@@ -316,8 +316,10 @@ ptah oci referrers "$SCHEMA" --type plan --format json
 `--type` accepts `all`, `lint`, `plan`, or `deployment`, and `--format` accepts
 `text` or `json`. Defaults are `all` and `text`. The result contains direct
 referrer descriptor metadata. Text output contains digest, artifact type, media
-type, and size; JSON output also contains annotations when present. Ptah does
-not currently expose a command to download or interpret the report payload.
+type, and size; JSON output also contains annotations when present.
+`ptah oci fetch` downloads the report payload itself — see
+[Native commands](../../reference/native-commands/). It writes the published
+bytes and does not interpret them.
 
 The subject follows the ordinary reference rules. An unqualified subject
 resolves to `:latest`, a tag resolves to its current manifest, and a digest

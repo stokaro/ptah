@@ -42,9 +42,10 @@ func newSchemaLineageCommand() *cobra.Command {
 	opts := schemaLineageOptions{}
 	cmd := &cobra.Command{
 		Use:   "lineage",
-		Short: "Trace which base columns feed each view column",
+		Short: "Trace which base columns feed each view column and each routine",
 		Long: `Derive column-to-column dependencies from the view and materialized-view
-bodies a schema declares, and write them as data.
+bodies a schema declares, and from the routine bodies it can resolve, and
+write them as data.
 
 This answers "what breaks if I drop this column" before the drop rather than
 after: a view column resolves to the base columns it reads, so a column nothing
@@ -56,7 +57,12 @@ contacts nothing.
 A view body this cannot fully resolve -- a join, a subquery source, a computed
 column with no alias -- is reported under "undecided" rather than omitted. A
 view whose dependencies went unresolved must not look like a view with none,
-because the difference decides whether the answer can be trusted.`,
+because the difference decides whether the answer can be trusted.
+
+Routines are traced on the same terms, and the same boundary applies: a routine
+whose body is a single SELECT resolves, and a procedural body -- one written in
+PL/pgSQL or any language other than plain SQL -- is reported as undecided
+naming its language.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runSchemaLineage(cmd, opts)
@@ -103,27 +109,45 @@ func runSchemaLineage(cmd *cobra.Command, opts schemaLineageOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	result := schemalineage.Derive(database)
-	if opts.format == "json" {
-		return writeLineageJSON(cmd.OutOrStdout(), result)
+	document := lineageDocument{
+		Result:   schemalineage.Derive(database),
+		Routines: schemalineage.DeriveRoutines(database),
 	}
-	return writeLineageTable(cmd.OutOrStdout(), result)
+	if opts.format == "json" {
+		return writeLineageJSON(cmd.OutOrStdout(), document)
+	}
+	return writeLineageTable(cmd.OutOrStdout(), document)
 }
 
-func writeLineageJSON(w io.Writer, result schemalineage.Result) error {
-	// Edges is never null in the document: a consumer iterating it should not
-	// have to special-case "no lineage" differently from "no views".
-	if result.Edges == nil {
-		result.Edges = make([]schemalineage.Edge, 0)
+// lineageDocument is what the command writes.
+//
+// [schemalineage.Result] is embedded rather than nested so its "edges" and
+// "undecided" keys stay where they have always been: routine lineage is a key
+// this document gained, not a rename of the keys a reader already parses.
+type lineageDocument struct {
+	schemalineage.Result
+	Routines schemalineage.RoutineResult `json:"routines"`
+}
+
+func writeLineageJSON(w io.Writer, document lineageDocument) error {
+	// Neither edge list is ever null in the document: a consumer iterating one
+	// should not have to special-case "no lineage" differently from "no views".
+	if document.Edges == nil {
+		document.Edges = make([]schemalineage.Edge, 0)
+	}
+	if document.Routines.Edges == nil {
+		document.Routines.Edges = make([]schemalineage.RoutineEdge, 0)
 	}
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
-	return encoder.Encode(result)
+	return encoder.Encode(document)
 }
 
-func writeLineageTable(w io.Writer, result schemalineage.Result) error {
-	if len(result.Edges) == 0 && len(result.Undecided) == 0 {
-		_, err := fmt.Fprintln(w, "No view columns to trace.")
+func writeLineageTable(w io.Writer, document lineageDocument) error {
+	result, routines := document.Result, document.Routines
+	if len(result.Edges) == 0 && len(result.Undecided) == 0 &&
+		len(routines.Edges) == 0 && len(routines.Undecided) == 0 {
+		_, err := fmt.Fprintln(w, "No view or routine columns to trace.")
 		return err
 	}
 	if len(result.Edges) > 0 {
@@ -145,6 +169,24 @@ func writeLineageTable(w io.Writer, result schemalineage.Result) error {
 			return err
 		}
 	}
+	if len(routines.Edges) > 0 {
+		table := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+		if _, err := fmt.Fprintln(table, "SOURCE\tREAD BY\tKIND"); err != nil {
+			return err
+		}
+		for _, edge := range routines.Edges {
+			if _, err := fmt.Fprintf(table, "%s.%s\t%s\t%s\n",
+				edge.FromTable, edge.FromColumn, edge.ToRoutine, edge.Kind); err != nil {
+				return err
+			}
+		}
+		if err := table.Flush(); err != nil {
+			return err
+		}
+	}
+	if err := writeLineageUndecidedRoutines(w, routines); err != nil {
+		return err
+	}
 	if len(result.Undecided) == 0 {
 		return nil
 	}
@@ -156,6 +198,25 @@ func writeLineageTable(w io.Writer, result schemalineage.Result) error {
 	}
 	for _, undecided := range result.Undecided {
 		if _, err := fmt.Fprintf(w, "  %s: %s\n", undecided.View, undecided.Reason); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// writeLineageUndecidedRoutines reports the routines that did not resolve.
+//
+// Same channel as the edges, for the reason the view half gives: a reader who
+// saw only what resolved would take an incomplete trace for a complete one.
+func writeLineageUndecidedRoutines(w io.Writer, routines schemalineage.RoutineResult) error {
+	if len(routines.Undecided) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintf(w, "\n%d routine(s) not fully resolved:\n", len(routines.Undecided)); err != nil {
+		return err
+	}
+	for _, undecided := range routines.Undecided {
+		if _, err := fmt.Fprintf(w, "  %s: %s\n", undecided.Routine, undecided.Reason); err != nil {
 			return err
 		}
 	}

@@ -222,11 +222,11 @@ fmt.Println(sql)
 
 ### Render SQL from YAML schema
 
-YAML is one of the authoring formats that produce Ptah's schema IR, alongside Go
-annotations, HCL, SQL, and DBML. `core/yamlschema` is its reader: `Parse` takes
-the document as bytes, `ParseFile` reads it from a path, and both return the
-same `*goschema.Database` the other readers return. Nothing downstream knows
-which one filled it.
+YAML is one of the authoring formats that produce Ptah's schema IR, alongside
+Go annotations, HCL, SQL, and DBML. `core/yamlschema` is its reader: `Parse`
+takes the document as bytes, `ParseFile` reads it from a path, and both return
+the same `*schemamodel.Database` the other readers return. Nothing downstream
+knows which one filled it.
 
 ```go
 package main
@@ -318,10 +318,10 @@ directly. Every reference includes its owning table.
 
 Planning rejects missing owners, unresolved additions, and same-name target
 indexes that conflict in the selected dialect's namespace. When a custom
-consumer starts from `goschema.Index` values, use
-`goschema.ResolveIndexTableNames` to resolve all owning tables in one indexed
-pass instead of scanning the table list for each index. MySQL and SQLite index
-matching applies ASCII case folding.
+consumer starts from `schemamodel.Index` values, use
+`schemamodel.ResolveIndexTableNames` to resolve all owning tables in one
+indexed pass instead of scanning the table list for each index. MySQL and
+SQLite index matching applies ASCII case folding.
 
 MariaDB matching also applies Unicode lowercase equivalence. All three retain
 the declared spelling in `IndexRef` values and rendered SQL.

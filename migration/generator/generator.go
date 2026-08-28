@@ -2144,7 +2144,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 		DomainsModified:        reverseDomainDiffs(diff.DomainsModified, schema),
 		CompositeTypesAdded:    diff.CompositeTypesRemoved,
 		CompositeTypesRemoved:  diff.CompositeTypesAdded,
-		CompositeTypesModified: reverseCompositeTypeDiffs(diff.CompositeTypesModified, schema),
+		CompositeTypesModified: reverseCompositeTypeDiffs(diff.CompositeTypesModified, schema, prior),
 		RangesAdded:            diff.RangesRemoved,
 		RangesRemoved:          diff.RangesAdded,
 		RangesModified:         reverseRangeDiffs(diff.RangesModified, schema),
@@ -2198,7 +2198,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// down plan's desired schema is the introspected one.
 		ContinuousAggregatesAdded:    slices.Clone(diff.ContinuousAggregatesRemoved),
 		ContinuousAggregatesRemoved:  slices.Clone(diff.ContinuousAggregatesAdded),
-		ContinuousAggregatesModified: reverseContinuousAggregateDiffs(diff.ContinuousAggregatesModified),
+		ContinuousAggregatesModified: reverseContinuousAggregateDiffs(diff.ContinuousAggregatesModified, prior, semantics),
 
 		// An extended property is a name, an address and a value, and the
 		// reversal needs no schema side because all three are already in the
@@ -2232,7 +2232,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// Reverse role operations
 		RolesAdded:          diff.RolesRemoved, // Roles to remove become roles to add
 		RolesRemoved:        diff.RolesAdded,   // Roles to add become roles to remove
-		RolesModified:       reverseRoleDiffs(diff.RolesModified),
+		RolesModified:       reverseRoleDiffs(diff.RolesModified, prior),
 		GrantsAdded:         diff.GrantsRemoved,       // Grants to remove become grants to add
 		GrantsRemoved:       diff.GrantsAdded,         // Grants to add become grants to revoke
 		GrantOptionsAdded:   diff.GrantOptionsRevoked, // Revoked grant options become grant-option additions
@@ -2285,6 +2285,19 @@ func reverseExtensionDiffs(diffs []difftypes.ExtensionDiff) []difftypes.Extensio
 			Name:       diff.Name,
 			FromSchema: diff.ToSchema,
 			ToSchema:   diff.FromSchema,
+			// The version pair is swapped for the reason the schema pair is:
+			// the rollback moves the extension back to where it was. Dropping
+			// it made a version-only change reverse to a diff describing no
+			// change at all, so the down file said "No rollback operations
+			// needed" and the extension stayed upgraded (stokaro/ptah#2418).
+			FromVersion: diff.ToVersion,
+			ToVersion:   diff.FromVersion,
+			// Carried, not swapped: whether the extension may be moved is a
+			// property of the extension, not a direction. Dropping it made
+			// every reversed diff claim false, and the planner refuses a move
+			// of a non-relocatable extension -- so a legal move reversed into
+			// a FAILING down migration.
+			Relocatable: diff.Relocatable,
 		}
 	}
 	return reversed
@@ -2993,6 +3006,14 @@ func reverseTableDiffs(tableDiffs []difftypes.TableDiff) []difftypes.TableDiff {
 			ColumnsAdded:    tableDiff.ColumnsRemoved, // Columns to remove become columns to add
 			ColumnsRemoved:  tableDiff.ColumnsAdded,   // Columns to add become columns to remove
 			ColumnsModified: reverseColumnDiffs(tableDiff.ColumnsModified),
+			// The three Desired/Current pairs below carry BOTH sides for the
+			// reason each of their doc comments gives, which is exactly so a
+			// reversal can swap them. None of them was swapped, or carried at
+			// all: a migration that changed a table's comment rolled back to
+			// "No rollback operations needed" (stokaro/ptah#2418).
+			CommentChange:           reverseCommentChange(tableDiff.CommentChange),
+			RowTTLChange:            reverseRowTTLChange(tableDiff.RowTTLChange),
+			RowDeletionPolicyChange: reverseRowDeletionPolicyChange(tableDiff.RowDeletionPolicyChange),
 		}
 	}
 	return reversed
@@ -3108,8 +3129,12 @@ func reverseDomainDiffs(domainDiffs []difftypes.DomainDiff, schema *schemamodel.
 	reversed := make([]difftypes.DomainDiff, len(domainDiffs))
 	for i, domainDiff := range domainDiffs {
 		reversed[i] = difftypes.DomainDiff{
-			DomainName:      domainDiff.DomainName,
-			Changes:         reverseChangeMap(domainDiff.Changes),
+			DomainName: domainDiff.DomainName,
+			Changes:    reverseChangeMap(domainDiff.Changes),
+			// The current-side base type is re-derived from the schema the UP
+			// migration leaves behind, which is what the DOWN direction is
+			// changing away from. CurrentCheckConstraints cannot be: see
+			// nestedCoverageExempt.
 			CurrentBaseType: targetDomainBaseType(schema, domainDiff.DomainName),
 		}
 	}
@@ -3175,7 +3200,11 @@ func reverseHypertableDiffs(changes []difftypes.HypertableDiff) []difftypes.Hype
 
 // reverseContinuousAggregateDiffs swaps the two sides of each aggregate change,
 // so a rollback restores the body and the option the database had.
-func reverseContinuousAggregateDiffs(changes []difftypes.ContinuousAggregateDiff) []difftypes.ContinuousAggregateDiff {
+func reverseContinuousAggregateDiffs(
+	changes []difftypes.ContinuousAggregateDiff,
+	prior *schemamodel.Database,
+	semantics identifier.Semantics,
+) []difftypes.ContinuousAggregateDiff {
 	reversed := make([]difftypes.ContinuousAggregateDiff, 0, len(changes))
 	for _, change := range changes {
 		reversed = append(reversed, difftypes.ContinuousAggregateDiff{
@@ -3184,9 +3213,33 @@ func reverseContinuousAggregateDiffs(changes []difftypes.ContinuousAggregateDiff
 			NewBody:             change.OldBody,
 			OldMaterializedOnly: change.NewMaterializedOnly,
 			NewMaterializedOnly: change.OldMaterializedOnly,
+			// Swapping the bodies without swapping the operand would have the
+			// down direction drop the aggregate and create the very definition
+			// it is undoing, since the operand is what the create renders from
+			// (stokaro/ptah#2315).
+			Desired: priorContinuousAggregate(prior, change.Name, semantics),
 		})
 	}
 	return reversed
+}
+
+// priorContinuousAggregate is the aggregate the pre-change database held.
+//
+// The diff spells a qualified name the declaration produced, and the aggregate
+// a read reports carries the schema the server puts it under, so the two are
+// compared as qualified names on the connection's own identifier terms.
+func priorContinuousAggregate(
+	prior *schemamodel.Database,
+	name string,
+	semantics identifier.Semantics,
+) schemamodel.ContinuousAggregate {
+	if prior == nil {
+		return schemamodel.ContinuousAggregate{}
+	}
+	if aggregate := objectlookup.Qualified(prior.ContinuousAggregates, name, semantics); aggregate != nil {
+		return *aggregate
+	}
+	return schemamodel.ContinuousAggregate{}
 }
 
 func reverseSynonymDiffs(diffs []difftypes.SynonymDiff) []difftypes.SynonymDiff {
@@ -3284,7 +3337,16 @@ func targetRangeSubtype(schema *schemamodel.Database, name string) string {
 func reverseMaterializedViewDiffs(viewDiffs []difftypes.MaterializedViewDiff) []difftypes.MaterializedViewDiff {
 	reversed := make([]difftypes.MaterializedViewDiff, len(viewDiffs))
 	for i, viewDiff := range viewDiffs {
-		reversed[i] = difftypes.MaterializedViewDiff{ViewName: viewDiff.ViewName, Changes: reverseChangeMap(viewDiff.Changes)}
+		reversed[i] = difftypes.MaterializedViewDiff{
+			ViewName: viewDiff.ViewName,
+			Changes:  reverseChangeMap(viewDiff.Changes),
+			// A ClickHouse refresh schedule is a Desired/Current pair for the
+			// reason the table's TTL is: the planner needs both sides to tell
+			// an ALTER from a rebuild. Dropping it meant a rollback restored
+			// the view without the schedule it had, so its rows would be right
+			// once and never again (stokaro/ptah#2418).
+			RefreshChange: reverseRefreshChange(viewDiff.RefreshChange),
+		}
 	}
 	return reversed
 }
@@ -3307,13 +3369,22 @@ func reverseTriggerDiffs(triggerDiffs []difftypes.TriggerDiff) []difftypes.Trigg
 }
 
 // reverseCompositeTypeDiffs mirrors reverseDomainDiffs for composite types.
-func reverseCompositeTypeDiffs(compositeDiffs []difftypes.CompositeTypeDiff, schema *schemamodel.Database) []difftypes.CompositeTypeDiff {
+func reverseCompositeTypeDiffs(
+	compositeDiffs []difftypes.CompositeTypeDiff,
+	schema, prior *schemamodel.Database,
+) []difftypes.CompositeTypeDiff {
 	reversed := make([]difftypes.CompositeTypeDiff, len(compositeDiffs))
 	for i, compositeDiff := range compositeDiffs {
 		reversed[i] = difftypes.CompositeTypeDiff{
 			TypeName:          compositeDiff.TypeName,
 			Changes:           reverseChangeMap(compositeDiff.Changes),
 			CurrentFieldTypes: targetCompositeFieldTypes(schema, compositeDiff.TypeName),
+			// An added attribute is a removed one coming back, and the pair is
+			// what lets the planner ALTER instead of rebuilding. Dropping both
+			// sent every reversed composite down the drop-and-recreate path
+			// (stokaro/ptah#2418).
+			AttributesAdded:   restoredCompositeAttributes(prior, compositeDiff.TypeName, compositeDiff.AttributesRemoved),
+			AttributesRemoved: compositeAttributeNames(compositeDiff.AttributesAdded),
 		}
 	}
 	return reversed
@@ -3375,7 +3446,7 @@ func reverseRLSPolicyDiffs(policyDiffs []difftypes.RLSPolicyDiff) []difftypes.RL
 }
 
 // reverseRoleDiffs reverses role modifications for down migrations
-func reverseRoleDiffs(roleDiffs []difftypes.RoleDiff) []difftypes.RoleDiff {
+func reverseRoleDiffs(roleDiffs []difftypes.RoleDiff, prior *schemamodel.Database) []difftypes.RoleDiff {
 	reversed := make([]difftypes.RoleDiff, len(roleDiffs))
 	for i, roleDiff := range roleDiffs {
 		// For role changes, we need to reverse the direction of changes
@@ -3394,9 +3465,35 @@ func reverseRoleDiffs(roleDiffs []difftypes.RoleDiff) []difftypes.RoleDiff {
 		reversed[i] = difftypes.RoleDiff{
 			RoleName: roleDiff.RoleName,
 			Changes:  reversedChanges,
+			// A password entry does not reverse: what it changed from is
+			// unreadable, so the reversed change still says one is required.
+			// The operand is what decides whether anything is written, and the
+			// pre-change database holds no password -- which is the honest
+			// answer, and the reason this rewrite is not optional. Carrying the
+			// declaration's role through would have the down direction set the
+			// NEW password (stokaro/ptah#2315).
+			Desired: priorRole(prior, roleDiff.RoleName),
 		}
 	}
 	return reversed
+}
+
+// priorRole is the role the pre-change database held.
+//
+// A role name is compared exactly, which is the identity the comparison that
+// produced the change already used: a role lives outside any schema and is not
+// resolved against a search path, so there is no qualified spelling of one and
+// nothing for identifier semantics to fold.
+func priorRole(prior *schemamodel.Database, name string) schemamodel.Role {
+	if prior == nil {
+		return schemamodel.Role{}
+	}
+	for _, role := range prior.Roles {
+		if role.Name == name {
+			return role
+		}
+	}
+	return schemamodel.Role{}
 }
 
 // nextAvailableMigrationVersion answers the version question over the names
@@ -3559,4 +3656,89 @@ func migrationFilesFromPairs(pairs []MigrationFilePair) *MigrationFiles {
 	return &MigrationFiles{
 		Files: pairs,
 	}
+}
+
+// reverseCommentChange swaps the two sides of a comment transition, so the
+// rollback restores the comment the database had.
+func reverseCommentChange(change *difftypes.CommentChange) *difftypes.CommentChange {
+	if change == nil {
+		return nil
+	}
+	return &difftypes.CommentChange{Current: change.Desired, Desired: change.Current}
+}
+
+// reverseRowTTLChange swaps the two sides of a row-level TTL transition.
+func reverseRowTTLChange(change *difftypes.RowTTLChange) *difftypes.RowTTLChange {
+	if change == nil {
+		return nil
+	}
+	return &difftypes.RowTTLChange{Desired: change.Current, Current: change.Desired}
+}
+
+// reverseRowDeletionPolicyChange swaps the two sides of a row deletion policy
+// transition.
+func reverseRowDeletionPolicyChange(
+	change *difftypes.RowDeletionPolicyChange,
+) *difftypes.RowDeletionPolicyChange {
+	if change == nil {
+		return nil
+	}
+	return &difftypes.RowDeletionPolicyChange{Desired: change.Current, Current: change.Desired}
+}
+
+// reverseRefreshChange swaps the two sides of a materialized view's refresh
+// schedule transition.
+func reverseRefreshChange(change *difftypes.MatViewRefreshChange) *difftypes.MatViewRefreshChange {
+	if change == nil {
+		return nil
+	}
+	return &difftypes.MatViewRefreshChange{Desired: change.Current, Current: change.Desired}
+}
+
+// compositeAttributeNames is the removal shape of a set of added attributes: a
+// DROP ATTRIBUTE takes a name, and nothing else of the attribute survives it.
+func compositeAttributeNames(added []difftypes.CompositeAttribute) []string {
+	if len(added) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(added))
+	for _, attribute := range added {
+		names = append(names, attribute.Name)
+	}
+	return names
+}
+
+// restoredCompositeAttributes gives a removed attribute back its type, which a
+// removal does not carry and an ADD ATTRIBUTE needs.
+//
+// The type comes from the PRE-CHANGE schema, because that is the composite the
+// rollback is restoring. An attribute the prior schema does not describe is
+// left out rather than added with an empty type, which would render
+// `ADD ATTRIBUTE "x" ` and be refused.
+func restoredCompositeAttributes(
+	prior *schemamodel.Database,
+	typeName string,
+	removed []string,
+) []difftypes.CompositeAttribute {
+	if prior == nil || len(removed) == 0 {
+		return nil
+	}
+	types := make(map[string]string)
+	for _, composite := range prior.CompositeTypes {
+		if composite.QualifiedName() != typeName {
+			continue
+		}
+		for _, field := range composite.Fields {
+			types[field.Name] = field.Type
+		}
+	}
+	restored := make([]difftypes.CompositeAttribute, 0, len(removed))
+	for _, name := range removed {
+		fieldType, known := types[name]
+		if !known {
+			continue
+		}
+		restored = append(restored, difftypes.CompositeAttribute{Name: name, Type: fieldType})
+	}
+	return restored
 }

@@ -112,15 +112,15 @@ database.
 
 `core/yamlschema` reads a desired schema written in Ptah's YAML format. `Parse`
 takes the document as bytes and `ParseFile` reads it from a path; both return
-the `*goschema.Database` that Go annotations, HCL, SQL, and DBML also produce,
-and nothing downstream can tell which reader filled it. Parsing is strict in
-two ways: an unknown key is an error rather than a silent drop, and a second
-YAML document in the same stream is refused rather than ignored.
+the `*schemamodel.Database` that Go annotations, HCL, SQL, and DBML also
+produce, and nothing downstream can tell which reader filled it. Parsing is
+strict in two ways: an unknown key is an error rather than a silent drop, and a
+second YAML document in the same stream is refused rather than ignored.
 `core/schemasource` covers the other direction — an external program that
 writes YAML to its standard output — and parses that output through this
 package.
 
-`goschema.Extension.Schema` records a PostgreSQL extension's installation
+`schemamodel.Extension.Schema` records a PostgreSQL extension's installation
 schema. `ast.ExtensionNode.Schema` and `SetSchema` carry the same intent into
 SQL rendering, which emits `CREATE EXTENSION ... WITH SCHEMA ...` after any
 `IF NOT EXISTS` clause and before `VERSION`. An empty schema means the target's
@@ -128,13 +128,14 @@ default schema. Embedders should preserve the field when converting or copying
 schema IR; dropping it can move an extension into the wrong namespace.
 
 `core/coverage` carries what a schema description does **not** claim to
-describe. `goschema.Database.NotDescribed` and `catalog.Database.NotDescribed`
-hold one, and schema comparison consults both: the desired state's record gates
-removals and the introspected state's record gates additions. Its zero value
-claims everything, so an embedder that never sets one gets exactly the
-comparison it got before the field existed. Set it when a reader was asked about
-less than the whole database, or a projection left something out on purpose;
-leaving it zero there is how an object nobody looked at becomes a `DROP`.
+describe. `schemamodel.Database.NotDescribed` and
+`catalog.Database.NotDescribed` hold one, and schema comparison consults both:
+the desired state's record gates removals and the introspected state's record
+gates additions. Its zero value claims everything, so an embedder that never
+sets one gets exactly the comparison it got before the field existed. Set it
+when a reader was asked about less than the whole database, or a projection
+left something out on purpose; leaving it zero there is how an object nobody
+looked at becomes a `DROP`.
 
 `schemadiff.CompareReportingUndecidedAdditions` exposes desired additions that
 an offline comparison could not plan safely, and
@@ -152,9 +153,9 @@ preserve both fields; missing facts fail closed with
 `ptaherr.ErrInvalidSchemaDiff`. Offline comparison has no live ownership facts
 and is not the safety boundary for applying such a replacement.
 
-`goschema.Finalize` rebuilds materialized inline, JSON, and relation fields on
-every call. `Field.GeneratedFromEmbedded` identifies those derived fields so a
-caller can mutate the source fields or embedded declarations and finalize the
+`schemamodel.Finalize` rebuilds materialized inline, JSON, and relation fields
+on every call. `Field.GeneratedFromEmbedded` identifies those derived fields so
+a caller can mutate the source fields or embedded declarations and finalize the
 database again without retaining stale or duplicate columns. Treat the flag as
 derived metadata: source declarations should leave it false.
 
@@ -609,6 +610,19 @@ a forward plan keeps the replacement, which preserves dependent objects and the
 privileges on the view and fails loudly if the engine refuses it, while a
 rollback drops and recreates, which always applies. Embedders that build a
 `ViewDiff` by hand and leave both fields empty get the forward answer.
+
+Two more modification entries carry the object they render rather than a
+reference to it. `migration/schemadiff/difftypes.ContinuousAggregateDiff` and
+`RoleDiff` each hold a `Desired` field, off the wire, holding the declaration
+the planner writes the change from: an aggregate modification is a drop and a
+create, and the create needs the schema, the name and the comment that the two
+body strings do not carry, while a role's `password_update_required` entry
+records only that a password has to be set and never the value. An embedder
+that builds either entry by hand and leaves `Desired` empty gets no statement
+for that entry. The field is also what makes a rollback correct: a reversal
+resolves it against the pre-change database, so a rolled-back aggregate is
+recreated from the definition that database held and a rolled-back password
+change sets nothing, the database holding no password to restore.
 
 `core/platform/identifier` exposes the reusable value types and conservative
 dialect defaults behind that contract.
