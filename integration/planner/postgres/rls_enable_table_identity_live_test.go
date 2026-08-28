@@ -170,6 +170,32 @@ func ordersPolicy(policyTable string) schemamodel.RLSPolicy {
 func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t *testing.T) {
 	adminURL := livePostgresURLForRLSEnable(t)
 
+	// Each declaration is named once and used twice: the diff's creations are
+	// assembled FROM it, and the plan is applied AGAINST it. A creation carries
+	// the columns, enums and dependency edges the planner renders from, so a row
+	// that spelled a bare name here would be handing the planner a table with no
+	// columns and asserting on a plan that never created one.
+	ordersDeclaredBare := ordersSchema("", "public.orders")
+	ordersDeclaredQualified := ordersSchema("public", "orders")
+	ordersDeclaredMatching := ordersSchema("", "orders")
+	shipmentsAndLegacy := &schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{Name: "shipments", StructName: "Shipment"},
+			{Name: "legacy", StructName: "Legacy"},
+		},
+		Fields: []schemamodel.Field{
+			{Name: "id", StructName: "Shipment", Type: "INTEGER", Primary: true},
+			{Name: "id", StructName: "Legacy", Type: "INTEGER", Primary: true},
+		},
+		RLSPolicies: []schemamodel.RLSPolicy{{
+			Name:            "tenant_isolation",
+			Table:           "legacy",
+			PolicyFor:       "ALL",
+			ToRoles:         "PUBLIC",
+			UsingExpression: "tenant_id = 1",
+		}},
+	}
+
 	tests := []struct {
 		name string
 		// seed runs against the fresh database before the plan, for rows whose
@@ -187,36 +213,36 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 		{
 			name: "the diff creates orders and the policy names public.orders",
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableChanges{{Name: "orders"}},
+				TablesAdded: difftypes.TableCreationsFor(ordersDeclaredBare, "orders"),
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 					{PolicyName: "tenant_isolation", TableName: "public.orders", Desired: ordersPolicy("public.orders")},
 				},
 			},
-			desired:         ordersSchema("", "public.orders"),
+			desired:         ordersDeclaredBare,
 			wantPolicies:    []string{"public/orders/tenant_isolation"},
 			wantRowSecurity: []string{"public/orders"},
 		},
 		{
 			name: "the diff creates public.orders and the policy names orders",
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableChanges{{Name: "public.orders"}},
+				TablesAdded: difftypes.TableCreationsFor(ordersDeclaredQualified, "public.orders"),
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 					{PolicyName: "tenant_isolation", TableName: "orders", Desired: ordersPolicy("orders")},
 				},
 			},
-			desired:         ordersSchema("public", "orders"),
+			desired:         ordersDeclaredQualified,
 			wantPolicies:    []string{"public/orders/tenant_isolation"},
 			wantRowSecurity: []string{"public/orders"},
 		},
 		{
 			name: "both sides spell the table the same way",
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableChanges{{Name: "orders"}},
+				TablesAdded: difftypes.TableCreationsFor(ordersDeclaredMatching, "orders"),
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 					{PolicyName: "tenant_isolation", TableName: "orders", Desired: ordersPolicy("orders")},
 				},
 			},
-			desired:         ordersSchema("", "orders"),
+			desired:         ordersDeclaredMatching,
 			wantPolicies:    []string{"public/orders/tenant_isolation"},
 			wantRowSecurity: []string{"public/orders"},
 		},
@@ -231,25 +257,9 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 				`CREATE TABLE legacy (id INTEGER PRIMARY KEY, tenant_id INTEGER)`,
 			},
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableChanges{{Name: "shipments"}},
+				TablesAdded: difftypes.TableCreationsFor(shipmentsAndLegacy, "shipments"),
 			},
-			desired: &schemamodel.Database{
-				Tables: []schemamodel.Table{
-					{Name: "shipments", StructName: "Shipment"},
-					{Name: "legacy", StructName: "Legacy"},
-				},
-				Fields: []schemamodel.Field{
-					{Name: "id", StructName: "Shipment", Type: "INTEGER", Primary: true},
-					{Name: "id", StructName: "Legacy", Type: "INTEGER", Primary: true},
-				},
-				RLSPolicies: []schemamodel.RLSPolicy{{
-					Name:            "tenant_isolation",
-					Table:           "legacy",
-					PolicyFor:       "ALL",
-					ToRoles:         "PUBLIC",
-					UsingExpression: "tenant_id = 1",
-				}},
-			},
+			desired:         shipmentsAndLegacy,
 			wantPolicies:    make([]string, 0),
 			wantRowSecurity: make([]string, 0),
 		},
