@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -19,6 +20,8 @@ import (
 type evidenceOptions struct {
 	// publishTo is the OCI reference the record is pushed to, empty for none.
 	publishTo string
+	// writeTo is the local path the record is written to, empty for none.
+	writeTo string
 	// plainHTTP permits an unencrypted connection to that registry.
 	plainHTTP bool
 }
@@ -27,6 +30,8 @@ type evidenceOptions struct {
 func addEvidenceFlags(flags *pflag.FlagSet, options *evidenceOptions) {
 	flags.StringVar(&options.publishTo, "publish-evidence", "",
 		"OCI reference to publish this run's record to; omitted keeps it out of a registry")
+	flags.StringVar(&options.writeTo, "evidence-file", "",
+		"Path to write this run's record to as JSON; omitted writes no file")
 	dbcli.RegisterPlainHTTPFlag(flags, &options.plainHTTP)
 }
 
@@ -80,6 +85,9 @@ func publishRecord(
 	if err != nil {
 		return err
 	}
+	if err := writeRecordFile(out, evidence.writeTo, record); err != nil {
+		return err
+	}
 	if evidence.publishTo == "" {
 		return nil
 	}
@@ -91,4 +99,35 @@ func publishRecord(
 	}
 	return writeLines(out, bullet(fmt.Sprintf(
 		"record %s published as %s", record.Digest[:12], result.Descriptor.Digest)))
+}
+
+// writeRecordFile keeps the record where a registry is not.
+//
+// A registry is where evidence belongs when there is one, and there often is
+// not: a first migration, a CI job that runs before anything is published, an
+// operator who has no registry at all. The record is the same bytes either way,
+// so what somebody keeps locally is what they would have fetched.
+//
+// The two destinations are independent. Naming both writes the file and pushes
+// the artifact, and naming neither is the default -- the record is built
+// regardless, because the cost of building it is nothing next to the run that
+// produced it.
+//
+// A failure to write is reported and does not fail the verb, for the reason a
+// failure to publish does not: the measurement or the pointer move already
+// happened, and a directory that is not there is not a fact about the
+// generation. Failing here would report a run that did not do what it did.
+func writeRecordFile(out io.Writer, path string, record embedrelease.Record) error {
+	if path == "" {
+		return nil
+	}
+	// 0o600 because the record is the operator's to share rather than the
+	// filesystem's to offer. It carries no credential -- the specification
+	// names where one lives, never what it is -- and it does carry what a
+	// corpus was built from.
+	if err := os.WriteFile(path, record.Body, 0o600); err != nil {
+		return writeLines(out, bullet(fmt.Sprintf("the record was not written: %v", err)))
+	}
+	return writeLines(out, bullet(fmt.Sprintf(
+		"record %s written to %s", record.Digest[:12], path)))
 }

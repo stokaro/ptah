@@ -88,6 +88,11 @@ A failure to publish is reported and does not fail the verb. The measurement or
 the pointer move already happened, and a registry nobody can reach is not a fact
 about the generation.
 
+Without a registry, `--evidence-file <path>` writes the same record as JSON. The
+bytes are identical, so what you keep locally is what you would have fetched —
+which is the destination for a first migration, for a CI job that runs before
+anything is published, and for a team with no registry at all.
+
 ## What to watch after the cutover
 
 - **Search latency.** A new index with different parameters behaves differently
