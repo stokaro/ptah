@@ -221,6 +221,7 @@ export const sidebar = [
         items: [
           { slug: 'reference/native-commands' },
           { slug: 'reference/atlas-commands' },
+          { slug: 'reference/command-flags' },
           { slug: 'reference/test-cases' },
         ],
       },

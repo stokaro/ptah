@@ -133,6 +133,9 @@ jobs:
       - name: Check the generated agent-surface tables
         run: scripts/check-agent-surface.sh
 
+      - name: Check the generated command reference
+        run: scripts/check-command-reference.sh
+
       - name: Check public Go API ledger
         run: scripts/check-public-api.sh
 

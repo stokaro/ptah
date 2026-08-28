@@ -156,7 +156,7 @@ var verbs = map[string]Verb{
 	"migrations tag": {TargetWrites, ScratchNone,
 		"records, lists or removes a tag in the target's tracking table; two of the three write"},
 	"migrations test": {TargetWrites, ScratchNone,
-		"runs declarative test cases against the database named by --db-url, whose own help " +
+		"runs declarative test cases against the database named by `--db-url`, whose own help " +
 			"calls it a \"Throwaway database URL\": the cases run raw SQL and apply schemas there"},
 	"migrations up": {TargetWrites, ScratchNone,
 		"runs pending migrations against the target"},
@@ -167,9 +167,9 @@ var verbs = map[string]Verb{
 	// project.
 	"project adopt": {TargetReads, ScratchNone,
 		"classifies every construct a project file declares as exact, compat-only or " +
-			"unsupported; --check reports that and writes nothing, the bare verb rewrites " +
+			"unsupported; `--check` reports that and writes nothing, the bare verb rewrites " +
 			"the compat-only spellings and refuses a project declaring anything " +
-			"unsupported, and --preflight also reads the revision history in the " +
+			"unsupported, and `--preflight` also reads the revision history in the " +
 			"project's database, writing nothing there"},
 	"project inspect": {TargetNone, ScratchNone,
 		"reads a project file and reports which of its settings Ptah acts on and which it " +
@@ -243,7 +243,7 @@ var verbs = map[string]Verb{
 	"schema stats": {TargetReads, ScratchNone,
 		"counts the objects in the target and emits them as OpenMetrics"},
 	"schema test": {TargetWrites, ScratchNone,
-		"runs declarative test cases against the database named by --db-url, whose own help " +
+		"runs declarative test cases against the database named by `--db-url`, whose own help " +
 			"calls it a \"Throwaway database URL\": measured on PostgreSQL 17.11, a case with an " +
 			"apply_schema step created a table there and an exec step inserted into it"},
 	"schema validate": {TargetNone, ScratchNone,

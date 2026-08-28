@@ -1,46 +1,168 @@
 ---
 title: Native commands
-description: Complete verb table for the native ptah command tree.
+description: Every command path the native ptah binary answers to, and the notes a verb table cannot hold.
 ---
 
-This page lists every native `ptah` verb with its purpose. Native commands use
-Ptah-owned spellings; Atlas aliases are intentionally absent from the `ptah`
-binary. The Atlas-compatible surface — the separate `ptah-compat` drop-in
-binary — has its own page: [Atlas-compatible commands](../atlas-commands/).
-Use `ptah <command> --help` for the exact flag set in an installed binary.
+This page is the lookup reference for the native `ptah` surface: every command
+path the binary answers to, and the per-verb detail a table cannot carry. Native
+commands use Ptah-owned spellings; Atlas aliases are intentionally absent from
+the `ptah` binary. The Atlas-compatible surface — the separate `ptah-compat`
+drop-in binary — has its own page:
+[Atlas-compatible commands](../atlas-commands/).
 
-## Desired schema: `ptah schema`
+## Every native verb
 
-| Command | Purpose |
-| --- | --- |
-| `ptah schema render` | Render desired-schema SQL to stdout from Go, YAML, HCL, SQL, or external-command inputs; write progress and dependency diagnostics to stderr. |
-| `ptah schema validate` | Report every structural problem in a desired schema without a database; exit 1 when any is found, 0 when none is. |
-| `ptah schema annotations` | Export Ptah Go annotation metadata as a JSON Schema document. |
-| `ptah schema compare` | Compare desired schema with a live database. |
-| `ptah schema drift` | Check live database drift against desired schema. |
-| `ptah schema apply` | Apply a desired schema directly to a database, with an advisory lock, optional dev-database rehearsal, and interactive approval (`--auto-approve` for scripts). |
-| `ptah schema plan` | Save the direct apply plan as a fingerprinted local plan file; `ptah schema apply --plan` executes it only while the target still matches the recorded fingerprint. |
-| `ptah schema approve` | Sign a saved plan file with an SSH key through `ssh-keygen`, writing `<plan>.sig` beside it. |
-| `ptah schema verify-approval` | Check a plan file's signature against an OpenSSH `allowed_signers` list and name the principal it belongs to. |
-| `ptah schema inspect` | Inspect a live database, a local schema file, an `oci://` schema artifact, or an Atlas-format migration directory as machine-clean HCL, SQL, or JSON; `--out-dir`/`--split` export files. |
-| `ptah schema diff` | Diff two arbitrary schema states (files, database URLs, or migration directories) into migration SQL or JSON. |
-| `ptah schema fmt` | Format HCL schema files canonically; `--check` is a no-write CI gate. |
-| `ptah schema export` | Export a schema to HCL, an OpenAPI 3.0 component schema, a GraphQL SDL, a Protobuf Edition 2023 definition, or reference documentation as Markdown or a self-contained HTML page. |
-| `ptah schema push` | Publish a lossless canonical desired schema to an OCI registry. |
-| `ptah schema pull` | Pull a canonical desired schema from an OCI registry. |
-| `ptah schema test` | Apply a desired schema from Go annotations, a SQL or HCL file, or a live database to a throwaway database and run declarative seed/SQL/assert cases against it. |
-| `ptah schema security` | Report security findings over a live schema: privileges granted to `PUBLIC`, tables reachable with no row-level security, and routines that run with their owner's privileges. Reads the database and nothing else. |
-| `ptah schema lineage` | Trace which base columns feed each view and materialized-view column, which base columns each routine reads, and which tables and columns each routine writes, from a schema source, with no database. |
-| `ptah schema stats` | Count the objects in a live schema and write one OpenMetrics gauge per object kind. |
-| `ptah schema serve` | Serve a read-only web page holding the desired schema and how a live database differs from it, re-read on every request. |
+The index below is generated from the `ptah` command tree, so it names every
+command path the binary answers to and no path it does not. Rows are sorted,
+which keeps a namespace's verbs together; which verb to reach for first is
+[Choose a workflow](../../start/choose-a-workflow/). Use `ptah <command> --help`
+for the exact flag set in an installed binary.
+
+A row marked `group` is a namespace rather than an operation. Running one with
+no verb prints its help, with one exception: `ptah assist` on its own starts a
+conversation, which [A model of your own](#a-model-of-your-own) describes.
+
+The tree is walked the way cobra finishes building it, so `ptah help` and the
+four `ptah completion` shells have rows: they ship, and an index built from the
+verbs `cmd/` registers by hand would leave them out. Two spellings stay outside
+it. `__complete` and `__completeNoDesc` ship and exit `0`, and no walk reaches
+them, because cobra registers them from an unexported function that removes them
+again unless the invocation being parsed is one of the two. They answer a shell
+rather than a person.
+
+<!-- BEGIN GENERATED NATIVE COMMANDS -->
+| Command | What it does | Notes |
+| --- | --- | --- |
+| `ptah assist` | Work with Ptah through a model you supply | group |
+| `ptah assist context` | Prints what a question would send to a model provider and sends nothing; it opens neither a database nor an endpoint, and writes no file | — |
+| `ptah assist explain` | Opens no connection of its own; it asks a model a question and lets the model call Ptah's own tools, each of which carries its own classification | — |
+| `ptah assist provider` | Inspect and test the model providers this machine can reach | group |
+| `ptah assist provider list` | Lists the provider profiles configured locally, and opens neither a database nor an endpoint | — |
+| `ptah assist provider test` | Measures a provider profile by calling the model endpoint it names; no database is involved | — |
+| `ptah assist sessions` | List, read and remove saved Ptah Assist conversations | group |
+| `ptah assist sessions delete` | Removes one saved conversation file from the project; no database is opened, and the audit log is a separate file it does not touch | — |
+| `ptah assist sessions list` | Lists the conversations saved under the project's .ptah directory; neither a database nor a model endpoint is opened | — |
+| `ptah assist sessions prune` | Removes saved conversation files untouched for longer than a given age; no database is opened, and the audit log is left alone | — |
+| `ptah assist sessions show` | Prints one saved conversation from disk, including what Ptah's tools answered during it; nothing is opened to do so | — |
+| `ptah completion` | Generate the autocompletion script for the specified shell | group |
+| `ptah completion bash` | Writes a bash completion script to stdout, generated from the command tree; it opens no database and writes no file | — |
+| `ptah completion fish` | Writes a fish completion script to stdout, generated from the command tree; it opens no database and writes no file | — |
+| `ptah completion powershell` | Writes a PowerShell completion script to stdout, generated from the command tree; it opens no database and writes no file | — |
+| `ptah completion zsh` | Writes a zsh completion script to stdout, generated from the command tree; it opens no database and writes no file | — |
+| `ptah db` | Work with live database schemas | group |
+| `ptah db capabilities` | Reads the server's version and catalogs to report the capability profile Ptah resolves | — |
+| `ptah db drop-all` | Drops every schema object in the database it is given | — |
+| `ptah db read` | Introspects the database and prints what it found | — |
+| `ptah help` | Prints the help text of the verb it names, or of the root when it names none; the verb itself is not run and nothing is opened | — |
+| `ptah inference` | Plan, run and cut over embedding-generation migrations | group |
+| `ptah inference backfill` | Reads the source, sends it to the embedding endpoint the specification names, and writes vectors and checkpoints into the target database | — |
+| `ptah inference catchup` | Rereads the source rows recorded as changed and writes their vectors, which sends that text to the embedding endpoint | — |
+| `ptah inference cutover` | Moves the pointer queries read to a different generation, and refuses when the pointer is not where the plan it was built from expects | — |
+| `ptah inference evaluate` | Searches the generation with queries from a corpus, which sends those queries to the embedding endpoint; the database is only read | — |
+| `ptah inference plan` | Resolves a specification against the database and prints what would happen; nothing is created and nothing is written | — |
+| `ptah inference prepare` | Creates the run's own tables and, under the outbox mode, a companion table and two triggers on the source | — |
+| `ptah inference retire` | Drops a generation's index and column; it is the one verb here that cannot be undone | — |
+| `ptah inference rollback` | Moves the pointer queries read back to a previous generation, when that generation is still measurably one you can go back to | — |
+| `ptah inference status` | Prints a run's phase, progress and watermarks from the run-state tables | — |
+| `ptah inference verify` | Reads the source and the generation and reports what a cutover would rest on; it writes nothing | — |
+| `ptah introspect` | Reads a live database and writes annotated Go models to disk; the database is only read | — |
+| `ptah license` | Prints license and attribution text compiled into the binary | — |
+| `ptah mcp` | Opens no connection of its own; it serves other operations to an MCP client, and each of those carries its own classification | — |
+| `ptah migrations` | Manage migration plans, files, and revision state | group |
+| `ptah migrations baseline` | Records existing migrations as applied in the target's tracking table, and replays the directory into a disposable shadow database to verify it reproduces the schema | — |
+| `ptah migrations checkpoint` | Squashes history into a checkpoint, replaying the directory into an ephemeral shadow database; the target is not touched | — |
+| `ptah migrations create` | Writes an empty up and down migration file pair for someone to fill in by hand | — |
+| `ptah migrations data` | Reads reference and seed data from the target and writes a migration file for the drift | — |
+| `ptah migrations down` | Rolls back migrations against the target, after replaying and verifying the rollback plan in an ephemeral shadow database | — |
+| `ptah migrations edit` | Rewrites a migration file and re-hashes the directory; the target is read to check whether the migration has been applied | — |
+| `ptah migrations generate` | Writes migration files from schema differences; the dev database it replays into "is reset destructively" and the shadow database verifies the result | — |
+| `ptah migrations hash` | Writes the directory's integrity file, so a later run can tell a hand-edited migration from an intact one | — |
+| `ptah migrations import` | Converts another tool's migration directory into Ptah's format on disk | — |
+| `ptah migrations lint` | Lints migration files; the dev database it names is cleaned and replayed into | — |
+| `ptah migrations ls` | Lists the migration files in a directory, reading nothing but the directory | — |
+| `ptah migrations plan` | Reads the target and prints the migration SQL the difference implies, writing nothing | — |
+| `ptah migrations pull` | Downloads a migration directory from an OCI registry and writes it to disk | — |
+| `ptah migrations push` | Uploads a migration directory from disk to an OCI registry | — |
+| `ptah migrations rebase` | Moves a migration to the end of history and updates the target's tracking table | — |
+| `ptah migrations repair` | Rewrites revision metadata in the target's tracking table | — |
+| `ptah migrations rm` | Deletes a migration, re-hashes the directory and updates the target's tracking table | — |
+| `ptah migrations set` | Sets the revision boundary in the target's tracking table to a named version | — |
+| `ptah migrations show` | Prints the SQL of one or more migration files, reading nothing but the files | — |
+| `ptah migrations status` | Reads the target's tracking table and reports which migrations are applied | — |
+| `ptah migrations tag` | Records, lists or removes a tag in the target's tracking table; two of the three write | — |
+| `ptah migrations test` | Runs declarative test cases against the database named by `--db-url`, whose own help calls it a "Throwaway database URL": the cases run raw SQL and apply schemas there | — |
+| `ptah migrations up` | Runs pending migrations against the target | — |
+| `ptah migrations validate` | Validates the directory against its integrity file; the dev database it names is "used to clean and replay migrations for SQL validation" | — |
+| `ptah oci` | Inspect Ptah artifacts in OCI registries | group |
+| `ptah oci capabilities` | Asks the registry behind a reference which features it supports, and prints them | — |
+| `ptah oci copy` | Copies an artifact between two registry repositories without rebuilding it | — |
+| `ptah oci fetch` | Downloads the payload of metadata attached to an OCI artifact and writes it to disk | — |
+| `ptah oci inspect` | Reports what an OCI artifact declares in its manifest, without downloading the payload | — |
+| `ptah oci login` | Checks a registry credential and stores it; it touches no database and writes only Ptah's own credential file | — |
+| `ptah oci logout` | Removes the credential Ptah stored for a registry, leaving a Docker-placed one alone | — |
+| `ptah oci referrers` | Asks a registry which metadata artifacts refer to one subject and prints them | — |
+| `ptah oci reindex` | Republishes attachments a registry's referrers index does not list, so a later query finds them | — |
+| `ptah oci resolve` | Asks a registry which immutable digest a mutable tag currently names | — |
+| `ptah oci tag` | Asks a registry to move a tag onto an artifact it already holds; nothing is uploaded | — |
+| `ptah oci tags` | Asks a registry for the tags one repository carries and prints them | — |
+| `ptah oci verify` | Checks an artifact against a verification policy before anything consumes it | — |
+| `ptah project` | Read a project file and report what Ptah makes of it | group |
+| `ptah project adopt` | Classifies every construct a project file declares as exact, compat-only or unsupported; `--check` reports that and writes nothing, the bare verb rewrites the compat-only spellings and refuses a project declaring anything unsupported, and `--preflight` also reads the revision history in the project's database, writing nothing there | — |
+| `ptah project inspect` | Reads a project file and reports which of its settings Ptah acts on and which it read and ignored; it opens no database | — |
+| `ptah schema` | Work with desired schema definitions | group |
+| `ptah schema annotations` | Exports the Go annotation metadata compiled into the binary, as JSON or a JSON Schema | — |
+| `ptah schema apply` | Applies a desired schema to the target; the dev database is where "the plan is rehearsed on before touching the target" | — |
+| `ptah schema approve` | Signs a saved plan file with an SSH key and writes the signature beside it | — |
+| `ptah schema compare` | Reads the target and reports the difference; on Oracle alone it creates a probe table in the dev database and drops it again, to learn how that engine spells a declared generated-column expression | — |
+| `ptah schema diff` | Diffs two arbitrary schema states; a non-database source is materialized by replaying it into the dev database | — |
+| `ptah schema drift` | Reads the target and reports how it differs from the desired schema | — |
+| `ptah schema export` | Converts one desired-schema source format into another on disk; no database is opened | — |
+| `ptah schema fmt` | Rewrites HCL schema files in the repository into canonical form; no database is opened | — |
+| `ptah schema inspect` | Reads a schema source and prints it; the dev database it names "is reset destructively" | — |
+| `ptah schema lineage` | Traces which base columns feed each view column, from the desired schema alone | — |
+| `ptah schema plan` | Saves a fingerprinted apply plan; the dev database is where the plan is rehearsed | — |
+| `ptah schema pull` | Downloads a desired-schema document from an OCI registry and writes it to disk | — |
+| `ptah schema push` | Uploads a desired-schema document from disk to an OCI registry | — |
+| `ptah schema render` | Renders the desired schema as SQL with no connection at all; the dialect comes from a flag | — |
+| `ptah schema security` | Reads the target's roles, grants and policies and reports security findings | — |
+| `ptah schema serve` | Serves a live read-only view of the schema over HTTP; it opens a listener, which is an exposure of its own even though the database is only read | — |
+| `ptah schema stats` | Counts the objects in the target and emits them as OpenMetrics | — |
+| `ptah schema test` | Runs declarative test cases against the database named by `--db-url`, whose own help calls it a "Throwaway database URL": measured on PostgreSQL 17.11, a case with an apply_schema step created a table there and an exec step inserted into it | — |
+| `ptah schema validate` | Reports structural problems in a desired schema without a database | — |
+| `ptah schema verify-approval` | Checks a saved plan's signature against an allowed-signers file | — |
+| `ptah seed` | Applies environment-scoped SQL seed files to the database it is given | — |
+| `ptah sql` | Work with standalone SQL files | group |
+| `ptah sql lint` | Lints standalone SQL files on disk and reports findings; no database is opened | — |
+| `ptah version` | Prints the version, commit and build date compiled into the binary | — |
+| `ptah viz` | Renders diagrams from a desired schema; no database is opened | — |
+<!-- END GENERATED NATIVE COMMANDS -->
+
+## Sources and output formats
+
+An index cell is the command's own one-line description — the line
+`ptah --help` prints beside it — so it is short by construction, and the verbs
+that accept several inputs or write several formats cannot state the set there.
+The set is here. For the flags that select within it, `ptah <command> --help` is
+authoritative and [Command flags](../command-flags/) is the same inventory as a
+page.
+
+| Verb | Reads | Writes |
+| --- | --- | --- |
+| `ptah schema render` | Go annotations, YAML, HCL, SQL, or an external command | SQL on stdout; progress and dependency diagnostics on stderr |
+| `ptah schema inspect` | a live database, a local schema file, an `oci://` schema artifact, or an Atlas-format migration directory | HCL, SQL, or JSON; `--out-dir` and `--split` write files instead of stdout |
+| `ptah schema diff` | two schema states, each a file, a database URL, or a migration directory | migration SQL or JSON |
+| `ptah schema export` | any desired-schema source | HCL, an OpenAPI 3.0 component schema, a GraphQL SDL, a Protobuf Edition 2023 definition, or reference documentation as Markdown or a self-contained HTML page |
+| `ptah schema test` | a desired schema from Go annotations, a SQL or HCL file, or a live database | a throwaway database the declarative seed, SQL and assert cases run against |
+| `ptah migrations import` | a golang-migrate, Goose, Flyway, Liquibase, or dbmate directory, detected unless `--from` names one | Ptah's native migration format |
+| `ptah viz` | a desired schema | Mermaid, DOT, or SVG; `--security` marks the tables the schema security rules find |
+
+## Rendering for a specific server
 
 Pass an explicit `--dialect` when the output must be executable by one target.
 Without it, `schema render` attempts the built-in review targets and emits
 labeled output only if every target can render the schema. An unsupported
 feature fails atomically with empty standard output. The combined output is a
 review artifact, not one executable SQL script.
-
-### Rendering for a specific server
 
 `schema render` never connects, so a bare `--dialect` renders against that
 dialect's default capability preset — the newest release line Ptah has measured.
@@ -65,7 +187,7 @@ Pass the banner with the dialect it names.
 
 `ptah sql lint` spells the same contract `--version`.
 
-### Schema file paths
+## Schema file paths
 
 Native `--schema-file` inputs use the process working directory as their path
 boundary. A relative path must resolve inside that directory after symbolic
@@ -78,43 +200,7 @@ working directory, such as `--schema-file /srv/schemas/app.sql`. Absolute
 pathnames retain their existing reach and are not confined to the working
 directory.
 
-## Migration lifecycle: `ptah migrations`
-
-| Command | Purpose |
-| --- | --- |
-| `ptah migrations plan` | Print migration SQL from desired/live schema differences. |
-| `ptah migrations generate` | Generate migration files from desired/live schema differences; `--replay` derives the current state by replaying the directory on a `--dev-url` database instead of introspecting `--db-url`. |
-| `ptah migrations create` | Create empty migration files for manual SQL; `--edit` opens them in `$VISUAL`/`$EDITOR` (or `--editor`) and refreshes `atlas.sum` for Atlas-format directories. |
-| `ptah migrations import` | Convert a golang-migrate, Goose, Flyway, Liquibase, or dbmate migration directory into Ptah's native format, auto-detecting the source tool unless `--from` is set. |
-| `ptah migrations baseline` | Record existing migrations as applied in the revision table without executing their SQL; `--shadow-db` verifies the baselined history reproduces the target schema. |
-| `ptah migrations set` | Move the revision boundary to an arbitrary version in both directions without executing SQL: everything through `--version` is recorded applied, rows above it are removed. |
-| `ptah migrations up` | Run pending migrations; a hashed directory (`ptah.sum` or `atlas.sum`) verifies before anything executes, `--limit N` applies only the first N, and `--allow-dirty` explicitly requests a verified retry that skips only an unchanged committed source prefix. |
-| `ptah migrations down` | Roll back migrations. |
-| `ptah migrations status` | Show migration status. |
-| `ptah migrations ls` | List the migration files a directory holds, oldest version first, without contacting a database; `--short` collapses a reversible pair onto its version and `--latest` keeps only the newest migration. |
-| `ptah migrations show` | Print the SQL a migration directory stores, without contacting a database; repeat `--version` to print several bodies in the order asked for, and `--direction` selects which half of a reversible pair is printed. |
-| `ptah migrations repair` | Repair migration revision metadata under the migration advisory lock after a dirty or partial state; `--resume-from` verifies the committed prefix, then executes the remaining statements of whichever body left the row dirty — up statements before marking the version applied, or down statements before removing the revision. |
-| `ptah migrations hash` | Write or update migration-directory integrity. |
-| `ptah migrations validate` | Validate migration-directory integrity and, optionally, SQL execution by cleaning and replaying migrations on `--dev-url`. |
-| `ptah migrations lint` | Lint migration files and, with `--dev-url`, clean and replay migrations on a directly connectable dev database before static reporting. |
-| `ptah migrations test` | Run declarative YAML cases with migrate/apply-schema/seed/SQL/assert steps against a throwaway database, exiting non-zero on any failure; `--migrations-schema` places the revision table a `migrate_to` step writes. |
-| `ptah migrations edit` | Edit a migration's SQL (via `$EDITOR` or `--up-file`/`--down-file`) and rewrite the integrity file, refusing already-applied migrations unless `--force`. |
-| `ptah migrations rebase` | Move a migration to the end of history by re-timestamping it, and rewrite the integrity file, refusing already-applied migrations unless `--force`. |
-| `ptah migrations rm` | Delete a migration's up/down pair and rewrite the integrity file, refusing already-applied migrations unless `--force`. |
-| `ptah migrations checkpoint` | Squash migration history into a cumulative-schema checkpoint by replaying the directory on a `--shadow-db`; `--dir-format` selects the ptah pair (default) or the Atlas single-file convention, and `--qualifier`, `--migration-lock-timeout` and `--edit` shape the replay and the written files. |
-| `ptah migrations data` | Generate a reversible data migration from declarative reference-data drift against a live database. |
-| `ptah migrations push` | Publish a migration directory to an OCI registry. |
-| `ptah migrations pull` | Pull and reconstruct a migration directory from an OCI registry. |
-
-## Live databases: `ptah db`
-
-| Command | Purpose |
-| --- | --- |
-| `ptah db read` | Read a live database as executable SQL on stdout; write connection status and failures to stderr. |
-| `ptah db capabilities` | Report the capability profile Ptah resolves for a live database: the preset it plans with, how that preset was reached, the support level of the release line, and every capability key with its value there. Modifies no schema object. |
-| `ptah db drop-all` | Drop all schema objects in a live database. |
-
-### Reading a server's capability profile
+## Reading a server's capability profile
 
 `ptah db capabilities` connects, reads the server's own version surface, and
 prints what Ptah resolved from it. It executes no DDL and modifies no schema
@@ -187,7 +273,7 @@ key's documentation string, as a stable sorted document. Two runs against an
 unchanged server produce identical bytes, so a diff of them reports a change
 that happened rather than a reordering.
 
-#### When configuration, not the version, decides a capability
+### When configuration, not the version, decides a capability
 
 MySQL 8.4 reads its foreign-key reference policy from
 `restrict_fk_on_non_standard_key`. Two servers on that release therefore answer
@@ -221,7 +307,7 @@ The refinement reports; it does not change the server. Ptah reads settings and
 plans by them, and never enables a database feature or writes a server
 variable.
 
-### What a machine reads, and from where
+## What a machine reads, and from where
 
 Every verb that has a machine-readable format writes that document to **stdout**,
 whatever the outcome, and keeps stderr for diagnostics. That includes the
@@ -234,67 +320,12 @@ The distinction a caller needs is the exit code, not the stream: `0` success,
 `1` an expected negative result, `2` a command or usage error. A parser reading
 stdout therefore gets a document in every case except `2`.
 
-## Registries and SQL files: `ptah oci`, `ptah sql`
+## What an inference verb does not imply
 
-| Command | Purpose |
-| --- | --- |
-| `ptah oci tags` | List the tags a repository carries. |
-| `ptah oci resolve` | Resolve a mutable tag to the immutable digest it names. |
-| `ptah oci inspect` | Report what an artifact declares, without downloading it. |
-| `ptah oci referrers` | List direct referrer metadata attached to an OCI artifact. |
-| `ptah oci fetch` | Download the payload of metadata attached to an artifact. |
-| `ptah oci tag` | Move an alias onto an artifact that already exists. |
-| `ptah oci copy` | Copy an artifact between repositories without rebuilding it. |
-| `ptah oci capabilities` | Report what the registry behind a reference supports. |
-| `ptah oci reindex` | Republish attachments the registry's referrers index does not list. |
-| `ptah oci verify` | Check an artifact against a verification policy before it is consumed. |
-| `ptah oci login` | Store a credential for a registry, after checking it works. |
-| `ptah oci logout` | Remove the credential Ptah stored for a registry. |
-| `ptah project inspect` | Report which project-file settings Ptah acts on, and which it read and ignored. |
-| `ptah project adopt` | Rewrite a project file's compat-only spellings into their native equivalents; `--check` reports the classification without writing; `--preflight` also reads the revision history in the project's database and reports whether native Ptah may take it over, writing nothing there. |
-| `ptah sql lint` | Lint standalone SQL files. |
-
-## Embedding generations: `ptah inference`
-
-| Command | Purpose |
-| --- | --- |
-| `ptah inference plan` | Report what a generation change would do, labeling every answer with where it came from: measured, configured, inferred, unknown, or unsupported. |
-| `ptah inference prepare` | Create the target column, the run's own tables, the outbox, and the snapshot boundary the backfill embeds. |
-| `ptah inference backfill` | Embed the source into the new generation, resumably; an interrupted run continues from its checkpoint. |
-| `ptah inference catchup` | Process the source changes made while the backfill ran; `--maintain-for` also keeps a previous generation current during its stabilization window. |
-| `ptah inference index` | Build the generation's vector index concurrently and leave it valid; an invalid index left by a failed build is dropped and built again. |
-| `ptah inference verify` | Run the deterministic checks a cutover rests on, and report what it did not measure; `--publish-evidence` writes the report to an OCI registry. |
-| `ptah inference evaluate` | Measure what the generation retrieves against a corpus you wrote, recording the query parameters the numbers were taken under. |
-| `ptah inference status` | Report what a run has done and what it is waiting for. |
-| `ptah inference cutover` | Make the new generation the one queries read, approved by plan digest; `--stabilize-for` keeps the previous generation eligible for a rollback. |
-| `ptah inference rollback` | Put the previous generation back, while it is still current enough to be a place to go back to. |
-| `ptah inference retire` | Destroy a generation, approved by plan digest, and refused while queries still read it. This cannot be undone. |
-
-None of these is implied by another. A backfill finishing does not mean the
-corpus is right; verification passing does not mean anything has cut over; and
+No `ptah inference` verb implies another. A backfill finishing does not mean
+the corpus is right; verification passing does not mean anything has cut over; and
 cutting over does not make the old generation disposable. The task-oriented
 walkthrough is [Inference migrations](../../operate/inference-migrations/).
-
-## Top-level verbs
-
-| Command | Purpose |
-| --- | --- |
-| `ptah introspect` | Generate annotated Go models from a live database. |
-| `ptah seed` | Apply environment-scoped SQL seed files. |
-| `ptah viz` | Render desired schema diagrams as Mermaid, DOT, or SVG; `--security` marks the tables the schema security rules find. |
-| `ptah version` | Print Ptah build information. |
-| `ptah license` | Print license, copyright, and Atlas-compatibility attribution. |
-| `ptah mcp` | Serve Ptah's operations to an AI client over the Model Context Protocol, on stdin and stdout. |
-| `ptah assist` | Hold a conversation with a model you supply, with Ptah's own tools answering. |
-| `ptah assist explain <question>` | Ask one question, with Ptah's own tools answering. |
-| `ptah assist context <question>` | Print what a question would send to the model provider, and send nothing. |
-| `ptah assist sessions list` | List the conversations saved for this project. |
-| `ptah assist sessions show <id>` | Print one conversation, including which tools ran and what they answered. |
-| `ptah assist sessions delete <id>` | Remove one saved conversation. |
-| `ptah assist sessions prune` | Remove conversations untouched for longer than a given age. |
-| `ptah assist provider list` | List the model provider profiles this machine can reach. |
-| `ptah assist provider test` | Check that a provider profile works: reachable, credential accepted, model served, tool calling available. |
-| `ptah completion <shell>` | Generate shell completion output for the native `ptah` command tree. |
 
 ## An AI client, over MCP
 
@@ -549,8 +580,8 @@ principal, and reporting every application account would bury the rule.
 
 Severities are the ones the rest of Ptah speaks: `info` reports and never
 blocks, `warning` asks for review, `error` blocks. `--fail-on error` (the
-default), `any`, or `none` decides the exit code, spelled the way `ptah lint`
-spells it. No rule here is error-severity, so the default reports without
+default), `any`, or `none` decides the exit code, spelled the way
+`ptah migrations lint` spells it. No rule here is error-severity, so the default reports without
 failing; `--fail-on any` gates on every finding.
 
 `--format json` emits the same findings as a document, each with its structured
