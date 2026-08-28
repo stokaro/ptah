@@ -11,15 +11,17 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/migration/risk"
 )
 
-// Severity classifies an export diagnostic.
-type Severity string
+// Severity classifies an export diagnostic, on the one scale every Ptah
+// producer expresses findings on (stokaro/ptah#2395).
+type Severity = risk.Severity
 
 // SeverityWarning reports a lossy or unresolved export detail that did not stop
 // the export (for example an enum whose values could not be resolved, emitted as
 // a plain string instead).
-const SeverityWarning Severity = "warning"
+const SeverityWarning = risk.Warning
 
 // Diagnostic describes a lossy or unresolved export detail.
 type Diagnostic struct {
