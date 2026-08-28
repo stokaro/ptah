@@ -86,10 +86,15 @@ what it did not measure.
 | --- | --- |
 | `--run-id` | Identifier of the run (required) |
 | `--publish-evidence` | OCI reference to publish this run's record to |
+| `--evidence-file` | Path to write this run's record to as JSON |
 | `--plain-http` | Allow an unencrypted connection to a trusted local registry |
 
-Exits non-zero when any finding is blocking. The record is published either way —
-a verification that found something is the evidence somebody will want.
+Exits non-zero when any finding is blocking. The record is kept either way — a
+verification that found something is the evidence somebody will want.
+
+The two destinations are independent: name both and the record is written and
+pushed, name neither and it is neither. A failure to keep it is reported and does
+not fail the verb, because the measurement already happened.
 
 ## `evaluate`
 
@@ -127,6 +132,7 @@ Makes the new generation the one queries read.
 | `--approver` | Who approved it |
 | `--stabilize-for` | How long the previous generation stays a way back; zero leaves no rollback |
 | `--publish-evidence` | OCI reference to publish this run's record to |
+| `--evidence-file` | Path to write this run's record to as JSON |
 | `--plain-http` | Allow an unencrypted connection to a trusted local registry |
 
 The approval binds to the plan digest. What is true now — the pointer, the

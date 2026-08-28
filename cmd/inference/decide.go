@@ -87,7 +87,10 @@ func publishVerification(
 	ctx context.Context, out io.Writer, options commonOptions,
 	report embedverify.Report, evidence evidenceOptions,
 ) error {
-	if evidence.publishTo == "" {
+	// Either destination is a reason to build the record. Guarding on the
+	// registry alone made --evidence-file do nothing without it, which is the
+	// case the file exists for.
+	if evidence.publishTo == "" && evidence.writeTo == "" {
 		return nil
 	}
 	opened, err := open(ctx, options)
@@ -340,7 +343,10 @@ func publishCutover(
 	report embedverify.Report, approver string, at time.Time,
 	stabilizeFor time.Duration, evidence evidenceOptions,
 ) error {
-	if evidence.publishTo == "" {
+	// Either destination is a reason to build the record. Guarding on the
+	// registry alone made --evidence-file do nothing without it, which is the
+	// case the file exists for.
+	if evidence.publishTo == "" && evidence.writeTo == "" {
 		return nil
 	}
 	cutover := embedrelease.Cutover{

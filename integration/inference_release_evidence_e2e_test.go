@@ -10,6 +10,8 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -233,6 +235,8 @@ func TestInferenceEvidencePublishedByTheCLIE2E(t *testing.T) {
 	assertVerifyPublishesWhatItMeasured(c, ctx, specPath, dbName, repository, generation)
 	assertCutoverPublishesWhatAuthorizedIt(c, ctx, specPath, dbName, repository, generation)
 	assertAnUnreachableRegistryDoesNotUndoTheRun(c, ctx, specPath, dbName)
+	assertAVerificationIsKeptWithoutARegistry(c, ctx, specPath, dbName)
+	assertAnUnwritableEvidenceFileDoesNotUndoTheRun(c, ctx, specPath, dbName)
 }
 
 // assertVerifyPublishesWhatItMeasured runs the verb and then reads its record.
@@ -311,5 +315,63 @@ func assertAnUnreachableRegistryDoesNotUndoTheRun(
 	c.Assert(output, qt.Contains, "the record was not published")
 	// And the verification it could not publish is still in the output, which
 	// is the whole reason failing here would be wrong.
+	c.Assert(output, qt.Contains, "rows")
+}
+
+// assertAVerificationIsKeptWithoutARegistry is the destination an operator has
+// when they have no registry.
+//
+// A first migration, a CI job that runs before anything is published, a team
+// with no registry at all: the record is the same bytes either way, so what is
+// kept locally is what would have been fetched.
+func assertAVerificationIsKeptWithoutARegistry(
+	c *qt.C, ctx context.Context, specPath, dbURL string,
+) {
+	c.Helper()
+	path := filepath.Join(c.TempDir(), "verification.json")
+
+	output := runInference(c, ctx, "verify",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID,
+		"--evidence-file", path)
+
+	c.Assert(output, qt.Contains, "written to "+path)
+	// No registry was named, and the record still exists. Guarding the record
+	// on the registry alone made this flag do nothing without one.
+	body, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+
+	var record embedrelease.Verification
+	c.Assert(json.Unmarshal(body, &record), qt.IsNil)
+	c.Assert(record.Passed, qt.IsTrue)
+	c.Assert(record.SourceRows > 0, qt.IsTrue)
+	// What the run did NOT measure is in the file too, which is the half of the
+	// epic's goal a pass/fail line cannot carry.
+	c.Assert(record.Unmeasured, qt.Not(qt.HasLen), 0)
+
+	// Written for the operator rather than offered to the filesystem.
+	info, err := os.Stat(path)
+	c.Assert(err, qt.IsNil)
+	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o600))
+}
+
+// assertAnUnwritableEvidenceFileDoesNotUndoTheRun is the same contract the
+// registry half carries.
+//
+// The measurement already happened when the write is attempted. A directory
+// that is not there is not a fact about the generation, and failing here would
+// report a run that did not do what it did.
+func assertAnUnwritableEvidenceFileDoesNotUndoTheRun(
+	c *qt.C, ctx context.Context, specPath, dbURL string,
+) {
+	c.Helper()
+	path := filepath.Join(c.TempDir(), "no-such-directory", "verification.json")
+
+	output := runInference(c, ctx, "verify",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID,
+		"--evidence-file", path)
+
+	c.Assert(output, qt.Contains, "the record was not written")
+	// And the verification it could not write is still in the output, which is
+	// the whole reason failing here would be wrong.
 	c.Assert(output, qt.Contains, "rows")
 }

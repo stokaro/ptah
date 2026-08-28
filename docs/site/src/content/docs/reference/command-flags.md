@@ -232,6 +232,7 @@ Read the columns as follows.
 | `--approve` | `string` | — | `PTAH_APPROVE` | — |
 | `--approver` | `string` | — | `PTAH_APPROVER` | — |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--evidence-file` | `string` | — | `PTAH_EVIDENCE_FILE` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--publish-evidence` | `string` | — | `PTAH_PUBLISH_EVIDENCE` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
@@ -312,6 +313,7 @@ Read the columns as follows.
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--evidence-file` | `string` | — | `PTAH_EVIDENCE_FILE` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--publish-evidence` | `string` | — | `PTAH_PUBLISH_EVIDENCE` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
