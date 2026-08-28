@@ -467,7 +467,11 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 }
 
 func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	return p.addForeignKeyConstraints(result, desired, deporder.TablesForCreate(desired, diff.TablesAdded.Names()))
+	return p.addForeignKeyConstraints(
+		result,
+		diff.TablesAdded.Qualified(diff.DeclaredUserTypes, DialectName).InDependencyOrder(),
+		diff.DeclaredTables,
+	)
 }
 
 // addSchemaPreconditions creates every schema this migration is about to put an
@@ -555,19 +559,34 @@ func (p *Planner) addSchemaPreconditions(
 	return result
 }
 
-// addForeignKeyConstraints adds foreign key constraints via ALTER TABLE statements
-func (p *Planner) addForeignKeyConstraints(result []ast.Node, desired *schemamodel.Database, tables []schemamodel.Table) []ast.Node {
-	for _, table := range tables {
-		result = p.addRegularForeignKeys(result, desired, table)
-		result = p.addSelfReferencingForeignKeys(result, desired, table)
+// addForeignKeyConstraints adds foreign key constraints via ALTER TABLE
+// statements, for the tables this plan creates.
+//
+// Each creation carries the columns whose references become constraints and the
+// self-references the declaration recorded for it. What it cannot carry is the
+// table a reference POINTS AT -- usually one this diff does not touch -- so the
+// declared table list travels on the diff instead (stokaro/ptah#2315).
+func (p *Planner) addForeignKeyConstraints(
+	result []ast.Node,
+	creations difftypes.TableChanges,
+	declaredTables []schemamodel.Table,
+) []ast.Node {
+	for _, creation := range creations {
+		result = p.addRegularForeignKeys(result, creation, declaredTables)
+		result = p.addSelfReferencingForeignKeys(result, creation, declaredTables)
 	}
 
 	return result
 }
 
 // addRegularForeignKeys adds regular (non-self-referencing) foreign key constraints
-func (p *Planner) addRegularForeignKeys(result []ast.Node, desired *schemamodel.Database, table schemamodel.Table) []ast.Node {
-	for _, field := range desired.Fields {
+func (p *Planner) addRegularForeignKeys(
+	result []ast.Node,
+	creation difftypes.TableCreation,
+	declaredTables []schemamodel.Table,
+) []ast.Node {
+	table := creation.Table
+	for _, field := range creation.Fields {
 		if !isRegularForeignKeyField(field, table) {
 			continue
 		}
@@ -576,7 +595,7 @@ func (p *Planner) addRegularForeignKeys(result []ast.Node, desired *schemamodel.
 		if fkRef == nil {
 			continue
 		}
-		qualifyForeignKeyRef(desired, table, fkRef)
+		qualifyForeignKeyRef(declaredTables, table, fkRef)
 		if foreignKeyTargetsTable(fkRef, table) {
 			continue
 		}
@@ -591,21 +610,25 @@ func foreignKeyTargetsTable(fkRef *ast.ForeignKeyRef, table schemamodel.Table) b
 	return fkRef.Table == table.QualifiedName()
 }
 
-func qualifyForeignKeyRef(desired *schemamodel.Database, current schemamodel.Table, fkRef *ast.ForeignKeyRef) {
-	fkRef.Table = tablelookup.ResolveReference(desired.Tables, current, fkRef.Table)
+func qualifyForeignKeyRef(
+	declaredTables []schemamodel.Table,
+	current schemamodel.Table,
+	fkRef *ast.ForeignKeyRef,
+) {
+	fkRef.Table = tablelookup.ResolveReference(declaredTables, current, fkRef.Table)
 }
 
 // addSelfReferencingForeignKeys adds self-referencing foreign key constraints
-func (p *Planner) addSelfReferencingForeignKeys(result []ast.Node, desired *schemamodel.Database, table schemamodel.Table) []ast.Node {
-	selfRefFKs, exists := desired.SelfReferencingForeignKeys[table.QualifiedName()]
-	if !exists {
-		return result
-	}
-
-	for _, selfRefFK := range selfRefFKs {
+func (p *Planner) addSelfReferencingForeignKeys(
+	result []ast.Node,
+	creation difftypes.TableCreation,
+	declaredTables []schemamodel.Table,
+) []ast.Node {
+	table := creation.Table
+	for _, selfRefFK := range creation.SelfReferencingForeignKeys {
 		fkRef := fromschema.ParseForeignKeyReference(selfRefFK.Foreign)
 		if fkRef != nil {
-			qualifyForeignKeyRef(desired, table, fkRef)
+			qualifyForeignKeyRef(declaredTables, table, fkRef)
 			fkRef.OnDelete = selfRefFK.OnDelete
 			fkRef.OnUpdate = selfRefFK.OnUpdate
 			result = append(result, p.createForeignKeyAlterStatement(table.QualifiedName(), selfReferencingForeignKeyName(table.Name, selfRefFK), []string{selfRefFK.FieldName}, fkRef))
@@ -721,7 +744,7 @@ func (p *Planner) addForeignKeyConstraintsForNewColumns(
 			fkRef := fromschema.ParseForeignKeyReference(targetField.Foreign)
 			if fkRef != nil {
 				if targetTable != nil {
-					qualifyForeignKeyRef(desired, *targetTable, fkRef)
+					qualifyForeignKeyRef(desired.Tables, *targetTable, fkRef)
 				}
 				fkName := foreignKeyName(targetTableName, *targetField)
 				fkRef.Name = fkName
@@ -3605,7 +3628,7 @@ func (p *Planner) fieldLevelForeignKeyConstraintNode(constraintName string, desi
 			continue
 		}
 		if table := findGeneratedTableByStructName(desired, f.StructName); table != nil {
-			qualifyForeignKeyRef(desired, *table, fkRef)
+			qualifyForeignKeyRef(desired.Tables, *table, fkRef)
 		}
 		fkRef.OnDelete = f.OnDelete
 		fkRef.OnUpdate = f.OnUpdate

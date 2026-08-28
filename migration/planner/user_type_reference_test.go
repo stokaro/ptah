@@ -196,3 +196,42 @@ func TestCompare_ACreatedColumnIsTypedByTheComparisonsVocabulary(t *testing.T) {
 	c.Assert(sql, qt.Contains, `"c" app.positive_int`,
 		qt.Commentf("the created column resolves through it\n%s", sql))
 }
+
+// TestCompare_AForeignKeyResolvesAgainstTheComparisonsTables is the reference
+// half of the vocabulary assertion above.
+//
+// A foreign key names the table it points at, and the declaration says which
+// schema that table lives in. A child in `app` referencing `parents` means
+// `app.parents`, and resolving it needs the declared table list — which a
+// creation cannot carry, because the referenced table is usually one the diff
+// does not touch.
+//
+// Driving the comparison is the point: the hand-built rows elsewhere supply the
+// list themselves, so they pin that the planner USES it, not that a real plan
+// has it.
+func TestCompare_AForeignKeyResolvesAgainstTheComparisonsTables(t *testing.T) {
+	c := qt.New(t)
+
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "Parent", Name: "parents", Schema: "app"},
+			{StructName: "Child", Name: "children", Schema: "app"},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "Parent", Name: "id", Type: "SERIAL", Primary: true},
+			{StructName: "Child", Name: "id", Type: "SERIAL", Primary: true},
+			{StructName: "Child", Name: "parent_id", Type: "INTEGER", Foreign: "parents(id)"},
+		},
+	}
+
+	diff := schemadiff.CompareWithDialect(desired, &catalog.Database{}, platform.Postgres)
+
+	c.Assert(diff.DeclaredTables, qt.HasLen, 2,
+		qt.Commentf("the comparison carries the declared tables a reference resolves against"))
+
+	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, `REFERENCES "app"."parents"`,
+		qt.Commentf("the reference resolves to the schema the declaration puts the parent in\n%s", sql))
+}

@@ -1041,6 +1041,19 @@ type SchemaDiff struct {
 	// through it; see [UserTypeVocabulary] for why it is not per entry.
 	DeclaredUserTypes UserTypeVocabulary `json:"-"`
 
+	// DeclaredTables is every table the declaration holds, carried once for the
+	// whole diff and off the wire.
+	//
+	// A foreign key names the table it references, and that table is usually
+	// one this diff does NOT touch -- an existing parent a new child points at.
+	// Resolving `parents` to `app.parents` therefore needs the declared table
+	// list rather than anything a per-entry operand could carry, for the reason
+	// [UserTypeVocabulary] gives about types (stokaro/ptah#2315).
+	//
+	// It holds the tables, not their columns: what a reference resolution reads
+	// is the name and the schema.
+	DeclaredTables []schemamodel.Table `json:"-"`
+
 	// RLSEnabledTablesAdded contains names of tables that need RLS enabled
 	RLSEnabledTablesAdded RLSEnabledTableChanges `json:"rls_enabled_tables_added"`
 
@@ -2245,6 +2258,15 @@ type TableCreation struct {
 	// and the renderer resolves it through this list.
 	Enums []schemamodel.Enum
 
+	// SelfReferencingForeignKeys are the foreign keys this table declares
+	// against itself.
+	//
+	// They live in a map keyed by qualified table name on the declaration, so
+	// they are a property of this table and travel with it. They are planned
+	// separately from a column's own reference because a self-reference cannot
+	// be part of the CREATE that makes the table (stokaro/ptah#2315).
+	SelfReferencingForeignKeys []schemamodel.SelfReferencingFK
+
 	// DependsOn are the tables this one is declared to come after, from the
 	// document's own dependency map.
 	//
@@ -2344,6 +2366,7 @@ func TableCreationFor(desired *schemamodel.Database, table schemamodel.Table, na
 	creation.Fields = owned
 	creation.Enums = fromschema.EnumsFor(owned, desired.Enums)
 	creation.DependsOn = desired.Dependencies[table.QualifiedName()]
+	creation.SelfReferencingForeignKeys = desired.SelfReferencingForeignKeys[table.QualifiedName()]
 	return creation
 }
 
