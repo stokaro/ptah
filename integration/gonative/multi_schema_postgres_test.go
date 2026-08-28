@@ -29,6 +29,13 @@ func TestPostgreSQLMultiSchemaGenerateApplyReadDiffIntegration(t *testing.T) {
 	cleanupMultiSchemaIntegration(t, db)
 	defer cleanupMultiSchemaIntegration(t, db)
 
+	policy := schemamodel.RLSPolicy{
+		Name:            "ptah_ms_users_visible",
+		Table:           "ptah_ms_auth.ptah_ms_users",
+		PolicyFor:       "ALL",
+		ToRoles:         "PUBLIC",
+		UsingExpression: "id IS NOT NULL",
+	}
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{
 			{StructName: "Account", Name: "ptah_ms_accounts"},
@@ -42,9 +49,7 @@ func TestPostgreSQLMultiSchemaGenerateApplyReadDiffIntegration(t *testing.T) {
 			{StructName: "Invoice", Name: "user_id", Type: "INTEGER", Foreign: "ptah_ms_auth.ptah_ms_users(id)"},
 			{StructName: "Invoice", Name: "account_id", Type: "INTEGER", Foreign: "ptah_ms_accounts(id)"},
 		},
-		RLSPolicies: []schemamodel.RLSPolicy{
-			{Name: "ptah_ms_users_visible", Table: "ptah_ms_auth.ptah_ms_users", PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "id IS NOT NULL"},
-		},
+		RLSPolicies: []schemamodel.RLSPolicy{policy},
 		RLSEnabledTables: []schemamodel.RLSEnabledTable{
 			{Table: "ptah_ms_auth.ptah_ms_users"},
 		},
@@ -54,7 +59,7 @@ func TestPostgreSQLMultiSchemaGenerateApplyReadDiffIntegration(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
 		TablesAdded: []string{"ptah_ms_accounts", "ptah_ms_auth.ptah_ms_users", "ptah_ms_billing.ptah_ms_invoices"},
 		RLSPoliciesAdded: []difftypes.RLSPolicyRef{
-			{PolicyName: "ptah_ms_users_visible", TableName: "ptah_ms_auth.ptah_ms_users"},
+			{PolicyName: policy.Name, TableName: policy.Table, Desired: policy},
 		},
 		RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "ptah_ms_auth.ptah_ms_users"}},
 	}

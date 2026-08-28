@@ -120,6 +120,19 @@ func queryStrings(c *qt.C, dbURL, query string) []string {
 	return found
 }
 
+// ordersPolicy returns the policy shared by a target schema and the diff that
+// creates it. An RLS policy addition renders from its carried declaration, so a
+// hand-built diff must carry the same policy the desired state declares.
+func ordersPolicy(policyTable string) schemamodel.RLSPolicy {
+	return schemamodel.RLSPolicy{
+		Name:            "tenant_isolation",
+		Table:           policyTable,
+		PolicyFor:       "ALL",
+		ToRoles:         "PUBLIC",
+		UsingExpression: "tenant_id = 1",
+	}
+}
+
 // ordersSchema returns the target schema for a single `orders` table whose
 // policy names the owning table with policyTable.
 func ordersSchema(tableSchema, policyTable string) *schemamodel.Database {
@@ -129,13 +142,7 @@ func ordersSchema(tableSchema, policyTable string) *schemamodel.Database {
 			{Name: "id", StructName: "Order", Type: "INTEGER", Primary: true},
 			{Name: "tenant_id", StructName: "Order", Type: "INTEGER"},
 		},
-		RLSPolicies: []schemamodel.RLSPolicy{{
-			Name:            "tenant_isolation",
-			Table:           policyTable,
-			PolicyFor:       "ALL",
-			ToRoles:         "PUBLIC",
-			UsingExpression: "tenant_id = 1",
-		}},
+		RLSPolicies: []schemamodel.RLSPolicy{ordersPolicy(policyTable)},
 	}
 }
 
@@ -179,7 +186,10 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 			diff: &difftypes.SchemaDiff{
 				TablesAdded: []string{"orders"},
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
-					{PolicyName: "tenant_isolation", TableName: "public.orders"},
+					{
+						PolicyName: "tenant_isolation", TableName: "public.orders",
+						Desired: ordersPolicy("public.orders"),
+					},
 				},
 			},
 			desired:         ordersSchema("", "public.orders"),
@@ -191,7 +201,10 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 			diff: &difftypes.SchemaDiff{
 				TablesAdded: []string{"public.orders"},
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
-					{PolicyName: "tenant_isolation", TableName: "orders"},
+					{
+						PolicyName: "tenant_isolation", TableName: "orders",
+						Desired: ordersPolicy("orders"),
+					},
 				},
 			},
 			desired:         ordersSchema("public", "orders"),
@@ -203,7 +216,10 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 			diff: &difftypes.SchemaDiff{
 				TablesAdded: []string{"orders"},
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
-					{PolicyName: "tenant_isolation", TableName: "orders"},
+					{
+						PolicyName: "tenant_isolation", TableName: "orders",
+						Desired: ordersPolicy("orders"),
+					},
 				},
 			},
 			desired:         ordersSchema("", "orders"),
