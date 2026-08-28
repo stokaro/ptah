@@ -73,6 +73,24 @@ func TestInferenceCLIE2E(t *testing.T) {
 	assertACutoverIsRefusedWhenSomebodyElseMovedThePointer(c, ctx, db, specPath, dbName)
 	assertAnUnmaintainedPreviousGenerationBlocksNothing(c, ctx, db, specPath, dbName)
 	assertCatchUpRefusesAModeThatRecordsNothing(c, ctx, endpoint.URL, dbName)
+	assertAPostgreSQLURLIsNotRefusedAsAnotherEngine(c, ctx, specPath, dbName)
+}
+
+// assertAPostgreSQLURLIsNotRefusedAsAnotherEngine is the control for
+// stokaro/ptah#2386's refusal.
+//
+// The unit tests beside cmd/inference measure every engine this namespace turns
+// away, and every one of them would still pass if the check had been written to
+// refuse everything. This is the half that needs a live server: a PostgreSQL URL
+// reaches the database and answers from it.
+func assertAPostgreSQLURLIsNotRefusedAsAnotherEngine(
+	c *qt.C, ctx context.Context, specPath, dbURL string,
+) {
+	c.Helper()
+	output := runInference(c, ctx, "status", "--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID)
+
+	c.Assert(output, qt.Not(qt.Contains), "ptah inference works against PostgreSQL")
+	c.Assert(output, qt.Contains, "run "+cliRunID)
 }
 
 // TestInferenceCLIRollbackE2E is Phase K and Phase L, which the lifecycle above
