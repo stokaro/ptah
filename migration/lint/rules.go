@@ -151,6 +151,7 @@ func dataSafetyRules() []Rule {
 	return []Rule{
 		tableDroppedRule(),
 		columnDroppedRule(),
+		columnDroppedWithReadersRule(),
 		columnTypeChangedRule(),
 		notNullDroppedRule(),
 		constraintDroppedRule(),
@@ -367,6 +368,97 @@ func columnDroppedRule() Rule {
 			return append(findings, columnRenamedFindings(file)...)
 		},
 	}
+}
+
+// columnDroppedWithReadersRule names what breaks when a column goes.
+//
+// DS102 says a drop deletes data. It never said what else the column was
+// holding up: `DROP COLUMN email` under a view that selects it reported DS102
+// alone, and the operator learned about the view when the migration ran, which
+// is the whole failure #1270's criterion 9 records.
+//
+// It reads the starting state rather than the migration text, because a view
+// body is not in the file that drops the column. On a run with no dev database
+// it resolves nothing and says so through [Analysis.UnmetInputs], for the reason
+// [RuleInput] gives: a rule that quietly finds less is worse than one that
+// names its missing input.
+func columnDroppedWithReadersRule() Rule {
+	return Rule{
+		Code:     "DS110P",
+		Title:    "column dropped while something reads it",
+		Severity: SeverityError,
+		CheckFile: func(file *File) []Finding {
+			if !file.IsUp {
+				return nil
+			}
+			var findings []Finding
+			for i := range file.Statements {
+				stmt := &file.Statements[i]
+				if !isAlterTable(stmt.Words) {
+					continue
+				}
+				findings = append(findings, droppedColumnReaderFindings(file, stmt, i)...)
+			}
+			return findings
+		},
+		Input:            InputBaselineSchema,
+		BaselineSubjects: droppedColumnStatements,
+	}
+}
+
+// droppedColumnStatements names the statements this rule needs the starting
+// state for.
+func droppedColumnStatements(file *File) []int {
+	var indexes []int
+	for i := range file.Statements {
+		stmt := &file.Statements[i]
+		if isAlterTable(stmt.Words) && len(droppedColumnSubjects(stmt.Words, stmt.sourceWords)) > 0 {
+			indexes = append(indexes, i)
+		}
+	}
+	return indexes
+}
+
+// droppedColumnReaderFindings reports one finding per dropped column that
+// something reads, naming every reader.
+func droppedColumnReaderFindings(file *File, stmt *Statement, index int) []Finding {
+	var findings []Finding
+	for _, subject := range droppedColumnSubjects(stmt.Words, stmt.sourceWords) {
+		readers := file.dependents.readers(normalizeIdent(subject.Parent), normalizeIdent(subject.Name))
+		if len(readers) == 0 {
+			continue
+		}
+		findings = append(findings, Finding{
+			Rule:     "DS110P",
+			Title:    "column dropped while something reads it",
+			Severity: SeverityError,
+			File:     file.Path,
+			Line:     stmt.Line,
+			Message: fmt.Sprintf(
+				"dropping %s breaks %s; drop or redefine %s first",
+				subject.Name, describeReaders(readers), pluralize("it", "them", len(readers))),
+			Context: statementFindingContext(index, subject),
+		})
+	}
+	return findings
+}
+
+// describeReaders names the readers in the order the state supplied them,
+// each with what it is.
+func describeReaders(readers []BaselineDependent) string {
+	parts := make([]string, 0, len(readers))
+	for _, reader := range readers {
+		parts = append(parts, reader.Kind+" "+reader.Dependent)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// pluralize picks the singular or plural form for a count.
+func pluralize(singular, plural string, count int) string {
+	if count == 1 {
+		return singular
+	}
+	return plural
 }
 
 // columnRenamedFindings reports the column names a file retires by renaming

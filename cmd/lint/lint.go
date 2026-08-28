@@ -207,10 +207,18 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	if err := migrationlintreport.Write(writer, opts.format, report); err != nil {
 		return writeError(cmd.ErrOrStderr(), formatText, opts.failOn, err.Error())
 	}
-	// Stderr, so a --format json consumer decodes exactly what it decoded
-	// before while a reader still learns the analysis was thinner than it
-	// could have been.
-	if err := migrationlintreport.WriteUnmetInputNotice(cmd.ErrOrStderr(), report); err != nil {
+	// Whichever stream the report did NOT take. The notice is prose and the
+	// report may be JSON, so sharing a stream with it puts a sentence inside a
+	// document a consumer decodes -- and a failing report goes to stderr, which
+	// is where a fixed choice of stderr would have put both.
+	//
+	// It was a fixed stderr until a rule common enough to fire on an ordinary
+	// migration declared the baseline input, and then `ptah migrations lint
+	// --format json` on a failing directory stopped being decodable
+	// (stokaro/ptah#1632, stokaro/ptah#2394).
+	if err := migrationlintreport.WriteUnmetInputNotice(
+		lintNoticeWriter(cmd.OutOrStdout(), cmd.ErrOrStderr(), report), report,
+	); err != nil {
 		return writeError(cmd.ErrOrStderr(), formatText, opts.failOn, err.Error())
 	}
 	if report.Failed {
@@ -323,6 +331,15 @@ func lintReportWriter(stdout, stderr io.Writer, report migrationlintreport.Repor
 		return stderr
 	}
 	return stdout
+}
+
+// lintNoticeWriter returns the stream the report did not take, so prose and a
+// machine-readable document never share one.
+func lintNoticeWriter(stdout, stderr io.Writer, report migrationlintreport.Report) io.Writer {
+	if report.Failed {
+		return stdout
+	}
+	return stderr
 }
 
 func writeError(w io.Writer, format, failOn, msg string) error {

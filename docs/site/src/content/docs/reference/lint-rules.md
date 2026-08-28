@@ -150,7 +150,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Migration lint rules
 
-45 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
+46 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
 
 ### Every dialect
 
@@ -172,6 +172,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `DS107` | dropping a schema, type, extension, function, procedure, trigger, role, or policy removes behavior | both | Ptah |
 | `DS108` | TRUNCATE deletes every row in the table | both | Ptah |
 | `DS109` | DISABLE ROW LEVEL SECURITY removes an access-control protection | both | Ptah |
+| `DS110P` | a column a view or routine reads is dropped, and the finding names what breaks | both | Ptah |
 | `MF101` | no matching .down.sql exists, so a failed deploy cannot be rolled back mechanically | both | Ptah |
 | `MF102` | the migration carries no executable statements | both | Ptah |
 | `MF103` | the file name does not follow the migration file-name convention | both | Ptah |
@@ -232,7 +233,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Default severities
 
-14 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `SQL001`, `SQL002`. The other 37 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
+15 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `SQL001`, `SQL002`. The other 37 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
 
 ## What ptah-compat prints
 

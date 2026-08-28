@@ -38,6 +38,31 @@ type BaselineColumn struct {
 	HasDefault bool
 }
 
+// BaselineDependent is one object that reads a column in the schema state a
+// version starts from.
+//
+// It is the answer to "what breaks if this column goes", carried into the
+// linter rather than derived there: resolving it needs the view and routine
+// bodies of the replayed schema, and the linter reads migration text.
+//
+// Kind names what does the reading -- a view, a materialized view, a function
+// or a procedure -- because the operator's next move differs by kind and a bare
+// name does not say which.
+type BaselineDependent struct {
+	// Version is the migration version whose starting state this belongs to:
+	// the state read BEFORE that version is applied.
+	Version int64
+	// Schema and Table are the owning table, as the server spells them.
+	Schema string
+	Table  string
+	// Column is the column that is read.
+	Column string
+	// Dependent is the object that reads it.
+	Dependent string
+	// Kind is what the dependent is.
+	Kind string
+}
+
 // baselineColumns is one version's starting state, indexed for lookup by the
 // source-spelled references the linter reads out of SQL.
 //
@@ -294,4 +319,77 @@ func normalizeBaselineColumns(columns []BaselineColumn) []BaselineColumn {
 		kept = append(kept, column)
 	}
 	return kept
+}
+
+// baselineDependents is one version's readers, indexed by the column they read.
+//
+// The zero value resolves nothing, which is what every run without a dev
+// database gets and what keeps a drop reported exactly as it was before this
+// existed.
+type baselineDependents struct {
+	byRef map[string][]BaselineDependent
+	// schemaless carries the same fact, and licenses the same relaxation, that
+	// it does on [baselineColumns].
+	schemaless bool
+}
+
+// newBaselineDependentIndex groups dependents by the version whose starting
+// state they describe.
+func newBaselineDependentIndex(dependents []BaselineDependent) map[int64]baselineDependents {
+	if len(dependents) == 0 {
+		return nil
+	}
+	index := make(map[int64]baselineDependents)
+	for _, dependent := range dependents {
+		state, ok := index[dependent.Version]
+		if !ok {
+			state = baselineDependents{byRef: make(map[string][]BaselineDependent), schemaless: true}
+		}
+		if strings.TrimSpace(dependent.Schema) != "" {
+			state.schemaless = false
+		}
+		for _, key := range baselineDependentKeys(dependent) {
+			state.byRef[key] = append(state.byRef[key], dependent)
+		}
+		index[dependent.Version] = state
+	}
+	return index
+}
+
+// baselineDependentKeys are the spellings a migration might use for the column,
+// in the forms [baselineKeys] builds for the same reason.
+func baselineDependentKeys(dependent BaselineDependent) []string {
+	name := normalizeIdent(dependent.Column)
+	table := normalizeIdent(dependent.Table)
+	if dependent.Schema == "" {
+		return []string{table + "\x00" + name}
+	}
+	return []string{
+		table + "\x00" + name,
+		normalizeIdent(dependent.Schema) + "." + table + "\x00" + name,
+	}
+}
+
+// readers returns everything that reads one column of one table.
+//
+// Unlike [baselineColumns.column] an ambiguous reference is not fatal here: two
+// tables of that name in different schemas both read by something means the
+// answer "something reads a column of this name" is still true, and the finding
+// names each reader with the table it read. Reporting nothing would be the
+// silence this rule exists to remove.
+func (b baselineDependents) readers(tableRef, columnName string) []BaselineDependent {
+	if len(b.byRef) == 0 || tableRef == "" || columnName == "" {
+		return nil
+	}
+	if found := b.byRef[tableRef+"\x00"+columnName]; len(found) > 0 {
+		return found
+	}
+	if !b.schemaless {
+		return nil
+	}
+	dot := strings.LastIndex(tableRef, ".")
+	if dot < 0 {
+		return nil
+	}
+	return b.byRef[tableRef[dot+1:]+"\x00"+columnName]
 }

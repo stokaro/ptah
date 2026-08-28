@@ -8,6 +8,8 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"go.5x5.cz/ptah/internal/schemalineage"
 	"go.5x5.cz/ptah/migration/lint"
 )
 
@@ -89,4 +91,70 @@ func numericDataType(column catalog.Column) string {
 		return precision + ")"
 	}
 	return precision + "," + strconv.Itoa(*column.NumericScale) + ")"
+}
+
+// readBaselineDependents records what reads each column in the state one
+// migration version starts from.
+//
+// It is the same read as [readBaselineColumns] answered a second way: the
+// catalog gives the view and routine bodies, and schemalineage resolves which
+// columns they read. A drop can then say what it breaks instead of only that it
+// deletes data, which is what #1270's criterion 9 asked for.
+//
+// What the analysis could not resolve is not reported here. An undecided view
+// contributes no dependent, so the rule stays silent about it rather than
+// naming a reader it did not establish -- the rule reports a fact, and the
+// analysis's own undecided list is where the gaps are stated.
+func readBaselineDependents(ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	version int64,
+	schemas []string,
+	dialect string,
+) ([]lint.BaselineDependent, error) {
+	schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, schemas)
+	if err != nil {
+		return nil, fmt.Errorf("read dev database schema: %w", err)
+	}
+	desired := dbschematogo.ConvertDBSchemaToGoSchema(schema)
+	tableSchemas := tableSchemasByName(schema)
+
+	dependents := make([]lint.BaselineDependent, 0)
+	for _, edge := range schemalineage.Derive(desired).Edges {
+		dependents = append(dependents, lint.BaselineDependent{
+			Version: version, Schema: tableSchemas[edge.FromTable],
+			Table: edge.FromTable, Column: edge.FromColumn,
+			Dependent: edge.ToView, Kind: viewKinds[edge.Materialized],
+		})
+	}
+	for _, read := range schemalineage.DeriveRoutines(desired, dialect).Reads {
+		dependents = append(dependents, lint.BaselineDependent{
+			Version: version, Schema: tableSchemas[read.Table],
+			Table: read.Table, Column: read.Column,
+			Dependent: read.ByRoutine, Kind: routineKind(read.Kind),
+		})
+	}
+	return dependents, nil
+}
+
+// tableSchemasByName maps each table to the schema the server spells it in, so
+// a dependent carries the same qualification a baseline column does.
+func tableSchemasByName(schema *catalog.Database) map[string]string {
+	schemas := make(map[string]string, len(schema.Tables))
+	for _, table := range schema.Tables {
+		schemas[table.Name] = table.Schema
+	}
+	return schemas
+}
+
+// viewKinds names a view in the words an operator uses, keyed by whether it is
+// materialized.
+var viewKinds = map[bool]string{false: "view", true: "materialized view"}
+
+// routineKind names a routine, defaulting to the family a declaration without
+// one belongs to.
+func routineKind(kind string) string {
+	if kind == "" {
+		return "function"
+	}
+	return kind
 }

@@ -229,6 +229,8 @@ type File struct {
 	// baseline is the schema state this file's version starts from, when the
 	// caller supplied one. Rules read it for facts the statement cannot carry.
 	baseline baselineColumns
+	// dependents is what reads each column in that same starting state.
+	dependents baselineDependents
 }
 
 // VersionSelection selects migration versions while preserving the difference
@@ -420,6 +422,7 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 	mode := modeForDialect(opts.Dialect)
 	scope := newSchemaScope(opts.SchemaScope)
 	baseline := newBaselineIndex(normalizeBaselineColumns(opts.Baseline))
+	dependents := newBaselineDependentIndex(opts.BaselineDependents)
 	files := make([]File, 0, len(names))
 	for _, name := range names {
 		file, err := prepareFile(
@@ -437,6 +440,7 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 			opts.Compatibility,
 			scope,
 			baseline,
+			dependents,
 		)
 		if err != nil {
 			return Analysis{}, err
@@ -581,6 +585,7 @@ func prepareFile(
 	compatibility CompatibilityProfile,
 	scope schemaScope,
 	baseline map[int64]baselineColumns,
+	dependents map[int64]baselineDependents,
 ) (File, error) {
 	raw := sources[name]
 	base := path.Base(name)
@@ -616,6 +621,7 @@ func prepareFile(
 		WellFormedName: strictNameRe.MatchString(base) || atlasFormat,
 		compatibility:  compatibility,
 		baseline:       baseline[version],
+		dependents:     dependents[version],
 	}
 	if compatibility == CompatibilityProfileAtlas {
 		file.suppressedRules, file.Ignored = parseAtlasFileNoLint(raw)
