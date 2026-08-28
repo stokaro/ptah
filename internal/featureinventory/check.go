@@ -24,11 +24,15 @@ const (
 	RuleUnknownClaim = "unknown-claim"
 	// RuleDuplicateClaim fires when two pages claim one feature.
 	RuleDuplicateClaim = "duplicate-claim"
-	// RuleOwnedBelowFloor fires when documentation coverage fell below the
-	// ratchet the artifact carries.
-	RuleOwnedBelowFloor = "owned-below-floor"
+	// RuleClaimedBelowFloor fires when documentation coverage fell below the
+	// floor the [ClaimedFloor] constant holds.
+	RuleClaimedBelowFloor = "claimed-below-floor"
 	// RuleNoExamples fires when no page opts in to internal/quickstart.
 	RuleNoExamples = "no-examples"
+	// RuleExampleRunsNothing fires when a page that opts in publishes no step
+	// for a shell, so a field named runnable_examples would list a page that
+	// runs nothing.
+	RuleExampleRunsNothing = "example-runs-nothing"
 	// RuleStaleArtifact fires when the committed file is not the regeneration.
 	RuleStaleArtifact = "stale-artifact"
 )
@@ -80,22 +84,37 @@ func RulesOf(problems []Problem) []string {
 	return rules
 }
 
-// cleanSources is the fixture every self-test case mutates: four kinds each
-// deriving rows, one page claiming one of them, one executed page, no floor.
+// fixtureModulePath is the module the self-test fixtures' ledger belongs to.
 //
-// The claimed row is a PACKAGE, not a verb. A fixture whose page claimed the
-// verb would report unknown-claim as well as empty-kind the moment the verb
-// case removed the leaves, and a case that fires two rules cannot say which of
+// It is deliberately not this repository's module path. LedgerPackages takes
+// the module as a parameter so internal/apiguard can drive it against a
+// throwaway fixture module through --list-packages, and a fixture that reused
+// the real path would pass whether the parameter were read or ignored.
+const fixtureModulePath = "example.test/fixture"
+
+// cleanSources is the fixture every self-test case mutates: four kinds each
+// deriving rows, one page claiming one of them, one executed page that runs
+// something, no floor.
+//
+// The claimed row is a PROGRAM, and that is load-bearing. Every case below has
+// to fire exactly one rule, so the claim must name a row no case removes: a
+// claimed verb would additionally report unknown-claim when the verb case empties
+// the leaves, and a claimed package would do the same when the module-path case
+// empties the ledger's prefix. A case that fires two rules cannot say which of
 // them the code still reads.
 func cleanSources() Sources {
 	return Sources{
+		ModulePath:   fixtureModulePath,
 		NativeLeaves: []agentsurface.Leaf{{Name: "schema apply"}, {Name: "db read"}},
 		Ledger: []byte("## Stable Embedder API\n\n" +
-			"- `" + ModulePath + "/core/renderer`\n" +
-			"- `" + ModulePath + "/dbschema`\n"),
-		Release:  []byte("builds:\n  - id: ptah\n    binary: ptah\n"),
-		Pages:    []PageClaim{{Path: "docs/site/src/content/docs/a.md", Owns: []string{"gopkg-core-renderer"}}},
-		Examples: []Example{{Page: "docs/site/src/content/docs/q.mdx"}},
+			"- `" + fixtureModulePath + "/core/renderer`\n" +
+			"- `" + fixtureModulePath + "/dbschema`\n"),
+		Release: []byte("builds:\n  - id: ptah\n    binary: ptah\n"),
+		Pages:   []PageClaim{{Path: "docs/site/src/content/docs/a.md", Owns: []string{"program-ptah"}}},
+		Examples: []Example{{
+			Page:   "docs/site/src/content/docs/q.mdx",
+			Shells: []ExampleShell{{Shell: "bash", Steps: 6, Expectations: 4}},
+		}},
 	}
 }
 
@@ -122,13 +141,25 @@ func selfTestCases() []selfTestCase {
 			src.Pages = append(src.Pages, PageClaim{Path: "b.md", Owns: []string{"cli-ptah-schema-retired"}})
 		}},
 		{name: "two pages claim one feature", rule: RuleDuplicateClaim, mutate: func(src *Sources) {
-			src.Pages = append(src.Pages, PageClaim{Path: "b.md", Owns: []string{"gopkg-core-renderer"}})
+			src.Pages = append(src.Pages, PageClaim{Path: "b.md", Owns: []string{"program-ptah"}})
 		}},
-		{name: "coverage fell below the ratchet", rule: RuleOwnedBelowFloor, mutate: func(src *Sources) {
-			src.OwnedFloor = len(src.Pages) + 1
+		{name: "coverage fell below the floor", rule: RuleClaimedBelowFloor, mutate: func(src *Sources) {
+			src.ClaimedFloor = len(src.Pages) + 1
 		}},
 		{name: "no page opts in to the runner", rule: RuleNoExamples, mutate: func(src *Sources) {
 			src.Examples = nil
+		}},
+		{name: "a page opts in and publishes no shell at all", rule: RuleExampleRunsNothing, mutate: func(src *Sources) {
+			src.Examples = append(src.Examples, Example{Page: "docs/site/src/content/docs/prose.md"})
+		}},
+		{name: "a page opts in and publishes a shell with no steps", rule: RuleExampleRunsNothing, mutate: func(src *Sources) {
+			src.Examples = append(src.Examples, Example{
+				Page:   "docs/site/src/content/docs/empty.md",
+				Shells: []ExampleShell{{Shell: "bash"}},
+			})
+		}},
+		{name: "the ledger's module is not the one its packages carry", rule: RuleEmptyKind, mutate: func(src *Sources) {
+			src.ModulePath = ""
 		}},
 	}
 }
@@ -186,6 +217,7 @@ func SelfTest() []string {
 func declaredRules() []string {
 	return []string{
 		RuleEmptyKind, RuleIdentifierCollision, RuleUnknownClaim,
-		RuleDuplicateClaim, RuleOwnedBelowFloor, RuleNoExamples, RuleStaleArtifact,
+		RuleDuplicateClaim, RuleClaimedBelowFloor, RuleNoExamples,
+		RuleExampleRunsNothing, RuleStaleArtifact,
 	}
 }

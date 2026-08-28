@@ -1268,8 +1268,9 @@ owns:
 scripts/check-feature-inventory.sh --write
 ```
 
-Three rules are worth knowing before adding a column to it, because each is a
-false green the closed attempt shipped (stokaro/ptah#2402):
+Five rules are worth knowing before adding a column to it, because each is a
+false green a closed attempt or a review of this one shipped
+(stokaro/ptah#2402):
 
 - **A column exists only if the gate checks it exactly.** No comparison in that
   file is a substring test. The canonical-page check that preceded it computed
@@ -1278,13 +1279,31 @@ false green the closed attempt shipped (stokaro/ptah#2402):
   threshold that repairs that, which is why the direction is inverted: the page
   declares, and the gate compares by string equality. A column that would need a
   heuristic is dropped, or turned into a fact the product declares.
-- **Runnable examples are marked, never inferred.** The marking is
-  `internal/quickstart`'s existing `quickstart: true` frontmatter key, and the
-  acceptance workflow is what proves the steps run. Do not add a second marking:
-  two lists of runnable pages can disagree, and the older one is the one that
-  actually executes. No ROW claims an example -- knowing that an executed page
-  exercises a named feature needs the argv the shell produced, not the text of a
-  fenced block.
+- **A column is named for what is checked, not for what it suggests.** The
+  claiming page is `claimed_by`, the counts beside it are `claimed` and
+  `claimed_floor`, and the word canonical appears nowhere. What the gate proves
+  is that the claim resolves to a derived feature and that no second page makes
+  it; it cannot prove the page explains anything, and a name reading as the
+  stronger promise is the same false green in prose that the substring check was
+  in code. A page still writes `owns:`, because that half is an author saying
+  what their page is for -- the register's half is the one that had to stop
+  overstating.
+- **Runnable examples are marked, never inferred, and a marked page has to run
+  something.** The marking is `internal/quickstart`'s existing `quickstart: true`
+  frontmatter key, and the acceptance workflow is what proves the steps run. Do
+  not add a second marking: two lists of runnable pages can disagree, and the
+  older one is the one that actually executes. A deliberate marking is still a
+  claim, so a page publishing no step for any shell is refused rather than
+  listed -- otherwise a page of prose carrying the key ships under
+  `runnable_examples` and the gate reports success. No ROW claims an example:
+  knowing that an executed page exercises a named feature needs the argv the
+  shell produced, not the text of a fenced block.
+- **A floor does not live in the file it governs.** The claimed-row count is held
+  above `featureinventory.ClaimedFloor`, a source constant, because a ratchet read
+  out of the artifact and written back by `--write` is the one field a byte
+  comparison cannot police: editing that line lowered the floor, the gate
+  reported success, and a false claim raised the floor to lock itself in as
+  coverage. Raising it is a reviewed edit.
 - **A `package main` is a measurement, not a supported program.** `go list` can
   find main packages; it cannot know which ones ship. The program rows come from
   `.goreleaser.yaml` `builds[].binary`, which is the product declaring what it

@@ -1,6 +1,7 @@
 package featureinventory_test
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -9,6 +10,20 @@ import (
 	"go.5x5.cz/ptah/internal/agentsurface"
 	"go.5x5.cz/ptah/internal/featureinventory"
 )
+
+// modulePath is the module the ledger fixtures below belong to. It is this
+// repository's own, because the ledger fixtures are copied from its ledger; the
+// parameter itself is exercised by TestLedgerPackages_ForeignModule.
+const modulePath = "go.5x5.cz/ptah"
+
+// runnableExample is a fixture page that publishes something to run. An Example
+// carrying no shells is refused, so the fixtures cannot use a bare page path.
+func runnableExample(page string) featureinventory.Example {
+	return featureinventory.Example{
+		Page:   page,
+		Shells: []featureinventory.ExampleShell{{Shell: "bash", Steps: 6, Expectations: 4}},
+	}
+}
 
 // The self-test is the gate's proof that it can still fail, so it runs here as
 // well as from scripts/check-feature-inventory.sh: `go test ./...` is what a
@@ -51,15 +66,16 @@ func TestLedgerPackages_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(featureinventory.LedgerPackages([]byte(test.ledger)), qt.DeepEquals, test.want)
+			c.Assert(featureinventory.LedgerPackages([]byte(test.ledger), modulePath), qt.DeepEquals, test.want)
 		})
 	}
 }
 
 // A backticked path in a paragraph is a mention, not a listing. This is the
 // distinction stokaro/ptah#2246 put a gate fixture on, and the recognition now
-// exists once -- scripts/check-public-api.sh reads the ledger through this
-// function -- so the two can no longer drift into different answers.
+// exists once -- every public-API gate reads the ledger through this function,
+// directly or through `check-public-api-snapshot.sh --list-packages` -- so they
+// can no longer drift into different answers.
 func TestLedgerPackages_FailurePath(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -76,7 +92,7 @@ func TestLedgerPackages_FailurePath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(featureinventory.LedgerPackages([]byte(test.ledger)), qt.HasLen, 0)
+			c.Assert(featureinventory.LedgerPackages([]byte(test.ledger), modulePath), qt.HasLen, 0)
 		})
 	}
 }
@@ -175,6 +191,7 @@ func TestDerive_HappyPath(t *testing.T) {
 
 	page := "docs/site/src/content/docs/direct/apply.md"
 	doc, problems := featureinventory.Derive(featureinventory.Sources{
+		ModulePath: modulePath,
 		// `schema apply-plan` derives an identifier that CONTAINS the claimed
 		// one. Under the substring join that closed the previous attempt it
 		// would be credited to the same page; here it stays unclaimed, because
@@ -183,14 +200,14 @@ func TestDerive_HappyPath(t *testing.T) {
 		Ledger:       []byte("- `go.5x5.cz/ptah/core/renderer`\n"),
 		Release:      []byte("builds:\n  - binary: ptah\n"),
 		Pages:        []featureinventory.PageClaim{{Path: page, Owns: []string{"cli-ptah-schema-apply"}}},
-		Examples:     []featureinventory.Example{{Page: "docs/site/src/content/docs/start/q.mdx"}},
+		Examples:     []featureinventory.Example{runnableExample("docs/site/src/content/docs/start/q.mdx")},
 	})
 
 	c.Assert(problems, qt.HasLen, 0)
-	c.Assert(doc.Owned, qt.Equals, 1)
-	c.Assert(rowOwner(c, doc, "cli-ptah-schema-apply"), qt.Equals, page)
+	c.Assert(doc.Claimed, qt.Equals, 1)
+	c.Assert(rowClaimant(c, doc, "cli-ptah-schema-apply"), qt.Equals, page)
 	c.Assert(rowSurface(c, doc, "cli-ptah-schema-apply"), qt.Equals, "ptah schema apply")
-	c.Assert(rowByID(c, doc, "cli-ptah-schema-apply-plan").Owner, qt.IsNil)
+	c.Assert(rowByID(c, doc, "cli-ptah-schema-apply-plan").ClaimedBy, qt.IsNil)
 	c.Assert(unclaimed(doc), qt.DeepEquals, []string{"cli-ptah-schema-apply-plan", "gopkg-core-renderer"})
 }
 
@@ -201,11 +218,12 @@ func TestDerive_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
 	_, problems := featureinventory.Derive(featureinventory.Sources{
+		ModulePath:   modulePath,
 		NativeLeaves: []agentsurface.Leaf{{Name: "schema apply"}},
 		Ledger:       []byte("- `go.5x5.cz/ptah/core/renderer`\n"),
 		Release:      []byte("builds:\n  - binary: ptah\n"),
 		Pages:        []featureinventory.PageClaim{{Path: "a.md", Owns: []string{"cli-ptah-schema-aplly"}}},
-		Examples:     []featureinventory.Example{{Page: "q.mdx"}},
+		Examples:     []featureinventory.Example{runnableExample("q.mdx")},
 	})
 
 	c.Assert(featureinventory.RulesOf(problems), qt.DeepEquals, []string{featureinventory.RuleUnknownClaim})
@@ -217,10 +235,11 @@ func TestRender_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
 	doc, _ := featureinventory.Derive(featureinventory.Sources{
+		ModulePath:   modulePath,
 		NativeLeaves: []agentsurface.Leaf{{Name: "db read"}},
 		Ledger:       []byte("- `go.5x5.cz/ptah/core/renderer`\n"),
 		Release:      []byte("builds:\n  - binary: ptah\n"),
-		Examples:     []featureinventory.Example{{Page: "q.mdx"}},
+		Examples:     []featureinventory.Example{runnableExample("q.mdx")},
 	})
 
 	first, err := featureinventory.Render(doc)
@@ -230,19 +249,17 @@ func TestRender_HappyPath(t *testing.T) {
 
 	c.Assert(string(second), qt.Equals, string(first))
 	c.Assert(strings.HasSuffix(string(first), "\n"), qt.IsTrue)
-	c.Assert(featureinventory.CommittedFloor(first), qt.Equals, doc.OwnedFloor)
 	// An unclaimed row carries null rather than an empty string, so a reader
-	// cannot mistake "nobody documents this" for "documented at the repository
-	// root".
-	c.Assert(strings.Count(string(first), `"owner": null`), qt.Equals, len(doc.Rows))
+	// cannot mistake "nobody claims this" for "claimed at the repository root".
+	c.Assert(strings.Count(string(first), `"claimed_by": null`), qt.Equals, len(doc.Rows))
 }
 
-// rowOwner is the claimed page of one row, and fails the test when no such row
-// exists rather than answering for a row that is not there.
-func rowOwner(c *qt.C, doc *featureinventory.Document, id string) string {
+// rowClaimant is the claiming page of one row, and fails the test when no such
+// row exists rather than answering for a row that is not there.
+func rowClaimant(c *qt.C, doc *featureinventory.Document, id string) string {
 	row := rowByID(c, doc, id)
-	c.Assert(row.Owner, qt.IsNotNil)
-	return *row.Owner
+	c.Assert(row.ClaimedBy, qt.IsNotNil)
+	return *row.ClaimedBy
 }
 
 func rowSurface(c *qt.C, doc *featureinventory.Document, id string) string {
@@ -265,9 +282,149 @@ func rowByID(c *qt.C, doc *featureinventory.Document, id string) featureinventor
 func unclaimed(doc *featureinventory.Document) []string {
 	var ids []string
 	for _, row := range doc.Rows {
-		if row.Owner == nil && len(ids) < 2 {
+		if row.ClaimedBy == nil && len(ids) < 2 {
 			ids = append(ids, row.ID)
 		}
 	}
 	return ids
+}
+
+// The module path is a parameter, not a constant, because internal/apiguard
+// drives the same recognition against a throwaway fixture module through
+// `check-public-api-snapshot.sh --list-packages`. A fixture that only ever used
+// this repository's module path would pass whether the parameter were read or
+// ignored.
+func TestLedgerPackages_ForeignModule(t *testing.T) {
+	c := qt.New(t)
+
+	ledger := []byte("- `apiguardfixture/pkg`\n- `go.5x5.cz/ptah/core/renderer`\n")
+
+	c.Assert(featureinventory.LedgerPackages(ledger, "apiguardfixture"), qt.DeepEquals,
+		[]string{"apiguardfixture/pkg"})
+	c.Assert(featureinventory.LedgerPackages(ledger, modulePath), qt.DeepEquals,
+		[]string{"go.5x5.cz/ptah/core/renderer"})
+}
+
+// An empty module path recognizes nothing rather than every backticked list
+// item. The mistake has to fail closed: a pattern built from an empty prefix
+// would widen the set to third-party paths and to whatever else a bullet holds,
+// and a wider allowlist reports fewer undocumented packages, not an error.
+func TestLedgerPackages_NoModulePath(t *testing.T) {
+	c := qt.New(t)
+
+	ledger := []byte("- `go.5x5.cz/ptah/core/renderer`\n- `github.com/spf13/cobra`\n")
+
+	c.Assert(featureinventory.LedgerPackages(ledger, ""), qt.HasLen, 0)
+}
+
+func TestModulePathOf_HappyPath(t *testing.T) {
+	tests := []struct {
+		name  string
+		goMod string
+		want  string
+	}{
+		{name: "the first directive", goMod: "module go.5x5.cz/ptah\n\ngo 1.26.5\n", want: "go.5x5.cz/ptah"},
+		{name: "a tab after the keyword", goMod: "module\tgo.5x5.cz/ptah\n", want: "go.5x5.cz/ptah"},
+		{name: "a quoted path", goMod: "module \"go.5x5.cz/ptah\"\n", want: "go.5x5.cz/ptah"},
+		{name: "a trailing comment", goMod: "module go.5x5.cz/ptah // the published path\n", want: "go.5x5.cz/ptah"},
+		{name: "a comment line first", goMod: "// a header\nmodule apiguardfixture\n", want: "apiguardfixture"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(featureinventory.ModulePathOf([]byte(test.goMod)), qt.Equals, test.want)
+		})
+	}
+}
+
+func TestModulePathOf_FailurePath(t *testing.T) {
+	tests := []struct {
+		name  string
+		goMod string
+	}{
+		{name: "no module directive", goMod: "go 1.26.5\n\nrequire (\n\tgithub.com/spf13/cobra v1.10.2\n)\n"},
+		{name: "an indented line is not a directive", goMod: "\tmodule go.5x5.cz/ptah\n"},
+		{name: "the keyword with nothing after it", goMod: "module\n"},
+		{name: "a word that starts with the keyword", goMod: "modulepath go.5x5.cz/ptah\n"},
+		{name: "an empty file", goMod: ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(featureinventory.ModulePathOf([]byte(test.goMod)), qt.Equals, "")
+		})
+	}
+}
+
+// The derivation reads the module path off this repository's own manifest, so
+// the value the ledger pattern is built from moves with the module rather than
+// being restated. This is the control on that: the shape above is exercised
+// against fixtures, and this asserts the real file still answers.
+func TestModulePathOf_ReadsThisModule(t *testing.T) {
+	c := qt.New(t)
+
+	source, err := os.ReadFile("../../go.mod")
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(featureinventory.ModulePathOf(source), qt.Equals, modulePath)
+}
+
+// A page listed under runnable_examples has to run something. The marking is
+// deliberate -- a page writes `quickstart: true` -- but a deliberate marking is
+// still a claim, and a page of prose carrying it would otherwise be published
+// as a runnable example with the gate reporting success.
+func TestDerive_ExampleRunsNothing(t *testing.T) {
+	tests := []struct {
+		name    string
+		example featureinventory.Example
+		wantErr string
+	}{
+		{
+			name:    "no shell at all",
+			example: featureinventory.Example{Page: "docs/site/src/content/docs/atlas/license-boundary.md"},
+			wantErr: "docs/site/src/content/docs/atlas/license-boundary.md opts in to internal/quickstart " +
+				"but publishes no steps for any shell; a page listed under runnable_examples has to run something",
+		},
+		{
+			name: "a shell whose program has no step",
+			example: featureinventory.Example{
+				Page:   "docs/site/src/content/docs/start/quick-start.md",
+				Shells: []featureinventory.ExampleShell{{Shell: "bash", Expectations: 4}},
+			},
+			wantErr: "docs/site/src/content/docs/start/quick-start.md publishes a bash program with no steps; " +
+				"a page listed under runnable_examples has to run something",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, problems := featureinventory.Derive(featureinventory.Sources{
+				ModulePath:   modulePath,
+				NativeLeaves: []agentsurface.Leaf{{Name: "db read"}},
+				Ledger:       []byte("- `go.5x5.cz/ptah/core/renderer`\n"),
+				Release:      []byte("builds:\n  - binary: ptah\n"),
+				Examples:     []featureinventory.Example{test.example},
+			})
+
+			c.Assert(featureinventory.RulesOf(problems), qt.DeepEquals,
+				[]string{featureinventory.RuleExampleRunsNothing})
+			c.Assert(problems[0].Message, qt.Equals, test.wantErr)
+		})
+	}
+}
+
+// The coverage floor is a source constant, so `--write` cannot move it and an
+// edited line of the artifact cannot lower it. A floor of zero would gate
+// nothing while reporting the same success, which is the shape every other
+// floor in this package exists to refuse.
+func TestClaimedFloor_IsAnAnchor(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(featureinventory.ClaimedFloor > 0, qt.IsTrue)
 }

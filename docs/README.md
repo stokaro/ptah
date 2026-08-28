@@ -67,9 +67,27 @@ scripts/check-feature-inventory.sh --write
 
 The identifier is compared to the derived one by string equality, so a claim
 naming nothing is refused with the page and the identifier. What the gate cannot
-do is read: `owns:` proves the link is mutual, unique and resolves to a real
-file, and never that the page explains the feature. The file states that limit
-in its own `notice` field, along with the eight other things it does not claim.
+do is read. The column is called `claimed_by` for that reason: it proves the
+claim resolves to a derived feature and that no second page makes it, and never
+that the page explains the feature. No column says canonical, because nothing
+here can check that.
+
+Two floors sit under the register, and neither one lives in it. The claimed-row
+count may not fall below `featureinventory.ClaimedFloor`, a constant in
+`internal/featureinventory`, so raising coverage is a reviewed source edit and
+lowering it is a red gate -- a ratchet read out of the file it guards is not a
+ratchet. And a page under `runnable_examples` has to publish a step: the
+`quickstart: true` marking is deliberate, but a deliberate marking is still a
+claim.
+
+The two words are deliberate. A page writes `owns:`, which is an author saying
+what their page is for; the register answers `claimed_by`, `claimed` and
+`claimed_floor`, which is all a machine can confirm about that sentence.
+
+The file states those limits in its own `notice` field, with the rest of what it
+does not claim. The count is not repeated here: `notice` is generated from
+`featureinventory.Notice`, so a number written beside it is one more thing to
+keep in step.
 
 ## Contributing to the documentation
 

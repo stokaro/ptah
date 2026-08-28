@@ -278,17 +278,36 @@ run_case check-feature-inventory.sh \
 	"a page claiming a feature the derivation does not produce" \
 	"perl -0pi -e 's/  - cli-ptah-schema-apply/  - cli-ptah-schema-aplly/' docs/site/src/content/docs/direct/apply.md"
 
-# The coverage ratchet. Removing an `owns:` line rewrites the artifact AND drops
-# the owned count below the committed floor, so this fixture is the one that
-# says the floor is read rather than merely written down.
+# The coverage floor. Removing an `owns:` line rewrites the artifact AND drops
+# the claimed count below the floor, so this fixture is the one that says the
+# floor is read rather than merely written down.
 run_case check-feature-inventory.sh \
 	"an owns: entry removed from a page that claims one feature" \
 	"perl -0pi -e 's/^owns:\\n  - cli-ptah-viz\\n//m' docs/site/src/content/docs/schema/visualize.md"
+
+# And the floor itself, edited in the artifact it governs. The floor used to be
+# read out of this file and written back by `--write`, which made it the one
+# field the byte comparison could not police: lowering the line lowered the
+# floor and the gate reported success, so a coverage regression could be
+# laundered through a regeneration. It is a source constant now, so the same
+# edit is a stale artifact. A tree whose floor is already 0 makes this mutation
+# a no-op and the harness reports the fixture as proving nothing.
+run_case check-feature-inventory.sh \
+	"the coverage floor lowered in the committed artifact" \
+	"perl -0pi -e 's/\"claimed_floor\": \\d+/\"claimed_floor\": 0/' docs/feature-inventory.json"
 
 # And the self-test itself, against a rule short-circuited in its own source.
 run_shell_selftest_case check-feature-inventory.sh \
 	"the unknown-claim refusal short-circuited inside applyClaims()" \
 	"perl -0pi -e 's/if !known \\{/if !known \\&\\& false \\{/' internal/featureinventory/pages.go"
+
+# A page listed under runnable_examples has to run something. The marking is
+# deliberate -- a page writes `quickstart: true` -- but a deliberate marking is
+# still a claim, and a page of prose carrying it was published as a runnable
+# example with the gate reporting success until this refusal existed.
+run_shell_selftest_case check-feature-inventory.sh \
+	"the runnable-example refusal short-circuited inside exampleProblems()" \
+	"perl -0pi -e 's/if len\\(example\\.Shells\\) == 0 \\{/if false \\&\\& len(example.Shells) == 0 {/' internal/featureinventory/inventory.go"
 
 run_case check-public-api.sh \
 	"an exported package with no doc comment" \

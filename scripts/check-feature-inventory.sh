@@ -18,11 +18,23 @@
 #                         not produce. Reported with the page and the id, never
 #                         silently dropped.
 #   duplicate-claim       two pages claim one feature. Both named.
-#   owned-below-floor     documentation coverage fell below the ratchet the
-#                         artifact carries. Moved forward only by --write.
+#   claimed-below-floor   documentation coverage fell below the floor that
+#                         internal/featureinventory.ClaimedFloor holds. The
+#                         floor is a source constant, not a number the artifact
+#                         carries forward: one read out of the file it guards is
+#                         the one field a byte comparison cannot police, so an
+#                         edited line would lower it and the gate would report
+#                         success.
 #   no-examples           no page opts in to internal/quickstart.
+#   example-runs-nothing  a page opts in and publishes no step. The marking is
+#                         deliberate, but a deliberate marking is still a claim,
+#                         and a page of prose carrying it would otherwise be
+#                         published under runnable_examples while running
+#                         nothing.
 #
-# `--write` regenerates the artifact and moves the coverage ratchet forward.
+# `--write` regenerates the artifact. It resolves no rule: every one of them is
+# somebody's mistake, and rewriting the file around one records the mistake as
+# the new truth.
 # `--selftest` breaks each rule above against in-memory fixtures and requires
 # the derivation to notice -- including a control fixture that must stay clean,
 # because a derivation refusing everything would satisfy every other case while

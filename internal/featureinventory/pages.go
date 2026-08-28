@@ -21,13 +21,19 @@ import (
 // this page explain this feature" is not machine-decidable. Asking instead
 // which features a page CLAIMS needs a read, and every comparison downstream of
 // it is string equality on a derived identifier.
+//
+// What survives is a claim, and the column is named claimed_by for that reason.
+// A page may claim a feature it does not document and the gate will not know;
+// what it can no longer do is have that claim raise a floor and lock itself in,
+// because the floor is a constant in source rather than a number this file
+// carries forward.
 const OwnsKey = "owns"
 
 // PageClaim is one documentation page and the feature identifiers it claims.
 type PageClaim struct {
-	// Path is the page's repository path, and it is what a row's owner field
-	// carries: the file the claim was read from, never a value somebody typed
-	// into the inventory.
+	// Path is the page's repository path, and it is what a row's claimed_by
+	// field carries: the file the claim was read from, never a value somebody
+	// typed into the inventory.
 	Path string
 	// Owns are the identifiers the page's frontmatter names, in file order.
 	Owns []string
@@ -115,7 +121,7 @@ func applyClaims(rows []Row, claims []PageClaim) (int, []Problem) {
 		index[row.ID] = i
 	}
 
-	owner := make(map[string]string, len(rows))
+	claimant := make(map[string]string, len(rows))
 	var problems []Problem
 	for _, claim := range claims {
 		for _, id := range claim.Owns {
@@ -126,16 +132,16 @@ func applyClaims(rows []Row, claims []PageClaim) (int, []Problem) {
 					claim.Path, id, OwnsKey)})
 				continue
 			}
-			if first, taken := owner[id]; taken {
+			if first, taken := claimant[id]; taken {
 				problems = append(problems, Problem{RuleDuplicateClaim, fmt.Sprintf(
-					"%s and %s both claim %q; a feature has one canonical page",
+					"%s and %s both claim %q; one feature is claimed by at most one page",
 					first, claim.Path, id)})
 				continue
 			}
-			owner[id] = claim.Path
-			rows[position].Owner = &claim.Path
+			claimant[id] = claim.Path
+			rows[position].ClaimedBy = &claim.Path
 		}
 	}
 
-	return len(owner), problems
+	return len(claimant), problems
 }

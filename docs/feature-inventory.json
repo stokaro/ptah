@@ -1,853 +1,853 @@
 {
   "notice": [
     "Generated. Every row is derived from a declaration the product already maintains; nothing here is authored.",
-    "1. Not that a page explains its feature. `owns:` is a human claim. The gate proves the link is mutual, unique and resolves to a real file. It cannot read.",
-    "2. Not that every feature has a page. A row with no claimant carries owner null, and the count is ratcheted rather than required to be complete.",
+    "1. Not that a page explains its feature. `owns:` is a page's own claim, and claimed_by is the file it was read from. The gate proves the claim resolves to a derived feature and that no second page makes it. It cannot read, so no column here says canonical.",
+    "2. Not that every feature has a page. A row nobody claims carries claimed_by null. claimed_floor is rendered from a constant in internal/featureinventory, not carried forward from this file: a ratchet read out of the file it guards would let one edited line lower it.",
     "3. Not that the surface list is complete. It covers four kinds. Schema formats, migration file formats, OCI media types, MCP tools, GitHub Action inputs and PTAH_* variables are absent, each because no canonical enumeration exists to compare against. Absent means not enumerable today, never does not exist.",
     "4. Not stability, maturity, support level or Atlas CE classification. No column carries any of them.",
-    "5. Not that any example exercises any feature. runnable_examples is page-scoped: it says these pages carry commands continuous integration runs and whose output it checks, and attributes nothing to a row.",
+    "5. Not that any example exercises any feature. runnable_examples is page-scoped: it says these pages carry commands continuous integration runs and whose output it checks, and attributes nothing to a row. A page that publishes no step is refused rather than listed.",
     "6. Not that a dialect row is a promise. A dialect being accepted is not a promise that every construct renders on it; docs/capabilities.md and `ptah db capabilities` answer that.",
     "7. Not that the walk reaches every spelling the binary answers to. `__complete` and `__completeNoDesc` come from cobra's unexported initCompleteCmd and no walk can reach them; internal/agentsurface/walk.go says so.",
     "8. Not the compatibility tree. AGENTS.md holds cmd/ptah-compat/main.go as the only non-test file outside cmd/atlas that may import cmd/atlas, so no tool here can walk that tree. Adding the kind is a maintainer decision about that rule, not a discovery.",
     "9. Not a verification date. There is no last-verified column: the file is regenerated on every continuous-integration run, and a stale one is a red gate."
   ],
   "generator": "scripts/check-feature-inventory.sh --write",
-  "owned_floor": 79,
-  "owned": 79,
+  "claimed_floor": 79,
+  "claimed": 79,
   "rows": [
     {
       "id": "cli-ptah-assist-context",
       "kind": "native-verb",
       "surface": "ptah assist context",
-      "owner": "docs/site/src/content/docs/operate/ai-assist.md"
+      "claimed_by": "docs/site/src/content/docs/operate/ai-assist.md"
     },
     {
       "id": "cli-ptah-assist-explain",
       "kind": "native-verb",
       "surface": "ptah assist explain",
-      "owner": "docs/site/src/content/docs/operate/ai-assist.md"
+      "claimed_by": "docs/site/src/content/docs/operate/ai-assist.md"
     },
     {
       "id": "cli-ptah-assist-provider-list",
       "kind": "native-verb",
       "surface": "ptah assist provider list",
-      "owner": "docs/site/src/content/docs/operate/ai-assist.md"
+      "claimed_by": "docs/site/src/content/docs/operate/ai-assist.md"
     },
     {
       "id": "cli-ptah-assist-provider-test",
       "kind": "native-verb",
       "surface": "ptah assist provider test",
-      "owner": "docs/site/src/content/docs/operate/ai-assist.md"
+      "claimed_by": "docs/site/src/content/docs/operate/ai-assist.md"
     },
     {
       "id": "cli-ptah-assist-sessions-delete",
       "kind": "native-verb",
       "surface": "ptah assist sessions delete",
-      "owner": "docs/site/src/content/docs/operate/ai-assist.md"
+      "claimed_by": "docs/site/src/content/docs/operate/ai-assist.md"
     },
     {
       "id": "cli-ptah-assist-sessions-list",
       "kind": "native-verb",
       "surface": "ptah assist sessions list",
-      "owner": "docs/site/src/content/docs/operate/ai-assist.md"
+      "claimed_by": "docs/site/src/content/docs/operate/ai-assist.md"
     },
     {
       "id": "cli-ptah-assist-sessions-prune",
       "kind": "native-verb",
       "surface": "ptah assist sessions prune",
-      "owner": "docs/site/src/content/docs/operate/ai-assist.md"
+      "claimed_by": "docs/site/src/content/docs/operate/ai-assist.md"
     },
     {
       "id": "cli-ptah-assist-sessions-show",
       "kind": "native-verb",
       "surface": "ptah assist sessions show",
-      "owner": "docs/site/src/content/docs/operate/ai-assist.md"
+      "claimed_by": "docs/site/src/content/docs/operate/ai-assist.md"
     },
     {
       "id": "cli-ptah-completion-bash",
       "kind": "native-verb",
       "surface": "ptah completion bash",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-completion-fish",
       "kind": "native-verb",
       "surface": "ptah completion fish",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-completion-powershell",
       "kind": "native-verb",
       "surface": "ptah completion powershell",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-completion-zsh",
       "kind": "native-verb",
       "surface": "ptah completion zsh",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-db-capabilities",
       "kind": "native-verb",
       "surface": "ptah db capabilities",
-      "owner": "docs/site/src/content/docs/databases/support-matrix.md"
+      "claimed_by": "docs/site/src/content/docs/databases/support-matrix.md"
     },
     {
       "id": "cli-ptah-db-drop-all",
       "kind": "native-verb",
       "surface": "ptah db drop-all",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-db-read",
       "kind": "native-verb",
       "surface": "ptah db read",
-      "owner": "docs/site/src/content/docs/direct/inspect.md"
+      "claimed_by": "docs/site/src/content/docs/direct/inspect.md"
     },
     {
       "id": "cli-ptah-help",
       "kind": "native-verb",
       "surface": "ptah help",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-inference-backfill",
       "kind": "native-verb",
       "surface": "ptah inference backfill",
-      "owner": "docs/site/src/content/docs/operate/inference-migrations.md"
+      "claimed_by": "docs/site/src/content/docs/operate/inference-migrations.md"
     },
     {
       "id": "cli-ptah-inference-catchup",
       "kind": "native-verb",
       "surface": "ptah inference catchup",
-      "owner": "docs/site/src/content/docs/operate/inference-migrations.md"
+      "claimed_by": "docs/site/src/content/docs/operate/inference-migrations.md"
     },
     {
       "id": "cli-ptah-inference-cutover",
       "kind": "native-verb",
       "surface": "ptah inference cutover",
-      "owner": "docs/site/src/content/docs/operate/inference-migrations.md"
+      "claimed_by": "docs/site/src/content/docs/operate/inference-migrations.md"
     },
     {
       "id": "cli-ptah-inference-evaluate",
       "kind": "native-verb",
       "surface": "ptah inference evaluate",
-      "owner": "docs/site/src/content/docs/operate/inference-migrations.md"
+      "claimed_by": "docs/site/src/content/docs/operate/inference-migrations.md"
     },
     {
       "id": "cli-ptah-inference-plan",
       "kind": "native-verb",
       "surface": "ptah inference plan",
-      "owner": "docs/site/src/content/docs/operate/inference-migrations.md"
+      "claimed_by": "docs/site/src/content/docs/operate/inference-migrations.md"
     },
     {
       "id": "cli-ptah-inference-prepare",
       "kind": "native-verb",
       "surface": "ptah inference prepare",
-      "owner": "docs/site/src/content/docs/operate/inference-migrations.md"
+      "claimed_by": "docs/site/src/content/docs/operate/inference-migrations.md"
     },
     {
       "id": "cli-ptah-inference-retire",
       "kind": "native-verb",
       "surface": "ptah inference retire",
-      "owner": "docs/site/src/content/docs/operate/inference-migrations.md"
+      "claimed_by": "docs/site/src/content/docs/operate/inference-migrations.md"
     },
     {
       "id": "cli-ptah-inference-rollback",
       "kind": "native-verb",
       "surface": "ptah inference rollback",
-      "owner": "docs/site/src/content/docs/operate/inference-migrations.md"
+      "claimed_by": "docs/site/src/content/docs/operate/inference-migrations.md"
     },
     {
       "id": "cli-ptah-inference-status",
       "kind": "native-verb",
       "surface": "ptah inference status",
-      "owner": "docs/site/src/content/docs/operate/inference-migrations.md"
+      "claimed_by": "docs/site/src/content/docs/operate/inference-migrations.md"
     },
     {
       "id": "cli-ptah-inference-verify",
       "kind": "native-verb",
       "surface": "ptah inference verify",
-      "owner": "docs/site/src/content/docs/operate/inference-migrations.md"
+      "claimed_by": "docs/site/src/content/docs/operate/inference-migrations.md"
     },
     {
       "id": "cli-ptah-introspect",
       "kind": "native-verb",
       "surface": "ptah introspect",
-      "owner": "docs/site/src/content/docs/start/adopt-an-existing-database.mdx"
+      "claimed_by": "docs/site/src/content/docs/start/adopt-an-existing-database.mdx"
     },
     {
       "id": "cli-ptah-license",
       "kind": "native-verb",
       "surface": "ptah license",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-mcp",
       "kind": "native-verb",
       "surface": "ptah mcp",
-      "owner": "docs/site/src/content/docs/operate/ai-agents.md"
+      "claimed_by": "docs/site/src/content/docs/operate/ai-agents.md"
     },
     {
       "id": "cli-ptah-migrations-baseline",
       "kind": "native-verb",
       "surface": "ptah migrations baseline",
-      "owner": "docs/site/src/content/docs/start/adopt-an-existing-database.mdx"
+      "claimed_by": "docs/site/src/content/docs/start/adopt-an-existing-database.mdx"
     },
     {
       "id": "cli-ptah-migrations-checkpoint",
       "kind": "native-verb",
       "surface": "ptah migrations checkpoint",
-      "owner": "docs/site/src/content/docs/versioned/checkpoints.md"
+      "claimed_by": "docs/site/src/content/docs/versioned/checkpoints.md"
     },
     {
       "id": "cli-ptah-migrations-create",
       "kind": "native-verb",
       "surface": "ptah migrations create",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-migrations-data",
       "kind": "native-verb",
       "surface": "ptah migrations data",
-      "owner": "docs/site/src/content/docs/versioned/reference-data.md"
+      "claimed_by": "docs/site/src/content/docs/versioned/reference-data.md"
     },
     {
       "id": "cli-ptah-migrations-down",
       "kind": "native-verb",
       "surface": "ptah migrations down",
-      "owner": "docs/site/src/content/docs/versioned/rollback.md"
+      "claimed_by": "docs/site/src/content/docs/versioned/rollback.md"
     },
     {
       "id": "cli-ptah-migrations-edit",
       "kind": "native-verb",
       "surface": "ptah migrations edit",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-migrations-generate",
       "kind": "native-verb",
       "surface": "ptah migrations generate",
-      "owner": "docs/site/src/content/docs/versioned/generate.md"
+      "claimed_by": "docs/site/src/content/docs/versioned/generate.md"
     },
     {
       "id": "cli-ptah-migrations-hash",
       "kind": "native-verb",
       "surface": "ptah migrations hash",
-      "owner": "docs/site/src/content/docs/versioned/integrity-and-safety.md"
+      "claimed_by": "docs/site/src/content/docs/versioned/integrity-and-safety.md"
     },
     {
       "id": "cli-ptah-migrations-import",
       "kind": "native-verb",
       "surface": "ptah migrations import",
-      "owner": "docs/site/src/content/docs/versioned/import.md"
+      "claimed_by": "docs/site/src/content/docs/versioned/import.md"
     },
     {
       "id": "cli-ptah-migrations-lint",
       "kind": "native-verb",
       "surface": "ptah migrations lint",
-      "owner": "docs/site/src/content/docs/atlas/migrate-commands.md"
+      "claimed_by": "docs/site/src/content/docs/atlas/migrate-commands.md"
     },
     {
       "id": "cli-ptah-migrations-ls",
       "kind": "native-verb",
       "surface": "ptah migrations ls",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-migrations-plan",
       "kind": "native-verb",
       "surface": "ptah migrations plan",
-      "owner": "docs/site/src/content/docs/versioned/generate.md"
+      "claimed_by": "docs/site/src/content/docs/versioned/generate.md"
     },
     {
       "id": "cli-ptah-migrations-pull",
       "kind": "native-verb",
       "surface": "ptah migrations pull",
-      "owner": "docs/site/src/content/docs/operate/oci-registry.md"
+      "claimed_by": "docs/site/src/content/docs/operate/oci-registry.md"
     },
     {
       "id": "cli-ptah-migrations-push",
       "kind": "native-verb",
       "surface": "ptah migrations push",
-      "owner": "docs/site/src/content/docs/operate/oci-registry.md"
+      "claimed_by": "docs/site/src/content/docs/operate/oci-registry.md"
     },
     {
       "id": "cli-ptah-migrations-rebase",
       "kind": "native-verb",
       "surface": "ptah migrations rebase",
-      "owner": "docs/site/src/content/docs/versioned/maintain-history.md"
+      "claimed_by": "docs/site/src/content/docs/versioned/maintain-history.md"
     },
     {
       "id": "cli-ptah-migrations-repair",
       "kind": "native-verb",
       "surface": "ptah migrations repair",
-      "owner": "docs/site/src/content/docs/versioned/rollback.md"
+      "claimed_by": "docs/site/src/content/docs/versioned/rollback.md"
     },
     {
       "id": "cli-ptah-migrations-rm",
       "kind": "native-verb",
       "surface": "ptah migrations rm",
-      "owner": "docs/site/src/content/docs/versioned/maintain-history.md"
+      "claimed_by": "docs/site/src/content/docs/versioned/maintain-history.md"
     },
     {
       "id": "cli-ptah-migrations-set",
       "kind": "native-verb",
       "surface": "ptah migrations set",
-      "owner": "docs/site/src/content/docs/versioned/maintain-history.md"
+      "claimed_by": "docs/site/src/content/docs/versioned/maintain-history.md"
     },
     {
       "id": "cli-ptah-migrations-show",
       "kind": "native-verb",
       "surface": "ptah migrations show",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-migrations-status",
       "kind": "native-verb",
       "surface": "ptah migrations status",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-migrations-tag",
       "kind": "native-verb",
       "surface": "ptah migrations tag",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-migrations-test",
       "kind": "native-verb",
       "surface": "ptah migrations test",
-      "owner": "docs/site/src/content/docs/testing/migrations-and-schema.md"
+      "claimed_by": "docs/site/src/content/docs/testing/migrations-and-schema.md"
     },
     {
       "id": "cli-ptah-migrations-up",
       "kind": "native-verb",
       "surface": "ptah migrations up",
-      "owner": "docs/site/src/content/docs/versioned/apply.md"
+      "claimed_by": "docs/site/src/content/docs/versioned/apply.md"
     },
     {
       "id": "cli-ptah-migrations-validate",
       "kind": "native-verb",
       "surface": "ptah migrations validate",
-      "owner": "docs/site/src/content/docs/versioned/integrity-and-safety.md"
+      "claimed_by": "docs/site/src/content/docs/versioned/integrity-and-safety.md"
     },
     {
       "id": "cli-ptah-oci-capabilities",
       "kind": "native-verb",
       "surface": "ptah oci capabilities",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-oci-copy",
       "kind": "native-verb",
       "surface": "ptah oci copy",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-oci-fetch",
       "kind": "native-verb",
       "surface": "ptah oci fetch",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-oci-inspect",
       "kind": "native-verb",
       "surface": "ptah oci inspect",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-oci-login",
       "kind": "native-verb",
       "surface": "ptah oci login",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-oci-logout",
       "kind": "native-verb",
       "surface": "ptah oci logout",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-oci-referrers",
       "kind": "native-verb",
       "surface": "ptah oci referrers",
-      "owner": "docs/site/src/content/docs/operate/oci-registry.md"
+      "claimed_by": "docs/site/src/content/docs/operate/oci-registry.md"
     },
     {
       "id": "cli-ptah-oci-reindex",
       "kind": "native-verb",
       "surface": "ptah oci reindex",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-oci-resolve",
       "kind": "native-verb",
       "surface": "ptah oci resolve",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-oci-tag",
       "kind": "native-verb",
       "surface": "ptah oci tag",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-oci-tags",
       "kind": "native-verb",
       "surface": "ptah oci tags",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-oci-verify",
       "kind": "native-verb",
       "surface": "ptah oci verify",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-project-adopt",
       "kind": "native-verb",
       "surface": "ptah project adopt",
-      "owner": "docs/site/src/content/docs/atlas/adoption.md"
+      "claimed_by": "docs/site/src/content/docs/atlas/adoption.md"
     },
     {
       "id": "cli-ptah-project-inspect",
       "kind": "native-verb",
       "surface": "ptah project inspect",
-      "owner": "docs/site/src/content/docs/atlas/adoption.md"
+      "claimed_by": "docs/site/src/content/docs/atlas/adoption.md"
     },
     {
       "id": "cli-ptah-schema-annotations",
       "kind": "native-verb",
       "surface": "ptah schema annotations",
-      "owner": "docs/site/src/content/docs/reference/go-annotations.md"
+      "claimed_by": "docs/site/src/content/docs/reference/go-annotations.md"
     },
     {
       "id": "cli-ptah-schema-apply",
       "kind": "native-verb",
       "surface": "ptah schema apply",
-      "owner": "docs/site/src/content/docs/direct/apply.md"
+      "claimed_by": "docs/site/src/content/docs/direct/apply.md"
     },
     {
       "id": "cli-ptah-schema-approve",
       "kind": "native-verb",
       "surface": "ptah schema approve",
-      "owner": "docs/site/src/content/docs/direct/plan-and-approve.md"
+      "claimed_by": "docs/site/src/content/docs/direct/plan-and-approve.md"
     },
     {
       "id": "cli-ptah-schema-compare",
       "kind": "native-verb",
       "surface": "ptah schema compare",
-      "owner": "docs/site/src/content/docs/direct/compare-and-drift.md"
+      "claimed_by": "docs/site/src/content/docs/direct/compare-and-drift.md"
     },
     {
       "id": "cli-ptah-schema-diff",
       "kind": "native-verb",
       "surface": "ptah schema diff",
-      "owner": "docs/site/src/content/docs/direct/compare-and-drift.md"
+      "claimed_by": "docs/site/src/content/docs/direct/compare-and-drift.md"
     },
     {
       "id": "cli-ptah-schema-drift",
       "kind": "native-verb",
       "surface": "ptah schema drift",
-      "owner": "docs/site/src/content/docs/direct/compare-and-drift.md"
+      "claimed_by": "docs/site/src/content/docs/direct/compare-and-drift.md"
     },
     {
       "id": "cli-ptah-schema-export",
       "kind": "native-verb",
       "surface": "ptah schema export",
-      "owner": "docs/site/src/content/docs/schema/export.md"
+      "claimed_by": "docs/site/src/content/docs/schema/export.md"
     },
     {
       "id": "cli-ptah-schema-fmt",
       "kind": "native-verb",
       "surface": "ptah schema fmt",
-      "owner": "docs/site/src/content/docs/schema/validate-and-format.md"
+      "claimed_by": "docs/site/src/content/docs/schema/validate-and-format.md"
     },
     {
       "id": "cli-ptah-schema-inspect",
       "kind": "native-verb",
       "surface": "ptah schema inspect",
-      "owner": "docs/site/src/content/docs/direct/inspect.md"
+      "claimed_by": "docs/site/src/content/docs/direct/inspect.md"
     },
     {
       "id": "cli-ptah-schema-lineage",
       "kind": "native-verb",
       "surface": "ptah schema lineage",
-      "owner": "docs/site/src/content/docs/schema/lineage.md"
+      "claimed_by": "docs/site/src/content/docs/schema/lineage.md"
     },
     {
       "id": "cli-ptah-schema-plan",
       "kind": "native-verb",
       "surface": "ptah schema plan",
-      "owner": "docs/site/src/content/docs/direct/plan-and-approve.md"
+      "claimed_by": "docs/site/src/content/docs/direct/plan-and-approve.md"
     },
     {
       "id": "cli-ptah-schema-pull",
       "kind": "native-verb",
       "surface": "ptah schema pull",
-      "owner": "docs/site/src/content/docs/operate/oci-registry.md"
+      "claimed_by": "docs/site/src/content/docs/operate/oci-registry.md"
     },
     {
       "id": "cli-ptah-schema-push",
       "kind": "native-verb",
       "surface": "ptah schema push",
-      "owner": "docs/site/src/content/docs/operate/oci-registry.md"
+      "claimed_by": "docs/site/src/content/docs/operate/oci-registry.md"
     },
     {
       "id": "cli-ptah-schema-render",
       "kind": "native-verb",
       "surface": "ptah schema render",
-      "owner": "docs/site/src/content/docs/schema/work-with-a-source.mdx"
+      "claimed_by": "docs/site/src/content/docs/schema/work-with-a-source.mdx"
     },
     {
       "id": "cli-ptah-schema-security",
       "kind": "native-verb",
       "surface": "ptah schema security",
-      "owner": "docs/site/src/content/docs/schema/security.md"
+      "claimed_by": "docs/site/src/content/docs/schema/security.md"
     },
     {
       "id": "cli-ptah-schema-serve",
       "kind": "native-verb",
       "surface": "ptah schema serve",
-      "owner": "docs/site/src/content/docs/schema/serve.md"
+      "claimed_by": "docs/site/src/content/docs/schema/serve.md"
     },
     {
       "id": "cli-ptah-schema-stats",
       "kind": "native-verb",
       "surface": "ptah schema stats",
-      "owner": "docs/site/src/content/docs/schema/stats.md"
+      "claimed_by": "docs/site/src/content/docs/schema/stats.md"
     },
     {
       "id": "cli-ptah-schema-test",
       "kind": "native-verb",
       "surface": "ptah schema test",
-      "owner": "docs/site/src/content/docs/testing/migrations-and-schema.md"
+      "claimed_by": "docs/site/src/content/docs/testing/migrations-and-schema.md"
     },
     {
       "id": "cli-ptah-schema-validate",
       "kind": "native-verb",
       "surface": "ptah schema validate",
-      "owner": "docs/site/src/content/docs/schema/validate-and-format.md"
+      "claimed_by": "docs/site/src/content/docs/schema/validate-and-format.md"
     },
     {
       "id": "cli-ptah-schema-verify-approval",
       "kind": "native-verb",
       "surface": "ptah schema verify-approval",
-      "owner": "docs/site/src/content/docs/direct/plan-and-approve.md"
+      "claimed_by": "docs/site/src/content/docs/direct/plan-and-approve.md"
     },
     {
       "id": "cli-ptah-seed",
       "kind": "native-verb",
       "surface": "ptah seed",
-      "owner": "docs/site/src/content/docs/operate/seed-data.md"
+      "claimed_by": "docs/site/src/content/docs/operate/seed-data.md"
     },
     {
       "id": "cli-ptah-sql-lint",
       "kind": "native-verb",
       "surface": "ptah sql lint",
-      "owner": "docs/site/src/content/docs/reference/lint-rules.md"
+      "claimed_by": "docs/site/src/content/docs/reference/lint-rules.md"
     },
     {
       "id": "cli-ptah-version",
       "kind": "native-verb",
       "surface": "ptah version",
-      "owner": "docs/site/src/content/docs/start/install.mdx"
+      "claimed_by": "docs/site/src/content/docs/start/install.mdx"
     },
     {
       "id": "cli-ptah-viz",
       "kind": "native-verb",
       "surface": "ptah viz",
-      "owner": "docs/site/src/content/docs/schema/visualize.md"
+      "claimed_by": "docs/site/src/content/docs/schema/visualize.md"
     },
     {
       "id": "gopkg-atlascompat",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/atlascompat",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-catalog",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/catalog",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-config",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/config",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-config-projectconfig",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/config/projectconfig",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-core-ast",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/core/ast",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-core-astbuilder",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/core/astbuilder",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-core-coverage",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/core/coverage",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-core-goschema",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/core/goschema",
-      "owner": "docs/site/src/content/docs/schema/go-annotations.md"
+      "claimed_by": "docs/site/src/content/docs/schema/go-annotations.md"
     },
     {
       "id": "gopkg-core-platform",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/core/platform",
-      "owner": "docs/site/src/content/docs/concepts/dialects-and-capabilities.md"
+      "claimed_by": "docs/site/src/content/docs/concepts/dialects-and-capabilities.md"
     },
     {
       "id": "gopkg-core-platform-capability",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/core/platform/capability",
-      "owner": "docs/site/src/content/docs/concepts/dialects-and-capabilities.md"
+      "claimed_by": "docs/site/src/content/docs/concepts/dialects-and-capabilities.md"
     },
     {
       "id": "gopkg-core-platform-identifier",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/core/platform/identifier",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-core-ptaherr",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/core/ptaherr",
-      "owner": "docs/site/src/content/docs/reference/exit-codes.md"
+      "claimed_by": "docs/site/src/content/docs/reference/exit-codes.md"
     },
     {
       "id": "gopkg-core-query",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/core/query",
-      "owner": "docs/site/src/content/docs/extend/query-builder.md"
+      "claimed_by": "docs/site/src/content/docs/extend/query-builder.md"
     },
     {
       "id": "gopkg-core-renderer",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/core/renderer",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-core-schemamodel",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/core/schemamodel",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-core-schemasource",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/core/schemasource",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-core-sqlutil",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/core/sqlutil",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-core-yamlschema",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/core/yamlschema",
-      "owner": "docs/site/src/content/docs/reference/yaml-schema.md"
+      "claimed_by": "docs/site/src/content/docs/reference/yaml-schema.md"
     },
     {
       "id": "gopkg-dbschema",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/dbschema",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-docs",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/docs",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-migration-datadiff",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/migration/datadiff",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-migration-dbtest",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/migration/dbtest",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-migration-diffpolicy",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/migration/diffpolicy",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-migration-generator",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/migration/generator",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-migration-importer",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/migration/importer",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-migration-lint",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/migration/lint",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-migration-migrationfile",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/migration/migrationfile",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-migration-migrator",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/migration/migrator",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-migration-planner",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/migration/planner",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-migration-risk",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/migration/risk",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-migration-safety",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/migration/safety",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-migration-schemadiff",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/migration/schemadiff",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-migration-schemadiff-difftypes",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/migration/schemadiff/difftypes",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-migration-seeder",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/migration/seeder",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "gopkg-migration-shadow",
       "kind": "public-package",
       "surface": "go.5x5.cz/ptah/migration/shadow",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "program-ptah",
       "kind": "program",
       "surface": "ptah",
-      "owner": "docs/site/src/content/docs/start/install.mdx"
+      "claimed_by": "docs/site/src/content/docs/start/install.mdx"
     },
     {
       "id": "program-ptah-compat",
       "kind": "program",
       "surface": "ptah-compat",
-      "owner": "docs/site/src/content/docs/start/install.mdx"
+      "claimed_by": "docs/site/src/content/docs/start/install.mdx"
     },
     {
       "id": "program-ptah-ls",
       "kind": "program",
       "surface": "ptah-ls",
-      "owner": "docs/site/src/content/docs/start/install.mdx"
+      "claimed_by": "docs/site/src/content/docs/start/install.mdx"
     },
     {
       "id": "dialect-clickhouse",
       "kind": "dialect",
       "surface": "clickhouse",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "dialect-cockroachdb",
       "kind": "dialect",
       "surface": "cockroachdb",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "dialect-mariadb",
       "kind": "dialect",
       "surface": "mariadb",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "dialect-mysql",
       "kind": "dialect",
       "surface": "mysql",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "dialect-oracle",
       "kind": "dialect",
       "surface": "oracle",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "dialect-postgres",
       "kind": "dialect",
       "surface": "postgres",
-      "owner": "docs/site/src/content/docs/databases/postgresql.md"
+      "claimed_by": "docs/site/src/content/docs/databases/postgresql.md"
     },
     {
       "id": "dialect-spanner",
       "kind": "dialect",
       "surface": "spanner",
-      "owner": null
+      "claimed_by": null
     },
     {
       "id": "dialect-sqlite",
       "kind": "dialect",
       "surface": "sqlite",
-      "owner": "docs/site/src/content/docs/databases/sqlite.md"
+      "claimed_by": "docs/site/src/content/docs/databases/sqlite.md"
     },
     {
       "id": "dialect-sqlserver",
       "kind": "dialect",
       "surface": "sqlserver",
-      "owner": "docs/site/src/content/docs/databases/sqlserver.md"
+      "claimed_by": "docs/site/src/content/docs/databases/sqlserver.md"
     },
     {
       "id": "dialect-yugabytedb",
       "kind": "dialect",
       "surface": "yugabytedb",
-      "owner": null
+      "claimed_by": null
     }
   ],
   "runnable_examples": [

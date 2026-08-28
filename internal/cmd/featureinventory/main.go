@@ -11,6 +11,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"go.5x5.cz/ptah/cmd/root"
@@ -29,21 +30,25 @@ func main() {
 	write := flag.Bool("write", false, "rewrite "+artifactPath+" from the declarations")
 	selftest := flag.Bool("selftest", false, "break each rule against fixtures and require the derivation to notice")
 	listLedger := flag.Bool("list-ledger", false, "print the stable-embedder ledger's package list, one per line")
+	moduleRoot := flag.String("root", ".", "the module `directory` to read go.mod and docs/public_api.md from")
 	format := flag.String("format", "json", "check against `json`, or print a human table with md")
 	flag.Parse()
 
-	if err := run(options{write: *write, selftest: *selftest, listLedger: *listLedger, format: *format}); err != nil {
+	if err := run(options{
+		write: *write, selftest: *selftest, listLedger: *listLedger, root: *moduleRoot, format: *format,
+	}); err != nil {
 		fmt.Fprintln(os.Stderr, "featureinventory: "+err.Error())
 		os.Exit(1)
 	}
 }
 
 // options are the invocation's modes. They travel as a struct rather than as
-// four parameters so the mode is read off a named field at each branch.
+// five parameters so the mode is read off a named field at each branch.
 type options struct {
 	write      bool
 	selftest   bool
 	listLedger bool
+	root       string
 	format     string
 }
 
@@ -52,7 +57,7 @@ func run(opts options) error {
 		return runSelfTest()
 	}
 	if opts.listLedger {
-		return runListLedger()
+		return runListLedger(opts.root)
 	}
 
 	source, err := gather()
@@ -63,7 +68,6 @@ func run(opts options) error {
 	if readErr != nil && !os.IsNotExist(readErr) {
 		return readErr
 	}
-	source.OwnedFloor = featureinventory.CommittedFloor(committed)
 
 	doc, problems := featureinventory.Derive(source)
 	if opts.format == "md" {
@@ -85,31 +89,28 @@ func run(opts options) error {
 		}
 		return fmt.Errorf("%d rule(s) refused the tree", len(problems))
 	}
-	fmt.Printf("featureinventory: %s matches the declarations (%d rows, %d owned, floor %d)\n",
-		artifactPath, len(doc.Rows), doc.Owned, doc.OwnedFloor)
+	fmt.Printf("featureinventory: %s matches the declarations (%d rows, %d claimed, floor %d)\n",
+		artifactPath, len(doc.Rows), doc.Claimed, doc.ClaimedFloor)
 	return nil
 }
 
-// writeArtifact rewrites the register and moves the coverage ratchet forward.
+// writeArtifact rewrites the register.
 //
-// Only the floor rule is allowed to be resolved by writing. Every other rule is
-// somebody's mistake -- a claim naming nothing, two pages claiming one feature,
-// a kind that stopped deriving -- and rewriting the file around it would record
-// the mistake as the new truth.
+// No rule is resolved by writing, the coverage floor included. Every rule here
+// is somebody's mistake -- a claim naming nothing, two pages claiming one
+// feature, a marked page that runs nothing, a kind that stopped deriving,
+// coverage that fell -- and rewriting the file around any of them would record
+// the mistake as the new truth. The floor used to be the exception: `--write`
+// read it out of the artifact and wrote a new one back, so a lowered floor and
+// a false claim both survived a regeneration and the gate reported success.
+// featureinventory.ClaimedFloor is a source constant now, and raising it is a
+// reviewed edit rather than a side effect of this command.
 func writeArtifact(doc *featureinventory.Document, problems []featureinventory.Problem) error {
-	refusing := 0
 	for _, problem := range problems {
-		if problem.Rule == featureinventory.RuleOwnedBelowFloor {
-			continue
-		}
 		fmt.Fprintln(os.Stderr, "featureinventory: "+problem.String())
-		refusing++
 	}
-	if refusing > 0 {
-		return fmt.Errorf("refusing to write an inventory that %d rule(s) refuse", refusing)
-	}
-	if doc.Owned > doc.OwnedFloor {
-		doc.OwnedFloor = doc.Owned
+	if len(problems) > 0 {
+		return fmt.Errorf("refusing to write an inventory that %d rule(s) refuse", len(problems))
 	}
 	rendered, err := featureinventory.Render(doc)
 	if err != nil {
@@ -118,8 +119,8 @@ func writeArtifact(doc *featureinventory.Document, problems []featureinventory.P
 	if err := os.WriteFile(artifactPath, rendered, 0o644); err != nil { // #nosec G306 -- a committed register is world-readable by design.
 		return err
 	}
-	fmt.Printf("featureinventory: wrote %s (%d rows, %d owned, floor %d)\n",
-		artifactPath, len(doc.Rows), doc.Owned, doc.OwnedFloor)
+	fmt.Printf("featureinventory: wrote %s (%d rows, %d claimed, floor %d)\n",
+		artifactPath, len(doc.Rows), doc.Claimed, doc.ClaimedFloor)
 	return nil
 }
 
@@ -135,16 +136,28 @@ func runSelfTest() error {
 	return nil
 }
 
-// runListLedger is what scripts/check-public-api.sh reads the ledger through,
-// so the recognition of a listed package exists once rather than twice.
-func runListLedger() error {
-	ledger, err := os.ReadFile("docs/public_api.md")
+// runListLedger is how every gate that needs the stable-embedder package set
+// reads it, so the recognition of a listed package exists once rather than
+// three times: scripts/check-public-api.sh calls this directly, and
+// scripts/check-public-api-snapshot.sh's --list-packages mode forwards here for
+// scripts/check-public-api-docs-sync.sh, scripts/check-exported-docs.sh,
+// scripts/check-public-api-released.sh and internal/apiguard.
+//
+// The module directory is a parameter because those callers do not share one:
+// internal/apiguard drives --list-packages against a throwaway fixture module,
+// so the module path is read from that directory's go.mod rather than assumed.
+func runListLedger(moduleRoot string) error {
+	modulePath, err := readModulePath(moduleRoot)
 	if err != nil {
 		return err
 	}
-	packages := featureinventory.LedgerPackages(ledger)
+	ledger, err := os.ReadFile(filepath.Join(moduleRoot, ledgerPath)) // #nosec G304 -- the caller names its own module directory.
+	if err != nil {
+		return err
+	}
+	packages := featureinventory.LedgerPackages(ledger, modulePath)
 	if len(packages) == 0 {
-		return fmt.Errorf("docs/public_api.md lists no %s packages; refusing to report a vacuous ledger", featureinventory.ModulePath)
+		return fmt.Errorf("%s lists no %s packages; refusing to report a vacuous ledger", ledgerPath, modulePath)
 	}
 	for _, path := range packages {
 		fmt.Println(path)
@@ -152,9 +165,33 @@ func runListLedger() error {
 	return nil
 }
 
+// ledgerPath is the stable-embedder ledger, relative to a module directory.
+const ledgerPath = "docs/public_api.md"
+
+// readModulePath reads the module path out of a directory's go.mod.
+//
+// Derived rather than written down: featureinventory.LedgerPackages builds its
+// pattern from this value, so a literal that stopped matching would produce an
+// empty ledger rather than an error naming the cause.
+func readModulePath(moduleRoot string) (string, error) {
+	source, err := os.ReadFile(filepath.Join(moduleRoot, "go.mod")) // #nosec G304 -- the caller names its own module directory.
+	if err != nil {
+		return "", err
+	}
+	modulePath := featureinventory.ModulePathOf(source)
+	if modulePath == "" {
+		return "", fmt.Errorf("%s declares no module path", filepath.Join(moduleRoot, "go.mod"))
+	}
+	return modulePath, nil
+}
+
 // gather reads the four declarations and the page claims.
 func gather() (featureinventory.Sources, error) {
-	ledger, err := os.ReadFile("docs/public_api.md")
+	modulePath, err := readModulePath(".")
+	if err != nil {
+		return featureinventory.Sources{}, err
+	}
+	ledger, err := os.ReadFile(ledgerPath)
 	if err != nil {
 		return featureinventory.Sources{}, err
 	}
@@ -171,11 +208,15 @@ func gather() (featureinventory.Sources, error) {
 		return featureinventory.Sources{}, err
 	}
 	return featureinventory.Sources{
+		ModulePath:   modulePath,
 		NativeLeaves: agentsurface.Walk(root.NewRootCommand()),
 		Ledger:       ledger,
 		Release:      release,
 		Pages:        claims,
 		Examples:     examples,
+		// The floor is the source constant, never a number read back out of
+		// the artifact this run is about to check.
+		ClaimedFloor: featureinventory.ClaimedFloor,
 	}, nil
 }
 
@@ -214,14 +255,14 @@ func discoverExamples() ([]featureinventory.Example, error) {
 // register of this size as prose.
 func markdown(doc *featureinventory.Document) string {
 	var out strings.Builder
-	fmt.Fprintf(&out, "# Feature inventory (%d rows, %d owned)\n\n| ID | Kind | Surface | Canonical page |\n| --- | --- | --- | --- |\n",
-		len(doc.Rows), doc.Owned)
+	fmt.Fprintf(&out, "# Feature inventory (%d rows, %d claimed)\n\n| ID | Kind | Surface | Claimed by |\n| --- | --- | --- | --- |\n",
+		len(doc.Rows), doc.Claimed)
 	for _, row := range doc.Rows {
-		owner := "-"
-		if row.Owner != nil {
-			owner = *row.Owner
+		claimedBy := "-"
+		if row.ClaimedBy != nil {
+			claimedBy = *row.ClaimedBy
 		}
-		fmt.Fprintf(&out, "| `%s` | %s | `%s` | %s |\n", row.ID, row.Kind, row.Surface, owner)
+		fmt.Fprintf(&out, "| `%s` | %s | `%s` | %s |\n", row.ID, row.Kind, row.Surface, claimedBy)
 	}
 	return out.String()
 }
