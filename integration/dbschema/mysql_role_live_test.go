@@ -58,7 +58,7 @@ func TestMySQLLiveRoleRoundTrip(t *testing.T) {
 	live, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	creation := schemadiff.CompareWithDialect(declared, live, conn.Info().Dialect)
-	c.Assert(creation.RolesAdded, qt.Contains, role)
+	c.Assert(creation.RolesAdded.Names(), qt.Contains, role)
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(creation, declared, conn.Info().Dialect)
 	c.Assert(err, qt.IsNil)
