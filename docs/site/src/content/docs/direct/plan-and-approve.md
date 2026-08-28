@@ -1,6 +1,10 @@
 ---
 title: Plan and approve changes
 description: Save a schema change as a plan file, sign it with an SSH key, and refuse an apply whose plan carries no matching approval.
+owns:
+  - cli-ptah-schema-approve
+  - cli-ptah-schema-plan
+  - cli-ptah-schema-verify-approval
 ---
 
 `ptah schema apply` computes the SQL and runs it in one command, so the person

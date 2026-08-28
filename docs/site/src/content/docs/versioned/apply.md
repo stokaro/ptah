@@ -1,6 +1,8 @@
 ---
 title: Apply migrations
 description: Run pending migrations with integrity verification, inspect status, wire operational hooks, and apply from OCI artifacts.
+owns:
+  - cli-ptah-migrations-up
 ---
 
 You have a hashed migration directory and a database that needs to catch up.

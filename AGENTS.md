@@ -1247,6 +1247,55 @@ it routes CLI, config, migration, parser/renderer, conformance, public API, and
 example changes to the right documentation surfaces and uses Inventario's docs
 site as the quality reference.
 
+### The feature register is derived, and a page declares what it owns
+
+`docs/feature-inventory.json` lists every native verb, stable-embedder package,
+released binary and dialect, with the documentation page that claims each one.
+It is **generated**, and adding a surface is not an edit to it: the row appears
+when the declaration does -- the walked command tree, `docs/public_api.md`,
+`.goreleaser.yaml`, and `renderer.SupportedDialects` folded through
+`platform.NormalizeDialect`.
+
+The one hand-written datum is an `owns:` list in a page's frontmatter, naming
+the identifiers that page documents. Claiming one is two steps:
+
+```yaml
+owns:
+  - cli-ptah-schema-apply
+```
+
+```bash
+scripts/check-feature-inventory.sh --write
+```
+
+Three rules are worth knowing before adding a column to it, because each is a
+false green the closed attempt shipped (stokaro/ptah#2402):
+
+- **A column exists only if the gate checks it exactly.** No comparison in that
+  file is a substring test. The canonical-page check that preceded it computed
+  identifying tokens and accepted a `strings.Contains` hit for any of them, so a
+  page passed without documenting the feature it was credited with. There is no
+  threshold that repairs that, which is why the direction is inverted: the page
+  declares, and the gate compares by string equality. A column that would need a
+  heuristic is dropped, or turned into a fact the product declares.
+- **Runnable examples are marked, never inferred.** The marking is
+  `internal/quickstart`'s existing `quickstart: true` frontmatter key, and the
+  acceptance workflow is what proves the steps run. Do not add a second marking:
+  two lists of runnable pages can disagree, and the older one is the one that
+  actually executes. No ROW claims an example -- knowing that an executed page
+  exercises a named feature needs the argv the shell produced, not the text of a
+  fenced block.
+- **A `package main` is a measurement, not a supported program.** `go list` can
+  find main packages; it cannot know which ones ship. The program rows come from
+  `.goreleaser.yaml` `builds[].binary`, which is the product declaring what it
+  releases, so `cmd/integration-test` is correctly absent rather than omitted.
+
+The file is `.json` under `docs/` because `docs/docs.go` embeds `*.md`,
+`adr/*.md` and the site content: a Markdown register there ships inside every
+binary and answers `search_docs`. `docs/docs_test.go` asserts its absence from
+`docs.FS` directly rather than through the Markdown-filtering helper, which
+would reduce the assertion to `0 == 0`.
+
 ### Label every issue you file
 
 An issue without labels is invisible to every filter anyone uses to plan, and

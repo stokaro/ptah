@@ -1,6 +1,9 @@
 ---
 title: Adopting an Atlas project
 description: The path from Atlas through `ptah-compat` to native Ptah, one reversible step at a time.
+owns:
+  - cli-ptah-project-adopt
+  - cli-ptah-project-inspect
 ---
 
 Adoption is a path, not a switch. Each step below leaves a project that works,

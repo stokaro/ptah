@@ -1,6 +1,8 @@
 ---
 title: Database support matrix
 description: The database engines Ptah supports, at what depth, and the operational differences to know before rollout.
+owns:
+  - cli-ptah-db-capabilities
 ---
 
 This page lists every database engine Ptah supports, the dialect name and URL

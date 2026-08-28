@@ -1,6 +1,9 @@
 ---
 title: Roll back migrations
 description: Roll a database back to an explicit target version, verify the plan on a shadow database first, and understand the down-file contract.
+owns:
+  - cli-ptah-migrations-down
+  - cli-ptah-migrations-repair
 ---
 
 Something shipped that has to come back out, or a deploy is being unwound.

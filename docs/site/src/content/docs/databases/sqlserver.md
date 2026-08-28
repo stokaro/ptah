@@ -1,6 +1,8 @@
 ---
 title: SQL Server
 description: SQL Server in Ptah - connection URLs, the supported T-SQL subset, collation-aware identifier comparison, and filtered indexes.
+owns:
+  - dialect-sqlserver
 ---
 
 Ptah supports SQL Server and Azure SQL as a deliberately conservative portable

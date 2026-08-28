@@ -1,6 +1,9 @@
 ---
 title: Dialects and capabilities
 description: Why Ptah separates the dialect it renders SQL for from the capabilities a concrete database target accepts.
+owns:
+  - gopkg-core-platform
+  - gopkg-core-platform-capability
 ---
 
 Ptah keeps two ideas apart that database tools often blur. A **dialect** is a

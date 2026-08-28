@@ -1,6 +1,8 @@
 ---
 title: Go annotation reference
 description: Every //ptah directive and attribute accepted by Ptah's Go annotation parser.
+owns:
+  - cli-ptah-schema-annotations
 ---
 
 This page lists every `//ptah` comment directive and attribute Ptah's Go

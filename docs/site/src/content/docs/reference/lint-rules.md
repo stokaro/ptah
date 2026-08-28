@@ -1,6 +1,8 @@
 ---
 title: Lint rules
 description: Every rule Ptah's linters report, with its meaning, dialects, surface, and whether the name is Atlas's or Ptah's.
+owns:
+  - cli-ptah-sql-lint
 ---
 
 Ptah lints in two places, and both report findings under stable identifiers.

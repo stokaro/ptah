@@ -1,6 +1,8 @@
 ---
 title: YAML Schema Reference
 description: Ptah's strict YAML schema-file format.
+owns:
+  - gopkg-core-yamlschema
 ---
 
 Ptah YAML is a language-neutral desired-schema format. It feeds the same schema

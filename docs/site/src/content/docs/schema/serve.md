@@ -1,6 +1,8 @@
 ---
 title: Serve a live schema view
 description: Run ptah schema serve to watch in a browser how a live database differs from the desired schema while you change it.
+owns:
+  - cli-ptah-schema-serve
 ---
 
 `ptah schema serve` serves a read-only web page carrying two things: the desired

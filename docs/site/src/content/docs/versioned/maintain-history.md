@@ -1,6 +1,10 @@
 ---
 title: Maintain migration history
 description: Edit, reorder, and delete unapplied migrations with the integrity file kept true, and repair a dirty revision state after a partial failure.
+owns:
+  - cli-ptah-migrations-rebase
+  - cli-ptah-migrations-rm
+  - cli-ptah-migrations-set
 ---
 
 Review feedback, a merge race, or a failed deploy means a migration has to

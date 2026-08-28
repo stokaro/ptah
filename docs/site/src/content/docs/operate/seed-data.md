@@ -1,6 +1,8 @@
 ---
 title: Seed data
 description: Apply one-off, environment-scoped SQL seed files with ptah seed and track them in schema_seeds.
+owns:
+  - cli-ptah-seed
 ---
 
 Use `ptah seed` to load one-off setup rows — development fixtures, demo

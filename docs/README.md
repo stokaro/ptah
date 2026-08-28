@@ -22,6 +22,7 @@ contributor or implementation detail beyond the site.
 | `docs/adr` | Architecture decision records: the alternatives weighed and the boundary chosen, kept so a later reader can tell a decision from an accident. |
 | `docs/architecture_boundaries.md` | The measured boundary inventory and the executable invariant set, with the baseline the gate ratchets against. |
 | `docs/canonical_pipeline_prototype.md` | What the ADR 0001 prototype measured, and what it changed about the record. |
+| `docs/feature-inventory.json` | The derived feature register: every native verb, ledger package, released program and dialect, with the page that claims it. Generated. |
 | `examples/*` | Runnable local examples and generated artifacts. |
 | `ptah-atlas-conformance` | External Atlas compatibility evidence and gap reports. |
 
@@ -39,6 +40,36 @@ When Ptah behavior changes, update every relevant layer:
 
 Do not update only the nearest README when a command path, flag, config key,
 generated SQL shape, public API, or Atlas parity claim changes.
+
+### The feature inventory
+
+`docs/feature-inventory.json` is generated and carries no authored column.
+Adding a verb, a ledger package, a released binary or a dialect is not an edit
+here at all: the register is derived from the command tree, `docs/public_api.md`,
+`.goreleaser.yaml` and `renderer.SupportedDialects`, so the row appears when the
+declaration does.
+
+The one thing a person writes is a page claiming what it documents:
+
+```yaml
+---
+title: "Apply directly"
+owns:
+  - cli-ptah-schema-apply
+---
+```
+
+Then regenerate:
+
+```bash
+scripts/check-feature-inventory.sh --write
+```
+
+The identifier is compared to the derived one by string equality, so a claim
+naming nothing is refused with the page and the identifier. What the gate cannot
+do is read: `owns:` proves the link is mutual, unique and resolves to a real
+file, and never that the page explains the feature. The file states that limit
+in its own `notice` field, along with the eight other things it does not claim.
 
 ## Contributing to the documentation
 

@@ -1,6 +1,21 @@
 ---
 title: Command reference
 description: Every ptah inference verb, what it does, and the flags it takes.
+owns:
+  - cli-ptah-inference-describe
+  - cli-ptah-inference-plan
+  - cli-ptah-inference-prepare
+  - cli-ptah-inference-backfill
+  - cli-ptah-inference-catchup
+  - cli-ptah-inference-index
+  - cli-ptah-inference-verify
+  - cli-ptah-inference-evaluate
+  - cli-ptah-inference-pause
+  - cli-ptah-inference-resume
+  - cli-ptah-inference-status
+  - cli-ptah-inference-cutover
+  - cli-ptah-inference-rollback
+  - cli-ptah-inference-retire
 ---
 
 Twelve verbs. Each is a decision taken separately: none of them is implied by

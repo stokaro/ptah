@@ -1,6 +1,9 @@
 ---
 title: Generate migrations
 description: Plan and generate migration files from the difference between your desired schema and a live database.
+owns:
+  - cli-ptah-migrations-generate
+  - cli-ptah-migrations-plan
 ---
 
 A migration file has two origins, and this page covers both. Either you write

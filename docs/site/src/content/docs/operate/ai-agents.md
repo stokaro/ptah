@@ -1,6 +1,8 @@
 ---
 title: AI agents over MCP
 description: Connect an AI client to Ptah with ptah mcp, and decide what it may read, propose, and write.
+owns:
+  - cli-ptah-mcp
 ---
 
 :::note[Experimental]

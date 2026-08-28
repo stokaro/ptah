@@ -1,6 +1,9 @@
 ---
 title: Inspect a database
 description: Read a live database schema as SQL statements, annotated Go models, or Atlas-shaped HCL, SQL, and JSON.
+owns:
+  - cli-ptah-db-read
+  - cli-ptah-schema-inspect
 ---
 
 You want to see the schema a live database actually has — to review it in the

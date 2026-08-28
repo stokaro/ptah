@@ -1,6 +1,10 @@
 ---
 title: Compare and drift
 description: See how a live database differs from the desired schema, and turn that difference into a check that gates pipelines.
+owns:
+  - cli-ptah-schema-compare
+  - cli-ptah-schema-diff
+  - cli-ptah-schema-drift
 ---
 
 You have a desired schema and a live database, and you want to know how the two

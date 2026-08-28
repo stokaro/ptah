@@ -1,6 +1,8 @@
 ---
 title: SQLite
 description: SQLite in Ptah - URL forms, the supported DDL surface, and which schema changes require a table rebuild.
+owns:
+  - dialect-sqlite
 ---
 
 SQLite is the engine to reach for when you want Ptah without a database
