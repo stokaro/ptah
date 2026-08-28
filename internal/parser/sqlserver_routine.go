@@ -228,48 +228,28 @@ func (p sqlServerRoutineBodyParser) parseOuterBlockStatements(beginIdx int) []as
 func (p sqlServerRoutineBodyParser) parseStatementRange(startIdx, endIdx int) []ast.SQLServerRoutineStatement {
 	statements := make([]ast.SQLServerRoutineStatement, 0)
 	statementStartIdx := -1
-	blockDepth := 0
-	caseDepth := 0
-	// A keyword inside parentheses belongs to a subquery or an expression, not
-	// to a new statement. Without this, `UPDATE t SET c = (SELECT max(v) FROM
-	// u)` came apart at the SELECT (stokaro/ptah#2451). INSERT kept its
-	// subquery only because keywordBelongsToCurrentStatement names that one
-	// pair explicitly; every other statement had nothing.
-	parenDepth := 0
+	var depth sqlServerRoutineDepth
 	for i := startIdx; i < endIdx; i++ {
 		tok := p.tokens[i]
 		if tok.MatchOperatorValue("[") {
 			i = sqlServerRoutineBracketEnd(p.tokens, i)
 			continue
 		}
-		if tok.MatchOperatorValue("(") {
-			parenDepth++
-		}
-		if tok.MatchOperatorValue(")") && parenDepth > 0 {
-			parenDepth--
-		}
+		depth.trackParenthesis(tok)
 		if statementStartIdx == -1 {
 			if isSQLServerRoutineTrivia(tok) {
 				continue
 			}
 			statementStartIdx = i
 		}
-
 		if tok.Type == lexer.TokenIdentifier {
-			nextValue := p.nextSignificantValue(i + 1)
-			trackSQLServerRoutineBodyKeyword(tok.Value, nextValue, &blockDepth, &caseDepth)
+			trackSQLServerRoutineBodyKeyword(tok.Value, p.nextSignificantValue(i+1), &depth.block, &depth.branch)
 		}
-		if p.startsRecoverableStatement(i) &&
-			!p.keywordBelongsToCurrentStatement(statementStartIdx, i) &&
-			blockDepth == 0 &&
-			caseDepth == 0 &&
-			parenDepth == 0 &&
-			statementStartIdx != i {
+		if depth.atTopLevel() && p.opensNewStatement(statementStartIdx, i) {
 			statements = append(statements, p.statementUntil(statementStartIdx, tok.Start))
 			statementStartIdx = i
 		}
-		if tok.Type == lexer.TokenSemicolon && blockDepth == 0 && caseDepth == 0 &&
-			parenDepth == 0 && statementStartIdx != -1 {
+		if tok.Type == lexer.TokenSemicolon && depth.atTopLevel() && statementStartIdx != -1 {
 			statements = append(statements, p.statement(statementStartIdx, i))
 			statementStartIdx = -1
 		}
@@ -278,6 +258,45 @@ func (p sqlServerRoutineBodyParser) parseStatementRange(startIdx, endIdx int) []
 		statements = append(statements, p.statementUntil(statementStartIdx, p.tokens[endIdx].Start))
 	}
 	return statements
+}
+
+// sqlServerRoutineDepth counts the nestings that make a keyword something other
+// than the start of a statement.
+//
+// Parentheses joined the block and branch counters because a keyword inside
+// them belongs to a subquery or an expression: without it, `UPDATE t SET c =
+// (SELECT max(v) FROM u)` came apart at the SELECT, into three statements.
+// INSERT kept its subquery only because keywordBelongsToCurrentStatement names
+// that one pair explicitly; every other statement had nothing
+// (stokaro/ptah#2451).
+type sqlServerRoutineDepth struct {
+	block  int
+	branch int
+	paren  int
+}
+
+// trackParenthesis follows one token's effect on the parenthesis nesting.
+func (d *sqlServerRoutineDepth) trackParenthesis(tok lexer.Token) {
+	if tok.MatchOperatorValue("(") {
+		d.paren++
+		return
+	}
+	if tok.MatchOperatorValue(")") && d.paren > 0 {
+		d.paren--
+	}
+}
+
+// atTopLevel reports whether a keyword here could begin a statement at all.
+func (d sqlServerRoutineDepth) atTopLevel() bool {
+	return d.block == 0 && d.branch == 0 && d.paren == 0
+}
+
+// opensNewStatement reports whether the token at idx begins a statement rather
+// than continuing the one already open.
+func (p sqlServerRoutineBodyParser) opensNewStatement(statementStartIdx, idx int) bool {
+	return p.startsRecoverableStatement(idx) &&
+		statementStartIdx != idx &&
+		!p.keywordBelongsToCurrentStatement(statementStartIdx, idx)
 }
 
 func (p sqlServerRoutineBodyParser) statement(startIdx, endIdx int) ast.SQLServerRoutineStatement {
