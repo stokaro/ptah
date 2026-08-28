@@ -14,6 +14,19 @@
 
 <p align="center"><a href="#install">Install</a> · <a href="https://stokaro.github.io/ptah/edge/start/quick-start/">Quick start</a> · <a href="https://stokaro.github.io/ptah/edge/operate/inference-migrations/">Inference migrations</a> · <a href="https://stokaro.github.io/ptah/edge/">Documentation</a> · <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">Database support</a></p>
 
+<p align="center">
+  <a href="https://stokaro.github.io/ptah/edge/databases/postgresql/">PostgreSQL</a> ·
+  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">MySQL</a> ·
+  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">MariaDB</a> ·
+  <a href="https://stokaro.github.io/ptah/edge/databases/sqlite/">SQLite</a> ·
+  <a href="https://stokaro.github.io/ptah/edge/databases/sqlserver/">SQL Server</a> ·
+  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">ClickHouse</a> ·
+  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">CockroachDB</a> ·
+  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">YugabyteDB</a> ·
+  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">Oracle</a> ·
+  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">Spanner</a>
+</p>
+
 Ptah manages database change across schemas and persistent inference state. For
 schemas, it compares a desired schema with a live database and either writes
 versioned migrations or applies an approved plan directly. For inference state,
