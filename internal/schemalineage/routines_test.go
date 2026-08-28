@@ -33,7 +33,7 @@ func TestDeriveRoutines_ResolvesWhatItCanAndNamesWhatItCannot(t *testing.T) {
 
 	c := qt.New(t)
 
-	result := schemalineage.DeriveRoutines(db)
+	result := schemalineage.DeriveRoutines(db, "postgres")
 
 	c.Assert(result.Edges, qt.HasLen, 2)
 	c.Assert(result.Edges[0].ToRoutine, qt.Equals, "active_emails")
@@ -61,7 +61,7 @@ func TestDeriveRoutines_AProceduralBodyIsUndecidedRatherThanEmpty(t *testing.T) 
 		Functions: []schemamodel.Function{
 			{Name: "f", Language: "plpgsql", Body: "BEGIN SELECT email FROM users; END;"},
 		},
-	})
+	}, "postgres")
 
 	c.Assert(result.Edges, qt.HasLen, 0)
 	c.Assert(result.Undecided, qt.HasLen, 1)
@@ -77,7 +77,7 @@ func TestDeriveRoutines_NoRoutinesIsNotAnUndecided(t *testing.T) {
 
 	result := schemalineage.DeriveRoutines(&schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "U", Name: "users"}},
-	})
+	}, "postgres")
 
 	c.Assert(result.Edges, qt.HasLen, 0)
 	c.Assert(result.Undecided, qt.HasLen, 0)
@@ -108,7 +108,7 @@ func TestDeriveRoutines_AnUnresolvableSQLBodyCarriesTheReadersReason(t *testing.
 		Functions: []schemamodel.Function{
 			{Name: "joined", Language: "sql", Body: "SELECT email FROM users JOIN orders ON orders.user_id = users.id"},
 		},
-	})
+	}, "postgres")
 
 	c.Assert(result.Edges, qt.HasLen, 0)
 	c.Assert(result.Undecided, qt.HasLen, 1)

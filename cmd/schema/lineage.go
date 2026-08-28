@@ -113,7 +113,7 @@ func runSchemaLineage(cmd *cobra.Command, opts schemaLineageOptions) error {
 	}
 	document := lineageDocument{
 		Result:   schemalineage.Derive(database),
-		Routines: schemalineage.DeriveRoutines(database),
+		Routines: schemalineage.DeriveRoutines(database, opts.dialect),
 	}
 	if opts.format == "json" {
 		return writeLineageJSON(cmd.OutOrStdout(), document)
