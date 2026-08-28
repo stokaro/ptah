@@ -1,11 +1,12 @@
 ---
 title: Trace view column lineage
-description: Run ptah schema lineage to find which base columns each view column reads, before dropping or renaming one of them.
+description: Run ptah schema lineage to find which base columns each view column and each routine reads, before dropping or renaming one of them.
 ---
 
 `ptah schema lineage` derives column-to-column dependencies from the view and
-materialized-view bodies a schema declares. It answers "what breaks if I drop
-this column" before the drop rather than after.
+materialized-view bodies a schema declares, and the columns each routine body
+reads. It answers "what breaks if I drop this column" before the drop rather
+than after.
 
 The analysis reads a schema source and contacts no database, so it answers
 before a change is applied. What it cannot attribute it reports as undecided
@@ -88,6 +89,50 @@ Four shapes land there, each with its own reason line:
 
 An undecided view does not change the exit code. The run above exits `0`.
 
+## Trace what a routine reads
+
+A routine reads base columns the same way a view does, and is traced on the
+same terms. Save this as `routines.sql`:
+
+```sql
+CREATE TABLE customers (
+  id INTEGER NOT NULL PRIMARY KEY,
+  email TEXT NOT NULL,
+  country TEXT NOT NULL
+);
+
+CREATE FUNCTION customer_emails() RETURNS SETOF TEXT
+LANGUAGE sql AS $$ SELECT email FROM customers $$;
+
+CREATE FUNCTION touch_customer(target INTEGER) RETURNS void
+LANGUAGE plpgsql AS $$ BEGIN UPDATE customers SET country = 'CZ' WHERE id = target; END; $$;
+```
+
+```bash
+ptah schema lineage --schema-file routines.sql --dialect postgres
+```
+
+Expected output:
+
+```text
+SOURCE           READ BY          KIND
+customers.email  customer_emails  function
+
+1 routine(s) not fully resolved:
+  touch_customer: the body is plpgsql rather than plain SQL
+```
+
+The boundary is the same one the view half draws, in the same place. A body
+that is a single `SELECT` -- which is the shape a `LANGUAGE sql` routine has --
+resolves through the same reader, with the same four undecided shapes in the
+table above. A procedural body written in PL/pgSQL or any other language lands
+in `undecided` naming its language, because resolving control flow needs more
+than this analysis does today.
+
+That distinction is the whole point of reading the list. `touch_customer`
+writes `customers.country`, and nothing above says so: an undecided routine is
+a routine whose dependencies were not established, not one with none.
+
 ## Take the answer as JSON
 
 ```bash
@@ -125,6 +170,32 @@ Expected output includes:
 only when at least one view landed there. A check that wants to fail on an
 unresolved view reads that key, since the exit code stays `0` either way.
 
+Routines carry the same two halves under `routines`, so a reader parsing
+`edges` keeps parsing exactly the view edges it always parsed:
+
+```json
+{
+  "edges": [],
+  "routines": {
+    "edges": [
+      {
+        "from_table": "customers",
+        "from_column": "email",
+        "to_routine": "customer_emails",
+        "kind": "function"
+      }
+    ],
+    "undecided": [
+      {
+        "routine": "touch_customer",
+        "reason": "the body is plpgsql rather than plain SQL",
+        "kind": "function"
+      }
+    ]
+  }
+}
+```
+
 ## Failure modes
 
 A completed trace exits `0`, whether or not any view landed in `undecided`. A
@@ -136,6 +207,9 @@ usage error exits `2` with one line on stderr. See
 - The resolvable shape is a select list over a single `FROM` source, with
   columns named plainly or aliased. The four shapes in the table above land in
   `undecided` instead.
+- A routine body resolves only when it is one such `SELECT`. A procedural body
+  is reported as undecided naming its language, and the columns it writes are
+  never reported at all -- lineage answers what is read, not what is written.
 - An arithmetic expression in the select list with no alias produces an edge
   that is wrong rather than an `undecided` entry. For a view declared
   `SELECT a + b FROM t`, the command reports one edge, `t.a` feeding a view
@@ -147,8 +221,8 @@ usage error exits `2` with one line on stderr. See
   written and the caller filters it.
 - With neither `--root-dir` nor `--schema-file`, the working directory is
   scanned for Go annotations. In a directory that holds none, the run reports
-  `No view columns to trace.` and exits `0`, which reads the same as a schema
-  with no views. Name the source.
+  `No view or routine columns to trace.` and exits `0`, which reads the same as
+  a schema with no views. Name the source.
 
 ## Exact reference
 

@@ -1227,7 +1227,7 @@
   },
   {
     "name": "schema_lineage",
-    "description": "Trace which base columns feed each view column in a declared Ptah schema. Answers what breaks if a column is dropped, before the drop. Views whose bodies cannot be resolved are reported rather than omitted.",
+    "description": "Trace which base columns feed each view column, and which base columns each routine reads, in a declared Ptah schema. Answers what breaks if a column is dropped, before the drop. Views and routines whose bodies cannot be resolved are reported rather than omitted.",
     "input_schema": {
       "additionalProperties": false,
       "properties": {
@@ -1304,6 +1304,72 @@
         "notice": {
           "type": "string"
         },
+        "routines": {
+          "additionalProperties": false,
+          "properties": {
+            "edges": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "from_column": {
+                    "type": "string"
+                  },
+                  "from_table": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "to_routine": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "from_table",
+                  "from_column",
+                  "to_routine",
+                  "kind"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            },
+            "undecided": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "type": "string"
+                  },
+                  "routine": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "routine",
+                  "reason",
+                  "kind"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            }
+          },
+          "required": [
+            "edges",
+            "undecided"
+          ],
+          "type": "object"
+        },
         "undecided": {
           "items": {
             "additionalProperties": false,
@@ -1330,6 +1396,7 @@
       "required": [
         "edges",
         "undecided",
+        "routines",
         "notice"
       ],
       "type": "object"
