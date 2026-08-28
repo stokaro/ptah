@@ -102,6 +102,7 @@ to rule out — so they are named here, where a claim nothing measures belongs.
 | `inference catchup` | **writes** | none | `--db-url` | rereads the source rows recorded as changed and writes their vectors, which sends that text to the embedding endpoint |
 | `inference cutover` | **writes** | none | `--db-url` | moves the pointer queries read to a different generation, and refuses when the pointer is not where the plan it was built from expects |
 | `inference evaluate` | reads | none | `--db-url` | searches the generation with queries from a corpus, which sends those queries to the embedding endpoint; the database is only read |
+| `inference index` | **writes** | none | `--db-url` | builds the generation's vector index concurrently, which writes an index into the target database and drops an invalid leftover before rebuilding it |
 | `inference plan` | reads | none | `--db-url` | resolves a specification against the database and prints what would happen; nothing is created and nothing is written |
 | `inference prepare` | **writes** | none | `--db-url` | creates the run's own tables and, under the outbox mode, a companion table and two triggers on the source |
 | `inference retire` | **writes** | none | `--db-url` | drops a generation's index and column; it is the one verb here that cannot be undone |

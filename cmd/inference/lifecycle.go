@@ -11,6 +11,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/embedcatchup"
 	"go.5x5.cz/ptah/internal/embedcutover"
+	"go.5x5.cz/ptah/internal/embedgen"
 	"go.5x5.cz/ptah/internal/embedpg"
 	"go.5x5.cz/ptah/internal/embedreport"
 	"go.5x5.cz/ptah/internal/embedrun"
@@ -147,6 +148,66 @@ func boundaryText(boundary string) string {
 // isConflict reports whether an error is the store refusing a duplicate.
 func isConflict(err error) bool {
 	return err != nil && errorsIs(err, embedstore.ErrConflict)
+}
+
+// newIndexCommand returns "ptah inference index".
+func newIndexCommand() *cobra.Command {
+	var options commonOptions
+
+	cmd := &cobra.Command{
+		Use:   "index",
+		Short: "Build the generation's vector index and wait for it to be valid",
+		Long: `Build the vector index the specification declares, concurrently.
+
+After the backfill rather than before it. An IVFFlat index trains its lists on
+the data present when it is built, so one built over an empty column is valid
+and useless.
+
+Concurrently, because the table is one an application is reading and writing
+while this runs. That is also why the index is read back afterwards: a
+concurrent build that fails leaves an index behind that PostgreSQL will not use,
+and it reports no error of its own.
+
+A specification naming no index method has no index to build, and this says so
+rather than failing. Every query over that generation is then a sequential scan
+over the whole corpus, which is a choice its author made.`,
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runIndex(cmd.Context(), cmd.OutOrStdout(), options)
+		},
+	}
+	addCommonFlags(cmd, &options)
+	return cmd
+}
+
+// runIndex builds it and says what happened.
+func runIndex(ctx context.Context, out io.Writer, options commonOptions) error {
+	opened, err := open(ctx, options)
+	if err != nil {
+		return err
+	}
+	defer opened.close()
+
+	outcome, err := embedpg.EnsureIndex(ctx, opened.db, opened.loaded.Spec)
+	if err != nil {
+		return err
+	}
+	return writeLines(out, indexOutcomeText(outcome, opened.loaded.Spec))
+}
+
+// indexOutcomeText says what the build did, including having nothing to do.
+func indexOutcomeText(outcome embedpg.IndexOutcome, spec embedgen.Spec) string {
+	generation := spec.Identity().Short()
+	messages := map[embedpg.IndexOutcome]string{
+		embedpg.IndexNotDeclared: "the specification declares no index method, so generation " +
+			generation + " has no index: every query over it is a sequential scan over the " +
+			"whole corpus",
+		embedpg.IndexAlreadyValid: "generation " + generation + " already has a valid index",
+		embedpg.IndexRebuilt: "generation " + generation + " had an index that was not valid, " +
+			"left by a concurrent build that failed; it was dropped and built again",
+		embedpg.IndexBuilt: "generation " + generation + " has a valid index",
+	}
+	return messages[outcome]
 }
 
 // newStatusCommand returns "ptah inference status".

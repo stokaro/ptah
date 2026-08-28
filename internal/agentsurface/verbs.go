@@ -87,6 +87,9 @@ var verbs = map[string]Verb{
 	"inference evaluate": {TargetReads, ScratchNone,
 		"searches the generation with queries from a corpus, which sends those queries to the " +
 			"embedding endpoint; the database is only read"},
+	"inference index": {TargetWrites, ScratchNone,
+		"builds the generation's vector index concurrently, which writes an index into the " +
+			"target database and drops an invalid leftover before rebuilding it"},
 	"inference plan": {TargetReads, ScratchNone,
 		"resolves a specification against the database and prints what would happen; nothing is " +
 			"created and nothing is written"},
