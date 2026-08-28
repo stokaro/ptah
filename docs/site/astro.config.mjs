@@ -70,6 +70,7 @@ export default defineConfig({
       },
       customCss: ['./src/styles/global.css'],
       components: {
+        PageTitle: './src/components/PageTitle.astro',
         SiteTitle: './src/components/SiteTitle.astro',
       },
       social: [

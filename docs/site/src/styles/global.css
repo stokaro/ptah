@@ -31,6 +31,38 @@
 }
 
 /*
+ * Starlight uses one 18.75rem value for both desktop side rails. That leaves
+ * the navigation room it does not need and lets the table of contents claim a
+ * large share of a laptop viewport. Ptah keeps the two jobs independent: a
+ * 16rem navigation rail and a narrower 14.5rem context rail.
+ *
+ * These rules are unlayered so they can override Starlight's layered component
+ * styles without depending on selector weight. Below 72rem Starlight replaces
+ * the desktop table of contents with its mobile disclosure, so only the left
+ * rail width applies.
+ */
+:root {
+	--sl-sidebar-width: 16rem;
+	--ptah-toc-width: 14.5rem;
+}
+
+@media (min-width: 72rem) {
+	.right-sidebar-container {
+		flex: 0 0 var(--ptah-toc-width);
+		width: var(--ptah-toc-width);
+	}
+
+	[data-has-sidebar][data-has-toc] .main-pane {
+		width: calc(100% - var(--ptah-toc-width));
+	}
+
+	.right-sidebar-panel .sl-container {
+		width: calc(var(--ptah-toc-width) - 2 * var(--sl-sidebar-pad-x));
+		max-width: none;
+	}
+}
+
+/*
  * A wide table scrolls inside its own container and keeps its desktop column
  * widths, which is the assumption scripts/check-responsive.mjs states when it
  * measures cell height at 1280px only.
