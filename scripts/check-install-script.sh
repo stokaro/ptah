@@ -297,9 +297,11 @@ add_shell() {
 	shell_names+=("$label")
 }
 # PTAH_INSTALL_TEST_SHELLS replaces discovery with an explicit list. It exists
-# for check-install-script-selftest.sh, which runs this gate nine times over and
-# is measuring the gate's assertions rather than the shell matrix. A CI job must
-# not set it: the matrix is the point there, which is what MIN_SHELLS guards.
+# for check-install-script-selftest.sh, which runs this gate once per mutation
+# and is measuring the gate's assertions rather than the shell matrix. A CI job
+# must not set it: the matrix is the point there, which is what MIN_SHELLS
+# guards. The shell it names has to be one where PATH decides, or the floor
+# below refuses the run.
 if [ -n "${PTAH_INSTALL_TEST_SHELLS:-}" ]; then
 	for candidate in $PTAH_INSTALL_TEST_SHELLS; do
 		shell_specs+=("$candidate")

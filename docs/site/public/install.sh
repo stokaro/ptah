@@ -371,7 +371,8 @@ curl_flags() {
 # download writes the URL to a file. It reports whether the failure was an HTTP
 # status the server chose -- which means "no such release" -- or anything else,
 # which means the transfer did not happen. curl is asked for the status line
-# itself; wget cannot be, so a wget run reports the generic failure.
+# itself, with -w; wget has no equivalent of it, so a wget run reports the
+# generic failure.
 download() {
 	local url="$1" dest="$2" status=0 flags code=""
 	DOWNLOAD_ERROR=""
