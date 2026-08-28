@@ -1081,8 +1081,14 @@ env "ci" {
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
+	// Separate buffers, because the two streams carry different things here.
+	// The report is stdout and the unmet-input notice is stderr, deliberately,
+	// so that `--format "{{ json . }}"` decodes exactly what it decoded before
+	// the notice existed. Merging them made this assertion depend on no rule
+	// ever asking for an input the fixture does not supply.
+	var errOut bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetErr(&out)
+	cmd.SetErr(&errOut)
 	cmd.SetArgs([]string{
 		"migrate",
 		"--config", "project.hcl",

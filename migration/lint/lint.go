@@ -241,6 +241,15 @@ type Options struct {
 	// precede that version. Empty analyzes SQL text alone, which is what every
 	// run without a dev database does. See [BaselineColumn].
 	Baseline []BaselineColumn
+
+	// BaselineDependents carries what reads each column in the state a version
+	// starts from, for the rule that reports a drop by naming what breaks.
+	//
+	// Separate from Baseline because it is resolved rather than read: the
+	// columns are a catalog query and these come from analyzing view and
+	// routine bodies, so a caller can supply one without the other and the
+	// unmet-input report says which is missing.
+	BaselineDependents []BaselineDependent
 }
 
 func parseKnownMigrationName(name string, dirFormat migrationfile.DirFormat) (*migrationfile.File, error) {

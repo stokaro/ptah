@@ -433,6 +433,7 @@ func lintDirectory(
 		return lint.Analysis{}, replayedSchemas{}, err
 	}
 	baseline := newBaselineCollector(analysis.BaselineVersions(), opts.DevURL)
+	baseline.setDialect(opts.Dialect)
 	capture := newReplaySchemaCapture(opts, analysis)
 	if err := migrationreplay.Replay(ctx, migrationreplay.Options{
 		Dir:               opts.Dir,
@@ -451,6 +452,7 @@ func lintDirectory(
 		return analysis, schemas, nil
 	}
 	lintOptions.Baseline = baseline.columns
+	lintOptions.BaselineDependents = baseline.dependents
 	// The second pass re-reads the same files with the baseline facts in hand;
 	// it does not replay, so the schema pair the replay captured is still the
 	// one that belongs to this analysis.
@@ -536,6 +538,19 @@ type baselineCollector struct {
 	wanted  map[int64]bool
 	schemas []string
 	columns []lint.BaselineColumn
+	// dependents is what reads each of those columns, resolved from the same
+	// read rather than a second round trip.
+	dependents []lint.BaselineDependent
+	dialect    string
+}
+
+// setDialect records which routine-body parser the dependents are resolved
+// with. A body is that dialect's procedural language, and reading it with
+// another dialect's parser is a wrong answer rather than a cautious one.
+func (c *baselineCollector) setDialect(dialect string) {
+	if c != nil {
+		c.dialect = dialect
+	}
 }
 
 func newBaselineCollector(versions []int64, devURL string) *baselineCollector {
@@ -571,6 +586,12 @@ func (c *baselineCollector) observe(
 		return err
 	}
 	c.columns = append(c.columns, columns...)
+
+	dependents, err := readBaselineDependents(ctx, conn, version, c.schemas, c.dialect)
+	if err != nil {
+		return err
+	}
+	c.dependents = append(c.dependents, dependents...)
 	return nil
 }
 

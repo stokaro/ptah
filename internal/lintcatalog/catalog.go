@@ -140,6 +140,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 		Summary:   "DROP TABLE destroys the table and every row in it; a rename reports here on the compatibility surface, retiring the old name without moving the rows",
 		AtlasCode: "DS102",
 	},
+	"DS110P": {
+		Summary: "a column a view or routine reads is dropped, and the finding names what breaks",
+	},
 	"DS102": {
 		Summary:   "DROP COLUMN destroys the column and every value stored in it",
 		AtlasCode: "DS103",
