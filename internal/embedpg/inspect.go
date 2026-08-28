@@ -385,9 +385,7 @@ func RetireIndex(
 func RetireColumns(
 	ctx context.Context, db *sql.DB, generation embedstore.Generation,
 ) error {
-	for _, suffix := range []string{
-		"", GenerationSuffix, InputHashSuffix, VersionSuffix, StateSuffix,
-	} {
+	for _, suffix := range append([]string{""}, MetadataSuffixes()...) {
 		// #nosec G201 -- relation and column names from the registry, through
 		// quoteIdentifier.
 		drop := fmt.Sprintf("ALTER TABLE %s DROP COLUMN IF EXISTS %s",

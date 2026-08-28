@@ -31,6 +31,17 @@ const (
 	StateSuffix = "_state"
 )
 
+// MetadataSuffixes returns them in one list.
+//
+// One list because three places need the same answer -- creating the columns,
+// dropping them, and writing them -- and a hand-written enumeration in each is
+// how a fifth suffix comes to be created and never dropped. A caller that wants
+// the vector column too prepends the empty string; the vector is not in here
+// because it is not metadata and its type is not TEXT.
+func MetadataSuffixes() []string {
+	return []string{GenerationSuffix, InputHashSuffix, VersionSuffix, StateSuffix}
+}
+
 // Target is embedengine.Target over a PostgreSQL table with pgvector.
 type Target struct {
 	db   *sql.DB
