@@ -322,13 +322,18 @@ func TestGenerateMigrationAST(t *testing.T) {
 		dialect string
 		diff    *difftypes.SchemaDiff
 		desired *schemamodel.Database
+
+		// tablesAdded names the tables the diff creates. The creations are
+		// assembled from the row's own desired schema in the loop below,
+		// because a row cannot reference its own other field
+		// (stokaro/ptah#2315).
+		tablesAdded []string
 	}{
 		{
-			name:    "postgres migration generation",
-			dialect: platform.Postgres,
-			diff: &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableChanges{{Name: "users"}},
-			},
+			name:        "postgres migration generation",
+			dialect:     platform.Postgres,
+			tablesAdded: []string{"users"},
+			diff:        &difftypes.SchemaDiff{},
 			desired: &schemamodel.Database{
 				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
@@ -339,11 +344,10 @@ func TestGenerateMigrationAST(t *testing.T) {
 			},
 		},
 		{
-			name:    "mysql migration generation",
-			dialect: platform.MySQL,
-			diff: &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableChanges{{Name: "users"}},
-			},
+			name:        "mysql migration generation",
+			dialect:     platform.MySQL,
+			tablesAdded: []string{"users"},
+			diff:        &difftypes.SchemaDiff{},
 			desired: &schemamodel.Database{
 				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
@@ -358,6 +362,8 @@ func TestGenerateMigrationAST(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
+
+			tt.diff.TablesAdded = difftypes.TableCreationsFor(tt.desired, tt.tablesAdded...)
 
 			nodes, err := planner.GenerateSchemaDiffAST(tt.diff, tt.desired, tt.dialect)
 			c.Assert(err, qt.IsNil)

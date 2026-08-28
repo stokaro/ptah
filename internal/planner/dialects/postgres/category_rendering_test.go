@@ -152,7 +152,7 @@ func diffCategoryFixtures() []categoryFixture {
 	increment := int64(2)
 
 	return []categoryFixture{
-		{"TablesAdded", &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "t"}}}, oneTable},
+		{"TablesAdded", &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(oneTable, "t")}, oneTable},
 		{"TablesRemoved", &difftypes.SchemaDiff{TablesRemoved: []string{"t"}}, &schemamodel.Database{}},
 		{
 			"TablesModified",

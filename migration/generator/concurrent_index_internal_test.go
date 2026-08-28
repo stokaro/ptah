@@ -150,7 +150,6 @@ func TestPlanGeneratedMigrationSpecs_SplitsTransactionalAndConcurrentIndex(t *te
 	c := qt.New(t)
 
 	diff := indexOnlyDiff()
-	diff.TablesAdded = difftypes.TableChanges{{Name: "posts"}}
 	desired := indexOnlyGeneratedSchema()
 	desired.Tables = append(desired.Tables, schemamodel.Table{StructName: "Post", Name: "posts"})
 	desired.Fields = append(desired.Fields, schemamodel.Field{
@@ -160,6 +159,9 @@ func TestPlanGeneratedMigrationSpecs_SplitsTransactionalAndConcurrentIndex(t *te
 		Primary:    true,
 		AutoInc:    true,
 	})
+	// After the schema holds the table: a creation carries what CREATE TABLE
+	// renders from (stokaro/ptah#2315).
+	diff.TablesAdded = difftypes.TableCreationsFor(desired, "posts")
 
 	specs, _, err := planGeneratedMigrationSpecs(
 		diff,
@@ -242,7 +244,6 @@ func TestPlanGeneratedMigrationSpecs_LeadsWithTheEnumValueAddition(t *testing.T)
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableChanges{{Name: "users"}},
 		EnumsModified: []difftypes.EnumDiff{{
 			EnumName:    "status",
 			ValuesAdded: []string{"archived"},
@@ -259,6 +260,7 @@ func TestPlanGeneratedMigrationSpecs_LeadsWithTheEnumValueAddition(t *testing.T)
 		}},
 		Enums: []schemamodel.Enum{{Name: "status", Values: []string{"active", "archived"}}},
 	}
+	diff.TablesAdded = difftypes.TableCreationsFor(desired, "users")
 
 	specs, _, err := planGeneratedMigrationSpecs(diff, desired, &catalog.Database{}, postgresInfo(capability.Postgres16()), 100, "mixed", DiffPolicy{}, atlasmigrate.Qualifier{})
 
@@ -391,7 +393,6 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropSplitsFromTransactional(
 	c := qt.New(t)
 
 	diff := indexRemovalOnlyDiff()
-	diff.TablesAdded = difftypes.TableChanges{{Name: "posts"}}
 	desired := indexOnlyGeneratedSchema()
 	desired.Tables = append(desired.Tables, schemamodel.Table{StructName: "Post", Name: "posts"})
 	desired.Fields = append(desired.Fields, schemamodel.Field{
@@ -401,6 +402,7 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexDropSplitsFromTransactional(
 		Primary:    true,
 		AutoInc:    true,
 	})
+	diff.TablesAdded = difftypes.TableCreationsFor(desired, "posts")
 
 	specs, _, err := planGeneratedMigrationSpecs(
 		diff,

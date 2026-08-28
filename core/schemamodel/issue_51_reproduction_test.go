@@ -86,7 +86,7 @@ func TestIssue51ExactReproduction(t *testing.T) {
 
 	// Now test the migration generation
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableChanges{{Name: "tenants"}, {Name: "users"}, {Name: "locations"}, {Name: "areas"}},
+		TablesAdded: difftypes.TableCreationsFor(db, "tenants", "users", "locations", "areas"),
 	}
 
 	// Generate migration using PostgreSQL planner

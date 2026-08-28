@@ -2115,9 +2115,14 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// becomes renders CREATE TABLE, so the declaration has to be recovered
 		// from the pre-change database or the rollback drops a table it never
 		// puts back (stokaro/ptah#2315).
-		TablesAdded:    tableCreationsFromRemovals(diff.TablesRemoved, prior),
-		TablesRemoved:  deporder.TableDropOrder(diff.TablesAdded.Names(), schema), // Tables to add become tables to remove
-		TablesModified: reverseTableDiffs(diff.TablesModified),
+		TablesAdded: tableCreationsFromRemovals(diff.TablesRemoved, prior),
+		// The PRE-CHANGE declaration's vocabulary, not the desired one: the
+		// tables this direction creates are the ones that database held, and a
+		// column of theirs names a type as that database declared it
+		// (stokaro/ptah#2315).
+		DeclaredUserTypes: difftypes.UserTypeVocabularyOf(prior),
+		TablesRemoved:     deporder.TableDropOrder(diff.TablesAdded.Names(), schema), // Tables to add become tables to remove
+		TablesModified:    reverseTableDiffs(diff.TablesModified),
 
 		// Reverse enum operations
 		EnumsAdded:    diff.EnumsRemoved, // Enums to remove become enums to add

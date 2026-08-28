@@ -630,6 +630,18 @@ the comparison produced, and the JSON is unchanged: `tables_added` has always
 been an array of names. `TablesRemoved` stays `[]string`, because DROP TABLE is
 written from the name.
 
+`SchemaDiff.DeclaredUserTypes` carries the declaration's type vocabulary — the
+domains, composite types, ranges and enums a column may name — once for the
+whole diff rather than on each entry. A column carries a type NAME and the
+declaration carries the schema that type lives in, so `positive_int` renders as
+`app.positive_int` only once the two are put together; and a column may name a
+type nothing in the diff changes, so no per-entry operand reproduces it. A
+planner resolves a created table's column types through it. `TableChanges`
+keeps its columns as written until `Qualified` runs, so a caller that wants the
+declaration rather than the rendering has it. An embedder building a diff by
+hand fills the field with `difftypes.UserTypeVocabularyOf(desired)`; one that
+omits it renders user-typed columns as the bare names the author wrote.
+
 `SchemaDiff.RLSEnabledTablesAdded` and `RLSEnabledTablesRemoved` are
 `RLSEnabledTableChanges` rather than `[]string`. An ADDED entry is the
 declaration, which is what a target rendering a declared comment needs; a

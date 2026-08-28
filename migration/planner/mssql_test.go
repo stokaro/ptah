@@ -16,7 +16,6 @@ func TestGenerateSchemaDiffSQL_SQLServerCreatesTSQL(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableChanges{{Name: "users"}},
 		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "dbo.users"},
 		},
@@ -52,6 +51,9 @@ func TestGenerateSchemaDiffSQL_SQLServerCreatesTSQL(t *testing.T) {
 			Fields:     []string{"email"},
 		}},
 	}
+	// After the schema exists: a creation carries what CREATE TABLE renders
+	// from, derived from the declaration (stokaro/ptah#2315).
+	diff.TablesAdded = difftypes.TableCreationsFor(desired, "users")
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLServer)
 
