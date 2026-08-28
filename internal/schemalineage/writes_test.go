@@ -160,6 +160,40 @@ END;`))
 	c.Assert(result.Undecided[0].Reason, qt.Contains, "every statement was classified")
 }
 
+// TestDeriveRoutines_ATriggerFunctionsFieldAssignmentIsNotAnUnresolvedStatement
+// covers the shape a trigger function is mostly made of.
+//
+// PL/pgSQL accepts `=` as well as `:=`, the target is usually qualified, and
+// the SQL lexer this borrows splits `:=` into two operator tokens. Each of the
+// three on its own reported `NEW.updated_at = now()` as a statement beginning
+// NEW that nothing recognized, which would make every trigger function partial.
+//
+// The assignment is not a write: it changes the row the statement that fired
+// the trigger is already writing, and naming a table here would name one this
+// body did not choose.
+func TestDeriveRoutines_ATriggerFunctionsFieldAssignmentIsNotAnUnresolvedStatement(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "qualified with equals", body: "BEGIN NEW.updated_at = now(); RETURN NEW; END;"},
+		{name: "qualified with colon equals", body: "BEGIN NEW.updated_at := now(); RETURN NEW; END;"},
+		{name: "plain with equals", body: "BEGIN total = 0; END;"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			result := schemalineage.DeriveRoutines(proceduralRoutine(test.body))
+
+			c.Assert(result.Writes, qt.HasLen, 0)
+			c.Assert(result.Undecided, qt.HasLen, 1)
+			c.Assert(result.Undecided[0].Reason, qt.Contains, "every statement was classified")
+		})
+	}
+}
+
 // TestDeriveRoutines_ASetClauseDoesNotInventColumnsFromAnExpression pins the
 // depth tracking.
 //

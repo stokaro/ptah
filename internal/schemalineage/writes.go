@@ -76,7 +76,7 @@ func classifyRoutineStatement(statement ast.PostgresRoutineStatement, routine, k
 // analysis never opened.
 func descendOrRefuse(statement ast.PostgresRoutineStatement, routine, kind string) (writes []RoutineWrite, unresolved []string) {
 	if len(statement.Statements) == 0 {
-		return nil, []string{fmt.Sprintf("a %s statement's contents could not be read", statement.Kind)}
+		return nil, []string{fmt.Sprintf("the %s statement's contents could not be read", statement.Kind)}
 	}
 	return walkRoutineStatements(statement.Statements, routine, kind)
 }
@@ -124,18 +124,48 @@ func classifyRawStatement(sql, routine, kind string) (writes []RoutineWrite, unr
 	return target.writes(routine, kind), nil
 }
 
-// isAssignment reports whether a statement assigns to a variable, which touches
-// no table.
+// isAssignment reports whether a statement assigns to a variable or a record
+// field, which touches no table.
 //
-// The lexer is the SQL one, where `:=` is two operator tokens rather than one:
-// SQL has no assignment, and this body is the PL/pgSQL sub-language borrowing
-// that tokenizer. Reading `:=` as a single token here matched nothing and made
-// every variable assignment an unrecognized statement.
+// Two things make this less obvious than it looks. The lexer is the SQL one,
+// where `:=` is two operator tokens rather than one: SQL has no assignment, and
+// this body is the PL/pgSQL sub-language borrowing that tokenizer. And the
+// target is often qualified -- `NEW.email := lower(NEW.email)` is what a
+// trigger function is mostly made of -- so stopping at the first token reported
+// every such statement as one beginning NEW that nothing recognized.
+//
+// An assignment to NEW is not counted as a write. It changes the row the
+// statement that fired the trigger is already writing, and reporting it as a
+// write would name a table this body does not choose.
 func isAssignment(tokens []lexer.Token) bool {
-	if len(tokens) > 1 && tokens[1].Value == ":=" {
+	index := assignmentTargetEnd(tokens)
+	if index < 0 {
+		return false
+	}
+	if index >= len(tokens) {
+		return false
+	}
+	// PL/pgSQL accepts `=` for assignment as well as `:=`, and a trigger
+	// function is mostly `NEW.updated_at = now()`. Nothing that writes a table
+	// begins with an identifier -- INSERT, UPDATE, DELETE and TRUNCATE are all
+	// keywords -- so a bare `=` after a name cannot be one of those misread.
+	if tokens[index].Value == ":=" || tokens[index].Value == "=" {
 		return true
 	}
-	return len(tokens) > 2 && tokens[1].Value == ":" && tokens[2].Value == "="
+	return index+1 < len(tokens) && tokens[index].Value == ":" && tokens[index+1].Value == "="
+}
+
+// assignmentTargetEnd walks a dotted name and returns the index after it, or -1
+// when the statement does not begin with one.
+func assignmentTargetEnd(tokens []lexer.Token) int {
+	if len(tokens) == 0 || tokens[0].Type != lexer.TokenIdentifier {
+		return -1
+	}
+	index := 1
+	for index+1 < len(tokens) && tokens[index].Value == "." && tokens[index+1].Type == lexer.TokenIdentifier {
+		index += 2
+	}
+	return index
 }
 
 // readingOrControlWord names the statements that read or steer without writing.
