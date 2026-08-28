@@ -228,34 +228,28 @@ func (p sqlServerRoutineBodyParser) parseOuterBlockStatements(beginIdx int) []as
 func (p sqlServerRoutineBodyParser) parseStatementRange(startIdx, endIdx int) []ast.SQLServerRoutineStatement {
 	statements := make([]ast.SQLServerRoutineStatement, 0)
 	statementStartIdx := -1
-	blockDepth := 0
-	caseDepth := 0
+	var depth sqlServerRoutineDepth
 	for i := startIdx; i < endIdx; i++ {
 		tok := p.tokens[i]
 		if tok.MatchOperatorValue("[") {
 			i = sqlServerRoutineBracketEnd(p.tokens, i)
 			continue
 		}
+		depth.trackParenthesis(tok)
 		if statementStartIdx == -1 {
 			if isSQLServerRoutineTrivia(tok) {
 				continue
 			}
 			statementStartIdx = i
 		}
-
 		if tok.Type == lexer.TokenIdentifier {
-			nextValue := p.nextSignificantValue(i + 1)
-			trackSQLServerRoutineBodyKeyword(tok.Value, nextValue, &blockDepth, &caseDepth)
+			trackSQLServerRoutineBodyKeyword(tok.Value, p.nextSignificantValue(i+1), &depth.block, &depth.branch)
 		}
-		if p.startsRecoverableStatement(i) &&
-			!p.keywordBelongsToCurrentStatement(statementStartIdx, i) &&
-			blockDepth == 0 &&
-			caseDepth == 0 &&
-			statementStartIdx != i {
+		if depth.atTopLevel() && p.opensNewStatement(statementStartIdx, i) {
 			statements = append(statements, p.statementUntil(statementStartIdx, tok.Start))
 			statementStartIdx = i
 		}
-		if tok.Type == lexer.TokenSemicolon && blockDepth == 0 && caseDepth == 0 && statementStartIdx != -1 {
+		if tok.Type == lexer.TokenSemicolon && depth.atTopLevel() && statementStartIdx != -1 {
 			statements = append(statements, p.statement(statementStartIdx, i))
 			statementStartIdx = -1
 		}
@@ -264,6 +258,45 @@ func (p sqlServerRoutineBodyParser) parseStatementRange(startIdx, endIdx int) []
 		statements = append(statements, p.statementUntil(statementStartIdx, p.tokens[endIdx].Start))
 	}
 	return statements
+}
+
+// sqlServerRoutineDepth counts the nestings that make a keyword something other
+// than the start of a statement.
+//
+// Parentheses joined the block and branch counters because a keyword inside
+// them belongs to a subquery or an expression: without it, `UPDATE t SET c =
+// (SELECT max(v) FROM u)` came apart at the SELECT, into three statements.
+// INSERT kept its subquery only because keywordBelongsToCurrentStatement names
+// that one pair explicitly; every other statement had nothing
+// (stokaro/ptah#2451).
+type sqlServerRoutineDepth struct {
+	block  int
+	branch int
+	paren  int
+}
+
+// trackParenthesis follows one token's effect on the parenthesis nesting.
+func (d *sqlServerRoutineDepth) trackParenthesis(tok lexer.Token) {
+	if tok.MatchOperatorValue("(") {
+		d.paren++
+		return
+	}
+	if tok.MatchOperatorValue(")") && d.paren > 0 {
+		d.paren--
+	}
+}
+
+// atTopLevel reports whether a keyword here could begin a statement at all.
+func (d sqlServerRoutineDepth) atTopLevel() bool {
+	return d.block == 0 && d.branch == 0 && d.paren == 0
+}
+
+// opensNewStatement reports whether the token at idx begins a statement rather
+// than continuing the one already open.
+func (p sqlServerRoutineBodyParser) opensNewStatement(statementStartIdx, idx int) bool {
+	return p.startsRecoverableStatement(idx) &&
+		statementStartIdx != idx &&
+		!p.keywordBelongsToCurrentStatement(statementStartIdx, idx)
 }
 
 func (p sqlServerRoutineBodyParser) statement(startIdx, endIdx int) ast.SQLServerRoutineStatement {
@@ -464,6 +497,9 @@ func (p sqlServerRoutineBodyParser) keywordBelongsToCurrentStatement(statementSt
 	}
 	currentKind := p.classifyStatement(statementStartIdx)
 	switch {
+	case p.tokens[keywordIdx].MatchIdentifierValue("SET") &&
+		p.setClauseBelongsToStatement(statementStartIdx, keywordIdx):
+		return true
 	case currentKind == ast.SQLServerRoutineStatementInsert && p.tokens[keywordIdx].MatchIdentifierValue("SELECT"):
 		return true
 	case currentKind == ast.SQLServerRoutineStatementReturn && p.tokens[keywordIdx].MatchIdentifierValue("SELECT"):
@@ -475,6 +511,58 @@ func (p sqlServerRoutineBodyParser) keywordBelongsToCurrentStatement(statementSt
 	default:
 		return false
 	}
+}
+
+// setClauseBelongsToStatement reports whether a SET is the clause of the
+// statement it sits inside rather than an assignment of its own.
+//
+// SET is two different things in T-SQL. `SET @total = 0` is a statement, and
+// the SET in `UPDATE t SET c = 1` is a clause. Treating every one as a
+// statement split an UPDATE in two and left neither half an update: the caller
+// saw `UPDATE t` and `SET c = 1` (stokaro/ptah#2451).
+//
+// The two openings differ, and measuring said so. An UPDATE has exactly one SET
+// clause, so a second SET at the same depth is a new statement -- which is what
+// `UPDATE t SET c = 1 SET @x = 2` means, written without a separator. A MERGE
+// has one per WHEN branch and T-SQL requires the terminating semicolon, so
+// every SET inside it is a clause and a bare SET after it cannot occur.
+//
+// A semicolon already ends a statement before this is asked, so the ordinary
+// spelling of either never reaches the question.
+func (p sqlServerRoutineBodyParser) setClauseBelongsToStatement(statementStartIdx, keywordIdx int) bool {
+	if p.statementOpensWith(statementStartIdx, "MERGE") {
+		return true
+	}
+	if !p.statementOpensWith(statementStartIdx, "UPDATE") {
+		return false
+	}
+	return !p.hasSetBetween(statementStartIdx, keywordIdx)
+}
+
+// statementOpensWith reports whether the statement's first word is one of the
+// given keywords.
+//
+// The statement kind cannot answer this: an UPDATE is classified raw, which is
+// also what an unrecognized statement is classified as.
+func (p sqlServerRoutineBodyParser) statementOpensWith(statementStartIdx int, keywords ...string) bool {
+	if statementStartIdx < 0 || statementStartIdx >= len(p.tokens) {
+		return false
+	}
+	if p.tokens[statementStartIdx].Type != lexer.TokenIdentifier {
+		return false
+	}
+	value := strings.ToUpper(p.tokens[statementStartIdx].Value)
+	return slices.Contains(keywords, value)
+}
+
+// hasSetBetween reports whether a SET already appears inside the statement.
+func (p sqlServerRoutineBodyParser) hasSetBetween(fromIdx, toIdx int) bool {
+	for i := fromIdx + 1; i < toIdx && i < len(p.tokens); i++ {
+		if p.tokens[i].MatchIdentifierValue("SET") {
+			return true
+		}
+	}
+	return false
 }
 
 func sqlServerRoutinePreviousSignificantIsOperator(tokens []lexer.Token, idx int, operator string) bool {

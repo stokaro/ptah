@@ -373,19 +373,15 @@ func TestDeriveRoutines_ATSQLBodyResolvesTheWritesItsSplitterModels(t *testing.T
 	}
 }
 
-// TestDeriveRoutines_ATSQLUpdateFailsClosedUntilTheSplitterIsFixed pins the one
-// that does not.
+// TestDeriveRoutines_ATSQLUpdateResolvesNowThatItArrivesWhole replaces the test
+// that pinned its failure.
 //
-// The T-SQL splitter treats every SET as the start of a statement, so `UPDATE t
-// SET c = 1` arrives as `raw` = `UPDATE t` and `assignment` = `SET c = 1` and
-// neither half is an update (stokaro/ptah#2451). What matters here is that the
-// routine is reported as not fully resolved rather than as writing nothing:
-// the most common write in a procedure is invisible, and a caller must be able
-// to see that it is.
-//
-// This test is expected to change when #2451 lands. Assert the failure it
-// produces, so the repair is visible here instead of arriving unnoticed.
-func TestDeriveRoutines_ATSQLUpdateFailsClosedUntilTheSplitterIsFixed(t *testing.T) {
+// The T-SQL splitter used to treat every SET as the start of a statement, so
+// `UPDATE t SET c = 1` arrived as `raw` = `UPDATE t` and `assignment` = `SET c
+// = 1` and neither half was an update. The previous test asserted exactly that
+// failure so the repair would be visible here rather than arriving unnoticed --
+// and it was: it reddened the moment stokaro/ptah#2451 landed.
+func TestDeriveRoutines_ATSQLUpdateResolvesNowThatItArrivesWhole(t *testing.T) {
 	c := qt.New(t)
 
 	result := schemalineage.DeriveRoutines(&schemamodel.Database{
@@ -394,9 +390,7 @@ func TestDeriveRoutines_ATSQLUpdateFailsClosedUntilTheSplitterIsFixed(t *testing
 		},
 	}, "sqlserver")
 
-	c.Assert(result.Writes, qt.HasLen, 0)
-	c.Assert(result.Undecided, qt.HasLen, 1)
-	c.Assert(result.Undecided[0].Reason, qt.Contains, "beginning UPDATE was not recognized")
+	c.Assert(writeTargets(result), qt.DeepEquals, []string{"t.c:update"})
 }
 
 // TestDeriveRoutines_AMySQLBranchIsUnresolvedRatherThanEmpty is the property

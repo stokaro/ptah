@@ -159,15 +159,13 @@ name, instead of being analyzed by whichever parser was reachable.
 | --- | --- |
 | the PostgreSQL family | every writing statement, including the ones inside an `IF` or a loop |
 | `mysql`, `mariadb` | every writing statement at the top level of the body |
-| `sqlserver` | `INSERT`, `DELETE` and `TRUNCATE`; an `UPDATE` is reported unresolved |
+| `sqlserver` | every writing statement at the top level of the body |
 | any other | nothing, reported as having no routine-body analysis |
 
-Two limits in that table are the body models rather than this analysis. The
-MySQL and T-SQL models carry no statements inside a branch, so an `IF` is
-reported as a statement whose contents could not be read -- not as a branch that
-writes nothing. And the T-SQL splitter treats every `SET` as the start of a
-statement, so `UPDATE t SET c = 1` arrives as two statements and neither is an
-update.
+One limit in that table is the body model rather than this analysis. The MySQL
+and T-SQL models carry no statements inside a branch, so an `IF` is reported as
+a statement whose contents could not be read -- not as a branch that writes
+nothing.
 
 That distinction is the whole point of reading the list. A routine reported with
 writes and nothing else would say its reads are none rather than unknown.
