@@ -238,6 +238,13 @@ Read the columns as follows.
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 | `--stabilize-for` | `duration` | `0s` | `PTAH_STABILIZE_FOR` | — |
 
+**`ptah inference describe`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--spec` | `string` | — | `PTAH_SPEC` | — |
+
 **`ptah inference evaluate`**
 
 | Flag | Type | Default | Environment variable | Notes |

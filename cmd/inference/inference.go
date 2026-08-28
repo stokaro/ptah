@@ -26,6 +26,7 @@ derived from the input.
 The verbs follow the lifecycle. Each one is a decision an operator takes
 separately:
 
+  describe   what a specification says, without a database
   plan       what would happen, and where each of its answers came from
   prepare    create the target column, its metadata and the outbox
   backfill   embed the source into the new generation, resumably
@@ -44,6 +45,7 @@ cutting over does not make the old generation disposable.`,
 		SilenceUsage: true,
 	}
 
+	cmd.AddCommand(newDescribeCommand())
 	cmd.AddCommand(newPlanCommand())
 	cmd.AddCommand(newPrepareCommand())
 	cmd.AddCommand(newBackfillCommand())

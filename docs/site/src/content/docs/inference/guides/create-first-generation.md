@@ -45,8 +45,17 @@ the one everything here assumes. Alternatives are in
 ## Write the specification
 
 Start from the one in [Quick start](../../quick-start/) and change the source,
-the model, and the target. Then check it against your database without running
-anything:
+the model, and the target. Then read back what it says, without a database:
+
+```bash
+ptah inference describe --spec spec.yaml
+```
+
+That reports the generation identity, whether it can be rebuilt, what would
+leave the database, and the objects it would create. It is the check to run
+while writing the file, because every other verb needs a live PostgreSQL.
+
+Then check it against your database without running anything:
 
 ```bash
 ptah inference plan --spec spec.yaml --db-url "$DB"
