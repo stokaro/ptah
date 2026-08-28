@@ -16,12 +16,15 @@ import (
 // fkColumnTypeChangeInputs is the shared scenario for issue #694: posts.user_id
 // widens from INTEGER to BIGINT while carrying a foreign key to users(id).
 func fkColumnTypeChangeInputs() (*difftypes.SchemaDiff, *schemamodel.Database) {
+	// The column is declared once and reaches the plan twice: as the operand the
+	// modification carries, and as the declaration the foreign key is read from.
+	userID := schemamodel.Field{Name: "user_id", Type: "BIGINT", StructName: "Post", Nullable: false, Foreign: "users(id)"}
 	diff := &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{
 			{
 				TableName: "posts",
 				ColumnsModified: []difftypes.ColumnDiff{
-					{ColumnName: "user_id", Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
+					{ColumnName: "user_id", Desired: userID, Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
 				},
 			},
 		},
@@ -33,7 +36,7 @@ func fkColumnTypeChangeInputs() (*difftypes.SchemaDiff, *schemamodel.Database) {
 		},
 		Fields: []schemamodel.Field{
 			{Name: "id", Type: "BIGINT", StructName: "User", Primary: true},
-			{Name: "user_id", Type: "BIGINT", StructName: "Post", Nullable: false, Foreign: "users(id)"},
+			userID,
 		},
 	}
 	return diff, desired

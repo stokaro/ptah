@@ -43,6 +43,7 @@ import (
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/internal/txrequire"
 	"go.5x5.cz/ptah/migration/diffpolicy"
+	"go.5x5.cz/ptah/migration/internal/generatedschema"
 	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/safety"
@@ -2126,7 +2127,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// of theirs names a table as that database had it.
 		DeclaredTables: priorTables(prior),
 		TablesRemoved:  deporder.TableDropOrder(diff.TablesAdded.Names(), schema), // Tables to add become tables to remove
-		TablesModified: reverseTableDiffs(diff.TablesModified),
+		TablesModified: reverseTableDiffs(diff.TablesModified, prior),
 
 		// Reverse enum operations
 		EnumsAdded:    diff.EnumsRemoved, // Enums to remove become enums to add
@@ -3026,14 +3027,14 @@ func defaultForeignKeyConstraintName(tableName string, columns []string) string 
 }
 
 // reverseTableDiffs reverses table modifications for down migrations
-func reverseTableDiffs(tableDiffs []difftypes.TableDiff) []difftypes.TableDiff {
+func reverseTableDiffs(tableDiffs []difftypes.TableDiff, prior *schemamodel.Database) []difftypes.TableDiff {
 	reversed := make([]difftypes.TableDiff, len(tableDiffs))
 	for i, tableDiff := range tableDiffs {
 		reversed[i] = difftypes.TableDiff{
 			TableName:       tableDiff.TableName,
 			ColumnsAdded:    tableDiff.ColumnsRemoved, // Columns to remove become columns to add
 			ColumnsRemoved:  tableDiff.ColumnsAdded,   // Columns to add become columns to remove
-			ColumnsModified: reverseColumnDiffs(tableDiff.ColumnsModified),
+			ColumnsModified: reverseColumnDiffs(tableDiff.ColumnsModified, tableDiff.TableName, prior),
 			// The three Desired/Current pairs below carry BOTH sides for the
 			// reason each of their doc comments gives, which is exactly so a
 			// reversal can swap them. None of them was swapped, or carried at
@@ -3048,7 +3049,22 @@ func reverseTableDiffs(tableDiffs []difftypes.TableDiff) []difftypes.TableDiff {
 }
 
 // reverseColumnDiffs reverses column modifications for down migrations
-func reverseColumnDiffs(columnDiffs []difftypes.ColumnDiff) []difftypes.ColumnDiff {
+// reverseColumnDiffs turns the forward direction's column modifications into
+// the rollback's, giving each the column the PRE-CHANGE database held.
+//
+// The operand is resolved against prior rather than carried across. A forward
+// modification's Desired is the column the change moved TO, and re-rendering
+// that on the way back would restore the state being rolled back -- the same
+// direction-dependent operand every reversal in this file resolves rather than
+// inherits.
+//
+// A column prior does not describe leaves the operand zero, which the planners
+// report rather than render.
+func reverseColumnDiffs(
+	columnDiffs []difftypes.ColumnDiff,
+	tableName string,
+	prior *schemamodel.Database,
+) []difftypes.ColumnDiff {
 	reversed := make([]difftypes.ColumnDiff, len(columnDiffs))
 	for i, columnDiff := range columnDiffs {
 		// For column changes, we need to reverse the direction of changes
@@ -3067,6 +3083,7 @@ func reverseColumnDiffs(columnDiffs []difftypes.ColumnDiff) []difftypes.ColumnDi
 		reversed[i] = difftypes.ColumnDiff{
 			ColumnName: columnDiff.ColumnName,
 			Changes:    reversedChanges,
+			Desired:    priorColumn(prior, tableName, columnDiff.ColumnName),
 		}
 	}
 	return reversed
@@ -3783,6 +3800,26 @@ func priorRLSPolicy(
 }
 
 // priorTableSchema is the schema the pre-change database declares a table under.
+// priorColumn answers with the named column of the named table as the
+// pre-change database held it, folded the same way the comparison folds a
+// declaration so an embedded column is found under the name it renders with.
+func priorColumn(prior *schemamodel.Database, tableName, columnName string) schemamodel.Field {
+	if prior == nil {
+		return schemamodel.Field{}
+	}
+	for _, table := range prior.Tables {
+		if table.Name != tableName && table.QualifiedName() != tableName {
+			continue
+		}
+		for _, field := range generatedschema.FieldsForTable(prior, table) {
+			if field.Name == columnName {
+				return field
+			}
+		}
+	}
+	return schemamodel.Field{}
+}
+
 func priorTableSchema(prior *schemamodel.Database, tableName string) string {
 	for _, table := range prior.Tables {
 		if table.Name == tableName {

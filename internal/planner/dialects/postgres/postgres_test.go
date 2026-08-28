@@ -822,6 +822,17 @@ func TestPlanner_GenerateMigrationSQL_IndexesRemoved(t *testing.T) {
 func TestPlanner_RecreatesGeneratedColumnOnExpressionChange(t *testing.T) {
 	c := qt.New(t)
 
+	// Declared once and used twice: the column the plan renders is the operand
+	// the modification carries, and an operand disagreeing with the declaration
+	// it is applied against would be a state no comparison produces.
+	slug := schemamodel.Field{
+		StructName:          "User",
+		Name:                "slug",
+		Type:                "TEXT",
+		Nullable:            true,
+		GeneratedExpression: "lower(name)",
+		GeneratedKind:       "STORED",
+	}
 	diff := &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{
 			{
@@ -829,6 +840,7 @@ func TestPlanner_RecreatesGeneratedColumnOnExpressionChange(t *testing.T) {
 				ColumnsModified: []difftypes.ColumnDiff{
 					{
 						ColumnName: "slug",
+						Desired:    slug,
 						Changes: map[string]string{
 							"generated": "STORED upper(name) -> STORED lower(name)",
 						},
@@ -841,16 +853,7 @@ func TestPlanner_RecreatesGeneratedColumnOnExpressionChange(t *testing.T) {
 		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users"},
 		},
-		Fields: []schemamodel.Field{
-			{
-				StructName:          "User",
-				Name:                "slug",
-				Type:                "TEXT",
-				Nullable:            true,
-				GeneratedExpression: "lower(name)",
-				GeneratedKind:       "STORED",
-			},
-		},
+		Fields: []schemamodel.Field{slug},
 	}
 
 	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
@@ -865,6 +868,14 @@ func TestPlanner_RecreatesGeneratedColumnOnExpressionChange(t *testing.T) {
 func TestPlanner_GeneratedColumnExpressionChangeOnPostgres16RequiresManualMigration(t *testing.T) {
 	c := qt.New(t)
 
+	slug := schemamodel.Field{
+		StructName:          "User",
+		Name:                "slug",
+		Type:                "TEXT",
+		Nullable:            true,
+		GeneratedExpression: "lower(name)",
+		GeneratedKind:       "STORED",
+	}
 	diff := &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{
 			{
@@ -872,6 +883,7 @@ func TestPlanner_GeneratedColumnExpressionChangeOnPostgres16RequiresManualMigrat
 				ColumnsModified: []difftypes.ColumnDiff{
 					{
 						ColumnName: "slug",
+						Desired:    slug,
 						Changes: map[string]string{
 							"generated": "STORED upper(name) -> STORED lower(name)",
 						},
@@ -884,16 +896,7 @@ func TestPlanner_GeneratedColumnExpressionChangeOnPostgres16RequiresManualMigrat
 		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users"},
 		},
-		Fields: []schemamodel.Field{
-			{
-				StructName:          "User",
-				Name:                "slug",
-				Type:                "TEXT",
-				Nullable:            true,
-				GeneratedExpression: "lower(name)",
-				GeneratedKind:       "STORED",
-			},
-		},
+		Fields: []schemamodel.Field{slug},
 	}
 
 	nodes, err := postgres.NewWithCapabilities(capability.Postgres16()).GenerateMigrationAST(diff, desired)
@@ -911,6 +914,19 @@ func TestPlanner_GeneratedColumnExpressionChangeOnPostgres16RequiresManualMigrat
 func TestPlanner_RecreatesEmbeddedGeneratedColumnOnExpressionChange(t *testing.T) {
 	c := qt.New(t)
 
+	// The operand is the column as the declaration writes it, inside the embedded
+	// struct. Folding that struct into its host is the COMPARISON's job now, and
+	// TestCompare_AnEmbeddedColumnsModificationCarriesTheFoldedColumn is where it
+	// is asserted; what this test holds is that the plan renders the operand it is
+	// handed.
+	slug := schemamodel.Field{
+		StructName:          "ComputedFields",
+		Name:                "slug",
+		Type:                "TEXT",
+		Nullable:            true,
+		GeneratedExpression: "lower(name)",
+		GeneratedKind:       "STORED",
+	}
 	diff := &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{
 			{
@@ -918,6 +934,7 @@ func TestPlanner_RecreatesEmbeddedGeneratedColumnOnExpressionChange(t *testing.T
 				ColumnsModified: []difftypes.ColumnDiff{
 					{
 						ColumnName: "slug",
+						Desired:    slug,
 						Changes: map[string]string{
 							"generated": "STORED upper(name) -> STORED lower(name)",
 						},
@@ -930,16 +947,7 @@ func TestPlanner_RecreatesEmbeddedGeneratedColumnOnExpressionChange(t *testing.T
 		Tables: []schemamodel.Table{
 			{StructName: "User", Name: "users"},
 		},
-		Fields: []schemamodel.Field{
-			{
-				StructName:          "ComputedFields",
-				Name:                "slug",
-				Type:                "TEXT",
-				Nullable:            true,
-				GeneratedExpression: "lower(name)",
-				GeneratedKind:       "STORED",
-			},
-		},
+		Fields: []schemamodel.Field{slug},
 		EmbeddedFields: []schemamodel.EmbeddedField{
 			{
 				StructName:       "User",
@@ -954,7 +962,7 @@ func TestPlanner_RecreatesEmbeddedGeneratedColumnOnExpressionChange(t *testing.T
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `ALTER TABLE "users" ALTER COLUMN "slug" SET EXPRESSION AS (lower(name));`)
-	c.Assert(sql, qt.Not(qt.Contains), "Could not find field definition")
+	c.Assert(sql, qt.Not(qt.Contains), "carries no column definition")
 }
 
 func TestPlanner_GenerateMigrationSQL_TablesRemoved(t *testing.T) {

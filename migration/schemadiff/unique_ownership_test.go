@@ -64,7 +64,10 @@ func TestCompareWithDialect_UniqueIndexRemovalKeepsColumnDifferenceVisible(t *te
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.DeepEquals, []difftypes.ColumnDiff{{
 		ColumnName: "email",
-		Changes:    map[string]string{"unique": "true -> false"},
+		// The operand is the column the declaration wrote, taken from the
+		// declaration this comparison was given rather than restated.
+		Desired: desired.Fields[0],
+		Changes: map[string]string{"unique": "true -> false"},
 	}})
 	c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{{
@@ -88,7 +91,10 @@ func TestCompareWithDialect_FieldUniqueStillOwnsMissingUniqueness(t *testing.T) 
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.DeepEquals, []difftypes.ColumnDiff{{
 		ColumnName: "email",
-		Changes:    map[string]string{"unique": "false -> true"},
+		// The operand is the column the declaration wrote, taken from the
+		// declaration this comparison was given rather than restated.
+		Desired: desired.Fields[0],
+		Changes: map[string]string{"unique": "false -> true"},
 	}})
 }
 
@@ -376,7 +382,10 @@ func TestCompareWithDialect_FilteredDatabaseIndexCannotHideUniqueRemoval(t *test
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.DeepEquals, []difftypes.ColumnDiff{{
 		ColumnName: "email",
-		Changes:    map[string]string{"unique": "true -> false"},
+		// The operand is the column the declaration wrote, taken from the
+		// declaration this comparison was given rather than restated.
+		Desired: desired.Fields[0],
+		Changes: map[string]string{"unique": "true -> false"},
 	}})
 	c.Assert(diff.IndexRemovals(), qt.HasLen, 0)
 }
@@ -394,7 +403,10 @@ func TestCompareWithDialect_PartialUniqueIndexDoesNotOwnColumnUniqueness(t *test
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.DeepEquals, []difftypes.ColumnDiff{{
 		ColumnName: "email",
-		Changes:    map[string]string{"unique": "true -> false"},
+		// The operand is the column the declaration wrote, taken from the
+		// declaration this comparison was given rather than restated.
+		Desired: desired.Fields[0],
+		Changes: map[string]string{"unique": "true -> false"},
 	}})
 }
 
