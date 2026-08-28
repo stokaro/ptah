@@ -170,10 +170,20 @@ func ExtensionsWithSemantics(
 
 	// Find removed extensions (exist in database but not in generated schema)
 	// Note: Ignored extensions are already filtered out, so they will never be marked for removal
+	//
+	// An extension a declared column's TYPE comes from is not unrequired merely
+	// because no extension annotation names it. `vector(384)` is a declaration
+	// that pgvector is needed, and dropping it is the plan contradicting its
+	// own CREATE TABLE (stokaro/ptah#2389).
+	needed := extensionsDeclaredTypesNeed(desired)
 	for extensionName, databaseExtension := range dbExtensions {
-		if _, exists := genExtensions[extensionName]; !exists {
-			diff.ExtensionsRemoved = append(diff.ExtensionsRemoved, extensionFromCatalog(databaseExtension))
+		if _, exists := genExtensions[extensionName]; exists {
+			continue
 		}
+		if needed[extensionName] {
+			continue
+		}
+		diff.ExtensionsRemoved = append(diff.ExtensionsRemoved, extensionFromCatalog(databaseExtension))
 	}
 
 	// A description that does not describe extensions is not a description of a
