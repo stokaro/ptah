@@ -45,7 +45,7 @@ func TestPlannerCreatesTableWithInlineConstraints(t *testing.T) {
 			},
 		},
 	}
-	diff := &difftypes.SchemaDiff{TablesAdded: []string{"users"}}
+	diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "users"}}}
 
 	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.SQLite)
 	c.Assert(err, qt.IsNil)
@@ -88,7 +88,7 @@ func TestPlannerCreatesAddedTablesWithQualifiedConstraintDiffs(t *testing.T) {
 		}},
 	}
 	diff := &difftypes.SchemaDiff{
-		TablesAdded:      []string{"posts", "users"},
+		TablesAdded:      difftypes.TableChanges{{Name: "posts"}, {Name: "users"}},
 		ConstraintsAdded: []string{"fk_posts_user"},
 		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 			Name:          "fk_posts_user",
@@ -871,7 +871,7 @@ func TestPlannerRejectsSQLiteExcludeConstraint(t *testing.T) {
 			ExcludeElements: "room_id WITH =",
 		}},
 	}
-	diff := &difftypes.SchemaDiff{TablesAdded: []string{"bookings"}}
+	diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "bookings"}}}
 
 	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.SQLite)
 

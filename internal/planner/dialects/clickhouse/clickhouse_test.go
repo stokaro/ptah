@@ -40,7 +40,7 @@ func TestGenerateMigrationAST_AddTableDropTableAndAlter(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		TablesAdded:   []string{"events"},
+		TablesAdded:   difftypes.TableChanges{{Name: "events"}},
 		TablesRemoved: []string{"legacy"},
 		TablesModified: []difftypes.TableDiff{
 			{
@@ -309,7 +309,7 @@ func TestGenerateMigrationAST_TableAdditionPreservesStructuralIdentity(t *testin
 	}
 
 	nodes, err := clickhouse.New().GenerateMigrationAST(
-		&difftypes.SchemaDiff{TablesAdded: []string{"tenant.data"}},
+		&difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "tenant.data"}}},
 		desired,
 	)
 

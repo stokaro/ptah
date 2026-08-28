@@ -170,9 +170,9 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 			diff := tt.diff
 			if diff == nil {
 				// Default: emit FKs for all tables in TablesAdded.
-				tablesAdded := make([]string, 0, len(tt.desired.Tables))
+				tablesAdded := make(difftypes.TableChanges, 0, len(tt.desired.Tables))
 				for _, table := range tt.desired.Tables {
-					tablesAdded = append(tablesAdded, table.Name)
+					tablesAdded = append(tablesAdded, difftypes.TableCreation{Name: table.Name})
 				}
 				diff = &difftypes.SchemaDiff{TablesAdded: tablesAdded}
 			}

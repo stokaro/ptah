@@ -22,7 +22,7 @@ func TestPlanner_SequencesAdded_OrderedBeforeTablesWithOwnershipAfter(t *testing
 		SequencesAdded: difftypes.SequenceChanges{
 			{Name: "order_seq", AsType: "bigint", Cache: new(int64(20)), OwnedBy: "orders.id"},
 		},
-		TablesAdded: []string{"orders"},
+		TablesAdded: difftypes.TableChanges{{Name: "orders"}},
 	}
 	desired := &schemamodel.Database{
 		Sequences: []schemamodel.Sequence{

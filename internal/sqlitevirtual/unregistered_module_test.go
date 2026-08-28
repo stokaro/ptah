@@ -686,7 +686,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			database: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: []string{"audit"},
+				TablesAdded: difftypes.TableChanges{{Name: "audit"}},
 				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 					{Name: "audit_chk", TableName: "audit", Type: "CHECK"},
 				},
@@ -706,7 +706,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			database: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: []string{"main.audit"},
+				TablesAdded: difftypes.TableChanges{{Name: "main.audit"}},
 				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 					{Name: "audit_chk", TableName: "audit", Type: "CHECK"},
 				},
@@ -720,7 +720,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			database: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: []string{"AUDIT"},
+				TablesAdded: difftypes.TableChanges{{Name: "AUDIT"}},
 				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 					{Name: "audit_chk", TableName: "audit", Type: "CHECK"},
 				},
@@ -736,7 +736,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			database: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: []string{"main.audit"},
+				TablesAdded: difftypes.TableChanges{{Name: "main.audit"}},
 				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
 					{Name: "docs_content_chk", TableName: "docs_content", Type: "CHECK"},
 				},
@@ -1145,7 +1145,7 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			dialect:  "sqlite",
 			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			database: holdingFTS4,
-			forward:  &difftypes.SchemaDiff{TablesAdded: []string{"audit"}},
+			forward:  &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "audit"}}},
 			reverse:  removing("audit"),
 			wantErr:  false,
 		},
@@ -1157,7 +1157,7 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			dialect:         "sqlite",
 			env:             envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			database:        holdingFTS4,
-			forward:         &difftypes.SchemaDiff{TablesAdded: []string{"audit"}},
+			forward:         &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "audit"}}},
 			reverse:         removing("docs_content"),
 			wantErr:         true,
 			wantUnsupported: true,
@@ -1174,7 +1174,7 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			dialect:  "sqlite",
 			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			database: holdingFTS4,
-			forward:  &difftypes.SchemaDiff{TablesAdded: []string{"main.audit"}},
+			forward:  &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "main.audit"}}},
 			reverse:  removing("audit"),
 			wantErr:  false,
 		},
@@ -1311,7 +1311,7 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			database: holdingFTS4,
 			forward:  removing("docs_content"),
-			reverse:  &difftypes.SchemaDiff{TablesAdded: []string{"docs_content"}},
+			reverse:  &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "docs_content"}}},
 			wantErr:  false,
 		},
 		{

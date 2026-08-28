@@ -116,7 +116,7 @@ func TestPlanner_GenerateMigrationAST_TablesAdded(t *testing.T) {
 		{
 			name: "single table added",
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: []string{"users"},
+				TablesAdded: difftypes.TableChanges{{Name: "users"}},
 			},
 			desired: &schemamodel.Database{
 				Tables: []schemamodel.Table{
@@ -141,7 +141,7 @@ func TestPlanner_GenerateMigrationAST_TablesAdded(t *testing.T) {
 		{
 			name: "composite primary key is created with new table",
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: []string{"memberships"},
+				TablesAdded: difftypes.TableChanges{{Name: "memberships"}},
 			},
 			desired: &schemamodel.Database{
 				Tables: []schemamodel.Table{{
@@ -432,7 +432,7 @@ func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 	}
 
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: []string{"test_table"},
+		TablesAdded: difftypes.TableChanges{{Name: "test_table"}},
 	}
 
 	planner := mysql.New()

@@ -215,7 +215,7 @@ func TestGenerateMigrationAST_ClickHouseRolesArePlannedBeforeTheGrantsThatNameTh
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		TablesAdded:         []string{"events"},
+		TablesAdded:         difftypes.TableChanges{{Name: "events"}},
 		RolesAdded:          difftypes.RoleChanges{{Name: "reporting"}},
 		GrantsRemoved:       []difftypes.GrantRef{rbacGrant("DROP")},
 		GrantOptionsRevoked: []difftypes.GrantRef{rbacGrant("ALTER")},

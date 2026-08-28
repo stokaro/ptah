@@ -170,7 +170,7 @@ func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
 				}
 			},
 			notDescribed: coverage.Set{}.WithObject(coverage.Schema, "extra"),
-			read:         func(diff *difftypes.SchemaDiff) []string { return diff.TablesAdded },
+			read:         func(diff *difftypes.SchemaDiff) []string { return diff.TablesAdded.Names() },
 			wantWithheld: []coverage.Object{{Kind: coverage.Schema, Name: "extra.b"}},
 		},
 	}
@@ -231,7 +231,7 @@ func TestAnUndeclaredReadPlansEveryAdditionAndWithholdsNothing(t *testing.T) {
 					Tables: []schemamodel.Table{{Name: "b", Schema: "extra", StructName: "B"}},
 				}
 			},
-			read:        func(diff *difftypes.SchemaDiff) []string { return diff.TablesAdded },
+			read:        func(diff *difftypes.SchemaDiff) []string { return diff.TablesAdded.Names() },
 			wantPlanned: []string{"extra.b"},
 		},
 	}

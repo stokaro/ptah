@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/crdbttl"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/spannerttl"
@@ -140,10 +141,22 @@ func TablesAndColumnsWithGeneratedExpressions(
 		semantics,
 	)
 
-	// Find added and removed tables
+	// Find added and removed tables.
+	//
+	// A creation carries what CREATE TABLE renders from rather than a name a
+	// planner would have to resolve back into a declaration: this table's
+	// columns, with embedded fields already folded in, and the enums those
+	// columns name (stokaro/ptah#2315).
+	allFields := fromschema.ProcessEmbeddedFields(desired.EmbeddedFields, desired.Fields)
 	for identity, table := range genTables {
 		if _, exists := dbTables[identity]; !exists {
-			diff.TablesAdded = append(diff.TablesAdded, tableDiffName(table.Schema, table.Name, dialect))
+			fields := tableFields(allFields, table)
+			diff.TablesAdded = append(diff.TablesAdded, difftypes.TableCreation{
+				Name:   tableDiffName(table.Schema, table.Name, dialect),
+				Table:  table,
+				Fields: fields,
+				Enums:  fromschema.EnumsFor(fields, desired.Enums),
+			})
 		}
 	}
 
@@ -237,14 +250,16 @@ func TablesAndColumnsWithGeneratedExpressions(
 	// so a table in an unread schema cannot be planned safely; it is withheld
 	// and named rather than dropped in silence.
 	keptTables, withheldTables := keepPlannedAdditions(cov,
-		coverage.Schema, diff.TablesAdded, tableSchemaOnly, itself, unguardedCreations(),
+		coverage.Schema, diff.TablesAdded, tableCreationSchemaOnly, tableCreationName, unguardedCreations(),
 	)
 	diff.TablesAdded = keptTables
 	cov.recordUndecidedAdditions(withheldTables)
 	diff.TablesRemoved = keepPlannedRemovals(cov, coverage.Schema, diff.TablesRemoved, tableSchemaOnly)
 
 	// Sort for consistent output
-	sort.Strings(diff.TablesAdded)
+	sort.Slice(diff.TablesAdded, func(i, j int) bool {
+		return diff.TablesAdded[i].Name < diff.TablesAdded[j].Name
+	})
 	sort.Strings(diff.TablesRemoved)
 	sort.Slice(diff.TablesModified, func(i, j int) bool {
 		return diff.TablesModified[i].TableName < diff.TablesModified[j].TableName
@@ -313,3 +328,29 @@ func rowDeletionPolicyChange(
 	}
 	return &difftypes.RowDeletionPolicyChange{Desired: desired.Clone(), Current: current.Clone()}
 }
+
+// tableFields is the columns one table owns, in declaration order.
+//
+// The renderer filters the whole list by struct name anyway, so a pre-filtered
+// list renders exactly what the whole one did -- and the caller no longer has
+// to be handed every column of every table to render one.
+func tableFields(fields []schemamodel.Field, table schemamodel.Table) []schemamodel.Field {
+	owned := make([]schemamodel.Field, 0, len(fields))
+	for _, field := range fields {
+		if field.StructName == table.StructName {
+			owned = append(owned, field)
+		}
+	}
+	return owned
+}
+
+// tableCreationSchemaOnly and tableCreationName are the coverage filter's two
+// accessors for a creation, reading the name the diff carries rather than one
+// derived from the declaration: the comparison qualifies a name per dialect,
+// and a filter asking a different question than the plan does would withhold
+// the wrong tables.
+func tableCreationSchemaOnly(creation difftypes.TableCreation) (string, []string) {
+	return tableSchemaOnly(creation.Name)
+}
+
+func tableCreationName(creation difftypes.TableCreation) string { return creation.Name }

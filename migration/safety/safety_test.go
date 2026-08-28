@@ -18,7 +18,7 @@ func TestClassifySchemaDiff_HighestSeverity(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: []string{"users"},
+		TablesAdded: difftypes.TableChanges{{Name: "users"}},
 		TablesModified: []difftypes.TableDiff{
 			{
 				TableName:      "products",

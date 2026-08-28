@@ -16,7 +16,7 @@ func TestPlanner_LiteralDotAndQualifiedTablesRemainDistinct(t *testing.T) {
 	c := qt.New(t)
 	desired := literalDotAndQualifiedSchema()
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: []string{`"tenant.data"`, "tenant.data"},
+		TablesAdded: difftypes.TableChanges{{Name: `"tenant.data"`}, {Name: "tenant.data"}},
 		IndexesAdded: []difftypes.IndexRef{
 			{Name: "literal_lookup", TableName: `"tenant.data"`},
 			{Name: "qualified_lookup", TableName: "tenant.data"},

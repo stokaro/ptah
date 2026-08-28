@@ -111,7 +111,7 @@ func coverageCases() []coverageCase {
 			},
 			database:     func() *catalog.Database { return &catalog.Database{} },
 			notDescribed: coverage.Set{}.WithObject(coverage.Schema, "extra"),
-			read:         func(diff *difftypes.SchemaDiff) []string { return diff.TablesAdded },
+			read:         func(diff *difftypes.SchemaDiff) []string { return diff.TablesAdded.Names() },
 			wantWithout:  []string{"extra.b"},
 		},
 	}

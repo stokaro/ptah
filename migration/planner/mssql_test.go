@@ -16,7 +16,7 @@ func TestGenerateSchemaDiffSQL_SQLServerCreatesTSQL(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: []string{"users"},
+		TablesAdded: difftypes.TableChanges{{Name: "users"}},
 		IndexesAdded: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "dbo.users"},
 		},

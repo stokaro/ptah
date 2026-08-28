@@ -319,7 +319,7 @@ func TestCompareWithDatabaseInfo_SQLServerCatalogTableIdentity(t *testing.T) {
 			IdentifierSemantics: semantics,
 		}, nil)
 		c.Assert(err, qt.IsNil)
-		c.Assert(diff.TablesAdded, qt.DeepEquals, []string{"dbo.users"})
+		c.Assert(diff.TablesAdded.Names(), qt.DeepEquals, []string{"dbo.users"})
 		c.Assert(diff.TablesRemoved, qt.DeepEquals, []string{"dbo.Users"})
 	})
 }
@@ -459,7 +459,7 @@ func TestCompareWithOptions_SQLServerIncompleteSnapshotFallsBackConservatively(t
 
 	diff := schemadiff.CompareWithOptions(desired, database, opts)
 
-	c.Assert(diff.TablesAdded, qt.DeepEquals, []string{"dbo.Users"})
+	c.Assert(diff.TablesAdded.Names(), qt.DeepEquals, []string{"dbo.Users"})
 	c.Assert(diff.TablesRemoved, qt.DeepEquals, []string{"dbo.Orders"})
 	c.Assert(diff.IdentifierSemantics, qt.IsNotNil)
 	c.Assert(

@@ -167,7 +167,7 @@ func (p *Planner) enumDialectLabel() string {
 }
 
 func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	orderedTables := deporder.TablesForCreate(desired, diff.TablesAdded)
+	orderedTables := deporder.TablesForCreate(desired, diff.TablesAdded.Names())
 
 	// Phase 1: Create tables without foreign key constraints
 	result = p.createTablesWithoutForeignKeys(result, desired, orderedTables)
@@ -176,7 +176,7 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff, de
 }
 
 func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	return p.addForeignKeyConstraints(result, desired, deporder.TablesForCreate(desired, diff.TablesAdded))
+	return p.addForeignKeyConstraints(result, desired, deporder.TablesForCreate(desired, diff.TablesAdded.Names()))
 }
 
 // createTablesWithoutForeignKeys creates all tables without foreign key constraints

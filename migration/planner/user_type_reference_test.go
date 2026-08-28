@@ -66,7 +66,7 @@ func TestGenerateSchemaDiffSQLQualifiesDeclaredUserTypes(t *testing.T) {
 			c := qt.New(t)
 
 			schema := plannerUserTypeSchema(test.columnType)
-			diff := &difftypes.SchemaDiff{TablesAdded: []string{"t"}}
+			diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "t"}}}
 
 			sql, err := planner.GenerateSchemaDiffSQL(diff, schema, platform.Postgres)
 
@@ -129,7 +129,7 @@ func TestGenerateSchemaDiffSQLLeavesABuiltInTypeAlone(t *testing.T) {
 					{Name: "positive_int", Schema: "advm", BaseType: "integer"},
 				},
 			}
-			diff := &difftypes.SchemaDiff{TablesAdded: []string{"t"}}
+			diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "t"}}}
 
 			sql, err := planner.GenerateSchemaDiffSQL(diff, schema, platform.Postgres)
 

@@ -359,7 +359,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLNewTableInlineKeyAvoidsPhantomCleanup(
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &difftypes.SchemaDiff{TablesAdded: []string{"children"}}
+			diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "children"}}}
 			desired := &schemamodel.Database{
 				Tables: []schemamodel.Table{
 					{StructName: "Parent", Name: "parents"},
