@@ -2,8 +2,9 @@
 
 Ptah can generate SQL from a language-agnostic YAML schema file instead of
 scanning Go source annotations. The YAML frontend builds the same
-`goschema.Database` intermediate representation as Go annotations, then runs the
-normal finalization, dependency ordering, AST conversion, and dialect renderers.
+`schemamodel.Database` intermediate representation as Go annotations, then
+runs the normal finalization, dependency ordering, AST conversion, and dialect
+renderers.
 
 Use YAML input when schema ownership should not depend on Go structs or when a
 tool needs to generate a Ptah schema from another language.

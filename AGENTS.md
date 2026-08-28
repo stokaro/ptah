@@ -11,10 +11,18 @@ replacement for the Atlas CLI.
 
 `--dialect` accepts every spelling `core/platform.NormalizeDialect` resolves:
 the canonical names declared in `core/platform/constants.go`, plus the aliases
-that fold onto them. A verb's `--dialect` help line prints the canonical list,
-so read that answer out of the binary rather than out of a count written down
-here. A dialect being accepted is not a promise that every construct renders on
-it. `SERIAL`, for one, is refused by name on ClickHouse, CockroachDB and Spanner
+that fold onto them, and `core/platform/capability.DefaultDialects()` returns
+the canonical set itself. Read the answer out of those declarations rather than
+out of a count written down here — and not out of a `--dialect` help line
+either, because each verb registering the flag states its own range.
+`ptah schema render` prints the canonical names; `ptah migrations lint` and
+`ptah sql lint` print a shorter list that leaves Oracle out. That omission is
+deliberate, since no lint rule analyzes Oracle, and
+`internal/lintdialect/dialect.go` and `cmd/sql/sql.go` each say so where their
+list is declared.
+
+A dialect being accepted is not a promise that every construct renders on it.
+`SERIAL`, for one, is refused by name on ClickHouse, CockroachDB and Spanner
 rather than downgraded behind the author's back, which is the compatibility
 policy below applied to dialects.
 [`docs/capabilities.md`](docs/capabilities.md) explains how capability sets
