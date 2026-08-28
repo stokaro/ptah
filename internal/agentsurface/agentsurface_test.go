@@ -106,3 +106,152 @@ func TestDatabaseSafe_ExcludesWhatCanDestroySomething(t *testing.T) {
 		})
 	}
 }
+
+// TestClassification_TheMaintenanceVerbsShareOneAnswer pins that three names
+// for one code path carry one class.
+//
+// `migrations edit`, `migrations rebase` and `migrations rm` each rewrite the
+// migration directory through internal/migrateops, which opens no database, and
+// each reaches one only through migratemaint.Options.Guard, which reads the
+// applied set and refuses an already-applied version unless --force. They were
+// classified reads, writes and writes, and the two writers said so in their
+// reasons: "updates the target's tracking table", for commands that never write
+// a row. The reference started printing those reasons in a user-facing column,
+// which is how the disagreement became visible.
+//
+// `migrations repair` is the control. It is the neighbouring verb that really
+// does rewrite revision metadata, so a change that made every migrations verb a
+// reader would fail here rather than agree with itself.
+func TestClassification_TheMaintenanceVerbsShareOneAnswer(t *testing.T) {
+	tests := []struct {
+		name        string
+		verb        string
+		wantTarget  agentsurface.Target
+		wantScratch agentsurface.Scratch
+		wantSafe    bool
+	}{
+		{name: "edit", verb: "migrations edit", wantTarget: agentsurface.TargetReads, wantScratch: agentsurface.ScratchNone, wantSafe: true},
+		{name: "rebase", verb: "migrations rebase", wantTarget: agentsurface.TargetReads, wantScratch: agentsurface.ScratchNone, wantSafe: true},
+		{name: "rm", verb: "migrations rm", wantTarget: agentsurface.TargetReads, wantScratch: agentsurface.ScratchNone, wantSafe: true},
+		{name: "repair, which really writes", verb: "migrations repair", wantTarget: agentsurface.TargetWrites, wantScratch: agentsurface.ScratchNone, wantSafe: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			verb, known := agentsurface.Lookup(test.verb)
+
+			c.Assert(known, qt.IsTrue)
+			c.Assert(verb.Target, qt.Equals, test.wantTarget)
+			c.Assert(verb.Scratch, qt.Equals, test.wantScratch)
+			c.Assert(verb.DatabaseSafe(), qt.Equals, test.wantSafe)
+		})
+	}
+}
+
+// TestClassification_TheMaintenanceReasonsDescribeTheReadTheyDo is the same
+// finding read off the prose rather than off the class.
+//
+// A class is four values and a reason is a sentence, so a class can be
+// corrected while the sentence that argued for the wrong one stays. The three
+// share a clause because they share the function that does the work.
+func TestClassification_TheMaintenanceReasonsDescribeTheReadTheyDo(t *testing.T) {
+	const guarded = "the target is read to check whether the migration has been applied"
+
+	for _, name := range []string{"migrations edit", "migrations rebase", "migrations rm"} {
+		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
+			verb, known := agentsurface.Lookup(name)
+
+			c.Assert(known, qt.IsTrue)
+			c.Assert(verb.Reason, qt.Contains, guarded)
+			c.Assert(verb.Reason, qt.Not(qt.Contains), "updates the target")
+		})
+	}
+}
+
+// TestNodes_AgreesWithWalkAboutWhatIsALeaf keeps the two views of the one
+// traversal from becoming two traversals.
+//
+// [agentsurface.Walk] is expressed over [agentsurface.Nodes], and this is what
+// says so out loud: if a second walk were ever introduced for the reference,
+// the two would agree on the day it was written and would come apart at the
+// next change to how cobra finishes building a tree.
+func TestNodes_AgreesWithWalkAboutWhatIsALeaf(t *testing.T) {
+	c := qt.New(t)
+
+	walked := make(map[string]bool)
+	for _, leaf := range agentsurface.Walk(root.NewRootCommand()) {
+		walked[leaf.Name] = true
+	}
+	nodes := agentsurface.Nodes(root.NewRootCommand())
+
+	// A walk that reached nothing would agree with a node list that reached
+	// nothing, and the subtests below would all be absent rather than failing.
+	c.Assert(len(walked) > 0, qt.IsTrue)
+	c.Assert(len(nodes) > len(walked), qt.IsTrue)
+
+	for _, node := range nodes {
+		t.Run(node.Name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(walked[node.Name], qt.Equals, node.Leaf)
+		})
+	}
+}
+
+// TestNodes_RecordsWhatAFlagCarries pins the four facts a command reference
+// needs and the two the walk previously threw away.
+//
+// The environment variable is the one worth naming here. It is asked of the
+// COMMAND's own installed binding, not derived from a prefix written down
+// here, and not read back out of the `[env: PTAH_X]` suffix the installer
+// appends to the usage string. Both shortcuts answer for the four
+// `ptah completion` shells, which cobra supplies after the binding was
+// installed and which therefore read no variable at all.
+func TestNodes_RecordsWhatAFlagCarries(t *testing.T) {
+	tests := []struct {
+		name        string
+		command     string
+		flag        string
+		wantType    string
+		wantDefault string
+		wantEnv     string
+	}{
+		{
+			name: "a bound string flag", command: "migrations up", flag: "db-url",
+			wantType: "string", wantDefault: "", wantEnv: "PTAH_DB_URL",
+		},
+		{
+			name: "a flag no variable may set", command: "schema apply", flag: "auto-approve",
+			wantType: "bool", wantDefault: "false", wantEnv: "",
+		},
+		{
+			name: "a flag on a command cobra supplied afterwards", command: "completion zsh", flag: "no-descriptions",
+			wantType: "bool", wantDefault: "false", wantEnv: "",
+		},
+		{
+			name: "a variable whose name loses a separator", command: "migrations up", flag: "migration-lock-timeout",
+			wantType: "string", wantDefault: "", wantEnv: "PTAH_MIGRATION_LOCK_TIMEOUT",
+		},
+	}
+
+	registered := make(map[string]map[string]agentsurface.Flag)
+	for _, node := range agentsurface.Nodes(root.NewRootCommand()) {
+		registered[node.Name] = make(map[string]agentsurface.Flag)
+		for _, flag := range node.Flags {
+			registered[node.Name][flag.Name] = flag
+		}
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			flag, found := registered[test.command][test.flag]
+
+			c.Assert(found, qt.IsTrue)
+			c.Assert(flag.Type, qt.Equals, test.wantType)
+			c.Assert(flag.Default, qt.Equals, test.wantDefault)
+			c.Assert(flag.Environment, qt.Equals, test.wantEnv)
+		})
+	}
+}

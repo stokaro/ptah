@@ -904,9 +904,16 @@ shared Ptah capability
 native Ptah adapter
 ```
 
-Today `cmd/ptah-compat/main.go` is the only non-test file outside `cmd/atlas`
-that imports `cmd/atlas`; native command packages reference it from tests only.
-Keep it that way.
+Two non-test files outside `cmd/atlas` import `cmd/atlas`, and the second is an
+exception rather than a precedent. `cmd/ptah-compat/main.go` is the binary.
+`internal/cmd/cmdref/main.go` is the command-reference generator, which has to
+construct BOTH trees in one process to say what the compatibility surface holds
+and what `PTAH_ATLAS_STRICT_COMPAT=1` takes out of it; a generator that shelled
+out to a built binary would be measuring whatever was on `PATH`. It ships in no
+binary and no product code imports it, so the direction this rule protects --
+shared capability below, two adapters above -- is untouched. Native command
+packages still reference `cmd/atlas` from tests only. Keep it that way: a third
+importer needs the same kind of reason written down beside it.
 
 ### Classify the change in the PR
 

@@ -18,13 +18,171 @@ a drop-in replacement for scripts that need Atlas-style root commands; the main
 written as `ptah-compat <command> ...`, the name the binary ships under. Each
 verb section names its native `ptah` twin.
 
+## Every Atlas-compatible command
+
+The index below is generated from the `ptah-compat` command tree, so it names
+every command path the binary answers to and no path it does not. Rows are
+sorted, which keeps a namespace's verbs together, and the **What it does**
+cell is the command's own one-line description. What each verb does in full,
+and where it differs from Atlas, is the section for that verb further down;
+`version`, `license` and `completion` are under
+[Utility commands](#utility-commands).
+
+A row marked `group` is a namespace rather than an operation. `ptah-compat
+help` and the four `ptah-compat completion` shells have rows because the
+shipped binary answers to them; `__complete` and `__completeNoDesc` ship too,
+and no walk of the tree reaches them, so they are named here rather than
+listed.
+
+<!-- BEGIN GENERATED COMPAT COMMANDS -->
+| Command | What it does | Notes |
+| --- | --- | --- |
+| `ptah-compat completion` | Generate the autocompletion script for the specified shell | group |
+| `ptah-compat completion bash` | Generate the autocompletion script for bash | — |
+| `ptah-compat completion fish` | Generate the autocompletion script for fish | — |
+| `ptah-compat completion powershell` | Generate the autocompletion script for powershell | — |
+| `ptah-compat completion zsh` | Generate the autocompletion script for zsh | — |
+| `ptah-compat help` | Help about any command | — |
+| `ptah-compat license` | Print license information | — |
+| `ptah-compat migrate` | Atlas migrate commands | group |
+| `ptah-compat migrate apply` | Apply pending migrations | — |
+| `ptah-compat migrate checkpoint` | Squash migration history into a cumulative-schema checkpoint | — |
+| `ptah-compat migrate diff` | Compute migration diff against a desired schema | — |
+| `ptah-compat migrate down` | Roll back migrations | — |
+| `ptah-compat migrate edit` | Edit a migration file and update the directory checksum | — |
+| `ptah-compat migrate hash` | Write or update the migration directory checksum | — |
+| `ptah-compat migrate import` | Import migrations from another tool | — |
+| `ptah-compat migrate lint` | Lint migration files | — |
+| `ptah-compat migrate ls` | List the migration files in the directory | — |
+| `ptah-compat migrate new` | Create a new migration file | — |
+| `ptah-compat migrate push` | Push migration directory to a remote registry | — |
+| `ptah-compat migrate rebase` | Move a migration to the end of history and update the directory checksum | — |
+| `ptah-compat migrate rm` | Remove a migration file and update the directory checksum | — |
+| `ptah-compat migrate set` | Set migration revision state | — |
+| `ptah-compat migrate show` | Print the contents of one or more migration files | — |
+| `ptah-compat migrate status` | Show migration status | — |
+| `ptah-compat migrate test` | Run declarative migration tests against a dev database | — |
+| `ptah-compat migrate validate` | Validate migration directory integrity | — |
+| `ptah-compat schema` | Atlas schema commands | group |
+| `ptah-compat schema apply` | Apply a desired schema to a database | — |
+| `ptah-compat schema clean` | Clean database schema objects | — |
+| `ptah-compat schema diff` | Diff desired schema against another schema | — |
+| `ptah-compat schema fmt` | Format schema files | — |
+| `ptah-compat schema inspect` | Inspect a database schema | — |
+| `ptah-compat schema plan` | Plan a declarative migration for a schema transition | group |
+| `ptah-compat schema plan approve` | Approve a plan in a remote registry | — |
+| `ptah-compat schema plan lint` | Run analysis (migration linting) on a plan file | — |
+| `ptah-compat schema plan list` | List plans in a remote registry | — |
+| `ptah-compat schema plan new` | Create a new plan file for the schema transition | — |
+| `ptah-compat schema plan pull` | Pull a plan from a remote registry | — |
+| `ptah-compat schema plan push` | Push a plan to a remote registry | — |
+| `ptah-compat schema plan rm` | Remove a plan from a remote registry | — |
+| `ptah-compat schema plan test` | Run schema plan tests | — |
+| `ptah-compat schema plan validate` | Validate a plan file against the schema transition | — |
+| `ptah-compat schema push` | Push schema state to a remote registry | — |
+| `ptah-compat schema stats` | Schema statistics | group |
+| `ptah-compat schema stats inspect` | Count the objects in a live schema and emit them as OpenMetrics | — |
+| `ptah-compat schema test` | Run declarative schema tests against a dev database | — |
+| `ptah-compat schema validate` | Report structural problems in a desired schema without a database | — |
+| `ptah-compat script` | Run a declared data operation | group |
+| `ptah-compat script exec` | Run a declared exec script | — |
+| `ptah-compat script loop` | Run a declared loop script | — |
+| `ptah-compat script query` | Run a declared query script | — |
+| `ptah-compat version` | Print Ptah version information | — |
+<!-- END GENERATED COMPAT COMMANDS -->
+
 ## Utility commands
 
-| Command | Behavior |
-| --- | --- |
-| `ptah-compat version` | Prints Ptah build information. |
-| `ptah-compat license` | Prints Ptah's MIT license and the license-clean Atlas compatibility notice. |
-| `ptah-compat completion <shell>` | Generates shell completion output for the Atlas-compatible command tree under the invoked executable name. |
+`ptah-compat version` prints Ptah build information.
+
+`ptah-compat license` prints Ptah's MIT license and the license-clean Atlas
+compatibility notice.
+
+`ptah-compat completion <shell>` generates completion output for the
+Atlas-compatible command tree under the invoked executable name, so an
+installation renamed for a drop-in completes under the name it was invoked as.
+The [Atlas compatibility overview](../../atlas/overview/) documents that
+rename.
+
+## Commands strict mode removes
+
+`PTAH_ATLAS_STRICT_COMPAT=1` selects a separate Atlas Community Edition policy,
+which constructs a smaller command tree before dispatch. The
+[Atlas compatibility overview](../../atlas/overview/) states what that selector
+is for and what else it narrows. This section is the command-level answer: 28
+of the 52 paths above leave the surface, and they do not all answer the same
+way.
+
+- **refused** — 12 paths stay registered and hidden, so each one's own gate
+  answers and the message names the path that was invoked.
+- **refused by its group** — 10 paths sit below a group that is itself refused.
+  The group's gate answers and names **the group**, never the path invoked, so
+  a script searching the message for its own verb finds nothing.
+- **absorbed by the group** — 2 paths are unregistered below a group cobra will
+  run, so that group runs in their place.
+- **unknown command** — 4 paths are unregistered below the root, which cobra
+  cannot run, so it reports the first segment it could not resolve.
+
+Two paths exit `0`, and they are the ones worth knowing about.
+`ptah-compat migrate ls` and `ptah-compat migrate show` are not registered
+under `PTAH_ATLAS_STRICT_COMPAT=1`, so the `migrate` group runs in their place:
+it writes its own help to standard output, writes nothing to standard error,
+and exits `0`. A caller testing only the exit code cannot tell that from the
+verb having run and found nothing. Test for the output the verb produces, or
+leave the variable unset.
+
+A real invocation usually carries a flag, and that one fails:
+
+```text
+$ PTAH_ATLAS_STRICT_COMPAT=1 ptah-compat migrate ls --dir file://migrations
+Error: unknown flag: --dir
+```
+
+The message is about a flag, for a verb that is not there, and it exits `1`.
+
+The fourth class names only the first segment it could not resolve, so the
+sub-verb never appears:
+
+```text
+$ PTAH_ATLAS_STRICT_COMPAT=1 ptah-compat script query
+Error: unknown command "script" for "atlas"
+```
+
+The name in that message is the one the binary reports itself under rather than
+the file name it was installed as.
+
+<!-- BEGIN GENERATED STRICT COMPAT CLASSIFICATION -->
+| Command | Under `PTAH_ATLAS_STRICT_COMPAT=1` | Exit | Stream | The answer names |
+| --- | --- | --- | --- | --- |
+| `ptah-compat migrate checkpoint` | refused | `1` | stderr | `ptah-compat migrate checkpoint` |
+| `ptah-compat migrate down` | refused | `1` | stderr | `ptah-compat migrate down` |
+| `ptah-compat migrate edit` | refused | `1` | stderr | `ptah-compat migrate edit` |
+| `ptah-compat migrate ls` | absorbed by the group | `0` | stdout | `ptah-compat migrate` |
+| `ptah-compat migrate push` | refused | `1` | stderr | `ptah-compat migrate push` |
+| `ptah-compat migrate rebase` | refused | `1` | stderr | `ptah-compat migrate rebase` |
+| `ptah-compat migrate rm` | refused | `1` | stderr | `ptah-compat migrate rm` |
+| `ptah-compat migrate show` | absorbed by the group | `0` | stdout | `ptah-compat migrate` |
+| `ptah-compat migrate test` | refused | `1` | stderr | `ptah-compat migrate test` |
+| `ptah-compat schema plan` | refused | `1` | stderr | `ptah-compat schema plan` |
+| `ptah-compat schema plan approve` | refused by its group | `1` | stderr | `ptah-compat schema plan` |
+| `ptah-compat schema plan lint` | refused by its group | `1` | stderr | `ptah-compat schema plan` |
+| `ptah-compat schema plan list` | refused by its group | `1` | stderr | `ptah-compat schema plan` |
+| `ptah-compat schema plan new` | refused by its group | `1` | stderr | `ptah-compat schema plan` |
+| `ptah-compat schema plan pull` | refused by its group | `1` | stderr | `ptah-compat schema plan` |
+| `ptah-compat schema plan push` | refused by its group | `1` | stderr | `ptah-compat schema plan` |
+| `ptah-compat schema plan rm` | refused by its group | `1` | stderr | `ptah-compat schema plan` |
+| `ptah-compat schema plan test` | refused by its group | `1` | stderr | `ptah-compat schema plan` |
+| `ptah-compat schema plan validate` | refused by its group | `1` | stderr | `ptah-compat schema plan` |
+| `ptah-compat schema push` | refused | `1` | stderr | `ptah-compat schema push` |
+| `ptah-compat schema stats` | refused | `1` | stderr | `ptah-compat schema stats` |
+| `ptah-compat schema stats inspect` | refused by its group | `1` | stderr | `ptah-compat schema stats` |
+| `ptah-compat schema test` | refused | `1` | stderr | `ptah-compat schema test` |
+| `ptah-compat schema validate` | refused | `1` | stderr | `ptah-compat schema validate` |
+| `ptah-compat script` | unknown command | `1` | stderr | `ptah-compat script` |
+| `ptah-compat script exec` | unknown command | `1` | stderr | `ptah-compat script` |
+| `ptah-compat script loop` | unknown command | `1` | stderr | `ptah-compat script` |
+| `ptah-compat script query` | unknown command | `1` | stderr | `ptah-compat script` |
+<!-- END GENERATED STRICT COMPAT CLASSIFICATION -->
 
 ## Migrate commands
 
@@ -1453,6 +1611,21 @@ report without findings describes the rules rather than the plan. The analyzer
 coverage itself is not private to this verb — it is the published set in
 [Lint rules](../lint-rules/), reported identically by `ptah-compat migrate
 lint`.
+
+#### Registry sub-verbs
+
+`ptah-compat schema plan approve`, `list`, `pull`, `push` and `rm` are
+registered and not implemented, because each targets an account-bound hosted
+registry protocol. `--help` reports that the command is not implemented and
+exits `0`; direct execution reports the same and exits `1`:
+
+```text
+$ ptah-compat schema plan list
+Error: ptah-compat schema plan list is not implemented by Ptah
+```
+
+`new`, `validate`, `lint` and `test` are the sub-verbs that run locally, and
+each has a section above.
 
 ### `ptah-compat schema diff`
 

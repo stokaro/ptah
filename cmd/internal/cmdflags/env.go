@@ -11,13 +11,12 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"go.5x5.cz/ptah/internal/envbinding"
 	"go.5x5.cz/ptah/internal/envbool"
 )
 
 const (
-	disableEnvAnnotation   = "ptah.env.disabled"
 	forwardedEnvAnnotation = "ptah.env.forwarded"
-	installedEnvAnnotation = "ptah.env.installed"
 	appliedEnvAnnotation   = "ptah.env.applied"
 )
 
@@ -58,10 +57,7 @@ func DisableEnvBinding(flags *pflag.FlagSet, name string) error {
 	if flag == nil {
 		return fmt.Errorf("flag %q does not exist", name)
 	}
-	if flag.Annotations == nil {
-		flag.Annotations = make(map[string][]string)
-	}
-	flag.Annotations[disableEnvAnnotation] = []string{"true"}
+	envbinding.Disable(flag)
 	return nil
 }
 
@@ -99,10 +95,7 @@ func installEnvValidationRecursive(prefix string, cmd *cobra.Command) {
 				return argsValidator(cmd, args)
 			}
 		}
-		if cmd.Annotations == nil {
-			cmd.Annotations = make(map[string]string)
-		}
-		cmd.Annotations[installedEnvAnnotation] = prefix
+		envbinding.MarkInstalled(cmd, prefix)
 	}
 	for _, child := range cmd.Commands() {
 		installEnvValidationRecursive(prefix, child)
@@ -110,7 +103,8 @@ func installEnvValidationRecursive(prefix string, cmd *cobra.Command) {
 }
 
 func envBindingInstalled(cmd *cobra.Command, prefix string) bool {
-	return cmd.Annotations[installedEnvAnnotation] == prefix
+	installed, ok := envbinding.InstalledPrefix(cmd)
+	return ok && installed == prefix
 }
 
 func annotateEnvRecursive(prefix string, visited map[*pflag.Flag]bool, cmd *cobra.Command) {
@@ -130,7 +124,7 @@ func annotateEnv(prefix string, visited map[*pflag.Flag]bool, flags *pflag.FlagS
 		if flag.Name == "help" {
 			return
 		}
-		if envBindingDisabled(flag) {
+		if envbinding.Disabled(flag) {
 			return
 		}
 
@@ -152,7 +146,7 @@ func applyEnv(prefix string, visited map[*pflag.Flag]bool, flags *pflag.FlagSet)
 		// not describe this one. Clearing it here, before anything can return,
 		// makes SetOnCommandLine answer for the run in progress.
 		clearEnvApplied(flag)
-		if flag.Name == "help" || envBindingDisabled(flag) {
+		if flag.Name == "help" || envbinding.Disabled(flag) {
 			return
 		}
 		if flag.Changed {
@@ -195,11 +189,6 @@ func setEnvValue(flags *pflag.FlagSet, flag *pflag.Flag, envName, value string) 
 	}
 	markEnvApplied(flag)
 	return nil
-}
-
-func envBindingDisabled(flag *pflag.Flag) bool {
-	values := flag.Annotations[disableEnvAnnotation]
-	return len(values) > 0 && values[0] == "true"
 }
 
 func markEnvApplied(flag *pflag.Flag) {
@@ -264,18 +253,14 @@ func MutuallyExclusiveOnCommandLine(flags *pflag.FlagSet, names ...string) error
 
 // EnvName returns the environment variable name for a Cobra flag.
 func EnvName(prefix, flagName string) string {
-	name := strings.NewReplacer("-", "_", ".", "_").Replace(flagName)
-	return strings.ToUpper(prefix + "_" + name)
+	return envbinding.Name(prefix, flagName)
 }
 
 // EnvBindingName returns the environment variable bound to flag when generic
 // binding is installed with prefix. Explicit-only flags and help have no
 // binding.
 func EnvBindingName(prefix string, flag *pflag.Flag) (string, bool) {
-	if flag == nil || flag.Name == "help" || envBindingDisabled(flag) {
-		return "", false
-	}
-	return EnvName(prefix, flag.Name), true
+	return envbinding.Of(prefix, flag)
 }
 
 func usageContainsEnv(usage string) bool {

@@ -121,6 +121,14 @@ var verbs = map[string]Verb{
 	"migrations down": {TargetWrites, ScratchRewrites,
 		"rolls back migrations against the target, after replaying and verifying the rollback " +
 			"plan in an ephemeral shadow database"},
+	// edit, rebase and rm are one code path with three names. Each rewrites the
+	// migration directory through internal/migrateops, which opens nothing, and
+	// each reaches a database only through migratemaint.Options.Guard, which
+	// reads the applied set and refuses an already-applied version unless
+	// --force. So all three read the target and none of them writes it; they
+	// carried two different classes until the reference started printing the
+	// reason, and a reader met "updates the target's tracking table" for a
+	// command that never writes a row.
 	"migrations edit": {TargetReads, ScratchNone,
 		"rewrites a migration file and re-hashes the directory; the target is read to check " +
 			"whether the migration has been applied"},
@@ -141,12 +149,14 @@ var verbs = map[string]Verb{
 		"downloads a migration directory from an OCI registry and writes it to disk"},
 	"migrations push": {TargetNone, ScratchNone,
 		"uploads a migration directory from disk to an OCI registry"},
-	"migrations rebase": {TargetWrites, ScratchNone,
-		"moves a migration to the end of history and updates the target's tracking table"},
+	"migrations rebase": {TargetReads, ScratchNone,
+		"re-timestamps a migration to the end of history and re-hashes the directory; the " +
+			"target is read to check whether the migration has been applied"},
 	"migrations repair": {TargetWrites, ScratchNone,
 		"rewrites revision metadata in the target's tracking table"},
-	"migrations rm": {TargetWrites, ScratchNone,
-		"deletes a migration, re-hashes the directory and updates the target's tracking table"},
+	"migrations rm": {TargetReads, ScratchNone,
+		"deletes a migration's file pair and re-hashes the directory; the target is read to " +
+			"check whether the migration has been applied"},
 	"migrations set": {TargetWrites, ScratchNone,
 		"sets the revision boundary in the target's tracking table to a named version"},
 	"migrations show": {TargetNone, ScratchNone,
@@ -156,7 +166,7 @@ var verbs = map[string]Verb{
 	"migrations tag": {TargetWrites, ScratchNone,
 		"records, lists or removes a tag in the target's tracking table; two of the three write"},
 	"migrations test": {TargetWrites, ScratchNone,
-		"runs declarative test cases against the database named by --db-url, whose own help " +
+		"runs declarative test cases against the database named by `--db-url`, whose own help " +
 			"calls it a \"Throwaway database URL\": the cases run raw SQL and apply schemas there"},
 	"migrations up": {TargetWrites, ScratchNone,
 		"runs pending migrations against the target"},
@@ -167,9 +177,9 @@ var verbs = map[string]Verb{
 	// project.
 	"project adopt": {TargetReads, ScratchNone,
 		"classifies every construct a project file declares as exact, compat-only or " +
-			"unsupported; --check reports that and writes nothing, the bare verb rewrites " +
+			"unsupported; `--check` reports that and writes nothing, the bare verb rewrites " +
 			"the compat-only spellings and refuses a project declaring anything " +
-			"unsupported, and --preflight also reads the revision history in the " +
+			"unsupported, and `--preflight` also reads the revision history in the " +
 			"project's database, writing nothing there"},
 	"project inspect": {TargetNone, ScratchNone,
 		"reads a project file and reports which of its settings Ptah acts on and which it " +
@@ -243,7 +253,7 @@ var verbs = map[string]Verb{
 	"schema stats": {TargetReads, ScratchNone,
 		"counts the objects in the target and emits them as OpenMetrics"},
 	"schema test": {TargetWrites, ScratchNone,
-		"runs declarative test cases against the database named by --db-url, whose own help " +
+		"runs declarative test cases against the database named by `--db-url`, whose own help " +
 			"calls it a \"Throwaway database URL\": measured on PostgreSQL 17.11, a case with an " +
 			"apply_schema step created a table there and an exec step inserted into it"},
 	"schema validate": {TargetNone, ScratchNone,

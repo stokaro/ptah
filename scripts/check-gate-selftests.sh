@@ -213,6 +213,23 @@ run_case check-agent-surface.sh \
 	"a verb row removed from the generated agent-surface table" \
 	"perl -0pi -e 's/^.*introspects the database and prints what it found.*\\n//m' docs/agent-surface.md"
 
+# Two fixtures, one per comparison mode. The gate checks three marker blocks and
+# one whole page, and a gate whose two rules are only ever broken together
+# cannot say which of them it still reads.
+#
+# Neither mutation writes a backtick or a dollar sign. The snippet is expanded
+# once by the caller and evaluated again by run_case, and a code span in a
+# generated table row would be command substitution on the second pass. `.`
+# matches the backtick in the pattern and perl's `\x60` writes one in the
+# replacement.
+run_case check-command-reference.sh \
+	"a verb row removed from the generated command index" \
+	"perl -0pi -e 's/^\| .ptah introspect. \|[^\n]*\n//m' docs/site/src/content/docs/reference/native-commands.md"
+
+run_case check-command-reference.sh \
+	"a flag's value type edited on the fully generated flag page" \
+	"perl -0pi -e 's/\*\*\x60ptah seed\x60\*\*.*?\| \x60--env\x60 \| \K\x60string\x60/\x60int\x60/s' docs/site/src/content/docs/reference/command-flags.md"
+
 run_case check-public-api.sh \
 	"an exported package with no doc comment" \
 	"mkdir -p gateselftest && printf 'package gateselftest\n\nfunc Exported() {}\n' >gateselftest/gateselftest.go"

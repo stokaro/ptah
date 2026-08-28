@@ -126,14 +126,14 @@ to rule out — so they are named here, where a claim nothing measures belongs.
 | `migrations plan` | reads | none | `--db-url` | reads the target and prints the migration SQL the difference implies, writing nothing |
 | `migrations pull` | none | none | — | downloads a migration directory from an OCI registry and writes it to disk |
 | `migrations push` | none | none | — | uploads a migration directory from disk to an OCI registry |
-| `migrations rebase` | **writes** | none | `--db-url` | moves a migration to the end of history and updates the target's tracking table |
+| `migrations rebase` | reads | none | `--db-url` | re-timestamps a migration to the end of history and re-hashes the directory; the target is read to check whether the migration has been applied |
 | `migrations repair` | **writes** | none | `--db-url` | rewrites revision metadata in the target's tracking table |
-| `migrations rm` | **writes** | none | `--db-url` | deletes a migration, re-hashes the directory and updates the target's tracking table |
+| `migrations rm` | reads | none | `--db-url` | deletes a migration's file pair and re-hashes the directory; the target is read to check whether the migration has been applied |
 | `migrations set` | **writes** | none | `--db-url` | sets the revision boundary in the target's tracking table to a named version |
 | `migrations show` | none | none | — | prints the SQL of one or more migration files, reading nothing but the files |
 | `migrations status` | reads | none | `--db-url` | reads the target's tracking table and reports which migrations are applied |
 | `migrations tag` | **writes** | none | `--db-url` | records, lists or removes a tag in the target's tracking table; two of the three write |
-| `migrations test` | **writes** | none | `--db-url` | runs declarative test cases against the database named by --db-url, whose own help calls it a "Throwaway database URL": the cases run raw SQL and apply schemas there |
+| `migrations test` | **writes** | none | `--db-url` | runs declarative test cases against the database named by `--db-url`, whose own help calls it a "Throwaway database URL": the cases run raw SQL and apply schemas there |
 | `migrations up` | **writes** | none | `--db-url` | runs pending migrations against the target |
 | `migrations validate` | none | **rewrites** | `--dev-url` | validates the directory against its integrity file; the dev database it names is "used to clean and replay migrations for SQL validation" |
 | `oci capabilities` | none | none | — | asks the registry behind a reference which features it supports, and prints them |
@@ -148,7 +148,7 @@ to rule out — so they are named here, where a claim nothing measures belongs.
 | `oci tag` | none | none | — | asks a registry to move a tag onto an artifact it already holds; nothing is uploaded |
 | `oci tags` | none | none | — | asks a registry for the tags one repository carries and prints them |
 | `oci verify` | none | none | — | checks an artifact against a verification policy before anything consumes it |
-| `project adopt` | reads | none | — | classifies every construct a project file declares as exact, compat-only or unsupported; --check reports that and writes nothing, the bare verb rewrites the compat-only spellings and refuses a project declaring anything unsupported, and --preflight also reads the revision history in the project's database, writing nothing there |
+| `project adopt` | reads | none | — | classifies every construct a project file declares as exact, compat-only or unsupported; `--check` reports that and writes nothing, the bare verb rewrites the compat-only spellings and refuses a project declaring anything unsupported, and `--preflight` also reads the revision history in the project's database, writing nothing there |
 | `project inspect` | none | none | — | reads a project file and reports which of its settings Ptah acts on and which it read and ignored; it opens no database |
 | `schema annotations` | none | none | — | exports the Go annotation metadata compiled into the binary, as JSON or a JSON Schema |
 | `schema apply` | **writes** | **rewrites** | `--db-url`, `--dev-url` | applies a desired schema to the target; the dev database is where "the plan is rehearsed on before touching the target" |
@@ -167,7 +167,7 @@ to rule out — so they are named here, where a claim nothing measures belongs.
 | `schema security` | reads | none | `--db-url` | reads the target's roles, grants and policies and reports security findings |
 | `schema serve` | reads | none | `--db-url` | serves a live read-only view of the schema over HTTP; it opens a listener, which is an exposure of its own even though the database is only read |
 | `schema stats` | reads | none | `--db-url` | counts the objects in the target and emits them as OpenMetrics |
-| `schema test` | **writes** | none | `--db-url` | runs declarative test cases against the database named by --db-url, whose own help calls it a "Throwaway database URL": measured on PostgreSQL 17.11, a case with an apply_schema step created a table there and an exec step inserted into it |
+| `schema test` | **writes** | none | `--db-url` | runs declarative test cases against the database named by `--db-url`, whose own help calls it a "Throwaway database URL": measured on PostgreSQL 17.11, a case with an apply_schema step created a table there and an exec step inserted into it |
 | `schema validate` | none | none | — | reports structural problems in a desired schema without a database |
 | `schema verify-approval` | none | none | — | checks a saved plan's signature against an allowed-signers file |
 | `seed` | **writes** | none | `--db-url` | applies environment-scoped SQL seed files to the database it is given |
@@ -216,6 +216,8 @@ permission.
 | `migrations plan` | reads the target and prints the migration SQL the difference implies, writing nothing |
 | `migrations pull` | downloads a migration directory from an OCI registry and writes it to disk |
 | `migrations push` | uploads a migration directory from disk to an OCI registry |
+| `migrations rebase` | re-timestamps a migration to the end of history and re-hashes the directory; the target is read to check whether the migration has been applied |
+| `migrations rm` | deletes a migration's file pair and re-hashes the directory; the target is read to check whether the migration has been applied |
 | `migrations show` | prints the SQL of one or more migration files, reading nothing but the files |
 | `migrations status` | reads the target's tracking table and reports which migrations are applied |
 | `oci capabilities` | asks the registry behind a reference which features it supports, and prints them |
@@ -230,7 +232,7 @@ permission.
 | `oci tag` | asks a registry to move a tag onto an artifact it already holds; nothing is uploaded |
 | `oci tags` | asks a registry for the tags one repository carries and prints them |
 | `oci verify` | checks an artifact against a verification policy before anything consumes it |
-| `project adopt` | classifies every construct a project file declares as exact, compat-only or unsupported; --check reports that and writes nothing, the bare verb rewrites the compat-only spellings and refuses a project declaring anything unsupported, and --preflight also reads the revision history in the project's database, writing nothing there |
+| `project adopt` | classifies every construct a project file declares as exact, compat-only or unsupported; `--check` reports that and writes nothing, the bare verb rewrites the compat-only spellings and refuses a project declaring anything unsupported, and `--preflight` also reads the revision history in the project's database, writing nothing there |
 | `project inspect` | reads a project file and reports which of its settings Ptah acts on and which it read and ignored; it opens no database |
 | `schema annotations` | exports the Go annotation metadata compiled into the binary, as JSON or a JSON Schema |
 | `schema approve` | signs a saved plan file with an SSH key and writes the signature beside it |

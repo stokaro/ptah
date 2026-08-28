@@ -32,6 +32,74 @@ Unset PTAH_ATLAS_STRICT_COMPAT to use Ptah's full compatibility surface.
 
 `
 
+// TestStrictCompatProcessAnswersEachRemovedClass drives the process for the
+// one inference in the generated strict-mode table.
+//
+// internal/cmdref classifies a removed path from the two trees alone: hidden in
+// strict is refused, absent below a hidden group is refused by that group,
+// absent below a RUNNABLE group is absorbed by it, and absent below anything
+// else is an unknown command. Three of those four are statements about the
+// tree. The third is a statement about cobra dispatch -- a runnable group given
+// an argument it cannot resolve prints its own help and exits 0 -- and the
+// table prints an exit code for it, so it is measured here rather than
+// asserted there.
+//
+// The exit-0 pair is why the column exists. A caller testing only the status
+// cannot tell `migrate ls` having been absorbed from `migrate ls` having run.
+func TestStrictCompatProcessAnswersEachRemovedClass(t *testing.T) {
+	c := qt.New(t)
+	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	tests := []struct {
+		name       string
+		args       []string
+		wantStdout string
+		wantStderr string
+		wantCode   int
+	}{
+		{
+			name:       "refused by its own gate",
+			args:       []string{"migrate", "checkpoint"},
+			wantStderr: "Abort: 'ptah-compat migrate checkpoint'" + strictCompatGateSuffix,
+			wantCode:   1,
+		},
+		{
+			name:       "refused by its group, which the abort names instead",
+			args:       []string{"schema", "plan", "approve"},
+			wantStderr: "Abort: 'ptah-compat schema plan'" + strictCompatGateSuffix,
+			wantCode:   1,
+		},
+		{
+			name:       "absorbed by a runnable group, on stdout, at exit 0",
+			args:       []string{"migrate", "ls"},
+			wantStdout: "Atlas migrate commands",
+			wantCode:   0,
+		},
+		{
+			name:       "unknown command, named by its top segment alone",
+			args:       []string{"script", "exec"},
+			wantStderr: `Error: unknown command "script" for "atlas"`,
+			wantCode:   1,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			stdout, stderr, code := runAtlasBinary(
+				compat,
+				[]string{"PTAH_ATLAS_STRICT_COMPAT=1"},
+				test.args...,
+			)
+
+			c.Assert(code, qt.Equals, test.wantCode)
+			c.Assert(strings.HasPrefix(stdout, test.wantStdout), qt.IsTrue,
+				qt.Commentf("stdout %q does not begin with %q", stdout, test.wantStdout))
+			c.Assert(strings.HasPrefix(stderr, test.wantStderr), qt.IsTrue,
+				qt.Commentf("stderr %q does not begin with %q", stderr, test.wantStderr))
+		})
+	}
+}
+
 func TestStrictCompatProcessUsesPtahGateDiagnostics(t *testing.T) {
 	c := qt.New(t)
 	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
