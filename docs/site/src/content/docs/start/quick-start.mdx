@@ -1,14 +1,16 @@
 ---
 title: Quick start
-description: Two quick starts, one decision — write the migration files yourself, or describe the schema you want and let Ptah change the database to match.
+description: Choose one of two schema quick starts. Persistent inference state uses a separate generation lifecycle.
 ---
 
 import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 
-Ptah is a schema management and database migration tool. It reads a live
-database, works out how that database differs from the schema you want, and
-changes it — either through migration files you keep in your repository, or
-directly.
+These quick starts cover schema changes. Ptah reads a live database, works out
+how it differs from the schema you want, and changes it through migration files
+you keep in your repository or through a direct apply.
+
+To replace an embedding model or preprocessing contract without overwriting
+active vectors, use [Inference migrations](../../operate/inference-migrations/).
 
 Which of those two you try first is the only decision on this page.
 
