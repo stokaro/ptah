@@ -611,6 +611,19 @@ privileges on the view and fails loudly if the engine refuses it, while a
 rollback drops and recreates, which always applies. Embedders that build a
 `ViewDiff` by hand and leave both fields empty get the forward answer.
 
+Two more modification entries carry the object they render rather than a
+reference to it. `migration/schemadiff/difftypes.ContinuousAggregateDiff` and
+`RoleDiff` each hold a `Desired` field, off the wire, holding the declaration
+the planner writes the change from: an aggregate modification is a drop and a
+create, and the create needs the schema, the name and the comment that the two
+body strings do not carry, while a role's `password_update_required` entry
+records only that a password has to be set and never the value. An embedder
+that builds either entry by hand and leaves `Desired` empty gets no statement
+for that entry. The field is also what makes a rollback correct: a reversal
+resolves it against the pre-change database, so a rolled-back aggregate is
+recreated from the definition that database held and a rolled-back password
+change sets nothing, the database holding no password to restore.
+
 `core/platform/identifier` exposes the reusable value types and conservative
 dialect defaults behind that contract.
 

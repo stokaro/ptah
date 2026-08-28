@@ -136,3 +136,49 @@ func TestGenerateDownMigration_ContinuousAggregateBodyComesFromTheComparison(t *
 	c.Assert(sql, qt.Contains, definition,
 		qt.Commentf("the rollback rebuilds the aggregate from the body the comparison carried"))
 }
+
+// TestGenerateDownMigration_ModifiedAggregateIsRecreatedFromThePriorDeclaration
+// pins the half of a modification the swapped bodies do not carry.
+//
+// A modification is a drop and a create, and the create renders from the
+// aggregate the change carries -- its schema, its name and its comment, none of
+// which are in the body strings. Reversing the bodies without reversing that
+// operand would have the rollback recreate the definition it is undoing.
+func TestGenerateDownMigration_ModifiedAggregateIsRecreatedFromThePriorDeclaration(t *testing.T) {
+	c := qt.New(t)
+
+	const priorDefinition = "SELECT time_bucket('30 min', ts) FROM readings"
+	const declaredBody = "SELECT time_bucket('1 hour', ts) FROM readings"
+	materializedOnly := true
+
+	desired := &schemamodel.Database{
+		ContinuousAggregates: []schemamodel.ContinuousAggregate{{
+			StructName: "Hourly", Name: "hourly", Schema: "public",
+			Body: declaredBody, MaterializedOnly: &materializedOnly,
+		}},
+	}
+	database := &catalog.Database{
+		ContinuousAggregates: []catalog.ContinuousAggregate{{
+			Schema: "public", Name: "hourly",
+			HypertableSchema: "public", HypertableName: "readings",
+			Definition: priorDefinition, MaterializedOnly: false,
+		}},
+	}
+
+	caps := capability.Postgres17().With(capability.ContinuousAggregates, true)
+	upDiff := schemadiff.CompareWithDialect(desired, database, platform.Postgres)
+	c.Assert(upDiff.ContinuousAggregatesModified, qt.HasLen, 1)
+
+	up, err := generateUpMigrationSQL(upDiff, desired, platform.Postgres, caps)
+	c.Assert(err, qt.IsNil)
+	c.Assert(up, qt.Contains, declaredBody)
+	c.Assert(up, qt.Contains, "timescaledb.materialized_only = true")
+
+	down, err := generateDownMigrationSQL(upDiff, desired, database, platform.Postgres, caps)
+	c.Assert(err, qt.IsNil)
+	c.Assert(down, qt.Contains, priorDefinition,
+		qt.Commentf("the rollback recreates the definition the database held"))
+	c.Assert(down, qt.Contains, "timescaledb.materialized_only = false")
+	c.Assert(down, qt.Not(qt.Contains), declaredBody,
+		qt.Commentf("the rollback must not recreate the body it is undoing"))
+}

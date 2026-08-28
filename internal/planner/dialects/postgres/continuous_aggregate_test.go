@@ -22,15 +22,18 @@ import (
 // out create-then-drop and end with no aggregate at all.
 func TestPlanner_ReplacesAContinuousAggregateInThatOrder(t *testing.T) {
 	c := qt.New(t)
-	declared := &schemamodel.Database{ContinuousAggregates: []schemamodel.ContinuousAggregate{
-		{Name: "hourly", Schema: "public", Body: "SELECT 2"},
-	}}
 
+	// The schema is empty on purpose. The aggregate the two halves render
+	// travels with the change, so the planner needs nothing else to write them
+	// (stokaro/ptah#2315).
 	nodes, err := postgres.New().GenerateMigrationAST(&difftypes.SchemaDiff{
 		ContinuousAggregatesModified: []difftypes.ContinuousAggregateDiff{{
 			Name: "public.hourly", OldBody: "SELECT 1", NewBody: "SELECT 2",
+			Desired: schemamodel.ContinuousAggregate{
+				Name: "hourly", Schema: "public", Body: "SELECT 2",
+			},
 		}},
-	}, declared)
+	}, &schemamodel.Database{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(continuousAggregateVerbs(nodes), qt.DeepEquals, []string{"drop:hourly", "create:hourly"})

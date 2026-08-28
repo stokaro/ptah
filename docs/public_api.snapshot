@@ -12902,6 +12902,18 @@ type ContinuousAggregateDiff struct {
     // OldMaterializedOnly and NewMaterializedOnly are the option's two values.
     OldMaterializedOnly bool `json:"old_materialized_only"`
     NewMaterializedOnly bool `json:"new_materialized_only"`
+
+    // Desired is the aggregate this change asks the database to hold.
+    //
+    // A modification is a drop followed by a create, and the create needs more
+    // than the two fields above: the schema and the name separately, and the
+    // comment. Carrying the object is what lets the planner render the change
+    // without being handed the schema it came out of (stokaro/ptah#2315).
+    //
+    // It stays off the wire. The bodies and the option are the change; this is
+    // the operand the renderer needs to write it, and a reader of a stored plan
+    // resolves the object for itself.
+    Desired schemamodel.ContinuousAggregate `json:"-"`
 }
     ContinuousAggregateDiff describes a continuous aggregate whose declaration
     differs from the one the catalog reports.
@@ -13516,6 +13528,18 @@ type RoleDiff struct {
     // Changes maps change types to their old->new value transitions
     // Format: "change_type" -> "old_value -> new_value"
     Changes map[string]string `json:"changes"`
+
+    // Desired is the role this change asks the database to hold.
+    //
+    // One entry needs it: a password change records only that one is required,
+    // because a comparison cannot read the value it is changing to out of the
+    // database. The value comes from the declaration, and carrying the role is
+    // what lets the planner reach it without being handed the schema
+    // (stokaro/ptah#2315).
+    //
+    // It stays off the wire, and here that is more than tidiness: this field
+    // holds a password.
+    Desired schemamodel.Role `json:"-"`
 }
     RoleDiff represents changes to PostgreSQL role definitions.
 

@@ -258,11 +258,12 @@ func diffCategoryFixtures() []categoryFixture {
 		{
 			"ContinuousAggregatesModified",
 			&difftypes.SchemaDiff{ContinuousAggregatesModified: []difftypes.ContinuousAggregateDiff{
-				{Name: "hourly", OldBody: "SELECT 1", NewBody: "SELECT 2"},
+				{
+					Name: "hourly", OldBody: "SELECT 1", NewBody: "SELECT 2",
+					Desired: schemamodel.ContinuousAggregate{Name: "hourly", Body: "SELECT 2"},
+				},
 			}},
-			&schemamodel.Database{ContinuousAggregates: []schemamodel.ContinuousAggregate{
-				{Name: "hourly", Body: "SELECT 2"},
-			}},
+			&schemamodel.Database{},
 		},
 		{
 			"SynonymsModified",
@@ -350,8 +351,12 @@ func diffCategoryFixtures() []categoryFixture {
 		{"RolesRemoved", &difftypes.SchemaDiff{RolesRemoved: difftypes.RoleChanges{{Name: "app"}}}, &schemamodel.Database{}},
 		{
 			"RolesModified",
-			&difftypes.SchemaDiff{RolesModified: []difftypes.RoleDiff{{RoleName: "app", Changes: map[string]string{"login": "false -> true"}}}},
-			&schemamodel.Database{Roles: []schemamodel.Role{{Name: "app", Login: true}}},
+			&difftypes.SchemaDiff{RolesModified: []difftypes.RoleDiff{{
+				RoleName: "app",
+				Changes:  map[string]string{"login": "false -> true"},
+				Desired:  schemamodel.Role{Name: "app", Login: true},
+			}}},
+			&schemamodel.Database{},
 		},
 		{
 			"GrantsAdded",
