@@ -53,8 +53,12 @@ be working; the fencing token says who may still *commit*, and a worker the run
 has moved past is refused before it touches your table.
 
 If the other worker is real, let it finish. If it is a process that died without
-releasing the lease, the token moves on when a new run takes over; run the
-command again and the new invocation becomes the holder.
+releasing the lease, run the command again: starting a verb takes the run, which
+moves the token past whatever the dead process held, and the new invocation
+becomes the holder.
+
+A lease that has expired does not stop its holder on its own. What stops it is a
+later worker taking the run.
 
 ## Verification found something
 

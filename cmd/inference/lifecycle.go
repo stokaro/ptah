@@ -111,6 +111,13 @@ func prepareConsistency(ctx context.Context, opened *session) (string, error) {
 }
 
 // createRun records the run, or reports the one that is already there.
+// defaultPrepareLease is how long the lease prepare takes is good for.
+//
+// Prepare does no long work, so this is short: it names the worker that
+// prepared the run and leaves a token a later claim moves past. The engine
+// takes its own, longer lease when it starts embedding.
+const defaultPrepareLease = time.Minute
+
 func createRun(
 	ctx context.Context, out io.Writer, opened *session, runID, worker, boundary string,
 ) error {
@@ -121,9 +128,16 @@ func createRun(
 		Target:          spec.Target.Table + "." + spec.Target.Column,
 		ProviderProfile: spec.Model.Provider, PtahVersion: "cli", PolicyDigest: "",
 		Phase: embedrun.PhasePrepared, Status: embedrun.StatusRunning,
-		LeaseOwner: worker, FencingToken: 1, SnapshotWatermark: boundary,
-		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+		SnapshotWatermark: boundary,
+		CreatedAt:         time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	}
+	// Claimed rather than written. `FencingToken: 1` in a literal is the
+	// mechanism's starting value and never its second, so a run created that
+	// way is one no later claim has anything to move past -- which is how a
+	// fence that is enforced on every write came to fence nothing
+	// (stokaro/ptah#2474).
+	run.Claim(worker, defaultPrepareLease)
+
 	err := opened.store.CreateRun(ctx, run)
 	switch {
 	case err == nil:

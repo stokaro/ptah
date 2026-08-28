@@ -96,12 +96,56 @@ type Engine struct {
 	Bounds embedrun.BatchBounds
 	// Worker names this process in the lease and in the audit trail.
 	Worker string
+	// LeaseFor is how long this worker's claim on the run is good for. Zero
+	// uses defaultLease.
+	//
+	// The lease says who SHOULD be working; the fencing token the claim issues
+	// says who may still commit. A lease that expires does not stop the holder
+	// -- only a later claim does, by moving the token past it.
+	LeaseFor time.Duration
 	// Now supplies the clock, so a test does not have to wait and a run does
 	// not have to guess. Nil uses time.Now.
 	Now func() time.Time
 }
 
 // now answers the current time.
+// defaultLease is how long a claim is good for when the caller names no
+// duration.
+//
+// Long enough that an ordinary batch does not outlive it, short enough that a
+// worker which died leaves a lease somebody can see has lapsed. It bounds
+// nothing on its own: what stops a lapsed holder committing is a later claim
+// moving the fencing token, not the clock.
+const defaultLease = 15 * time.Minute
+
+// claim takes the run for this worker and persists the token that fences the
+// last holder.
+//
+// Before any work rather than after it. The fencing token is enforced in the
+// store's own WHERE clause, so a worker whose token is behind is refused at the
+// moment it commits -- but only if somebody moved the token, and until
+// stokaro/ptah#2474 nobody did: `prepare` wrote 1 into the run and every verb
+// read it back unchanged. The mechanism was real and the event that exercises
+// it did not occur.
+//
+// The claim is saved before the loop starts, because a claim this process holds
+// and the store does not is a claim that fences nobody.
+func (e *Engine) claim(ctx context.Context, runID string) (embedrun.Run, int64, error) {
+	run, err := e.Store.Run(ctx, runID)
+	if err != nil {
+		return embedrun.Run{}, 0, fmt.Errorf("load run %s: %w", runID, err)
+	}
+	lease := e.LeaseFor
+	if lease <= 0 {
+		lease = defaultLease
+	}
+	token := run.Claim(e.Worker, lease)
+	if err := e.Store.SaveRun(ctx, run); err != nil {
+		return embedrun.Run{}, 0, fmt.Errorf("claim run %s: %w", runID, err)
+	}
+	return run, token, nil
+}
+
 func (e *Engine) now() time.Time {
 	if e.Now == nil {
 		return time.Now()
@@ -115,11 +159,10 @@ func (e *Engine) now() time.Time {
 // early can see exactly how far the work got rather than how far this process
 // believed it got.
 func (e *Engine) Backfill(ctx context.Context, runID string) (embedrun.Run, error) {
-	run, err := e.Store.Run(ctx, runID)
+	run, token, err := e.claim(ctx, runID)
 	if err != nil {
-		return embedrun.Run{}, fmt.Errorf("load run %s: %w", runID, err)
+		return embedrun.Run{}, err
 	}
-	token := run.FencingToken
 
 	for {
 		if err := ctx.Err(); err != nil {
