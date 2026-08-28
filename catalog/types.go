@@ -1088,8 +1088,12 @@ type Function struct {
 	Language       string `json:"language"`   // Function language (e.g., "plpgsql", "sql")
 	Security       string `json:"security"`   // Security context (e.g., "DEFINER", "INVOKER")
 	Volatility     string `json:"volatility"` // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
-	Body           string `json:"body"`       // Function body/implementation
-	Comment        string `json:"comment"`    // Function comment/description
+	// Settings are the routine's own configuration settings as the catalog
+	// reports them, each `name=value`. PostgreSQL keeps them in
+	// pg_proc.proconfig; a dialect without such a facility leaves this empty.
+	Settings []string `json:"settings,omitempty"`
+	Body     string   `json:"body"`    // Function body/implementation
+	Comment  string   `json:"comment"` // Function comment/description
 }
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.

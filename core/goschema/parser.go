@@ -21,6 +21,7 @@ import (
 	"go.5x5.cz/ptah/internal/chrefresh"
 	"go.5x5.cz/ptah/internal/crdbttl"
 	"go.5x5.cz/ptah/internal/dialectscope"
+	"go.5x5.cz/ptah/internal/routinesetting"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -1216,6 +1217,7 @@ func (s *schemaParseState) parseFunctionComment(comment *ast.Comment, structName
 		Language:   kv["language"],
 		Security:   kv["security"],
 		Volatility: kv["volatility"],
+		Settings:   routinesetting.NormalizeAll(splitRoutineSettings(kv["settings"])),
 		Body:       kv["body"],
 		Comment:    kv["comment"],
 		Dialects:   scope,
@@ -1933,4 +1935,16 @@ func targetNames(kv map[string]string) schemamodel.TargetNames {
 		GraphQL:  kv["graphql_name"],
 		Protobuf: kv["proto_name"],
 	}
+}
+
+// splitRoutineSettings reads the `settings` attribute, which carries several
+// `name=value` entries separated by `;`.
+//
+// A semicolon rather than a comma, because a value is itself comma-separated:
+// `search_path=pg_catalog, pg_temp` is one setting (stokaro/ptah#2356).
+func splitRoutineSettings(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return strings.Split(value, ";")
 }

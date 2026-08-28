@@ -333,6 +333,7 @@ func convertFunctions(database *schemamodel.Database, dbFunctions []catalog.Func
 			Language:   dbFunction.Language,
 			Security:   dbFunction.Security,
 			Volatility: dbFunction.Volatility,
+			Settings:   dbFunction.Settings,
 			Body:       dbFunction.Body,
 			Comment:    dbFunction.Comment,
 		}

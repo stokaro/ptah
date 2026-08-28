@@ -133,6 +133,7 @@ func toFunction(node *ast.CreateFunctionNode) schemamodel.Function {
 		Language:   node.Language,
 		Security:   node.Security,
 		Volatility: node.Volatility,
+		Settings:   node.Settings,
 		Body:       strings.TrimSpace(node.Body),
 		Comment:    node.Comment,
 	}

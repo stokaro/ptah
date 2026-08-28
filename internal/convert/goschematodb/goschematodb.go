@@ -512,6 +512,7 @@ func toDBFunctions(functions []schemamodel.Function) []catalog.Function {
 			Language:   function.Language,
 			Security:   function.Security,
 			Volatility: function.Volatility,
+			Settings:   function.Settings,
 			Body:       function.Body,
 			Comment:    function.Comment,
 		})

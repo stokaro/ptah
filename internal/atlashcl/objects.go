@@ -632,6 +632,7 @@ func (p *parser) rejectUnsupportedRoutineAttrs(block *hclsyntax.Block, blockType
 		"return":     blockType == routineBlockFunction,
 		"security":   true,
 		"volatility": true,
+		"set":        true,
 		"as":         true,
 		"comment":    true,
 	}

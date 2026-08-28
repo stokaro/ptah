@@ -966,8 +966,16 @@ type Function struct {
 	Language   string // Function language (e.g., "plpgsql", "sql")
 	Security   string // Security context (e.g., "DEFINER", "INVOKER")
 	Volatility string // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
-	Body       string // Function body/implementation
-	Comment    string // Optional comment for documentation
+	// Settings are the routine's own configuration settings, each as
+	// `name=value`, which is the spelling pg_proc.proconfig reports.
+	//
+	// A SECURITY DEFINER routine without a pinned search_path resolves
+	// unqualified names through whatever the caller set. Ptah could not express
+	// the remedy at all: the parser refused the clause and the renderer emitted
+	// routines that could never carry it (stokaro/ptah#2356).
+	Settings []string `json:",omitempty"`
+	Body     string   // Function body/implementation
+	Comment  string   // Optional comment for documentation
 
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToDialect].
