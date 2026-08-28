@@ -67,7 +67,16 @@ func unhostableCreationDiff() *difftypes.SchemaDiff {
 		ViewsAdded:             difftypes.ViewChanges{{Name: "v1", Body: "SELECT id FROM t"}},
 		MaterializedViewsAdded: difftypes.MaterializedViewChanges{{Name: "mv1", Body: "SELECT id FROM t"}},
 		RLSEnabledTablesAdded:  []string{"t"},
-		RLSPoliciesAdded:       []difftypes.RLSPolicyRef{{PolicyName: "p1", TableName: "t"}},
+		RLSPoliciesAdded: []difftypes.RLSPolicyRef{{
+			PolicyName: "p1", TableName: "t",
+			// An addition carries the declaration it renders from
+			// (stokaro/ptah#2315); an entry without one is refused, which would
+			// end the plan rather than contribute a diagnostic.
+			Desired: schemamodel.RLSPolicy{
+				StructName: "T", Name: "p1", Table: "t",
+				PolicyFor: "ALL", UsingExpression: "true",
+			},
+		}},
 		GrantsAdded: []difftypes.GrantRef{{
 			Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app.t",
 		}},

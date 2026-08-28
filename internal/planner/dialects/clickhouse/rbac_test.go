@@ -277,15 +277,18 @@ func TestGenerateMigrationAST_ClickHouseGrantsKeepTheSlotTheRenderPathUsesForThe
 		RolesAdded:            difftypes.RoleChanges{{Name: "reporting"}},
 		FunctionsAdded:        difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "bump"}}},
 		RLSEnabledTablesAdded: []string{"events"},
-		RLSPoliciesAdded:      []difftypes.RLSPolicyRef{{PolicyName: "p1", TableName: "events"}},
-		GrantsAdded:           []difftypes.GrantRef{rbacGrant("SELECT")},
-		TriggersAdded:         []difftypes.TriggerRef{{TriggerName: "trg1", TableName: "events"}},
+		RLSPoliciesAdded: []difftypes.RLSPolicyRef{{
+			PolicyName: "p1", TableName: "events",
+			Desired: schemamodel.RLSPolicy{Name: "p1", Table: "events", UsingExpression: "true"},
+		}},
+		GrantsAdded:   []difftypes.GrantRef{rbacGrant("SELECT")},
+		TriggersAdded: []difftypes.TriggerRef{{TriggerName: "trg1", TableName: "events"}},
 	}
 
 	// The row-policy phase plans from the declaration now that ClickHouse
-	// carries capability.RowLevelSecurity, so the desired schema has to hold
-	// what the diff names or the phase contributes nothing and the ordering
-	// this test is about cannot be seen (stokaro/ptah#1736).
+	// carries capability.RowLevelSecurity. The policy travels with its entry
+	// (stokaro/ptah#2315); the enablement below still comes from the schema,
+	// because RLSEnabledTablesAdded is a name list.
 	nodes := planClickHouse(c, diff, &schemamodel.Database{
 		RLSEnabledTables: []schemamodel.RLSEnabledTable{{Table: "events"}},
 		RLSPolicies: []schemamodel.RLSPolicy{{

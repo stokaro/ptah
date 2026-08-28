@@ -64,8 +64,13 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 		{
 			name: "a new table carrying a policy is enabled without a diff entry",
 			diff: &difftypes.SchemaDiff{
-				TablesAdded:      []string{"tenants"},
-				RLSPoliciesAdded: []difftypes.RLSPolicyRef{{PolicyName: "tenant_isolation", TableName: "tenants"}},
+				TablesAdded: []string{"tenants"},
+				RLSPoliciesAdded: []difftypes.RLSPolicyRef{{
+					PolicyName: "tenant_isolation", TableName: "tenants",
+					Desired: schemamodel.RLSPolicy{
+						Name: "tenant_isolation", Table: "tenants", PolicyFor: "ALL", ToRoles: "app",
+					},
+				}},
 			},
 			desired: &schemamodel.Database{
 				Tables: []schemamodel.Table{{Name: "tenants", StructName: "Tenant"}},
@@ -93,7 +98,12 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 				TablesAdded:           []string{"tenants"},
 				RLSEnabledTablesAdded: []string{"tenants"},
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
-					{PolicyName: "tenant_isolation", TableName: "tenants"},
+					{
+						PolicyName: "tenant_isolation", TableName: "tenants",
+						Desired: schemamodel.RLSPolicy{
+							Name: "tenant_isolation", Table: "tenants", PolicyFor: "ALL", ToRoles: "app",
+						},
+					},
 				},
 			},
 			desired: &schemamodel.Database{
@@ -120,7 +130,13 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 			name: "an existing table keeps its enablement when only a policy changes",
 			diff: &difftypes.SchemaDiff{
 				RLSPoliciesModified: []difftypes.RLSPolicyDiff{
-					{PolicyName: "tenant_isolation", TableName: "tenants", Changes: map[string]string{"using": "a -> b"}},
+					{
+						PolicyName: "tenant_isolation", TableName: "tenants",
+						Changes: map[string]string{"using": "a -> b"},
+						Desired: schemamodel.RLSPolicy{
+							Name: "tenant_isolation", Table: "tenants", PolicyFor: "ALL", ToRoles: "app",
+						},
+					},
 				},
 			},
 			desired: &schemamodel.Database{

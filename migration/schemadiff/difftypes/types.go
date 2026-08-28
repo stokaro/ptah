@@ -1024,6 +1024,16 @@ type SchemaDiff struct {
 	// schemas but have different definitions (expressions, roles, etc.)
 	RLSPoliciesModified []RLSPolicyDiff `json:"rls_policies_modified"`
 
+	// RLSPolicyIdentityConflicts records declared policies that collapse onto
+	// one identity, which the lists above cannot show: a colliding pair is
+	// already one entry by the time they exist.
+	//
+	// A planner refuses a diff that carries any, because the alternative is
+	// applying one of two policies nobody chose between. It stays off the wire:
+	// a refusal is not a plan, so there is nothing for a reader of a stored one
+	// to do with it (stokaro/ptah#2440).
+	RLSPolicyIdentityConflicts []RLSPolicyConflict `json:"-"`
+
 	// RLSEnabledTablesAdded contains names of tables that need RLS enabled
 	RLSEnabledTablesAdded []string `json:"rls_enabled_tables_added"`
 
@@ -2062,6 +2072,32 @@ type RLSPolicyRef struct {
 
 	// TableName is the name of the table the policy applies to
 	TableName string `json:"table_name"`
+
+	// Desired is the policy this entry asks the database to hold.
+	//
+	// It is populated for an ADDITION and for a MODIFICATION, both of which
+	// render CREATE POLICY from a declaration, and empty for a REMOVAL, which
+	// `DROP POLICY name ON table` builds from the two names above.
+	//
+	// An added or modified entry that carries none is refused rather than
+	// skipped. The planner's only alternative is to emit no statement, and a
+	// plan that silently drops an access-control operation reports success
+	// while leaving the database unprotected (stokaro/ptah#1311).
+	//
+	// It stays off the wire. The names are the reference; this is the operand.
+	Desired schemamodel.RLSPolicy `json:"-"`
+
+	// TableSchema is the schema the owning table is declared under, or empty
+	// when the declaration does not say.
+	//
+	// SQL Server needs it: a policy there is addressed as `schema.name` on
+	// `schema.table`, and the schema is a property of the TABLE rather than of
+	// the policy, so it cannot be read off [RLSPolicyRef.Desired]. Resolving it
+	// where the declared tables are in hand is what lets the planner render the
+	// policy without being handed the schema (stokaro/ptah#2315).
+	//
+	// It stays off the wire for the reason Desired does: it is an operand.
+	TableSchema string `json:"-"`
 }
 
 // RLSPolicyDiff represents changes to Row-Level Security policy definitions.
@@ -2098,6 +2134,32 @@ type RLSPolicyDiff struct {
 	// Changes maps change types to their old->new value transitions
 	// Format: "change_type" -> "old_value -> new_value"
 	Changes map[string]string `json:"changes"`
+
+	// Desired is the policy this entry asks the database to hold.
+	//
+	// It is populated for an ADDITION and for a MODIFICATION, both of which
+	// render CREATE POLICY from a declaration, and empty for a REMOVAL, which
+	// `DROP POLICY name ON table` builds from the two names above.
+	//
+	// An added or modified entry that carries none is refused rather than
+	// skipped. The planner's only alternative is to emit no statement, and a
+	// plan that silently drops an access-control operation reports success
+	// while leaving the database unprotected (stokaro/ptah#1311).
+	//
+	// It stays off the wire. The names are the reference; this is the operand.
+	Desired schemamodel.RLSPolicy `json:"-"`
+
+	// TableSchema is the schema the owning table is declared under, or empty
+	// when the declaration does not say.
+	//
+	// SQL Server needs it: a policy there is addressed as `schema.name` on
+	// `schema.table`, and the schema is a property of the TABLE rather than of
+	// the policy, so it cannot be read off [RLSPolicyRef.Desired]. Resolving it
+	// where the declared tables are in hand is what lets the planner render the
+	// policy without being handed the schema (stokaro/ptah#2315).
+	//
+	// It stays off the wire for the reason Desired does: it is an operand.
+	TableSchema string `json:"-"`
 }
 
 // RoleDiff represents changes to PostgreSQL role definitions.
@@ -2146,6 +2208,26 @@ type RoleDiff struct {
 	// It stays off the wire, and here that is more than tidiness: this field
 	// holds a password.
 	Desired schemamodel.Role `json:"-"`
+}
+
+// RLSPolicyConflict records two declared row-level security policies that
+// resolve to one identity under the target's identifier rules.
+//
+// A comparison keys declarations by that identity to pair them with what the
+// database reports, so a colliding pair is reduced to one entry and the plan
+// would depend on which one the map happened to keep. Recording the pair is
+// what lets the planner refuse instead: by the time the diff exists the two
+// declarations are already one entry, so nothing downstream could otherwise see
+// that there were two (stokaro/ptah#2440).
+//
+// Both sides keep the spelling their declaration supplied, because the refusal
+// names them and the author has to recognize what they wrote.
+type RLSPolicyConflict struct {
+	// First is the declaration the comparison met first.
+	First schemamodel.RLSPolicy
+
+	// Second is the one that resolved to the same identity.
+	Second schemamodel.RLSPolicy
 }
 
 // GrantRef identifies one PostgreSQL privilege grant.

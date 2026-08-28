@@ -2226,9 +2226,18 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// table, so reversing is a swap and no name-to-table resolution is
 		// needed -- the resolution that used to happen here keyed a map by
 		// policy name and lost one of two policies that shared one.
-		RLSPoliciesAdded:    slices.Clone(diff.RLSPoliciesRemoved), // Policies to remove become policies to add
-		RLSPoliciesRemoved:  slices.Clone(diff.RLSPoliciesAdded),   // Policies to add become policies to remove
-		RLSPoliciesModified: reverseRLSPolicyDiffs(diff.RLSPoliciesModified),
+		// Exchanged, and rewritten on the way. An addition renders CREATE POLICY
+		// from its operand and a removal is written from its two names, so the
+		// reversed addition needs the declaration the pre-change database held
+		// and the reversed removal needs none (stokaro/ptah#2315).
+		RLSPoliciesAdded:    rlsAdditionsFromRemovals(diff.RLSPoliciesRemoved, prior, semantics),
+		RLSPoliciesRemoved:  rlsRemovalsFromAdditions(diff.RLSPoliciesAdded),
+		RLSPoliciesModified: reverseRLSPolicyDiffs(diff.RLSPoliciesModified, prior, semantics),
+		// Carried, not dropped. A declaration in which two policies share one
+		// identity cannot be planned in either direction, and a rollback that
+		// became plannable by forgetting the conflict would plan against the
+		// very declaration the forward direction refused (stokaro/ptah#2440).
+		RLSPolicyIdentityConflicts: diff.RLSPolicyIdentityConflicts,
 
 		// Reverse RLS table enablement operations
 		RLSEnabledTablesAdded:   diff.RLSEnabledTablesRemoved, // Tables to disable RLS become tables to enable RLS
@@ -3647,7 +3656,11 @@ func targetCompositeFieldTypes(schema *schemamodel.Database, name string) []stri
 }
 
 // reverseRLSPolicyDiffs reverses RLS policy modifications for down migrations
-func reverseRLSPolicyDiffs(policyDiffs []difftypes.RLSPolicyDiff) []difftypes.RLSPolicyDiff {
+func reverseRLSPolicyDiffs(
+	policyDiffs []difftypes.RLSPolicyDiff,
+	prior *schemamodel.Database,
+	semantics identifier.Semantics,
+) []difftypes.RLSPolicyDiff {
 	reversed := make([]difftypes.RLSPolicyDiff, len(policyDiffs))
 	for i, policyDiff := range policyDiffs {
 		// For policy changes, we need to reverse the direction of changes
@@ -3663,13 +3676,106 @@ func reverseRLSPolicyDiffs(policyDiffs []difftypes.RLSPolicyDiff) []difftypes.RL
 			}
 		}
 
+		policy, tableSchema := priorRLSPolicy(prior, policyDiff.PolicyName, policyDiff.TableName, semantics)
 		reversed[i] = difftypes.RLSPolicyDiff{
 			PolicyName: policyDiff.PolicyName,
 			TableName:  policyDiff.TableName,
 			Changes:    reversedChanges,
+			// CREATE POLICY renders from the operand, so reversing the change
+			// map without reversing the operand would have the down direction
+			// re-apply the predicate it is undoing.
+			Desired:     policy,
+			TableSchema: tableSchema,
 		}
 	}
 	return reversed
+}
+
+// rlsAdditionsFromRemovals turns the forward direction's removals into the
+// rollback's additions, giving each the declaration the pre-change database
+// held.
+//
+// A removal carries two names, which is all a DROP needs. The addition it
+// becomes renders CREATE POLICY, so the operand has to be recovered here or the
+// rollback drops an access-control operation and puts nothing back.
+func rlsAdditionsFromRemovals(
+	removals []difftypes.RLSPolicyRef,
+	prior *schemamodel.Database,
+	semantics identifier.Semantics,
+) []difftypes.RLSPolicyRef {
+	if len(removals) == 0 {
+		return nil
+	}
+	additions := make([]difftypes.RLSPolicyRef, len(removals))
+	for i, ref := range removals {
+		policy, tableSchema := priorRLSPolicy(prior, ref.PolicyName, ref.TableName, semantics)
+		additions[i] = difftypes.RLSPolicyRef{
+			PolicyName:  ref.PolicyName,
+			TableName:   ref.TableName,
+			Desired:     policy,
+			TableSchema: tableSchema,
+		}
+	}
+	return additions
+}
+
+// rlsRemovalsFromAdditions turns the forward direction's additions into the
+// rollback's removals, dropping the operand each one carried.
+//
+// `DROP POLICY name ON table` is written from the two names. Carrying the
+// declaration into a removal would leave the entry holding a policy nothing
+// reads, which tells the next reader that something does.
+func rlsRemovalsFromAdditions(additions []difftypes.RLSPolicyRef) []difftypes.RLSPolicyRef {
+	if len(additions) == 0 {
+		return nil
+	}
+	removals := make([]difftypes.RLSPolicyRef, len(additions))
+	for i, ref := range additions {
+		removals[i] = difftypes.RLSPolicyRef{PolicyName: ref.PolicyName, TableName: ref.TableName}
+	}
+	return removals
+}
+
+// priorRLSPolicy is the policy the pre-change database held, and the schema its
+// table is declared under there.
+//
+// The two are resolved together because they are one answer: SQL Server
+// addresses a policy by its table's schema, so a policy recovered without it
+// would be rendered under a name the target cannot bind.
+//
+// The table half goes through the identity tiers, because the declaration and a
+// database read do not have to spell it the same way -- which is the whole
+// reason a modification's operand could not be found on the down direction
+// before (stokaro/ptah#1311).
+func priorRLSPolicy(
+	prior *schemamodel.Database,
+	policyName, tableName string,
+	semantics identifier.Semantics,
+) (schemamodel.RLSPolicy, string) {
+	if prior == nil {
+		return schemamodel.RLSPolicy{}, ""
+	}
+	wanted := semantics.QualifiedTableIdentityKey(tableName)
+	for _, policy := range prior.RLSPolicies {
+		if policy.Name != policyName {
+			continue
+		}
+		if semantics.QualifiedTableIdentityKey(policy.Table) != wanted {
+			continue
+		}
+		return policy, priorTableSchema(prior, policy.Table)
+	}
+	return schemamodel.RLSPolicy{}, ""
+}
+
+// priorTableSchema is the schema the pre-change database declares a table under.
+func priorTableSchema(prior *schemamodel.Database, tableName string) string {
+	for _, table := range prior.Tables {
+		if table.Name == tableName {
+			return table.Schema
+		}
+	}
+	return ""
 }
 
 // reverseRoleDiffs reverses role modifications for down migrations

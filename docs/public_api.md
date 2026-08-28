@@ -611,6 +611,23 @@ privileges on the view and fails loudly if the engine refuses it, while a
 rollback drops and recreates, which always applies. Embedders that build a
 `ViewDiff` by hand and leave both fields empty get the forward answer.
 
+`migration/schemadiff/difftypes.RLSPolicyRef` and `RLSPolicyDiff` carry a
+`Desired` policy and a `TableSchema`, both off the wire. The policy is what
+CREATE POLICY renders from; the schema is the one the owning table is declared
+under, which SQL Server addresses a policy by and which cannot be read off the
+policy itself. An added or modified entry carrying no policy is refused with
+`ptaherr.ErrInvalidSchemaDiff` rather than skipped, because a plan that
+silently drops an access-control operation reports success while leaving the
+database unprotected. A removal carries neither: `DROP POLICY name ON table` is
+written from the two names.
+
+`SchemaDiff.RLSPolicyIdentityConflicts` is the companion, also off the wire. It
+records declared policies that resolve to one identity — something the three
+lists cannot show, because a colliding pair is already one entry by the time
+they exist. A planner refuses a diff that carries any. An embedder building a
+diff by hand will not produce one and need not populate it; an embedder reading
+a diff the comparison produced must not plan it while it is non-empty.
+
 `migration/schemadiff/difftypes.MaterializedViewDiff` carries one too. No engine
 has an in-place replacement that keeps a materialized view's rows, so a change
 other than a ClickHouse refresh schedule is a drop and a create, and the create

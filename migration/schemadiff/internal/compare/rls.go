@@ -115,8 +115,23 @@ func RLSPoliciesWithSemantics(
 	// and the policy name together.
 	generatedPolicyMap := make(map[tableMemberKey]schemamodel.RLSPolicy, len(desired.RLSPolicies))
 	for _, rlsPolicy := range desired.RLSPolicies {
-		generatedPolicyMap[newTableMemberKey(rlsPolicy.Table, rlsPolicy.Name, semantics)] = rlsPolicy
+		key := newTableMemberKey(rlsPolicy.Table, rlsPolicy.Name, semantics)
+		// Two declarations under one identity are recorded rather than silently
+		// reduced to the one the map keeps. A planner refuses the diff on this
+		// list; without it the collision is invisible from here on, because the
+		// pair has already become a single entry (stokaro/ptah#2440).
+		if previous, collides := generatedPolicyMap[key]; collides {
+			diff.RLSPolicyIdentityConflicts = append(diff.RLSPolicyIdentityConflicts,
+				difftypes.RLSPolicyConflict{First: previous, Second: rlsPolicy})
+			continue
+		}
+		generatedPolicyMap[key] = rlsPolicy
 	}
+
+	// The schema each declared table is written under, for the one target that
+	// addresses a policy by it. Built once here rather than searched per policy
+	// in the planner, which is what let the planner keep the desired schema.
+	tableSchemas := declaredTableSchemas(desired)
 
 	databasePolicyMap := make(map[tableMemberKey]catalog.RLSPolicy, len(database.RLSPolicies))
 	for _, rlsPolicy := range database.RLSPolicies {
@@ -127,8 +142,10 @@ func RLSPoliciesWithSemantics(
 	for key, generatedPolicy := range generatedPolicyMap {
 		if _, exists := databasePolicyMap[key]; !exists {
 			diff.RLSPoliciesAdded = append(diff.RLSPoliciesAdded, difftypes.RLSPolicyRef{
-				PolicyName: generatedPolicy.Name,
-				TableName:  generatedPolicy.Table,
+				PolicyName:  generatedPolicy.Name,
+				TableName:   generatedPolicy.Table,
+				Desired:     generatedPolicy,
+				TableSchema: tableSchemas[generatedPolicy.Table],
 			})
 		}
 	}
@@ -151,6 +168,8 @@ func RLSPoliciesWithSemantics(
 				generatedPolicy, databasePolicy,
 				policies[exprkey.Policy(semantics, generatedPolicy.Table, generatedPolicy.Name)])
 			if len(policyComparison.Changes) > 0 {
+				policyComparison.Desired = generatedPolicy
+				policyComparison.TableSchema = tableSchemas[generatedPolicy.Table]
 				diff.RLSPoliciesModified = append(diff.RLSPoliciesModified, policyComparison)
 			}
 		}
@@ -475,4 +494,24 @@ func RLSPolicyDefinitionsWithExpressions(
 	}
 
 	return policyDiff
+}
+
+// declaredTableSchemas maps each declared table's name to the schema it is
+// written under.
+//
+// The key is the name as the DECLARATION spells it, and the match a caller
+// makes against it is string equality, which is what
+// [fromschema.QualifyRLSPolicyForTarget] did with the same two values. Folding
+// the two through identifier semantics would qualify policies that are not
+// qualified today; that is a defect worth fixing on its own evidence rather
+// than as a side effect of moving the lookup (stokaro/ptah#2440).
+func declaredTableSchemas(desired *schemamodel.Database) map[string]string {
+	schemas := make(map[string]string, len(desired.Tables))
+	for _, table := range desired.Tables {
+		if _, seen := schemas[table.Name]; seen {
+			continue
+		}
+		schemas[table.Name] = table.Schema
+	}
+	return schemas
 }

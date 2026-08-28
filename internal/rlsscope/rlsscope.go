@@ -1,6 +1,5 @@
-// Package rlsscope resolves row-level security policy references against the
-// schema a migration plan is built from, using the identifier semantics the
-// diff was produced with.
+// Package rlsscope validates the row-level security policy references a
+// migration plan carries, before any of them is rendered.
 package rlsscope
 
 import (
@@ -8,115 +7,55 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
-// identity is what makes two policy references the same policy: the table that
-// owns it, under the target's table semantics, and the policy's own name.
+// Validate refuses a diff whose row-level security entries cannot be planned.
 //
-// It is a struct rather than a joined string because both components are
-// database identifiers and either may contain a dot when quoted, so no
-// separator encoding is injective: table `a` with policy `"b.c"` and table
-// `a.b` with policy `c` would share one joined key and one of two distinct
-// policies would be dropped (stokaro/ptah#1276).
+// It reads the diff and nothing else. Every policy an entry renders travels
+// with that entry (stokaro/ptah#2315), so there is no target schema to index
+// and no reference left to resolve; what remains is the two ways a diff can be
+// unplannable, and both are answered here rather than by emitting no statement
+// for the entry. A plan that silently drops an access-control operation reports
+// success while leaving the database unprotected -- the failure
+// stokaro/ptah#1311 was reviewed for. The public planning contract already
+// promises that an invalid schema diff is rejected with
+// [ptaherr.ErrInvalidSchemaDiff].
 //
-// The policy name is compared as written, which is what
-// `compare.RLSPoliciesWithSemantics` keys on. A resolver that normalized the
-// name differently from the comparator that produced the reference would miss
-// exactly the references the comparator meant to hand it.
-type identity struct {
-	table  string
-	policy string
-}
-
-// Resolver holds the target row-level security policies one migration plan may
-// need, indexed by the identity the diff refers to them with.
-type Resolver struct {
-	semantics identifier.Semantics
-	policies  map[identity]schemamodel.RLSPolicy
-}
-
-// Resolve returns the target policy identified by ref.
+// The two:
 //
-// A reference that resolves to nothing is an error rather than a skip. The
-// planner's only alternative is to emit no statement for it, and a plan that
-// silently drops an access-control operation reports success while leaving the
-// database unprotected -- the failure stokaro/ptah#1311 was reviewed for. The
-// public planning contract already promises that an invalid schema diff is
-// rejected with [ptaherr.ErrInvalidSchemaDiff].
-func (r *Resolver) Resolve(ref difftypes.RLSPolicyRef) (schemamodel.RLSPolicy, error) {
-	if r == nil {
-		return schemamodel.RLSPolicy{}, fmt.Errorf(
-			"%w: no validated target RLS policies are available",
-			ptaherr.ErrInvalidSchemaDiff,
-		)
-	}
-	policy, ok := r.policies[identityKey(r.semantics, ref)]
-	if !ok {
-		return schemamodel.RLSPolicy{}, fmt.Errorf(
-			"%w: target RLS policy %s on table %s was not part of the validated plan",
-			ptaherr.ErrInvalidSchemaDiff,
-			ref.PolicyName,
-			ref.TableName,
-		)
-	}
-	return policy, nil
-}
-
-// NewResolver validates every policy identity needed to plan diff and indexes
-// the target schema, using conservative offline rules for dialect.
-func NewResolver(
-	dialect string,
-	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
-) (*Resolver, error) {
-	return NewResolverWithSemantics(dialect, identifier.ForDialect(dialect), diff, desired)
-}
-
-// NewResolverWithSemantics validates and indexes target policies using explicit
-// live or offline identifier semantics.
+//   - a reference missing either half of its identity, in any of the three
+//     lists. A policy name alone does not identify a policy: the name is scoped
+//     to the owning table, so `tenant_isolation` is a different policy on every
+//     table that declares it (stokaro/ptah#1276).
+//   - two declarations that resolved to ONE identity. The comparison records
+//     the pair because it cannot report it any other way: keying declarations
+//     by identity is what pairs them with the database, so a collision is
+//     already a single entry by the time the diff exists (stokaro/ptah#2440).
 //
-// Validation covers every reference in the diff, in all three categories:
-//
-//   - a reference missing either half of its identity is refused outright,
-//     because a policy name alone does not identify a policy;
-//   - every ADDED and every MODIFIED reference must resolve to a declared
-//     policy, since both emit a CREATE POLICY built from that declaration;
-//   - a REMOVED reference needs no declaration -- `DROP POLICY name ON table`
-//     is built from the reference itself -- so it is checked for shape only.
-//
-// The target schema is refused when two declarations collapse onto one
-// identity, since the plan would then depend on which one the map happened to
-// keep.
-func NewResolverWithSemantics(
-	dialect string,
-	semantics identifier.Semantics,
-	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
-) (*Resolver, error) {
+// An added or modified entry carrying no declaration is NOT refused here. That
+// is the planner's own check, because what it means differs per dialect: a
+// target without row-level security renders a diagnostic from the name alone
+// and was never going to read a declaration.
+func Validate(dialect string, diff *difftypes.SchemaDiff) error {
 	if diff == nil {
-		return nil, fmt.Errorf("%w: schema diff is nil", ptaherr.ErrInvalidSchemaDiff)
+		return fmt.Errorf("%w: schema diff is nil", ptaherr.ErrInvalidSchemaDiff)
 	}
 	if err := validateRefs("added", diff.RLSPoliciesAdded); err != nil {
-		return nil, err
+		return err
 	}
 	if err := validateRefs("removed", diff.RLSPoliciesRemoved); err != nil {
-		return nil, err
+		return err
 	}
 	if err := validateRefs("modified", modifiedRefs(diff)); err != nil {
-		return nil, err
+		return err
 	}
-	resolver, err := newTargetResolver(dialect, semantics, desired)
-	if err != nil {
-		return nil, err
+	for _, conflict := range diff.RLSPolicyIdentityConflicts {
+		return conflictError(dialect, conflict.First, conflict.Second)
 	}
-	if err := resolver.requireResolvable("added", diff.RLSPoliciesAdded); err != nil {
-		return nil, err
-	}
-	return resolver, resolver.requireResolvable("modified", modifiedRefs(diff))
+	return nil
 }
 
 // modifiedRefs projects the modified policy diffs onto the same reference shape
@@ -130,64 +69,6 @@ func modifiedRefs(diff *difftypes.SchemaDiff) []difftypes.RLSPolicyRef {
 		})
 	}
 	return refs
-}
-
-func newTargetResolver(
-	dialect string,
-	semantics identifier.Semantics,
-	desired *schemamodel.Database,
-) (*Resolver, error) {
-	resolver := &Resolver{
-		semantics: semantics,
-		policies:  make(map[identity]schemamodel.RLSPolicy),
-	}
-	if desired == nil {
-		return resolver, nil
-	}
-	for position, policy := range desired.RLSPolicies {
-		ref := difftypes.RLSPolicyRef{PolicyName: policy.Name, TableName: policy.Table}
-		if err := validateRef("target", position, ref); err != nil {
-			return nil, err
-		}
-		key := identityKey(semantics, ref)
-		if previous, conflict := resolver.policies[key]; conflict {
-			return nil, conflictError(dialect, previous, policy)
-		}
-		resolver.policies[key] = policy
-	}
-	return resolver, nil
-}
-
-func (r *Resolver) requireResolvable(operation string, refs []difftypes.RLSPolicyRef) error {
-	for position, ref := range refs {
-		if _, exists := r.policies[identityKey(r.semantics, ref)]; exists {
-			continue
-		}
-		return fmt.Errorf(
-			"%w: %s RLS policy %s on table %s at position %d is missing from the target schema",
-			ptaherr.ErrInvalidSchemaDiff,
-			operation,
-			ref.PolicyName,
-			ref.TableName,
-			position,
-		)
-	}
-	return nil
-}
-
-// identityKey returns the comparison identity for ref under semantics. It is
-// intended only for map keys; callers must keep the original reference when
-// rendering SQL so the supplied identifier spelling is preserved.
-//
-// The table goes through the target's qualified-table rules, which is what
-// makes `orders` and `public.orders` one table -- the difference between the
-// desired spelling a comparator reports and the introspected spelling a
-// rollback plans against (stokaro/ptah#1311).
-func identityKey(semantics identifier.Semantics, ref difftypes.RLSPolicyRef) identity {
-	return identity{
-		table:  semantics.QualifiedTableIdentityKey(ref.TableName),
-		policy: ref.PolicyName,
-	}
 }
 
 func validateRefs(operation string, refs []difftypes.RLSPolicyRef) error {

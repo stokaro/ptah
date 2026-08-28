@@ -820,10 +820,11 @@ func TestPlanner_GenerateMigrationAST_ModifiesRLSPolicies(t *testing.T) {
 			PolicyName: "tenant_isolation",
 			TableName:  "accounts",
 			Changes:    map[string]string{"using_expression": "old -> new"},
+			Desired:    desired.RLSPolicies[0],
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, desired)
+	nodes, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

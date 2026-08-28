@@ -33,6 +33,7 @@ var nonCategoryFields = map[string]string{
 	"ForeignKeysRemovedWithTables":    "supplements matching ConstraintsRemovedWithTables entries with local and referenced columns for drop ordering; it is ignored without a base removal and reporting it would print the same foreign-key removal twice",
 	"FunctionsRemovedWithSignatures":  "the removals FunctionsRemoved already names, carrying the argument list that makes each one addressable; reporting it would print the same removed function twice, and on its own it removes nothing (stokaro/ptah#2296)",
 	"ProceduresRemovedWithSignatures": "ProceduresRemoved with signatures, for the same reason",
+	"RLSPolicyIdentityConflicts":      "two declared policies that resolve to one identity, which is a defect in the declaration rather than a difference between the two schemas; the planner refuses the diff on it, so reporting it as a change would tell the operator the databases differ when what differs is the document they wrote (stokaro/ptah#2440)",
 }
 
 // TestWriteComparisonReportsEveryDiffCategory is the guard for
