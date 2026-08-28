@@ -322,6 +322,41 @@ if [ -n "$busybox_path" ]; then
 fi
 fi
 
+# Which of those shells let PATH decide what exists.
+#
+# busybox's shell resolves its own applets BEFORE consulting PATH. Measured on
+# ubuntu 24.04 with busybox-static: under `PATH=/nonexistent`, `busybox ash`
+# still finds wget, tar, sha256sum and uname, and it finds them in preference to
+# a directory placed at the front of PATH. Four cases below need a tool to be
+# absent or shadowed, and under such a shell neither is achievable from outside
+# the process -- the installer's own `command -v` answers before PATH is read.
+#
+# So those four run under the shells where PATH decides, and are reported as not
+# run under the others. A skip nobody counts is a pass, which is why the floor
+# below refuses a run in which no shell could have made them.
+shell_path_authoritative=()
+path_authoritative_count=0
+for entry in "${shell_specs[@]}"; do
+	read -r -a probe_argv <<<"$entry"
+	if "${probe_argv[@]}" -c 'PATH=/ptah-install-check-no-such-directory
+command -v tar >/dev/null 2>&1 ||
+	command -v wget >/dev/null 2>&1 ||
+	command -v sha256sum >/dev/null 2>&1 ||
+	command -v uname >/dev/null 2>&1' 2>/dev/null; then
+		shell_path_authoritative+=(false)
+	else
+		shell_path_authoritative+=(true)
+		path_authoritative_count=$((path_authoritative_count + 1))
+	fi
+done
+
+if [ "$path_authoritative_count" -eq 0 ]; then
+	echo "check-install-script: every shell found here carries its own applets, so the four" >&2
+	echo "  cases that need a tool to be MISSING could not run under any of them. They would" >&2
+	echo "  have been reported as not run, and a suite that reports nothing is not a pass." >&2
+	exit 1
+fi
+
 if [ "${#shell_specs[@]}" -lt "$min_shells" ]; then
 	echo "check-install-script: found ${#shell_specs[@]} POSIX shell(s), expected at least $min_shells" >&2
 	echo "  a bashism is invisible under the /bin/sh a maintainer's macOS ships; install dash" >&2
@@ -869,7 +904,12 @@ case_truncated_pipe() {
 	pass "a pipe cut in half installs nothing"
 }
 
+# run_suite takes whether PATH decides what this shell can find. The four cases
+# that need a tool to be absent or shadowed are the only ones that care, and
+# they are named individually rather than skipped as a block so that a reader of
+# the output can see exactly what did not run here.
 run_suite() {
+	local path_decides="$1"
 	case_help
 	case_unknown_option
 	case_install
@@ -877,10 +917,15 @@ run_suite() {
 	case_pinned_version
 	case_checksum_mismatch
 	case_checksum_absent
-	case_unsupported_platform
-	case_missing_hasher
-	case_missing_tar
-	case_missing_downloader
+	if [ "$path_decides" = true ]; then
+		case_unsupported_platform
+		case_missing_hasher
+		case_missing_tar
+		case_missing_downloader
+	else
+		printf '    --    an unsupported platform, and the three missing prerequisites:\n'
+		printf '          this shell answers command -v from its own applets before reading PATH\n'
+	fi
 	case_release_not_found
 	case_release_not_found_http2
 	case_symlink_in_bindir
@@ -910,9 +955,10 @@ for entry in "${shell_specs[@]}"; do
 	# The one two-word entry is "busybox ash", an applet rather than a file.
 	read -r -a shell_argv <<<"$entry"
 	current="${shell_names[$index]}"
+	path_decides="${shell_path_authoritative[$index]}"
 	index=$((index + 1))
 	echo "  under $current ($entry)"
-	run_suite
+	run_suite "$path_decides"
 done
 
 if [ "$live" = true ]; then
@@ -962,4 +1008,5 @@ if [ "$failures" -ne 0 ]; then
 	echo "check-install-script: $failures of $checks assertions failed" >&2
 	exit 1
 fi
-echo "check-install-script: OK ($checks assertions, ${#shell_specs[@]} shell(s): ${shell_names[*]})"
+echo "check-install-script: OK ($checks assertions, ${#shell_specs[@]} shell(s): ${shell_names[*]};" \
+	"$path_authoritative_count of them let PATH decide what exists)"

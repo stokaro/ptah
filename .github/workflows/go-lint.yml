@@ -77,6 +77,12 @@ jobs:
       # is installed because `| sh` is busybox ash on Alpine and nothing else
       # here compiles that path; without it the gate's shell floor is not met
       # and the step fails rather than quietly testing one shell.
+      #
+      # busybox's shell answers `command -v` from its own applets before reading
+      # PATH, so four of the gate's cases -- the ones needing a tool to be
+      # missing or shadowed -- cannot run under it and are reported as not run.
+      # The gate refuses a run in which NO shell could make them, which is what
+      # keeps that from reading as a pass.
       - name: Check the hosted install script
         run: |
           set -euo pipefail
