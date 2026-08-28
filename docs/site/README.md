@@ -14,6 +14,9 @@ ASTRO_TELEMETRY_DISABLED=1 npm run check:page-health
 ASTRO_TELEMETRY_DISABLED=1 npm run check:exit-codes
 ASTRO_TELEMETRY_DISABLED=1 npm run build
 npm run versions:selftest
+npm run root-assets:selftest
+npm run check:pages-root:selftest
+npm run check:pages-root
 npm audit --audit-level=low
 ```
 
@@ -114,6 +117,94 @@ an ordinary first item inside its own group, labeled `Overview` where the page
 title would otherwise repeat the group label. `collapsed: true` hides a
 subgroup's items until the reader opens it, and opens the group anyway
 whenever the current page is inside it.
+
+## The Pages root
+
+The site is served from `https://stokaro.github.io/ptah/`, and everything a
+reader browses lives one directory down, under a version slug. A few files sit
+at the root itself and address the site as a whole:
+
+| File | Written by | What it is |
+| --- | --- | --- |
+| `versions.json` | `scripts/gen-versions.mjs` | The version list the picker reads |
+| `index.html` | `scripts/gen-versions.mjs` | The redirect from the root to the default version |
+| `install.sh` | `scripts/publish-root-assets.mjs` | The shell installer, from `public/install.sh` |
+| `install.ps1` | `scripts/publish-root-assets.mjs` | The PowerShell installer, from `public/install.ps1` |
+
+The installers have to answer at the root because the commands a reader is
+given carry no version:
+
+```bash
+curl -fsSL https://stokaro.github.io/ptah/install.sh | sh
+```
+
+```powershell
+irm https://stokaro.github.io/ptah/install.ps1 | iex
+```
+
+`.github/workflows/docs.yml` assembles `_site/` from scratch on every deploying
+run and uploads the whole directory, so there is no Pages state for a file to
+survive in. A root file exists after a deploy only because that deploy wrote
+it. That is why the installers are published by a workflow step rather than
+uploaded once, and why the step carries the same `push` condition as the
+version index beside it: a tag deploy has to write them too.
+
+`scripts/check-pages-root.mjs` is the gate. It runs the assembly and reads what
+came out, rather than asking whether the files are in the tree — the difference
+between those two questions is the whole failure it exists to catch, because a
+tree that still carries `public/install.sh` and a workflow that no longer
+publishes it look identical from the tree's side. It also requires the workflow
+to still invoke both producers before the upload, and requires the
+documentation and the root to agree in both directions: a published URL nothing
+writes is a 404, and a file nothing documents is unreachable.
+
+`--site <dir>` is the second half, and the build job runs it on the real `_site`
+after assembling it. Everything the gate reads in the tree can be right while
+the directory about to be uploaded is missing a file.
+
+### What only a request can see
+
+Both halves above read this repository: one reads the tree, the other reads the
+directory a run of this workflow assembled. Neither asks whether
+`https://stokaro.github.io/ptah/install.sh` answers, and there are ways for it
+to stop answering that leave no trace here at all:
+
+- A Pages settings change, or a repository rename that moves the whole site.
+- A deploy triggered by a **tag**. A tag push runs the workflow file as it
+  exists *at that tag*, and every tag cut before this mechanism landed has a
+  `docs.yml` with no publish step — it still builds, uploads and deploys, and a
+  Pages deployment replaces the whole site. Re-cutting or re-running such a tag
+  would deploy a root with no installers in it. Tags move forward, so cut them
+  from `master` and do not re-push an old one.
+
+`--live` is the third half and the only one that asks the address. It requests
+every root file, requires a 200, and requires each installer to be the bytes of
+its source under `public/`. It probes the generated files beside them as a
+control: a run where everything answers 404 is a site that moved, and a run
+where only an installer does is the publish step having stopped running.
+
+```bash
+node scripts/check-pages-root.mjs --live
+```
+
+It runs on the schedule in `.github/workflows/install-smoke.yml`, not on a push
+— a push to `master` starts that workflow and the Pages deploy at the same
+moment, so a probe there would race the deploy it is verifying. The site
+converges on `master` within a minute of each push, which is why a byte
+difference on the schedule is the root serving something the repository does
+not, rather than a deploy in flight.
+
+### Adding a root file
+
+Add an entry to `ROOT_ASSETS` in `scripts/publish-root-assets.mjs`, put the file
+under `public/`, and give it a documented command. Nothing else needs editing:
+the workflow step already copies whatever the declaration names, and the gate
+already requires the rest.
+
+`public/` rather than the repository's `scripts/` directory, because
+`docs.yml` filters its jobs on `docs/**` and `docs/site/**`. A file under
+`scripts/` would change the installer without running the workflow on the pull
+request and without deploying on merge.
 
 ## Brand assets
 

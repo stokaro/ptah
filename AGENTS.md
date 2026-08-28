@@ -973,6 +973,9 @@ node docs/site/scripts/check-matrix-flag-names.mjs --selftest
 node docs/site/scripts/check-matrix-flag-names.mjs
 node docs/site/scripts/check-route-retirement.mjs
 node docs/site/scripts/build-feature-matrix.mjs --check
+node docs/site/scripts/publish-root-assets.mjs --selftest
+node docs/site/scripts/check-pages-root.mjs --selftest
+node docs/site/scripts/check-pages-root.mjs
 ```
 
 `check-route-retirement.mjs` is the one on that list a new page trips, and it

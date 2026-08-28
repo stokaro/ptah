@@ -91,49 +91,37 @@ on the remaining engines the migration runs without one.
 
 ## Install
 
-The released archives carry `ptah`, `ptah-compat`, and `ptah-ls` for Linux,
-macOS, and Windows on `amd64` and `arm64`; the Windows ones are `.zip`. Download
-with `curl`, as below, rather than through a browser: the macOS binaries are
-ad-hoc signed, and macOS quarantines such a binary when a browser fetches it.
+One command installs `ptah`, `ptah-compat`, and `ptah-ls` into `~/.local/bin`.
+The released archives cover Linux, macOS, and Windows on both `amd64` and
+`arm64`, and the script picks the one for the machine it runs on.
+
+The script downloads with `curl` rather than a browser on purpose: the macOS
+binaries are ad-hoc signed, and macOS quarantines such a binary when a browser
+fetches it.
 
 ```bash
-set -euo pipefail
-
-VERSION="$(curl -sSL https://api.github.com/repos/stokaro/ptah/releases/latest \
-  | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')"
-OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
-ARCH="$(uname -m)"
-[ "$ARCH" = "x86_64" ] && ARCH=amd64
-[ "$ARCH" = "aarch64" ] && ARCH=arm64
-ARCHIVE="ptah_${VERSION#v}_${OS}_${ARCH}.tar.gz"
-
-cd "$(mktemp -d)"
-curl -sSLO "https://github.com/stokaro/ptah/releases/download/${VERSION}/${ARCHIVE}"
-curl -sSLO "https://github.com/stokaro/ptah/releases/download/${VERSION}/checksums.txt"
-if command -v sha256sum >/dev/null; then
-  sha256sum --ignore-missing -c checksums.txt
-else
-  shasum -a 256 --ignore-missing -c checksums.txt
-fi
-
-tar -xzf "$ARCHIVE"
-sudo install -d /usr/local/bin
-sudo install -m 0755 ptah ptah-compat ptah-ls /usr/local/bin/
-ptah version
+curl -fsSL https://stokaro.github.io/ptah/install.sh | sh
 ```
 
-`set -euo pipefail` is what makes the checksum a gate: without it a failed
-comparison is followed by the install anyway. The archive has no top-level
-directory, which is why the binaries are installed one by one. `install -d`
-creates `/usr/local/bin`, which macOS does not ship, and does nothing when it is
-already there. Stock macOS ships `shasum` rather than `sha256sum`, which is what
-the branch above selects between. The
-[install guide](https://stokaro.github.io/ptah/edge/start/install/) covers the
-Go toolchain path and building from a checkout.
+On Windows, in PowerShell:
 
-Every documentation link in this file points at the `edge` channel, which is
-built from `master` and describes this tree rather than the release the command
-above installs. The
+```powershell
+irm https://stokaro.github.io/ptah/install.ps1 | iex
+```
+
+The script resolves the newest release, checks the archive against the
+published `checksums.txt`, installs the three binaries under your home
+directory, and edits no shell startup file. It calls no `sudo`. The URL serves
+a plain file: add `-o install.sh` to read the script before running it, and
+`sh -s -- --version v0.2.0` to pin a release.
+
+The [install guide](https://stokaro.github.io/ptah/edge/start/install/) covers the
+flags, the download-and-verify route that uses no script, signature
+verification, and building from a checkout.
+
+The install guide link, and every other documentation link in this file, points
+at the `edge` channel, which is built from `master` and describes this tree
+rather than the release the command above installs. The
 [documentation front door](https://stokaro.github.io/ptah/) opens the newest
 released version instead.
 

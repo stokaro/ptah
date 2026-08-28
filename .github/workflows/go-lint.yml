@@ -72,6 +72,55 @@ jobs:
       - name: Check the ADR index
         run: scripts/check-adr-index.sh
 
+      # The script published at https://stokaro.github.io/ptah/install.sh, run
+      # against a fixture release under every POSIX shell on the runner. busybox
+      # is installed because `| sh` is busybox ash on Alpine and nothing else
+      # here compiles that path; without it the gate's shell floor is not met
+      # and the step fails rather than quietly testing one shell.
+      #
+      # busybox's shell answers `command -v` from its own applets before reading
+      # PATH, so four of the gate's cases -- the ones needing a tool to be
+      # missing or shadowed -- cannot run under it and are reported as not run.
+      # The gate refuses a run in which NO shell could make them, which is what
+      # keeps that from reading as a pass.
+      - name: Check the hosted install script
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends busybox-static
+          scripts/check-install-script.sh
+          scripts/check-install-script-selftest.sh
+
+      # The PowerShell sibling, published at
+      # https://stokaro.github.io/ptah/install.ps1. A Linux runner cannot
+      # install with it -- it downloads a Windows .zip -- but `pwsh` is on this
+      # image and the grammar can be judged anywhere, which is worth doing here
+      # rather than nightly: the file is piped into `iex`, so a syntax error
+      # reaches whoever runs the documented one-liner first.
+      #
+      # It has already happened once, from one em dash. Windows PowerShell 5.1
+      # reads a .ps1 with no byte-order mark in the machine's ANSI code page,
+      # where those three UTF-8 bytes end in a right double quotation mark, and
+      # PowerShell accepts that character as a string delimiter -- so the string
+      # it sat in closed early and the whole file stopped parsing.
+      # docs/site/scripts/check-pages-root.mjs holds the ASCII rule that keeps
+      # it out; this step holds the grammar that rule cannot see.
+      #
+      # ParseInput rather than [scriptblock]::Create, because it reports every
+      # error in the file instead of throwing on the first one.
+      - name: Check the hosted PowerShell installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $text = Get-Content -Raw docs/site/public/install.ps1
+          $errors = $null
+          $null = [System.Management.Automation.Language.Parser]::ParseInput($text, [ref]$null, [ref]$errors)
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Output $_.ToString() }
+            throw "docs/site/public/install.ps1 has $($errors.Count) parse error(s)"
+          }
+          Write-Output "docs/site/public/install.ps1 parses under PowerShell $($PSVersionTable.PSVersion)"
+
       - name: Check the Renovate custom-manager patterns
         run: scripts/check-renovate-regex.sh
 

@@ -20,6 +20,9 @@ on:
       - master
     paths:
       - "scripts/check-documented-install.sh"
+      - "scripts/check-install-script.sh"
+      - "docs/site/public/install.sh"
+      - "docs/site/public/install.ps1"
       - ".github/workflows/install-smoke.yml"
 
 permissions:
@@ -42,3 +45,135 @@ jobs:
       # discover which commands the documentation currently publishes.
       - name: Run every documented install command
         run: scripts/check-documented-install.sh
+
+  # The published address itself. Every gate in docs.yml reads this tree or the
+  # directory the deploy assembles; none of them asks whether
+  # https://stokaro.github.io/ptah/install.sh answers. That difference is not
+  # theoretical: a Pages settings change, a repository rename, or a deploy
+  # triggered by a tag whose workflow file predates the publish step would each
+  # leave the documented one-liner answering 404 with every check green. A tag
+  # deploy replaces the whole site and runs the workflow AS IT EXISTS AT THAT
+  # TAG, and v0.2.0's has no publish step.
+  #
+  # Not on `push`: a push to master starts this workflow and the Pages deploy at
+  # the same time, so the probe would race the deploy it is meant to verify. The
+  # schedule catches every one of the failures above within the day, which is
+  # what they need.
+  pages-root-urls:
+    name: The published Pages root serves the install scripts
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      # No npm install: this gate has no dependencies, and its --selftest is
+      # what says the rules below can fail at all.
+      - name: Fetch every root file the documentation publishes
+        run: |
+          set -euo pipefail
+          node docs/site/scripts/check-pages-root.mjs --selftest
+          node docs/site/scripts/check-pages-root.mjs --live
+
+  hosted-install-script:
+    name: The hosted install script against the published release
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      # Linux runners have neither busybox nor a second POSIX shell by default,
+      # and macOS runners have neither busybox nor dash. The gate refuses to
+      # pass under one shell, so this is what makes its matrix real rather than
+      # a floor nobody meets.
+      - name: Install the other POSIX shells
+        run: |
+          set -eu
+          if [ "$RUNNER_OS" = Linux ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq --no-install-recommends busybox-static
+          else
+            brew install dash
+          fi
+
+      # --live adds two runs against github.com on top of the fixture suite: a
+      # pinned end-to-end install of v0.2.0, and a dry run that resolves
+      # `latest`. Like the documented-install job above, this is scheduled
+      # rather than a pull-request gate, because a GitHub outage would otherwise
+      # redden unrelated pull requests.
+      - name: Install v0.2.0 from the published release
+        run: scripts/check-install-script.sh --live
+
+  hosted-install-script-windows:
+    name: The hosted PowerShell installer against the published release
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      # Both hosts, because the installer supports both and they are different
+      # programs. Windows PowerShell 5.1 is the one every Windows machine
+      # already has, and the one whose `Invoke-WebRequest` needs
+      # -UseBasicParsing on a machine with no configured browser. PowerShell 7
+      # is the one a developer installs.
+      #
+      # `Get-Content -Raw ... | Invoke-Expression` is what `irm ... | iex` does
+      # with the text it fetched, so this drives the documented form rather
+      # than a form only this job uses.
+      - name: Install v0.2.0 with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PTAH_INSTALL_VERSION = 'v0.2.0'
+          $env:PTAH_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'ptah-windows-powershell'
+          $env:PTAH_INSTALL_NO_MODIFY_PATH = '1'
+          Get-Content -Raw docs/site/public/install.ps1 | Invoke-Expression
+          & (Join-Path $env:PTAH_INSTALL_DIR 'ptah.exe') version
+
+      - name: Install v0.2.0 with PowerShell 7
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PTAH_INSTALL_VERSION = 'v0.2.0'
+          $env:PTAH_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'ptah-pwsh'
+          $env:PTAH_INSTALL_NO_MODIFY_PATH = '1'
+          Get-Content -Raw docs/site/public/install.ps1 | Invoke-Expression
+          & (Join-Path $env:PTAH_INSTALL_DIR 'ptah.exe') version
+
+      # A verification step that has only ever seen a matching checksum reports
+      # the same success as one that stopped comparing. This case gives it a
+      # checksums.txt that does not match, from a fixture release on disk, and
+      # requires the run to stop with 6 and to install nothing.
+      - name: A corrupted archive is refused
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $release = Join-Path $env:RUNNER_TEMP 'fixture\download\v0.0.1'
+          New-Item -ItemType Directory -Path $release -Force | Out-Null
+          $stage = Join-Path $env:RUNNER_TEMP 'fixture-stage'
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          Set-Content -Path (Join-Path $stage 'ptah-ls.exe') -Value 'stand-in' -Encoding ascii
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath (Join-Path $release 'ptah_0.0.1_windows_amd64.zip') -Force
+          Set-Content -Path (Join-Path $release 'checksums.txt') -Encoding ascii -Value @(
+            ('0' * 64 + '  ptah_0.0.1_windows_amd64.zip'),
+            ('1' * 64 + '  ptah_0.0.1_windows_amd64.zip.sbom.json'))
+
+          $target = Join-Path $env:RUNNER_TEMP 'ptah-corrupt'
+          $env:PTAH_INSTALL_BASE_URL = 'file:///' + ((Join-Path $env:RUNNER_TEMP 'fixture') -replace '\\', '/')
+          $env:PTAH_INSTALL_VERSION = '0.0.1'
+          $env:PTAH_INSTALL_BINARIES = 'ptah-ls'
+          $env:PTAH_INSTALL_DIR = $target
+          $env:PTAH_INSTALL_NO_MODIFY_PATH = '1'
+          $global:LASTEXITCODE = $null
+          try { Get-Content -Raw docs/site/public/install.ps1 | Invoke-Expression } catch { Write-Output $_.Exception.Message }
+          if ($LASTEXITCODE -ne 6) { throw "a corrupted archive exited $LASTEXITCODE, expected 6" }
+          if (Test-Path (Join-Path $target 'ptah-ls.exe')) { throw 'a refused archive was installed anyway' }
+          Write-Output 'the corrupted archive was refused and nothing was installed'
