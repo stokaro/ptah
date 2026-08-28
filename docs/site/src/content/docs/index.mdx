@@ -1,10 +1,10 @@
 ---
 title: Ptah
-description: Ptah helps you inspect, define, compare, visualize, test, and change database schemas, using versioned migrations, direct schema changes, or both.
+description: Ptah manages database schema changes and persistent inference state through versioned migrations, direct schema changes, and verified generation cutovers.
 template: splash
 hero:
   title: Ptah
-  tagline: Ptah helps you inspect, define, compare, visualize, test, and change database schemas. Use versioned migrations, direct schema changes, or both, across supported databases.
+  tagline: Manage database schemas and persistent inference state. Use versioned migrations, direct schema changes, or verified inference generations with cutover and rollback.
   image:
     alt: Ptah logo
     file: ../../assets/logo.svg
@@ -13,24 +13,32 @@ hero:
       link: ./start/quick-start/
       icon: right-arrow
       variant: primary
+    - text: Inference migrations
+      link: ./operate/inference-migrations/
+      icon: right-arrow
+      variant: secondary
     - text: Install
       link: ./start/install/
       icon: download
       variant: secondary
-    - text: View on GitHub
-      link: https://github.com/stokaro/ptah
-      icon: external
-      variant: minimal
 ---
 
 import { LinkCard, CardGrid } from '@astrojs/starlight/components';
 
-Ptah is a command-line tool for database schema management. It reads the schema
-you want, reads the schema a live database has, and works out the difference
-between them. You choose what happens next: record the difference as versioned
-migration files, or apply it to the database directly. One project can do both.
+Ptah is a command-line tool for database change management. It handles schema
+changes through versioned migrations or direct apply, and persistent inference
+state through candidate generations, verification, cutover, and rollback. Ptah
+calls your external embedding endpoint during an inference migration; it does
+not run inference.
 
-## How a change moves through Ptah
+## Choose what you manage
+
+<CardGrid>
+  <LinkCard title="Database schemas" href="./start/choose-a-workflow/" description="Compare a desired schema with a live database, then keep the change as versioned migration files or review and apply it directly." />
+  <LinkCard title="Persistent inference state" href="./operate/inference-migrations/" description="Build a candidate generation beside the active one, catch up concurrent changes, verify it, cut over, and retain a rollback path." />
+</CardGrid>
+
+## How a schema change moves through Ptah
 
 A schema change moves through these stages.
 
@@ -154,7 +162,7 @@ A schema change moves through these stages.
    records which versions are applied, and `ptah migrations status` reads that
    record back.
 
-## Two workflows, and how to combine them
+## Two schema workflows, and how to combine them
 
 ### Versioned migrations
 
@@ -193,6 +201,18 @@ ptah migrations generate --db-url "$DATABASE_URL" --schema-file schema.sql \
 [Choose a workflow](./start/choose-a-workflow/) sets out which combinations
 exist and what each one costs.
 
+## How inference state moves through Ptah
+
+Ptah builds a candidate generation beside the active one, catches up concurrent
+changes, verifies and evaluates it, switches the active pointer, and retains the
+previous generation for rollback. Ptah writes database state; the external
+endpoint only returns embeddings.
+
+![Ptah builds a candidate inference generation from a specification and source rows, calls an external embedding endpoint during backfill and catch-up, verifies the result, switches the active generation at cutover, and retains the previous generation for rollback.](../../assets/inference-state-migration.png)
+
+The [inference migrations guide](./operate/inference-migrations/) covers the
+specification, execution lifecycle, approvals, rollback window, and retirement.
+
 ## What the project includes
 
 Ptah is published under the MIT license. Migration integrity, deterministic
@@ -216,6 +236,7 @@ run the `ptah-ls` language server for annotation support in an editor.
   <LinkCard title="Start" href="./start/quick-start/" description="Install Ptah, then run one of the two quick starts: versioned migration files you write and roll back, or a change Ptah derives from the schema you want." />
   <LinkCard title="Versioned migrations" href="./versioned/overview/" description="Generate, apply, roll back, verify, import, and maintain a directory of timestamped SQL files that you review and commit." />
   <LinkCard title="Direct schema changes" href="./direct/overview/" description="Inspect a live database, compare it with the desired schema, gate on drift, and apply the change without writing migration files." />
+  <LinkCard title="Inference migrations" href="./operate/inference-migrations/" description="Change an embedding model or preprocessing contract through a candidate generation, verification, cutover, and rollback lifecycle." />
   <LinkCard title="Schema" href="./schema/work-with-a-source/" description="Describe the schema you want in SQL, YAML, HCL, DBML, an ORM loader, or Go annotations, then validate, visualize, document, and export it." />
   <LinkCard title="Databases" href="./databases/support-matrix/" description="Check which engines Ptah supports and how deep the support goes, and read the PostgreSQL, SQLite, and SQL Server guides." />
   <LinkCard title="Integrations" href="./extend/public-api/" description="Embed the documented Go API, reuse parser and migrator components, and give an AI agent a schema surface to work against." />
@@ -233,6 +254,7 @@ run the `ptah-ls` language server for annotation support in an editor.
 | SQL, YAML, or HCL schema files | [SQL schema](./schema/sql/), [YAML schema](./schema/yaml/), or [HCL schema](./schema/hcl/) |
 | A Go application with schema annotations | [Go annotations](./schema/go-annotations/) |
 | An ORM that owns the schema | [ORM and external loaders](./schema/orm-and-external/) |
+| An embedding model, preprocessing contract, or vector corpus to replace | [Inference migrations](./operate/inference-migrations/) |
 | No decision yet on versioned versus direct changes | [Choose a workflow](./start/choose-a-workflow/) |
 | An OCI registry for migration or schema distribution | [OCI registry artifacts](./operate/oci-registry/) |
 | Scripts written for the Atlas CLI | [Atlas compatibility overview](./atlas/overview/) |
