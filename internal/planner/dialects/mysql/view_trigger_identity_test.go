@@ -57,24 +57,20 @@ func TestViewAndTriggerLookupsDoNotCrossDatabases(t *testing.T) {
 	}
 }
 
-// TestCompare_ATriggerDoesNotResolveTheDatabaseQualifier records what MySQL
-// actually does with the case the view test above resolves, and it is not the
-// same answer.
+// TestCompare_ATriggerResolvesTheDatabaseQualifier is the trigger half of the
+// capability the view test below measures, and it now gives the same answer.
 //
 // A declaration writes the table as `orders` and MySQL's reader reports it as
-// `app.orders`. For a view that is one modification; for a trigger it is one
-// addition and one removal, so the plan drops the trigger and creates it again
-// on every run. The two families resolve identity differently -- views through
-// objectlookup's three tiers, triggers through a map key, and a key has no tier
-// for "unqualified matches qualified when only one candidate does", because that
-// tier needs the whole candidate set.
+// `app.orders`. Both families resolve that to one object: views always did,
+// through objectlookup's three tiers, and triggers were paired by a map key
+// instead -- one string, with no tier for "unqualified matches qualified when
+// only one candidate does", because that tier needs the whole candidate set.
 //
-// This is stokaro/ptah#2436 and it is not what the carry changed: the comparison
-// produced the same pair before it, and the planner rendered them from the same
-// declaration. The assertions below are deliberately the MEASUREMENT rather than
-// the wish, so that fixing #2436 turns this test red and it gets rewritten to
-// the answer the view already gives.
-func TestCompare_ATriggerDoesNotResolveTheDatabaseQualifier(t *testing.T) {
+// Until stokaro/ptah#2436 this test recorded the measurement rather than the
+// wish: one addition and one removal, so the plan dropped the trigger and
+// created it again on every run. It succeeded each time, and each apply left a
+// window in which the table had no trigger.
+func TestCompare_ATriggerResolvesTheDatabaseQualifier(t *testing.T) {
 	c := qt.New(t)
 
 	desired := &schemamodel.Database{
@@ -97,13 +93,14 @@ func TestCompare_ATriggerDoesNotResolveTheDatabaseQualifier(t *testing.T) {
 
 	diff := schemadiff.CompareWithDialect(desired, database, platform.MySQL)
 
-	c.Assert(diff.TriggersModified, qt.HasLen, 0)
-	c.Assert(diff.TriggersAdded, qt.HasLen, 1)
-	c.Assert(diff.TriggersRemoved, qt.HasLen, 1)
-	c.Assert(diff.TriggersAdded[0].Desired.Name, qt.Equals, "touch",
-		qt.Commentf("the addition still carries the declaration it renders from"))
-	c.Assert(diff.TriggersRemoved[0].Desired.Name, qt.Equals, "",
-		qt.Commentf("a removal is written from its two names and carries no operand"))
+	// One object. The body differs -- the reader reported none -- so it is a
+	// modification rather than nothing, and it carries the declaration it
+	// resolved to, the way the view change does.
+	c.Assert(diff.TriggersAdded, qt.HasLen, 0)
+	c.Assert(diff.TriggersRemoved, qt.HasLen, 0)
+	c.Assert(diff.TriggersModified, qt.HasLen, 1)
+	c.Assert(diff.TriggersModified[0].Desired.Name, qt.Equals, "touch",
+		qt.Commentf("the change carries the declaration the comparison resolved to"))
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.MySQL)
 

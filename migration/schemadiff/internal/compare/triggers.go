@@ -8,6 +8,7 @@ import (
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -42,50 +43,80 @@ func TriggersWithSemantics(
 	semantics identifier.Semantics,
 ) {
 	semantics = semantics.Normalize("")
-	generatedTriggers := make(map[tableMemberKey]schemamodel.Trigger)
-	// The declaration as written, alongside the folded copy the comparison
-	// needs. Canonicalize touches the timing, the event and the FOR EACH clause
-	// -- never the name or the table -- so the two maps are keyed alike, and the
-	// entry carries what the author wrote (stokaro/ptah#2315).
-	declaredTriggers := make(map[tableMemberKey]schemamodel.Trigger)
-	for _, trigger := range desired.Triggers {
-		declared := trigger
-		trigger.Canonicalize()
-		key := triggerKey(trigger.Table, trigger.Name, semantics)
-		generatedTriggers[key] = trigger
-		declaredTriggers[key] = declared
+
+	// Paired by the candidate set rather than by a map key.
+	//
+	// A key is one string. It folds a case difference and it resolves a default
+	// schema the semantics know, and there it stops -- it has no tier saying
+	// "an unqualified name and a qualified one are the same object when only
+	// one candidate accepts it", because that tier needs the whole candidate
+	// set and a key does not have one.
+	//
+	// MySQL is where that bit: its reader reports the database name for
+	// everything, a Go annotation leaves it bare, and the database name is
+	// whatever the connection points at, so no static default schema can join
+	// them. A trigger on `orders` and the same trigger read back as
+	// `app.orders` came out as one addition and one removal, and the plan
+	// dropped and recreated it on every run -- succeeding each time, and
+	// leaving a window with no trigger on the table (stokaro/ptah#2436).
+	//
+	// Views never had it: they resolve through objectlookup, which applies the
+	// three tiers. This applies the same ones.
+	// Two passes, exact spellings first.
+	//
+	// A declaration that names the table exactly as the reader does gets that
+	// trigger before one relying on a tier is offered it. Without the ordering,
+	// a schema spelling the same trigger both ways would hand the database's
+	// one to whichever declaration came first in the slice -- the coin toss
+	// objectlookup declines to make elsewhere.
+	paired := make([]bool, len(database.Triggers))
+	matched := make([]int, len(desired.Triggers))
+	for position := range matched {
+		matched[position] = -1
+	}
+	for position, declared := range desired.Triggers {
+		matched[position] = exactDatabaseTrigger(database.Triggers, paired, declared, semantics)
+		if matched[position] >= 0 {
+			paired[matched[position]] = true
+		}
+	}
+	for position, declared := range desired.Triggers {
+		if matched[position] >= 0 {
+			continue
+		}
+		matched[position] = matchingDatabaseTrigger(database.Triggers, paired, declared, semantics)
+		if matched[position] >= 0 {
+			paired[matched[position]] = true
+		}
 	}
 
-	databaseTriggers := make(map[tableMemberKey]catalog.Trigger)
-	for _, trigger := range database.Triggers {
-		databaseTriggers[triggerKey(trigger.QualifiedTable(), trigger.Name, semantics)] = trigger
-	}
+	for position, declared := range desired.Triggers {
+		canonical := declared
+		canonical.Canonicalize()
 
-	for key, trigger := range generatedTriggers {
-		if _, exists := databaseTriggers[key]; !exists {
+		index := matched[position]
+		if index < 0 {
 			diff.TriggersAdded = append(diff.TriggersAdded, difftypes.TriggerRef{
-				TriggerName: trigger.Name,
-				TableName:   trigger.Table,
-				Desired:     declaredTriggers[key],
+				TriggerName: canonical.Name,
+				TableName:   canonical.Table,
+				Desired:     declared,
 			})
+			continue
+		}
+		triggerDiff := TriggerDefinitions(canonical, database.Triggers[index])
+		if len(triggerDiff.Changes) > 0 {
+			triggerDiff.Desired = declared
+			diff.TriggersModified = append(diff.TriggersModified, triggerDiff)
 		}
 	}
-	for key, trigger := range databaseTriggers {
-		if _, exists := generatedTriggers[key]; !exists {
-			diff.TriggersRemoved = append(diff.TriggersRemoved, difftypes.TriggerRef{
-				TriggerName: trigger.Name,
-				TableName:   trigger.QualifiedTable(),
-			})
+	for index, trigger := range database.Triggers {
+		if paired[index] {
+			continue
 		}
-	}
-	for key, generatedTrigger := range generatedTriggers {
-		if databaseTrigger, exists := databaseTriggers[key]; exists {
-			triggerDiff := TriggerDefinitions(generatedTrigger, databaseTrigger)
-			if len(triggerDiff.Changes) > 0 {
-				triggerDiff.Desired = declaredTriggers[key]
-				diff.TriggersModified = append(diff.TriggersModified, triggerDiff)
-			}
-		}
+		diff.TriggersRemoved = append(diff.TriggersRemoved, difftypes.TriggerRef{
+			TriggerName: trigger.Name,
+			TableName:   trigger.QualifiedTable(),
+		})
 	}
 
 	sortTriggerRefs(diff.TriggersAdded)
@@ -98,8 +129,73 @@ func TriggersWithSemantics(
 	})
 }
 
-func triggerKey(tableName, triggerName string, semantics identifier.Semantics) tableMemberKey {
-	return newTableMemberKey(tableName, triggerName, semantics)
+// matchingDatabaseTrigger returns the index of the database trigger that is the
+// same object as a declared one, or -1.
+//
+// The trigger's own name is folded first and the table half is put through the
+// tiers, which is how objectlookup.Trigger reads the same pair: a trigger is
+// identified by its own name plus the table it hangs on, and it is the table
+// that carries the schema.
+//
+// A trigger already paired is not offered again. Two declarations that both
+// accept one database trigger name one object between them, and the second is
+// an addition rather than a second claim on the first -- iterating the declared
+// slice in order makes which is which deterministic.
+// exactDatabaseTrigger returns the index of a database trigger spelled exactly
+// as the declaration spells it, or -1.
+//
+// The first of objectlookup's tiers, applied to every declaration before any of
+// them reaches the later ones. A schema that spells a name the way the reader
+// does is never re-interpreted, and doing that pass first is what makes the
+// answer independent of the order the declarations happen to be in.
+func exactDatabaseTrigger(
+	triggers []catalog.Trigger,
+	paired []bool,
+	declared schemamodel.Trigger,
+	semantics identifier.Semantics,
+) int {
+	for index, trigger := range triggers {
+		if paired[index] {
+			continue
+		}
+		if semantics.TableIdentityKey(trigger.Name) != semantics.TableIdentityKey(declared.Name) {
+			continue
+		}
+		if trigger.QualifiedTable() == declared.Table {
+			return index
+		}
+	}
+	return -1
+}
+
+func matchingDatabaseTrigger(
+	triggers []catalog.Trigger,
+	paired []bool,
+	declared schemamodel.Trigger,
+	semantics identifier.Semantics,
+) int {
+	wanted := semantics.TableIdentityKey(declared.Name)
+	candidates := make([]catalog.Trigger, 0, len(triggers))
+	indexes := make([]int, 0, len(triggers))
+	for index, trigger := range triggers {
+		if paired[index] || semantics.TableIdentityKey(trigger.Name) != wanted {
+			continue
+		}
+		candidates = append(candidates, trigger)
+		indexes = append(indexes, index)
+	}
+
+	match := objectlookup.Find(candidates, declared.Table, semantics,
+		func(trigger catalog.Trigger) string { return trigger.QualifiedTable() })
+	if match == nil {
+		return -1
+	}
+	for position := range candidates {
+		if &candidates[position] == match {
+			return indexes[position]
+		}
+	}
+	return -1
 }
 
 func sortTriggerRefs(refs []difftypes.TriggerRef) {
