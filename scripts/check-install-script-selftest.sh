@@ -182,14 +182,59 @@ p.write_text(s.replace(old, "\t*) BOOL_RESULT=false ;;"))
 
 # An install directory nobody proved writable, checked after the transfer rather
 # than before it. The reader waits for tens of megabytes to learn what was
-# knowable at the start.
+# knowable at the start. The probe still runs here; its failure is swallowed,
+# which is the same thing and is the shape the mistake actually takes.
 run_mutation "the install directory not proven writable" '
 import os, pathlib
 p = pathlib.Path(os.environ["MUTANT"])
 s = p.read_text()
-old = "\tif ! (: >\"$probe\") 2>/dev/null; then"
+old = "\tprobe=\"$(mktemp \"$bindir/.ptah-install-probe.XXXXXXXXXX\" 2>/dev/null)\" ||\n\t\tfail 7 \"cannot write to $bindir; set PTAH_INSTALL_DIR or run with different privileges\""
 assert old in s, "anchor moved: the writability probe"
-p.write_text(s.replace(old, "\tif false; then"))
+new = "\tprobe=\"$(mktemp \"$bindir/.ptah-install-probe.XXXXXXXXXX\" 2>/dev/null || printf \"%s\" \"$bindir/.ptah-unproven\")\""
+p.write_text(s.replace(old, new))
+'
+
+# The classification of a 404 keyed on curl's exit code again. It is 22 over
+# HTTP/1.1 and 56 over HTTP/2, and github.com serves HTTP/2, so this is the
+# shape in which every macOS reader asking for a version that does not exist
+# was told the transfer had failed. Only the HTTP/2 case sees it: the fixture
+# server speaks HTTP/1.1, where the old code was right.
+run_mutation "a 404 classified from curl s exit code rather than the status line" '
+import os, pathlib
+p = pathlib.Path(os.environ["MUTANT"])
+s = p.read_text()
+old = "\t\tcase \"$code\" in\n\t\t4??) DOWNLOAD_ERROR=notfound ;;\n\t\tesac"
+assert old in s, "anchor moved: the download classification"
+p.write_text(s.replace(old, "\t\tif [ \"$status\" -eq 22 ]; then\n\t\t\tDOWNLOAD_ERROR=notfound\n\t\tfi"))
+'
+
+# The writability probe back on a name built from the process id, opened without
+# O_EXCL. A process id is public, so a symlink planted at that name is truncated
+# rather than refused -- and the file it points at is outside the install
+# directory the installer promises to confine itself to.
+run_mutation "the writability probe on a name built from the process id" '
+import os, pathlib
+p = pathlib.Path(os.environ["MUTANT"])
+s = p.read_text()
+old = "\tprobe=\"$(mktemp \"$bindir/.ptah-install-probe.XXXXXXXXXX\" 2>/dev/null)\" ||\n\t\tfail 7"
+assert old in s, "anchor moved: the writability probe"
+new = "\tprobe=\"$bindir/.ptah-install-probe.$$\"\n\tif ! (: >\"$probe\") 2>/dev/null; then\n\t\tfail 7"
+s = s.replace(old, new)
+old2 = "or run with different privileges\"\n\trm -f \"$probe\""
+assert old2 in s, "anchor moved: the probe removal"
+p.write_text(s.replace(old2, "or run with different privileges\"\n\tfi\n\trm -f \"$probe\""))
+'
+
+# The staging name back on the process id. `cp` then writes the binary through
+# a symlink planted there, and `mv` renames the symlink into place: the run
+# reports three binaries installed, one of them a link somewhere else.
+run_mutation "the staging file on a name built from the process id" '
+import os, pathlib
+p = pathlib.Path(os.environ["MUTANT"])
+s = p.read_text()
+old = "\t\tstaging_file=\"$(mktemp \"$bindir/.ptah-install.XXXXXXXXXX\")\" ||\n\t\t\tfail 7 \"could not create a staging file in $bindir\"\n"
+assert old in s, "anchor moved: the staging file"
+p.write_text(s.replace(old, "\t\tstaging_file=\"$bindir/.ptah-install-$$-$name\"\n"))
 '
 
 # The shape --verify-signature had for one revision: the cosign check sat inside

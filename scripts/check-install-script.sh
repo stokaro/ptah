@@ -208,6 +208,33 @@ esac
 FAKE
 chmod 0755 "$work/fakeuname/uname"
 
+# A curl that reports what Apple's curl reports over HTTP/2.
+#
+# `curl -f` aborts on any status of 400 or above, but the exit code it then
+# reports depends on the HTTP version: 22 over HTTP/1.1 and 56 over HTTP/2.
+# Measured with curl 8.7.1 on macOS 26.5 against github.com, which serves
+# HTTP/2, in the same minute as a Debian curl 7.88.1 that answered 22.
+#
+# The fixture server below is python3's http.server, which speaks HTTP/1.1 and
+# nothing else, so it can only ever produce the 22 half of that. This shim
+# supplies the other half offline and deterministically: it is the real curl
+# with one exit code rewritten, which is the whole of the platform difference.
+# The `--live` run at the end of this file exercises the real protocol.
+curl_http2_shim() {
+	local dir="$work/curl-http2" real
+	real="$(command -v curl)"
+	mkdir -p "$dir"
+	cat >"$dir/curl" <<SHIM
+#!/bin/sh
+"$real" "\$@"
+s=\$?
+if [ "\$s" -eq 22 ]; then s=56; fi
+exit "\$s"
+SHIM
+	chmod 0755 "$dir/curl"
+	printf '%s\n' "$dir"
+}
+
 # A PATH holding only the named tools, used to prove that a missing
 # prerequisite stops the run. Everything else the installer needs before it
 # reaches the check under test is a shell builtin.
@@ -326,6 +353,54 @@ fresh_bindir() {
 	rm -rf "${work:?}/bin" "${work:?}/home" "${work:?}/tmp"
 	mkdir -p "$work/bin" "$work/home" "$work/tmp"
 	printf '%s\n' "$work/bin"
+}
+
+# invoke_deferred starts the installer under a wrapper that first publishes the
+# process id it will run as, then waits for a go file, then execs. exec keeps
+# the pid, so $$ inside the installer is the number printed before it started.
+#
+# That is what makes case_symlink_in_bindir deterministic rather than a race: it
+# learns the pid, plants what it wants at the names that pid produces, and only
+# then lets the run proceed. It works because a process id is public, which is
+# the property the case is about.
+#
+# WRAPPER is a program the shell under test runs, so the process that execs the
+# installer is that shell rather than this one. Every expansion in it belongs to
+# that shell, which is why it is single-quoted here.
+# shellcheck disable=SC2016
+WRAPPER='printf "%s\n" "$$" >"$1"
+while [ ! -e "$2" ]; do sleep 0.05; done
+shift 2
+exec "$@"'
+deferred_pid=""
+deferred_job=""
+invoke_deferred() {
+	deferred_pid=""
+	deferred_job=""
+	rm -f "$work/pid" "$work/go"
+	env -u PTAH_INSTALL_VERSION -u PTAH_INSTALL_DIR -u PTAH_INSTALL_BINARIES \
+		-u PTAH_INSTALL_NO_MODIFY_PATH -u PTAH_INSTALL_VERIFY_SIGNATURE \
+		-u PTAH_INSTALL_DRY_RUN -u PTAH_INSTALL_QUIET -u PTAH_INSTALL_BASE_URL \
+		-u GITHUB_PATH -u XDG_BIN_HOME \
+		HOME="$work/home" TMPDIR="$work/tmp" \
+		"$@" >"$out" 2>"$err" &
+	deferred_job=$!
+	for _ in $(seq 1 200); do
+		if [ -s "$work/pid" ]; then
+			deferred_pid="$(cat "$work/pid")"
+			return 0
+		fi
+		sleep 0.05
+	done
+	kill "$deferred_job" >/dev/null 2>&1 || true
+	report "$current / deferred: the wrapper never published the installer's pid"
+	return 1
+}
+
+release_deferred() {
+	: >"$work/go"
+	status=0
+	wait "$deferred_job" || status=$?
 }
 
 expect_status() {
@@ -574,8 +649,76 @@ case_release_not_found() {
 		"${shell_argv[@]}" "$script" --version v9.9.9
 	expect_status 5 "a release that does not exist exits 5" || return 0
 	expect_contains "$err" "no release v9.9.9" "the refusal names the version" || return 0
+	# The actionable half of the sentence, pinned separately. "failed to
+	# download <url>" is also an exit 5 naming the version, and it is what the
+	# reader got when the classification below stopped firing.
+	expect_contains "$err" "check the version" "the refusal says what to do about it" || return 0
 	expect_empty_dir "$bindir" "nothing is installed" || return 0
 	pass "a release that does not exist is refused"
+}
+
+# The same refusal, with curl reporting the exit code it reports over HTTP/2.
+#
+# curl -f aborts on a 404 either way, but it exits 22 over HTTP/1.1 and 56 over
+# HTTP/2 -- and github.com serves HTTP/2, so every macOS reader who asked for a
+# version that does not exist was told "failed to download <url>" instead. The
+# fixture server speaks HTTP/1.1 only and therefore always produced the 22 that
+# the old classification recognized; this case supplies the other answer.
+case_release_not_found_http2() {
+	local bindir path
+	bindir="$(fresh_bindir)"
+	path="$(curl_http2_shim)"
+	invoke PATH="$path:$PATH" PTAH_INSTALL_BASE_URL="$base_url" PTAH_INSTALL_DIR="$bindir" \
+		"${shell_argv[@]}" "$script" --version v9.9.9
+	expect_status 5 "a 404 reported as exit 56 still exits 5" || return 0
+	expect_contains "$err" "no release v9.9.9" "the refusal names the version" || return 0
+	expect_contains "$err" "check the version" "the refusal is the actionable one, not the generic one" || return 0
+	expect_empty_dir "$bindir" "nothing is installed" || return 0
+	pass "a 404 is classified from the status line, not from curl's exit code"
+}
+
+# A symlink planted in the install directory must not be followed.
+#
+# The names the installer writes there used to be built from its process id --
+# `.ptah-install-probe.$$` and `.ptah-install-$$-ptah` -- and neither was
+# created with O_EXCL. A process id is public, so anyone else able to write to
+# the install directory could put a symlink at both names: the probe truncated
+# whatever it pointed at, `cp` wrote the binary through it, and `mv` renamed the
+# symlink into place. The run exited 0 and reported three binaries installed,
+# one of which was a link to a file outside the directory.
+#
+# The default install directory is one only its owner writes. --bin-dir is what
+# makes this reachable: it exists to name a shared one.
+case_symlink_in_bindir() {
+	local bindir victim
+	bindir="$(fresh_bindir)"
+	victim="$work/victim"
+	printf 'do not overwrite me\n' >"$victim"
+
+	invoke_deferred PTAH_INSTALL_BASE_URL="$base_url" PTAH_INSTALL_DIR="$bindir" \
+		"${shell_argv[@]}" -c "$WRAPPER" _ "$work/pid" "$work/go" \
+		"${shell_argv[@]}" "$script" || return 0
+	ln -s "$victim" "$bindir/.ptah-install-probe.$deferred_pid"
+	ln -s "$victim" "$bindir/.ptah-install-$deferred_pid-ptah"
+	release_deferred
+
+	expect_status 0 "the install still succeeds" || return 0
+	checks=$((checks + 1))
+	if [ "$(cat "$victim")" != "do not overwrite me" ]; then
+		report "$current / symlink: a symlink in $bindir was written through to $victim"
+		return 0
+	fi
+	checks=$((checks + 1))
+	if [ -L "$bindir/ptah" ]; then
+		report "$current / symlink: $bindir/ptah is a symlink to $(readlink "$bindir/ptah")"
+		return 0
+	fi
+	checks=$((checks + 1))
+	if [ "$("$bindir/ptah" version | head -n 1)" != "Version: 0.2.0" ]; then
+		report "$current / symlink: the installed ptah did not run"
+		return 0
+	fi
+	pass "a symlink planted at a predictable staging name is neither followed nor renamed into place"
 }
 
 case_unwritable_bindir() {
@@ -739,6 +882,8 @@ run_suite() {
 	case_missing_tar
 	case_missing_downloader
 	case_release_not_found
+	case_release_not_found_http2
+	case_symlink_in_bindir
 	case_signature_without_cosign
 	case_unwritable_bindir
 	case_default_location
@@ -786,6 +931,20 @@ if [ "$live" = true ]; then
 		fi
 	done
 	pass "v0.2.0 installs from the published release and all three binaries run"
+
+	# The refusal for a version that does not exist, over the protocol
+	# github.com actually serves. The fixture suite covers this too, but only
+	# by simulating curl's HTTP/2 exit code; this is the real one. curl 8.7.1
+	# on macOS reports 56 here and Debian's curl 7.88.1 reports 22, and the
+	# sentence has to be the same either way.
+	bindir="$(fresh_bindir)"
+	invoke PTAH_INSTALL_DIR="$bindir" "${shell_argv[@]}" "$script" --version v9.9.9
+	expect_status 5 "a release that does not exist exits 5 against github.com" || true
+	expect_contains "$err" "no release v9.9.9 at https://github.com/stokaro/ptah/releases" \
+		"the refusal names the release page" || true
+	expect_contains "$err" "check the version" "the refusal is the actionable one over HTTP/2" || true
+	expect_empty_dir "$bindir" "nothing is installed" || true
+	pass "a version github.com does not have is refused with the actionable sentence"
 
 	bindir="$(fresh_bindir)"
 	invoke PTAH_INSTALL_DIR="$bindir" "${shell_argv[@]}" "$script" --dry-run

@@ -53,6 +53,7 @@ selected=""
 downloader=""
 hasher=""
 tmpdir=""
+staging_file=""
 resolved_latest=false
 opt_version=""
 opt_bindir=""
@@ -138,12 +139,17 @@ have() {
 # install directory. It runs on a normal exit and on an interrupt, so an
 # abandoned run leaves neither a 28 MB archive in /tmp nor a partial binary
 # beside the real one.
+#
+# The staging file is removed by the name mktemp chose, not by a glob: there is
+# exactly one at a time and its name is not derivable from outside the process,
+# which is the same property that keeps a planted symlink from being written
+# through. A glob would have to be guessable to be writable.
 cleanup() {
 	if [ -n "$tmpdir" ] && [ -d "$tmpdir" ]; then
 		rm -rf "$tmpdir"
 	fi
-	if [ -n "$bindir" ]; then
-		rm -f "$bindir"/.ptah-install-$$-* 2>/dev/null || true
+	if [ -n "$staging_file" ]; then
+		rm -f "$staging_file" 2>/dev/null || true
 	fi
 	return 0
 }
@@ -320,6 +326,16 @@ detect_tar() {
 	have tar || fail 4 "need tar to unpack the Ptah archive"
 }
 
+# detect_mktemp is a prerequisite check because three writes depend on it: the
+# temporary directory, the writability probe, and the staging file each binary
+# is copied to. Every one of those needs a name created with O_EXCL under a name
+# nobody outside this process can predict, and mktemp is the only POSIX way to
+# get one. It is checked here, with the other prerequisites, rather than being
+# discovered at the first write.
+detect_mktemp() {
+	have mktemp || fail 4 "need mktemp to stage the Ptah binaries safely"
+}
+
 # detect_hasher picks the first sha256 tool present. sha256sum covers Linux and
 # busybox; shasum covers every macOS, being Perl; openssl is the last resort and
 # prints the digest as the final field under both LibreSSL ("SHA256(f)= h") and
@@ -353,11 +369,11 @@ curl_flags() {
 }
 
 # download writes the URL to a file. It reports whether the failure was an HTTP
-# status the server chose -- which means "no such release asset" -- or anything
-# else, which means the transfer did not happen. curl distinguishes the two by
-# exit status; wget does not, so a wget run reports the generic failure.
+# status the server chose -- which means "no such release" -- or anything else,
+# which means the transfer did not happen. curl is asked for the status line
+# itself; wget cannot be, so a wget run reports the generic failure.
 download() {
-	local url="$1" dest="$2" status=0 flags
+	local url="$1" dest="$2" status=0 flags code=""
 	DOWNLOAD_ERROR=""
 	rm -f "$dest"
 	if [ "$downloader" = curl ]; then
@@ -367,19 +383,27 @@ download() {
 			# --proto pins the transfer, and its redirect, to https: a release
 			# asset is served from a second host and the hop must not downgrade.
 			# shellcheck disable=SC2086 # word splitting of the flag list is the point
-			curl --proto '=https' --proto-redir '=https' --tlsv1.2 $flags -o "$dest" "$url" || status=$?
+			code="$(curl --proto '=https' --proto-redir '=https' --tlsv1.2 $flags -w '%{http_code}' -o "$dest" "$url")" || status=$?
 			;;
 		*)
 			# shellcheck disable=SC2086 # word splitting of the flag list is the point
-			curl $flags -o "$dest" "$url" || status=$?
+			code="$(curl $flags -w '%{http_code}' -o "$dest" "$url")" || status=$?
 			;;
 		esac
-		# -f makes curl exit 22 for any HTTP status of 400 or above. Without -f
-		# a 404 exits 0 and writes a nine-byte file saying "Not Found", which
-		# then fails verification as though the release had been tampered with.
-		if [ "$status" -eq 22 ]; then
-			DOWNLOAD_ERROR=notfound
-		fi
+		# -f is what makes a 404 a failure at all: without it curl exits 0 and
+		# writes a nine-byte file saying "Not Found", which then fails
+		# verification as though the release had been tampered with.
+		#
+		# WHICH failure it is comes from the status line, not from curl's exit
+		# code. That code depends on the HTTP version -- 22 over HTTP/1.1 and 56
+		# over HTTP/2, measured with curl 8.7.1 against github.com, which serves
+		# HTTP/2. Keying on 22 classified a 404 correctly on one protocol only,
+		# so every macOS reader asking for a version that does not exist was
+		# told the transfer failed instead of being told to check the version.
+		# -w prints the status line even on the run -f aborted.
+		case "$code" in
+		4??) DOWNLOAD_ERROR=notfound ;;
+		esac
 	else
 		wget -q -O "$dest" "$url" || status=$?
 	fi
@@ -463,14 +487,21 @@ resolve_bindir() {
 # ensure_bindir_writable proves the directory can be written by writing to it,
 # before the download rather than after it. Permission bits are not the whole
 # answer on every filesystem, and a read-only mount answers only to a write.
+#
+# mktemp, not a name built from $$. A process id is public, so `$bindir/.ptah-
+# install-probe.$$` is a name anyone else with write access to the install
+# directory can compute and create ahead of the run -- and `: >"$probe"` follows
+# a symlink found there and truncates whatever it points at. mktemp creates the
+# file with O_EXCL under a name that is not derivable, so a planted symlink is
+# neither followed nor able to make the probe fail. --bin-dir is what makes this
+# matter: the default is a directory only its owner writes, but the flag exists
+# to name a shared one.
 ensure_bindir_writable() {
 	local probe
 	mkdir -p "$bindir" 2>/dev/null ||
 		fail 7 "cannot create $bindir; set PTAH_INSTALL_DIR or --bin-dir to a directory you can write"
-	probe="$bindir/.ptah-install-probe.$$"
-	if ! (: >"$probe") 2>/dev/null; then
+	probe="$(mktemp "$bindir/.ptah-install-probe.XXXXXXXXXX" 2>/dev/null)" ||
 		fail 7 "cannot write to $bindir; set PTAH_INSTALL_DIR or run with different privileges"
-	fi
 	rm -f "$probe"
 }
 
@@ -541,19 +572,28 @@ unpack() {
 # directory and renames it into place. The rename is within one directory, so it
 # is atomic: there is no moment at which a half-written file carries the name a
 # shell would find on PATH.
+#
+# mktemp chooses the staging name for the reason the probe above does. The name
+# it replaced was `.ptah-install-$$-$name`, which anyone able to write to the
+# install directory could compute: a symlink planted there was opened by `cp`,
+# so the binary was written through it to a file outside the directory, and the
+# `mv` then renamed the symlink into place. The run exited 0 and reported three
+# binaries installed, one of which was a link somewhere else.
 install_binaries() {
-	local name dest staging
+	local name dest
 	for name in $selected; do
 		dest="$bindir/$name"
-		staging="$bindir/.ptah-install-$$-$name"
+		staging_file="$(mktemp "$bindir/.ptah-install.XXXXXXXXXX")" ||
+			fail 7 "could not create a staging file in $bindir"
 		if [ -e "$dest" ]; then
 			say "replacing $(display_path "$dest")"
 		fi
-		cp "$tmpdir/unpack/$name" "$staging" ||
-			fail 7 "could not write $staging"
-		chmod 0755 "$staging"
-		mv -f "$staging" "$dest" ||
+		cp "$tmpdir/unpack/$name" "$staging_file" ||
+			fail 7 "could not write $staging_file"
+		chmod 0755 "$staging_file"
+		mv -f "$staging_file" "$dest" ||
 			fail 7 "could not install $dest"
+		staging_file=""
 	done
 	say "installed $(printf '%s' "$selected" | sed 's/ /, /g') in $(display_path "$bindir")"
 }
@@ -704,6 +744,7 @@ main() {
 	detect_tar
 	detect_hasher
 	detect_signature_tool
+	detect_mktemp
 
 	resolve_version
 	if [ "$resolved_latest" = true ]; then
