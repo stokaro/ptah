@@ -46,22 +46,15 @@ var Exempt = map[string]string{
 	"NewMemory": "an in-memory store that exists for tests to drive the engine without a " +
 		"server; a production caller would be the defect",
 
-	// The shape this package is named for, found by running it. Each is a
-	// decision with tests and no caller, and each is a behavior the vertical
-	// does not have. Tracked in stokaro/ptah#2474.
-	"Stale": "stokaro/ptah#2474: the staleness rule a target row answers, called by " +
-		"nothing; verification derives freshness its own way",
+	// The shape this package is named for, found by running it. Tracked in
+	// stokaro/ptah#2474. Claim was wired up in #2480 and the four redundant
+	// answers are gone; a missing pair of verbs is what is left.
 	"Pause":  "stokaro/ptah#2474: pauses a run, and there is no verb that pauses one",
 	"Resume": "stokaro/ptah#2474: the other half of the same missing pair",
-	"SameGeneration": "stokaro/ptah#2474: compares two specifications for one generation; " +
-		"every caller compares digests directly instead",
 
-	// Plan queries with no reader. Smaller than the five above -- they report
-	// on a plan rather than deciding anything -- but the same shape.
-	"Irreversible": "stokaro/ptah#2474: reports the steps that cannot be undone, and the " +
-		"plan is rendered without asking",
-	"Mutations":  "stokaro/ptah#2474: reports the steps that change something, likewise",
-	"Undetailed": "stokaro/ptah#2474: builds a fact with no detail, which no fact site wants",
+	"Undetailed": "a self-check rather than a decision: it reports the facts a plan built " +
+		"that owe an explanation and give none, and the only caller a self-check can have " +
+		"is a test. embedreport's facts_internal_test.go runs it over the real assembly",
 
 	"NewReleaseRecord": "stokaro/ptah#2475: the release record has no verb that publishes " +
 		"one; verify and cutover publish theirs",

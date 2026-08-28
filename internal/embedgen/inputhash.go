@@ -64,15 +64,3 @@ type TargetRow struct {
 // version the row was computed at. The three are separate questions and the
 // answer is deliberately one boolean plus a reason, so a caller can act and a
 // diagnostic can explain.
-func (t TargetRow) Stale(generation, currentInputHash, currentVersion string) (bool, string) {
-	switch {
-	case t.GenerationIdentity != generation:
-		return true, "the row belongs to a different generation"
-	case t.SourceInputHash != currentInputHash:
-		return true, "the source input has changed since the vector was computed"
-	case currentVersion != "" && t.SourceVersion != "" && currentVersion != t.SourceVersion:
-		return true, "the source has advanced past the version the vector was computed at"
-	default:
-		return false, ""
-	}
-}

@@ -72,26 +72,8 @@ func (p Plan) Runnable() bool {
 }
 
 // Mutations lists the steps that change something.
-func (p Plan) Mutations() []Step {
-	var mutating []Step
-	for _, step := range p.Steps {
-		if step.Mutating {
-			mutating = append(mutating, step)
-		}
-	}
-	return mutating
-}
 
 // Irreversible lists the steps that cannot be undone.
-func (p Plan) Irreversible() []Step {
-	var irreversible []Step
-	for _, step := range p.Steps {
-		if step.Irreversible {
-			irreversible = append(irreversible, step)
-		}
-	}
-	return irreversible
-}
 
 // requiredCapabilities are what a generation needs from the target database.
 var requiredCapabilities = []struct {

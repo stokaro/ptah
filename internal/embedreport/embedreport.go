@@ -195,13 +195,7 @@ func planInputs(
 	ctx context.Context, db *sql.DB, loaded embedspec.Loaded, current string,
 ) (embedplan.Inputs, error) {
 	spec := loaded.Spec
-	facts := embedplan.Facts{
-		embedplan.ConfiguredFact("source.table", spec.Source.Table, spec.Name),
-		embedplan.ConfiguredFact("model.identifier", spec.Model.Identifier, "the specification"),
-		embedplan.ConfiguredFact("model.revision", spec.Model.Revision, "the specification"),
-		embedplan.ConfiguredFact("provider.credential", loaded.Credential,
-			"the specification, as a reference rather than a value"),
-	}
+	facts := configuredFacts(loaded)
 
 	targetExists, err := embedpg.ColumnExists(ctx, db, spec.Target.Table, spec.Target.Column)
 	if err != nil {
@@ -230,6 +224,29 @@ func planInputs(
 		// would be a check with nothing behind it.
 		Permissions: map[string]bool{"inference:plan": true},
 	}, nil
+}
+
+// configuredFacts are the answers the specification gives on its own.
+//
+// One function because the plan is assembled from literals, and a literal is
+// the only way to build a fact that owes an explanation and gives none.
+// `Facts.Undetailed` is the check for that, and it can only be run against a
+// list something produces.
+//
+// The detail on source.table used to be the specification's NAME, which read as
+// `source.table = articles (configured: articles)` whenever the two matched and
+// as nothing at all when the specification carried no name -- a configured fact
+// with no source, which is the shape Undetailed exists to report
+// (stokaro/ptah#2474).
+func configuredFacts(loaded embedspec.Loaded) embedplan.Facts {
+	spec := loaded.Spec
+	return embedplan.Facts{
+		embedplan.ConfiguredFact("source.table", spec.Source.Table, "the specification"),
+		embedplan.ConfiguredFact("model.identifier", spec.Model.Identifier, "the specification"),
+		embedplan.ConfiguredFact("model.revision", spec.Model.Revision, "the specification"),
+		embedplan.ConfiguredFact("provider.credential", loaded.Credential,
+			"the specification, as a reference rather than a value"),
+	}
 }
 
 // disclosureOf says what would leave the database.

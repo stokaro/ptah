@@ -616,3 +616,90 @@ func TestVerify_AnUnmeasuredVectorCheckIsNotABlocker(t *testing.T) {
 			"values were not",
 	})
 }
+
+// TestVerify_FreshnessIsTheLayerThatHadNoTest is the rule that decides whether
+// a corpus is recomputed.
+//
+// Until stokaro/ptah#2474 nothing here named LayerFreshness. The only tests of
+// staleness exercised `embedgen.TargetRow.Stale`, a second implementation with
+// no caller -- so the rule that runs was untested and the rule that was tested
+// did not run. Comparing the two is what found the defect the last row pins.
+func TestVerify_FreshnessIsTheLayerThatHadNoTest(t *testing.T) {
+	tests := []struct {
+		name string
+		// sourceVersion and targetVersion are what the two sides carry.
+		sourceVersion string
+		targetVersion string
+		// sourceHash and targetHash are the model input each was computed from.
+		sourceHash string
+		targetHash string
+		wantStale  bool
+	}{
+		{
+			name:       "the text changed",
+			sourceHash: "hash-new", targetHash: "hash-1",
+			sourceVersion: "7", targetVersion: "7",
+			wantStale: true,
+		},
+		{
+			name:       "the source moved past the version the vector was computed at",
+			sourceHash: "hash-1", targetHash: "hash-1",
+			sourceVersion: "8", targetVersion: "7",
+			wantStale: true,
+		},
+		{
+			name:       "neither side records a version, and the text is the same",
+			sourceHash: "hash-1", targetHash: "hash-1",
+			sourceVersion: "", targetVersion: "",
+			wantStale: false,
+		},
+		{
+			// The row was written without a version and the source has one now.
+			// That is a strategy change, not evidence the source moved: there
+			// is no earlier version to have moved FROM, and the input hash --
+			// which matches -- is what answers freshness here.
+			//
+			// Reported stale before stokaro/ptah#2474, which recomputed a
+			// corpus whose text had not changed, at the provider's price.
+			name:       "the row carries no version and the source does",
+			sourceHash: "hash-1", targetHash: "hash-1",
+			sourceVersion: "8", targetVersion: "",
+			wantStale: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			expectation, structure, source, target, state := healthy()
+			source[0].Version, source[0].InputHash = test.sourceVersion, test.sourceHash
+			target[0].Version, target[0].InputHash = test.targetVersion, test.targetHash
+			source[1].Version, source[1].InputHash = test.sourceVersion, test.sourceHash
+			target[1].Version, target[1].InputHash = test.targetVersion, test.targetHash
+
+			report := embedverify.Verify(expectation, structure, source, target, state)
+
+			c.Assert(freshnessFindings(report), qt.HasLen, boolToCount(test.wantStale))
+		})
+	}
+}
+
+// freshnessFindings returns the findings the freshness layer reported.
+func freshnessFindings(report embedverify.Report) []embedverify.Finding {
+	found := make([]embedverify.Finding, 0, len(report.Findings))
+	for _, finding := range report.Findings {
+		if finding.Layer == embedverify.LayerFreshness {
+			found = append(found, finding)
+		}
+	}
+	return found
+}
+
+// boolToCount is how many findings a row expects.
+//
+// The freshness layer reports one finding covering every stale row, so a table
+// that expected a row count would be asserting the wrong number.
+func boolToCount(stale bool) int {
+	counts := map[bool]int{true: 1, false: 0}
+	return counts[stale]
+}

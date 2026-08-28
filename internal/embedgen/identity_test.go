@@ -117,7 +117,6 @@ func TestIdentity_ChangesWithEveryLoadBearingProperty(t *testing.T) {
 			test.change(&changed)
 
 			c.Assert(changed.Identity().Digest, qt.Not(qt.Equals), baseSpec().Identity().Digest)
-			c.Assert(embedgen.SameGeneration(baseSpec(), changed), qt.IsFalse)
 		})
 	}
 }
@@ -146,7 +145,6 @@ func TestIdentity_DoesNotChangeWithPresentationOrTuning(t *testing.T) {
 			test.change(&changed)
 
 			c.Assert(changed.Identity().Digest, qt.Equals, baseSpec().Identity().Digest)
-			c.Assert(embedgen.SameGeneration(baseSpec(), changed), qt.IsTrue)
 		})
 	}
 }
