@@ -267,6 +267,14 @@ run_case check-command-reference.sh \
 	"a row deleted from the generated command reference" \
 	'perl -0pi -e "s/^[|] .ptah inference plan. [|][^\\n]*\\n//m" docs/command-reference.md'
 
+run_case check-inventory-pages.sh \
+	"a page several rows name as canonical, retired from the site" \
+	"git rm -q docs/site/src/content/docs/direct/inspect.md"
+
+run_case check-inventory-pages.sh \
+	"every fenced block stripped from a page rows claim a runnable example on" \
+	'perl -ni -e "print unless /^ *\x60\x60\x60/" docs/site/src/content/docs/direct/inspect.md'
+
 run_case check-renovate-regex.sh \
 	"a backreference put back into a custom-manager pattern" \
 	"perl -0pi -e 's/\\[a-z\\]\\[\\\\\\\\w\\.\\/-\\]\\*:/\\\\\\\\k<depName>:/' renovate.json"

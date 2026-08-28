@@ -52,7 +52,12 @@ type Flag struct {
 	// coverage rule: a hidden flag need not be documented, and a hidden flag
 	// named in documentation is still real.
 	Hidden bool
-	Usage  string
+	// NoOptDefVal is pflag's own field, and it says whether the next word on
+	// the line is this flag's value or a positional argument. `--dry-run x`
+	// passes one positional and `--db-url x` passes none, and nothing but this
+	// field separates them.
+	NoOptDefVal string
+	Usage       string
 }
 
 // Command is one path in one tree.
@@ -67,8 +72,19 @@ type Command struct {
 	// abort as unreachable.
 	Hidden bool
 	// Leaf reports that the command registers no subcommands.
-	Leaf  bool
-	Short string
+	Leaf bool
+	// Validate is the command's own positional-argument validator, bound to the
+	// command and ready to be asked about a concrete argument list. Walk sets
+	// it for every command it produces, so a Census always carries one.
+	//
+	// It is asked rather than described, and never inferred from Leaf: a
+	// namespace that loses its last subcommand becomes a leaf and still refuses
+	// every word its verbs used to answer to. Asking it with the words a
+	// document actually wrote is also the only reading that gets an arity or a
+	// type right -- `ptah oci tag <ref> <tag>` needs two, and
+	// `ptah-compat migrate apply 2` needs an integer.
+	Validate func(args []string) error
+	Short    string
 	// Flags holds every flag the command parses, including the persistent flags
 	// it inherits, keyed by name.
 	Flags map[string]Flag
@@ -155,34 +171,92 @@ func (c *Census) VisiblePaths(tree Tree) []string {
 // Resolve walks a launcher's positional words down the tree and reports how far
 // they got.
 //
-// It returns the deepest command the words reach, the number of words consumed,
-// and whether the first unconsumed word is a word the tree would refuse. That
-// last answer is what separates a stale command reference from an ordinary
-// positional argument: cobra answers `unknown command` when a word follows a
-// command that has subcommands, and treats the same word as an argument when it
-// follows a leaf.
+// It returns the deepest command the words reach, the index of the first word
+// that command could not consume, and whether that command would refuse the
+// positional tail it was left holding. That last answer is what separates a
+// stale command reference from an ordinary positional argument, and it is
+// obtained by asking the command's own validator rather than by describing it.
+//
+// Flags are stepped over the way cobra steps over them, which needs the flag
+// set: `--dry-run x` leaves one positional word behind and `--db-url x` leaves
+// none. Reading every non-flag word as positional would hand a validator a URL
+// and call the document stale.
 func (c *Census) Resolve(tree Tree, words []string) (cmd Command, consumed int, refused bool) {
 	current, ok := c.Lookup(tree, "")
 	if !ok {
 		return Command{}, 0, false
 	}
-	path := ""
-	for i, word := range words {
-		if strings.HasPrefix(word, "-") {
-			return current, i, false
+	rest := words
+	offset := 0
+	for {
+		positions := positionalIndexes(rest, current)
+		if len(positions) == 0 {
+			return current, len(words), false
 		}
-		next := strings.TrimSpace(path + " " + word)
-		child, ok := c.Lookup(tree, next)
-		if !ok {
-			// A word the tree cannot resolve is a refusal only where cobra
-			// would refuse it. After a leaf it is an argument -- `ptah help
-			// migrations` and `ptah schema render ./models` are both ordinary.
-			return current, i, !current.Leaf
+		index := positions[0]
+		child, found := c.Lookup(tree, strings.TrimSpace(current.Path+" "+rest[index]))
+		if !found {
+			tail := make([]string, 0, len(positions))
+			for _, at := range positions {
+				tail = append(tail, rest[at])
+			}
+			return current, offset + index, current.Validate(tail) != nil
 		}
-		path = next
 		current = child
+		offset += index + 1
+		rest = rest[index+1:]
 	}
-	return current, len(words), false
+}
+
+// positionalIndexes reports which of a command line's words a command would see
+// as positional arguments.
+//
+// It mirrors cobra's own stripFlags, including the two cases that decide whether
+// the next word is a flag's value: a long flag with no `=` whose flag takes a
+// value, and a two-character short flag whose flag takes one. A flag this
+// command does not register is treated as taking a value, which is the
+// conservative direction: the alternative reports the value as a stray
+// positional and blames the document for a flag name the check has already
+// reported once.
+func positionalIndexes(words []string, cmd Command) []int {
+	var positions []int
+	for index := 0; index < len(words); index++ {
+		word := words[index]
+		switch {
+		case word == "--":
+			return positions
+		case strings.HasPrefix(word, "--"):
+			if !strings.Contains(word, "=") && cmd.takesValue(strings.TrimPrefix(word, "--")) {
+				index++
+			}
+		case strings.HasPrefix(word, "-") && word != "-":
+			if len(word) == 2 && !strings.Contains(word, "=") && cmd.shorthandTakesValue(word[1:]) {
+				index++
+			}
+		case IsPlaceholder(word):
+			// Kept in the line so the flag before it still pairs with its
+			// value, and skipped here so no validator is asked about `[flags]`.
+		default:
+			positions = append(positions, index)
+		}
+	}
+	return positions
+}
+
+// takesValue reports whether a long flag consumes the following word.
+func (c Command) takesValue(name string) bool {
+	flag, registered := c.Flags[name]
+	return !registered || flag.NoOptDefVal == ""
+}
+
+// shorthandTakesValue is takesValue for a single-letter spelling.
+func (c Command) shorthandTakesValue(shorthand string) bool {
+	for _, flag := range c.Flags {
+		if flag.Shorthand == shorthand {
+			return flag.NoOptDefVal == ""
+		}
+	}
+	return true
 }
 
 // Walk returns every command of one tree, including the root.
@@ -210,12 +284,13 @@ func Walk(tree Tree, root *cobra.Command) []Command {
 			path = ""
 		}
 		out = append(out, Command{
-			Tree:   tree,
-			Path:   path,
-			Hidden: cmd.Hidden,
-			Leaf:   !cmd.HasSubCommands(),
-			Short:  cmd.Short,
-			Flags:  flagsOf(cmd),
+			Tree:     tree,
+			Path:     path,
+			Hidden:   cmd.Hidden,
+			Leaf:     !cmd.HasSubCommands(),
+			Validate: validatorOf(cmd),
+			Short:    cmd.Short,
+			Flags:    flagsOf(cmd),
 		})
 		for _, sub := range cmd.Commands() {
 			visit(sub, path)
@@ -224,6 +299,32 @@ func Walk(tree Tree, root *cobra.Command) []Command {
 	visit(root, "")
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
 	return out
+}
+
+// validatorOf returns one command's positional-argument validator, bound.
+//
+// cobra applies legacyArgs when Args is nil, which refuses a leftover word only
+// at the ROOT of a tree that has subcommands and accepts it everywhere else, so
+// a nil validator is reproduced here rather than treated as "no opinion".
+//
+// The returned closure writes nothing: cmdutil.Fail prints its diagnostic to the
+// command's own error writer, so the writers are redirected first. Walk already
+// mutates the tree it is given -- it runs cobra's two default initializers -- so
+// the census takes ownership of the roots it is handed, and this is not a new
+// claim on them.
+func validatorOf(cmd *cobra.Command) func(args []string) error {
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if cmd.Args == nil {
+		hasParent, hasSubCommands := cmd.HasParent(), cmd.HasSubCommands()
+		return func(args []string) error {
+			if hasParent || !hasSubCommands || len(args) == 0 {
+				return nil
+			}
+			return fmt.Errorf("unknown command %q for %q", args[0], cmd.CommandPath())
+		}
+	}
+	return func(args []string) error { return cmd.Args(cmd, args) }
 }
 
 // flagsOf reads one command's complete flag set.
@@ -237,7 +338,7 @@ func flagsOf(cmd *cobra.Command) map[string]Flag {
 
 	flags := make(map[string]Flag)
 	cmd.Flags().VisitAll(func(f *pflag.Flag) {
-		flags[f.Name] = Flag{Name: f.Name, Shorthand: f.Shorthand, Hidden: f.Hidden, Usage: f.Usage}
+		flags[f.Name] = Flag{Name: f.Name, Shorthand: f.Shorthand, Hidden: f.Hidden, NoOptDefVal: f.NoOptDefVal, Usage: f.Usage}
 	})
 	return flags
 }

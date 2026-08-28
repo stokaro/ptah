@@ -361,7 +361,7 @@ import that goes with it, and as a date-time string in OpenAPI and GraphQL.
 
 Only the contract moves. `type` is what the migration engine plans against, and
 it is unaffected: the column stays `DECIMAL(12,2)` in the database, and
-`ptah migrate` never reads `api_type`.
+`ptah migrations generate` never reads `api_type`.
 
 ### Enums, in both directions
 

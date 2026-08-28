@@ -172,6 +172,65 @@ func TestCommandCensus_StrictModeRemovesPathsInTwoDistinguishableWays(t *testing
 	c.Assert(census.StrictOf(kept), qt.Equals, featureinventory.StrictRegistered)
 }
 
+// TestCommandCensus_ARefusalIsAskedOfTheCommandNotInferredFromLeaf pins the
+// answer a Leaf-based reading gets wrong.
+//
+// 57 of the native tree's 91 leaves refuse a positional word outright, so `Leaf`
+// and "takes arguments" are not the same fact and never were. The direction that
+// matters is the removal: a namespace that loses its LAST subcommand becomes a
+// leaf, and a reading that inferred acceptance from Leaf would then resolve every
+// documented invocation of its removed verbs as an ordinary argument. Measured
+// on this tree by commenting out the one AddCommand in cmd/sql: the binary
+// answers `ptah sql lint ./schema.sql` with
+// `unexpected positional arguments ["lint" "./schema.sql"]` at exit 2, and both
+// document checks reported success.
+func TestCommandCensus_ARefusalIsAskedOfTheCommandNotInferredFromLeaf(t *testing.T) {
+	t.Run("the shipped tree disagrees with Leaf on 57 of its 91 leaves", func(t *testing.T) {
+		c := qt.New(t)
+		census := shippedCensus(c)
+		leaves, refusing := leavesRefusingAWord(census, featureinventory.TreeNative)
+		c.Assert(leaves, qt.Equals, 91)
+		c.Assert(refusing, qt.Equals, 57)
+	})
+
+	t.Run("a leaf that refuses is reported, matching the binary", func(t *testing.T) {
+		c := qt.New(t)
+		census := shippedCensus(c)
+		cmd, _, refused := census.Resolve(featureinventory.TreeNative, []string{"schema", "render", "./models"})
+		c.Assert(cmd.Path, qt.Equals, "schema render")
+		c.Assert(refused, qt.IsTrue)
+	})
+
+	t.Run("a leaf that takes arguments is not reported", func(t *testing.T) {
+		c := qt.New(t)
+		census := shippedCensus(c)
+		cmd, _, refused := census.Resolve(featureinventory.TreeNative, []string{"oci", "tag", "ghcr.io/acme/app:sha", "staging"})
+		c.Assert(cmd.Path, qt.Equals, "oci tag")
+		c.Assert(refused, qt.IsFalse)
+	})
+
+	t.Run("an emptied namespace is a leaf that still refuses its removed verb", func(t *testing.T) {
+		c := qt.New(t)
+		census := fixtureCensus(c)
+		emptied, found := census.Lookup(featureinventory.TreeNative, "sql")
+		c.Assert(found, qt.IsTrue)
+		c.Assert(emptied.Leaf, qt.IsTrue)
+		cmd, consumed, refused := census.Resolve(featureinventory.TreeNative, []string{"sql", "lint", "./schema.sql"})
+		c.Assert(cmd.Path, qt.Equals, "sql")
+		c.Assert(consumed, qt.Equals, 1)
+		c.Assert(refused, qt.IsTrue)
+	})
+
+	t.Run("a flag's value is not a positional word", func(t *testing.T) {
+		c := qt.New(t)
+		census := shippedCensus(c)
+		cmd, _, refused := census.Resolve(featureinventory.TreeNative,
+			[]string{"schema", "render", "--root-dir", "./models", "--dialect", "postgres"})
+		c.Assert(cmd.Path, qt.Equals, "schema render")
+		c.Assert(refused, qt.IsFalse)
+	})
+}
+
 // TestCommandCensus_HiddenFlagsAreMeasuredRatherThanListed pins the flag census.
 //
 // Hidden flags decide both directions of the flag coverage rule, so the set has
@@ -257,6 +316,21 @@ func missingFrom(constructed []string, shipped []featureinventory.Command) []str
 // The helpers below keep the conditionals out of the test bodies, which
 // scripts/check-test-style.sh requires. Each takes the collection and answers a
 // question about it, rather than taking a bool and choosing with it.
+
+// leavesRefusingAWord counts one tree's leaves and how many of them refuse a
+// positional word.
+func leavesRefusingAWord(census *featureinventory.Census, tree featureinventory.Tree) (leaves, refusing int) {
+	for _, cmd := range census.OfTree(tree) {
+		if !cmd.Leaf {
+			continue
+		}
+		leaves++
+		if cmd.Validate([]string{"ptah-positional-probe"}) != nil {
+			refusing++
+		}
+	}
+	return leaves, refusing
+}
 
 // countLeaves counts the commands that register no subcommands.
 func countLeaves(commands []featureinventory.Command) int {

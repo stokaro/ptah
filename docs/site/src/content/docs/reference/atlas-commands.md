@@ -1558,7 +1558,9 @@ objects its plan reports.
 Function `Cmd` values use PostgreSQL identity arguments, so overloaded,
 defaulted, and OUT-only functions remain distinct and executable.
 
-Native twin: [`ptah schema clean`](../native-commands/).
+Native twin: [`ptah db drop-all`](../native-commands/). The native binary
+has no `schema clean` spelling; the destructive cleanup runtime both verbs
+drive is the same one.
 
 ### `ptah-compat schema test [paths]`
 

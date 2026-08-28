@@ -794,6 +794,34 @@ The design proposal attached to #804 was drafted against `master` at
   the absent brownfield path, the absent directive reference, and the absent
   database-URL reference were all confirmed exactly as designed.
 
+## 12a. Cross-references the page gate found (stokaro/ptah#804)
+
+`scripts/check-inventory-pages.sh` reads the `Canonical page` and `Example`
+columns of `docs/feature-inventory.md`, which no earlier check did. Three
+reader-facing pages were corrected in place when it was added; none was moved,
+merged, split or retired, and the site's page set is unchanged.
+
+- `reference/atlas-commands` — the per-verb `Native twin:` cross-link under
+  `ptah-compat schema clean` pointed at `ptah schema clean`, which the native
+  binary answers with `unexpected positional arguments ["clean"]` at exit 2. The
+  native twin is `ptah db drop-all`; the link now says so, and says the native
+  binary has no `schema clean` spelling. The idiom appears thirteen times on
+  that page and the other twelve resolve.
+- `reference/native-commands` — the `--fail-on` paragraph under schema security
+  said "spelled the way `ptah lint` spells it". There is no `ptah lint`;
+  `--fail-on` is registered on `ptah migrations lint` and `ptah schema security`,
+  and the sentence now names the first.
+- `schema/export` — "`ptah migrate` never reads `api_type`" named the Atlas verb
+  rather than a native one. It now names `ptah migrations generate`.
+
+Ten page claims in the register were wrong in the other direction and were
+corrected there rather than on the pages: a canonical page that never mentioned
+its surface, or a runnable example claimed on a document with no fenced code
+block at all. `reference/capabilities`,
+`concepts/dialects-and-capabilities`, `atlas/retained-divergences` and
+`examples/orm-loaders/README.md` carry no fenced block, so no row may claim an
+example on them until they do.
+
 ## 13. Tooling constraints that shape the migration
 
 All enforced by scripts in `docs/site/scripts/` (verified by reading them):

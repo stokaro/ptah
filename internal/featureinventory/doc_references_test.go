@@ -22,14 +22,19 @@ func TestDocCommandReferences_NoDocumentNamesACommandTheTreesLack(t *testing.T) 
 	c.Assert(messages(findings), qt.HasLen, 0)
 }
 
-// TestDocCommandReferences_ReadsAllThreeShapes is the control on the scan.
+// TestDocCommandReferences_ReadsAllFourShapes is the control on the scan.
 //
 // A reading that quietly stopped producing references would leave the gate above
 // comparing an empty set against the trees, and an empty set has nothing wrong
-// with it. Each shape is asserted to have produced something, and one reference
-// of each is named so a shape that started producing the wrong thing is a
-// failure too.
-func TestDocCommandReferences_ReadsAllThreeShapes(t *testing.T) {
+// with it. Each shape is asserted to have produced something, so a reading that
+// went silent is a failure rather than a clean run.
+//
+// The table-row floor is the one worth reading. Keyed only on a launcher-named
+// heading it produced 30-odd rows out of the 857 that name a command, and the
+// 661 outside such a section are where the verb reference and every per-command
+// exit-code table live. Keyed on the first cell as well it produces 576, which is
+// the shape those tables have: one command per row.
+func TestDocCommandReferences_ReadsAllFourShapes(t *testing.T) {
 	c := qt.New(t)
 	references := documentedReferences(c)
 
@@ -40,7 +45,8 @@ func TestDocCommandReferences_ReadsAllThreeShapes(t *testing.T) {
 
 	c.Assert(counts["fenced code block"] > 400, qt.IsTrue, qt.Commentf("fenced blocks yielded %d references", counts["fenced code block"]))
 	c.Assert(counts["heading"] > 20, qt.IsTrue, qt.Commentf("headings yielded %d references", counts["heading"]))
-	c.Assert(counts["table row"] > 20, qt.IsTrue, qt.Commentf("table rows yielded %d references", counts["table row"]))
+	c.Assert(counts["table row"] > 400, qt.IsTrue, qt.Commentf("table rows yielded %d references", counts["table row"]))
+	c.Assert(counts["link text"] > 20, qt.IsTrue, qt.Commentf("link texts yielded %d references", counts["link text"]))
 }
 
 // TestDocCommandReferencesSelftest_NoticesAStaleReference plants the defect.
@@ -74,6 +80,21 @@ func TestDocCommandReferencesSelftest_NoticesAStaleReference(t *testing.T) {
 			name: "named in a table under a launcher heading",
 			body: "# Fixture\n\n## The `ptah-compat migrate` group\n\n| Command | What |\n| --- | --- |\n| `ptah-compat migrate resurrect` | raises the dead |\n",
 			want: "`resurrect` names no command of `ptah-compat migrate`",
+		},
+		{
+			name: "keyed by a table row's first cell, under no launcher heading at all",
+			body: "# Fixture\n\n## Exit codes\n\n| Command | Code |\n| --- | --- |\n| `ptah schema generate` | 2 |\n",
+			want: "`generate` names no command of `ptah schema`",
+		},
+		{
+			name: "the link text of a cross-reference",
+			body: "# Fixture\n\nNative twin: [`ptah schema generate`](../native-commands/).\n",
+			want: "`generate` names no command of `ptah schema`",
+		},
+		{
+			name: "a namespace whose last verb was removed",
+			body: "# Fixture\n\n```bash\nptah sql lint ./schema.sql\n```\n",
+			want: "`lint` names no command of `ptah sql`",
 		},
 	}
 
@@ -118,8 +139,24 @@ func TestDocCommandReferencesSelftest_LeavesTheShapesItMustNotRead(t *testing.T)
 			body: "# Fixture\n\n```bash\nptah schema render   # render the desired schema\n```\n",
 		},
 		{
-			name: "a positional argument after a leaf",
-			body: "# Fixture\n\n```bash\nptah schema render ./models\n```\n",
+			name: "a positional argument a command actually takes",
+			body: "# Fixture\n\n```bash\nptah oci tag ghcr.io/acme/app:sha staging\n```\n",
+		},
+		{
+			name: "a usage line's placeholders",
+			body: "# Fixture\n\n```bash\nptah oci tag <oci-reference> <tag>\n```\n",
+		},
+		{
+			name: "an output redirection written without a space",
+			body: "# Fixture\n\n```bash\nptah schema render --root-dir ./models >schema.sql\n```\n",
+		},
+		{
+			name: "a placeholder between a flag and its value's neighbour",
+			body: "# Fixture\n\n```bash\nptah schema render --root-dir \"<loader>\" --hidden-flag x\n```\n",
+		},
+		{
+			name: "program output inside a session transcript",
+			body: "# Fixture\n\n```console\n$ ptah schema render\n\tptah schema generate   what this page says does not exist\n```\n",
 		},
 		{
 			name: "a second program after a pipe",

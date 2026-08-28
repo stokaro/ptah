@@ -275,14 +275,33 @@ func (i *Inventory) ValueTokens() map[string]bool {
 	return values
 }
 
-// tableCells splits a Markdown table row into trimmed cells.
+// tableCells splits a Markdown table row into trimmed cells, honoring the
+// escaped pipe.
+//
+// `\|` is a literal pipe inside a cell, and three rows of the register carry
+// one: `--schema-format sql\|hcl\|yaml`, the four values of
+// `PTAH_OCI_REFERRER_POLICY`, and the four `ptah assist sessions` verbs.
+// Splitting on every pipe gave those rows twelve and thirteen cells against ten
+// columns, so every column after the escape was read one or three places to the
+// left -- `Canonical page` came back holding `any program on PATH; three output
+// formats`. Nothing noticed while no check read past `Public surface`.
 func tableCells(row string) []string {
 	trimmed := strings.TrimSuffix(strings.TrimPrefix(row, "|"), "|")
-	parts := strings.Split(trimmed, "|")
-	cells := make([]string, 0, len(parts))
-	for _, part := range parts {
-		cells = append(cells, strings.TrimSpace(part))
+	var cells []string
+	var current strings.Builder
+	for index := 0; index < len(trimmed); index++ {
+		switch {
+		case trimmed[index] == '\\' && index+1 < len(trimmed) && trimmed[index+1] == '|':
+			current.WriteByte('|')
+			index++
+		case trimmed[index] == '|':
+			cells = append(cells, strings.TrimSpace(current.String()))
+			current.Reset()
+		default:
+			current.WriteByte(trimmed[index])
+		}
 	}
+	cells = append(cells, strings.TrimSpace(current.String()))
 	return cells
 }
 

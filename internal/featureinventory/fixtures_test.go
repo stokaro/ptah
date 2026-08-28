@@ -2,6 +2,7 @@ package featureinventory_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -96,24 +97,52 @@ func commandReferenceBody(c *qt.C) string {
 	return string(body)
 }
 
-// fixtureRoots builds a two-command tree the self-tests drive.
+// fixtureRoots builds a small tree the self-tests drive.
 //
 // A fixture rather than the shipped trees, because a self-test has to be able to
 // plant the defect it claims to detect. Planting one in the real tree would mean
 // editing the command layer from a test.
+//
+// Every command carries the argument validator its real counterpart carries, and
+// that is load-bearing rather than tidy. A cobra command with no validator
+// accepts any positional word, so a fixture built from bare commands asserts
+// that `ptah schema render ./models` is a legal line -- which the shipped binary
+// refuses at exit 2 with `unexpected positional arguments ["./models"]`. The
+// fixture was making a false claim about the product, and a self-test written
+// against it was measuring nothing.
+//
+// The tree carries one of each answer a validator gives:
+//
+//   - `schema` and `schema render` refuse every positional word, which is what
+//     cmdutil.NoPositionalArgs does on 21 real commands;
+//   - `oci tag` requires two, so a probe offering one word would call a correct
+//     line stale;
+//   - `sql` is a namespace whose last verb has been removed. It is a leaf and it
+//     still refuses `lint`, which is the removal shape check 2 exists for and
+//     the one a Leaf-based reading cannot see.
 func fixtureRoots() map[featureinventory.Tree]*cobra.Command {
 	native := &cobra.Command{Use: "ptah", Short: "fixture root"}
-	group := &cobra.Command{Use: "schema", Short: "fixture group"}
-	render := &cobra.Command{Use: "render", Short: "fixture verb", Run: func(*cobra.Command, []string) {}}
+	group := &cobra.Command{Use: "schema", Short: "fixture group", Args: cobra.NoArgs}
+	render := &cobra.Command{Use: "render", Short: "fixture verb", Args: cobra.NoArgs, Run: func(*cobra.Command, []string) {}}
 	render.Flags().String("root-dir", "", "fixture flag")
 	render.Flags().String("hidden-flag", "", "fixture hidden flag")
 	_ = render.Flags().MarkHidden("hidden-flag")
 	group.AddCommand(render)
 	native.AddCommand(group)
 
+	oci := &cobra.Command{Use: "oci", Short: "fixture group", Args: cobra.NoArgs}
+	tag := &cobra.Command{Use: "tag <oci-reference> <tag>", Short: "fixture verb taking two arguments",
+		Args: cobra.MinimumNArgs(2), Run: func(*cobra.Command, []string) {}}
+	oci.AddCommand(tag)
+	native.AddCommand(oci)
+
+	// The namespace whose last verb is gone: no subcommands, and still refusing
+	// every word the verb used to answer to.
+	native.AddCommand(&cobra.Command{Use: "sql", Short: "fixture emptied group", Args: cobra.NoArgs})
+
 	compat := &cobra.Command{Use: "ptah-compat", Short: "fixture compat root"}
-	migrate := &cobra.Command{Use: "migrate", Short: "fixture compat group"}
-	apply := &cobra.Command{Use: "apply", Short: "fixture compat verb", Run: func(*cobra.Command, []string) {}}
+	migrate := &cobra.Command{Use: "migrate", Short: "fixture compat group", Args: cobra.NoArgs}
+	apply := &cobra.Command{Use: "apply", Short: "fixture compat verb", Args: cobra.MaximumNArgs(1)}
 	migrate.AddCommand(apply)
 	compat.AddCommand(migrate)
 
@@ -125,7 +154,7 @@ func fixtureRoots() map[featureinventory.Tree]*cobra.Command {
 	migrate.AddCommand(compatGated)
 
 	strict := &cobra.Command{Use: "ptah-compat", Short: "fixture compat root"}
-	strictMigrate := &cobra.Command{Use: "migrate", Short: "fixture compat group"}
+	strictMigrate := &cobra.Command{Use: "migrate", Short: "fixture compat group", Args: cobra.NoArgs}
 	strictGated := &cobra.Command{Use: "gated", Short: "fixture gated verb", Hidden: true, Run: func(*cobra.Command, []string) {}}
 	strictMigrate.AddCommand(strictGated)
 	strict.AddCommand(strictMigrate)
@@ -208,6 +237,87 @@ func writeDocument(c *qt.C, dir, body string) {
 	c.Helper()
 	c.Assert(os.MkdirAll(filepath.Join(dir, "docs"), 0o700), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, filepath.FromSlash(featureinventory.InventoryPath)), []byte(body), 0o600), qt.IsNil)
+}
+
+// shippedDocuments reads every tracked document of this checkout.
+func shippedDocuments(c *qt.C) *featureinventory.Documents {
+	c.Helper()
+	docs, err := featureinventory.NewDocuments(repoRoot(c))
+	c.Assert(err, qt.IsNil)
+	return docs
+}
+
+// sitePath renders the tracked file one site slug resolves from.
+func sitePath(slug string) string { return featureinventory.SiteRoot + "/" + slug + ".md" }
+
+// inventoryPageRow renders one row with its page columns set and every other
+// column filled, so a page self-test states only what it is about.
+func inventoryPageRow(id, surface, canonical, example string) string {
+	set := map[string]string{
+		"Feature ID":     id,
+		"Public surface": surface,
+		"Canonical page": canonical,
+		"Example":        example,
+	}
+	cells := make([]string, 0, len(featureinventory.RequiredColumns))
+	for _, column := range featureinventory.RequiredColumns {
+		cells = append(cells, cellOr(set, column))
+	}
+	return "| " + strings.Join(cells, " | ") + " |\n"
+}
+
+// cellOr keeps the conditional out of the row builder.
+func cellOr(set map[string]string, column string) string {
+	if value, ok := set[column]; ok {
+		return value
+	}
+	return "fixture"
+}
+
+// writePagesFixture writes an inventory and a small site into a throwaway
+// repository, and returns both halves the page check compares.
+//
+// A real git repository, because the document reader lists tracked files rather
+// than walking the filesystem -- this checkout's parent holds other worktrees of
+// the same repository, and a walk descends into them. A fixture that skipped
+// `git add` would leave the reader with nothing to read and every claim
+// unresolvable.
+func writePagesFixture(c *qt.C, rows string, pages map[string]string) (*featureinventory.Documents, *featureinventory.Inventory) {
+	c.Helper()
+	dir := c.TempDir()
+	writeDocument(c, dir, fixtureHeader+rows)
+	// One page nothing claims, so a fixture whose only document is a repository
+	// file still has a site for the reader to resolve against.
+	writeTrackedFile(c, dir, sitePath("index"), "# Fixture site\n")
+	for name, body := range pages {
+		writeTrackedFile(c, dir, name, body)
+	}
+	initFixtureRepository(c, dir)
+
+	docs, err := featureinventory.NewDocuments(dir)
+	c.Assert(err, qt.IsNil)
+	inventory, err := featureinventory.LoadInventory(dir)
+	c.Assert(err, qt.IsNil)
+	return docs, inventory
+}
+
+// writeTrackedFile writes one file, creating its directories.
+func writeTrackedFile(c *qt.C, dir, name, body string) {
+	c.Helper()
+	full := filepath.Join(dir, filepath.FromSlash(name))
+	c.Assert(os.MkdirAll(filepath.Dir(full), 0o700), qt.IsNil)
+	c.Assert(os.WriteFile(full, []byte(body), 0o600), qt.IsNil)
+}
+
+// initFixtureRepository makes a throwaway checkout whose index lists every file
+// written into it.
+func initFixtureRepository(c *qt.C, dir string) {
+	c.Helper()
+	initialize, err := exec.Command("git", "-C", dir, "init", "-q").CombinedOutput()
+	c.Assert(err, qt.IsNil, qt.Commentf("git init: %s", initialize))
+
+	added, err := exec.Command("git", "-C", dir, "add", "-A").CombinedOutput()
+	c.Assert(err, qt.IsNil, qt.Commentf("git add: %s", added))
 }
 
 // shippedSurfaces reads every non-command surface from this checkout.

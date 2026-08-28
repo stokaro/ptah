@@ -548,8 +548,8 @@ principal, and reporting every application account would bury the rule.
 
 Severities are the ones the rest of Ptah speaks: `info` reports and never
 blocks, `warning` asks for review, `error` blocks. `--fail-on error` (the
-default), `any`, or `none` decides the exit code, spelled the way `ptah lint`
-spells it. No rule here is error-severity, so the default reports without
+default), `any`, or `none` decides the exit code, spelled the way
+`ptah migrations lint` spells it. No rule here is error-severity, so the default reports without
 failing; `--fail-on any` gates on every finding.
 
 `--format json` emits the same findings as a document, each with its structured

@@ -36,6 +36,9 @@ func TestInventoryCommandsSelftest_NoticesACommandWithNoRow(t *testing.T) {
 	inventory := writeInventory(c,
 		inventoryRow("root", "`ptah`")+
 			inventoryRow("group", "`ptah schema`")+
+			inventoryRow("oci-group", "`ptah oci`")+
+			inventoryRow("oci-verb", "`ptah oci tag`")+
+			inventoryRow("emptied-group", "`ptah sql`")+
 			inventoryRow("compat-root", "`ptah-compat`")+
 			inventoryRow("compat-group", "`ptah-compat migrate`")+
 			inventoryRow("compat-verb", "`ptah-compat migrate apply`")+
@@ -67,6 +70,9 @@ func TestInventoryCommandsSelftest_NoticesARowNamingNoCommand(t *testing.T) {
 		inventoryRow("root", "`ptah`")+
 			inventoryRow("group", "`ptah schema`")+
 			inventoryRow("verb", "`ptah schema render`")+
+			inventoryRow("oci-group", "`ptah oci`")+
+			inventoryRow("oci-verb", "`ptah oci tag`")+
+			inventoryRow("emptied-group", "`ptah sql`")+
 			inventoryRow("retired", "`ptah schema generate`")+
 			inventoryRow("compat-root", "`ptah-compat`")+
 			inventoryRow("compat-group", "`ptah-compat migrate`")+

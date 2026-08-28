@@ -1,6 +1,7 @@
 package featureinventory
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -48,6 +49,23 @@ var fenceOpen = regexp.MustCompile("^\\s{0,3}(`{3,}|~{3,})[ \t]*([^\\s`]*)")
 // five launcher lines in YAML blocks are shell commands inside a workflow
 // `run:` step, and none is a YAML value. Two of them are among the twelve
 // invocations of a command `ptah` does not have.
+// transcriptFence names the info strings whose contents are a SESSION rather
+// than a script: a prompt, a command, and the output it produced.
+//
+// Inside one of these, only a prompted line is an invocation. That is the
+// document's own notation and not a convention imposed on it, and it was
+// measured before it was written: of the 39 launcher lines in transcript blocks
+// across the tracked documents, 33 carry the prompt and the 6 that do not are
+// the tab-indented listing docs/conformance.md prints as `ptah-compat cloud`
+// output. Reading those as invocations reported four commands as stale that the
+// page had never claimed to run.
+var transcriptFence = map[string]bool{
+	"console":       true,
+	"shell-session": true,
+	"shellsession":  true,
+	"terminal":      true,
+}
+
 var runnableFence = map[string]bool{
 	"":              true,
 	"bash":          true,
@@ -70,23 +88,49 @@ var headingCommand = regexp.MustCompile("^(#{1,6})\\s+.*?`([^`]+)`")
 // tableCell matches a backticked token anywhere in a table row.
 var tableCell = regexp.MustCompile("`([^`]+)`")
 
+// linkText matches a Markdown link whose link text is a backticked token:
+// “[`ptah schema clean`](../native-commands/)“. A link is a document
+// promising a reader somewhere to go for that command, which makes it as
+// self-declaring a bound as a heading.
+//
+// It is the idiom the Atlas command reference uses thirteen times, once per
+// verb, under the words `Native twin:`. One of the thirteen named a command the
+// native tree does not have, and no reading of fences, headings or tables could
+// see it.
+var linkText = regexp.MustCompile("\\[`([^`]+)`\\]\\(")
+
 // ScanDocument reads one document and returns every command reference in it.
 //
-// Three readings, each bounded by something the document itself declares:
+// Four readings, each bounded by something the document itself declares:
 //
 //   - a fenced code block, bounded by its own fence. This is the only reading
 //     that carries flags, because it is the only one where a whole invocation is
-//     written out;
+//     written out. A block whose info string says it is a session is bounded
+//     once more, by the prompt;
 //   - a heading whose text is a backticked command path, bounded by being a
 //     heading;
-//   - a table row inside a section whose heading names a launcher, bounded by
-//     that heading and the next one at the same or higher level.
+//   - a Markdown link whose link text is a backticked command path, bounded by
+//     being a link;
+//   - a table row: any row whose FIRST cell is a backticked command path, plus
+//     every cell of a row inside a section whose heading names a launcher.
 //
-// Prose is not read at all. Measured over the tracked documents, a scan of the
-// whole text finds 2095 invocations and flags 105 of them, almost every one a
-// sentence: AGENTS.md states outright that there is no `ptah generate`, and
-// docs/conformance.md quotes what `ptah-compat` does where Atlas CE differs.
-// Only code and structure are checkable.
+// The first-cell rule is what makes the verb tables readable. Measured over the
+// tracked documents, 857 rows name a launcher-qualified command and only 196 of
+// them sit inside a launcher-named section; the 661 outside include every
+// per-command exit-code table and most of the native verb reference -- the pages
+// most likely to outlive a removed verb. Keyed on the first cell, 439 rows are
+// read, which is the shape those tables have: one command per row.
+//
+// Prose is not read, and that is a measurement rather than an omission. Over the
+// tracked documents, 1083 backticked launcher-qualified tokens sit in prose and
+// 22 name something no tree registers. Three of the 22 are defects, and this
+// change fixes them. The other 19 are correct: AGENTS.md states outright that
+// there is no `ptah generate`, docs/conformance.md names the conformance cell
+// `ptah-compat exits 0 where Atlas CE exits 1`, and start/install.md says which
+// Atlas spellings the native binary deliberately lacks. Reading prose would need
+// eight file-scoped exemptions in four files whose subject matter includes the
+// commands that do not exist, which is the allowlist docCommandExemptions exists
+// to stay small enough to police.
 func ScanDocument(repoRoot, rel string, launchers []Launcher) ([]Reference, error) {
 	body, err := os.ReadFile(filepath.Join(repoRoot, filepath.FromSlash(rel)))
 	if err != nil {
@@ -111,6 +155,14 @@ type scanner struct {
 
 	fence    string
 	runnable bool
+	// prompted marks a fence whose info string says it holds a session, so only
+	// a prompted line inside it is a command.
+	prompted bool
+	// seen deduplicates the readings, which overlap by design: a row inside a
+	// launcher-named section whose first cell is a command satisfies two of
+	// them, and reporting one mistake twice is a worse diagnostic than reporting
+	// it once.
+	seen map[string]bool
 	// section is the launcher the current heading named, and level is that
 	// heading's depth. A table row is read only while both are set.
 	section Launcher
@@ -128,10 +180,13 @@ func (s *scanner) run() {
 			continue
 		}
 		if match := fenceOpen.FindStringSubmatch(raw); match != nil {
+			info := strings.ToLower(match[2])
 			s.fence = match[1]
-			s.runnable = runnableFence[strings.ToLower(match[2])]
+			s.runnable = runnableFence[info]
+			s.prompted = transcriptFence[info]
 			continue
 		}
+		s.link(index, raw)
 		if strings.HasPrefix(trimmed, "#") {
 			s.heading(index, raw, trimmed)
 			continue
@@ -144,15 +199,18 @@ func (s *scanner) run() {
 // a backslash continuation consumed.
 func (s *scanner) insideFence(index int, trimmed string) int {
 	if strings.HasPrefix(trimmed, s.fence) {
-		s.fence, s.runnable = "", false
+		s.fence, s.runnable, s.prompted = "", false, false
 		return 0
 	}
 	if !s.runnable {
 		return 0
 	}
+	if s.prompted && !strings.HasPrefix(trimmed, "$ ") {
+		return 0
+	}
 	joined, consumed := joinContinuations(s.lines, index)
 	if ref, ok := invocationOf(s.file, index+1, "fenced code block", joined, s.launchers); ok {
-		s.refs = append(s.refs, ref)
+		s.add(ref)
 	}
 	return consumed
 }
@@ -176,14 +234,42 @@ func (s *scanner) heading(index int, raw, trimmed string) {
 		return
 	}
 	s.section, s.level = launcher, depth
-	if ref, ok := reference(s.file, index+1, "heading", launcher, rest, raw); ok {
-		s.refs = append(s.refs, ref)
+	s.add(reference(s.file, index+1, "heading", launcher, rest, raw))
+}
+
+// link reads a Markdown link whose text is a backticked command path.
+func (s *scanner) link(index int, raw string) {
+	for _, match := range linkText.FindAllStringSubmatch(raw, -1) {
+		launcher, rest, ok := splitLauncher(match[1], s.launchers)
+		if !ok {
+			continue
+		}
+		s.add(reference(s.file, index+1, "link text", launcher, rest, strings.TrimSpace(raw)))
 	}
 }
 
-// tableRow reads a row of a table inside a section a heading opened.
+// tableRow reads a table row, by either of two bounds.
+//
+// The first cell, always: a row whose first cell is a backticked command path is
+// a row about that command, whatever section it sits in, which is the shape of
+// every verb table and every per-command exit-code table in the tree.
+//
+// Every cell, inside a section whose heading names a launcher: there the
+// heading has already said what the table is about, so a command named in a
+// later column is being named on purpose.
 func (s *scanner) tableRow(index int, trimmed string) {
-	if s.level == 0 || !strings.HasPrefix(trimmed, "|") {
+	if !strings.HasPrefix(trimmed, "|") {
+		return
+	}
+	cells := tableCells(trimmed)
+	if len(cells) > 0 && strings.HasPrefix(cells[0], "`") {
+		if match := tableCell.FindStringSubmatch(cells[0]); match != nil {
+			if launcher, rest, ok := splitLauncher(match[1], s.launchers); ok {
+				s.add(reference(s.file, index+1, "table row", launcher, rest, trimmed))
+			}
+		}
+	}
+	if s.level == 0 {
 		return
 	}
 	for _, cell := range tableCell.FindAllStringSubmatch(trimmed, -1) {
@@ -191,10 +277,21 @@ func (s *scanner) tableRow(index int, trimmed string) {
 		if !ok || launcher.Tree != s.section.Tree {
 			continue
 		}
-		if ref, ok := reference(s.file, index+1, "table row", launcher, rest, trimmed); ok {
-			s.refs = append(s.refs, ref)
-		}
+		s.add(reference(s.file, index+1, "table row", launcher, rest, trimmed))
 	}
+}
+
+// add records a reference once.
+func (s *scanner) add(ref Reference) {
+	key := fmt.Sprintf("%d\x00%s\x00%s", ref.Line, ref.Launcher.Prefix, strings.Join(ref.Words, "\x00"))
+	if s.seen == nil {
+		s.seen = make(map[string]bool)
+	}
+	if s.seen[key] {
+		return
+	}
+	s.seen[key] = true
+	s.refs = append(s.refs, ref)
 }
 
 // joinContinuations folds a backslash-continued command onto one logical line
@@ -230,7 +327,7 @@ func invocationOf(rel string, line int, source, text string, launchers []Launche
 	if !ok {
 		return Reference{}, false
 	}
-	return reference(rel, line, source, launcher, rest, strings.TrimSpace(text))
+	return reference(rel, line, source, launcher, rest, strings.TrimSpace(text)), true
 }
 
 // envAssignment matches one leading `NAME=value` prefix on a command line.
@@ -250,17 +347,48 @@ func splitLauncher(text string, launchers []Launcher) (Launcher, string, bool) {
 	return Launcher{}, "", false
 }
 
+// IsPlaceholder reports a word that stands for an argument rather than being
+// one.
+//
+// The notation is cobra's own: `Use: "tag <oci-reference> <tag> [tag...]"`, and
+// the documents copy it. Measured, every one of them is angle-bracketed,
+// square-bracketed or an ellipsis, and reading them literally reported
+// `ptah migrations test [flags]` and `ptah completion <shell>` as invocations of
+// commands that do not exist.
+//
+// A placeholder is kept in the word list and skipped where positional arguments
+// are counted, never dropped from the line. Dropping it unpairs every flag after
+// it: `--schema-cmd "<loader>" --dialect postgres` becomes a flag whose value is
+// `--dialect`, and `postgres` is then reported as a command that does not exist.
+// Four documented lines were misread that way while this was being measured.
+func IsPlaceholder(word string) bool {
+	if word == "..." || word == "\u2026" {
+		return true
+	}
+	return strings.HasPrefix(word, "[") ||
+		(strings.HasPrefix(word, "<") && strings.HasSuffix(word, ">"))
+}
+
+// redirection matches a word that begins a shell redirection with no space
+// after the operator: `>schema.sql`, `2>&1`, `<input.sql`.
+//
+// The standalone spellings are in shellOperators already. This is the same rule
+// for the attached form, and it was a measured false positive rather than a
+// precaution: `ptah db read --db-url "..." >schema.sql` read `>schema.sql` as a
+// positional word, and six documented lines were reported as naming commands
+// that do not exist.
+var redirection = regexp.MustCompile(`^(?:\d*(?:>>|>|<)|&>)`)
+
 // reference builds a Reference from the words after a launcher.
-func reference(rel string, line int, source string, launcher Launcher, rest, text string) (Reference, bool) {
-	words := shellWords(rest)
+func reference(rel string, line int, source string, launcher Launcher, rest, text string) Reference {
 	return Reference{
 		File:     rel,
 		Line:     line,
 		Source:   source,
 		Launcher: launcher,
-		Words:    words,
+		Words:    shellWords(rest),
 		Text:     text,
-	}, true
+	}
 }
 
 // shellOperators end the part of a line this command owns.
@@ -293,6 +421,9 @@ func shellWords(rest string) []string {
 		current.Reset()
 		quoted = false
 		if !wasQuoted && (shellOperators[word] || strings.HasPrefix(word, "#")) {
+			return false
+		}
+		if !wasQuoted && !IsPlaceholder(word) && redirection.MatchString(word) {
 			return false
 		}
 		words = append(words, word)
