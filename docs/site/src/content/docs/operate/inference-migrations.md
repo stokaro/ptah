@@ -15,6 +15,8 @@ derived from the input. A vector is not a column value Ptah can compute — so
 these verbs manage a second generation alongside the one queries read, and move
 the pointer only when somebody decides to.
 
+![Ptah builds a candidate inference generation from a specification and source rows, calls an external embedding endpoint during backfill and catch-up, verifies the result, switches the active generation at cutover, and retains the previous generation for rollback.](../../../assets/inference-state-migration.png)
+
 ## Write the specification
 
 The specification names the source rows, the model, the target column, and the

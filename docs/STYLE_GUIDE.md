@@ -403,11 +403,18 @@ a reader recognizes on sight and cannot reconstruct from a paragraph.
 
 ### 11.2 Which medium
 
-- Diagrams are SVG, inline or as a committed file. Do not ship a diagram as a
-  raster image: it cannot be read at another zoom level and it cannot follow the
-  reader's theme.
-- A diagram uses `currentColor` and the site's own color tokens rather than
-  fixed hex values, so it renders in both the light and dark theme.
+- Choose the medium for what the visual has to communicate. Prefer SVG for a
+  schematic whose value is precise geometry, labels, sharp lines at any zoom,
+  or direct use of the reader's theme. SVG is a preference, not a requirement.
+- PNG and WebP are valid for illustration-led or generative diagrams, and for
+  texture, lighting, gradients, or visual composition that loses explanatory
+  or aesthetic value when reduced to vector shapes. Render a raster diagram at
+  enough resolution to stay sharp at its largest intended size, and inspect it
+  at that size rather than assuming the source dimensions are sufficient.
+- Every diagram works in both the light and dark theme. An SVG normally uses
+  `currentColor` and the site's color tokens. A raster diagram uses transparency,
+  theme-specific variants through `<picture>`, or a deliberate neutral
+  background whose contrast has been checked in both themes.
 - Screenshots are for visual and interactive output only. A terminal command and
   its output stay selectable text in fenced blocks, never a picture.
 - Capture browser output at a fixed viewport, and record that width beside the
@@ -426,14 +433,21 @@ a reader recognizes on sight and cannot reconstruct from a paragraph.
   using a screen reader, a reader on a slow link, and a reader reading the
   Markdown on GitHub all get the same information.
 
-### 11.4 Assets are generated, never hand-drawn
+### 11.4 Assets are reproducible or traceable
 
-- Every committed visual asset comes from a committed fixture through a
-  committed command, and that command is recorded next to the asset.
+- A visual that demonstrates Ptah's actual output comes from a committed fixture
+  through a committed command. A reader must be able to reproduce the behavior
+  the image claims.
+- An illustrative, brand, or generative visual does not have to reproduce as
+  identical bytes. Record its source in the repository or in the pull request
+  that introduces it: the design file or prompt and references, the tool used,
+  and any material post-processing. The record must let a later editor
+  understand what they are changing; it does not have to make a stochastic
+  generator deterministic.
 - A screenshot contains no local path, credential, token, host name, timestamp,
-  or other value that changes between runs. Regenerating an asset from the same
-  fixture produces the same bytes.
-- Review every page carrying a visual at 390px and 1280px before merge.
+  or other value that changes between runs.
+- Review every page carrying a visual at 390px and 1280px, in both themes,
+  before merge.
 
 ### 11.5 Tabs
 
@@ -562,9 +576,10 @@ Complete this for every documentation PR:
     a page says `no longer`, `legacy`, `previously`, or `used to`, read the
     subject: a statement about another product's behavior or about a live
     runtime state stays (section 6.3).
-13. Visual pass (section 11): every image has alt text a reader can use, every
-    committed asset names the command that regenerates it, and no essential
-    instruction lives only inside an image.
+13. Visual pass (section 11): every image has alt text a reader can use, its
+    medium suits what it communicates, its regeneration command or source is
+    recorded as section 11.4 requires, and no essential instruction lives only
+    inside an image.
 
 ## 16. What is machine-enforced
 
@@ -734,8 +749,9 @@ the purpose sense of `used to` — in the self-test in the same change.
 Until then, section 6 is item 12 of the review checklist.
 
 **Section 11 (visual documentation).** Presence of alt text is enforced.
-Whether the alt text says what the image shows, whether an asset was generated
-from a committed fixture, whether a screenshot leaked a local path, and whether
-a page that should carry a diagram has one are all read, not measured.
+Whether the alt text says what the image shows, whether the medium suits the
+visual, whether its reproducibility or source is recorded, whether a screenshot
+leaked a local path, and whether a page that should carry a diagram has one are
+all read, not measured.
 `check:responsive` measures layout at 390px and 1280px; it performs no
 accessibility check.
