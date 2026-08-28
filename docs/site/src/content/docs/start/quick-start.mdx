@@ -21,8 +21,8 @@ Which of those two you try first is the only decision on this page.
     description="You write the .up.sql and .down.sql files. Ptah seals the directory with a checksum, applies what is pending, records every applied migration in the database, and rolls them back on request. Choose this for shared and production databases, and wherever a change has to be reviewed as SQL before it runs."
   />
   <LinkCard
-    title="Declarative changes"
-    href="../quick-start-declarative/"
+    title="Direct schema changes"
+    href="../quick-start-direct/"
     description="You keep one file that describes the schema you want. Ptah reads the live database, works out the difference, and applies it. Choose this for prototypes, local development, and databases with a single owner."
   />
 </CardGrid>
@@ -45,7 +45,7 @@ toolchain, or Docker. Both end by deleting the one directory they created.
 Each page runs one path so that it stays short. Three things they do not cover
 are worth knowing exist:
 
-- **The other schema sources.** The declarative quick start uses plain SQL. Ptah
+- **The other schema sources.** The direct quick start uses plain SQL. Ptah
   reads the desired schema from YAML, HCL, and DBML files, from an external
   loader, and from annotated Go structs, and every source parses into the same
   internal representation. Go is one source among several, not the entry point.
@@ -62,6 +62,6 @@ are worth knowing exist:
 ## Next steps
 
 - Run [Quick start: versioned migrations](../quick-start-migrations/).
-- Run [Quick start: declarative changes](../quick-start-declarative/).
+- Run [Quick start: direct schema changes](../quick-start-direct/).
 - Bring a database that already exists under Ptah:
   [Adopt an existing database](../adopt-an-existing-database/).

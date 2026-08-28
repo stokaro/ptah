@@ -53,7 +53,7 @@ database and hands you the difference along one of two routes.
 | Workflow | You write | Pick it when | Start with |
 | --- | --- | --- | --- |
 | Versioned migrations | Numbered SQL files kept in version control | a person reviews the change before it runs, and the file belongs in the pull request | `ptah migrations generate` |
-| Declarative schema changes | The schema you want, in any supported source format | the declared schema is the source of truth, and drift is the thing you fix | `ptah schema apply` |
+| Direct schema changes | The schema you want, in any supported source format | the declared schema is the source of truth, and drift is the thing you fix | `ptah schema apply` |
 
 The two combine. One command reads a schema source, compares it with a live
 database, and writes the difference as a reversible migration pair:
@@ -176,7 +176,7 @@ Schema apply completed successfully.
 ```
 
 > [!CAUTION]
-> `--auto-approve` answers the confirmation prompt for you, and a declarative
+> `--auto-approve` answers the confirmation prompt for you, and a direct
 > apply drops the objects the schema no longer declares. It is here because
 > `app.db` is a throwaway file. Against a database whose contents matter, run
 > the command without the flag and read the plan it prints, or save one first
@@ -204,7 +204,7 @@ When you are done, remove the database with `rm app.db`.
 | I want to | Read |
 | --- | --- |
 | Run my first migration | [Quick start: versioned migrations](https://stokaro.github.io/ptah/edge/start/quick-start-migrations/) |
-| Apply a schema without writing migration files | [Quick start: declarative changes](https://stokaro.github.io/ptah/edge/start/quick-start-declarative/) |
+| Apply a schema without writing migration files | [Quick start: direct schema changes](https://stokaro.github.io/ptah/edge/start/quick-start-direct/) |
 | Decide between the two workflows | [Choose a workflow](https://stokaro.github.io/ptah/edge/start/choose-a-workflow/) |
 | Bring a database Ptah did not create under management | [Adopt an existing database](https://stokaro.github.io/ptah/edge/start/adopt-an-existing-database/) |
 | Write the schema in SQL, YAML, HCL, DBML, or an external loader | [Work with a desired schema](https://stokaro.github.io/ptah/edge/schema/work-with-a-source/) |

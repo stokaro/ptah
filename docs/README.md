@@ -6,7 +6,7 @@ Start with:
 
 - [Install](site/src/content/docs/start/install.mdx)
 - [Quick start: versioned migrations](site/src/content/docs/start/quick-start-migrations.mdx)
-- [Quick start: declarative changes](site/src/content/docs/start/quick-start-declarative.mdx)
+- [Quick start: direct schema changes](site/src/content/docs/start/quick-start-direct.mdx)
 - [Choose a workflow](site/src/content/docs/start/choose-a-workflow.md)
 - [Troubleshooting](site/src/content/docs/operate/troubleshooting.md)
 

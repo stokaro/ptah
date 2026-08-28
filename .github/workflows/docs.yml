@@ -7,15 +7,21 @@ on:
       - 'v*'
   pull_request:
     paths:
-      # The style check governs every documentation layer, so the workflow has
-      # to see changes to all of them. Only the site build is gated on
+      # The style check governs every documentation layer and the terminology
+      # check governs every Markdown file in the repository, so the workflow has
+      # to see changes to all of them. `**.md` and `**.mdx` are what cover
+      # CLAUDE.md, TESTING.md and the other root records that belong to no
+      # layer; they subsume the README entries this list used to name.
+      #
+      # A corpus wider than this list would be a gate that reports without
+      # running, so check-terminology.mjs reads this block and fails when one of
+      # its own files is not reachable from it. Only the site build is gated on
       # docs/site/** below.
       - 'docs/**'
       - 'examples/**'
       - 'integration/**'
-      - 'README.md'
-      - '**/README.md'
-      - 'AGENTS.md'
+      - '**.md'
+      - '**.mdx'
       - '.github/workflows/docs.yml'
 
 permissions:
@@ -93,11 +99,20 @@ jobs:
       # check-limitations.mjs has none either, and it governs a page under
       # docs/site, so it runs here rather than in the site build: the fast job
       # is the one that sees every documentation change.
+      #
+      # check-terminology.mjs runs here for the same reason and one more: its
+      # corpus reaches README.md and docs/*.md, which the site build never sees.
+      # It covers the PROSE half of the terminology registry. The other half is
+      # the native command tree's help text, which cmd/internal/terminologyguard
+      # reads in `go test ./...` -- a Go-only change does not trigger this
+      # workflow at all, so putting that half here would have left it ungated.
       - name: Check documentation style
         run: |
           set -euo pipefail
           node docs/site/scripts/check-style.mjs --selftest
           node docs/site/scripts/check-style.mjs
+          node docs/site/scripts/check-terminology.mjs --selftest
+          node docs/site/scripts/check-terminology.mjs
           node docs/site/scripts/check-limitations.mjs --selftest
           node docs/site/scripts/check-limitations.mjs
           node docs/site/scripts/check-matrix-verdict-prose.mjs --selftest

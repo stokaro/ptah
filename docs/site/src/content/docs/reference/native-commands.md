@@ -19,7 +19,7 @@ Use `ptah <command> --help` for the exact flag set in an installed binary.
 | `ptah schema compare` | Compare desired schema with a live database. |
 | `ptah schema drift` | Check live database drift against desired schema. |
 | `ptah schema apply` | Apply a desired schema directly to a database, with an advisory lock, optional dev-database rehearsal, and interactive approval (`--auto-approve` for scripts). |
-| `ptah schema plan` | Save the declarative apply plan as a fingerprinted local plan file; `ptah schema apply --plan` executes it only while the target still matches the recorded fingerprint. |
+| `ptah schema plan` | Save the direct apply plan as a fingerprinted local plan file; `ptah schema apply --plan` executes it only while the target still matches the recorded fingerprint. |
 | `ptah schema approve` | Sign a saved plan file with an SSH key through `ssh-keygen`, writing `<plan>.sig` beside it. |
 | `ptah schema verify-approval` | Check a plan file's signature against an OpenSSH `allowed_signers` list and name the principal it belongs to. |
 | `ptah schema inspect` | Inspect a live database, a local schema file, an `oci://` schema artifact, or an Atlas-format migration directory as machine-clean HCL, SQL, or JSON; `--out-dir`/`--split` export files. |

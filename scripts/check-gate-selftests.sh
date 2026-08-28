@@ -305,6 +305,46 @@ run_node_selftest_case check-pages-root.mjs \
 	"the published-address status rule short-circuited inside analyzeLive()" \
 	"perl -0pi -e 's/if \\(answer\\.status !== 200\\) \\{/if (false) {/' docs/site/scripts/check-pages-root.mjs"
 
+# The terminology gate has four things to prove and they fail independently:
+# the ban still fires on prose, it still reaches the site sources that are not
+# Markdown, section 7 is still compared against the registry it is generated
+# from, and the gate's own self-test still asserts.
+#
+# The prose fixture writes the banned spelling as a WORKFLOW LABEL, which is the
+# only sense section 7 retires. The word itself is legitimate 123 times in this
+# tree, so a gate reddening on the fixture and staying green on the tree is the
+# claim being tested, not the mutation alone.
+run_node_gate_case check-terminology.mjs \
+	"a retired workflow label written into a governed page" \
+	"printf '\nThe declarative schema changes workflow runs the difference now.\n' >>docs/site/src/content/docs/direct/overview.md"
+
+# The sidebar is the site's primary navigation and it is not Markdown, so it was
+# outside the gate's corpus until the corpus stopped being a hand-written list
+# of globs. A reader meets these 26 labels before any page.
+run_node_gate_case check-terminology.mjs \
+	"a retired workflow label in the sidebar, which is not a Markdown file" \
+	"perl -0pi -e \"s/label: 'Direct schema changes'/label: 'Declarative schema changes'/\" docs/site/src/sidebar.mjs"
+
+# Section 7 is generated. Hand-editing it is the failure build-feature-matrix
+# already exists to catch on another page, and it has to be caught here too --
+# otherwise the registry and the table a human reads drift apart in the one
+# direction nobody notices, with both looking authoritative.
+run_node_gate_case check-terminology.mjs \
+	"section 7's generated table edited by hand" \
+	"perl -0pi -e 's/\| revision table \| The database table recording applied migrations\. \| review \|/| revision table | The table. | review |/' docs/STYLE_GUIDE.md"
+
+run_node_selftest_case check-terminology.mjs \
+	"the head classification short-circuited inside analyze()" \
+	"perl -0pi -e \"s/if \\(verdict === 'allowed'\\) continue;/if (true) continue;/\" docs/site/scripts/check-terminology.mjs"
+
+# The mention rule is the gate's only silencer, and it is the lever that decides
+# between a gate nobody can use and a gate that reports nothing. Widening it to
+# "a quote silences everything" is the shape that would pass a self-test written
+# only from fixtures that must fire.
+run_node_selftest_case check-terminology.mjs \
+	"the mention rule widened to silence every quoted stem" \
+	"perl -0pi -e 's/export function isMention\\(prose, stemStart, stemEnd\\) \\{/export function isMention(prose, stemStart, stemEnd) { return true;/' docs/site/scripts/check-terminology.mjs"
+
 # The library both route gates read the tree through. Its self-test is the only
 # thing asserting that pages come from git rather than from a walk, and that a
 # route Astro would spell differently is refused rather than guessed at.

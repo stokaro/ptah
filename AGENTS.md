@@ -950,6 +950,27 @@ merged, split, or retired, update the content inventory at
 [`docs/site/CONTENT_INVENTORY.md`](docs/site/CONTENT_INVENTORY.md) in the same
 PR.
 
+**Section 7 of the style guide is the terminology authority.** Before writing a
+name for a Ptah thing — a workflow, a file, a command tree — look it up there
+and use the canonical spelling; where a row says "never" or "do not", it means
+it. The table is generated from `docs/site/scripts/data/terminology.json`, and
+that file is what the checkers read, so grepping it answers "is this term
+governed, and how" without opening the guide. Add a new term there and render
+it with `node docs/site/scripts/check-terminology.mjs --write`; never edit the
+table by hand.
+
+A row carrying a ban applies to `ptah --help` as much as to a page.
+`cmd/internal/terminologyguard` reads the same registry and walks the native
+command tree, because the rule that arrived in section 7 was already broken in
+fourteen pages *and* in the binary's opening sentence.
+
+Most rows carry no ban, and the table's **Held by** column says which do. A row
+held by review is a name you are still held to, by a person reading rather
+than by a gate. The gate's corpus is derived from the tracked file list — every
+Markdown file, plus the site sources carrying reader-facing text that is not
+Markdown — so a page or a package README you add is governed without being
+listed anywhere.
+
 CI enforces the mechanical half of that guide. Section 16 of the guide lists
 exactly which rules fail a build and which stay a reading responsibility. Run
 `node docs/site/scripts/check-style.mjs` for any documentation change: it needs
@@ -963,6 +984,8 @@ ones a documentation change usually needs:
 ```bash
 node docs/site/scripts/check-style.mjs --selftest
 node docs/site/scripts/check-style.mjs
+node docs/site/scripts/check-terminology.mjs --selftest
+node docs/site/scripts/check-terminology.mjs
 node docs/site/scripts/check-limitations.mjs --selftest
 node docs/site/scripts/check-limitations.mjs
 node docs/site/scripts/check-matrix-verdict-prose.mjs --selftest

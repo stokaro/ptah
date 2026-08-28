@@ -53,9 +53,9 @@ Word counts were measured with `wc -w` at the audited commit.
 
 | Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
 | --- | --- | --- | --- | --- | --- | --- |
-| `start/quick-start.mdx` (routing) | new user | Which quick start should I run? | navigation | this page (the one decision, plus what both quick starts need) | `start/choose-a-workflow` carries the longer version of the same decision | split → `start/quick-start-migrations` and `start/quick-start-declarative`; URL kept, so the `/getting-started/` redirect still resolves |
+| `start/quick-start.mdx` (routing) | new user | Which quick start should I run? | navigation | this page (the one decision, plus what both quick starts need) | `start/choose-a-workflow` carries the longer version of the same decision | split → `start/quick-start-migrations` and `start/quick-start-direct`; URL kept, so the `/getting-started/` redirect still resolves |
 | `start/quick-start-migrations.mdx` | new user, any language | How do I write a migration, apply it, and roll it back? | tutorial | this page; every command and output block run against a built binary | `versioned/generate` (the hand-written half), `versioned/rollback` | created (stokaro/ptah#1228 onboarding split); keep |
-| `start/quick-start-declarative.mdx` | new user, any language | How do I make a database match a file that describes the schema I want? | tutorial | this page; every command and output block run against a built binary | `direct/apply`, `direct/compare-and-drift` | created (stokaro/ptah#1228 onboarding split); keep |
+| `start/quick-start-direct.mdx` | new user, any language | How do I make a database match a file that describes the schema I want? | tutorial | this page; every command and output block run against a built binary | `direct/apply`, `direct/compare-and-drift` | created (stokaro/ptah#1228 onboarding split); renamed from `start/quick-start-declarative` under section 7's `direct schema changes` rule, old route redirects; keep |
 | `start/choose-a-workflow.md` (742) | new user deciding integration shape | Should changes reach my databases as versioned migration files or as direct applies? | concept | this page; command shapes verified against the built binary | `workflows/migrations`, `workflows/atlas-cli`, `reference/comparison` | created (section 9, item 4); keep |
 | `start/adopt-an-existing-database.md` (1,000) | brownfield database adopter | How do I put an existing database under Ptah management without recreating it? | howto | this page; `ptah introspect`, `ptah migrations baseline`, `ptah migrations import` runs against the built binary | `workflows/checkpoints` (baseline contrast), `workflows/migrations` import section | created (section 9, item 3); keep |
 
@@ -328,7 +328,7 @@ introduction for a reader who does not write Go.
 `start/quick-start` is now a routing page carrying one decision, and the work
 sits in two tutorials below it. `start/quick-start-migrations` writes a
 migration by hand and takes it through hash, validate, apply, status, read back
-and roll back. `start/quick-start-declarative` keeps one `schema.sql`, applies
+and roll back. `start/quick-start-direct` keeps one `schema.sql`, applies
 it, adds a column, and checks for drift. Neither needs an application language,
 a database server, or a source checkout: both start from an installed binary
 and a local SQLite file.
@@ -390,7 +390,7 @@ nowhere else:
 
 | Page | Tabs | Why they are equivalent |
 | --- | --- | --- |
-| `start/quick-start-migrations`, `start/quick-start-declarative` | Bash, PowerShell | one tutorial step in two shells; every `ptah` invocation is identical in both panels, and only the shell's own commands differ. `internal/quickstart` reads each panel as the program for its shell, so a Windows reader is shown PowerShell throughout and CI runs what the panel says |
+| `start/quick-start-migrations`, `start/quick-start-direct` | Bash, PowerShell | one tutorial step in two shells; every `ptah` invocation is identical in both panels, and only the shell's own commands differ. `internal/quickstart` reads each panel as the program for its shell, so a Windows reader is shown PowerShell throughout and CI runs what the panel says |
 | `schema/work-with-a-source` | the source flag | `--schema-file`, `--root-dir`, `--schema-cmd` name the same input |
 | `start/adopt-an-existing-database` | Go, HCL | one adoption path, two things to keep afterwards |
 | `reference/configuration` | `ptah.yaml`, `atlas.hcl` | a native command reads either through `--env`; measured with `migrations status --env dev` beside both |
@@ -433,7 +433,7 @@ Verified with repository-wide searches at the audited commit.
 | `ptah-compat` | the only Atlas-compatible command surface | #850 pass: promoted from prose-only mention to the documented host of the Atlas-compatible tree (including the `atlas/comparison` command-parity column) |
 | desired schema vs desired state | "desired schema" appears 60 times across 18 pages; "desired state" 3 times (`workflows/migrations.md` twice, `workflows/schema-files.md` once) | standardize on **desired schema**; retire "desired state" outside the composite-source discussion (done: the final pass also replaced the hyphenated "desired-state" uses in Atlas status prose) |
 | schema source | used informally | canonicalize: Go annotations, YAML, HCL, SQL file, external loader, or live database used as input |
-| direct schema changes vs declarative schema changes | the nested-navigation pass measured the exact phrase "declarative schema changes" 4 times across 2 pages (`index.mdx` frontmatter description, hero tagline, and the H3 at line 171; `atlas/conformance` under a **Native Ptah.** label) and "declarative schema management" 3 times across 2 pages, against "Direct schema changes" as the sidebar group, the home page card, and the `start/choose-a-workflow` heading | standardize on **direct schema changes** for the workflow that runs a difference against the database with no migration file in between; retire "declarative schema changes" and "declarative schema management" as names for it, because `ptah migrations generate` reads the same desired schema and "declarative" therefore names where a change came from rather than how it lands. "Declarative" stays correct for the authoring model (`concepts/desired-schema-and-sources`) and inside capability names that carry it, such as declarative reference data and declarative test cases (done under `docs/site/src/content/docs/` and `docs/conformance.md`: 0 occurrences of either retired phrase remain; `direct/overview` states the reasoning in a heading, and `docs/STYLE_GUIDE.md` section 7 carries the rule. Outstanding: the root `README.md` opening sentence and its "Two ways to change a schema" table row, plus the verbatim quote of that sentence in `docs/roadmap-post-ga.md`, are left for the README rewrite that owns the file) |
+| direct schema changes vs "declarative schema changes" | the nested-navigation pass measured the exact phrase "declarative schema changes" 4 times across 2 pages (`index.mdx` frontmatter description, hero tagline, and the H3 at line 171; `atlas/conformance` under a **Native Ptah.** label) and "declarative schema management" 3 times across 2 pages, against "Direct schema changes" as the sidebar group, the home page card, and the `start/choose-a-workflow` heading | standardize on **direct schema changes** for the workflow that runs a difference against the database with no migration file in between; retire "declarative schema changes" and "declarative schema management" as names for it, because `ptah migrations generate` reads the same desired schema and "declarative" therefore names where a change came from rather than how it lands. "Declarative" stays correct for the authoring model (`concepts/desired-schema-and-sources`) and inside capability names that carry it, such as declarative reference data and declarative test cases (done under `docs/site/src/content/docs/` and `docs/conformance.md`: 0 occurrences of either retired phrase remain; `direct/overview` states the reasoning in a heading, and `docs/STYLE_GUIDE.md` section 7 carries the rule. The backlog that pass deferred is now cleared as well: the root `README.md` opening sentence, its "Two ways to change a schema" table row and its quick-start link row; the verbatim quote of that sentence in `docs/roadmap-post-ga.md`; the `ptah --help` text all three copy (`cmd/root/root.go`, plus `ptah schema plan` and `ptah schema validate`); `docs/README.md`; `start/quick-start`, `start/quick-start-migrations`, `start/install` and `reference/native-commands`; and the `Declarative and direct schema changes` section title in `docs/site/scripts/build-feature-matrix.mjs`, which is generated and could not be fixed on the page. `start/quick-start-declarative` was renamed to `start/quick-start-direct` so the slug stops contradicting every label around it, with a redirect and a ledger entry; `start/choose-a-workflow` names "declarative" once, in quotation marks, so a reader who arrives with the word other tools use still lands on the workflow it describes) |
 | dev database / shadow database / throwaway database | all three exist and are real, distinct flags: `--dev-url` (replay validation on `migrations validate`, `migrations lint`, Atlas-compatible verbs), `--shadow-db` (`migrations generate`, `checkpoint`, `baseline` verification replay), throwaway databases in `migrations test` / `schema test` | keep all three as distinct terms; define each once in `concepts/database-urls-and-dev-databases` and link instead of re-defining (done: page exists and first uses link to it) |
 | migration directory / integrity file / revision table | consistent; integrity files are `ptah.sum` (native) and `atlas.sum` (Atlas-format) | keep |
 | dialect vs database/engine | mostly consistent; `reference/dialect-notes` blurs the two | dialect = SQL rendering flavor; database/engine = the product you connect to (done: `concepts/dialects-and-capabilities` defines both and the `Databases` group replaced `dialect-notes`) |
@@ -560,7 +560,7 @@ Start
   Install Ptah                        start/install
   Quick start                         start/quick-start (navigation: one decision, two children)
   Quick start: versioned migrations   start/quick-start-migrations
-  Quick start: declarative changes    start/quick-start-declarative
+  Quick start: direct schema changes  start/quick-start-direct
   Choose a workflow                   start/choose-a-workflow
   Adopt an existing database          start/adopt-an-existing-database
 Workflows
@@ -829,11 +829,25 @@ All enforced by scripts in `docs/site/scripts/` (verified by reading them):
   restoring `### Declarative schema changes` to `index.mdx` and running
   `check:style`, `check:links`, `check:page-health`, `check:route-retirement`,
   `check:redirects` and `check:core-doc-links` — all six exit 0. A phrase rule
-  is addable, and is deferred rather than rejected: added today it would fail
-  on the root `README.md` opening sentence, its workflow table row, and the
-  verbatim quote of that sentence in `docs/roadmap-post-ga.md`, all of which
-  belong to the README rewrite that owns the file. It becomes a zero-finding
-  addition once that rewrite carries the rename.
+  is addable, and is deferred rather than rejected. The three sites that would
+  have made it red on arrival — the root `README.md` opening sentence, its
+  workflow table row, and the verbatim quote of that sentence in
+  `docs/roadmap-post-ga.md` — now carry the canonical phrase, as do
+  `ptah --help`, `ptah schema plan --help`, `ptah schema validate --help`, and
+  the quick start whose slug used to spell the retired label. A phrase rule for
+  this one term would now land at zero findings.
+  What such a rule still has to get right is the unit of the ban. The same
+  corpus uses "declarative" correctly far more often than not — capability
+  names such as declarative reference data and declarative test cases, Atlas
+  page titles the compatibility pages cite as evidence, PostgreSQL's own
+  "declarative partitioning", and URLs and directory names that are not prose
+  at all — so a rule matching the bare word reports mostly false positives, and
+  a rule matching the literal phrase "declarative schema changes" would have
+  found two of the sites fixed here. The head noun after the word is what
+  separates the two, and the rule has to read across a line break: the
+  `cmd/root/root.go` sentence wrapped between "declarative schema" and
+  "changes", so `grep -n 'declarative schema changes' cmd/root/root.go`
+  answered nothing while the widest-reach copy of the phrase was in that file.
 - The site builds under a `/ptah/<version>/` base (`DOCS_VERSION`, default
   `edge`); redirects for moved URLs must be verified under that base.
   Historical tag builds rebuild their own snapshots, so renames never break

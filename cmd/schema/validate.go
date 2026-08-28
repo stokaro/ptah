@@ -49,7 +49,7 @@ connecting to any database.
 
 The desired state comes from Go annotations (--root-dir) or schema files
 (--schema-file, repeatable; sources merge into one composite schema), the same
-way every other declarative verb takes it.
+way every other verb that reads a desired schema takes it.
 
 Validation is per target, because a declaration valid for one dialect can be
 invalid for another. Pass --dialect once per target to check; repeated values

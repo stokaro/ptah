@@ -49,8 +49,8 @@ func newSchemaPlanCommand() *cobra.Command {
 	opts := schemaPlanOptions{}
 	cmd := &cobra.Command{
 		Use:   "plan",
-		Short: "Save a fingerprinted declarative apply plan",
-		Long: `Compute the declarative schema plan from the --db-url target database to the
+		Short: "Save a fingerprinted direct apply plan",
+		Long: `Compute the direct schema plan from the --db-url target database to the
 local desired-state sources and save it as a fingerprinted local plan file
 (JSON, format version 1).
 

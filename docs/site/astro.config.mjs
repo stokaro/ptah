@@ -50,6 +50,7 @@ const redirectRoutes = {
   '/reference/public-api/': '/extend/public-api/',
   '/reference/reusable-components/': '/extend/components/',
   '/reference/query-builder/': '/extend/query-builder/',
+  '/start/quick-start-declarative/': '/start/quick-start-direct/',
 };
 
 const redirects = Object.fromEntries(
