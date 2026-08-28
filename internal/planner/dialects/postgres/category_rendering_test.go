@@ -223,7 +223,11 @@ func diffCategoryFixtures() []categoryFixture {
 		{"ViewsRemoved", &difftypes.SchemaDiff{ViewsRemoved: difftypes.ViewChanges{{Name: "v"}}}, &schemamodel.Database{}},
 		{
 			"ViewsModified",
-			&difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{ViewName: "v", Changes: map[string]string{"body": "a -> b"}}}},
+			&difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{
+				ViewName: "v",
+				Desired:  schemamodel.View{Name: "v", Body: "SELECT 1"},
+				Changes:  map[string]string{"body": "a -> b"},
+			}}},
 			&schemamodel.Database{Views: []schemamodel.View{{Name: "v", Body: "SELECT 2"}}},
 		},
 		{

@@ -973,10 +973,15 @@ func (p *Planner) modifyViews(
 	semantics identifier.Semantics,
 ) []ast.Node {
 	var result []ast.Node
+	// The view this change leaves behind travels WITH it, in the direction
+	// being planned: the declaration going up, the database's own view coming
+	// down (stokaro/ptah#2315). A change carrying none is skipped, which is
+	// what the failed lookup did.
 	for _, viewDiff := range diff.ViewsModified {
-		if view := findView(desired.Views, viewDiff.ViewName, semantics); view != nil {
-			result = append(result, fromschema.FromView(*view).SetReplace())
+		if viewDiff.Desired.Name == "" {
+			continue
 		}
+		result = append(result, fromschema.FromView(viewDiff.Desired).SetReplace())
 	}
 	return result
 }
@@ -987,10 +992,6 @@ func (p *Planner) removeViews(diff *difftypes.SchemaDiff) []ast.Node {
 		result = append(result, ast.NewDropView(view.Name).SetIfExists())
 	}
 	return result
-}
-
-func findView(views []schemamodel.View, name string, semantics identifier.Semantics) *schemamodel.View {
-	return objectlookup.View(views, name, semantics)
 }
 
 func (p *Planner) addTriggers(

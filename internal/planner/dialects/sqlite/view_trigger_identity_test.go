@@ -6,8 +6,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
+	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -81,21 +84,6 @@ func TestViewAndTriggerLookupsFoldASCIICase(t *testing.T) {
 		wantSQL string
 	}{
 		{
-			name: "a modified view spelled in a different case",
-			desired: &schemamodel.Database{
-				Views: []schemamodel.View{{
-					Name: "Active_Notes",
-					Body: "SELECT id FROM notes WHERE body IS NOT NULL",
-				}},
-			},
-			diff: &difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{
-				ViewName:     "active_notes",
-				PreviousBody: "SELECT id FROM notes",
-				Changes:      map[string]string{"body": "changed"},
-			}}},
-			wantSQL: "VIEW",
-		},
-		{
 			name: "a trigger whose table is spelled in a different case",
 			desired: &schemamodel.Database{
 				Triggers: []schemamodel.Trigger{{
@@ -125,4 +113,34 @@ func TestViewAndTriggerLookupsFoldASCIICase(t *testing.T) {
 			c.Assert(plan, qt.Contains, test.wantSQL, qt.Commentf("plan:\n%s", plan))
 		})
 	}
+}
+
+// TestCompare_AModifiedViewResolvesACaseDifference is the view half of the
+// capability above, measured where it now happens.
+//
+// A declaration writes `Active_Notes` and a server reports `active_notes`. The
+// planner used to reconcile the two by looking the name up; the comparison does
+// it now, and the change carries the view it resolved to (stokaro/ptah#2315).
+// Driving the comparison rather than hand-building the diff is the point: a
+// hand-built one bypasses the resolution the planner no longer performs.
+func TestCompare_AModifiedViewResolvesACaseDifference(t *testing.T) {
+	c := qt.New(t)
+
+	desired := &schemamodel.Database{
+		Views: []schemamodel.View{{Name: "Active_Notes", Body: "SELECT id FROM notes WHERE body IS NOT NULL"}},
+	}
+	database := &catalog.Database{
+		Views: []catalog.View{{Name: "active_notes", Body: "SELECT id FROM notes"}},
+	}
+
+	diff := schemadiff.CompareWithDialect(desired, database, platform.SQLite)
+
+	c.Assert(diff.ViewsModified, qt.HasLen, 1)
+	c.Assert(diff.ViewsModified[0].Desired.Name, qt.Equals, "Active_Notes",
+		qt.Commentf("the comparison folded the case and resolved to the declaration"))
+
+	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "VIEW")
 }

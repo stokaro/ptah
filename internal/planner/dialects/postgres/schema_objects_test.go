@@ -45,7 +45,9 @@ func TestPlanner_GenerateMigrationAST_SchemaObjectsModified(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
 		ViewsModified: []difftypes.ViewDiff{{
 			ViewName: "active_users",
-			Changes:  map[string]string{"body": "old -> new"},
+			Desired: schemamodel.View{Name: "active_users",
+				Body: "SELECT id FROM users WHERE deleted_at IS NULL"},
+			Changes: map[string]string{"body": "old -> new"},
 		}},
 		MaterializedViewsModified: []difftypes.MaterializedViewDiff{{ViewName: "user_stats", Changes: map[string]string{"body": "old -> new"}}},
 		TriggersModified:          []difftypes.TriggerDiff{{TriggerName: "set_updated_at", TableName: "users", Changes: map[string]string{"body": "old -> new"}}},
@@ -155,6 +157,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedViewDropsWhenReplaceWouldBeRefused
 			diff := &difftypes.SchemaDiff{
 				ViewsModified: []difftypes.ViewDiff{{
 					ViewName:     "active_users",
+					Desired:      schemamodel.View{Name: "active_users", Body: tc.nextBody},
 					Changes:      map[string]string{"body": "old -> new"},
 					PreviousBody: tc.previousBody,
 				}},
@@ -303,6 +306,7 @@ func TestPlanner_GenerateMigrationAST_UndecidableViewBodyFollowsTheDirection(t *
 			diff := &difftypes.SchemaDiff{
 				ViewsModified: []difftypes.ViewDiff{{
 					ViewName:     "active_users",
+					Desired:      schemamodel.View{Name: "active_users", Body: tc.nextBody},
 					Changes:      map[string]string{"body": "old -> new"},
 					PreviousBody: tc.previousBody,
 					Rollback:     tc.rollback,
@@ -395,6 +399,7 @@ func TestPlanner_GenerateMigrationAST_SameStarOverSameRelationsKeepsTheReplace(t
 			diff := &difftypes.SchemaDiff{
 				ViewsModified: []difftypes.ViewDiff{{
 					ViewName:     "active_users",
+					Desired:      schemamodel.View{Name: "active_users", Body: tc.nextBody},
 					Changes:      map[string]string{"body": "old -> new"},
 					PreviousBody: tc.previousBody,
 					Rollback:     tc.rollback,
@@ -431,8 +436,10 @@ func TestPlanner_GenerateMigrationAST_ModifiedViewsDropInDependencyOrder(t *test
 	}
 	diff := &difftypes.SchemaDiff{
 		ViewsModified: []difftypes.ViewDiff{
-			{ViewName: "a_report", Changes: map[string]string{"body": "old -> new"}, Rollback: true},
-			{ViewName: "z_base", Changes: map[string]string{"body": "old -> new"}, Rollback: true},
+			{ViewName: "a_report",
+				Desired: schemamodel.View{Name: "a_report", Body: "SELECT id FROM z_base"}, Changes: map[string]string{"body": "old -> new"}, Rollback: true},
+			{ViewName: "z_base",
+				Desired: schemamodel.View{Name: "z_base", Body: "SELECT id FROM users"}, Changes: map[string]string{"body": "old -> new"}, Rollback: true},
 		},
 	}
 
@@ -474,6 +481,7 @@ func TestPlanner_GenerateMigrationAST_DroppedViewRebuildsDeclaredDependents(t *t
 	diff := &difftypes.SchemaDiff{
 		ViewsModified: []difftypes.ViewDiff{{
 			ViewName: "base_view",
+			Desired:  schemamodel.View{Name: "base_view", Body: "SELECT id, email FROM users"},
 			Changes:  map[string]string{"body": "old -> new"},
 			// The column list shrank, so the replace is refused and the drop is
 			// the only statement that applies -- in both directions.
@@ -533,6 +541,7 @@ func TestPlanner_GenerateMigrationAST_CascadeRebuildReadsCodeNotText(t *testing.
 	diff := &difftypes.SchemaDiff{
 		ViewsModified: []difftypes.ViewDiff{{
 			ViewName: "base_view",
+			Desired:  schemamodel.View{Name: "base_view", Body: "SELECT id, email FROM users"},
 			Changes:  map[string]string{"body": "old -> new"},
 			// The column list shrank, so the drop is the only statement that
 			// applies and the rebuild list is what decides who else is touched.
@@ -623,6 +632,7 @@ func TestPlanner_GenerateMigrationAST_QuotedRelationCaseIsNotFolded(t *testing.T
 			diff := &difftypes.SchemaDiff{
 				ViewsModified: []difftypes.ViewDiff{{
 					ViewName:     "probe_view",
+					Desired:      schemamodel.View{Name: "probe_view", Body: tc.nextBody},
 					Changes:      map[string]string{"body": "old -> new"},
 					PreviousBody: tc.previousBody,
 					Rollback:     true,

@@ -38,6 +38,7 @@ import (
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/migrationversion"
 	"go.5x5.cz/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/internal/txrequire"
@@ -2095,6 +2096,16 @@ func reverseSchemaDiffWithSchemaForDialect(
 	// same rules the forward one was compared under, so a down migration pairs
 	// its drops exactly as the up migration it undoes did.
 	semantics := diff.EffectiveIdentifierSemantics(dialect)
+	// The pre-change database as a desired schema. This is the schema the DOWN
+	// plan is rendered against -- see generateDownMigrationSQLQualified, which
+	// hands the planner exactly this -- so it is where a reversed modification
+	// finds the definition it must restore (stokaro/ptah#2315).
+	// nil is a real input here: callers that reverse a diff without a database
+	// read pass one, and the conversion dereferences it.
+	var prior *schemamodel.Database
+	if dbSchema != nil {
+		prior = dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	}
 	reversed := &difftypes.SchemaDiff{
 		IdentifierSemantics: cloneIdentifierSemantics(diff.IdentifierSemantics),
 
@@ -2157,7 +2168,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// state the database is actually in when the rollback runs.
 		ViewsAdded:    diff.ViewsRemoved, // Views to remove become views to add
 		ViewsRemoved:  diff.ViewsAdded,   // Views to add become views to remove
-		ViewsModified: reverseViewDiffs(diff.ViewsModified, schema),
+		ViewsModified: reverseViewDiffs(diff.ViewsModified, schema, prior, semantics),
 
 		// A synonym is an alias with no body, so reversing it needs no schema
 		// side: the down direction drops what the up direction created and
@@ -3193,17 +3204,40 @@ func reverseSynonymDiffs(diffs []difftypes.SynonymDiff) []difftypes.SynonymDiff 
 	return reversed
 }
 
-func reverseViewDiffs(viewDiffs []difftypes.ViewDiff, schema *schemamodel.Database) []difftypes.ViewDiff {
+func reverseViewDiffs(
+	viewDiffs []difftypes.ViewDiff,
+	schema, prior *schemamodel.Database,
+	semantics identifier.Semantics,
+) []difftypes.ViewDiff {
 	reversed := make([]difftypes.ViewDiff, len(viewDiffs))
 	for i, viewDiff := range viewDiffs {
 		reversed[i] = difftypes.ViewDiff{
 			ViewName:     viewDiff.ViewName,
 			Changes:      reverseChangeMap(viewDiff.Changes),
 			PreviousBody: generatedViewBody(schema, viewDiff.ViewName),
-			Rollback:     true,
+			// The view the database HAD, which is what this rollback restores.
+			// The forward entry carries the declaration; reversing the change
+			// map without reversing the operand would have the down direction
+			// reapply the very body it is undoing (stokaro/ptah#2315).
+			Desired:  priorView(prior, viewDiff.ViewName, semantics),
+			Rollback: true,
 		}
 	}
 	return reversed
+}
+
+// priorView is the view the pre-change database held, resolved on the terms the
+// planner resolved it on when it was handed that schema directly: the diff
+// spells a name the declaration used, and a database view carries the schema
+// the server reports it under.
+func priorView(prior *schemamodel.Database, name string, semantics identifier.Semantics) schemamodel.View {
+	if prior == nil {
+		return schemamodel.View{}
+	}
+	if view := objectlookup.View(prior.Views, name, semantics); view != nil {
+		return *view
+	}
+	return schemamodel.View{}
 }
 
 // reverseRangeDiffs mirrors reverseDomainDiffs for range types.

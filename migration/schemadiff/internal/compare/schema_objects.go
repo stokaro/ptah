@@ -770,6 +770,10 @@ func ViewDefinitionsWithDialect(genView schemamodel.View, dbView catalog.View, d
 	viewDiff := difftypes.ViewDiff{
 		ViewName: genView.Name,
 		Changes:  make(map[string]string),
+		// The declaration this change leaves behind. The reversal replaces it
+		// with the database's own view, because a rollback restores that one
+		// (stokaro/ptah#2315).
+		Desired: genView,
 		// The database body is what the view has before this diff is applied.
 		// The planner needs it to decide whether CREATE OR REPLACE VIEW is legal
 		// for the change, which is not derivable from the target body alone.

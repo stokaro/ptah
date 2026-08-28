@@ -2381,8 +2381,10 @@ func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaD
 	var dropped []string
 	replaced := make([]deporder.ViewLike, 0, len(diff.ViewsModified))
 	for _, viewDiff := range diff.ViewsModified {
-		view := objectlookup.View(desired.Views, viewDiff.ViewName, semantics)
-		if view == nil {
+		// The view this change leaves behind travels WITH it, in the direction
+		// being planned (stokaro/ptah#2315).
+		view := &viewDiff.Desired
+		if view.Name == "" {
 			continue
 		}
 		if viewReplaceKeepsDependents(viewDiff, view.Body) {

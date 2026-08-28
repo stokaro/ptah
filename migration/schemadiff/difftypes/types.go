@@ -1832,6 +1832,20 @@ type ViewDiff struct {
 	ViewName string            `json:"view_name"`
 	Changes  map[string]string `json:"changes"`
 
+	// Desired is the view this change should leave behind, which is what a
+	// `CREATE OR REPLACE VIEW` is written from.
+	//
+	// It is direction-dependent, and that is the whole subtlety. Going UP it is
+	// the declaration; coming DOWN it is the view the database had before, so
+	// the rollback restores what it is undoing rather than reapplying it. The
+	// comparison sets the first and [reverseViewDiffs] rewrites it to the
+	// second -- which is what the planner used to get by being handed a
+	// different schema per direction (stokaro/ptah#2315).
+	//
+	// It is not serialized: the document has always carried a name and a map of
+	// what changed, and a consumer reading it is unaffected.
+	Desired schemamodel.View `json:"-"`
+
 	// PreviousBody is the view body that is in force before this diff is
 	// applied: the database side of a forward comparison, and the post-up side
 	// of a reversed one. It is what makes the modification path decidable.

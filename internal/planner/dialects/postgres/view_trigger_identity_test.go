@@ -6,8 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
+	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -94,6 +96,13 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 // TestViewAndTriggerLookupsResolveAcrossSpellings is the capability half: the
 // spellings that DO name one object still resolve, so the rows above are a
 // refusal to guess rather than a refusal to work.
+//
+// Its view row moved to TestCompare_AModifiedViewResolvesTheDiffSpelling below.
+// A modified view carries the definition it leaves behind now
+// (stokaro/ptah#2315), so the spelling is resolved where the SEMANTICS are
+// known -- by the comparison -- rather than by the planner guessing from a
+// name. The trigger row stays here, because a trigger reference still is a
+// name.
 func TestViewAndTriggerLookupsResolveAcrossSpellings(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -101,21 +110,6 @@ func TestViewAndTriggerLookupsResolveAcrossSpellings(t *testing.T) {
 		diff    *difftypes.SchemaDiff
 		wantSQL string
 	}{
-		{
-			name: "a modified view the diff qualifies with public",
-			desired: &schemamodel.Database{
-				Views: []schemamodel.View{{
-					Name: "active_users",
-					Body: "SELECT id FROM users WHERE active",
-				}},
-			},
-			diff: &difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{
-				ViewName:     "public.active_users",
-				PreviousBody: "SELECT id FROM users",
-				Changes:      map[string]string{"body": "changed"},
-			}}},
-			wantSQL: "VIEW",
-		},
 		{
 			name: "a trigger whose table the diff qualifies with public",
 			desired: &schemamodel.Database{
@@ -146,4 +140,34 @@ func TestViewAndTriggerLookupsResolveAcrossSpellings(t *testing.T) {
 			c.Assert(plan, qt.Contains, test.wantSQL, qt.Commentf("plan:\n%s", plan))
 		})
 	}
+}
+
+// TestCompare_AModifiedViewResolvesTheDiffSpelling is the view half of the
+// capability above, measured where it now happens.
+//
+// A declaration writes `active_users` and a server reports `public.active_users`.
+// The planner used to reconcile the two by looking the name up; the comparison
+// does it now, and the change carries the view it resolved to. Driving the
+// comparison rather than hand-building the diff is the point: a hand-built one
+// bypasses the resolution, which is exactly what the planner no longer performs.
+func TestCompare_AModifiedViewResolvesTheDiffSpelling(t *testing.T) {
+	c := qt.New(t)
+
+	desired := &schemamodel.Database{
+		Views: []schemamodel.View{{Name: "active_users", Body: "SELECT id FROM users WHERE active"}},
+	}
+	database := &catalog.Database{
+		Views: []catalog.View{{Schema: "public", Name: "active_users", Body: "SELECT id FROM users"}},
+	}
+
+	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+
+	c.Assert(diff.ViewsModified, qt.HasLen, 1)
+	c.Assert(diff.ViewsModified[0].Desired.Name, qt.Equals, "active_users",
+		qt.Commentf("the comparison resolved the two spellings to one declaration"))
+
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, "postgres")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.Join(statements, "\n"), qt.Contains, "VIEW")
 }
