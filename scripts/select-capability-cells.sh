@@ -49,6 +49,14 @@ push)
 	request="none"
 	reason="the probe fan-out does not run on a push; it runs nightly, and on request from the workflow's Run button"
 	;;
+pull_request | pull_request_target)
+	# A pull request probes only what a `/capability-matrix` comment asked for.
+	# The caller reads that comment -- it needs the API and this script takes no
+	# network -- and passes the result in, so an empty argument here means the
+	# pull request asked for nothing.
+	request="${requested:-none}"
+	reason="requested on this pull request: ${request}"
+	;;
 *)
 	request="none"
 	reason="not requested on this event (${event}); comment \`/capability-matrix\` on the pull request to run it, or use the workflow's Run button"
@@ -76,12 +84,30 @@ else
 	    | $id ]' <<<"$all")"
 fi
 
-count="$(jq 'length' <<<"$selected")"
-
 printf 'selected=%s\n' "$selected"
 printf 'reason=%s\n' "$reason"
 
-if [ "$count" -eq 0 ] && [ "$request" != "none" ] && [ -n "$request" ]; then
-	echo "select-capability-cells: requested cells (${request}) matched none of ${all}" >&2
-	exit 1
+# A request that names something the matrix does not have is a typo, and
+# answering it with silence is the same defect this whole tier warns about.
+#
+# EVERY selector is checked, not the count. `postgres,postgrez` has a valid
+# half, so a count-only check passes while the misspelled half is discarded --
+# the run then probes fewer cells than were asked for and reports that it
+# honored the request.
+#
+# `all` and `none` are sentinels, not selectors. Both are resolved by the branch
+# above and never reach the matching rule, so neither is a name the matrix could
+# be expected to have. Validating `all` as though it were a cell id is what
+# failed every scheduled run for three nights (stokaro/ptah#2185).
+if [ -n "$request" ] && [ "$request" != "none" ] && [ "$request" != "all" ]; then
+	unmatched="$(REQUEST="$request" jq -r '
+	  . as $ids
+	  | ($ENV.REQUEST | split(",") | map(gsub("^\\s+|\\s+$"; "")) | map(select(length > 0)))
+	  | map(select(. as $w | ($ids | any(. == $w or startswith($w + "-"))) | not))
+	  | join(", ")' <<<"$all")"
+	if [ -n "$unmatched" ]; then
+		echo "select-capability-cells: requested cells matched nothing: ${unmatched}" >&2
+		echo "select-capability-cells: the matrix declares: ${all}" >&2
+		exit 1
+	fi
 fi
