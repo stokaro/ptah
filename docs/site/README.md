@@ -162,6 +162,38 @@ writes is a 404, and a file nothing documents is unreachable.
 after assembling it. Everything the gate reads in the tree can be right while
 the directory about to be uploaded is missing a file.
 
+### What only a request can see
+
+Both halves above read this repository: one reads the tree, the other reads the
+directory a run of this workflow assembled. Neither asks whether
+`https://stokaro.github.io/ptah/install.sh` answers, and there are ways for it
+to stop answering that leave no trace here at all:
+
+- A Pages settings change, or a repository rename that moves the whole site.
+- A deploy triggered by a **tag**. A tag push runs the workflow file as it
+  exists *at that tag*, and every tag cut before this mechanism landed has a
+  `docs.yml` with no publish step — it still builds, uploads and deploys, and a
+  Pages deployment replaces the whole site. Re-cutting or re-running such a tag
+  would deploy a root with no installers in it. Tags move forward, so cut them
+  from `master` and do not re-push an old one.
+
+`--live` is the third half and the only one that asks the address. It requests
+every root file, requires a 200, and requires each installer to be the bytes of
+its source under `public/`. It probes the generated files beside them as a
+control: a run where everything answers 404 is a site that moved, and a run
+where only an installer does is the publish step having stopped running.
+
+```bash
+node scripts/check-pages-root.mjs --live
+```
+
+It runs on the schedule in `.github/workflows/install-smoke.yml`, not on a push
+— a push to `master` starts that workflow and the Pages deploy at the same
+moment, so a probe there would race the deploy it is verifying. The site
+converges on `master` within a minute of each push, which is why a byte
+difference on the schedule is the root serving something the repository does
+not, rather than a deploy in flight.
+
 ### Adding a root file
 
 Add an entry to `ROOT_ASSETS` in `scripts/publish-root-assets.mjs`, put the file

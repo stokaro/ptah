@@ -29,9 +29,18 @@
 //      writes, and every declared asset is named by the documentation. The
 //      first direction is the 404; the second is an asset nobody can find.
 //
-// `--site <dir>` is the other half, and the build job runs it on the real
+// `--site <dir>` is the third half, and the build job runs it on the real
 // `_site` after assembling it. Rules 1 to 4 read the tree; this reads what was
 // actually produced, which is the only thing the deploy uploads.
+//
+// `--live` is the fourth, and it is the only one that asks the published
+// address. Everything above can pass while https://stokaro.github.io/ptah/
+// answers 404 for a file: a Pages settings change, a repository rename, or a
+// deploy from an older tag whose workflow predates the publish step -- a tag
+// deploy replaces the whole site, and the workflow it runs is the one that
+// exists AT THAT TAG. None of those is a change to this tree, so nothing here
+// can see them. Only a request can, which is why `--live` exists and why it
+// runs on a schedule rather than on a pull request.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -159,6 +168,68 @@ export function analyze(input) {
   return problems;
 }
 
+// analyzeLive judges what the published site answered. `fetched` maps a file
+// name to { status, text } for a request that completed, or to { error } for one
+// that did not.
+//
+// The generated files are probed beside the declared assets, and they are the
+// control: they have been at the root since before any installer was, so a run
+// where everything 404s is a site that moved or a Pages configuration that
+// changed, and a run where only an installer 404s is the publish step having
+// stopped running. Reporting those two as the same finding would send the
+// reader to the wrong file.
+//
+// An asset is additionally required to be the bytes of its source. The site
+// converges on the tree within a minute of every push to master, so on the
+// schedule this runs on a difference is not a deploy in flight; it is the root
+// serving something other than what the repository says it serves.
+export function analyzeLive(input) {
+  const { assets, generated, fetched, sources } = input;
+  const problems = [];
+  const names = [...generated, ...assets.map((asset) => asset.name)];
+  const reachable = names.filter((name) => {
+    const answer = fetched.get(name);
+    return answer && !answer.error && answer.status === 200;
+  });
+
+  for (const name of names) {
+    const answer = fetched.get(name);
+    if (!answer) {
+      problems.push(`${PAGES_PREFIX}${name} was not requested`);
+      continue;
+    }
+    if (answer.error) {
+      problems.push(`${PAGES_PREFIX}${name} could not be requested: ${answer.error}`);
+      continue;
+    }
+    if (answer.status !== 200) {
+      const control = reachable.length > 0 ? `; ${reachable.join(', ')} still answered 200` : '';
+      problems.push(`${PAGES_PREFIX}${name} answered ${answer.status}${control}`);
+      continue;
+    }
+    if (answer.text.length === 0) {
+      problems.push(`${PAGES_PREFIX}${name} answered 200 with an empty body`);
+    }
+  }
+
+  for (const asset of assets) {
+    const answer = fetched.get(asset.name);
+    const source = sources.get(asset.name);
+    if (!answer || answer.error || answer.status !== 200 || answer.text.length === 0) continue;
+    if (source === undefined) {
+      problems.push(`${asset.source} could not be read to compare against ${asset.url}`);
+      continue;
+    }
+    if (answer.text !== source) {
+      problems.push(
+        `${asset.url} is not the bytes of ${asset.source}; the deployed root is serving something else`,
+      );
+    }
+  }
+
+  return problems;
+}
+
 // rootFileReferences pulls the root-level file names out of one file's Pages
 // URLs. A URL with no path, or one whose path enters a version directory, names
 // no root file; neither does an extensionless route.
@@ -240,6 +311,23 @@ function checkAssembledSite(siteDir) {
     }
   }
   return problems;
+}
+
+// fetchRoot requests every root file from the published site. A request that
+// throws is recorded rather than raised, so one unreachable file does not hide
+// what the others answered -- the control in analyzeLive needs all of them.
+async function fetchRoot(names) {
+  const fetched = new Map();
+  for (const name of names) {
+    const url = `${PAGES_PREFIX}${name}`;
+    try {
+      const response = await fetch(url, { redirect: 'follow' });
+      fetched.set(name, { status: response.status, text: await response.text() });
+    } catch (error) {
+      fetched.set(name, { error: error.message });
+    }
+  }
+  return fetched;
 }
 
 function selftest() {
@@ -441,6 +529,80 @@ function selftest() {
     'discovery that read nothing must fail closed',
   );
 
+  // --live. Every rule here is a way the published address stops answering
+  // while this tree stays green.
+  const liveHealthy = () => ({
+    assets,
+    generated,
+    fetched: new Map([
+      ['versions.json', { status: 200, text: '{}\n' }],
+      ['index.html', { status: 200, text: '<!doctype html>\n' }],
+      ['install.sh', { status: 200, text: '#!/bin/sh\n' }],
+      ['install.ps1', { status: 200, text: "Write-Output 'ptah'\n" }],
+    ]),
+    sources: new Map([
+      ['install.sh', '#!/bin/sh\n'],
+      ['install.ps1', "Write-Output 'ptah'\n"],
+    ]),
+  });
+
+  assert(analyzeLive(liveHealthy()).length === 0, `a healthy site must pass: ${JSON.stringify(analyzeLive(liveHealthy()))}`);
+
+  // The failure this mode exists for: the tree is intact, the assembly is
+  // intact, and the deployed root has lost one file.
+  const gone = liveHealthy();
+  gone.fetched.set('install.sh', { status: 404, text: 'not found' });
+  const goneProblems = analyzeLive(gone);
+  assert(
+    goneProblems.some((problem) => problem.includes('install.sh answered 404')),
+    `a 404 at the published address must be reported: ${JSON.stringify(goneProblems)}`,
+  );
+  // And it must say what still answered, because "install.sh is 404" and "the
+  // whole site is 404" send the reader to different files.
+  assert(
+    goneProblems.some((problem) => problem.includes('still answered 200')),
+    'a partial outage must name the files that still answered',
+  );
+
+  const siteGone = liveHealthy();
+  for (const name of [...generated, ...assets.map((asset) => asset.name)]) {
+    siteGone.fetched.set(name, { status: 404, text: '' });
+  }
+  const siteGoneProblems = analyzeLive(siteGone);
+  assert(siteGoneProblems.length === 4, `every root file must be reported: ${JSON.stringify(siteGoneProblems)}`);
+  assert(
+    !siteGoneProblems.some((problem) => problem.includes('still answered 200')),
+    'a whole-site outage has no control to name',
+  );
+
+  const unreachable = liveHealthy();
+  unreachable.fetched.set('install.ps1', { error: 'getaddrinfo ENOTFOUND' });
+  assert(
+    analyzeLive(unreachable).some((problem) => problem.includes('could not be requested')),
+    'a request that never completed must be reported, not treated as a pass',
+  );
+
+  const emptyBody = liveHealthy();
+  emptyBody.fetched.set('install.sh', { status: 200, text: '' });
+  assert(
+    analyzeLive(emptyBody).some((problem) => problem.includes('empty body')),
+    'a 200 with nothing in it must be reported',
+  );
+
+  const stale = liveHealthy();
+  stale.fetched.set('install.sh', { status: 200, text: '#!/bin/sh\n# something else\n' });
+  assert(
+    analyzeLive(stale).some((problem) => problem.includes('is not the bytes of')),
+    'a served file that is not the tree\'s must be reported',
+  );
+
+  const notRequested = liveHealthy();
+  notRequested.fetched.delete('install.ps1');
+  assert(
+    analyzeLive(notRequested).some((problem) => problem.includes('was not requested')),
+    'a file nothing asked for must not read as a pass',
+  );
+
   // rootFileReferences reads root files and nothing else.
   const references = rootFileReferences(
     [
@@ -464,10 +626,33 @@ function selftest() {
   console.log('check-pages-root.mjs --selftest: OK');
 }
 
-function main() {
+async function main() {
   const argument = process.argv[2];
   if (argument === '--selftest') {
     selftest();
+    return;
+  }
+
+  if (argument === '--live') {
+    const names = [...GENERATED_ROOT_FILES, ...ROOT_ASSETS.map((asset) => asset.name)];
+    const sources = new Map();
+    for (const asset of ROOT_ASSETS) {
+      const path = sourcePath(asset);
+      if (existsSync(path)) sources.set(asset.name, readFileSync(path, 'utf8'));
+    }
+    const problems = analyzeLive({
+      assets: ROOT_ASSETS,
+      generated: GENERATED_ROOT_FILES,
+      fetched: await fetchRoot(names),
+      sources,
+    });
+    if (problems.length > 0) {
+      console.error(`check-pages-root.mjs --live: ${problems.length} problem(s) at ${PAGES_PREFIX}:`);
+      for (const problem of problems) console.error(`- ${problem}`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`check-pages-root.mjs --live: OK (${PAGES_PREFIX} serves ${names.join(', ')})`);
     return;
   }
 
@@ -534,4 +719,4 @@ function main() {
   console.log(`check-pages-root.mjs: OK (${names.join(', ')} across ${files.length} documentation files)`);
 }
 
-main();
+await main();

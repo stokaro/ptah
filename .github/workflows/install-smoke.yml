@@ -46,6 +46,39 @@ jobs:
       - name: Run every documented install command
         run: scripts/check-documented-install.sh
 
+  # The published address itself. Every gate in docs.yml reads this tree or the
+  # directory the deploy assembles; none of them asks whether
+  # https://stokaro.github.io/ptah/install.sh answers. That difference is not
+  # theoretical: a Pages settings change, a repository rename, or a deploy
+  # triggered by a tag whose workflow file predates the publish step would each
+  # leave the documented one-liner answering 404 with every check green. A tag
+  # deploy replaces the whole site and runs the workflow AS IT EXISTS AT THAT
+  # TAG, and v0.2.0's has no publish step.
+  #
+  # Not on `push`: a push to master starts this workflow and the Pages deploy at
+  # the same time, so the probe would race the deploy it is meant to verify. The
+  # schedule catches every one of the failures above within the day, which is
+  # what they need.
+  pages-root-urls:
+    name: The published Pages root serves the install scripts
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      # No npm install: this gate has no dependencies, and its --selftest is
+      # what says the rules below can fail at all.
+      - name: Fetch every root file the documentation publishes
+        run: |
+          set -euo pipefail
+          node docs/site/scripts/check-pages-root.mjs --selftest
+          node docs/site/scripts/check-pages-root.mjs --live
+
   hosted-install-script:
     name: The hosted install script against the published release
     strategy:

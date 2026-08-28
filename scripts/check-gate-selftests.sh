@@ -296,6 +296,15 @@ run_node_selftest_case check-pages-root.mjs \
 	"the produced-file rule short-circuited inside analyze()" \
 	"perl -0pi -e 's/if \\(!assembled\\.has\\(name\\)\\) \\{/if (false) {/' docs/site/scripts/check-pages-root.mjs"
 
+# The --live rule. It is the only one that asks the published address, and it is
+# the only one that can see a root a deploy from an older tag replaced -- a tag
+# runs the workflow file AS IT EXISTS AT THAT TAG, which for anything cut before
+# the publish step has no publish step. Nothing in this tree can be edited to
+# produce that, so the rule is measured through its own self-test.
+run_node_selftest_case check-pages-root.mjs \
+	"the published-address status rule short-circuited inside analyzeLive()" \
+	"perl -0pi -e 's/if \\(answer\\.status !== 200\\) \\{/if (false) {/' docs/site/scripts/check-pages-root.mjs"
+
 # The library both route gates read the tree through. Its self-test is the only
 # thing asserting that pages come from git rather than from a walk, and that a
 # route Astro would spell differently is refused rather than guessed at.
