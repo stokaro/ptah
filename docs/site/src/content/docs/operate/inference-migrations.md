@@ -112,7 +112,13 @@ refusal names the statement to run.
 Two generations over one table need two columns, so a specification whose model
 changed also needs its `target.column` changed. A generation writes its own
 column; it never overwrites another generation's, which is what makes the
-cutover a pointer move rather than a data migration. `backfill` embeds
+cutover a pointer move rather than a data migration — the previous corpus is
+still there to go back to.
+
+`prepare` refuses when the column you named already holds another generation,
+and says which. That refusal is deliberately early: the write path refuses the
+same thing one row at a time, in the middle of a backfill, after the provider
+has already been called for that batch. `backfill` embeds
 that snapshot; `catchup` embeds what the outbox collected since. Running
 `catchup` until it reports nothing left is what makes a cutover possible —
 `cutover` refuses while the backfill is unfinished or the outbox has a backlog.
