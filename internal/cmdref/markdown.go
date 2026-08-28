@@ -37,7 +37,7 @@ type Surface struct {
 // groups in the first place. The Notes column carries `group`, so a reader can
 // see which of the two a cell came from without being told.
 //
-// Measured on the native tree: 102 paths, 91 leaves and 11 groups; 91
+// Measured on the native tree: 103 paths, 92 leaves and 11 groups; 92
 // classified verbs, none with an empty Reason. The eleven without one are
 // exactly the eleven groups, so there is no partial coverage to police, and
 // TestClassification_NamesEveryVerbTheBinaryHas guards that bidirectionally --
@@ -76,7 +76,7 @@ func Commands(surface Surface) (string, error) {
 // The capital is this renderer's, not the registry's. A classification reads
 // as a predicate of the verb it belongs to -- "introspects the database and
 // prints what it found" -- and a reference table's cell is a sentence of its
-// own; a column mixing 91 predicates with 11 sentences reads as a mistake.
+// own; a column mixing 92 predicates with 11 sentences reads as a mistake.
 // Nothing else about the string is touched.
 func purposeOf(surface Surface, node agentsurface.Node) (string, error) {
 	if !surface.Classified || !node.Leaf {
@@ -101,19 +101,21 @@ func capitalized(sentence string) string {
 }
 
 // Flags renders every flag every command of every surface registers, one row
-// per command and flag.
+// per command and flag. Rows are grouped below their exact command path rather
+// than repeating that path in a sixth column. Besides fitting the documentation
+// column, the grouping makes one command's accepted inputs readable as a unit.
 //
 // One row per pair is the only shape that fits, and the limit is mechanical:
 // docs/site/scripts/check-style.mjs refuses a table cell over 350 characters.
 // Measured on this tree, a cell per command listing its flags puts four of the
-// 102 native rows over that, `migrations up` at 555; inverted, a cell per flag
+// 103 native rows over that, `migrations up` at 555; inverted, a cell per flag
 // listing its commands puts six over, `--db-url` at 695 across 38 commands.
 //
 // # There is no column carrying a flag's own words, and the measurement is why
 //
 // agentsurface.Flag.Usage holds the sentence `--help` prints, and rendering it
 // here would put the meaning of every flag on one page. The same 350-character
-// limit refuses it: 6 of the 935 usage strings are over, all of them
+// limit refuses it: 6 of the 937 usage strings are over, all of them
 // `--verify-sum`, from 409 characters on `migrations up` to 512 on
 // `migrations show`. Truncating a measured value would make the reference lie
 // about text the binary prints in full, and there is no third rendering. A
@@ -132,22 +134,26 @@ func Flags(surfaces []Surface) (string, error) {
 			return "", errEmpty("the command tree of " + surface.Program)
 		}
 		fmt.Fprintf(&out, "## `%s`\n\n", surface.Program)
-		out.WriteString("| Command | Flag | Type | Default | Environment variable | Notes |\n")
-		out.WriteString("| --- | --- | --- | --- | --- | --- |\n")
 		rows := 0
 		for _, node := range surface.Nodes {
+			if len(node.Flags) == 0 {
+				continue
+			}
+			fmt.Fprintf(&out, "**`%s %s`**\n\n", surface.Program, node.Name)
+			out.WriteString("| Flag | Type | Default | Environment variable | Notes |\n")
+			out.WriteString("| --- | --- | --- | --- | --- |\n")
 			for _, flag := range node.Flags {
-				fmt.Fprintf(&out, "| `%s %s` | `--%s`%s | `%s` | %s | %s | %s |\n",
-					surface.Program, node.Name, flag.Name, shorthand(flag),
+				fmt.Fprintf(&out, "| `--%s`%s | `%s` | %s | %s | %s |\n",
+					flag.Name, shorthand(flag),
 					flag.Type, code(flag.Default), code(flag.Environment),
 					notes(flagNotes(flag)))
 				rows++
 			}
+			out.WriteString("\n")
 		}
 		if rows == 0 {
 			return "", errEmpty("the flag set of " + surface.Program)
 		}
-		out.WriteString("\n")
 	}
 	return out.String(), nil
 }
@@ -202,6 +208,10 @@ var flagsPreamble = strings.Join([]string{
 	"string this page indexes by name. What each VERB is for is on",
 	"[Native commands](../native-commands/) and",
 	"[Atlas-compatible commands](../atlas-commands/).",
+	"",
+	"Each flag table sits under the exact command path that accepts it. The",
+	"command path is outside the table so the five measured flag fields fit the",
+	"documentation column without hiding the right-hand fields.",
 	"",
 	"Read the columns as follows.",
 	"",

@@ -13,6 +13,10 @@ string this page indexes by name. What each VERB is for is on
 [Native commands](../native-commands/) and
 [Atlas-compatible commands](../atlas-commands/).
 
+Each flag table sits under the exact command path that accepts it. The
+command path is outside the table so the five measured flag fields fit the
+documentation column without hiding the right-hand fields.
+
 Read the columns as follows.
 
 - **Default** is the value the flag holds when nothing sets one, in the
@@ -30,946 +34,1577 @@ Read the columns as follows.
 
 ## `ptah`
 
-| Command | Flag | Type | Default | Environment variable | Notes |
-| --- | --- | --- | --- | --- | --- |
-| `ptah assist` | `--allow-database-inspect` | `string` | — | — | — |
-| `ptah assist` | `--allow-write` | `stringSlice` | `[]` | `PTAH_ALLOW_WRITE` | — |
-| `ptah assist` | `--audit-log` | `string` | — | `PTAH_AUDIT_LOG` | — |
-| `ptah assist` | `--auto-approve` | `bool` | `false` | — | — |
-| `ptah assist` | `--database-class` | `string` | — | `PTAH_DATABASE_CLASS` | — |
-| `ptah assist` | `--database-name` | `string` | — | `PTAH_DATABASE_NAME` | — |
-| `ptah assist` | `--database-url` | `string` | — | `PTAH_DATABASE_URL` | — |
-| `ptah assist` | `--dialect` | `string` | — | `PTAH_DIALECT` | — |
-| `ptah assist` | `--ephemeral` | `bool` | `false` | `PTAH_EPHEMERAL` | — |
-| `ptah assist` | `--max-tool-calls` | `int` | `40` | `PTAH_MAX_TOOL_CALLS` | — |
-| `ptah assist` | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah assist` | `--model` | `string` | — | `PTAH_MODEL` | — |
-| `ptah assist` | `--provider-profile` | `string` | — | `PTAH_PROVIDER_PROFILE` | — |
-| `ptah assist` | `--resume` | `string` | — | `PTAH_RESUME` | — |
-| `ptah assist` | `--schema-dir` | `string` | — | `PTAH_SCHEMA_DIR` | — |
-| `ptah assist` | `--schema-source-root` | `stringSlice` | `[]` | `PTAH_SCHEMA_SOURCE_ROOT` | — |
-| `ptah assist` | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
-| `ptah assist` | `--tests-dir` | `string` | — | `PTAH_TESTS_DIR` | — |
-| `ptah assist` | `--trace` | `bool` | `false` | `PTAH_TRACE` | — |
-| `ptah assist` | `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
-| `ptah assist context` | `--allow-database-inspect` | `string` | — | — | — |
-| `ptah assist context` | `--allow-write` | `stringSlice` | `[]` | `PTAH_ALLOW_WRITE` | — |
-| `ptah assist context` | `--audit-log` | `string` | — | `PTAH_AUDIT_LOG` | — |
-| `ptah assist context` | `--auto-approve` | `bool` | `false` | — | — |
-| `ptah assist context` | `--database-class` | `string` | — | `PTAH_DATABASE_CLASS` | — |
-| `ptah assist context` | `--database-name` | `string` | — | `PTAH_DATABASE_NAME` | — |
-| `ptah assist context` | `--database-url` | `string` | — | `PTAH_DATABASE_URL` | — |
-| `ptah assist context` | `--dialect` | `string` | — | `PTAH_DIALECT` | — |
-| `ptah assist context` | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
-| `ptah assist context` | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah assist context` | `--model` | `string` | — | `PTAH_MODEL` | — |
-| `ptah assist context` | `--provider-profile` | `string` | — | `PTAH_PROVIDER_PROFILE` | — |
-| `ptah assist context` | `--resume` | `string` | — | `PTAH_RESUME` | — |
-| `ptah assist context` | `--schema-dir` | `string` | — | `PTAH_SCHEMA_DIR` | — |
-| `ptah assist context` | `--schema-source-root` | `stringSlice` | `[]` | `PTAH_SCHEMA_SOURCE_ROOT` | — |
-| `ptah assist context` | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
-| `ptah assist context` | `--tests-dir` | `string` | — | `PTAH_TESTS_DIR` | — |
-| `ptah assist context` | `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
-| `ptah assist explain` | `--allow-database-inspect` | `string` | — | — | — |
-| `ptah assist explain` | `--allow-write` | `stringSlice` | `[]` | `PTAH_ALLOW_WRITE` | — |
-| `ptah assist explain` | `--audit-log` | `string` | — | `PTAH_AUDIT_LOG` | — |
-| `ptah assist explain` | `--auto-approve` | `bool` | `false` | — | — |
-| `ptah assist explain` | `--database-class` | `string` | — | `PTAH_DATABASE_CLASS` | — |
-| `ptah assist explain` | `--database-name` | `string` | — | `PTAH_DATABASE_NAME` | — |
-| `ptah assist explain` | `--database-url` | `string` | — | `PTAH_DATABASE_URL` | — |
-| `ptah assist explain` | `--dialect` | `string` | — | `PTAH_DIALECT` | — |
-| `ptah assist explain` | `--ephemeral` | `bool` | `false` | `PTAH_EPHEMERAL` | — |
-| `ptah assist explain` | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
-| `ptah assist explain` | `--max-tool-calls` | `int` | `40` | `PTAH_MAX_TOOL_CALLS` | — |
-| `ptah assist explain` | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah assist explain` | `--model` | `string` | — | `PTAH_MODEL` | — |
-| `ptah assist explain` | `--non-interactive` | `bool` | `false` | `PTAH_NON_INTERACTIVE` | — |
-| `ptah assist explain` | `--provider-profile` | `string` | — | `PTAH_PROVIDER_PROFILE` | — |
-| `ptah assist explain` | `--resume` | `string` | — | `PTAH_RESUME` | — |
-| `ptah assist explain` | `--schema-dir` | `string` | — | `PTAH_SCHEMA_DIR` | — |
-| `ptah assist explain` | `--schema-source-root` | `stringSlice` | `[]` | `PTAH_SCHEMA_SOURCE_ROOT` | — |
-| `ptah assist explain` | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
-| `ptah assist explain` | `--tests-dir` | `string` | — | `PTAH_TESTS_DIR` | — |
-| `ptah assist explain` | `--trace` | `bool` | `false` | `PTAH_TRACE` | — |
-| `ptah assist explain` | `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
-| `ptah assist provider list` | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
-| `ptah assist provider test` | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
-| `ptah assist provider test` | `--model` | `string` | — | `PTAH_MODEL` | — |
-| `ptah assist provider test` | `--provider-profile` | `string` | — | `PTAH_PROVIDER_PROFILE` | — |
-| `ptah assist sessions delete` | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
-| `ptah assist sessions delete` | `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
-| `ptah assist sessions list` | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
-| `ptah assist sessions list` | `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
-| `ptah assist sessions prune` | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
-| `ptah assist sessions prune` | `--older-than` | `duration` | `720h0m0s` | `PTAH_OLDER_THAN` | — |
-| `ptah assist sessions prune` | `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
-| `ptah assist sessions show` | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
-| `ptah assist sessions show` | `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
-| `ptah completion bash` | `--no-descriptions` | `bool` | `false` | — | — |
-| `ptah completion fish` | `--no-descriptions` | `bool` | `false` | — | — |
-| `ptah completion powershell` | `--no-descriptions` | `bool` | `false` | — | — |
-| `ptah completion zsh` | `--no-descriptions` | `bool` | `false` | — | — |
-| `ptah db capabilities` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah db capabilities` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah db capabilities` | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
-| `ptah db drop-all` | `--auto-approve` | `bool` | `false` | — | — |
-| `ptah db drop-all` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah db drop-all` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah db drop-all` | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
-| `ptah db read` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah db read` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah db read` | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
-| `ptah inference backfill` | `--batch-inputs` | `int` | `32` | `PTAH_BATCH_INPUTS` | — |
-| `ptah inference backfill` | `--batch-rows` | `int` | `200` | `PTAH_BATCH_ROWS` | — |
-| `ptah inference backfill` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah inference backfill` | `--maintain-for` | `duration` | `0s` | `PTAH_MAINTAIN_FOR` | — |
-| `ptah inference backfill` | `--provider-timeout` | `duration` | `1m0s` | `PTAH_PROVIDER_TIMEOUT` | — |
-| `ptah inference backfill` | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
-| `ptah inference backfill` | `--spec` | `string` | — | `PTAH_SPEC` | — |
-| `ptah inference catchup` | `--batch-inputs` | `int` | `32` | `PTAH_BATCH_INPUTS` | — |
-| `ptah inference catchup` | `--batch-rows` | `int` | `200` | `PTAH_BATCH_ROWS` | — |
-| `ptah inference catchup` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah inference catchup` | `--maintain-for` | `duration` | `0s` | `PTAH_MAINTAIN_FOR` | — |
-| `ptah inference catchup` | `--provider-timeout` | `duration` | `1m0s` | `PTAH_PROVIDER_TIMEOUT` | — |
-| `ptah inference catchup` | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
-| `ptah inference catchup` | `--spec` | `string` | — | `PTAH_SPEC` | — |
-| `ptah inference cutover` | `--approve` | `string` | — | `PTAH_APPROVE` | — |
-| `ptah inference cutover` | `--approver` | `string` | — | `PTAH_APPROVER` | — |
-| `ptah inference cutover` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah inference cutover` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah inference cutover` | `--publish-evidence` | `string` | — | `PTAH_PUBLISH_EVIDENCE` | — |
-| `ptah inference cutover` | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
-| `ptah inference cutover` | `--spec` | `string` | — | `PTAH_SPEC` | — |
-| `ptah inference cutover` | `--stabilize-for` | `duration` | `0s` | `PTAH_STABILIZE_FOR` | — |
-| `ptah inference evaluate` | `--baseline` | `string` | — | `PTAH_BASELINE` | — |
-| `ptah inference evaluate` | `--corpus` | `string` | — | `PTAH_CORPUS` | — |
-| `ptah inference evaluate` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah inference evaluate` | `--k` | `int` | `10` | `PTAH_K` | — |
-| `ptah inference evaluate` | `--max-mrr-regression` | `float64` | `0` | `PTAH_MAX_MRR_REGRESSION` | — |
-| `ptah inference evaluate` | `--max-ndcg-regression` | `float64` | `0` | `PTAH_MAX_NDCG_REGRESSION` | — |
-| `ptah inference evaluate` | `--min-exact-agreement` | `float64` | `0` | `PTAH_MIN_EXACT_AGREEMENT` | — |
-| `ptah inference evaluate` | `--min-recall` | `float64` | `0` | `PTAH_MIN_RECALL` | — |
-| `ptah inference evaluate` | `--provider-timeout` | `duration` | `1m0s` | `PTAH_PROVIDER_TIMEOUT` | — |
-| `ptah inference evaluate` | `--require-every-case` | `bool` | `true` | `PTAH_REQUIRE_EVERY_CASE` | — |
-| `ptah inference evaluate` | `--spec` | `string` | — | `PTAH_SPEC` | — |
-| `ptah inference plan` | `--current` | `string` | — | `PTAH_CURRENT` | — |
-| `ptah inference plan` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah inference plan` | `--spec` | `string` | — | `PTAH_SPEC` | — |
-| `ptah inference prepare` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah inference prepare` | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
-| `ptah inference prepare` | `--spec` | `string` | — | `PTAH_SPEC` | — |
-| `ptah inference prepare` | `--worker` | `string` | `ptah-cli` | `PTAH_WORKER` | — |
-| `ptah inference retire` | `--approve` | `string` | — | `PTAH_APPROVE` | — |
-| `ptah inference retire` | `--approver` | `string` | — | `PTAH_APPROVER` | — |
-| `ptah inference retire` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah inference retire` | `--drop-column` | `bool` | `true` | `PTAH_DROP_COLUMN` | — |
-| `ptah inference retire` | `--generation` | `string` | — | `PTAH_GENERATION` | — |
-| `ptah inference retire` | `--spec` | `string` | — | `PTAH_SPEC` | — |
-| `ptah inference rollback` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah inference rollback` | `--spec` | `string` | — | `PTAH_SPEC` | — |
-| `ptah inference rollback` | `--to` | `string` | — | `PTAH_TO` | — |
-| `ptah inference rollback` | `--window` | `duration` | `0s` | `PTAH_WINDOW` | — |
-| `ptah inference status` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah inference status` | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
-| `ptah inference status` | `--spec` | `string` | — | `PTAH_SPEC` | — |
-| `ptah inference verify` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah inference verify` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah inference verify` | `--publish-evidence` | `string` | — | `PTAH_PUBLISH_EVIDENCE` | — |
-| `ptah inference verify` | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
-| `ptah inference verify` | `--spec` | `string` | — | `PTAH_SPEC` | — |
-| `ptah introspect` | `--add-db-tags` | `bool` | `false` | `PTAH_ADD_DB_TAGS` | — |
-| `ptah introspect` | `--add-json-tags` | `bool` | `false` | `PTAH_ADD_JSON_TAGS` | — |
-| `ptah introspect` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah introspect` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah introspect` | `--lowercase-fields` | `bool` | `false` | `PTAH_LOWERCASE_FIELDS` | — |
-| `ptah introspect` | `--out` | `string` | — | `PTAH_OUT` | — |
-| `ptah introspect` | `--package` | `string` | `models` | `PTAH_PACKAGE` | — |
-| `ptah introspect` | `--per-table` | `bool` | `false` | `PTAH_PER_TABLE` | — |
-| `ptah introspect` | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
-| `ptah introspect` | `--single-file` | `bool` | `false` | `PTAH_SINGLE_FILE` | — |
-| `ptah mcp` | `--allow-database-inspect` | `string` | — | — | — |
-| `ptah mcp` | `--allow-write` | `stringSlice` | `[]` | `PTAH_ALLOW_WRITE` | — |
-| `ptah mcp` | `--audit-log` | `string` | — | `PTAH_AUDIT_LOG` | — |
-| `ptah mcp` | `--auto-approve` | `bool` | `false` | — | — |
-| `ptah mcp` | `--database-class` | `string` | — | `PTAH_DATABASE_CLASS` | — |
-| `ptah mcp` | `--database-name` | `string` | — | `PTAH_DATABASE_NAME` | — |
-| `ptah mcp` | `--database-url` | `string` | — | `PTAH_DATABASE_URL` | — |
-| `ptah mcp` | `--dialect` | `string` | — | `PTAH_DIALECT` | — |
-| `ptah mcp` | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah mcp` | `--schema-dir` | `string` | — | `PTAH_SCHEMA_DIR` | — |
-| `ptah mcp` | `--schema-source-root` | `stringSlice` | `[]` | `PTAH_SCHEMA_SOURCE_ROOT` | — |
-| `ptah mcp` | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
-| `ptah mcp` | `--tests-dir` | `string` | — | `PTAH_TESTS_DIR` | — |
-| `ptah mcp` | `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
-| `ptah migrations baseline` | `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
-| `ptah migrations baseline` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah migrations baseline` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah migrations baseline` | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
-| `ptah migrations baseline` | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
-| `ptah migrations baseline` | `--force` | `bool` | `false` | `PTAH_FORCE` | — |
-| `ptah migrations baseline` | `--migration-lock-timeout` | `string` | — | `PTAH_MIGRATION_LOCK_TIMEOUT` | — |
-| `ptah migrations baseline` | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah migrations baseline` | `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
-| `ptah migrations baseline` | `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
-| `ptah migrations baseline` | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
-| `ptah migrations baseline` | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
-| `ptah migrations baseline` | `--root-dir` | `string` | `./` | `PTAH_ROOT_DIR` | — |
-| `ptah migrations baseline` | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
-| `ptah migrations baseline` | `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
-| `ptah migrations baseline` | `--version` | `string` | — | `PTAH_VERSION` | — |
-| `ptah migrations checkpoint` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah migrations checkpoint` | `--description` | `string` | `checkpoint` | `PTAH_DESCRIPTION` | — |
-| `ptah migrations checkpoint` | `--dialect` | `string` | — | `PTAH_DIALECT` | — |
-| `ptah migrations checkpoint` | `--dir-format` | `string` | `ptah` | `PTAH_DIR_FORMAT` | — |
-| `ptah migrations checkpoint` | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
-| `ptah migrations checkpoint` | `--edit` | `bool` | `false` | `PTAH_EDIT` | — |
-| `ptah migrations checkpoint` | `--editor` | `string` | — | `PTAH_EDITOR` | — |
-| `ptah migrations checkpoint` | `--migration-lock-timeout` | `string` | — | `PTAH_MIGRATION_LOCK_TIMEOUT` | — |
-| `ptah migrations checkpoint` | `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah migrations checkpoint` | `--qualifier` | `string` | — | `PTAH_QUALIFIER` | — |
-| `ptah migrations checkpoint` | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
-| `ptah migrations checkpoint` | `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
-| `ptah migrations checkpoint` | `--version` | `string` | — | `PTAH_VERSION` | — |
-| `ptah migrations create` | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
-| `ptah migrations create` | `--edit` | `bool` | `false` | `PTAH_EDIT` | — |
-| `ptah migrations create` | `--editor` | `string` | — | `PTAH_EDITOR` | — |
-| `ptah migrations create` | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah migrations create` | `--name` | `string` | — | `PTAH_NAME` | — |
-| `ptah migrations data` | `--allow-destructive` | `bool` | `false` | `PTAH_ALLOW_DESTRUCTIVE` | — |
-| `ptah migrations data` | `--allow-prod` | `bool` | `false` | `PTAH_ALLOW_PROD` | — |
-| `ptah migrations data` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah migrations data` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah migrations data` | `--description` | `string` | `data` | `PTAH_DESCRIPTION` | — |
-| `ptah migrations data` | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
-| `ptah migrations data` | `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah migrations data` | `--protected-table` | `stringArray` | `[]` | `PTAH_PROTECTED_TABLE` | — |
-| `ptah migrations data` | `--root-dir` | `string` | — | `PTAH_ROOT_DIR` | — |
-| `ptah migrations data` | `--version` | `string` | — | `PTAH_VERSION` | — |
-| `ptah migrations down` | `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
-| `ptah migrations down` | `--atlas-project-config` | `string` | — | `PTAH_ATLAS_PROJECT_CONFIG` | hidden |
-| `ptah migrations down` | `--atlas-project-var` | `stringArray` | `[]` | `PTAH_ATLAS_PROJECT_VAR` | hidden |
-| `ptah migrations down` | `--config` | `string` | — | `PTAH_CONFIG` | — |
-| `ptah migrations down` | `--confirm` | `bool` | `false` | `PTAH_CONFIRM` | — |
-| `ptah migrations down` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah migrations down` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah migrations down` | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
-| `ptah migrations down` | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
-| `ptah migrations down` | `--env` | `string` | — | `PTAH_ENV` | — |
-| `ptah migrations down` | `--exec-order` | `string` | `linear` | `PTAH_EXEC_ORDER` | — |
-| `ptah migrations down` | `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
-| `ptah migrations down` | `--log-format` | `string` | `text` | `PTAH_LOG_FORMAT` | — |
-| `ptah migrations down` | `--log-level` | `string` | `info` | `PTAH_LOG_LEVEL` | — |
-| `ptah migrations down` | `--metrics-addr` | `string` | — | `PTAH_METRICS_ADDR` | — |
-| `ptah migrations down` | `--migration-lock-timeout` | `string` | — | `PTAH_MIGRATION_LOCK_TIMEOUT` | — |
-| `ptah migrations down` | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah migrations down` | `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
-| `ptah migrations down` | `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
-| `ptah migrations down` | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
-| `ptah migrations down` | `--mysqldump-to` | `string` | — | `PTAH_MYSQLDUMP_TO` | — |
-| `ptah migrations down` | `--pg-dump-to` | `string` | — | `PTAH_PG_DUMP_TO` | — |
-| `ptah migrations down` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah migrations down` | `--plan` | `bool` | `false` | `PTAH_PLAN` | — |
-| `ptah migrations down` | `--pre-down-hook` | `string` | — | `PTAH_PRE_DOWN_HOOK` | — |
-| `ptah migrations down` | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
-| `ptah migrations down` | `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
-| `ptah migrations down` | `--skip-checks` | `bool` | `false` | `PTAH_SKIP_CHECKS` | — |
-| `ptah migrations down` | `--statement-timeout` | `string` | — | `PTAH_STATEMENT_TIMEOUT` | — |
-| `ptah migrations down` | `--target` | `string` | `0` | `PTAH_TARGET` | — |
-| `ptah migrations down` | `--to-tag` | `string` | — | `PTAH_TO_TAG` | — |
-| `ptah migrations down` | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
-| `ptah migrations down` | `--verbose` | `bool` | `false` | `PTAH_VERBOSE` | — |
-| `ptah migrations down` | `--verify-sum` | `bool` | `false` | `PTAH_VERIFY_SUM` | — |
-| `ptah migrations down` | `--webhook` | `string` | — | `PTAH_WEBHOOK` | — |
-| `ptah migrations edit` | `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
-| `ptah migrations edit` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah migrations edit` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah migrations edit` | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
-| `ptah migrations edit` | `--down-file` | `string` | — | `PTAH_DOWN_FILE` | — |
-| `ptah migrations edit` | `--editor` | `string` | — | `PTAH_EDITOR` | — |
-| `ptah migrations edit` | `--force` | `bool` | `false` | `PTAH_FORCE` | — |
-| `ptah migrations edit` | `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah migrations edit` | `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
-| `ptah migrations edit` | `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
-| `ptah migrations edit` | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
-| `ptah migrations edit` | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
-| `ptah migrations edit` | `--up-file` | `string` | — | `PTAH_UP_FILE` | — |
-| `ptah migrations edit` | `--version` | `string` | — | `PTAH_VERSION` | — |
-| `ptah migrations generate` | `--allow-destructive` | `bool` | `false` | `PTAH_ALLOW_DESTRUCTIVE` | — |
-| `ptah migrations generate` | `--allow-external-schema` | `bool` | `false` | `PTAH_ALLOW_EXTERNAL_SCHEMA` | — |
-| `ptah migrations generate` | `--check-destructive` | `bool` | `false` | `PTAH_CHECK_DESTRUCTIVE` | — |
-| `ptah migrations generate` | `--config` | `string` | — | `PTAH_CONFIG` | — |
-| `ptah migrations generate` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah migrations generate` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah migrations generate` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah migrations generate` | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
-| `ptah migrations generate` | `--env` | `string` | — | `PTAH_ENV` | — |
-| `ptah migrations generate` | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah migrations generate` | `--name` | `string` | `migration` | `PTAH_NAME` | — |
-| `ptah migrations generate` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah migrations generate` | `--qualifier` | `string` | — | `PTAH_QUALIFIER` | — |
-| `ptah migrations generate` | `--replay` | `bool` | `false` | `PTAH_REPLAY` | — |
-| `ptah migrations generate` | `--report` | `string` | — | `PTAH_REPORT` | — |
-| `ptah migrations generate` | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
-| `ptah migrations generate` | `--schema-cmd` | `string` | — | `PTAH_SCHEMA_CMD` | — |
-| `ptah migrations generate` | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
-| `ptah migrations generate` | `--schema-format` | `string` | `sql` | `PTAH_SCHEMA_FORMAT` | — |
-| `ptah migrations generate` | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
-| `ptah migrations generate` | `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
-| `ptah migrations generate` | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
-| `ptah migrations hash` | `--dir` | `string` | `./migrations` | `PTAH_DIR` | — |
-| `ptah migrations hash` | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
-| `ptah migrations import` | `--allow-partial` | `bool` | `false` | `PTAH_ALLOW_PARTIAL` | — |
-| `ptah migrations import` | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
-| `ptah migrations import` | `--from` | `string` | — | `PTAH_FROM` | — |
-| `ptah migrations import` | `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah migrations import` | `--source-dir` | `string` | — | `PTAH_SOURCE_DIR` | — |
-| `ptah migrations lint` | `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
-| `ptah migrations lint` | `--atlas-project-config` | `string` | — | `PTAH_ATLAS_PROJECT_CONFIG` | hidden |
-| `ptah migrations lint` | `--atlas-project-var` | `stringArray` | `[]` | `PTAH_ATLAS_PROJECT_VAR` | hidden |
-| `ptah migrations lint` | `--attach` | `bool` | `false` | `PTAH_ATTACH` | — |
-| `ptah migrations lint` | `--config` | `string` | — | `PTAH_CONFIG` | — |
-| `ptah migrations lint` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah migrations lint` | `--dialect` | `string` | — | `PTAH_DIALECT` | — |
-| `ptah migrations lint` | `--dir` | `string` | `./migrations` | `PTAH_DIR` | — |
-| `ptah migrations lint` | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
-| `ptah migrations lint` | `--disable` | `stringArray` | `[]` | `PTAH_DISABLE` | — |
-| `ptah migrations lint` | `--env` | `string` | — | `PTAH_ENV` | — |
-| `ptah migrations lint` | `--fail-on` | `string` | `error` | `PTAH_FAIL_ON` | — |
-| `ptah migrations lint` | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
-| `ptah migrations lint` | `--git-base` | `string` | — | `PTAH_GIT_BASE` | — |
-| `ptah migrations lint` | `--git-dir` | `string` | `.` | `PTAH_GIT_DIR` | — |
-| `ptah migrations lint` | `--latest` | `uint` | `0` | `PTAH_LATEST` | — |
-| `ptah migrations lint` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah migrations lint` | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
-| `ptah migrations ls` | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
-| `ptah migrations ls` | `--latest` | `bool` | `false` | `PTAH_LATEST` | — |
-| `ptah migrations ls` | `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah migrations ls` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah migrations ls` | `--short` | `bool` | `false` | `PTAH_SHORT` | — |
-| `ptah migrations ls` | `--verify-sum` | `bool` | `false` | `PTAH_VERIFY_SUM` | — |
-| `ptah migrations plan` | `--allow-destructive` | `bool` | `false` | `PTAH_ALLOW_DESTRUCTIVE` | — |
-| `ptah migrations plan` | `--allow-external-schema` | `bool` | `false` | `PTAH_ALLOW_EXTERNAL_SCHEMA` | — |
-| `ptah migrations plan` | `--attach` | `bool` | `false` | `PTAH_ATTACH` | — |
-| `ptah migrations plan` | `--check-destructive` | `bool` | `false` | `PTAH_CHECK_DESTRUCTIVE` | — |
-| `ptah migrations plan` | `--config` | `string` | — | `PTAH_CONFIG` | — |
-| `ptah migrations plan` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah migrations plan` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah migrations plan` | `--env` | `string` | — | `PTAH_ENV` | — |
-| `ptah migrations plan` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah migrations plan` | `--report` | `string` | `text` | `PTAH_REPORT` | — |
-| `ptah migrations plan` | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
-| `ptah migrations plan` | `--schema-cmd` | `string` | — | `PTAH_SCHEMA_CMD` | — |
-| `ptah migrations plan` | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
-| `ptah migrations plan` | `--schema-format` | `string` | `sql` | `PTAH_SCHEMA_FORMAT` | — |
-| `ptah migrations plan` | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
-| `ptah migrations plan` | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
-| `ptah migrations pull` | `--out` | `string` | — | `PTAH_OUT` | — |
-| `ptah migrations pull` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah migrations push` | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
-| `ptah migrations push` | `--generated-version` | `bool` | `false` | `PTAH_GENERATED_VERSION` | — |
-| `ptah migrations push` | `--latest` | `bool` | `false` | `PTAH_LATEST` | — |
-| `ptah migrations push` | `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah migrations push` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah migrations push` | `--tag` | `stringArray` | `[]` | `PTAH_TAG` | — |
-| `ptah migrations push` | `--verify-sum` | `bool` | `false` | `PTAH_VERIFY_SUM` | — |
-| `ptah migrations push` | `--version` | `string` | — | `PTAH_VERSION` | — |
-| `ptah migrations rebase` | `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
-| `ptah migrations rebase` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah migrations rebase` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah migrations rebase` | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
-| `ptah migrations rebase` | `--force` | `bool` | `false` | `PTAH_FORCE` | — |
-| `ptah migrations rebase` | `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah migrations rebase` | `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
-| `ptah migrations rebase` | `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
-| `ptah migrations rebase` | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
-| `ptah migrations rebase` | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
-| `ptah migrations rebase` | `--version` | `string` | — | `PTAH_VERSION` | — |
-| `ptah migrations repair` | `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
-| `ptah migrations repair` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah migrations repair` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah migrations repair` | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
-| `ptah migrations repair` | `--force` | `bool` | `false` | `PTAH_FORCE` | — |
-| `ptah migrations repair` | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah migrations repair` | `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
-| `ptah migrations repair` | `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
-| `ptah migrations repair` | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
-| `ptah migrations repair` | `--resume-from` | `string` | — | `PTAH_RESUME_FROM` | — |
-| `ptah migrations repair` | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
-| `ptah migrations repair` | `--version` | `string` | — | `PTAH_VERSION` | — |
-| `ptah migrations rm` | `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
-| `ptah migrations rm` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah migrations rm` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah migrations rm` | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
-| `ptah migrations rm` | `--force` | `bool` | `false` | `PTAH_FORCE` | — |
-| `ptah migrations rm` | `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah migrations rm` | `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
-| `ptah migrations rm` | `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
-| `ptah migrations rm` | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
-| `ptah migrations rm` | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
-| `ptah migrations rm` | `--version` | `string` | — | `PTAH_VERSION` | — |
-| `ptah migrations set` | `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
-| `ptah migrations set` | `--config` | `string` | — | `PTAH_CONFIG` | — |
-| `ptah migrations set` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah migrations set` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah migrations set` | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
-| `ptah migrations set` | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
-| `ptah migrations set` | `--env` | `string` | — | `PTAH_ENV` | — |
-| `ptah migrations set` | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah migrations set` | `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
-| `ptah migrations set` | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
-| `ptah migrations set` | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
-| `ptah migrations set` | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
-| `ptah migrations set` | `--version` | `string` | — | `PTAH_VERSION` | — |
-| `ptah migrations show` | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
-| `ptah migrations show` | `--direction` | `string` | `up` | `PTAH_DIRECTION` | — |
-| `ptah migrations show` | `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah migrations show` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah migrations show` | `--verify-sum` | `bool` | `false` | `PTAH_VERIFY_SUM` | — |
-| `ptah migrations show` | `--version` | `stringArray` | `[]` | `PTAH_VERSION` | — |
-| `ptah migrations status` | `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
-| `ptah migrations status` | `--atlas-project-config` | `string` | — | `PTAH_ATLAS_PROJECT_CONFIG` | hidden |
-| `ptah migrations status` | `--atlas-project-var` | `stringArray` | `[]` | `PTAH_ATLAS_PROJECT_VAR` | hidden |
-| `ptah migrations status` | `--config` | `string` | — | `PTAH_CONFIG` | — |
-| `ptah migrations status` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah migrations status` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah migrations status` | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
-| `ptah migrations status` | `--env` | `string` | — | `PTAH_ENV` | — |
-| `ptah migrations status` | `--exit-code` | `bool` | `false` | `PTAH_EXIT_CODE` | — |
-| `ptah migrations status` | `--json` | `bool` | `false` | `PTAH_JSON` | — |
-| `ptah migrations status` | `--log-format` | `string` | `text` | `PTAH_LOG_FORMAT` | — |
-| `ptah migrations status` | `--log-level` | `string` | `info` | `PTAH_LOG_LEVEL` | — |
-| `ptah migrations status` | `--metrics-addr` | `string` | — | `PTAH_METRICS_ADDR` | — |
-| `ptah migrations status` | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah migrations status` | `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
-| `ptah migrations status` | `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
-| `ptah migrations status` | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
-| `ptah migrations status` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah migrations status` | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
-| `ptah migrations status` | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
-| `ptah migrations status` | `--verbose` | `bool` | `false` | `PTAH_VERBOSE` | — |
-| `ptah migrations status` | `--verify-sum` | `bool` | `false` | `PTAH_VERIFY_SUM` | — |
-| `ptah migrations tag` | `--config` | `string` | — | `PTAH_CONFIG` | — |
-| `ptah migrations tag` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah migrations tag` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah migrations tag` | `--delete` | `bool` | `false` | `PTAH_DELETE` | — |
-| `ptah migrations tag` | `--env` | `string` | — | `PTAH_ENV` | — |
-| `ptah migrations tag` | `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
-| `ptah migrations tag` | `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
-| `ptah migrations tag` | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
-| `ptah migrations tag` | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
-| `ptah migrations tag` | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
-| `ptah migrations tag` | `--version` | `string` | — | `PTAH_VERSION` | — |
-| `ptah migrations test` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah migrations test` | `--dir` | `string` | `./tests` | `PTAH_DIR` | — |
-| `ptah migrations test` | `--dir-format` | `string` | `ptah` | `PTAH_DIR_FORMAT` | — |
-| `ptah migrations test` | `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah migrations test` | `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
-| `ptah migrations test` | `--report` | `string` | `text` | `PTAH_REPORT` | — |
-| `ptah migrations test` | `--root-dir` | `string` | `./models` | `PTAH_ROOT_DIR` | — |
-| `ptah migrations test` | `--run` | `string` | — | `PTAH_RUN` | — |
-| `ptah migrations test` | `--seed-dir` | `string` | — | `PTAH_SEED_DIR` | — |
-| `ptah migrations up` | `--allow-destructive` | `bool` | `false` | `PTAH_ALLOW_DESTRUCTIVE` | — |
-| `ptah migrations up` | `--allow-dirty` | `bool` | `false` | `PTAH_ALLOW_DIRTY` | — |
-| `ptah migrations up` | `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
-| `ptah migrations up` | `--config` | `string` | — | `PTAH_CONFIG` | — |
-| `ptah migrations up` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah migrations up` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah migrations up` | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
-| `ptah migrations up` | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
-| `ptah migrations up` | `--env` | `string` | — | `PTAH_ENV` | — |
-| `ptah migrations up` | `--exec-order` | `string` | `linear` | `PTAH_EXEC_ORDER` | — |
-| `ptah migrations up` | `--limit` | `uint64` | `0` | `PTAH_LIMIT` | — |
-| `ptah migrations up` | `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
-| `ptah migrations up` | `--log-format` | `string` | `text` | `PTAH_LOG_FORMAT` | — |
-| `ptah migrations up` | `--log-level` | `string` | `info` | `PTAH_LOG_LEVEL` | — |
-| `ptah migrations up` | `--metrics-addr` | `string` | — | `PTAH_METRICS_ADDR` | — |
-| `ptah migrations up` | `--migration-lock-timeout` | `string` | — | `PTAH_MIGRATION_LOCK_TIMEOUT` | — |
-| `ptah migrations up` | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah migrations up` | `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
-| `ptah migrations up` | `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
-| `ptah migrations up` | `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
-| `ptah migrations up` | `--mysqldump-to` | `string` | — | `PTAH_MYSQLDUMP_TO` | — |
-| `ptah migrations up` | `--pg-dump-to` | `string` | — | `PTAH_PG_DUMP_TO` | — |
-| `ptah migrations up` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah migrations up` | `--pre-up-hook` | `string` | — | `PTAH_PRE_UP_HOOK` | — |
-| `ptah migrations up` | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
-| `ptah migrations up` | `--skip-checks` | `bool` | `false` | `PTAH_SKIP_CHECKS` | — |
-| `ptah migrations up` | `--skip-report` | `bool` | `false` | `PTAH_SKIP_REPORT` | — |
-| `ptah migrations up` | `--statement-timeout` | `string` | — | `PTAH_STATEMENT_TIMEOUT` | — |
-| `ptah migrations up` | `--tx-mode` | `string` | `file` | `PTAH_TX_MODE` | — |
-| `ptah migrations up` | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
-| `ptah migrations up` | `--verbose` | `bool` | `false` | `PTAH_VERBOSE` | — |
-| `ptah migrations up` | `--verify-sum` | `bool` | `false` | `PTAH_VERIFY_SUM` | — |
-| `ptah migrations up` | `--webhook` | `string` | — | `PTAH_WEBHOOK` | — |
-| `ptah migrations validate` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah migrations validate` | `--dir` | `string` | `./migrations` | `PTAH_DIR` | — |
-| `ptah migrations validate` | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
-| `ptah migrations validate` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah oci capabilities` | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
-| `ptah oci capabilities` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah oci copy` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah oci copy` | `--recursive` | `bool` | `false` | `PTAH_RECURSIVE` | — |
-| `ptah oci copy` | `--tag` | `stringArray` | `[]` | `PTAH_TAG` | — |
-| `ptah oci fetch` | `--digest` | `string` | — | `PTAH_DIGEST` | — |
-| `ptah oci fetch` | `--file` | `string` | — | `PTAH_FILE` | — |
-| `ptah oci fetch` | `--output`, `-o` | `string` | — | `PTAH_OUTPUT` | — |
-| `ptah oci fetch` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah oci fetch` | `--type` | `string` | `all` | `PTAH_TYPE` | — |
-| `ptah oci inspect` | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
-| `ptah oci inspect` | `--no-referrers` | `bool` | `false` | `PTAH_NO_REFERRERS` | — |
-| `ptah oci inspect` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah oci login` | `--password-stdin` | `bool` | `false` | `PTAH_PASSWORD_STDIN` | — |
-| `ptah oci login` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah oci login` | `--username`, `-u` | `string` | — | `PTAH_USERNAME` | — |
-| `ptah oci referrers` | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
-| `ptah oci referrers` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah oci referrers` | `--type` | `string` | `all` | `PTAH_TYPE` | — |
-| `ptah oci reindex` | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
-| `ptah oci reindex` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah oci resolve` | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
-| `ptah oci resolve` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah oci tag` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah oci tags` | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
-| `ptah oci tags` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah oci verify` | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
-| `ptah oci verify` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah oci verify` | `--policy` | `string` | — | `PTAH_POLICY` | — |
-| `ptah project adopt` | `--atlas-config` | `string` | — | `PTAH_ATLAS_CONFIG` | — |
-| `ptah project adopt` | `--check` | `bool` | `false` | `PTAH_CHECK` | — |
-| `ptah project adopt` | `--config` | `string` | — | `PTAH_CONFIG` | — |
-| `ptah project adopt` | `--env` | `string` | — | `PTAH_ENV` | — |
-| `ptah project adopt` | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
-| `ptah project adopt` | `--preflight` | `bool` | `false` | `PTAH_PREFLIGHT` | — |
-| `ptah project inspect` | `--atlas-config` | `string` | — | `PTAH_ATLAS_CONFIG` | — |
-| `ptah project inspect` | `--config` | `string` | — | `PTAH_CONFIG` | — |
-| `ptah project inspect` | `--env` | `string` | — | `PTAH_ENV` | — |
-| `ptah project inspect` | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
-| `ptah schema annotations` | `--format` | `string` | `json-schema` | `PTAH_FORMAT` | — |
-| `ptah schema annotations` | `--out` | `string` | — | `PTAH_OUT` | — |
-| `ptah schema apply` | `--allowed-signers` | `string` | — | `PTAH_ALLOWED_SIGNERS` | — |
-| `ptah schema apply` | `--auto-approve` | `bool` | `false` | — | — |
-| `ptah schema apply` | `--config` | `string` | — | `PTAH_CONFIG` | — |
-| `ptah schema apply` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah schema apply` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah schema apply` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah schema apply` | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
-| `ptah schema apply` | `--edit` | `bool` | `false` | `PTAH_EDIT` | — |
-| `ptah schema apply` | `--env` | `string` | — | `PTAH_ENV` | — |
-| `ptah schema apply` | `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
-| `ptah schema apply` | `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
-| `ptah schema apply` | `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
-| `ptah schema apply` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah schema apply` | `--plan` | `string` | — | `PTAH_PLAN` | — |
-| `ptah schema apply` | `--require-approval` | `bool` | `false` | `PTAH_REQUIRE_APPROVAL` | — |
-| `ptah schema apply` | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
-| `ptah schema apply` | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
-| `ptah schema apply` | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
-| `ptah schema apply` | `--signer` | `string` | — | `PTAH_SIGNER` | — |
-| `ptah schema apply` | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
-| `ptah schema apply` | `--tx-mode` | `string` | — | `PTAH_TX_MODE` | — |
-| `ptah schema apply` | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
-| `ptah schema approve` | `--key` | `string` | — | `PTAH_KEY` | — |
-| `ptah schema approve` | `--plan` | `string` | — | `PTAH_PLAN` | — |
-| `ptah schema compare` | `--allow-external-schema` | `bool` | `false` | `PTAH_ALLOW_EXTERNAL_SCHEMA` | — |
-| `ptah schema compare` | `--config` | `string` | — | `PTAH_CONFIG` | — |
-| `ptah schema compare` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah schema compare` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah schema compare` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah schema compare` | `--env` | `string` | — | `PTAH_ENV` | — |
-| `ptah schema compare` | `--exit-code` | `bool` | `false` | `PTAH_EXIT_CODE` | — |
-| `ptah schema compare` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah schema compare` | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
-| `ptah schema compare` | `--schema-cmd` | `string` | — | `PTAH_SCHEMA_CMD` | — |
-| `ptah schema compare` | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
-| `ptah schema compare` | `--schema-format` | `string` | `sql` | `PTAH_SCHEMA_FORMAT` | — |
-| `ptah schema compare` | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
-| `ptah schema compare` | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
-| `ptah schema diff` | `--config` | `string` | — | `PTAH_CONFIG` | — |
-| `ptah schema diff` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah schema diff` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah schema diff` | `--env` | `string` | — | `PTAH_ENV` | — |
-| `ptah schema diff` | `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
-| `ptah schema diff` | `--format` | `string` | `sql` | `PTAH_FORMAT` | — |
-| `ptah schema diff` | `--from` | `stringArray` | `[]` | `PTAH_FROM` | — |
-| `ptah schema diff` | `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
-| `ptah schema diff` | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
-| `ptah schema diff` | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
-| `ptah schema diff` | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
-| `ptah schema diff` | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
-| `ptah schema drift` | `--allow-external-schema` | `bool` | `false` | `PTAH_ALLOW_EXTERNAL_SCHEMA` | — |
-| `ptah schema drift` | `--config` | `string` | — | `PTAH_CONFIG` | — |
-| `ptah schema drift` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah schema drift` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah schema drift` | `--env` | `string` | — | `PTAH_ENV` | — |
-| `ptah schema drift` | `--exit-code` | `bool` | `true` | `PTAH_EXIT_CODE` | — |
-| `ptah schema drift` | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
-| `ptah schema drift` | `--ignore` | `stringArray` | `[]` | `PTAH_IGNORE` | — |
-| `ptah schema drift` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah schema drift` | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
-| `ptah schema drift` | `--schema-cmd` | `string` | — | `PTAH_SCHEMA_CMD` | — |
-| `ptah schema drift` | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
-| `ptah schema drift` | `--schema-format` | `string` | `sql` | `PTAH_SCHEMA_FORMAT` | — |
-| `ptah schema drift` | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
-| `ptah schema drift` | `--severity` | `string` | `all` | `PTAH_SEVERITY` | — |
-| `ptah schema drift` | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
-| `ptah schema export` | `--api-field-policy` | `string` | `all` | `PTAH_API_FIELD_POLICY` | — |
-| `ptah schema export` | `--cleanup-diff` | `bool` | `false` | `PTAH_CLEANUP_DIFF` | — |
-| `ptah schema export` | `--cleanup-dry-run` | `bool` | `false` | `PTAH_CLEANUP_DRY_RUN` | — |
-| `ptah schema export` | `--cleanup-go-annotations` | `bool` | `false` | `PTAH_CLEANUP_GO_ANNOTATIONS` | — |
-| `ptah schema export` | `--exclude-tables` | `stringSlice` | `[]` | `PTAH_EXCLUDE_TABLES` | — |
-| `ptah schema export` | `--from` | `string` | `go` | `PTAH_FROM` | — |
-| `ptah schema export` | `--go-package` | `string` | — | `PTAH_GO_PACKAGE` | — |
-| `ptah schema export` | `--graphql-operations` | `stringSlice` | `[]` | `PTAH_GRAPHQL_OPERATIONS` | — |
-| `ptah schema export` | `--include-tables` | `stringSlice` | `[]` | `PTAH_INCLUDE_TABLES` | — |
-| `ptah schema export` | `--out` | `string` | — | `PTAH_OUT` | — |
-| `ptah schema export` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah schema export` | `--proto-comments` | `string` | `none` | `PTAH_PROTO_COMMENTS` | — |
-| `ptah schema export` | `--proto-on-field-removal` | `string` | `error` | `PTAH_PROTO_ON_FIELD_REMOVAL` | — |
-| `ptah schema export` | `--proto-on-incompatible-change` | `string` | `error` | `PTAH_PROTO_ON_INCOMPATIBLE_CHANGE` | — |
-| `ptah schema export` | `--proto-on-name-reuse` | `string` | `error` | `PTAH_PROTO_ON_NAME_REUSE` | — |
-| `ptah schema export` | `--proto-on-type-move` | `string` | `error` | `PTAH_PROTO_ON_TYPE_MOVE` | — |
-| `ptah schema export` | `--proto-package` | `string` | — | `PTAH_PROTO_PACKAGE` | — |
-| `ptah schema export` | `--proto-split` | `string` | `none` | `PTAH_PROTO_SPLIT` | — |
-| `ptah schema export` | `--proto-type-removal` | `string` | `error` | `PTAH_PROTO_TYPE_REMOVAL` | — |
-| `ptah schema export` | `--root-dir` | `string` | `.` | `PTAH_ROOT_DIR` | — |
-| `ptah schema export` | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
-| `ptah schema export` | `--title` | `string` | — | `PTAH_TITLE` | — |
-| `ptah schema export` | `--to` | `string` | `hcl` | `PTAH_TO` | — |
-| `ptah schema fmt` | `--check` | `bool` | `false` | `PTAH_CHECK` | — |
-| `ptah schema inspect` | `--config` | `string` | — | `PTAH_CONFIG` | — |
-| `ptah schema inspect` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah schema inspect` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah schema inspect` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah schema inspect` | `--env` | `string` | — | `PTAH_ENV` | — |
-| `ptah schema inspect` | `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
-| `ptah schema inspect` | `--format` | `string` | `hcl` | `PTAH_FORMAT` | — |
-| `ptah schema inspect` | `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
-| `ptah schema inspect` | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
-| `ptah schema inspect` | `--out-dir` | `string` | — | `PTAH_OUT_DIR` | — |
-| `ptah schema inspect` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah schema inspect` | `--schema-file` | `string` | — | `PTAH_SCHEMA_FILE` | — |
-| `ptah schema inspect` | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
-| `ptah schema inspect` | `--split` | `string` | — | `PTAH_SPLIT` | — |
-| `ptah schema inspect` | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
-| `ptah schema lineage` | `--config` | `string` | — | `PTAH_CONFIG` | — |
-| `ptah schema lineage` | `--dialect` | `string` | `postgres` | `PTAH_DIALECT` | — |
-| `ptah schema lineage` | `--env` | `string` | — | `PTAH_ENV` | — |
-| `ptah schema lineage` | `--format` | `string` | `table` | `PTAH_FORMAT` | — |
-| `ptah schema lineage` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah schema lineage` | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
-| `ptah schema lineage` | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
-| `ptah schema lineage` | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
-| `ptah schema lineage` | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
-| `ptah schema plan` | `--config` | `string` | — | `PTAH_CONFIG` | — |
-| `ptah schema plan` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah schema plan` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah schema plan` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah schema plan` | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
-| `ptah schema plan` | `--env` | `string` | — | `PTAH_ENV` | — |
-| `ptah schema plan` | `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
-| `ptah schema plan` | `--name` | `string` | — | `PTAH_NAME` | — |
-| `ptah schema plan` | `--output` | `string` | — | `PTAH_OUTPUT` | — |
-| `ptah schema plan` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah schema plan` | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
-| `ptah schema plan` | `--save` | `bool` | `false` | `PTAH_SAVE` | — |
-| `ptah schema plan` | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
-| `ptah schema plan` | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
-| `ptah schema pull` | `--out` | `string` | — | `PTAH_OUT` | — |
-| `ptah schema pull` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah schema push` | `--dialect` | `string` | — | `PTAH_DIALECT` | — |
-| `ptah schema push` | `--generated-version` | `bool` | `false` | `PTAH_GENERATED_VERSION` | — |
-| `ptah schema push` | `--latest` | `bool` | `false` | `PTAH_LATEST` | — |
-| `ptah schema push` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah schema push` | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
-| `ptah schema push` | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
-| `ptah schema push` | `--tag` | `stringArray` | `[]` | `PTAH_TAG` | — |
-| `ptah schema push` | `--version` | `string` | — | `PTAH_VERSION` | — |
-| `ptah schema render` | `--allow-external-schema` | `bool` | `false` | `PTAH_ALLOW_EXTERNAL_SCHEMA` | — |
-| `ptah schema render` | `--config` | `string` | — | `PTAH_CONFIG` | — |
-| `ptah schema render` | `--dialect` | `string` | — | `PTAH_DIALECT` | — |
-| `ptah schema render` | `--env` | `string` | — | `PTAH_ENV` | — |
-| `ptah schema render` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah schema render` | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
-| `ptah schema render` | `--schema-cmd` | `string` | — | `PTAH_SCHEMA_CMD` | — |
-| `ptah schema render` | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
-| `ptah schema render` | `--schema-format` | `string` | `sql` | `PTAH_SCHEMA_FORMAT` | — |
-| `ptah schema render` | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
-| `ptah schema render` | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
-| `ptah schema security` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah schema security` | `--fail-on` | `string` | `error` | `PTAH_FAIL_ON` | — |
-| `ptah schema security` | `--format` | `string` | `table` | `PTAH_FORMAT` | — |
-| `ptah schema security` | `--role-usage` | `string` | — | `PTAH_ROLE_USAGE` | — |
-| `ptah schema security` | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
-| `ptah schema serve` | `--addr` | `string` | `127.0.0.1:7070` | `PTAH_ADDR` | — |
-| `ptah schema serve` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah schema serve` | `--refresh` | `duration` | `30s` | `PTAH_REFRESH` | — |
-| `ptah schema serve` | `--root-dir` | `stringSlice` | `[]` | `PTAH_ROOT_DIR` | — |
-| `ptah schema serve` | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
-| `ptah schema serve` | `--title` | `string` | — | `PTAH_TITLE` | — |
-| `ptah schema stats` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah schema stats` | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
-| `ptah schema test` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah schema test` | `--dir` | `string` | `./tests` | `PTAH_DIR` | — |
-| `ptah schema test` | `--report` | `string` | `text` | `PTAH_REPORT` | — |
-| `ptah schema test` | `--root-dir` | `string` | `./models` | `PTAH_ROOT_DIR` | — |
-| `ptah schema test` | `--run` | `string` | — | `PTAH_RUN` | — |
-| `ptah schema test` | `--schema` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
-| `ptah schema test` | `--seed-dir` | `string` | — | `PTAH_SEED_DIR` | — |
-| `ptah schema test` | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
-| `ptah schema validate` | `--config` | `string` | — | `PTAH_CONFIG` | — |
-| `ptah schema validate` | `--dialect` | `stringArray` | `[]` | `PTAH_DIALECT` | — |
-| `ptah schema validate` | `--env` | `string` | — | `PTAH_ENV` | — |
-| `ptah schema validate` | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
-| `ptah schema validate` | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
-| `ptah schema validate` | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
-| `ptah schema validate` | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
-| `ptah schema validate` | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
-| `ptah schema verify-approval` | `--allowed-signers` | `string` | — | `PTAH_ALLOWED_SIGNERS` | — |
-| `ptah schema verify-approval` | `--plan` | `string` | — | `PTAH_PLAN` | — |
-| `ptah schema verify-approval` | `--signer` | `string` | — | `PTAH_SIGNER` | — |
-| `ptah seed` | `--allow-prod` | `bool` | `false` | `PTAH_ALLOW_PROD` | — |
-| `ptah seed` | `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
-| `ptah seed` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah seed` | `--env` | `string` | — | `PTAH_ENV` | — |
-| `ptah seed` | `--force` | `bool` | `false` | `PTAH_FORCE` | — |
-| `ptah seed` | `--idempotent` | `bool` | `false` | `PTAH_IDEMPOTENT` | — |
-| `ptah seed` | `--protected-env` | `stringArray` | `[prod,production]` | `PTAH_PROTECTED_ENV` | — |
-| `ptah seed` | `--protected-table` | `stringArray` | `[]` | `PTAH_PROTECTED_TABLE` | — |
-| `ptah seed` | `--seeds-dir` | `string` | `seeds` | `PTAH_SEEDS_DIR` | — |
-| `ptah seed` | `--verbose` | `bool` | `false` | `PTAH_VERBOSE` | — |
-| `ptah sql lint` | `--dialect` | `string` | — | `PTAH_DIALECT` | — |
-| `ptah sql lint` | `--disable` | `stringArray` | `[]` | `PTAH_DISABLE` | — |
-| `ptah sql lint` | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
-| `ptah sql lint` | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
-| `ptah sql lint` | `--stdin` | `bool` | `false` | `PTAH_STDIN` | — |
-| `ptah viz` | `--dialect` | `string` | `postgres` | `PTAH_DIALECT` | — |
-| `ptah viz` | `--exclude-tables` | `string` | — | `PTAH_EXCLUDE_TABLES` | — |
-| `ptah viz` | `--format` | `string` | `mermaid` | `PTAH_FORMAT` | — |
-| `ptah viz` | `--include-columns` | `bool` | `false` | `PTAH_INCLUDE_COLUMNS` | — |
-| `ptah viz` | `--root-dir` | `string` | `.` | `PTAH_ROOT_DIR` | — |
-| `ptah viz` | `--security` | `bool` | `false` | `PTAH_SECURITY` | — |
-| `ptah viz` | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
-| `ptah viz` | `--theme` | `string` | `light` | `PTAH_THEME` | — |
+**`ptah assist`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--allow-database-inspect` | `string` | — | — | — |
+| `--allow-write` | `stringSlice` | `[]` | `PTAH_ALLOW_WRITE` | — |
+| `--audit-log` | `string` | — | `PTAH_AUDIT_LOG` | — |
+| `--auto-approve` | `bool` | `false` | — | — |
+| `--database-class` | `string` | — | `PTAH_DATABASE_CLASS` | — |
+| `--database-name` | `string` | — | `PTAH_DATABASE_NAME` | — |
+| `--database-url` | `string` | — | `PTAH_DATABASE_URL` | — |
+| `--dialect` | `string` | — | `PTAH_DIALECT` | — |
+| `--ephemeral` | `bool` | `false` | `PTAH_EPHEMERAL` | — |
+| `--max-tool-calls` | `int` | `40` | `PTAH_MAX_TOOL_CALLS` | — |
+| `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
+| `--model` | `string` | — | `PTAH_MODEL` | — |
+| `--provider-profile` | `string` | — | `PTAH_PROVIDER_PROFILE` | — |
+| `--resume` | `string` | — | `PTAH_RESUME` | — |
+| `--schema-dir` | `string` | — | `PTAH_SCHEMA_DIR` | — |
+| `--schema-source-root` | `stringSlice` | `[]` | `PTAH_SCHEMA_SOURCE_ROOT` | — |
+| `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
+| `--tests-dir` | `string` | — | `PTAH_TESTS_DIR` | — |
+| `--trace` | `bool` | `false` | `PTAH_TRACE` | — |
+| `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
+
+**`ptah assist context`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--allow-database-inspect` | `string` | — | — | — |
+| `--allow-write` | `stringSlice` | `[]` | `PTAH_ALLOW_WRITE` | — |
+| `--audit-log` | `string` | — | `PTAH_AUDIT_LOG` | — |
+| `--auto-approve` | `bool` | `false` | — | — |
+| `--database-class` | `string` | — | `PTAH_DATABASE_CLASS` | — |
+| `--database-name` | `string` | — | `PTAH_DATABASE_NAME` | — |
+| `--database-url` | `string` | — | `PTAH_DATABASE_URL` | — |
+| `--dialect` | `string` | — | `PTAH_DIALECT` | — |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
+| `--model` | `string` | — | `PTAH_MODEL` | — |
+| `--provider-profile` | `string` | — | `PTAH_PROVIDER_PROFILE` | — |
+| `--resume` | `string` | — | `PTAH_RESUME` | — |
+| `--schema-dir` | `string` | — | `PTAH_SCHEMA_DIR` | — |
+| `--schema-source-root` | `stringSlice` | `[]` | `PTAH_SCHEMA_SOURCE_ROOT` | — |
+| `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
+| `--tests-dir` | `string` | — | `PTAH_TESTS_DIR` | — |
+| `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
+
+**`ptah assist explain`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--allow-database-inspect` | `string` | — | — | — |
+| `--allow-write` | `stringSlice` | `[]` | `PTAH_ALLOW_WRITE` | — |
+| `--audit-log` | `string` | — | `PTAH_AUDIT_LOG` | — |
+| `--auto-approve` | `bool` | `false` | — | — |
+| `--database-class` | `string` | — | `PTAH_DATABASE_CLASS` | — |
+| `--database-name` | `string` | — | `PTAH_DATABASE_NAME` | — |
+| `--database-url` | `string` | — | `PTAH_DATABASE_URL` | — |
+| `--dialect` | `string` | — | `PTAH_DIALECT` | — |
+| `--ephemeral` | `bool` | `false` | `PTAH_EPHEMERAL` | — |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--max-tool-calls` | `int` | `40` | `PTAH_MAX_TOOL_CALLS` | — |
+| `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
+| `--model` | `string` | — | `PTAH_MODEL` | — |
+| `--non-interactive` | `bool` | `false` | `PTAH_NON_INTERACTIVE` | — |
+| `--provider-profile` | `string` | — | `PTAH_PROVIDER_PROFILE` | — |
+| `--resume` | `string` | — | `PTAH_RESUME` | — |
+| `--schema-dir` | `string` | — | `PTAH_SCHEMA_DIR` | — |
+| `--schema-source-root` | `stringSlice` | `[]` | `PTAH_SCHEMA_SOURCE_ROOT` | — |
+| `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
+| `--tests-dir` | `string` | — | `PTAH_TESTS_DIR` | — |
+| `--trace` | `bool` | `false` | `PTAH_TRACE` | — |
+| `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
+
+**`ptah assist provider list`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+
+**`ptah assist provider test`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--model` | `string` | — | `PTAH_MODEL` | — |
+| `--provider-profile` | `string` | — | `PTAH_PROVIDER_PROFILE` | — |
+
+**`ptah assist sessions delete`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
+
+**`ptah assist sessions list`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
+
+**`ptah assist sessions prune`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--older-than` | `duration` | `720h0m0s` | `PTAH_OLDER_THAN` | — |
+| `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
+
+**`ptah assist sessions show`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
+
+**`ptah completion bash`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--no-descriptions` | `bool` | `false` | — | — |
+
+**`ptah completion fish`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--no-descriptions` | `bool` | `false` | — | — |
+
+**`ptah completion powershell`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--no-descriptions` | `bool` | `false` | — | — |
+
+**`ptah completion zsh`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--no-descriptions` | `bool` | `false` | — | — |
+
+**`ptah db capabilities`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+
+**`ptah db drop-all`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--auto-approve` | `bool` | `false` | — | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
+
+**`ptah db read`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
+
+**`ptah inference backfill`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--batch-inputs` | `int` | `32` | `PTAH_BATCH_INPUTS` | — |
+| `--batch-rows` | `int` | `200` | `PTAH_BATCH_ROWS` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--maintain-for` | `duration` | `0s` | `PTAH_MAINTAIN_FOR` | — |
+| `--provider-timeout` | `duration` | `1m0s` | `PTAH_PROVIDER_TIMEOUT` | — |
+| `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
+| `--spec` | `string` | — | `PTAH_SPEC` | — |
+
+**`ptah inference catchup`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--batch-inputs` | `int` | `32` | `PTAH_BATCH_INPUTS` | — |
+| `--batch-rows` | `int` | `200` | `PTAH_BATCH_ROWS` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--maintain-for` | `duration` | `0s` | `PTAH_MAINTAIN_FOR` | — |
+| `--provider-timeout` | `duration` | `1m0s` | `PTAH_PROVIDER_TIMEOUT` | — |
+| `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
+| `--spec` | `string` | — | `PTAH_SPEC` | — |
+
+**`ptah inference cutover`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--approve` | `string` | — | `PTAH_APPROVE` | — |
+| `--approver` | `string` | — | `PTAH_APPROVER` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--publish-evidence` | `string` | — | `PTAH_PUBLISH_EVIDENCE` | — |
+| `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
+| `--spec` | `string` | — | `PTAH_SPEC` | — |
+| `--stabilize-for` | `duration` | `0s` | `PTAH_STABILIZE_FOR` | — |
+
+**`ptah inference evaluate`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--baseline` | `string` | — | `PTAH_BASELINE` | — |
+| `--corpus` | `string` | — | `PTAH_CORPUS` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--k` | `int` | `10` | `PTAH_K` | — |
+| `--max-mrr-regression` | `float64` | `0` | `PTAH_MAX_MRR_REGRESSION` | — |
+| `--max-ndcg-regression` | `float64` | `0` | `PTAH_MAX_NDCG_REGRESSION` | — |
+| `--min-exact-agreement` | `float64` | `0` | `PTAH_MIN_EXACT_AGREEMENT` | — |
+| `--min-recall` | `float64` | `0` | `PTAH_MIN_RECALL` | — |
+| `--provider-timeout` | `duration` | `1m0s` | `PTAH_PROVIDER_TIMEOUT` | — |
+| `--require-every-case` | `bool` | `true` | `PTAH_REQUIRE_EVERY_CASE` | — |
+| `--spec` | `string` | — | `PTAH_SPEC` | — |
+
+**`ptah inference index`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--spec` | `string` | — | `PTAH_SPEC` | — |
+
+**`ptah inference plan`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--current` | `string` | — | `PTAH_CURRENT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--spec` | `string` | — | `PTAH_SPEC` | — |
+
+**`ptah inference prepare`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
+| `--spec` | `string` | — | `PTAH_SPEC` | — |
+| `--worker` | `string` | `ptah-cli` | `PTAH_WORKER` | — |
+
+**`ptah inference retire`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--approve` | `string` | — | `PTAH_APPROVE` | — |
+| `--approver` | `string` | — | `PTAH_APPROVER` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--drop-column` | `bool` | `true` | `PTAH_DROP_COLUMN` | — |
+| `--generation` | `string` | — | `PTAH_GENERATION` | — |
+| `--spec` | `string` | — | `PTAH_SPEC` | — |
+
+**`ptah inference rollback`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--spec` | `string` | — | `PTAH_SPEC` | — |
+| `--to` | `string` | — | `PTAH_TO` | — |
+| `--window` | `duration` | `0s` | `PTAH_WINDOW` | — |
+
+**`ptah inference status`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
+| `--spec` | `string` | — | `PTAH_SPEC` | — |
+
+**`ptah inference verify`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--publish-evidence` | `string` | — | `PTAH_PUBLISH_EVIDENCE` | — |
+| `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
+| `--spec` | `string` | — | `PTAH_SPEC` | — |
+
+**`ptah introspect`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--add-db-tags` | `bool` | `false` | `PTAH_ADD_DB_TAGS` | — |
+| `--add-json-tags` | `bool` | `false` | `PTAH_ADD_JSON_TAGS` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--lowercase-fields` | `bool` | `false` | `PTAH_LOWERCASE_FIELDS` | — |
+| `--out` | `string` | — | `PTAH_OUT` | — |
+| `--package` | `string` | `models` | `PTAH_PACKAGE` | — |
+| `--per-table` | `bool` | `false` | `PTAH_PER_TABLE` | — |
+| `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
+| `--single-file` | `bool` | `false` | `PTAH_SINGLE_FILE` | — |
+
+**`ptah mcp`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--allow-database-inspect` | `string` | — | — | — |
+| `--allow-write` | `stringSlice` | `[]` | `PTAH_ALLOW_WRITE` | — |
+| `--audit-log` | `string` | — | `PTAH_AUDIT_LOG` | — |
+| `--auto-approve` | `bool` | `false` | — | — |
+| `--database-class` | `string` | — | `PTAH_DATABASE_CLASS` | — |
+| `--database-name` | `string` | — | `PTAH_DATABASE_NAME` | — |
+| `--database-url` | `string` | — | `PTAH_DATABASE_URL` | — |
+| `--dialect` | `string` | — | `PTAH_DIALECT` | — |
+| `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
+| `--schema-dir` | `string` | — | `PTAH_SCHEMA_DIR` | — |
+| `--schema-source-root` | `stringSlice` | `[]` | `PTAH_SCHEMA_SOURCE_ROOT` | — |
+| `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
+| `--tests-dir` | `string` | — | `PTAH_TESTS_DIR` | — |
+| `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
+
+**`ptah migrations baseline`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
+| `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
+| `--force` | `bool` | `false` | `PTAH_FORCE` | — |
+| `--migration-lock-timeout` | `string` | — | `PTAH_MIGRATION_LOCK_TIMEOUT` | — |
+| `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
+| `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
+| `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
+| `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
+| `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
+| `--root-dir` | `string` | `./` | `PTAH_ROOT_DIR` | — |
+| `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
+| `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
+| `--version` | `string` | — | `PTAH_VERSION` | — |
+
+**`ptah migrations checkpoint`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--description` | `string` | `checkpoint` | `PTAH_DESCRIPTION` | — |
+| `--dialect` | `string` | — | `PTAH_DIALECT` | — |
+| `--dir-format` | `string` | `ptah` | `PTAH_DIR_FORMAT` | — |
+| `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
+| `--edit` | `bool` | `false` | `PTAH_EDIT` | — |
+| `--editor` | `string` | — | `PTAH_EDITOR` | — |
+| `--migration-lock-timeout` | `string` | — | `PTAH_MIGRATION_LOCK_TIMEOUT` | — |
+| `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
+| `--qualifier` | `string` | — | `PTAH_QUALIFIER` | — |
+| `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
+| `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
+| `--version` | `string` | — | `PTAH_VERSION` | — |
+
+**`ptah migrations create`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
+| `--edit` | `bool` | `false` | `PTAH_EDIT` | — |
+| `--editor` | `string` | — | `PTAH_EDITOR` | — |
+| `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
+| `--name` | `string` | — | `PTAH_NAME` | — |
+
+**`ptah migrations data`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--allow-destructive` | `bool` | `false` | `PTAH_ALLOW_DESTRUCTIVE` | — |
+| `--allow-prod` | `bool` | `false` | `PTAH_ALLOW_PROD` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--description` | `string` | `data` | `PTAH_DESCRIPTION` | — |
+| `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
+| `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
+| `--protected-table` | `stringArray` | `[]` | `PTAH_PROTECTED_TABLE` | — |
+| `--root-dir` | `string` | — | `PTAH_ROOT_DIR` | — |
+| `--version` | `string` | — | `PTAH_VERSION` | — |
+
+**`ptah migrations down`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
+| `--atlas-project-config` | `string` | — | `PTAH_ATLAS_PROJECT_CONFIG` | hidden |
+| `--atlas-project-var` | `stringArray` | `[]` | `PTAH_ATLAS_PROJECT_VAR` | hidden |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
+| `--confirm` | `bool` | `false` | `PTAH_CONFIRM` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
+| `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
+| `--exec-order` | `string` | `linear` | `PTAH_EXEC_ORDER` | — |
+| `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
+| `--log-format` | `string` | `text` | `PTAH_LOG_FORMAT` | — |
+| `--log-level` | `string` | `info` | `PTAH_LOG_LEVEL` | — |
+| `--metrics-addr` | `string` | — | `PTAH_METRICS_ADDR` | — |
+| `--migration-lock-timeout` | `string` | — | `PTAH_MIGRATION_LOCK_TIMEOUT` | — |
+| `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
+| `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
+| `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
+| `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
+| `--mysqldump-to` | `string` | — | `PTAH_MYSQLDUMP_TO` | — |
+| `--pg-dump-to` | `string` | — | `PTAH_PG_DUMP_TO` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--plan` | `bool` | `false` | `PTAH_PLAN` | — |
+| `--pre-down-hook` | `string` | — | `PTAH_PRE_DOWN_HOOK` | — |
+| `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
+| `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
+| `--skip-checks` | `bool` | `false` | `PTAH_SKIP_CHECKS` | — |
+| `--statement-timeout` | `string` | — | `PTAH_STATEMENT_TIMEOUT` | — |
+| `--target` | `string` | `0` | `PTAH_TARGET` | — |
+| `--to-tag` | `string` | — | `PTAH_TO_TAG` | — |
+| `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
+| `--verbose` | `bool` | `false` | `PTAH_VERBOSE` | — |
+| `--verify-sum` | `bool` | `false` | `PTAH_VERIFY_SUM` | — |
+| `--webhook` | `string` | — | `PTAH_WEBHOOK` | — |
+
+**`ptah migrations edit`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
+| `--down-file` | `string` | — | `PTAH_DOWN_FILE` | — |
+| `--editor` | `string` | — | `PTAH_EDITOR` | — |
+| `--force` | `bool` | `false` | `PTAH_FORCE` | — |
+| `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
+| `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
+| `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
+| `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
+| `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
+| `--up-file` | `string` | — | `PTAH_UP_FILE` | — |
+| `--version` | `string` | — | `PTAH_VERSION` | — |
+
+**`ptah migrations generate`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--allow-destructive` | `bool` | `false` | `PTAH_ALLOW_DESTRUCTIVE` | — |
+| `--allow-external-schema` | `bool` | `false` | `PTAH_ALLOW_EXTERNAL_SCHEMA` | — |
+| `--check-destructive` | `bool` | `false` | `PTAH_CHECK_DESTRUCTIVE` | — |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
+| `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
+| `--name` | `string` | `migration` | `PTAH_NAME` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--qualifier` | `string` | — | `PTAH_QUALIFIER` | — |
+| `--replay` | `bool` | `false` | `PTAH_REPLAY` | — |
+| `--report` | `string` | — | `PTAH_REPORT` | — |
+| `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
+| `--schema-cmd` | `string` | — | `PTAH_SCHEMA_CMD` | — |
+| `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
+| `--schema-format` | `string` | `sql` | `PTAH_SCHEMA_FORMAT` | — |
+| `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
+| `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
+| `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
+
+**`ptah migrations hash`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dir` | `string` | `./migrations` | `PTAH_DIR` | — |
+| `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
+
+**`ptah migrations import`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--allow-partial` | `bool` | `false` | `PTAH_ALLOW_PARTIAL` | — |
+| `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
+| `--from` | `string` | — | `PTAH_FROM` | — |
+| `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
+| `--source-dir` | `string` | — | `PTAH_SOURCE_DIR` | — |
+
+**`ptah migrations lint`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
+| `--atlas-project-config` | `string` | — | `PTAH_ATLAS_PROJECT_CONFIG` | hidden |
+| `--atlas-project-var` | `stringArray` | `[]` | `PTAH_ATLAS_PROJECT_VAR` | hidden |
+| `--attach` | `bool` | `false` | `PTAH_ATTACH` | — |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--dialect` | `string` | — | `PTAH_DIALECT` | — |
+| `--dir` | `string` | `./migrations` | `PTAH_DIR` | — |
+| `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
+| `--disable` | `stringArray` | `[]` | `PTAH_DISABLE` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
+| `--fail-on` | `string` | `error` | `PTAH_FAIL_ON` | — |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--git-base` | `string` | — | `PTAH_GIT_BASE` | — |
+| `--git-dir` | `string` | `.` | `PTAH_GIT_DIR` | — |
+| `--latest` | `uint` | `0` | `PTAH_LATEST` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
+
+**`ptah migrations ls`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
+| `--latest` | `bool` | `false` | `PTAH_LATEST` | — |
+| `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--short` | `bool` | `false` | `PTAH_SHORT` | — |
+| `--verify-sum` | `bool` | `false` | `PTAH_VERIFY_SUM` | — |
+
+**`ptah migrations plan`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--allow-destructive` | `bool` | `false` | `PTAH_ALLOW_DESTRUCTIVE` | — |
+| `--allow-external-schema` | `bool` | `false` | `PTAH_ALLOW_EXTERNAL_SCHEMA` | — |
+| `--attach` | `bool` | `false` | `PTAH_ATTACH` | — |
+| `--check-destructive` | `bool` | `false` | `PTAH_CHECK_DESTRUCTIVE` | — |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--report` | `string` | `text` | `PTAH_REPORT` | — |
+| `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
+| `--schema-cmd` | `string` | — | `PTAH_SCHEMA_CMD` | — |
+| `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
+| `--schema-format` | `string` | `sql` | `PTAH_SCHEMA_FORMAT` | — |
+| `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
+| `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
+
+**`ptah migrations pull`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--out` | `string` | — | `PTAH_OUT` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+
+**`ptah migrations push`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
+| `--generated-version` | `bool` | `false` | `PTAH_GENERATED_VERSION` | — |
+| `--latest` | `bool` | `false` | `PTAH_LATEST` | — |
+| `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--tag` | `stringArray` | `[]` | `PTAH_TAG` | — |
+| `--verify-sum` | `bool` | `false` | `PTAH_VERIFY_SUM` | — |
+| `--version` | `string` | — | `PTAH_VERSION` | — |
+
+**`ptah migrations rebase`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
+| `--force` | `bool` | `false` | `PTAH_FORCE` | — |
+| `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
+| `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
+| `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
+| `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
+| `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
+| `--version` | `string` | — | `PTAH_VERSION` | — |
+
+**`ptah migrations repair`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
+| `--force` | `bool` | `false` | `PTAH_FORCE` | — |
+| `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
+| `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
+| `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
+| `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
+| `--resume-from` | `string` | — | `PTAH_RESUME_FROM` | — |
+| `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
+| `--version` | `string` | — | `PTAH_VERSION` | — |
+
+**`ptah migrations rm`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
+| `--force` | `bool` | `false` | `PTAH_FORCE` | — |
+| `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
+| `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
+| `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
+| `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
+| `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
+| `--version` | `string` | — | `PTAH_VERSION` | — |
+
+**`ptah migrations set`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
+| `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
+| `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
+| `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
+| `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
+| `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
+| `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
+| `--version` | `string` | — | `PTAH_VERSION` | — |
+
+**`ptah migrations show`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
+| `--direction` | `string` | `up` | `PTAH_DIRECTION` | — |
+| `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--verify-sum` | `bool` | `false` | `PTAH_VERIFY_SUM` | — |
+| `--version` | `stringArray` | `[]` | `PTAH_VERSION` | — |
+
+**`ptah migrations status`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
+| `--atlas-project-config` | `string` | — | `PTAH_ATLAS_PROJECT_CONFIG` | hidden |
+| `--atlas-project-var` | `stringArray` | `[]` | `PTAH_ATLAS_PROJECT_VAR` | hidden |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
+| `--exit-code` | `bool` | `false` | `PTAH_EXIT_CODE` | — |
+| `--json` | `bool` | `false` | `PTAH_JSON` | — |
+| `--log-format` | `string` | `text` | `PTAH_LOG_FORMAT` | — |
+| `--log-level` | `string` | `info` | `PTAH_LOG_LEVEL` | — |
+| `--metrics-addr` | `string` | — | `PTAH_METRICS_ADDR` | — |
+| `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
+| `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
+| `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
+| `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
+| `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
+| `--verbose` | `bool` | `false` | `PTAH_VERBOSE` | — |
+| `--verify-sum` | `bool` | `false` | `PTAH_VERIFY_SUM` | — |
+
+**`ptah migrations tag`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--delete` | `bool` | `false` | `PTAH_DELETE` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
+| `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
+| `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
+| `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
+| `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
+| `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
+| `--version` | `string` | — | `PTAH_VERSION` | — |
+
+**`ptah migrations test`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--dir` | `string` | `./tests` | `PTAH_DIR` | — |
+| `--dir-format` | `string` | `ptah` | `PTAH_DIR_FORMAT` | — |
+| `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
+| `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
+| `--report` | `string` | `text` | `PTAH_REPORT` | — |
+| `--root-dir` | `string` | `./models` | `PTAH_ROOT_DIR` | — |
+| `--run` | `string` | — | `PTAH_RUN` | — |
+| `--seed-dir` | `string` | — | `PTAH_SEED_DIR` | — |
+
+**`ptah migrations up`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--allow-destructive` | `bool` | `false` | `PTAH_ALLOW_DESTRUCTIVE` | — |
+| `--allow-dirty` | `bool` | `false` | `PTAH_ALLOW_DIRTY` | — |
+| `--atlas-env` | `string` | — | `PTAH_ATLAS_ENV` | — |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
+| `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
+| `--exec-order` | `string` | `linear` | `PTAH_EXEC_ORDER` | — |
+| `--limit` | `uint64` | `0` | `PTAH_LIMIT` | — |
+| `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
+| `--log-format` | `string` | `text` | `PTAH_LOG_FORMAT` | — |
+| `--log-level` | `string` | `info` | `PTAH_LOG_LEVEL` | — |
+| `--metrics-addr` | `string` | — | `PTAH_METRICS_ADDR` | — |
+| `--migration-lock-timeout` | `string` | — | `PTAH_MIGRATION_LOCK_TIMEOUT` | — |
+| `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
+| `--migrations-engine` | `string` | — | `PTAH_MIGRATIONS_ENGINE` | — |
+| `--migrations-schema` | `string` | — | `PTAH_MIGRATIONS_SCHEMA` | — |
+| `--migrations-table` | `string` | — | `PTAH_MIGRATIONS_TABLE` | — |
+| `--mysqldump-to` | `string` | — | `PTAH_MYSQLDUMP_TO` | — |
+| `--pg-dump-to` | `string` | — | `PTAH_PG_DUMP_TO` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--pre-up-hook` | `string` | — | `PTAH_PRE_UP_HOOK` | — |
+| `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
+| `--skip-checks` | `bool` | `false` | `PTAH_SKIP_CHECKS` | — |
+| `--skip-report` | `bool` | `false` | `PTAH_SKIP_REPORT` | — |
+| `--statement-timeout` | `string` | — | `PTAH_STATEMENT_TIMEOUT` | — |
+| `--tx-mode` | `string` | `file` | `PTAH_TX_MODE` | — |
+| `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
+| `--verbose` | `bool` | `false` | `PTAH_VERBOSE` | — |
+| `--verify-sum` | `bool` | `false` | `PTAH_VERIFY_SUM` | — |
+| `--webhook` | `string` | — | `PTAH_WEBHOOK` | — |
+
+**`ptah migrations validate`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--dir` | `string` | `./migrations` | `PTAH_DIR` | — |
+| `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+
+**`ptah oci capabilities`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+
+**`ptah oci copy`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--recursive` | `bool` | `false` | `PTAH_RECURSIVE` | — |
+| `--tag` | `stringArray` | `[]` | `PTAH_TAG` | — |
+
+**`ptah oci fetch`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--digest` | `string` | — | `PTAH_DIGEST` | — |
+| `--file` | `string` | — | `PTAH_FILE` | — |
+| `--output`, `-o` | `string` | — | `PTAH_OUTPUT` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--type` | `string` | `all` | `PTAH_TYPE` | — |
+
+**`ptah oci inspect`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--no-referrers` | `bool` | `false` | `PTAH_NO_REFERRERS` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+
+**`ptah oci login`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--password-stdin` | `bool` | `false` | `PTAH_PASSWORD_STDIN` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--username`, `-u` | `string` | — | `PTAH_USERNAME` | — |
+
+**`ptah oci referrers`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--type` | `string` | `all` | `PTAH_TYPE` | — |
+
+**`ptah oci reindex`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+
+**`ptah oci resolve`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+
+**`ptah oci tag`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+
+**`ptah oci tags`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+
+**`ptah oci verify`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--policy` | `string` | — | `PTAH_POLICY` | — |
+
+**`ptah project adopt`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--atlas-config` | `string` | — | `PTAH_ATLAS_CONFIG` | — |
+| `--check` | `bool` | `false` | `PTAH_CHECK` | — |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--preflight` | `bool` | `false` | `PTAH_PREFLIGHT` | — |
+
+**`ptah project inspect`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--atlas-config` | `string` | — | `PTAH_ATLAS_CONFIG` | — |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+
+**`ptah schema annotations`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--format` | `string` | `json-schema` | `PTAH_FORMAT` | — |
+| `--out` | `string` | — | `PTAH_OUT` | — |
+
+**`ptah schema apply`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--allowed-signers` | `string` | — | `PTAH_ALLOWED_SIGNERS` | — |
+| `--auto-approve` | `bool` | `false` | — | — |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
+| `--edit` | `bool` | `false` | `PTAH_EDIT` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
+| `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
+| `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
+| `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--plan` | `string` | — | `PTAH_PLAN` | — |
+| `--require-approval` | `bool` | `false` | `PTAH_REQUIRE_APPROVAL` | — |
+| `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
+| `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
+| `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
+| `--signer` | `string` | — | `PTAH_SIGNER` | — |
+| `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
+| `--tx-mode` | `string` | — | `PTAH_TX_MODE` | — |
+| `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
+
+**`ptah schema approve`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--key` | `string` | — | `PTAH_KEY` | — |
+| `--plan` | `string` | — | `PTAH_PLAN` | — |
+
+**`ptah schema compare`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--allow-external-schema` | `bool` | `false` | `PTAH_ALLOW_EXTERNAL_SCHEMA` | — |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
+| `--exit-code` | `bool` | `false` | `PTAH_EXIT_CODE` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
+| `--schema-cmd` | `string` | — | `PTAH_SCHEMA_CMD` | — |
+| `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
+| `--schema-format` | `string` | `sql` | `PTAH_SCHEMA_FORMAT` | — |
+| `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
+| `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
+
+**`ptah schema diff`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
+| `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
+| `--format` | `string` | `sql` | `PTAH_FORMAT` | — |
+| `--from` | `stringArray` | `[]` | `PTAH_FROM` | — |
+| `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
+| `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
+| `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
+| `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
+| `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
+
+**`ptah schema drift`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--allow-external-schema` | `bool` | `false` | `PTAH_ALLOW_EXTERNAL_SCHEMA` | — |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
+| `--exit-code` | `bool` | `true` | `PTAH_EXIT_CODE` | — |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--ignore` | `stringArray` | `[]` | `PTAH_IGNORE` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
+| `--schema-cmd` | `string` | — | `PTAH_SCHEMA_CMD` | — |
+| `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
+| `--schema-format` | `string` | `sql` | `PTAH_SCHEMA_FORMAT` | — |
+| `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
+| `--severity` | `string` | `all` | `PTAH_SEVERITY` | — |
+| `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
+
+**`ptah schema export`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--api-field-policy` | `string` | `all` | `PTAH_API_FIELD_POLICY` | — |
+| `--cleanup-diff` | `bool` | `false` | `PTAH_CLEANUP_DIFF` | — |
+| `--cleanup-dry-run` | `bool` | `false` | `PTAH_CLEANUP_DRY_RUN` | — |
+| `--cleanup-go-annotations` | `bool` | `false` | `PTAH_CLEANUP_GO_ANNOTATIONS` | — |
+| `--exclude-tables` | `stringSlice` | `[]` | `PTAH_EXCLUDE_TABLES` | — |
+| `--from` | `string` | `go` | `PTAH_FROM` | — |
+| `--go-package` | `string` | — | `PTAH_GO_PACKAGE` | — |
+| `--graphql-operations` | `stringSlice` | `[]` | `PTAH_GRAPHQL_OPERATIONS` | — |
+| `--include-tables` | `stringSlice` | `[]` | `PTAH_INCLUDE_TABLES` | — |
+| `--out` | `string` | — | `PTAH_OUT` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--proto-comments` | `string` | `none` | `PTAH_PROTO_COMMENTS` | — |
+| `--proto-on-field-removal` | `string` | `error` | `PTAH_PROTO_ON_FIELD_REMOVAL` | — |
+| `--proto-on-incompatible-change` | `string` | `error` | `PTAH_PROTO_ON_INCOMPATIBLE_CHANGE` | — |
+| `--proto-on-name-reuse` | `string` | `error` | `PTAH_PROTO_ON_NAME_REUSE` | — |
+| `--proto-on-type-move` | `string` | `error` | `PTAH_PROTO_ON_TYPE_MOVE` | — |
+| `--proto-package` | `string` | — | `PTAH_PROTO_PACKAGE` | — |
+| `--proto-split` | `string` | `none` | `PTAH_PROTO_SPLIT` | — |
+| `--proto-type-removal` | `string` | `error` | `PTAH_PROTO_TYPE_REMOVAL` | — |
+| `--root-dir` | `string` | `.` | `PTAH_ROOT_DIR` | — |
+| `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
+| `--title` | `string` | — | `PTAH_TITLE` | — |
+| `--to` | `string` | `hcl` | `PTAH_TO` | — |
+
+**`ptah schema fmt`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--check` | `bool` | `false` | `PTAH_CHECK` | — |
+
+**`ptah schema inspect`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
+| `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
+| `--format` | `string` | `hcl` | `PTAH_FORMAT` | — |
+| `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
+| `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
+| `--out-dir` | `string` | — | `PTAH_OUT_DIR` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--schema-file` | `string` | — | `PTAH_SCHEMA_FILE` | — |
+| `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
+| `--split` | `string` | — | `PTAH_SPLIT` | — |
+| `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
+
+**`ptah schema lineage`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
+| `--dialect` | `string` | `postgres` | `PTAH_DIALECT` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
+| `--format` | `string` | `table` | `PTAH_FORMAT` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
+| `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
+| `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
+| `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
+
+**`ptah schema plan`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
+| `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
+| `--name` | `string` | — | `PTAH_NAME` | — |
+| `--output` | `string` | — | `PTAH_OUTPUT` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
+| `--save` | `bool` | `false` | `PTAH_SAVE` | — |
+| `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
+| `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
+
+**`ptah schema pull`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--out` | `string` | — | `PTAH_OUT` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+
+**`ptah schema push`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dialect` | `string` | — | `PTAH_DIALECT` | — |
+| `--generated-version` | `bool` | `false` | `PTAH_GENERATED_VERSION` | — |
+| `--latest` | `bool` | `false` | `PTAH_LATEST` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
+| `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
+| `--tag` | `stringArray` | `[]` | `PTAH_TAG` | — |
+| `--version` | `string` | — | `PTAH_VERSION` | — |
+
+**`ptah schema render`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--allow-external-schema` | `bool` | `false` | `PTAH_ALLOW_EXTERNAL_SCHEMA` | — |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
+| `--dialect` | `string` | — | `PTAH_DIALECT` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
+| `--schema-cmd` | `string` | — | `PTAH_SCHEMA_CMD` | — |
+| `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
+| `--schema-format` | `string` | `sql` | `PTAH_SCHEMA_FORMAT` | — |
+| `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
+| `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
+
+**`ptah schema security`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--fail-on` | `string` | `error` | `PTAH_FAIL_ON` | — |
+| `--format` | `string` | `table` | `PTAH_FORMAT` | — |
+| `--role-usage` | `string` | — | `PTAH_ROLE_USAGE` | — |
+| `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
+
+**`ptah schema serve`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--addr` | `string` | `127.0.0.1:7070` | `PTAH_ADDR` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--refresh` | `duration` | `30s` | `PTAH_REFRESH` | — |
+| `--root-dir` | `stringSlice` | `[]` | `PTAH_ROOT_DIR` | — |
+| `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
+| `--title` | `string` | — | `PTAH_TITLE` | — |
+
+**`ptah schema stats`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
+
+**`ptah schema test`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--dir` | `string` | `./tests` | `PTAH_DIR` | — |
+| `--report` | `string` | `text` | `PTAH_REPORT` | — |
+| `--root-dir` | `string` | `./models` | `PTAH_ROOT_DIR` | — |
+| `--run` | `string` | — | `PTAH_RUN` | — |
+| `--schema` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
+| `--seed-dir` | `string` | — | `PTAH_SEED_DIR` | — |
+| `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
+
+**`ptah schema validate`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--config` | `string` | — | `PTAH_CONFIG` | — |
+| `--dialect` | `stringArray` | `[]` | `PTAH_DIALECT` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
+| `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
+| `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
+| `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
+
+**`ptah schema verify-approval`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--allowed-signers` | `string` | — | `PTAH_ALLOWED_SIGNERS` | — |
+| `--plan` | `string` | — | `PTAH_PLAN` | — |
+| `--signer` | `string` | — | `PTAH_SIGNER` | — |
+
+**`ptah seed`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--allow-prod` | `bool` | `false` | `PTAH_ALLOW_PROD` | — |
+| `--connect-timeout` | `string` | `10s` | `PTAH_CONNECT_TIMEOUT` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--env` | `string` | — | `PTAH_ENV` | — |
+| `--force` | `bool` | `false` | `PTAH_FORCE` | — |
+| `--idempotent` | `bool` | `false` | `PTAH_IDEMPOTENT` | — |
+| `--protected-env` | `stringArray` | `[prod,production]` | `PTAH_PROTECTED_ENV` | — |
+| `--protected-table` | `stringArray` | `[]` | `PTAH_PROTECTED_TABLE` | — |
+| `--seeds-dir` | `string` | `seeds` | `PTAH_SEEDS_DIR` | — |
+| `--verbose` | `bool` | `false` | `PTAH_VERBOSE` | — |
+
+**`ptah sql lint`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dialect` | `string` | — | `PTAH_DIALECT` | — |
+| `--disable` | `stringArray` | `[]` | `PTAH_DISABLE` | — |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
+| `--stdin` | `bool` | `false` | `PTAH_STDIN` | — |
+
+**`ptah viz`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dialect` | `string` | `postgres` | `PTAH_DIALECT` | — |
+| `--exclude-tables` | `string` | — | `PTAH_EXCLUDE_TABLES` | — |
+| `--format` | `string` | `mermaid` | `PTAH_FORMAT` | — |
+| `--include-columns` | `bool` | `false` | `PTAH_INCLUDE_COLUMNS` | — |
+| `--root-dir` | `string` | `.` | `PTAH_ROOT_DIR` | — |
+| `--security` | `bool` | `false` | `PTAH_SECURITY` | — |
+| `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
+| `--theme` | `string` | `light` | `PTAH_THEME` | — |
 
 ## `ptah-compat`
 
-| Command | Flag | Type | Default | Environment variable | Notes |
-| --- | --- | --- | --- | --- | --- |
-| `ptah-compat completion bash` | `--no-descriptions` | `bool` | `false` | `PTAH_NO_DESCRIPTIONS` | — |
-| `ptah-compat completion fish` | `--no-descriptions` | `bool` | `false` | `PTAH_NO_DESCRIPTIONS` | — |
-| `ptah-compat completion powershell` | `--no-descriptions` | `bool` | `false` | `PTAH_NO_DESCRIPTIONS` | — |
-| `ptah-compat completion zsh` | `--no-descriptions` | `bool` | `false` | `PTAH_NO_DESCRIPTIONS` | — |
-| `ptah-compat migrate` | `--config`, `-c` | `string` | `file://atlas.hcl` | `PTAH_CONFIG` | inherited by subcommands |
-| `ptah-compat migrate` | `--env` | `string` | — | `PTAH_ENV` | inherited by subcommands |
-| `ptah-compat migrate` | `--var` | `<name>=<value>` | `[]` | `PTAH_VAR` | inherited by subcommands |
-| `ptah-compat migrate apply` | `--allow-dirty` | `bool` | `false` | `PTAH_ALLOW_DIRTY` | — |
-| `ptah-compat migrate apply` | `--baseline` | `string` | — | `PTAH_BASELINE` | — |
-| `ptah-compat migrate apply` | `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
-| `ptah-compat migrate apply` | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
-| `ptah-compat migrate apply` | `--exec-order` | `string` | `linear` | `PTAH_EXEC_ORDER` | — |
-| `ptah-compat migrate apply` | `--format` | `string` | — | `PTAH_FORMAT` | — |
-| `ptah-compat migrate apply` | `--lock-name` | `string` | — | `PTAH_LOCK_NAME` | — |
-| `ptah-compat migrate apply` | `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
-| `ptah-compat migrate apply` | `--revisions-schema` | `string` | — | `PTAH_REVISIONS_SCHEMA` | — |
-| `ptah-compat migrate apply` | `--skip-lock` | `bool` | `false` | `PTAH_SKIP_LOCK` | — |
-| `ptah-compat migrate apply` | `--to-version` | `string` | — | `PTAH_TO_VERSION` | — |
-| `ptah-compat migrate apply` | `--tx-mode` | `string` | `file` | `PTAH_TX_MODE` | — |
-| `ptah-compat migrate apply` | `--url`, `-u` | `string` | — | `PTAH_URL` | — |
-| `ptah-compat migrate checkpoint` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah-compat migrate checkpoint` | `--dir` | `string` | — | `PTAH_DIR` | — |
-| `ptah-compat migrate checkpoint` | `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
-| `ptah-compat migrate checkpoint` | `--edit` | `bool` | `false` | `PTAH_EDIT` | — |
-| `ptah-compat migrate checkpoint` | `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
-| `ptah-compat migrate checkpoint` | `--qualifier` | `string` | — | `PTAH_QUALIFIER` | — |
-| `ptah-compat migrate checkpoint` | `--schema`, `-s` | `stringSlice` | `[]` | `PTAH_SCHEMA` | — |
-| `ptah-compat migrate diff` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah-compat migrate diff` | `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
-| `ptah-compat migrate diff` | `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
-| `ptah-compat migrate diff` | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | hidden |
-| `ptah-compat migrate diff` | `--edit` | `bool` | `false` | `PTAH_EDIT` | — |
-| `ptah-compat migrate diff` | `--format` | `string` | — | `PTAH_FORMAT` | — |
-| `ptah-compat migrate diff` | `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
-| `ptah-compat migrate diff` | `--qualifier` | `string` | — | `PTAH_QUALIFIER` | — |
-| `ptah-compat migrate diff` | `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
-| `ptah-compat migrate diff` | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
-| `ptah-compat migrate down` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah-compat migrate down` | `--dir` | `string` | — | `PTAH_DIR` | — |
-| `ptah-compat migrate down` | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
-| `ptah-compat migrate down` | `--format` | `string` | — | `PTAH_FORMAT` | — |
-| `ptah-compat migrate down` | `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
-| `ptah-compat migrate down` | `--plan` | `bool` | `false` | `PTAH_PLAN` | — |
-| `ptah-compat migrate down` | `--revisions-schema` | `string` | — | `PTAH_REVISIONS_SCHEMA` | — |
-| `ptah-compat migrate down` | `--skip-checks` | `bool` | `false` | `PTAH_SKIP_CHECKS` | — |
-| `ptah-compat migrate down` | `--to-tag` | `string` | — | `PTAH_TO_TAG` | — |
-| `ptah-compat migrate down` | `--to-version` | `string` | — | `PTAH_TO_VERSION` | — |
-| `ptah-compat migrate down` | `--url`, `-u` | `string` | — | `PTAH_URL` | — |
-| `ptah-compat migrate edit` | `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
-| `ptah-compat migrate edit` | `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
-| `ptah-compat migrate hash` | `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
-| `ptah-compat migrate hash` | `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
-| `ptah-compat migrate import` | `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
-| `ptah-compat migrate import` | `--from` | `string` | `file://migrations` | `PTAH_FROM` | — |
-| `ptah-compat migrate import` | `--to` | `string` | `file://migrations` | `PTAH_TO` | — |
-| `ptah-compat migrate lint` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah-compat migrate lint` | `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
-| `ptah-compat migrate lint` | `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
-| `ptah-compat migrate lint` | `--format` | `string` | — | `PTAH_FORMAT` | — |
-| `ptah-compat migrate lint` | `--git-base` | `string` | — | `PTAH_GIT_BASE` | — |
-| `ptah-compat migrate lint` | `--git-dir` | `string` | `.` | `PTAH_GIT_DIR` | — |
-| `ptah-compat migrate lint` | `--latest` | `uint` | `0` | `PTAH_LATEST` | — |
-| `ptah-compat migrate ls` | `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
-| `ptah-compat migrate ls` | `--latest`, `-l` | `bool` | `false` | `PTAH_LATEST` | — |
-| `ptah-compat migrate ls` | `--short`, `-s` | `bool` | `false` | `PTAH_SHORT` | — |
-| `ptah-compat migrate new` | `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
-| `ptah-compat migrate new` | `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
-| `ptah-compat migrate new` | `--edit` | `bool` | `false` | `PTAH_EDIT` | — |
-| `ptah-compat migrate rebase` | `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
-| `ptah-compat migrate rebase` | `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
-| `ptah-compat migrate rm` | `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
-| `ptah-compat migrate rm` | `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
-| `ptah-compat migrate set` | `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
-| `ptah-compat migrate set` | `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
-| `ptah-compat migrate set` | `--revisions-schema` | `string` | — | `PTAH_REVISIONS_SCHEMA` | — |
-| `ptah-compat migrate set` | `--url`, `-u` | `string` | — | `PTAH_URL` | — |
-| `ptah-compat migrate show` | `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
-| `ptah-compat migrate status` | `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
-| `ptah-compat migrate status` | `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
-| `ptah-compat migrate status` | `--format` | `string` | — | `PTAH_FORMAT` | — |
-| `ptah-compat migrate status` | `--revisions-schema` | `string` | — | `PTAH_REVISIONS_SCHEMA` | — |
-| `ptah-compat migrate status` | `--url`, `-u` | `string` | — | `PTAH_URL` | — |
-| `ptah-compat migrate test` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah-compat migrate test` | `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
-| `ptah-compat migrate test` | `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
-| `ptah-compat migrate test` | `--report` | `string` | — | `PTAH_REPORT` | — |
-| `ptah-compat migrate test` | `--revisions-schema` | `string` | — | `PTAH_REVISIONS_SCHEMA` | — |
-| `ptah-compat migrate test` | `--run` | `string` | — | `PTAH_RUN` | — |
-| `ptah-compat migrate test` | `--seed-dir` | `string` | — | `PTAH_SEED_DIR` | — |
-| `ptah-compat migrate validate` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah-compat migrate validate` | `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
-| `ptah-compat migrate validate` | `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
-| `ptah-compat schema` | `--config`, `-c` | `string` | `file://atlas.hcl` | `PTAH_CONFIG` | inherited by subcommands |
-| `ptah-compat schema` | `--env` | `string` | — | `PTAH_ENV` | inherited by subcommands |
-| `ptah-compat schema` | `--var` | `<name>=<value>` | `[]` | `PTAH_VAR` | inherited by subcommands |
-| `ptah-compat schema apply` | `--auto-approve` | `bool` | `false` | — | — |
-| `ptah-compat schema apply` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah-compat schema apply` | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
-| `ptah-compat schema apply` | `--edit` | `bool` | `false` | `PTAH_EDIT` | — |
-| `ptah-compat schema apply` | `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
-| `ptah-compat schema apply` | `--file`, `-f` | `stringArray` | `[]` | `PTAH_FILE` | hidden |
-| `ptah-compat schema apply` | `--format` | `string` | — | `PTAH_FORMAT` | — |
-| `ptah-compat schema apply` | `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
-| `ptah-compat schema apply` | `--lock-name` | `string` | — | `PTAH_LOCK_NAME` | — |
-| `ptah-compat schema apply` | `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
-| `ptah-compat schema apply` | `--plan` | `string` | — | `PTAH_PLAN` | — |
-| `ptah-compat schema apply` | `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
-| `ptah-compat schema apply` | `--skip-lint` | `bool` | `false` | `PTAH_SKIP_LINT` | — |
-| `ptah-compat schema apply` | `--skip-lock` | `bool` | `false` | `PTAH_SKIP_LOCK` | — |
-| `ptah-compat schema apply` | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
-| `ptah-compat schema apply` | `--tx-mode` | `string` | — | `PTAH_TX_MODE` | — |
-| `ptah-compat schema apply` | `--url`, `-u` | `string` | — | `PTAH_URL` | — |
-| `ptah-compat schema clean` | `--auto-approve` | `bool` | `false` | — | — |
-| `ptah-compat schema clean` | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
-| `ptah-compat schema clean` | `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
-| `ptah-compat schema clean` | `--format` | `string` | — | `PTAH_FORMAT` | — |
-| `ptah-compat schema clean` | `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
-| `ptah-compat schema clean` | `--url`, `-u` | `string` | — | `PTAH_URL` | — |
-| `ptah-compat schema diff` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah-compat schema diff` | `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
-| `ptah-compat schema diff` | `--export` | `bool` | `false` | `PTAH_EXPORT` | — |
-| `ptah-compat schema diff` | `--format` | `string` | — | `PTAH_FORMAT` | — |
-| `ptah-compat schema diff` | `--from`, `-f` | `stringArray` | `[]` | `PTAH_FROM` | — |
-| `ptah-compat schema diff` | `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
-| `ptah-compat schema diff` | `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
-| `ptah-compat schema diff` | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
-| `ptah-compat schema inspect` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah-compat schema inspect` | `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
-| `ptah-compat schema inspect` | `--export` | `bool` | `false` | `PTAH_EXPORT` | — |
-| `ptah-compat schema inspect` | `--format` | `string` | — | `PTAH_FORMAT` | — |
-| `ptah-compat schema inspect` | `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
-| `ptah-compat schema inspect` | `--output`, `-o` | `string` | — | `PTAH_OUTPUT` | — |
-| `ptah-compat schema inspect` | `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
-| `ptah-compat schema inspect` | `--url`, `-u` | `string` | — | `PTAH_URL` | — |
-| `ptah-compat schema inspect` | `--web`, `-w` | `bool` | `false` | `PTAH_WEB` | — |
-| `ptah-compat schema plan` | `--auto-approve` | `bool` | `false` | `PTAH_AUTO_APPROVE` | — |
-| `ptah-compat schema plan` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah-compat schema plan` | `--directive`, `-d` | `stringArray` | `[]` | `PTAH_DIRECTIVE` | — |
-| `ptah-compat schema plan` | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
-| `ptah-compat schema plan` | `--edit` | `bool` | `false` | `PTAH_EDIT` | — |
-| `ptah-compat schema plan` | `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
-| `ptah-compat schema plan` | `--format` | `string` | — | `PTAH_FORMAT` | — |
-| `ptah-compat schema plan` | `--from` | `stringArray` | `[]` | `PTAH_FROM` | — |
-| `ptah-compat schema plan` | `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
-| `ptah-compat schema plan` | `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
-| `ptah-compat schema plan` | `--name` | `string` | — | `PTAH_NAME` | — |
-| `ptah-compat schema plan` | `--name-format` | `string` | — | `PTAH_NAME_FORMAT` | — |
-| `ptah-compat schema plan` | `--output`, `-o` | `string` | — | `PTAH_OUTPUT` | — |
-| `ptah-compat schema plan` | `--pending` | `bool` | `false` | `PTAH_PENDING` | — |
-| `ptah-compat schema plan` | `--push` | `bool` | `false` | `PTAH_PUSH` | — |
-| `ptah-compat schema plan` | `--repo` | `string` | — | `PTAH_REPO` | — |
-| `ptah-compat schema plan` | `--save` | `bool` | `false` | `PTAH_SAVE` | — |
-| `ptah-compat schema plan` | `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
-| `ptah-compat schema plan` | `--skip-lint` | `bool` | `false` | `PTAH_SKIP_LINT` | — |
-| `ptah-compat schema plan` | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
-| `ptah-compat schema plan lint` | `--auto-approve` | `bool` | `false` | `PTAH_AUTO_APPROVE` | — |
-| `ptah-compat schema plan lint` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah-compat schema plan lint` | `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
-| `ptah-compat schema plan lint` | `--file`, `-f` | `string` | — | `PTAH_FILE` | — |
-| `ptah-compat schema plan lint` | `--format` | `string` | — | `PTAH_FORMAT` | — |
-| `ptah-compat schema plan lint` | `--from` | `stringArray` | `[]` | `PTAH_FROM` | — |
-| `ptah-compat schema plan lint` | `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
-| `ptah-compat schema plan lint` | `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
-| `ptah-compat schema plan lint` | `--repo` | `string` | — | `PTAH_REPO` | — |
-| `ptah-compat schema plan lint` | `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
-| `ptah-compat schema plan lint` | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
-| `ptah-compat schema plan new` | `--auto-approve` | `bool` | `false` | `PTAH_AUTO_APPROVE` | — |
-| `ptah-compat schema plan new` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah-compat schema plan new` | `--edit` | `bool` | `false` | `PTAH_EDIT` | — |
-| `ptah-compat schema plan new` | `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
-| `ptah-compat schema plan new` | `--format` | `string` | — | `PTAH_FORMAT` | — |
-| `ptah-compat schema plan new` | `--from` | `stringArray` | `[]` | `PTAH_FROM` | — |
-| `ptah-compat schema plan new` | `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
-| `ptah-compat schema plan new` | `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
-| `ptah-compat schema plan new` | `--name` | `string` | — | `PTAH_NAME` | — |
-| `ptah-compat schema plan new` | `--name-format` | `string` | — | `PTAH_NAME_FORMAT` | — |
-| `ptah-compat schema plan new` | `--output`, `-o` | `string` | — | `PTAH_OUTPUT` | — |
-| `ptah-compat schema plan new` | `--repo` | `string` | — | `PTAH_REPO` | — |
-| `ptah-compat schema plan new` | `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
-| `ptah-compat schema plan new` | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
-| `ptah-compat schema plan test` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah-compat schema plan test` | `--run` | `string` | — | `PTAH_RUN` | — |
-| `ptah-compat schema plan validate` | `--auto-approve` | `bool` | `false` | `PTAH_AUTO_APPROVE` | — |
-| `ptah-compat schema plan validate` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah-compat schema plan validate` | `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
-| `ptah-compat schema plan validate` | `--file`, `-f` | `string` | — | `PTAH_FILE` | — |
-| `ptah-compat schema plan validate` | `--format` | `string` | — | `PTAH_FORMAT` | — |
-| `ptah-compat schema plan validate` | `--from` | `stringArray` | `[]` | `PTAH_FROM` | — |
-| `ptah-compat schema plan validate` | `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
-| `ptah-compat schema plan validate` | `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
-| `ptah-compat schema plan validate` | `--repo` | `string` | — | `PTAH_REPO` | — |
-| `ptah-compat schema plan validate` | `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
-| `ptah-compat schema plan validate` | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
-| `ptah-compat schema stats inspect` | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `ptah-compat schema stats inspect` | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
-| `ptah-compat schema test` | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
-| `ptah-compat schema test` | `--report` | `string` | — | `PTAH_REPORT` | — |
-| `ptah-compat schema test` | `--run` | `string` | — | `PTAH_RUN` | — |
-| `ptah-compat schema test` | `--schema`, `-s` | `string` | — | `PTAH_SCHEMA` | — |
-| `ptah-compat schema test` | `--seed-dir` | `string` | — | `PTAH_SEED_DIR` | — |
-| `ptah-compat schema test` | `--url`, `-u` | `string` | — | `PTAH_URL` | — |
-| `ptah-compat schema validate` | `--dialect` | `stringSlice` | `[]` | `PTAH_DIALECT` | — |
-| `ptah-compat schema validate` | `--root-dir` | `stringSlice` | `[]` | `PTAH_ROOT_DIR` | — |
-| `ptah-compat schema validate` | `--schema-file` | `stringSlice` | `[]` | `PTAH_SCHEMA_FILE` | — |
-| `ptah-compat schema validate` | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
-| `ptah-compat script exec` | `--file` | `string` | — | `PTAH_FILE` | — |
-| `ptah-compat script exec` | `--quiet` | `bool` | `false` | `PTAH_QUIET` | — |
-| `ptah-compat script exec` | `--run` | `string` | — | `PTAH_RUN` | — |
-| `ptah-compat script exec` | `--url` | `string` | — | `PTAH_URL` | — |
-| `ptah-compat script loop` | `--file` | `string` | — | `PTAH_FILE` | — |
-| `ptah-compat script loop` | `--quiet` | `bool` | `false` | `PTAH_QUIET` | — |
-| `ptah-compat script loop` | `--run` | `string` | — | `PTAH_RUN` | — |
-| `ptah-compat script loop` | `--url` | `string` | — | `PTAH_URL` | — |
-| `ptah-compat script query` | `--file` | `string` | — | `PTAH_FILE` | — |
-| `ptah-compat script query` | `--quiet` | `bool` | `false` | `PTAH_QUIET` | — |
-| `ptah-compat script query` | `--run` | `string` | — | `PTAH_RUN` | — |
-| `ptah-compat script query` | `--url` | `string` | — | `PTAH_URL` | — |
+**`ptah-compat completion bash`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--no-descriptions` | `bool` | `false` | `PTAH_NO_DESCRIPTIONS` | — |
+
+**`ptah-compat completion fish`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--no-descriptions` | `bool` | `false` | `PTAH_NO_DESCRIPTIONS` | — |
+
+**`ptah-compat completion powershell`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--no-descriptions` | `bool` | `false` | `PTAH_NO_DESCRIPTIONS` | — |
+
+**`ptah-compat completion zsh`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--no-descriptions` | `bool` | `false` | `PTAH_NO_DESCRIPTIONS` | — |
+
+**`ptah-compat migrate`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--config`, `-c` | `string` | `file://atlas.hcl` | `PTAH_CONFIG` | inherited by subcommands |
+| `--env` | `string` | — | `PTAH_ENV` | inherited by subcommands |
+| `--var` | `<name>=<value>` | `[]` | `PTAH_VAR` | inherited by subcommands |
+
+**`ptah-compat migrate apply`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--allow-dirty` | `bool` | `false` | `PTAH_ALLOW_DIRTY` | — |
+| `--baseline` | `string` | — | `PTAH_BASELINE` | — |
+| `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
+| `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
+| `--exec-order` | `string` | `linear` | `PTAH_EXEC_ORDER` | — |
+| `--format` | `string` | — | `PTAH_FORMAT` | — |
+| `--lock-name` | `string` | — | `PTAH_LOCK_NAME` | — |
+| `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
+| `--revisions-schema` | `string` | — | `PTAH_REVISIONS_SCHEMA` | — |
+| `--skip-lock` | `bool` | `false` | `PTAH_SKIP_LOCK` | — |
+| `--to-version` | `string` | — | `PTAH_TO_VERSION` | — |
+| `--tx-mode` | `string` | `file` | `PTAH_TX_MODE` | — |
+| `--url`, `-u` | `string` | — | `PTAH_URL` | — |
+
+**`ptah-compat migrate checkpoint`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--dir` | `string` | — | `PTAH_DIR` | — |
+| `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
+| `--edit` | `bool` | `false` | `PTAH_EDIT` | — |
+| `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
+| `--qualifier` | `string` | — | `PTAH_QUALIFIER` | — |
+| `--schema`, `-s` | `stringSlice` | `[]` | `PTAH_SCHEMA` | — |
+
+**`ptah-compat migrate diff`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
+| `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
+| `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | hidden |
+| `--edit` | `bool` | `false` | `PTAH_EDIT` | — |
+| `--format` | `string` | — | `PTAH_FORMAT` | — |
+| `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
+| `--qualifier` | `string` | — | `PTAH_QUALIFIER` | — |
+| `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
+| `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
+
+**`ptah-compat migrate down`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--dir` | `string` | — | `PTAH_DIR` | — |
+| `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
+| `--format` | `string` | — | `PTAH_FORMAT` | — |
+| `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
+| `--plan` | `bool` | `false` | `PTAH_PLAN` | — |
+| `--revisions-schema` | `string` | — | `PTAH_REVISIONS_SCHEMA` | — |
+| `--skip-checks` | `bool` | `false` | `PTAH_SKIP_CHECKS` | — |
+| `--to-tag` | `string` | — | `PTAH_TO_TAG` | — |
+| `--to-version` | `string` | — | `PTAH_TO_VERSION` | — |
+| `--url`, `-u` | `string` | — | `PTAH_URL` | — |
+
+**`ptah-compat migrate edit`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
+| `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
+
+**`ptah-compat migrate hash`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
+| `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
+
+**`ptah-compat migrate import`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
+| `--from` | `string` | `file://migrations` | `PTAH_FROM` | — |
+| `--to` | `string` | `file://migrations` | `PTAH_TO` | — |
+
+**`ptah-compat migrate lint`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
+| `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
+| `--format` | `string` | — | `PTAH_FORMAT` | — |
+| `--git-base` | `string` | — | `PTAH_GIT_BASE` | — |
+| `--git-dir` | `string` | `.` | `PTAH_GIT_DIR` | — |
+| `--latest` | `uint` | `0` | `PTAH_LATEST` | — |
+
+**`ptah-compat migrate ls`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
+| `--latest`, `-l` | `bool` | `false` | `PTAH_LATEST` | — |
+| `--short`, `-s` | `bool` | `false` | `PTAH_SHORT` | — |
+
+**`ptah-compat migrate new`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
+| `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
+| `--edit` | `bool` | `false` | `PTAH_EDIT` | — |
+
+**`ptah-compat migrate rebase`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
+| `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
+
+**`ptah-compat migrate rm`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
+| `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
+
+**`ptah-compat migrate set`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
+| `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
+| `--revisions-schema` | `string` | — | `PTAH_REVISIONS_SCHEMA` | — |
+| `--url`, `-u` | `string` | — | `PTAH_URL` | — |
+
+**`ptah-compat migrate show`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
+
+**`ptah-compat migrate status`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
+| `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
+| `--format` | `string` | — | `PTAH_FORMAT` | — |
+| `--revisions-schema` | `string` | — | `PTAH_REVISIONS_SCHEMA` | — |
+| `--url`, `-u` | `string` | — | `PTAH_URL` | — |
+
+**`ptah-compat migrate test`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
+| `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
+| `--report` | `string` | — | `PTAH_REPORT` | — |
+| `--revisions-schema` | `string` | — | `PTAH_REVISIONS_SCHEMA` | — |
+| `--run` | `string` | — | `PTAH_RUN` | — |
+| `--seed-dir` | `string` | — | `PTAH_SEED_DIR` | — |
+
+**`ptah-compat migrate validate`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
+| `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
+
+**`ptah-compat schema`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--config`, `-c` | `string` | `file://atlas.hcl` | `PTAH_CONFIG` | inherited by subcommands |
+| `--env` | `string` | — | `PTAH_ENV` | inherited by subcommands |
+| `--var` | `<name>=<value>` | `[]` | `PTAH_VAR` | inherited by subcommands |
+
+**`ptah-compat schema apply`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--auto-approve` | `bool` | `false` | — | — |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
+| `--edit` | `bool` | `false` | `PTAH_EDIT` | — |
+| `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
+| `--file`, `-f` | `stringArray` | `[]` | `PTAH_FILE` | hidden |
+| `--format` | `string` | — | `PTAH_FORMAT` | — |
+| `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
+| `--lock-name` | `string` | — | `PTAH_LOCK_NAME` | — |
+| `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
+| `--plan` | `string` | — | `PTAH_PLAN` | — |
+| `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
+| `--skip-lint` | `bool` | `false` | `PTAH_SKIP_LINT` | — |
+| `--skip-lock` | `bool` | `false` | `PTAH_SKIP_LOCK` | — |
+| `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
+| `--tx-mode` | `string` | — | `PTAH_TX_MODE` | — |
+| `--url`, `-u` | `string` | — | `PTAH_URL` | — |
+
+**`ptah-compat schema clean`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--auto-approve` | `bool` | `false` | — | — |
+| `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
+| `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
+| `--format` | `string` | — | `PTAH_FORMAT` | — |
+| `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
+| `--url`, `-u` | `string` | — | `PTAH_URL` | — |
+
+**`ptah-compat schema diff`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
+| `--export` | `bool` | `false` | `PTAH_EXPORT` | — |
+| `--format` | `string` | — | `PTAH_FORMAT` | — |
+| `--from`, `-f` | `stringArray` | `[]` | `PTAH_FROM` | — |
+| `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
+| `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
+| `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
+
+**`ptah-compat schema inspect`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
+| `--export` | `bool` | `false` | `PTAH_EXPORT` | — |
+| `--format` | `string` | — | `PTAH_FORMAT` | — |
+| `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
+| `--output`, `-o` | `string` | — | `PTAH_OUTPUT` | — |
+| `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
+| `--url`, `-u` | `string` | — | `PTAH_URL` | — |
+| `--web`, `-w` | `bool` | `false` | `PTAH_WEB` | — |
+
+**`ptah-compat schema plan`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--auto-approve` | `bool` | `false` | `PTAH_AUTO_APPROVE` | — |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--directive`, `-d` | `stringArray` | `[]` | `PTAH_DIRECTIVE` | — |
+| `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
+| `--edit` | `bool` | `false` | `PTAH_EDIT` | — |
+| `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
+| `--format` | `string` | — | `PTAH_FORMAT` | — |
+| `--from` | `stringArray` | `[]` | `PTAH_FROM` | — |
+| `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
+| `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
+| `--name` | `string` | — | `PTAH_NAME` | — |
+| `--name-format` | `string` | — | `PTAH_NAME_FORMAT` | — |
+| `--output`, `-o` | `string` | — | `PTAH_OUTPUT` | — |
+| `--pending` | `bool` | `false` | `PTAH_PENDING` | — |
+| `--push` | `bool` | `false` | `PTAH_PUSH` | — |
+| `--repo` | `string` | — | `PTAH_REPO` | — |
+| `--save` | `bool` | `false` | `PTAH_SAVE` | — |
+| `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
+| `--skip-lint` | `bool` | `false` | `PTAH_SKIP_LINT` | — |
+| `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
+
+**`ptah-compat schema plan lint`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--auto-approve` | `bool` | `false` | `PTAH_AUTO_APPROVE` | — |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
+| `--file`, `-f` | `string` | — | `PTAH_FILE` | — |
+| `--format` | `string` | — | `PTAH_FORMAT` | — |
+| `--from` | `stringArray` | `[]` | `PTAH_FROM` | — |
+| `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
+| `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
+| `--repo` | `string` | — | `PTAH_REPO` | — |
+| `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
+| `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
+
+**`ptah-compat schema plan new`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--auto-approve` | `bool` | `false` | `PTAH_AUTO_APPROVE` | — |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--edit` | `bool` | `false` | `PTAH_EDIT` | — |
+| `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
+| `--format` | `string` | — | `PTAH_FORMAT` | — |
+| `--from` | `stringArray` | `[]` | `PTAH_FROM` | — |
+| `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
+| `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
+| `--name` | `string` | — | `PTAH_NAME` | — |
+| `--name-format` | `string` | — | `PTAH_NAME_FORMAT` | — |
+| `--output`, `-o` | `string` | — | `PTAH_OUTPUT` | — |
+| `--repo` | `string` | — | `PTAH_REPO` | — |
+| `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
+| `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
+
+**`ptah-compat schema plan test`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--run` | `string` | — | `PTAH_RUN` | — |
+
+**`ptah-compat schema plan validate`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--auto-approve` | `bool` | `false` | `PTAH_AUTO_APPROVE` | — |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--exclude` | `stringArray` | `[]` | `PTAH_EXCLUDE` | — |
+| `--file`, `-f` | `string` | — | `PTAH_FILE` | — |
+| `--format` | `string` | — | `PTAH_FORMAT` | — |
+| `--from` | `stringArray` | `[]` | `PTAH_FROM` | — |
+| `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
+| `--lock-timeout` | `string` | — | `PTAH_LOCK_TIMEOUT` | — |
+| `--repo` | `string` | — | `PTAH_REPO` | — |
+| `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
+| `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
+
+**`ptah-compat schema stats inspect`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
+
+**`ptah-compat schema test`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
+| `--report` | `string` | — | `PTAH_REPORT` | — |
+| `--run` | `string` | — | `PTAH_RUN` | — |
+| `--schema`, `-s` | `string` | — | `PTAH_SCHEMA` | — |
+| `--seed-dir` | `string` | — | `PTAH_SEED_DIR` | — |
+| `--url`, `-u` | `string` | — | `PTAH_URL` | — |
+
+**`ptah-compat schema validate`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--dialect` | `stringSlice` | `[]` | `PTAH_DIALECT` | — |
+| `--root-dir` | `stringSlice` | `[]` | `PTAH_ROOT_DIR` | — |
+| `--schema-file` | `stringSlice` | `[]` | `PTAH_SCHEMA_FILE` | — |
+| `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
+
+**`ptah-compat script exec`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--file` | `string` | — | `PTAH_FILE` | — |
+| `--quiet` | `bool` | `false` | `PTAH_QUIET` | — |
+| `--run` | `string` | — | `PTAH_RUN` | — |
+| `--url` | `string` | — | `PTAH_URL` | — |
+
+**`ptah-compat script loop`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--file` | `string` | — | `PTAH_FILE` | — |
+| `--quiet` | `bool` | `false` | `PTAH_QUIET` | — |
+| `--run` | `string` | — | `PTAH_RUN` | — |
+| `--url` | `string` | — | `PTAH_URL` | — |
+
+**`ptah-compat script query`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--file` | `string` | — | `PTAH_FILE` | — |
+| `--quiet` | `bool` | `false` | `PTAH_QUIET` | — |
+| `--run` | `string` | — | `PTAH_RUN` | — |
+| `--url` | `string` | — | `PTAH_URL` | — |
 

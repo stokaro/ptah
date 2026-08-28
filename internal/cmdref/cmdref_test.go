@@ -124,7 +124,9 @@ func TestRendering_HappyPath(t *testing.T) {
 	// The default carries the one character a table row cannot, and both notes
 	// are on at once.
 	c.Assert(flags, qt.Contains,
-		"| `ptah seed` | `--env` | `string` | `a\\|b` | `PTAH_ENV` | inherited by subcommands, hidden |\n")
+		"**`ptah seed`**\n\n| Flag | Type | Default | Environment variable | Notes |\n")
+	c.Assert(flags, qt.Contains,
+		"| `--env` | `string` | `a\\|b` | `PTAH_ENV` | inherited by subcommands, hidden |\n")
 }
 
 // TestRendering_FailurePath pins the refusal that keeps this gate from
@@ -268,9 +270,13 @@ func TestFlagsPage_SaysBothHalves(t *testing.T) {
 	c.Assert(page, qt.Contains, "no `--auto-approve` and no")
 	c.Assert(page, qt.Contains, "surface's `ptah-compat schema plan` verbs do bind one")
 	c.Assert(page, qt.Contains,
-		"| `ptah-compat schema plan` | `--auto-approve` | `bool` | `false` | `PTAH_AUTO_APPROVE` | — |\n")
+		"**`ptah-compat schema plan`**\n\n| Flag | Type | Default | Environment variable | Notes |\n")
 	c.Assert(page, qt.Contains,
-		"| `ptah schema apply` | `--auto-approve` | `bool` | `false` | — | — |\n")
+		"| `--auto-approve` | `bool` | `false` | `PTAH_AUTO_APPROVE` | — |\n")
+	c.Assert(page, qt.Contains,
+		"**`ptah schema apply`**\n\n| Flag | Type | Default | Environment variable | Notes |\n")
+	c.Assert(page, qt.Contains,
+		"| `--auto-approve` | `bool` | `false` | — | — |\n")
 }
 
 // TestCommands_ALeafCellIsItsClassification pins where the native index's cells
@@ -279,8 +285,8 @@ func TestFlagsPage_SaysBothHalves(t *testing.T) {
 //
 // It read "the command's own one-line description — the line `ptah --help`
 // prints beside it — so it is short by construction". Measured over the whole
-// block, 11 of the 102 cells equal cobra's Short and they are exactly the 11
-// group rows; the other 91 are the classification, which averages 99
+// block, 11 of the 103 cells equal cobra's Short and they are exactly the 11
+// group rows; the other 92 are the classification, which averages 99
 // characters against Short's 45. The sentence had been carried over from the
 // compatibility page, where every cell really is Short because nothing
 // classifies that tree.

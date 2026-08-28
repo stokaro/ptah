@@ -228,7 +228,7 @@ run_case check-command-reference.sh \
 
 run_case check-command-reference.sh \
 	"a flag's value type edited on the fully generated flag page" \
-	"perl -0pi -e 's/.ptah seed. \| .--env. \| .string./\x60ptah seed\x60 | \x60--env\x60 | \x60int\x60/' docs/site/src/content/docs/reference/command-flags.md"
+	"perl -0pi -e 's/\*\*\x60ptah seed\x60\*\*.*?\| \x60--env\x60 \| \K\x60string\x60/\x60int\x60/s' docs/site/src/content/docs/reference/command-flags.md"
 
 run_case check-public-api.sh \
 	"an exported package with no doc comment" \

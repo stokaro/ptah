@@ -99,7 +99,7 @@ type Node struct {
 // [cobra.Command.ExecuteC] calls InitDefaultHelpCmd and InitDefaultCompletionCmd
 // after the program has assembled its own tree, and those supply `help` and
 // `completion` with one leaf per shell. Measured: `root.NewRootCommand()` walks
-// to 86 leaves, and the shipped `ptah` answers to the 91 its `--help` lists.
+// to 87 leaves, and the shipped `ptah` answers to the 92 its `--help` lists.
 // Without these two calls the inventory describes the constructor, and the five
 // verbs an agent can actually reach are missing from a document whose first
 // claim is that it answers for every verb.

@@ -10,7 +10,7 @@
 #
 # The drift it exists to stop was measured before it was written. The
 # hand-written verb tables named `ptah lint`, which answers `unknown command`
-# and exits 2, and never named 6 of the 91 native leaves or 17 of the 52
+# and exits 2, and never named 6 of the 92 native leaves or 17 of the 52
 # compatibility paths.
 #
 # `--write` regenerates the blocks and the page instead of checking them.
