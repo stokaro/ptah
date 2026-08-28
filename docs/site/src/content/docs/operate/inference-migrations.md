@@ -93,7 +93,7 @@ ptah inference backfill --spec spec.yaml --db-url "$DB" --run-id 2026-08-article
 ptah inference catchup --spec spec.yaml --db-url "$DB" --run-id 2026-08-articles
 
 # Build the vector index, concurrently, and leave it valid.
-ptah inference index --spec spec.yaml --db-url "$DB"
+ptah inference index --spec spec.yaml --db-url "$DB" --run-id 2026-08-articles
 
 # The deterministic checks a cutover rests on.
 ptah inference verify --spec spec.yaml --db-url "$DB" --run-id 2026-08-articles
@@ -109,6 +109,13 @@ ptah inference status --spec spec.yaml --db-url "$DB" --run-id 2026-08-articles
 installs the outbox, and records where the source was when the run started. It is
 idempotent, so several workers may start at once and an interrupted run is
 resumed by running it again.
+
+Each verb records how far the run got, and `status` reports it. The phase is a
+high-water mark rather than a cursor: running `catchup` again after a
+verification is ordinary — the source keeps moving — and it leaves the phase
+where it was rather than dragging it back. A phase is only ever reached one step
+at a time, so nothing arrives at a cutover without having passed through
+verification.
 
 It does not install pgvector. `CREATE EXTENSION vector` is a database-wide,
 privileged act, and Ptah refuses rather than taking it on your behalf — the

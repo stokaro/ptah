@@ -177,28 +177,96 @@ var nextPhases = map[Phase][]Phase{
 	PhasePrepared:         {PhaseBoundaryCaptured},
 	PhaseBoundaryCaptured: {PhaseBackfilling},
 	PhaseBackfilling:      {PhaseCaughtUp},
-	PhaseCaughtUp:         {PhaseIndexed},
-	PhaseIndexed:          {PhaseVerified},
-	PhaseVerified:         {PhaseCutOver},
-	PhaseCutOver:          {PhaseRetired, PhaseRolledBack},
-	PhaseRetired:          nil,
-	PhaseRolledBack:       nil,
+	// Indexing is a step a specification may not have. One that declares no
+	// index method has nothing to build -- every query over that generation is
+	// a sequential scan, which is what its author asked for -- so verification
+	// follows the catch-up directly. Making the edge conditional on a
+	// specification is not open to a static table, and refusing it would leave
+	// such a run unable to reach a phase it legitimately completed.
+	//
+	// It costs nothing that matters: a DECLARED index that is missing is
+	// refused by verification itself, which is where the check belongs, and
+	// cut_over is still reachable only from verified.
+	PhaseCaughtUp:   {PhaseIndexed, PhaseVerified},
+	PhaseIndexed:    {PhaseVerified},
+	PhaseVerified:   {PhaseCutOver},
+	PhaseCutOver:    {PhaseRetired, PhaseRolledBack},
+	PhaseRetired:    nil,
+	PhaseRolledBack: nil,
 }
 
-// Advance moves the run one phase along the lifecycle.
+// Reach records that the run has got as far as a phase.
 //
-// The token is checked first: a stale worker must not be able to move a run at
-// all, and a phase change is the most consequential move there is.
-func (r *Run) Advance(token int64, to Phase) error {
+// The phase is a high-water mark rather than a cursor, and that is what makes
+// it usable by verbs an operator may run more than once and out of order. A
+// catch-up run after a verification is ordinary -- the source keeps moving --
+// and it must not drag the run backwards to say so. So a phase already at or
+// past the one being reached is left alone, and nothing is reported: the
+// caller's work still happened, it simply told the run nothing new.
+//
+// Forward it is still one step at a time, which is the guarantee worth having:
+// a jump is refused even where a path exists, so nothing reaches a cutover
+// without passing through verification. What the earlier shape lacked -- and
+// why it had no caller -- is the no-op. `catchup` may run twenty times, and
+// after a verification each of those asks to reach a phase already passed; a
+// rule that answered that with an error could not be obeyed by the lifecycle it
+// described (stokaro/ptah#2441).
+//
+// The token is checked first, and before the ordering, because a stale worker
+// must not be able to move a run at all -- a phase change is the most
+// consequential move there is, and a worker whose lease was taken is not the
+// one to make it.
+func (r *Run) Reach(token int64, to Phase) error {
 	if err := r.Fence(token); err != nil {
 		return err
 	}
+	if _, known := nextPhases[to]; !known {
+		return fmt.Errorf("%w: %s is not a phase of this lifecycle", ErrPhase, to)
+	}
+	// Already there, or behind. A catch-up run after a verification is
+	// ordinary -- the source keeps moving -- and it asks to reach a phase the
+	// run has passed. Refusing that would make re-running an earlier verb an
+	// error; the work happened, it simply told the run nothing new.
+	if to == r.Phase || reaches(to, r.Phase) {
+		return nil
+	}
+	// Forward, and exactly one step. A jump is refused even though a path
+	// exists, because the steps it skips are the ones whose absence is
+	// invisible afterwards: a corpus cut over without verification looks
+	// exactly like one that passed. Every verb completes one phase and reaches
+	// that one, so nothing in the lifecycle needs to jump.
 	if !slices.Contains(nextPhases[r.Phase], to) {
 		return fmt.Errorf("%w: %s cannot move to %s", ErrPhase, r.Phase, to)
 	}
 	r.Phase = to
 	r.UpdatedAt = time.Now().UTC()
 	return nil
+}
+
+// reaches reports whether one phase is ahead of another along the lifecycle.
+//
+// It walks nextPhases rather than comparing against a second list of the order.
+// The table already says what may follow what, and an ordering written beside
+// it would be a second answer to the same question -- the one that goes stale
+// when a phase is added.
+func reaches(from, to Phase) bool {
+	seen := map[Phase]bool{from: true}
+	frontier := []Phase{from}
+	for len(frontier) > 0 {
+		current := frontier[len(frontier)-1]
+		frontier = frontier[:len(frontier)-1]
+		for _, next := range nextPhases[current] {
+			if next == to {
+				return true
+			}
+			if seen[next] {
+				continue
+			}
+			seen[next] = true
+			frontier = append(frontier, next)
+		}
+	}
+	return false
 }
 
 // Fence refuses a mutating operation from a worker the run has moved past.

@@ -45,7 +45,7 @@ func TestFence_AStaleWorkerCannotCommit(t *testing.T) {
 	c.Assert(fresh > stale, qt.IsTrue)
 	c.Assert(run.Fence(stale), qt.ErrorIs, embedrun.ErrFenced)
 	c.Assert(run.Checkpoint(stale, committed("42")), qt.ErrorIs, embedrun.ErrFenced)
-	c.Assert(run.Advance(stale, embedrun.PhaseCaughtUp), qt.ErrorIs, embedrun.ErrFenced)
+	c.Assert(run.Reach(stale, embedrun.PhaseCaughtUp), qt.ErrorIs, embedrun.ErrFenced)
 	c.Assert(run.Pause(stale, "stopping"), qt.ErrorIs, embedrun.ErrFenced)
 	c.Assert(run.Fail(stale, "provider", "refused"), qt.ErrorIs, embedrun.ErrFenced)
 	// And the run is untouched by any of it.
@@ -64,13 +64,13 @@ func TestFence_TheCurrentWorkerCommits(t *testing.T) {
 	c.Assert(run.Cursor, qt.DeepEquals, []string{"42"})
 }
 
-// TestAdvance_NothingReachesCutoverExceptThroughVerification is why the phases
+// TestReach_NothingReachesCutoverExceptThroughVerification is why the phases
 // are a machine rather than a label.
 //
 // Each row is a jump somebody could make by setting a field, and each one skips
 // a step whose absence is invisible afterwards: a corpus cut over without
 // verification looks exactly like one that passed.
-func TestAdvance_NothingReachesCutoverExceptThroughVerification(t *testing.T) {
+func TestReach_NothingReachesCutoverExceptThroughVerification(t *testing.T) {
 	tests := []struct {
 		name string
 		from embedrun.Phase
@@ -79,16 +79,15 @@ func TestAdvance_NothingReachesCutoverExceptThroughVerification(t *testing.T) {
 		{name: "backfilling straight to cutover", from: embedrun.PhaseBackfilling, to: embedrun.PhaseCutOver},
 		{name: "prepared straight to backfilling", from: embedrun.PhasePrepared, to: embedrun.PhaseBackfilling},
 		{name: "indexed straight to cutover", from: embedrun.PhaseIndexed, to: embedrun.PhaseCutOver},
+		{name: "caught up straight to cutover", from: embedrun.PhaseCaughtUp, to: embedrun.PhaseCutOver},
 		{name: "verified straight to retired", from: embedrun.PhaseVerified, to: embedrun.PhaseRetired},
-		{name: "backwards", from: embedrun.PhaseVerified, to: embedrun.PhaseBackfilling},
-		{name: "past a terminal phase", from: embedrun.PhaseRetired, to: embedrun.PhaseCutOver},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			run := running(test.from)
 
-			err := run.Advance(run.FencingToken, test.to)
+			err := run.Reach(run.FencingToken, test.to)
 
 			c.Assert(err, qt.ErrorIs, embedrun.ErrPhase)
 			c.Assert(run.Phase, qt.Equals, test.from)
@@ -96,9 +95,76 @@ func TestAdvance_NothingReachesCutoverExceptThroughVerification(t *testing.T) {
 	}
 }
 
-// TestAdvance_WalksTheWholeLifecycle is the other side: the path the epic
+// TestReach_VerificationFollowsTheCatchUpWhenThereIsNoIndex is the edge a
+// specification without an index method needs.
+//
+// Such a generation has no indexing step, so requiring the phase would leave a
+// run unable to reach one it legitimately completed. The edge is in the table
+// rather than decided per run, because a static table cannot read a
+// specification -- and it costs nothing: a DECLARED index that is missing is
+// refused by verification, and cut_over is still reachable only from verified,
+// which the row above asserts.
+func TestReach_VerificationFollowsTheCatchUpWhenThereIsNoIndex(t *testing.T) {
+	c := qt.New(t)
+	run := running(embedrun.PhaseCaughtUp)
+
+	c.Assert(run.Reach(run.FencingToken, embedrun.PhaseVerified), qt.IsNil)
+	c.Assert(run.Phase, qt.Equals, embedrun.PhaseVerified)
+}
+
+// TestReach_APhaseAlreadyPassedIsLeftAlone is what makes the verbs usable.
+//
+// The phase is a high-water mark, not a cursor. A catch-up run after a
+// verification is ordinary -- the source keeps moving -- and it asks to reach a
+// phase the run went past. Reporting that as an error would make re-running an
+// earlier verb a failure; the work happened, it told the run nothing new.
+//
+// Silence rather than an error, and the phase unmoved: those are two different
+// claims and both are asserted, because an implementation that answered nil and
+// dragged the run backwards would satisfy the first alone.
+func TestReach_APhaseAlreadyPassedIsLeftAlone(t *testing.T) {
+	tests := []struct {
+		name string
+		from embedrun.Phase
+		to   embedrun.Phase
+	}{
+		{name: "catching up again after verification",
+			from: embedrun.PhaseVerified, to: embedrun.PhaseCaughtUp},
+		{name: "the same phase twice",
+			from: embedrun.PhaseBackfilling, to: embedrun.PhaseBackfilling},
+		{name: "one step behind",
+			from: embedrun.PhaseIndexed, to: embedrun.PhaseCaughtUp},
+		{name: "a terminal run told to cut over",
+			from: embedrun.PhaseRetired, to: embedrun.PhaseCutOver},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			run := running(test.from)
+
+			c.Assert(run.Reach(run.FencingToken, test.to), qt.IsNil)
+			c.Assert(run.Phase, qt.Equals, test.from)
+		})
+	}
+}
+
+// TestReach_RefusesAPhaseTheLifecycleDoesNotHave is the input guard.
+//
+// A phase nothing declares is neither ahead nor behind, and answering nil
+// would let a typo pass for a move that happened.
+func TestReach_RefusesAPhaseTheLifecycleDoesNotHave(t *testing.T) {
+	c := qt.New(t)
+	run := running(embedrun.PhaseBackfilling)
+
+	err := run.Reach(run.FencingToken, embedrun.Phase("indexing"))
+
+	c.Assert(err, qt.ErrorIs, embedrun.ErrPhase)
+	c.Assert(run.Phase, qt.Equals, embedrun.PhaseBackfilling)
+}
+
+// TestReach_WalksTheWholeLifecycle is the other side: the path the epic
 // describes has to be walkable end to end, or the machine is a wall.
-func TestAdvance_WalksTheWholeLifecycle(t *testing.T) {
+func TestReach_WalksTheWholeLifecycle(t *testing.T) {
 	c := qt.New(t)
 	run := running(embedrun.PhaseResolved)
 
@@ -107,19 +173,19 @@ func TestAdvance_WalksTheWholeLifecycle(t *testing.T) {
 		embedrun.PhaseBackfilling, embedrun.PhaseCaughtUp, embedrun.PhaseIndexed,
 		embedrun.PhaseVerified, embedrun.PhaseCutOver, embedrun.PhaseRetired,
 	} {
-		c.Assert(run.Advance(run.FencingToken, phase), qt.IsNil, qt.Commentf("moving to %s", phase))
+		c.Assert(run.Reach(run.FencingToken, phase), qt.IsNil, qt.Commentf("moving to %s", phase))
 		c.Assert(run.Phase, qt.Equals, phase)
 	}
 }
 
-// TestAdvance_RollbackIsReachableFromCutover pins the other branch: a run that
+// TestReach_RollbackIsReachableFromCutover pins the other branch: a run that
 // cut over must be able to go back, which is what makes the rollback window
 // real rather than a promise.
-func TestAdvance_RollbackIsReachableFromCutover(t *testing.T) {
+func TestReach_RollbackIsReachableFromCutover(t *testing.T) {
 	c := qt.New(t)
 	run := running(embedrun.PhaseCutOver)
 
-	c.Assert(run.Advance(run.FencingToken, embedrun.PhaseRolledBack), qt.IsNil)
+	c.Assert(run.Reach(run.FencingToken, embedrun.PhaseRolledBack), qt.IsNil)
 	c.Assert(run.Phase, qt.Equals, embedrun.PhaseRolledBack)
 }
 

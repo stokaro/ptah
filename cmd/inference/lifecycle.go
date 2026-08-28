@@ -127,6 +127,13 @@ func createRun(
 	err := opened.store.CreateRun(ctx, run)
 	switch {
 	case err == nil:
+		// The boundary-capture step ran, so the run reaches it -- the phase
+		// names the step rather than the artifact, and a mode that records no
+		// boundary answered the step rather than skipping it. Without this a
+		// backfill's move would be a jump, and jumps are refused.
+		if err := opened.store.ReachPhase(ctx, runID, embedrun.PhaseBoundaryCaptured); err != nil {
+			return err
+		}
 		return writeLines(out,
 			fmt.Sprintf("prepared run %s for generation %s", runID, spec.Identity().Short()),
 			bullet("snapshot boundary: "+boundaryText(boundary)))
@@ -153,6 +160,7 @@ func isConflict(err error) bool {
 // newIndexCommand returns "ptah inference index".
 func newIndexCommand() *cobra.Command {
 	var options commonOptions
+	var runID string
 
 	cmd := &cobra.Command{
 		Use:   "index",
@@ -173,15 +181,19 @@ rather than failing. Every query over that generation is then a sequential scan
 over the whole corpus, which is a choice its author made.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runIndex(cmd.Context(), cmd.OutOrStdout(), options)
+			return runIndex(cmd.Context(), cmd.OutOrStdout(), options, runID)
 		},
 	}
 	addCommonFlags(cmd, &options)
+	cmd.Flags().StringVar(&runID, "run-id", "", "Identifier of the run (required)")
 	return cmd
 }
 
 // runIndex builds it and says what happened.
-func runIndex(ctx context.Context, out io.Writer, options commonOptions) error {
+func runIndex(ctx context.Context, out io.Writer, options commonOptions, runID string) error {
+	if runID == "" {
+		return fmt.Errorf("--run-id is required")
+	}
 	opened, err := open(ctx, options)
 	if err != nil {
 		return err
@@ -190,6 +202,12 @@ func runIndex(ctx context.Context, out io.Writer, options commonOptions) error {
 
 	outcome, err := embedpg.EnsureIndex(ctx, opened.db, opened.loaded.Spec)
 	if err != nil {
+		return err
+	}
+	// The phase names the step rather than the artifact, so a specification
+	// that declares no index method still reaches it: the indexing step is
+	// done, and a run left short of it could never be verified.
+	if err := opened.store.ReachPhase(ctx, runID, embedrun.PhaseIndexed); err != nil {
 		return err
 	}
 	return writeLines(out, indexOutcomeText(outcome, opened.loaded.Spec))
@@ -217,7 +235,7 @@ func newStatusCommand() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "status",
-		Short: "Show what a run has done and what it is waiting for",
+		Short: "Show what a run has done, how far it got, and what it is waiting for",
 		Long: `Print a run's phase, progress and the evidence it has gathered.
 
 It reads and changes nothing, and it is the verb to reach for when a cutover has

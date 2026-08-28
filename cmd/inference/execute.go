@@ -115,6 +115,9 @@ func runBackfill(ctx context.Context, out io.Writer, options executeOptions) err
 	if err != nil {
 		return reportRun(out, run, err)
 	}
+	if err := opened.store.ReachPhase(ctx, options.runID, embedrun.PhaseBackfilling); err != nil {
+		return err
+	}
 	return writeLines(out,
 		fmt.Sprintf("backfill finished: %d scanned, %d embedded, %d skipped",
 			run.Progress.RowsScanned, run.Progress.RowsEmbedded, run.Progress.RowsSkipped))
@@ -148,6 +151,9 @@ func runCatchUp(ctx context.Context, out io.Writer, options executeOptions) erro
 	run, err := engine.CatchUp(ctx, options.runID, outbox, source)
 	if err != nil {
 		return reportRun(out, run, err)
+	}
+	if err := opened.store.ReachPhase(ctx, options.runID, embedrun.PhaseCaughtUp); err != nil {
+		return err
 	}
 	lines := []string{fmt.Sprintf("caught up to transaction %s: %d changed rows, %d tombstoned",
 		boundaryText(run.CatchUpWatermark), run.Progress.RowsScanned, run.Progress.RowsDeleted)}
