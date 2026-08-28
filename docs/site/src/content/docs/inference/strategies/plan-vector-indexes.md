@@ -46,7 +46,7 @@ over it is a sequential scan.
 Running it again is the finished state:
 
 ```console
-$ ptah inference index --spec spec.yaml --db-url "$DB"
+$ ptah inference index --spec spec.yaml --db-url "$DB" --run-id "$RUN"
 generation 3b2b6d04c204 already has a valid index
 ```
 

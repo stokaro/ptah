@@ -53,7 +53,7 @@ export RUN=$(date +%Y-%m-%d)-v2
 ptah inference prepare  --spec spec-v2.yaml --db-url "$DB" --run-id "$RUN"
 ptah inference backfill --spec spec-v2.yaml --db-url "$DB" --run-id "$RUN"
 ptah inference catchup  --spec spec-v2.yaml --db-url "$DB" --run-id "$RUN"
-ptah inference index    --spec spec-v2.yaml --db-url "$DB"
+ptah inference index    --spec spec-v2.yaml --db-url "$DB" --run-id "$RUN"
 ```
 
 Both columns now hold vectors. Your application is still reading the first, and

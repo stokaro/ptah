@@ -69,8 +69,13 @@ it is current, in one command.
 Builds the vector index the specification declares, concurrently, and leaves it
 valid. An invalid index left by a failed build is dropped and built again.
 
+| Flag | Meaning |
+| --- | --- |
+| `--run-id` | Identifier of the run (required) |
+
 A specification declaring no `index_method` has nothing to build, and this says
-so rather than failing.
+so rather than failing. The run still reaches its `indexed` phase: the phase
+names the step, and a run left short of it could never be verified.
 
 ## `verify`
 

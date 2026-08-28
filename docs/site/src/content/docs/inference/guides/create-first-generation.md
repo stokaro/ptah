@@ -64,7 +64,7 @@ export RUN=$(date +%Y-%m-%d)-articles
 ptah inference prepare  --spec spec.yaml --db-url "$DB" --run-id "$RUN"
 ptah inference backfill --spec spec.yaml --db-url "$DB" --run-id "$RUN"
 ptah inference catchup  --spec spec.yaml --db-url "$DB" --run-id "$RUN"
-ptah inference index    --spec spec.yaml --db-url "$DB"
+ptah inference index    --spec spec.yaml --db-url "$DB" --run-id "$RUN"
 ptah inference verify   --spec spec.yaml --db-url "$DB" --run-id "$RUN"
 ```
 

@@ -37,7 +37,7 @@ ptah inference prepare  --spec spec-v2.yaml --db-url "$DB" --run-id "$RUN"
 ptah inference backfill --spec spec-v2.yaml --db-url "$DB" --run-id "$RUN" \
   --batch-inputs 64 --batch-rows 500
 ptah inference catchup  --spec spec-v2.yaml --db-url "$DB" --run-id "$RUN"
-ptah inference index    --spec spec-v2.yaml --db-url "$DB"
+ptah inference index    --spec spec-v2.yaml --db-url "$DB" --run-id "$RUN"
 
 # 2. Measure. Both the deterministic checks and the retrieval quality.
 ptah inference verify   --spec spec-v2.yaml --db-url "$DB" --run-id "$RUN" \
