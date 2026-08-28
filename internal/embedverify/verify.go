@@ -242,7 +242,19 @@ func verifyCoverageAndFreshness(report *Report, expectation Expectation, source 
 			if !row.Skipped {
 				missing = append(missing, row.Key)
 			}
-		case found.InputHash != row.InputHash, row.Version != "" && found.Version != row.Version:
+		case found.InputHash != row.InputHash,
+			row.Version != "" && found.Version != "" && found.Version != row.Version:
+			// Both sides have to carry a version for the comparison to mean
+			// anything. A target row written with none -- under the input_hash
+			// strategy, or before a strategy that records one -- has no earlier
+			// version to have moved FROM, so a source that has one now is a
+			// strategy change rather than evidence the source moved.
+			//
+			// Without the second guard, switching to a versioned strategy
+			// reports every existing row stale and recomputes a corpus whose
+			// text has not changed. The input hash above is what answers
+			// freshness in that case, and it answers it correctly
+			// (stokaro/ptah#2474).
 			stale = append(stale, row.Key)
 		}
 	}

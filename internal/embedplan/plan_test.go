@@ -238,14 +238,11 @@ func TestBuild_IrreversibleStepsAreSeparated(t *testing.T) {
 
 	plan := embedplan.Build(resolved())
 
-	c.Assert(plan.Irreversible(), qt.HasLen, 1)
-	c.Assert(plan.Irreversible()[0].Phase, qt.Equals, "retire")
+	c.Assert(phasesWhere(plan, func(step embedplan.Step) bool { return step.Irreversible }),
+		qt.DeepEquals, []string{"retire"})
 	// Verification is the step that reads and changes nothing, and it is what
 	// separates "every step" from "the mutating ones".
-	mutating := make([]string, 0, len(plan.Steps))
-	for _, step := range plan.Mutations() {
-		mutating = append(mutating, step.Phase)
-	}
+	mutating := phasesWhere(plan, func(step embedplan.Step) bool { return step.Mutating })
 	c.Assert(mutating, qt.DeepEquals, []string{
 		"prepare", "capture", "backfill", "catch-up", "index", "cutover", "retire",
 	})
@@ -260,7 +257,8 @@ func TestBuild_AFirstGenerationRetiresNothing(t *testing.T) {
 
 	plan := embedplan.Build(inputs)
 
-	c.Assert(plan.Irreversible(), qt.HasLen, 0)
+	c.Assert(phasesWhere(plan, func(step embedplan.Step) bool { return step.Irreversible }),
+		qt.HasLen, 0)
 	c.Assert(stepSummaries(plan), qt.Contains,
 		"point queries at generation gen-new, which nothing currently reads")
 }
@@ -337,4 +335,20 @@ func TestBuild_AnEmptySourceIsAMeasurementAndNotAGap(t *testing.T) {
 	c.Assert(fact.Established(), qt.IsTrue)
 	c.Assert(stepSummaries(plan), qt.Contains, "embed 0 in-scope source rows")
 	c.Assert(plan.Uncertain, qt.HasLen, 0, qt.Commentf("%v", plan.Uncertain))
+}
+
+// phasesWhere names the phases of the steps a predicate accepts.
+//
+// The plan carries Mutating and Irreversible per step and no longer carries
+// filters over them: two methods that read a field a renderer already reads
+// were a second way to ask one question, and nothing outside a test asked it
+// (stokaro/ptah#2474).
+func phasesWhere(plan embedplan.Plan, accepts func(embedplan.Step) bool) []string {
+	phases := make([]string, 0, len(plan.Steps))
+	for _, step := range plan.Steps {
+		if accepts(step) {
+			phases = append(phases, step.Phase)
+		}
+	}
+	return phases
 }

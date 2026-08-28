@@ -152,11 +152,6 @@ var excludedFromIdentity = map[string]string{
 		"property of the query rather than of the generation",
 }
 
-// SameGeneration reports whether two specifications describe one generation.
-func SameGeneration(left, right Spec) bool {
-	return left.Identity().Digest == right.Identity().Digest
-}
-
 // sortedKeys is used by the classification test and by diagnostics that list
 // the exclusions in a stable order.
 func sortedKeys(m map[string]string) []string {
