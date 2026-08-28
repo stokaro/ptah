@@ -100,7 +100,19 @@ ptah inference evaluate --spec spec.yaml --db-url "$DB" --corpus corpus.yaml
 ptah inference status --spec spec.yaml --db-url "$DB" --run-id 2026-08-articles
 ```
 
-`prepare` records where the source was when the run started. `backfill` embeds
+`prepare` creates the vector column and the four bookkeeping columns beside it,
+installs the outbox, and records where the source was when the run started. It is
+idempotent, so several workers may start at once and an interrupted run is
+resumed by running it again.
+
+It does not install pgvector. `CREATE EXTENSION vector` is a database-wide,
+privileged act, and Ptah refuses rather than taking it on your behalf — the
+refusal names the statement to run.
+
+Two generations over one table need two columns, so a specification whose model
+changed also needs its `target.column` changed. A generation writes its own
+column; it never overwrites another generation's, which is what makes the
+cutover a pointer move rather than a data migration. `backfill` embeds
 that snapshot; `catchup` embeds what the outbox collected since. Running
 `catchup` until it reports nothing left is what makes a cutover possible —
 `cutover` refuses while the backfill is unfinished or the outbox has a backlog.

@@ -62,6 +62,13 @@ func runPrepare(
 		return err
 	}
 	spec := opened.loaded.Spec
+	// The target columns, which is the step the plan names and nothing
+	// performed. Before the generation is registered, because a registry row
+	// for a generation with nowhere to write is a row every later verb trusts
+	// (stokaro/ptah#2390).
+	if err := embedpg.EnsureTarget(ctx, opened.db, spec); err != nil {
+		return err
+	}
 	if _, err := opened.store.RegisterGeneration(ctx, embedstore.Generation{
 		Identity: spec.Identity().Digest, SpecDigest: spec.Identity().Digest,
 		Name: spec.Name, Reproducibility: string(spec.Identity().Reproducibility),

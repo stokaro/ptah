@@ -611,18 +611,18 @@ func assertACutoverIsRefusedWhenSomebodyElseMovedThePointer(
 const cliRunID = "cli-run"
 
 // seedCLIArticles creates the source table the specification names.
+//
+// The source table and nothing else. The vector column and its metadata are
+// `prepare`'s job, and a fixture that wrote them made that verb's own work
+// invisible: `prepare` returned without creating anything for as long as this
+// function did it first, and every assertion downstream still passed
+// (stokaro/ptah#2390). The extension stays, because Ptah refuses to install one.
 func seedCLIArticles(c *qt.C, ctx context.Context, db *sql.DB) {
 	c.Helper()
 	for _, statement := range []string{
 		`CREATE EXTENSION IF NOT EXISTS vector`,
 		`CREATE TABLE articles (
 			id BIGINT PRIMARY KEY, title TEXT, body TEXT, updated_at TEXT NOT NULL)`,
-		`ALTER TABLE articles
-			ADD COLUMN embedding vector(4),
-			ADD COLUMN embedding_generation TEXT,
-			ADD COLUMN embedding_input_hash TEXT,
-			ADD COLUMN embedding_source_version TEXT,
-			ADD COLUMN embedding_state TEXT`,
 		`INSERT INTO articles (id, title, body, updated_at) VALUES
 			(1, 'First',  'about pricing', '7'),
 			(2, 'Second', 'about support', '7'),
@@ -743,10 +743,12 @@ func assertPlanSaysWhatItKnows(c *qt.C, ctx context.Context, specPath, dbURL str
 	c.Assert(output, qt.Contains, "target.capability.vector_type = true (measured)")
 	c.Assert(output, qt.Contains, "[backfill] embed 3 in-scope source rows")
 	c.Assert(output, qt.Contains, "Consistency mode: outbox")
-	// The target column already exists in this fixture, so the plan must not
-	// propose creating it. A plan that proposed the work regardless would be a
-	// plan nobody could trust about a resumed run.
-	c.Assert(output, qt.Not(qt.Contains), "create the vector column")
+	// Nothing has run yet, so the column is not there and the plan says it
+	// would create one. The other half -- that a plan stops proposing work
+	// already done -- is asserted after prepare, where the state it reads is
+	// one Ptah produced rather than one this fixture wrote (stokaro/ptah#2390).
+	c.Assert(output, qt.Contains, "target.exists = false (measured)")
+	c.Assert(output, qt.Contains, "create the vector column")
 }
 
 // assertPrepareIsIdempotent runs the mutating setup twice.
@@ -764,6 +766,50 @@ func assertPrepareIsIdempotent(c *qt.C, ctx context.Context, specPath, dbURL str
 	c.Assert(first, qt.Contains, "prepared run "+cliRunID)
 	c.Assert(first, qt.Contains, "snapshot boundary: ")
 	c.Assert(second, qt.Contains, "already exists; leaving it as it is")
+
+	// The columns exist now, and running prepare twice did not disturb them.
+	assertTargetColumns(c, ctx, dbURL)
+
+	// And the plan stops proposing the work. This is the assertion the fixture
+	// used to satisfy by writing the DDL itself, which made it a statement
+	// about the fixture rather than about prepare.
+	after := runInference(c, ctx, "plan", "--spec", specPath, "--db-url", dbURL)
+	c.Assert(after, qt.Contains, "target.exists = true (measured)")
+	c.Assert(after, qt.Not(qt.Contains), "create the vector column")
+}
+
+// assertTargetColumns reads the catalog rather than the verb's own output.
+//
+// prepare printed "prepared run ..." for as long as it created nothing, so a
+// test reading what it said would have passed throughout.
+func assertTargetColumns(c *qt.C, ctx context.Context, dbURL string) {
+	c.Helper()
+	db, err := sql.Open("pgx", dbURL)
+	c.Assert(err, qt.IsNil)
+	defer db.Close()
+
+	rows, err := db.QueryContext(ctx, `SELECT column_name, udt_name
+		FROM information_schema.columns
+		WHERE table_name = 'articles' AND column_name LIKE 'embedding%'
+		ORDER BY column_name`)
+	c.Assert(err, qt.IsNil)
+	defer rows.Close()
+
+	found := map[string]string{}
+	for rows.Next() {
+		var name, kind string
+		c.Assert(rows.Scan(&name, &kind), qt.IsNil)
+		found[name] = kind
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+
+	c.Assert(found, qt.DeepEquals, map[string]string{
+		"embedding":                "vector",
+		"embedding_generation":     "text",
+		"embedding_input_hash":     "text",
+		"embedding_source_version": "text",
+		"embedding_state":          "text",
+	})
 }
 
 // assertBackfillEmbedsTheSource runs the loop through the CLI, against a real
