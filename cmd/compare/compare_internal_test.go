@@ -23,7 +23,7 @@ func TestCompareExitCode_EmptyDiff(t *testing.T) {
 func TestCompareExitCode_NonEmptyDiff(t *testing.T) {
 	c := qt.New(t)
 
-	err := nonEmptyDiffExitCode(&difftypes.SchemaDiff{TablesAdded: []string{"users"}})
+	err := nonEmptyDiffExitCode(&difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "users"}}})
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)

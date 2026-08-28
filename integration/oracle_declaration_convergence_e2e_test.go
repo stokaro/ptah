@@ -263,7 +263,7 @@ func oracleGeneratedExpressionOptions(
 // which one rather than that a count was not zero.
 func oracleDiffSummary(diff *difftypes.SchemaDiff) []string {
 	var changes []string
-	for _, name := range diff.TablesAdded {
+	for _, name := range diff.TablesAdded.Names() {
 		changes = append(changes, "table added: "+name)
 	}
 	for _, name := range diff.TablesRemoved {

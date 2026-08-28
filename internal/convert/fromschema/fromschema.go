@@ -389,6 +389,28 @@ func declaredEnum(fieldType string, enums []schemamodel.Enum) *schemamodel.Enum 
 	return nil
 }
 
+// EnumsFor returns the declared enums the given fields name as their type.
+//
+// It exists so that a caller assembling what one table renders from can carry
+// the enums that table actually needs, rather than the whole declaration's.
+// The matching is [declaredEnum]'s -- the same rule the renderer resolves a
+// column's type with -- because a second rule here would decide that a column
+// needs an enum this list does not carry, and the column would render as its Go
+// spelling with nothing to say so.
+func EnumsFor(fields []schemamodel.Field, enums []schemamodel.Enum) []schemamodel.Enum {
+	var needed []schemamodel.Enum
+	seen := make(map[string]bool, len(fields))
+	for _, field := range fields {
+		enum := declaredEnum(field.Type, enums)
+		if enum == nil || seen[enum.Name] {
+			continue
+		}
+		seen[enum.Name] = true
+		needed = append(needed, *enum)
+	}
+	return needed
+}
+
 func handleEnumTypes(field schemamodel.Field, enums []schemamodel.Enum, targetPlatform string) schemamodel.Field {
 	enum := declaredEnum(field.Type, enums)
 	if enum == nil {

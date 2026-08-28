@@ -63,7 +63,7 @@ func unhostableCreationDiff() *difftypes.SchemaDiff {
 		SequencesAdded:         difftypes.SequenceChanges{{Name: "order_number_seq"}},
 		RolesAdded:             difftypes.RoleChanges{{Name: "app_role"}},
 		FunctionsAdded:         difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "bump"}}},
-		TablesAdded:            []string{"t"},
+		TablesAdded:            difftypes.TableChanges{{Name: "t"}},
 		ViewsAdded:             difftypes.ViewChanges{{Name: "v1", Body: "SELECT id FROM t"}},
 		MaterializedViewsAdded: difftypes.MaterializedViewChanges{{Name: "mv1", Body: "SELECT id FROM t"}},
 		RLSEnabledTablesAdded:  difftypes.RLSEnabledTableChanges{{Table: "t"}},
@@ -338,7 +338,7 @@ func mysqlFamilyCreationDiff() *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{
 		ExtensionsAdded: difftypes.ExtensionChanges{{Name: "pg_trgm"}},
 		SequencesAdded:  difftypes.SequenceChanges{{Name: "order_number_seq"}},
-		TablesAdded:     []string{"t"},
+		TablesAdded:     difftypes.TableChanges{{Name: "t"}},
 	}
 }
 
@@ -668,7 +668,7 @@ func roleFamilySchema() *schemamodel.Database {
 func roleFamilyCreationDiff() *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{
 		RolesAdded:  difftypes.RoleChanges{{Name: "app_reader"}},
-		TablesAdded: []string{"t"},
+		TablesAdded: difftypes.TableChanges{{Name: "t"}},
 		GrantsAdded: []difftypes.GrantRef{{
 			Role: "app_reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t",
 		}},

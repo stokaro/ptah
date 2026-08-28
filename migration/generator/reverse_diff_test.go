@@ -107,7 +107,7 @@ func TestGenerateDownMigrationSQL_Issue43_RLSPolicyTableNames(t *testing.T) {
 			{PolicyName: "area_user_isolation", TableName: "areas"},
 			{PolicyName: "commodity_user_isolation", TableName: "commodities"},
 		},
-		TablesAdded: []string{"areas", "commodities"},
+		TablesAdded: difftypes.TableChanges{{Name: "areas"}, {Name: "commodities"}},
 	}
 
 	// Create a database schema that includes the RLS policies with table names
@@ -196,7 +196,7 @@ func TestGenerateDownMigrationSQL_Issue57_MissingTableNames(t *testing.T) {
 			{PolicyName: "area_user_isolation", TableName: "areas"},
 			{PolicyName: "commodity_tenant_isolation", TableName: "commodities"},
 		},
-		TablesAdded: []string{"areas", "commodities"},
+		TablesAdded: difftypes.TableChanges{{Name: "areas"}, {Name: "commodities"}},
 	}
 
 	// Create a database schema that includes the tables but NOT the RLS policies
@@ -269,7 +269,7 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 
 	// Test that all fields are properly reversed
 	input := &difftypes.SchemaDiff{
-		TablesAdded:   []string{"users", "posts"},
+		TablesAdded:   difftypes.TableChanges{{Name: "users"}, {Name: "posts"}},
 		TablesRemoved: []string{"old_table"},
 		EnumsAdded:    difftypes.EnumChanges{{Name: "status_type"}},
 		EnumsRemoved:  difftypes.EnumChanges{{Name: "old_enum"}},
@@ -311,8 +311,8 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 	result := reverseSchemaDiff(input)
 
 	// Verify all reversals
-	c.Assert(result.TablesAdded, qt.DeepEquals, input.TablesRemoved)
-	c.Assert(result.TablesRemoved, qt.DeepEquals, input.TablesAdded)
+	c.Assert(result.TablesAdded.Names(), qt.DeepEquals, input.TablesRemoved)
+	c.Assert(result.TablesRemoved, qt.DeepEquals, input.TablesAdded.Names())
 	c.Assert(result.EnumsAdded.Names(), qt.DeepEquals, input.EnumsRemoved.Names())
 	c.Assert(result.EnumsRemoved.Names(), qt.DeepEquals, input.EnumsAdded.Names())
 	c.Assert(result.IndexesAdded, qt.DeepEquals, input.IndexesRemoved)
@@ -356,11 +356,7 @@ func TestGenerateDownMigrationSQL_DropsFKChainChildBeforeParent(t *testing.T) {
 	c := qt.New(t)
 	schema := fkOrderSchema()
 	upDiff := &difftypes.SchemaDiff{
-		TablesAdded: []string{
-			"ptah_fk_order_accounts",
-			"ptah_fk_order_projects",
-			"ptah_fk_order_tasks",
-		},
+		TablesAdded: difftypes.TableChanges{{Name: "ptah_fk_order_accounts"}, {Name: "ptah_fk_order_projects"}, {Name: "ptah_fk_order_tasks"}},
 	}
 
 	downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, "postgres")
@@ -375,12 +371,7 @@ func TestGenerateDownMigrationSQL_DropsFKDiamondLeavesBeforeRoot(t *testing.T) {
 	c := qt.New(t)
 	schema := fkOrderSchema()
 	upDiff := &difftypes.SchemaDiff{
-		TablesAdded: []string{
-			"ptah_fk_order_accounts",
-			"ptah_fk_order_memberships",
-			"ptah_fk_order_projects",
-			"ptah_fk_order_tasks",
-		},
+		TablesAdded: difftypes.TableChanges{{Name: "ptah_fk_order_accounts"}, {Name: "ptah_fk_order_memberships"}, {Name: "ptah_fk_order_projects"}, {Name: "ptah_fk_order_tasks"}},
 	}
 
 	downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, "postgres")
@@ -416,7 +407,7 @@ func TestGenerateDownMigrationSQL_DropsSchemaQualifiedTableLevelFKChildBeforePar
 			},
 		},
 	}
-	upDiff := &difftypes.SchemaDiff{TablesAdded: []string{"app.accounts", "app.projects"}}
+	upDiff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(schema, "app.accounts", "app.projects")}
 
 	downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, "postgres")
 
@@ -679,7 +670,7 @@ func TestReverseSchemaDiff_Issue39_Integration(t *testing.T) {
 		RolesAdded: difftypes.RoleChanges{{Name: "inventario_app"}},
 
 		// Also add a table to make it a realistic scenario
-		TablesAdded: []string{"users"},
+		TablesAdded: difftypes.TableChanges{{Name: "users"}},
 	}
 
 	// Generate the reverse diff (for down migration)
@@ -812,7 +803,7 @@ func TestReverseSchemaDiff_AddedTableForeignKeyRemovalsWithTables(t *testing.T) 
 		},
 	}
 	upDiff := &difftypes.SchemaDiff{
-		TablesAdded: []string{"app.projects"},
+		TablesAdded: difftypes.TableCreationsFor(generatedSchema, "app.projects"),
 	}
 
 	result := reverseSchemaDiffWithSchema(upDiff, generatedSchema, nil)

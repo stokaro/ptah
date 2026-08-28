@@ -20,6 +20,8 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/deporder"
 )
 
 // ViewChanges is a set of views one change applies to, carrying each one's
@@ -769,7 +771,7 @@ type SchemaDiff struct {
 
 	// TablesAdded contains names of tables that exist in the target schema
 	// but not in the current database schema
-	TablesAdded []string `json:"tables_added"`
+	TablesAdded TableChanges `json:"tables_added"`
 
 	// TablesRemoved contains names of tables that exist in the current database
 	// but not in the target schema (potentially dangerous - data loss)
@@ -1033,6 +1035,24 @@ type SchemaDiff struct {
 	// a refusal is not a plan, so there is nothing for a reader of a stored one
 	// to do with it (stokaro/ptah#2440).
 	RLSPolicyIdentityConflicts []RLSPolicyConflict `json:"-"`
+
+	// DeclaredUserTypes is the type vocabulary a column may name, carried once
+	// for the whole diff. A planner resolves a created table's column types
+	// through it; see [UserTypeVocabulary] for why it is not per entry.
+	DeclaredUserTypes UserTypeVocabulary `json:"-"`
+
+	// DeclaredTables is every table the declaration holds, carried once for the
+	// whole diff and off the wire.
+	//
+	// A foreign key names the table it references, and that table is usually
+	// one this diff does NOT touch -- an existing parent a new child points at.
+	// Resolving `parents` to `app.parents` therefore needs the declared table
+	// list rather than anything a per-entry operand could carry, for the reason
+	// [UserTypeVocabulary] gives about types (stokaro/ptah#2315).
+	//
+	// It holds the tables, not their columns: what a reference resolution reads
+	// is the name and the schema.
+	DeclaredTables []schemamodel.Table `json:"-"`
 
 	// RLSEnabledTablesAdded contains names of tables that need RLS enabled
 	RLSEnabledTablesAdded RLSEnabledTableChanges `json:"rls_enabled_tables_added"`
@@ -2208,6 +2228,298 @@ type RoleDiff struct {
 	// It stays off the wire, and here that is more than tidiness: this field
 	// holds a password.
 	Desired schemamodel.Role `json:"-"`
+}
+
+// TableCreation is a table a diff creates, together with everything CREATE
+// TABLE renders from.
+//
+// The lists a planner used to reach for are keyed by the Go struct rather than
+// owned by the table -- `Database.Fields` holds every column of every table --
+// so rendering one table meant being handed the whole desired schema and
+// filtering it. The filtering happens once, where the schema is already in
+// hand, and the result travels with the change (stokaro/ptah#2315).
+type TableCreation struct {
+	// Name is the spelling the diff carries for this table, which is the one a
+	// plan and a report name it by. It is not derived from Table: the
+	// comparison qualifies a name per dialect, and MySQL's answer differs from
+	// PostgreSQL's for the same declaration.
+	Name string
+
+	// Table is the declaration itself.
+	Table schemamodel.Table
+
+	// Fields are this table's columns, embedded fields already resolved into
+	// them. The renderer still filters by struct name, so a list holding only
+	// this table's columns renders exactly what the whole list did.
+	Fields []schemamodel.Field
+
+	// Enums are the enumerated types this table's columns name. A column
+	// declared with one renders as that type rather than as its Go spelling,
+	// and the renderer resolves it through this list.
+	Enums []schemamodel.Enum
+
+	// SelfReferencingForeignKeys are the foreign keys this table declares
+	// against itself.
+	//
+	// They live in a map keyed by qualified table name on the declaration, so
+	// they are a property of this table and travel with it. They are planned
+	// separately from a column's own reference because a self-reference cannot
+	// be part of the CREATE that makes the table (stokaro/ptah#2315).
+	SelfReferencingForeignKeys []schemamodel.SelfReferencingFK
+
+	// DependsOn are the tables this one is declared to come after, from the
+	// document's own dependency map.
+	//
+	// It is here because a creation that renders without the schema but cannot
+	// be ORDERED without it has moved half a dependency. The other two sources
+	// of the ordering graph already travel: a column's foreign reference is in
+	// Fields, and a relation-mode embedding is folded into Fields before it
+	// gets there. This map is the third, and nothing derives it from a
+	// declaration -- an author writes it down.
+	DependsOn []string
+}
+
+// UserTypeVocabulary is the declaration's type vocabulary: every user type a
+// column may name.
+//
+// It rides on the diff once rather than on each entry, because it is not a
+// property of any one change. A column may name a domain nothing in this diff
+// touches, so no per-entry operand reproduces it -- and a renderer resolving
+// `positive_int` to `app.positive_int` has to know the domain exists at all
+// (stokaro/ptah#2315).
+//
+// It is the four lists [fromschema.QualifyDeclaredUserTypes] reads, and no
+// more: what a caller must supply is exactly what the qualification consults.
+type UserTypeVocabulary struct {
+	Domains        []schemamodel.Domain
+	CompositeTypes []schemamodel.CompositeType
+	Ranges         []schemamodel.Range
+	Enums          []schemamodel.Enum
+}
+
+// UserTypeVocabularyOf reads the vocabulary off a declaration.
+//
+// A comparison fills it in; a caller building a diff by hand has to, and this is
+// the one line that does it. A diff without it renders a user-typed column as
+// the bare name the author wrote, which is correct for a declaration whose types
+// live in the connection's default schema and wrong for one whose do not.
+func UserTypeVocabularyOf(desired *schemamodel.Database) UserTypeVocabulary {
+	if desired == nil {
+		return UserTypeVocabulary{}
+	}
+	// Each list is nil when it holds nothing, never an empty slice. Two readers
+	// of the same document disagree about that -- one finalizes every list and
+	// one leaves the absent ones nil -- and a vocabulary that kept the
+	// difference would make two diffs of one schema compare unequal for a
+	// reason neither document states.
+	return UserTypeVocabulary{
+		Domains:        nilWhenEmpty(desired.Domains),
+		CompositeTypes: nilWhenEmpty(desired.CompositeTypes),
+		Ranges:         nilWhenEmpty(desired.Ranges),
+		Enums:          nilWhenEmpty(desired.Enums),
+	}
+}
+
+// nilWhenEmpty answers nil for a list that holds nothing, whatever shape the
+// caller's emptiness took.
+func nilWhenEmpty[T any](values []T) []T {
+	if len(values) == 0 {
+		return nil
+	}
+	return values
+}
+
+// declared is the vocabulary in the shape the qualifier reads it, and is the
+// whole of what this hands over: the four lists, and no schema description
+// built around them.
+func (v UserTypeVocabulary) declared() fromschema.DeclaredUserTypes {
+	return fromschema.DeclaredUserTypes{
+		Domains:        v.Domains,
+		CompositeTypes: v.CompositeTypes,
+		Ranges:         v.Ranges,
+		Enums:          v.Enums,
+	}
+}
+
+// TableCreationFor assembles what a planner needs to create one declared table.
+//
+// It is the one place the assembly lives, so a caller building a diff by hand
+// gets the same bundle a comparison produces. The three parts each answer a
+// question the flat declaration cannot: which columns are this table's, which
+// of them exist only after an embedded field is folded in, and which enums
+// their types name.
+//
+// name is the spelling the diff carries, which the caller decides: a comparison
+// qualifies it per dialect, and this function has no dialect to do that with.
+func TableCreationFor(desired *schemamodel.Database, table schemamodel.Table, name string) TableCreation {
+	creation := TableCreation{Name: name, Table: table}
+	if desired == nil {
+		return creation
+	}
+	all := fromschema.ProcessEmbeddedFields(desired.EmbeddedFields, desired.Fields)
+	owned := make([]schemamodel.Field, 0, len(all))
+	for _, field := range all {
+		if field.StructName == table.StructName {
+			owned = append(owned, field)
+		}
+	}
+	creation.Fields = owned
+	creation.Enums = fromschema.EnumsFor(owned, desired.Enums)
+	// Derived rather than read out of desired.Dependencies, because that map is
+	// filled by [schemamodel.Finalize] and a declaration assembled in memory has
+	// not necessarily been through it. The carry's promise is that everything the
+	// planner needs travels with the creation; a carry that is complete only when
+	// the caller remembered to finalize is the same trap in a new place, and it
+	// fails as a table created before the one it references rather than as an
+	// error. [deporder.GeneratedTableDependencies] unions the declared map with
+	// the three kinds of edge a declaration expresses -- a field's `foreign=`, a
+	// relation-mode embedded field, and a table-level FOREIGN KEY constraint --
+	// so it is correct for a finalized declaration and for one built by hand.
+	creation.DependsOn = deporder.GeneratedTableDependencies(desired)[table.QualifiedName()]
+	creation.SelfReferencingForeignKeys = desired.SelfReferencingForeignKeys[table.QualifiedName()]
+	return creation
+}
+
+// TableCreationsFor assembles the creations for the named tables.
+//
+// It is the form a caller building a diff by hand wants: the names are what
+// such a caller has, and the bundle each one needs is derived here rather than
+// spelled out. A name that no declared table answers to is skipped, because a
+// diff naming a table the schema does not declare has nothing to create.
+//
+// It assembles from the declaration exactly as given. A declaration whose
+// foreign keys name themselves only by default needs
+// [fromschema.AssignDefaultForeignKeyNames] run over it first: that derivation
+// reads the whole document -- it truncates an over-long name to a hashed one
+// and avoids colliding with an explicit name used anywhere -- so it cannot be
+// done per table, and a comparison does it before it assembles these.
+//
+// A name matches a table's qualified spelling or its bare one, which is the
+// same latitude a diff's own names are read with -- `orders` and
+// `public.orders` are one table on the engines that resolve an unqualified name
+// through a search path.
+//
+// That latitude is also its limit. A table literally NAMED `tenant.data` and a
+// table `data` in schema `tenant` answer to the same string, and this takes the
+// first declared one; a caller holding two such tables has to say which it
+// means, with [TableCreationFor].
+func TableCreationsFor(desired *schemamodel.Database, names ...string) TableChanges {
+	if desired == nil || len(names) == 0 {
+		return nil
+	}
+	creations := make(TableChanges, 0, len(names))
+	for _, name := range names {
+		for _, table := range desired.Tables {
+			if table.QualifiedName() != name && table.Name != name {
+				continue
+			}
+			creations = append(creations, TableCreationFor(desired, table, name))
+			break
+		}
+	}
+	return creations
+}
+
+// TableChanges is a list of tables a diff creates.
+type TableChanges []TableCreation
+
+// InDependencyOrder returns these creations ordered so that a table comes after
+// everything it references.
+//
+// The rules are the ones the whole desired schema is ordered by, applied to the
+// declaration these creations describe. Every input they read travels with a
+// creation, which is what lets a planner order what it is about to create
+// without being handed the schema it came out of (stokaro/ptah#2315).
+//
+// The edges are the ones the declaration finalized -- a field's `foreign=`, a
+// relation-mode embedded field, and a table-level FOREIGN KEY constraint all
+// reach [go.5x5.cz/ptah/core/schemamodel.Database.Dependencies] before a
+// creation is assembled -- so ordering reads one list per creation rather than
+// re-deriving three kinds of edge from a schema.
+//
+// Both the node and the edge are the table's qualified name from the
+// DECLARATION, never the creation's Name, which is the spelling the COMPARISON
+// produced and is qualified per dialect. The two are different strings for the
+// same table on the dialects that rewrite a schema qualifier, and an edge names
+// the declaration's spelling.
+//
+// An edge to a table this diff is not creating is skipped rather than ordered
+// against: the referenced table already exists, so nothing here has to come
+// after it.
+func (t TableChanges) InDependencyOrder() TableChanges {
+	if len(t) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(t))
+	byKey := make(map[string]TableCreation, len(t))
+	edges := make(map[string][]string, len(t))
+	for _, creation := range t {
+		// A creation naming no declared table carries nothing to render, which
+		// is what a diff that names a table the declaration does not have
+		// assembles to. Ordering is the last step before rendering on every
+		// planner, so it is where such an entry stops.
+		if creation.Table.Name == "" {
+			continue
+		}
+		key := creation.Table.QualifiedName()
+		if _, seen := byKey[key]; seen {
+			continue
+		}
+		keys = append(keys, key)
+		byKey[key] = creation
+		edges[key] = creation.DependsOn
+	}
+
+	ordered := make(TableChanges, 0, len(byKey))
+	for _, key := range deporder.StableTopologicalSort(keys, edges) {
+		ordered = append(ordered, byKey[key])
+	}
+	return ordered
+}
+
+// Qualified returns these creations with every column type resolved to the
+// user type it names, where the vocabulary declares one.
+//
+// A column carries a type NAME and the declaration carries the schema that type
+// lives in, so `positive_int` renders as `app.positive_int` only once the two
+// are put together. That is a render step and it stays one: the comparison
+// compares a domain column structurally, by the identity the catalog reports,
+// and must not be made to normalize a spelling to do it.
+//
+// A creation keeps its columns as written until this runs, so a caller that
+// wants the declaration rather than the rendering has it.
+func (t TableChanges) Qualified(vocabulary UserTypeVocabulary, dialect string) TableChanges {
+	if len(t) == 0 {
+		return nil
+	}
+	qualified := make(TableChanges, 0, len(t))
+	for _, creation := range t {
+		creation.Fields = fromschema.QualifyFieldUserTypes(creation.Fields, vocabulary.declared(), dialect)
+		qualified = append(qualified, creation)
+	}
+	return qualified
+}
+
+// MarshalJSON writes the table names alone, the shape `tables_added` has always
+// had.
+func (t TableChanges) MarshalJSON() ([]byte, error) {
+	if t == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(t.Names())
+}
+
+// Names is the table names this change applies to, in the spelling the
+// comparison produced.
+func (t TableChanges) Names() []string {
+	if t == nil {
+		return nil
+	}
+	names := make([]string, 0, len(t))
+	for _, creation := range t {
+		names = append(names, creation.Name)
+	}
+	return names
 }
 
 // RLSEnabledTableChanges is a list of row-level-security enablements a diff

@@ -359,7 +359,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLNewTableInlineKeyAvoidsPhantomCleanup(
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &difftypes.SchemaDiff{TablesAdded: []string{"children"}}
+			diff := &difftypes.SchemaDiff{}
 			desired := &schemamodel.Database{
 				Tables: []schemamodel.Table{
 					{StructName: "Parent", Name: "parents"},
@@ -374,6 +374,9 @@ func TestPlanBidirectionalSchemaDiff_MySQLNewTableInlineKeyAvoidsPhantomCleanup(
 					},
 				},
 			}
+			// After the schema exists: a creation carries what CREATE TABLE
+			// renders from (stokaro/ptah#2315).
+			diff.TablesAdded = difftypes.TableCreationsFor(desired, "children")
 
 			plan, err := planMySQLBidirectional(diff, desired, &catalog.Database{})
 

@@ -2109,9 +2109,23 @@ func reverseSchemaDiffWithSchemaForDialect(
 	reversed := &difftypes.SchemaDiff{
 		IdentifierSemantics: cloneIdentifierSemantics(diff.IdentifierSemantics),
 
-		// Reverse table operations
-		TablesAdded:    diff.TablesRemoved,                                // Tables to remove become tables to add
-		TablesRemoved:  deporder.TableDropOrder(diff.TablesAdded, schema), // Tables to add become tables to remove
+		// Reverse table operations.
+		//
+		// A removal is a name, which is all DROP TABLE needs. The addition it
+		// becomes renders CREATE TABLE, so the declaration has to be recovered
+		// from the pre-change database or the rollback drops a table it never
+		// puts back (stokaro/ptah#2315).
+		TablesAdded: tableCreationsFromRemovals(diff.TablesRemoved, prior),
+		// The PRE-CHANGE declaration's vocabulary, not the desired one: the
+		// tables this direction creates are the ones that database held, and a
+		// column of theirs names a type as that database declared it
+		// (stokaro/ptah#2315).
+		DeclaredUserTypes: difftypes.UserTypeVocabularyOf(prior),
+		// The same reasoning for the tables a foreign key may point at: this
+		// direction restores what the pre-change database held, and a reference
+		// of theirs names a table as that database had it.
+		DeclaredTables: priorTables(prior),
+		TablesRemoved:  deporder.TableDropOrder(diff.TablesAdded.Names(), schema), // Tables to add become tables to remove
 		TablesModified: reverseTableDiffs(diff.TablesModified),
 
 		// Reverse enum operations
@@ -2634,7 +2648,7 @@ func reverseConstraintRemovals(
 		})
 		handled[add.Name] = struct{}{}
 	}
-	infos = appendAddedTableForeignKeyRemovals(infos, seen, diff.TablesAdded, schema)
+	infos = appendAddedTableForeignKeyRemovals(infos, seen, diff.TablesAdded.Names(), schema)
 	infos = appendAddedColumnForeignKeyRemovals(infos, seen, diff.TablesModified, schema)
 
 	// Index field-level constraint names to their owning table for the names
@@ -2722,7 +2736,7 @@ func newReverseForeignKeyRemovalCollector(
 		removals:    make(map[tableMemberKey]difftypes.ForeignKeyRemovalInfo),
 		addedNames:  make(map[string]struct{}, len(diff.ConstraintsAdded)),
 		addedHosts:  make(map[tableMemberKey]struct{}, len(diff.ConstraintsAddedWithTables)),
-		addedTables: stringSet(diff.TablesAdded),
+		addedTables: stringSet(diff.TablesAdded.Names()),
 	}
 	for _, name := range diff.ConstraintsAdded {
 		collector.addedNames[semantics.IndexIdentityKey(name)] = struct{}{}
@@ -3827,6 +3841,61 @@ func priorRole(prior *schemamodel.Database, name string) schemamodel.Role {
 		}
 	}
 	return schemamodel.Role{}
+}
+
+// priorTables is every table the pre-change database declared.
+func priorTables(prior *schemamodel.Database) []schemamodel.Table {
+	if prior == nil {
+		return nil
+	}
+	return prior.Tables
+}
+
+// tableCreationsFromRemovals turns the forward direction's removals into the
+// rollback's creations, giving each the declaration the pre-change database
+// held.
+//
+// A creation carries the columns and the enums CREATE TABLE renders from, and a
+// removal carries none of that -- so the bundle is rebuilt here, from the same
+// schema the planner used to be handed for the down direction.
+//
+// A name the pre-change schema does not hold yields a creation with no table.
+// That is the honest answer rather than a silent omission: the planner has
+// nothing to render, and the entry still names the table so a report can say
+// which one.
+func tableCreationsFromRemovals(names []string, prior *schemamodel.Database) difftypes.TableChanges {
+	if len(names) == 0 {
+		return nil
+	}
+	creations := make(difftypes.TableChanges, 0, len(names))
+	for _, name := range names {
+		creations = append(creations, priorTableCreation(prior, name))
+	}
+	return creations
+}
+
+// priorTableCreation is the creation bundle for one table the pre-change
+// database held.
+func priorTableCreation(prior *schemamodel.Database, name string) difftypes.TableCreation {
+	creation := difftypes.TableCreation{Name: name}
+	if prior == nil {
+		return creation
+	}
+	table := objectlookup.Qualified(prior.Tables, name, identifier.Semantics{})
+	if table == nil {
+		return creation
+	}
+	fields := fromschema.ProcessEmbeddedFields(prior.EmbeddedFields, prior.Fields)
+	owned := make([]schemamodel.Field, 0, len(fields))
+	for _, field := range fields {
+		if field.StructName == table.StructName {
+			owned = append(owned, field)
+		}
+	}
+	creation.Table = *table
+	creation.Fields = owned
+	creation.Enums = fromschema.EnumsFor(owned, prior.Enums)
+	return creation
 }
 
 // nextAvailableMigrationVersion answers the version question over the names

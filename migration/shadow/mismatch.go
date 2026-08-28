@@ -68,7 +68,7 @@ func collectMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 
 func collectTableMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 	var mismatches []Mismatch
-	mismatches = append(mismatches, tableMismatches(diff.TablesAdded, "missing_table", "missing table")...)
+	mismatches = append(mismatches, tableMismatches(diff.TablesAdded.Names(), "missing_table", "missing table")...)
 	mismatches = append(mismatches, tableMismatches(diff.TablesRemoved, "extra_table", "extra table")...)
 	for _, table := range sortedTableDiffs(diff.TablesModified) {
 		mismatches = append(mismatches, collectModifiedTableMismatches(table)...)

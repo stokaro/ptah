@@ -83,6 +83,32 @@ func assertReverseCoverageField(
 		// Signature is what holds that, since this gate structurally cannot.
 		return
 	}
+	if field.Name == "DeclaredTables" {
+		// An OUTPUT of the reverse, for the reason DeclaredUserTypes below is.
+		// A rollback restores the tables the pre-change database held, and a
+		// foreign key of theirs names a table as THAT database had it -- so the
+		// reverse derives the list from the introspected schema and the forward
+		// value cannot reach it.
+		//
+		// TestReverseSchemaDiff_ARolledBackForeignKeyResolvesAgainstThePriorTables
+		// is what holds that, since this gate structurally cannot.
+		return
+	}
+	if field.Name == "DeclaredUserTypes" {
+		// An OUTPUT of the reverse rather than an input, for the reason the
+		// signatures above are. The vocabulary the down direction needs is the
+		// PRE-CHANGE declaration's -- the tables it creates are the ones that
+		// database held -- so the reverse derives it from the introspected
+		// schema and the forward value cannot reach it.
+		//
+		// Carrying the forward one across would be wrong rather than merely
+		// unnecessary: it names the types the DESIRED schema declares, and a
+		// rollback creating a table that database held would resolve its
+		// columns through a vocabulary that may not contain their types at all.
+		// TestReverseSchemaDiff_ARolledBackTableIsTypedByThePriorVocabulary is
+		// what holds that, since this gate structurally cannot.
+		return
+	}
 	withoutField := reverseCoverageDiff()
 	reflect.ValueOf(withoutField).Elem().Field(fieldIndex).SetZero()
 
@@ -316,6 +342,13 @@ func reverseCoverageDiff() *difftypes.SchemaDiff {
 		TableName: revCoverageTable,
 		Type:      "CHECK",
 	}}
+	// DeclaredUserTypes is only observable through a table this direction
+	// CREATES whose column names a user type: the vocabulary resolves
+	// `rev_coverage_domain` to its schema, and a generic value resolves
+	// nothing because no creation names a type. The removal below is what the
+	// rollback turns into that creation (stokaro/ptah#2315).
+	diff.TablesRemoved = append(diff.TablesRemoved, revCoverageTypedTable)
+
 	// The planner refuses a snapshot that disagrees with the dialect it is
 	// planning for, so this one field cannot carry an invented value: a generic
 	// filler would make every rendered-rollback subtest fail on the same error
@@ -329,6 +362,13 @@ const (
 	revCoverageTable      = "rev_coverage_hosts"
 	revCoverageCheckName  = "rev_coverage_check"
 	revCoverageUniqueName = "rev_coverage_unique"
+
+	// The table whose column names a user type, and the domain it names. The
+	// domain lives outside the default schema, because that is the only case
+	// where qualifying it changes the rendered type.
+	revCoverageTypedTable  = "revcov.rev_coverage_typed"
+	revCoverageDomainName  = "rev_coverage_domain"
+	revCoverageDomainOwner = "revcov"
 )
 
 // reverseCoverageContext supplies the generated schema and the pre-change
@@ -351,12 +391,23 @@ func reverseCoverageContext() (*schemamodel.Database, *catalog.Database) {
 	schemamodel.Finalize(schema)
 
 	dbSchema := &catalog.Database{
+		Domains: []catalog.Domain{{
+			Schema: revCoverageDomainOwner, Name: revCoverageDomainName, BaseType: "integer",
+		}},
 		Tables: []catalog.Table{{
 			Name: revCoverageTable,
 			Type: "TABLE",
 			Columns: []catalog.Column{
 				{Name: "id", DataType: "bigint", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
 			},
+		}, {
+			Schema: revCoverageDomainOwner,
+			Name:   "rev_coverage_typed",
+			Type:   "TABLE",
+			Columns: []catalog.Column{{
+				Name: "c", DataType: revCoverageDomainName, IsNullable: "YES", OrdinalPosition: 1,
+				DomainName: revCoverageDomainName, DomainSchema: revCoverageDomainOwner,
+			}},
 		}},
 		Constraints: []catalog.Constraint{
 			{
@@ -469,4 +520,69 @@ func TestReverseSchemaDiff_ARoutineTheSchemaNoLongerDeclaresDropsByName(t *testi
 
 	c.Assert(reversed.FunctionsRemoved.Removals(), qt.DeepEquals,
 		[]difftypes.RoutineRemoval{{Name: "gone", Signature: ""}})
+}
+
+// TestReverseSchemaDiff_ARolledBackTableIsTypedByThePriorVocabulary is the
+// assertion the coverage gate above structurally cannot make.
+//
+// A rollback creates the tables the up direction dropped, and their columns name
+// the user types the PRE-CHANGE database declared. Resolving them through the
+// desired schema's vocabulary would type a restored column by a declaration that
+// no longer describes it -- and where the desired schema declares no such type,
+// by nothing at all, which renders the bare name and applies to whatever the
+// connection's search path finds.
+func TestReverseSchemaDiff_ARolledBackTableIsTypedByThePriorVocabulary(t *testing.T) {
+	c := qt.New(t)
+
+	schema, dbSchema := reverseCoverageContext()
+	forward := &difftypes.SchemaDiff{
+		TablesRemoved: []string{revCoverageTypedTable},
+		// The desired schema's vocabulary, which is empty here: the rollback
+		// must not resolve through it.
+		DeclaredUserTypes: difftypes.UserTypeVocabularyOf(schema),
+	}
+
+	reversed := reverseSchemaDiffWithSchema(forward, schema, dbSchema)
+
+	c.Assert(reversed.TablesAdded, qt.HasLen, 1)
+	c.Assert(reversed.DeclaredUserTypes.Domains, qt.HasLen, 1,
+		qt.Commentf("the vocabulary comes from the database that held the table"))
+	c.Assert(reversed.DeclaredUserTypes.Domains[0].Name, qt.Equals, revCoverageDomainName)
+
+	qualified := reversed.TablesAdded.Qualified(reversed.DeclaredUserTypes, "postgres")
+	c.Assert(qualified, qt.HasLen, 1)
+	c.Assert(qualified[0].Fields, qt.HasLen, 1)
+	c.Assert(qualified[0].Fields[0].Type, qt.Equals,
+		revCoverageDomainOwner+"."+revCoverageDomainName,
+		qt.Commentf("the restored column is typed by the domain that database declared"))
+}
+
+// TestReverseSchemaDiff_ARolledBackForeignKeyResolvesAgainstThePriorTables is
+// the companion to the vocabulary assertion above, for the other schema-wide
+// fact a rollback needs.
+//
+// A restored table's foreign key names the table it references, and that table
+// is one the PRE-CHANGE database held. Resolving it against the desired
+// schema's tables would qualify it by a declaration that no longer describes
+// the database being rolled back to -- or leave it unqualified, to be resolved
+// by whatever the connection's search path finds.
+func TestReverseSchemaDiff_ARolledBackForeignKeyResolvesAgainstThePriorTables(t *testing.T) {
+	c := qt.New(t)
+
+	schema, dbSchema := reverseCoverageContext()
+	forward := &difftypes.SchemaDiff{
+		TablesRemoved: []string{revCoverageTypedTable},
+		// The desired schema's tables, which do not include the one the
+		// rollback restores: the reverse must not resolve through them.
+		DeclaredTables: schema.Tables,
+	}
+
+	reversed := reverseSchemaDiffWithSchema(forward, schema, dbSchema)
+
+	names := make([]string, 0, len(reversed.DeclaredTables))
+	for _, table := range reversed.DeclaredTables {
+		names = append(names, table.QualifiedName())
+	}
+	c.Assert(names, qt.Contains, revCoverageTypedTable,
+		qt.Commentf("the reference vocabulary comes from the database that held the table"))
 }

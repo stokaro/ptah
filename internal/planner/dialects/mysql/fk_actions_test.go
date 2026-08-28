@@ -163,11 +163,19 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 
 			diff := tt.diff
 			if diff == nil {
-				tablesAdded := make([]string, 0, len(tt.desired.Tables))
+				tablesAdded := make(difftypes.TableChanges, 0, len(tt.desired.Tables))
 				for _, table := range tt.desired.Tables {
-					tablesAdded = append(tablesAdded, table.Name)
+					tablesAdded = append(tablesAdded,
+						difftypes.TableCreationFor(tt.desired, table, table.Name))
 				}
-				diff = &difftypes.SchemaDiff{TablesAdded: tablesAdded}
+				diff = &difftypes.SchemaDiff{
+					TablesAdded: tablesAdded,
+					// A foreign key names the table it references, and that is
+					// resolved through the declared list rather than through
+					// anything a creation carries (stokaro/ptah#2315).
+					DeclaredTables:    tt.desired.Tables,
+					DeclaredUserTypes: difftypes.UserTypeVocabularyOf(tt.desired),
+				}
 			}
 
 			nodes, err := mysql.New().GenerateMigrationAST(diff, tt.desired)

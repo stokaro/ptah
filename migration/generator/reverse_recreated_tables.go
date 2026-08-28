@@ -69,7 +69,7 @@ func dropReverseConstraintsRestoredByTableCreation(
 	if reversed == nil || dbSchema == nil || len(reversed.TablesAdded) == 0 {
 		return
 	}
-	restored := tableCreationRestores(dbschematogo.ConvertDBSchemaToGoSchema(dbSchema), reversed.TablesAdded)
+	restored := tableCreationRestores(dbschematogo.ConvertDBSchemaToGoSchema(dbSchema), reversed.TablesAdded.Names())
 	if len(restored) == 0 {
 		return
 	}

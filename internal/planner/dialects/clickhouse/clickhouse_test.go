@@ -40,7 +40,6 @@ func TestGenerateMigrationAST_AddTableDropTableAndAlter(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		TablesAdded:   []string{"events"},
 		TablesRemoved: []string{"legacy"},
 		TablesModified: []difftypes.TableDiff{
 			{
@@ -54,6 +53,9 @@ func TestGenerateMigrationAST_AddTableDropTableAndAlter(t *testing.T) {
 		},
 	}
 	gen := mkDB()
+	// After the schema exists: a creation carries the columns and enums CREATE
+	// TABLE renders from, and they are derived from it (stokaro/ptah#2315).
+	diff.TablesAdded = difftypes.TableCreationsFor(gen, "events")
 	gen.Tables = append(gen.Tables, schemamodel.Table{StructName: "Existing", Name: "existing"})
 	gen.Fields = append(gen.Fields,
 		schemamodel.Field{StructName: "Existing", Name: "id", Type: "BIGINT", Primary: true, Nullable: false},
@@ -309,7 +311,7 @@ func TestGenerateMigrationAST_TableAdditionPreservesStructuralIdentity(t *testin
 	}
 
 	nodes, err := clickhouse.New().GenerateMigrationAST(
-		&difftypes.SchemaDiff{TablesAdded: []string{"tenant.data"}},
+		&difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(desired, "tenant.data")},
 		desired,
 	)
 

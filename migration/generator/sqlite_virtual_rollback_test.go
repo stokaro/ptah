@@ -76,7 +76,7 @@ func TestPlanBidirectionalSchemaDiffGatesTheRollbackItGenerates(t *testing.T) {
 			// three earlier rounds closed, arriving by a new route.
 			name:    "a rollback that drops the table the migration added is not refused",
 			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			diff:    &difftypes.SchemaDiff{TablesAdded: []string{"audit"}},
+			diff:    &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "audit"}}},
 			desired: declaredLiveTablesWithAuditTable(),
 			wantErr: false,
 		},

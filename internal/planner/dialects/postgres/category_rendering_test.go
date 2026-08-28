@@ -27,6 +27,7 @@ type refusedFixture struct {
 }
 
 var supplementalDiffCategories = map[string]string{
+	"DeclaredTables":                  "every table the declaration holds, carried so a foreign key can be resolved to the table it references -- usually one this diff does not touch. It is an INPUT to rendering rather than a change: on its own it creates no operation, and a fixture would assert that a list of tables plans nothing (stokaro/ptah#2315)",
 	"ForeignKeysRemovedWithTables":    "supplements matching ConstraintsRemovedWithTables entries with column identities for MySQL/MariaDB drop ordering; it creates no operation by itself and PostgreSQL deliberately ignores it",
 	"FunctionsRemovedWithSignatures":  "the same removals FunctionsRemoved names, with the argument list that makes each one addressable; the planner reads this list and falls back to the bare names, so it creates no operation of its own and a fixture would exercise the same DROP twice (stokaro/ptah#2296)",
 	"ProceduresRemovedWithSignatures": "ProceduresRemoved with signatures, supplemental for the same reason",
@@ -152,7 +153,7 @@ func diffCategoryFixtures() []categoryFixture {
 	increment := int64(2)
 
 	return []categoryFixture{
-		{"TablesAdded", &difftypes.SchemaDiff{TablesAdded: []string{"t"}}, oneTable},
+		{"TablesAdded", &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(oneTable, "t")}, oneTable},
 		{"TablesRemoved", &difftypes.SchemaDiff{TablesRemoved: []string{"t"}}, &schemamodel.Database{}},
 		{
 			"TablesModified",

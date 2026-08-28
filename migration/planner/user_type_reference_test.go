@@ -5,9 +5,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
+	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -66,7 +68,12 @@ func TestGenerateSchemaDiffSQLQualifiesDeclaredUserTypes(t *testing.T) {
 			c := qt.New(t)
 
 			schema := plannerUserTypeSchema(test.columnType)
-			diff := &difftypes.SchemaDiff{TablesAdded: []string{"t"}}
+			diff := &difftypes.SchemaDiff{
+				TablesAdded: difftypes.TableCreationsFor(schema, "t"),
+				// A hand-built diff carries the vocabulary itself; a comparison
+				// fills it in (stokaro/ptah#2315).
+				DeclaredUserTypes: difftypes.UserTypeVocabularyOf(schema),
+			}
 
 			sql, err := planner.GenerateSchemaDiffSQL(diff, schema, platform.Postgres)
 
@@ -129,7 +136,12 @@ func TestGenerateSchemaDiffSQLLeavesABuiltInTypeAlone(t *testing.T) {
 					{Name: "positive_int", Schema: "advm", BaseType: "integer"},
 				},
 			}
-			diff := &difftypes.SchemaDiff{TablesAdded: []string{"t"}}
+			diff := &difftypes.SchemaDiff{
+				TablesAdded: difftypes.TableCreationsFor(schema, "t"),
+				// A hand-built diff carries the vocabulary itself; a comparison
+				// fills it in (stokaro/ptah#2315).
+				DeclaredUserTypes: difftypes.UserTypeVocabularyOf(schema),
+			}
 
 			sql, err := planner.GenerateSchemaDiffSQL(diff, schema, platform.Postgres)
 
@@ -150,4 +162,76 @@ func plannerUserTypeSchema(columnType string) *schemamodel.Database {
 			Name: "positive_int", Schema: "app", BaseType: "integer",
 		}},
 	}
+}
+
+// TestCompare_ACreatedColumnIsTypedByTheComparisonsVocabulary is the half the
+// hand-built rows above cannot reach.
+//
+// They supply the vocabulary themselves, so they pin that the planner USES it.
+// This one drives the comparison, which is what fills it in for every real
+// plan: a diff produced from a declaration carries the type vocabulary that
+// declaration states, and a created column resolves through it.
+//
+// Without that, a column declared `positive_int` renders as the bare name and
+// applies to whatever the connection's search path finds -- or to nothing.
+func TestCompare_ACreatedColumnIsTypedByTheComparisonsVocabulary(t *testing.T) {
+	c := qt.New(t)
+
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "T", Name: "t", Schema: "app"}},
+		Fields: []schemamodel.Field{{StructName: "T", Name: "c", Type: "positive_int"}},
+		Domains: []schemamodel.Domain{{
+			Name: "positive_int", Schema: "app", BaseType: "integer",
+		}},
+	}
+
+	diff := schemadiff.CompareWithDialect(desired, &catalog.Database{}, platform.Postgres)
+
+	c.Assert(diff.DeclaredUserTypes.Domains, qt.HasLen, 1,
+		qt.Commentf("the comparison carries the declaration's type vocabulary"))
+
+	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, `"c" app.positive_int`,
+		qt.Commentf("the created column resolves through it\n%s", sql))
+}
+
+// TestCompare_AForeignKeyResolvesAgainstTheComparisonsTables is the reference
+// half of the vocabulary assertion above.
+//
+// A foreign key names the table it points at, and the declaration says which
+// schema that table lives in. A child in `app` referencing `parents` means
+// `app.parents`, and resolving it needs the declared table list — which a
+// creation cannot carry, because the referenced table is usually one the diff
+// does not touch.
+//
+// Driving the comparison is the point: the hand-built rows elsewhere supply the
+// list themselves, so they pin that the planner USES it, not that a real plan
+// has it.
+func TestCompare_AForeignKeyResolvesAgainstTheComparisonsTables(t *testing.T) {
+	c := qt.New(t)
+
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "Parent", Name: "parents", Schema: "app"},
+			{StructName: "Child", Name: "children", Schema: "app"},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "Parent", Name: "id", Type: "SERIAL", Primary: true},
+			{StructName: "Child", Name: "id", Type: "SERIAL", Primary: true},
+			{StructName: "Child", Name: "parent_id", Type: "INTEGER", Foreign: "parents(id)"},
+		},
+	}
+
+	diff := schemadiff.CompareWithDialect(desired, &catalog.Database{}, platform.Postgres)
+
+	c.Assert(diff.DeclaredTables, qt.HasLen, 2,
+		qt.Commentf("the comparison carries the declared tables a reference resolves against"))
+
+	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, `REFERENCES "app"."parents"`,
+		qt.Commentf("the reference resolves to the schema the declaration puts the parent in\n%s", sql))
 }

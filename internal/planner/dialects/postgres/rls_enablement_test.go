@@ -24,6 +24,12 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 		diff    *difftypes.SchemaDiff
 		desired *schemamodel.Database
 		want    []string
+
+		// tablesAdded names the tables the diff creates. The creations are
+		// assembled from the row's own desired schema in the loop below,
+		// because a row cannot reference its own other field
+		// (stokaro/ptah#2315).
+		tablesAdded []string
 	}{
 		{
 			name: "enablement recorded for an existing table",
@@ -62,9 +68,9 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 			},
 		},
 		{
-			name: "a new table carrying a policy is enabled without a diff entry",
+			name:        "a new table carrying a policy is enabled without a diff entry",
+			tablesAdded: []string{"tenants"},
 			diff: &difftypes.SchemaDiff{
-				TablesAdded: []string{"tenants"},
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{{
 					PolicyName: "tenant_isolation", TableName: "tenants",
 					Desired: schemamodel.RLSPolicy{
@@ -93,9 +99,9 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 			},
 		},
 		{
-			name: "a table listed twice is enabled once",
+			name:        "a table listed twice is enabled once",
+			tablesAdded: []string{"tenants"},
 			diff: &difftypes.SchemaDiff{
-				TablesAdded:           []string{"tenants"},
 				RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "tenants"}},
 				RLSPoliciesAdded: []difftypes.RLSPolicyRef{
 					{
@@ -194,6 +200,8 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
+			test.diff.TablesAdded = difftypes.TableCreationsFor(test.desired, test.tablesAdded...)
+
 			nodes, err := postgres.New().GenerateMigrationAST(test.diff, test.desired)
 			c.Assert(err, qt.IsNil)
 

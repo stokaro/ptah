@@ -40,7 +40,7 @@ func TestTwoPhaseTableCreationWithSelfReference(t *testing.T) {
 
 	// Create a schema diff that adds the users table
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: []string{"users"},
+		TablesAdded: difftypes.TableCreationsFor(desired, "users"),
 	}
 
 	// Generate AST nodes using PostgreSQL planner
@@ -129,7 +129,7 @@ func TestComplexDependencyChainTwoPhase(t *testing.T) {
 
 	// Create a schema diff that adds all tables
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: []string{"tenants", "users", "locations", "areas"},
+		TablesAdded: difftypes.TableCreationsFor(desired, "tenants", "users", "locations", "areas"),
 	}
 
 	// Generate AST nodes using PostgreSQL planner
@@ -212,7 +212,7 @@ func TestNoForeignKeysInCreateTable(t *testing.T) {
 
 	// Create a schema diff that adds both tables
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: []string{"users", "posts"},
+		TablesAdded: difftypes.TableCreationsFor(desired, "users", "posts"),
 	}
 
 	// Generate AST nodes using PostgreSQL planner

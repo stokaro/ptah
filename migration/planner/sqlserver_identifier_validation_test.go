@@ -15,13 +15,15 @@ import (
 
 func TestGenerateSchemaDiffAST_SQLServerUnknownTableSemantics_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{
-		TablesAdded: []string{"dbo.orders", "dbo.users"},
-	}
+	diff := &difftypes.SchemaDiff{}
 	desired := &schemamodel.Database{Tables: []schemamodel.Table{
 		{StructName: "Order", Schema: "dbo", Name: "orders"},
 		{StructName: "User", Schema: "dbo", Name: "users"},
 	}}
+
+	// After the schema exists: a creation carries what CREATE TABLE renders
+	// from, derived from the declaration (stokaro/ptah#2315).
+	diff.TablesAdded = difftypes.TableCreationsFor(desired, tableNames(desired)...)
 
 	nodes, err := planner.GenerateSchemaDiffAST(
 		diff,
@@ -36,9 +38,7 @@ func TestGenerateSchemaDiffAST_SQLServerUnknownTableSemantics_FailurePath(t *tes
 
 func TestGenerateSchemaDiffAST_SQLServerUnknownColumnSemantics_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{
-		TablesAdded: []string{"dbo.users"},
-	}
+	diff := &difftypes.SchemaDiff{}
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{
 			{StructName: "User", Schema: "dbo", Name: "users"},
@@ -48,6 +48,10 @@ func TestGenerateSchemaDiffAST_SQLServerUnknownColumnSemantics_FailurePath(t *te
 			{StructName: "User", Name: "status", Type: "INT"},
 		},
 	}
+
+	// After the schema exists: a creation carries what CREATE TABLE renders
+	// from, derived from the declaration (stokaro/ptah#2315).
+	diff.TablesAdded = difftypes.TableCreationsFor(desired, tableNames(desired)...)
 
 	nodes, err := planner.GenerateSchemaDiffAST(
 		diff,
@@ -72,11 +76,14 @@ func TestGenerateSchemaDiffAST_SQLServerIncompleteSnapshot_FailurePath(t *testin
 		})
 	diff := &difftypes.SchemaDiff{
 		IdentifierSemantics: &semantics,
-		TablesAdded:         []string{"dbo.users"},
 	}
 	desired := &schemamodel.Database{Tables: []schemamodel.Table{
 		{StructName: "User", Schema: "dbo", Name: "users"},
 	}}
+
+	// After the schema exists: a creation carries what CREATE TABLE renders
+	// from, derived from the declaration (stokaro/ptah#2315).
+	diff.TablesAdded = difftypes.TableCreationsFor(desired, tableNames(desired)...)
 
 	nodes, err := planner.GenerateSchemaDiffAST(
 		diff,
@@ -107,4 +114,15 @@ func TestGenerateSchemaDiffAST_SQLServerInvalidSnapshot_FailurePath(t *testing.T
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(err, qt.ErrorMatches, `.*invalid identifier semantics snapshot.*`)
 	c.Assert(nodes, qt.IsNil)
+}
+
+// tableNames is every table the declaration holds, in declaration order. These
+// tests create all of them, so naming each row would only restate the schema
+// above it.
+func tableNames(desired *schemamodel.Database) []string {
+	names := make([]string, 0, len(desired.Tables))
+	for _, table := range desired.Tables {
+		names = append(names, table.QualifiedName())
+	}
+	return names
 }

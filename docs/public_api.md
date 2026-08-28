@@ -621,6 +621,35 @@ silently drops an access-control operation reports success while leaving the
 database unprotected. A removal carries neither: `DROP POLICY name ON table` is
 written from the two names.
 
+`SchemaDiff.TablesAdded` is `TableChanges` rather than `[]string`. Each entry
+carries the table's declaration, that table's columns with embedded fields
+already folded in, and the enums those columns name — everything CREATE TABLE
+renders from, which otherwise lives in three flat lists keyed by the Go struct
+rather than owned by the table. `Names()` gives the table names in the spelling
+the comparison produced, and the JSON is unchanged: `tables_added` has always
+been an array of names. `TablesRemoved` stays `[]string`, because DROP TABLE is
+written from the name.
+
+`SchemaDiff.DeclaredTables` carries every table the declaration holds, also once
+and off the wire. A foreign key names the table it references, and that table is
+usually one the diff does not touch — an existing parent a new child points at —
+so resolving `parents` to `app.parents` needs the declared list rather than
+anything a per-entry operand could carry. A `TableCreation` carries the columns
+whose references become constraints and the self-references the declaration
+recorded for it; this is the other half.
+
+`SchemaDiff.DeclaredUserTypes` carries the declaration's type vocabulary — the
+domains, composite types, ranges and enums a column may name — once for the
+whole diff rather than on each entry. A column carries a type NAME and the
+declaration carries the schema that type lives in, so `positive_int` renders as
+`app.positive_int` only once the two are put together; and a column may name a
+type nothing in the diff changes, so no per-entry operand reproduces it. A
+planner resolves a created table's column types through it. `TableChanges`
+keeps its columns as written until `Qualified` runs, so a caller that wants the
+declaration rather than the rendering has it. An embedder building a diff by
+hand fills the field with `difftypes.UserTypeVocabularyOf(desired)`; one that
+omits it renders user-typed columns as the bare names the author wrote.
+
 `SchemaDiff.RLSEnabledTablesAdded` and `RLSEnabledTablesRemoved` are
 `RLSEnabledTableChanges` rather than `[]string`. An ADDED entry is the
 declaration, which is what a target rendering a declared comment needs; a

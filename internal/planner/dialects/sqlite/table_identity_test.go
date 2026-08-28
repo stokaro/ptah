@@ -136,7 +136,7 @@ func TestConstraintOnACreatedTableIsNotAlsoRebuilt(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{
-				TablesAdded:      []string{test.addedTableName},
+				TablesAdded:      difftypes.TableChanges{{Name: test.addedTableName}},
 				ConstraintsAdded: []string{"ck_notes_body"},
 				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 					Name:            "ck_notes_body",

@@ -304,7 +304,7 @@ func existingTablesWithConstraintChanges(
 	named := make(map[string]bool, len(diff.ConstraintsAddedWithTables)+len(diff.ConstraintsRemovedWithTables))
 	for _, constraint := range diff.ConstraintsAddedWithTables {
 		named[constraint.Name] = true
-		if !objectlookup.Contains(diff.TablesAdded, constraint.TableName, semantics) {
+		if !objectlookup.Contains(diff.TablesAdded.Names(), constraint.TableName, semantics) {
 			record(constraint.TableName)
 		}
 	}
@@ -435,7 +435,7 @@ func (p *Planner) addTables(
 ) ([]ast.Node, error) {
 	var result []ast.Node
 	for _, table := range desired.Tables {
-		if !objectlookup.Contains(diff.TablesAdded, table.QualifiedName(), semantics) {
+		if !objectlookup.Contains(diff.TablesAdded.Names(), table.QualifiedName(), semantics) {
 			continue
 		}
 		node := fromschema.FromTable(table, desired.Fields, desired.Enums, DialectName)
