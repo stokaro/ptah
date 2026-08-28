@@ -229,8 +229,10 @@ type functionSpec struct {
 	Language   stringScalar `yaml:"language"`
 	Security   stringScalar `yaml:"security"`
 	Volatility stringScalar `yaml:"volatility"`
-	Body       stringScalar `yaml:"body"`
-	Comment    stringScalar `yaml:"comment"`
+	// Settings are the routine's own configuration settings, each `name=value`.
+	Settings []stringScalar `yaml:"settings"`
+	Body     stringScalar   `yaml:"body"`
+	Comment  stringScalar   `yaml:"comment"`
 }
 
 type viewSpec struct {

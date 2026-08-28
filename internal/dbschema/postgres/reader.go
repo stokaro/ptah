@@ -17,6 +17,7 @@ import (
 	"go.5x5.cz/ptah/internal/pgindexstorage"
 	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/internal/rolescope"
+	"go.5x5.cz/ptah/internal/routinesetting"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
 
@@ -3119,7 +3120,11 @@ func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) 
 			END AS volatility,
 			p.prosrc AS body,
 			COALESCE(obj_description(p.oid, 'pg_proc'), '') AS comment,
-			CASE p.prokind WHEN 'p' THEN 'procedure' ELSE 'function' END AS kind
+			CASE p.prokind WHEN 'p' THEN 'procedure' ELSE 'function' END AS kind,
+			-- The routine's own configuration settings, which is where a pinned
+			-- search_path lives. A routine with none reports NULL rather than an
+			-- empty array (stokaro/ptah#2356).
+			COALESCE(array_to_string(p.proconfig, E'\n'), '') AS settings
 		FROM pg_proc p
 		JOIN pg_namespace n ON n.oid = p.pronamespace
 		JOIN pg_language l ON l.oid = p.prolang
@@ -3156,6 +3161,7 @@ func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) 
 	for rows.Next() {
 		var fn catalog.Function
 		var identityArguments string
+		var settings string
 		err := rows.Scan(
 			&fn.Name,
 			&fn.Parameters,
@@ -3167,10 +3173,12 @@ func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) 
 			&fn.Body,
 			&fn.Comment,
 			&fn.Kind,
+			&settings,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan function: %w", err)
 		}
+		fn.Settings = routinesetting.Split(settings)
 
 		// Same convention as tables, views and domains: blank for the
 		// connection's own schema, named otherwise, so `--exclude app.fn_app`

@@ -2419,6 +2419,22 @@ type CreateFunctionNode struct {
 	Security string
 	// Volatility specifies function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
 	Volatility string
+	// Settings are the routine's own configuration settings, each as
+	// `name=value`, which is the spelling pg_proc.proconfig reports.
+	//
+	// The one that matters is search_path. A SECURITY DEFINER routine without a
+	// pinned search_path resolves unqualified names through whatever the caller
+	// set, which is the classic PostgreSQL privilege-escalation shape -- and
+	// Ptah could not express the remedy: the parser refused the clause, the
+	// renderer emitted routines that could never satisfy it, and following the
+	// advice of PRV02 deleted the routine from the change model
+	// (stokaro/ptah#2356).
+	//
+	// `SET name TO value` is recorded as `name=value`, because a catalog reports
+	// one spelling for both. `SET name FROM CURRENT` keeps its own words: the
+	// server resolves it at definition time, so no declared form can equal what
+	// the catalog reports back, and normalizing it would claim otherwise.
+	Settings []string
 	// Comment is an optional comment for the function
 	Comment string
 }
@@ -2538,6 +2554,19 @@ func (n *CreateFunctionNode) SetAtomicBody(body string) *CreateFunctionNode {
 //	createFunc.SetSecurity("DEFINER")
 func (n *CreateFunctionNode) SetSecurity(security string) *CreateFunctionNode {
 	n.Security = security
+	return n
+}
+
+// AddSetting records one routine configuration setting, in the `name=value`
+// spelling a catalog reports.
+func (n *CreateFunctionNode) AddSetting(setting string) *CreateFunctionNode {
+	n.Settings = append(n.Settings, setting)
+	return n
+}
+
+// SetSettings replaces the routine's configuration settings.
+func (n *CreateFunctionNode) SetSettings(settings []string) *CreateFunctionNode {
+	n.Settings = settings
 	return n
 }
 

@@ -920,6 +920,8 @@ func (p *Parser) parseFunctionClause(function *ast.CreateFunctionNode) (bool, er
 		function.SetVolatility(keyword)
 		p.advance()
 		return false, nil
+	case "SET":
+		return false, p.parseFunctionSetting(function)
 	default:
 		if p.skipMySQLFunctionAttribute(keyword) {
 			return false, nil
@@ -1167,6 +1169,90 @@ func (p *Parser) parseFunctionSecurity(function *ast.CreateFunctionNode) error {
 	}
 	function.SetSecurity(strings.ToUpper(security))
 	return nil
+}
+
+// parseFunctionSetting reads one `SET` clause of a routine header.
+//
+// Three spellings mean two things. `SET name = value` and `SET name TO value`
+// both set the value, and a catalog reports one spelling for both, so both are
+// recorded as `name=value`. `SET name FROM CURRENT` keeps its own words,
+// because the server resolves it at definition time and no declared form can
+// equal what the catalog reports back (stokaro/ptah#2356).
+//
+// A value runs to the end of the clause rather than to the first token: a
+// search_path is a comma-separated list, and `pg_catalog, pg_temp` is one
+// value.
+func (p *Parser) parseFunctionSetting(function *ast.CreateFunctionNode) error {
+	if err := p.expect(lexer.TokenIdentifier, "SET"); err != nil {
+		return err
+	}
+	p.skipWhitespace()
+
+	name, err := p.expectIdentifier()
+	if err != nil {
+		return fmt.Errorf("expected a routine setting name: %w", err)
+	}
+	p.skipWhitespace()
+
+	if p.current.Type == lexer.TokenIdentifier && strings.EqualFold(p.current.Value, "FROM") {
+		p.advance()
+		p.skipWhitespace()
+		if err := p.expect(lexer.TokenIdentifier, "CURRENT"); err != nil {
+			return fmt.Errorf("expected CURRENT after FROM in a routine setting: %w", err)
+		}
+		function.AddSetting(name + " FROM CURRENT")
+		return nil
+	}
+
+	switch {
+	case p.current.Type == lexer.TokenOperator && p.current.Value == "=":
+		p.advance()
+	case p.current.Type == lexer.TokenIdentifier && strings.EqualFold(p.current.Value, "TO"):
+		p.advance()
+	default:
+		return fmt.Errorf("expected =, TO or FROM CURRENT in the %s routine setting at position %d",
+			name, p.current.Start)
+	}
+	p.skipWhitespace()
+
+	value := p.readRoutineSettingValue()
+	if value == "" {
+		return fmt.Errorf("expected a value for the %s routine setting", name)
+	}
+	function.AddSetting(name + "=" + value)
+	return nil
+}
+
+// readRoutineSettingValue consumes a setting's value, which ends where the next
+// header clause begins.
+func (p *Parser) readRoutineSettingValue() string {
+	var parts []string
+	for p.current.Type != lexer.TokenEOF {
+		if p.current.Type == lexer.TokenSemicolon {
+			break
+		}
+		if p.current.Type == lexer.TokenIdentifier && endsRoutineSettingValue(p.current.Value) {
+			break
+		}
+		if p.current.Type != lexer.TokenWhitespace {
+			parts = append(parts, p.current.Value)
+		}
+		p.advance()
+	}
+	return strings.Join(parts, "")
+}
+
+// endsRoutineSettingValue reports whether a keyword starts the next clause of a
+// routine header, and therefore ends the value being read.
+func endsRoutineSettingValue(value string) bool {
+	switch strings.ToUpper(value) {
+	case "SET", "AS", "LANGUAGE", "SECURITY", "IMMUTABLE", "STABLE", "VOLATILE",
+		"RETURNS", "RETURN", "BEGIN", "STRICT", "PARALLEL", "COST", "ROWS",
+		"WINDOW", "LEAKPROOF", "CALLED", "EXTERNAL":
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Parser) parseCreateTrigger(statementStart int) (ast.Node, error) {

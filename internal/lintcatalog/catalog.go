@@ -258,6 +258,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 		Summary:   "adding an identity column can rewrite existing rows",
 		AtlasCode: "PG310",
 	},
+	"PG312P": {
+		Summary: "a SECURITY DEFINER routine that does not pin search_path resolves unqualified names through the caller's",
+	},
 	"PG311": {
 		Summary:   "changing a table's access method rewrites the table",
 		AtlasCode: "PG311",

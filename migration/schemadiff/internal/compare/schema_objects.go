@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/oracleroutine"
+	"go.5x5.cz/ptah/internal/routinesetting"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -747,6 +748,17 @@ func FunctionDefinitionsWithDialect(
 	// Compare volatility (VOLATILE/STABLE/IMMUTABLE)
 	if genFunction.Volatility != dbFunction.Volatility {
 		functionDiff.Changes["volatility"] = fmt.Sprintf("%s -> %s", dbFunction.Volatility, genFunction.Volatility)
+	}
+
+	// Compare the routine's own configuration settings, folded onto one
+	// spelling. A property the comparison cannot see is one it plans forever,
+	// and a search_path pinned by the author would otherwise be dropped on the
+	// next apply without anything reporting it (stokaro/ptah#2356).
+	genSettings := routinesetting.NormalizeAll(genFunction.Settings)
+	dbSettings := routinesetting.NormalizeAll(dbFunction.Settings)
+	if !slices.Equal(genSettings, dbSettings) {
+		functionDiff.Changes["settings"] = fmt.Sprintf("%s -> %s",
+			strings.Join(dbSettings, ", "), strings.Join(genSettings, ", "))
 	}
 
 	// Compare function body (normalize whitespace for comparison)

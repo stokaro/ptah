@@ -1836,6 +1836,18 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 	return nil
 }
 
+// renderRoutineSetting spells one setting as a SET clause.
+//
+// The stored form is the catalog's, `name=value`; `FROM CURRENT` keeps its own
+// words because the server resolved it and there is no value to write.
+func renderRoutineSetting(setting string) string {
+	name, value, found := strings.Cut(setting, "=")
+	if !found {
+		return "SET " + setting
+	}
+	return fmt.Sprintf("SET %s = %s", name, value)
+}
+
 // VisitCreateFunction renders a CREATE FUNCTION statement for PostgreSQL
 func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 	// A procedure decides against its own key. The two kinds are one catalog
@@ -1887,6 +1899,14 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 	// Volatility attribute
 	if node.Volatility != "" {
 		attributes = append(attributes, node.Volatility)
+	}
+
+	// The routine's own configuration settings. Emitted after the volatility
+	// so the header reads in the order PostgreSQL prints it back, and emitted
+	// at all because without them Ptah rendered SECURITY DEFINER routines that
+	// no author could pin a search_path on (stokaro/ptah#2356).
+	for _, setting := range node.Settings {
+		attributes = append(attributes, renderRoutineSetting(setting))
 	}
 
 	if node.BodyKind == ast.FunctionBodyReturn || node.BodyKind == ast.FunctionBodyAtomic {

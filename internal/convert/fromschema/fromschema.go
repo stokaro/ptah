@@ -1738,6 +1738,7 @@ func FromFunction(function schemamodel.Function) *ast.CreateFunctionNode {
 		SetLanguage(function.Language).
 		SetSecurity(function.Security).
 		SetVolatility(function.Volatility).
+		SetSettings(function.Settings).
 		SetBody(function.Body).
 		SetComment(function.Comment)
 

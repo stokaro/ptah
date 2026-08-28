@@ -148,6 +148,7 @@ func dataSafetyRules() []Rule {
 		enumValueRemovedRule(),
 		databaseObjectDroppedRule(),
 		routineBodyNotAnalyzedRule(),
+		definerRoutineWithoutSearchPathRule(),
 		tableTruncatedRule(),
 		rlsDisabledRule(),
 	}
@@ -530,6 +531,67 @@ func enumValueRemovedRule() Rule {
 //
 // Info severity, so nothing about the migration changes. It ends when routine
 // analysis exists (stokaro/ptah#2356, stokaro/ptah#2357).
+// definerRoutineWithoutSearchPathRule reports a SECURITY DEFINER routine that
+// does not pin its search_path.
+//
+// Such a routine runs with its owner's privileges and resolves unqualified
+// names through whatever the CALLER set, so a caller who puts a schema of their
+// own first decides which table the owner's routine writes to. It is the
+// classic PostgreSQL privilege-escalation shape.
+//
+// PRV02 already reports every definer routine (internal/schemasecurity), and
+// two things separate this from it: PRV02 needs a live server and never sees a
+// migration directory, and it cannot tell a pinned routine from an unpinned one
+// because nothing read proconfig. Its own suggestion asked for what it could
+// not check.
+//
+// Anchored on the header, and that is the whole difficulty. A routine body is
+// words, and a `BEGIN ATOMIC` body carrying its own SET satisfied a scan of the
+// statement while the header carried none -- the rule's answer would have
+// depended on how the author quoted a body it has no business reading
+// (stokaro/ptah#2356).
+func definerRoutineWithoutSearchPathRule() Rule {
+	return Rule{
+		Code:     "PG312P",
+		Title:    "SECURITY DEFINER routine does not pin search_path",
+		Severity: SeverityWarning,
+		Dialects: []string{"postgres"},
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			header, ok := routineHeaderWords(stmt.Words)
+			if !ok || !containsWord(header, "DEFINER") || containsWord(header, "SET") {
+				return false, ""
+			}
+			return true, "a SECURITY DEFINER routine resolves unqualified names through the caller's search_path; " +
+				"add SET search_path = pg_catalog, pg_temp so the caller cannot decide what it reads"
+		},
+		AppliesToDown: true,
+	}
+}
+
+// routineHeaderWords returns the words of a routine definition's header, and
+// reports whether the statement is one.
+//
+// The header ends where the body begins, which is AS, BEGIN or RETURN. Reading
+// past it is what a scan of the whole statement does, and a body is words: one
+// carrying `SET` would satisfy the rule for a header that pins nothing.
+func routineHeaderWords(w []string) ([]string, bool) {
+	if _, ok := routineDefinitionKind(w); !ok {
+		return nil, false
+	}
+	for i, word := range w {
+		switch word {
+		case "AS", "BEGIN", "RETURN":
+			return w[:i], true
+		}
+	}
+	return w, true
+}
+
+// containsWord reports whether a word list holds one.
+func containsWord(w []string, want string) bool {
+	return slices.Contains(w, want)
+}
+
 func routineBodyNotAnalyzedRule() Rule {
 	return Rule{
 		Code:     "AC101",

@@ -697,6 +697,10 @@
               "description": "Security mode, such as DEFINER.",
               "type": "string"
             },
+            "settings": {
+              "description": "Routine configuration settings, `name=value`, separated by `;`; pin `search_path` on a DEFINER routine.",
+              "type": "string"
+            },
             "volatility": {
               "description": "Volatility class.",
               "type": "string"

@@ -733,8 +733,12 @@ type Function struct {
     Language       string `json:"language"`   // Function language (e.g., "plpgsql", "sql")
     Security       string `json:"security"`   // Security context (e.g., "DEFINER", "INVOKER")
     Volatility     string `json:"volatility"` // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
-    Body           string `json:"body"`       // Function body/implementation
-    Comment        string `json:"comment"`    // Function comment/description
+    // Settings are the routine's own configuration settings as the catalog
+    // reports them, each `name=value`. PostgreSQL keeps them in
+    // pg_proc.proconfig; a dialect without such a facility leaves this empty.
+    Settings []string `json:"settings,omitempty"`
+    Body     string   `json:"body"`    // Function body/implementation
+    Comment  string   `json:"comment"` // Function comment/description
 }
     Function represents a custom function read from the database.
 
@@ -3270,6 +3274,22 @@ type CreateFunctionNode struct {
     Security string
     // Volatility specifies function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
     Volatility string
+    // Settings are the routine's own configuration settings, each as
+    // `name=value`, which is the spelling pg_proc.proconfig reports.
+    //
+    // The one that matters is search_path. A SECURITY DEFINER routine without a
+    // pinned search_path resolves unqualified names through whatever the caller
+    // set, which is the classic PostgreSQL privilege-escalation shape -- and
+    // Ptah could not express the remedy: the parser refused the clause, the
+    // renderer emitted routines that could never satisfy it, and following the
+    // advice of PRV02 deleted the routine from the change model
+    // (stokaro/ptah#2356).
+    //
+    // `SET name TO value` is recorded as `name=value`, because a catalog reports
+    // one spelling for both. `SET name FROM CURRENT` keeps its own words: the
+    // server resolves it at definition time, so no declared form can equal what
+    // the catalog reports back, and normalizing it would claim otherwise.
+    Settings []string
     // Comment is an optional comment for the function
     Comment string
 }
@@ -3283,6 +3303,7 @@ type CreateFunctionNode struct {
 
 func NewCreateFunction(name string) *CreateFunctionNode
 func (n *CreateFunctionNode) Accept(visitor Visitor) error
+func (n *CreateFunctionNode) AddSetting(setting string) *CreateFunctionNode
 func (n *CreateFunctionNode) IsProcedure() bool
 func (n *CreateFunctionNode) SetAtomicBody(body string) *CreateFunctionNode
 func (n *CreateFunctionNode) SetBody(body string) *CreateFunctionNode
@@ -3293,6 +3314,7 @@ func (n *CreateFunctionNode) SetParameters(parameters string) *CreateFunctionNod
 func (n *CreateFunctionNode) SetReturnBody(body string) *CreateFunctionNode
 func (n *CreateFunctionNode) SetReturns(returns string) *CreateFunctionNode
 func (n *CreateFunctionNode) SetSecurity(security string) *CreateFunctionNode
+func (n *CreateFunctionNode) SetSettings(settings []string) *CreateFunctionNode
 func (n *CreateFunctionNode) SetVolatility(volatility string) *CreateFunctionNode
 
 ### go.5x5.cz/ptah/core/ast.CreateHypertableNode
@@ -8560,8 +8582,16 @@ type Function struct {
     Language   string // Function language (e.g., "plpgsql", "sql")
     Security   string // Security context (e.g., "DEFINER", "INVOKER")
     Volatility string // Function volatility (e.g., "STABLE", "IMMUTABLE", "VOLATILE")
-    Body       string // Function body/implementation
-    Comment    string // Optional comment for documentation
+    // Settings are the routine's own configuration settings, each as
+    // `name=value`, which is the spelling pg_proc.proconfig reports.
+    //
+    // A SECURITY DEFINER routine without a pinned search_path resolves
+    // unqualified names through whatever the caller set. Ptah could not express
+    // the remedy at all: the parser refused the clause and the renderer emitted
+    // routines that could never carry it (stokaro/ptah#2356).
+    Settings []string `json:",omitempty"`
+    Body     string   // Function body/implementation
+    Comment  string   // Optional comment for documentation
 
     // Dialects scopes this declaration to the named target dialects. See
     // [ScopeToDialect].

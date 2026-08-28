@@ -477,6 +477,7 @@ func functionAnnotation(function schemamodel.Function) string {
 		attr{name: "language", value: function.Language, set: function.Language != ""},
 		attr{name: "security", value: function.Security, set: function.Security != ""},
 		attr{name: "volatility", value: function.Volatility, set: function.Volatility != ""},
+		attr{name: "settings", value: strings.Join(function.Settings, ";"), set: len(function.Settings) > 0},
 		attr{name: "body", value: function.Body, set: true},
 		attr{name: "comment", value: function.Comment, set: function.Comment != ""},
 	)
