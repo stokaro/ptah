@@ -48,7 +48,7 @@ BEGIN
   INSERT INTO audit (actor, action) VALUES (1, 'touch');
   DELETE FROM stale WHERE id = 1;
   TRUNCATE TABLE scratch;
-END;`))
+END;`), "postgres")
 
 	c.Assert(writeTargets(result), qt.DeepEquals, []string{
 		"audit.action:insert",
@@ -73,7 +73,7 @@ BEGIN
   IF now() > '2020-01-01' THEN
     DELETE FROM audit WHERE actor = 1;
   END IF;
-END;`))
+END;`), "postgres")
 
 	c.Assert(writeTargets(result), qt.DeepEquals, []string{"audit:delete"})
 }
@@ -95,7 +95,7 @@ BEGIN
   UPDATE customers SET email = lower(email) WHERE id = 1;
   RAISE NOTICE 'done';
   RETURN;
-END;`))
+END;`), "postgres")
 
 	c.Assert(result.Writes, qt.HasLen, 1)
 	c.Assert(result.Undecided, qt.HasLen, 1)
@@ -115,7 +115,7 @@ func TestDeriveRoutines_DynamicSQLMakesTheWriteListIncomplete(t *testing.T) {
 BEGIN
   DELETE FROM audit WHERE actor = 1;
   EXECUTE 'DROP TABLE ' || quote_ident(target);
-END;`))
+END;`), "postgres")
 
 	c.Assert(writeTargets(result), qt.DeepEquals, []string{"audit:delete"})
 	c.Assert(result.Undecided, qt.HasLen, 1)
@@ -134,7 +134,7 @@ func TestDeriveRoutines_AnUnrecognizedStatementIsNotTreatedAsHarmless(t *testing
 	result := schemalineage.DeriveRoutines(proceduralRoutine(`
 BEGIN
   CALL rebuild_everything();
-END;`))
+END;`), "postgres")
 
 	c.Assert(result.Writes, qt.HasLen, 0)
 	c.Assert(result.Undecided, qt.HasLen, 1)
@@ -154,7 +154,7 @@ func TestDeriveRoutines_AVariableAssignmentIsNotAnUnresolvedStatement(t *testing
 DECLARE total INT;
 BEGIN
   total := 0;
-END;`))
+END;`), "postgres")
 
 	c.Assert(result.Undecided, qt.HasLen, 1)
 	c.Assert(result.Undecided[0].Reason, qt.Contains, "every statement was classified")
@@ -185,7 +185,7 @@ func TestDeriveRoutines_ATriggerFunctionsFieldAssignmentIsNotAnUnresolvedStateme
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result := schemalineage.DeriveRoutines(proceduralRoutine(test.body))
+			result := schemalineage.DeriveRoutines(proceduralRoutine(test.body), "postgres")
 
 			c.Assert(result.Writes, qt.HasLen, 0)
 			c.Assert(result.Undecided, qt.HasLen, 1)
@@ -206,7 +206,7 @@ func TestDeriveRoutines_ASetClauseDoesNotInventColumnsFromAnExpression(t *testin
 	result := schemalineage.DeriveRoutines(proceduralRoutine(`
 BEGIN
   UPDATE customers SET email = coalesce(fallback, backup) WHERE id = 1;
-END;`))
+END;`), "postgres")
 
 	c.Assert(writeTargets(result), qt.DeepEquals, []string{"customers.email:update"})
 }
@@ -222,7 +222,7 @@ func TestDeriveRoutines_ATruncateListIsRefusedRatherThanHalfRead(t *testing.T) {
 	result := schemalineage.DeriveRoutines(proceduralRoutine(`
 BEGIN
   TRUNCATE TABLE first_table, second_table;
-END;`))
+END;`), "postgres")
 
 	c.Assert(result.Writes, qt.HasLen, 0)
 	c.Assert(result.Undecided[0].Reason, qt.Contains, "beginning TRUNCATE was not recognized")
@@ -240,7 +240,7 @@ func TestDeriveRoutines_AnInsertWithNoColumnListNamesTheTable(t *testing.T) {
 	result := schemalineage.DeriveRoutines(proceduralRoutine(`
 BEGIN
   INSERT INTO audit VALUES (1, 'touch');
-END;`))
+END;`), "postgres")
 
 	c.Assert(writeTargets(result), qt.DeepEquals, []string{"audit:insert"})
 	c.Assert(result.Writes[0].Column, qt.Equals, "")
@@ -261,33 +261,66 @@ func TestDeriveRoutines_APlainSQLRoutineReportsNoWrites(t *testing.T) {
 		Functions: []schemamodel.Function{
 			{Name: "r", Language: "sql", Body: "SELECT email FROM customers"},
 		},
-	})
+	}, "postgres")
 
 	c.Assert(result.Writes, qt.HasLen, 0)
 	c.Assert(result.Edges, qt.HasLen, 1)
 	c.Assert(result.Undecided, qt.HasLen, 0)
 }
 
-// TestDeriveRoutines_AProcedureBodyIsNotReportedAsTheWrongShape covers the
+// TestDeriveRoutines_AProcedureWithNoLanguageIsAnalyzedByItsDialect covers the
 // routines the schema converter started handing this package.
 //
-// A SQL Server or MySQL routine reaches the model with no language of its own
-// and is recorded as plain SQL, so it takes the single-SELECT path and fails
-// it. "The body does not begin with SELECT" says the body was the wrong shape;
-// what happened is that nothing looked at its statements, and only a PL/pgSQL
-// body is looked at today (stokaro/ptah#2435 made these reachable).
-func TestDeriveRoutines_AProcedureBodyIsNotReportedAsTheWrongShape(t *testing.T) {
+// A SQL Server or MySQL routine has no LANGUAGE clause of its own and reaches
+// the model recorded as plain SQL. Asked to be a single SELECT it simply fails,
+// and the answer said the body was the wrong shape; what it is, is that
+// dialect's procedural language, and the dialect is what says which parser
+// reads it (stokaro/ptah#2435 made these reachable).
+func TestDeriveRoutines_AProcedureWithNoLanguageIsAnalyzedByItsDialect(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		body    string
+	}{
+		{name: "mysql", dialect: "mysql", body: "BEGIN UPDATE t SET c = 1; END"},
+		{name: "mariadb", dialect: "mariadb", body: "BEGIN UPDATE t SET c = 1; END"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			result := schemalineage.DeriveRoutines(&schemamodel.Database{
+				Functions: []schemamodel.Function{
+					{Name: "p", Kind: "procedure", Language: "sql", Body: test.body},
+				},
+			}, test.dialect)
+
+			c.Assert(writeTargets(result), qt.DeepEquals, []string{"t.c:update"})
+			c.Assert(result.Undecided, qt.HasLen, 1)
+			c.Assert(result.Undecided[0].Reason, qt.Contains, test.dialect)
+		})
+	}
+}
+
+// TestDeriveRoutines_ADialectWithNoRoutineBodyParserSaysSo is the fail-closed
+// direction.
+//
+// Each dialect parses a routine body with its own grammar and there is no
+// shared one to fall back on: a body read by the wrong splitter is not a
+// conservative answer, it is a wrong one.
+func TestDeriveRoutines_ADialectWithNoRoutineBodyParserSaysSo(t *testing.T) {
 	c := qt.New(t)
 
 	result := schemalineage.DeriveRoutines(&schemamodel.Database{
 		Functions: []schemamodel.Function{
 			{Name: "p", Kind: "procedure", Language: "sql", Body: "UPDATE t SET c = 1;"},
 		},
-	})
+	}, "clickhouse")
 
+	c.Assert(result.Writes, qt.HasLen, 0)
 	c.Assert(result.Undecided, qt.HasLen, 1)
-	c.Assert(result.Undecided[0].Reason, qt.Contains, "procedure body rather than a single SELECT")
-	c.Assert(result.Undecided[0].Reason, qt.Contains, "only where the routine declares PL/pgSQL")
+	c.Assert(result.Undecided[0].Reason, qt.Contains, "no routine-body analysis exists for the clickhouse dialect")
 }
 
 // TestDeriveRoutines_AFunctionKeepsTheReadersOwnReason is the control.
@@ -302,8 +335,91 @@ func TestDeriveRoutines_AFunctionKeepsTheReadersOwnReason(t *testing.T) {
 		Functions: []schemamodel.Function{
 			{Name: "f", Language: "sql", Body: "SELECT a FROM x JOIN y ON y.id = x.id"},
 		},
-	})
+	}, "postgres")
 
 	c.Assert(result.Undecided, qt.HasLen, 1)
 	c.Assert(result.Undecided[0].Reason, qt.Contains, "more than one source")
+}
+
+// TestDeriveRoutines_ATSQLBodyResolvesTheWritesItsSplitterModels covers the
+// three T-SQL writes whose statements arrive whole.
+func TestDeriveRoutines_ATSQLBodyResolvesTheWritesItsSplitterModels(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want []string
+	}{
+		{
+			name: "insert",
+			body: "INSERT INTO audit (actor, action) VALUES (1, 'x');",
+			want: []string{"audit.action:insert", "audit.actor:insert"},
+		},
+		{name: "delete", body: "DELETE FROM audit WHERE actor = 1;", want: []string{"audit:delete"}},
+		{name: "truncate", body: "TRUNCATE TABLE scratch;", want: []string{"scratch:truncate"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			result := schemalineage.DeriveRoutines(&schemamodel.Database{
+				Functions: []schemamodel.Function{
+					{Name: "p", Kind: "procedure", Language: "sql", Body: test.body},
+				},
+			}, "sqlserver")
+
+			c.Assert(writeTargets(result), qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestDeriveRoutines_ATSQLUpdateFailsClosedUntilTheSplitterIsFixed pins the one
+// that does not.
+//
+// The T-SQL splitter treats every SET as the start of a statement, so `UPDATE t
+// SET c = 1` arrives as `raw` = `UPDATE t` and `assignment` = `SET c = 1` and
+// neither half is an update (stokaro/ptah#2451). What matters here is that the
+// routine is reported as not fully resolved rather than as writing nothing:
+// the most common write in a procedure is invisible, and a caller must be able
+// to see that it is.
+//
+// This test is expected to change when #2451 lands. Assert the failure it
+// produces, so the repair is visible here instead of arriving unnoticed.
+func TestDeriveRoutines_ATSQLUpdateFailsClosedUntilTheSplitterIsFixed(t *testing.T) {
+	c := qt.New(t)
+
+	result := schemalineage.DeriveRoutines(&schemamodel.Database{
+		Functions: []schemamodel.Function{
+			{Name: "p", Kind: "procedure", Language: "sql", Body: "UPDATE t SET c = 1;"},
+		},
+	}, "sqlserver")
+
+	c.Assert(result.Writes, qt.HasLen, 0)
+	c.Assert(result.Undecided, qt.HasLen, 1)
+	c.Assert(result.Undecided[0].Reason, qt.Contains, "beginning UPDATE was not recognized")
+}
+
+// TestDeriveRoutines_AMySQLBranchIsUnresolvedRatherThanEmpty is the property
+// that separates a modelled nesting from an unmodelled one.
+//
+// The PL/pgSQL body model carries the statements a control-flow statement holds
+// (stokaro/ptah#2393), and the MySQL one does not: an IF arrives as one
+// statement whose SQL is the whole branch. Reporting no writes for it would
+// credit the routine with touching nothing inside a branch nobody opened, which
+// is the confident wrong answer this package exists to avoid.
+func TestDeriveRoutines_AMySQLBranchIsUnresolvedRatherThanEmpty(t *testing.T) {
+	c := qt.New(t)
+
+	result := schemalineage.DeriveRoutines(&schemamodel.Database{
+		Functions: []schemamodel.Function{
+			{
+				Name: "p", Kind: "procedure", Language: "sql",
+				Body: "BEGIN IF x > 0 THEN DELETE FROM audit WHERE actor = 1; END IF; END",
+			},
+		},
+	}, "mysql")
+
+	c.Assert(result.Writes, qt.HasLen, 0)
+	c.Assert(result.Undecided, qt.HasLen, 1)
+	c.Assert(result.Undecided[0].Reason, qt.Contains, "the if statement's contents could not be read")
 }

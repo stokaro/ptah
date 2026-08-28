@@ -713,3 +713,17 @@ var mysqlRoutineCharacteristicKeywords = []string{
 	"READS",
 	"SQL",
 }
+
+// ParseMySQLRoutineBody splits a MySQL routine body into the statements it
+// holds.
+//
+// The whole-statement parser reaches this through a CREATE PROCEDURE it just
+// read, and had the only way in. A caller holding a body -- which is what a
+// schema model carries -- would otherwise have to synthesize a CREATE PROCEDURE
+// around the text to get it parsed again (stokaro/ptah#2394).
+func ParseMySQLRoutineBody(body string) ast.MySQLRoutineBody {
+	return ast.MySQLRoutineBody{
+		SQL:        body,
+		Statements: parseMySQLRoutineBodyStatements(body),
+	}
+}

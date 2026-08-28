@@ -147,6 +147,28 @@ because `CALL`, `MERGE` and `COPY` all write; a `TRUNCATE` naming more than one
 table, refused rather than half-read; and a control-flow statement whose
 contents the parser could not split.
 
+### Which dialect reads the body
+
+Each engine writes routine bodies in its own procedural language, and each has
+its own parser here. `--dialect` is what selects one; there is no shared parser
+to fall back on, because a body read by the wrong one is a wrong answer rather
+than a cautious one. A dialect with no routine-body parser reports that, by
+name, instead of being analyzed by whichever parser was reachable.
+
+| Dialect | What resolves |
+| --- | --- |
+| the PostgreSQL family | every writing statement, including the ones inside an `IF` or a loop |
+| `mysql`, `mariadb` | every writing statement at the top level of the body |
+| `sqlserver` | `INSERT`, `DELETE` and `TRUNCATE`; an `UPDATE` is reported unresolved |
+| any other | nothing, reported as having no routine-body analysis |
+
+Two limits in that table are the body models rather than this analysis. The
+MySQL and T-SQL models carry no statements inside a branch, so an `IF` is
+reported as a statement whose contents could not be read -- not as a branch that
+writes nothing. And the T-SQL splitter treats every `SET` as the start of a
+statement, so `UPDATE t SET c = 1` arrives as two statements and neither is an
+update.
+
 That distinction is the whole point of reading the list. A routine reported with
 writes and nothing else would say its reads are none rather than unknown.
 
@@ -239,7 +261,8 @@ usage error exits `2` with one line on stderr. See
   appears in `undecided` even when its writes are complete.
 - A **write** is resolved from the statement that performs it, so it is exact
   about the table and about the columns an `UPDATE` assigns or an `INSERT`
-  lists. A statement naming the table alone -- a `DELETE`, a `TRUNCATE`, an
+  lists. Which statements are reached depends on the dialect; see the table
+  above. A statement naming the table alone -- a `DELETE`, a `TRUNCATE`, an
   `INSERT` with no column list -- is reported with no column, which means the
   whole table rather than an unknown column.
 - `SET (a, b) = (...)` is not read as a column list. The statement goes

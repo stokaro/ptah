@@ -54,21 +54,21 @@ type RoutineResult struct {
 // That boundary is the point rather than a limitation. "Nothing depends on this
 // column" and "I could not tell" decide different things, and a confident wrong
 // answer about a drop is worse than no answer (stokaro/ptah#2394).
-func DeriveRoutines(db *schemamodel.Database) RoutineResult {
+func DeriveRoutines(db *schemamodel.Database, dialect string) RoutineResult {
 	if db == nil {
 		return RoutineResult{}
 	}
 	columns := columnsByTable(db)
 	var result RoutineResult
 	for _, routine := range db.Functions {
-		result.absorbRoutine(deriveRoutine(routine, columns))
+		result.absorbRoutine(deriveRoutine(routine, dialect, columns))
 	}
 	sortRoutineResult(&result)
 	return result
 }
 
 // deriveRoutine resolves one routine body, or records why it could not.
-func deriveRoutine(routine schemamodel.Function, columns map[string][]string) RoutineResult {
+func deriveRoutine(routine schemamodel.Function, dialect string, columns map[string][]string) RoutineResult {
 	kind := routineKind(routine)
 	undecided := func(reason string) RoutineResult {
 		return RoutineResult{Undecided: []UndecidedRoutine{
@@ -81,17 +81,26 @@ func deriveRoutine(routine schemamodel.Function, columns map[string][]string) Ro
 	// about the reads would let "nothing reads this column" be concluded from a
 	// routine whose reads were never looked at.
 	if language := strings.ToLower(strings.TrimSpace(routine.Language)); language != "sql" && language != "" {
-		return deriveProceduralRoutine(routine, kind, language)
+		return deriveProceduralRoutine(routine, dialect, kind, language)
 	}
 	if strings.TrimSpace(routine.Body) == "" {
 		return undecided("the routine declares no body")
+	}
+
+	// A procedure declaring plain SQL is how a MySQL or T-SQL routine reaches
+	// this package: it has no LANGUAGE clause of its own, and the converter
+	// records it as SQL. Its body is that dialect's procedural language, so it
+	// takes the procedural path rather than being asked to be one SELECT
+	// (stokaro/ptah#2435 is what makes these reach here at all).
+	if kind == "procedure" && !isSingleSelectBody(routine.Body, columns) {
+		return deriveProceduralRoutine(routine, dialect, kind, "")
 	}
 
 	// The view path resolves exactly this shape, and asking it is what keeps
 	// one answer rather than two that drift.
 	viewResult := deriveView(routine.Name, routine.Body, false, columns)
 	if len(viewResult.Undecided) > 0 {
-		return undecided(unresolvedPlainSQLReason(kind, viewResult.Undecided[0].Reason))
+		return undecided(viewResult.Undecided[0].Reason)
 	}
 
 	edges := make([]RoutineEdge, 0, len(viewResult.Edges))
@@ -113,16 +122,41 @@ func deriveRoutine(routine schemamodel.Function, columns map[string][]string) Ro
 // statement went unrecognized, because its reads are not derived at all. The
 // entry says which of the two it is: an incomplete write list and unresolved
 // reads, or a complete write list and unresolved reads.
-func deriveProceduralRoutine(routine schemamodel.Function, kind, language string) RoutineResult {
-	writes, unresolved := deriveProceduralWrites(routine, kind)
+func deriveProceduralRoutine(routine schemamodel.Function, dialect, kind, language string) RoutineResult {
+	writes, unresolved, analyzed := proceduralWritesFor(dialect, routine, kind)
+	if !analyzed {
+		return RoutineResult{Undecided: []UndecidedRoutine{{
+			Routine: routine.Name,
+			Kind:    kind,
+			Reason:  fmt.Sprintf("no routine-body analysis exists for the %s dialect", dialect),
+		}}}
+	}
 	return RoutineResult{
 		Writes: writes,
 		Undecided: []UndecidedRoutine{{
 			Routine: routine.Name,
 			Kind:    kind,
-			Reason:  proceduralReason(language, unresolved),
+			Reason:  proceduralReason(bodyLanguage(language, dialect), unresolved),
 		}},
 	}
+}
+
+// bodyLanguage names the language a body is written in for the reason line.
+//
+// A routine declaring one is taken at its word; one that declares none is
+// written in whatever procedural language its dialect has, and naming the
+// dialect is more use to a reader than naming nothing.
+func bodyLanguage(language, dialect string) string {
+	if language != "" {
+		return language
+	}
+	return dialect
+}
+
+// isSingleSelectBody reports whether a body is the shape the read path
+// resolves, which is what decides whether a plain-SQL routine is procedural.
+func isSingleSelectBody(body string, columns map[string][]string) bool {
+	return len(deriveView("", body, false, columns).Undecided) == 0
 }
 
 // proceduralReason states what was resolved and what was not.
@@ -135,23 +169,6 @@ func proceduralReason(language string, unresolved []string) string {
 	return fmt.Sprintf(
 		"the body is %s: %s, so neither the writes nor the columns it reads are complete",
 		language, strings.Join(unresolved, "; "))
-}
-
-// unresolvedPlainSQLReason says why a routine declaring plain SQL did not
-// resolve.
-//
-// A procedure whose body is not a single SELECT is procedural code, and this
-// package analyzes a procedural body only where it declares PL/pgSQL: a SQL
-// Server or MySQL routine reaches the model with no language of its own and is
-// recorded as plain SQL. Reporting "the body does not begin with SELECT" there
-// says the body was the wrong shape, when what happened is that nothing looked
-// at its statements (stokaro/ptah#2394).
-func unresolvedPlainSQLReason(kind, viewReason string) string {
-	if kind != "procedure" {
-		return viewReason
-	}
-	return "the body is a procedure body rather than a single SELECT, and its " +
-		"statements are analyzed only where the routine declares PL/pgSQL"
 }
 
 // routineKind names the routine family, defaulting to a function for the
