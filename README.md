@@ -2,7 +2,7 @@
 
 <h1 align="center">Ptah</h1>
 
-<p align="center">Open-source database schema management, from design to deployment.</p>
+<p align="center">Open-source database change management for schemas and persistent inference state.</p>
 
 <p align="center">
   <a href="https://github.com/stokaro/ptah/actions/workflows/go-unit-tests.yml?query=branch%3Amaster"><img src="https://img.shields.io/github/actions/workflow/status/stokaro/ptah/go-unit-tests.yml?branch=master&label=tests&logo=github" alt="Status of the unit test workflow on the master branch"></a>
@@ -12,17 +12,36 @@
   <a href="https://github.com/stokaro/ptah/blob/master/LICENSE"><img src="https://img.shields.io/github/license/stokaro/ptah?label=license&color=blue" alt="The license badge, reading MIT"></a>
 </p>
 
-<p align="center"><a href="#install">Install</a> · <a href="https://stokaro.github.io/ptah/edge/start/quick-start/">Quick start</a> · <a href="https://stokaro.github.io/ptah/edge/">Documentation</a> · <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">Database support</a></p>
+<p align="center"><a href="#install">Install</a> · <a href="https://stokaro.github.io/ptah/edge/start/quick-start/">Quick start</a> · <a href="https://stokaro.github.io/ptah/edge/operate/inference-migrations/">Inference migrations</a> · <a href="https://stokaro.github.io/ptah/edge/">Documentation</a> · <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">Database support</a></p>
 
-Ptah reads a desired schema, inspects a live database, and computes the change
-between them. You can keep that change as versioned migration files or review
-and apply it directly. The command-line interface runs without a Go toolchain,
-and the same planning components are available as Go packages.
+Ptah manages database change across schemas and persistent inference state. For
+schemas, it compares a desired schema with a live database and either writes
+versioned migrations or applies an approved plan directly. For inference state,
+it builds a candidate generation beside the active one, calls an external
+embedding endpoint, verifies the result, and switches consumers with a rollback
+path.
+
+The command-line interface runs without a Go toolchain, and the same planning
+components are available as Go packages.
+
+## Schema changes
 
 <p align="center"><img src="docs/site/src/assets/readme-product-flow.png" alt="Schema sources and the current database meet at compare and plan. The plan follows either versioned migrations through generate, review, commit, and apply, or direct schema changes through review, approval, and apply. Both routes update the target database." width="1000"></p>
 
 Both workflows use the same comparison and planning model. The difference is
 whether SQL becomes a reviewed artifact in version control before it runs.
+
+## Persistent inference state
+
+Ptah orchestrates the migration; it does not run inference. It reads source
+rows, calls the external endpoint, and writes the candidate generation itself,
+leaving the active generation untouched until verification and cutover.
+
+<p align="center"><img src="docs/site/src/assets/inference-state-migration.png" alt="Ptah builds a candidate inference generation from a specification and source rows, calls an external embedding endpoint during backfill and catch-up, verifies the result, switches the active generation at cutover, and retains the previous generation for rollback." width="1000"></p>
+
+The [inference migrations guide](https://stokaro.github.io/ptah/edge/operate/inference-migrations/)
+covers the specification, concurrent-change catch-up, evaluation, approvals,
+rollback, and retirement.
 
 > [!NOTE]
 > Ptah is pre-GA. The native command tree and public Go API can still change.
@@ -80,7 +99,7 @@ For a complete workflow with expected output and verification, use the
 or the
 [versioned migrations tutorial](https://stokaro.github.io/ptah/edge/start/quick-start-migrations/).
 
-## Choose how changes land
+## Choose how schema changes land
 
 | Workflow | Use it when | Start with |
 | --- | --- | --- |

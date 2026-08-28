@@ -87,6 +87,7 @@ export const sidebar = [
           { slug: 'direct/apply' },
         ],
       },
+      { slug: 'operate/inference-migrations', label: 'Inference migrations' },
       {
         label: 'Test and CI',
         items: [
@@ -105,7 +106,6 @@ export const sidebar = [
         label: 'Distribute and operate',
         items: [
           { slug: 'operate/oci-registry' },
-          { slug: 'operate/inference-migrations' },
           { slug: 'operate/troubleshooting' },
         ],
       },
