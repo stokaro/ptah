@@ -30,6 +30,7 @@ separately:
   prepare    create the target column, its metadata and the outbox
   backfill   embed the source into the new generation, resumably
   catchup    process the source changes made while the backfill ran
+  index      build the vector index and wait for it to be valid
   verify     the deterministic checks a cutover rests on
   evaluate   what the generation actually retrieves, against a corpus you wrote
   status     what a run has done and what it is waiting for
@@ -47,6 +48,7 @@ cutting over does not make the old generation disposable.`,
 	cmd.AddCommand(newPrepareCommand())
 	cmd.AddCommand(newBackfillCommand())
 	cmd.AddCommand(newCatchUpCommand())
+	cmd.AddCommand(newIndexCommand())
 	cmd.AddCommand(newVerifyCommand())
 	cmd.AddCommand(newEvaluateCommand())
 	cmd.AddCommand(newStatusCommand())

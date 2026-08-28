@@ -92,6 +92,9 @@ ptah inference backfill --spec spec.yaml --db-url "$DB" --run-id 2026-08-article
 # Process what changed while the backfill ran.
 ptah inference catchup --spec spec.yaml --db-url "$DB" --run-id 2026-08-articles
 
+# Build the vector index, concurrently, and leave it valid.
+ptah inference index --spec spec.yaml --db-url "$DB"
+
 # The deterministic checks a cutover rests on.
 ptah inference verify --spec spec.yaml --db-url "$DB" --run-id 2026-08-articles
 

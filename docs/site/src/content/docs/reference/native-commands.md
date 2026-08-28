@@ -262,6 +262,7 @@ stdout therefore gets a document in every case except `2`.
 | `ptah inference prepare` | Create the target column, the run's own tables, the outbox, and the snapshot boundary the backfill embeds. |
 | `ptah inference backfill` | Embed the source into the new generation, resumably; an interrupted run continues from its checkpoint. |
 | `ptah inference catchup` | Process the source changes made while the backfill ran; `--maintain-for` also keeps a previous generation current during its stabilization window. |
+| `ptah inference index` | Build the generation's vector index concurrently and leave it valid; an invalid index left by a failed build is dropped and built again. |
 | `ptah inference verify` | Run the deterministic checks a cutover rests on, and report what it did not measure; `--publish-evidence` writes the report to an OCI registry. |
 | `ptah inference evaluate` | Measure what the generation retrieves against a corpus you wrote, recording the query parameters the numbers were taken under. |
 | `ptah inference status` | Report what a run has done and what it is waiting for. |
