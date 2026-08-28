@@ -39,6 +39,7 @@ type UndecidedRoutine struct {
 // RoutineResult is the derived routine lineage plus what could not be derived.
 type RoutineResult struct {
 	Edges     []RoutineEdge      `json:"edges"`
+	Writes    []RoutineWrite     `json:"writes"`
 	Undecided []UndecidedRoutine `json:"undecided,omitempty"`
 }
 
@@ -75,12 +76,12 @@ func deriveRoutine(routine schemamodel.Function, columns map[string][]string) Ro
 		}}
 	}
 
-	// A procedural body is a sequence of statements with control flow, and
-	// resolving it needs the references the parser does not yet yield. #1270
-	// records that as the prerequisite the rest waits on, and names matching
-	// identifiers lexically as the approach #1280/#1281 measured as wrong.
+	// A procedural body is resolved for its writes and not for its reads, and
+	// the caller is told exactly that. Deriving the writes and staying silent
+	// about the reads would let "nothing reads this column" be concluded from a
+	// routine whose reads were never looked at.
 	if language := strings.ToLower(strings.TrimSpace(routine.Language)); language != "sql" && language != "" {
-		return undecided(fmt.Sprintf("the body is %s rather than plain SQL", language))
+		return deriveProceduralRoutine(routine, kind, language)
 	}
 	if strings.TrimSpace(routine.Body) == "" {
 		return undecided("the routine declares no body")
@@ -90,7 +91,7 @@ func deriveRoutine(routine schemamodel.Function, columns map[string][]string) Ro
 	// one answer rather than two that drift.
 	viewResult := deriveView(routine.Name, routine.Body, false, columns)
 	if len(viewResult.Undecided) > 0 {
-		return undecided(viewResult.Undecided[0].Reason)
+		return undecided(unresolvedPlainSQLReason(kind, viewResult.Undecided[0].Reason))
 	}
 
 	edges := make([]RoutineEdge, 0, len(viewResult.Edges))
@@ -105,6 +106,54 @@ func deriveRoutine(routine schemamodel.Function, columns map[string][]string) Ro
 	return RoutineResult{Edges: edges}
 }
 
+// deriveProceduralRoutine resolves the writes a procedural body performs, and
+// says what about that routine is still unresolved.
+//
+// Every procedural routine carries an undecided entry, whether or not a
+// statement went unrecognized, because its reads are not derived at all. The
+// entry says which of the two it is: an incomplete write list and unresolved
+// reads, or a complete write list and unresolved reads.
+func deriveProceduralRoutine(routine schemamodel.Function, kind, language string) RoutineResult {
+	writes, unresolved := deriveProceduralWrites(routine, kind)
+	return RoutineResult{
+		Writes: writes,
+		Undecided: []UndecidedRoutine{{
+			Routine: routine.Name,
+			Kind:    kind,
+			Reason:  proceduralReason(language, unresolved),
+		}},
+	}
+}
+
+// proceduralReason states what was resolved and what was not.
+func proceduralReason(language string, unresolved []string) string {
+	if len(unresolved) == 0 {
+		return fmt.Sprintf(
+			"the body is %s: every statement was classified, so the writes are complete; "+
+				"the columns it reads are not resolved", language)
+	}
+	return fmt.Sprintf(
+		"the body is %s: %s, so neither the writes nor the columns it reads are complete",
+		language, strings.Join(unresolved, "; "))
+}
+
+// unresolvedPlainSQLReason says why a routine declaring plain SQL did not
+// resolve.
+//
+// A procedure whose body is not a single SELECT is procedural code, and this
+// package analyzes a procedural body only where it declares PL/pgSQL: a SQL
+// Server or MySQL routine reaches the model with no language of its own and is
+// recorded as plain SQL. Reporting "the body does not begin with SELECT" there
+// says the body was the wrong shape, when what happened is that nothing looked
+// at its statements (stokaro/ptah#2394).
+func unresolvedPlainSQLReason(kind, viewReason string) string {
+	if kind != "procedure" {
+		return viewReason
+	}
+	return "the body is a procedure body rather than a single SELECT, and its " +
+		"statements are analyzed only where the routine declares PL/pgSQL"
+}
+
 // routineKind names the routine family, defaulting to a function for the
 // declarations written before procedures existed.
 func routineKind(routine schemamodel.Function) string {
@@ -117,6 +166,7 @@ func routineKind(routine schemamodel.Function) string {
 // absorbRoutine merges one routine's result into the whole.
 func (r *RoutineResult) absorbRoutine(other RoutineResult) {
 	r.Edges = append(r.Edges, other.Edges...)
+	r.Writes = append(r.Writes, other.Writes...)
 	r.Undecided = append(r.Undecided, other.Undecided...)
 }
 
@@ -133,6 +183,16 @@ func sortRoutineResult(result *RoutineResult) {
 			return a.FromTable < b.FromTable
 		}
 		return a.FromColumn < b.FromColumn
+	})
+	sort.Slice(result.Writes, func(i, j int) bool {
+		a, b := result.Writes[i], result.Writes[j]
+		if a.ByRoutine != b.ByRoutine {
+			return a.ByRoutine < b.ByRoutine
+		}
+		if a.Table != b.Table {
+			return a.Table < b.Table
+		}
+		return a.Column < b.Column
 	})
 	sort.Slice(result.Undecided, func(i, j int) bool {
 		return result.Undecided[i].Routine < result.Undecided[j].Routine

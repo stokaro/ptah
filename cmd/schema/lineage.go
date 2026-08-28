@@ -44,8 +44,8 @@ func newSchemaLineageCommand() *cobra.Command {
 		Use:   "lineage",
 		Short: "Trace which base columns feed each view column and each routine",
 		Long: `Derive column-to-column dependencies from the view and materialized-view
-bodies a schema declares, and from the routine bodies it can resolve, and
-write them as data.
+bodies a schema declares, from the routine bodies it can resolve, and the
+tables and columns those routines write, and write them as data.
 
 This answers "what breaks if I drop this column" before the drop rather than
 after: a view column resolves to the base columns it reads, so a column nothing
@@ -60,9 +60,11 @@ view whose dependencies went unresolved must not look like a view with none,
 because the difference decides whether the answer can be trusted.
 
 Routines are traced on the same terms, and the same boundary applies: a routine
-whose body is a single SELECT resolves, and a procedural body -- one written in
-PL/pgSQL or any language other than plain SQL -- is reported as undecided
-naming its language.`,
+whose body is a single SELECT resolves to the columns it reads. A procedural
+body is resolved for what it writes -- the tables and columns its INSERT,
+UPDATE, DELETE and TRUNCATE statements name -- and is always reported as
+undecided as well, because its reads are not derived and a silent routine would
+read as one that reads nothing.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runSchemaLineage(cmd, opts)
@@ -138,6 +140,9 @@ func writeLineageJSON(w io.Writer, document lineageDocument) error {
 	if document.Routines.Edges == nil {
 		document.Routines.Edges = make([]schemalineage.RoutineEdge, 0)
 	}
+	if document.Routines.Writes == nil {
+		document.Routines.Writes = make([]schemalineage.RoutineWrite, 0)
+	}
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(document)
@@ -146,7 +151,7 @@ func writeLineageJSON(w io.Writer, document lineageDocument) error {
 func writeLineageTable(w io.Writer, document lineageDocument) error {
 	result, routines := document.Result, document.Routines
 	if len(result.Edges) == 0 && len(result.Undecided) == 0 &&
-		len(routines.Edges) == 0 && len(routines.Undecided) == 0 {
+		len(routines.Edges) == 0 && len(routines.Writes) == 0 && len(routines.Undecided) == 0 {
 		_, err := fmt.Fprintln(w, "No view or routine columns to trace.")
 		return err
 	}
@@ -183,6 +188,9 @@ func writeLineageTable(w io.Writer, document lineageDocument) error {
 		if err := table.Flush(); err != nil {
 			return err
 		}
+	}
+	if err := writeLineageRoutineWrites(w, routines); err != nil {
+		return err
 	}
 	if err := writeLineageUndecidedRoutines(w, routines); err != nil {
 		return err
@@ -221,4 +229,39 @@ func writeLineageUndecidedRoutines(w io.Writer, routines schemalineage.RoutineRe
 		}
 	}
 	return nil
+}
+
+// writeLineageRoutineWrites reports the tables and columns routines write.
+//
+// A write is reported on the same channel as the reads, in its own table: the
+// two answer different questions -- "what breaks if I drop this column" and
+// "what changes this column" -- and merging them into one list would make
+// neither readable.
+func writeLineageRoutineWrites(w io.Writer, routines schemalineage.RoutineResult) error {
+	if len(routines.Writes) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w); err != nil {
+		return err
+	}
+	table := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	if _, err := fmt.Fprintln(table, "TARGET\tWRITTEN BY\tSTATEMENT"); err != nil {
+		return err
+	}
+	for _, write := range routines.Writes {
+		if _, err := fmt.Fprintf(table, "%s\t%s\t%s\n",
+			writeTargetName(write), write.ByRoutine, write.Statement); err != nil {
+			return err
+		}
+	}
+	return table.Flush()
+}
+
+// writeTargetName renders a write target, naming the whole table where the
+// statement named no column.
+func writeTargetName(write schemalineage.RoutineWrite) string {
+	if write.Column == "" {
+		return write.Table
+	}
+	return write.Table + "." + write.Column
 }
