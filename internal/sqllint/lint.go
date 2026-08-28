@@ -10,6 +10,7 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/internal/lexer"
 	"go.5x5.cz/ptah/internal/parser"
@@ -71,6 +72,18 @@ type Options struct {
 	// An entry for a code the linter does not report is an error, because a
 	// severity nobody applies is a policy the operator believes is in force.
 	Severities map[string]Severity
+
+	// Schema is the schema state the analyzed SQL is read against, or nil when
+	// the caller has none.
+	//
+	// Everything above is about the statement in front of the linter. This is
+	// the one input that is not: a CREATE INDEX names a table and columns that
+	// exist somewhere else, and without the schema the linter can only say the
+	// statement parses. A rule that reads it declares so through
+	// [Rule.NeedsSchema], because the failure mode of a missing schema is
+	// silence -- the rule runs, resolves nothing, reports less, and the run
+	// exits 0 (stokaro/ptah#1270, criterion 7).
+	Schema *schemamodel.Database
 }
 
 type Finding struct {
@@ -96,7 +109,13 @@ type Context struct {
 	Dialect      string
 	Version      string
 	Capabilities capability.Capabilities
-	statement    sourceStatement
+	// Schema is what names in the statement are resolved against, nil when the
+	// run supplied none.
+	Schema *schemamodel.Database
+	// fileTables are the tables this same file declares, which is where an
+	// index usually finds its table without any schema being supplied at all.
+	fileTables map[string]map[string]bool
+	statement  sourceStatement
 }
 
 func DefaultRules() []Rule {
@@ -105,6 +124,7 @@ func DefaultRules() []Rule {
 		tablePrimaryKeyRule{},
 		createIndexCapabilityRule{},
 		dynamicSQLRule{},
+		indexColumnRule{},
 	}
 }
 
@@ -122,6 +142,7 @@ func LintSource(source Source, opts Options) ([]Finding, error) {
 
 	var findings []Finding
 	var unanalyzedKinds []string
+	fileTables := declaredTablesIn(source, opts, caps)
 	for _, statement := range splitSourceStatements(source, opts.Dialect) {
 		keyword, keywordOffset := firstKeyword(statement.sql)
 		if keyword == "" {
@@ -131,7 +152,7 @@ func LintSource(source Source, opts Options) ([]Finding, error) {
 			findings = append(findings, unsupportedStatementFinding(source, statement, opts, keyword, keywordOffset))
 			continue
 		}
-		statementFindings, unanalyzed, err := lintParsedStatement(source, statement, opts, caps)
+		statementFindings, unanalyzed, err := lintParsedStatement(source, statement, fileTables, opts, caps)
 		if err != nil {
 			return nil, err
 		}
@@ -301,6 +322,7 @@ func unsupportedStatementFinding(source Source, statement sourceStatement, opts 
 func lintParsedStatement(
 	source Source,
 	statement sourceStatement,
+	fileTables map[string]map[string]bool,
 	opts Options,
 	caps capability.Capabilities,
 ) ([]Finding, []string, error) {
@@ -315,6 +337,8 @@ func lintParsedStatement(
 		Dialect:      opts.Dialect,
 		Version:      opts.Version,
 		Capabilities: caps,
+		Schema:       opts.Schema,
+		fileTables:   fileTables,
 	}
 	findings := make([]Finding, 0)
 	var unanalyzed []string
