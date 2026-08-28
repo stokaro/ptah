@@ -712,6 +712,32 @@ func postgresRoutineStatements(stmt ast.Node) (label string, statements []ast.Po
 // PostgreSQL only, because it is the only frontend with an execute Kind --
 // MySQL and SQL Server routine statements have no such classification, so their
 // dynamic SQL is indistinguishable from any other raw statement here.
+// dialectDynamicFindings reports the dynamic SQL a MySQL or T-SQL body builds.
+//
+// Separate from the PL/pgSQL walk below because the three parsers model a body
+// differently: PL/pgSQL names an execute statement, and the other two leave it
+// in the raw kind for the leading words to identify.
+func dialectDynamicFindings(ctx Context, stmt ast.Node) []Finding {
+	label, dynamic := dialectDynamicStatements(stmt)
+	findings := make([]Finding, 0, len(dynamic))
+	for _, statement := range dynamic {
+		line, column := ctx.LineColumn(statement)
+		findings = append(findings, Finding{
+			Rule:     RuleDynamicSQL,
+			Title:    "Dynamic SQL limits static analysis",
+			Severity: SeverityInfo,
+			File:     ctx.Source.Name,
+			Line:     line,
+			Column:   column,
+			Dialect:  ctx.Dialect,
+			Message:  fmt.Sprintf("%s builds SQL at run time", label),
+			Rationale: "The statement text is not known until the routine runs, " +
+				"so nothing here can resolve what it reads or writes.",
+		})
+	}
+	return findings
+}
+
 type dynamicSQLRule struct{}
 
 func (dynamicSQLRule) ID() string {
@@ -719,6 +745,9 @@ func (dynamicSQLRule) ID() string {
 }
 
 func (dynamicSQLRule) CheckStatement(ctx Context, stmt ast.Node) []Finding {
+	if findings := dialectDynamicFindings(ctx, stmt); len(findings) > 0 {
+		return findings
+	}
 	label, statements := postgresRoutineStatements(stmt)
 	if len(statements) == 0 {
 		return nil
