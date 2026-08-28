@@ -1,18 +1,23 @@
 package docs_test
 
-// "Which databases does it support" is the first question a reader arrives
-// with, and a hand-written answer is a claim that was true when it was written.
-// So nothing here is written twice: the support matrix is held to the dialect
-// set the code declares, and the README is held to reaching the matrix.
+// The README names every engine Ptah supports, above the fold, because that is
+// the first question a reader arrives with. A hand-written list of engines is a
+// claim that was true when it was written, so nothing here is written twice:
+// the README is held to the support matrix, and the support matrix is held to
+// the dialect set the code declares.
 //
-// The chain was longer. The README used to name every engine above the fold and
-// was held to the matrix name by name, because its prose had come to name nine
-// of the ten and no gate saw it -- the sentence read as a partition of the
-// supported set and Oracle was in neither half. The README was later rewritten
-// to link the matrix instead, so that half of the chain has no subject; a test
-// still asserting it would measure nothing while staying green. What replaced
-// it is the property the new shape rests on: with the names gone, the link is
-// the reader's only route, so losing it costs more than it used to.
+// The chain matters in that order. Adding an engine touches the code and the
+// matrix; the README is the file nobody thinks of, and it is the one everybody
+// reads. This test exists because the README's own prose had come to name nine
+// of the ten engines, and no gate saw it: the sentence read as a partition of
+// the supported set and Oracle was in neither half.
+//
+// The chain was broken once by two repairs that disagreed. A rewrite dropped
+// the engine row; #2447 put it back and #2448 removed the test instead, and
+// both landed, leaving the row on the page with nothing holding it to the
+// matrix. The link assertion below is what #2448 put in its place, and it is
+// kept: it is a weaker property than the name-by-name pin, and the two do not
+// overlap -- a README could link the matrix and still name nine engines.
 //
 // It reaches out of its own directory for `../README.md`, which the embed test
 // beside it deliberately does not do. That test walks the tree the patterns are
@@ -39,45 +44,88 @@ const (
 	glanceHeading    = "## Engines at a glance"
 )
 
+// centeredBlock matches one `<p align="center">` element of the README header.
+var centeredBlock = regexp.MustCompile(`(?s)<p align="center">.*?</p>`)
+
 // htmlLink and markdownLink read a link's visible label, which is what a reader
 // scans the engine row for.
 var (
-	backticked = regexp.MustCompile("`([^`]*)`")
+	htmlLink     = regexp.MustCompile(`<a\s+href="([^"]*)"[^>]*>([^<]*)</a>`)
+	markdownLink = regexp.MustCompile(`\[([^\]]*)\]\(([^)]*)\)`)
+	backticked   = regexp.MustCompile("`([^`]*)`")
 )
 
-// supportMatrixRoute is the published page the README sends a reader to for the
-// engine list. Matched as a route rather than a whole URL so the documentation
-// channel in front of it can change without touching this test.
-const supportMatrixRoute = "/databases/support-matrix/"
+// databasesPrefix is the documentation area every engine link points into.
+const databasesPrefix = "https://stokaro.github.io/ptah/edge/databases/"
 
-// TestReadmeRoutesToTheSupportMatrix holds what the README now claims.
-//
-// It used to name every engine above the fold, and this test held that list to
-// the matrix. The README was rewritten to link the matrix instead, so the list
-// has no subject and an assertion about it would be a tautology dressed as a
-// guarantee -- the shape AGENTS.md warns about, where a check quietly stops
-// having anything to measure.
-//
-// What survives is the property the new shape depends on. A reader asking
-// "does it support my database" has exactly one route now, so the link going
-// missing costs more than it did when the names were on the page. The matrix
-// itself is still held to the code by the test below, which is the half of the
-// chain that never depended on the README.
-func TestReadmeRoutesToTheSupportMatrix(t *testing.T) {
+// minimumEngineLinks separates the engine row from the other centered blocks in
+// the header, which carry badges and section links. It is a floor rather than
+// the exact count on purpose: this test must not have to be edited when an
+// engine is added, only when the row stops being a row.
+const minimumEngineLinks = 5
+
+func TestReadmeNamesEveryEngineTheSupportMatrixLists(t *testing.T) {
 	c := qt.New(t)
 
-	body, err := os.ReadFile(readmePath)
-	c.Assert(err, qt.IsNil)
-
-	c.Assert(strings.Contains(string(body), supportMatrixRoute), qt.IsTrue,
-		qt.Commentf("the README links %s nowhere; it is the only route a reader has"+
-			" to the engine list since the names left the page", supportMatrixRoute))
+	c.Assert(readmeEngines(c), qt.DeepEquals, glanceEngines(c))
 }
 
 func TestSupportMatrixGlanceCoversEveryDeclaredDialect(t *testing.T) {
 	c := qt.New(t)
 
 	c.Assert(glanceDialects(c), qt.DeepEquals, capability.DefaultDialects())
+}
+
+// readmeEngines returns the engine names the README's centered engine row
+// links, sorted.
+func readmeEngines(c *qt.C) []string {
+	body, err := os.ReadFile(readmePath)
+	c.Assert(err, qt.IsNil)
+
+	var rows [][]string
+	for _, block := range centeredBlock.FindAllString(string(body), -1) {
+		labels := engineLabels(block)
+		rows = appendWhenRow(rows, labels)
+	}
+
+	// Exactly one row, or the rule this test states has stopped being readable
+	// off the file: no row means the engine list is gone, and two mean a reader
+	// meets two answers.
+	c.Assert(rows, qt.HasLen, 1)
+	return sorted(rows[0])
+}
+
+func engineLabels(block string) []string {
+	var labels []string
+	for _, match := range htmlLink.FindAllStringSubmatch(block, -1) {
+		labels = appendEngineLabel(labels, match[1], match[2])
+	}
+	return labels
+}
+
+func appendEngineLabel(labels []string, href, label string) []string {
+	if !strings.HasPrefix(href, databasesPrefix) {
+		return labels
+	}
+	return append(labels, strings.TrimSpace(label))
+}
+
+func appendWhenRow(rows [][]string, labels []string) [][]string {
+	if len(labels) < minimumEngineLinks {
+		return rows
+	}
+	return append(rows, labels)
+}
+
+// glanceEngines returns the engine names the support matrix's "Engines at a
+// glance" table lists, sorted, with any parenthetical qualifier dropped so that
+// "Spanner (PostgreSQL interface)" and "Spanner" are the same engine.
+func glanceEngines(c *qt.C) []string {
+	var names []string
+	for _, cells := range glanceRows(c) {
+		names = append(names, engineName(cells[0]))
+	}
+	return sorted(names)
 }
 
 // glanceDialects returns the normalized dialect name each glance row declares,
@@ -141,8 +189,39 @@ func isDelimiter(cell string) bool {
 	return strings.Trim(cell, "-: ") == ""
 }
 
+// engineName reads the display name out of a glance cell, which may be a link
+// to the engine's own page, and drops a parenthetical qualifier.
+func engineName(cell string) string {
+	name := cell
+	if match := markdownLink.FindStringSubmatch(cell); match != nil {
+		name = match[1]
+	}
+	name, _, _ = strings.Cut(name, " (")
+	return strings.TrimSpace(name)
+}
+
 func sorted(values []string) []string {
 	out := slices.Clone(values)
 	slices.Sort(out)
 	return out
+}
+
+// supportMatrixRoute is the documentation route the README has to reach.
+const supportMatrixRoute = "/databases/support-matrix/"
+
+// TestReadmeRoutesToTheSupportMatrix holds the weaker half of the chain.
+//
+// The engine row above is name-by-name; this is the link a reader follows when
+// the row does not answer their question. The two are separate properties: a
+// README could link the matrix and name nine of ten engines, or name all ten
+// and link nothing.
+func TestReadmeRoutesToTheSupportMatrix(t *testing.T) {
+	c := qt.New(t)
+
+	body, err := os.ReadFile(readmePath)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(string(body), qt.Contains, supportMatrixRoute,
+		qt.Commentf("the README links %s nowhere, so a reader whose engine is not"+
+			" in the row above has no route to the answer", supportMatrixRoute))
 }
