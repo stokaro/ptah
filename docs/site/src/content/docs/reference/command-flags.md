@@ -1045,12 +1045,14 @@ Read the columns as follows.
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--config` | `string` | — | `PTAH_CONFIG` | — |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--dialect` | `string` | `postgres` | `PTAH_DIALECT` | — |
 | `--env` | `string` | — | `PTAH_ENV` | — |
 | `--format` | `string` | `table` | `PTAH_FORMAT` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
+| `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 

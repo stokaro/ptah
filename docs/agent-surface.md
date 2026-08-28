@@ -160,7 +160,7 @@ to rule out — so they are named here, where a claim nothing measures belongs.
 | `schema export` | none | none | — | converts one desired-schema source format into another on disk; no database is opened |
 | `schema fmt` | none | none | — | rewrites HCL schema files in the repository into canonical form; no database is opened |
 | `schema inspect` | reads | **rewrites** | `--db-url`, `--dev-url` | reads a schema source and prints it; the dev database it names "is reset destructively" |
-| `schema lineage` | none | none | — | traces which base columns feed each view column, from the desired schema alone |
+| `schema lineage` | reads | none | `--db-url` | traces which columns each view and routine reads and writes; `--db-url` reads the target |
 | `schema plan` | reads | **rewrites** | `--db-url`, `--dev-url` | saves a fingerprinted apply plan; the dev database is where the plan is rehearsed |
 | `schema pull` | none | none | — | downloads a desired-schema document from an OCI registry and writes it to disk |
 | `schema push` | none | none | — | uploads a desired-schema document from disk to an OCI registry |
@@ -242,7 +242,7 @@ permission.
 | `schema drift` | reads the target and reports how it differs from the desired schema |
 | `schema export` | converts one desired-schema source format into another on disk; no database is opened |
 | `schema fmt` | rewrites HCL schema files in the repository into canonical form; no database is opened |
-| `schema lineage` | traces which base columns feed each view column, from the desired schema alone |
+| `schema lineage` | traces which columns each view and routine reads and writes; `--db-url` reads the target |
 | `schema pull` | downloads a desired-schema document from an OCI registry and writes it to disk |
 | `schema push` | uploads a desired-schema document from disk to an OCI registry |
 | `schema render` | renders the desired schema as SQL with no connection at all; the dialect comes from a flag |

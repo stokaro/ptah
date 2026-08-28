@@ -11,6 +11,8 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/serverversion"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/schemalineage"
 	"go.5x5.cz/ptah/internal/schemaload"
 )
@@ -20,11 +22,14 @@ const (
 	lineageSchemaFileFlag = "schema-file"
 	lineageDialectFlag    = "dialect"
 	lineageFormatFlag     = "format"
+	lineageDBURLFlag      = "db-url"
 )
 
 type schemaLineageOptions struct {
 	rootDirs      []string
 	schemaFiles   []string
+	dbURL         string
+	schemas       string
 	dialect       string
 	serverVersion string
 	format        string
@@ -51,8 +56,10 @@ This answers "what breaks if I drop this column" before the drop rather than
 after: a view column resolves to the base columns it reads, so a column nothing
 reads is visibly distinct from one three views depend on.
 
-The analysis is static and local. It reads the schema Ptah already models and
-contacts nothing.
+The analysis is static. Without --db-url it reads a declared schema and contacts
+nothing; with --db-url it reads the live schema and traces that, which is how
+the same question -- what breaks if I drop this column -- is asked about a
+database nobody has a declaration for.
 
 A view body this cannot fully resolve -- a join, a subquery source, a computed
 column with no alias -- is reported under "undecided" rather than omitted. A
@@ -77,6 +84,9 @@ read as one that reads nothing.`,
 		"Schema file to read (repeatable)")
 	flags.StringVar(&opts.dialect, lineageDialectFlag, "postgres",
 		"Dialect the schema is read for")
+	flags.StringVar(&opts.dbURL, lineageDBURLFlag, "",
+		"Trace the schema of a live database instead of a schema source")
+	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
 	serverversion.Register(flags, &opts.serverVersion)
 	flags.StringVar(&opts.format, lineageFormatFlag, "table",
 		"Output format: table or json")
@@ -91,6 +101,9 @@ func runSchemaLineage(cmd *cobra.Command, opts schemaLineageOptions) error {
 	if opts.format != "table" && opts.format != "json" {
 		return cmdutil.Fail(cmd, fmt.Errorf("--%s must be table or json, got %q",
 			lineageFormatFlag, opts.format))
+	}
+	if opts.dbURL != "" {
+		return runSchemaLineageLive(cmd, opts)
 	}
 	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
 	if err != nil {
@@ -129,6 +142,40 @@ func runSchemaLineage(cmd *cobra.Command, opts schemaLineageOptions) error {
 type lineageDocument struct {
 	schemalineage.Result
 	Routines schemalineage.RoutineResult `json:"routines"`
+}
+
+// runSchemaLineage traces the schema of a live database.
+//
+// The same derivation over a schema read back from the server rather than one
+// declared in a file. It is the only route by which this analysis reaches a
+// database at all, which is what made integration coverage of it structurally
+// impossible before (stokaro/ptah#1270, criterion 8).
+func runSchemaLineageLive(cmd *cobra.Command, opts schemaLineageOptions) error {
+	conn, err := dbschema.ConnectToDatabase(cmd.Context(), opts.dbURL)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("connect to database: %w", err))
+	}
+	defer dbschema.CloseAndWarn(conn)
+
+	live, err := dbschema.ReadSchemaWithSchemasContext(
+		cmd.Context(), conn, dbcli.ParseSchemas(opts.schemas),
+	)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("read database schema: %w", err))
+	}
+	// The dialect the server reports rather than the flag: a lineage traced
+	// against a live database is about that database, and a routine body is
+	// read by its own engine's parser.
+	dialect := conn.Info().Dialect
+	database := dbschematogo.ConvertDBSchemaToGoSchema(live)
+	document := lineageDocument{
+		Result:   schemalineage.Derive(database),
+		Routines: schemalineage.DeriveRoutines(database, dialect),
+	}
+	if opts.format == "json" {
+		return writeLineageJSON(cmd.OutOrStdout(), document)
+	}
+	return writeLineageTable(cmd.OutOrStdout(), document)
 }
 
 func writeLineageJSON(w io.Writer, document lineageDocument) error {
