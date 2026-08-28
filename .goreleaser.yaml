@@ -212,7 +212,11 @@ brews:
     skip_upload: '{{ if index .Env "HOMEBREW_TAP_TOKEN" }}false{{ else }}true{{ end }}'
     directory: Formula
     homepage: "https://github.com/stokaro/ptah"
-    description: "Schema management and migration tooling for Go projects"
+    # The product sentence, not a Go-first framing: this is what `brew info
+    # ptah` prints, and it is the first thing a reader meets. It is held to the
+    # root command's own Short by TestFormulaDescription in cmd/root, so the two
+    # cannot drift -- a description is a claim that was true when it was typed.
+    description: "Ptah manages database change across schemas and persistent inference state"
     license: MIT
     commit_msg_template: "Brew formula update for {{ .ProjectName }} {{ .Tag }}"
 
