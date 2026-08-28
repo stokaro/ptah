@@ -2377,6 +2377,13 @@ func TableCreationFor(desired *schemamodel.Database, table schemamodel.Table, na
 // spelled out. A name that no declared table answers to is skipped, because a
 // diff naming a table the schema does not declare has nothing to create.
 //
+// It assembles from the declaration exactly as given. A declaration whose
+// foreign keys name themselves only by default needs
+// [fromschema.AssignDefaultForeignKeyNames] run over it first: that derivation
+// reads the whole document -- it truncates an over-long name to a hashed one
+// and avoids colliding with an explicit name used anywhere -- so it cannot be
+// done per table, and a comparison does it before it assembles these.
+//
 // A name matches a table's qualified spelling or its bare one, which is the
 // same latitude a diff's own names are read with -- `orders` and
 // `public.orders` are one table on the engines that resolve an unqualified name
