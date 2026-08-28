@@ -365,7 +365,7 @@ func rejectUnsupportedSchemaObjects(diff *difftypes.SchemaDiff) error {
 	if names := changedNames(diff.ExtensionsAdded.Names(), diff.ExtensionsRemoved.Names(), extensionNames(diff)); len(names) > 0 {
 		return unsupportedFeaturef("extensions are not supported: %s", strings.Join(names, ", "))
 	}
-	if names := changedNames(diff.FunctionsAdded, diff.FunctionsRemoved, functionNames(diff)); len(names) > 0 {
+	if names := changedNames(diff.FunctionsAdded.Names(), diff.FunctionsRemoved.Names(), functionNames(diff)); len(names) > 0 {
 		return unsupportedFeaturef("functions are not supported: %s", strings.Join(names, ", "))
 	}
 	if names := changedNames(diff.SequencesAdded.Names(), diff.SequencesRemoved.Names(), sequenceNames(diff)); len(names) > 0 {

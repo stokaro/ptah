@@ -280,6 +280,85 @@ func (r RoleChanges) Names() []string {
 	return names
 }
 
+// RoutineChange is one routine a change applies to: its declaration, and the
+// argument list a DROP addresses it by.
+//
+// The two are separate because they are different facts. `Parameters` is what
+// the author wrote -- names, defaults, OUT arguments and all -- and `Signature`
+// is what identifies an overload to `DROP FUNCTION`. PostgreSQL answers a bare
+// name with `function name "f" is not unique` whenever a schema holds more than
+// one, and `IF EXISTS` does not help, because the refusal is about ambiguity
+// rather than existence (stokaro/ptah#2296).
+//
+// A reader that had only the declaration would have to guess between them, and
+// [go.5x5.cz/ptah/catalog.Function.IdentityArguments] says why guessing is
+// wrong: the two differ exactly where an author wrote a name or a default.
+type RoutineChange struct {
+	schemamodel.Function
+
+	// Signature is the argument list this routine is addressed by, empty when
+	// the routine is not overloaded and the reader supplied none.
+	Signature string
+}
+
+// FunctionChanges is a set of routines one change applies to, carrying each
+// one's declaration and drop identity and not only its name.
+//
+// The fourteenth family off `[]string` under stokaro/ptah#2315, and the one
+// that retires a parallel field rather than only a lookup:
+// `FunctionsRemovedWithSignatures` existed because a name could not carry the
+// drop identity, which is this issue's problem solved once by hand.
+//
+// See [RangeChanges] for why both sides carry and why the wire shape does not
+// change.
+type FunctionChanges []RoutineChange
+
+// MarshalJSON writes the names alone, the shape `functions_added` and
+// `functions_removed` have always had.
+func (f FunctionChanges) MarshalJSON() ([]byte, error) {
+	if f == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(f.Names())
+}
+
+// Names is the routine names this change applies to.
+func (f FunctionChanges) Names() []string {
+	if f == nil {
+		return nil
+	}
+	names := make([]string, 0, len(f))
+	for _, routine := range f {
+		names = append(names, routine.Name)
+	}
+	return names
+}
+
+// Declarations is the routines this change carries, for a consumer that wants
+// the declaration rather than the change around it.
+func (f FunctionChanges) Declarations() []schemamodel.Function {
+	if f == nil {
+		return nil
+	}
+	declarations := make([]schemamodel.Function, 0, len(f))
+	for _, routine := range f {
+		declarations = append(declarations, routine.Function)
+	}
+	return declarations
+}
+
+// Removals describes these routines the way a planner addresses a DROP.
+func (f FunctionChanges) Removals() []RoutineRemoval {
+	if f == nil {
+		return nil
+	}
+	removals := make([]RoutineRemoval, 0, len(f))
+	for _, routine := range f {
+		removals = append(removals, RoutineRemoval{Name: routine.Name, Signature: routine.Signature})
+	}
+	return removals
+}
+
 // DomainChanges is a set of domain types one change applies to, carrying each
 // one's definition and not only its name.
 //
@@ -754,21 +833,11 @@ type SchemaDiff struct {
 
 	// FunctionsAdded contains names of PostgreSQL functions that exist in the target schema
 	// but not in the current database schema
-	FunctionsAdded []string `json:"functions_added"`
+	FunctionsAdded FunctionChanges `json:"functions_added"`
 
 	// FunctionsRemoved contains names of PostgreSQL functions that exist in the current database
 	// but not in the target schema (potentially dangerous - may break existing functionality)
-	FunctionsRemoved []string `json:"functions_removed"`
-	// FunctionsRemovedWithSignatures names the same removals with the argument
-	// list each one needs to be addressable.
-	//
-	// FunctionsRemoved carries a bare name, and a name does not select an
-	// overload: PostgreSQL answers `DROP FUNCTION IF EXISTS f` with
-	// `function name "f" is not unique` whenever the schema holds more than
-	// one, and IF EXISTS does not help, because the refusal is about ambiguity
-	// rather than existence. A planner reads this list; the bare one stays for
-	// readers that have not moved (stokaro/ptah#2296).
-	FunctionsRemovedWithSignatures []RoutineRemoval `json:"functions_removed_with_signatures,omitempty"`
+	FunctionsRemoved FunctionChanges `json:"functions_removed"`
 	// ProceduresRemoved names the procedures the database holds and the desired
 	// state does not.
 	//
@@ -778,10 +847,7 @@ type SchemaDiff struct {
 	// declaration -- there is no declaration left. Additions and modifications
 	// stay in the function collections, where the planner reads the kind off the
 	// declaration it is building from (stokaro/ptah#1722).
-	ProceduresRemoved []string `json:"procedures_removed,omitempty"`
-	// ProceduresRemovedWithSignatures is [SchemaDiff.FunctionsRemovedWithSignatures]
-	// for the other routine kind, and exists for the same reason.
-	ProceduresRemovedWithSignatures []RoutineRemoval `json:"procedures_removed_with_signatures,omitempty"`
+	ProceduresRemoved FunctionChanges `json:"procedures_removed,omitempty"`
 
 	// FunctionsModified contains detailed information about functions that exist in both
 	// schemas but have different definitions (parameters, body, attributes, etc.)

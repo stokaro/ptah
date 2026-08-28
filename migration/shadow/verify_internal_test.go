@@ -14,6 +14,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -93,8 +94,8 @@ func TestCollectMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 		ExtensionsModified: []difftypes.ExtensionDiff{{
 			Name: "changed_extension", FromSchema: "public", ToSchema: "extensions",
 		}},
-		FunctionsAdded:            []string{"missing_function"},
-		FunctionsRemoved:          []string{"extra_function"},
+		FunctionsAdded:            difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "missing_function"}}},
+		FunctionsRemoved:          difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "extra_function"}}},
 		FunctionsModified:         []difftypes.FunctionDiff{{FunctionName: "changed_function", Changes: changes}},
 		SequencesAdded:            difftypes.SequenceChanges{{Name: "missing_sequence"}},
 		SequencesRemoved:          difftypes.SequenceChanges{{Name: "extra_sequence"}},

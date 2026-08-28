@@ -99,14 +99,14 @@ func (p *Planner) reportUnsupportedRoutinesAndRoles(result []ast.Node, diff *dif
 	if p.capabilities().Has(capability.Functions) {
 		return result
 	}
-	for _, name := range diff.FunctionsAdded {
-		result = append(result, ast.NewCreateFunction(name))
+	for _, routine := range diff.FunctionsAdded {
+		result = append(result, ast.NewCreateFunction(routine.Name))
 	}
-	for _, name := range diff.FunctionsRemoved {
-		result = append(result, ast.NewDropFunction(name))
+	for _, routine := range diff.FunctionsRemoved {
+		result = append(result, ast.NewDropFunction(routine.Name))
 	}
-	for _, name := range diff.ProceduresRemoved {
-		result = append(result, ast.NewDropFunction(name).SetKind(schemamodel.FunctionKindProcedure))
+	for _, routine := range diff.ProceduresRemoved {
+		result = append(result, ast.NewDropFunction(routine.Name).SetKind(schemamodel.FunctionKindProcedure))
 	}
 	return result
 }
@@ -218,10 +218,10 @@ func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff, d
 	if !p.capabilities().Has(capability.Functions) {
 		return result
 	}
-	for _, name := range diff.FunctionsAdded {
-		if fn, ok := findGeneratedFunction(desired, name); ok {
-			result = append(result, fromschema.FromFunction(fn))
-		}
+	// The declaration travels WITH the change, so this renders what it was
+	// handed rather than looking the name back up (stokaro/ptah#2315).
+	for _, routine := range diff.FunctionsAdded {
+		result = append(result, fromschema.FromFunction(routine.Function))
 	}
 	for _, fnDiff := range diff.FunctionsModified {
 		fn, ok := findGeneratedFunction(desired, fnDiff.FunctionName)
@@ -263,15 +263,15 @@ func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff, d
 		node.SetComment(fmt.Sprintf("Modify %s %s: %s", routineWord(fn), fn.Name, changes))
 		result = append(result, node)
 	}
-	for _, name := range diff.FunctionsRemoved {
-		result = append(result, ast.NewDropFunction(name).
+	for _, routine := range diff.FunctionsRemoved {
+		result = append(result, ast.NewDropFunction(routine.Name).
 			SetIfExists().
 			SetComment("WARNING: Ensure no other objects depend on this function"))
 	}
 	// The verb has to match the object; the comparator kept the two apart for
 	// exactly this statement (stokaro/ptah#1722).
-	for _, name := range diff.ProceduresRemoved {
-		result = append(result, ast.NewDropFunction(name).
+	for _, routine := range diff.ProceduresRemoved {
+		result = append(result, ast.NewDropFunction(routine.Name).
 			SetKind(schemamodel.FunctionKindProcedure).
 			SetIfExists().
 			SetComment("WARNING: Ensure no other objects depend on this procedure"))

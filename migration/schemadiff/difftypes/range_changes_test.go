@@ -887,3 +887,75 @@ func TestRoleChanges_TheAttributesSurviveInMemory(t *testing.T) {
 	c.Assert(changes.Names(), qt.DeepEquals, []string{"app_user"},
 		qt.Commentf("and the name list a consumer reads is unchanged"))
 }
+
+// TestFunctionChanges_TheWireShapeIsUnchanged is the same promise for the
+// fourteenth family off `[]string`, the one that retires a parallel field.
+func TestFunctionChanges_TheWireShapeIsUnchanged(t *testing.T) {
+	tests := []struct {
+		name    string
+		changes difftypes.FunctionChanges
+		want    string
+		why     string
+	}{
+		{
+			name:    "nil is null",
+			changes: nil,
+			want:    "null",
+			why:     "null is a comparison that did not run",
+		},
+		{
+			name:    "empty is an empty array",
+			changes: difftypes.FunctionChanges{},
+			want:    "[]",
+			why:     "[] is a comparison that ran and found nothing",
+		},
+		{
+			name: "neither the body nor the drop signature reaches the wire",
+			changes: difftypes.FunctionChanges{{
+				Function: schemamodel.Function{
+					Name: "bump", Parameters: "a integer", Returns: "integer",
+					Language: "sql", Body: "SELECT a + 1",
+				},
+				Signature: "integer",
+			}},
+			want: `["bump"]`,
+			why:  "a name list is what format_version 1 has always carried here",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			encoded, err := json.Marshal(test.changes)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(encoded), qt.Equals, test.want, qt.Commentf("%s", test.why))
+		})
+	}
+}
+
+// TestFunctionChanges_TheSignatureIsNotTheParameters is the distinction this
+// family exists to keep.
+//
+// `Parameters` is what the author wrote -- names, defaults, OUT arguments and
+// all -- and `Signature` is what identifies an overload to `DROP FUNCTION`.
+// PostgreSQL answers a bare name with `function name "f" is not unique`
+// whenever a schema holds more than one, and IF EXISTS does not help, because
+// the refusal is about ambiguity rather than existence (stokaro/ptah#2296).
+func TestFunctionChanges_TheSignatureIsNotTheParameters(t *testing.T) {
+	c := qt.New(t)
+
+	changes := difftypes.FunctionChanges{{
+		Function:  schemamodel.Function{Name: "bump", Parameters: "a integer DEFAULT 1"},
+		Signature: "integer",
+	}}
+
+	c.Assert(changes[0].Parameters, qt.Equals, "a integer DEFAULT 1",
+		qt.Commentf("what the author wrote, which a CREATE renders"))
+	c.Assert(changes[0].Signature, qt.Equals, "integer",
+		qt.Commentf("what identifies the overload, which a DROP addresses"))
+	c.Assert(changes.Removals(), qt.DeepEquals,
+		[]difftypes.RoutineRemoval{{Name: "bump", Signature: "integer"}},
+		qt.Commentf("and this is the shape the parallel list used to hold"))
+}

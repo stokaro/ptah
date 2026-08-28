@@ -738,7 +738,7 @@ func TestPlanner_GenerateMigrationAST_OrdersFunctionsByDependencies(t *testing.T
 		},
 	}
 	diff := &difftypes.SchemaDiff{
-		FunctionsAdded: []string{"a_child", "z_parent"},
+		FunctionsAdded: difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "a_child"}}, {Function: schemamodel.Function{Name: "z_parent"}}},
 	}
 
 	nodes, err := planner.GenerateMigrationAST(diff, desired)

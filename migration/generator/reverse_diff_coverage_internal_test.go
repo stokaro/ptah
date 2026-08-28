@@ -441,28 +441,32 @@ func distinctLabel(parent, name string) string {
 func TestReverseSchemaDiff_ADroppedOverloadKeepsItsSignature(t *testing.T) {
 	c := qt.New(t)
 
-	schema := &schemamodel.Database{
-		Functions: []schemamodel.Function{
-			{Name: "f", Parameters: "a text", Returns: "text", Body: "SELECT $1"},
-		},
-	}
-
+	// The addition carries its own declaration now, so the signature the
+	// rollback drops by comes from the change rather than from a lookup in the
+	// schema beside it (stokaro/ptah#2315). The schema is still passed, and
+	// still empty of this routine, which is what shows the carry is the source.
 	reversed := reverseSchemaDiffWithSchema(
-		&difftypes.SchemaDiff{FunctionsAdded: []string{"f"}}, schema, nil)
+		&difftypes.SchemaDiff{FunctionsAdded: difftypes.FunctionChanges{{
+			Function: schemamodel.Function{Name: "f", Parameters: "a text", Returns: "text", Body: "SELECT $1"},
+		}}}, &schemamodel.Database{}, nil)
 
-	c.Assert(reversed.FunctionsRemovedWithSignatures, qt.DeepEquals,
+	c.Assert(reversed.FunctionsRemoved.Removals(), qt.DeepEquals,
 		[]difftypes.RoutineRemoval{{Name: "f", Signature: "a text"}})
 }
 
 // TestReverseSchemaDiff_ARoutineTheSchemaNoLongerDeclaresDropsByName is the
 // control: an empty signature is the answer the bare list already gave, and it
 // drops correctly wherever the name is unique.
+//
+// What makes it empty changed with stokaro/ptah#2315. It used to be a lookup
+// that found nothing; it is now an addition that declared no parameters, which
+// is the same answer reached without depending on the schema still being there.
 func TestReverseSchemaDiff_ARoutineTheSchemaNoLongerDeclaresDropsByName(t *testing.T) {
 	c := qt.New(t)
 
 	reversed := reverseSchemaDiffWithSchema(
-		&difftypes.SchemaDiff{FunctionsAdded: []string{"gone"}}, &schemamodel.Database{}, nil)
+		&difftypes.SchemaDiff{FunctionsAdded: difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "gone"}}}}, &schemamodel.Database{}, nil)
 
-	c.Assert(reversed.FunctionsRemovedWithSignatures, qt.DeepEquals,
+	c.Assert(reversed.FunctionsRemoved.Removals(), qt.DeepEquals,
 		[]difftypes.RoutineRemoval{{Name: "gone", Signature: ""}})
 }

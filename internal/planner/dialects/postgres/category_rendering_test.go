@@ -153,11 +153,11 @@ func diffCategoryFixtures() []categoryFixture {
 		{"ExtensionsRemoved", &difftypes.SchemaDiff{ExtensionsRemoved: difftypes.ExtensionChanges{{Name: "pg_trgm"}}}, &schemamodel.Database{}},
 		{
 			"FunctionsAdded",
-			&difftypes.SchemaDiff{FunctionsAdded: []string{"f"}},
+			&difftypes.SchemaDiff{FunctionsAdded: difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "f"}}}},
 			&schemamodel.Database{Functions: []schemamodel.Function{{Name: "f", Returns: "int", Body: "SELECT 1"}}},
 		},
-		{"FunctionsRemoved", &difftypes.SchemaDiff{FunctionsRemoved: []string{"f"}}, &schemamodel.Database{}},
-		{"ProceduresRemoved", &difftypes.SchemaDiff{ProceduresRemoved: []string{"p"}}, &schemamodel.Database{}},
+		{"FunctionsRemoved", &difftypes.SchemaDiff{FunctionsRemoved: difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "f"}}}}, &schemamodel.Database{}},
+		{"ProceduresRemoved", &difftypes.SchemaDiff{ProceduresRemoved: difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "p"}}}}, &schemamodel.Database{}},
 		{
 			"FunctionsModified",
 			&difftypes.SchemaDiff{FunctionsModified: []difftypes.FunctionDiff{{FunctionName: "f", Changes: map[string]string{"body": "x -> y"}}}},

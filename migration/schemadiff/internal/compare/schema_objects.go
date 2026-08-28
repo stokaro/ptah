@@ -212,7 +212,7 @@ func FunctionsWithDialect(
 			// The desired spelling, never the folded key: the planner resolves
 			// this name back to its declaration by exact match, and the
 			// rendered DDL must carry what the operator wrote.
-			diff.FunctionsAdded = append(diff.FunctionsAdded, generatedFunction.Name)
+			diff.FunctionsAdded = append(diff.FunctionsAdded, declaredRoutine(generatedFunction))
 			continue
 		}
 		// Keyed by kind as well: a procedure and a function can share a
@@ -230,16 +230,16 @@ func FunctionsWithDialect(
 			continue
 		}
 		if strings.EqualFold(strings.TrimSpace(fn.Kind), "procedure") {
-			diff.ProceduresRemoved = append(diff.ProceduresRemoved, fn.QualifiedName())
+			diff.ProceduresRemoved = append(diff.ProceduresRemoved, reportedRoutine(fn))
 			continue
 		}
-		diff.FunctionsRemoved = append(diff.FunctionsRemoved, fn.QualifiedName())
+		diff.FunctionsRemoved = append(diff.FunctionsRemoved, reportedRoutine(fn))
 	}
 
 	// Ensure consistent ordering of results
-	sort.Strings(diff.FunctionsAdded)
-	sort.Strings(diff.FunctionsRemoved)
-	sort.Strings(diff.ProceduresRemoved)
+	sortRoutines(diff.FunctionsAdded)
+	sortRoutines(diff.FunctionsRemoved)
+	sortRoutines(diff.ProceduresRemoved)
 	sort.Slice(diff.FunctionsModified, func(i, j int) bool {
 		return diff.FunctionsModified[i].FunctionName < diff.FunctionsModified[j].FunctionName
 	})
@@ -287,9 +287,14 @@ func FunctionsWithSemantics(
 
 	for identity, declared := range generatedFunctions {
 		recorded := databaseFunctions[identity]
-		pairs, addedCount, _ := pairRoutineOverloads(declared, recorded)
-		for range addedCount {
-			diff.FunctionsAdded = append(diff.FunctionsAdded, generatedNames[identity])
+		pairs, added, _ := pairRoutineOverloads(declared, recorded)
+		// Each added overload carries ITS OWN declaration. Appending the shared
+		// name once per unmatched overload made the planner resolve the same
+		// declaration every time, so one overload was created twice and the
+		// other never (stokaro/ptah#2408).
+		for _, declaration := range added {
+			diff.FunctionsAdded = append(diff.FunctionsAdded,
+				declaredRoutineNamed(declaration, generatedNames[identity]))
 		}
 		for _, pair := range pairs {
 			functionComparison := FunctionDefinitionsWithDialect(pair.declared, pair.recorded, dialect)
@@ -315,18 +320,16 @@ func FunctionsWithSemantics(
 				Signature: recordedRoutineSignature(routine),
 			}
 			if identity.Kind() == objectidentity.KindProcedure {
-				diff.ProceduresRemoved = append(diff.ProceduresRemoved, removal.Name)
-				diff.ProceduresRemovedWithSignatures = append(diff.ProceduresRemovedWithSignatures, removal)
+				diff.ProceduresRemoved = append(diff.ProceduresRemoved, routineFromRemoval(removal))
 				continue
 			}
-			diff.FunctionsRemoved = append(diff.FunctionsRemoved, removal.Name)
-			diff.FunctionsRemovedWithSignatures = append(diff.FunctionsRemovedWithSignatures, removal)
+			diff.FunctionsRemoved = append(diff.FunctionsRemoved, routineFromRemoval(removal))
 		}
 	}
 
-	sort.Strings(diff.FunctionsAdded)
-	sort.Strings(diff.FunctionsRemoved)
-	sort.Strings(diff.ProceduresRemoved)
+	sortRoutines(diff.FunctionsAdded)
+	sortRoutines(diff.FunctionsRemoved)
+	sortRoutines(diff.ProceduresRemoved)
 	sort.Slice(diff.FunctionsModified, func(i, j int) bool {
 		return diff.FunctionsModified[i].FunctionName < diff.FunctionsModified[j].FunctionName
 	})
@@ -1036,4 +1039,57 @@ func sortSynonyms(synonyms difftypes.SynonymChanges) {
 	sort.Slice(synonyms, func(i, j int) bool {
 		return synonyms[i].QualifiedName() < synonyms[j].QualifiedName()
 	})
+}
+
+// declaredRoutine carries a routine the desired schema declares.
+//
+// A declaration has no drop identity: nothing is being dropped, and the
+// signature a DROP would need is the SERVER's canonical argument list, which
+// only a read supplies. See [difftypes.RoutineChange].
+func declaredRoutine(declared schemamodel.Function) difftypes.RoutineChange {
+	return difftypes.RoutineChange{Function: declared}
+}
+
+// declaredRoutineNamed is declaredRoutine for the overload-aware path, where
+// the name a diff carries is the desired spelling rather than the declaration's
+// own -- the planner resolves it back by exact match.
+func declaredRoutineNamed(declared schemamodel.Function, name string) difftypes.RoutineChange {
+	declared.Name = name
+	return difftypes.RoutineChange{Function: declared}
+}
+
+// reportedRoutine carries a routine the database reported, with the argument
+// list a DROP addresses it by.
+//
+// recordedRoutineSignature prefers the catalog's own identity arguments and
+// falls back to the declaration parameters, which is the same answer the
+// overload-aware path records.
+func reportedRoutine(reported catalog.Function) difftypes.RoutineChange {
+	return difftypes.RoutineChange{
+		Function: schemamodel.Function{
+			Name:       reported.QualifiedName(),
+			Kind:       reported.Kind,
+			Parameters: reported.Parameters,
+			Returns:    reported.Returns,
+			Language:   reported.Language,
+			Security:   reported.Security,
+			Volatility: reported.Volatility,
+			Body:       reported.Body,
+			Comment:    reported.Comment,
+		},
+		Signature: recordedRoutineSignature(reported),
+	}
+}
+
+// routineFromRemoval carries what the overload pairing already resolved.
+func routineFromRemoval(removal difftypes.RoutineRemoval) difftypes.RoutineChange {
+	return difftypes.RoutineChange{
+		Function:  schemamodel.Function{Name: removal.Name},
+		Signature: removal.Signature,
+	}
+}
+
+// sortRoutines orders by the key the name list was sorted on.
+func sortRoutines(routines difftypes.FunctionChanges) {
+	sort.Slice(routines, func(i, j int) bool { return routines[i].Name < routines[j].Name })
 }

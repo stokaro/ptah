@@ -275,7 +275,7 @@ func TestGenerateMigrationAST_ClickHouseGrantsKeepTheSlotTheRenderPathUsesForThe
 
 	diff := &difftypes.SchemaDiff{
 		RolesAdded:            difftypes.RoleChanges{{Name: "reporting"}},
-		FunctionsAdded:        []string{"bump"},
+		FunctionsAdded:        difftypes.FunctionChanges{{Function: schemamodel.Function{Name: "bump"}}},
 		RLSEnabledTablesAdded: []string{"events"},
 		RLSPoliciesAdded:      []difftypes.RLSPolicyRef{{PolicyName: "p1", TableName: "events"}},
 		GrantsAdded:           []difftypes.GrantRef{rbacGrant("SELECT")},
