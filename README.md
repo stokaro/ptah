@@ -14,6 +14,19 @@
 
 <p align="center"><a href="#install">Install</a> · <a href="https://stokaro.github.io/ptah/edge/start/quick-start/">Quick start</a> · <a href="https://stokaro.github.io/ptah/edge/operate/inference-migrations/">Inference migrations</a> · <a href="https://stokaro.github.io/ptah/edge/">Documentation</a> · <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">Database support</a></p>
 
+<p align="center">
+  <a href="https://stokaro.github.io/ptah/edge/databases/postgresql/">PostgreSQL</a> ·
+  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">MySQL</a> ·
+  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">MariaDB</a> ·
+  <a href="https://stokaro.github.io/ptah/edge/databases/sqlite/">SQLite</a> ·
+  <a href="https://stokaro.github.io/ptah/edge/databases/sqlserver/">SQL Server</a> ·
+  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">ClickHouse</a> ·
+  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">CockroachDB</a> ·
+  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">YugabyteDB</a> ·
+  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">Oracle</a> ·
+  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">Spanner</a>
+</p>
+
 Ptah manages database change across schemas and persistent inference state. For
 schemas, it compares a desired schema with a live database and either writes
 versioned migrations or applies an approved plan directly. For inference state,
@@ -66,6 +79,7 @@ The [installation guide](https://stokaro.github.io/ptah/edge/start/install/)
 covers version pinning, signature verification, download-without-execution,
 and building from source.
 
+<!-- ptah:readme-example -->
 ## Try Ptah with SQLite
 
 Save this desired schema as `schema.sql`:
@@ -86,8 +100,26 @@ ptah schema apply --db-url "sqlite://app.db" --schema-file schema.sql --auto-app
 ptah schema drift --db-url "sqlite://app.db" --schema-file schema.sql
 ```
 
-The final command prints `No schema drift detected.` and exits 0. Remove
-`app.db` and `schema.sql` when you are done.
+Expected output includes:
+
+```text
+CREATE TABLE "users" (
+```
+
+Expected output includes:
+
+```text
+Schema apply completed successfully.
+```
+
+Expected output includes:
+
+```text
+No schema drift detected.
+```
+
+The last command exits 0 when the database matches the file, which is what makes
+it usable as a CI gate. Remove `app.db` and `schema.sql` when you are done.
 
 > [!CAUTION]
 > `--auto-approve` skips the confirmation prompt. A direct schema change can
