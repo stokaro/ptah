@@ -2329,11 +2329,11 @@ func nilWhenEmpty[T any](values []T) []T {
 	return values
 }
 
-// database is the shape the qualifier takes, holding the vocabulary and the
-// fields to qualify and nothing else.
-func (v UserTypeVocabulary) database(fields []schemamodel.Field) *schemamodel.Database {
-	return &schemamodel.Database{
-		Fields:         fields,
+// declared is the vocabulary in the shape the qualifier reads it, and is the
+// whole of what this hands over: the four lists, and no schema description
+// built around them.
+func (v UserTypeVocabulary) declared() fromschema.DeclaredUserTypes {
+	return fromschema.DeclaredUserTypes{
 		Domains:        v.Domains,
 		CompositeTypes: v.CompositeTypes,
 		Ranges:         v.Ranges,
@@ -2365,7 +2365,17 @@ func TableCreationFor(desired *schemamodel.Database, table schemamodel.Table, na
 	}
 	creation.Fields = owned
 	creation.Enums = fromschema.EnumsFor(owned, desired.Enums)
-	creation.DependsOn = desired.Dependencies[table.QualifiedName()]
+	// Derived rather than read out of desired.Dependencies, because that map is
+	// filled by [schemamodel.Finalize] and a declaration assembled in memory has
+	// not necessarily been through it. The carry's promise is that everything the
+	// planner needs travels with the creation; a carry that is complete only when
+	// the caller remembered to finalize is the same trap in a new place, and it
+	// fails as a table created before the one it references rather than as an
+	// error. [deporder.GeneratedTableDependencies] unions the declared map with
+	// the three kinds of edge a declaration expresses -- a field's `foreign=`, a
+	// relation-mode embedded field, and a table-level FOREIGN KEY constraint --
+	// so it is correct for a finalized declaration and for one built by hand.
+	creation.DependsOn = deporder.GeneratedTableDependencies(desired)[table.QualifiedName()]
 	creation.SelfReferencingForeignKeys = desired.SelfReferencingForeignKeys[table.QualifiedName()]
 	return creation
 }
@@ -2421,26 +2431,48 @@ type TableChanges []TableCreation
 // creation, which is what lets a planner order what it is about to create
 // without being handed the schema it came out of (stokaro/ptah#2315).
 //
-// The mapping back from an ordered table to its creation is by struct name
-// rather than by table name, deliberately. A creation's Name is the spelling
-// the COMPARISON produced, qualified per dialect, while an ordered table
-// carries the spelling the DECLARATION used; the struct name is the identity
-// both sides agree on, and it is the same key the renderer filters a table's
-// columns by.
+// The edges are the ones the declaration finalized -- a field's `foreign=`, a
+// relation-mode embedded field, and a table-level FOREIGN KEY constraint all
+// reach [go.5x5.cz/ptah/core/schemamodel.Database.Dependencies] before a
+// creation is assembled -- so ordering reads one list per creation rather than
+// re-deriving three kinds of edge from a schema.
+//
+// Both the node and the edge are the table's qualified name from the
+// DECLARATION, never the creation's Name, which is the spelling the COMPARISON
+// produced and is qualified per dialect. The two are different strings for the
+// same table on the dialects that rewrite a schema qualifier, and an edge names
+// the declaration's spelling.
+//
+// An edge to a table this diff is not creating is skipped rather than ordered
+// against: the referenced table already exists, so nothing here has to come
+// after it.
 func (t TableChanges) InDependencyOrder() TableChanges {
 	if len(t) == 0 {
 		return nil
 	}
-	byStruct := make(map[string]TableCreation, len(t))
+	keys := make([]string, 0, len(t))
+	byKey := make(map[string]TableCreation, len(t))
+	edges := make(map[string][]string, len(t))
 	for _, creation := range t {
-		byStruct[creation.Table.StructName] = creation
+		// A creation naming no declared table carries nothing to render, which
+		// is what a diff that names a table the declaration does not have
+		// assembles to. Ordering is the last step before rendering on every
+		// planner, so it is where such an entry stops.
+		if creation.Table.Name == "" {
+			continue
+		}
+		key := creation.Table.QualifiedName()
+		if _, seen := byKey[key]; seen {
+			continue
+		}
+		keys = append(keys, key)
+		byKey[key] = creation
+		edges[key] = creation.DependsOn
 	}
 
-	ordered := make(TableChanges, 0, len(t))
-	for _, table := range deporder.TablesForCreate(t.Schema(), t.Names()) {
-		if creation, ok := byStruct[table.StructName]; ok {
-			ordered = append(ordered, creation)
-		}
+	ordered := make(TableChanges, 0, len(byKey))
+	for _, key := range deporder.StableTopologicalSort(keys, edges) {
+		ordered = append(ordered, byKey[key])
 	}
 	return ordered
 }
@@ -2462,8 +2494,7 @@ func (t TableChanges) Qualified(vocabulary UserTypeVocabulary, dialect string) T
 	}
 	qualified := make(TableChanges, 0, len(t))
 	for _, creation := range t {
-		resolved := fromschema.QualifyDeclaredUserTypes(vocabulary.database(creation.Fields), dialect)
-		creation.Fields = resolved.Fields
+		creation.Fields = fromschema.QualifyFieldUserTypes(creation.Fields, vocabulary.declared(), dialect)
 		qualified = append(qualified, creation)
 	}
 	return qualified
@@ -2489,34 +2520,6 @@ func (t TableChanges) Names() []string {
 		names = append(names, creation.Name)
 	}
 	return names
-}
-
-// Schema assembles the declaration these creations describe, and nothing else.
-//
-// It exists so that a caller ordering the creations can use the same dependency
-// rules the whole desired schema is ordered by, without being handed that
-// schema. Every input those rules read travels with a creation: the tables, the
-// columns whose foreign references are edges, and the document's own dependency
-// map.
-//
-// It is not a desired schema and must not be used as one. It holds the tables
-// this diff CREATES and their columns, so a rule that asked it about a table
-// the plan is not creating would be told the table does not exist -- which is
-// the right answer for ordering these creations and the wrong one for anything
-// else.
-func (t TableChanges) Schema() *schemamodel.Database {
-	schema := &schemamodel.Database{
-		Tables:       make([]schemamodel.Table, 0, len(t)),
-		Dependencies: make(map[string][]string, len(t)),
-	}
-	for _, creation := range t {
-		schema.Tables = append(schema.Tables, creation.Table)
-		schema.Fields = append(schema.Fields, creation.Fields...)
-		if len(creation.DependsOn) > 0 {
-			schema.Dependencies[creation.Table.QualifiedName()] = creation.DependsOn
-		}
-	}
-	return schema
 }
 
 // RLSEnabledTableChanges is a list of row-level-security enablements a diff

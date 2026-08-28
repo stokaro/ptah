@@ -58,16 +58,53 @@ func QualifyDeclaredUserTypes(database *schemamodel.Database, targetPlatform str
 		return nil
 	}
 	clone := *database
-	scalars, arrays := declaredUserTypeQualifiers(database, targetPlatform)
-	if len(scalars) == 0 && len(arrays) == 0 {
-		return &clone
-	}
-	clone.Fields = make([]schemamodel.Field, len(database.Fields))
-	copy(clone.Fields, database.Fields)
-	for i := range clone.Fields {
-		clone.Fields[i].Type = qualifyUserTypeReference(clone.Fields[i].Type, scalars, arrays)
-	}
+	clone.Fields = QualifyFieldUserTypes(database.Fields, DeclaredUserTypes{
+		Domains:        database.Domains,
+		CompositeTypes: database.CompositeTypes,
+		Ranges:         database.Ranges,
+		Enums:          database.Enums,
+	}, targetPlatform)
 	return &clone
+}
+
+// DeclaredUserTypes is the vocabulary [QualifyFieldUserTypes] resolves a column
+// type against: the four kinds of user type a schema declares.
+//
+// It is the whole of what the qualification reads. Naming it lets a caller that
+// holds those four lists ask for the rewrite without assembling a schema
+// description around them, which is the direction ADR 0001's
+// `pipeline-builds-source-description` rule points: a stage downstream of the
+// comparison receives what a source wrote and does not build it.
+type DeclaredUserTypes struct {
+	Domains        []schemamodel.Domain
+	CompositeTypes []schemamodel.CompositeType
+	Ranges         []schemamodel.Range
+	Enums          []schemamodel.Enum
+}
+
+// QualifyFieldUserTypes returns fields whose column types name the schema of
+// the user type declared for them, and is what [QualifyDeclaredUserTypes] does
+// once the schema description is set aside.
+//
+// The returned slice is a copy whenever anything is rewritten, so the caller's
+// fields are left as the declaration wrote them. Every rule about which names
+// are rewritten and which are deliberately left alone is stated on
+// [QualifyDeclaredUserTypes].
+func QualifyFieldUserTypes(
+	fields []schemamodel.Field,
+	declared DeclaredUserTypes,
+	targetPlatform string,
+) []schemamodel.Field {
+	scalars, arrays := declaredUserTypeQualifiers(declared, targetPlatform)
+	if len(scalars) == 0 && len(arrays) == 0 {
+		return fields
+	}
+	qualified := make([]schemamodel.Field, len(fields))
+	copy(qualified, fields)
+	for i := range qualified {
+		qualified[i].Type = qualifyUserTypeReference(qualified[i].Type, scalars, arrays)
+	}
+	return qualified
 }
 
 // declaredUserTypeQualifiers maps the bare name of every unambiguously declared
@@ -79,7 +116,7 @@ func QualifyDeclaredUserTypes(database *schemamodel.Database, targetPlatform str
 // twice is mapped to the empty string rather than dropped, so that a later
 // declaration of the same name cannot re-add it.
 func declaredUserTypeQualifiers(
-	database *schemamodel.Database,
+	database DeclaredUserTypes,
 	targetPlatform string,
 ) (scalars, arrays map[string]string) {
 	declare := func(into map[string]string, name, schema, qualified string) {
