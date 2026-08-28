@@ -1620,6 +1620,42 @@ must never do is take a handle and assert its way to the concrete type:
 `c.TB.(*testing.T)` inside a helper declared for `testing.TB` panics the moment
 it is called from a benchmark, and the signature promises otherwise.
 
+### A rule with no caller is a rule that is not in effect
+
+`unused` counts a test as a use. So a function that carries a rule, carries its
+own tests, and is called from nothing else is green in every gate — and the
+behavior it describes is absent.
+
+Measured twice in one feature. `embedrun.ResolveWrite` held the row-level write
+rules — a write never crosses generations, a stale answer does not win, a
+tombstone survives a late update — with thirteen tests, while the write path
+rendered an unconditional `UPDATE` (stokaro/ptah#2391). `embedrun.Run.Advance`
+held the phase machine, with its own transition table and a fencing check, while
+`status` reported whatever `prepare` wrote, forever (stokaro/ptah#2441).
+
+The second is the instructive one: it had no caller because it **could not be
+obeyed**. One phase step per call, against verbs that complete several. A rule
+the surrounding code cannot follow does not get followed, and nothing says so.
+
+`internal/embedguard` reports the shape over `internal/embed...`: an exported
+function or method that no non-test file calls. Running it found five more
+(stokaro/ptah#2474).
+
+Two things this asks of a new rule, and neither is satisfied by adding a test:
+
+- **The test has to be one the production path fails without.** A test that
+  calls the decision function directly proves the function works, not that
+  anything uses it. Disable the rule and watch a test that drives the real
+  entry point redden.
+- **A finding is a decision, not a suppression.** Either the behavior is
+  missing and something should call it, or it exists elsewhere and the
+  declaration should go. `embedguard.Exempt` refuses a bare entry, and the
+  reason has to say which of the two it is.
+
+The rule generalizes past this package. Anywhere a decision is factored into a
+function so it can be tested, the factoring is what makes the test possible and
+also what makes the call site optional.
+
 ### A Table Row Carries Data, Not A Checker
 
 A table-driven test that forbids conditionals in its body pushes the varying
