@@ -28,7 +28,7 @@ func TestPlanner_GenerateMigrationAST_MultiSchemaTablesAndFKs(t *testing.T) {
 		SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
 	}
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableChanges{{Name: "auth.users"}, {Name: "billing.invoices"}},
+		TablesAdded: difftypes.TableCreationsFor(desired, "auth.users", "billing.invoices"),
 	}
 
 	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
@@ -61,7 +61,7 @@ func TestPlanner_GenerateMigrationAST_TrimsSchemaPreconditions(t *testing.T) {
 		SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
 	}
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableChanges{{Name: "auth.users"}, {Name: "auth.accounts"}, {Name: "blank"}},
+		TablesAdded: difftypes.TableCreationsFor(desired, "auth.users", "auth.accounts", "blank"),
 	}
 
 	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
@@ -94,7 +94,7 @@ func TestPlanner_GenerateMigrationAST_DoesNotQualifyAmbiguousLeafFK(t *testing.T
 		SelfReferencingForeignKeys: make(map[string][]schemamodel.SelfReferencingFK),
 	}
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableChanges{{Name: "auth.users"}, {Name: "crm.users"}, {Name: "billing.invoices"}},
+		TablesAdded: difftypes.TableCreationsFor(desired, "auth.users", "crm.users", "billing.invoices"),
 	}
 
 	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)

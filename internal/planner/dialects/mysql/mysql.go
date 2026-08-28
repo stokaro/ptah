@@ -166,25 +166,17 @@ func (p *Planner) enumDialectLabel() string {
 	}
 }
 
-func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	orderedTables := deporder.TablesForCreate(desired, diff.TablesAdded.Names())
-
-	// Phase 1: Create tables without foreign key constraints
-	result = p.createTablesWithoutForeignKeys(result, desired, orderedTables)
-
-	return result
-}
-
-func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	return p.addForeignKeyConstraints(result, desired, deporder.TablesForCreate(desired, diff.TablesAdded.Names()))
-}
-
-// createTablesWithoutForeignKeys creates all tables without foreign key constraints
-func (p *Planner) createTablesWithoutForeignKeys(result []ast.Node, desired *schemamodel.Database, tables []schemamodel.Table) []ast.Node {
-	allFields := desired.Fields
-
-	for _, table := range tables {
-		astNode := fromschema.FromTable(table, allFields, desired.Enums, p.targetDialect())
+func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	// Phase 1: create the tables without their foreign keys, in an order where
+	// a table comes after everything it references.
+	//
+	// Both halves read the diff and nothing else. A creation carries the
+	// declaration, this table's columns and the enums they name, and the
+	// ordering rules read the same three plus the document's dependency map,
+	// which travels too (stokaro/ptah#2315).
+	creations := diff.TablesAdded.Qualified(diff.DeclaredUserTypes, p.targetDialect()).InDependencyOrder()
+	for _, creation := range creations {
+		astNode := fromschema.FromTable(creation.Table, creation.Fields, creation.Enums, p.targetDialect())
 		for _, column := range astNode.Columns {
 			column.ForeignKey = nil
 		}
@@ -192,6 +184,10 @@ func (p *Planner) createTablesWithoutForeignKeys(result []ast.Node, desired *sch
 	}
 
 	return result
+}
+
+func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+	return p.addForeignKeyConstraints(result, desired, deporder.TablesForCreate(desired, diff.TablesAdded.Names()))
 }
 
 // addForeignKeyConstraints adds foreign key constraints via ALTER TABLE statements
@@ -1305,7 +1301,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	result = p.handleEnumModifications(result, diff)
 
 	// 3. Add new tables
-	result = p.addNewTables(result, diff, desired)
+	result = p.addNewTables(result, diff)
 
 	// 4. Modify existing tables. On MySQL/MariaDB a column-type change on a
 	// column that participates in a foreign key — as the referencing OR the

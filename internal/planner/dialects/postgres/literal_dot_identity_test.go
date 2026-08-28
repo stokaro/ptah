@@ -16,7 +16,14 @@ func TestPlanner_LiteralDotAndQualifiedTablesRemainDistinct(t *testing.T) {
 	c := qt.New(t)
 	desired := literalDotAndQualifiedSchema()
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableChanges{{Name: `"tenant.data"`}, {Name: "tenant.data"}},
+		// By table rather than by name, because a name is exactly what these two
+		// tables share: `tenant.data` is the literal name of one and the
+		// qualified name of the other, so asking for a creation by that string
+		// is the ambiguity this test exists to keep apart.
+		TablesAdded: difftypes.TableChanges{
+			difftypes.TableCreationFor(desired, desired.Tables[0], `"tenant.data"`),
+			difftypes.TableCreationFor(desired, desired.Tables[1], "tenant.data"),
+		},
 		IndexesAdded: []difftypes.IndexRef{
 			{Name: "literal_lookup", TableName: `"tenant.data"`},
 			{Name: "qualified_lookup", TableName: "tenant.data"},

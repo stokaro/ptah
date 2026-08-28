@@ -189,12 +189,17 @@ func TestPlanner_GenerateMigrationSQL_TablesAdded(t *testing.T) {
 		diff     *difftypes.SchemaDiff
 		desired  *schemamodel.Database
 		expected func(nodes []ast.Node) bool
+
+		// tablesAdded names the tables the diff creates. The creations are
+		// assembled from the row's own desired schema in the loop below,
+		// because a row cannot reference its own other field
+		// (stokaro/ptah#2315).
+		tablesAdded []string
 	}{
 		{
-			name: "single table added",
-			diff: &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableChanges{{Name: "users"}},
-			},
+			name:        "single table added",
+			tablesAdded: []string{"users"},
+			diff:        &difftypes.SchemaDiff{},
 			desired: &schemamodel.Database{
 				Tables: []schemamodel.Table{
 					{Name: "users", StructName: "User"},
@@ -216,10 +221,9 @@ func TestPlanner_GenerateMigrationSQL_TablesAdded(t *testing.T) {
 			},
 		},
 		{
-			name: "composite primary key is created with new table",
-			diff: &difftypes.SchemaDiff{
-				TablesAdded: difftypes.TableChanges{{Name: "memberships"}},
-			},
+			name:        "composite primary key is created with new table",
+			tablesAdded: []string{"memberships"},
+			diff:        &difftypes.SchemaDiff{},
 			desired: &schemamodel.Database{
 				Tables: []schemamodel.Table{{
 					Name:       "memberships",
@@ -242,6 +246,8 @@ func TestPlanner_GenerateMigrationSQL_TablesAdded(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
+
+			tt.diff.TablesAdded = difftypes.TableCreationsFor(tt.desired, tt.tablesAdded...)
 
 			planner := &postgres.Planner{}
 			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
@@ -1039,12 +1045,18 @@ func TestPlanner_GenerateMigrationSQL_ComplexScenario(t *testing.T) {
 		diff     *difftypes.SchemaDiff
 		desired  *schemamodel.Database
 		expected func(nodes []ast.Node) bool
+
+		// tablesAdded names the tables the diff creates. The creations are
+		// assembled from the row's own desired schema in the loop below,
+		// because a row cannot reference its own other field
+		// (stokaro/ptah#2315).
+		tablesAdded []string
 	}{
 		{
-			name: "complete migration with all operations",
+			name:        "complete migration with all operations",
+			tablesAdded: []string{"users"},
 			diff: &difftypes.SchemaDiff{
-				EnumsAdded:  difftypes.EnumChanges{{Name: "user_status", Values: []string{"active", "inactive"}}},
-				TablesAdded: difftypes.TableChanges{{Name: "users"}},
+				EnumsAdded: difftypes.EnumChanges{{Name: "user_status", Values: []string{"active", "inactive"}}},
 				IndexesAdded: []difftypes.IndexRef{
 					{Name: "idx_users_email", TableName: "users"},
 				},
@@ -1086,6 +1098,8 @@ func TestPlanner_GenerateMigrationSQL_ComplexScenario(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
+
+			tt.diff.TablesAdded = difftypes.TableCreationsFor(tt.desired, tt.tablesAdded...)
 
 			planner := &postgres.Planner{}
 			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
@@ -1134,6 +1148,8 @@ func TestPlanner_GenerateMigrationSQL_EdgeCases(t *testing.T) {
 		{
 			name: "table added but not found in generated schema",
 			diff: &difftypes.SchemaDiff{
+				// A name no declared table answers to, which is what this row is
+				// about: the creation carries nothing to render.
 				TablesAdded: difftypes.TableChanges{{Name: "missing_table"}},
 			},
 			desired: &schemamodel.Database{
@@ -1646,7 +1662,7 @@ func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 	}
 
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableChanges{{Name: "test_table"}},
+		TablesAdded: difftypes.TableCreationsFor(desired, "test_table"),
 	}
 
 	planner := &postgres.Planner{}

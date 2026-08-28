@@ -407,7 +407,7 @@ func TestGenerateDownMigrationSQL_DropsSchemaQualifiedTableLevelFKChildBeforePar
 			},
 		},
 	}
-	upDiff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "app.accounts"}, {Name: "app.projects"}}}
+	upDiff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(schema, "app.accounts", "app.projects")}
 
 	downSQL, err := generateDownMigrationSQL(upDiff, schema, &catalog.Database{}, "postgres")
 
@@ -803,7 +803,7 @@ func TestReverseSchemaDiff_AddedTableForeignKeyRemovalsWithTables(t *testing.T) 
 		},
 	}
 	upDiff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableChanges{{Name: "app.projects"}},
+		TablesAdded: difftypes.TableCreationsFor(generatedSchema, "app.projects"),
 	}
 
 	result := reverseSchemaDiffWithSchema(upDiff, generatedSchema, nil)

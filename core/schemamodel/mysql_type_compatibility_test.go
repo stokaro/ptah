@@ -113,7 +113,7 @@ func TestMySQLMigrationGeneratesCompatibleTypes(t *testing.T) {
 
 	// Create schema diff for adding both tables
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableChanges{{Name: "users"}, {Name: "articles"}},
+		TablesAdded: difftypes.TableCreationsFor(db, "users", "articles"),
 	}
 
 	// Generate migration using MySQL planner

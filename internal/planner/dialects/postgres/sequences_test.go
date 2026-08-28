@@ -22,7 +22,6 @@ func TestPlanner_SequencesAdded_OrderedBeforeTablesWithOwnershipAfter(t *testing
 		SequencesAdded: difftypes.SequenceChanges{
 			{Name: "order_seq", AsType: "bigint", Cache: new(int64(20)), OwnedBy: "orders.id"},
 		},
-		TablesAdded: difftypes.TableChanges{{Name: "orders"}},
 	}
 	desired := &schemamodel.Database{
 		Sequences: []schemamodel.Sequence{
@@ -31,6 +30,9 @@ func TestPlanner_SequencesAdded_OrderedBeforeTablesWithOwnershipAfter(t *testing
 		Tables: []schemamodel.Table{{StructName: "Order", Name: "orders"}},
 		Fields: []schemamodel.Field{{StructName: "Order", Name: "id", Type: "BIGINT", Primary: true}},
 	}
+	// After the schema exists: a creation carries what CREATE TABLE renders
+	// from, derived from the declaration (stokaro/ptah#2315).
+	diff.TablesAdded = difftypes.TableCreationsFor(desired, "orders")
 
 	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
 	c.Assert(err, qt.IsNil)

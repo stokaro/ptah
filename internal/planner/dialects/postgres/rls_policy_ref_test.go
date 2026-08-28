@@ -227,10 +227,15 @@ func TestCompare_AnRLSPolicyResolvesTheDefaultSchemaSpelling(t *testing.T) {
 					UsingExpression: "tenant_id = 1",
 				}},
 			}
-			database := &catalog.Database{RLSPolicies: []catalog.RLSPolicy{{
-				Name: "tenant_isolation", Table: test.reported,
-				PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 99",
-			}}}
+			// The table is on both sides, so the only difference is the policy
+			// and the plan is the one statement this test is about.
+			database := &catalog.Database{
+				Tables: []catalog.Table{{Schema: "public", Name: "orders"}},
+				RLSPolicies: []catalog.RLSPolicy{{
+					Name: "tenant_isolation", Table: test.reported,
+					PolicyFor: "ALL", ToRoles: "PUBLIC", UsingExpression: "tenant_id = 99",
+				}},
+			}
 
 			diff := schemadiff.CompareWithDialect(desired, database, "postgres")
 

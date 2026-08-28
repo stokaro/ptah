@@ -10,7 +10,6 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/crdbttl"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/spannerttl"
@@ -147,16 +146,14 @@ func TablesAndColumnsWithGeneratedExpressions(
 	// planner would have to resolve back into a declaration: this table's
 	// columns, with embedded fields already folded in, and the enums those
 	// columns name (stokaro/ptah#2315).
-	allFields := fromschema.ProcessEmbeddedFields(desired.EmbeddedFields, desired.Fields)
+	// The type vocabulary a created column may name, carried once for the whole
+	// diff rather than per table: a column may name a type nothing here changes
+	// (stokaro/ptah#2315).
+	diff.DeclaredUserTypes = difftypes.UserTypeVocabularyOf(desired)
 	for identity, table := range genTables {
 		if _, exists := dbTables[identity]; !exists {
-			fields := tableFields(allFields, table)
-			diff.TablesAdded = append(diff.TablesAdded, difftypes.TableCreation{
-				Name:   tableDiffName(table.Schema, table.Name, dialect),
-				Table:  table,
-				Fields: fields,
-				Enums:  fromschema.EnumsFor(fields, desired.Enums),
-			})
+			diff.TablesAdded = append(diff.TablesAdded, difftypes.TableCreationFor(
+				desired, table, tableDiffName(table.Schema, table.Name, dialect)))
 		}
 	}
 
@@ -327,21 +324,6 @@ func rowDeletionPolicyChange(
 		return nil
 	}
 	return &difftypes.RowDeletionPolicyChange{Desired: desired.Clone(), Current: current.Clone()}
-}
-
-// tableFields is the columns one table owns, in declaration order.
-//
-// The renderer filters the whole list by struct name anyway, so a pre-filtered
-// list renders exactly what the whole one did -- and the caller no longer has
-// to be handed every column of every table to render one.
-func tableFields(fields []schemamodel.Field, table schemamodel.Table) []schemamodel.Field {
-	owned := make([]schemamodel.Field, 0, len(fields))
-	for _, field := range fields {
-		if field.StructName == table.StructName {
-			owned = append(owned, field)
-		}
-	}
-	return owned
 }
 
 // tableCreationSchemaOnly and tableCreationName are the coverage filter's two

@@ -44,7 +44,7 @@ func TestGenerateSchemaDiffSQL_AvoidsExplicitAndGeneratedForeignKeyNameCollision
 		ForeignKeyName: "FK_CHILDREN_PARENT_ID",
 	})
 	schemamodel.Finalize(schema)
-	diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "parents"}, {Name: "children"}}}
+	diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(schema, "parents", "children")}
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, schema, platform.MySQL)
 

@@ -16,7 +16,7 @@ func TestPlanner_GenerateMigrationAST_OrdersFKChainTables(t *testing.T) {
 	planner := postgres.New()
 	desired := dependencyOrderSchema()
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableChanges{{Name: "ptah_fk_order_tasks"}, {Name: "ptah_fk_order_projects"}, {Name: "ptah_fk_order_accounts"}},
+		TablesAdded: difftypes.TableCreationsFor(desired, "ptah_fk_order_tasks", "ptah_fk_order_projects", "ptah_fk_order_accounts"),
 	}
 
 	nodes, err := planner.GenerateMigrationAST(diff, desired)
@@ -35,7 +35,7 @@ func TestPlanner_GenerateMigrationAST_OrdersFKDiamondTables(t *testing.T) {
 	planner := postgres.New()
 	desired := dependencyOrderSchema()
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableChanges{{Name: "ptah_fk_order_tasks"}, {Name: "ptah_fk_order_projects"}, {Name: "ptah_fk_order_memberships"}, {Name: "ptah_fk_order_accounts"}},
+		TablesAdded: difftypes.TableCreationsFor(desired, "ptah_fk_order_tasks", "ptah_fk_order_projects", "ptah_fk_order_memberships", "ptah_fk_order_accounts"),
 	}
 
 	nodes, err := planner.GenerateMigrationAST(diff, desired)
@@ -80,7 +80,7 @@ func TestPlanner_GenerateMigrationAST_AddsReferencedUniqueIndexBeforeNewTableFKs
 	planner := postgres.New()
 	desired := referencedUniqueKeySchema()
 	diff := &difftypes.SchemaDiff{
-		TablesAdded: difftypes.TableChanges{{Name: "ptah_fk_order_children"}, {Name: "ptah_fk_order_parents"}},
+		TablesAdded: difftypes.TableCreationsFor(desired, "ptah_fk_order_children", "ptah_fk_order_parents"),
 		IndexesAdded: []difftypes.IndexRef{
 			{Name: "uq_ptah_fk_order_parents_code_idx", TableName: "ptah_fk_order_parents"},
 		},
@@ -101,7 +101,7 @@ func TestPlanner_GenerateMigrationAST_AddsReferencedUniqueConstraintBeforeNewTab
 	planner := postgres.New()
 	desired := referencedUniqueKeySchema()
 	diff := &difftypes.SchemaDiff{
-		TablesAdded:      difftypes.TableChanges{{Name: "ptah_fk_order_children"}, {Name: "ptah_fk_order_parents"}},
+		TablesAdded:      difftypes.TableCreationsFor(desired, "ptah_fk_order_children", "ptah_fk_order_parents"),
 		ConstraintsAdded: []string{"uq_ptah_fk_order_parents_code"},
 		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 			Name:      "uq_ptah_fk_order_parents_code",
