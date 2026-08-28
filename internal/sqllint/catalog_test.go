@@ -217,6 +217,16 @@ func TestCatalogRowsMatchTheEmittedFindings(t *testing.T) {
 			code:    "SQL004",
 		},
 		{
+			// The index and the table it names are in one file, which is where
+			// an index usually finds its table. Options.Schema is the other
+			// route and is exercised by the rule's own tests.
+			name: "index over a column the table does not declare",
+			source: sqllint.Source{Name: "index.sql", SQL: "CREATE TABLE users (id INT PRIMARY KEY);\n" +
+				"CREATE INDEX idx_users_email ON users (email);"},
+			options: sqllint.Options{Dialect: platform.Postgres},
+			code:    "DDL002",
+		},
+		{
 			name:    "table without a primary key",
 			source:  sqllint.Source{Name: "schema.sql", SQL: "CREATE TABLE users (email TEXT NOT NULL);"},
 			options: sqllint.Options{Dialect: platform.Postgres},

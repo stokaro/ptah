@@ -220,12 +220,13 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## SQL lint rules
 
-6 rules, reported by `ptah sql lint` over standalone SQL files, on every dialect. The compatibility surface has no verb that reaches them.
+7 rules, reported by `ptah sql lint` over standalone SQL files, on every dialect. The compatibility surface has no verb that reaches them.
 
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
 | `CAP001` | the statement needs a capability the target server version does not have | native only | Ptah |
 | `DDL001` | the created table declares no primary key | native only | Ptah |
+| `DDL002` | an index names a column the schema does not declare | native only | Ptah |
 | `SQL001` | the SQL parser could not build an AST, so no rule could inspect the statement | native only | Ptah |
 | `SQL002` | the statement uses a sub-language `ptah sql lint` does not model yet | native only | Ptah |
 | `SQL003` | a routine body builds SQL at run time, so static analysis of that routine stops there | native only | Ptah |
@@ -233,7 +234,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Default severities
 
-15 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `SQL001`, `SQL002`. The other 37 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
+16 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `SQL001`, `SQL002`. The other 37 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
 
 ## What ptah-compat prints
 

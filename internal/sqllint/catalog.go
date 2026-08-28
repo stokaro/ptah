@@ -23,6 +23,11 @@ var catalogRules = []CatalogRule{
 	{ID: RuleParseError, Title: "SQL parse error", Severity: SeverityError},
 	{ID: RuleUnsupportedStatement, Title: "Unsupported SQL statement", Severity: SeverityError},
 	{ID: RuleTableWithoutPrimaryKey, Title: "Table has no primary key", Severity: SeverityWarning},
+	{
+		ID:       RuleIndexNamesUnknownColumn,
+		Title:    "index names a column the schema does not declare",
+		Severity: SeverityError,
+	},
 	{ID: RuleUnsupportedCapability, Title: "Statement requires unsupported capability", Severity: SeverityError},
 	{ID: RuleDynamicSQL, Title: "Dynamic SQL limits static analysis", Severity: SeverityInfo},
 	{ID: RuleStatementsNotAnalyzed, Title: "Statements no rule analyzed", Severity: SeverityInfo},

@@ -311,6 +311,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 // sqlRuleMeta declares the same facts for the standalone SQL linter, which
 // only native ptah reaches.
 var sqlRuleMeta = map[string]ruleMeta{
+	"DDL002": {
+		Summary: "an index names a column the schema does not declare",
+	},
 	"SQL001": {
 		Summary: "the SQL parser could not build an AST, so no rule could inspect the statement",
 	},
