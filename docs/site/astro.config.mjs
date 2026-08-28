@@ -21,6 +21,7 @@ const base = `/ptah/${DOCS_VERSION}/`;
 // prepended below before the map reaches Astro.
 const redirectRoutes = {
   '/getting-started/': '/start/quick-start/',
+  '/operate/inference-migrations/': '/inference/overview/',
   '/install/': '/start/install/',
   '/documentation-map/': '/',
   '/workflows/go-schema/': '/schema/go-annotations/',

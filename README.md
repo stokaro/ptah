@@ -12,7 +12,7 @@
   <a href="https://github.com/stokaro/ptah/blob/master/LICENSE"><img src="https://img.shields.io/github/license/stokaro/ptah?label=license&color=blue" alt="The license badge, reading MIT"></a>
 </p>
 
-<p align="center"><a href="#install">Install</a> · <a href="https://stokaro.github.io/ptah/edge/start/quick-start/">Quick start</a> · <a href="https://stokaro.github.io/ptah/edge/operate/inference-migrations/">Inference migrations</a> · <a href="https://stokaro.github.io/ptah/edge/">Documentation</a> · <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">Database support</a></p>
+<p align="center"><a href="#install">Install</a> · <a href="https://stokaro.github.io/ptah/edge/start/quick-start/">Quick start</a> · <a href="https://stokaro.github.io/ptah/edge/inference/overview/">Inference migrations</a> · <a href="https://stokaro.github.io/ptah/edge/">Documentation</a> · <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">Database support</a></p>
 
 <p align="center">
   <a href="https://stokaro.github.io/ptah/edge/databases/postgresql/">PostgreSQL</a> ·
@@ -52,7 +52,7 @@ leaving the active generation untouched until verification and cutover.
 
 <p align="center"><img src="docs/site/src/assets/inference-state-migration.png" alt="Ptah builds a candidate inference generation from a specification and source rows, calls an external embedding endpoint during backfill and catch-up, verifies the result, switches the active generation at cutover, and retains the previous generation for rollback." width="1000"></p>
 
-The [inference migrations guide](https://stokaro.github.io/ptah/edge/operate/inference-migrations/)
+The [inference migrations guide](https://stokaro.github.io/ptah/edge/inference/overview/)
 covers the specification, concurrent-change catch-up, evaluation, approvals,
 rollback, and retirement.
 
@@ -153,7 +153,7 @@ and `ptah db capabilities --db-url <url>` for the concrete target.
   or [test migrations and schemas](https://stokaro.github.io/ptah/edge/testing/migrations-and-schema/).
 - [Visualize](https://stokaro.github.io/ptah/edge/schema/visualize/)
   or [export](https://stokaro.github.io/ptah/edge/schema/export/) a schema.
-- [Migrate persistent inference state](https://stokaro.github.io/ptah/edge/operate/inference-migrations/)
+- [Migrate persistent inference state](https://stokaro.github.io/ptah/edge/inference/overview/)
   while an external endpoint computes embeddings.
 - [Look up native commands](https://stokaro.github.io/ptah/edge/reference/native-commands/)
   or [diagnose a failure](https://stokaro.github.io/ptah/edge/operate/troubleshooting/).

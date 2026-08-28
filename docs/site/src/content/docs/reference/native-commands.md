@@ -326,7 +326,7 @@ stdout therefore gets a document in every case except `2`.
 No `ptah inference` verb implies another. A backfill finishing does not mean
 the corpus is right; verification passing does not mean anything has cut over; and
 cutting over does not make the old generation disposable. The task-oriented
-walkthrough is [Inference migrations](../../operate/inference-migrations/).
+walkthrough is [Inference migrations](../../inference/overview/).
 
 ## An AI client, over MCP
 
