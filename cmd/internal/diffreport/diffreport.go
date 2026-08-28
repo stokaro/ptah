@@ -91,8 +91,30 @@ func Names(categories []Category) []string {
 // objects; the fields that are not lists record how the diff was produced
 // rather than what differs — the live catalog identifier rules, for one — and
 // reporting them as changes would make a synced schema look modified.
+//
+// A list the wire does not carry is not one either. `json:"-"` is how the diff
+// says a field is an INPUT the planner reads rather than an observation about
+// the two schemas: the declaration's tables, resolved so a foreign key can name
+// the table it points at, and the policy identity collisions the planner
+// refuses on. Both are populated on an ordinary comparison of two schemas that
+// agree, so reporting them printed `DeclaredTables (2): ...` for a converged
+// database and `ptah schema compare` answered that a synced schema differs
+// (stokaro/ptah#2315).
+//
+// The test is the same one [categoryName] applies, and deliberately so: a field
+// with a name on the wire is reported under that name, and a field with none is
+// not reported at all.
 func isChangeCategory(field reflect.StructField) bool {
-	return field.IsExported() && field.Type.Kind() == reflect.Slice
+	if !field.IsExported() || field.Type.Kind() != reflect.Slice {
+		return false
+	}
+	tag, ok := field.Tag.Lookup("json")
+	if !ok {
+		// No tag at all still serializes, under the Go field name.
+		return true
+	}
+	name, _, _ := strings.Cut(tag, ",")
+	return name != "-"
 }
 
 // categoryName prefers the field's JSON name so reports and serialized diffs
