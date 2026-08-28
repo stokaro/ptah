@@ -317,9 +317,19 @@ type LineageRoutineWrite struct {
 	Statement string `json:"statement"`
 }
 
+// LineageRoutineRead is one column a routine body reads.
+type LineageRoutineRead struct {
+	Table     string `json:"table"`
+	Column    string `json:"column"`
+	ByRoutine string `json:"by_routine"`
+	Kind      string `json:"kind"`
+	Statement string `json:"statement"`
+}
+
 // LineageRoutines is the routine half of a lineage answer.
 type LineageRoutines struct {
 	Edges     []LineageRoutineEdge      `json:"edges"`
+	Reads     []LineageRoutineRead      `json:"reads"`
 	Writes    []LineageRoutineWrite     `json:"writes"`
 	Undecided []LineageRoutineUndecided `json:"undecided"`
 }
@@ -371,6 +381,7 @@ func schemaLineage(ctx context.Context, req SchemaLineageRequest) (*SchemaLineag
 		Undecided: make([]LineageUndecided, 0, len(derived.Undecided)),
 		Routines: LineageRoutines{
 			Edges:     make([]LineageRoutineEdge, 0, len(derivedRoutines.Edges)),
+			Reads:     make([]LineageRoutineRead, 0, len(derivedRoutines.Reads)),
 			Writes:    make([]LineageRoutineWrite, 0, len(derivedRoutines.Writes)),
 			Undecided: make([]LineageRoutineUndecided, 0, len(derivedRoutines.Undecided)),
 		},
@@ -390,6 +401,12 @@ func schemaLineage(ctx context.Context, req SchemaLineageRequest) (*SchemaLineag
 		response.Routines.Edges = append(response.Routines.Edges, LineageRoutineEdge{
 			FromTable: edge.FromTable, FromColumn: edge.FromColumn,
 			ToRoutine: edge.ToRoutine, Kind: edge.Kind,
+		})
+	}
+	for _, read := range derivedRoutines.Reads {
+		response.Routines.Reads = append(response.Routines.Reads, LineageRoutineRead{
+			Table: read.Table, Column: read.Column, ByRoutine: read.ByRoutine,
+			Kind: read.Kind, Statement: read.Statement,
 		})
 	}
 	for _, write := range derivedRoutines.Writes {

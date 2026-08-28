@@ -78,14 +78,15 @@ END;`), "postgres")
 	c.Assert(writeTargets(result), qt.DeepEquals, []string{"audit:delete"})
 }
 
-// TestDeriveRoutines_AResolvedBodyStillSaysItsReadsAreNot is the honesty
+// TestDeriveRoutines_AResolvedBodySaysWhatItsReadsRestOn is the honesty
 // property the whole package turns on.
 //
 // Every statement here is classified, so the write list is complete. The reads
-// are not derived at all, and a routine reported with writes and no undecided
-// entry would let "nothing reads customers.email" be concluded from a body that
-// was never read for that question.
-func TestDeriveRoutines_AResolvedBodyStillSaysItsReadsAreNot(t *testing.T) {
+// are derived only from statements naming one table, and the entry says so: a
+// routine reported with writes and no undecided entry would let "nothing reads
+// customers.email" be concluded from a body whose other statements were never
+// attributed.
+func TestDeriveRoutines_AResolvedBodySaysWhatItsReadsRestOn(t *testing.T) {
 	c := qt.New(t)
 
 	result := schemalineage.DeriveRoutines(proceduralRoutine(`
@@ -100,7 +101,7 @@ END;`), "postgres")
 	c.Assert(result.Writes, qt.HasLen, 1)
 	c.Assert(result.Undecided, qt.HasLen, 1)
 	c.Assert(result.Undecided[0].Reason, qt.Contains, "every statement was classified")
-	c.Assert(result.Undecided[0].Reason, qt.Contains, "the columns it reads are not resolved")
+	c.Assert(result.Undecided[0].Reason, qt.Contains, "the reads are those of its statements that name one table")
 }
 
 // TestDeriveRoutines_DynamicSQLMakesTheWriteListIncomplete is the #1270 case.
@@ -120,7 +121,7 @@ END;`), "postgres")
 	c.Assert(writeTargets(result), qt.DeepEquals, []string{"audit:delete"})
 	c.Assert(result.Undecided, qt.HasLen, 1)
 	c.Assert(result.Undecided[0].Reason, qt.Contains, "EXECUTE composes its statement at run time")
-	c.Assert(result.Undecided[0].Reason, qt.Contains, "neither the writes nor the columns it reads are complete")
+	c.Assert(result.Undecided[0].Reason, qt.Contains, "the writes are not complete")
 }
 
 // TestDeriveRoutines_AnUnrecognizedStatementIsNotTreatedAsHarmless covers the

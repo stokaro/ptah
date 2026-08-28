@@ -39,6 +39,7 @@ type UndecidedRoutine struct {
 // RoutineResult is the derived routine lineage plus what could not be derived.
 type RoutineResult struct {
 	Edges     []RoutineEdge      `json:"edges"`
+	Reads     []RoutineRead      `json:"reads"`
 	Writes    []RoutineWrite     `json:"writes"`
 	Undecided []UndecidedRoutine `json:"undecided,omitempty"`
 }
@@ -81,7 +82,7 @@ func deriveRoutine(routine schemamodel.Function, dialect string, columns map[str
 	// about the reads would let "nothing reads this column" be concluded from a
 	// routine whose reads were never looked at.
 	if language := strings.ToLower(strings.TrimSpace(routine.Language)); language != "sql" && language != "" {
-		return deriveProceduralRoutine(routine, dialect, kind, language)
+		return deriveProceduralRoutine(routine, dialect, kind, language, columns)
 	}
 	if strings.TrimSpace(routine.Body) == "" {
 		return undecided("the routine declares no body")
@@ -93,7 +94,7 @@ func deriveRoutine(routine schemamodel.Function, dialect string, columns map[str
 	// takes the procedural path rather than being asked to be one SELECT
 	// (stokaro/ptah#2435 is what makes these reach here at all).
 	if kind == "procedure" && !isSingleSelectBody(routine.Body, columns) {
-		return deriveProceduralRoutine(routine, dialect, kind, "")
+		return deriveProceduralRoutine(routine, dialect, kind, "", columns)
 	}
 
 	// The view path resolves exactly this shape, and asking it is what keeps
@@ -122,7 +123,7 @@ func deriveRoutine(routine schemamodel.Function, dialect string, columns map[str
 // statement went unrecognized, because its reads are not derived at all. The
 // entry says which of the two it is: an incomplete write list and unresolved
 // reads, or a complete write list and unresolved reads.
-func deriveProceduralRoutine(routine schemamodel.Function, dialect, kind, language string) RoutineResult {
+func deriveProceduralRoutine(routine schemamodel.Function, dialect, kind, language string, columns map[string][]string) RoutineResult {
 	writes, unresolved, analyzed := proceduralWritesFor(dialect, routine, kind)
 	if !analyzed {
 		return RoutineResult{Undecided: []UndecidedRoutine{{
@@ -131,14 +132,16 @@ func deriveProceduralRoutine(routine schemamodel.Function, dialect, kind, langua
 			Reason:  fmt.Sprintf("no routine-body analysis exists for the %s dialect", dialect),
 		}}}
 	}
-	return RoutineResult{
-		Writes: writes,
-		Undecided: []UndecidedRoutine{{
-			Routine: routine.Name,
-			Kind:    kind,
-			Reason:  proceduralReason(bodyLanguage(language, dialect), unresolved),
-		}},
+	result := RoutineResult{Writes: writes}
+	if readsAreDerivable(dialect) {
+		result.Reads = deriveProceduralReads(routine, dialect, kind, columns)
 	}
+	result.Undecided = []UndecidedRoutine{{
+		Routine: routine.Name,
+		Kind:    kind,
+		Reason:  proceduralReason(bodyLanguage(language, dialect), dialect, unresolved),
+	}}
+	return result
 }
 
 // bodyLanguage names the language a body is written in for the reason line.
@@ -160,15 +163,26 @@ func isSingleSelectBody(body string, columns map[string][]string) bool {
 }
 
 // proceduralReason states what was resolved and what was not.
-func proceduralReason(language string, unresolved []string) string {
+//
+// The reads clause is per dialect rather than fixed, because whether a read can
+// be answered at all is a property of the engine: see [readsAreDerivable].
+func proceduralReason(language, dialect string, unresolved []string) string {
 	if len(unresolved) == 0 {
-		return fmt.Sprintf(
-			"the body is %s: every statement was classified, so the writes are complete; "+
-				"the columns it reads are not resolved", language)
+		return fmt.Sprintf("the body is %s: every statement was classified, so the writes are complete; %s",
+			language, readsClause(dialect))
 	}
-	return fmt.Sprintf(
-		"the body is %s: %s, so neither the writes nor the columns it reads are complete",
-		language, strings.Join(unresolved, "; "))
+	return fmt.Sprintf("the body is %s: %s, so the writes are not complete; %s",
+		language, strings.Join(unresolved, "; "), readsClause(dialect))
+}
+
+// readsClause says what was established about the columns a body reads.
+func readsClause(dialect string) string {
+	if !readsAreDerivable(dialect) {
+		return "the columns it reads are not resolved, because a declared variable takes " +
+			"precedence over a column of the same name on this engine and the body does not " +
+			"distinguish them"
+	}
+	return "the reads are those of its statements that name one table"
 }
 
 // routineKind names the routine family, defaulting to a function for the
@@ -183,6 +197,7 @@ func routineKind(routine schemamodel.Function) string {
 // absorbRoutine merges one routine's result into the whole.
 func (r *RoutineResult) absorbRoutine(other RoutineResult) {
 	r.Edges = append(r.Edges, other.Edges...)
+	r.Reads = append(r.Reads, other.Reads...)
 	r.Writes = append(r.Writes, other.Writes...)
 	r.Undecided = append(r.Undecided, other.Undecided...)
 }
@@ -201,6 +216,7 @@ func sortRoutineResult(result *RoutineResult) {
 		}
 		return a.FromColumn < b.FromColumn
 	})
+	sortRoutineReads(result.Reads)
 	sort.Slice(result.Writes, func(i, j int) bool {
 		a, b := result.Writes[i], result.Writes[j]
 		if a.ByRoutine != b.ByRoutine {

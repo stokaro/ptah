@@ -1337,6 +1337,40 @@
                 "array"
               ]
             },
+            "reads": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "by_routine": {
+                    "type": "string"
+                  },
+                  "column": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "statement": {
+                    "type": "string"
+                  },
+                  "table": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "table",
+                  "column",
+                  "by_routine",
+                  "kind",
+                  "statement"
+                ],
+                "type": "object"
+              },
+              "type": [
+                "null",
+                "array"
+              ]
+            },
             "undecided": {
               "items": {
                 "additionalProperties": false,
@@ -1400,6 +1434,7 @@
           },
           "required": [
             "edges",
+            "reads",
             "writes",
             "undecided"
           ],

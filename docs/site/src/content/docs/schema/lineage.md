@@ -119,12 +119,20 @@ Expected output:
 SOURCE           READ BY          KIND
 customers.email  customer_emails  function
 
+SOURCE        READ BY         STATEMENT
+customers.id  touch_customer  update
+
 TARGET             WRITTEN BY      STATEMENT
 customers.country  touch_customer  update
 
 1 routine(s) not fully resolved:
-  touch_customer: the body is plpgsql: every statement was classified, so the writes are complete; the columns it reads are not resolved
+  touch_customer: the body is plpgsql: every statement was classified, so the writes are complete; the reads are those of its statements that name one table
 ```
+
+Two of those tables say `READ BY` and are not the same list. The first is a
+routine whose whole body is one `SELECT`, resolved column to column like a view;
+the second is a column a statement inside a procedural body reads, and its third
+column names the statement. A routine appears in one or the other, never both.
 
 The boundary is the same one the view half draws, in the same place. A body
 that is a single `SELECT` -- which is the shape a `LANGUAGE sql` routine has --
@@ -138,14 +146,40 @@ inside an `IF` or a loop. Its reads are not derived, so it is always reported in
 
 | Reason ends | Meaning |
 | --- | --- |
-| `every statement was classified, so the writes are complete; the columns it reads are not resolved` | the write list above is the whole set |
-| `..., so neither the writes nor the columns it reads are complete` | something in the body could write and was not resolved |
+| `every statement was classified, so the writes are complete; ...` | the write list above is the whole set |
+| `..., so the writes are not complete; ...` | something in the body could write and was not resolved |
+
+The clause after the semicolon says what was established about the reads, and it
+depends on the engine rather than on the body:
+
+| Reads clause | Meaning |
+| --- | --- |
+| `the reads are those of its statements that name one table` | reads were derived; a statement with two tables in scope contributed none |
+| `the columns it reads are not resolved, because a declared variable takes precedence over a column of the same name on this engine ...` | MySQL, where the two cannot be told apart |
 
 Four things land in the second row: an `EXECUTE`, which composes its statement
 at run time; a statement whose leading word is not one this analysis knows,
 because `CALL`, `MERGE` and `COPY` all write; a `TRUNCATE` naming more than one
 table, refused rather than half-read; and a control-flow statement whose
 contents the parser could not split.
+
+### Which dialect can answer about reads
+
+A read is a column named in a statement, and the danger is a local variable or
+parameter carrying a column's name: reporting it as a read of that column would
+be a wrong answer about the one question this verb exists for. Each engine
+resolves that ambiguity differently, and the difference is what decides whether
+reads can be answered at all.
+
+| Dialect | Variable against column | Reads |
+| --- | --- | --- |
+| the PostgreSQL family | `plpgsql.variable_conflict` defaults to `error`, so a body that compiles has no collision | derived |
+| `sqlserver` | variables carry an `@` prefix and cannot collide with a column name | derived |
+| `mysql`, `mariadb` | a declared variable takes precedence over a column of the same name | not derived, and the reason says so |
+
+A column a statement assigns to is a write and not a read. In `SET country =
+'CZ' WHERE id = 1` only `id` is read; in `SET email = lower(email)` the column
+`email` is both, and appears in both lists.
 
 ### Which dialect reads the body
 
@@ -223,6 +257,15 @@ always parsed:
         "kind": "function"
       }
     ],
+    "reads": [
+      {
+        "table": "customers",
+        "column": "id",
+        "by_routine": "touch_customer",
+        "kind": "function",
+        "statement": "update"
+      }
+    ],
     "writes": [
       {
         "table": "customers",
@@ -235,7 +278,7 @@ always parsed:
     "undecided": [
       {
         "routine": "touch_customer",
-        "reason": "the body is plpgsql: every statement was classified, so the writes are complete; the columns it reads are not resolved",
+        "reason": "the body is plpgsql: every statement was classified, so the writes are complete; the reads are those of its statements that name one table",
         "kind": "function"
       }
     ]
@@ -254,8 +297,9 @@ usage error exits `2` with one line on stderr. See
 - The resolvable shape is a select list over a single `FROM` source, with
   columns named plainly or aliased. The four shapes in the table above land in
   `undecided` instead.
-- A routine's **reads** resolve only when its body is one such `SELECT`. A
-  procedural body's reads are not derived, which is why every procedural routine
+- A routine's body-wide **read** resolves only when the body is one such
+  `SELECT`. Inside a procedural body, a read resolves per statement, and only
+  where that statement names one table -- which is why every procedural routine
   appears in `undecided` even when its writes are complete.
 - A **write** is resolved from the statement that performs it, so it is exact
   about the table and about the columns an `UPDATE` assigns or an `INSERT`
