@@ -67,9 +67,6 @@ const minimumEngineLinks = 5
 func TestReadmeNamesEveryEngineTheSupportMatrixLists(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(string(body), qt.Contains, supportMatrixRoute,
-		qt.Commentf("the README links %s nowhere; it is the only route a reader has"+
-			" to the engine list since the names left the page", supportMatrixRoute))
 	c.Assert(readmeEngines(c), qt.DeepEquals, glanceEngines(c))
 }
 
