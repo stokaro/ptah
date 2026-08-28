@@ -213,11 +213,11 @@ func unmetInputs(files []File, opts Options, rules []Rule) []UnmetInput {
 	var unmet []UnmetInput
 	for i := range files {
 		file := &files[i]
-		if !file.Selected || !file.IsUp || file.Version == 0 || !file.baseline.empty() {
+		if !file.Selected || file.Version == 0 {
 			continue
 		}
 		for _, rule := range rules {
-			if !ruleWantsBaseline(rule, file, opts) {
+			if !ruleInputUnmet(rule, file, opts) {
 				continue
 			}
 			unmet = append(unmet, UnmetInput{
@@ -229,6 +229,45 @@ func unmetInputs(files []File, opts Options, rules []Rule) []UnmetInput {
 		}
 	}
 	return unmet
+}
+
+// ruleInputUnmet reports whether a rule asked this file for an input the run
+// did not supply.
+func ruleInputUnmet(rule Rule, file *File, opts Options) bool {
+	switch rule.Input {
+	case InputBaselineSchema:
+		return file.IsUp && file.baseline.empty() && ruleWantsBaseline(rule, file, opts)
+	case InputRoutineBody:
+		return ruleWantsRoutineBody(rule, file, opts)
+	case InputStatementText:
+		return false
+	default:
+		return false
+	}
+}
+
+// ruleWantsRoutineBody reports whether a rule that reads a routine body was
+// handed a file whose routine bodies could not be parsed.
+//
+// Parsing a body needs a dialect. Without one the body is not parsed, the rule
+// finds nothing, and the run exits 0 -- the exact failure RuleInput exists to
+// prevent, which is why this is a third input rather than a detail of the
+// second (stokaro/ptah#2357).
+//
+// A file that defines no routine is not a gap: the rule had nothing to ask for.
+func ruleWantsRoutineBody(rule Rule, file *File, opts Options) bool {
+	if strings.TrimSpace(opts.Dialect) != "" {
+		return false
+	}
+	if !ruleRunsOnFile(rule, file, opts) {
+		return false
+	}
+	for i := range file.Statements {
+		if looksLikeRoutineDefinition(file.Statements[i].SQL) {
+			return true
+		}
+	}
+	return false
 }
 
 // UnmetInput reports one rule that asked for an analyzer input the run did not

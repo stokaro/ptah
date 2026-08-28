@@ -133,11 +133,22 @@ const (
 	// version starts from, replayed onto a dev database by the caller and
 	// handed back through [Options.Baseline]; see [BaselineColumn].
 	InputBaselineSchema
+	// InputRoutineBody additionally reads the parsed body of a routine the
+	// statement defines; see [Statement.Routine].
+	//
+	// It is a third input rather than a detail of the second because it fails
+	// the same way and for its own reason: parsing a body needs a dialect, and
+	// without --dialect the body is not parsed, the rule finds nothing, and the
+	// run exits 0. Declaring the input is what turns that into a named gap
+	// instead of a smaller report (stokaro/ptah#2357).
+	InputRoutineBody
 )
 
 // String names the input for diagnostics.
 func (i RuleInput) String() string {
 	switch i {
+	case InputRoutineBody:
+		return "routine body"
 	case InputBaselineSchema:
 		return "baseline schema"
 	case InputStatementText:
