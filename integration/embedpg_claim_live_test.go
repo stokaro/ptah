@@ -139,7 +139,7 @@ func claimEngine(
 // claimFixture builds a database of its own with one prepared run.
 func claimFixture(c *qt.C, ctx context.Context) (*sql.DB, embedgen.Spec, *embedpg.Store) {
 	c.Helper()
-	dbURL := dbtarget.URL(c, dbtarget.PostgreSQL)
+	dbURL := dbtarget.URL(c, dbtarget.TimescaleDB)
 	admin, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { _ = admin.Close() })
