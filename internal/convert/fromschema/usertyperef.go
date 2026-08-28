@@ -58,7 +58,7 @@ func QualifyDeclaredUserTypes(database *schemamodel.Database, targetPlatform str
 		return nil
 	}
 	clone := *database
-	scalars, arrays := declaredUserTypeQualifiers(database, targetPlatform)
+	scalars, arrays := declaredUserTypeQualifiers(userTypeDeclarationsOf(database), targetPlatform)
 	if len(scalars) == 0 && len(arrays) == 0 {
 		return &clone
 	}
@@ -78,8 +78,52 @@ func QualifyDeclaredUserTypes(database *schemamodel.Database, targetPlatform str
 // scalar map does not; see [QualifyDeclaredUserTypes] for why. A name declared
 // twice is mapped to the empty string rather than dropped, so that a later
 // declaration of the same name cannot re-add it.
+// UserTypeDeclarations are the declarations a name is qualified against.
+//
+// A caller holding these had to assemble a schemamodel.Database to reach the
+// qualifier, and the assembled value was a schema in type only -- it carried
+// the declarations and the fields and nothing else. Naming the four lists says
+// what the rule reads, and stops a comparator constructing a source schema
+// description to reach it (stokaro/ptah#1344, stokaro/ptah#2315).
+type UserTypeDeclarations struct {
+	Domains        []schemamodel.Domain
+	CompositeTypes []schemamodel.CompositeType
+	Ranges         []schemamodel.Range
+	Enums          []schemamodel.Enum
+}
+
+// QualifyFieldUserTypes returns the fields with every unambiguously declared
+// user type reference qualified, leaving the caller's slice untouched.
+//
+// The field-level half of [QualifyDeclaredUserTypes], for a caller that has
+// fields and declarations rather than a schema.
+func QualifyFieldUserTypes(
+	fields []schemamodel.Field, declarations UserTypeDeclarations, targetPlatform string,
+) []schemamodel.Field {
+	scalars, arrays := declaredUserTypeQualifiers(declarations, targetPlatform)
+	if len(scalars) == 0 && len(arrays) == 0 {
+		return fields
+	}
+	qualified := make([]schemamodel.Field, len(fields))
+	copy(qualified, fields)
+	for i := range qualified {
+		qualified[i].Type = qualifyUserTypeReference(qualified[i].Type, scalars, arrays)
+	}
+	return qualified
+}
+
+// userTypeDeclarationsOf reads the four lists a qualifier needs off a schema.
+func userTypeDeclarationsOf(database *schemamodel.Database) UserTypeDeclarations {
+	return UserTypeDeclarations{
+		Domains:        database.Domains,
+		CompositeTypes: database.CompositeTypes,
+		Ranges:         database.Ranges,
+		Enums:          database.Enums,
+	}
+}
+
 func declaredUserTypeQualifiers(
-	database *schemamodel.Database,
+	declarations UserTypeDeclarations,
 	targetPlatform string,
 ) (scalars, arrays map[string]string) {
 	declare := func(into map[string]string, name, schema, qualified string) {
@@ -102,13 +146,13 @@ func declaredUserTypeQualifiers(
 		into[name] = qualified
 	}
 	base := make(map[string]string)
-	for _, domain := range database.Domains {
+	for _, domain := range declarations.Domains {
 		declare(base, domain.Name, domain.Schema, domain.QualifiedName())
 	}
-	for _, composite := range database.CompositeTypes {
+	for _, composite := range declarations.CompositeTypes {
 		declare(base, composite.Name, composite.Schema, composite.QualifiedName())
 	}
-	for _, rangeType := range database.Ranges {
+	for _, rangeType := range declarations.Ranges {
 		declare(base, rangeType.Name, rangeType.Schema, rangeType.QualifiedName())
 	}
 
@@ -117,7 +161,7 @@ func declaredUserTypeQualifiers(
 	// An enum name never participates in the scalar map, even when no enum
 	// block claims a schema: a scalar column typed with it belongs to
 	// [handleEnumTypes], which finds it by the bare name.
-	for _, enum := range database.Enums {
+	for _, enum := range declarations.Enums {
 		if name := strings.TrimSpace(enum.Name); name != "" {
 			scalars[name] = ""
 		}
@@ -126,9 +170,9 @@ func declaredUserTypeQualifiers(
 		return scalars, scalars
 	}
 
-	arrays = make(map[string]string, len(base)+len(database.Enums))
+	arrays = make(map[string]string, len(base)+len(declarations.Enums))
 	maps.Copy(arrays, base)
-	for _, enum := range database.Enums {
+	for _, enum := range declarations.Enums {
 		name := strings.TrimSpace(enum.Name)
 		if strings.TrimSpace(enum.Schema) == "" {
 			// A schemaless enum still shadows a same-named declaration of

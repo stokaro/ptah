@@ -264,17 +264,52 @@ func TablesForCreate(schema *schemamodel.Database, tableNames []string) []schema
 		return nil
 	}
 
-	tablesByKey := mapTablesByQualifiedName(schema.Tables)
-	keys := tableKeysInInputOrder(schema.Tables, tableNames)
-	orderedKeys := StableTopologicalSort(keys, GeneratedTableDependencies(schema))
+	return orderTablesForCreate(schema.Tables, GeneratedTableDependencies(schema), tableNames)
+}
 
-	tables := make([]schemamodel.Table, 0, len(orderedKeys))
+// TablesForCreateFrom orders tables for creation from the tables, their columns
+// and a declared edge map, without a schema to read them out of.
+//
+// It takes what it reads. A caller holding exactly these -- which is what a
+// diff carries about the tables it creates -- had to assemble a
+// schemamodel.Database to reach this rule, and the assembled value was a schema
+// in type only: it held the tables being created and nothing else, so any
+// question but this one would have been answered wrongly by it. Building one
+// inside a comparator is separately what the architecture ratchet forbids
+// (stokaro/ptah#1344, stokaro/ptah#2315).
+//
+// The edges are the ones [TableDependenciesFrom] derives. The rest of what
+// [GeneratedTableDependencies] adds -- embedded relations and table-level
+// constraints -- needs a whole schema, and a caller without one does not have
+// them to give.
+func TablesForCreateFrom(
+	tables []schemamodel.Table,
+	fields []schemamodel.Field,
+	declared map[string][]string,
+	tableNames []string,
+) []schemamodel.Table {
+	if len(tableNames) == 0 {
+		return nil
+	}
+	return orderTablesForCreate(tables, TableDependenciesFrom(tables, fields, declared), tableNames)
+}
+
+// orderTablesForCreate is the ordering both entry points perform, so the two
+// cannot answer differently for the same edges.
+func orderTablesForCreate(
+	tables []schemamodel.Table, dependencies map[string][]string, tableNames []string,
+) []schemamodel.Table {
+	tablesByKey := mapTablesByQualifiedName(tables)
+	keys := tableKeysInInputOrder(tables, tableNames)
+	orderedKeys := StableTopologicalSort(keys, dependencies)
+
+	ordered := make([]schemamodel.Table, 0, len(orderedKeys))
 	for _, key := range orderedKeys {
 		if table, ok := tablesByKey[key]; ok {
-			tables = append(tables, table)
+			ordered = append(ordered, table)
 		}
 	}
-	return tables
+	return ordered
 }
 
 // TableDropOrder returns table names in child-before-parent order for DROP
@@ -304,24 +339,44 @@ func TableDropOrder(tableNames []string, schema *schemamodel.Database) []string 
 	return result
 }
 
-// GeneratedTableDependencies returns table dependency edges derived from
-// finalized metadata plus inline field and table-level FK definitions.
-func GeneratedTableDependencies(schema *schemamodel.Database) map[string][]string {
-	dependencies := make(map[string][]string, len(schema.Tables))
-	for _, table := range schema.Tables {
-		dependencies[table.QualifiedName()] = append([]string(nil), schema.Dependencies[table.QualifiedName()]...)
+// TableDependenciesFrom derives the edges a set of tables and their columns
+// declare, from those inputs alone.
+//
+// It takes what it reads. A caller holding tables, their columns and a declared
+// edge map -- which is what a diff carries about the tables it creates -- had
+// to assemble a schemamodel.Database to reach this rule, and the assembled
+// value was a schema in type only: it held the tables being created and
+// nothing else, so any question but this one would have been answered wrongly
+// by it. Building one inside a comparator is separately what the architecture
+// ratchet forbids (stokaro/ptah#1344, stokaro/ptah#2315).
+//
+// [GeneratedTableDependencies] adds the edges that only a whole schema carries
+// -- embedded relations and table-level constraints -- on top of these.
+func TableDependenciesFrom(
+	tables []schemamodel.Table, fields []schemamodel.Field, declared map[string][]string,
+) map[string][]string {
+	dependencies := make(map[string][]string, len(tables))
+	for _, table := range tables {
+		dependencies[table.QualifiedName()] = append([]string(nil), declared[table.QualifiedName()]...)
 	}
 
-	for _, field := range schema.Fields {
+	for _, field := range fields {
 		if field.Foreign == "" {
 			continue
 		}
-		table := generatedTableByStructName(schema.Tables, field.StructName)
+		table := generatedTableByStructName(tables, field.StructName)
 		if table == nil {
 			continue
 		}
-		addGeneratedTableDependency(dependencies, schema.Tables, *table, foreignReferenceTable(field.Foreign))
+		addGeneratedTableDependency(dependencies, tables, *table, foreignReferenceTable(field.Foreign))
 	}
+	return dependencies
+}
+
+// GeneratedTableDependencies returns table dependency edges derived from
+// finalized metadata plus inline field and table-level FK definitions.
+func GeneratedTableDependencies(schema *schemamodel.Database) map[string][]string {
+	dependencies := TableDependenciesFrom(schema.Tables, schema.Fields, schema.Dependencies)
 
 	for _, embedded := range schema.EmbeddedFields {
 		if embedded.Mode != "relation" || embedded.Ref == "" {

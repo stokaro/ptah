@@ -2329,11 +2329,13 @@ func nilWhenEmpty[T any](values []T) []T {
 	return values
 }
 
-// database is the shape the qualifier takes, holding the vocabulary and the
-// fields to qualify and nothing else.
-func (v UserTypeVocabulary) database(fields []schemamodel.Field) *schemamodel.Database {
-	return &schemamodel.Database{
-		Fields:         fields,
+// declarations is what the qualifier resolves names against.
+//
+// It used to be a schemamodel.Database carrying the vocabulary and the fields
+// and nothing else -- a schema in type only, and a comparator constructing one
+// is what the architecture ratchet forbids (stokaro/ptah#1344).
+func (v UserTypeVocabulary) declarations() fromschema.UserTypeDeclarations {
+	return fromschema.UserTypeDeclarations{
 		Domains:        v.Domains,
 		CompositeTypes: v.CompositeTypes,
 		Ranges:         v.Ranges,
@@ -2437,7 +2439,7 @@ func (t TableChanges) InDependencyOrder() TableChanges {
 	}
 
 	ordered := make(TableChanges, 0, len(t))
-	for _, table := range deporder.TablesForCreate(t.Schema(), t.Names()) {
+	for _, table := range deporder.TablesForCreateFrom(t.tables(), t.fields(), t.declaredDependencies(), t.Names()) {
 		if creation, ok := byStruct[table.StructName]; ok {
 			ordered = append(ordered, creation)
 		}
@@ -2462,8 +2464,8 @@ func (t TableChanges) Qualified(vocabulary UserTypeVocabulary, dialect string) T
 	}
 	qualified := make(TableChanges, 0, len(t))
 	for _, creation := range t {
-		resolved := fromschema.QualifyDeclaredUserTypes(vocabulary.database(creation.Fields), dialect)
-		creation.Fields = resolved.Fields
+		resolved := fromschema.QualifyFieldUserTypes(creation.Fields, vocabulary.declarations(), dialect)
+		creation.Fields = resolved
 		qualified = append(qualified, creation)
 	}
 	return qualified
@@ -2491,32 +2493,37 @@ func (t TableChanges) Names() []string {
 	return names
 }
 
-// Schema assembles the declaration these creations describe, and nothing else.
+// tables, fields and declaredDependencies are what the ordering rules read.
 //
-// It exists so that a caller ordering the creations can use the same dependency
-// rules the whole desired schema is ordered by, without being handed that
-// schema. Every input those rules read travels with a creation: the tables, the
-// columns whose foreign references are edges, and the document's own dependency
-// map.
-//
-// It is not a desired schema and must not be used as one. It holds the tables
-// this diff CREATES and their columns, so a rule that asked it about a table
-// the plan is not creating would be told the table does not exist -- which is
-// the right answer for ordering these creations and the wrong one for anything
-// else.
-func (t TableChanges) Schema() *schemamodel.Database {
-	schema := &schemamodel.Database{
-		Tables:       make([]schemamodel.Table, 0, len(t)),
-		Dependencies: make(map[string][]string, len(t)),
-	}
+// They were reached through an assembled schemamodel.Database, which was a
+// schema in type only: it held the tables this diff creates and nothing else,
+// so a rule asking it about any other table would have been told that table
+// does not exist. Handing the three lists directly says that plainly, and stops
+// a comparator constructing a source schema description (stokaro/ptah#1344).
+func (t TableChanges) tables() []schemamodel.Table {
+	tables := make([]schemamodel.Table, 0, len(t))
 	for _, creation := range t {
-		schema.Tables = append(schema.Tables, creation.Table)
-		schema.Fields = append(schema.Fields, creation.Fields...)
+		tables = append(tables, creation.Table)
+	}
+	return tables
+}
+
+func (t TableChanges) fields() []schemamodel.Field {
+	fields := make([]schemamodel.Field, 0, len(t))
+	for _, creation := range t {
+		fields = append(fields, creation.Fields...)
+	}
+	return fields
+}
+
+func (t TableChanges) declaredDependencies() map[string][]string {
+	declared := make(map[string][]string, len(t))
+	for _, creation := range t {
 		if len(creation.DependsOn) > 0 {
-			schema.Dependencies[creation.Table.QualifiedName()] = creation.DependsOn
+			declared[creation.Table.QualifiedName()] = creation.DependsOn
 		}
 	}
-	return schema
+	return declared
 }
 
 // RLSEnabledTableChanges is a list of row-level-security enablements a diff
