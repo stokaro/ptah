@@ -98,6 +98,15 @@ func validateRule(rule Rule) error {
 				"rule %s declares the %s input and must set BaselineSubjects to say which statements need it",
 				rule.Code, rule.Input)
 		}
+	case InputRoutineBody:
+		// No subjects predicate: which statements need a body is not a choice
+		// the rule makes, it is which of them define a routine, and the
+		// analysis already knows that (stokaro/ptah#2357).
+		if rule.BaselineSubjects != nil {
+			return fmt.Errorf(
+				"rule %s sets BaselineSubjects but declares the %s input; set Input to InputBaselineSchema",
+				rule.Code, rule.Input)
+		}
 	case InputStatementText:
 		if rule.BaselineSubjects != nil {
 			return fmt.Errorf(
@@ -149,6 +158,7 @@ func dataSafetyRules() []Rule {
 		databaseObjectDroppedRule(),
 		routineBodyNotAnalyzedRule(),
 		definerRoutineWithoutSearchPathRule(),
+		immutableRoutineReadsTheClockRule(),
 		tableTruncatedRule(),
 		rlsDisabledRule(),
 	}
@@ -550,6 +560,103 @@ func enumValueRemovedRule() Rule {
 // statement while the header carried none -- the rule's answer would have
 // depended on how the author quoted a body it has no business reading
 // (stokaro/ptah#2356).
+// nonDeterministicCalls are the calls whose result changes between two
+// invocations with the same arguments.
+//
+// A call list rather than reference resolution, and the boundary is stated
+// rather than assumed: deciding whether a body reads a TABLE needs references
+// parsed out of statement text, which #1270 records as the prerequisite the
+// rest waits on and whose lexical shortcut #1280/#1281 measured as wrong.
+// These are resolvable from tokens alone.
+var nonDeterministicCalls = []string{
+	"NOW", "RANDOM", "CLOCK_TIMESTAMP", "TIMEOFDAY", "STATEMENT_TIMESTAMP",
+	"CURRENT_TIMESTAMP", "CURRENT_DATE", "CURRENT_TIME", "LOCALTIME",
+	"LOCALTIMESTAMP", "NEXTVAL", "UUID_GENERATE_V4", "GEN_RANDOM_UUID",
+	"SYSDATE", "RAND", "UUID", "GETDATE", "SYSDATETIME", "NEWID",
+}
+
+// immutableRoutineReadsTheClockRule reports a routine declared IMMUTABLE or
+// DETERMINISTIC whose body calls something that is neither.
+//
+// The tree states the hazard twice, in the two packages that had to decide what
+// the value means off PostgreSQL: "a DETERMINISTIC function is what a
+// function-based index may be built from, and one that reads a table is not
+// that" (internal/oracleroutine), and "IMMUTABLE must be DETERMINISTIC -- that
+// axis is load-bearing for the optimizer and for replication, and misstating it
+// is a lie the server acts on" (internal/mysqlroutine). The same package records
+// a routine declared NOT DETERMINISTIC NO SQL whose body reads a table being
+// created and answering on MySQL 26.7.0: the engine does not defend itself.
+//
+// Ptah carried both halves and related them nowhere -- Volatility and Body sit
+// beside each other on both models and the comparison writes them as
+// independent properties (stokaro/ptah#2357).
+//
+// The body is read through Statement.Routine rather than Words, because a
+// `$$`-quoted body is one word: a rule scanning Words would answer differently
+// depending on how the author quoted it.
+func immutableRoutineReadsTheClockRule() Rule {
+	return Rule{
+		Code:     "DD102",
+		Title:    "immutable routine calls something that is not",
+		Severity: SeverityWarning,
+		Input:    InputRoutineBody,
+		CheckStatement: func(stmt *Statement) (bool, string) {
+			if stmt.Routine == nil || !declaresImmutability(stmt.Words) {
+				return false, ""
+			}
+			call, found := firstNonDeterministicCall(stmt.Routine.BodyWords)
+			if !found {
+				return false, ""
+			}
+			return true, "the routine is declared immutable and its body calls " + call +
+				", whose result changes between two calls with the same arguments; " +
+				"an index built on it returns rows that no longer match"
+		},
+		AppliesToDown: true,
+	}
+}
+
+// declaresImmutability reports whether a routine header promises that the
+// routine answers the same way every time.
+//
+// Read from the header for the reason the definer rule is: a body is words, and
+// one mentioning IMMUTABLE would otherwise answer for a header that does not.
+func declaresImmutability(w []string) bool {
+	header, ok := routineHeaderWords(w)
+	if !ok {
+		return false
+	}
+	if containsWord(header, "IMMUTABLE") {
+		return true
+	}
+	// MySQL and MariaDB spell it DETERMINISTIC, and NOT DETERMINISTIC is the
+	// opposite promise rather than a weaker one.
+	for i, word := range header {
+		if word != "DETERMINISTIC" {
+			continue
+		}
+		if i > 0 && header[i-1] == "NOT" {
+			return false
+		}
+		return true
+	}
+	return false
+}
+
+// firstNonDeterministicCall names the first such call a body makes.
+//
+// A word match over the tokenized body, where a string literal is one verbatim
+// token and a comment is gone, so `EXECUTE 'SELECT now()'` and a commented-out
+// call do not fire it.
+func firstNonDeterministicCall(bodyWords []string) (string, bool) {
+	for _, word := range bodyWords {
+		if slices.Contains(nonDeterministicCalls, word) {
+			return strings.ToLower(word), true
+		}
+	}
+	return "", false
+}
+
 func definerRoutineWithoutSearchPathRule() Rule {
 	return Rule{
 		Code:     "PG312P",

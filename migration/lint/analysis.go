@@ -10,9 +10,11 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/internal/atlaslint"
 	"go.5x5.cz/ptah/internal/fsnapshot"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
+	"go.5x5.cz/ptah/internal/parser"
 	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
@@ -121,6 +123,15 @@ type Statement struct {
 	// Canonical is the comment-stripped, whitespace-collapsed, uppercased
 	// display form. String literals keep their original case.
 	Canonical string
+	// Routine is the parsed routine this statement defines, nil when it defines
+	// none and nil when no dialect was given to parse it with.
+	//
+	// It exists because Words cannot answer for a body. A `$$`-quoted body
+	// arrives as ONE word -- the whole body is a single string literal -- while
+	// a `BEGIN ATOMIC` or MySQL `BEGIN…END` body is fully tokenized, so a rule
+	// scanning Words would answer differently depending on how the author
+	// quoted the body (stokaro/ptah#2357).
+	Routine *RoutineDefinition
 	// Words is the token-word sequence the built-in rules scan: comments and
 	// whitespace dropped, bare keywords/identifiers uppercased, punctuation
 	// as its own entry, string literals and quoted identifiers kept verbatim
@@ -652,6 +663,7 @@ func prepareFile(
 				SQL:             rawStmt.text,
 				Canonical:       canonicalize(rawStmt.text, mode),
 				Words:           tokenizeWords(rawStmt.text, mode),
+				Routine:         routineDefinitionOf(rawStmt.text, mode),
 				Line:            rawStmt.line + up.SourceLineOffset,
 				sourceWords:     tokenizeSourceWords(rawStmt.text, mode),
 				suppressedRules: rawStmt.suppressedRules,
@@ -672,4 +684,70 @@ func selectionIncludes(selection VersionSelection, version int64, revisionVersio
 		return revisionVersion != "" && slices.Contains(selection.VersionKeys, revisionVersion)
 	}
 	return hasVersion && slices.Contains(selection.Versions, version)
+}
+
+// RoutineDefinition is what a rule may read about the routine a statement
+// defines.
+//
+// It carries the body rather than the whole parse, because the header is
+// already in [Statement.Words] and the body is the part Words cannot see.
+type RoutineDefinition struct {
+	// BodyWords is the routine body tokenized the way Words is: comments
+	// dropped, keywords and identifiers uppercased, string literals kept
+	// verbatim.
+	//
+	// Verbatim literals are what lets a rule match a call by name without
+	// firing on `EXECUTE 'SELECT now()'` or on a commented-out one.
+	BodyWords []string
+}
+
+// routineDefinitionOf parses a statement that defines a routine, returning nil
+// for one that does not and for a dialect that was not given.
+//
+// A cheap word test comes first so that an ordinary migration -- which defines
+// no routine -- pays nothing.
+func routineDefinitionOf(sql string, mode scanMode) *RoutineDefinition {
+	if strings.TrimSpace(mode.dialect) == "" {
+		return nil
+	}
+	if !looksLikeRoutineDefinition(sql) {
+		return nil
+	}
+	list, err := parser.NewParser(sql, parser.WithDialect(mode.dialect)).Parse()
+	if err != nil || list == nil {
+		return nil
+	}
+	for _, node := range list.Statements {
+		if body, ok := routineBodySQL(node); ok {
+			return &RoutineDefinition{BodyWords: tokenizeWords(body, mode)}
+		}
+	}
+	return nil
+}
+
+// looksLikeRoutineDefinition is the cheap test that keeps the parse off every
+// other statement.
+func looksLikeRoutineDefinition(sql string) bool {
+	upper := strings.ToUpper(sql)
+	return strings.Contains(upper, "FUNCTION") || strings.Contains(upper, "PROCEDURE")
+}
+
+// routineBodySQL returns the body text of whichever node a routine arrived as.
+//
+// Four node types, because four dialect paths claim a routine, and the fifth --
+// the opaque node -- is the one the parser preserves verbatim when no path
+// claimed it, so there is no parsed body to read.
+func routineBodySQL(node ast.Node) (string, bool) {
+	switch routine := node.(type) {
+	case *ast.CreateFunctionNode:
+		return routine.Body, true
+	case *ast.PostgresRoutineNode:
+		return routine.Body.SQL, true
+	case *ast.MySQLRoutineNode:
+		return routine.Body.SQL, true
+	case *ast.SQLServerRoutineNode:
+		return routine.Body.SQL, true
+	default:
+		return "", false
+	}
 }
