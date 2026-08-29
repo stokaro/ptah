@@ -31,7 +31,7 @@ func TestPlanner_GenerateMigrationAST_MultiSchemaTablesAndFKs(t *testing.T) {
 		TablesAdded: difftypes.TableCreationsFor(desired, "auth.users", "billing.invoices"),
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
+	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -64,7 +64,7 @@ func TestPlanner_GenerateMigrationAST_TrimsSchemaPreconditions(t *testing.T) {
 		TablesAdded: difftypes.TableCreationsFor(desired, "auth.users", "auth.accounts", "blank"),
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
+	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -97,7 +97,7 @@ func TestPlanner_GenerateMigrationAST_DoesNotQualifyAmbiguousLeafFK(t *testing.T
 		TablesAdded: difftypes.TableCreationsFor(desired, "auth.users", "crm.users", "billing.invoices"),
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
+	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -154,7 +154,7 @@ func TestPlanner_SchemaPreconditionsSkipTheNamesATargetOwns(t *testing.T) {
 			diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: test.schema + ".users"}}}
 
 			nodes, err := postgres.NewForDialect(test.dialect, nil).
-				GenerateMigrationAST(diff, desired)
+				GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL(test.dialect, nodes...)
 			c.Assert(err, qt.IsNil)

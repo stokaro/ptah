@@ -39,7 +39,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 	t.Run("default policy stays non-concurrent", func(t *testing.T) {
 		c := qt.New(t)
 
-		nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
+		nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -53,7 +53,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 	t.Run("policy plus capability emits CONCURRENTLY", func(t *testing.T) {
 		c := qt.New(t)
 
-		nodes, err := postgres.New().WithConcurrentIndexes().GenerateMigrationAST(diff, desired)
+		nodes, err := postgres.New().WithConcurrentIndexes().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -67,7 +67,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 		c := qt.New(t)
 
 		caps := capability.Postgres16().With(capability.CreateIndexConcurrently, false)
-		nodes, err := postgres.NewWithCapabilities(caps).WithConcurrentIndexes().GenerateMigrationAST(diff, desired)
+		nodes, err := postgres.NewWithCapabilities(caps).WithConcurrentIndexes().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -90,7 +90,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 				{Name: "uq_users_email", StructName: "User", Fields: []string{"email"}, Unique: true},
 			},
 		}
-		nodes, err := postgres.New().WithConcurrentIndexes().GenerateMigrationAST(uniqueDiff, uniqueGenerated)
+		nodes, err := postgres.New().WithConcurrentIndexes().GenerateMigrationAST(withDeclaredObjects(uniqueDiff, uniqueGenerated), uniqueGenerated)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -106,7 +106,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 		base := postgres.New()
 		_ = base.WithConcurrentIndexes()
 
-		nodes, err := base.GenerateMigrationAST(diff, desired)
+		nodes, err := base.GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -137,7 +137,7 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 		nodes, err := postgres.New().WithConcurrentIndexRefs(
 			difftypes.IndexRef{},
 			difftypes.IndexRef{Name: "idx_users_email", TableName: "users"},
-		).GenerateMigrationAST(diff, desired)
+		).GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -153,7 +153,7 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 		caps := capability.Postgres16().With(capability.CreateIndexConcurrently, false)
 		nodes, err := postgres.NewWithCapabilities(caps).WithConcurrentIndexRefs(
 			difftypes.IndexRef{Name: "idx_users_email", TableName: "users"},
-		).GenerateMigrationAST(diff, desired)
+		).GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -167,7 +167,7 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 
 		base := postgres.New()
 		_ = base.WithConcurrentIndexRefs(difftypes.IndexRef{Name: "idx_users_email", TableName: "users"})
-		nodes, err := base.GenerateMigrationAST(diff, desired)
+		nodes, err := base.GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -187,7 +187,7 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 		}
 
 		nodes, err := postgres.New().WithConcurrentIndexRefs(ref).
-			GenerateMigrationAST(rawDiff, rawGenerated)
+			GenerateMigrationAST(withDeclaredObjects(rawDiff, rawGenerated), rawGenerated)
 		c.Assert(err, qt.IsNil)
 		c.Assert(nodes, qt.HasLen, 1)
 

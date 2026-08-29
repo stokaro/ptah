@@ -138,7 +138,7 @@ func TestPlanner_UnchangedTTLPlansNothing(t *testing.T) {
 	}
 
 	planner := postgres.NewForDialect(platform.CockroachDB, capability.CockroachDB26())
-	nodes, err := planner.GenerateMigrationAST(diff, nil)
+	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, nil), nil)
 
 	c.Assert(err, qt.IsNil)
 	for _, statement := range renderedStatements(c, nodes, capability.CockroachDB26(), platform.CockroachDB) {
@@ -152,7 +152,7 @@ func planRowTTL(c *qt.C, diff *difftypes.SchemaDiff) []string {
 	c.Helper()
 
 	planner := postgres.NewForDialect(platform.CockroachDB, capability.CockroachDB26())
-	nodes, err := planner.GenerateMigrationAST(diff, nil)
+	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, nil), nil)
 	c.Assert(err, qt.IsNil)
 
 	return renderedStatements(c, nodes, capability.CockroachDB26(), platform.CockroachDB)

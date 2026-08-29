@@ -111,7 +111,7 @@ func TestPlanner_ConcurrentIndexDrops(t *testing.T) {
 			c := qt.New(t)
 			diff, desired := tt.fixture()
 
-			nodes, err := tt.planner().GenerateMigrationAST(diff, desired)
+			nodes, err := tt.planner().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)

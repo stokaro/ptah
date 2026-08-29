@@ -94,6 +94,16 @@ func assertReverseCoverageField(
 		// is what holds that, since this gate structurally cannot.
 		return
 	}
+	if field.Name == "DeclaredViewLikes" {
+		// An OUTPUT of the reverse, for the reason the two above are. A
+		// rollback recreates what a cascade took from the PRE-CHANGE database,
+		// so the collateral set is that database's views; the forward value
+		// names the views the change was moving to and cannot reach it.
+		//
+		// TestReverseSchemaDiff_ARolledBackCascadeRecreatesThePriorViews is
+		// what holds that, since this gate structurally cannot.
+		return
+	}
 	if field.Name == "DeclaredUserTypes" {
 		// An OUTPUT of the reverse rather than an input, for the reason the
 		// signatures above are. The vocabulary the down direction needs is the
@@ -585,4 +595,62 @@ func TestReverseSchemaDiff_ARolledBackForeignKeyResolvesAgainstThePriorTables(t 
 	}
 	c.Assert(names, qt.Contains, revCoverageTypedTable,
 		qt.Commentf("the reference vocabulary comes from the database that held the table"))
+}
+
+// TestReverseSchemaDiff_ARolledBackCascadeRecreatesThePriorViews is the third
+// schema-wide fact a rollback resolves rather than inherits.
+//
+// A DROP that cascades reaches whichever views SELECT from what it dropped, and
+// the rollback has to put those back. Which views those are is a fact about the
+// database being rolled back TO, not about the declaration the change was
+// moving to: a view the desired schema declares may not exist there at all, and
+// a view that database held may have been removed by the very change being
+// undone.
+//
+// The gate above cannot see this, because the reverse derives the vocabulary
+// and zeroing the forward field leaves the down plan identical.
+func TestReverseSchemaDiff_ARolledBackCascadeRecreatesThePriorViews(t *testing.T) {
+	c := qt.New(t)
+
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Host", Name: "rev_view_host"}},
+		Fields: []schemamodel.Field{{StructName: "Host", Name: "id", Type: "BIGINT", Primary: true}},
+		Views: []schemamodel.View{{
+			Name: "rev_view_desired",
+			Body: "SELECT id FROM rev_view_host",
+		}},
+	}
+	schemamodel.Finalize(schema)
+
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{{
+			Name: "rev_view_host",
+			Type: "TABLE",
+			Columns: []catalog.Column{
+				{Name: "id", DataType: "bigint", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
+			},
+		}},
+		Views: []catalog.View{{
+			Name: "rev_view_prior",
+			Body: "SELECT id FROM rev_view_host",
+		}},
+	}
+
+	forward := &difftypes.SchemaDiff{
+		ViewsAdded: difftypes.ViewChanges{{Name: "rev_view_desired"}},
+		// The DESIRED schema's views, which the reverse must not resolve
+		// through: they describe the state being rolled back FROM.
+		DeclaredViewLikes: difftypes.ViewLikeVocabularyOf(schema),
+	}
+
+	reversed := reverseSchemaDiffWithSchema(forward, schema, dbSchema)
+
+	names := make([]string, 0, len(reversed.DeclaredViewLikes.Views))
+	for _, view := range reversed.DeclaredViewLikes.Views {
+		names = append(names, view.Name)
+	}
+	c.Assert(names, qt.Contains, "rev_view_prior",
+		qt.Commentf("the collateral set comes from the database being rolled back to"))
+	c.Assert(names, qt.Not(qt.Contains), "rev_view_desired",
+		qt.Commentf("a view only the desired schema declares is not there to be recreated"))
 }

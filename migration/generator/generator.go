@@ -2126,8 +2126,12 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// direction restores what the pre-change database held, and a reference
 		// of theirs names a table as that database had it.
 		DeclaredTables: priorTables(prior),
-		TablesRemoved:  deporder.TableDropOrder(diff.TablesAdded.Names(), schema), // Tables to add become tables to remove
-		TablesModified: reverseTableDiffs(diff.TablesModified, prior),
+		// And the same for the views a cascade may reach: a rollback recreates
+		// what the pre-change database held, so the collateral set is that
+		// database's views rather than the ones the change was moving to.
+		DeclaredViewLikes: difftypes.ViewLikeVocabularyOf(prior),
+		TablesRemoved:     deporder.TableDropOrder(diff.TablesAdded.Names(), schema), // Tables to add become tables to remove
+		TablesModified:    reverseTableDiffs(diff.TablesModified, prior),
 
 		// Reverse enum operations
 		EnumsAdded:    diff.EnumsRemoved, // Enums to remove become enums to add

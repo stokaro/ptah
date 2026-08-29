@@ -111,7 +111,7 @@ func TestPlanner_GenerateMigrationAST_HostlessReAdd_DropsExactlyOnce(t *testing.
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
+		nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -153,7 +153,7 @@ func TestPlanner_GenerateMigrationAST_HostlessReAdd_DropsExactlyOnce(t *testing.
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
+		nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -201,7 +201,7 @@ func TestPlanner_GenerateMigrationAST_EmptyTableNameAdditionTreatedAsHostless(t 
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
+	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
