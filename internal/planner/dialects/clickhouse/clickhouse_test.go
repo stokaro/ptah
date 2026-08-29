@@ -46,7 +46,14 @@ func TestGenerateMigrationAST_AddTableDropTableAndAlter(t *testing.T) {
 				TableName:    "existing",
 				ColumnsAdded: difftypes.ColumnChanges{{StructName: "Existing", Name: "new_col", Type: "INTEGER", Nullable: false}},
 				ColumnsModified: []difftypes.ColumnDiff{
-					{ColumnName: "id", Changes: map[string]string{"type": "Int64"}},
+					{
+						ColumnName: "id",
+						// The column the plan renders, which a comparison carries on the
+						// modification. It matches what gen declares for `existing`
+						// below.
+						Desired: schemamodel.Field{StructName: "Existing", Name: "id", Type: "BIGINT", Primary: true, Nullable: false},
+						Changes: map[string]string{"type": "Int64"},
+					},
 				},
 				ColumnsRemoved: difftypes.ColumnChanges{{Name: "old_col"}},
 			},
@@ -69,6 +76,16 @@ func TestGenerateMigrationAST_AddTableDropTableAndAlter(t *testing.T) {
 	// Expected order: CREATE events, ALTER existing (add), ALTER existing (modify),
 	// ALTER existing (drop), DROP legacy.
 	c.Assert(nodes, qt.HasLen, 5)
+
+	// The MODIFY renders the column the modification CARRIES, not a name with
+	// no type: `MODIFY COLUMN `id`` alone is not a statement ClickHouse can
+	// run, and nothing else here would notice the type going missing.
+	modify, ok := nodes[2].(*ast.AlterTableNode)
+	c.Assert(ok, qt.IsTrue)
+	modifyOp, ok := modify.Operations[0].(*ast.ModifyColumnOperation)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(modifyOp.Column.Name, qt.Equals, "id")
+	c.Assert(modifyOp.Column.Type, qt.Not(qt.Equals), "")
 
 	ct, ok := nodes[0].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue, qt.Commentf("first node should be CREATE TABLE, got %T", nodes[0]))

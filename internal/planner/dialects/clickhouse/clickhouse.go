@@ -110,7 +110,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 
 	result = reportUnsupportedObjectsBeforeTables(result, diff)
 	result = p.addNewTables(result, diff)
-	result = p.modifyExistingTables(result, diff, desired)
+	result = p.modifyExistingTables(result, diff)
 	result, err = planObjectsAfterTables(result, diff, desired, p.capabilities())
 	if err != nil {
 		return nil, err
@@ -152,7 +152,7 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 	return result
 }
 
-func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(platform.ClickHouse)
 	for _, td := range diff.TablesModified {
 		structName := lookupStructName(diff.DeclaredTables, td.TableName, semantics)
@@ -161,10 +161,9 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 			continue
 		}
 
-		// The column travels WITH the change, so the "could not find field"
-		// warning below has no addition to warn about any more: there is no
-		// lookup left to fail. The modification path keeps both, because a
-		// ColumnDiff still carries a name alone (stokaro/ptah#2315).
+		// The column travels WITH the change, on both paths: an addition carries
+		// the column it adds and a modification carries the column it renders
+		// (stokaro/ptah#2315). There is no lookup left to fail.
 		for _, column := range td.ColumnsAdded {
 			col := fromschema.FromField(column, diff.DeclaredUserTypes.Enums, platform.ClickHouse)
 			result = append(result, &ast.AlterTableNode{
@@ -174,12 +173,11 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 		}
 
 		for _, colDiff := range td.ColumnsModified {
-			field := lookupField(desired, structName, colDiff.ColumnName)
-			if field == nil {
-				result = append(result, ast.NewComment(fmt.Sprintf("WARNING: ClickHouse planner could not find field %s.%s; skipping MODIFY COLUMN", td.TableName, colDiff.ColumnName)))
+			if colDiff.Desired.Name == "" {
+				result = append(result, ast.NewComment(fmt.Sprintf("WARNING: the diff carries no column definition for %s.%s; skipping MODIFY COLUMN", td.TableName, colDiff.ColumnName)))
 				continue
 			}
-			col := fromschema.FromField(*field, diff.DeclaredUserTypes.Enums, platform.ClickHouse)
+			col := fromschema.FromField(colDiff.Desired, diff.DeclaredUserTypes.Enums, platform.ClickHouse)
 			result = append(result, &ast.AlterTableNode{
 				Name: td.TableName,
 				Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{
@@ -269,15 +267,6 @@ func lookupStructName(
 		return ""
 	}
 	return table.StructName
-}
-
-func lookupField(desired *schemamodel.Database, structName, columnName string) *schemamodel.Field {
-	for i := range desired.Fields {
-		if desired.Fields[i].StructName == structName && desired.Fields[i].Name == columnName {
-			return &desired.Fields[i]
-		}
-	}
-	return nil
 }
 
 func previousColumnType(change string) string {
