@@ -6,10 +6,17 @@
 # them say so in their own headers: "a gate that compares nothing to nothing
 # reports success at exactly the moment it stopped working."
 #
-# Some gates could already prove otherwise -- three shell ones carry a
-# `-selftest.sh` companion and twelve of the thirteen `check-*.mjs` take
-# `--selftest`. The rest carried nothing, and an audit that broke each rule by
-# hand is a photograph: nothing keeps it true (stokaro/ptah#1923).
+# A gate can prove otherwise where the proof lives beside it: a `-selftest.sh`
+# companion for a shell gate, a `--selftest` mode for a `.mjs` one, a test
+# package for a gate whose rules are Go. What has none of those carried nothing,
+# and an audit that broke each rule by hand is a photograph: nothing keeps it
+# true (stokaro/ptah#1923).
+#
+# Every `check-*.sh` now proves itself where it lives, so the mutation fixtures
+# left here are the `.mjs` half. The accounting below is the other half of the
+# job and outlives the fixtures: it walks the gates on disk and requires each to
+# be covered somewhere or to say why not, which is what makes "OK" a statement
+# about the tree rather than about this file (stokaro/ptah#2509).
 #
 # A `--selftest` is not by itself a proof either, and the gap is worth naming
 # because the docs job cannot see it: a self-test reduced to a bare
@@ -48,7 +55,7 @@ git worktree add --detach "$worktree" HEAD >/dev/null 2>&1
 
 failures=0
 checked=0
-# fixtured accumulates the gates run_case was given, so the coverage guard at
+# fixtured accumulates the gates a shell case was given, so the coverage guard at
 # the end reads what actually ran rather than a second list beside it.
 # mjs_fixtured does the same for the `.mjs` gates, which have their own guard.
 fixtured=()
@@ -67,31 +74,9 @@ restore_worktree() {
 	(cd "$worktree" && git reset -q --hard HEAD >/dev/null 2>&1 && git clean -fdq >/dev/null 2>&1)
 }
 
-run_case() {
-	local gate="$1" description="$2" mutation="$3"
-	checked=$((checked + 1))
-	fixtured+=("$gate")
 
-	if ! (cd "$worktree" && bash "scripts/${gate}" >/dev/null 2>&1); then
-		echo "check-gate-selftests: ${gate} fails on an UNMODIFIED tree; the fixture below proves nothing" >&2
-		failures=$((failures + 1))
-		return
-	fi
-
-	(cd "$worktree" && eval "$mutation")
-	local status=0
-	(cd "$worktree" && bash "scripts/${gate}" >/dev/null 2>&1) || status=$?
-	restore_worktree
-
-	if [ "$status" -eq 0 ]; then
-		echo "check-gate-selftests: ${gate} PASSED with ${description}" >&2
-		failures=$((failures + 1))
-		return
-	fi
-	printf '  %-40s %s\n' "$gate" "$description"
-}
-
-# run_node_gate_case is run_case for a `.mjs` gate under docs/site/scripts. The
+# run_node_gate_case breaks a rule and requires a `.mjs` gate under
+# docs/site/scripts to notice. The
 # gate is invoked directly rather than through npm, because the throwaway
 # worktree has no node_modules -- and these gates deliberately have no npm
 # dependency, which is the property that lets them be exercised here at all.
@@ -185,11 +170,6 @@ echo "check-gate-selftests: breaking each gate's own rule and requiring it to no
 # The path is assembled rather than written out, because check-repository-local-
 # paths.sh reads this file too and would find its own fixture. Its exclusion
 # list names only the gate itself, which is the right list: a harness that had
-
-
-run_case check-public-api-snapshot.sh \
-	"an exported field added to a documented struct" \
-	"perl -0pi -e 's/type DomainExpression struct \{/type DomainExpression struct {\n\t\/\/ GateSelftestField exists only inside this fixture.\n\tGateSelftestField string\n/' config/config.go"
 
 
 # Two fixtures, one per comparison mode. The command reference is three marker
@@ -388,6 +368,7 @@ adjacent=(
 	"check-go-toolchain-single-source.sh	internal/gotoolchain: every YAML spelling and both forwarding shapes, with controls"
 	"check-renovate-regex.sh	internal/renovateregex: the backreference that stopped Renovate, and the group spelling that is the control for it"
 	"check-exported-docs.sh	internal/cmd/exporteddocs: each rule over an AST fixture, and the method exemption that 148 of 158 findings turned on"
+	"check-public-api-snapshot.sh	internal/apiguard: the whole gate over a fixture module -- an added exported field, its control, and the scrape's vacuity refusal"
 )
 
 uncovered=(
@@ -503,7 +484,7 @@ done
 echo
 if [ -n "$unlisted" ]; then
 	echo "check-gate-selftests: no fixture, no companion and no reason for:${unlisted}" >&2
-	echo "  add a run_case for it, give it a -selftest.sh, or say in uncovered why not" >&2
+	echo "  give it a -selftest.sh beside the gate, or say in uncovered why not" >&2
 	exit 1
 fi
 if [ -n "$mjs_unlisted" ]; then

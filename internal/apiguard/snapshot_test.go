@@ -153,7 +153,7 @@ func TestListPackagesReadsListItemsOnly(t *testing.T) {
 	err = os.WriteFile(filepath.Join(dir, "docs", "public_api.md"), []byte(ledger), 0o600)
 	c.Assert(err, qt.IsNil)
 
-	script := filepath.Join(moduleRoot(t), "scripts", "check-public-api-snapshot.sh")
+	script := filepath.Join(moduleRoot(c), "scripts", "check-public-api-snapshot.sh")
 	cmd := exec.Command("bash", script, "--list-packages")
 	cmd.Dir = dir
 
@@ -179,7 +179,7 @@ func emitFragment(t *testing.T, source string) string {
 	err = os.WriteFile(filepath.Join(dir, "fixture.go"), []byte(source), 0o600)
 	c.Assert(err, qt.IsNil)
 
-	script := filepath.Join(moduleRoot(t), "scripts", "check-public-api-snapshot.sh")
+	script := filepath.Join(moduleRoot(c), "scripts", "check-public-api-snapshot.sh")
 	cmd := exec.Command("bash", script, "--emit-package", ".")
 	cmd.Dir = dir
 
@@ -194,11 +194,11 @@ func emitFragment(t *testing.T, source string) string {
 // moduleRoot returns the repository root. This package lives at a fixed depth
 // (internal/apiguard) and go test runs with the working directory set to the
 // package source directory, so the root is two directories up.
-func moduleRoot(t *testing.T) string {
-	t.Helper()
+func moduleRoot(c *qt.C) string {
+	c.Helper()
 
 	wd, err := os.Getwd()
-	qt.New(t).Assert(err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	return filepath.Dir(filepath.Dir(wd))
 }

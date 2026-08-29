@@ -94,15 +94,12 @@ tmp="$(mktemp)"
 packages="$(mktemp)"
 trap 'rm -f "$tmp" "$packages"' EXIT
 
-module_path="$(go list -m -f '{{.Path}}')"
-
+# The floor that stops an empty ledger from producing an empty snapshot, which
+# would match an empty recorded one and exit 0, is inside the scrape:
+# `featureinventory --list-ledger` refuses rather than printing nothing. A second
+# `[[ ! -s ]]` here would be a branch nothing can reach and no fixture can drive,
+# which is a line that reads as coverage while measuring nothing.
 list_ledger_packages >"$packages"
-
-if [[ ! -s "$packages" ]]; then
-	printf '%s: found no %s packages in docs/public_api.md; refusing to report a vacuous pass\n' \
-		"$0" "$module_path" >&2
-	exit 1
-fi
 
 while IFS= read -r package_path; do
 	emit_package_snapshot "$package_path" >>"$tmp"
