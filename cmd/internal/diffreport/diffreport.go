@@ -60,7 +60,7 @@ func Categories(diff *difftypes.SchemaDiff) []Category {
 	categories := make([]Category, 0, structType.NumField())
 	for index := range structType.NumField() {
 		field := structType.Field(index)
-		if !isChangeCategory(field) {
+		if !IsChangeCategory(field) {
 			continue
 		}
 		list := value.Field(index)
@@ -85,7 +85,7 @@ func Names(categories []Category) []string {
 	return names
 }
 
-// isChangeCategory reports whether field carries schema changes.
+// IsChangeCategory reports whether field carries schema changes.
 //
 // Only slice fields do. Every category of the diff is a list of changed
 // objects; the fields that are not lists record how the diff was produced
@@ -104,8 +104,24 @@ func Names(categories []Category) []string {
 // The test is the same one [categoryName] applies, and deliberately so: a field
 // with a name on the wire is reported under that name, and a field with none is
 // not reported at all.
-func isChangeCategory(field reflect.StructField) bool {
+//
+// A list the diff declares a supplement is not one either, and that exclusion
+// is read off the declaration rather than decided here. A supplement qualifies
+// another list -- naming the removals a UNIQUE constraint backs, or the columns
+// a foreign-key drop must be ordered by -- so every object it holds is already
+// printed under the list it qualifies, and printing it again tells an operator
+// that two things changed where one did. It stays on the wire, where a machine
+// needs the qualifier; see [difftypes.SupplementLists].
+//
+// It is exported because the guard that asserts every category reaches a report
+// has to ask the same question this does. A guard with its own copy of the
+// predicate is a guard that can agree with itself while the report diverges,
+// which is what stokaro/ptah#2476 measured.
+func IsChangeCategory(field reflect.StructField) bool {
 	if !field.IsExported() || field.Type.Kind() != reflect.Slice {
+		return false
+	}
+	if _, supplement := difftypes.SupplementLists()[categoryName(field)]; supplement {
 		return false
 	}
 	tag, ok := field.Tag.Lookup("json")
