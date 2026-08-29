@@ -155,6 +155,22 @@ func (p *Planner) handleEnumModifications(result []ast.Node, diff *difftypes.Sch
 // are aliased onto it, and a refusal that names the wrong engine sends an
 // operator to the wrong documentation. Every dialect aliased here needs an arm,
 // because the default spells a family it may not belong to.
+// constraintDialectLabel names the target in a constraint diagnostic.
+//
+// It is separate from [Planner.enumDialectLabel] because the two sentences read
+// differently: an enum warning is about the family's shared behavior, and a
+// constraint warning names the one server the author is pointed at.
+func (p *Planner) constraintDialectLabel() string {
+	switch p.targetDialect() {
+	case platform.SQLServer:
+		return "SQL Server"
+	case platform.Oracle:
+		return "Oracle"
+	default:
+		return "MySQL"
+	}
+}
+
 func (p *Planner) enumDialectLabel() string {
 	switch p.targetDialect() {
 	case platform.SQLServer:
@@ -1712,7 +1728,7 @@ func (p *Planner) addNewConstraints(
 	maps.Copy(state.droppedForModify, bracketDropped)
 
 	result = p.addPrimaryKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state)
-	result = p.addCheckAndUniqueConstraintsWithTables(
+	result = p.addNonForeignKeyConstraintsWithTables(
 		result,
 		diff.ConstraintsAddedWithTables,
 		state.removalByTableName,
@@ -1930,7 +1946,7 @@ func (p *Planner) addForeignKeyConstraintsWithTables(
 	return result
 }
 
-func (p *Planner) addCheckAndUniqueConstraintsWithTables(
+func (p *Planner) addNonForeignKeyConstraintsWithTables(
 	result []ast.Node,
 	additions []difftypes.ConstraintAdditionInfo,
 	removalByTableName map[constraintHostKey]difftypes.ConstraintRemovalInfo,
@@ -1959,6 +1975,16 @@ func (p *Planner) addCheckAndUniqueConstraintsWithTables(
 			!p.capabilities().Has(capability.CheckConstraintsEnforced) {
 			result = append(result, ast.NewComment(fmt.Sprintf(
 				"WARNING: CHECK constraint %s skipped - %s", add.Name, p.checkNotEnforcedMessage())))
+			continue
+		}
+		// EXCLUDE is PostgreSQL's, and no target this planner serves has it in
+		// any spelling. The author asked for something the target cannot hold,
+		// which is reported for the same reason as the CHECK above rather than
+		// dropped in silence.
+		if add.Type == "EXCLUDE" && constraintRecordDescribes(add) {
+			result = append(result, ast.NewComment(fmt.Sprintf(
+				"WARNING: EXCLUDE constraint %s not supported in %s (PostgreSQL-specific feature)",
+				add.Name, p.constraintDialectLabel())))
 			continue
 		}
 		constraint := p.constraintAdditionNode(add)
@@ -2295,7 +2321,8 @@ func changedMaterializedViewNames(diff *difftypes.SchemaDiff) []string {
 //
 // It is the question the refusal asks, separated from whether the target can
 // have the constraint at all: a CHECK with an expression is described even on a
-// target that does not enforce CHECK constraints.
+// target that does not enforce CHECK constraints, and an EXCLUDE with its
+// elements is described even here, where no target has EXCLUDE at all.
 func constraintRecordDescribes(add difftypes.ConstraintAdditionInfo) bool {
 	if add.TableName == "" {
 		return false
@@ -2305,6 +2332,8 @@ func constraintRecordDescribes(add difftypes.ConstraintAdditionInfo) bool {
 		return add.CheckExpression != ""
 	case "UNIQUE":
 		return len(add.Columns) > 0
+	case "EXCLUDE":
+		return add.ExcludeElements != ""
 	default:
 		return false
 	}
