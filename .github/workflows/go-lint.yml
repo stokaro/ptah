@@ -201,7 +201,10 @@ jobs:
           scripts/check-go-module-lint-coverage.sh
 
       - name: Check test style baseline
-        run: scripts/check-test-style.sh
+        run: |
+          set -euo pipefail
+          scripts/check-test-style-selftest.sh
+          scripts/check-test-style.sh
 
       # A gate stops gating quietly: it discovers zero inputs and reports the
       # same success it reports on a clean tree. This breaks each gate's own

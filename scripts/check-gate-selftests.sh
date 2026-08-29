@@ -192,9 +192,6 @@ echo "check-gate-selftests: breaking each gate's own rule and requiring it to no
 
 
 
-run_case check-test-style.sh \
-	"a conditional added to a test function" \
-	"printf '\nfunc TestGateSelftestConditional(t *testing.T) {\n\tif t.Name() == \"\" {\n\t\tt.Fatal(\"unreachable\")\n\t}\n}\n' >>internal/dbtarget/dbtarget_test.go"
 
 run_case check-public-api-snapshot.sh \
 	"an exported field added to a documented struct" \
