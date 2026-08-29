@@ -13,7 +13,6 @@ import (
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
@@ -136,50 +135,6 @@ func NewPostgreSQLWriterForRunnerWithCapabilities(
 		schema: schema,
 		caps:   caps,
 	}
-}
-
-// writeEnums creates all enum types
-func (w *PostgreSQLWriter) writeEnums(enums []schemamodel.Enum) error { //nolint:unused // TODO: verify why this is not used
-	for _, enum := range enums {
-		// Check if enum already exists (skip in dry run mode)
-		var exists bool
-		if !w.dryRun {
-			checkSQL := `
-				SELECT EXISTS (
-					SELECT 1 FROM pg_type t
-					JOIN pg_namespace n ON n.oid = t.typnamespace
-					WHERE t.typname = $1 AND n.nspname = $2
-				)`
-
-			err := w.db.QueryRow(checkSQL, enum.Name, w.schema).Scan(&exists)
-			if err != nil {
-				return fmt.Errorf("failed to check if enum %s exists: %w", enum.Name, err)
-			}
-
-			if exists {
-				slog.Info("Enum already exists, skipping...", "enumName", enum.Name)
-				continue
-			}
-		}
-
-		// CREATE TYPE cannot use bind parameters: identifiers and enum-value
-		// literals must be substituted into the SQL text directly. Route the
-		// enum name through quoteIdent and escape the literal values by
-		// doubling any embedded single quote, per the SQL standard.
-		values := make([]string, len(enum.Values))
-		for i, v := range enum.Values {
-			values[i] = "'" + strings.ReplaceAll(v, "'", "''") + "'"
-		}
-
-		createEnumSQL := "CREATE TYPE " + quoteIdent(enum.Name) +
-			" AS ENUM (" + strings.Join(values, ", ") + ")"
-
-		slog.Info("Creating enum...", "enumName", enum.Name)
-		if err := w.ExecuteSQL(context.Background(), createEnumSQL); err != nil {
-			return fmt.Errorf("failed to create enum %s: %w", enum.Name, err)
-		}
-	}
-	return nil
 }
 
 // ExecuteSQL executes a standalone SQL statement. Values

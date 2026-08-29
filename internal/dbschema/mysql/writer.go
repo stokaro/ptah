@@ -1211,24 +1211,6 @@ func (w *Writer) extractTableNameFromCreateIndex(sqlExpr string) string {
 	return ""
 }
 
-// tableExists checks if a table exists in the database
-func (w *Writer) tableExists(tableName string) bool { //nolint:unused // TODO: verify why this is not used
-	if w.dryRun {
-		// In dry run mode, assume table doesn't exist to show all operations
-		return false
-	}
-
-	var exists bool
-	checkSQL := `
-		SELECT EXISTS (
-			SELECT 1 FROM information_schema.tables
-			WHERE table_schema = DATABASE() AND table_name = ?
-		)`
-
-	err := w.db.QueryRow(checkSQL, tableName).Scan(&exists)
-	return err == nil && exists
-}
-
 // SetDryRun enables or disables dry run mode
 func (w *Writer) SetDryRun(dryRun bool) {
 	w.dryRun = dryRun
