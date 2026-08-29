@@ -91,9 +91,10 @@ func TestRebuildCarriesAddedColumnsAcrossSchemaSpellings(t *testing.T) {
 					CheckExpression: "length(body) > 0",
 				}},
 			}
+			declared := identityRebuildSchema(test.tableSchema)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
-				diff,
-				identityRebuildSchema(test.tableSchema),
+				declaringTheOnlyTable(diff, declared),
+				declared,
 				"sqlite",
 			)
 			c.Assert(err, qt.IsNil)
@@ -151,7 +152,7 @@ func TestConstraintOnACreatedTableIsNotAlsoRebuilt(t *testing.T) {
 					CheckExpression: "length(body) > 0",
 				}},
 			}
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, declared, "sqlite")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(withDeclaredTable(diff, declared), declared, "sqlite")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(plan, qt.Not(qt.Contains), "__ptah_rebuild_notes")

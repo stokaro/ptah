@@ -44,14 +44,20 @@ func TestGenerateSchemaDiffSQL_TableModificationUsesStructuralIdentity(t *testin
 
 func TestGenerateSchemaDiffSQL_SQLiteRebuildUsesStructuralIdentity(t *testing.T) {
 	c := qt.New(t)
+	// Two declared tables answer to `tenant.data`. The modification carries the
+	// declaration of the one a comparison would have matched -- `data` in
+	// schema `tenant` -- which is what this test is about: the rebuild copies
+	// FROM that table and not from the one literally named `tenant.data`.
+	declared := referenceCollisionSchema()
 	diff := &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{{
 			TableName:      "tenant.data",
 			ColumnsRemoved: difftypes.ColumnChanges{{Name: "obsolete"}},
+			Desired:        difftypes.TableDeclarationFor(declared, declared.Tables[1]),
 		}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, referenceCollisionSchema(), platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, declared, platform.SQLite)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `FROM "tenant"."data"`)

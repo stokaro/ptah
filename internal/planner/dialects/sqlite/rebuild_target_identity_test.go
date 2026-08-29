@@ -61,9 +61,10 @@ func TestRebuildResolvesTheRetainedTableAcrossSchemaSpellings(t *testing.T) {
 					Changes:    map[string]string{"type": "TEXT -> BLOB"},
 				}},
 			}}}
+			declared := identityRebuildSchema(test.tableSchema)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
-				diff,
-				identityRebuildSchema(test.tableSchema),
+				declaringTheOnlyTable(diff, declared),
+				declared,
 				"sqlite",
 			)
 			c.Assert(err, qt.IsNil)
@@ -158,7 +159,7 @@ func TestRebuiltTableDoesNotAlsoGetItsIndexAndTriggerRecreated(t *testing.T) {
 				}},
 			}
 
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, "sqlite")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(declaringTheOnlyTable(diff, desired), desired, "sqlite")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(strings.Count(plan, "CREATE INDEX"), qt.Equals, 1, qt.Commentf("plan:\n%s", plan))

@@ -1449,6 +1449,24 @@ type TableDiff struct {
 	// ... already exists` (stokaro/ptah#2404).
 	ColumnsRemoved ColumnChanges `json:"columns_removed"`
 
+	// Desired is everything the declaration says about this table.
+	//
+	// Most changes to a table are expressible as ALTER TABLE and need only
+	// the column that moved, which the column lists carry. SQLite has a
+	// class that is not: dropping a column, changing its type, adding a
+	// constraint. There the table is rebuilt -- created afresh under a
+	// temporary name, copied into, dropped, renamed -- and rebuilding it
+	// means declaring it again, with its columns, its constraints, its
+	// indexes and its triggers.
+	//
+	// A planner assembled that by filtering the whole declaration four times,
+	// once per kind. The comparison holds the table and the declaration
+	// together, so it assembles it once (stokaro/ptah#2315).
+	//
+	// Off the wire: `tables_modified` reports what CHANGED, and this is the
+	// table it changed.
+	Desired TableDeclaration `json:"-"`
+
 	// ColumnsModified contains detailed information about columns that exist in both
 	// schemas but have different properties (type, constraints, defaults, etc.)
 	ColumnsModified []ColumnDiff `json:"columns_modified"`
@@ -2470,6 +2488,87 @@ func TableCreationFor(desired *schemamodel.Database, table schemamodel.Table, na
 	creation.SelfReferencingForeignKeys =
 		deporder.GeneratedSelfReferencingForeignKeys(desired)[table.QualifiedName()]
 	return creation
+}
+
+// TableDeclaration is everything the declaration says about one table.
+//
+// It is the bundle a rebuild needs. [TableCreation] is the narrower one a
+// CREATE TABLE needs: a creation renders the table and its columns, and its
+// constraints, indexes and triggers are planned as their own additions. A
+// rebuild cannot do that -- the table it replaces already has them, and they
+// have to come back with it -- so this carries all four.
+type TableDeclaration struct {
+	// Table is the declared table.
+	Table schemamodel.Table
+	// Fields are this table's columns, with embedded fields folded in.
+	Fields []schemamodel.Field
+	// Enums are the declared enum types Fields name.
+	Enums []schemamodel.Enum
+	// Constraints are the table-level constraints declared on it.
+	Constraints []schemamodel.Constraint
+	// Indexes are the indexes declared on it.
+	Indexes []schemamodel.Index
+	// Triggers are the triggers declared on it.
+	Triggers []schemamodel.Trigger
+}
+
+// HasTable reports whether a declaration was assembled at all.
+//
+// A modification naming a table the declaration does not hold carries none, and
+// a planner that rebuilds has to say so rather than rebuild nothing.
+func (d TableDeclaration) HasTable() bool {
+	return d.Table.Name != ""
+}
+
+// TableDeclarationFor assembles what the declaration says about one table.
+//
+// The four lists are filtered the way each planner filtered them: columns by
+// the table's Go struct with embedded fields folded in, constraints by the
+// table they name, indexes by the table they name or the struct they were
+// declared on, and triggers by the table they fire on.
+func TableDeclarationFor(desired *schemamodel.Database, table schemamodel.Table) TableDeclaration {
+	declaration := TableDeclaration{Table: table}
+	if desired == nil {
+		return declaration
+	}
+	qualified := table.QualifiedName()
+
+	all := fromschema.ProcessEmbeddedFields(desired.EmbeddedFields, desired.Fields)
+	owned := make([]schemamodel.Field, 0, len(all))
+	for _, field := range all {
+		if field.StructName == table.StructName {
+			owned = append(owned, field)
+		}
+	}
+	declaration.Fields = nilWhenEmpty(owned)
+	declaration.Enums = fromschema.EnumsFor(owned, desired.Enums)
+
+	constraints := make([]schemamodel.Constraint, 0, len(desired.Constraints))
+	for _, constraint := range desired.Constraints {
+		if constraint.StructName == table.StructName || constraint.Table == qualified || constraint.Table == table.Name {
+			constraints = append(constraints, constraint)
+		}
+	}
+	declaration.Constraints = nilWhenEmpty(constraints)
+
+	indexes := make([]schemamodel.Index, 0, len(desired.Indexes))
+	for _, index := range desired.Indexes {
+		named := strings.TrimSpace(index.TableName)
+		if named == qualified || named == table.Name || (named == "" && index.StructName == table.StructName) {
+			indexes = append(indexes, index)
+		}
+	}
+	declaration.Indexes = nilWhenEmpty(indexes)
+
+	triggers := make([]schemamodel.Trigger, 0, len(desired.Triggers))
+	for _, trigger := range desired.Triggers {
+		if trigger.Table == qualified || trigger.Table == table.Name {
+			triggers = append(triggers, trigger)
+		}
+	}
+	declaration.Triggers = nilWhenEmpty(triggers)
+
+	return declaration
 }
 
 // TableCreationsFor assembles the creations for the named tables.

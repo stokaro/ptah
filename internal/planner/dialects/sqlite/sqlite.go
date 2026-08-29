@@ -524,7 +524,7 @@ func (p *Planner) modifyTables(
 	emitted := make(map[string]bool, len(rebuilds.order))
 	for _, tableDiff := range diff.TablesModified {
 		if target, ok := rebuilds.target(tableDiff.TableName); ok {
-			nodes, err := p.rebuildTable(target, diff, desired)
+			nodes, err := p.rebuildTable(target, tableDiff.Desired, diff)
 			if err != nil {
 				return nil, err
 			}
@@ -547,7 +547,13 @@ func (p *Planner) modifyTables(
 		if emitted[tableName] {
 			continue
 		}
-		nodes, err := p.rebuildTable(rebuilds.targets[tableName], diff, desired)
+		// A table reached only through a CONSTRAINT change never appears in
+		// TablesModified, so there is no modification carrying its
+		// declaration. The constraint records do not carry one either --
+		// that is stokaro/ptah#2315's constraint cluster -- so this path
+		// still assembles it from the declaration.
+		declared := declarationForRebuild(diff, desired, tableName)
+		nodes, err := p.rebuildTable(rebuilds.targets[tableName], declared, diff)
 		if err != nil {
 			return nil, err
 		}
@@ -561,30 +567,38 @@ func (p *Planner) modifyTables(
 // is rendered from the desired definition, so one rebuild covers column type,
 // nullability, default, generated-expression and constraint changes at once,
 // as well as dropped and added columns.
+// rebuildTable creates the table afresh under a temporary name, copies into
+// it, drops the original and renames, then puts its indexes and triggers
+// back.
+//
+// Everything it declares comes off the modification. It used to filter the
+// whole declaration four times -- columns, constraints, indexes, triggers --
+// once per kind, each with its own rule for which of them belong to this
+// table (stokaro/ptah#2315).
 func (p *Planner) rebuildTable(
 	target rebuildTarget,
+	declared difftypes.TableDeclaration,
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 ) ([]ast.Node, error) {
-	table := findTable(desired.Tables, target.tableName, diff.EffectiveIdentifierSemantics(DialectName))
-	if table == nil {
+	if !declared.HasTable() {
 		return nil, unsupportedFeaturef(
 			"rebuilding table %s requires its desired definition, and the declaration does not contain it. "+
 				"Declare the table, or drop it instead of changing it",
 			target.tableName)
 	}
-	tempName, err := availableRebuildTableName(*table, diff, desired)
+	table := &declared.Table
+	tempName, err := availableRebuildTableName(*table, diff)
 	if err != nil {
 		return nil, err
 	}
 
-	createNode := fromschema.FromTable(*table, desired.Fields, desired.Enums, DialectName)
-	if err := addInlineConstraints(createNode, *table, desired.Constraints); err != nil {
+	createNode := fromschema.FromTable(*table, declared.Fields, declared.Enums, DialectName)
+	if err := addInlineConstraints(createNode, *table, declared.Constraints); err != nil {
 		return nil, err
 	}
 	createNode.Name = qualifyLikeTable(*table, tempName)
 
-	columns, err := rebuildCopiedColumns(*table, desired.Fields, target.addedColumns)
+	columns, err := rebuildCopiedColumns(*table, declared.Fields, target.addedColumns)
 	if err != nil {
 		return nil, err
 	}
@@ -606,8 +620,8 @@ func (p *Planner) rebuildTable(
 		ast.NewRawSQL("ALTER TABLE " + quoteQualifiedIdentifier(createNode.Name) +
 			" RENAME TO " + quoteIdentifier(table.Name) + ";"),
 	}
-	nodes = append(nodes, p.recreateTableIndexes(*table, desired)...)
-	triggers, err := p.recreateTableTriggers(*table, desired)
+	nodes = append(nodes, p.recreateTableIndexes(*table, declared.Indexes)...)
+	triggers, err := p.recreateTableTriggers(*table, declared.Triggers)
 	if err != nil {
 		return nil, err
 	}
@@ -637,7 +651,6 @@ const rebuildTableNameAttempts = 100
 func availableRebuildTableName(
 	table schemamodel.Table,
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 ) (string, error) {
 	base := "__ptah_rebuild_" + table.Name
 	for attempt := range rebuildTableNameAttempts {
@@ -790,37 +803,26 @@ func validateRebuiltAddedColumn(table schemamodel.Table, field schemamodel.Field
 	)
 }
 
-func (p *Planner) recreateTableIndexes(table schemamodel.Table, desired *schemamodel.Database) []ast.Node {
-	tableMap := structToTableMap(desired.Tables)
-	var nodes []ast.Node
-	for _, index := range desired.Indexes {
-		tableName := generatedIndexTableName(index, tableMap)
-		if tableName == table.QualifiedName() {
-			nodes = append(nodes, fromschema.FromIndexWithTableMapping(index, tableMap))
-		}
+// recreateTableIndexes renders the indexes the rebuild has to put back.
+//
+// They arrive already filtered to this table, so the struct-to-table map is
+// this table alone: an index declared on the struct without naming a table
+// resolves through it, and there is no other table it could resolve to.
+func (p *Planner) recreateTableIndexes(table schemamodel.Table, indexes []schemamodel.Index) []ast.Node {
+	tableMap := map[string]string{table.StructName: table.QualifiedName()}
+	nodes := make([]ast.Node, 0, len(indexes))
+	for _, index := range indexes {
+		nodes = append(nodes, fromschema.FromIndexWithTableMapping(index, tableMap))
 	}
 	return nodes
 }
 
-func generatedIndexTableName(index schemamodel.Index, tableMap map[string]string) string {
-	if strings.TrimSpace(index.TableName) != "" {
-		return index.TableName
-	}
-	return tableMap[index.StructName]
-}
-
-func structToTableMap(tables []schemamodel.Table) map[string]string {
-	out := make(map[string]string, len(tables))
-	for _, table := range tables {
-		out[table.StructName] = table.QualifiedName()
-	}
-	return out
-}
-
-func (p *Planner) recreateTableTriggers(table schemamodel.Table, desired *schemamodel.Database) ([]ast.Node, error) {
+// recreateTableTriggers renders the triggers the rebuild has to put back.
+// They arrive already filtered to this table.
+func (p *Planner) recreateTableTriggers(table schemamodel.Table, triggers []schemamodel.Trigger) ([]ast.Node, error) {
 	var nodes []ast.Node
-	for _, trigger := range desired.Triggers {
-		if trigger.Table == table.QualifiedName() {
+	for _, trigger := range triggers {
+		{
 			if triggerBodyContainsCreateTrigger(trigger.Body) {
 				return nil, unsupportedFeaturef(
 					"rebuilding table %s cannot recreate trigger %s: its body is itself a CREATE TRIGGER "+
@@ -1159,4 +1161,26 @@ func userDefinedTypeNames(diff *difftypes.SchemaDiff) []string {
 	}
 	slices.Sort(names)
 	return slices.Compact(names)
+}
+
+// declarationForRebuild answers with the declaration a rebuild renders from.
+//
+// A modification carries it. A table reached only through a constraint change
+// has no modification, so it is assembled here from the declaration, which is
+// the one place this planner still reads one for a rebuild.
+func declarationForRebuild(
+	diff *difftypes.SchemaDiff,
+	desired *schemamodel.Database,
+	tableName string,
+) difftypes.TableDeclaration {
+	for _, tableDiff := range diff.TablesModified {
+		if tableDiff.TableName == tableName && tableDiff.Desired.HasTable() {
+			return tableDiff.Desired
+		}
+	}
+	table := findTable(desired.Tables, tableName, diff.EffectiveIdentifierSemantics(DialectName))
+	if table == nil {
+		return difftypes.TableDeclaration{}
+	}
+	return difftypes.TableDeclarationFor(desired, *table)
 }

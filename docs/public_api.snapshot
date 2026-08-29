@@ -12644,6 +12644,8 @@ type TableChanges []TableCreation
     func TableCreationsFor(desired *schemamodel.Database, names ...string) TableChanges
 type TableCreation struct{ ... }
     func TableCreationFor(desired *schemamodel.Database, table schemamodel.Table, name string) TableCreation
+type TableDeclaration struct{ ... }
+    func TableDeclarationFor(desired *schemamodel.Database, table schemamodel.Table) TableDeclaration
 type TableDiff struct{ ... }
 type TriggerDiff struct{ ... }
 type TriggerRef struct{ ... }
@@ -14521,6 +14523,35 @@ type TableCreation struct {
 
 func TableCreationFor(desired *schemamodel.Database, table schemamodel.Table, name string) TableCreation
 
+### go.5x5.cz/ptah/migration/schemadiff/difftypes.TableDeclaration
+
+package difftypes // import "go.5x5.cz/ptah/migration/schemadiff/difftypes"
+
+type TableDeclaration struct {
+    // Table is the declared table.
+    Table schemamodel.Table
+    // Fields are this table's columns, with embedded fields folded in.
+    Fields []schemamodel.Field
+    // Enums are the declared enum types Fields name.
+    Enums []schemamodel.Enum
+    // Constraints are the table-level constraints declared on it.
+    Constraints []schemamodel.Constraint
+    // Indexes are the indexes declared on it.
+    Indexes []schemamodel.Index
+    // Triggers are the triggers declared on it.
+    Triggers []schemamodel.Trigger
+}
+    TableDeclaration is everything the declaration says about one table.
+
+    It is the bundle a rebuild needs. TableCreation is the narrower one a
+    CREATE TABLE needs: a creation renders the table and its columns, and its
+    constraints, indexes and triggers are planned as their own additions.
+    A rebuild cannot do that -- the table it replaces already has them, and they
+    have to come back with it -- so this carries all four.
+
+func TableDeclarationFor(desired *schemamodel.Database, table schemamodel.Table) TableDeclaration
+func (d TableDeclaration) HasTable() bool
+
 ### go.5x5.cz/ptah/migration/schemadiff/difftypes.TableDiff
 
 package difftypes // import "go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -14545,6 +14576,24 @@ type TableDiff struct {
     // emit its foreign key twice, which PostgreSQL answers with `constraint
     // ... already exists` (stokaro/ptah#2404).
     ColumnsRemoved ColumnChanges `json:"columns_removed"`
+
+    // Desired is everything the declaration says about this table.
+    //
+    // Most changes to a table are expressible as ALTER TABLE and need only
+    // the column that moved, which the column lists carry. SQLite has a
+    // class that is not: dropping a column, changing its type, adding a
+    // constraint. There the table is rebuilt -- created afresh under a
+    // temporary name, copied into, dropped, renamed -- and rebuilding it
+    // means declaring it again, with its columns, its constraints, its
+    // indexes and its triggers.
+    //
+    // A planner assembled that by filtering the whole declaration four times,
+    // once per kind. The comparison holds the table and the declaration
+    // together, so it assembles it once (stokaro/ptah#2315).
+    //
+    // Off the wire: `tables_modified` reports what CHANGED, and this is the
+    // table it changed.
+    Desired TableDeclaration `json:"-"`
 
     // ColumnsModified contains detailed information about columns that exist in both
     // schemas but have different properties (type, constraints, defaults, etc.)

@@ -47,7 +47,7 @@ func TestPlannerCreatesTableWithInlineConstraints(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(desired, "users")}
 
-	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.SQLite)
+	nodes, err := planner.GenerateSchemaDiffAST(withDeclaredTable(diff, desired), desired, platform.SQLite)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
 
@@ -55,7 +55,7 @@ func TestPlannerCreatesTableWithInlineConstraints(t *testing.T) {
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(table.Constraints, qt.HasLen, 2)
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), desired, platform.SQLite)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `CREATE TABLE "users"`)
 	c.Assert(sql, qt.Contains, `CONSTRAINT "users_email_check" CHECK (email <> '')`)
@@ -100,7 +100,7 @@ func TestPlannerCreatesAddedTablesWithQualifiedConstraintDiffs(t *testing.T) {
 		}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), desired, platform.SQLite)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `CREATE TABLE "users"`)
@@ -153,7 +153,7 @@ func TestPlannerAddsColumnsAndIndexes(t *testing.T) {
 		},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), desired, platform.SQLite)
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `ALTER TABLE "users" ADD COLUMN "display_name" TEXT`)
 	c.Assert(sql, qt.Contains, `CREATE UNIQUE INDEX IF NOT EXISTS "idx_users_display_name" ON "users" ("display_name") WHERE display_name IS NOT NULL`)
@@ -187,7 +187,7 @@ func TestPlannerRebuildsTableWhenDroppingColumn(t *testing.T) {
 		ColumnsRemoved: difftypes.ColumnChanges{{Name: "name"}},
 	}}}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), desired, platform.SQLite)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
@@ -226,7 +226,7 @@ func TestPlannerRebuildStepsAsideFromADeclaredTableName(t *testing.T) {
 		DeclaredTables: desired.Tables,
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), desired, platform.SQLite)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users_1"`)
@@ -264,7 +264,7 @@ func TestPlannerRejectsUnsafeTableRebuildPreconditions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := planner.GenerateSchemaDiffAST(diff, tt.desired, platform.SQLite)
+			nodes, err := planner.GenerateSchemaDiffAST(withDeclaredTable(diff, tt.desired), tt.desired, platform.SQLite)
 			c.Assert(nodes, qt.IsNil)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, tt.want)
@@ -327,7 +327,7 @@ func TestPlannerRebuildsATableOtherTablesReferTo(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, err := planner.GenerateSchemaDiffSQL(diff, tt.desired, platform.SQLite)
+			sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, tt.desired), tt.desired, platform.SQLite)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, "PRAGMA foreign_keys = off;")
 			c.Assert(sql, qt.Contains, "PRAGMA foreign_keys = on;")
@@ -370,7 +370,7 @@ func TestPlannerRebuildStepsAsideFromARemovedTableName(t *testing.T) {
 		}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), desired, platform.SQLite)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users_1"`)
@@ -433,7 +433,7 @@ func TestPlannerRebuildsForAddColumnShapesAlterCannotExpress(t *testing.T) {
 				ColumnsAdded: difftypes.ColumnChanges{tt.field},
 			}}}
 
-			sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
+			sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), desired, platform.SQLite)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
@@ -467,7 +467,7 @@ func TestPlannerRefusesRebuiltNotNullAddWithoutDefault(t *testing.T) {
 		ColumnsAdded: difftypes.ColumnChanges{field},
 	}}}
 
-	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.SQLite)
+	nodes, err := planner.GenerateSchemaDiffAST(withDeclaredTable(diff, desired), desired, platform.SQLite)
 
 	c.Assert(nodes, qt.IsNil)
 	var planErr *ptaherr.PlanError
@@ -686,7 +686,7 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, err := planner.GenerateSchemaDiffSQL(test.diff, test.desired, platform.SQLite)
+			sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(test.diff, test.desired), test.desired, platform.SQLite)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
@@ -722,7 +722,7 @@ func TestPlannerRebuildRefusesAddedNotNullColumnWithoutDefault(t *testing.T) {
 		ColumnsRemoved: difftypes.ColumnChanges{{Name: "legacy"}},
 	}}}
 
-	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.SQLite)
+	nodes, err := planner.GenerateSchemaDiffAST(withDeclaredTable(diff, desired), desired, platform.SQLite)
 
 	c.Assert(nodes, qt.IsNil)
 	var planErr *ptaherr.PlanError
@@ -775,7 +775,7 @@ func TestPlannerRebuildEmitsIndexesAndTriggersOnce(t *testing.T) {
 		}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), desired, platform.SQLite)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Count(sql, `CREATE INDEX IF NOT EXISTS "idx_users_name"`), qt.Equals, 1)
@@ -823,7 +823,7 @@ func TestPlannerEmitsTriggerChangesWithoutRebuild(t *testing.T) {
 		}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), desired, platform.SQLite)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Count(sql, `CREATE TRIGGER "trg_users_insert"`), qt.Equals, 1)
@@ -879,7 +879,7 @@ func TestPlannerRejectsSQLiteExcludeConstraint(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(desired, "bookings")}
 
-	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.SQLite)
+	nodes, err := planner.GenerateSchemaDiffAST(withDeclaredTable(diff, desired), desired, platform.SQLite)
 
 	c.Assert(nodes, qt.IsNil)
 	var planErr *ptaherr.PlanError
@@ -929,7 +929,7 @@ func TestPlannerRebuildExcludesColumnsAddedBesideAConstraintChange(t *testing.T)
 		}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), desired, platform.SQLite)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains,
@@ -963,9 +963,77 @@ func TestPlanner_RefusesAColumnOnARelationTheSchemaDoesNotDeclare(t *testing.T) 
 		ColumnsAdded: difftypes.ColumnChanges{{StructName: "User", Name: "note", Type: "TEXT"}},
 	}}}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), desired, platform.SQLite)
 
 	c.Assert(err, qt.ErrorMatches, `.*requires its desired definition.*`)
 	c.Assert(sql, qt.Equals, "",
 		qt.Commentf("no DDL for a relation the desired schema never declared"))
+}
+
+// withDeclaredTable fills a fixture diff's per-table declaration from the
+// declaration the plan is applied against, leaving one the fixture already
+// supplied alone.
+//
+// A rebuild recreates the whole table -- its columns, constraints, indexes and
+// triggers -- so the modification carries all four, and a comparison fills them
+// on every run. A fixture states the CHANGE; restating the declaration beside it
+// would put the same table in two places where a reader has to check they agree.
+func withDeclaredTable(diff *difftypes.SchemaDiff, desired *schemamodel.Database) *difftypes.SchemaDiff {
+	if diff == nil || desired == nil || len(diff.TablesModified) == 0 {
+		return diff
+	}
+	completed := *diff
+	completed.TablesModified = make([]difftypes.TableDiff, len(diff.TablesModified))
+	copy(completed.TablesModified, diff.TablesModified)
+	for i, tableDiff := range completed.TablesModified {
+		if tableDiff.Desired.HasTable() {
+			continue
+		}
+		if table, ok := declaredTableNamed(desired, tableDiff.TableName); ok {
+			completed.TablesModified[i].Desired = difftypes.TableDeclarationFor(desired, table)
+		}
+	}
+	if len(completed.DeclaredTables) == 0 {
+		completed.DeclaredTables = desired.Tables
+	}
+	return &completed
+}
+
+// declaredTableNamed resolves the table a fixture's modification names.
+//
+// Both spellings the declaration answers to are tried, and nothing looser. A
+// fixture whose diff names a table by a spelling the declaration does not use
+// carries no declaration, which is correct: a modification naming a relation
+// the schema never declared must write no DDL, and a helper that resolved it by
+// bare name would hand the planner the very table those tests assert it does not
+// touch.
+func declaredTableNamed(desired *schemamodel.Database, tableName string) (schemamodel.Table, bool) {
+	for _, table := range desired.Tables {
+		if table.Name == tableName || table.QualifiedName() == tableName {
+			return table, true
+		}
+	}
+	return schemamodel.Table{}, false
+}
+
+// declaringTheOnlyTable fills a fixture's modification with the declaration of
+// the one table the fixture declares.
+//
+// It is for the identity fixtures, whose whole point is that the diff spells the
+// table differently from the declaration: `main.notes` against a declared
+// `notes`. A comparison resolves that and produces the modification from the
+// table it matched, so the fixture says which table it means rather than asking
+// a helper to guess -- and withDeclaredTable deliberately does not guess.
+func declaringTheOnlyTable(diff *difftypes.SchemaDiff, desired *schemamodel.Database) *difftypes.SchemaDiff {
+	if len(desired.Tables) != 1 {
+		panic("declaringTheOnlyTable wants a declaration holding exactly one table")
+	}
+	completed := *diff
+	completed.TablesModified = make([]difftypes.TableDiff, len(diff.TablesModified))
+	copy(completed.TablesModified, diff.TablesModified)
+	for i := range completed.TablesModified {
+		completed.TablesModified[i].Desired = difftypes.TableDeclarationFor(desired, desired.Tables[0])
+	}
+	completed.DeclaredTables = desired.Tables
+	return &completed
 }

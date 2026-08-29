@@ -99,6 +99,10 @@ func reverseTableDiffs(tableDiffs []difftypes.TableDiff, prior *schemamodel.Data
 			ColumnsAdded:    tableDiff.ColumnsRemoved, // Columns to remove become columns to add
 			ColumnsRemoved:  tableDiff.ColumnsAdded,   // Columns to add become columns to remove
 			ColumnsModified: reverseColumnDiffs(tableDiff.ColumnsModified, tableDiff.TableName, prior),
+			// The table as the PRE-CHANGE database declared it. A rollback that
+			// rebuilds is rebuilding what that database held, and the forward
+			// declaration describes the state being rolled back from.
+			Desired: priorTableDeclaration(prior, tableDiff.TableName),
 			// The three Desired/Current pairs below carry BOTH sides for the
 			// reason each of their doc comments gives, which is exactly so a
 			// reversal can swap them. None of them was swapped, or carried at
@@ -157,6 +161,24 @@ func reverseColumnDiffs(
 // priorColumn answers with the named column of the named table as the
 // pre-change database held it, folded the same way the comparison folds a
 // declaration so an embedded column is found under the name it renders with.
+// priorTableDeclaration answers with everything the pre-change database
+// declared about the named table.
+//
+// It is the rollback's half of the declaration a modification carries: a
+// dialect that rebuilds rather than alters recreates the table, and the one
+// it has to recreate is the one that database held.
+func priorTableDeclaration(prior *schemamodel.Database, tableName string) difftypes.TableDeclaration {
+	if prior == nil {
+		return difftypes.TableDeclaration{}
+	}
+	for _, table := range prior.Tables {
+		if table.Name == tableName || table.QualifiedName() == tableName {
+			return difftypes.TableDeclarationFor(prior, table)
+		}
+	}
+	return difftypes.TableDeclaration{}
+}
+
 func priorColumn(prior *schemamodel.Database, tableName, columnName string) schemamodel.Field {
 	if prior == nil {
 		return schemamodel.Field{}
