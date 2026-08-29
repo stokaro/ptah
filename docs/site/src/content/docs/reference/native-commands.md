@@ -350,12 +350,9 @@ Eight reading tools, each forwarding to the operation that already owns the work
 | `inference_plan` | what changing an embedding model would do, what blocks it, and what text would leave the database |
 | `inference_status` | how far a generation run has got, and why a cutover is blocked |
 
-Three of Ptah's own reading verbs are deliberately absent: `schema inspect`,
-`schema diff` and `migrations lint`. Each needs a scratch database that Ptah
-resets destructively, and a destructive capability must not sit behind a
-read-only name on a surface an agent drives without reading flag documentation.
-They return when a later phase can supply that database out of band rather than
-from the caller.
+Three of Ptah's own reading verbs are absent — `schema inspect`, `schema diff`
+and `migrations lint` — because each needs a scratch database Ptah resets
+destructively. Run those from the CLI; the guide linked below states the rule.
 
 `--workspace` adds three artifact tools -- `read_artifact`, `preview_patch`
 and `apply_patch` -- confined to the directories `--migrations-dir`,
