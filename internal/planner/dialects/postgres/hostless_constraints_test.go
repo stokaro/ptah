@@ -101,6 +101,12 @@ func TestPlanner_GenerateMigrationAST_HostlessReAdd_DropsExactlyOnce(t *testing.
 		diff := &difftypes.SchemaDiff{
 			ConstraintsAdded:   []string{"chk_down"},
 			ConstraintsRemoved: []string{"chk_down"},
+			// The addition carries its body, because a diff has to describe what it
+			// names; the removal carries the host this test is about
+			// (stokaro/ptah#2315).
+			ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+				{Name: "chk_down", TableName: "things", Type: "CHECK", CheckExpression: "qty >= 0"},
+			},
 			ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 				{Name: "chk_down", TableName: "things", Type: "CHECK"},
 			},
@@ -132,16 +138,19 @@ func TestPlanner_GenerateMigrationAST_HostlessReAdd_DropsExactlyOnce(t *testing.
 	})
 
 	t.Run("two removal hosts", func(t *testing.T) {
-		// The down migration of a multi-host non-FK constraint modify: the
-		// bare name arrives duplicated, every host sits in
-		// ConstraintsRemovedWithTables, ConstraintsAddedWithTables is empty.
-		// Every recorded host must be dropped exactly once, all before the
-		// re-add, and removeConstraints must add nothing on top.
+		// The down migration of a multi-host non-FK constraint modify: the name
+		// arrives once per host, every host sits in both record lists, and every
+		// recorded removal host must be dropped exactly once, all before the
+		// re-add, with removeConstraints adding nothing on top.
 		c := qt.New(t)
 
 		diff := &difftypes.SchemaDiff{
 			ConstraintsAdded:   []string{"shared_check", "shared_check"},
 			ConstraintsRemoved: []string{"shared_check", "shared_check"},
+			ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+				{Name: "shared_check", TableName: "articles", Type: "CHECK", CheckExpression: "qty >= 0"},
+				{Name: "shared_check", TableName: "pages", Type: "CHECK", CheckExpression: "qty >= 0"},
+			},
 			ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 				{Name: "shared_check", TableName: "articles", Type: "CHECK"},
 				{Name: "shared_check", TableName: "pages", Type: "CHECK"},
@@ -164,12 +173,19 @@ func TestPlanner_GenerateMigrationAST_HostlessReAdd_DropsExactlyOnce(t *testing.
 		c.Assert(strings.Count(sql, "ALTER TABLE pages DROP CONSTRAINT IF EXISTS shared_check;"), qt.Equals, 1,
 			qt.Commentf("second removal host dropped exactly once; got:\n%s", sql))
 
-		firstAdd := strings.Index(sql, "ADD CONSTRAINT shared_check")
-		c.Assert(firstAdd >= 0, qt.IsTrue)
-		c.Assert(strings.LastIndex(sql, "ALTER TABLE articles DROP CONSTRAINT IF EXISTS shared_check") < firstAdd, qt.IsTrue,
-			qt.Commentf("all drops must precede the re-add; got:\n%s", sql))
-		c.Assert(strings.LastIndex(sql, "ALTER TABLE pages DROP CONSTRAINT IF EXISTS shared_check") < firstAdd, qt.IsTrue,
-			qt.Commentf("all drops must precede the re-add; got:\n%s", sql))
+		// Each host's drop precedes ITS OWN re-add. The older assertion put every
+		// drop before a single re-add, which is the shape a bare name produced:
+		// one statement standing in for both hosts. With a record per host the
+		// plan pairs them, and pairing is the property that matters -- a host
+		// re-added before its own constraint is dropped collides with 42710.
+		for _, host := range []string{"articles", "pages"} {
+			drop := strings.Index(sql, "ALTER TABLE "+host+" DROP CONSTRAINT IF EXISTS shared_check")
+			add := strings.Index(sql, "ALTER TABLE "+host+" ADD CONSTRAINT shared_check")
+			c.Assert(drop >= 0, qt.IsTrue, qt.Commentf("%s is dropped; got:\n%s", host, sql))
+			c.Assert(add >= 0, qt.IsTrue, qt.Commentf("%s is re-added; got:\n%s", host, sql))
+			c.Assert(drop < add, qt.IsTrue,
+				qt.Commentf("%s must be dropped before it is re-added; got:\n%s", host, sql))
+		}
 	})
 }
 
@@ -189,7 +205,10 @@ func TestPlanner_GenerateMigrationAST_EmptyTableNameAdditionTreatedAsHostless(t 
 		ConstraintsAdded:   []string{"chk_ghost"},
 		ConstraintsRemoved: []string{"chk_ghost"},
 		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
-			{Name: "chk_ghost", TableName: "", Type: "CHECK"},
+			// The host and the body a comparison resolves. The record used to
+			// carry neither and the planner recovered both from the declaration;
+			// that route is withdrawn (stokaro/ptah#2315).
+			{Name: "chk_ghost", TableName: "things", Type: "CHECK", CheckExpression: "qty >= 0"},
 		},
 		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 			{Name: "chk_ghost", TableName: "things", Type: "CHECK"},

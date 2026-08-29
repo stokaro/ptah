@@ -5,9 +5,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
+	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -61,13 +65,18 @@ func TestPlanner_TableLevelConstraintWithoutAnExplicitTable(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{test.constraint.Name}}
 			desired := &schemamodel.Database{
 				Tables:      []schemamodel.Table{{StructName: "Booking", Name: "bookings"}},
+				Fields:      []schemamodel.Field{{StructName: "Booking", Name: "code", Type: "TEXT"}},
 				Constraints: []schemamodel.Constraint{test.constraint},
 			}
+			// A real comparison, because resolving the host table is what this
+			// test is about and that resolution is the comparison's: the planner
+			// renders the record, and the record carries the table the
+			// declaration resolved to (stokaro/ptah#2315).
+			diff := schemadiff.CompareWithDialect(desired, bookingsDatabase(), platform.Postgres)
 
-			nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+			nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
 
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
@@ -82,16 +91,23 @@ func TestPlanner_TableLevelConstraintWithoutAnExplicitTable(t *testing.T) {
 // deliberately something else so the two answers cannot be confused.
 func TestPlanner_TableLevelConstraintNamesItsOwnTable(t *testing.T) {
 	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{"positive_price"}}
 	desired := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "Booking", Name: "bookings"}},
+		Tables: []schemamodel.Table{
+			{StructName: "Booking", Name: "bookings"},
+			{StructName: "Archived", Name: "archived_bookings"},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "Booking", Name: "code", Type: "TEXT"},
+			{StructName: "Archived", Name: "price", Type: "INTEGER"},
+		},
 		Constraints: []schemamodel.Constraint{{
 			StructName: "Booking", Name: "positive_price", Type: "CHECK",
 			Table: "archived_bookings", CheckExpression: "price > 0",
 		}},
 	}
+	diff := schemadiff.CompareWithDialect(desired, bookingsDatabase(), platform.Postgres)
 
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
 
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
@@ -99,30 +115,39 @@ func TestPlanner_TableLevelConstraintNamesItsOwnTable(t *testing.T) {
 	c.Assert(sql, qt.Contains, `ALTER TABLE "archived_bookings" ADD CONSTRAINT "positive_price" CHECK (price > 0);`)
 }
 
-// TestPlanner_TableLevelConstraintWhoseStructDeclaresNoTable pins the last
-// resort, and the choice it encodes.
+// TestPlanner_RefusesAConstraintTheDiffDoesNotDescribe is what the last-resort
+// test became, and the change is the one its own comment asked for.
 //
-// A description whose constraint names a struct no table declares is malformed
-// -- the canonical adapter refuses it by name -- but this planner has no way to
-// refuse, and its two silent alternatives are worse than a wrong name: an empty
-// one renders `ALTER TABLE ""`, and dropping the node emits nothing at all for a
-// constraint the description declared. The struct's own name fails loudly and
-// says which declaration to look at, which is the fallback the field-level
-// paths beside it already use.
-func TestPlanner_TableLevelConstraintWhoseStructDeclaresNoTable(t *testing.T) {
+// It read: "this planner has no way to refuse, and its two silent alternatives
+// are worse than a wrong name" -- so a constraint whose struct no table declares
+// was rendered against the STRUCT's name, `ALTER TABLE "Booking"`, chosen to fail
+// loudly at the server rather than quietly in the plan.
+//
+// The planner has a way to refuse now. A diff that names a constraint it does
+// not describe is a caller error, and saying so beats every spelling of a table
+// nobody declared (stokaro/ptah#2315).
+func TestPlanner_RefusesAConstraintTheDiffDoesNotDescribe(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{"positive_price"}}
-	desired := &schemamodel.Database{
-		Constraints: []schemamodel.Constraint{{
-			StructName: "Booking", Name: "positive_price", Type: "CHECK",
-			CheckExpression: "price > 0",
-		}},
-	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+	nodes, err := postgres.New().GenerateMigrationAST(diff, &schemamodel.Database{})
 
-	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
-	c.Assert(err, qt.IsNil)
-	c.Assert(sql, qt.Contains, `ALTER TABLE "Booking" ADD CONSTRAINT "positive_price" CHECK (price > 0);`)
+	c.Assert(nodes, qt.IsNil)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(err, qt.ErrorMatches, `.*constraint "positive_price" is added without a definition.*`)
+}
+
+// bookingsDatabase is a database holding the tables the rows above declare and
+// none of their constraints, so every constraint is an addition.
+func bookingsDatabase() *catalog.Database {
+	return &catalog.Database{Tables: []catalog.Table{
+		{
+			Name: "bookings", Type: "BASE TABLE",
+			Columns: []catalog.Column{{Name: "code", DataType: "text", IsNullable: "YES", OrdinalPosition: 1}},
+		},
+		{
+			Name: "archived_bookings", Type: "BASE TABLE",
+			Columns: []catalog.Column{{Name: "price", DataType: "integer", IsNullable: "YES", OrdinalPosition: 1}},
+		},
+	}}
 }

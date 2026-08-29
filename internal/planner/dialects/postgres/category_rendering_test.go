@@ -498,7 +498,15 @@ func diffCategoryFixtures() []categoryFixture {
 		},
 		{
 			"ConstraintsAdded",
-			&difftypes.SchemaDiff{ConstraintsAdded: []string{"uq"}},
+			&difftypes.SchemaDiff{
+				ConstraintsAdded: []string{"uq"},
+				// The record a comparison carries. A name with no definition is
+				// refused, so a row carrying only the name would assert that this
+				// category cannot be planned (stokaro/ptah#2315).
+				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+					Name: "uq", TableName: "t", Type: "UNIQUE", Columns: []string{"c"},
+				}},
+			},
 			&schemamodel.Database{
 				Tables:      []schemamodel.Table{{Name: "t", StructName: "T"}},
 				Constraints: []schemamodel.Constraint{{Name: "uq", StructName: "T", Type: "UNIQUE", Columns: []string{"c"}}},

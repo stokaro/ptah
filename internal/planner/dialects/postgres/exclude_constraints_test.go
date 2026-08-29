@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
@@ -379,15 +380,18 @@ func TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTa
 			qt.Commentf("DROP must precede the re-ADD; drop=%d add=%d sql:\n%s", dropIdx, addIdx, sql))
 	})
 
-	t.Run("synthetic diff without a recorded host falls back to the name-only DO block", func(t *testing.T) {
+	t.Run("a diff that names a modified constraint without describing it is refused", func(t *testing.T) {
 		c := qt.New(t)
 
-		// Defensive fallback: a hand-built diff that names a modified constraint
-		// but carries no ConstraintsRemovedWithTables entry has genuinely no host
-		// to scope by, so the runtime information_schema DO block remains the
-		// only option. The real comparator never produces this shape (it fills
-		// the WithTables lists in lockstep), but the planner must not panic or
-		// silently drop the work.
+		// This shape used to be planned: the name was resolved against the
+		// declaration for the re-ADD, and the DROP fell back to a runtime
+		// information_schema lookup because no host was recorded on either side.
+		// The comparator never produces it -- it fills the WithTables lists in
+		// lockstep -- and resolving a name through whatever declaration happened
+		// to be passed is the input shape #2315 withdraws.
+		//
+		// A refusal is the answer the previous behavior's own comment asked for:
+		// "the planner must not panic or silently drop the work".
 		diff := &difftypes.SchemaDiff{
 			ConstraintsAdded:   []string{"legacy_check"},
 			ConstraintsRemoved: []string{"legacy_check"},
@@ -398,22 +402,11 @@ func TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTa
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
-		c.Assert(err, qt.IsNil)
-		sql, err := renderer.RenderSQL("postgres", nodes...)
-		c.Assert(err, qt.IsNil)
-		sql = legacyRenderedSQL(sql)
+		nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
 
-		c.Assert(sql, qt.Contains, "information_schema.table_constraints",
-			qt.Commentf("with no recorded host the planner must fall back to the DO block; got:\n%s", sql))
-		c.Assert(sql, qt.Contains, "constraint_name = 'legacy_check'",
-			qt.Commentf("fallback DO block must target the constraint by name; got:\n%s", sql))
-		c.Assert(sql, qt.Contains, "ALTER TABLE things ADD CONSTRAINT legacy_check CHECK (x > 0);",
-			qt.Commentf("modified constraint must still be re-added; got:\n%s", sql))
-		dropIdx := strings.Index(sql, "DO $ptah$")
-		addIdx := strings.Index(sql, "ADD CONSTRAINT legacy_check")
-		c.Assert(dropIdx >= 0 && addIdx >= 0 && dropIdx < addIdx, qt.IsTrue,
-			qt.Commentf("DROP must precede the re-ADD; drop=%d add=%d sql:\n%s", dropIdx, addIdx, sql))
+		c.Assert(nodes, qt.IsNil)
+		c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+		c.Assert(err, qt.ErrorMatches, `.*constraint "legacy_check" is added without a definition.*`)
 	})
 }
 
@@ -494,7 +487,10 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 			ConstraintsAdded:   []string{"shared_check"},
 			ConstraintsRemoved: []string{"shared_check"},
 			ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
-				{Name: "shared_check", TableName: "articles", Type: "CHECK"},
+				// The body a comparison carries. The assertions below are about the
+				// ORDER of the statements, not this expression, but a record without
+				// one describes no constraint and is refused (stokaro/ptah#2315).
+				{Name: "shared_check", TableName: "articles", Type: "CHECK", CheckExpression: "status IN ('draft', 'published')"},
 			},
 			ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 				{Name: "shared_check", TableName: "articles", Type: "CHECK"},

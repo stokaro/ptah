@@ -36,33 +36,6 @@ func tableQualifiedAdditionSQL(c *qt.C, deferrable bool, initially string) strin
 	return legacyRenderedSQL(sql)
 }
 
-// declaredAdditionSQL plans a foreign key known only by name, the fallback route
-// that resolves it from the description's own constraint list.
-func declaredAdditionSQL(c *qt.C, deferrable bool, initially string) string {
-	c.Helper()
-	diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{"fk_child_pid"}}
-	desired := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "Child", Name: "child"}},
-		Constraints: []schemamodel.Constraint{{
-			StructName:     "Child",
-			Name:           "fk_child_pid",
-			Type:           "FOREIGN KEY",
-			Table:          "child",
-			Columns:        []string{"pid"},
-			ForeignTable:   "parent",
-			ForeignColumn:  "id",
-			ForeignColumns: []string{"id"},
-			Deferrable:     deferrable,
-			Initially:      initially,
-		}},
-	}
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
-	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
-	c.Assert(err, qt.IsNil)
-	return legacyRenderedSQL(sql)
-}
-
 // TestPlanner_AddsAForeignKeysDeferral pins that the clause reaches the
 // statement on both routes.
 //
@@ -87,10 +60,10 @@ func TestPlanner_AddsAForeignKeysDeferral(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
+			// One route now: the addition carries the reference it renders.
+			// The other resolved a bare name against the declaration handed to
+			// the planner, and that shape is withdrawn (stokaro/ptah#2315).
 			c.Assert(tableQualifiedAdditionSQL(c, tt.deferrable, tt.initially), qt.Contains, tt.want)
-			// The two routes reach two different constructions of the same
-			// reference, so one of them passing says nothing about the other.
-			c.Assert(declaredAdditionSQL(c, tt.deferrable, tt.initially), qt.Contains, tt.want)
 		})
 	}
 }
@@ -104,5 +77,4 @@ func TestPlanner_LeavesAnImmediateForeignKeyWithoutADeferralClause(t *testing.T)
 	c := qt.New(t)
 
 	c.Assert(tableQualifiedAdditionSQL(c, false, ""), qt.Not(qt.Contains), "DEFERRABLE")
-	c.Assert(declaredAdditionSQL(c, false, ""), qt.Not(qt.Contains), "DEFERRABLE")
 }
