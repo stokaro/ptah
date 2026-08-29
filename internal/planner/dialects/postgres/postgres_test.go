@@ -131,6 +131,13 @@ func TestPlanner_GenerateMigrationSQL_EnumsModified(t *testing.T) {
 					{
 						EnumName:      "user_status",
 						ValuesRemoved: []string{"deprecated"},
+						// The columns a comparison carries for a value removal: the
+						// type is recreated, so every column naming it is converted
+						// across and its default put back.
+						Usages: []difftypes.EnumColumnUsage{{
+							Table: "users", Column: "status",
+							Default: "active", DefaultSet: true,
+						}},
 					},
 				},
 				// The vocabulary a comparison fills on every run: recreating an enum

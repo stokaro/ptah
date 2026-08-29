@@ -260,14 +260,6 @@ func (p *Planner) addNewEnums(result []ast.Node, diff *difftypes.SchemaDiff, des
 	return result
 }
 
-type postgresEnumColumnUsage struct {
-	Table       string
-	Column      string
-	Default     string
-	DefaultSet  bool
-	DefaultExpr string
-}
-
 func (p *Planner) modifyExistingEnums(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, enumDiff := range diff.EnumsModified {
@@ -284,7 +276,7 @@ func (p *Planner) modifyExistingEnums(result []ast.Node, diff *difftypes.SchemaD
 			result = append(result, ast.NewRawSQL(postgresEnumValueRemovalSQL(
 				enumDiff.EnumName,
 				values,
-				postgresEnumColumnUsages(desired, enumDiff.EnumName),
+				enumDiff.Usages,
 			)))
 			continue
 		}
@@ -316,43 +308,7 @@ func postgresEnumValues(
 	return append([]string(nil), enum.Values...), true
 }
 
-func postgresEnumColumnUsages(desired *schemamodel.Database, enumName string) []postgresEnumColumnUsage {
-	if desired == nil {
-		return nil
-	}
-	tablesByStruct := make(map[string]schemamodel.Table, len(desired.Tables))
-	for _, table := range desired.Tables {
-		tablesByStruct[table.StructName] = table
-	}
-
-	// A field names its declared type by bare name -- that is what
-	// fromschema.declaredEnum matches on -- while the diff names the enum by
-	// qualified name. Both spellings are accepted so a rebuild of an enum in a
-	// non-default schema still finds the columns it has to convert. Where two
-	// schemas hold an enum of one name the bare spelling cannot separate them;
-	// see the residual note on stokaro/ptah#1276.
-	bareName := postgresBaseName(enumName)
-	usages := make([]postgresEnumColumnUsage, 0)
-	for _, field := range desired.Fields {
-		if field.Type != enumName && field.Type != bareName {
-			continue
-		}
-		table, ok := tablesByStruct[field.StructName]
-		if !ok {
-			continue
-		}
-		usages = append(usages, postgresEnumColumnUsage{
-			Table:       table.QualifiedName(),
-			Column:      field.Name,
-			Default:     field.Default,
-			DefaultSet:  field.DefaultSet,
-			DefaultExpr: field.DefaultExpr,
-		})
-	}
-	return usages
-}
-
-func postgresEnumValueRemovalSQL(enumName string, values []string, usages []postgresEnumColumnUsage) string {
+func postgresEnumValueRemovalSQL(enumName string, values []string, usages []difftypes.EnumColumnUsage) string {
 	oldName := postgresTemporaryEnumName(enumName)
 	enumIdent := quotePostgresIdentifierPath(enumName)
 	oldIdent := quotePostgresIdentifierPath(oldName)
@@ -412,7 +368,7 @@ func postgresEnumValueList(values []string) string {
 	return strings.Join(quoted, ", ")
 }
 
-func postgresDefaultSQL(usage postgresEnumColumnUsage) (string, bool) {
+func postgresDefaultSQL(usage difftypes.EnumColumnUsage) (string, bool) {
 	if usage.DefaultExpr != "" {
 		return usage.DefaultExpr, true
 	}
