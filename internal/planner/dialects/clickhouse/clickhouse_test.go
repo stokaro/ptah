@@ -63,7 +63,7 @@ func TestGenerateMigrationAST_AddTableDropTableAndAlter(t *testing.T) {
 	)
 
 	p := clickhouse.New()
-	nodes, err := p.GenerateMigrationAST(diff, gen)
+	nodes, err := p.GenerateMigrationAST(withDeclaredTables(diff, gen), gen)
 	c.Assert(err, qt.IsNil)
 
 	// Expected order: CREATE events, ALTER existing (add), ALTER existing (modify),
@@ -112,7 +112,7 @@ func TestGenerateMigrationAST_IndexAddRemove(t *testing.T) {
 	}
 
 	p := clickhouse.New()
-	nodes, err := p.GenerateMigrationAST(diff, gen)
+	nodes, err := p.GenerateMigrationAST(withDeclaredTables(diff, gen), gen)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 	idx, ok := nodes[0].(*ast.IndexNode)
@@ -131,7 +131,7 @@ func TestGenerateMigrationAST_EnumChangesAreSurfacedAsComment(t *testing.T) {
 		EnumsAdded: difftypes.EnumChanges{{Name: "status"}},
 	}
 	p := clickhouse.New()
-	nodes, err := p.GenerateMigrationAST(diff, mkDB())
+	nodes, err := p.GenerateMigrationAST(withDeclaredTables(diff, mkDB()), mkDB())
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
 	comment, ok := nodes[0].(*ast.CommentNode)
@@ -150,7 +150,7 @@ func TestGenerateMigrationAST_IndexUnresolvedStructRejected(t *testing.T) {
 	}}
 
 	p := clickhouse.New()
-	nodes, err := p.GenerateMigrationAST(diff, gen)
+	nodes, err := p.GenerateMigrationAST(withDeclaredTables(diff, gen), gen)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(nodes, qt.IsNil)
@@ -171,7 +171,7 @@ func TestGenerateMigrationAST_IndexExplicitTableNameWins(t *testing.T) {
 	}}
 
 	p := clickhouse.New()
-	nodes, err := p.GenerateMigrationAST(diff, gen)
+	nodes, err := p.GenerateMigrationAST(withDeclaredTables(diff, gen), gen)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
 	idx, ok := nodes[0].(*ast.IndexNode)
@@ -199,7 +199,7 @@ func TestGenerateMigrationAST_IndexTypeAndGranularityPropagate(t *testing.T) {
 	}}
 
 	p := clickhouse.New()
-	nodes, err := p.GenerateMigrationAST(diff, gen)
+	nodes, err := p.GenerateMigrationAST(withDeclaredTables(diff, gen), gen)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
 	idx, ok := nodes[0].(*ast.IndexNode)
@@ -804,4 +804,21 @@ func TestGenerateMigrationAST_AnAddedViewNeedsNoDesiredDeclaration(t *testing.T)
 	c.Assert(createdMatView.Name, qt.Equals, "analytics.hourly")
 	c.Assert(createdMatView.Body, qt.Equals, "SELECT 2",
 		qt.Commentf("the body came from the change, not from a lookup"))
+}
+
+// withDeclaredTables fills a fixture diff's declared-table list from the
+// declaration the plan is applied against, leaving a diff that already carries
+// one alone.
+//
+// A planner resolves the table a change names through this list, and a
+// comparison fills it on every run. A fixture states the CHANGE; restating the
+// declaration beside it would put the same tables in two places where a reader
+// has to check they agree.
+func withDeclaredTables(diff *difftypes.SchemaDiff, desired *schemamodel.Database) *difftypes.SchemaDiff {
+	if diff == nil || desired == nil || len(diff.DeclaredTables) > 0 {
+		return diff
+	}
+	completed := *diff
+	completed.DeclaredTables = desired.Tables
+	return &completed
 }

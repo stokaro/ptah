@@ -178,7 +178,7 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 				}
 			}
 
-			nodes, err := mysql.New().GenerateMigrationAST(diff, tt.desired)
+			nodes, err := mysql.New().GenerateMigrationAST(withDeclaredTables(diff, tt.desired), tt.desired)
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("mysql", nodes...)
 			c.Assert(err, qt.IsNil)

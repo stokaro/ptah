@@ -103,10 +103,10 @@ func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			added, err := planner.GenerateSchemaDiffSQLStatements(
-				&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
+				withDeclaredTables(&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 					TableName:    test.diffName,
 					ColumnsAdded: difftypes.ColumnChanges{{StructName: "Order", Name: "note", Type: "TEXT"}},
-				}}},
+				}}}, test.desired),
 				test.desired,
 				test.dialect,
 			)
@@ -115,13 +115,13 @@ func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 			c.Assert(addedPlan, qt.Contains, test.wantAdd, qt.Commentf("plan:\n%s", addedPlan))
 
 			modified, err := planner.GenerateSchemaDiffSQLStatements(
-				&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
+				withDeclaredTables(&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 					TableName: test.diffName,
 					ColumnsModified: []difftypes.ColumnDiff{{
 						ColumnName: "note",
 						Changes:    map[string]string{"type": "VARCHAR(10) -> TEXT"},
 					}},
-				}}},
+				}}}, test.desired),
 				test.desired,
 				test.dialect,
 			)

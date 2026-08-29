@@ -690,7 +690,7 @@ func (p *Planner) createForeignKeyAlterStatement(tableName, constraintName strin
 func (p *Planner) addNewTableColumns(
 	result []ast.Node,
 	tableDiff difftypes.TableDiff,
-	desired *schemamodel.Database,
+	declared []schemamodel.Table,
 	vocabulary difftypes.UserTypeVocabulary,
 	semantics identifier.Semantics,
 ) []ast.Node {
@@ -700,7 +700,7 @@ func (p *Planner) addNewTableColumns(
 	// a schema that declares `reporting.users` must write no DDL, because the
 	// statement would apply cleanly to a relation nobody declared. Measured on
 	// PostgreSQL 17.10; see TestPlannerWritesNoDDLForARelationTheSchemaDoesNotDeclare.
-	if findGeneratedTableByDiffName(desired, tableDiff.TableName, semantics) == nil {
+	if findGeneratedTableByDiffName(declared, tableDiff.TableName, semantics) == nil {
 		return result
 	}
 
@@ -725,7 +725,7 @@ func (p *Planner) addNewTableColumns(
 func (p *Planner) addForeignKeyConstraintsForNewColumns(
 	result []ast.Node,
 	tableDiff difftypes.TableDiff,
-	desired *schemamodel.Database,
+	declared []schemamodel.Table,
 	semantics identifier.Semantics,
 ) []ast.Node {
 	for _, column := range tableDiff.ColumnsAdded {
@@ -735,7 +735,7 @@ func (p *Planner) addForeignKeyConstraintsForNewColumns(
 		// The TABLE is still looked up, because qualifying the reference needs
 		// the declaration's own schema. The COLUMN is not: it travels with the
 		// change (stokaro/ptah#2315).
-		if table := findGeneratedTableByDiffName(desired, tableDiff.TableName, semantics); table != nil {
+		if table := findGeneratedTableByDiffName(declared, tableDiff.TableName, semantics); table != nil {
 			targetTable = table
 			targetTableName = table.Name
 		}
@@ -747,7 +747,7 @@ func (p *Planner) addForeignKeyConstraintsForNewColumns(
 			fkRef := fromschema.ParseForeignKeyReference(targetField.Foreign)
 			if fkRef != nil {
 				if targetTable != nil {
-					qualifyForeignKeyRef(desired.Tables, *targetTable, fkRef)
+					qualifyForeignKeyRef(declared, *targetTable, fkRef)
 				}
 				fkName := foreignKeyName(targetTableName, *targetField)
 				fkRef.Name = fkName
@@ -1009,21 +1009,21 @@ func isGeneratedColumnChange(colDiff difftypes.ColumnDiff) bool {
 // omitted the ALTER TABLE ... ADD COLUMN that restores it, exited 0 and reported
 // success.
 func findGeneratedTableByDiffName(
-	desired *schemamodel.Database,
+	declared []schemamodel.Table,
 	tableName string,
 	semantics identifier.Semantics,
 ) *schemamodel.Table {
-	return objectlookup.Qualified(desired.Tables, tableName, semantics)
+	return objectlookup.Qualified(declared, tableName, semantics)
 }
 
 // findGeneratedTableByStructName resolves a declared table from the Go struct it
 // was declared on. A struct name is not a database identifier, so it carries no
 // schema and no folding rule: it is matched verbatim, and identifier semantics
 // have nothing to say about it.
-func findGeneratedTableByStructName(desired *schemamodel.Database, structName string) *schemamodel.Table {
-	for i := range desired.Tables {
-		if desired.Tables[i].StructName == structName {
-			return &desired.Tables[i]
+func findGeneratedTableByStructName(declared []schemamodel.Table, structName string) *schemamodel.Table {
+	for i := range declared {
+		if declared[i].StructName == structName {
+			return &declared[i]
 		}
 	}
 	return nil
@@ -1087,7 +1087,7 @@ func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *difftypes.Sc
 			initialLength := len(result)
 
 			// Add new columns
-			result = p.addNewTableColumns(result, tableDiff, desired, diff.DeclaredUserTypes, semantics)
+			result = p.addNewTableColumns(result, tableDiff, diff.DeclaredTables, diff.DeclaredUserTypes, semantics)
 
 			// Modify existing columns
 			result = p.modifyExistingTableColumns(result, tableDiff, diff.DeclaredUserTypes)
@@ -1119,7 +1119,7 @@ func (p *Planner) addForeignKeyConstraintsForModifiedTables(result []ast.Node, d
 			initialLength := len(result)
 
 			// Add foreign key constraints for new columns
-			result = p.addForeignKeyConstraintsForNewColumns(result, tableDiff, desired, semantics)
+			result = p.addForeignKeyConstraintsForNewColumns(result, tableDiff, diff.DeclaredTables, semantics)
 
 			// Only add the comment if actual operations were performed
 			if len(result) > initialLength {
@@ -3654,7 +3654,7 @@ func (p *Planner) fieldLevelForeignKeyConstraintNode(constraintName string, desi
 		if fkRef == nil {
 			continue
 		}
-		if table := findGeneratedTableByStructName(desired, f.StructName); table != nil {
+		if table := findGeneratedTableByStructName(desired.Tables, f.StructName); table != nil {
 			qualifyForeignKeyRef(desired.Tables, *table, fkRef)
 		}
 		fkRef.OnDelete = f.OnDelete

@@ -157,7 +157,14 @@ func diffCategoryFixtures() []categoryFixture {
 		{"TablesRemoved", &difftypes.SchemaDiff{TablesRemoved: []string{"t"}}, &schemamodel.Database{}},
 		{
 			"TablesModified",
-			&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{TableName: "t", ColumnsAdded: difftypes.ColumnChanges{{Name: "c", StructName: "T", Type: "TEXT"}}}}},
+			&difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{{TableName: "t", ColumnsAdded: difftypes.ColumnChanges{{Name: "c", StructName: "T", Type: "TEXT"}}}},
+				// The declared tables the planner checks the change against: a
+				// modification naming a table the declaration does not hold writes
+				// no DDL, so a fixture that carried none would assert that this
+				// category plans nothing.
+				DeclaredTables: oneTable.Tables,
+			},
 			oneTable,
 		},
 		{

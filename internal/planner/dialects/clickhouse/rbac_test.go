@@ -37,7 +37,7 @@ func nodeTypes(nodes []ast.Node) []string {
 }
 
 func planClickHouse(c *qt.C, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	nodes, err := clickhouse.New().GenerateMigrationAST(diff, desired)
+	nodes, err := clickhouse.New().GenerateMigrationAST(withDeclaredTables(diff, desired), desired)
 	c.Assert(err, qt.IsNil)
 	return nodes
 }
