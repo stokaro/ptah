@@ -420,15 +420,9 @@ func connectDatabase(
 	return dbschema.ConnectToDatabase(connectCtx, rawURL)
 }
 
-// VerifyMigrationDir mirrors `atlas migrate diff` checksum handling for a
-// migration directory used as a desired-state or inspection source: a missing
-// atlas.sum is tolerated, an invalid one fails before replay.
-func VerifyMigrationDir(dir string) error {
-	return verifyMigrationFS(os.DirFS(dir))
-}
-
 // CaptureVerifiedMigrationDir returns one stable migration-directory snapshot
-// after applying the same checksum policy as [VerifyMigrationDir]. Callers that
+// after applying the checksum policy `atlas migrate diff` applies: a missing
+// atlas.sum is tolerated, an invalid one fails before replay. Callers that
 // inspect policy and then replay the directory use the returned filesystem so
 // both operations see the same bytes.
 func CaptureVerifiedMigrationDir(dir string) (fs.FS, error) {
