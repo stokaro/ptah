@@ -309,7 +309,13 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 						ConstraintsAdded:   []string{"shared_check"},
 						ConstraintsRemoved: []string{"shared_check"},
 						ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
-							{Name: "shared_check", TableName: "articles", Type: "CHECK"},
+							// The body a comparison carries. The assertions here are
+							// about statement ORDER, but a record with no expression
+							// describes no constraint (stokaro/ptah#2315).
+							{
+								Name: "shared_check", TableName: "articles", Type: "CHECK",
+								CheckExpression: "status IN ('draft', 'published')",
+							},
 						},
 						ConstraintsRemovedWithTables: removals,
 					}
@@ -484,21 +490,16 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 	})
 
 	t.Run("check constraint, two removal hosts", func(t *testing.T) {
-		// The down migration of a multi-host non-FK constraint modify arrives
-		// exactly in this shape: reverseSchemaDiffWithSchema copies the bare
-		// name into ConstraintsAdded once per host (duplicated), fills
-		// ConstraintsRemovedWithTables with EVERY host, and leaves
-		// ConstraintsAddedWithTables empty (reverseConstraintAdditions
-		// restores FOREIGN KEYs only). emitModifyDropForName must then drop
-		// every recorded host exactly once — deduped across the duplicated
-		// bare names — and removeConstraints must emit nothing (hostless
-		// re-add rule). A regression that drops only the first host would
-		// leave the second host's stale constraint in place with the whole
-		// suite green, which is why the per-host counts below are load-bearing.
+		// The down migration of a multi-host non-FK constraint modify arrives in
+		// this shape: the name once per host, and a record per host on both
+		// sides -- reverseConstraintAdditions reconstructs a CHECK from the
+		// pre-change database.
 		//
-		// The ADD side is deliberately NOT count-asserted: the multi-host
-		// non-FK re-add resolves by name to a single definition (a
-		// pre-existing limitation explicitly deferred in issue #207 notes).
+		// Every recorded host must be dropped exactly once, deduped across the
+		// duplicated names, and removeConstraints must emit nothing on top. A
+		// regression that drops only the first host would leave the second
+		// host's stale constraint in place with the whole suite green, which is
+		// why the per-host counts below are load-bearing.
 		for _, dialect := range mysqlFamilyDialects {
 			t.Run(dialect, func(t *testing.T) {
 				c := qt.New(t)
@@ -506,6 +507,13 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 				diff := &difftypes.SchemaDiff{
 					ConstraintsAdded:   []string{"shared_check", "shared_check"},
 					ConstraintsRemoved: []string{"shared_check", "shared_check"},
+					// A record per host. The reversal reconstructs a CHECK from the
+					// pre-change database, so this is the shape a down migration
+					// arrives in (stokaro/ptah#2315).
+					ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+						{Name: "shared_check", TableName: "articles", Type: "CHECK", CheckExpression: "qty >= 0"},
+						{Name: "shared_check", TableName: "pages", Type: "CHECK", CheckExpression: "qty >= 0"},
+					},
 					ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 						{Name: "shared_check", TableName: "articles", Type: "CHECK"},
 						{Name: "shared_check", TableName: "pages", Type: "CHECK"},
@@ -527,12 +535,19 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 					qt.Commentf("exactly one drop per recorded host across BOTH planner phases; got:\n%s", sql))
 				c.Assert(sql, qt.Not(qt.Contains), "IF EXISTS")
 
-				articlesDrop := strings.Index(sql, "ALTER TABLE articles DROP CONSTRAINT shared_check")
-				pagesDrop := strings.Index(sql, "ALTER TABLE pages DROP CONSTRAINT shared_check")
-				firstAdd := strings.Index(sql, "ADD CONSTRAINT shared_check")
-				c.Assert(articlesDrop >= 0 && pagesDrop >= 0 && firstAdd >= 0, qt.IsTrue)
-				c.Assert(articlesDrop < firstAdd && pagesDrop < firstAdd, qt.IsTrue,
-					qt.Commentf("both host drops are owned by the add side and must precede the re-add; got:\n%s", sql))
+				// Each host's drop precedes ITS OWN re-add. The older assertion put
+				// both drops before a single re-add, which is the shape one bare
+				// name standing in for two hosts produced; with a record per host
+				// the plan pairs them, and pairing is the property that matters --
+				// a host re-added before its own drop collides.
+				for _, host := range []string{"articles", "pages"} {
+					drop := strings.Index(sql, "ALTER TABLE "+host+" DROP CONSTRAINT shared_check")
+					add := strings.Index(sql, "ALTER TABLE "+host+" ADD CONSTRAINT shared_check")
+					c.Assert(drop >= 0, qt.IsTrue, qt.Commentf("%s is dropped; got:\n%s", host, sql))
+					c.Assert(add >= 0, qt.IsTrue, qt.Commentf("%s is re-added; got:\n%s", host, sql))
+					c.Assert(drop < add, qt.IsTrue,
+						qt.Commentf("%s must be dropped before it is re-added; got:\n%s", host, sql))
+				}
 			})
 		}
 	})
@@ -592,7 +607,10 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 					ConstraintsAdded:   []string{"chk_ghost"},
 					ConstraintsRemoved: []string{"chk_ghost"},
 					ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
-						{Name: "chk_ghost", TableName: "", Type: "CHECK"},
+						// The host and the body a comparison resolves. The record used
+						// to carry neither and the planner recovered both from the
+						// declaration; that route is withdrawn (stokaro/ptah#2315).
+						{Name: "chk_ghost", TableName: "things", Type: "CHECK", CheckExpression: "qty >= 0"},
 					},
 					ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 						{Name: "chk_ghost", TableName: "things", Type: "CHECK"},
@@ -626,6 +644,16 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 				diff := &difftypes.SchemaDiff{
 					ConstraintsAdded:   []string{"fk_post_owner"},
 					ConstraintsRemoved: []string{"fk_post_owner"},
+					// The record a comparison carries for a key synthesized from a
+					// field: it folds the synthesis into the same map before it
+					// compares, so this reaches a diff like any other addition
+					// (stokaro/ptah#2315).
+					ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+						Name: "fk_post_owner", TableName: "posts", Type: "FOREIGN KEY",
+						Columns: []string{"owner_id"}, ForeignTable: "users",
+						ForeignColumn: "id", ForeignColumns: []string{"id"},
+						OnDelete: "CASCADE",
+					}},
 					ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
 						{Name: "fk_post_owner", TableName: "posts", Type: "FOREIGN KEY"},
 					},
@@ -786,6 +814,7 @@ func withDeclaredObjects(
 	diff *difftypes.SchemaDiff,
 	desired *schemamodel.Database,
 ) *difftypes.SchemaDiff {
+	diff = withConstraintRecords(diff, desired)
 	completed := *diff
 	completed.TablesModified = make([]difftypes.TableDiff, len(diff.TablesModified))
 	copy(completed.TablesModified, diff.TablesModified)
@@ -818,4 +847,168 @@ func declaredColumn(desired *schemamodel.Database, tableName, columnName string)
 		}
 	}
 	return schemamodel.Field{}
+}
+
+// withConstraintRecords fills a fixture diff's constraint additions from the
+// declaration, the way a comparison does.
+//
+// A comparison describes every constraint it adds: it resolves the host table,
+// folds in the ones synthesized from a field, and carries the body. A fixture
+// that states only names is standing in for that, so this does the same
+// resolution once rather than each fixture spelling the record out
+// (stokaro/ptah#2315).
+//
+// A name the declaration does not describe is left without a record, which is
+// what a test about a diff naming something undeclared needs.
+func withConstraintRecords(diff *difftypes.SchemaDiff, desired *schemamodel.Database) *difftypes.SchemaDiff {
+	if diff == nil || desired == nil || len(diff.ConstraintsAdded) == 0 {
+		return diff
+	}
+	completed := *diff
+	records := append([]difftypes.ConstraintAdditionInfo(nil), diff.ConstraintsAddedWithTables...)
+	described := make(map[string]bool, len(records))
+	for _, record := range records {
+		described[record.Name] = true
+	}
+	for _, name := range diff.ConstraintsAdded {
+		if described[name] {
+			continue
+		}
+		declared, ok := declaredConstraintNamed(desired, name)
+		if !ok {
+			declared, ok = synthesizedFieldCheck(desired, name)
+		}
+		if !ok {
+			continue
+		}
+		described[name] = true
+		records = append(records, difftypes.ConstraintAdditionInfo{
+			Name:            declared.Name,
+			TableName:       constraintHostTable(desired, declared),
+			Type:            declared.Type,
+			Columns:         append([]string(nil), declared.Columns...),
+			IncludeColumns:  append([]string(nil), declared.IncludeColumns...),
+			CheckExpression: declared.CheckExpression,
+			ForeignTable:    declared.ForeignTable,
+			ForeignColumn:   declared.ForeignColumn,
+			ForeignColumns:  append([]string(nil), declared.ForeignColumns...),
+			OnDelete:        declared.OnDelete,
+			OnUpdate:        declared.OnUpdate,
+			Deferrable:      declared.Deferrable,
+			Initially:       declared.Initially,
+			UsingMethod:     declared.UsingMethod,
+			ExcludeElements: declared.ExcludeElements,
+			WhereCondition:  declared.WhereCondition,
+		})
+	}
+	completed.ConstraintsAddedWithTables = records
+	return &completed
+}
+
+func declaredConstraintNamed(desired *schemamodel.Database, name string) (schemamodel.Constraint, bool) {
+	for _, constraint := range desired.Constraints {
+		if constraint.Name == name {
+			return constraint, true
+		}
+	}
+	return schemamodel.Constraint{}, false
+}
+
+// constraintHostTable resolves the table a declared constraint belongs to: the
+// one it names, or the one its struct declares.
+func constraintHostTable(desired *schemamodel.Database, constraint schemamodel.Constraint) string {
+	if constraint.Table != "" {
+		return constraint.Table
+	}
+	for _, table := range desired.Tables {
+		if table.StructName == constraint.StructName {
+			return table.QualifiedName()
+		}
+	}
+	return ""
+}
+
+// synthesizedFieldCheck rebuilds the constraint a comparison synthesizes from a
+// field's `check=`.
+//
+// The comparison folds these into the same map as the declared ones before it
+// compares, so they reach a diff as ordinary records. A fixture that names one
+// is standing in for that.
+func synthesizedFieldCheck(desired *schemamodel.Database, name string) (schemamodel.Constraint, bool) {
+	for _, field := range desired.Fields {
+		if field.Check == "" {
+			continue
+		}
+		table := ""
+		for _, candidate := range desired.Tables {
+			if candidate.StructName == field.StructName {
+				table = candidate.QualifiedName()
+			}
+		}
+		synthesized := field.CheckName
+		if synthesized == "" {
+			synthesized = table + "_" + field.Name + "_check"
+		}
+		if synthesized != name {
+			continue
+		}
+		return schemamodel.Constraint{
+			StructName:      field.StructName,
+			Name:            synthesized,
+			Type:            "CHECK",
+			Table:           table,
+			CheckExpression: field.Check,
+		}, true
+	}
+	return schemamodel.Constraint{}, false
+}
+
+// TestPlanner_ModifiedPrimaryKeyIsDroppedThenReadded covers the one addition
+// kind whose pass emitted nothing for a modification.
+//
+// A PRIMARY KEY change reaches the planner as a removal and an addition sharing
+// one (table, name). The pass that owns primary keys skipped such a record
+// outright, and the re-ADD arrived from the name-resolving route instead — so
+// withdrawing that route left the drop with nothing after it, and the name it
+// never marked as handled reached the refusal for a constraint the diff does
+// not describe. It describes this one completely.
+//
+// The PostgreSQL planner already emitted the pair from the record
+// (stokaro/ptah#2199); this is the same shape, and the SQL is byte-identical to
+// what the withdrawn route produced.
+func TestPlanner_ModifiedPrimaryKeyIsDroppedThenReadded(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{
+		ConstraintsAdded:   []string{"pk_users"},
+		ConstraintsRemoved: []string{"pk_users"},
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+			Name: "pk_users", TableName: "users", Type: "PRIMARY KEY",
+			Columns: []string{"id", "tenant"},
+		}},
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
+			Name: "pk_users", TableName: "users", Type: "PRIMARY KEY",
+		}},
+	}
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Constraints: []schemamodel.Constraint{{
+			StructName: "User", Name: "pk_users", Type: "PRIMARY KEY",
+			Table: "users", Columns: []string{"id", "tenant"},
+		}},
+	}
+
+	nodes, err := mysql.New().GenerateMigrationAST(diff, desired)
+
+	c.Assert(err, qt.IsNil)
+	sql, err := renderer.RenderSQL("mysql", nodes...)
+	c.Assert(err, qt.IsNil)
+	drop := strings.Index(sql, "ALTER TABLE `users` DROP PRIMARY KEY;")
+	add := strings.Index(sql, "ALTER TABLE `users` ADD PRIMARY KEY (`id`, `tenant`);")
+	c.Assert(drop >= 0, qt.IsTrue)
+	c.Assert(add >= 0, qt.IsTrue)
+	// The order is the property: MySQL 9.7.1 answers
+	// `ERROR 1068 (42000): Multiple primary key defined` to an ADD that
+	// precedes the DROP of the key it replaces.
+	c.Assert(drop < add, qt.IsTrue)
+	c.Assert(strings.Count(sql, "DROP PRIMARY KEY"), qt.Equals, 1)
 }

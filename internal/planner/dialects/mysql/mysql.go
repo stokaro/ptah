@@ -155,6 +155,22 @@ func (p *Planner) handleEnumModifications(result []ast.Node, diff *difftypes.Sch
 // are aliased onto it, and a refusal that names the wrong engine sends an
 // operator to the wrong documentation. Every dialect aliased here needs an arm,
 // because the default spells a family it may not belong to.
+// constraintDialectLabel names the target in a constraint diagnostic.
+//
+// It is separate from [Planner.enumDialectLabel] because the two sentences read
+// differently: an enum warning is about the family's shared behavior, and a
+// constraint warning names the one server the author is pointed at.
+func (p *Planner) constraintDialectLabel() string {
+	switch p.targetDialect() {
+	case platform.SQLServer:
+		return "SQL Server"
+	case platform.Oracle:
+		return "Oracle"
+	default:
+		return "MySQL"
+	}
+}
+
 func (p *Planner) enumDialectLabel() string {
 	switch p.targetDialect() {
 	case platform.SQLServer:
@@ -950,28 +966,6 @@ func appendSelfReferencingForeignKeys(
 	return candidates
 }
 
-// declaredConstraintTable is the table a table-level constraint is on.
-//
-// A declaration names one only when it differs from the struct's own table --
-// that is what [schemamodel.Constraint.Table] documents -- so the ordinary
-// declaration leaves it empty and the table has to come from the struct. Read
-// straight, the empty value reached the renderer and every kind came out as
-//
-//	ALTER TABLE "" ADD CONSTRAINT "ex1" EXCLUDE USING gist (room WITH =)
-//
-// which no server takes (stokaro/ptah#2008). The struct's own name is the last
-// resort, which is the fallback the field-level paths beside this one already
-// use for the same question.
-func declaredConstraintTable(constraint schemamodel.Constraint, structToTable map[string]string) string {
-	if constraint.Table != "" {
-		return constraint.Table
-	}
-	if table := structToTable[constraint.StructName]; table != "" {
-		return table
-	}
-	return constraint.StructName
-}
-
 func appendTableLevelForeignKeys(candidates []affectedForeignKey, desired *schemamodel.Database) []affectedForeignKey {
 	for _, constraint := range desired.Constraints {
 		if !strings.EqualFold(constraint.Type, "FOREIGN KEY") {
@@ -1362,7 +1356,10 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	// 5.5. Add new constraints (must be done after tables and columns exist).
 	// fkPlan.dropped suppresses the drop half of any FK modification whose
 	// pre-MODIFY drop was already emitted at step 4.
-	result = p.addNewConstraints(result, diff, desired, fkPlan.dropped)
+	result, err = p.addNewConstraints(result, diff, fkPlan.dropped)
+	if err != nil {
+		return nil, err
+	}
 
 	// 5.6. Add field-level foreign keys for new tables after referenced
 	// unique indexes and constraints have been created.
@@ -1718,16 +1715,8 @@ func (p *Planner) removeMaterializedViews(result []ast.Node, diff *difftypes.Sch
 func (p *Planner) addNewConstraints(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 	bracketDropped map[constraintHostKey]struct{},
-) []ast.Node {
-	// Resolve struct → table name once for the field-level synthesis fallbacks.
-	// The declared tables the diff carries, indexed by struct name.
-	structToTable := make(map[string]string, len(diff.DeclaredTables))
-	for _, t := range diff.DeclaredTables {
-		structToTable[t.StructName] = t.Name
-	}
-
+) ([]ast.Node, error) {
 	state := newConstraintPlanState(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))
 
 	// A foreign key whose column also changes type was already dropped before
@@ -1739,7 +1728,7 @@ func (p *Planner) addNewConstraints(
 	maps.Copy(state.droppedForModify, bracketDropped)
 
 	result = p.addPrimaryKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state)
-	result = p.addCheckAndUniqueConstraintsWithTables(
+	result = p.addNonForeignKeyConstraintsWithTables(
 		result,
 		diff.ConstraintsAddedWithTables,
 		state.removalByTableName,
@@ -1748,10 +1737,16 @@ func (p *Planner) addNewConstraints(
 		diff.IndexRemovalsRebuiltAsUniqueConstraints(),
 		state.semantics,
 	)
-	result = p.addNamedConstraintsByKind(result, diff, desired, structToTable, state, nonForeignKeyConstraints)
+	result, err := p.addNamedConstraintsByKind(result, diff, state, nonForeignKeyConstraints)
+	if err != nil {
+		return nil, err
+	}
 	result = p.addForeignKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state)
-	result = p.addNamedConstraintsByKind(result, diff, desired, structToTable, state, foreignKeyConstraints)
-	return result
+	result, err = p.addNamedConstraintsByKind(result, diff, state, foreignKeyConstraints)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 type constraintKindFilter int
@@ -1866,8 +1861,8 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 		if add.Type != "PRIMARY KEY" || add.TableName == "" || len(add.Columns) == 0 {
 			continue
 		}
-		if _, modified := state.removalByTableName[add.Identity]; modified {
-			continue
+		if info, modified := state.removalByTableName[add.Identity]; modified {
+			result = p.appendScopedDrop(result, info, state.droppedForModify, state.semantics)
 		}
 		result = append(result, &ast.AlterTableNode{
 			Name:       add.TableName,
@@ -1878,44 +1873,55 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 	return result
 }
 
+// addNamedConstraintsByKind refuses an addition the record-driven passes could
+// not render.
+//
+// A comparison describes every constraint it adds, the ones synthesized from a
+// field's `check=` and `foreign=` included: they are folded into the same map
+// before the comparison runs, so they reach the diff as records. A name arriving
+// here has no body, and a diff that names a constraint it does not describe is a
+// caller error.
+//
+// It used to resolve such a name against the declaration handed to the planner.
+// That input shape -- a diff of names, planned against a schema that describes
+// them -- is withdrawn, which is what lets a planner stop taking a declaration
+// (stokaro/ptah#2315). The PostgreSQL planner made the same withdrawal first.
 func (p *Planner) addNamedConstraintsByKind(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
-	structToTable map[string]string,
 	state constraintPlanState,
 	kind constraintKindFilter,
-) []ast.Node {
+) ([]ast.Node, error) {
 	wantForeignKey := kind == foreignKeyConstraints
-	// Fallback for added constraints with no table-qualified FK entry above
-	// (table-level CHECK/UNIQUE, or field-level synthesis resolved by name).
 	for _, constraintName := range constraintscope.AdditionNames(diff) {
 		constraintIdentity := state.semantics.IndexIdentityKey(constraintName)
 		if _, done := state.handled[constraintIdentity]; done {
 			continue
 		}
-		if p.constraintNameIsForeignKey(constraintName, desired, structToTable) != wantForeignKey {
+		if constraintRecordIsForeignKey(diff.ConstraintsAddedWithTables, constraintName) != wantForeignKey {
 			continue
 		}
-
-		// For a modification, emit the DROP(s) first so they precede the
-		// re-add, scoped to the constraint's concrete host table(s) — never a
-		// name-keyed single-winner lookup, which collapses multiple removal
-		// hosts onto one arbitrary table (issue #207).
-		if _, modified := state.removedNames[constraintIdentity]; modified {
-			result = p.emitModifyDropForName(
-				result,
-				constraintIdentity,
-				state.removalsByName,
-				state.addedHostsByName[constraintIdentity],
-				state.droppedForModify,
-				state.semantics,
-			)
-		}
-
-		result = p.appendAddConstraint(result, constraintName, desired, structToTable)
+		return nil, fmt.Errorf(
+			"%w: constraint %q is added without a definition the planner can render; "+
+				"a diff has to describe the constraints it names",
+			ptaherr.ErrInvalidSchemaDiff, constraintName,
+		)
 	}
-	return result
+	return result, nil
+}
+
+// constraintRecordIsForeignKey answers which of the two passes a named addition
+// belongs to, from the record the comparison carries for it.
+//
+// A record carrying no kind answers false, so such a name is refused once, by
+// the non-foreign-key pass, rather than by both.
+func constraintRecordIsForeignKey(additions []difftypes.ConstraintAdditionInfo, name string) bool {
+	for _, add := range additions {
+		if add.Name == name {
+			return strings.EqualFold(add.Type, "FOREIGN KEY")
+		}
+	}
+	return false
 }
 
 func (p *Planner) addForeignKeyConstraintsWithTables(
@@ -1940,28 +1946,7 @@ func (p *Planner) addForeignKeyConstraintsWithTables(
 	return result
 }
 
-func (p *Planner) constraintNameIsForeignKey(constraintName string, desired *schemamodel.Database, structToTable map[string]string) bool {
-	for _, constraint := range desired.Constraints {
-		if constraint.Name == constraintName {
-			return strings.EqualFold(constraint.Type, "FOREIGN KEY")
-		}
-	}
-	for _, field := range desired.Fields {
-		if field.Foreign == "" {
-			continue
-		}
-		tableName := structToTable[field.StructName]
-		if tableName == "" {
-			tableName = field.StructName
-		}
-		if foreignKeyName(tableName, field) == constraintName {
-			return true
-		}
-	}
-	return false
-}
-
-func (p *Planner) addCheckAndUniqueConstraintsWithTables(
+func (p *Planner) addNonForeignKeyConstraintsWithTables(
 	result []ast.Node,
 	additions []difftypes.ConstraintAdditionInfo,
 	removalByTableName map[constraintHostKey]difftypes.ConstraintRemovalInfo,
@@ -1971,6 +1956,37 @@ func (p *Planner) addCheckAndUniqueConstraintsWithTables(
 	semantics identifier.Semantics,
 ) []ast.Node {
 	for _, add := range additions {
+		// A record this pass owns is HANDLED whether or not it renders. The two
+		// nil answers below are different facts: "the diff does not describe
+		// this" is a caller error the named pass refuses, and "this target has
+		// no enforced CHECK" is a capability skip that already carries its own
+		// warning. Marking only the rendered ones would refuse the second
+		// (stokaro/ptah#2315).
+		if constraintRecordDescribes(add) {
+			handled[semantics.IndexIdentityKey(add.Name)] = struct{}{}
+		}
+		// A CHECK on a target that parses but does not enforce CHECK
+		// (capability.CheckConstraintsEnforced absent -- MySQL before 8.0.16)
+		// would be a silent no-op in the live schema while Ptah believes it
+		// applied, so it is reported rather than emitted (issue #226). The
+		// warning used to live on the name-resolving path this replaced; what
+		// the target leaves out is still said out loud (stokaro/ptah#2315).
+		if add.Type == "CHECK" && constraintRecordDescribes(add) &&
+			!p.capabilities().Has(capability.CheckConstraintsEnforced) {
+			result = append(result, ast.NewComment(fmt.Sprintf(
+				"WARNING: CHECK constraint %s skipped - %s", add.Name, p.checkNotEnforcedMessage())))
+			continue
+		}
+		// EXCLUDE is PostgreSQL's, and no target this planner serves has it in
+		// any spelling. The author asked for something the target cannot hold,
+		// which is reported for the same reason as the CHECK above rather than
+		// dropped in silence.
+		if add.Type == "EXCLUDE" && constraintRecordDescribes(add) {
+			result = append(result, ast.NewComment(fmt.Sprintf(
+				"WARNING: EXCLUDE constraint %s not supported in %s (PostgreSQL-specific feature)",
+				add.Name, p.constraintDialectLabel())))
+			continue
+		}
 		constraint := p.constraintAdditionNode(add)
 		if constraint == nil {
 			continue
@@ -2038,59 +2054,6 @@ func (p *Planner) constraintAdditionNode(add difftypes.ConstraintAdditionInfo) *
 	}
 }
 
-// emitModifyDropForName appends the DROP(s) that must precede the re-ADD of a
-// modified constraint reached via the bare ConstraintsAdded name list (the
-// non-FK and field-level synthesis paths; FK modifies are handled per-host in
-// the ConstraintsAddedWithTables loop). The comparator records every removal
-// in ConstraintsRemovedWithTables in lockstep with the bare list, so the
-// owning table and constraint type are normally known: each re-added host gets
-// a direct, table-qualified, type-aware drop (DROP FOREIGN KEY /
-// DROP CONSTRAINT), deduped per (host, name). A name-keyed single-winner
-// lookup must never be used here: with >=2 removal hosts it collapses onto one
-// arbitrary host, so the wrong table's constraint is dropped while the
-// re-added host's ADD collides with its still-present old constraint
-// (errno 1826/3822, issue #207).
-//
-// The drop is restricted to addedHosts — the hosts actually being re-added
-// under this name (ConstraintsAddedWithTables). In the MIXED case a shared
-// name is a modify on host A (re-added) and a PURE removal on host B (not
-// re-added); B's drop is owned by removeConstraints. MySQL accepts no
-// IF EXISTS on constraint drops (only MariaDB does), so — unlike postgres,
-// where a duplicate guarded drop degrades to a no-op — dropping B here as well
-// would abort the migration on removeConstraints' second drop.
-//
-// When addedHosts is empty the re-added hosts are unknown — e.g. a
-// reverse/down diff fills ConstraintsRemovedWithTables but not
-// ConstraintsAddedWithTables because the prior definition could not be
-// reconstructed from schema context. In that case every recorded removal host
-// is dropped here and removeConstraints skips the name entirely (its
-// hostless-re-add rule), so each host is still dropped exactly once. A name
-// with no recorded removal host at all emits no drop: MySQL has no
-// anonymous-block equivalent of the postgres
-// information_schema DO fallback to resolve the owner at runtime, so the
-// re-add proceeds alone (pre-existing behavior for hand-built diffs).
-func (p *Planner) emitModifyDropForName(
-	result []ast.Node,
-	name string,
-	removalsByName map[string][]difftypes.ConstraintRemovalInfo,
-	addedHosts map[string]struct{},
-	droppedForModify map[constraintHostKey]struct{},
-	semantics identifier.Semantics,
-) []ast.Node {
-	for _, info := range removalsByName[name] {
-		if info.TableName == "" {
-			continue
-		}
-		if len(addedHosts) > 0 {
-			if _, reAdded := addedHosts[semantics.QualifiedTableIdentityKey(info.TableName)]; !reAdded {
-				continue
-			}
-		}
-		result = p.appendScopedDrop(result, info, droppedForModify, semantics)
-	}
-	return result
-}
-
 // appendScopedDrop appends a single table-qualified, type-aware constraint
 // drop (ALTER TABLE <host> DROP FOREIGN KEY <name> / DROP CONSTRAINT <name>),
 // deduped per (table, name) via dropped so a constraint name shared across
@@ -2127,89 +2090,6 @@ func (p *Planner) foreignKeyAdditionNode(add difftypes.ConstraintAdditionInfo) *
 	return p.createForeignKeyAlterStatement(add.TableName, add.Name, add.Columns, fkRef)
 }
 
-// appendAddConstraint resolves the ADD CONSTRAINT node for a constraint known
-// only by name, trying the explicit table-level constraints first and then the
-// synthesized field-level check= / foreign= fallbacks, mirroring the PostgreSQL
-// planner.
-func (p *Planner) appendAddConstraint(result []ast.Node, constraintName string, desired *schemamodel.Database, structToTable map[string]string) []ast.Node {
-	for _, constraint := range desired.Constraints {
-		if constraint.Name != constraintName {
-			continue
-		}
-		// A CHECK constraint on a target that parses but does not enforce
-		// CHECK (capability.CheckConstraintsEnforced absent — MySQL before
-		// 8.0.16) would be a silent no-op in the live schema while ptah
-		// believes it applied; surface that loudly instead of emitting it
-		// (issue #226).
-		if constraint.Type == "CHECK" && !p.capabilities().Has(capability.CheckConstraintsEnforced) {
-			return append(result, ast.NewComment(fmt.Sprintf("WARNING: CHECK constraint %s skipped - %s", constraint.Name, p.checkNotEnforcedMessage())))
-		}
-		if astConstraint := p.convertConstraintToAST(constraint); astConstraint != nil {
-			return append(result, &ast.AlterTableNode{
-				Name:       declaredConstraintTable(constraint, structToTable),
-				Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: astConstraint}},
-			})
-		}
-		if constraint.Type == "EXCLUDE" {
-			return append(result, ast.NewComment(fmt.Sprintf("WARNING: EXCLUDE constraint %s not supported in %s (PostgreSQL-specific feature)", constraint.Name, p.constraintDialectLabel())))
-		}
-		return result
-	}
-
-	if node, ok := p.fieldLevelCheckConstraintNode(constraintName, desired, structToTable); ok {
-		if node != nil {
-			result = append(result, node)
-		}
-		return result
-	}
-
-	if node, ok := p.fieldLevelForeignKeyConstraintNode(constraintName, desired, structToTable); ok {
-		if node != nil {
-			result = append(result, node)
-		}
-	}
-	return result
-}
-
-// fieldLevelCheckConstraintNode builds the ADD CONSTRAINT node for a synthesized
-// field-level check= constraint. Mirrors the PostgreSQL planner. New columns are
-// handled by the inline CHECK in ALTER TABLE ADD COLUMN and the comparator
-// deliberately skips synthesizing those, so only existing-column field-level
-// CHECKs reach here.
-func (p *Planner) fieldLevelCheckConstraintNode(constraintName string, desired *schemamodel.Database, structToTable map[string]string) (ast.Node, bool) {
-	for _, f := range desired.Fields {
-		if f.Check == "" {
-			continue
-		}
-		tableName := structToTable[f.StructName]
-		if tableName == "" {
-			tableName = f.StructName
-		}
-		name := f.CheckName
-		if name == "" {
-			name = tableName + "_" + f.Name + "_check"
-		}
-		if name != constraintName {
-			continue
-		}
-		// Same enforcement gate as the table-level path in
-		// appendAddConstraint: never emit a CHECK the target would silently
-		// ignore (issue #226).
-		if !p.capabilities().Has(capability.CheckConstraintsEnforced) {
-			return ast.NewComment(fmt.Sprintf("WARNING: CHECK constraint %s skipped - %s", name, p.checkNotEnforcedMessage())), true
-		}
-		return &ast.AlterTableNode{
-			Name: tableName,
-			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: &ast.ConstraintNode{
-				Type:       ast.CheckConstraint,
-				Name:       name,
-				Expression: f.Check,
-			}}},
-		}, true
-	}
-	return nil, false
-}
-
 func (p *Planner) checkNotEnforcedMessage() string {
 	switch p.targetDialect() {
 	case platform.SQLServer:
@@ -2217,46 +2097,6 @@ func (p *Planner) checkNotEnforcedMessage() string {
 	default:
 		return "the target parses but does not enforce CHECK constraints (MySQL < 8.0.16)"
 	}
-}
-
-func (p *Planner) constraintDialectLabel() string {
-	switch p.targetDialect() {
-	case platform.SQLServer:
-		return "SQL Server"
-	default:
-		return "MySQL"
-	}
-}
-
-// fieldLevelForeignKeyConstraintNode builds the ADD CONSTRAINT node for a
-// synthesized field-level foreign= constraint whose on_delete / on_update action
-// changed (issue #189). Without this the FK would be dropped (via
-// removeConstraints) but never re-added with the new action — a destructive,
-// silently-broken migration. New columns/tables are handled by the inline FK in
-// CREATE TABLE / ALTER TABLE ADD COLUMN and the comparator deliberately skips
-// synthesizing those, so only existing-column FK action changes reach here.
-func (p *Planner) fieldLevelForeignKeyConstraintNode(constraintName string, desired *schemamodel.Database, structToTable map[string]string) (ast.Node, bool) {
-	for _, f := range desired.Fields {
-		if f.Foreign == "" {
-			continue
-		}
-		tableName := structToTable[f.StructName]
-		if tableName == "" {
-			tableName = f.StructName
-		}
-		name := foreignKeyName(tableName, f)
-		if name != constraintName {
-			continue
-		}
-		fkRef := fromschema.ParseForeignKeyReference(f.Foreign)
-		if fkRef == nil {
-			continue
-		}
-		fkRef.OnDelete = f.OnDelete
-		fkRef.OnUpdate = f.OnUpdate
-		return p.createForeignKeyAlterStatement(tableName, name, []string{f.Name}, fkRef), true
-	}
-	return nil, false
 }
 
 // removeConstraints removes table-level constraints via ALTER TABLE statements.
@@ -2426,58 +2266,6 @@ func (p *Planner) dropConstraintNode(info difftypes.ConstraintRemovalInfo) ast.N
 	}
 }
 
-// convertConstraintToAST converts a schemamodel.Constraint to an ast.ConstraintNode for MySQL.
-//
-// This helper method handles the conversion between the schema annotation representation
-// and the AST representation used for SQL generation, taking into account MySQL-specific
-// limitations and syntax differences.
-func (p *Planner) convertConstraintToAST(constraint schemamodel.Constraint) *ast.ConstraintNode {
-	switch constraint.Type {
-	case "EXCLUDE":
-		// EXCLUDE constraints are not supported in MySQL
-		return nil
-
-	case "CHECK":
-		if constraint.CheckExpression == "" {
-			return nil // Invalid CHECK constraint
-		}
-		return &ast.ConstraintNode{
-			Type:       ast.CheckConstraint,
-			Name:       constraint.Name,
-			Expression: constraint.CheckExpression,
-		}
-
-	case "UNIQUE":
-		if len(constraint.Columns) == 0 {
-			return nil // Invalid UNIQUE constraint
-		}
-		return ast.NewUniqueConstraint(constraint.Name, constraint.Columns...)
-
-	case "PRIMARY KEY":
-		if len(constraint.Columns) == 0 {
-			return nil // Invalid PRIMARY KEY constraint
-		}
-		return ast.NewPrimaryKeyConstraint(constraint.Columns...)
-
-	case "FOREIGN KEY":
-		if len(constraint.Columns) == 0 || constraint.ForeignTable == "" || len(constraint.ForeignColumnsOrDefault()) == 0 {
-			return nil // Invalid FOREIGN KEY constraint
-		}
-		ref := &ast.ForeignKeyRef{
-			Table:    constraint.ForeignTable,
-			Column:   constraint.ForeignColumn,
-			Columns:  constraint.ForeignColumns,
-			OnDelete: constraint.OnDelete,
-			OnUpdate: constraint.OnUpdate,
-			Name:     constraint.Name,
-		}
-		return ast.NewForeignKeyConstraint(constraint.Name, constraint.Columns, ref)
-
-	default:
-		return nil // Unsupported constraint type
-	}
-}
-
 func previousColumnType(change string) string {
 	before, _, ok := strings.Cut(change, " -> ")
 	if !ok {
@@ -2526,4 +2314,27 @@ func changedMaterializedViewNames(diff *difftypes.SchemaDiff) []string {
 	}
 	slices.Sort(names)
 	return slices.Compact(names)
+}
+
+// constraintRecordDescribes reports whether an addition record says enough for
+// this pass to know what the constraint is.
+//
+// It is the question the refusal asks, separated from whether the target can
+// have the constraint at all: a CHECK with an expression is described even on a
+// target that does not enforce CHECK constraints, and an EXCLUDE with its
+// elements is described even here, where no target has EXCLUDE at all.
+func constraintRecordDescribes(add difftypes.ConstraintAdditionInfo) bool {
+	if add.TableName == "" {
+		return false
+	}
+	switch add.Type {
+	case "CHECK":
+		return add.CheckExpression != ""
+	case "UNIQUE":
+		return len(add.Columns) > 0
+	case "EXCLUDE":
+		return add.ExcludeElements != ""
+	default:
+		return false
+	}
 }
