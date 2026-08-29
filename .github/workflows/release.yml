@@ -64,6 +64,25 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
+      # First, before the checkout and the eleven minutes of build behind it.
+      # GoReleaser reaches the Homebrew formula only after the release assets
+      # and the container images are already pushed, so a token discovered
+      # missing there leaves a half-published release behind. It costs seconds
+      # to learn it here instead.
+      #
+      # This is the other half of stokaro/ptah#2361. `skip_upload` in
+      # .goreleaser.yaml no longer turns an absent token into a quietly
+      # narrower release; this step is what turns it into a legible failure.
+      - name: The Homebrew tap token must be present
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "${HOMEBREW_TAP_TOKEN}" ]; then
+            echo "::error::HOMEBREW_TAP_TOKEN is empty or unset. The Homebrew formula would not reach stokaro/homebrew-ptah, and the release would otherwise finish green with one channel missing. Set the secret, then re-run this job." >&2
+            exit 1
+          fi
+          echo "HOMEBREW_TAP_TOKEN is present"
+
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
