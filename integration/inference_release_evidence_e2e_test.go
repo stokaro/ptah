@@ -255,6 +255,13 @@ func assertPlanLeavesNoRecordUnasked(
 	output := runInference(c, ctx, "plan", "--spec", specPath, "--db-url", dbURL)
 
 	c.Assert(output, qt.Contains, "generation ")
+	// Every line either destination can produce says "the record" or "record
+	// <digest>", including the two that report a FAILURE to keep it. Asserting
+	// only the successes left a plan that published unasked and could not reach
+	// the registry reading exactly like one that published nothing. The plan's
+	// own prose says "record" too -- a step recording a starting position -- so
+	// the assertion is on the two shapes rather than on the word.
+	c.Assert(output, qt.Not(qt.Contains), "the record was")
 	c.Assert(output, qt.Not(qt.Contains), "published as")
 	c.Assert(output, qt.Not(qt.Contains), "written to")
 }
