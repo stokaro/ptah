@@ -1,0 +1,141 @@
+# Try to make stokaro/ptah#2365 happen on purpose.
+#
+# `ptah-go-lint-windows` fails intermittently with a Go runtime assertion rather
+# than a test failure:
+#
+#   fatal error: found pointer to free object
+#   runtime.(*mspan).reportZombies(...)
+#   FAIL  go.5x5.cz/ptah/migration/migrator
+#
+# That is the collector's own heap-consistency check, raised by the sweeper long
+# after whatever caused it, so the stack it prints names the goroutine that was
+# running and not the code at fault. It has been seen on two branches including
+# master, on the same package each time, and `migration/migrator` has no cgo, no
+# `unsafe` and no finalizer of its own.
+#
+# `GODEBUG=clobberfree=1` fills a freed object with a poison value, so a
+# use-after-free faults where it happens instead of at the next sweep. Either
+# outcome is worth having: a crash here is a reproduction that can be reported
+# upstream, and a clean run over many iterations is evidence the fault is not in
+# the freeing path.
+#
+# It is one package rather than the whole contour, so it does not run on a pull
+# request. Nightly and on request.
+name: GC Clobberfree Probe (Windows)
+
+on:
+  schedule:
+    # 05:40 UTC, clear of every other scheduled job in this repository.
+    - cron: '40 5 * * *'
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: 'How many times to run the package'
+        required: false
+        default: '8'
+      package:
+        description: 'Package to probe'
+        required: false
+        default: './migration/migrator/'
+
+permissions:
+  contents: read
+
+jobs:
+  clobberfree:
+    name: clobberfree
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      # Before the checkout, for the reason go-lint.yml states: Git on Windows
+      # converts LF to CRLF on the way in by default, and this repository stores
+      # LF.
+      - name: Keep the line endings the repository stores
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v7
+
+      # go.mod decides, the way every other job here does. The crash reports the
+      # toolchain version this repository asks for, so pinning a different one
+      # would probe a Go nobody runs.
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Install dependencies
+        run: go mod download
+
+      # -count is the whole experiment: one pass proves nothing about a fault
+      # seen twice in dozens of runs. Each iteration is a fresh process, because
+      # the assertion fires during a sweep and a sweep is per-process.
+      #
+      # No -race. It changes how the allocator behaves, and this probe is about
+      # the allocator.
+      #
+      # The count is asserted rather than assumed. A probe that ran zero
+      # iterations exits green and reads exactly like one that found nothing,
+      # which is the failure mode every gate in this repository is written
+      # against.
+      - name: Probe the package under clobberfree
+        shell: pwsh
+        env:
+          GODEBUG: clobberfree=1
+          ITERATIONS: ${{ inputs.iterations }}
+          PACKAGE: ${{ inputs.package }}
+        run: |
+          # Continue, deliberately. The step template sets Stop, and under Stop
+          # a native command's stderr merged with 2>&1 arrives as ErrorRecords
+          # that terminate the script -- so `go test` printing its first
+          # diagnostic would end the probe as though the probe had failed. Every
+          # failure below exits explicitly instead.
+          $ErrorActionPreference = 'Continue'
+
+          $iterations = if ($env:ITERATIONS) { [int]$env:ITERATIONS } else { 8 }
+          $package = if ($env:PACKAGE) { $env:PACKAGE } else { './migration/migrator/' }
+          if ($iterations -lt 1) {
+            "refused: iterations must be at least 1, got $iterations" | Out-File -FilePath probe-verdict.txt
+            Write-Host "::error::iterations must be at least 1, got $iterations"
+            exit 1
+          }
+          Write-Host "probing $package for $iterations iterations under GODEBUG=$env:GODEBUG"
+
+          $ran = 0
+          for ($i = 1; $i -le $iterations; $i++) {
+            Write-Host "--- iteration $i of $iterations"
+            go test $package -count=1 -timeout 30m 2>&1 | Tee-Object -FilePath "probe-$i.log"
+            $status = $LASTEXITCODE
+            $ran++
+            if ($status -ne 0) {
+              "reproduced on iteration $i of $iterations, exit $status" | Out-File -FilePath probe-verdict.txt
+              Write-Host "::error::iteration $i exited $status; the artifact holds the full output"
+              exit $status
+            }
+          }
+
+          # The count is asserted rather than assumed. A probe that ran nothing
+          # exits green and reads exactly like one that found nothing.
+          if ($ran -ne $iterations) {
+            "refused: ran $ran iterations of $iterations" | Out-File -FilePath probe-verdict.txt
+            Write-Host "::error::ran $ran iterations of $iterations"
+            exit 1
+          }
+          "not reproduced in $ran iterations" | Out-File -FilePath probe-verdict.txt
+          Write-Host "not reproduced in $ran iterations under GODEBUG=clobberfree=1"
+
+      # Kept whichever way it went. A reproduction is what makes this reportable
+      # upstream, and a clean run is the measurement that says how many
+      # iterations stood behind the answer.
+      - name: Keep what the probe saw
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: clobberfree-probe
+          path: |
+            probe-*.log
+            probe-verdict.txt
+          if-no-files-found: warn
+          retention-days: 14
