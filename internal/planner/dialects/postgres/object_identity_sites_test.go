@@ -93,10 +93,15 @@ func TestEnumLookupResolvesAcrossSchemaSpellings(t *testing.T) {
 			}
 
 			removed, err := planner.GenerateSchemaDiffSQLStatements(
-				&difftypes.SchemaDiff{EnumsModified: []difftypes.EnumDiff{{
-					EnumName:      test.diffName,
-					ValuesRemoved: []string{"draft"},
-				}}},
+				&difftypes.SchemaDiff{
+					EnumsModified: []difftypes.EnumDiff{{
+						EnumName:      test.diffName,
+						ValuesRemoved: []string{"draft"},
+					}},
+					// Filled the way a comparison fills it, from the declaration this
+					// plan is applied against.
+					DeclaredUserTypes: difftypes.UserTypeVocabularyOf(desired),
+				},
 				desired,
 				"postgres",
 			)

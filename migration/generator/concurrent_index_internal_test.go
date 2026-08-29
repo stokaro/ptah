@@ -49,12 +49,17 @@ func TestPlanGeneratedMigrationSpecs_ConcurrentIndexForPopulatedPostgresTable(t 
 
 func TestPlanGeneratedMigrationSpecs_ReverseOnlyNoTransactionMarksPair(t *testing.T) {
 	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{EnumsModified: []difftypes.EnumDiff{{
-		EnumName: "status", ValuesRemoved: []string{"retired"},
-	}}}
 	desired := &schemamodel.Database{Enums: []schemamodel.Enum{{
 		Name: "status", Values: []string{"active"},
 	}}}
+	diff := &difftypes.SchemaDiff{
+		EnumsModified: []difftypes.EnumDiff{{
+			EnumName: "status", ValuesRemoved: []string{"retired"},
+		}},
+		// Filled the way a comparison fills it, from the declaration this plan
+		// is applied against.
+		DeclaredUserTypes: difftypes.UserTypeVocabularyOf(desired),
+	}
 	current := &catalog.Database{Enums: []catalog.Enum{{
 		Name: "status", Values: []string{"active", "retired"},
 	}}}

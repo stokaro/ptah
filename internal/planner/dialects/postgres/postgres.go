@@ -272,7 +272,7 @@ func (p *Planner) modifyExistingEnums(result []ast.Node, diff *difftypes.SchemaD
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, enumDiff := range diff.EnumsModified {
 		if len(enumDiff.ValuesRemoved) > 0 {
-			values, ok := postgresEnumValues(desired, enumDiff.EnumName, semantics)
+			values, ok := postgresEnumValues(diff.DeclaredUserTypes, enumDiff.EnumName, semantics)
 			if !ok {
 				result = append(result, ast.NewComment(fmt.Sprintf(
 					"WARNING: Cannot remove enum values %v from %s because the target enum definition was not found",
@@ -299,15 +299,17 @@ func (p *Planner) modifyExistingEnums(result []ast.Node, diff *difftypes.SchemaD
 	return result
 }
 
+// postgresEnumValues answers with the values a declared enum holds, from the
+// vocabulary the diff carries rather than from the declaration.
+//
+// The vocabulary is the same four lists a created column is typed against,
+// and the comparison fills it on every run (stokaro/ptah#2315).
 func postgresEnumValues(
-	desired *schemamodel.Database,
+	vocabulary difftypes.UserTypeVocabulary,
 	enumName string,
 	semantics identifier.Semantics,
 ) ([]string, bool) {
-	if desired == nil {
-		return nil, false
-	}
-	enum := objectlookup.Qualified(desired.Enums, enumName, semantics)
+	enum := objectlookup.Qualified(vocabulary.Enums, enumName, semantics)
 	if enum == nil {
 		return nil, false
 	}
@@ -689,6 +691,7 @@ func (p *Planner) addNewTableColumns(
 	result []ast.Node,
 	tableDiff difftypes.TableDiff,
 	desired *schemamodel.Database,
+	vocabulary difftypes.UserTypeVocabulary,
 	semantics identifier.Semantics,
 ) []ast.Node {
 	// The TABLE still has to be declared. The column travels with the change
@@ -705,7 +708,7 @@ func (p *Planner) addNewTableColumns(
 	// table's Go STRUCT name and a scan of every field in the schema, which is
 	// a parser artifact reaching into the planner (stokaro/ptah#2315).
 	for _, column := range tableDiff.ColumnsAdded {
-		columnNode := fromschema.FromFieldWithoutForeignKeys(column, desired.Enums, "postgres")
+		columnNode := fromschema.FromFieldWithoutForeignKeys(column, vocabulary.Enums, "postgres")
 
 		// Only add the column - foreign key constraints will be added separately
 		// to ensure proper dependency ordering (columns must exist before FK constraints)
@@ -1084,7 +1087,7 @@ func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *difftypes.Sc
 			initialLength := len(result)
 
 			// Add new columns
-			result = p.addNewTableColumns(result, tableDiff, desired, semantics)
+			result = p.addNewTableColumns(result, tableDiff, desired, diff.DeclaredUserTypes, semantics)
 
 			// Modify existing columns
 			result = p.modifyExistingTableColumns(result, tableDiff, diff.DeclaredUserTypes)

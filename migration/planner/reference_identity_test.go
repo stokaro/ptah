@@ -193,6 +193,9 @@ func TestGenerateSchemaDiffSQL_PostgresEnumRemovalPreservesLiteralDotIdentity(t 
 			EnumName:      `"tenant.data"`,
 			ValuesRemoved: []string{"retired"},
 		}},
+		// Filled the way a comparison fills it, from the declaration this plan
+		// is applied against.
+		DeclaredUserTypes: difftypes.UserTypeVocabularyOf(desired),
 	}
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.Postgres)

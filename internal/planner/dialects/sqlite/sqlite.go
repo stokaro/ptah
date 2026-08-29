@@ -197,6 +197,19 @@ func identity(name string) string { return name }
 // or generated expression, and any table constraint — has to be rewritten
 // through a new table. A constraint change that cannot be attributed to a table
 // is still refused, because there is nothing to rebuild.
+// The enum list these render with is the DECLARATION's, not the vocabulary the
+// diff carries, and the difference is not cosmetic. SQLite is one of the
+// dialects `normalizeInlineEnumsForCompare` normalizes for: the comparison
+// sees a declaration whose enums are nil and whose enum columns are already
+// TEXT with a CHECK, so `diff.DeclaredUserTypes.Enums` is empty by design.
+// This planner creates a table by iterating the DECLARATION rather than the
+// creation the comparison carried, so its fields still name the enum and the
+// authored list is what inlines them. Substituting the carried vocabulary
+// here renders `"status" enum_user_status`, which SQLite refuses with
+// `unknown datatype` -- caught by TestRoundTripGeneratedSchemaThroughSQLite.
+//
+// Reading the carry instead means reading it for the COLUMNS too, which is
+// the table-rebuild cluster of stokaro/ptah#2315 rather than this change.
 func planTableRebuilds(
 	diff *difftypes.SchemaDiff,
 	desired *schemamodel.Database,

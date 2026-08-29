@@ -310,6 +310,7 @@ func (p *Planner) addNewTableColumns(
 	result []ast.Node,
 	tableDiff *difftypes.TableDiff,
 	desired *schemamodel.Database,
+	vocabulary difftypes.UserTypeVocabulary,
 	semantics identifier.Semantics,
 ) []ast.Node {
 	// The TABLE still has to be declared. The column travels with the change
@@ -328,7 +329,7 @@ func (p *Planner) addNewTableColumns(
 		targetField := &column
 
 		{
-			columnNode := fromschema.FromField(*targetField, desired.Enums, p.targetDialect())
+			columnNode := fromschema.FromField(*targetField, vocabulary.Enums, p.targetDialect())
 
 			// Create operations list starting with ADD COLUMN
 			operations := []ast.AlterOperation{&ast.AddColumnOperation{Column: columnNode}}
@@ -627,7 +628,7 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 		result = appendTableComment(result, tableDiff)
 
 		// Add new columns
-		result = p.addNewTableColumns(result, &tableDiff, desired, semantics)
+		result = p.addNewTableColumns(result, &tableDiff, desired, diff.DeclaredUserTypes, semantics)
 
 		// Modify existing columns
 		var err error
