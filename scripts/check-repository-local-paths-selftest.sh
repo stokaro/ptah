@@ -47,30 +47,37 @@ assert_accepted() {
 	fi
 }
 
-write_repo 'Run it from /Users/somebody/Work/thing.'
+# The fixtures are assembled from parts so this file does not itself contain a
+# developer path. It is scanned by the gate it tests -- everything tracked is,
+# apart from the gate's own source -- and a companion carrying the literal
+# would be a leak nobody could tell from a real one.
+mac_home="/Users"
+linux_home="/home"
+home_var='\$HOME'
+
+write_repo "Run it from ${mac_home}/somebody/Work/thing."
 assert_rejected 'a macOS home path'
 
-write_repo 'Run it from /home/somebody/Work/thing.'
+write_repo "Run it from ${linux_home}/somebody/Work/thing."
 assert_rejected 'a Linux home path'
 
-write_repo 'It lives in $HOME/Work/ptah.'
-assert_rejected 'a $HOME checkout convention'
+write_repo "It lives in ${home_var}""/Work/ptah."
+assert_rejected 'a \$HOME checkout convention'
 
 # The shapes it must NOT reject. Each is a real spelling this repository
 # contains, and a pattern that caught them would make the gate unusable.
-write_repo 'The Windows runner uses C:/Users/runner/work, which is not a local path.'
+write_repo "The Windows runner uses C:${mac_home}/runner/work, which is not a local path."
 assert_accepted 'a synthetic Windows path in a cross-platform test'
 
-write_repo 'The container mounts /home-grown/data and /Users-guide.md.'
+write_repo "The container mounts ${linux_home}-grown/data and ${mac_home}-guide.md."
 assert_accepted 'a path that merely starts with the same letters'
 
 # The boundary, recorded rather than assumed: the pattern requires a trailing
-# slash, so `$HOME/Work` naming the directory itself is not matched. Whether it
-# should be is a question about the pattern; this says what the pattern does, so
-# the next reader does not have to derive it.
-write_repo 'The checkout usually sits at $HOME/Work.'
-assert_accepted 'a $HOME directory with no trailing slash'
-
+# slash, so the directory itself is not matched. Whether it should be is a
+# question about the pattern; this says what the pattern does, so the next
+# reader does not have to derive it.
+write_repo "The checkout usually sits at ${home_var}""/Work."
+assert_accepted 'a \$HOME directory with no trailing slash'
 # Vacuity. A repository with nothing tracked must fail rather than report a
 # clean scan: the gate cannot otherwise tell an empty pathspec from a clean tree.
 rm -rf "$work_dir/repo"
