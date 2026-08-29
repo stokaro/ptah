@@ -325,19 +325,20 @@ considered valid only because each journey below resolves by reading the
 sidebar, without consulting a meta-map.
 
 Paths are written the way the sidebar reads: `Root row > Subgroup > Page`,
-using the labels a reader sees. A linked root row can be the page itself.
+using the labels a reader sees. A root group is a disclosure control; its
+landing page remains an explicit child.
 
 | Journey | Before the restructuring | Path through the navigation |
 | --- | --- | --- |
-| Migration-first user, any language | `start/quick-start-migrations` runs the whole hand-written migration workflow — write, hash, validate, apply, status, read back, roll back — before any schema source appears | Home → `Start > Quick start` → `Start > Quick start: versioned migrations` → `Versioned migrations` |
-| New Go user | reaches the quick start like everybody else and finds Go as one of four schema sources rather than as the entry point | Home → `Start > Quick start` → either tutorial → `Schema > Sources > Go annotations` → `Versioned migrations` |
+| Migration-first user, any language | `start/quick-start-migrations` runs the whole hand-written migration workflow — write, hash, validate, apply, status, read back, roll back — before any schema source appears | Home → `Start > Quick start` → `Start > Quick start: versioned migrations` → `Versioned migrations > Overview` |
+| New Go user | reaches the quick start like everybody else and finds Go as one of four schema sources rather than as the entry point | Home → `Start > Quick start` → either tutorial → `Schema > Sources > Go annotations` → `Versioned migrations > Overview` |
 | Schema-file user | `workflows/schema-files` covers four formats on one page; reference pages are two clicks away | Home → `Start > Choose a workflow` → `Schema > Sources > Work with a desired schema` → the format page beside it (`SQL schema`, `YAML schema`, `HCL schema`, `DBML`) |
 | ORM/external-provider user | `workflows/orm-loaders`, duplicated by a section of `schema-files` | `Schema > Sources > ORM and external loaders`, a sibling of the hand-written formats rather than a separate group |
 | Brownfield database adopter | no path: `ptah introspect` appears only in reference tables, `migrations baseline` has no how-to (only a contrast note in `checkpoints` and an exit-code row) | `Start > Adopt an existing database` → `Direct schema changes > Inspect a database` → `Versioned migrations > Import from another tool` or `Checkpoints` |
-| Versioned-migration user | `workflows/migrations` hub; per-step depth requires jumping to four other pages | `Versioned migrations` → the seven lifecycle pages below the same root row, all visible at once |
-| Direct-workflow user | no home: `schema compare`/`drift` live in command tables; direct apply is only inside `workflows/atlas-cli` | `Start > Choose a workflow` → `Direct schema changes` → the four verbs below it, in the order a change passes through them |
+| Versioned-migration user | `workflows/migrations` hub; per-step depth requires jumping to four other pages | `Versioned migrations > Overview` → the lifecycle pages below the same root row, all visible at once |
+| Direct-workflow user | no home: `schema compare`/`drift` live in command tables; direct apply is only inside `workflows/atlas-cli` | `Start > Choose a workflow` → `Direct schema changes > Overview` → the four verbs below it, in the order a change passes through them |
 | CI/operator | `workflows/ci` (371 words) → `reference/exit-codes`; safety gates buried in `workflows/migrations` | `Test and CI > CI` → `Versioned migrations > Integrity and safety` → `Concepts and reference > Rules and diagnostics > Exit codes` → `Distribute and operate > Troubleshooting` |
-| Atlas migration user | `workflows/atlas-cli` (4,137 words, four page types mixed) → `reference/comparison` (4,795 words, four questions mixed) | `Atlas compatibility` → `Adopting an Atlas project` → `Commands and configuration > Atlas migrate commands` / `Atlas schema commands` → `Differences and evidence > Feature matrix` / `Conformance`, the one collapsed subgroup, because evidence sits outside the learning path |
+| Atlas migration user | `workflows/atlas-cli` (4,137 words, four page types mixed) → `reference/comparison` (4,795 words, four questions mixed) | `Atlas compatibility > Overview` → `Adopting an Atlas project` → `Commands and configuration > Atlas migrate commands` / `Atlas schema commands` → `Differences and evidence > Feature matrix` / `Conformance`, the one collapsed subgroup, because evidence sits outside the learning path |
 | Go API embedder | `reference/reusable-components` + `reference/public-api` + `reference/query-builder`, all filed under generic `Reference` | `Integrations > Go integration > Public Go API` → `Reusable components` → `Query builder` |
 | Contributor | `AGENTS.md` → skill; no style guide exists yet | `AGENTS.md` → `docs/STYLE_GUIDE.md` → skill → this inventory |
 
@@ -347,12 +348,12 @@ of it:
 
 - **The three state-change lifecycles are root rows.** A reader opens
   `Versioned migrations`, `Direct schema changes`, or `Inference migrations`
-  directly. There is no intermediate `Workflows` row and no duplicate
-  `Overview` child.
+  without an intermediate `Workflows` row. Each lifecycle keeps its landing
+  page as an explicit `Overview` child.
 - **Every list inside a root row is readable without scrolling past it.**
-  Measured from `src/sidebar.mjs`: no such list runs past eight. `Versioned
-  migrations` and `Sources` are the two that reach eight, and both are lists a
-  reader arrives at deliberately rather than scans.
+  Measured from `src/sidebar.mjs`: `Versioned migrations` has nine entries,
+  including its overview, and `Sources` has eight. Both are lists a reader
+  arrives at deliberately rather than scans.
 
 ## 6a. The onboarding narrative (stokaro/ptah#1228)
 
@@ -583,14 +584,13 @@ these are merely misplaced content.
 
 Ordering principle: reading order for a new user first, lookup surfaces last.
 The root list names the product domains directly. A root row may hold pages or
-one further subgroup level, so no visible child list inside a row runs past
-eight. Group rationale follows the tree. Current → new mappings are in the
-disposition columns of sections 1–2.
+one further subgroup level, and its child list stays around eight entries.
+Group rationale follows the tree. Current → new mappings are in the disposition
+columns of sections 1–2.
 
 The tree below is the sidebar `docs/site/src/sidebar.mjs` declares. Each line
-carries the label the reader sees and the slug behind it. `[landing]` marks a
-page whose link and expansion control share the root row; it does not render as
-a duplicate `Overview` child.
+carries the label the reader sees and the slug behind it. A landing page is an
+ordinary child, labeled `Overview` when its title repeats the group label.
 
 ```text
 Home (index.mdx, splash; renders no sidebar)
@@ -601,7 +601,8 @@ Start
   Quick start: direct schema changes  start/quick-start-direct
   Choose a workflow                   start/choose-a-workflow
   Adopt an existing database          start/adopt-an-existing-database
-Versioned migrations [landing]        versioned/overview
+Versioned migrations
+  Overview                            versioned/overview
   Generate migrations                 versioned/generate
   Apply migrations                    versioned/apply
   Roll back migrations                versioned/rollback
@@ -610,12 +611,14 @@ Versioned migrations [landing]        versioned/overview
   Maintain migration history          versioned/maintain-history
   Import from another tool            versioned/import
   Checkpoints                         versioned/checkpoints
-Direct schema changes [landing]       direct/overview
+Direct schema changes
+  Overview                            direct/overview
   Inspect a database                  direct/inspect
   Compare and drift                   direct/compare-and-drift
   Plan and approve changes            direct/plan-and-approve
   Apply directly                      direct/apply
-Inference migrations [landing]        inference/overview
+Inference migrations
+  Overview                            inference/overview
   Quick start                         inference/quick-start
   Concepts
     Embeddings and inference state    inference/concepts/embeddings-and-inference-state
@@ -690,7 +693,8 @@ Integrations
   AI and agents
     AI agents over MCP                operate/ai-agents
     Ptah Assist and your own model    operate/ai-assist
-Atlas compatibility [landing]         atlas/overview
+Atlas compatibility
+  Overview                            atlas/overview
   Adopting an Atlas project           atlas/adoption
   Commands and configuration
     Atlas migrate commands            atlas/migrate-commands
@@ -732,17 +736,17 @@ Retired from the sidebar: `documentation-map` (redirect to home), the
 changes no page or route: it lifts each state-change and operational section to
 the root list.
 
-Starlight's sidebar schema does not let a group carry a link. Ptah keeps each
-landing page as the group's first entry, labeled `Overview`, and a component
-override renders that link on the group row beside a separate expansion
-control. The route remains one ordinary sidebar entry for page-health checks,
-pagination, and breadcrumbs, while the reader sees no duplicate child.
+Starlight's sidebar schema does not let a group carry a link. The group heading
+always expands or collapses its children. A landing page is the first ordinary
+child link, labeled `Overview` when the page title repeats the group label or
+given a more specific label when that better describes the page.
 
 The shape, measured by importing `src/sidebar.mjs` rather than by counting the
 block above: 12 root rows, 15 subgroups, 107 leaf entries, maximum group depth
 one below the root, and one collapsed subgroup (`Atlas compatibility >
-Differences and evidence`). The largest list inside a root row is 8, reached by
-the visible children of `Versioned migrations` and by `Schema > Sources`.
+Differences and evidence`). The largest list inside a root row is 9, reached by
+`Versioned migrations` because its overview remains an explicit child before
+the eight workflow pages. `Schema > Sources` follows with 8.
 
 Three of those properties are reading rules that no checker holds, and they are
 written here so a later change is judged against them rather than against
@@ -751,7 +755,7 @@ whichever gate happens to stay green:
 - **The two-level cap.** Starlight's `items` schema is a lazy union that
   includes itself, so a third level renders and passes every check in
   `docs/site/scripts/`.
-- **The seven-or-eight sibling rule inside a root row.** Nothing counts
+- **The seven-to-nine sibling rule inside a root row.** Nothing counts
   siblings. The 12 root rows are the product-domain index and are the deliberate
   exception; nesting them under a generic wrapper would add a click without
   narrowing the reader's question.
@@ -769,8 +773,8 @@ order):
    start, the one decision that shapes everything else (versioned vs direct vs
    hybrid), and the brownfield entry.
 2. **Versioned migrations** — "How do I review and replay database changes as
-   files?" The landing row opens the generate → apply → rollback → integrity →
-   maintain → import lifecycle.
+   files?" Its overview introduces the generate → apply → rollback → integrity
+   → maintain → import lifecycle.
 3. **Direct schema changes** — "How do I inspect, plan, approve, and apply a
    change without a migration file?" It is the peer schema path to versioned
    migrations.
@@ -791,8 +795,8 @@ order):
    CLI?" The Go API and the agent surfaces, discoverable without sitting on
    the path a new reader walks.
 11. **Atlas compatibility** — "I'm coming from Atlas / need parity evidence."
-   Its overview is the linked landing row; commands and evidence remain in
-   their focused subgroups.
+   Its overview is the first child; commands and evidence remain in their
+   focused subgroups.
 12. **Concepts and reference** — "What exactly does X mean / accept?" Last,
    because they serve returning readers, and split by what is being looked up:
    a concept, a command, a file format, or a rule.
@@ -809,9 +813,6 @@ their backing material justified it, while MySQL/MariaDB launched as a
 Adopted, in Ptah terms:
 
 - Navigation by database-work domain rather than by how the docs accumulated.
-- Linked, expandable root rows for lifecycle landing pages. Ptah uses its own
-  domains and labels; the Atlas comparison established the interaction, not the
-  taxonomy.
 - The versioned/direct decision surfaced early (`start/choose-a-workflow`)
   instead of buried in a comparison table.
 - Large workflows decomposed into focused lifecycle pages instead of one hub.
@@ -822,6 +823,9 @@ Adopted, in Ptah terms:
 
 Rejected or adapted:
 
+- Linked group headings. Ptah keeps every group heading as a disclosure
+  control and every landing page as an explicit child link, so the same click
+  has the same meaning in every group.
 - No "Cloud" group or partner catalog. Ptah's `Integrations` row contains its
   Go and agent surfaces, while distribution stays under its own operational
   row.

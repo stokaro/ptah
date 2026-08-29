@@ -113,25 +113,19 @@ flattens whatever it finds, so the cap is a reading rule that review holds, as
 is the rule that no list inside a root row runs much past eight.
 
 A Starlight group carries a `label` and `items`, but no `link` or `slug`.
-`src/components/Sidebar.astro` and `SidebarSublist.astro` provide the linked
-group interaction: when the first entry is labeled `Overview`, the renderer
-puts that link on the expandable group row and leaves the duplicate child out
-of the visible list. `src/lib/sidebar.mjs` owns that recognition for the
-renderer and breadcrumbs. Keep the `Overview` entry in `src/sidebar.mjs`; it is
-the single route source for page health, pagination, and page context.
-
-`collapsed: true` hides a subgroup's items until the reader opens it, and opens
-the group anyway whenever the current page is inside it. The link and expansion
-control are separate interactive elements, so following the landing page does
-not also toggle the group.
+The group heading is always a disclosure control. Put a landing page first in
+the group's `items` as an ordinary child link. Use `Overview` when the page
+title repeats the group label, or give the child a more specific label when it
+answers a narrower question. `collapsed: true` hides a subgroup's items until
+the reader opens it, and opens the group anyway whenever the current page is
+inside it.
 
 ## Page context and actions
 
 `src/components/PageTitle.astro` replaces Starlight's page-title component. It
 derives each breadcrumb from the rendered sidebar tree, including its current
-page marker, so the page hierarchy has no second label map to maintain. A group
-landing page uses the group label as the current crumb instead of `Overview`.
-The home crumb uses Starlight's version-aware site URL.
+page marker, so the page hierarchy has no second label map to maintain. The
+home crumb uses Starlight's version-aware site URL.
 
 `Copy page` reads a generated Markdown representation from
 `page-source/<page-id>.md`. The endpoint strips frontmatter, restores the title
