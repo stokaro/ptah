@@ -186,15 +186,9 @@ echo "check-gate-selftests: breaking each gate's own rule and requiring it to no
 # paths.sh reads this file too and would find its own fixture. Its exclusion
 # list names only the gate itself, which is the right list: a harness that had
 
-run_case check-go-module-lint-coverage.sh \
-	"working-directory for the nested module removed from one job" \
-	"perl -0pi -e 's|working-directory: examples/orm-loaders/gorm||' .github/workflows/go-lint.yml"
 
 
 
-run_case check-goreleaser-artifact-names.sh \
-	"the snapshot version taken from whatever tag git describe reaches" \
-	"perl -0pi -e 's|version_template: \"0\\.0\\.0-SNAPSHOT-\\{\\{ \\.ShortCommit \\}\\}\"|version_template: \"{{ .Version }}-SNAPSHOT-{{ .ShortCommit }}\"|' .goreleaser.yaml"
 
 run_case check-brand-assets.sh \
 	"the favicon drifting away from the header logo" \

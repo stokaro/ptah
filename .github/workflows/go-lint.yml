@@ -131,7 +131,10 @@ jobs:
         run: scripts/check-renovate-regex.sh
 
       - name: Check goreleaser artifact names
-        run: scripts/check-goreleaser-artifact-names.sh
+        run: |
+          set -euo pipefail
+          scripts/check-goreleaser-artifact-names-selftest.sh
+          scripts/check-goreleaser-artifact-names.sh
 
       # One step for every generated documentation block: the lint rules, the
       # agent-surface tables, the two command indexes, the strict-mode
@@ -186,7 +189,10 @@ jobs:
         run: make lint-nolintguard
 
       - name: Check every Go module is linted
-        run: scripts/check-go-module-lint-coverage.sh
+        run: |
+          set -euo pipefail
+          scripts/check-go-module-lint-coverage-selftest.sh
+          scripts/check-go-module-lint-coverage.sh
 
       - name: Check test style baseline
         run: scripts/check-test-style.sh
