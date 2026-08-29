@@ -27,16 +27,18 @@
 //
 // THE SHAPE OF THE TREE. A group may contain a group, recursively — Starlight's
 // `items` schema is a lazy union that includes the group schema itself. This
-// sidebar uses exactly two levels, group → subgroup → page, and that cap is a
-// reading rule rather than a limit anything enforces: a third level would pass
-// every gate in this directory. Hold it in review, along with the rule that no
-// list of siblings runs past about eight.
+// sidebar uses at most two levels below a root row, group → subgroup → page,
+// and that cap is a reading rule rather than a limit anything enforces: a third
+// level would pass every gate in this directory. Hold it in review, along with
+// the rule that no list inside a root row runs past about eight.
 //
 // A group carries a `label` and `items` and nothing else that navigates: the
-// schema has no `link` and no `slug`, and it renders as a `<summary>` rather
-// than an `<a>`, so a group heading can never be clicked through to a page. An
-// index page is therefore an ordinary first item inside its own group, labeled
-// `Overview` where the page title would otherwise repeat the group label.
+// schema has no `link` or `slug`. Ptah's Sidebar override recognizes an
+// ordinary first item labeled `Overview`, renders its link on the expandable
+// group row, and leaves the duplicate child out of the visible list. The item
+// stays here as the single route source for Starlight, the docs gates,
+// pagination, and breadcrumbs. `src/lib/sidebar.mjs` owns that recognition for
+// every consumer.
 //
 // Only four entry shapes are safe here, because `scripts/lib/docroutes.mjs`
 // tests `items` before `link`: a bare slug string, `{ slug }`, `{ slug, label }`
@@ -62,102 +64,97 @@ export const sidebar = [
     ],
   },
   {
-    label: 'Workflows',
+    label: 'Versioned migrations',
     items: [
-      {
-        label: 'Versioned migrations',
-        items: [
-          { slug: 'versioned/overview', label: 'Overview' },
-          { slug: 'versioned/generate' },
-          { slug: 'versioned/apply' },
-          { slug: 'versioned/rollback' },
-          { slug: 'versioned/integrity-and-safety' },
+      { slug: 'versioned/overview', label: 'Overview' },
+      { slug: 'versioned/generate' },
+      { slug: 'versioned/apply' },
+      { slug: 'versioned/rollback' },
+      { slug: 'versioned/integrity-and-safety' },
       { slug: 'versioned/lint' },
-          { slug: 'versioned/maintain-history' },
-          { slug: 'versioned/import' },
-          { slug: 'versioned/checkpoints' },
+      { slug: 'versioned/maintain-history' },
+      { slug: 'versioned/import' },
+      { slug: 'versioned/checkpoints' },
+    ],
+  },
+  {
+    label: 'Direct schema changes',
+    items: [
+      { slug: 'direct/overview', label: 'Overview' },
+      { slug: 'direct/inspect' },
+      { slug: 'direct/compare-and-drift' },
+      { slug: 'direct/plan-and-approve' },
+      { slug: 'direct/apply' },
+    ],
+  },
+  {
+    label: 'Inference migrations',
+    items: [
+      { slug: 'inference/overview', label: 'Overview' },
+      { slug: 'inference/quick-start' },
+      {
+        label: 'Concepts',
+        items: [
+          { slug: 'inference/concepts/embeddings-and-inference-state' },
+          { slug: 'inference/concepts/generations' },
+          { slug: 'inference/concepts/lifecycle' },
+          { slug: 'inference/concepts/consistency' },
+          { slug: 'inference/concepts/verification-and-cutover' },
+          { slug: 'inference/concepts/security-and-data-boundaries' },
         ],
       },
       {
-        label: 'Direct schema changes',
+        label: 'Guides',
         items: [
-          { slug: 'direct/overview', label: 'Overview' },
-          { slug: 'direct/inspect' },
-          { slug: 'direct/compare-and-drift' },
-          { slug: 'direct/plan-and-approve' },
-          { slug: 'direct/apply' },
+          { slug: 'inference/guides/create-first-generation' },
+          { slug: 'inference/guides/migrate-to-another-model' },
+          { slug: 'inference/guides/migrate-a-live-table' },
+          { slug: 'inference/guides/migrate-a-paused-source' },
+          { slug: 'inference/guides/resume-and-recover' },
+          { slug: 'inference/guides/rollback-and-retire' },
         ],
       },
       {
-        label: 'Inference migrations',
+        label: 'Strategies',
         items: [
-          { slug: 'inference/overview', label: 'Overview' },
-          { slug: 'inference/quick-start' },
-          {
-            label: 'Concepts',
-            items: [
-              { slug: 'inference/concepts/embeddings-and-inference-state' },
-              { slug: 'inference/concepts/generations' },
-              { slug: 'inference/concepts/lifecycle' },
-              { slug: 'inference/concepts/consistency' },
-              { slug: 'inference/concepts/verification-and-cutover' },
-              { slug: 'inference/concepts/security-and-data-boundaries' },
-            ],
-          },
-          {
-            label: 'Guides',
-            items: [
-              { slug: 'inference/guides/create-first-generation' },
-              { slug: 'inference/guides/migrate-to-another-model' },
-              { slug: 'inference/guides/migrate-a-live-table' },
-              { slug: 'inference/guides/migrate-a-paused-source' },
-              { slug: 'inference/guides/resume-and-recover' },
-              { slug: 'inference/guides/rollback-and-retire' },
-            ],
-          },
-          {
-            label: 'Strategies',
-            items: [
-              { slug: 'inference/strategies/choose-a-consistency-mode' },
-              { slug: 'inference/strategies/choose-a-target-layout' },
-              { slug: 'inference/strategies/plan-provider-capacity' },
-              { slug: 'inference/strategies/plan-vector-indexes' },
-              { slug: 'inference/strategies/production-rollout' },
-            ],
-          },
-          {
-            label: 'Reference',
-            items: [
-              { slug: 'inference/reference/specification' },
-              { slug: 'inference/reference/commands' },
-              { slug: 'inference/reference/run-status-and-findings' },
-              { slug: 'inference/reference/support-and-limitations' },
-            ],
-          },
-          { slug: 'inference/troubleshooting' },
+          { slug: 'inference/strategies/choose-a-consistency-mode' },
+          { slug: 'inference/strategies/choose-a-target-layout' },
+          { slug: 'inference/strategies/plan-provider-capacity' },
+          { slug: 'inference/strategies/plan-vector-indexes' },
+          { slug: 'inference/strategies/production-rollout' },
         ],
       },
       {
-        label: 'Test and CI',
+        label: 'Reference',
         items: [
-          { slug: 'testing/migrations-and-schema' },
-          { slug: 'testing/ci' },
+          { slug: 'inference/reference/specification' },
+          { slug: 'inference/reference/commands' },
+          { slug: 'inference/reference/run-status-and-findings' },
+          { slug: 'inference/reference/support-and-limitations' },
         ],
       },
-      {
-        label: 'Load data',
-        items: [
-          { slug: 'versioned/reference-data' },
-          { slug: 'operate/seed-data' },
-        ],
-      },
-      {
-        label: 'Distribute and operate',
-        items: [
-          { slug: 'operate/oci-registry' },
-          { slug: 'operate/troubleshooting' },
-        ],
-      },
+      { slug: 'inference/troubleshooting' },
+    ],
+  },
+  {
+    label: 'Test and CI',
+    items: [
+      { slug: 'testing/migrations-and-schema' },
+      { slug: 'testing/ci' },
+    ],
+  },
+  {
+    label: 'Load data',
+    items: [
+      { slug: 'versioned/reference-data' },
+      { slug: 'operate/seed-data' },
+    ],
+  },
+  {
+    label: 'Distribute and operate',
+    items: [
+      { slug: 'operate/oci-registry' },
+      { slug: 'operate/troubleshooting' },
     ],
   },
   {

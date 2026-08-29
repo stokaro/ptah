@@ -107,23 +107,31 @@ needs something at the other end: a `slug:` names a page, an internal `link:`
 names a route the site publishes or a redirect `astro.config.mjs` declares.
 Either kind counts as coverage. External `link:` values are left alone.
 
-The tree is two levels: a top-level group holds subgroups, a subgroup holds
-pages. Starlight nests groups to any depth and the gate flattens whatever it
-finds, so the cap is a reading rule that review holds, as is the rule that no
-list of siblings runs much past eight. A group carries a `label` and `items`
-and nothing that navigates -- the schema has no `link` and no `slug`, and the
-heading renders as a `<summary>` rather than an `<a>` -- so a section index is
-an ordinary first item inside its own group, labeled `Overview` where the page
-title would otherwise repeat the group label. `collapsed: true` hides a
-subgroup's items until the reader opens it, and opens the group anyway
-whenever the current page is inside it.
+The root list names product domains directly. A root row may hold pages or one
+further subgroup level. Starlight nests groups to any depth and the gate
+flattens whatever it finds, so the cap is a reading rule that review holds, as
+is the rule that no list inside a root row runs much past eight.
+
+A Starlight group carries a `label` and `items`, but no `link` or `slug`.
+`src/components/Sidebar.astro` and `SidebarSublist.astro` provide the linked
+group interaction: when the first entry is labeled `Overview`, the renderer
+puts that link on the expandable group row and leaves the duplicate child out
+of the visible list. `src/lib/sidebar.mjs` owns that recognition for the
+renderer and breadcrumbs. Keep the `Overview` entry in `src/sidebar.mjs`; it is
+the single route source for page health, pagination, and page context.
+
+`collapsed: true` hides a subgroup's items until the reader opens it, and opens
+the group anyway whenever the current page is inside it. The link and expansion
+control are separate interactive elements, so following the landing page does
+not also toggle the group.
 
 ## Page context and actions
 
 `src/components/PageTitle.astro` replaces Starlight's page-title component. It
 derives each breadcrumb from the rendered sidebar tree, including its current
-page marker, so the page hierarchy has no second label map to maintain. The
-home crumb uses Starlight's version-aware site URL.
+page marker, so the page hierarchy has no second label map to maintain. A group
+landing page uses the group label as the current crumb instead of `Overview`.
+The home crumb uses Starlight's version-aware site URL.
 
 `Copy page` reads a generated Markdown representation from
 `page-source/<page-id>.md`. The endpoint strips frontmatter, restores the title
