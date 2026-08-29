@@ -295,6 +295,13 @@ func reverseSchemaDiffWithSchemaForDialect(
 		reversed.ConstraintsAdded = append(reversed.ConstraintsAdded, restored.Name)
 		reversed.ConstraintsAddedWithTables = append(reversed.ConstraintsAddedWithTables, restored)
 	}
+	// The tables those constraint changes name, as the PRE-CHANGE database
+	// declared them: a rollback rebuilds the table that database had, so the
+	// columns, indexes and triggers the rebuild renders are its. Filled last
+	// because the two lists it reads are still being appended to above
+	// (stokaro/ptah#2315).
+	reversed.DeclaredConstraintHosts = difftypes.ConstraintHostDeclarationsOf(
+		prior, reversed.ConstraintsAddedWithTables, reversed.ConstraintsRemovedWithTables, semantics)
 	return reversed
 }
 

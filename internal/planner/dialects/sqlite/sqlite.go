@@ -582,7 +582,7 @@ func (p *Planner) rebuildTable(
 ) ([]ast.Node, error) {
 	if !declared.HasTable() {
 		return nil, unsupportedFeaturef(
-			"rebuilding table %s requires its desired definition, and the declaration does not contain it. "+
+			"rebuilding table %s requires its desired definition, and the diff carries none for it. "+
 				"Declare the table, or drop it instead of changing it",
 			target.tableName)
 	}
@@ -670,10 +670,6 @@ func availableRebuildTableName(
 		"rebuilding table %s found no free scratch table name: %s and %d numbered variants are all taken. "+
 			"Rename or drop one of them in a separate migration first",
 		table.QualifiedName(), base, rebuildTableNameAttempts-1)
-}
-
-func findTable(tables []schemamodel.Table, name string, semantics identifier.Semantics) *schemamodel.Table {
-	return objectlookup.Qualified(tables, name, semantics)
 }
 
 func tableNameCollides(tables []schemamodel.Table, target schemamodel.Table, name string) bool {
@@ -1166,8 +1162,15 @@ func userDefinedTypeNames(diff *difftypes.SchemaDiff) []string {
 // declarationForRebuild answers with the declaration a rebuild renders from.
 //
 // A modification carries it. A table reached only through a constraint change
-// has no modification, so it is assembled here from the declaration, which is
-// the one place this planner still reads one for a rebuild.
+// has no modification, so it comes from the carry the comparison fills for
+// exactly those hosts -- and the reversal fills from the pre-change schema, so
+// a rollback rebuilds the table that database had rather than the one the
+// change was moving to.
+//
+// The lookup is [objectlookup.Find] over the carry, the same three-tier rule
+// the declaration scan it replaces used. A host arrives spelled the way its
+// record wrote it, which is not always the way the declaration spells the
+// table.
 func declarationForRebuild(
 	diff *difftypes.SchemaDiff,
 	desired *schemamodel.Database,
@@ -1178,9 +1181,13 @@ func declarationForRebuild(
 			return tableDiff.Desired
 		}
 	}
-	table := findTable(desired.Tables, tableName, diff.EffectiveIdentifierSemantics(DialectName))
-	if table == nil {
+	semantics := diff.EffectiveIdentifierSemantics(DialectName)
+	declared := objectlookup.Find(
+		diff.DeclaredConstraintHosts, tableName, semantics,
+		func(host difftypes.TableDeclaration) string { return host.Table.QualifiedName() },
+	)
+	if declared == nil {
 		return difftypes.TableDeclaration{}
 	}
-	return difftypes.TableDeclarationFor(desired, *table)
+	return *declared
 }
