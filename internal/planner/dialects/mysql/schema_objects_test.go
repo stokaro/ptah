@@ -54,6 +54,13 @@ func TestPlanner_GenerateMigrationAST_ViewsAndTriggersModified(t *testing.T) {
 	c.Assert(sql, qt.Contains, "CREATE TRIGGER set_updated_at BEFORE UPDATE ON users FOR EACH ROW SET NEW.updated_at = NOW();")
 }
 
+// TestPlanner_GenerateMigrationAST_RejectsUniqueIncludeColumns states the
+// constraint in the DIFF alone.
+//
+// It used to state it in both the diff and the declaration, which made either
+// half of the refusal sufficient and neither of them measured. The declaration
+// is empty here, so this asserts the record-driven half and nothing else
+// (stokaro/ptah#2315).
 func TestPlanner_GenerateMigrationAST_RejectsUniqueIncludeColumns(t *testing.T) {
 	c := qt.New(t)
 	planner := mysql.New()
@@ -68,7 +75,29 @@ func TestPlanner_GenerateMigrationAST_RejectsUniqueIncludeColumns(t *testing.T) 
 			IncludeColumns: []string{"updated_at"},
 		}},
 	}
+
+	_, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, "MySQL-family does not support PostgreSQL INCLUDE columns on UNIQUE constraints.*")
+}
+
+// TestPlanner_GenerateMigrationAST_ACoveringUniqueThePlanDoesNotTouch is the
+// control that makes the test above measure something.
+//
+// The declaration holds the same constraint and the diff does not, so a
+// refusal here would be about a document rather than about this plan -- and a
+// plan that does nothing would refuse to do it. That fact is real and wider
+// than one family: `ptah schema render --dialect mysql` prints the constraint
+// without its INCLUDE and exits 0, on five dialects. stokaro/ptah#2538 is where
+// it is answered, at the point a declaration meets a target.
+//
+// Without this control, deleting the refusal outright would leave the test
+// above passing on a planner that had stopped refusing anything.
+func TestPlanner_GenerateMigrationAST_ACoveringUniqueThePlanDoesNotTouch(t *testing.T) {
+	c := qt.New(t)
 	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
 		Constraints: []schemamodel.Constraint{{
 			StructName:     "User",
 			Name:           "users_email_key",
@@ -79,10 +108,10 @@ func TestPlanner_GenerateMigrationAST_RejectsUniqueIncludeColumns(t *testing.T) 
 		}},
 	}
 
-	_, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+	nodes, err := mysql.New().GenerateMigrationAST(&difftypes.SchemaDiff{}, desired)
 
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, "MySQL-family does not support PostgreSQL INCLUDE columns on UNIQUE constraints.*")
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 0)
 }
 
 func TestPlanner_GenerateSchemaDiffSQLStatements_CompoundTriggerBody(t *testing.T) {

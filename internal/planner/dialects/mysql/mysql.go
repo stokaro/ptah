@@ -1192,7 +1192,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 		return nil, err
 	}
 
-	if err := p.rejectUniqueIncludeConstraints(diff, desired); err != nil {
+	if err := p.rejectUniqueIncludeConstraints(diff); err != nil {
 		return nil, err
 	}
 
@@ -1339,23 +1339,30 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	return result, nil
 }
 
-func (p *Planner) rejectUniqueIncludeConstraints(diff *difftypes.SchemaDiff, desired *schemamodel.Database) error {
-	if diff != nil {
-		for _, add := range diff.ConstraintsAddedWithTables {
-			if !strings.EqualFold(add.Type, "UNIQUE") || len(add.IncludeColumns) == 0 {
-				continue
-			}
-			return p.uniqueIncludeUnsupportedError(add.Name)
-		}
-	}
-	if desired == nil {
+// rejectUniqueIncludeConstraints refuses a covering UNIQUE this plan would have
+// to create on a target that has no INCLUDE clause for one.
+//
+// It asks the diff, and only the diff. The question is about what this plan
+// does: a constraint the plan creates cannot be created covering, and one the
+// plan does not touch is not this plan's to refuse. Every way a covering UNIQUE
+// reaches a statement here is an addition record -- a new table's table-level
+// constraints arrive as additions too, measured through the comparison rather
+// than assumed.
+//
+// A declaration holding such a constraint that this plan does not act on is a
+// document that cannot target this family at all, which is a wider fact than a
+// plan: `ptah schema render` drops the clause on five dialects without saying
+// so, and stokaro/ptah#2538 is where that belongs -- at the point a declaration
+// meets a target, covering every producer rather than this one path.
+func (p *Planner) rejectUniqueIncludeConstraints(diff *difftypes.SchemaDiff) error {
+	if diff == nil {
 		return nil
 	}
-	for _, constraint := range desired.Constraints {
-		if !strings.EqualFold(constraint.Type, "UNIQUE") || len(constraint.IncludeColumns) == 0 {
+	for _, add := range diff.ConstraintsAddedWithTables {
+		if !strings.EqualFold(add.Type, "UNIQUE") || len(add.IncludeColumns) == 0 {
 			continue
 		}
-		return p.uniqueIncludeUnsupportedError(constraint.Name)
+		return p.uniqueIncludeUnsupportedError(add.Name)
 	}
 	return nil
 }
