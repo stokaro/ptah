@@ -258,14 +258,27 @@ restricted_path() {
 
 python3 -u -m http.server 0 --bind 127.0.0.1 --directory "$site" >"$work/server.log" 2>&1 &
 server_pid=$!
+
+# The wait is a wall-clock deadline, not an iteration count. A count is a budget
+# that shrinks on the machine that most needs it: every turn of the loop pays for
+# two forks as well as its sleep, so "100 iterations of 0.1s" is ten seconds on a
+# fast machine and fifteen on a slow one -- while the thing being waited for, a
+# cold interpreter reaching its first bind, is slower there too. The macOS leg of
+# this job timed out here on every run it ever made (stokaro/ptah#2533).
+server_deadline=$((SECONDS + 60))
 port=""
-for _ in $(seq 1 100); do
+while [ "$SECONDS" -lt "$server_deadline" ]; do
 	port="$(sed -n 's/.*port \([0-9][0-9]*\).*/\1/p' "$work/server.log" | head -n 1)"
 	[ -n "$port" ] && break
-	sleep 0.1
+	sleep 0.2
 done
 if [ -z "$port" ]; then
-	echo "check-install-script: the fixture server did not report a port" >&2
+	# An empty server.log is what this said the first time, and it sends the
+	# reader nowhere: it cannot tell a missing interpreter from a slow one from a
+	# process that died without a word. These three lines answer that.
+	echo "check-install-script: the fixture server did not report a port within 60 seconds" >&2
+	echo "  python3: $(command -v python3 || echo "not on PATH")" >&2
+	ps -p "$server_pid" -o pid=,stat=,comm= >&2 || echo "  the server process is gone" >&2
 	cat "$work/server.log" >&2
 	exit 1
 fi
