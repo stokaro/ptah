@@ -77,10 +77,17 @@ func TestPlannerDoesNotWriteToARelationTheSchemaNeverDeclaredLive(t *testing.T) 
 					{StructName: "User", Name: "note", Type: "TEXT"},
 				},
 			}
-			diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
-				TableName:    "app.users",
-				ColumnsAdded: difftypes.ColumnChanges{{StructName: "User", Name: "note", Type: "TEXT"}},
-			}}}
+			diff := &difftypes.SchemaDiff{
+				TablesModified: []difftypes.TableDiff{{
+					TableName:    "app.users",
+					ColumnsAdded: difftypes.ColumnChanges{{StructName: "User", Name: "note", Type: "TEXT"}},
+				}},
+				// The declared tables a comparison fills. The planner asks this list
+				// whether `app.users` is declared at all, which is the whole subject
+				// of this test: one row declares it and one declares `reporting.users`
+				// instead.
+				DeclaredTables: desired.Tables,
+			}
 
 			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, "postgres")
 			c.Assert(err, qt.IsNil)
