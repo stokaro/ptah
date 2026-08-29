@@ -2,11 +2,13 @@ package viz_test
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -175,10 +177,52 @@ func TestSVGReportsGraphvizStderrOnFailure(t *testing.T) {
 		"--format", "svg",
 	})
 
-	err := cmd.Execute()
+	// A deadline of this test's own, because the assertion is about the
+	// diagnostic and not about the clock. The render used to impose ten seconds
+	// on every caller, so on a loaded machine the fake `dot` lost to that
+	// deadline and this reported a broken Graphviz diagnostic when the
+	// diagnostic was fine -- twice, in one sitting.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	err := cmd.ExecuteContext(ctx)
 
 	c.Assert(err, qt.ErrorMatches, `render SVG with Graphviz dot: .*: graphviz exploded`)
 	c.Assert(stderr.String(), qt.Contains, "graphviz exploded")
+}
+
+// TestSVGRespectsTheCallersDeadline is the property the fix adds: a caller that
+// named a budget keeps it.
+//
+// A deadline already past means the render must not run at all, and the failure
+// has to name the deadline rather than Graphviz -- which is what distinguishes
+// "the caller's context governs" from "the default happened to be longer".
+func TestSVGRespectsTheCallersDeadline(t *testing.T) {
+	testutils.SkipWithoutPOSIXShell(t)
+	skipOnWindows(t)
+	c := qt.New(t)
+	dir := t.TempDir()
+	writeModel(c, dir)
+	binDir := t.TempDir()
+	dotPath := filepath.Join(binDir, "dot")
+	c.Assert(os.WriteFile(dotPath, []byte("#!/bin/sh\nexit 0\n"), 0o600), qt.IsNil)
+	c.Assert(os.Chmod(dotPath, 0o700), qt.IsNil)
+	t.Setenv("PATH", binDir)
+
+	cmd := viz.NewCommand()
+	var stderr bytes.Buffer
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{
+		"--root-dir", dir,
+		"--format", "svg",
+	})
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	err := cmd.ExecuteContext(ctx)
+
+	c.Assert(err, qt.ErrorIs, context.DeadlineExceeded)
 }
 
 func skipOnWindows(t *testing.T) {
