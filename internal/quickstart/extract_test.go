@@ -105,6 +105,19 @@ func TestExtract_FileBlockBecomesAFileWrite(t *testing.T) {
 	}
 }
 
+func TestExtract_ConsoleBlockRunsInBothShells(t *testing.T) {
+	c := qt.New(t)
+	source := []byte("---\ntitle: Neutral command\nquickstart: true\n---\n\n```console\nptah version\n```\n")
+
+	page, err := quickstart.Extract("neutral.mdx", source)
+	c.Assert(err, qt.IsNil)
+	for _, shell := range quickstart.Shells() {
+		found := program(c, page, shell)
+		c.Assert(found.Steps(), qt.Equals, 1)
+		c.Assert(found.Actions[0].Body, qt.Equals, "ptah version")
+	}
+}
+
 // TestExtract_StreamComesFromTheIntroducingSentence pins the tie between the
 // sentence the reader is shown and the stream the runner asserts against. They
 // are one mechanism on purpose: a page that stops saying which stream stops

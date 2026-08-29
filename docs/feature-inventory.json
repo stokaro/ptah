@@ -876,31 +876,31 @@
   ],
   "runnable_examples": [
     {
-      "page": "docs/site/src/content/docs/start/quick-start-direct.mdx",
-      "shells": [
-        {
-          "shell": "bash",
-          "steps": 13,
-          "expectations": 9
-        },
-        {
-          "shell": "powershell",
-          "steps": 13,
-          "expectations": 9
-        }
-      ]
-    },
-    {
       "page": "docs/site/src/content/docs/start/quick-start-migrations.mdx",
       "shells": [
         {
           "shell": "bash",
-          "steps": 12,
+          "steps": 6,
           "expectations": 8
         },
         {
           "shell": "powershell",
-          "steps": 12,
+          "steps": 6,
+          "expectations": 8
+        }
+      ]
+    },
+    {
+      "page": "docs/site/src/content/docs/start/quick-start.mdx",
+      "shells": [
+        {
+          "shell": "bash",
+          "steps": 6,
+          "expectations": 8
+        },
+        {
+          "shell": "powershell",
+          "steps": 6,
           "expectations": 8
         }
       ]

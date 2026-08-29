@@ -1,0 +1,248 @@
+---
+title: Other installation methods
+description: Pin or customize the installer, use Homebrew or Go, verify release artifacts, and build Ptah from source.
+type: reference
+audience:
+  - new-user
+  - ci-operator
+  - security-reviewer
+readerQuestion: Which Ptah installation and artifact-verification options are available?
+goal: Choose and verify an installation route beyond the default release script.
+sourceOfTruth:
+  - docs/site/public/install.sh
+  - docs/site/public/install.ps1
+  - .github/workflows/release.yml
+  - Makefile
+generated: false
+searchAliases:
+  - install Ptah with Homebrew
+  - verify Ptah checksum
+  - build Ptah from source
+overlaps:
+  - /start/install/
+disposition: keep
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+The [default installer](../install/) is the shortest supported route. Use this
+page when you need a pinned version, a custom destination, a package manager, a
+manual verification trail, or a binary built from source.
+
+## Inspect the installer before running it
+
+<Tabs syncKey="install-platform">
+<TabItem label="Linux and macOS">
+
+```bash
+curl -fsSL https://stokaro.github.io/ptah/install.sh -o install.sh
+less install.sh
+sh ./install.sh
+```
+
+</TabItem>
+<TabItem label="Windows">
+
+```powershell
+irm https://stokaro.github.io/ptah/install.ps1 -OutFile install.ps1
+Get-Content install.ps1 | more
+& ./install.ps1
+```
+
+</TabItem>
+</Tabs>
+
+The downloaded files are the same scripts used by the one-line installer.
+
+## Pin or customize the release installer
+
+Pin a release tag in automation:
+
+```bash
+curl -fsSL https://stokaro.github.io/ptah/install.sh | sh -s -- --version vX.Y.Z
+```
+
+PowerShell can pass the same choice through the environment when the script is
+piped into `iex`:
+
+```powershell
+$env:PTAH_INSTALL_VERSION = 'vX.Y.Z'
+irm https://stokaro.github.io/ptah/install.ps1 | iex
+```
+
+The shell installer options and their environment equivalents are:
+
+| Option | Environment variable | Result |
+| --- | --- | --- |
+| `--version <tag>` | `PTAH_INSTALL_VERSION` | Install one release instead of resolving the newest tag. |
+| `--bin-dir <dir>` | `PTAH_INSTALL_DIR` | Install into another directory. |
+| `--only <list>` | `PTAH_INSTALL_BINARIES` | Install a comma-separated subset of `ptah`, `ptah-compat`, and `ptah-ls`. |
+| `--no-modify-path` | `PTAH_INSTALL_NO_MODIFY_PATH` | Leave GitHub Actions and the Windows user `Path` unchanged. |
+| `--verify-signature` | `PTAH_INSTALL_VERIFY_SIGNATURE` | Verify `checksums.txt` with cosign and fail when cosign is unavailable. |
+| `--dry-run` | `PTAH_INSTALL_DRY_RUN` | Print the plan without downloading or writing. |
+| `--quiet` | `PTAH_INSTALL_QUIET` | Report errors only. |
+| — | `PTAH_INSTALL_BASE_URL` | Read release assets from a mirror. |
+
+PowerShell spells the options `-Version`, `-BinDir`, `-Only`, `-NoModifyPath`,
+`-VerifySignature`, `-DryRun`, and `-Quiet`. Run the saved script with `-Help`,
+or the shell script with `--help`, for the current accepted values and exit
+codes.
+
+Boolean installer variables accept `1`, `0`, `true`, `false`, `yes`, or `no`.
+An empty or unknown value is a configuration error rather than a silent default.
+
+## Install with Homebrew
+
+Install the newest tagged release on macOS or Linux with Homebrew:
+
+```bash
+brew install stokaro/ptah/ptah
+```
+
+Install the current `master` branch instead:
+
+```bash
+brew install --HEAD stokaro/ptah/ptah-edge
+```
+
+The edge formula builds from source and therefore installs Go as a build
+dependency. It represents the development branch, not a released or signed
+archive. Refresh it explicitly with:
+
+```bash
+brew upgrade --fetch-HEAD ptah-edge
+```
+
+Both formulas provide binaries with the same names. Remove one formula before
+switching to the other so Homebrew does not leave the earlier links on `PATH`.
+
+## Install with the Go toolchain
+
+Install the native CLI from a tagged module version:
+
+```bash
+go install go.5x5.cz/ptah/cmd/ptah@vX.Y.Z
+```
+
+Install the compatibility binary and language server separately:
+
+```bash
+go install go.5x5.cz/ptah/cmd/ptah-compat@vX.Y.Z
+go install go.5x5.cz/ptah/cmd/ptah-ls@vX.Y.Z
+```
+
+The binaries land in `GOBIN`, or in `$(go env GOPATH)/bin` when `GOBIN` is
+unset. That directory is not automatically on `PATH`.
+
+## Build from a checkout
+
+```bash
+git clone https://github.com/stokaro/ptah.git
+cd ptah
+make build
+```
+
+`make build` writes `ptah`, `ptah-compat`, `ptah-ls`, and the integration-test
+runner under `bin/`. The build uses the toolchain declared in `go.mod`.
+
+Verify the source revision represented by the binary:
+
+```console
+bin/ptah version
+```
+
+The output names the exact commit and build date.
+
+## Install a release archive by hand
+
+Each release publishes one archive per supported host pair:
+
+| Host | Archive pattern |
+| --- | --- |
+| Linux amd64 | `ptah_<version>_linux_amd64.tar.gz` |
+| Linux arm64 | `ptah_<version>_linux_arm64.tar.gz` |
+| macOS amd64 | `ptah_<version>_darwin_amd64.tar.gz` |
+| macOS arm64 | `ptah_<version>_darwin_arm64.tar.gz` |
+| Windows amd64 | `ptah_<version>_windows_amd64.zip` |
+| Windows arm64 | `ptah_<version>_windows_arm64.zip` |
+
+The tag includes a leading `v`; the archive's embedded version does not. For
+example, tag `vX.Y.Z` contains `ptah_X.Y.Z_linux_amd64.tar.gz`.
+
+Download the archive and `checksums.txt` from the same release, then compare the
+archive against the line that names it. On Linux:
+
+```bash
+sha256sum --ignore-missing -c checksums.txt
+```
+
+On macOS:
+
+```bash
+shasum -a 256 --ignore-missing -c checksums.txt
+```
+
+`--ignore-missing` matters because the checksum file names every release asset,
+while you downloaded only one archive. Stop if the matching line does not say
+`OK`.
+
+The archive has no top-level directory. Extract it into a temporary directory,
+then install the three binaries by name so `LICENSE` and `README.md` do not land
+in the binary directory.
+
+## Verify the release signature
+
+The release workflow signs `checksums.txt` with Sigstore. After downloading
+`checksums.txt`, `checksums.txt.sig`, and `checksums.txt.pem`, verify the checksum
+file before using it to trust an archive:
+
+```bash
+cosign verify-blob \
+  --certificate checksums.txt.pem \
+  --signature checksums.txt.sig \
+  --certificate-identity-regexp '^https://github.com/stokaro/ptah/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  checksums.txt
+```
+
+Then run the SHA-256 comparison for the archive. Signature verification and
+archive checksum verification answer different questions; use both when the
+release provenance is part of your trust decision.
+
+## Shell completion and editor support
+
+Generate shell completion from the installed native binary:
+
+```console
+ptah completion --help
+```
+
+Install the output using your shell's normal completion directory. The command
+help provides the current Bash, Zsh, Fish, and PowerShell forms.
+
+`ptah-ls` is included in release archives and by the default installer. See
+[Editor support](../../reference/go-annotations/#editor-support) for client
+configuration.
+
+## Optional tools
+
+Some features call external programs:
+
+- Graphviz `dot` renders SVG and image outputs from schema diagrams;
+- cosign verifies release signatures when requested;
+- Docker is needed only for workflows whose chosen database or fixture runs in
+  a container.
+
+The default SQLite quick start needs none of them.
+
+## Verify the chosen route
+
+Whichever route you use, finish with:
+
+```console
+ptah version
+ptah-compat version
+ptah-ls --version
+```
+
+Then continue to the [quick start](../quick-start/).

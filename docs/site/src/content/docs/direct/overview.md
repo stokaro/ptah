@@ -15,7 +15,7 @@ generated: false
 overlaps:
   - "/start/choose-a-workflow/"
   - "/direct/apply/"
-disposition: rewrite
+disposition: keep
 ---
 
 You have a description of the schema you want and a database that does not

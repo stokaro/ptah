@@ -170,6 +170,8 @@ func (s *scanner) block(open, end int, language string) error {
 		return s.step(open, Bash, body)
 	case "powershell", "pwsh", "ps1":
 		return s.step(open, PowerShell, body)
+	case "console":
+		return s.neutralStep(open, body)
 	case "sql":
 		return s.file(open, body)
 	case "text":
@@ -177,6 +179,20 @@ func (s *scanner) block(open, end int, language string) error {
 	default:
 		return nil
 	}
+}
+
+func (s *scanner) neutralStep(line int, body string) error {
+	if s.tabLabel != "" {
+		return &ExtractError{
+			Path: s.path, Line: line + 1,
+			Problem: "a console block is shell-neutral and must sit outside shell-specific tabs",
+		}
+	}
+	if strings.TrimSpace(body) == "" {
+		return &ExtractError{Path: s.path, Line: line + 1, Problem: "an empty console block runs nothing"}
+	}
+	s.entries = append(s.entries, entry{kind: ActionStep, line: line + 1, shells: Shells(), body: body})
+	return nil
 }
 
 func (s *scanner) step(line int, shell Shell, body string) error {

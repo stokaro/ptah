@@ -9,12 +9,13 @@
 //
 // A page opts in with `quickstart: true` in its frontmatter. Inside an opted-in
 // page the fence language decides what a block is: `bash` and `powershell`
-// blocks are steps, an `sql` block is a file the reader is told to write, and a
-// `text` block introduced by "… on standard output:" or "… on standard error:"
-// is an expectation for the step above it. Extract reports the shapes that
-// would otherwise be skipped in silence -- an output block introduced by
-// neither stream, a step-less expectation, a Bash block in a Windows tab --
-// because a skipped assertion reads exactly like a passing one.
+// blocks are shell-specific steps, a `console` block outside tabs is a command
+// sequence shared by both shells, an `sql` block is a file the reader is told
+// to write, and a `text` block introduced by "… on standard output:" or "… on
+// standard error:" is an expectation for the step above it. Extract reports
+// the shapes that would otherwise be skipped in silence -- an output block
+// introduced by neither stream, a step-less expectation, a Bash block in a
+// Windows tab -- because a skipped assertion reads exactly like a passing one.
 //
 // Run turns one page into one shell script per shell, in page order, and runs
 // it in a fresh working directory with a sentinel between steps so each step's

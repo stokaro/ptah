@@ -1,84 +1,180 @@
 ---
 title: Quick start
-description: Choose one of two schema quick starts. Persistent inference state uses a separate generation lifecycle.
-type: landing
+description: Apply and verify a first Ptah schema change against a disposable SQLite database.
+type: tutorial
 audience:
-  - "new-user"
-readerQuestion: "Which first Ptah workflow should I try?"
-goal: "Choose a first Ptah workflow to try."
+  - new-user
+readerQuestion: How do I get a verified Ptah result in five minutes?
+goal: Apply a desired schema to SQLite and verify the live database matches it.
 sourceOfTruth:
-  - "cmd/root"
-  - "cmd/schema"
-  - "cmd/migrations"
+  - cmd/schema
+  - cmd/db
+  - cmd/schema/apply_test.go
 generated: false
+searchAliases:
+  - first Ptah result
+  - apply desired schema
+  - SQLite quick start
 overlaps:
-  - "/start/choose-a-workflow/"
-  - "/start/quick-start-migrations/"
-  - "/start/quick-start-direct/"
-disposition: rewrite
+  - /direct/apply/
+  - /start/quick-start-direct/
+  - /start/choose-a-workflow/
+disposition: keep
+quickstart: true
 ---
 
-import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-These quick starts cover schema changes. Ptah reads a live database, works out
-how it differs from the schema you want, and changes it through migration files
-you keep in your repository or through a direct apply.
+Start with an empty directory. You will create one desired-schema file, preview
+the SQL Ptah plans, apply it to a local SQLite database, and read the live schema
+back. The result is disposable and needs no database server, Docker, or Go
+toolchain.
 
-To replace an embedding model or preprocessing contract without overwriting
-active vectors, use [Inference migrations](../../inference/overview/).
+## What you need
 
-Which of those two you try first is the only decision on this page.
+- A `ptah` binary on your `PATH`. [Install Ptah](../install/) if you do not have
+  one.
+- A terminal and about five minutes.
 
-## Pick one
+Confirm that the binary runs:
 
-<CardGrid>
-  <LinkCard
-    title="Versioned migrations"
-    href="../quick-start-migrations/"
-    description="You write the .up.sql and .down.sql files. Ptah seals the directory with a checksum, applies what is pending, records every applied migration in the database, and rolls them back on request. Choose this for shared and production databases, and wherever a change has to be reviewed as SQL before it runs."
-  />
-  <LinkCard
-    title="Direct schema changes"
-    href="../quick-start-direct/"
-    description="You keep one file that describes the schema you want. Ptah reads the live database, works out the difference, and applies it. Choose this for prototypes, local development, and databases with a single owner."
-  />
-</CardGrid>
+```console
+ptah version
+```
 
-Neither is a reduced form of the other, and a project can use both. If the
-choice matters more than five minutes of reading, [Choose a
-workflow](../choose-a-workflow/) sets out what each one costs and what it buys.
+The output names the version and platform. Their values depend on how you
+installed Ptah.
 
-## What both quick starts need
+## Step 1. Create the working files
 
-- A `ptah` binary on your `PATH`. [Install Ptah](../install/) covers the routes.
-- A terminal. Both Bash and PowerShell are shown on each page.
-- About five minutes.
+<Tabs syncKey="shell">
+<TabItem label="Bash">
 
-Both run against a local SQLite file, so neither needs a database server, a Go
-toolchain, or Docker. Both end by deleting the one directory they created.
+```bash
+mkdir ptah-quick-start
+cd ptah-quick-start
+cat > schema.sql <<'SQL'
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+SQL
+```
 
-## What the quick starts leave out
+</TabItem>
+<TabItem label="PowerShell">
 
-Each page runs one path so that it stays short. Three things they do not cover
-are worth knowing exist:
+```powershell
+New-Item -ItemType Directory ptah-quick-start | Out-Null
+Set-Location ptah-quick-start
+@'
+CREATE TABLE users (
+    id    INTEGER PRIMARY KEY,
+    email TEXT NOT NULL
+);
+'@ | Set-Content schema.sql
+```
 
-- **The other schema sources.** The direct quick start uses plain SQL. Ptah
-  reads the desired schema from YAML, HCL, and DBML files, from an external
-  loader, and from annotated Go structs, and every source parses into the same
-  internal representation. Go is one source among several, not the entry point.
-  See [Work with a desired schema](../../schema/work-with-a-source/).
-- **Migrations Ptah writes for you.** The two workflows meet at
-  `ptah migrations generate`, which turns the difference between a desired
-  schema and a live database into an ordinary migration pair. See
-  [Generate migrations](../../versioned/generate/).
-- **Engines other than SQLite.** The same commands take a PostgreSQL, MySQL, or
-  other supported database URL in place of the SQLite one. What each engine
-  accepts differs. See the
-  [database support matrix](../../databases/support-matrix/).
+</TabItem>
+</Tabs>
+
+`schema.sql` is the schema you want. `app.db` does not exist yet.
+
+## Step 2. Preview the plan
+
+```console
+ptah schema apply --schema-file schema.sql --db-url sqlite://app.db --dry-run
+```
+
+Expected output on standard output:
+
+```text
+Planned schema changes:
+CREATE TABLE "users" (
+  "id" INTEGER PRIMARY KEY,
+  "email" TEXT NOT NULL
+);
+```
+
+`--dry-run` opens the target to inspect its current schema but executes no
+planned statement.
+
+## Step 3. Apply the plan
+
+```console
+ptah schema apply --schema-file schema.sql --db-url sqlite://app.db --auto-approve
+```
+
+Expected output includes the reviewed plan, on standard output:
+
+```text
+Planned schema changes:
+CREATE TABLE "users" (
+  "id" INTEGER PRIMARY KEY,
+  "email" TEXT NOT NULL
+);
+```
+
+Expected output also includes the completion result, on standard output:
+
+```text
+Auto-approval enabled; applying schema changes.
+Schema apply completed successfully.
+```
+
+:::caution
+`--auto-approve` executes the displayed plan without prompting. This tutorial
+uses it only against the disposable `app.db` file. Preview with `--dry-run` and
+use an approval flow for a database you care about.
+:::
+
+## Step 4. Verify the live database
+
+```console
+ptah db read --db-url sqlite://app.db
+```
+
+Expected output includes, on standard output:
+
+```text
+CREATE TABLE "users" (
+  "id" INTEGER PRIMARY KEY,
+  "email" TEXT NOT NULL
+);
+```
+
+This output comes from `app.db`, not from `schema.sql`. The database now matches
+the desired schema you reviewed.
+
+## Step 5. Clean up
+
+Leave the working directory, then remove only the directory this tutorial
+created.
+
+<Tabs syncKey="shell">
+<TabItem label="Bash">
+
+```bash
+cd ..
+rm -rf ptah-quick-start
+```
+
+</TabItem>
+<TabItem label="PowerShell">
+
+```powershell
+Set-Location ..
+Remove-Item -Recurse -Force ptah-quick-start
+```
+
+</TabItem>
+</Tabs>
 
 ## Next steps
 
-- Run [Quick start: versioned migrations](../quick-start-migrations/).
-- Run [Quick start: direct schema changes](../quick-start-direct/).
-- Bring a database that already exists under Ptah:
-  [Adopt an existing database](../adopt-an-existing-database/).
+- [Evolve the schema and add a drift gate](../quick-start-direct/).
+- [Create and apply a versioned migration](../quick-start-migrations/).
+- [Choose a schema workflow](../choose-a-workflow/) before using a shared
+  database.
+- [Use another schema source](../../schema/work-with-a-source/) such as YAML,
+  HCL, DBML, an ORM loader, or Go annotations.

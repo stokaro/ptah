@@ -37,7 +37,8 @@ const (
 type ActionKind string
 
 const (
-	// ActionStep is a ```bash or ```powershell block: something to run.
+	// ActionStep is a shell-specific block or a shell-neutral ```console
+	// block: something to run.
 	ActionStep ActionKind = "step"
 	// ActionFile is an ```sql block whose introduction names a path: something
 	// to write to disk before the next step runs.

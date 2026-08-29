@@ -5,8 +5,9 @@ The human-facing documentation site source lives in [`site`](site).
 Start with:
 
 - [Install](site/src/content/docs/start/install.mdx)
+- [Quick start](site/src/content/docs/start/quick-start.mdx)
 - [Quick start: versioned migrations](site/src/content/docs/start/quick-start-migrations.mdx)
-- [Quick start: direct schema changes](site/src/content/docs/start/quick-start-direct.mdx)
+- [Continue direct schema changes](site/src/content/docs/start/quick-start-direct.mdx)
 - [Choose a workflow](site/src/content/docs/start/choose-a-workflow.md)
 - [Troubleshooting](site/src/content/docs/operate/troubleshooting.md)
 
@@ -79,6 +80,11 @@ lowering it is a red gate -- a ratchet read out of the file it guards is not a
 ratchet. And a page under `runnable_examples` has to publish a step: the
 `quickstart: true` marking is deliberate, but a deliberate marking is still a
 claim.
+
+The quick-start runner executes `bash` and `powershell` fences in their matching
+tabs. A `console` fence outside those tabs is one shell-neutral command block;
+the runner executes it in both programs. Use that form when the command is
+byte-identical in Bash and PowerShell instead of publishing duplicate tabs.
 
 The two words are deliberate. A page writes `owns:`, which is an author saying
 what their page is for; the register answers `claimed_by`, `claimed` and
