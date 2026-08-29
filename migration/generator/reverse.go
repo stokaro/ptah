@@ -116,8 +116,12 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// what the pre-change database held, so the collateral set is that
 		// database's views rather than the ones the change was moving to.
 		DeclaredViewLikes: difftypes.ViewLikeVocabularyOf(prior),
-		TablesRemoved:     deporder.TableDropOrder(diff.TablesAdded.Names(), schema), // Tables to add become tables to remove
-		TablesModified:    reverseTableDiffs(diff.TablesModified, prior),
+		// And the same for the foreign keys a column type change takes with
+		// it: a rollback restores the column the pre-change database had, so
+		// the keys to drop and put back are that database's.
+		DeclaredForeignKeys: difftypes.ForeignKeyDeclarationsOf(prior),
+		TablesRemoved:       deporder.TableDropOrder(diff.TablesAdded.Names(), schema), // Tables to add become tables to remove
+		TablesModified:      reverseTableDiffs(diff.TablesModified, prior),
 
 		// Reverse enum operations
 		EnumsAdded:    diff.EnumsRemoved, // Enums to remove become enums to add

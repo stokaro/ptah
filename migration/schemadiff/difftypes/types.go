@@ -10,6 +10,7 @@ package difftypes
 
 import (
 	"encoding/json"
+	"maps"
 	"slices"
 	"strings"
 
@@ -18,6 +19,7 @@ import (
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
+	"go.5x5.cz/ptah/internal/tableref"
 )
 
 // ViewChanges is a set of views one change applies to, carrying each one's
@@ -1066,6 +1068,24 @@ type SchemaDiff struct {
 	// A recreate renders the view back, so this holds the whole declaration
 	// of each rather than its name.
 	DeclaredViewLikes ViewLikeVocabulary `json:"-"`
+
+	// DeclaredForeignKeys is every foreign key the schema this plan runs
+	// against holds, carried once for the whole diff and off the wire.
+	//
+	// A column whose type changes takes its foreign keys with it on the
+	// MySQL family: the key is dropped before the MODIFY and put back after,
+	// because MODIFY COLUMN on a referencing column is refused while the key
+	// stands. Those keys are almost never in the diff -- the key itself is
+	// unchanged, the column under it is not -- so no per-entry operand can
+	// supply them, which is the shape [DeclaredTables] has for a reference's
+	// target (stokaro/ptah#2315).
+	//
+	// It is the schema the plan runs against rather than the desired one, and
+	// the two differ by direction: a reversal drops and restores what the
+	// PRE-CHANGE database held. The comparison fills it from the declaration
+	// and the reversal from the prior schema, exactly as [DeclaredTables] is
+	// filled.
+	DeclaredForeignKeys []ForeignKeyDeclaration `json:"-"`
 
 	// RLSEnabledTablesAdded contains names of tables that need RLS enabled
 	RLSEnabledTablesAdded RLSEnabledTableChanges `json:"rls_enabled_tables_added"`
@@ -2416,6 +2436,166 @@ type ViewLikeVocabulary struct {
 	Views []schemamodel.View
 	// MaterializedViews are the declared materialized views.
 	MaterializedViews []schemamodel.MaterializedView
+}
+
+// ForeignKeyDeclaration is one foreign key a schema holds, in the shape a
+// planner needs to drop it and put it back unchanged.
+//
+// It carries the reference flat rather than as an [ast.ForeignKeyRef], for two
+// reasons. The AST node is named per use -- the planner writes the constraint
+// name into it -- so a carried pointer would be one value several statements
+// mutate in turn. And [ConstraintAdditionInfo] already spells a reference this
+// way, so the two shapes a planner reads a foreign key from agree.
+type ForeignKeyDeclaration struct {
+	// TableName is the host, qualified as the ALTER TABLE statement spells it.
+	TableName string
+	// Name is the constraint name, either declared or derived by the same
+	// convention the creation path and the comparison's synthesis use.
+	Name string
+	// Columns are the referencing columns, in declaration order.
+	Columns []string
+	// ForeignTable is the referenced relation.
+	ForeignTable string
+	// ForeignColumn and ForeignColumns are the referenced columns, single and
+	// composite; a reference carries one spelling or the other.
+	ForeignColumn  string
+	ForeignColumns []string
+	// OnDelete and OnUpdate are the referential actions, empty when the
+	// declaration states none.
+	OnDelete string
+	OnUpdate string
+}
+
+// ForeignKeyDeclarationsOf enumerates every foreign key db declares, from all
+// three places one can be written: a field's foreign= reference, the
+// self-referencing map a document builds, and a table-level FOREIGN KEY
+// constraint.
+//
+// A nil database answers nil rather than an empty slice, so a diff built
+// without a declaration carries the same absence it started with.
+func ForeignKeyDeclarationsOf(db *schemamodel.Database) []ForeignKeyDeclaration {
+	if db == nil {
+		return nil
+	}
+	tableByStructName := make(map[string]schemamodel.Table, len(db.Tables))
+	tableByQualifiedName := make(map[string]schemamodel.Table, len(db.Tables))
+	for _, table := range db.Tables {
+		tableByStructName[table.StructName] = table
+		tableByQualifiedName[table.QualifiedName()] = table
+	}
+
+	var declarations []ForeignKeyDeclaration
+	declarations = appendFieldForeignKeys(declarations, db, tableByStructName)
+	declarations = appendSelfReferencingForeignKeys(declarations, db, tableByQualifiedName)
+	declarations = appendTableForeignKeys(declarations, db)
+	return declarations
+}
+
+// appendFieldForeignKeys resolves each field-level foreign key to its owning
+// table.
+//
+// The host is the QUALIFIED table name, matching the MODIFY statement and the
+// constraint comparator, while the conventional constraint name derives from
+// the BARE one, matching what the creation path and the comparison's synthesis
+// both spell. The two are different strings for a table in a named schema, and
+// using either for both ends produces a key nothing else in the pipeline
+// recognizes.
+func appendFieldForeignKeys(
+	declarations []ForeignKeyDeclaration,
+	db *schemamodel.Database,
+	tableByStructName map[string]schemamodel.Table,
+) []ForeignKeyDeclaration {
+	for _, field := range db.Fields {
+		if field.Foreign == "" {
+			continue
+		}
+		reference := fromschema.ParseForeignKeyReference(field.Foreign)
+		if reference == nil {
+			continue
+		}
+		qualified, bare := field.StructName, field.StructName
+		if table, ok := tableByStructName[field.StructName]; ok {
+			qualified, bare = table.QualifiedName(), table.Name
+		}
+		declarations = append(declarations, ForeignKeyDeclaration{
+			TableName:      qualified,
+			Name:           declaredForeignKeyName(field.ForeignKeyName, bare, field.Name),
+			Columns:        []string{field.Name},
+			ForeignTable:   reference.Table,
+			ForeignColumn:  reference.Column,
+			ForeignColumns: append([]string(nil), reference.Columns...),
+			OnDelete:       field.OnDelete,
+			OnUpdate:       field.OnUpdate,
+		})
+	}
+	return declarations
+}
+
+// appendSelfReferencingForeignKeys walks the map a document builds for the
+// keys a table points at itself with.
+//
+// The map is keyed by the qualified table name, which may name a table the
+// declaration does not hold -- so the bare spelling falls back to the parsed
+// reference rather than to the whole key, which would put a schema prefix into
+// a derived constraint name.
+func appendSelfReferencingForeignKeys(
+	declarations []ForeignKeyDeclaration,
+	db *schemamodel.Database,
+	tableByQualifiedName map[string]schemamodel.Table,
+) []ForeignKeyDeclaration {
+	for _, tableName := range slices.Sorted(maps.Keys(db.SelfReferencingForeignKeys)) {
+		qualified, bare := tableName, tableName
+		if table, ok := tableByQualifiedName[tableName]; ok {
+			qualified, bare = table.QualifiedName(), table.Name
+		} else if reference, ok := tableref.Parse(tableName); ok {
+			bare = reference.Name
+		}
+		for _, foreignKey := range db.SelfReferencingForeignKeys[tableName] {
+			reference := fromschema.ParseForeignKeyReference(foreignKey.Foreign)
+			if reference == nil {
+				continue
+			}
+			declarations = append(declarations, ForeignKeyDeclaration{
+				TableName:      qualified,
+				Name:           declaredForeignKeyName(foreignKey.ForeignKeyName, bare, foreignKey.FieldName),
+				Columns:        []string{foreignKey.FieldName},
+				ForeignTable:   reference.Table,
+				ForeignColumn:  reference.Column,
+				ForeignColumns: append([]string(nil), reference.Columns...),
+				OnDelete:       foreignKey.OnDelete,
+				OnUpdate:       foreignKey.OnUpdate,
+			})
+		}
+	}
+	return declarations
+}
+
+func appendTableForeignKeys(declarations []ForeignKeyDeclaration, db *schemamodel.Database) []ForeignKeyDeclaration {
+	for _, constraint := range db.Constraints {
+		if !strings.EqualFold(constraint.Type, "FOREIGN KEY") {
+			continue
+		}
+		declarations = append(declarations, ForeignKeyDeclaration{
+			TableName:      constraint.Table,
+			Name:           constraint.Name,
+			Columns:        append([]string(nil), constraint.Columns...),
+			ForeignTable:   constraint.ForeignTable,
+			ForeignColumn:  constraint.ForeignColumn,
+			ForeignColumns: append([]string(nil), constraint.ForeignColumns...),
+			OnDelete:       constraint.OnDelete,
+			OnUpdate:       constraint.OnUpdate,
+		})
+	}
+	return declarations
+}
+
+// declaredForeignKeyName prefers the name the author wrote and falls back to
+// the convention the rest of the pipeline derives.
+func declaredForeignKeyName(declared, tableName, columnName string) string {
+	if declared != "" {
+		return declared
+	}
+	return fromschema.GenerateForeignKeyName(tableName, columnName)
 }
 
 // ViewLikeVocabularyOf reads the view-like vocabulary out of a declaration.

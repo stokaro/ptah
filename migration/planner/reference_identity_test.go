@@ -170,6 +170,11 @@ func TestGenerateSchemaDiffSQL_MySQLSelfForeignKeyTypeChangePreservesStructuralI
 				Changes:    map[string]string{"type": "INTEGER -> BIGINT"},
 			}},
 		}},
+		// The self-reference the MODIFY has to step around, as the comparison
+		// carries it. The enumeration answers from the schema above, so the
+		// qualified-versus-bare spelling this test is about is the one the
+		// pipeline derives rather than one restated here.
+		DeclaredForeignKeys: difftypes.ForeignKeyDeclarationsOf(desired),
 	}
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.MySQL)

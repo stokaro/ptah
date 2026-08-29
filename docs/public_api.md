@@ -650,6 +650,18 @@ declaration rather than the rendering has it. An embedder building a diff by
 hand fills the field with `difftypes.UserTypeVocabularyOf(desired)`; one that
 omits it renders user-typed columns as the bare names the author wrote.
 
+`SchemaDiff.DeclaredForeignKeys` carries every foreign key the schema the plan
+runs against holds, once and off the wire. The MySQL family cannot `MODIFY` a
+column a foreign key references, so a column type change drops that column's
+keys and puts them back; the keys themselves are unchanged, which is why the
+diff's own change lists never name them. The field is direction-dependent in a
+way the other three are not read for: a rollback drops and restores what the
+PRE-CHANGE database held, so the reversal fills it from the introspected schema
+rather than carrying the forward value across. An embedder building a diff by
+hand fills it with `difftypes.ForeignKeyDeclarationsOf(desired)`; one that omits
+it gets a bare `MODIFY COLUMN`, which MySQL refuses with errno 3780 and MariaDB
+with errno 1832.
+
 `SchemaDiff.RLSEnabledTablesAdded` and `RLSEnabledTablesRemoved` are
 `RLSEnabledTableChanges` rather than `[]string`. An ADDED entry is the
 declaration, which is what a target rendering a declared comment needs; a

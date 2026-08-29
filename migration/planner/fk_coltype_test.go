@@ -17,7 +17,7 @@ import (
 // widens from INTEGER to BIGINT while carrying a foreign key to users(id).
 func fkColumnTypeChangeInputs() (*difftypes.SchemaDiff, *schemamodel.Database) {
 	// The column is declared once and reaches the plan twice: as the operand the
-	// modification carries, and as the declaration the foreign key is read from.
+	// modification carries, and as the foreign key the diff carries for it.
 	userID := schemamodel.Field{Name: "user_id", Type: "BIGINT", StructName: "Post", Nullable: false, Foreign: "users(id)"}
 	diff := &difftypes.SchemaDiff{
 		TablesModified: []difftypes.TableDiff{
@@ -39,6 +39,10 @@ func fkColumnTypeChangeInputs() (*difftypes.SchemaDiff, *schemamodel.Database) {
 			userID,
 		},
 	}
+	// The keys the plan drops around the MODIFY, as the comparison would carry
+	// them. They are the schema's own, and this fixture states the schema, so
+	// the enumeration answers rather than a hand-written list.
+	diff.DeclaredForeignKeys = difftypes.ForeignKeyDeclarationsOf(desired)
 	return diff, desired
 }
 
