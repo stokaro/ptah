@@ -1046,7 +1046,7 @@ npm ci
 npm run check:links:selftest && npm run check:links
 npm run check:redirects:selftest && npm run check:redirects
 npm run check:route-retirement:selftest && npm run check:route-retirement
-npm run check:core-doc-links
+npm run check:core-doc-links:selftest && npm run check:core-doc-links
 npm run check:page-health:selftest && npm run check:page-health
 npm run check:exit-codes:selftest && npm run check:exit-codes
 DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run build
