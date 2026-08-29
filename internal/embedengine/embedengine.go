@@ -131,19 +131,14 @@ const defaultLease = 15 * time.Minute
 // The claim is saved before the loop starts, because a claim this process holds
 // and the store does not is a claim that fences nobody.
 func (e *Engine) claim(ctx context.Context, runID string) (embedrun.Run, int64, error) {
-	run, err := e.Store.Run(ctx, runID)
-	if err != nil {
-		return embedrun.Run{}, 0, fmt.Errorf("load run %s: %w", runID, err)
-	}
-	lease := e.LeaseFor
-	if lease <= 0 {
-		lease = defaultLease
-	}
-	token := run.Claim(e.Worker, lease)
-	if err := e.Store.SaveRun(ctx, run); err != nil {
-		return embedrun.Run{}, 0, fmt.Errorf("claim run %s: %w", runID, err)
-	}
-	return run, token, nil
+	return e.runs().Claim(ctx, runID)
+}
+
+// runs is the store-only half of this engine, which is also what the pause and
+// resume verbs hold. One claim implementation rather than two, because a second
+// one that forgot to save would fence nobody and look identical from here.
+func (e *Engine) runs() Runs {
+	return Runs{Store: e.Store, Worker: e.Worker, LeaseFor: e.LeaseFor}
 }
 
 func (e *Engine) now() time.Time {

@@ -47,11 +47,6 @@ var Exempt = map[string]string{
 		"server; a production caller would be the defect",
 
 	// The shape this package is named for, found by running it. Tracked in
-	// stokaro/ptah#2474. Claim was wired up in #2480 and the four redundant
-	// answers are gone; a missing pair of verbs is what is left.
-	"Pause":  "stokaro/ptah#2474: pauses a run, and there is no verb that pauses one",
-	"Resume": "stokaro/ptah#2474: the other half of the same missing pair",
-
 	"Undetailed": "a self-check rather than a decision: it reports the facts a plan built " +
 		"that owe an explanation and give none, and the only caller a self-check can have " +
 		"is a test. embedreport's facts_internal_test.go runs it over the real assembly",

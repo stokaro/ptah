@@ -61,8 +61,10 @@ rather than a person.
 | `ptah inference describe` | Reads a specification file and reports what it says; it opens no connection, which is what makes it usable where every other verb here cannot be | — |
 | `ptah inference evaluate` | Searches the generation with queries from a corpus, which sends those queries to the embedding endpoint; the database is only read | — |
 | `ptah inference index` | Builds the generation's vector index concurrently, which writes an index into the target database and drops an invalid leftover before rebuilding it | — |
+| `ptah inference pause` | Stops a run at the boundary its last checkpoint reached, which writes the run's own row: it takes the run for this process, so a worker that was running is refused at its next commit | — |
 | `ptah inference plan` | Resolves a specification against the database and prints what would happen; nothing is created and nothing is written | — |
 | `ptah inference prepare` | Creates the run's own tables and, under the outbox mode, a companion table and two triggers on the source | — |
+| `ptah inference resume` | Returns a paused run to running, which writes the run's own row and takes the run for this process; nothing starts working here | — |
 | `ptah inference retire` | Drops a generation's index and column; it is the one verb here that cannot be undone | — |
 | `ptah inference rollback` | Moves the pointer queries read back to a previous generation, when that generation is still measurably one you can go back to | — |
 | `ptah inference status` | Prints a run's phase, progress and watermarks from the run-state tables | — |
