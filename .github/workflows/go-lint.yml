@@ -174,7 +174,10 @@ jobs:
         run: scripts/check-public-api-released.sh --require-baseline
 
       - name: Check public Go API docs sync
-        run: scripts/check-public-api-docs-sync.sh
+        run: |
+          set -euo pipefail
+          scripts/check-public-api-docs-sync-selftest.sh
+          scripts/check-public-api-docs-sync.sh
 
       - name: Check public Go API doc comments
         run: scripts/check-exported-docs.sh

@@ -187,16 +187,9 @@ echo "check-gate-selftests: breaking each gate's own rule and requiring it to no
 # list names only the gate itself, which is the right list: a harness that had
 
 
-
-
-
-
-
-
 run_case check-public-api-snapshot.sh \
 	"an exported field added to a documented struct" \
 	"perl -0pi -e 's/type DomainExpression struct \{/type DomainExpression struct {\n\t\/\/ GateSelftestField exists only inside this fixture.\n\tGateSelftestField string\n/' config/config.go"
-
 
 
 # Two fixtures, one per comparison mode. The command reference is three marker
@@ -251,17 +244,6 @@ run_shell_selftest_case check-feature-inventory.sh \
 run_shell_selftest_case check-feature-inventory.sh \
 	"the runnable-example refusal short-circuited inside exampleProblems()" \
 	"perl -0pi -e 's/if len\\(example\\.Shells\\) == 0 \\{/if false \\&\\& len(example.Shells) == 0 {/' internal/featureinventory/inventory.go"
-
-
-
-
-run_case check-public-api-docs-sync.sh \
-	"a ledger package's row removed from the site's stable-packages table" \
-	"perl -0pi -e 's/^\| \`core\/coverage\`[^\n]*\n//m' docs/site/src/content/docs/extend/public-api.md"
-
-run_case check-public-api-docs-sync.sh \
-	"a package the site table lists deleted from the ledger" \
-	"perl -0pi -e 's/^- \`go\.5x5\.cz\/ptah\/migration\/seeder\`\n//m' docs/public_api.md"
 
 
 # The `.mjs` route gates under docs/site/scripts. They take no npm dependency,
