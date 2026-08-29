@@ -208,7 +208,10 @@ func parseSQL(data []byte, dialect string) (*schemamodel.Database, error) {
 	if err != nil {
 		return nil, err
 	}
-	db := toschema.ToDatabase(statements, dialect)
+	db, err := toschema.ToDatabase(statements, dialect)
+	if err != nil {
+		return nil, err
+	}
 	schemamodel.Finalize(&db)
 	return &db, nil
 }

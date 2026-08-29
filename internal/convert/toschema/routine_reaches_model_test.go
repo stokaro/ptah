@@ -16,7 +16,8 @@ func routinesOf(c *qt.C, dialect, sql string) []schemamodel.Function {
 
 	statements, err := parser.NewParser(sql, parser.WithDialect(dialect)).Parse()
 	c.Assert(err, qt.IsNil)
-	database := toschema.ToDatabase(statements, dialect)
+	database, err := toschema.ToDatabase(statements, dialect)
+	c.Assert(err, qt.IsNil)
 	schemamodel.Finalize(&database)
 	return database.Functions
 }

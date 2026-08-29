@@ -179,7 +179,8 @@ func renderClickHouse(c *qt.C, sqlText string) string {
 
 	statements, err := parser.NewParser(sqlText, parser.WithDialect(platform.ClickHouse)).Parse()
 	c.Assert(err, qt.IsNil)
-	database := toschema.ToDatabase(statements, platform.ClickHouse)
+	database, err := toschema.ToDatabase(statements, platform.ClickHouse)
+	c.Assert(err, qt.IsNil)
 	schemamodel.Finalize(&database)
 
 	rendered, err := renderer.GetOrderedCreateStatements(&database, platform.ClickHouse)

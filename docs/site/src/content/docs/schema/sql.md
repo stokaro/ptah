@@ -127,6 +127,28 @@ CREATE TABLE "pets" (
   Write `b INTEGER DEFAULT 1` instead. A name Ptah accepts and cannot read back
   would make every later comparison report a difference no apply can settle.
 
+- A routine whose body Ptah did not parse is refused rather than dropped. The
+  parser understands the outer boundary of every `CREATE PROCEDURE` and
+  `CREATE FUNCTION` it accepts; where it cannot model the body, it keeps the
+  text — and text nothing read cannot be compared, so it has no place in a
+  desired schema:
+
+  ```sql
+  CREATE PROCEDURE bump() SET @counter = @counter + 1;
+  ```
+
+  ```text
+  the schema model has no place for this statement: a mysql procedure whose
+  body was kept as text rather than parsed, so nothing here can compare it:
+  CREATE PROCEDURE bump() SET @counter = @counter + 1
+  ```
+
+  Write the body in a form Ptah reads — a `BEGIN ... END` block, or a
+  `RETURN` — or keep the routine out of the desired schema and manage it
+  separately. Carried silently, the routine would be missing from the desired
+  schema: a comparison against a database that has it reports no difference,
+  and a migration against one that does not plans it out of existence.
+
 - A constraint name on `NOT NULL` is carried where the target **persists** it.
   The distinction is not whether the syntax parses: PostgreSQL 17 accepts
   `CONSTRAINT c_x NOT NULL` and stores nothing, while PostgreSQL 18 records one

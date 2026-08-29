@@ -42,6 +42,8 @@
 package toschema
 
 import (
+	"errors"
+	"fmt"
 	"maps"
 	"strconv"
 	"strings"
@@ -654,7 +656,14 @@ func ToEnum(enum *ast.EnumNode) schemamodel.Enum {
 // carries them in Overrides, keyed by platform, and an empty platform has
 // nowhere to put them. Passing "" here silently dropped every ClickHouse
 // MergeTree clause a .sql file declared (stokaro/ptah#1571).
-func ToDatabase(statements *ast.StatementList, sourcePlatform string) schemamodel.Database {
+//
+// It refuses a statement it does not model rather than dropping it. What that
+// costs is a read that fails on one exotic routine; what dropping costs is a
+// desired schema missing an object the document declared, which is a comparison
+// that reports no difference and a migration that removes it (stokaro/ptah#2435).
+func ToDatabase(
+	statements *ast.StatementList, sourcePlatform string,
+) (schemamodel.Database, error) {
 	database := schemamodel.Database{
 		Schemas: make([]schemamodel.Schema, 0),
 		Tables:  make([]schemamodel.Table, 0),
@@ -665,25 +674,34 @@ func ToDatabase(statements *ast.StatementList, sourcePlatform string) schemamode
 
 	// Process all statements and categorize them
 	for _, stmt := range statements.Statements {
-		appendStatement(&database, stmt, sourcePlatform)
+		if err := appendStatement(&database, stmt, sourcePlatform); err != nil {
+			return schemamodel.Database{}, err
+		}
 	}
 
 	// A PostgreSQL trigger renders as a function plus a trigger; recombine the
 	// pair so the function is not also carried as a standalone object.
 	adoptTriggerFunctions(&database)
 
-	return database
+	return database, nil
 }
 
 // appendStatement folds one parsed statement into the database being built.
 //
 // Every AST node kind the SQL frontend can produce for a schema object needs a
-// case here: a node with no case is accepted by the parser and then silently
+// case here: a node with no case was accepted by the parser and then silently
 // dropped, which is what issue #932 reported for views, domains, composite and
 // range types, extensions, functions and triggers.
-func appendStatement(database *schemamodel.Database, stmt ast.Node, sourcePlatform string) {
+//
+// The comment saying so has stood above this switch since #932, and three more
+// node kinds went missing under it anyway (stokaro/ptah#2435). A comment is read
+// by whoever is already thinking about this function, which is never the person
+// adding a node kind somewhere else. So the default refuses by name, and a kind
+// this package deliberately does not model says so in a case of its own rather
+// than by not appearing.
+func appendStatement(database *schemamodel.Database, stmt ast.Node, sourcePlatform string) error {
 	if appendRoutine(database, stmt) {
-		return
+		return nil
 	}
 	switch node := stmt.(type) {
 	case *ast.CreateSchemaNode:
@@ -725,8 +743,63 @@ func appendStatement(database *schemamodel.Database, stmt ast.Node, sourcePlatfo
 		database.RLSEnabledTables = append(database.RLSEnabledTables, toRLSEnabledTable(node))
 	case *ast.CommentNode:
 		applyRoleComment(database, node)
+	case *ast.CreateDatabaseNode, *ast.DropTableNode, *ast.DropIndexNode,
+		*ast.PostgresDoBlockNode, *ast.RawSQLNode:
+		// Deliberately not modeled, and each for the same reason: a
+		// schemamodel.Database is what a schema SHOULD contain, and none of
+		// these names an object it would contain. A CREATE DATABASE names the
+		// database this model already is; a DROP names an object by its
+		// absence, which the desired schema expresses by not declaring it; a DO
+		// block and a raw statement do work rather than declare a thing.
+		//
+		// Written out rather than left to fall through, so that the default
+		// below means "nobody decided" and not "somebody decided not to".
+		return nil
+	default:
+		return fmt.Errorf(
+			"%w: %s", ErrUnmodeledStatement, describeUnmodeledStatement(stmt))
 	}
+	return nil
 }
+
+// ErrUnmodeledStatement is the class of every statement this package parsed and
+// cannot turn into a schema object.
+var ErrUnmodeledStatement = errors.New("the schema model has no place for this statement")
+
+// describeUnmodeledStatement says what was refused, in terms of the document
+// rather than of the Go type.
+//
+// An opaque routine gets its own sentence because it is the one kind an author
+// meets by writing ordinary SQL: the parser understood the routine's outer
+// boundary and kept its body as text it never read. Carrying that would put
+// bytes Ptah cannot compare into a desired schema, and every later comparison
+// would be against a body nothing modeled.
+func describeUnmodeledStatement(stmt ast.Node) string {
+	if routine, ok := stmt.(*ast.OpaqueRoutineNode); ok {
+		return fmt.Sprintf(
+			"a %s %s whose body was kept as text rather than parsed, so nothing here can "+
+				"compare it: %s",
+			routine.Dialect, routine.Kind, firstLine(routine.SQL))
+	}
+	return fmt.Sprintf("%T", stmt)
+}
+
+// firstLine bounds a statement quoted back to its author.
+func firstLine(sql string) string {
+	line, _, cut := strings.Cut(strings.TrimSpace(sql), "\n")
+	if len(line) > unmodeledStatementQuote {
+		return line[:unmodeledStatementQuote] + "..."
+	}
+	if cut {
+		return line + " ..."
+	}
+	return line
+}
+
+// unmodeledStatementQuote bounds how much of a refused statement is quoted. Long
+// enough to name the routine, short enough that a body does not become the
+// error message.
+const unmodeledStatementQuote = 80
 
 // appendRoutine records the routine nodes CREATE PROCEDURE parses to, and
 // reports whether it recognized one.
