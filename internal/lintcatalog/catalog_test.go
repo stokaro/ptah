@@ -411,7 +411,7 @@ func TestConventionSpellsIdentifiersTheWayTheIssueDecided(t *testing.T) {
 }
 
 // TestGeneratedBlockMatchesThePublishedPage is the drift gate in the form the
-// default test run reaches. scripts/check-lint-rules.sh checks the same thing
+// default test run reaches. scripts/check-docsync.sh checks the same thing
 // with a --write escape hatch; this is what fails a change that never ran it.
 func TestGeneratedBlockMatchesThePublishedPage(t *testing.T) {
 	c := qt.New(t)
@@ -419,7 +419,7 @@ func TestGeneratedBlockMatchesThePublishedPage(t *testing.T) {
 	desired := generatedBlock(c)
 	c.Assert(desired, qt.Not(qt.Equals), "")
 	c.Assert(publishedBlock(c), qt.Equals, desired,
-		qt.Commentf("run scripts/check-lint-rules.sh --write"))
+		qt.Commentf("run scripts/check-docsync.sh --write"))
 }
 
 // TestCommandTableMatchesTheScopesTheCodeDefines covers the claims about scope

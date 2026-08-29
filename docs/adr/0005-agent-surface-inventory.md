@@ -88,7 +88,7 @@ cannot reach one.
 The list of verbs and their classification live in
 [`docs/agent-surface.md`](../agent-surface.md), generated from the command tree
 of the binary this repository builds, and checked by
-`scripts/check-agent-surface.sh` in the lint job.
+`scripts/check-docsync.sh` in the lint job.
 
 A record of a decision and a measurement of a moving surface are different
 documents with different lifetimes, and putting the second inside the first

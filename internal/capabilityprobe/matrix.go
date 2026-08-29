@@ -548,7 +548,7 @@ func splitImageTag(ref string) (repository, tag string) {
 //
 // The documentation matrix is generated from Cells rather than written beside
 // it because a third hand-maintained list of supported versions is what
-// stokaro/ptah#1341 exists to prevent. scripts/check-version-matrix.sh fails
+// stokaro/ptah#1341 exists to prevent. scripts/check-docsync.sh fails
 // the build when the checked-in table and this output differ.
 func WriteMatrixMarkdown(w io.Writer) {
 	matrix := CIMatrix()
