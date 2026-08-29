@@ -211,6 +211,16 @@ brews:
     # and .Env.X errors on a missing key while index yields an empty string.
     skip_upload: '{{ if index .Env "HOMEBREW_TAP_TOKEN" }}false{{ else }}true{{ end }}'
     directory: Formula
+    # Declared on BOTH formulas, deliberately. Homebrew's conflict check reads
+    # only the conflicts of the formula being installed -- it does not scan the
+    # installed set for one pointing back. Measured on Homebrew 6.0.20 with
+    # ptah-edge installed and this line absent: `brew install ptah` SUCCEEDED,
+    # left both installed, and left bin/ptah still symlinked to ptah-edge, so a
+    # release install kept running the master build. The only notice was a
+    # "shadowed by" caveat. With the line present Homebrew refuses and names the
+    # unlink. The tap's hand-written Formula/ptah-edge.rb carries the mirror.
+    conflicts:
+      - stokaro/ptah/ptah-edge
     homepage: "https://github.com/stokaro/ptah"
     # The product sentence, not a Go-first framing: this is what `brew info
     # ptah` prints, and it is the first thing a reader meets. It is held to the
