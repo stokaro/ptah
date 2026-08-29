@@ -245,7 +245,7 @@ outside the supported compatibility subset.
 
 **Ptah documentation.** [HCL schema](../../schema/hcl/), site [HCL schema reference](../../reference/hcl-schema/)
 
-**Implementation status.** Partial. Ptah parses a strict supported subset and fails explicitly for unsupported constructs. Current support includes core tables, columns, indexes, constraints, enums, schemas, selected generated/identity forms, and recently added PostgreSQL include columns.
+**Implementation status.** Partial. Ptah parses a strict supported subset and fails explicitly for unsupported constructs. Current support includes core tables, columns, indexes, constraints, enums, schemas, selected generated/identity forms, and PostgreSQL include columns.
 
 **Conformance status.** Measured for current imported fixtures; not complete Atlas HCL coverage.
 

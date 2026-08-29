@@ -277,6 +277,17 @@ run_node_selftest_case check-route-retirement.mjs \
 	"the retirement rule short-circuited inside analyze()" \
 	"perl -0pi -e 's/if \\(liveSet\\.has\\(route\\) \\|\\| sources\\.has\\(route\\)\\) continue;/if (true) continue;/' docs/site/scripts/check-route-retirement.mjs"
 
+# A promise with no owner, on a reader-facing page. The gate exists because
+# section 6.2's other fifteen spellings have a present-tense reading and these
+# three do not, so the fixture is a sentence somebody would plausibly write.
+run_node_gate_case check-implementation-chronology.mjs \
+	"a reader page promising a capability in a later phase" \
+	"printf '\nThey return when a later phase can supply one.\n' >>docs/site/src/content/docs/operate/ai-agents.md"
+
+run_node_selftest_case check-implementation-chronology.mjs \
+	"the phrase list emptied inside findingsIn()" \
+	"perl -0pi -e 's/for \\(const \\{ pattern, why \\} of phrases\\) \\{/for (const { pattern, why } of []) {/' docs/site/scripts/check-implementation-chronology.mjs"
+
 # Two files publishing one route. The build resolves it by serving one body in
 # place of the other and exits 0, so the refusal has to be on this gate's path
 # and not only on the retirement gate's.

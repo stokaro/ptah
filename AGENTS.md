@@ -1014,6 +1014,8 @@ node docs/site/scripts/check-terminology.mjs --selftest
 node docs/site/scripts/check-terminology.mjs
 node docs/site/scripts/check-limitations.mjs --selftest
 node docs/site/scripts/check-limitations.mjs
+node docs/site/scripts/check-implementation-chronology.mjs --selftest
+node docs/site/scripts/check-implementation-chronology.mjs
 node docs/site/scripts/check-matrix-verdict-prose.mjs --selftest
 node docs/site/scripts/check-matrix-verdict-prose.mjs
 node docs/site/scripts/check-matrix-citations.mjs --selftest
@@ -1064,7 +1066,7 @@ node scripts above would not have produced.
 renamed with no redirect entry passes `check:redirects`, `check:links`,
 `check:page-health` and the site build alike -- measured, seven for seven --
 because every one of them reasons about what the tree holds now, and the defect
-is a route that used to be in it. The record it compares against is
+is a route the tree no longer holds and a reader still follows. The record it compares against is
 `docs/site/scripts/data/published-routes.json`, and a page added in a PR joins
 it in that PR:
 

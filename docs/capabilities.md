@@ -1022,8 +1022,8 @@ file, exactly as any other command reaching the same URL would.
   engines further disagree with each other about the legacy display width
   (`int` on MySQL, `int(11)` on MariaDB). Parameter rows are restricted to
   `ROUTINE_TYPE = 'FUNCTION'`, since a procedure of the same name shares the
-  function's `SPECIFIC_NAME` and its arguments used to be appended to the
-  function's signature.
+  function's `SPECIFIC_NAME` and an unrestricted read appends its arguments to
+  the function's signature.
 
   Stored-function DDL is never transactional on these engines. Measured on
   MySQL 26.7.0, `CREATE FUNCTION` inside `START TRANSACTION` survives a

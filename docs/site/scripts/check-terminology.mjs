@@ -48,7 +48,7 @@
 // runs it from a bare checkout for changes that touch no site page.
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -1092,4 +1092,10 @@ function main() {
   run({ write: args.includes('--write') });
 }
 
-main();
+// Only when this file is the program. Its helpers -- proseOf above all -- are
+// exported so another gate reads prose the same way rather than deciding again
+// what a code span is, and an unguarded main would run this whole check as a
+// side effect of that import, with the importer's flags.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main();
+}

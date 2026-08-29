@@ -115,6 +115,8 @@ jobs:
           node docs/site/scripts/check-terminology.mjs
           node docs/site/scripts/check-limitations.mjs --selftest
           node docs/site/scripts/check-limitations.mjs
+          node docs/site/scripts/check-implementation-chronology.mjs --selftest
+          node docs/site/scripts/check-implementation-chronology.mjs
           node docs/site/scripts/check-matrix-verdict-prose.mjs --selftest
           node docs/site/scripts/check-matrix-verdict-prose.mjs
           node docs/site/scripts/check-matrix-citations.mjs --selftest

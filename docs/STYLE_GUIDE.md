@@ -736,17 +736,24 @@ the keep pile: 17 describe Atlas or a database engine, 18 sit in conformance
 evidence and design records where history belongs, and 48 are the present-tense
 readings above. A deny-list would report all 142.
 
-The narrow phrases that have no present-tense reading do better and still do not
-pass. `formerly`, `used to be`, `now supports`, `recently added`, `in an earlier
-version`, `in a previous version`, `the old behavior`, `the new implementation`,
-`this was added later`, `the first phase`, and `a later phase` report 16 hits,
-12 of them on site pages. Those 12 are genuine, so the rule is not wrong; it is
-early. Adding it before those pages are rewritten turns every unrelated
-documentation change red. Rewrite the pages, then add the rule, and put its
-clean-fixture shapes — an Atlas subject, a runtime state, `legacy-tested`, and
-the purpose sense of `used to` — in the self-test in the same change.
+Three of the narrow phrases are enforced. `now supports`, `recently added` and
+`a later phase` have no present-tense reading at all — a release note however it
+is read, an adjective with no stable meaning, and a promise with no owner — and
+`check-implementation-chronology.mjs` reports them over every Markdown file in
+the tree, on the prose stream `check-terminology.mjs` builds, so a code span or
+a fenced block is not a finding. Its self-test carries the clean-fixture shapes
+this section named: an Atlas subject, a runtime state, `legacy-tested`, and the
+purpose sense of `used to`.
 
-Until then, section 6 is item 12 of the review checklist.
+Four paths are exempt, each because the past is its subject rather than an
+intrusion: `docs/adr/**` is a design record, `docs/conformance.md` is a dated
+measurement, `atlas/retained-divergences.md` is about which divergences closed,
+and this file has to spell the phrases it governs. The exemption is by path
+because "is the subject Ptah's own roadmap" is not a question a regular
+expression answers, and the gate says so where the list is declared.
+
+The rest of section 6 stays unenforced for the reason above and is item 12 of
+the review checklist.
 
 **Section 11 (visual documentation).** Presence of alt text is enforced.
 Whether the alt text says what the image shows, whether the medium suits the
