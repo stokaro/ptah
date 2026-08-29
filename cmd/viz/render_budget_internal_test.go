@@ -54,6 +54,17 @@ func TestRenderDOTToSVG_TheBudgetAppliesWhenNobodyNamedOne(t *testing.T) {
 }
 
 // installSleepingDot puts a `dot` on PATH that takes seconds to answer.
+//
+// The directory goes in FRONT of the existing PATH rather than replacing it,
+// which is the difference between a fixture that sleeps and one that does not.
+// A script run with PATH set to the fixture directory alone cannot find
+// `sleep`: it prints `sleep: command not found`, reaches `echo` immediately and
+// exits 0, so `dot` answers in a millisecond and every assertion about a
+// deadline is decided by nothing. It read as passing on a developer machine and
+// failed on CI, which is the right way round but only by luck.
+//
+// TestRenderDOTToSVG_TheBudgetAppliesWhenNobodyNamedOne is this helper's own
+// witness: it can only pass if the sleep is real.
 func installSleepingDot(c *qt.C, t *testing.T, seconds string) {
 	c.Helper()
 	binDir := t.TempDir()
@@ -61,5 +72,5 @@ func installSleepingDot(c *qt.C, t *testing.T, seconds string) {
 	path := filepath.Join(binDir, "dot")
 	c.Assert(os.WriteFile(path, []byte(script), 0o600), qt.IsNil)
 	c.Assert(os.Chmod(path, 0o700), qt.IsNil)
-	t.Setenv("PATH", binDir)
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
