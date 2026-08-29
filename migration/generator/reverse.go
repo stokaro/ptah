@@ -128,8 +128,11 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// And the same for the functions this direction creates: they are the
 		// ones that database held, and what they call is what it recorded.
 		DeclaredFunctions: difftypes.FunctionOrderingOf(prior),
-		TablesRemoved:     deporder.TableDropOrder(diff.TablesAdded.Names(), schema), // Tables to add become tables to remove
-		TablesModified:    reverseTableDiffs(diff.TablesModified, prior),
+		// And the same for the indexes this direction restores: they are the
+		// ones that database had, on the relations it had them on.
+		DeclaredIndexes: difftypes.IndexDeclarationsOf(prior),
+		TablesRemoved:   deporder.TableDropOrder(diff.TablesAdded.Names(), schema), // Tables to add become tables to remove
+		TablesModified:  reverseTableDiffs(diff.TablesModified, prior),
 
 		// Reverse enum operations
 		EnumsAdded:    diff.EnumsRemoved, // Enums to remove become enums to add

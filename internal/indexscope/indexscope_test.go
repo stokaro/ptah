@@ -30,7 +30,7 @@ func TestNewResolver_HappyPath(t *testing.T) {
 		},
 	}
 
-	resolver, err := indexscope.NewResolver("postgres", diff, desired)
+	resolver, err := indexscope.NewResolver("postgres", withDeclaredIndexes(diff, desired))
 	c.Assert(err, qt.IsNil)
 	index, err := resolver.Resolve(
 		difftypes.IndexRef{Name: "idx_email", TableName: "app.users"},
@@ -54,7 +54,7 @@ func TestNewResolver_TargetIdentityCollisionRejected(t *testing.T) {
 		},
 	}
 
-	resolver, err := indexscope.NewResolver("mysql", diff, desired)
+	resolver, err := indexscope.NewResolver("mysql", withDeclaredIndexes(diff, desired))
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(resolver, qt.IsNil)
@@ -71,8 +71,7 @@ func TestNewResolver_TargetIdentityCollisionRejectedWithoutAdditions(t *testing.
 
 	resolver, err := indexscope.NewResolver(
 		"postgres",
-		&difftypes.SchemaDiff{},
-		desired,
+		withDeclaredIndexes(&difftypes.SchemaDiff{}, desired),
 	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -92,7 +91,7 @@ func TestNewResolver_DefaultAndNamedSchemaIndexesAreIndependent(t *testing.T) {
 		},
 	}
 
-	resolver, err := indexscope.NewResolver("postgres", &difftypes.SchemaDiff{}, desired)
+	resolver, err := indexscope.NewResolver("postgres", withDeclaredIndexes(&difftypes.SchemaDiff{}, desired))
 
 	c.Assert(err, qt.IsNil)
 	defaultIndex, err := resolver.Resolve(difftypes.IndexRef{Name: "idx_email", TableName: "users"})
@@ -128,7 +127,7 @@ func TestNewResolver_CaseInsensitiveTargetIdentityCollisionRejected(t *testing.T
 				},
 			}
 
-			resolver, err := indexscope.NewResolver(test.dialect, diff, desired)
+			resolver, err := indexscope.NewResolver(test.dialect, withDeclaredIndexes(diff, desired))
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(resolver, qt.IsNil)
@@ -156,7 +155,7 @@ func TestNewResolver_CaseInsensitiveDiffCollisionRejected(t *testing.T) {
 				},
 			}
 
-			resolver, err := indexscope.NewResolver(test.dialect, diff, nil)
+			resolver, err := indexscope.NewResolver(test.dialect, diff)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(resolver, qt.IsNil)
@@ -185,8 +184,7 @@ func TestNewResolverWithSemantics_IncompleteCatalogSnapshotRejected(t *testing.T
 	resolver, err := indexscope.NewResolverWithSemantics(
 		"sqlserver",
 		semantics,
-		diff,
-		desired,
+		withDeclaredIndexes(diff, desired),
 	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -253,7 +251,7 @@ func TestNewResolver_TargetTableResolution(t *testing.T) {
 			}
 			diff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{test.ref}}
 
-			resolver, err := indexscope.NewResolver("mysql", diff, desired)
+			resolver, err := indexscope.NewResolver("mysql", withDeclaredIndexes(diff, desired))
 			c.Assert(err, qt.IsNil)
 			c.Assert(
 				schemamodel.ResolveIndexTableNames(
@@ -286,7 +284,7 @@ func TestNewResolver_UnknownQualifiedTableRejected(t *testing.T) {
 		},
 	}
 
-	resolver, err := indexscope.NewResolver("mysql", diff, desired)
+	resolver, err := indexscope.NewResolver("mysql", withDeclaredIndexes(diff, desired))
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(resolver, qt.IsNil)
@@ -309,7 +307,7 @@ func TestNewResolver_AmbiguousPlainTableRejected(t *testing.T) {
 		},
 	}
 
-	resolver, err := indexscope.NewResolver("mysql", diff, desired)
+	resolver, err := indexscope.NewResolver("mysql", withDeclaredIndexes(diff, desired))
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(resolver, qt.IsNil)
@@ -321,7 +319,7 @@ func TestNewResolver_MalformedRemovalRejectedWithoutTarget(t *testing.T) {
 		IndexesRemoved: []difftypes.IndexRef{{Name: "idx_users_email"}},
 	}
 
-	resolver, err := indexscope.NewResolver("postgres", diff, nil)
+	resolver, err := indexscope.NewResolver("postgres", diff)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(resolver, qt.IsNil)
@@ -335,7 +333,7 @@ func TestNewResolver_AdditionRequiresTargetIndex(t *testing.T) {
 		},
 	}
 
-	resolver, err := indexscope.NewResolver("postgres", diff, nil)
+	resolver, err := indexscope.NewResolver("postgres", diff)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(resolver, qt.IsNil)
@@ -669,8 +667,7 @@ func TestNewResolverWithSemantics_SQLServerUnknownRejectsDistinctNames(t *testin
 	_, err := indexscope.NewResolverWithSemantics(
 		"sqlserver",
 		identifier.ForDialect("sqlserver"),
-		diff,
-		desired,
+		withDeclaredIndexes(diff, desired),
 	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -699,7 +696,7 @@ func TestNewResolverWithSemantics_SQLServerCaseSensitiveAcceptsVariants(t *testi
 		{Name: "IDX_Email", TableName: "dbo.users"},
 	}}
 
-	resolver, err := indexscope.NewResolverWithSemantics("sqlserver", semantics, diff, desired)
+	resolver, err := indexscope.NewResolverWithSemantics("sqlserver", semantics, withDeclaredIndexes(diff, desired))
 
 	c.Assert(err, qt.IsNil)
 	lower, err := resolver.Resolve(difftypes.IndexRef{Name: "idx_email", TableName: "users"})
@@ -755,9 +752,23 @@ func BenchmarkNewResolver_LargeDuplicateNameSchema(b *testing.B) {
 	var resolver *indexscope.Resolver
 	var err error
 	for range b.N {
-		resolver, err = indexscope.NewResolver("mysql", diff, desired)
+		resolver, err = indexscope.NewResolver("mysql", withDeclaredIndexes(diff, desired))
 	}
 	b.StopTimer()
 	c.Assert(err, qt.IsNil)
 	c.Assert(resolver, qt.IsNotNil)
+}
+
+// withDeclaredIndexes fills the declared index/owner pairs a comparison
+// carries, so a fixture states the schema once rather than the pairs
+// (stokaro/ptah#2315).
+func withDeclaredIndexes(diff *difftypes.SchemaDiff, desired *schemamodel.Database) *difftypes.SchemaDiff {
+	if diff == nil {
+		return diff
+	}
+	completed := *diff
+	if len(completed.DeclaredIndexes) == 0 {
+		completed.DeclaredIndexes = difftypes.IndexDeclarationsOf(desired)
+	}
+	return &completed
 }

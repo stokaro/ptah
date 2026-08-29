@@ -433,6 +433,17 @@ func GenerateSchemaDiffASTWithOptions(
 			return nil, wrapPlanError(dialect, err)
 		}
 	}
+	// The carries a dialect planner reads, completed from the declaration this
+	// entry point still takes.
+	//
+	// A diff a comparison produced already holds them. One a caller assembled
+	// by hand may not, and this layer is where the declaration is prepared for
+	// planning anyway -- it qualifies user types and assigns default foreign
+	// key names a few lines above for the same reason. Only an EMPTY carry is
+	// filled, so a diff that states its own is never overruled
+	// (stokaro/ptah#2315).
+	diff = withCarriesFromDeclaration(diff, preparedGenerated)
+
 	planner, err := GetPlannerWithOptions(dialect, opts)
 	if err != nil {
 		return nil, wrapPlanError(dialect, err)
@@ -676,4 +687,25 @@ func wrapRenderError(dialect string, err error) error {
 		Err:     err,
 		Message: err.Error(),
 	}
+}
+
+// withCarriesFromDeclaration returns diff with any carry it left empty filled
+// from the declaration.
+//
+// It is a bridge, not a fallback: the comparison fills every one of these, and
+// this exists so a hand-assembled diff plus a declaration plans what it always
+// did while the declaration parameter is on its way out of this signature
+// (stokaro/ptah#2315).
+func withCarriesFromDeclaration(
+	diff *difftypes.SchemaDiff,
+	desired *schemamodel.Database,
+) *difftypes.SchemaDiff {
+	if diff == nil || desired == nil {
+		return diff
+	}
+	completed := *diff
+	if len(completed.DeclaredIndexes) == 0 {
+		completed.DeclaredIndexes = difftypes.IndexDeclarationsOf(desired)
+	}
+	return &completed
 }

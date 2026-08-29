@@ -1133,6 +1133,21 @@ type SchemaDiff struct {
 	// pre-change database's.
 	DeclaredFunctions FunctionOrdering `json:"-"`
 
+	// DeclaredIndexes is every declared index paired with the relation it
+	// belongs to, carried once for the whole diff and off the wire.
+	//
+	// An index addition is a REFERENCE -- a name and a table -- and the
+	// definition it resolves to is in the declaration. So is the answer to
+	// which relation owns it, which is not written on the index: a declaration
+	// may name the table, or name none and belong to the struct it was written
+	// on, and a materialized view is an owner too (stokaro/ptah#2315).
+	//
+	// The owner is resolved once, where the declaration is, so a planner reads
+	// a pair rather than repeating [schemamodel.ResolveIndexOwners]. It is the
+	// schema the plan runs against, so a reversal carries the pre-change
+	// database's.
+	DeclaredIndexes []IndexDeclaration `json:"-"`
+
 	// RLSEnabledTablesAdded contains names of tables that need RLS enabled
 	RLSEnabledTablesAdded RLSEnabledTableChanges `json:"rls_enabled_tables_added"`
 
@@ -2744,6 +2759,37 @@ func FunctionOrderingOf(db *schemamodel.Database) FunctionOrdering {
 		ordering.Order = append(ordering.Order, function.Name)
 	}
 	return ordering
+}
+
+// IndexDeclaration is one declared index and the relation it belongs to.
+//
+// The pair is the point. An index carries its own definition, and the owner is
+// derived: [schemamodel.ResolveIndexOwners] reads it from the index's `table=`,
+// from the struct the index was declared on, or from a materialized view --
+// PostgreSQL indexes those, and a UNIQUE index on one is what
+// REFRESH MATERIALIZED VIEW CONCURRENTLY requires.
+type IndexDeclaration struct {
+	// Index is the declaration.
+	Index schemamodel.Index
+	// TableName is the relation it belongs to, resolved.
+	TableName string
+}
+
+// IndexDeclarationsOf pairs every declared index with its resolved owner.
+//
+// The order is the declaration's, because a refusal about a conflicting or
+// unresolvable index names its POSITION, and a position that moved between two
+// runs over one document is one nobody can act on.
+func IndexDeclarationsOf(db *schemamodel.Database) []IndexDeclaration {
+	if db == nil || len(db.Indexes) == 0 {
+		return nil
+	}
+	owners := schemamodel.ResolveIndexOwners(db.Indexes, db.Tables, db.MaterializedViews)
+	declarations := make([]IndexDeclaration, 0, len(db.Indexes))
+	for position, index := range db.Indexes {
+		declarations = append(declarations, IndexDeclaration{Index: index, TableName: owners[position]})
+	}
+	return declarations
 }
 
 // ViewLikeVocabularyOf reads the view-like vocabulary out of a declaration.

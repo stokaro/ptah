@@ -833,6 +833,9 @@ func withDeclaredObjects(
 	if len(completed.DeclaredTables) == 0 {
 		completed.DeclaredTables = desired.Tables
 	}
+	if len(completed.DeclaredIndexes) == 0 {
+		completed.DeclaredIndexes = difftypes.IndexDeclarationsOf(desired)
+	}
 	if len(completed.DeclaredTableDependencies) == 0 {
 		completed.DeclaredTableDependencies = deporder.GeneratedTableDependencies(desired)
 	}

@@ -698,6 +698,17 @@ direction-dependent like the carries above. Omitting it costs the ORDER and not
 the statements: a routine the ordering does not name is still created, in the
 order the diff stated it.
 
+`SchemaDiff.DeclaredIndexes` carries every declared index paired with the
+relation it belongs to. `IndexesAdded` is a **reference** — a name and a table —
+and the definition it names is in the declaration; so is the answer to which
+relation owns it, which is not written on the index itself: a declaration may
+name the table, may name none and belong to the struct it was written on, and a
+materialized view is an owner too. Resolving the owner happens once, where the
+declaration is, so a planner reads a pair. It is direction-dependent like the
+carries above. An embedder building a diff by hand and omitting it gets
+`invalid schema diff: added index ... is missing or ambiguous in the target
+schema` rather than a plan built from a guess.
+
 `SchemaDiff.RLSEnabledTablesAdded` and `RLSEnabledTablesRemoved` are
 `RLSEnabledTableChanges` rather than `[]string`. An ADDED entry is the
 declaration, which is what a target rendering a declared comment needs; a

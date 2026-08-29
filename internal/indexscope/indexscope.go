@@ -54,12 +54,8 @@ func validateDiff(dialect string, semantics identifier.Semantics, diff *difftype
 // NewResolver validates every index identity needed to plan diff and indexes
 // the target schema for constant-time addition lookup. Removals are
 // self-contained because their owning table is part of IndexRef.
-func NewResolver(
-	dialect string,
-	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
-) (*Resolver, error) {
-	return NewResolverWithSemantics(dialect, identifier.ForDialect(dialect), diff, desired)
+func NewResolver(dialect string, diff *difftypes.SchemaDiff) (*Resolver, error) {
+	return NewResolverWithSemantics(dialect, identifier.ForDialect(dialect), diff)
 }
 
 // NewResolverWithSemantics validates and indexes target indexes using explicit
@@ -68,7 +64,6 @@ func NewResolverWithSemantics(
 	dialect string,
 	semantics identifier.Semantics,
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 ) (*Resolver, error) {
 	if diff == nil {
 		return nil, fmt.Errorf("%w: schema diff is nil", ptaherr.ErrInvalidSchemaDiff)
@@ -76,7 +71,7 @@ func NewResolverWithSemantics(
 	if err := validateDiff(dialect, semantics, diff); err != nil {
 		return nil, err
 	}
-	resolver, err := newTargetResolver(dialect, semantics, desired)
+	resolver, err := newTargetResolver(dialect, semantics, diff.DeclaredIndexes)
 	if err != nil {
 		return nil, err
 	}
@@ -97,30 +92,34 @@ func NewResolverWithSemantics(
 	return resolver, nil
 }
 
+// newTargetResolver builds the lookup from the declared index/owner pairs the
+// diff carries.
+//
+// Resolving the owner is the declaration's job and happens once, in
+// [difftypes.IndexDeclarationsOf]. Materialized views are relations an index
+// can belong to, not just tables: PostgreSQL accepts CREATE INDEX on one, and a
+// UNIQUE index on one is what REFRESH MATERIALIZED VIEW CONCURRENTLY requires.
+// Resolving against tables alone left the owner empty, and the refusal that
+// followed named a position in a slice rather than the index or the view
+// (stokaro/ptah#1725).
 func newTargetResolver(
 	dialect string,
 	semantics identifier.Semantics,
-	desired *schemamodel.Database,
+	declared []difftypes.IndexDeclaration,
 ) (*Resolver, error) {
 	resolver := &Resolver{
 		semantics: semantics,
 		indexes:   make(map[difftypes.IndexRef]schemamodel.Index),
 	}
-	if desired == nil {
+	if len(declared) == 0 {
 		return resolver, nil
 	}
 	tracker := NewConflictSetWithSemantics(semantics, nil)
-	// Materialized views are relations an index can belong to, not just
-	// tables: PostgreSQL accepts CREATE INDEX on one, and a UNIQUE index on
-	// one is what REFRESH MATERIALIZED VIEW CONCURRENTLY requires. Resolving
-	// against tables alone left the owner empty, and the refusal that
-	// followed named a position in a slice rather than the index or the view
-	// (stokaro/ptah#1725).
-	tableNames := schemamodel.ResolveIndexOwners(desired.Indexes, desired.Tables, desired.MaterializedViews)
-	for position, index := range desired.Indexes {
+	for position, declaration := range declared {
+		index := declaration.Index
 		ref := difftypes.IndexRef{
 			Name:      index.Name,
-			TableName: tableNames[position],
+			TableName: declaration.TableName,
 		}
 		if err := validateRef("target", position, ref); err != nil {
 			return nil, err

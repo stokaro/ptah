@@ -47,7 +47,7 @@ func TestPlanner_MySQLFamilyDropsAConstraintBackedKeyAsAnIndex(t *testing.T) {
 			c := qt.New(t)
 
 			nodes, err := test.planner.GenerateMigrationAST(
-				uniqueKeyRebuildDiff(),
+				withDeclaredTables(uniqueKeyRebuildDiff(), uniqueKeyRebuildSchema()),
 				uniqueKeyRebuildSchema(),
 			)
 
@@ -74,7 +74,7 @@ func TestPlanner_MySQLFamilyMarksTheUniquenessLossOnTheDrop(t *testing.T) {
 			c := qt.New(t)
 
 			nodes, err := test.planner.GenerateMigrationAST(
-				uniqueKeyRebuildDiff(),
+				withDeclaredTables(uniqueKeyRebuildDiff(), uniqueKeyRebuildSchema()),
 				uniqueKeyRebuildSchema(),
 			)
 

@@ -43,7 +43,7 @@ func TestPlanner_ConstraintBackedIndexRebuildDropsTheConstraint(t *testing.T) {
 	c := qt.New(t)
 
 	nodes, err := postgres.New().GenerateMigrationAST(
-		uniqueKeyRebuildDiff([]difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}}),
+		withDeclaredObjects(uniqueKeyRebuildDiff([]difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}}), uniqueKeyRebuildSchema()),
 		uniqueKeyRebuildSchema(),
 	)
 
@@ -72,7 +72,7 @@ func TestPlanner_UnmarkedIndexRebuildStillDropsTheIndex(t *testing.T) {
 	c := qt.New(t)
 
 	nodes, err := postgres.New().GenerateMigrationAST(
-		uniqueKeyRebuildDiff(nil),
+		withDeclaredObjects(uniqueKeyRebuildDiff(nil), uniqueKeyRebuildSchema()),
 		uniqueKeyRebuildSchema(),
 	)
 

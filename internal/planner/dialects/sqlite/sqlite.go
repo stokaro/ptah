@@ -50,15 +50,14 @@ func (p *Planner) capabilities() capability.Capabilities {
 	return p.caps
 }
 
-func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *schemamodel.Database) ([]ast.Node, error) {
-	if desired == nil {
-		desired = &schemamodel.Database{}
-	}
+// The declaration is no longer read: every fact this planner needs travels
+// on the diff. The parameter stays until it leaves the Planner interface,
+// which is one mechanical sweep over 257 call sites (stokaro/ptah#2315).
+func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, _ *schemamodel.Database) ([]ast.Node, error) {
 	indexes, err := indexscope.NewResolverWithSemantics(
 		DialectName,
 		diff.EffectiveIdentifierSemantics(DialectName),
 		diff,
-		desired,
 	)
 	if err != nil {
 		return nil, err

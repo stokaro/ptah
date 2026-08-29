@@ -735,9 +735,9 @@ type columnTypeForeignKeyPlan struct {
 //   - Neither (not in the FK constraint diff at all): a pure column-type change
 //     on an unchanged key. This planner owns both the pre-drop and the
 //     post-MODIFY re-add.
-func (p *Planner) planColumnTypeForeignKeyChanges(diff *difftypes.SchemaDiff, desired *schemamodel.Database) columnTypeForeignKeyPlan {
+func (p *Planner) planColumnTypeForeignKeyChanges(diff *difftypes.SchemaDiff) columnTypeForeignKeyPlan {
 	plan := columnTypeForeignKeyPlan{dropped: make(map[constraintHostKey]struct{})}
-	if diff == nil || desired == nil {
+	if diff == nil {
 		return plan
 	}
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
@@ -1168,11 +1168,11 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *difftypes.SchemaDi
 // Returns a slice of AST nodes representing SQL statements or an error when
 // the diff cannot be planned safely. Each node can be rendered to SQL using a
 // MySQL-specific visitor.
-func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *schemamodel.Database) ([]ast.Node, error) {
+// The declaration is no longer read: every fact this planner needs travels
+// on the diff. The parameter stays until it leaves the Planner interface,
+// which is one mechanical sweep over 257 call sites (stokaro/ptah#2315).
+func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, _ *schemamodel.Database) ([]ast.Node, error) {
 	var result []ast.Node
-	if desired == nil {
-		desired = &schemamodel.Database{}
-	}
 	// One fold, at the door, beside the index resolver that has always been
 	// here. A diff the comparator produced arrives with its identities
 	// resolved; one an embedder built by hand does not, and the zero identity
@@ -1183,7 +1183,6 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 		p.targetDialect(),
 		diff.EffectiveIdentifierSemantics(p.targetDialect()),
 		diff,
-		desired,
 	)
 	if err != nil {
 		return nil, err
@@ -1245,7 +1244,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	// to addNewConstraints, which runs after the modifications; fkPlan.dropped
 	// tells that machinery — and removeConstraints — to suppress their own now
 	// redundant drop of the same (table, name).
-	fkPlan := p.planColumnTypeForeignKeyChanges(diff, desired)
+	fkPlan := p.planColumnTypeForeignKeyChanges(diff)
 	result = append(result, fkPlan.drops...)
 
 	result, err = p.modifyExistingTables(result, diff)
