@@ -508,8 +508,19 @@ func nativeEnvironmentPresent(flag Flag) bool {
 // including unsupported ones: setting PTAH_TO_TAG is a request for --to-tag,
 // and the loud refusal is the correct answer to a request Ptah cannot honor.
 //
-// Only a flag marked EnvDisabled opts out, and on this surface exactly one
-// does — see ExplicitUnsupportedBoolReason.
+// Only a flag marked EnvDisabled opts out. No flag on this surface carries the
+// mark today: the one that did was `migrate down --skip-checks`, a waiver whose
+// name `migrate apply` had repurposed, and it stopped needing the mark when the
+// rollback capability became real rather than refused (stokaro/ptah#951). Both
+// verbs now mean "skip the pre-migration checks" by it, so one PTAH_SKIP_CHECKS
+// serving both is the right answer rather than a collision.
+//
+// The mark stays, and so do [ExplicitNativeBool] and
+// [ExplicitUnsupportedBoolReason], because the shape recurs whenever a name is
+// repurposed. TestNoFlagCarriesTheEnvironmentMarkUnexplained is what keeps this
+// paragraph from becoming a count nobody rechecks: it fails when a flag takes
+// the mark, so whoever adds one has to say here why the name collides
+// (stokaro/ptah#2496).
 func appendEnvArgs(flags []Flag, args []string) ([]string, error) {
 	out := args
 	cloned := false
