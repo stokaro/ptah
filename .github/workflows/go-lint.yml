@@ -162,7 +162,10 @@ jobs:
         run: scripts/check-feature-inventory.sh --selftest
 
       - name: Check public Go API ledger
-        run: scripts/check-public-api.sh
+        run: |
+          set -euo pipefail
+          scripts/check-public-api-selftest.sh
+          scripts/check-public-api.sh
 
       - name: Check public Go API snapshot
         run: scripts/check-public-api-snapshot.sh

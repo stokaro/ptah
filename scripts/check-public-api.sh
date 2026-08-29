@@ -18,7 +18,16 @@ trap 'rm -f "$allowlist" "$packages"' EXIT
 # character produces a SMALLER allowlist, and a smaller allowlist reports fewer
 # undocumented packages rather than an error. The tool refuses a vacuous ledger
 # itself, so nothing below re-checks for an empty file.
-go run ./internal/cmd/featureinventory --list-ledger | sort -u >"$allowlist"
+#
+# PTAH_FEATURE_INVENTORY lets check-public-api-selftest.sh aim this gate at a
+# prebuilt binary, so the fixture can be a throwaway module that has no
+# internal/cmd of its own. It is the same seam check-compose-image-pins.sh
+# opens for the same reason (stokaro/ptah#2509).
+if [[ -n ${PTAH_FEATURE_INVENTORY:-} ]]; then
+	"$PTAH_FEATURE_INVENTORY" --list-ledger | sort -u >"$allowlist"
+else
+	go run ./internal/cmd/featureinventory --list-ledger | sort -u >"$allowlist"
+fi
 
 go list -f '{{.ImportPath}}|{{.Name}}' ./... >"$packages"
 

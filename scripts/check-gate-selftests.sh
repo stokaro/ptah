@@ -255,16 +255,7 @@ run_shell_selftest_case check-feature-inventory.sh \
 	"the runnable-example refusal short-circuited inside exampleProblems()" \
 	"perl -0pi -e 's/if len\\(example\\.Shells\\) == 0 \\{/if false \\&\\& len(example.Shells) == 0 {/' internal/featureinventory/inventory.go"
 
-run_case check-public-api.sh \
-	"an exported package with no doc comment" \
-	"mkdir -p gateselftest && printf 'package gateselftest\n\nfunc Exported() {}\n' >gateselftest/gateselftest.go"
 
-# The ledger scrape reads list items only. This fixture documents the new
-# package in a prose paragraph rather than a bullet: a scrape that let prose
-# mentions join the allowlist would accept it and pass (stokaro/ptah#2246).
-run_case check-public-api.sh \
-	"a package whose only ledger mention is a prose paragraph" \
-	'mkdir -p gateselftest && printf "package gateselftest\n\nfunc Exported() {}\n" >gateselftest/gateselftest.go && printf "\nA prose paragraph that mentions \`go.5x5.cz/ptah/gateselftest\` is not a listing.\n" >>docs/public_api.md'
 
 
 run_case check-public-api-docs-sync.sh \
