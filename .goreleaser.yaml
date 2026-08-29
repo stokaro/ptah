@@ -204,12 +204,23 @@ brews:
       owner: stokaro
       name: homebrew-ptah
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    # The formula is always generated, but publishing it needs the tap
-    # repository and a token that can push to it. Without HOMEBREW_TAP_TOKEN
-    # the upload is skipped instead of failing the whole release.
-    # index, not .Env.X: the snapshot job does not define the variable at all,
-    # and .Env.X errors on a missing key while index yields an empty string.
-    skip_upload: '{{ if index .Env "HOMEBREW_TAP_TOKEN" }}false{{ else }}true{{ end }}'
+    # The upload is not optional, and this is stokaro/ptah#2361: a release that
+    # drops a distribution channel reports the same result as one that
+    # publishes it, so nothing ever complained while no tap existed.
+    #
+    # A missing token is a configuration error rather than a reason to ship one
+    # fewer channel. The release workflow refuses it in a step of its own,
+    # before anything is built, so this field never has to decide -- and it
+    # refuses there rather than here because GoReleaser reaches the formula
+    # only after the release assets and the images are already pushed, and a
+    # half-published release is the expensive way to learn the secret is gone.
+    #
+    # Snapshots are unaffected: `--snapshot` implies `--skip=publish`, so the
+    # publish phase -- this upload, and the `.Env.HOMEBREW_TAP_TOKEN` lookup
+    # above with it -- does not run at all. Measured on v2.15.4 with the
+    # variable explicitly unset: the run writes dist/homebrew/Formula/ptah.rb
+    # and succeeds.
+    skip_upload: false
     directory: Formula
     # Declared on BOTH formulas, deliberately. Homebrew's conflict check reads
     # only the conflicts of the formula being installed -- it does not scan the

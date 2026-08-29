@@ -9,12 +9,13 @@ Ptah releases are produced by GoReleaser from annotated version tags.
   fine-grained token granting `Contents: Read and write` on that repository and
   nothing else, which is the whole of what GoReleaser needs: it reads the
   default branch, reads the formula path for its SHA, and writes the file.
-  Without the secret the formula is generated and its upload is skipped, and the
-  rest of the release publishes normally. With a secret whose token has
-  **expired** the release fails instead, because `skip_upload` in
-  `.goreleaser.yaml` asks whether the variable is set rather than whether its
-  value still works. The token's expiry is on its page under GitHub developer
-  settings; rotate it there and reset the secret.
+  Both are required. The release workflow's first step refuses an empty or
+  unset secret and stops before anything is built, and `skip_upload` is
+  `false`, so a release cannot finish green with the Homebrew channel missing.
+  An **expired** token fails the same run later, at the formula push, because
+  neither check can tell a live token from a dead one. The expiry is on the
+  token's page under GitHub developer settings; rotating it there means
+  resetting the secret.
 - GitHub Actions package permissions enabled for publishing
   `ghcr.io/stokaro/ptah`.
 - GoReleaser `v2.15.4`. The GitHub Actions workflow pins this version because
