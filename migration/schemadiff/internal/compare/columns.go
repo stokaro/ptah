@@ -139,7 +139,12 @@ func tableColumnsWithSemantics(
 	objectOwnedUniqueColumns map[columnIdentity]struct{},
 	generatedExpressions map[string]config.GeneratedExpression,
 ) difftypes.TableDiff {
-	tableDiff := difftypes.TableDiff{TableName: genTable.QualifiedName()}
+	tableDiff := difftypes.TableDiff{
+		TableName: genTable.QualifiedName(),
+		// Everything the declaration says about this table, for the rebuild a
+		// dialect reaches for when ALTER TABLE cannot express the change.
+		Desired: difftypes.TableDeclarationFor(desired, genTable),
+	}
 
 	// Create maps for quick lookup
 	genFields := generatedschema.FieldsForTable(desired, genTable)

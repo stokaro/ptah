@@ -122,6 +122,11 @@ func TestEveryTableDiffFieldIsClassified(t *testing.T) {
 		// carry comments, so a SQLite table cannot have one to converge
 		// (stokaro/ptah#2168).
 		"CommentChange": false,
+		// The table as the declaration holds it, which the rebuild renders FROM
+		// rather than a change it has to converge. It is present on every
+		// modification, including the ones ALTER TABLE expresses in place, so a
+		// rebuild forced by it would rebuild for nothing (stokaro/ptah#2315).
+		"Desired": false,
 	}
 
 	// One non-zero value per field kind, so the census exercises the predicate
@@ -137,6 +142,16 @@ func TestEveryTableDiffFieldIsClassified(t *testing.T) {
 		},
 		reflect.Pointer: func(fieldType reflect.Type) reflect.Value {
 			return reflect.New(fieldType.Elem())
+		},
+		// The one struct field TableDiff has is the table declaration, made
+		// non-zero by naming its table. A different struct field added later
+		// panics here rather than being quietly built zero, which is the
+		// census asking for a decision the same way the classification map
+		// above does.
+		reflect.Struct: func(fieldType reflect.Type) reflect.Value {
+			value := reflect.New(fieldType).Elem()
+			value.FieldByName("Table").FieldByName("Name").SetString("users")
+			return value
 		},
 	}
 
