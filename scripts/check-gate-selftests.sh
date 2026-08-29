@@ -185,21 +185,12 @@ echo "check-gate-selftests: breaking each gate's own rule and requiring it to no
 # The path is assembled rather than written out, because check-repository-local-
 # paths.sh reads this file too and would find its own fixture. Its exclusion
 # list names only the gate itself, which is the right list: a harness that had
-run_case check-go-toolchain-single-source.sh \
-	"a Go version literal pinned in a workflow" \
-	"perl -0pi -e 's/go-version-file: go.mod/go-version: \"1.26.0\"/' .github/workflows/go-unit-tests.yml"
 
 run_case check-go-module-lint-coverage.sh \
 	"working-directory for the nested module removed from one job" \
 	"perl -0pi -e 's|working-directory: examples/orm-loaders/gorm||' .github/workflows/go-lint.yml"
 
-run_case check-docsync.sh \
-	"a declared release line deleted from the documented version matrix" \
-	"perl -0pi -e 's/^\|\s\`postgres\`\s\|\s18[^\n]*\n//m' docs/site/src/content/docs/databases/support-matrix.md"
 
-run_case check-docsync.sh \
-	"a heading removed from the generated lint-rule block" \
-	"perl -0pi -e 's/^## Identifier families\n//m' docs/site/src/content/docs/reference/lint-rules.md"
 
 run_case check-goreleaser-artifact-names.sh \
 	"the snapshot version taken from whatever tag git describe reaches" \
@@ -224,13 +215,7 @@ run_case check-public-api-snapshot.sh \
 	"an exported field added to a documented struct" \
 	"perl -0pi -e 's/type DomainExpression struct \{/type DomainExpression struct {\n\t\/\/ GateSelftestField exists only inside this fixture.\n\tGateSelftestField string\n/' config/config.go"
 
-run_case check-docsync.sh \
-	"a key removed from the generated capability table" \
-	"perl -0pi -e 's/^\| \`advisory_locks\`[^\n]*\n//m' docs/capabilities.md"
 
-run_case check-docsync.sh \
-	"a verb row removed from the generated agent-surface table" \
-	"perl -0pi -e 's/^.*introspects the database and prints what it found.*\\n//m' docs/agent-surface.md"
 
 # Two fixtures, one per comparison mode. The command reference is three marker
 # blocks and one whole page, and a gate whose two rules are only ever broken
@@ -245,13 +230,7 @@ run_case check-docsync.sh \
 # generated table row would be command substitution on the second pass. `.`
 # matches the backtick in the pattern and perl's `\x60` writes one in the
 # replacement.
-run_case check-docsync.sh \
-	"a verb row removed from the generated command index" \
-	"perl -0pi -e 's/^\| .ptah introspect. \|[^\n]*\n//m' docs/site/src/content/docs/reference/native-commands.md"
 
-run_case check-docsync.sh \
-	"a flag's value type edited on the fully generated flag page" \
-	"perl -0pi -e 's/\*\*\x60ptah seed\x60\*\*.*?\| \x60--env\x60 \| \K\x60string\x60/\x60int\x60/s' docs/site/src/content/docs/reference/command-flags.md"
 
 # The derived feature inventory. Three fixtures, because the gate's rules fail
 # in three different places and only the first leaves a diff anyone would see.
@@ -260,24 +239,15 @@ run_case check-docsync.sh \
 # the byte comparison is the whole of the gate's coverage of every derived
 # column: kind, surface and identifier are checked by that one comparison and by
 # nothing else.
-run_case check-feature-inventory.sh \
-	"a row deleted from the committed inventory" \
-	"perl -0pi -e 's/\\{\\n      \"id\": \"cli-ptah-db-read\",.*?\\n    \\},\\n//s' docs/feature-inventory.json"
 
 # The one hand-written datum in the system. A page claiming an identifier the
 # derivation does not produce is the mistake the inverted direction exists to
 # catch: the closed attempt searched pages for a feature and credited any page
 # containing any token of its name.
-run_case check-feature-inventory.sh \
-	"a page claiming a feature the derivation does not produce" \
-	"perl -0pi -e 's/  - cli-ptah-schema-apply/  - cli-ptah-schema-aplly/' docs/site/src/content/docs/direct/apply.md"
 
 # The coverage floor. Removing an `owns:` line rewrites the artifact AND drops
 # the claimed count below the floor, so this fixture is the one that says the
 # floor is read rather than merely written down.
-run_case check-feature-inventory.sh \
-	"an owns: entry removed from a page that claims one feature" \
-	"perl -0pi -e 's/^owns:\\n  - cli-ptah-viz\\n//m' docs/site/src/content/docs/schema/visualize.md"
 
 # And the floor itself, edited in the artifact it governs. The floor used to be
 # read out of this file and written back by `--write`, which made it the one
@@ -286,9 +256,6 @@ run_case check-feature-inventory.sh \
 # laundered through a regeneration. It is a source constant now, so the same
 # edit is a stale artifact. A tree whose floor is already 0 makes this mutation
 # a no-op and the harness reports the fixture as proving nothing.
-run_case check-feature-inventory.sh \
-	"the coverage floor lowered in the committed artifact" \
-	"perl -0pi -e 's/\"claimed_floor\": \\d+/\"claimed_floor\": 0/' docs/feature-inventory.json"
 
 # And the self-test itself, against a rule short-circuited in its own source.
 run_shell_selftest_case check-feature-inventory.sh \
@@ -457,6 +424,21 @@ run_node_selftest_case lib/docroutes.mjs \
 # paragraph, because the guard at the end of this file reads it: a coverage list
 # nobody checks is the same failure mode the harness exists to prevent --
 # silence that reads as completeness (stokaro/ptah#1923).
+# adjacent lists the gates whose known-bad fixtures already live BESIDE the
+# checker, which is where stokaro/ptah#2509 wants all of them. A mutation here
+# would run a second, weaker version of a claim that is already made where it
+# can be read next to the code it is about -- and the harness's own summary
+# would count it twice.
+#
+# Each entry names where the fixtures are, so the claim is checkable rather than
+# asserted. This list is the harness shrinking toward its own deletion: it is
+# the direction, and a gate joins it by growing an adjacent test.
+adjacent=(
+	"check-docsync.sh	internal/docsync: each fail-closed refusal, and Replace asserted idempotent"
+	"check-feature-inventory.sh	--selftest breaks every derivation rule against in-memory fixtures, and go-lint.yml runs it"
+	"check-go-toolchain-single-source.sh	internal/gotoolchain: every YAML spelling and both forwarding shapes, with controls"
+)
+
 uncovered=(
 	"check-coverage.sh	runs the whole test suite; minutes per fixture"
 	"check-public-api-released.sh	resolves the published module over the network"
@@ -485,6 +467,9 @@ echo
 echo "  not covered here, with the reason:"
 for entry in "${uncovered[@]}"; do
 	printf '    %-40s %s\n' "${entry%%	*}" "${entry##*	}"
+done
+for entry in "${adjacent[@]}"; do
+	printf '    %-40s %s\n' "${entry%%	*}" "proven beside the checker -- ${entry##*	}"
 done
 for gate in $(companion_gates); do
 	printf '    %-40s %s\n' "$gate" "carries its own -selftest.sh companion"
@@ -558,7 +543,7 @@ for path in scripts/check-*.sh; do
 	for covered in "${fixtured[@]}" $(companion_gates); do
 		[ "$covered" = "$gate" ] && listed="yes"
 	done
-	for entry in "${uncovered[@]}"; do
+	for entry in "${uncovered[@]}" "${adjacent[@]}"; do
 		[ "${entry%%	*}" = "$gate" ] && listed="yes"
 	done
 	[ -n "$listed" ] || unlisted="${unlisted} ${gate}"
