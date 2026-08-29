@@ -88,8 +88,15 @@ a release -- and nothing regenerates it either. **A change to how the release
 binaries are built belongs in both places.** The edge formula repeats the
 release build's `CGO_ENABLED=0`, its `-trimpath`, its `buildinfo` ldflags, and
 its list of three binaries; when any of those move in `.goreleaser.yaml` and not
-in the formula, edge quietly stops being the edge of what ships. There is no
-check for this today, because the two files are in different repositories.
+in the formula, edge quietly stops being the edge of what ships.
+
+That coupling is checked, and the check lives in the tap because the file it
+guards does: `scripts/check-edge-matches-release.sh` there reads this
+repository's `.goreleaser.yaml` and requires the formula to still repeat it. The
+change that breaks it is made here, where nothing can see that file, so the
+check runs on a daily schedule as well as on every push to the tap -- a drift
+introduced by a change on this side surfaces within a day rather than at the
+next install.
 
 ## Local Snapshot
 
