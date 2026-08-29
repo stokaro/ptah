@@ -16,7 +16,8 @@ func fieldNamed(c *qt.C, sql, column string) schemamodel.Field {
 
 	statements, err := parser.NewParser(sql, parser.WithDialect("postgres")).Parse()
 	c.Assert(err, qt.IsNil)
-	database := toschema.ToDatabase(statements, "postgres")
+	database, err := toschema.ToDatabase(statements, "postgres")
+	c.Assert(err, qt.IsNil)
 	schemamodel.Finalize(&database)
 
 	for _, field := range database.Fields {

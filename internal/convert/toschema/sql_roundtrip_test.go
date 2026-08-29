@@ -21,7 +21,9 @@ import (
 func parseToDatabase(c *qt.C, sql string) schemamodel.Database {
 	statements, err := parser.NewParser(sql).Parse()
 	c.Assert(err, qt.IsNil)
-	return toschema.ToDatabase(statements, "")
+	database, err := toschema.ToDatabase(statements, "")
+	c.Assert(err, qt.IsNil)
+	return database
 }
 
 func findTable(db schemamodel.Database, name string) (schemamodel.Table, bool) {
@@ -198,7 +200,8 @@ func TestToDatabase_SQLServerBracketIdentifiersStayAtomic(t *testing.T) {
 	statements, err := parser.NewParser(sql, parser.WithDialect("sqlserver")).Parse()
 	c.Assert(err, qt.IsNil)
 
-	db := toschema.ToDatabase(statements, "")
+	db, err := toschema.ToDatabase(statements, "")
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, "user's")
@@ -289,11 +292,12 @@ func TestToDatabase_DialectQuotedIdentifiersAreCanonicalized(t *testing.T) {
 	extension := ast.NewExtension(`"uuid-ossp"`).SetSchema(`"Extension Store"`)
 	enum := ast.NewEnum(`"audit"."event""kind"`, "created")
 
-	db := toschema.ToDatabase(&ast.StatementList{Statements: []ast.Node{
+	db, err := toschema.ToDatabase(&ast.StatementList{Statements: []ast.Node{
 		table,
 		index,
 		enum,
 	}}, "")
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Schema, qt.Equals, "audit")
