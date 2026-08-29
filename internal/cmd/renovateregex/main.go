@@ -1,36 +1,15 @@
 // Command renovateregex compiles every custom-manager pattern in renovate.json
-// with Go's regexp package, which is RE2 -- the engine Renovate evaluates them
-// with.
+// with the engine Renovate evaluates them with.
 //
-// A pattern that RE2 cannot compile does not degrade: Renovate refuses the whole
-// configuration and stops opening pull requests until somebody fixes it. That is
-// what stokaro/ptah#2339 was, from a `\k<depName>` backreference -- valid in
-// JavaScript, absent from RE2, and invisible to every check this repository ran.
-//
-// It is invisible to `renovate-config-validator` too. That tool loads the `re2`
-// native module and falls back to JavaScript's own engine when the module is not
-// built; measured on 2026-08-27, it reported "Config validated successfully" for
-// the exact file Renovate had already refused. A validator that answers about a
-// different engine than the one that will run the pattern is not evidence about
-// this, so the compile happens here instead.
+// The rules are internal/renovateregex, where their fixtures sit beside them.
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
-	"regexp"
-	"strings"
-)
 
-// config is the part of renovate.json this reads. Everything else is the
-// validator's business.
-type config struct {
-	CustomManagers []struct {
-		Description  string   `json:"description"`
-		MatchStrings []string `json:"matchStrings"`
-	} `json:"customManagers"`
-}
+	"go.5x5.cz/ptah/internal/renovateregex"
+)
 
 func main() {
 	// Fixed rather than taken as an argument. This gate is about THIS
@@ -43,49 +22,19 @@ func main() {
 	if err != nil {
 		failf("%v", err)
 	}
-	var cfg config
-	if err := json.Unmarshal(raw, &cfg); err != nil {
+	config, err := renovateregex.Parse(raw)
+	if err != nil {
 		failf("%s: %v", path, err)
 	}
-
-	// A file that declares no custom manager is not a pass to report. This gate
-	// exists because the patterns are unchecked anywhere else, and one that
-	// compiled nothing would report the same success on the day the managers
-	// were renamed out from under it.
-	if len(cfg.CustomManagers) == 0 {
-		failf("%s declares no customManagers; refusing to report a vacuous pass", path)
+	result := renovateregex.Check(config)
+	for _, finding := range result.Findings {
+		fmt.Fprintf(os.Stderr, "%s: %s\n", path, finding)
 	}
-
-	checked := 0
-	failures := 0
-	for i, manager := range cfg.CustomManagers {
-		if len(manager.MatchStrings) == 0 {
-			failf("%s: customManagers[%d] declares no matchStrings", path, i)
-		}
-		for j, pattern := range manager.MatchStrings {
-			checked++
-			if _, err := regexp.Compile(re2Spelling(pattern)); err != nil {
-				failures++
-				fmt.Fprintf(os.Stderr, "%s: customManagers[%d].matchStrings[%d] does not compile under RE2: %v\n",
-					path, i, j, err)
-				fmt.Fprintf(os.Stderr, "  %s\n", pattern)
-			}
-		}
-	}
-	if failures > 0 {
-		fmt.Fprintf(os.Stderr, "renovate regex check: %d of %d pattern(s) would stop Renovate\n", failures, checked)
+	if !result.OK() {
+		fmt.Fprintf(os.Stderr, "renovate regex check: %d finding(s) would stop Renovate\n", len(result.Findings))
 		os.Exit(1)
 	}
-	fmt.Printf("renovate regex check: OK (%d pattern(s) compile under RE2)\n", checked)
-}
-
-// re2Spelling converts a named group from the spelling Renovate's patterns use
-// to the one Go's parser wants. They are the same construct: RE2 accepts
-// `(?P<name>`, and the `re2` binding Renovate uses accepts `(?<name>` for it.
-// Rewriting is what lets this compile the file's own bytes rather than a
-// transcription of them.
-func re2Spelling(pattern string) string {
-	return strings.ReplaceAll(pattern, "(?<", "(?P<")
+	fmt.Printf("renovate regex check: OK (%d pattern(s) compile under RE2)\n", result.Checked)
 }
 
 func failf(format string, args ...any) {

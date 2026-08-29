@@ -39,7 +39,10 @@ jobs:
           ! grep -F "locking prevents double-apply" README.md
 
       - name: Check repository-local path leaks
-        run: scripts/check-repository-local-paths.sh
+        run: |
+          set -euo pipefail
+          scripts/check-repository-local-paths-selftest.sh
+          scripts/check-repository-local-paths.sh
 
       - name: Check developer stack image pins
         run: |
@@ -70,7 +73,10 @@ jobs:
           scripts/check-readme-example-selftest.sh
 
       - name: Check the ADR index
-        run: scripts/check-adr-index.sh
+        run: |
+          set -euo pipefail
+          scripts/check-adr-index-selftest.sh
+          scripts/check-adr-index.sh
 
       # The script published at https://stokaro.github.io/ptah/install.sh, run
       # against a fixture release under every POSIX shell on the runner. busybox
