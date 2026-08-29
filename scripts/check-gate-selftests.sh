@@ -418,6 +418,20 @@ companion_gates() {
 	done
 }
 
+# The guard on that derivation. A companion on disk is a file, not a check: what
+# excuses a gate from this harness is the companion RUNNING, and nothing here
+# read the workflows to find out. The same hole was in the `.mjs` half, where the
+# claim "takes --selftest, run in the docs job" was checked by grepping the
+# gate's own source for the string; both are a sentence about CI that CI never
+# had to make true.
+companion_unrun=""
+for companion in scripts/check-*-selftest.sh; do
+	[ -e "$companion" ] || continue
+	companion_base="$(basename "$companion")"
+	grep -rqF "$companion_base" .github/workflows/ ||
+		companion_unrun="${companion_unrun} ${companion_base}"
+done
+
 echo
 echo "  not covered here, with the reason:"
 for entry in "${uncovered[@]}"; do
@@ -428,7 +442,7 @@ for entry in "${adjacent[@]}"; do
 	printf '    %-40s %s\n' "${entry%%	*}" "proven in ${rest%%	*}: ${rest#*	}"
 done
 for gate in $(companion_gates); do
-	printf '    %-40s %s\n' "$gate" "carries its own -selftest.sh companion"
+	printf '    %-40s %s\n' "$gate" "carries its own -selftest.sh companion, run beside it in CI"
 done
 
 # selftest_is_run answers whether a `.mjs` gate takes `--selftest` AND the docs
@@ -531,6 +545,11 @@ for path in scripts/check-*.sh; do
 done
 
 echo
+if [ -n "$companion_unrun" ]; then
+	echo "check-gate-selftests: a companion exists but no workflow runs it:${companion_unrun}" >&2
+	echo "  add it to the step beside its gate, or the gate is excused by a file nobody executes" >&2
+	exit 1
+fi
 if [ -n "$adjacent_unproven" ]; then
 	echo "check-gate-selftests: a gate is excused as proven beside its checker, but the tests are not there:${adjacent_unproven}" >&2
 	exit 1
