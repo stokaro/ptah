@@ -36,8 +36,8 @@ var mysqlFamilyDialects = []string{"mysql", "mariadb"}
 // against, which is what the comparison does and the only answer that can be
 // right.
 func renderMySQLFamily(c *qt.C, dialect string, diff *difftypes.SchemaDiff, desired *schemamodel.Database) string {
-	diff = withDeclaredColumnOperands(diff, desired)
-	nodes, err := mysql.New().GenerateMigrationAST(diff, desired)
+	diff = withDeclaredObjects(diff, desired)
+	nodes, err := mysql.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL(dialect, nodes...)
 	c.Assert(err, qt.IsNil)
@@ -771,14 +771,18 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedPrimaryKeyRemovalSuppressesC
 	}
 }
 
-// withDeclaredColumnOperands fills each column modification's operand from
-// desired, leaving one that already carries an operand alone.
+// withDeclaredObjects fills a fixture diff's carries from the declaration the
+// plan is applied against: each column modification's operand, and the declared
+// table list a constraint synthesis indexes by struct name.
+//
+// Both are things a comparison fills on every run, and a fixture states the
+// CHANGE.
 //
 // It resolves the way the comparison does: the table's struct, then that
 // struct's fields with embedded structs folded in. A column desired does not
 // declare is left with no operand, so a fixture testing that case still reaches
 // the planner's report.
-func withDeclaredColumnOperands(
+func withDeclaredObjects(
 	diff *difftypes.SchemaDiff,
 	desired *schemamodel.Database,
 ) *difftypes.SchemaDiff {
@@ -795,6 +799,9 @@ func withDeclaredColumnOperands(
 			columns[columnIndex].Desired = declaredColumn(desired, tableDiff.TableName, colDiff.ColumnName)
 		}
 		completed.TablesModified[tableIndex].ColumnsModified = columns
+	}
+	if len(completed.DeclaredTables) == 0 {
+		completed.DeclaredTables = desired.Tables
 	}
 	return &completed
 }

@@ -3011,8 +3011,11 @@ func (p *Planner) removeRLSPolicies(result []ast.Node, diff *difftypes.SchemaDif
 //	  CHECK (price > 0);
 func (p *Planner) addNewConstraints(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	// Resolve struct → table name once for the field-level synthesis fallbacks.
-	structToTable := make(map[string]string, len(desired.Tables))
-	for _, t := range desired.Tables {
+	// The declared tables the diff carries. This is an INDEX of them --
+	// struct name to table name -- so the order the two lists differ in does
+	// not reach it (stokaro/ptah#2315).
+	structToTable := make(map[string]string, len(diff.DeclaredTables))
+	for _, t := range diff.DeclaredTables {
 		structToTable[t.StructName] = t.QualifiedName()
 	}
 
@@ -3195,7 +3198,7 @@ func (p *Planner) addNamedConstraintsByKind(
 		// synthesizes those constraints into diff.ConstraintsAdded by name only
 		// — they never reach generated.Constraints, so without the fallbacks an
 		// ADD CONSTRAINT for an existing column would be silently dropped.
-		if node, ok := p.addConstraintNodeFor(constraintName, desired, structToTable); ok {
+		if node, ok := p.addConstraintNodeFor(constraintName, desired, diff.DeclaredTables, structToTable); ok {
 			if node != nil {
 				result = append(result, node)
 			}
@@ -3532,7 +3535,12 @@ func declaredConstraintTable(constraint schemamodel.Constraint, structToTable ma
 // The returned bool reports whether a matching definition was found; the node
 // may still be nil when a match exists but produces no valid AST -- a kind whose
 // own required fields are missing, such as an EXCLUDE with no element list.
-func (p *Planner) addConstraintNodeFor(constraintName string, desired *schemamodel.Database, structToTable map[string]string) (ast.Node, bool) {
+func (p *Planner) addConstraintNodeFor(
+	constraintName string,
+	desired *schemamodel.Database,
+	declaredTables []schemamodel.Table,
+	structToTable map[string]string,
+) (ast.Node, bool) {
 	for _, constraint := range desired.Constraints {
 		if constraint.Name != constraintName {
 			continue
@@ -3550,7 +3558,7 @@ func (p *Planner) addConstraintNodeFor(constraintName string, desired *schemamod
 		return node, true
 	}
 
-	return p.fieldLevelForeignKeyConstraintNode(constraintName, desired, structToTable)
+	return p.fieldLevelForeignKeyConstraintNode(constraintName, desired, declaredTables, structToTable)
 }
 
 // fieldLevelCheckConstraintNode builds the ADD CONSTRAINT node for a synthesized
@@ -3593,7 +3601,12 @@ func (p *Planner) fieldLevelCheckConstraintNode(constraintName string, desired *
 // silently-broken migration. New columns/tables are handled by the inline FK in
 // CREATE TABLE / ALTER TABLE ADD COLUMN and the comparator deliberately skips
 // synthesizing those, so only existing-column FK action changes reach here.
-func (p *Planner) fieldLevelForeignKeyConstraintNode(constraintName string, desired *schemamodel.Database, structToTable map[string]string) (ast.Node, bool) {
+func (p *Planner) fieldLevelForeignKeyConstraintNode(
+	constraintName string,
+	desired *schemamodel.Database,
+	declaredTables []schemamodel.Table,
+	structToTable map[string]string,
+) (ast.Node, bool) {
 	for _, f := range desired.Fields {
 		if f.Foreign == "" {
 			continue
@@ -3610,8 +3623,8 @@ func (p *Planner) fieldLevelForeignKeyConstraintNode(constraintName string, desi
 		if fkRef == nil {
 			continue
 		}
-		if table := findGeneratedTableByStructName(desired.Tables, f.StructName); table != nil {
-			qualifyForeignKeyRef(desired.Tables, *table, fkRef)
+		if table := findGeneratedTableByStructName(declaredTables, f.StructName); table != nil {
+			qualifyForeignKeyRef(declaredTables, *table, fkRef)
 		}
 		fkRef.OnDelete = f.OnDelete
 		fkRef.OnUpdate = f.OnUpdate

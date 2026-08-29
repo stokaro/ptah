@@ -210,7 +210,7 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 			},
 		}
 
-		nodes, err := mysql.NewWithCapabilities(capability.MySQLLegacy()).GenerateMigrationAST(diff, desired)
+		nodes, err := mysql.NewWithCapabilities(capability.MySQLLegacy()).GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -222,7 +222,7 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 			qt.Commentf("the skip must be loud; got:\n%s", sql))
 
 		// The enforcing window (8.0.16+) emits the constraint as usual.
-		nodes, err = mysql.NewWithCapabilities(capability.MySQL8016()).GenerateMigrationAST(diff, desired)
+		nodes, err = mysql.NewWithCapabilities(capability.MySQL8016()).GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 		c.Assert(err, qt.IsNil)
 		sql, err = renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -245,7 +245,7 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 			},
 		}
 
-		nodes, err := mysql.NewWithCapabilities(capability.MySQLLegacy()).GenerateMigrationAST(diff, desired)
+		nodes, err := mysql.NewWithCapabilities(capability.MySQLLegacy()).GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -258,7 +258,7 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 
 		// Positive control at the unit level: an enforcing target emits the
 		// field-level ADD as before.
-		nodes, err = mysql.New().GenerateMigrationAST(diff, desired)
+		nodes, err = mysql.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 		c.Assert(err, qt.IsNil)
 		sql, err = renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -292,11 +292,11 @@ func TestPlanner_CapabilityGating_ZeroValuePlannerBehavesLikeNew(t *testing.T) {
 	}
 
 	zero := &mysql.Planner{}
-	zeroNodes, err := zero.GenerateMigrationAST(diff, desired)
+	zeroNodes, err := zero.GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 	c.Assert(err, qt.IsNil)
 	zeroSQL, err := renderer.RenderSQL("mysql", zeroNodes...)
 	c.Assert(err, qt.IsNil)
-	newNodes, err := mysql.New().GenerateMigrationAST(diff, desired)
+	newNodes, err := mysql.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 	c.Assert(err, qt.IsNil)
 	newSQL, err := renderer.RenderSQL("mysql", newNodes...)
 	c.Assert(err, qt.IsNil)

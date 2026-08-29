@@ -52,7 +52,7 @@ func TestPlanner_ModifiesAColumnDeclaredInsideAnEmbeddedStruct(t *testing.T) {
 	}
 
 	diff := schemadiff.CompareWithDialect(desired, database, platform.MySQL)
-	nodes, err := mysql.New().GenerateMigrationAST(diff, desired)
+	nodes, err := mysql.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL(platform.MySQL, nodes...)
 	c.Assert(err, qt.IsNil)

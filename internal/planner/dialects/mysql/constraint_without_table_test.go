@@ -51,7 +51,7 @@ func TestPlanner_TableLevelConstraintWithoutAnExplicitTable(t *testing.T) {
 				Constraints: []schemamodel.Constraint{test.constraint},
 			}
 
-			nodes, err := mysql.New().GenerateMigrationAST(diff, desired)
+			nodes, err := mysql.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("mysql", nodes...)
@@ -75,7 +75,7 @@ func TestPlanner_TableLevelConstraintNamesItsOwnTable(t *testing.T) {
 		}},
 	}
 
-	nodes, err := mysql.New().GenerateMigrationAST(diff, desired)
+	nodes, err := mysql.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("mysql", nodes...)
