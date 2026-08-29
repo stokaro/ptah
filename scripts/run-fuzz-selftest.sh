@@ -82,6 +82,13 @@ expect "a killed process beside the deadline fails" false "$(stub go_killed 1 '-
 signal: killed
 FAIL')"
 
+# A build failure carries no line of its own beyond go's package summary, so
+# this is the row that holds that summary's pattern to a duration. Loosened to
+# "any line beginning FAIL", every other row here still passes.
+expect "a build failure beside the deadline fails" false "$(stub go_build 1 '--- FAIL: FuzzThing (30.31s)
+    context deadline exceeded
+FAIL	go.5x5.cz/ptah/pkg [build failed]')"
+
 # The controls. A deadline-only transcript still passes, and it still passes
 # with the progress and package-summary lines a real run prints around it --
 # without these, refusing everything would satisfy every row above.
