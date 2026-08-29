@@ -13,7 +13,7 @@
   ],
   "generator": "scripts/check-feature-inventory.sh --write",
   "claimed_floor": 79,
-  "claimed": 79,
+  "claimed": 83,
   "rows": [
     {
       "id": "cli-ptah-assist-context",
@@ -115,67 +115,85 @@
       "id": "cli-ptah-inference-backfill",
       "kind": "native-verb",
       "surface": "ptah inference backfill",
-      "claimed_by": "docs/site/src/content/docs/operate/inference-migrations.md"
+      "claimed_by": "docs/site/src/content/docs/inference/reference/commands.md"
     },
     {
       "id": "cli-ptah-inference-catchup",
       "kind": "native-verb",
       "surface": "ptah inference catchup",
-      "claimed_by": "docs/site/src/content/docs/operate/inference-migrations.md"
+      "claimed_by": "docs/site/src/content/docs/inference/reference/commands.md"
     },
     {
       "id": "cli-ptah-inference-cutover",
       "kind": "native-verb",
       "surface": "ptah inference cutover",
-      "claimed_by": "docs/site/src/content/docs/operate/inference-migrations.md"
+      "claimed_by": "docs/site/src/content/docs/inference/reference/commands.md"
+    },
+    {
+      "id": "cli-ptah-inference-describe",
+      "kind": "native-verb",
+      "surface": "ptah inference describe",
+      "claimed_by": "docs/site/src/content/docs/inference/reference/commands.md"
     },
     {
       "id": "cli-ptah-inference-evaluate",
       "kind": "native-verb",
       "surface": "ptah inference evaluate",
-      "claimed_by": "docs/site/src/content/docs/operate/inference-migrations.md"
+      "claimed_by": "docs/site/src/content/docs/inference/reference/commands.md"
     },
     {
       "id": "cli-ptah-inference-index",
       "kind": "native-verb",
       "surface": "ptah inference index",
-      "claimed_by": null
+      "claimed_by": "docs/site/src/content/docs/inference/reference/commands.md"
+    },
+    {
+      "id": "cli-ptah-inference-pause",
+      "kind": "native-verb",
+      "surface": "ptah inference pause",
+      "claimed_by": "docs/site/src/content/docs/inference/reference/commands.md"
     },
     {
       "id": "cli-ptah-inference-plan",
       "kind": "native-verb",
       "surface": "ptah inference plan",
-      "claimed_by": "docs/site/src/content/docs/operate/inference-migrations.md"
+      "claimed_by": "docs/site/src/content/docs/inference/reference/commands.md"
     },
     {
       "id": "cli-ptah-inference-prepare",
       "kind": "native-verb",
       "surface": "ptah inference prepare",
-      "claimed_by": "docs/site/src/content/docs/operate/inference-migrations.md"
+      "claimed_by": "docs/site/src/content/docs/inference/reference/commands.md"
+    },
+    {
+      "id": "cli-ptah-inference-resume",
+      "kind": "native-verb",
+      "surface": "ptah inference resume",
+      "claimed_by": "docs/site/src/content/docs/inference/reference/commands.md"
     },
     {
       "id": "cli-ptah-inference-retire",
       "kind": "native-verb",
       "surface": "ptah inference retire",
-      "claimed_by": "docs/site/src/content/docs/operate/inference-migrations.md"
+      "claimed_by": "docs/site/src/content/docs/inference/reference/commands.md"
     },
     {
       "id": "cli-ptah-inference-rollback",
       "kind": "native-verb",
       "surface": "ptah inference rollback",
-      "claimed_by": "docs/site/src/content/docs/operate/inference-migrations.md"
+      "claimed_by": "docs/site/src/content/docs/inference/reference/commands.md"
     },
     {
       "id": "cli-ptah-inference-status",
       "kind": "native-verb",
       "surface": "ptah inference status",
-      "claimed_by": "docs/site/src/content/docs/operate/inference-migrations.md"
+      "claimed_by": "docs/site/src/content/docs/inference/reference/commands.md"
     },
     {
       "id": "cli-ptah-inference-verify",
       "kind": "native-verb",
       "surface": "ptah inference verify",
-      "claimed_by": "docs/site/src/content/docs/operate/inference-migrations.md"
+      "claimed_by": "docs/site/src/content/docs/inference/reference/commands.md"
     },
     {
       "id": "cli-ptah-introspect",

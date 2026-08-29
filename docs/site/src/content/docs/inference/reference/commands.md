@@ -18,7 +18,7 @@ owns:
   - cli-ptah-inference-retire
 ---
 
-Twelve verbs. Each is a decision taken separately: none of them is implied by
+Fourteen verbs. Each is a decision taken separately: none of them is implied by
 another.
 
 Every verb takes `--spec` and `--db-url`. Most take `--run-id`, which is an
