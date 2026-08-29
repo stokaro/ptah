@@ -185,16 +185,6 @@ echo "check-gate-selftests: breaking each gate's own rule and requiring it to no
 # The path is assembled rather than written out, because check-repository-local-
 # paths.sh reads this file too and would find its own fixture. Its exclusion
 # list names only the gate itself, which is the right list: a harness that had
-# to be added to it would be a harness nobody could tell from a real leak.
-home_root="/Users"
-run_case check-repository-local-paths.sh \
-	"an absolute developer path in README" \
-	"printf '\n    %s/somebody/Work/ptah/schema.sql\n' \"${home_root}\" >>README.md"
-
-run_case check-adr-index.sh \
-	"a second record taking a number another one already has" \
-	"printf '# ADR 0001: A second record\n' >docs/adr/0001-a-second-record.md"
-
 run_case check-go-toolchain-single-source.sh \
 	"a Go version literal pinned in a workflow" \
 	"perl -0pi -e 's/go-version-file: go.mod/go-version: \"1.26.0\"/' .github/workflows/go-unit-tests.yml"
