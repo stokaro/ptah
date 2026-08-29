@@ -90,7 +90,7 @@
             "whyTheTwoNumbersDiffer": "`rawGrep` is what a repository-wide grep answers and is recorded because the census measured it. `ratchet` is what THIS gate measures over the whole corpus, on the prose stream with code spans, fenced blocks and link destinations already dropped. The two differ because the stream drops text a grep counts, not because the ratchet covers less: the ratchet caps every file the corpus holds.",
             "whyTheScopeIsNotNarrowed": "It was, for one commit: the ratchet read 15 over the non-Atlas site pages, and the other 91 findings were free to grow. A ratchet is only a ceiling over what it counts, so narrowing it to an easier frontier is the one thing it must not do. The number is larger and the property is stronger."
           },
-          "ratchet": 103
+          "ratchet": 101
         }
       ]
     },
