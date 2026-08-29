@@ -1,8 +1,6 @@
 ---
 title: Atlas migrate commands
 description: Run Atlas-style migration workflows with ptah-compat migrate apply, down, status, diff, lint, and the directory-maintenance verbs.
-owns:
-  - cli-ptah-migrations-lint
 ---
 
 You have an Atlas-format migration directory — or scripts that manage one with

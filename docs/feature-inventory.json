@@ -271,7 +271,7 @@
       "id": "cli-ptah-migrations-lint",
       "kind": "native-verb",
       "surface": "ptah migrations lint",
-      "claimed_by": "docs/site/src/content/docs/atlas/migrate-commands.md"
+      "claimed_by": "docs/site/src/content/docs/versioned/lint.md"
     },
     {
       "id": "cli-ptah-migrations-ls",

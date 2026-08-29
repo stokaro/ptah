@@ -1,6 +1,8 @@
 ---
 title: Lint and gate unsafe SQL
 description: Analyze migration files for production-unsafe patterns, set the rule policy, declare rules of your own, and gate destructive statements at apply time.
+owns:
+  - cli-ptah-migrations-lint
 ---
 
 Some SQL is legal and still wrong to run against a database people depend on.
