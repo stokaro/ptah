@@ -843,3 +843,34 @@ func assertBefore(t *testing.T, sql, earlier, later string) {
 	c.Assert(laterIndex, qt.Not(qt.Equals), -1, qt.Commentf("missing %q in:\n%s", later, sql))
 	c.Assert(earlierIndex < laterIndex, qt.IsTrue, qt.Commentf("expected %q before %q in:\n%s", earlier, later, sql))
 }
+
+// TestPlanner_GenerateMigrationAST_FunctionsWithoutAnOrderingAreStillCreated
+// pins what an incomplete carry costs.
+//
+// The ordering inputs are a convenience: they say which CREATE has to come
+// first and how to break a tie. The functions themselves travel with the
+// additions, so a diff that carries the bodies and no ordering has to emit
+// every one of them, in the order it stated them.
+//
+// Written the other way -- names drawn from the declared order alone -- an
+// empty order produced an EMPTY PLAN: every function silently dropped, and a
+// migration reporting success with nothing in it (stokaro/ptah#2315).
+func TestPlanner_GenerateMigrationAST_FunctionsWithoutAnOrderingAreStillCreated(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{
+		FunctionsAdded: difftypes.FunctionChanges{
+			{Function: schemamodel.Function{Name: "second", Body: "SELECT 2", Returns: "integer", Language: "sql"}},
+			{Function: schemamodel.Function{Name: "first", Body: "SELECT 1", Returns: "integer", Language: "sql"}},
+		},
+	}
+
+	nodes, err := postgres.New().GenerateMigrationAST(diff, &schemamodel.Database{})
+
+	c.Assert(err, qt.IsNil)
+	sql, err := renderer.RenderSQL("postgres", nodes...)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, `FUNCTION "second"`)
+	c.Assert(sql, qt.Contains, `FUNCTION "first"`)
+	// Stated order, because nothing said otherwise.
+	c.Assert(strings.Index(sql, `FUNCTION "second"`) < strings.Index(sql, `FUNCTION "first"`), qt.IsTrue)
+}

@@ -1120,6 +1120,19 @@ type SchemaDiff struct {
 	// arrived, which is what leaves a rollback's own ordering standing.
 	DeclaredTableDependencies map[string][]string `json:"-"`
 
+	// DeclaredFunctions is the ordering input for creating functions, carried
+	// once for the whole diff and off the wire.
+	//
+	// A function body may call another function, so a CREATE has to come after
+	// what it calls. The bodies travel with the additions, but the additions
+	// are SORTED by name -- the edges between them, and the order the author
+	// wrote them in, are properties of the document rather than of any one
+	// entry (stokaro/ptah#2315).
+	//
+	// It is the schema the plan runs against, so a reversal carries the
+	// pre-change database's.
+	DeclaredFunctions FunctionOrdering `json:"-"`
+
 	// RLSEnabledTablesAdded contains names of tables that need RLS enabled
 	RLSEnabledTablesAdded RLSEnabledTableChanges `json:"rls_enabled_tables_added"`
 
@@ -2695,6 +2708,42 @@ func ConstraintHostDeclarationsOf(
 		return nil
 	}
 	return declarations
+}
+
+// FunctionOrdering is what putting a set of functions in creation order needs
+// beyond the functions themselves.
+//
+// The two halves answer different questions and neither implies the other.
+// Dependencies says which CREATE must come first. Order says how to break a
+// tie, and it is the order the author wrote, which is what keeps a plan
+// reading like the document it came from rather than like a map walk.
+type FunctionOrdering struct {
+	// Order is every declared function name, in declaration order.
+	Order []string
+	// Dependencies maps a function name to the functions its body calls.
+	Dependencies map[string][]string
+}
+
+// FunctionOrderingOf reads the ordering inputs off a schema.
+//
+// The dependency map is one [schemamodel.Finalize] fills, so a declaration
+// assembled in memory and never finalized carries none -- and answers with the
+// author's order alone, which is the same answer the sort gives for a document
+// whose functions call nothing.
+func FunctionOrderingOf(db *schemamodel.Database) FunctionOrdering {
+	if db == nil {
+		return FunctionOrdering{}
+	}
+	ordering := FunctionOrdering{Dependencies: db.FunctionDependencies}
+	seen := make(map[string]struct{}, len(db.Functions))
+	for _, function := range db.Functions {
+		if _, already := seen[function.Name]; already {
+			continue
+		}
+		seen[function.Name] = struct{}{}
+		ordering.Order = append(ordering.Order, function.Name)
+	}
+	return ordering
 }
 
 // ViewLikeVocabularyOf reads the view-like vocabulary out of a declaration.

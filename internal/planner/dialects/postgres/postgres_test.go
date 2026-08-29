@@ -1733,6 +1733,9 @@ func withDeclaredObjects(diff *difftypes.SchemaDiff, desired *schemamodel.Databa
 	if len(completed.DeclaredTableDependencies) == 0 {
 		completed.DeclaredTableDependencies = deporder.GeneratedTableDependencies(desired)
 	}
+	if len(completed.DeclaredFunctions.Order) == 0 {
+		completed.DeclaredFunctions = difftypes.FunctionOrderingOf(desired)
+	}
 	if len(completed.DeclaredViewLikes.Views) == 0 && len(completed.DeclaredViewLikes.MaterializedViews) == 0 {
 		completed.DeclaredViewLikes = difftypes.ViewLikeVocabularyOf(desired)
 	}

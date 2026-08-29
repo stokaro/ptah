@@ -688,6 +688,16 @@ carries above: a reversal carries the pre-change database's graph, and a table
 that graph does not name orders as it arrived. An embedder building a diff by
 hand and omitting it gets its removals in the order it wrote them.
 
+`SchemaDiff.DeclaredFunctions` carries the two things that putting a set of
+functions in creation order needs beyond the functions themselves: the order the
+author declared them in, and which function's body calls which. A body may call
+another function, so a `CREATE` has to come after what it calls; the bodies
+travel with the additions, but the additions are sorted by name, and neither the
+edges nor the author's order is a property of any one entry. It is
+direction-dependent like the carries above. Omitting it costs the ORDER and not
+the statements: a routine the ordering does not name is still created, in the
+order the diff stated it.
+
 `SchemaDiff.RLSEnabledTablesAdded` and `RLSEnabledTablesRemoved` are
 `RLSEnabledTableChanges` rather than `[]string`. An ADDED entry is the
 declaration, which is what a target rendering a declared comment needs; a
