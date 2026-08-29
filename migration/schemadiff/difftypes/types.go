@@ -1640,6 +1640,41 @@ type EnumDiff struct {
 	// ValuesRemoved contains enum values that need to be removed from the enum type
 	// (may not be supported by all databases - see database limitations above)
 	ValuesRemoved []string `json:"values_removed"`
+
+	// Usages are the declared columns typed by this enum, carried off the wire.
+	//
+	// Removing a value is not an ALTER on PostgreSQL: the type is renamed
+	// aside, recreated without the value, and every column that names it is
+	// converted across -- with its default dropped first and restored after,
+	// because a default is typed by the type being replaced.
+	//
+	// Which columns those are is a question about the whole declaration, and a
+	// planner asked it by scanning every declared field for the type name. It
+	// belongs to the change instead: the comparison holds the declaration at
+	// the moment it decides a value is going (stokaro/ptah#2315).
+	//
+	// Empty for a change that only ADDS values, which needs no conversion.
+	Usages []EnumColumnUsage `json:"-"`
+}
+
+// EnumColumnUsage is one declared column typed by an enum, and what the
+// conversion has to put back around it.
+//
+// The default travels with the column because dropping it is half of the
+// conversion: `ALTER COLUMN ... TYPE` cannot run while a default typed by the
+// old type is attached, so the plan drops it, converts, and sets it again.
+type EnumColumnUsage struct {
+	// Table is the column's table, qualified as the declaration spells it.
+	Table string
+	// Column is the column name.
+	Column string
+	// Default is the declared default, empty when there is none.
+	Default string
+	// DefaultSet separates a declared empty default from no default at all.
+	DefaultSet bool
+	// DefaultExpr is the declared default expression, which is not quoted as
+	// a literal when it is restored.
+	DefaultExpr string
 }
 
 // FunctionDiff represents changes to PostgreSQL function definitions.

@@ -158,6 +158,12 @@ func EnumsWithSemantics(
 		}
 		matched[dbEnum.QualifiedName()] = struct{}{}
 		enumDiff := EnumValues(genEnum, dbEnum)
+		if len(enumDiff.ValuesRemoved) > 0 {
+			// Only a removal needs them: that is the change PostgreSQL cannot
+			// express as an ALTER, so the type is recreated and every column
+			// naming it is converted across.
+			enumDiff.Usages = enumColumnUsages(desired, enumDiff.EnumName)
+		}
 		if len(enumDiff.ValuesAdded) > 0 || len(enumDiff.ValuesRemoved) > 0 {
 			diff.EnumsModified = append(diff.EnumsModified, enumDiff)
 		}
@@ -339,4 +345,48 @@ func enumFromCatalog(reported catalog.Enum) schemamodel.Enum {
 // sortEnums orders by the key the name lists were sorted on.
 func sortEnums(enums difftypes.EnumChanges) {
 	sort.Slice(enums, func(i, j int) bool { return enums[i].QualifiedName() < enums[j].QualifiedName() })
+}
+
+// enumColumnUsages lists the declared columns typed by the named enum.
+//
+// A field names its declared type by BARE name -- that is what the renderer
+// matches on -- while the diff names the enum by qualified name. Both spellings
+// are accepted so a rebuild of an enum in a non-default schema still finds the
+// columns it has to convert. Where two schemas hold an enum of one name the bare
+// spelling cannot separate them; see the residual note on stokaro/ptah#1276.
+func enumColumnUsages(desired *schemamodel.Database, enumName string) []difftypes.EnumColumnUsage {
+	if desired == nil {
+		return nil
+	}
+	tablesByStruct := make(map[string]schemamodel.Table, len(desired.Tables))
+	for _, table := range desired.Tables {
+		tablesByStruct[table.StructName] = table
+	}
+
+	bareName := enumName
+	if ref, ok := tableref.Parse(enumName); ok {
+		bareName = ref.Name
+	}
+
+	usages := make([]difftypes.EnumColumnUsage, 0)
+	for _, field := range desired.Fields {
+		if field.Type != enumName && field.Type != bareName {
+			continue
+		}
+		table, ok := tablesByStruct[field.StructName]
+		if !ok {
+			continue
+		}
+		usages = append(usages, difftypes.EnumColumnUsage{
+			Table:       table.QualifiedName(),
+			Column:      field.Name,
+			Default:     field.Default,
+			DefaultSet:  field.DefaultSet,
+			DefaultExpr: field.DefaultExpr,
+		})
+	}
+	if len(usages) == 0 {
+		return nil
+	}
+	return usages
 }

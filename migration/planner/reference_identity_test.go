@@ -192,6 +192,15 @@ func TestGenerateSchemaDiffSQL_PostgresEnumRemovalPreservesLiteralDotIdentity(t 
 		EnumsModified: []difftypes.EnumDiff{{
 			EnumName:      `"tenant.data"`,
 			ValuesRemoved: []string{"retired"},
+			// The column a comparison carries for the removal. Its table is the
+			// one literally named `tenant.data`, which is the identity this test
+			// is about.
+			// The table QUOTED, which is what Table.QualifiedName answers for a
+			// table whose name holds a literal dot -- and the identity this test
+			// is about: unquoted it would name schema `tenant`, table `data`.
+			Usages: []difftypes.EnumColumnUsage{{
+				Table: `"tenant.data"`, Column: "status",
+			}},
 		}},
 		// Filled the way a comparison fills it, from the declaration this plan
 		// is applied against.
