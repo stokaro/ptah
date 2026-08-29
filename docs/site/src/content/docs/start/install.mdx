@@ -255,8 +255,10 @@ Edge is the development tip rather than a release. It carries commands and
 behavior no released version has, and none of the verification a tag goes
 through -- signed checksums, SBOMs, the published archives -- applies to it.
 
-Both formulas install the same three binaries, so Homebrew refuses to have both
-linked at once. Move between them by uninstalling first:
+Both formulas install the same three binaries, and Homebrew links whichever
+arrived first: installing the second leaves the first one's `ptah` on your
+`PATH` and says so only in a `shadowed by` hint. Each formula's caveat names
+the other. Move between them by uninstalling first:
 
 ```bash
 brew uninstall ptah && brew install --HEAD stokaro/ptah/ptah-edge
