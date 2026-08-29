@@ -12647,6 +12647,7 @@ type TableChanges []TableCreation
 type TableCreation struct{ ... }
     func TableCreationFor(desired *schemamodel.Database, table schemamodel.Table, name string) TableCreation
 type TableDeclaration struct{ ... }
+    func ConstraintHostDeclarationsOf(db *schemamodel.Database, additions []ConstraintAdditionInfo, ...) []TableDeclaration
     func TableDeclarationFor(desired *schemamodel.Database, table schemamodel.Table) TableDeclaration
 type TableDiff struct{ ... }
 type TriggerDiff struct{ ... }
@@ -14321,6 +14322,23 @@ type SchemaDiff struct {
     // filled.
     DeclaredForeignKeys []ForeignKeyDeclaration `json:"-"`
 
+    // DeclaredConstraintHosts is the whole declaration of every table a
+    // constraint change names, carried once for the whole diff and off the
+    // wire.
+    //
+    // A target that cannot ALTER a constraint into place rebuilds the table
+    // around it, and a rebuild renders the table entire -- columns, indexes
+    // and triggers included. Such a table has no entry in [SchemaDiff.TablesModified]
+    // at all when the constraint is its only change, so no per-table operand
+    // carries it and the planner assembled it from the declaration
+    // (stokaro/ptah#2315).
+    //
+    // It is filled from the schema the plan runs against, the way
+    // [DeclaredTables] is: the comparison from the declaration and the
+    // reversal from the pre-change schema, because a rollback rebuilds the
+    // table that database had.
+    DeclaredConstraintHosts []TableDeclaration `json:"-"`
+
     // RLSEnabledTablesAdded contains names of tables that need RLS enabled
     RLSEnabledTablesAdded RLSEnabledTableChanges `json:"rls_enabled_tables_added"`
 
@@ -14625,6 +14643,7 @@ type TableDeclaration struct {
     A rebuild cannot do that -- the table it replaces already has them, and they
     have to come back with it -- so this carries all four.
 
+func ConstraintHostDeclarationsOf(db *schemamodel.Database, additions []ConstraintAdditionInfo, ...) []TableDeclaration
 func TableDeclarationFor(desired *schemamodel.Database, table schemamodel.Table) TableDeclaration
 func (d TableDeclaration) HasTable() bool
 

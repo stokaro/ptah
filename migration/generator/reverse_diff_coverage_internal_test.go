@@ -104,6 +104,17 @@ func assertReverseCoverageField(
 		// what holds that, since this gate structurally cannot.
 		return
 	}
+	if field.Name == "DeclaredConstraintHosts" {
+		// An OUTPUT of the reverse, for the reason the four above are. A
+		// rollback rebuilds the table the PRE-CHANGE database held, so the
+		// columns, indexes and triggers that rebuild renders are that
+		// database's -- the forward value describes the table the change was
+		// moving to and cannot reach it.
+		//
+		// TestReverseSchemaDiff_ARolledBackRebuildUsesThePriorTableBody is
+		// what holds that, since this gate structurally cannot.
+		return
+	}
 	if field.Name == "DeclaredForeignKeys" {
 		// An OUTPUT of the reverse, for the reason the three above are. A
 		// rollback restores the column the PRE-CHANGE database had, so the
@@ -752,4 +763,69 @@ func TestReverseSchemaDiff_ARolledBackTableCarriesThePriorConstraints(t *testing
 	}
 	c.Assert(names, qt.Contains, revCoverageCheckName,
 		qt.Commentf("the recreated table brings back the constraints that database's table had"))
+}
+
+// TestReverseSchemaDiff_ARolledBackRebuildUsesThePriorTableBody is the fifth
+// schema-wide fact a rollback resolves rather than inherits.
+//
+// A target with no ALTER for a constraint change rebuilds the table around it,
+// and a rebuild renders the table entire. Which columns, indexes and triggers
+// that is, is a fact about the database being rolled back TO: the declaration
+// describes the table the change was moving to, and rebuilding from it would
+// write the post-change table while restoring the pre-change constraint.
+//
+// The two bodies differ by one column here, and both are non-empty, so a
+// reversal that inherited the forward value would still look populated.
+func TestReverseSchemaDiff_ARolledBackRebuildUsesThePriorTableBody(t *testing.T) {
+	c := qt.New(t)
+
+	const table, constraintName = "widgets", "ck_widgets_id"
+	// The declaration has the column the change ADDS; the database does not.
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Widget", Name: table}},
+		Fields: []schemamodel.Field{
+			{StructName: "Widget", Name: "id", Type: "BIGINT", Primary: true},
+			{StructName: "Widget", Name: "note", Type: "TEXT"},
+		},
+		Constraints: []schemamodel.Constraint{{
+			StructName: "Widget", Name: constraintName, Table: table,
+			Type: "CHECK", CheckExpression: "id > 0",
+		}},
+	}
+	schemamodel.Finalize(schema)
+	checkClause := "id > 0"
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{{
+			Name: table, Type: "TABLE",
+			Columns: []catalog.Column{
+				{Name: "id", DataType: "bigint", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
+			},
+		}},
+		// The constraint the forward change removes has to BE there, or the
+		// rollback has nothing to restore and carries no host either.
+		Constraints: []catalog.Constraint{{
+			Name: constraintName, TableName: table, Type: "CHECK", CheckClause: &checkClause,
+		}},
+	}
+	removal := []difftypes.ConstraintRemovalInfo{{
+		Name: constraintName, TableName: table, Type: "CHECK",
+	}}
+	forward := &difftypes.SchemaDiff{
+		ConstraintsRemoved:           []string{constraintName},
+		ConstraintsRemovedWithTables: removal,
+		// The declaration's own hosts, carrying the added column. A rollback
+		// rebuilding from these would write a table the database never had.
+		DeclaredConstraintHosts: difftypes.ConstraintHostDeclarationsOf(
+			schema, nil, removal, identifier.Semantics{}),
+	}
+
+	reversed := reverseSchemaDiffWithSchema(forward, schema, dbSchema)
+	c.Assert(reversed.DeclaredConstraintHosts, qt.HasLen, 1)
+	columns := make([]string, 0, len(reversed.DeclaredConstraintHosts[0].Fields))
+	for _, field := range reversed.DeclaredConstraintHosts[0].Fields {
+		columns = append(columns, field.Name)
+	}
+	c.Assert(columns, qt.Contains, "id")
+	c.Assert(columns, qt.Not(qt.Contains), "note",
+		qt.Commentf("the rebuild renders the table body that database had, not the one the change was moving to"))
 }

@@ -19,6 +19,7 @@ import (
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
+	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -1086,6 +1087,23 @@ type SchemaDiff struct {
 	// and the reversal from the prior schema, exactly as [DeclaredTables] is
 	// filled.
 	DeclaredForeignKeys []ForeignKeyDeclaration `json:"-"`
+
+	// DeclaredConstraintHosts is the whole declaration of every table a
+	// constraint change names, carried once for the whole diff and off the
+	// wire.
+	//
+	// A target that cannot ALTER a constraint into place rebuilds the table
+	// around it, and a rebuild renders the table entire -- columns, indexes
+	// and triggers included. Such a table has no entry in [SchemaDiff.TablesModified]
+	// at all when the constraint is its only change, so no per-table operand
+	// carries it and the planner assembled it from the declaration
+	// (stokaro/ptah#2315).
+	//
+	// It is filled from the schema the plan runs against, the way
+	// [DeclaredTables] is: the comparison from the declaration and the
+	// reversal from the pre-change schema, because a rollback rebuilds the
+	// table that database had.
+	DeclaredConstraintHosts []TableDeclaration `json:"-"`
 
 	// RLSEnabledTablesAdded contains names of tables that need RLS enabled
 	RLSEnabledTablesAdded RLSEnabledTableChanges `json:"rls_enabled_tables_added"`
@@ -2605,6 +2623,63 @@ func declaredForeignKeyName(declared, tableName, columnName string) string {
 		return declared
 	}
 	return fromschema.GenerateForeignKeyName(tableName, columnName)
+}
+
+// ConstraintHostDeclarationsOf assembles the declaration of every table the
+// given constraint changes name.
+//
+// It carries a superset of what any one planner rebuilds: a host whose table
+// is rebuilt for some other reason already has its declaration on the
+// modification, and one whose table is being created needs none. Over-carrying
+// is inert -- the planner looks up by name -- and the alternative is
+// reproducing a planner's rebuild rule here, where a divergence would show up
+// as a table rebuilt from nothing.
+//
+// A host the declaration does not hold contributes nothing, which is the same
+// answer the lookup it replaces gave.
+func ConstraintHostDeclarationsOf(
+	db *schemamodel.Database,
+	additions []ConstraintAdditionInfo,
+	removals []ConstraintRemovalInfo,
+	semantics identifier.Semantics,
+) []TableDeclaration {
+	if db == nil {
+		return nil
+	}
+	hosts := make([]string, 0, len(additions)+len(removals))
+	for _, addition := range additions {
+		hosts = append(hosts, addition.TableName)
+	}
+	for _, removal := range removals {
+		hosts = append(hosts, removal.TableName)
+	}
+	// Deduped by IDENTITY rather than by string: a modified constraint arrives
+	// as an addition spelled the way the declaration wrote its table and a
+	// removal spelled the way the catalog reports it, so `widget` and
+	// `main.widget` are one table and two strings. Sorted so the carry does not
+	// depend on the order the comparators ran in.
+	slices.Sort(hosts)
+	declarations := make([]TableDeclaration, 0, len(hosts))
+	seen := make(map[string]struct{}, len(hosts))
+	for _, host := range hosts {
+		if host == "" {
+			continue
+		}
+		key := semantics.QualifiedTableIdentityKey(host)
+		if _, done := seen[key]; done {
+			continue
+		}
+		seen[key] = struct{}{}
+		table := objectlookup.Qualified(db.Tables, host, semantics)
+		if table == nil {
+			continue
+		}
+		declarations = append(declarations, TableDeclarationFor(db, *table))
+	}
+	if len(declarations) == 0 {
+		return nil
+	}
+	return declarations
 }
 
 // ViewLikeVocabularyOf reads the view-like vocabulary out of a declaration.

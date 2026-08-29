@@ -980,7 +980,7 @@ func TestPlanner_RefusesAColumnOnARelationTheSchemaDoesNotDeclare(t *testing.T) 
 // on every run. A fixture states the CHANGE; restating the declaration beside it
 // would put the same table in two places where a reader has to check they agree.
 func withDeclaredTable(diff *difftypes.SchemaDiff, desired *schemamodel.Database) *difftypes.SchemaDiff {
-	if diff == nil || desired == nil || len(diff.TablesModified) == 0 {
+	if diff == nil || desired == nil {
 		return diff
 	}
 	completed := *diff
@@ -996,6 +996,11 @@ func withDeclaredTable(diff *difftypes.SchemaDiff, desired *schemamodel.Database
 	}
 	if len(completed.DeclaredTables) == 0 {
 		completed.DeclaredTables = desired.Tables
+	}
+	if len(completed.DeclaredConstraintHosts) == 0 {
+		completed.DeclaredConstraintHosts = difftypes.ConstraintHostDeclarationsOf(
+			desired, diff.ConstraintsAddedWithTables, diff.ConstraintsRemovedWithTables,
+			diff.EffectiveIdentifierSemantics(platform.SQLite))
 	}
 	return &completed
 }
@@ -1036,6 +1041,12 @@ func declaringTheOnlyTable(diff *difftypes.SchemaDiff, desired *schemamodel.Data
 		completed.TablesModified[i].Desired = difftypes.TableDeclarationFor(desired, desired.Tables[0])
 	}
 	completed.DeclaredTables = desired.Tables
+	// The one table is the only host a constraint change here can name, and
+	// naming it by identity is the whole point of the fixtures that use this:
+	// the diff and the constraint spell the table differently on purpose.
+	completed.DeclaredConstraintHosts = []difftypes.TableDeclaration{
+		difftypes.TableDeclarationFor(desired, desired.Tables[0]),
+	}
 	return &completed
 }
 

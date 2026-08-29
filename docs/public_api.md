@@ -667,6 +667,17 @@ hand fills it with `difftypes.ForeignKeyDeclarationsOf(desired)`; one that omits
 it gets a bare `MODIFY COLUMN`, which MySQL refuses with errno 3780 and MariaDB
 with errno 1832.
 
+`SchemaDiff.DeclaredConstraintHosts` carries the whole declaration of every
+table a constraint change names — columns, enums, constraints, indexes and
+triggers. A target with no `ALTER` for a constraint change rebuilds the table
+around it, and a rebuild renders the table entire; such a table has no entry in
+`TablesModified` at all when the constraint is its only change, so no per-table
+operand carries it. It is direction-dependent for the same reason
+`DeclaredForeignKeys` is: a rollback rebuilds the table the pre-change database
+had. An embedder building a diff by hand fills it with
+`difftypes.ConstraintHostDeclarationsOf`; one that omits it gets a refusal
+naming the table rather than a rebuild from nothing.
+
 `SchemaDiff.RLSEnabledTablesAdded` and `RLSEnabledTablesRemoved` are
 `RLSEnabledTableChanges` rather than `[]string`. An ADDED entry is the
 declaration, which is what a target rendering a declared comment needs; a

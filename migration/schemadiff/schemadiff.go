@@ -335,6 +335,13 @@ func CompareReportingUndecidedAdditions(
 	// Compare table-level constraints (EXCLUDE, CHECK, UNIQUE, etc.)
 	compare.ConstraintsWithSemantics(desired, database, diff, opts, identifierSemantics)
 
+	// The declaration of every table those constraints name, for a target that
+	// rebuilds a table to change one. It is filled here rather than beside the
+	// other carries because it reads the constraint lists, which the call above
+	// is what fills (stokaro/ptah#2315).
+	diff.DeclaredConstraintHosts = difftypes.ConstraintHostDeclarationsOf(
+		desired, diff.ConstraintsAddedWithTables, diff.ConstraintsRemovedWithTables, identifierSemantics)
+
 	// Every comparator sorts its own lists after filtering them, but the
 	// undecided additions arrive from several comparators, and the order inside
 	// each one follows the map iteration that produced the planned list. A
