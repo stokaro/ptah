@@ -414,7 +414,7 @@ scripts. `ptah migrations up` supports:
   It exists for ClickHouse, where a replicated deployment needs
   `ReplicatedMergeTree(...)` or the migration history lives on one node while
   every replica reports itself consistent; see
-  [the ClickHouse section](../../databases/support-matrix/#the-revision-tables-storage-engine).
+  [the ClickHouse revision table's storage engine](../../databases/clickhouse/#the-revision-tables-storage-engine).
   An engine the revision table cannot be is refused before any statement runs.
 
 All of these can live in `ptah.yaml` instead of the command line; see
@@ -480,8 +480,9 @@ error: error running migrations: pending migrations contain destructive statemen
 - 0000000003_drop_users.up.sql:1 DS101 error: DROP TABLE permanently deletes table users and every row in it; ...
 ```
 
-Both gates are covered in depth in
-[Integrity and safety](../integrity-and-safety/).
+The integrity gate is covered in depth on
+[Integrity and safety](../integrity-and-safety/), the destructive gate on
+[Lint and gate unsafe SQL](../lint/).
 
 **A migration failed partway.** The revision table records a dirty state and
 every later run refuses to continue until it is repaired — see

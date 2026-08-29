@@ -177,7 +177,7 @@ real CockroachDB parameter is deliberately absent — `ttl_row_stats_poll_interv
 — because the server rewrites the duration it stores and drops a value below one
 second entirely, so a declaration could never read back as written; declaring it
 is refused by name with the reason.
-See [CockroachDB row-level TTL](../../databases/support-matrix/#cockroachdb-row-level-ttl).
+See [CockroachDB row-level TTL](../../databases/distributed/#cockroachdb-row-level-ttl).
 
 Platform overrides: yes.
 
@@ -551,7 +551,7 @@ carries none of them — `system.roles` is `(name, id, storage)` — so declarin
 `password`, `login`, `superuser`, `createdb`, `createrole`, or `replication`
 for a ClickHouse target is refused rather than dropped, and `comment` is
 emitted as a leading SQL comment because the engine cannot store one. See
-[ClickHouse roles and grants](../../databases/support-matrix/#clickhouse-roles-and-grants).
+[ClickHouse roles and grants](../../databases/clickhouse/#roles-and-grants).
 
 ### `//ptah:schema:grant`
 
@@ -580,7 +580,7 @@ because ClickHouse resolves a grantee across users and roles and a user of that
 name would win. Privilege names the server rewrites on the way in — `ALL`,
 `CREATE`, `DROP`, `SYSTEM` and the rest — are refused too, because they never
 read back as written. See
-[ClickHouse roles and grants](../../databases/support-matrix/#clickhouse-roles-and-grants).
+[ClickHouse roles and grants](../../databases/clickhouse/#roles-and-grants).
 
 ### `//ptah:schema:rls:enable`
 

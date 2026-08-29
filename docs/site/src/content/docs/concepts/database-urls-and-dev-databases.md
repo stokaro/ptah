@@ -170,6 +170,7 @@ allowed.
 
 ## Where it appears
 
-- Replay validation and linting with a dev database: [Integrity and safety](../../versioned/integrity-and-safety/).
+- Replay validation with a dev database: [Integrity and safety](../../versioned/integrity-and-safety/).
+- Linting against a dev database: [Lint and gate unsafe SQL](../../versioned/lint/).
 - Shadow-verified generation and baselining: [Generate migrations](../../versioned/generate/) and [Adopt an existing database](../../start/adopt-an-existing-database/).
 - Engine-specific URL behavior: [Database support matrix](../../databases/support-matrix/).

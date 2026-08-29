@@ -66,7 +66,8 @@ pending. Each step is covered in depth on its own page:
 | Write a migration by hand, or plan and write one from schema differences | [Generate migrations](../generate/) |
 | Apply pending migrations and inspect state | [Apply migrations](../apply/) |
 | Roll back to an earlier version | [Roll back migrations](../rollback/) |
-| Hash, validate, lint, and gate destructive changes | [Integrity and safety](../integrity-and-safety/) |
+| Hash the directory, validate it, and assert preconditions | [Integrity and safety](../integrity-and-safety/) |
+| Lint the SQL and gate destructive changes | [Lint and gate unsafe SQL](../lint/) |
 | Edit, reorder, delete, or repair migrations | [Maintain migration history](../maintain-history/) |
 | Adopt an existing golang-migrate, Goose, Flyway, or Liquibase directory | [Import from another tool](../import/) |
 | Squash long history into a bootstrap snapshot | [Checkpoints](../checkpoints/) |

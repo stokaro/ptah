@@ -92,7 +92,9 @@ Use these routes to avoid missing a class of docs:
   `docs/site/src/content/docs/atlas/migrate-commands.md`,
   `docs/site/src/content/docs/atlas/schema-commands.md`,
   `docs/site/src/content/docs/reference/atlas-commands.md`,
-  `docs/site/src/content/docs/atlas/comparison.md`,
+  `docs/site/src/content/docs/atlas/feature-matrix.md` (generated from
+  `docs/site/scripts/data/feature-matrix-rows.json`),
+  `docs/site/src/content/docs/atlas/retained-divergences.md`,
   `docs/site/src/content/docs/reference/exit-codes.md`, `docs/exit_codes.md`,
   `docs/site/src/content/docs/atlas/conformance.md`, and
   `docs/site/src/content/docs/atlas/license-boundary.md`.
@@ -262,7 +264,7 @@ practical, live commands:
   Two of those rules govern table density, and the fix is almost never to
   shorten the sentence. A row that needs a paragraph wants the table to become
   an index of short linked cells with a section per row underneath; see
-  `atlas/comparison` and `atlas/docs-coverage` for the shape. Anchors into
+  `atlas/docs-coverage` and `atlas/retained-divergences` for the shape. Anchors into
   those sections are checked, so a later heading rename fails the build
   instead of stranding readers at the top of a long page.
 

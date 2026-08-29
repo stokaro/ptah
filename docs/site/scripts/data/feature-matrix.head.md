@@ -7,10 +7,10 @@ This page answers one question: for a given capability, what does Ptah do, what
 does the open Atlas community binary do, and what does Atlas keep outside its
 community build. Every row cites the evidence it rests on.
 
-It is a status index, not an argument. The per-area detail behind these rows is
-on [Comparison](../comparison/), the measured evidence is on
-[Conformance](../conformance/), and the Atlas-documentation crosswalk is on
-[Atlas docs coverage](../docs-coverage/).
+It is a status index, not an argument. The measured evidence is on
+[Conformance](../conformance/), the differences Ptah keeps on purpose are on
+[Retained divergences](../retained-divergences/), and the Atlas-documentation
+crosswalk is on [Atlas docs coverage](../docs-coverage/).
 
 ## How to read the tables
 
