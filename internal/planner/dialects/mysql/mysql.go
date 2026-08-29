@@ -1075,8 +1075,8 @@ func (p *Planner) removeIndexes(
 	return result
 }
 
-func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	for _, tableName := range deporder.TableDropOrder(diff.TablesRemoved, desired) {
+func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	for _, tableName := range deporder.TableDropOrderWithDependencies(diff.TablesRemoved, diff.DeclaredTables, diff.DeclaredTableDependencies) {
 		dropTableNode := ast.NewDropTable(tableName).
 			SetIfExists().
 			SetCascade().
@@ -1317,7 +1317,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	result = p.removeRLS(result, diff)
 
 	// 7. Remove tables (dangerous!)
-	result = p.removeTables(result, diff, desired)
+	result = p.removeTables(result, diff)
 
 	// 7a. Remove sequences after the tables whose defaults drew from them.
 	result = p.removeSequences(result, diff)

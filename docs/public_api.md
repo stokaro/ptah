@@ -678,6 +678,16 @@ had. An embedder building a diff by hand fills it with
 `difftypes.ConstraintHostDeclarationsOf`; one that omits it gets a refusal
 naming the table rather than a rebuild from nothing.
 
+`SchemaDiff.DeclaredTableDependencies` carries the table dependency graph of
+the schema the plan runs against, keyed by qualified table name. Dropping tables
+is the mirror of creating them — a child goes before the parent it references,
+or the `DROP` is refused — and while a creation carries its own edges in
+`TableCreation.DependsOn`, a removal is only a name, so the edges between
+removals have nowhere per-entry to live. It is direction-dependent like the two
+carries above: a reversal carries the pre-change database's graph, and a table
+that graph does not name orders as it arrived. An embedder building a diff by
+hand and omitting it gets its removals in the order it wrote them.
+
 `SchemaDiff.RLSEnabledTablesAdded` and `RLSEnabledTablesRemoved` are
 `RLSEnabledTableChanges` rather than `[]string`. An ADDED entry is the
 declaration, which is what a target rendering a declared comment needs; a

@@ -29,6 +29,9 @@ type refusedFixture struct {
 var supplementalDiffCategories = map[string]string{
 	"DeclaredTables":                  "every table the declaration holds, carried so a foreign key can be resolved to the table it references -- usually one this diff does not touch. It is an INPUT to rendering rather than a change: on its own it creates no operation, and a fixture would assert that a list of tables plans nothing (stokaro/ptah#2315)",
 	"DeclaredForeignKeys":             "every foreign key the schema the plan runs against holds, carried so the MySQL family can drop a column's keys before MODIFY and put them back. PostgreSQL changes a column type in place and touches no key doing it, so this planner reads the field nowhere; a fixture here would assert that a list of foreign keys plans nothing (stokaro/ptah#2315)",
+	"DeclaredTableDependencies":       "the table dependency graph, carried so the removals can be ordered child-before-parent. A creation carries its own edges and a removal is only a name, which is why this one is schema-wide; it renders nothing on its own, and a fixture would assert that a graph plans nothing (stokaro/ptah#2315)",
+	"DeclaredUserTypes":               "the declaration's type vocabulary, which a created column's type is resolved THROUGH rather than rendered FROM. It creates no operation by itself: TestPlanner_CreatesAColumnTypedByADeclaredDomain drives it as part of a table creation, which is the only way it can be exercised (stokaro/ptah#2315)",
+	"DeclaredViewLikes":               "every declared view and materialized view, which a cascading DROP is resolved AGAINST rather than rendered from. The recreate it feeds belongs to the drop that cascaded, and several fixtures below carry it for exactly that reason; on its own it plans nothing (stokaro/ptah#2315)",
 	"DeclaredConstraintHosts":         "the declaration of every table a constraint change names, carried for a target that has to rebuild the table to change a constraint on it. PostgreSQL adds and drops constraints in place and never rebuilds, so this planner reads the field nowhere; a fixture here would assert that a list of table declarations plans nothing (stokaro/ptah#2315)",
 	"ForeignKeysRemovedWithTables":    "supplements matching ConstraintsRemovedWithTables entries with column identities for MySQL/MariaDB drop ordering; it creates no operation by itself and PostgreSQL deliberately ignores it",
 	"FunctionsRemovedWithSignatures":  "the same removals FunctionsRemoved names, with the argument list that makes each one addressable; the planner reads this list and falls back to the bare names, so it creates no operation of its own and a fixture would exercise the same DROP twice (stokaro/ptah#2296)",
@@ -119,7 +122,14 @@ func uncoveredDiffCategories(fixtures []categoryFixture) []string {
 	structType := reflect.TypeFor[difftypes.SchemaDiff]()
 	var uncovered []string
 	for field := range structType.Fields() {
-		if !field.IsExported() || field.Type.Kind() != reflect.Slice {
+		// Every exported field but the semantics snapshot, which is a pointer
+		// to the rules the diff was produced under rather than a difference.
+		//
+		// This walked SLICE fields alone until stokaro/ptah#2315, so a category
+		// spelled as a struct or a map was skipped without being exempt --
+		// which is a gate reporting on a set it chose not to look at. Widening
+		// it named exactly the three carries below and nothing else.
+		if !field.IsExported() || field.Type.Kind() == reflect.Pointer {
 			continue
 		}
 		if covered[field.Name] {

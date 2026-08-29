@@ -12,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -1728,6 +1729,9 @@ func withDeclaredObjects(diff *difftypes.SchemaDiff, desired *schemamodel.Databa
 	completed := *diff
 	if len(completed.DeclaredTables) == 0 {
 		completed.DeclaredTables = desired.Tables
+	}
+	if len(completed.DeclaredTableDependencies) == 0 {
+		completed.DeclaredTableDependencies = deporder.GeneratedTableDependencies(desired)
 	}
 	if len(completed.DeclaredViewLikes.Views) == 0 && len(completed.DeclaredViewLikes.MaterializedViews) == 0 {
 		completed.DeclaredViewLikes = difftypes.ViewLikeVocabularyOf(desired)

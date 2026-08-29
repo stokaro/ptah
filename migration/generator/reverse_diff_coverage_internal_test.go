@@ -15,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -101,6 +102,17 @@ func assertReverseCoverageField(
 		// names the views the change was moving to and cannot reach it.
 		//
 		// TestReverseSchemaDiff_ARolledBackCascadeRecreatesThePriorViews is
+		// what holds that, since this gate structurally cannot.
+		return
+	}
+	if field.Name == "DeclaredTableDependencies" {
+		// An OUTPUT of the reverse, for the reason the five below are. A
+		// rollback drops the tables the change created, and the edges between
+		// them are the PRE-CHANGE database's -- a table it never held has no
+		// edges there, which is what leaves this direction's own ordering of
+		// TablesRemoved standing.
+		//
+		// TestReverseSchemaDiff_ARolledBackDropOrderComesFromThePriorGraph is
 		// what holds that, since this gate structurally cannot.
 		return
 	}
@@ -828,4 +840,56 @@ func TestReverseSchemaDiff_ARolledBackRebuildUsesThePriorTableBody(t *testing.T)
 	c.Assert(columns, qt.Contains, "id")
 	c.Assert(columns, qt.Not(qt.Contains), "note",
 		qt.Commentf("the rebuild renders the table body that database had, not the one the change was moving to"))
+}
+
+// TestReverseSchemaDiff_ARolledBackDropOrderComesFromThePriorGraph is the sixth
+// schema-wide fact a rollback resolves rather than inherits.
+//
+// The graph the removals are ordered by describes the database being rolled
+// back TO. Inheriting the forward one would order a rollback's drops by edges
+// between tables that database does not have.
+func TestReverseSchemaDiff_ARolledBackDropOrderComesFromThePriorGraph(t *testing.T) {
+	c := qt.New(t)
+
+	// The declaration and the database each hold one edge, and they are
+	// different edges, so a reversal that inherited the forward value would
+	// still look populated.
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "Desired", Name: "desired_child"},
+			{StructName: "DesiredParent", Name: "desired_parent"},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "Desired", Name: "parent_id", Type: "BIGINT", Foreign: "desired_parent(id)"},
+			{StructName: "DesiredParent", Name: "id", Type: "BIGINT", Primary: true},
+		},
+	}
+	schemamodel.Finalize(schema)
+	parent, parentColumn := "prior_parent", "id"
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{
+			{Name: "prior_parent", Type: "TABLE", Columns: []catalog.Column{
+				{Name: "id", DataType: "bigint", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
+			}},
+			{Name: "prior_child", Type: "TABLE", Columns: []catalog.Column{
+				{Name: "parent_id", DataType: "bigint", OrdinalPosition: 1},
+			}},
+		},
+		Constraints: []catalog.Constraint{{
+			Name: "fk_prior_child_parent", TableName: "prior_child", Type: "FOREIGN KEY",
+			ColumnName: "parent_id", ForeignTable: &parent, ForeignColumn: &parentColumn,
+		}},
+	}
+	forward := &difftypes.SchemaDiff{
+		TablesRemoved:             []string{"prior_child", "prior_parent"},
+		DeclaredTableDependencies: deporder.GeneratedTableDependencies(schema),
+	}
+
+	reversed := reverseSchemaDiffWithSchema(forward, schema, dbSchema)
+
+	c.Assert(reversed.DeclaredTableDependencies["prior_child"], qt.Contains, "prior_parent",
+		qt.Commentf("the edges come from the database being rolled back to"))
+	_, declaredEdge := reversed.DeclaredTableDependencies["desired_child"]
+	c.Assert(declaredEdge, qt.IsFalse,
+		qt.Commentf("the declaration's own graph describes tables that database does not have"))
 }

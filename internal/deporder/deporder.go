@@ -280,15 +280,32 @@ func TablesForCreate(schema *schemamodel.Database, tableNames []string) []schema
 // TableDropOrder returns table names in child-before-parent order for DROP
 // TABLE operations. Output names match the caller's input spelling.
 func TableDropOrder(tableNames []string, schema *schemamodel.Database) []string {
+	if schema == nil {
+		return append([]string(nil), tableNames...)
+	}
+	return TableDropOrderWithDependencies(tableNames, schema.Tables, GeneratedTableDependencies(schema))
+}
+
+// TableDropOrderWithDependencies is [TableDropOrder] for a caller holding the
+// two things it reads rather than the whole schema.
+//
+// A planner is that caller: the diff carries the table list and the dependency
+// graph, and handing the pieces over is what lets it order its drops without
+// being handed the declaration they came out of (stokaro/ptah#2315).
+func TableDropOrderWithDependencies(
+	tableNames []string,
+	tables []schemamodel.Table,
+	dependencies map[string][]string,
+) []string {
 	ordered := append([]string(nil), tableNames...)
-	if schema == nil || len(ordered) < 2 {
+	if len(ordered) < 2 {
 		return ordered
 	}
 
 	inputByKey := make(map[string]string, len(ordered))
 	keys := make([]string, 0, len(ordered))
 	for _, tableName := range ordered {
-		key := resolveTableKey(schema.Tables, tableName)
+		key := resolveTableKey(tables, tableName)
 		if _, seen := inputByKey[key]; seen {
 			continue
 		}
@@ -296,7 +313,7 @@ func TableDropOrder(tableNames []string, schema *schemamodel.Database) []string 
 		keys = append(keys, key)
 	}
 
-	orderedKeys := StableReverseDependencySort(keys, GeneratedTableDependencies(schema))
+	orderedKeys := StableReverseDependencySort(keys, dependencies)
 	result := make([]string, 0, len(orderedKeys))
 	for _, key := range orderedKeys {
 		result = append(result, inputByKey[key])
