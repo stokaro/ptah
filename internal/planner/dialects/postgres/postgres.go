@@ -1605,11 +1605,11 @@ func currentRangeReferences(rangeDiff difftypes.RangeDiff) []string {
 // through. Keeping that answer in one place prevents the plan path from
 // silently dropping an unsupported object while `schema render` reports it
 // differently (stokaro/ptah#929).
-func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *schemamodel.Database) ([]ast.Node, error) {
+// The declaration is no longer read: every fact this planner needs travels
+// on the diff. The parameter stays until it leaves the Planner interface,
+// which is one mechanical sweep over 257 call sites (stokaro/ptah#2315).
+func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, _ *schemamodel.Database) ([]ast.Node, error) {
 	var result []ast.Node
-	if desired == nil {
-		desired = &schemamodel.Database{}
-	}
 	if err := p.validateExtensionInstallationSchemas(diff); err != nil {
 		return nil, err
 	}
@@ -1629,7 +1629,6 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 		p.targetDialect(),
 		semantics,
 		diff,
-		desired,
 	)
 	if err != nil {
 		return nil, err

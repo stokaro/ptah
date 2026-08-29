@@ -844,5 +844,8 @@ func withDeclaredTables(diff *difftypes.SchemaDiff, desired *schemamodel.Databas
 	}
 	completed := *diff
 	completed.DeclaredTables = desired.Tables
+	if len(completed.DeclaredIndexes) == 0 {
+		completed.DeclaredIndexes = difftypes.IndexDeclarationsOf(desired)
+	}
 	return &completed
 }

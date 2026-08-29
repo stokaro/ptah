@@ -105,6 +105,16 @@ func assertReverseCoverageField(
 		// what holds that, since this gate structurally cannot.
 		return
 	}
+	if field.Name == "DeclaredIndexes" {
+		// An OUTPUT of the reverse, for the reason the six below are. A
+		// rollback restores the indexes the PRE-CHANGE database had, on the
+		// relations it had them on -- the forward value describes the
+		// document the change was moving to.
+		//
+		// TestReverseSchemaDiff_ARolledBackIndexResolvesAgainstThePrior is
+		// what holds that, since this gate structurally cannot.
+		return
+	}
 	if field.Name == "DeclaredFunctions" {
 		// An OUTPUT of the reverse, for the reason the five below are. A
 		// rollback creates the functions the PRE-CHANGE database held, and
@@ -930,4 +940,46 @@ func TestReverseSchemaDiff_ARolledBackFunctionOrderComesFromThePrior(t *testing.
 		qt.Commentf("the ordering inputs come from the database being rolled back to"))
 	c.Assert(reversed.DeclaredFunctions.Order, qt.Not(qt.Contains), "desired_only",
 		qt.Commentf("the declaration's own functions are not in that database"))
+}
+
+// TestReverseSchemaDiff_ARolledBackIndexResolvesAgainstThePrior is the eighth
+// schema-wide fact a rollback resolves rather than inherits.
+//
+// An index addition is a reference. A rollback re-adds the indexes the change
+// dropped, and their definitions live in the database being rolled back TO --
+// an index the declaration holds may not be there at all.
+func TestReverseSchemaDiff_ARolledBackIndexResolvesAgainstThePrior(t *testing.T) {
+	c := qt.New(t)
+
+	// Each side declares one index and they are different indexes, so a
+	// reversal that inherited the forward value would still look populated.
+	schema := &schemamodel.Database{
+		Tables:  []schemamodel.Table{{StructName: "Widget", Name: "widgets"}},
+		Fields:  []schemamodel.Field{{StructName: "Widget", Name: "code", Type: "TEXT"}},
+		Indexes: []schemamodel.Index{{StructName: "Widget", Name: "idx_desired_only", Fields: []string{"code"}}},
+	}
+	schemamodel.Finalize(schema)
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{{
+			Name: "widgets", Type: "TABLE",
+			Columns: []catalog.Column{{Name: "code", DataType: "text", OrdinalPosition: 1}},
+		}},
+		Indexes: []catalog.Index{{
+			Name: "idx_prior_only", TableName: "widgets", Columns: []string{"code"},
+		}},
+	}
+	forward := &difftypes.SchemaDiff{
+		DeclaredIndexes: difftypes.IndexDeclarationsOf(schema),
+	}
+
+	reversed := reverseSchemaDiffWithSchema(forward, schema, dbSchema)
+
+	names := make([]string, 0, len(reversed.DeclaredIndexes))
+	for _, declared := range reversed.DeclaredIndexes {
+		names = append(names, declared.Index.Name)
+	}
+	c.Assert(names, qt.Contains, "idx_prior_only",
+		qt.Commentf("the definitions come from the database being rolled back to"))
+	c.Assert(names, qt.Not(qt.Contains), "idx_desired_only",
+		qt.Commentf("the declaration's own index is not in that database"))
 }

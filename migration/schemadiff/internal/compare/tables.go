@@ -166,6 +166,9 @@ func TablesAndColumnsWithGeneratedExpressions(
 	// The ordering inputs for creating functions: a body may call another
 	// function, and the additions are sorted by name rather than by either.
 	diff.DeclaredFunctions = difftypes.FunctionOrderingOf(desired)
+	// Every declared index with its owner resolved, for the additions that
+	// name one: an addition is a reference, and its definition is here.
+	diff.DeclaredIndexes = difftypes.IndexDeclarationsOf(desired)
 	for identity, table := range genTables {
 		if _, exists := dbTables[identity]; !exists {
 			diff.TablesAdded = append(diff.TablesAdded, difftypes.TableCreationFor(

@@ -88,17 +88,16 @@ func (p *Planner) capabilities() capability.Capabilities {
 // each to a named `-- CLICKHOUSE: ... is not supported` comment, in the order
 // `schema render` produces for the same model. Plain-view, role and grant nodes
 // are executable and retain what they declare.
-func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *schemamodel.Database) ([]ast.Node, error) {
+// The declaration is no longer read: every fact this planner needs travels
+// on the diff. The parameter stays until it leaves the Planner interface,
+// which is one mechanical sweep over 257 call sites (stokaro/ptah#2315).
+func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, _ *schemamodel.Database) ([]ast.Node, error) {
 	var result []ast.Node
 
-	if desired == nil {
-		desired = &schemamodel.Database{}
-	}
 	indexes, err := indexscope.NewResolverWithSemantics(
 		platform.ClickHouse,
 		diff.EffectiveIdentifierSemantics(platform.ClickHouse),
 		diff,
-		desired,
 	)
 	if err != nil {
 		return nil, err

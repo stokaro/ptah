@@ -997,6 +997,9 @@ func withDeclaredTable(diff *difftypes.SchemaDiff, desired *schemamodel.Database
 	if len(completed.DeclaredTables) == 0 {
 		completed.DeclaredTables = desired.Tables
 	}
+	if len(completed.DeclaredIndexes) == 0 {
+		completed.DeclaredIndexes = difftypes.IndexDeclarationsOf(desired)
+	}
 	if len(completed.DeclaredConstraintHosts) == 0 {
 		completed.DeclaredConstraintHosts = difftypes.ConstraintHostDeclarationsOf(
 			desired, diff.ConstraintsAddedWithTables, diff.ConstraintsRemovedWithTables,
@@ -1046,6 +1049,9 @@ func declaringTheOnlyTable(diff *difftypes.SchemaDiff, desired *schemamodel.Data
 	// the diff and the constraint spell the table differently on purpose.
 	completed.DeclaredConstraintHosts = []difftypes.TableDeclaration{
 		difftypes.TableDeclarationFor(desired, desired.Tables[0]),
+	}
+	if len(completed.DeclaredIndexes) == 0 {
+		completed.DeclaredIndexes = difftypes.IndexDeclarationsOf(desired)
 	}
 	return &completed
 }
