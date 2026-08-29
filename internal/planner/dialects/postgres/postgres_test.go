@@ -1724,6 +1724,7 @@ func withDeclaredObjects(diff *difftypes.SchemaDiff, desired *schemamodel.Databa
 	if diff == nil || desired == nil {
 		return diff
 	}
+	diff = withConstraintRecords(diff, desired)
 	completed := *diff
 	if len(completed.DeclaredTables) == 0 {
 		completed.DeclaredTables = desired.Tables
@@ -1732,4 +1733,80 @@ func withDeclaredObjects(diff *difftypes.SchemaDiff, desired *schemamodel.Databa
 		completed.DeclaredViewLikes = difftypes.ViewLikeVocabularyOf(desired)
 	}
 	return &completed
+}
+
+// withConstraintRecords fills a fixture diff's constraint additions from the
+// declaration, the way a comparison does.
+//
+// A comparison describes every constraint it adds: it resolves the host table,
+// folds in the ones synthesized from a field, and carries the body. A fixture
+// that states only names is standing in for that, so this does the same
+// resolution once rather than each fixture spelling the record out
+// (stokaro/ptah#2315).
+//
+// A name the declaration does not describe is left without a record, which is
+// what a test about a diff naming something undeclared needs.
+func withConstraintRecords(diff *difftypes.SchemaDiff, desired *schemamodel.Database) *difftypes.SchemaDiff {
+	if diff == nil || desired == nil || len(diff.ConstraintsAdded) == 0 {
+		return diff
+	}
+	completed := *diff
+	records := append([]difftypes.ConstraintAdditionInfo(nil), diff.ConstraintsAddedWithTables...)
+	described := make(map[string]bool, len(records))
+	for _, record := range records {
+		described[record.Name] = true
+	}
+	for _, name := range diff.ConstraintsAdded {
+		if described[name] {
+			continue
+		}
+		declared, ok := declaredConstraintNamed(desired, name)
+		if !ok {
+			continue
+		}
+		described[name] = true
+		records = append(records, difftypes.ConstraintAdditionInfo{
+			Name:            declared.Name,
+			TableName:       constraintHostTable(desired, declared),
+			Type:            declared.Type,
+			Columns:         append([]string(nil), declared.Columns...),
+			IncludeColumns:  append([]string(nil), declared.IncludeColumns...),
+			CheckExpression: declared.CheckExpression,
+			ForeignTable:    declared.ForeignTable,
+			ForeignColumn:   declared.ForeignColumn,
+			ForeignColumns:  append([]string(nil), declared.ForeignColumns...),
+			OnDelete:        declared.OnDelete,
+			OnUpdate:        declared.OnUpdate,
+			Deferrable:      declared.Deferrable,
+			Initially:       declared.Initially,
+			UsingMethod:     declared.UsingMethod,
+			ExcludeElements: declared.ExcludeElements,
+			WhereCondition:  declared.WhereCondition,
+		})
+	}
+	completed.ConstraintsAddedWithTables = records
+	return &completed
+}
+
+func declaredConstraintNamed(desired *schemamodel.Database, name string) (schemamodel.Constraint, bool) {
+	for _, constraint := range desired.Constraints {
+		if constraint.Name == name {
+			return constraint, true
+		}
+	}
+	return schemamodel.Constraint{}, false
+}
+
+// constraintHostTable resolves the table a declared constraint belongs to: the
+// one it names, or the one its struct declares.
+func constraintHostTable(desired *schemamodel.Database, constraint schemamodel.Constraint) string {
+	if constraint.Table != "" {
+		return constraint.Table
+	}
+	for _, table := range desired.Tables {
+		if table.StructName == constraint.StructName {
+			return table.QualifiedName()
+		}
+	}
+	return ""
 }

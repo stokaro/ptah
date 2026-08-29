@@ -6,58 +6,84 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
-// TestPlannerOrdersABareNameForeignKeyAfterTheOtherKinds pins that a constraint
-// addition carrying nothing but a NAME is still classified by kind.
+// TestPlannerRefusesABareNameConstraintAddition is what the bare-name ordering
+// control became, and the change is the point.
 //
-// The planner adds constraints in two passes, everything else and then the
-// foreign keys, because a FOREIGN KEY may reference columns a UNIQUE constraint
-// in the same plan is what makes referenceable. Which pass a name belongs to is
-// decided by resolving it against the declaration.
+// It used to assert that a constraint addition carrying nothing but a NAME was
+// still classified by kind, so that a foreign key was added after the other
+// kinds -- a FOREIGN KEY may reference columns a UNIQUE constraint in the same
+// plan is what makes referenceable. The classification worked by resolving the
+// name against the declaration handed to the planner.
 //
-// A bare name is a real shape rather than a hand-built curiosity.
-// `constraintscope.coverBareAdditions` gives every name in `ConstraintsAdded`
-// that no record answers a record of its own -- `{Name: name}`, with no Type --
-// and the reversal produces exactly that when it has no database schema to
-// resolve against. So a classification that read the record instead of the
-// declaration would answer "not a foreign key" for every one of them.
+// That resolution is withdrawn. A comparison describes every constraint it
+// adds, the ones synthesized from a field's `check=` and `foreign=` included, so
+// a name arriving without a definition is a caller error and is answered as one
+// (stokaro/ptah#2315).
 //
-// Measured: with the resolution replaced by a read of
-// `ConstraintsAddedWithTables[...].Type`, this test's foreign key moves ahead of
-// the check constraint and the whole unit suite still passes. That is what this
-// test exists to stop, and the names are chosen so alphabetical order is the
-// WRONG answer -- `aaa_` for the foreign key, `zzz_` for the check -- because a
-// classification that collapses to "emit in name order" would otherwise agree
-// with the correct one by accident.
-func TestPlannerOrdersABareNameForeignKeyAfterTheOtherKinds(t *testing.T) {
+// The ordering property it protected did not go anywhere: it is asserted on
+// records, which carry the kind directly, by
+// TestPlannerOrdersAForeignKeyAfterTheOtherKinds below.
+func TestPlannerRefusesABareNameConstraintAddition(t *testing.T) {
 	c := qt.New(t)
 
-	desired := bareConstraintKindSchema()
 	diff := &difftypes.SchemaDiff{
-		ConstraintsAdded: []string{"aaa_fk_child_parent", "zzz_ck_child_amount"},
+		ConstraintsAdded: []string{"aaa_fk_child_parent"},
 	}
 
-	nodes, err := (&postgres.Planner{}).GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
-	c.Assert(err, qt.IsNil)
-	sql, err := renderer.RenderSQL("postgres", nodes...)
-	c.Assert(err, qt.IsNil)
+	nodes, err := postgres.New().GenerateMigrationAST(diff, bareConstraintKindSchema())
 
-	check := strings.Index(sql, "zzz_ck_child_amount")
-	foreignKey := strings.Index(sql, "aaa_fk_child_parent")
+	c.Assert(nodes, qt.IsNil)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(err, qt.ErrorMatches, `.*constraint "aaa_fk_child_parent" is added without a definition.*`)
+}
+
+// TestPlannerOrdersAForeignKeyAfterTheOtherKinds keeps the property the test
+// above used to carry, on the input shape that remains.
+//
+// The names are chosen so alphabetical order is the WRONG answer -- `aaa_` for
+// the foreign key, `zzz_` for the check -- because an ordering that collapsed to
+// "emit in name order" would otherwise agree with the correct one by accident.
+func TestPlannerOrdersAForeignKeyAfterTheOtherKinds(t *testing.T) {
+	c := qt.New(t)
+
+	diff := &difftypes.SchemaDiff{
+		ConstraintsAdded: []string{"aaa_fk_child_parent", "zzz_ck_child_amount"},
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+			{
+				Name: "aaa_fk_child_parent", TableName: "wf2315_children", Type: "FOREIGN KEY",
+				Columns: []string{"parent_id"}, ForeignTable: "wf2315_parents", ForeignColumn: "id",
+				ForeignColumns: []string{"id"},
+			},
+			{
+				Name: "zzz_ck_child_amount", TableName: "wf2315_children", Type: "CHECK",
+				CheckExpression: "amount > 0",
+			},
+		},
+	}
+
+	nodes, err := postgres.New().GenerateMigrationAST(diff, bareConstraintKindSchema())
+	c.Assert(err, qt.IsNil)
+	sql := renderPostgresNodes(c, nodes)
+
+	check := indexOfSubstring(sql, "zzz_ck_child_amount")
+	foreignKey := indexOfSubstring(sql, "aaa_fk_child_parent")
 	c.Assert(check, qt.Not(qt.Equals), -1, qt.Commentf("plan:\n%s", sql))
 	c.Assert(foreignKey, qt.Not(qt.Equals), -1, qt.Commentf("plan:\n%s", sql))
 	c.Assert(check < foreignKey, qt.IsTrue,
-		qt.Commentf("a bare-name FOREIGN KEY must be added after the other kinds; plan:\n%s", sql))
+		qt.Commentf("a FOREIGN KEY must be added after the other kinds; plan:\n%s", sql))
 }
 
-// bareConstraintKindSchema declares one child table with a foreign key and a
-// check, both as table-level constraints so that a diff naming them carries no
-// kind of its own.
+// bareConstraintKindSchema declares the two tables the constraints above name.
+// It is handed to the planner because the signature still takes a declaration;
+// no constraint is resolved through it any more.
 func bareConstraintKindSchema() *schemamodel.Database {
 	return &schemamodel.Database{
 		Tables: []schemamodel.Table{
@@ -70,18 +96,20 @@ func bareConstraintKindSchema() *schemamodel.Database {
 			{StructName: "Child", Name: "parent_id", Type: "BIGINT"},
 			{StructName: "Child", Name: "amount", Type: "BIGINT"},
 		},
-		Constraints: []schemamodel.Constraint{
-			{
-				StructName: "Child", Table: "wf2315_children",
-				Name: "aaa_fk_child_parent", Type: "FOREIGN KEY",
-				Columns: []string{"parent_id"}, ForeignTable: "wf2315_parents",
-				ForeignColumn: "id",
-			},
-			{
-				StructName: "Child", Table: "wf2315_children",
-				Name: "zzz_ck_child_amount", Type: "CHECK",
-				CheckExpression: "amount > 0",
-			},
-		},
 	}
+}
+
+// renderPostgresNodes renders a plan, failing the test rather than returning an
+// error the caller would have to check.
+func renderPostgresNodes(c *qt.C, nodes []ast.Node) string {
+	c.Helper()
+	sql, err := renderer.RenderSQL("postgres", nodes...)
+	c.Assert(err, qt.IsNil)
+	return sql
+}
+
+// indexOfSubstring is strings.Index, named for what the assertions above read
+// it as.
+func indexOfSubstring(haystack, needle string) int {
+	return strings.Index(haystack, needle)
 }

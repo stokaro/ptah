@@ -1030,9 +1030,23 @@ func TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction(t *test
 	}
 
 	// Up diff for the action change: remove(old) + add(new) of the same name.
+	//
+	// Both sides carry their record, the way a comparison produces them. The
+	// removal record is what lets the reversal rebuild the prior body from the
+	// introspected database, which is the whole subject here; the addition
+	// record is required because a diff has to describe what it names
+	// (stokaro/ptah#2315).
 	upDiff := &difftypes.SchemaDiff{
 		ConstraintsRemoved: []string{"fk_export_file"},
 		ConstraintsAdded:   []string{"fk_export_file"},
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
+			Name: "fk_export_file", TableName: "exports", Type: "FOREIGN KEY",
+		}},
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+			Name: "fk_export_file", TableName: "exports", Type: "FOREIGN KEY",
+			Columns: []string{"file_id"}, ForeignTable: "files", ForeignColumn: "id",
+			ForeignColumns: []string{"id"}, OnDelete: "SET NULL",
+		}},
 	}
 
 	t.Run("postgres", func(t *testing.T) {

@@ -683,6 +683,19 @@ type ConstraintAdditionInfo struct {
 	// CheckExpression is the CHECK predicate body (CHECK only).
 	CheckExpression string `json:"check_expression,omitempty"`
 
+	// UsingMethod, ExcludeElements and WhereCondition are an EXCLUDE
+	// constraint's definition: the index method, the elements with their
+	// operators, and the optional WHERE.
+	//
+	// They complete the record. Every other kind was already describable here,
+	// the ones synthesized from a field's `check=` or `foreign=` included,
+	// and EXCLUDE was the one left over -- so a planner had to resolve its name
+	// against a declaration to render it. Withdrawing that route is what makes
+	// these load-bearing (stokaro/ptah#2315).
+	UsingMethod     string `json:"using_method,omitempty"`
+	ExcludeElements string `json:"exclude_elements,omitempty"`
+	WhereCondition  string `json:"where_condition,omitempty"`
+
 	// ForeignTable / ForeignColumn / ForeignColumns describe the FK target
 	// (FOREIGN KEY only). ForeignColumn is kept for compatibility with older
 	// single-column callers; ForeignColumns carries the full referenced column
