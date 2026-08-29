@@ -37,7 +37,7 @@ func TestPlanner_IndexRefs_QualifiesDropsAndReplacesOnlyExactRef(t *testing.T) {
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
+	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 4)
@@ -80,7 +80,7 @@ func TestPlanner_IndexRefs_DropsSameSchemaNameBeforeMovingIndex(t *testing.T) {
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
+	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -108,7 +108,7 @@ func TestPlanner_IndexRefs_CockroachDBPreservesReplacementTable(t *testing.T) {
 	}
 
 	nodes, err := postgres.NewForDialect(platform.CockroachDB, capability.CockroachDB23()).
-		GenerateMigrationAST(diff, desired)
+		GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -137,7 +137,7 @@ func TestPlanner_IndexRefs_SpannerDropsSameSchemaNameBeforeMovingIndex(t *testin
 	}
 
 	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).
-		GenerateMigrationAST(diff, desired)
+		GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -165,7 +165,7 @@ func TestPlanner_IndexRefs_SpannerKeepsDifferentSchemaIndexesIndependent(t *test
 	}
 
 	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).
-		GenerateMigrationAST(diff, desired)
+		GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -213,7 +213,7 @@ func TestPlanner_IndexRefs_UsesCanonicalOwnerAcrossPostgresFamily(t *testing.T) 
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			nodes, err := postgres.NewForDialect(test.dialect, test.caps).
-				GenerateMigrationAST(diff, desired)
+				GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
 
@@ -268,7 +268,7 @@ func BenchmarkPlanner_LargeIndexReplacementPlan(b *testing.B) {
 	var nodes []ast.Node
 	var err error
 	for range b.N {
-		nodes, err = planner.GenerateMigrationAST(diff, desired)
+		nodes, err = planner.GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 	}
 	b.StopTimer()
 	c.Assert(err, qt.IsNil)

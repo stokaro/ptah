@@ -67,7 +67,7 @@ func TestPlanner_TableLevelConstraintWithoutAnExplicitTable(t *testing.T) {
 				Constraints: []schemamodel.Constraint{test.constraint},
 			}
 
-			nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
+			nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
@@ -91,7 +91,7 @@ func TestPlanner_TableLevelConstraintNamesItsOwnTable(t *testing.T) {
 		}},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
+	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
@@ -119,7 +119,7 @@ func TestPlanner_TableLevelConstraintWhoseStructDeclaresNoTable(t *testing.T) {
 		}},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
+	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)

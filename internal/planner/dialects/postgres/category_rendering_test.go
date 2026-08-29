@@ -282,17 +282,32 @@ func diffCategoryFixtures() []categoryFixture {
 		},
 		{
 			"ViewsAdded",
-			&difftypes.SchemaDiff{ViewsAdded: difftypes.ViewChanges{{Name: "v"}}},
+			&difftypes.SchemaDiff{
+				ViewsAdded: difftypes.ViewChanges{{Name: "v"}},
+				// The declared view-like objects a comparison fills: rendering a view
+				// back reads its body from here, so a fixture carrying none would
+				// assert that this category plans nothing.
+				DeclaredViewLikes: difftypes.ViewLikeVocabulary{
+					Views: []schemamodel.View{{Name: "v", Body: "SELECT 1"}},
+				},
+			},
 			&schemamodel.Database{Views: []schemamodel.View{{Name: "v", Body: "SELECT 1"}}},
 		},
 		{"ViewsRemoved", &difftypes.SchemaDiff{ViewsRemoved: difftypes.ViewChanges{{Name: "v"}}}, &schemamodel.Database{}},
 		{
 			"ViewsModified",
-			&difftypes.SchemaDiff{ViewsModified: []difftypes.ViewDiff{{
-				ViewName: "v",
-				Desired:  schemamodel.View{Name: "v", Body: "SELECT 1"},
-				Changes:  map[string]string{"body": "a -> b"},
-			}}},
+			&difftypes.SchemaDiff{
+				ViewsModified: []difftypes.ViewDiff{{
+					ViewName: "v",
+					Desired:  schemamodel.View{Name: "v", Body: "SELECT 1"},
+					Changes:  map[string]string{"body": "a -> b"},
+				}},
+				// A modification that drops and recreates resolves the recreate
+				// through the declared set, so the row carries it.
+				DeclaredViewLikes: difftypes.ViewLikeVocabulary{
+					Views: []schemamodel.View{{Name: "v", Body: "SELECT 1"}},
+				},
+			},
 			&schemamodel.Database{Views: []schemamodel.View{{Name: "v", Body: "SELECT 2"}}},
 		},
 		{
@@ -364,7 +379,12 @@ func diffCategoryFixtures() []categoryFixture {
 		},
 		{
 			"MaterializedViewsAdded",
-			&difftypes.SchemaDiff{MaterializedViewsAdded: difftypes.MaterializedViewChanges{{Name: "mv"}}},
+			&difftypes.SchemaDiff{
+				MaterializedViewsAdded: difftypes.MaterializedViewChanges{{Name: "mv"}},
+				DeclaredViewLikes: difftypes.ViewLikeVocabulary{
+					MaterializedViews: []schemamodel.MaterializedView{{Name: "mv", Body: "SELECT 1"}},
+				},
+			},
 			&schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{Name: "mv", Body: "SELECT 1"}}},
 		},
 		{"MaterializedViewsRemoved", &difftypes.SchemaDiff{MaterializedViewsRemoved: difftypes.MaterializedViewChanges{{Name: "mv"}}}, &schemamodel.Database{}},

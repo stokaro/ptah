@@ -161,7 +161,7 @@ func planRowDeletionPolicy(c *qt.C, diff *difftypes.SchemaDiff) []string {
 	c.Helper()
 
 	planner := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres())
-	nodes, err := planner.GenerateMigrationAST(diff, nil)
+	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, nil), nil)
 	c.Assert(err, qt.IsNil)
 
 	return renderedStatements(c, nodes, capability.SpannerPostgres(), platform.Spanner)

@@ -1058,6 +1058,20 @@ type SchemaDiff struct {
 	// is the name and the schema.
 	DeclaredTables []schemamodel.Table `json:"-"`
 
+	// DeclaredViewLikes is every view and materialized view the declaration
+	// holds, carried once for the whole diff and off the wire.
+	//
+	// A DROP that cascades reaches a view by what the view SELECTS from, and
+	// that view is usually one this diff does not touch: it is not being
+	// added, removed or modified, it is collateral. So the set a planner has
+	// to walk is every declared view, which no per-entry operand can supply --
+	// the same shape [DeclaredTables] has for a foreign key's target
+	// (stokaro/ptah#2315).
+	//
+	// A recreate renders the view back, so this holds the whole declaration
+	// of each rather than its name.
+	DeclaredViewLikes ViewLikeVocabulary `json:"-"`
+
 	// RLSEnabledTablesAdded contains names of tables that need RLS enabled
 	RLSEnabledTablesAdded RLSEnabledTableChanges `json:"rls_enabled_tables_added"`
 
@@ -2341,6 +2355,35 @@ func UserTypeVocabularyOf(desired *schemamodel.Database) UserTypeVocabulary {
 		CompositeTypes: nilWhenEmpty(desired.CompositeTypes),
 		Ranges:         nilWhenEmpty(desired.Ranges),
 		Enums:          nilWhenEmpty(desired.Enums),
+	}
+}
+
+// ViewLikeVocabulary is the declared view-like objects a planner resolves a
+// cascade against: the views and the materialized views.
+//
+// The two travel together because every reader of them reads both. A DROP
+// cascades to whichever kind selects from what it dropped, and the plan that
+// puts them back has to know which kind each was.
+type ViewLikeVocabulary struct {
+	// Views are the declared views.
+	Views []schemamodel.View
+	// MaterializedViews are the declared materialized views.
+	MaterializedViews []schemamodel.MaterializedView
+}
+
+// ViewLikeVocabularyOf reads the view-like vocabulary out of a declaration.
+//
+// Each list is nil when it holds nothing, for the reason
+// [UserTypeVocabularyOf] gives: two readers of one document disagree about
+// empty versus nil, and a vocabulary that kept the difference would make two
+// diffs of one schema compare unequal for a reason neither document states.
+func ViewLikeVocabularyOf(desired *schemamodel.Database) ViewLikeVocabulary {
+	if desired == nil {
+		return ViewLikeVocabulary{}
+	}
+	return ViewLikeVocabulary{
+		Views:             nilWhenEmpty(desired.Views),
+		MaterializedViews: nilWhenEmpty(desired.MaterializedViews),
 	}
 }
 

@@ -191,7 +191,7 @@ func TestPlanner_GenerateMigrationAST_ConstraintsAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := postgres.New()
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
+			nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(tt.diff, tt.desired), tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			// Convert AST nodes to SQL for verification
@@ -355,7 +355,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTa
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
+		nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -398,7 +398,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedNonFKConstraint_ScopesDropToHostTa
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
+		nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -507,7 +507,7 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 			},
 		}
 
-		nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
+		nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -565,7 +565,7 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_ScopesToHostWhenAddedHostsAbsen
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
+	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -593,7 +593,7 @@ func TestPlanner_GenerateMigrationAST_ConstraintsRemoved(t *testing.T) {
 	desired := &schemamodel.Database{}
 
 	pl := postgres.New()
-	nodes, err := pl.GenerateMigrationAST(diff, desired)
+	nodes, err := pl.GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 	c.Assert(err, qt.IsNil)
 
 	// One DO block per removed constraint. The previous implementation emitted

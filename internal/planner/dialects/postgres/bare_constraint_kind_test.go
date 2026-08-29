@@ -42,7 +42,7 @@ func TestPlannerOrdersABareNameForeignKeyAfterTheOtherKinds(t *testing.T) {
 		ConstraintsAdded: []string{"aaa_fk_child_parent", "zzz_ck_child_amount"},
 	}
 
-	nodes, err := (&postgres.Planner{}).GenerateMigrationAST(diff, desired)
+	nodes, err := (&postgres.Planner{}).GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
