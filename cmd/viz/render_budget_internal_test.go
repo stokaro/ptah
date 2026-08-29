@@ -9,6 +9,7 @@ package viz
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -63,8 +64,13 @@ func TestRenderDOTToSVG_TheBudgetAppliesWhenNobodyNamedOne(t *testing.T) {
 // deadline is decided by nothing. It read as passing on a developer machine and
 // failed on CI, which is the right way round but only by luck.
 //
-// TestRenderDOTToSVG_TheBudgetAppliesWhenNobodyNamedOne is this helper's own
-// witness: it can only pass if the sleep is real.
+// The LookPath assertion is what makes that non-negotiable on every machine.
+// Neither test can see a missing sleep where spawning a process is slow: this
+// laptop takes about three seconds to exec a freshly written script under load,
+// which exceeds every budget these tests choose, so both gave the right answer
+// for the wrong reason and the CI runner -- where exec costs milliseconds --
+// was the only place the broken fixture showed. A fixture that quietly stops
+// measuring what it claims is worse than one that fails.
 func installSleepingDot(c *qt.C, t *testing.T, seconds string) {
 	c.Helper()
 	binDir := t.TempDir()
@@ -73,4 +79,9 @@ func installSleepingDot(c *qt.C, t *testing.T, seconds string) {
 	c.Assert(os.WriteFile(path, []byte(script), 0o600), qt.IsNil)
 	c.Assert(os.Chmod(path, 0o700), qt.IsNil)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	_, err := exec.LookPath("sleep")
+	c.Assert(err, qt.IsNil, qt.Commentf(
+		"the fake dot delays with `sleep`, and PATH does not reach one; "+
+			"without it the script exits immediately and these tests measure nothing"))
 }
