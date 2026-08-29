@@ -435,7 +435,14 @@ invoke_deferred() {
 		HOME="$work/home" TMPDIR="$work/tmp" \
 		"$@" >"$out" 2>"$err" &
 	deferred_job=$!
-	for _ in $(seq 1 200); do
+	# A deadline rather than an iteration count, for the reason the fixture
+	# server's wait carries: what is being waited for is a fork and an exec, and
+	# a machine slow enough to need the wait makes the wait itself shorter. This
+	# one has not failed -- but the macOS leg of the job that would find out ran
+	# for the first time in stokaro/ptah#2533, so its budget here has almost no
+	# history behind it.
+	local deferred_deadline=$((SECONDS + 30))
+	while [ "$SECONDS" -lt "$deferred_deadline" ]; do
 		if [ -s "$work/pid" ]; then
 			deferred_pid="$(cat "$work/pid")"
 			return 0
