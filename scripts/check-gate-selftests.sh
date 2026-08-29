@@ -190,16 +190,7 @@ echo "check-gate-selftests: breaking each gate's own rule and requiring it to no
 
 
 
-run_case check-brand-assets.sh \
-	"the favicon drifting away from the header logo" \
-	"perl -0pi -e 's/fill=\"#f59e0b\"/fill=\"#38bdf8\"/' docs/site/public/favicon.svg"
 
-# The same edit applied to both files, so the drift rule stays satisfied and only
-# the legibility one can fire. A gate whose two rules are only ever broken
-# together cannot say which of them it still reads.
-run_case check-brand-assets.sh \
-	"two courses moved closer than one favicon pixel, in both files" \
-	"perl -0pi -e 's/y=\"27\"/y=\"25\"/' docs/site/src/assets/logo.svg docs/site/public/favicon.svg"
 
 run_case check-test-style.sh \
 	"a conditional added to a test function" \

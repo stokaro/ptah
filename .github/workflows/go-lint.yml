@@ -60,7 +60,10 @@ jobs:
           scripts/check-architecture-boundaries-selftest.sh
 
       - name: Check the brand assets
-        run: scripts/check-brand-assets.sh
+        run: |
+          set -euo pipefail
+          scripts/check-brand-assets-selftest.sh
+          scripts/check-brand-assets.sh
 
       # The README's worked example, run for real. It lives in this workflow
       # rather than in docs.yml because both directions have to reach it: a
