@@ -362,14 +362,37 @@ run_node_selftest_case lib/docroutes.mjs \
 # Each entry names where the fixtures are, so the claim is checkable rather than
 # asserted. This list is the harness shrinking toward its own deletion: it is
 # the direction, and a gate joins it by growing an adjacent test.
+# Three fields: the gate, the package holding its fixtures, and what those
+# fixtures say. The package is a field rather than a phrase inside the sentence
+# because the accounting below reads it: an entry naming a package that does not
+# exist, or one that carries no tests, is a gate excused from this harness on the
+# strength of a sentence. check-feature-inventory.sh is deliberately absent -- it
+# has fixtures ABOVE, and an entry here would let the summary count it twice.
 adjacent=(
-	"check-docsync.sh	internal/docsync: each fail-closed refusal, and Replace asserted idempotent"
-	"check-feature-inventory.sh	--selftest breaks every derivation rule against in-memory fixtures, and go-lint.yml runs it"
-	"check-go-toolchain-single-source.sh	internal/gotoolchain: every YAML spelling and both forwarding shapes, with controls"
-	"check-renovate-regex.sh	internal/renovateregex: the backreference that stopped Renovate, and the group spelling that is the control for it"
-	"check-exported-docs.sh	internal/cmd/exporteddocs: each rule over an AST fixture, and the method exemption that 148 of 158 findings turned on"
-	"check-public-api-snapshot.sh	internal/apiguard: the whole gate over a fixture module -- an added exported field, its control, and the scrape's vacuity refusal"
+	"check-docsync.sh	internal/docsync	each fail-closed refusal, and Replace asserted idempotent"
+	"check-go-toolchain-single-source.sh	internal/gotoolchain	every YAML spelling and both forwarding shapes, with controls"
+	"check-renovate-regex.sh	internal/renovateregex	the backreference that stopped Renovate, and the group spelling that is the control for it"
+	"check-exported-docs.sh	internal/cmd/exporteddocs	each rule over an AST fixture, and the method exemption that 148 of 158 findings turned on"
+	"check-public-api-snapshot.sh	internal/apiguard	the whole gate over a fixture module -- an added exported field, its control, and the scrape's vacuity refusal"
 )
+
+# The guard on that list. A gate leaves this harness by growing tests elsewhere,
+# and "elsewhere" is checkable: the package has to exist and to hold test files.
+# Without this, deleting internal/renovateregex would take its coverage with it
+# and leave the line here reporting that the gate is proven.
+adjacent_unproven=""
+for entry in "${adjacent[@]}"; do
+	adjacent_gate="${entry%%	*}"
+	adjacent_rest="${entry#*	}"
+	adjacent_package="${adjacent_rest%%	*}"
+	[ -d "$adjacent_package" ] || {
+		adjacent_unproven="${adjacent_unproven} ${adjacent_gate} (no ${adjacent_package})"
+		continue
+	}
+	ls "$adjacent_package"/*_test.go >/dev/null 2>&1 || {
+		adjacent_unproven="${adjacent_unproven} ${adjacent_gate} (${adjacent_package} holds no tests)"
+	}
+done
 
 uncovered=(
 	"check-coverage.sh	runs the whole test suite; minutes per fixture"
@@ -401,7 +424,8 @@ for entry in "${uncovered[@]}"; do
 	printf '    %-40s %s\n' "${entry%%	*}" "${entry##*	}"
 done
 for entry in "${adjacent[@]}"; do
-	printf '    %-40s %s\n' "${entry%%	*}" "proven beside the checker -- ${entry##*	}"
+	rest="${entry#*	}"
+	printf '    %-40s %s\n' "${entry%%	*}" "proven in ${rest%%	*}: ${rest#*	}"
 done
 for gate in $(companion_gates); do
 	printf '    %-40s %s\n' "$gate" "carries its own -selftest.sh companion"
@@ -507,6 +531,10 @@ for path in scripts/check-*.sh; do
 done
 
 echo
+if [ -n "$adjacent_unproven" ]; then
+	echo "check-gate-selftests: a gate is excused as proven beside its checker, but the tests are not there:${adjacent_unproven}" >&2
+	exit 1
+fi
 if [ -n "$unlisted" ]; then
 	echo "check-gate-selftests: no fixture, no companion and no reason for:${unlisted}" >&2
 	echo "  give it a -selftest.sh beside the gate, or say in uncovered why not" >&2
