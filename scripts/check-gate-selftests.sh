@@ -293,9 +293,6 @@ run_case check-public-api-docs-sync.sh \
 	"a package the site table lists deleted from the ledger" \
 	"perl -0pi -e 's/^- \`go\.5x5\.cz\/ptah\/migration\/seeder\`\n//m' docs/public_api.md"
 
-run_case check-renovate-regex.sh \
-	"a backreference put back into a custom-manager pattern" \
-	"perl -0pi -e 's/\\[a-z\\]\\[\\\\\\\\w\\.\\/-\\]\\*:/\\\\\\\\k<depName>:/' renovate.json"
 
 # The `.mjs` route gates under docs/site/scripts. They take no npm dependency,
 # so they run here exactly as they run in the docs job.
@@ -437,6 +434,7 @@ adjacent=(
 	"check-docsync.sh	internal/docsync: each fail-closed refusal, and Replace asserted idempotent"
 	"check-feature-inventory.sh	--selftest breaks every derivation rule against in-memory fixtures, and go-lint.yml runs it"
 	"check-go-toolchain-single-source.sh	internal/gotoolchain: every YAML spelling and both forwarding shapes, with controls"
+	"check-renovate-regex.sh	internal/renovateregex: the backreference that stopped Renovate, and the group spelling that is the control for it"
 )
 
 uncovered=(
