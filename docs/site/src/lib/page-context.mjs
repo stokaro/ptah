@@ -1,5 +1,3 @@
-import { groupLandingPage } from './sidebar.mjs';
-
 /**
  * Return the navigation path to the current page.
  *
@@ -14,11 +12,6 @@ export function breadcrumbTrail(entries) {
     }
 
     if (entry.type !== 'group') continue;
-    const landingPage = groupLandingPage(entry);
-    if (landingPage?.isCurrent) {
-      return [{ label: entry.label, href: landingPage.href, current: true }];
-    }
-
     const childTrail = breadcrumbTrail(entry.entries);
     if (childTrail.length > 0) {
       return [{ label: entry.label, current: false }, ...childTrail];

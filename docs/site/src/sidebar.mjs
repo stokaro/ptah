@@ -33,12 +33,10 @@
 // the rule that no list inside a root row runs past about eight.
 //
 // A group carries a `label` and `items` and nothing else that navigates: the
-// schema has no `link` or `slug`. Ptah's Sidebar override recognizes an
-// ordinary first item labeled `Overview`, renders its link on the expandable
-// group row, and leaves the duplicate child out of the visible list. The item
-// stays here as the single route source for Starlight, the docs gates,
-// pagination, and breadcrumbs. `src/lib/sidebar.mjs` owns that recognition for
-// every consumer.
+// schema has no `link` or `slug`, and the heading renders as a disclosure
+// control rather than as a link. A landing page is therefore an ordinary first
+// item inside its group. Label it `Overview` when the page title would only
+// repeat the group label; use a more specific label when the page has one.
 //
 // Only four entry shapes are safe here, because `scripts/lib/docroutes.mjs`
 // tests `items` before `link`: a bare slug string, `{ slug }`, `{ slug, label }`

@@ -73,7 +73,6 @@ export default defineConfig({
       customCss: ['./src/styles/global.css'],
       components: {
         PageTitle: './src/components/PageTitle.astro',
-        Sidebar: './src/components/Sidebar.astro',
         SiteTitle: './src/components/SiteTitle.astro',
       },
       social: [
