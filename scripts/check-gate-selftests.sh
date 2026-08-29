@@ -407,6 +407,29 @@ for gate in $(companion_gates); do
 	printf '    %-40s %s\n' "$gate" "carries its own -selftest.sh companion"
 done
 
+# selftest_is_run answers whether a `.mjs` gate takes `--selftest` AND the docs
+# job actually runs it. Both halves, because the sentence printed for such a
+# gate -- "takes --selftest, run in the docs job" -- is two claims, and only the
+# first was ever checked: a grep for the string in the gate's own source. A
+# self-test nothing invokes is the exact shape this harness exists to refuse,
+# and it would have been reported here as coverage.
+#
+# The docs job spells the invocation two ways, and both count: `npm run
+# check:x:selftest`, whose command is read out of package.json rather than
+# guessed from the gate's name, and a direct `node docs/site/scripts/x.mjs
+# --selftest` for the gates that run before `npm ci`.
+selftest_is_run() {
+	local gate="$1" pattern script
+	grep -q -- "--selftest" "docs/site/scripts/${gate}" || return 1
+
+	grep -qF "node docs/site/scripts/${gate} --selftest" .github/workflows/docs.yml && return 0
+
+	pattern="${gate//./\\.}"
+	script="$(sed -n -E "s|^[[:space:]]*\"([^\"]+)\": \"node scripts/${pattern} --selftest\",?$|\1|p" docs/site/package.json)"
+	[ -n "$script" ] || return 1
+	grep -qF "npm run ${script}" .github/workflows/docs.yml
+}
+
 # The `.mjs` gates under docs/site/scripts, and what is claimed about each.
 #
 # Five fixtures above watched three of them go red on a broken rule. Every other
@@ -423,9 +446,11 @@ done
 # carries its own `versions:selftest`; neither is a `check-*` gate and neither
 # is claimed here. `lib/docroutes.mjs` is a library, not a gate, and it is
 # covered by a fixture above instead.
-uncovered_mjs=(
-	"check-core-doc-links.mjs	a substring scan over pinned core paths; it takes no --selftest yet"
-)
+# Empty, and it stays declared: the accounting loop below reads it, and a list
+# that disappeared when it emptied would take its guard with it. The last entry
+# was check-core-doc-links.mjs, which now takes a --selftest that the docs job
+# runs.
+uncovered_mjs=()
 
 echo
 echo "  docs/site/scripts .mjs gates, and what is claimed about each:"
@@ -452,7 +477,7 @@ for path in docs/site/scripts/check-*.mjs; do
 		printf '    %-40s %s\n' "$gate" "$listed"
 		continue
 	fi
-	if grep -q -- '--selftest' "$path"; then
+	if selftest_is_run "$gate"; then
 		printf '    %-40s %s\n' "$gate" "takes --selftest, run in the docs job; no mutation fixture here"
 		continue
 	fi
