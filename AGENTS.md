@@ -336,11 +336,16 @@ ours inside an Atlas family adds a trailing `P`, a rule inside a family of ours
 is left unmarked — and the identifiers that predate it, a list that may shrink
 and must not grow.
 
-Prefer `go test ./... -count=1` over `test-ptah.sh` for a local unit run. The
-script is committed without an executable bit, so `./test-ptah.sh` cannot be
-invoked directly, and it exports `POSTGRES_TEST_DSN`, `MYSQL_TEST_DSN` and
-`MARIADB_TEST_DSN` unconditionally, which makes its `unit` mode depend on
-databases listening on those exact ports.
+`go test ./... -count=1` or `make test` is the local unit run, and
+`bin/ptah-integration-test` with the `make integration-test` targets is the
+integration one. There is no second entry point: a standalone runner bundle used
+to sit beside them and stopped receiving the repository's testing decisions --
+its `unit` mode exported three database DSNs before choosing a mode, its
+integration mode covered one of the twenty-odd package trees, and it rendered
+its own reports in shell while the supported runner already emitted four formats
+(stokaro/ptah#2507). A convenience entry point may come back as a thin wrapper
+over these commands; it must not be a second discovery, orchestration and
+reporting implementation.
 
 ### The Go toolchain
 
