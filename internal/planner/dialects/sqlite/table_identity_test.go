@@ -135,8 +135,14 @@ func TestConstraintOnACreatedTableIsNotAlsoRebuilt(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
+			// The creation carries the declaration, and its Name carries the
+			// spelling this row is about: the diff and the constraint name the
+			// same table differently, and the planner has to see one table.
+			declared := identityRebuildSchema("")
+			creations := difftypes.TableCreationsFor(declared, "notes")
+			creations[0].Name = test.addedTableName
 			diff := &difftypes.SchemaDiff{
-				TablesAdded:      difftypes.TableChanges{{Name: test.addedTableName}},
+				TablesAdded:      creations,
 				ConstraintsAdded: []string{"ck_notes_body"},
 				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
 					Name:            "ck_notes_body",
@@ -145,7 +151,7 @@ func TestConstraintOnACreatedTableIsNotAlsoRebuilt(t *testing.T) {
 					CheckExpression: "length(body) > 0",
 				}},
 			}
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, identityRebuildSchema(""), "sqlite")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, declared, "sqlite")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(plan, qt.Not(qt.Contains), "__ptah_rebuild_notes")
