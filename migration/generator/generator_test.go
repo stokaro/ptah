@@ -12,30 +12,116 @@ import (
 
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/migration/generator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
-func TestGenerateMigration_HappyPath(t *testing.T) {
+// TestGenerateMigration_WritesAPairThatCreatesAndDropsTheTable is the happy
+// path, and it is the first one this package has had.
+//
+// What stood here was named happy path, pointed at a directory with no entities
+// and a `memory://` URL no scheme dispatcher accepts, and asserted that the
+// error contained the substring "error" (stokaro/ptah#2502). Every stage of
+// generation could have been broken under it.
+//
+// SQLite needs no server, so a real generation is a unit test: entities on
+// disk, a database file, and the two artifacts read back.
+func TestGenerateMigration_WritesAPairThatCreatesAndDropsTheTable(t *testing.T) {
 	c := qt.New(t)
+	root := t.TempDir()
+	entities := writeEntities(c, root, `//ptah:schema:table name="widgets"
+type Widget struct {
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
+	ID int64
 
-	// Create a temporary directory for output
-	tempDir := t.TempDir()
+	//ptah:schema:field name="name" type="TEXT" not_null="true"
+	Name string
+}`)
+	output := makeDir(c, root, "migrations")
 
-	// Test options
-	opts := generator.GenerateMigrationOptions{
-		GoEntitiesDir: "./testdata",
-		DatabaseURL:   "memory://test",
-		MigrationName: "test_migration",
-		OutputDir:     tempDir,
-	}
+	files, err := generator.GenerateMigration(context.Background(), generator.GenerateMigrationOptions{
+		GoEntitiesDir: entities,
+		DatabaseURL:   "sqlite://" + filepath.Join(root, "target.db"),
+		MigrationName: "create_widgets",
+		OutputDir:     output,
+	})
 
-	// This test will fail if there's no testdata directory with Go entities
-	// and no memory database connection, but it tests the basic structure
-	_, err := generator.GenerateMigration(context.Background(), opts)
+	c.Assert(err, qt.IsNil)
+	c.Assert(files.Files, qt.HasLen, 1)
+	pair := files.Files[0]
 
-	// We expect this to fail because we don't have test data set up
-	// but we can verify the error is reasonable
+	// The names come from the production namer, so this reads them back through
+	// the parser that owns the format rather than matching a pattern here.
+	up, err := migrationfile.ParseFileName(filepath.Base(pair.UpFile))
+	c.Assert(err, qt.IsNil)
+	c.Assert(up.Version, qt.Equals, pair.Version)
+	c.Assert(up.Direction, qt.Equals, "up")
+	down, err := migrationfile.ParseFileName(filepath.Base(pair.DownFile))
+	c.Assert(err, qt.IsNil)
+	c.Assert(down.Version, qt.Equals, pair.Version)
+	c.Assert(down.Direction, qt.Equals, "down")
+
+	// And the artifacts say what the migration does, in both directions. A pair
+	// written with an empty up file passes every assertion about names.
+	c.Assert(readFile(c, pair.UpFile), qt.Contains, `CREATE TABLE "widgets"`)
+	c.Assert(readFile(c, pair.UpFile), qt.Contains, `"name" TEXT NOT NULL`)
+	c.Assert(readFile(c, pair.DownFile), qt.Contains, `DROP TABLE IF EXISTS "widgets"`)
+}
+
+// TestGenerateMigration_AnEmptyNameDefaultsToMigration covers the default the
+// replaced test's own comment described and never checked -- it asserted only
+// that a run with no name failed, for want of a fixture.
+func TestGenerateMigration_AnEmptyNameDefaultsToMigration(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	entities := writeEntities(c, root, `//ptah:schema:table name="widgets"
+type Widget struct {
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
+	ID int64
+}`)
+	output := makeDir(c, root, "migrations")
+
+	files, err := generator.GenerateMigration(context.Background(), generator.GenerateMigrationOptions{
+		GoEntitiesDir: entities,
+		DatabaseURL:   "sqlite://" + filepath.Join(root, "target.db"),
+		OutputDir:     output,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(files.Files, qt.HasLen, 1)
+	// On disk first, because that is what an operator sees, and then through
+	// the parser -- which title-cases what it reads back, so the two spellings
+	// are both the contract and neither stands for the other.
+	c.Assert(filepath.Base(files.Files[0].UpFile), qt.Matches, `[0-9]+_migration\.up\.sql`)
+	name, err := migrationfile.ParseFileName(filepath.Base(files.Files[0].UpFile))
+	c.Assert(err, qt.IsNil)
+	c.Assert(name.Name, qt.Equals, "Migration")
+}
+
+// TestGenerateMigration_AMissingEntitiesDirectoryIsRefusedByName asserts the
+// validation boundary rather than that something, somewhere, failed.
+//
+// The replaced rows accepted any error from a run whose entities directory did
+// not exist AND whose database URL named no scheme this build dispatches, so a
+// failure at either stage satisfied them -- and one of them wrote to the shared
+// absolute path /tmp/migrations while doing it.
+func TestGenerateMigration_AMissingEntitiesDirectoryIsRefusedByName(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	missing := filepath.Join(root, "no-such-entities")
+
+	_, err := generator.GenerateMigration(context.Background(), generator.GenerateMigrationOptions{
+		GoEntitiesDir: missing,
+		DatabaseURL:   "sqlite://" + filepath.Join(root, "target.db"),
+		MigrationName: "create_widgets",
+		OutputDir:     makeDir(c, root, "migrations"),
+	})
+
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Contains, "error")
+	// Ptah's own clause and the name the caller gave, and not the sentence the
+	// operating system appended: "no such file or directory" is one platform's
+	// wording and Windows writes another.
+	c.Assert(err.Error(), qt.Contains, "error parsing Go entities")
+	c.Assert(err.Error(), qt.Contains, filepath.Base(missing))
 }
 
 func TestPlanMigrationRejectsMalformedSQLiteVirtualDropToggleBeforeDesiredSchema(t *testing.T) {
@@ -107,127 +193,6 @@ func TestPlanMigrationDoesNotApplySQLiteToggleToPostgresOutputPath(t *testing.T)
 	})
 
 	c.Assert(err, qt.ErrorMatches, `error validating output directory: .*outside allowed root.*`)
-}
-
-func TestGenerateStructName(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "simple table name",
-			input:    "users",
-			expected: "Users",
-		},
-		{
-			name:     "underscore separated",
-			input:    "user_profiles",
-			expected: "UserProfiles",
-		},
-		{
-			name:     "multiple underscores",
-			input:    "user_profile_settings",
-			expected: "UserProfileSettings",
-		},
-		{
-			name:     "single character",
-			input:    "a",
-			expected: "A",
-		},
-		{
-			name:     "empty string",
-			input:    "",
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			// We need to test the internal function, but it's not exported
-			// For now, we'll test the behavior through the public API
-			// In a real implementation, you might want to export these helper functions
-			// or test them through integration tests
-
-			// This is a placeholder test structure
-			c.Assert(tt.input, qt.IsNotNil) // Just to make the test pass for now
-		})
-	}
-}
-
-func TestCreateMigrationFiles_FileCreation(t *testing.T) {
-	c := qt.New(t)
-
-	// Create a temporary directory
-	tempDir := t.TempDir()
-
-	// This tests the internal createMigrationFiles function
-	// Since it's not exported, we'll test through the main function
-	// In a real scenario, you might want to export this function for testing
-
-	opts := generator.GenerateMigrationOptions{
-		GoEntitiesDir: "./testdata",
-		DatabaseURL:   "memory://test",
-		MigrationName: "test_migration",
-		OutputDir:     tempDir,
-	}
-
-	// This will fail due to missing testdata, but we can check the structure
-	_, err := generator.GenerateMigration(context.Background(), opts)
-	c.Assert(err, qt.IsNotNil) // Expected to fail without proper setup
-}
-
-func TestMigrationFileNaming(t *testing.T) {
-	c := qt.New(t)
-
-	// Test that the expected file naming pattern would be used
-	// This is more of a documentation test for the expected behavior
-
-	expectedUpFile := "1234567890_create_users_table.up.sql"
-	expectedDownFile := "1234567890_create_users_table.down.sql"
-
-	// Verify the expected naming pattern
-	c.Assert(expectedUpFile, qt.Contains, "up.sql")
-	c.Assert(expectedDownFile, qt.Contains, "down.sql")
-	c.Assert(strings.HasPrefix(expectedUpFile, "1234567890"), qt.IsTrue)
-	c.Assert(strings.HasPrefix(expectedDownFile, "1234567890"), qt.IsTrue)
-}
-
-func TestGenerateMigrationOptions_ErrorCases(t *testing.T) {
-	tests := []struct {
-		name string
-		opts generator.GenerateMigrationOptions
-	}{
-		{
-			name: "missing testdata directory",
-			opts: generator.GenerateMigrationOptions{
-				GoEntitiesDir: "./testdata",
-				DatabaseURL:   "memory://test",
-				MigrationName: "test_migration",
-				OutputDir:     "/tmp/migrations",
-			},
-		},
-		{
-			name: "empty migration name with missing testdata",
-			opts: generator.GenerateMigrationOptions{
-				GoEntitiesDir: "./testdata",
-				DatabaseURL:   "memory://test",
-				OutputDir:     "/tmp/migrations",
-				// MigrationName is empty - should default to "migration"
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			_, err := generator.GenerateMigration(context.Background(), tt.opts)
-			c.Assert(err, qt.IsNotNil)
-		})
-	}
 }
 
 func TestGenerateMigration_FilesystemPathResolution(t *testing.T) {
@@ -362,4 +327,30 @@ type TestTable struct {
 	// is the same question without a spelling in it.
 	c.Assert(err, qt.Not(qt.ErrorAs), new(*fs.PathError),
 		qt.Commentf("Should not have filesystem path errors, got: %s", errMsg))
+}
+
+// writeEntities puts one annotated struct in its own package directory and
+// returns the directory.
+func writeEntities(c *qt.C, root, declaration string) string {
+	c.Helper()
+	dir := makeDir(c, root, "entities")
+	source := "package entities\n\n" + declaration + "\n"
+	c.Assert(os.WriteFile(filepath.Join(dir, "schema.go"), []byte(source), 0o600), qt.IsNil)
+	return dir
+}
+
+// makeDir creates one directory under root.
+func makeDir(c *qt.C, root, name string) string {
+	c.Helper()
+	dir := filepath.Join(root, name)
+	c.Assert(os.MkdirAll(dir, 0o750), qt.IsNil)
+	return dir
+}
+
+// readFile reads a generated artifact.
+func readFile(c *qt.C, path string) string {
+	c.Helper()
+	body, err := os.ReadFile(path) //gosec:disable G304 -- the path is a temporary directory this test made
+	c.Assert(err, qt.IsNil)
+	return string(body)
 }

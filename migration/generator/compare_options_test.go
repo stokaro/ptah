@@ -53,7 +53,7 @@ func TestGenerateMigrationOptions_CompareOptions_Initialization(t *testing.T) {
 				GoEntitiesDir:  "./testdata",
 				DatabaseURL:    "memory://test",
 				MigrationName:  "test_migration",
-				OutputDir:      "/tmp/migrations",
+				OutputDir:      t.TempDir(),
 				CompareOptions: tt.compareOptions,
 			}
 
