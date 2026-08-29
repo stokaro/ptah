@@ -104,6 +104,17 @@ func assertReverseCoverageField(
 		// what holds that, since this gate structurally cannot.
 		return
 	}
+	if field.Name == "DeclaredForeignKeys" {
+		// An OUTPUT of the reverse, for the reason the three above are. A
+		// rollback restores the column the PRE-CHANGE database had, so the
+		// keys it must drop and put back around that column are that
+		// database's -- the forward value names the keys the change was moving
+		// to and cannot reach it.
+		//
+		// TestReverseSchemaDiff_ARolledBackColumnCarriesThePriorForeignKeys is
+		// what holds that, since this gate structurally cannot.
+		return
+	}
 	if field.Name == "DeclaredUserTypes" {
 		// An OUTPUT of the reverse rather than an input, for the reason the
 		// signatures above are. The vocabulary the down direction needs is the
@@ -653,4 +664,66 @@ func TestReverseSchemaDiff_ARolledBackCascadeRecreatesThePriorViews(t *testing.T
 		qt.Commentf("the collateral set comes from the database being rolled back to"))
 	c.Assert(names, qt.Not(qt.Contains), "rev_view_desired",
 		qt.Commentf("a view only the desired schema declares is not there to be recreated"))
+}
+
+// TestReverseSchemaDiff_ARolledBackColumnCarriesThePriorForeignKeys is the
+// fourth schema-wide fact a rollback resolves rather than inherits.
+//
+// The MySQL family cannot MODIFY a column a foreign key references, so it drops
+// the keys first and puts them back after. Which keys those are is a fact about
+// the database being rolled back TO: a key the desired schema declares may not
+// be there at all, and one that database holds may be absent from the
+// declaration -- which is exactly what a rollback of "add a foreign key" is.
+//
+// Inheriting the forward value would drop nothing and re-add a key the
+// pre-change database never had.
+func TestReverseSchemaDiff_ARolledBackColumnCarriesThePriorForeignKeys(t *testing.T) {
+	c := qt.New(t)
+
+	// The declaration holds one foreign key; the database holds a different
+	// one. Neither list is empty, so a reverse that inherited the forward value
+	// would still look populated.
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Order", Name: "orders"}},
+		Fields: []schemamodel.Field{
+			{StructName: "Order", Name: "id", Type: "BIGINT", Primary: true},
+			{StructName: "Order", Name: "buyer_id", Type: "BIGINT", Foreign: "buyers(id)", ForeignKeyName: "fk_orders_buyer"},
+		},
+	}
+	schemamodel.Finalize(schema)
+	foreignTable, foreignColumn := "customers", "id"
+	dbSchema := &catalog.Database{
+		Tables: []catalog.Table{{
+			Name: "orders",
+			Type: "TABLE",
+			Columns: []catalog.Column{
+				{Name: "id", DataType: "bigint", IsNullable: "NO", IsPrimaryKey: true, OrdinalPosition: 1},
+				{Name: "customer_id", DataType: "bigint", IsNullable: "NO", OrdinalPosition: 2},
+			},
+		}},
+		Constraints: []catalog.Constraint{{
+			Name:          "fk_orders_customer",
+			TableName:     "orders",
+			Type:          "FOREIGN KEY",
+			ColumnName:    "customer_id",
+			ForeignTable:  &foreignTable,
+			ForeignColumn: &foreignColumn,
+		}},
+	}
+	forward := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{TableName: "orders"}},
+		// The declaration's keys, which the rollback must not act on.
+		DeclaredForeignKeys: difftypes.ForeignKeyDeclarationsOf(schema),
+	}
+
+	reversed := reverseSchemaDiffWithSchema(forward, schema, dbSchema)
+
+	names := make([]string, 0, len(reversed.DeclaredForeignKeys))
+	for _, declared := range reversed.DeclaredForeignKeys {
+		names = append(names, declared.Name)
+	}
+	c.Assert(names, qt.Contains, "fk_orders_customer",
+		qt.Commentf("the keys to drop and restore come from the database being rolled back to"))
+	c.Assert(names, qt.Not(qt.Contains), "fk_orders_buyer",
+		qt.Commentf("the declaration's own key is not in that database and must not be re-added"))
 }

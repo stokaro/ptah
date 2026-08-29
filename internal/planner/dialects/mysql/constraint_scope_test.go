@@ -832,6 +832,9 @@ func withDeclaredObjects(
 	if len(completed.DeclaredTables) == 0 {
 		completed.DeclaredTables = desired.Tables
 	}
+	if len(completed.DeclaredForeignKeys) == 0 {
+		completed.DeclaredForeignKeys = difftypes.ForeignKeyDeclarationsOf(desired)
+	}
 	return &completed
 }
 

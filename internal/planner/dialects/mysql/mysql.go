@@ -18,7 +18,6 @@ import (
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
-	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -790,7 +789,7 @@ func collectColumnTypeForeignKeyActions(
 	// target schema on the up path, the introspected pre-change schema on the
 	// down path. This covers unchanged and modified keys. Added-only keys are
 	// not in the database yet, so they are not pre-dropped here.
-	for _, fk := range candidateForeignKeys(desired) {
+	for _, fk := range declaredForeignKeys(diff) {
 		if !foreignKeyValid(fk) || !foreignKeyTouchesTypeChange(fk, typeChanged, semantics) {
 			continue
 		}
@@ -880,107 +879,33 @@ func foreignKeyConstraintDiffHosts(
 	return added, removed
 }
 
-// candidateForeignKeys enumerates every foreign key in the schema, drawing on
-// all three representations: field-level foreign= references (and the
-// single-column FKs the down path reconstructs from the database),
-// self-referencing foreign keys, and table-level foreign key constraints (and
-// the composite FKs the down path reconstructs).
-func candidateForeignKeys(desired *schemamodel.Database) []affectedForeignKey {
-	structToTable := make(map[string]schemamodel.Table, len(desired.Tables))
-	tableByQualifiedName := make(map[string]schemamodel.Table, len(desired.Tables))
-	for _, t := range desired.Tables {
-		structToTable[t.StructName] = t
-		tableByQualifiedName[t.QualifiedName()] = t
+// declaredForeignKeys reads the foreign keys of the schema this plan runs
+// against off the diff.
+//
+// The enumeration itself is [difftypes.ForeignKeyDeclarationsOf], which the
+// comparison runs over the declaration and the reversal over the pre-change
+// schema. The planner is handed the answer for its own direction and does not
+// re-derive it, which is what lets a rollback drop the keys the database had
+// rather than the ones the change was moving to (stokaro/ptah#2315).
+func declaredForeignKeys(diff *difftypes.SchemaDiff) []affectedForeignKey {
+	if diff == nil {
+		return nil
 	}
-
-	var candidates []affectedForeignKey
-	candidates = appendFieldLevelForeignKeys(candidates, desired, structToTable)
-	candidates = appendSelfReferencingForeignKeys(candidates, desired, tableByQualifiedName)
-	candidates = appendTableLevelForeignKeys(candidates, desired)
-	return candidates
-}
-
-// appendFieldLevelForeignKeys resolves each field-level foreign key to its
-// owning table. The ALTER TABLE target is the qualified table name — matching
-// the MODIFY statement and the constraint comparator — while the conventional
-// constraint name is derived from the bare table name, matching
-// fromschema.GenerateForeignKeyName as used on the FK-creation path and by the
-// comparator's synthesis.
-func appendFieldLevelForeignKeys(candidates []affectedForeignKey, desired *schemamodel.Database, structToTable map[string]schemamodel.Table) []affectedForeignKey {
-	for _, field := range desired.Fields {
-		if field.Foreign == "" {
-			continue
-		}
-		ref := fromschema.ParseForeignKeyReference(field.Foreign)
-		if ref == nil {
-			continue
-		}
-		ref.OnDelete = field.OnDelete
-		ref.OnUpdate = field.OnUpdate
-		table, ok := structToTable[field.StructName]
-		qualified := field.StructName
-		bare := field.StructName
-		if ok {
-			qualified = table.QualifiedName()
-			bare = table.Name
-		}
+	candidates := make([]affectedForeignKey, 0, len(diff.DeclaredForeignKeys))
+	for _, declared := range diff.DeclaredForeignKeys {
 		candidates = append(candidates, affectedForeignKey{
-			table:   qualified,
-			name:    foreignKeyName(bare, field),
-			columns: []string{field.Name},
-			ref:     ref,
-		})
-	}
-	return candidates
-}
-
-func appendSelfReferencingForeignKeys(
-	candidates []affectedForeignKey,
-	desired *schemamodel.Database,
-	tableByQualifiedName map[string]schemamodel.Table,
-) []affectedForeignKey {
-	for tableName, fks := range desired.SelfReferencingForeignKeys {
-		qualified := tableName
-		bare := tableName
-		if table, ok := tableByQualifiedName[tableName]; ok {
-			qualified = table.QualifiedName()
-			bare = table.Name
-		} else if ref, ok := tableref.Parse(tableName); ok {
-			bare = ref.Name
-		}
-		for _, fk := range fks {
-			ref := fromschema.ParseForeignKeyReference(fk.Foreign)
-			if ref == nil {
-				continue
-			}
-			ref.OnDelete = fk.OnDelete
-			ref.OnUpdate = fk.OnUpdate
-			candidates = append(candidates, affectedForeignKey{
-				table:   qualified,
-				name:    selfReferencingForeignKeyName(bare, fk),
-				columns: []string{fk.FieldName},
-				ref:     ref,
-			})
-		}
-	}
-	return candidates
-}
-
-func appendTableLevelForeignKeys(candidates []affectedForeignKey, desired *schemamodel.Database) []affectedForeignKey {
-	for _, constraint := range desired.Constraints {
-		if !strings.EqualFold(constraint.Type, "FOREIGN KEY") {
-			continue
-		}
-		candidates = append(candidates, affectedForeignKey{
-			table:   constraint.Table,
-			name:    constraint.Name,
-			columns: constraint.Columns,
+			table:   declared.TableName,
+			name:    declared.Name,
+			columns: declared.Columns,
+			// A fresh reference per key: the statement builder names the
+			// constraint by writing into it, so a shared one would be renamed
+			// under every key that followed.
 			ref: &ast.ForeignKeyRef{
-				Table:    constraint.ForeignTable,
-				Column:   constraint.ForeignColumn,
-				Columns:  constraint.ForeignColumns,
-				OnDelete: constraint.OnDelete,
-				OnUpdate: constraint.OnUpdate,
+				Table:    declared.ForeignTable,
+				Column:   declared.ForeignColumn,
+				Columns:  declared.ForeignColumns,
+				OnDelete: declared.OnDelete,
+				OnUpdate: declared.OnUpdate,
 			},
 		})
 	}

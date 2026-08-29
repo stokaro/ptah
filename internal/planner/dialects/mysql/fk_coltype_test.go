@@ -577,3 +577,64 @@ func TestPlanner_ColumnTypeChange_MariaDBGuardsDrop(t *testing.T) {
 
 	c.Assert(sql, qt.Contains, "ALTER TABLE posts DROP FOREIGN KEY IF EXISTS fk_posts_user_id;")
 }
+
+// TestPlanner_ColumnTypeChange_ForeignKeysComeFromTheDiff pins WHERE the keys
+// this pass drops are read from.
+//
+// Every other test in this file states one schema and lets the fixture fill the
+// diff from it, so a planner reading either source answers the same. These two
+// separate them, because the two sources disagree by direction: a rollback
+// drops the keys the PRE-CHANGE database held, and the diff is what carries
+// that answer.
+func TestPlanner_ColumnTypeChange_ForeignKeysComeFromTheDiff(t *testing.T) {
+	t.Run("a key only the diff carries is dropped and put back", func(t *testing.T) {
+		c := qt.New(t)
+		// The declaration knows nothing about this key: it is one the database
+		// being changed holds, which is what the down direction hands over.
+		desired := &schemamodel.Database{
+			Tables: []schemamodel.Table{{Name: "posts", StructName: "Post"}},
+			Fields: []schemamodel.Field{{Name: "user_id", Type: "BIGINT", StructName: "Post"}},
+		}
+		diff := typeChangeDiff("posts", "user_id", "INTEGER -> BIGINT")
+		diff.TablesModified[0].ColumnsModified[0].Desired = desired.Fields[0]
+		diff.DeclaredForeignKeys = []difftypes.ForeignKeyDeclaration{{
+			TableName: "posts", Name: "fk_posts_user_id", Columns: []string{"user_id"},
+			ForeignTable: "users", ForeignColumn: "id",
+		}}
+
+		nodes, err := mysql.New().GenerateMigrationAST(diff, desired)
+
+		c.Assert(err, qt.IsNil)
+		sql, err := renderer.RenderSQL("mysql", nodes...)
+		c.Assert(err, qt.IsNil)
+		c.Assert(sql, qt.Contains, "ALTER TABLE `posts` DROP FOREIGN KEY `fk_posts_user_id`")
+		c.Assert(sql, qt.Contains, "MODIFY COLUMN `user_id`")
+		c.Assert(sql, qt.Contains, "ALTER TABLE `posts` ADD CONSTRAINT `fk_posts_user_id` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`)")
+	})
+
+	t.Run("a key only the declaration holds is left alone", func(t *testing.T) {
+		c := qt.New(t)
+		// The inverse: the declaration names a key the diff does not carry.
+		// Dropping it would be acting on a key the database does not have.
+		desired := &schemamodel.Database{
+			Tables: []schemamodel.Table{
+				{Name: "users", StructName: "User"},
+				{Name: "posts", StructName: "Post"},
+			},
+			Fields: []schemamodel.Field{
+				{Name: "id", Type: "BIGINT", StructName: "User", Primary: true},
+				{Name: "user_id", Type: "BIGINT", StructName: "Post", Foreign: "users(id)"},
+			},
+		}
+		diff := typeChangeDiff("posts", "user_id", "INTEGER -> BIGINT")
+		diff.TablesModified[0].ColumnsModified[0].Desired = desired.Fields[1]
+
+		nodes, err := mysql.New().GenerateMigrationAST(diff, desired)
+
+		c.Assert(err, qt.IsNil)
+		sql, err := renderer.RenderSQL("mysql", nodes...)
+		c.Assert(err, qt.IsNil)
+		c.Assert(sql, qt.Not(qt.Contains), "DROP FOREIGN KEY")
+		c.Assert(sql, qt.Contains, "MODIFY COLUMN `user_id`")
+	})
+}
