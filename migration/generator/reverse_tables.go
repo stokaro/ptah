@@ -240,5 +240,16 @@ func priorTableCreation(prior *schemamodel.Database, name string) difftypes.Tabl
 	creation.Table = *table
 	creation.Fields = owned
 	creation.Enums = fromschema.EnumsFor(owned, prior.Enums)
+	// The constraints that database's table had. A target with no
+	// ADD CONSTRAINT renders them inside the CREATE, so a rollback that
+	// omitted them would put the table back without them and report success
+	// (stokaro/ptah#2315).
+	//
+	// DependsOn and SelfReferencingForeignKeys are still unfilled here, and
+	// the second one must not simply be filled: the down path already emits
+	// those keys as ALTERs, so a copy on the creation emits each twice and
+	// flattens a composite self-reference into one quoted column list.
+	// stokaro/ptah#2541 carries the measurement.
+	creation.Constraints = difftypes.TableCreationFor(prior, *table, name).Constraints
 	return creation
 }

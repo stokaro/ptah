@@ -463,7 +463,7 @@ func (p *Planner) addTables(
 	var result []ast.Node
 	for _, creation := range diff.TablesAdded.Qualified(diff.DeclaredUserTypes, DialectName).InDependencyOrder() {
 		node := fromschema.FromTable(creation.Table, creation.Fields, creation.Enums, DialectName)
-		if err := addInlineConstraints(node, creation.Table, desired.Constraints); err != nil {
+		if err := addInlineConstraints(node, creation.Table, creation.Constraints); err != nil {
 			return nil, err
 		}
 		result = append(result, node)

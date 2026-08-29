@@ -14569,6 +14569,15 @@ type TableCreation struct {
     // be part of the CREATE that makes the table (stokaro/ptah#2315).
     SelfReferencingForeignKeys []schemamodel.SelfReferencingFK
 
+    // Constraints are the table-level constraints this table owns.
+    //
+    // A target that can ALTER a constraint into place plans each one as its own
+    // addition and never reads this. SQLite cannot -- it has no
+    // ADD CONSTRAINT, so a constraint that is not inside the CREATE has no
+    // second chance -- and it read them off the declaration handed to the
+    // planner instead (stokaro/ptah#2315).
+    Constraints []schemamodel.Constraint
+
     // DependsOn are the tables this one is declared to come after, from the
     // document's own dependency map.
     //

@@ -727,3 +727,29 @@ func TestReverseSchemaDiff_ARolledBackColumnCarriesThePriorForeignKeys(t *testin
 	c.Assert(names, qt.Not(qt.Contains), "fk_orders_buyer",
 		qt.Commentf("the declaration's own key is not in that database and must not be re-added"))
 }
+
+// TestReverseSchemaDiff_ARolledBackTableCarriesThePriorConstraints covers the
+// half of a creation that has no second chance to arrive.
+//
+// A rollback recreates the tables the change removed, and on a target with no
+// ADD CONSTRAINT the constraints have to be inside that CREATE. They come from
+// the database being rolled back to, which is where the table was.
+//
+// The reverse census cannot see this: the forward diff's TablesRemoved is a
+// list of names, so there is no forward value to zero.
+func TestReverseSchemaDiff_ARolledBackTableCarriesThePriorConstraints(t *testing.T) {
+	c := qt.New(t)
+
+	schema, dbSchema := reverseCoverageContext()
+	forward := &difftypes.SchemaDiff{TablesRemoved: []string{revCoverageTable}}
+
+	reversed := reverseSchemaDiffWithSchema(forward, schema, dbSchema)
+
+	c.Assert(reversed.TablesAdded, qt.HasLen, 1)
+	names := make([]string, 0, len(reversed.TablesAdded[0].Constraints))
+	for _, constraint := range reversed.TablesAdded[0].Constraints {
+		names = append(names, constraint.Name)
+	}
+	c.Assert(names, qt.Contains, revCoverageCheckName,
+		qt.Commentf("the recreated table brings back the constraints that database's table had"))
+}

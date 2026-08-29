@@ -2372,6 +2372,15 @@ type TableCreation struct {
 	// be part of the CREATE that makes the table (stokaro/ptah#2315).
 	SelfReferencingForeignKeys []schemamodel.SelfReferencingFK
 
+	// Constraints are the table-level constraints this table owns.
+	//
+	// A target that can ALTER a constraint into place plans each one as its own
+	// addition and never reads this. SQLite cannot -- it has no
+	// ADD CONSTRAINT, so a constraint that is not inside the CREATE has no
+	// second chance -- and it read them off the declaration handed to the
+	// planner instead (stokaro/ptah#2315).
+	Constraints []schemamodel.Constraint
+
 	// DependsOn are the tables this one is declared to come after, from the
 	// document's own dependency map.
 	//
@@ -2680,7 +2689,35 @@ func TableCreationFor(desired *schemamodel.Database, table schemamodel.Table, na
 	// constraint was not there (stokaro/ptah#2471).
 	creation.SelfReferencingForeignKeys =
 		deporder.GeneratedSelfReferencingForeignKeys(desired)[table.QualifiedName()]
+	// A target that cannot ALTER a constraint into place has to render them
+	// inside the CREATE, so they belong to the creation the way its columns do.
+	// SQLite is that target: it has no ADD CONSTRAINT at all, and read the
+	// declaration for them (stokaro/ptah#2315).
+	creation.Constraints = constraintsOfTable(desired.Constraints, table)
 	return creation
+}
+
+// constraintsOfTable selects the constraints one table owns.
+//
+// It is one function because two callers ask the same question --
+// [TableCreationFor] for what a CREATE renders inline and [TableDeclarationFor]
+// for what a rebuild must put back -- and a predicate written twice is a
+// predicate that agrees until one of them is extended.
+//
+// A constraint names its host in one of three ways: by the Go struct, by the
+// qualified table name, or by the bare one. The declaration leaves `Table`
+// empty whenever it matches the struct's own table, which is the ordinary case.
+func constraintsOfTable(constraints []schemamodel.Constraint, table schemamodel.Table) []schemamodel.Constraint {
+	qualified := table.QualifiedName()
+	owned := make([]schemamodel.Constraint, 0, len(constraints))
+	for _, constraint := range constraints {
+		if constraint.StructName == table.StructName ||
+			constraint.Table == qualified ||
+			constraint.Table == table.Name {
+			owned = append(owned, constraint)
+		}
+	}
+	return nilWhenEmpty(owned)
 }
 
 // TableDeclaration is everything the declaration says about one table.
@@ -2736,13 +2773,7 @@ func TableDeclarationFor(desired *schemamodel.Database, table schemamodel.Table)
 	declaration.Fields = nilWhenEmpty(owned)
 	declaration.Enums = fromschema.EnumsFor(owned, desired.Enums)
 
-	constraints := make([]schemamodel.Constraint, 0, len(desired.Constraints))
-	for _, constraint := range desired.Constraints {
-		if constraint.StructName == table.StructName || constraint.Table == qualified || constraint.Table == table.Name {
-			constraints = append(constraints, constraint)
-		}
-	}
-	declaration.Constraints = nilWhenEmpty(constraints)
+	declaration.Constraints = nilWhenEmpty(constraintsOfTable(desired.Constraints, table))
 
 	indexes := make([]schemamodel.Index, 0, len(desired.Indexes))
 	for _, index := range desired.Indexes {

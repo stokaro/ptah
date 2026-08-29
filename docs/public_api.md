@@ -623,9 +623,14 @@ written from the two names.
 
 `SchemaDiff.TablesAdded` is `TableChanges` rather than `[]string`. Each entry
 carries the table's declaration, that table's columns with embedded fields
-already folded in, and the enums those columns name — everything CREATE TABLE
+already folded in, the enums those columns name, and the table-level
+constraints it owns — everything CREATE TABLE
 renders from, which otherwise lives in three flat lists keyed by the Go struct
-rather than owned by the table. `Names()` gives the table names in the spelling
+rather than owned by the table. The constraints are there for a target that
+cannot ALTER one into place: SQLite has no `ADD CONSTRAINT`, so a constraint
+missing from the `CREATE` has no second chance, while every other target plans
+each one as its own addition and never reads them. `Names()` gives the table
+names in the spelling
 the comparison produced, and the JSON is unchanged: `tables_added` has always
 been an array of names. `TablesRemoved` stays `[]string`, because DROP TABLE is
 written from the name.
