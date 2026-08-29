@@ -11,6 +11,9 @@ sourceOfTruth:
   - "cmd/inference"
   - "integration/inference_cli_e2e_test.go"
 generated: false
+searchAliases:
+  - pgvector
+  - inference migration tutorial
 overlaps:
   - "/inference/guides/create-first-generation/"
   - "/inference/concepts/lifecycle/"

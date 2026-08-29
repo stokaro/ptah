@@ -35,6 +35,20 @@ Whenever page content, metadata, navigation, or internal links change, run
 journeys and non-derivable decisions in `docs/site/CONTENT_INVENTORY.md`; never
 copy mechanical counts or route lists back into that file.
 
+## Preserve The Navigation Contract
+
+A top-level sidebar group is a disclosure control. Give it no route. Its first
+child must be an authored `type: landing` page, normally labeled `Overview`;
+use a task-specific child label when that is clearer. Breadcrumbs link the
+group ancestor to this explicit child. A subgroup has no breadcrumb link unless
+it also has an explicit landing.
+
+For navigation or discoverability changes, regenerate the inventory, build the
+site, then run `npm run check:navigation` and
+`npm run check:search-ranking`. Add a search alias only for reader language the
+title and visible prose do not already contain. The ranking check owns the
+accepted query-to-canonical-route map and requires a top-three result.
+
 ## Start With The Change Class
 
 Classify the change before editing docs:

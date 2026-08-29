@@ -560,9 +560,13 @@ a reader recognizes on sight and cannot reconstruct from a paragraph.
 - Every page is named by a sidebar entry in `docs/site/src/sidebar.mjs`, and
   every entry names something that exists: a `slug:` names a page, an internal
   `link:` names a route the site publishes or a redirect it declares. Both
-  directions are enforced by `check-page-health.mjs`. Either kind of entry
-  counts as coverage, so a section index authored as `{ label, link }` is a
-  reachable page rather than an orphan.
+  directions are enforced by `check-page-health.mjs`.
+- A top-level sidebar group is a disclosure control, never a link. Its first
+  child is a page with `type: landing`, usually labeled `Overview`. Use a more
+  specific child label when `Overview` would hide the reader's decision. The
+  parent breadcrumb links to that explicit landing; a nested group without its
+  own landing remains plain text. `check-navigation.mjs` enforces the structural
+  rule and renders every top-level parent breadcrumb.
 - `reference/exit-codes` is the canonical page for exit codes, and
   `check-exit-codes.mjs` holds it in lockstep with the codes the binaries
   return. Document an exit code there and link to it, rather than restating the
@@ -579,6 +583,16 @@ a reader recognizes on sight and cannot reconstruct from a paragraph.
   `check-page-health.mjs`).
 - Structural changes get a visual review at desktop and mobile widths before
   merge.
+- Page actions appear in this order: Copy page as Markdown, Edit this page,
+  View source, Report a documentation issue. Assistant destinations require
+  measured use before they displace those actions.
+- `lastVerified` is the date a status claim's evidence was checked. The footer's
+  Git-derived Last updated date records when the page source changed. Do not use
+  one as a substitute for the other.
+- `searchAliases` hold reader language that the title and visible prose do not
+  already cover. Do not copy the page title into the aliases. The search gate
+  requires each canonical acceptance page to rank in Pagefind's first three
+  results for its recorded query.
 
 ## 14. Anti-slop rules
 
@@ -622,9 +636,11 @@ Complete this for every documentation PR:
    npm run check:style:selftest && npm run check:style &&
    npm run check:terminology:selftest && npm run check:terminology &&
    npm run check:limitations:selftest && npm run check:limitations &&
-   npm run check:responsive:selftest && npm run versions:selftest &&
+   npm run check:responsive:selftest && npm run check:navigation:selftest &&
+   npm run check:search-ranking:selftest && npm run versions:selftest &&
    npm run build && npm run check:responsive &&
-   npm run check:glossary:selftest && npm run check:glossary`
+   npm run check:glossary:selftest && npm run check:glossary &&
+   npm run check:navigation && npm run check:search-ranking`
    all pass in `docs/site`. `check:responsive` and `check:glossary` read the
    built site, so they run last. Run every `:selftest` alongside its check: a
    check whose self-test is failing is not reporting on your content.
@@ -683,6 +699,10 @@ in this guide is a review responsibility.
 | Release-line support counts and classifications appear only in generated blocks | 12 | `check:support-matrix` |
 | Every page is named by a sidebar entry | 12 | `check:page-health` |
 | Every sidebar entry names a page or a route | 12 | `check:page-health` |
+| Every top-level group starts with a landing page | 12 | `check:navigation` |
+| Landing-backed breadcrumb ancestors are links | 12, 13 | `check:navigation` |
+| Page-action order and keyboard dismissal | 13 | `check:navigation` |
+| Canonical search pages rank in the top three | 13 | `check:search-ranking` |
 | No `TODO`/`TBD`/`FIXME`/"coming soon" | 14 | `check:page-health` |
 | Site-internal links resolve | 12 | `check:links` |
 | A declared redirect is well formed | 12 | `check:redirects` |

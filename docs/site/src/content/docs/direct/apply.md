@@ -1,6 +1,6 @@
 ---
-title: Apply directly
-description: Apply desired-schema changes straight to a database with ptah schema apply, saved plan files, and hybrid patterns.
+title: Apply a desired schema
+description: Apply desired-schema changes to a database with ptah schema apply, saved plan files, and hybrid patterns.
 type: how-to
 audience:
   - "database-engineer"

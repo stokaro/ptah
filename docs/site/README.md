@@ -16,7 +16,11 @@ ASTRO_TELEMETRY_DISABLED=1 npm run check:content-inventory
 ASTRO_TELEMETRY_DISABLED=1 npm run check:support-matrix:selftest
 ASTRO_TELEMETRY_DISABLED=1 npm run check:support-matrix
 ASTRO_TELEMETRY_DISABLED=1 npm run check:exit-codes
+ASTRO_TELEMETRY_DISABLED=1 npm run check:navigation:selftest
+ASTRO_TELEMETRY_DISABLED=1 npm run check:search-ranking:selftest
 ASTRO_TELEMETRY_DISABLED=1 npm run build
+ASTRO_TELEMETRY_DISABLED=1 npm run check:navigation
+ASTRO_TELEMETRY_DISABLED=1 npm run check:search-ranking
 npm run versions:selftest
 npm run root-assets:selftest
 npm run check:pages-root:selftest
@@ -138,9 +142,11 @@ A Starlight group carries a `label` and `items`, but no `link` or `slug`.
 The group heading is always a disclosure control. Put a landing page first in
 the group's `items` as an ordinary child link. Use `Overview` when the page
 title repeats the group label, or give the child a more specific label when it
-answers a narrower question. `collapsed: true` hides a subgroup's items until
-the reader opens it, and opens the group anyway whenever the current page is
-inside it.
+answers a narrower question. `check-navigation.mjs` requires this first child
+to have `type: landing` and renders a descendant of every top-level group to
+verify that the parent breadcrumb links back to it. `collapsed: true` hides a
+subgroup's items until the reader opens it, and opens the group anyway whenever
+the current page is inside it.
 
 ## Page context and actions
 
@@ -153,8 +159,10 @@ home crumb uses Starlight's version-aware site URL.
 `page-source/<page-id>.md`. The endpoint strips frontmatter, restores the title
 and description, and records the canonical page URL. Keeping that text outside
 the HTML avoids sending a second copy of a long reference page to every reader.
-The ChatGPT and Claude actions copy the same Markdown before opening a new chat;
-they do not depend on undocumented prompt query parameters.
+The remaining actions link to edit, source, and issue-reporting destinations in
+that order. `check-navigation.mjs` exercises the menu's keyboard open and Escape
+paths. `check-search-ranking.mjs` queries the built Pagefind index and requires
+each recorded canonical page in the first three results.
 
 The source endpoints are build artifacts, not reader pages. They are omitted
 from the sitemap and from the published-route ledger, and no sidebar entry

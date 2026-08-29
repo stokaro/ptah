@@ -53,6 +53,7 @@ export const sidebar = [
   {
     label: 'Start',
     items: [
+      { slug: 'start/overview', label: 'Overview' },
       { slug: 'start/install' },
       { slug: 'start/install-options' },
       { slug: 'start/quick-start' },
@@ -115,6 +116,7 @@ export const sidebar = [
       },
       {
         label: 'Strategies',
+        collapsed: true,
         items: [
           { slug: 'inference/strategies/choose-a-consistency-mode' },
           { slug: 'inference/strategies/choose-a-target-layout' },
@@ -125,6 +127,7 @@ export const sidebar = [
       },
       {
         label: 'Reference',
+        collapsed: true,
         items: [
           { slug: 'inference/reference/specification' },
           { slug: 'inference/reference/commands' },
@@ -136,29 +139,9 @@ export const sidebar = [
     ],
   },
   {
-    label: 'Test and CI',
+    label: 'Define and understand schemas',
     items: [
-      { slug: 'testing/migrations-and-schema' },
-      { slug: 'testing/ci' },
-    ],
-  },
-  {
-    label: 'Load data',
-    items: [
-      { slug: 'versioned/reference-data' },
-      { slug: 'operate/seed-data' },
-    ],
-  },
-  {
-    label: 'Distribute and operate',
-    items: [
-      { slug: 'operate/oci-registry' },
-      { slug: 'operate/troubleshooting' },
-    ],
-  },
-  {
-    label: 'Schema',
-    items: [
+      { slug: 'schema/overview', label: 'Overview' },
       {
         label: 'Sources',
         items: [
@@ -196,6 +179,7 @@ export const sidebar = [
   {
     label: 'Databases',
     items: [
+      { slug: 'databases/overview', label: 'Overview' },
       { slug: 'databases/support-matrix' },
       { slug: 'databases/postgresql' },
       { slug: 'databases/mysql' },
@@ -207,8 +191,21 @@ export const sidebar = [
     ],
   },
   {
-    label: 'Integrations',
+    label: 'Test, automate, and operate',
     items: [
+      { slug: 'operate/overview', label: 'Overview' },
+      { slug: 'testing/migrations-and-schema' },
+      { slug: 'testing/ci' },
+      { slug: 'versioned/reference-data' },
+      { slug: 'operate/seed-data' },
+      { slug: 'operate/oci-registry' },
+      { slug: 'operate/troubleshooting' },
+    ],
+  },
+  {
+    label: 'Extend and integrate',
+    items: [
+      { slug: 'extend/overview', label: 'Overview' },
       {
         label: 'Go integration',
         items: [
@@ -227,12 +224,60 @@ export const sidebar = [
     ],
   },
   {
+    label: 'Reference',
+    items: [
+      { slug: 'reference/overview', label: 'Overview' },
+      {
+        label: 'Concepts',
+        collapsed: true,
+        items: [
+          { slug: 'concepts/desired-schema-and-sources' },
+          { slug: 'concepts/migration-directory' },
+          { slug: 'concepts/database-urls-and-dev-databases' },
+          { slug: 'concepts/dialects-and-capabilities' },
+        ],
+      },
+      {
+        label: 'Command reference',
+        collapsed: true,
+        items: [
+          { slug: 'reference/native-commands' },
+          { slug: 'reference/atlas-commands' },
+          { slug: 'reference/command-flags' },
+          { slug: 'reference/extension-variables' },
+          { slug: 'reference/test-cases' },
+        ],
+      },
+      {
+        label: 'Format reference',
+        collapsed: true,
+        items: [
+          { slug: 'reference/configuration' },
+          { slug: 'reference/go-annotations' },
+          { slug: 'reference/hcl-schema' },
+          { slug: 'reference/yaml-schema' },
+        ],
+      },
+      {
+        label: 'Rules and diagnostics',
+        collapsed: true,
+        items: [
+          { slug: 'reference/capabilities' },
+          { slug: 'reference/lint-rules' },
+          { slug: 'reference/exit-codes' },
+          { slug: 'reference/glossary' },
+        ],
+      },
+    ],
+  },
+  {
     label: 'Atlas compatibility',
     items: [
       { slug: 'atlas/overview', label: 'Overview' },
       { slug: 'atlas/adoption' },
       {
         label: 'Commands and configuration',
+        collapsed: true,
         items: [
           { slug: 'atlas/migrate-commands' },
           { slug: 'atlas/schema-commands' },
@@ -248,48 +293,6 @@ export const sidebar = [
           { slug: 'atlas/conformance' },
           { slug: 'atlas/docs-coverage' },
           { slug: 'atlas/license-boundary' },
-        ],
-      },
-    ],
-  },
-  {
-    label: 'Concepts and reference',
-    items: [
-      {
-        label: 'Concepts',
-        items: [
-          { slug: 'concepts/desired-schema-and-sources' },
-          { slug: 'concepts/migration-directory' },
-          { slug: 'concepts/database-urls-and-dev-databases' },
-          { slug: 'concepts/dialects-and-capabilities' },
-        ],
-      },
-      {
-        label: 'Command reference',
-        items: [
-          { slug: 'reference/native-commands' },
-          { slug: 'reference/atlas-commands' },
-          { slug: 'reference/command-flags' },
-      { slug: 'reference/extension-variables' },
-          { slug: 'reference/test-cases' },
-        ],
-      },
-      {
-        label: 'Format reference',
-        items: [
-          { slug: 'reference/configuration' },
-          { slug: 'reference/go-annotations' },
-          { slug: 'reference/hcl-schema' },
-          { slug: 'reference/yaml-schema' },
-        ],
-      },
-      {
-        label: 'Rules and diagnostics',
-        items: [
-          { slug: 'reference/capabilities' },
-          { slug: 'reference/lint-rules' },
-          { slug: 'reference/exit-codes' },
-          { slug: 'reference/glossary' },
         ],
       },
     ],

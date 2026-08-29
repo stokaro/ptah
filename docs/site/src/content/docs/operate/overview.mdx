@@ -1,0 +1,54 @@
+---
+title: Test, automate, and operate
+description: Test migrations and schemas, build CI gates, manage data artifacts, and diagnose failed runs.
+type: landing
+audience:
+  - ci-operator
+  - database-engineer
+readerQuestion: How do I run Ptah safely in tests, automation, and operational workflows?
+goal: Open the canonical test, CI, artifact, data, or troubleshooting task.
+sourceOfTruth:
+  - cmd/migrations
+  - cmd/schema
+  - cmd/oci
+  - cmd/seed
+generated: false
+searchAliases:
+  - Ptah CI
+  - Ptah operations
+overlaps:
+  - /testing/ci/
+  - /operate/troubleshooting/
+disposition: keep
+---
+
+import { LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+Operational Ptah work should leave an observable result: a test report, an exit
+code, a sealed artifact, a recorded revision, or a diagnostic tied to a stable
+error fragment. Choose the task that owns that result.
+
+## Common tasks
+
+<CardGrid>
+  <LinkCard title="Test migrations and schemas" href="../../testing/migrations-and-schema/" description="Run cases against throwaway databases and verify expected success or failure." />
+  <LinkCard title="Build a CI gate" href="../../testing/ci/" description="Gate drift, migration integrity, unsafe SQL, generated output, and test cases." />
+  <LinkCard title="Load controlled data" href="../../versioned/reference-data/" description="Reconcile versioned lookup rows separately from ordinary schema changes." />
+  <LinkCard title="Publish an OCI artifact" href="../oci-registry/" description="Package, verify, and distribute migration or schema artifacts through a registry." />
+  <LinkCard title="Troubleshoot a failure" href="../troubleshooting/" description="Start from the exact error or symptom and verify the repair." />
+</CardGrid>
+
+## Choose the safety boundary
+
+Use a throwaway database for tests, a dev or shadow database for replay and
+planning, and a reviewed target URL for a real apply. These roles are not
+interchangeable; [database URLs and dev databases](../../concepts/database-urls-and-dev-databases/)
+defines each one.
+
+Commands that mutate a database keep their warning and verification step on the
+task page where the operation runs.
+
+## Reference
+
+Use [exit codes](../../reference/exit-codes/) for automation contracts and
+[test-case reference](../../reference/test-cases/) for the exact case format.

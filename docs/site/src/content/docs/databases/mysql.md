@@ -10,6 +10,9 @@ sourceOfTruth:
   - "internal/capabilityprobe/cells.go"
   - "internal/dbschema"
 generated: false
+searchAliases:
+  - MySQL supported versions
+  - MariaDB supported versions
 overlaps: []
 disposition: keep
 ---

@@ -1,4 +1,5 @@
 ---
+import { getCollection } from 'astro:content';
 import PageActions from './PageActions.astro';
 import { breadcrumbTrail } from '../lib/page-context.mjs';
 
@@ -7,10 +8,27 @@ import { breadcrumbTrail } from '../lib/page-context.mjs';
 // exports, so the override keeps the public component contract explicitly.
 const PAGE_TITLE_ID = '_top';
 const { entry, sidebar, siteTitleHref } = Astro.locals.starlightRoute;
-const breadcrumbs = breadcrumbTrail(sidebar);
+const landingEntries = await getCollection('docs', ({ data }) => data.type === 'landing');
+const landingHrefs = new Set(landingEntries.map(({ id }) => `${siteTitleHref}${id ? `${id}/` : ''}`));
+const breadcrumbs = breadcrumbTrail(sidebar, landingHrefs);
 const hasAncestors = breadcrumbs.some((crumb) => !crumb.current);
 const hasSource = Boolean(entry.filePath) && entry.id !== '404' && !entry.id.endsWith('/404');
 const markdownUrl = `${import.meta.env.BASE_URL}page-source/${entry.id}.md`;
+const repositoryPath = `docs/site/${entry.filePath}`;
+const editUrl = `https://github.com/stokaro/ptah/edit/master/${repositoryPath}`;
+const sourceUrl = `https://github.com/stokaro/ptah/blob/master/${repositoryPath}`;
+const reportParams = new URLSearchParams({
+  title: `docs: ${entry.data.title}`,
+  body: `Page: ${Astro.url.href}\nSource: ${sourceUrl}\n\nWhat needs to change?\n`,
+});
+const reportUrl = `https://github.com/stokaro/ptah/issues/new?${reportParams}`;
+const searchAliases = entry.data.searchAliases ?? [];
+const verifiedDate = entry.data.lastVerified
+  ? new Date(`${entry.data.lastVerified}T00:00:00Z`).toLocaleDateString('en-US', {
+      dateStyle: 'medium',
+      timeZone: 'UTC',
+    })
+  : undefined;
 ---
 
 <div class="page-heading">
@@ -49,6 +67,8 @@ const markdownUrl = `${import.meta.env.BASE_URL}page-source/${entry.id}.md`;
               </svg>
               {crumb.current ? (
                 <span class="current-crumb" aria-current="page">{crumb.label}</span>
+              ) : crumb.href ? (
+                <a class="group-crumb" href={crumb.href}>{crumb.label}</a>
               ) : (
                 <span class="group-crumb">{crumb.label}</span>
               )}
@@ -58,10 +78,27 @@ const markdownUrl = `${import.meta.env.BASE_URL}page-source/${entry.id}.md`;
       </ol>
     </nav>
 
-    {hasSource && <PageActions markdownUrl={markdownUrl} />}
+    {hasSource && (
+      <PageActions
+        markdownUrl={markdownUrl}
+        editUrl={editUrl}
+        sourceUrl={sourceUrl}
+        reportUrl={reportUrl}
+      />
+    )}
   </div>
 
   <h1 id={PAGE_TITLE_ID}>{entry.data.title}</h1>
+  {verifiedDate && (
+    <p class="verified-date">
+      Evidence verified <time datetime={entry.data.lastVerified}>{verifiedDate}</time>
+    </p>
+  )}
+  {searchAliases.length > 0 && (
+    <p class="search-aliases" data-pagefind-weight="10">
+      {searchAliases.join(' · ')}
+    </p>
+  )}
 </div>
 
 <style>
@@ -186,6 +223,23 @@ const markdownUrl = `${import.meta.env.BASE_URL}page-source/${entry.id}.md`;
     overflow-wrap: anywhere;
   }
 
+  a.group-crumb {
+    color: var(--sl-color-gray-2);
+    text-decoration: none;
+  }
+
+  a.group-crumb:hover {
+    color: var(--sl-color-white);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  a.group-crumb:focus-visible {
+    border-radius: 0.2rem;
+    outline: 2px solid var(--sl-color-accent);
+    outline-offset: 2px;
+  }
+
   .current-crumb {
     padding: 0.25rem 0.5rem;
     border: 1px solid color-mix(in srgb, var(--sl-color-accent) 28%, transparent);
@@ -207,6 +261,16 @@ const markdownUrl = `${import.meta.env.BASE_URL}page-source/${entry.id}.md`;
     line-height: var(--sl-line-height-headings);
   }
 
+  .verified-date {
+    margin-top: 0.65rem;
+    color: var(--sl-color-gray-3);
+    font-size: var(--sl-text-sm);
+  }
+
+  .search-aliases {
+    display: none;
+  }
+
   @media (max-width: 40rem) {
     .page-context {
       align-items: center;
@@ -223,8 +287,8 @@ const markdownUrl = `${import.meta.env.BASE_URL}page-source/${entry.id}.md`;
      * cannot, which is what the marker keeps.
      *
      * They are hidden the accessible way rather than with `display: none`: a
-     * screen reader has no layout to run out of, and the trail it reads at
-     * 375px is the one it reads at 1280px, marker excluded.
+     * screen reader has no layout to run out of, and keeps the full linked
+     * hierarchy at 375px. The visual marker only records that hidden depth.
      */
     .breadcrumbs .group-item {
       position: absolute;

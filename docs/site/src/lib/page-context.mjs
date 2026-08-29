@@ -5,16 +5,18 @@
  * `isCurrent` marker. Deriving breadcrumbs from that tree keeps labels and
  * hierarchy tied to the navigation instead of maintaining a second map.
  */
-export function breadcrumbTrail(entries) {
+export function breadcrumbTrail(entries, landingHrefs = new Set()) {
   for (const entry of entries) {
     if (entry.type === 'link' && entry.isCurrent) {
       return [{ label: entry.label, href: entry.href, current: true }];
     }
 
     if (entry.type !== 'group') continue;
-    const childTrail = breadcrumbTrail(entry.entries);
+    const childTrail = breadcrumbTrail(entry.entries, landingHrefs);
     if (childTrail.length > 0) {
-      return [{ label: entry.label, current: false }, ...childTrail];
+      const first = entry.entries[0];
+      const href = first?.type === 'link' && landingHrefs.has(first.href) ? first.href : undefined;
+      return [{ label: entry.label, href, current: false }, ...childTrail];
     }
   }
 

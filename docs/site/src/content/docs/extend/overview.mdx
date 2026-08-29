@@ -1,0 +1,53 @@
+---
+title: Extend and integrate
+description: Embed stable Go packages, reuse Ptah components, or connect an AI client through the constrained MCP surface.
+type: landing
+audience:
+  - application-developer
+  - integration-developer
+readerQuestion: How do I use Ptah from another program or tool?
+goal: Choose the supported Go, component, query-builder, MCP, or AI-assist integration.
+sourceOfTruth:
+  - docs/public_api.md
+  - cmd/mcp
+  - cmd/assist
+generated: false
+searchAliases:
+  - integrate Ptah
+  - embed Ptah
+overlaps:
+  - /extend/public-api/
+  - /operate/ai-agents/
+disposition: keep
+---
+
+import { LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+The CLI is one adapter over Ptah's schema, planning, rendering, and migration
+packages. Embed only the published Go surface, or expose a constrained command
+surface to an AI client when a human-reviewed tool boundary is the better fit.
+
+## Common tasks
+
+<CardGrid>
+  <LinkCard title="Embed the public Go API" href="../public-api/" description="Choose a stable package and verify that it is part of the supported embedder surface." />
+  <LinkCard title="Reuse a component" href="../components/" description="Compose parsers, renderers, schema diff, planning, migration files, or execution." />
+  <LinkCard title="Build SQL with Ptah" href="../query-builder/" description="Construct parameterized queries through the public query-builder package." />
+  <LinkCard title="Connect an AI client over MCP" href="../../operate/ai-agents/" description="Choose allowed tools, configure the client, and keep mutation behind explicit policy." />
+  <LinkCard title="Ask for CLI assistance" href="../../operate/ai-assist/" description="Generate a bounded command suggestion without granting an agent a tool session." />
+</CardGrid>
+
+## Choose the boundary
+
+Use Go packages when your program owns types, control flow, and error handling.
+Use MCP when an external client needs discoverable tools under a restricted
+policy. Use AI assist when the desired result is a command suggestion for a
+human to inspect rather than a callable tool.
+
+Anything under `internal/` can change without preserving an import contract.
+The [public API ledger](../public-api/) is the authority on supported packages.
+
+## Reference
+
+[Native command reference](../../reference/native-commands/) includes the MCP
+server and tool inventory generated from the current command tree.
