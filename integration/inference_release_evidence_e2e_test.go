@@ -232,6 +232,10 @@ func TestInferenceEvidencePublishedByTheCLIE2E(t *testing.T) {
 		"--spec", specPath, "--db-url", dbName, "--run-id", cliRunID, "--batch-rows", "10")
 
 	generation := activeGenerationFrom(c, ctx, specPath, dbName)
+	assertPlanLeavesNoRecordUnasked(c, ctx, specPath, dbName)
+	assertPlanWritesTheReleaseToAFile(c, ctx, specPath, dbName, generation)
+	assertPlanPublishesTheRelease(c, ctx, specPath, dbName, repository, generation)
+	assertVerifyIsFoundFromTheReleaseItIsAbout(c, ctx, specPath, dbName, repository)
 	assertVerifyPublishesWhatItMeasured(c, ctx, specPath, dbName, repository, generation)
 	assertCutoverPublishesWhatAuthorizedIt(c, ctx, specPath, dbName, repository, generation)
 	assertAnUnreachableRegistryDoesNotUndoTheRun(c, ctx, specPath, dbName)
@@ -239,7 +243,108 @@ func TestInferenceEvidencePublishedByTheCLIE2E(t *testing.T) {
 	assertAnUnwritableEvidenceFileDoesNotUndoTheRun(c, ctx, specPath, dbName)
 }
 
+// assertPlanLeavesNoRecordUnasked is the control for the three below.
+//
+// plan is the verb an operator runs to look, and it stays one. Publishing on
+// every run would put a release in a registry for every question anybody asked
+// of a specification, and the assertions that follow would pass either way.
+func assertPlanLeavesNoRecordUnasked(
+	c *qt.C, ctx context.Context, specPath, dbURL string,
+) {
+	c.Helper()
+	output := runInference(c, ctx, "plan", "--spec", specPath, "--db-url", dbURL)
+
+	c.Assert(output, qt.Contains, "generation ")
+	// Every line either destination can produce says "the record" or "record
+	// <digest>", including the two that report a FAILURE to keep it. Asserting
+	// only the successes left a plan that published unasked and could not reach
+	// the registry reading exactly like one that published nothing. The plan's
+	// own prose says "record" too -- a step recording a starting position -- so
+	// the assertion is on the two shapes rather than on the word.
+	c.Assert(output, qt.Not(qt.Contains), "the record was")
+	c.Assert(output, qt.Not(qt.Contains), "published as")
+	c.Assert(output, qt.Not(qt.Contains), "written to")
+}
+
+// assertPlanWritesTheReleaseToAFile is the half an operator with no registry
+// gets, and it is the same bytes the registry would have held.
+func assertPlanWritesTheReleaseToAFile(
+	c *qt.C, ctx context.Context, specPath, dbURL, generation string,
+) {
+	c.Helper()
+	path := filepath.Join(c.TempDir(), "release.json")
+
+	output := runInference(c, ctx, "plan",
+		"--spec", specPath, "--db-url", dbURL, "--evidence-file", path)
+	c.Assert(output, qt.Contains, "written to "+path)
+
+	body, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+	var record embedrelease.Release
+	c.Assert(json.Unmarshal(body, &record), qt.IsNil)
+
+	c.Assert(record.Generation, qt.Equals, generation)
+	c.Assert(record.Version, qt.Equals, embedrelease.RecordVersion)
+	// The document that proposed the change, which is not the generation: two
+	// files that differ only in a name address one generation, and a reader
+	// asking which file this came from has nothing else to go on.
+	c.Assert(record.SpecDigest, qt.HasLen, 64)
+	c.Assert(record.SpecDigest, qt.Not(qt.Equals), record.Generation)
+	c.Assert(record.Target, qt.Equals, "public.articles.embedding")
+	// Whether it can be rebuilt, and why not. A record carrying neither reads
+	// as yes.
+	c.Assert(record.Reproducibility, qt.Not(qt.Equals), "")
+}
+
+// assertPlanPublishesTheRelease is stokaro/ptah#2475: the record existed, and
+// no verb produced one, so every verification published stood alone.
+func assertPlanPublishesTheRelease(
+	c *qt.C, ctx context.Context, specPath, dbURL, repository, generation string,
+) {
+	c.Helper()
+	output := runInference(c, ctx, "plan",
+		"--spec", specPath, "--db-url", dbURL,
+		"--publish-evidence", repository+":release", "--plain-http")
+	c.Assert(output, qt.Contains, "published as sha256:")
+
+	pulled := pullRecord(c, ctx, repository+":release",
+		embedrelease.ReleaseArtifactType, embedrelease.ReleaseFileName)
+	var record embedrelease.Release
+	c.Assert(json.Unmarshal(pulled, &record), qt.IsNil)
+	c.Assert(record.Generation, qt.Equals, generation)
+	c.Assert(record.Digest(), qt.HasLen, 64)
+}
+
+// assertVerifyIsFoundFromTheReleaseItIsAbout closes the chain the issue named.
+//
+// Attached rather than tagged: a generation gets one release and several
+// verifications, and finding them by remembering a tag each is how a record
+// goes missing. The package-level test above proves the mechanism; this proves
+// the verbs reach it, which is the half that was absent.
+func assertVerifyIsFoundFromTheReleaseItIsAbout(
+	c *qt.C, ctx context.Context, specPath, dbURL, repository string,
+) {
+	c.Helper()
+	output := runInference(c, ctx, "verify",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID,
+		"--attach-to", repository+":release", "--plain-http")
+	c.Assert(output, qt.Contains, "published as sha256:")
+
+	client, err := ociartifact.NewClient(ociartifact.ClientOptions{PlainHTTP: true})
+	c.Assert(err, qt.IsNil)
+	referrers, err := client.Referrers(ctx, repository+":release",
+		embedrelease.VerificationArtifactType)
+	c.Assert(err, qt.IsNil)
+	c.Assert(referrers, qt.HasLen, 1)
+	c.Assert(referrers[0].Annotations["cz.5x5.ptah.inference.passed"], qt.Equals, "true")
+}
+
 // assertVerifyPublishesWhatItMeasured runs the verb and then reads its record.
+//
+// It is also the control for the attachment above: a verification with no
+// release to attach to still lands, addressed by its own digest. That is the
+// record somebody wants most, and a subject that had become required would have
+// taken it away from every operator who never ran plan against a registry.
 func assertVerifyPublishesWhatItMeasured(
 	c *qt.C, ctx context.Context, specPath, dbURL, repository, generation string,
 ) {

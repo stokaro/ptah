@@ -5,37 +5,48 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"go.5x5.cz/ptah/internal/embedrelease"
 	"go.5x5.cz/ptah/internal/embedreport"
+	"go.5x5.cz/ptah/internal/embedspec"
 )
 
 // newPlanCommand returns "ptah inference plan".
 func newPlanCommand() *cobra.Command {
 	var options commonOptions
 	var currentGeneration string
+	var evidence evidenceOptions
 
 	cmd := &cobra.Command{
 		Use:   "plan",
 		Short: "Show what a generation change would do, and where each answer came from",
 		Long: `Resolve a specification against a live database and print the plan.
 
-Nothing is created and nothing is written. What the plan adds over a list of
-steps is provenance: every fact says whether it was measured against the
-database, configured by you, inferred by Ptah, unknown, or unsupported by this
-build.
+The database is not written to. What the plan adds over a list of steps is
+provenance: every fact says whether it was measured against the database,
+configured by you, inferred by Ptah, unknown, or unsupported by this build.
 
 That distinction is the point. A source nobody counted, rendered as zero, says
-the backfill is free.`,
+the backfill is free.
+
+This is also where a generation change is put on the record. Naming
+--publish-evidence or --evidence-file leaves a release: what this change
+proposes, addressed by its own digest. A verification published later attaches
+to it as an OCI referrer, which is how several verifications of one generation
+are found without remembering a tag for each. Naming neither leaves nothing
+behind, and a verification with no release to attach to is still publishable.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runPlan(cmd.Context(), cmd.OutOrStdout(), options, currentGeneration)
+			return runPlan(cmd.Context(), cmd.OutOrStdout(), options, currentGeneration, evidence)
 		},
 	}
 	addCommonFlags(cmd, &options)
 	cmd.Flags().StringVar(&currentGeneration, "current", "",
 		"Identity of the generation queries read now, when there is one")
+	addEvidenceFlags(cmd.Flags(), &evidence)
 	return cmd
 }
 
@@ -47,8 +58,11 @@ func addCommonFlags(cmd *cobra.Command, options *commonOptions) {
 		"Database URL (required). Example: postgres://localhost:5432/dbname")
 }
 
-// runPlan resolves and prints.
-func runPlan(ctx context.Context, out io.Writer, options commonOptions, current string) error {
+// runPlan resolves, prints, and records.
+func runPlan(
+	ctx context.Context, out io.Writer, options commonOptions,
+	current string, evidence evidenceOptions,
+) error {
 	opened, err := open(ctx, options)
 	if err != nil {
 		return err
@@ -59,7 +73,33 @@ func runPlan(ctx context.Context, out io.Writer, options commonOptions, current 
 	if err != nil {
 		return err
 	}
-	return printPlan(out, plan)
+	if err := printPlan(out, plan); err != nil {
+		return err
+	}
+	return publishRelease(ctx, out, opened.loaded, plan, evidence)
+}
+
+// publishRelease leaves the record of what this change proposes.
+//
+// A blocked plan is published too. The release states the generation, the
+// document that proposed it, what it replaces and whether it can be rebuilt,
+// and every one of those is true of a plan that cannot run yet -- it makes no
+// claim that anything ran, which is what the verification record is for.
+// Refusing here would lose the proposal an operator most wants to circulate,
+// the one that is waiting on something.
+func publishRelease(
+	ctx context.Context, out io.Writer, loaded embedspec.Loaded,
+	plan embedreport.Plan, evidence evidenceOptions,
+) error {
+	// Any destination is a reason to build the record, and none of them is a
+	// reason to build one: a plan that names no destination is the reading verb
+	// it has always been.
+	if !evidence.destinationNamed() {
+		return nil
+	}
+	record, buildErr := embedrelease.NewReleaseRecord(
+		embedreport.BuildRelease(loaded, plan, time.Now().UTC()))
+	return publishRecord(ctx, out, evidence, record, buildErr)
 }
 
 // printPlan renders the plan for a person.

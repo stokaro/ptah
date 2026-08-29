@@ -55,9 +55,6 @@ var Exempt = map[string]string{
 	"Undetailed": "a self-check rather than a decision: it reports the facts a plan built " +
 		"that owe an explanation and give none, and the only caller a self-check can have " +
 		"is a test. embedreport's facts_internal_test.go runs it over the real assembly",
-
-	"NewReleaseRecord": "stokaro/ptah#2475: the release record has no verb that publishes " +
-		"one; verify and cutover publish theirs",
 }
 
 // Scan reports every exported declaration under root's internal/embed... that

@@ -47,6 +47,7 @@ others.`,
 	addCommonFlags(cmd, &options)
 	cmd.Flags().StringVar(&runID, "run-id", "", "Identifier of the run (required)")
 	addEvidenceFlags(cmd.Flags(), &evidence)
+	addSubjectFlag(cmd, &evidence)
 	return cmd
 }
 
@@ -87,10 +88,7 @@ func publishVerification(
 	ctx context.Context, out io.Writer, options commonOptions,
 	report embedverify.Report, evidence evidenceOptions,
 ) error {
-	// Either destination is a reason to build the record. Guarding on the
-	// registry alone made --evidence-file do nothing without it, which is the
-	// case the file exists for.
-	if evidence.publishTo == "" && evidence.writeTo == "" {
+	if !evidence.destinationNamed() {
 		return nil
 	}
 	opened, err := open(ctx, options)
@@ -287,6 +285,7 @@ stops applying -- which is the point of it.`,
 	cmd.Flags().DurationVar(&stabilizeFor, "stabilize-for", 0,
 		"How long the previous generation stays a way back; zero leaves no rollback")
 	addEvidenceFlags(cmd.Flags(), &evidence)
+	addSubjectFlag(cmd, &evidence)
 	return cmd
 }
 
@@ -343,10 +342,7 @@ func publishCutover(
 	report embedverify.Report, approver string, at time.Time,
 	stabilizeFor time.Duration, evidence evidenceOptions,
 ) error {
-	// Either destination is a reason to build the record. Guarding on the
-	// registry alone made --evidence-file do nothing without it, which is the
-	// case the file exists for.
-	if evidence.publishTo == "" && evidence.writeTo == "" {
+	if !evidence.destinationNamed() {
 		return nil
 	}
 	cutover := embedrelease.Cutover{

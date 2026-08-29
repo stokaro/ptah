@@ -32,6 +32,10 @@ them. See
 ## A rollout that has worked
 
 ```bash
+# 0. Put the proposal on the record, before anything is built.
+ptah inference plan     --spec spec-v2.yaml --db-url "$DB" \
+  --publish-evidence oci://registry.example.com/search-evidence:release
+
 # 1. Build, on a schedule that fits the provider budget.
 ptah inference prepare  --spec spec-v2.yaml --db-url "$DB" --run-id "$RUN"
 ptah inference backfill --spec spec-v2.yaml --db-url "$DB" --run-id "$RUN" \
@@ -41,7 +45,7 @@ ptah inference index    --spec spec-v2.yaml --db-url "$DB" --run-id "$RUN"
 
 # 2. Measure. Both the deterministic checks and the retrieval quality.
 ptah inference verify   --spec spec-v2.yaml --db-url "$DB" --run-id "$RUN" \
-  --publish-evidence oci://registry.example.com/search-evidence:verification
+  --attach-to oci://registry.example.com/search-evidence:release
 ptah inference evaluate --spec spec-v2.yaml --db-url "$DB" \
   --corpus corpus.yaml --baseline <previous> --max-ndcg-regression 0.02
 
@@ -51,7 +55,7 @@ ptah inference catchup  --spec spec-v2.yaml --db-url "$DB" --run-id "$RUN"
 # 4. Cut over, with a window.
 ptah inference cutover  --spec spec-v2.yaml --db-url "$DB" --run-id "$RUN" \
   --approve <digest> --approver "your name" --stabilize-for 24h \
-  --publish-evidence oci://registry.example.com/search-evidence:cutover
+  --attach-to oci://registry.example.com/search-evidence:release
 ```
 
 Step 3 is the one that gets skipped. A verification from four hours ago passed
@@ -72,13 +76,27 @@ drifted — `rollback` will refuse it, correctly.
 
 ## Keep the evidence
 
-`--publish-evidence` writes what was measured to an OCI registry, where the rest
-of Ptah's evidence already lives:
+`--publish-evidence` writes a record to an OCI registry, where the rest of Ptah's
+evidence already lives:
 
+- the **release** record, from `plan`, carries what the change proposes: the
+  generation, the digest of the document that proposed it, what it replaces, and
+  whether it can be rebuilt;
 - the **verification** record carries the findings whole, not a verdict, plus
   what the run did not measure;
 - the **cutover** record carries the plan digest the approval bound to, the
   approver, and the verification it cited.
+
+`--attach-to` names the release a verification or a cutover is about, and
+publishes the record into that release's repository as a referrer of it. Step 0
+above is what the two later steps attach to. Attached rather than tagged, because
+evidence accumulates: a generation gets one release and several verifications,
+and finding them by remembering a tag for each is how a record goes missing.
+
+There is no step 0 in some pipelines, and that is allowed. A verification with no
+release to attach to is published on its own, addressed by its own digest — it is
+the record somebody wants most, and requiring a subject would have taken it away
+from every operator without a registry at plan time.
 
 Six months later the question is not whether it passed — the pointer answers
 that — but what it said. A record holding one boolean cannot be re-read into an
