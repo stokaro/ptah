@@ -3,6 +3,7 @@ package docsync_test
 import (
 	"errors"
 	"io"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -56,7 +57,44 @@ func TestExtract_RefusesADocumentWithNoMarkers(t *testing.T) {
 
 	_, err := docsync.Extract("# A page with no markers\n", markerTarget())
 
-	c.Assert(err, qt.ErrorMatches, `the thing: docs/thing.md carries no <!-- BEGIN GENERATED THING --> markers`)
+	c.Assert(err, qt.ErrorMatches, `the thing: docs/thing.md carries no <!-- BEGIN GENERATED THING --> line`)
+}
+
+// TestExtract_RefusesAMarkerThatIsNotAloneOnItsLine is the shape a substring
+// check accepts and then splits nothing on.
+//
+// It was not hypothetical: a fixture that inserted text mid-marker passed the
+// existence check, the split found no marker line, and Replace wrote a SECOND
+// copy of the block at the end of the file rather than refusing.
+func TestExtract_RefusesAMarkerThatIsNotAloneOnItsLine(t *testing.T) {
+	c := qt.New(t)
+
+	broken := strings.Replace(document,
+		"<!-- BEGIN GENERATED THING -->",
+		"<!-- BEGIN GENERATED THING -->| appended |", 1)
+
+	_, err := docsync.Extract(broken, markerTarget())
+	c.Assert(err, qt.ErrorMatches, `the thing: docs/thing.md carries no <!-- BEGIN GENERATED THING --> line`)
+
+	_, err = docsync.Replace(broken, "| c | d |\n", markerTarget())
+	c.Assert(err, qt.ErrorMatches, `the thing: docs/thing.md carries no <!-- BEGIN GENERATED THING --> line`)
+}
+
+// TestReplace_IsIdempotent keeps a rewrite from drifting the document by a
+// newline each time, which a marker split is easy to get wrong in.
+func TestReplace_IsIdempotent(t *testing.T) {
+	c := qt.New(t)
+
+	once, err := docsync.Replace(document, "| c | d |\n", markerTarget())
+	c.Assert(err, qt.IsNil)
+	twice, err := docsync.Replace(once, "| c | d |\n", markerTarget())
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(twice, qt.Equals, once)
+	// And rewriting what is already there returns the document unchanged.
+	same, err := docsync.Replace(document, "| a | b |\n", markerTarget())
+	c.Assert(err, qt.IsNil)
+	c.Assert(same, qt.Equals, document)
 }
 
 // TestGenerate_RefusesAGeneratorThatPrintsNothing is the other half of that

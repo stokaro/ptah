@@ -78,16 +78,63 @@ func Generate(target Target) (string, error) {
 //
 // A document that carries neither marker is a problem rather than an empty
 // block, for the reason the package comment gives.
+//
+// A marker must be ALONE ON ITS LINE. Accepting it as a substring is how a
+// broken marker -- text appended to it in a merge, say -- passes the existence
+// check and then splits nothing, which left Replace writing a second copy of
+// the block at the end of the file instead of refusing.
 func Extract(document string, target Target) (string, error) {
 	if target.WholeFile() {
 		return document, nil
 	}
-	if !strings.Contains(document, target.Begin) || !strings.Contains(document, target.End) {
-		return "", fmt.Errorf("%s: %s carries no %s markers", target.Name, target.Path, target.Begin)
+	cut, err := split(document, target)
+	if err != nil {
+		return "", err
 	}
-	_, _, rest := cut(document, target.Begin+"\n")
-	body, _, _ := cut(rest, target.End)
-	return body, nil
+	return cut.Body, nil
+}
+
+// parts is a document cut into the three pieces a marker target has.
+type parts struct {
+	// Head is everything up to and including the line before the begin marker.
+	Head string
+	// Body is the generated block.
+	Body string
+	// Tail is everything after the end marker's line.
+	Tail string
+}
+
+// split cuts a document into its three parts.
+func split(document string, target Target) (parts, error) {
+	before, rest, ok := strings.Cut(padded(document), "\n"+target.Begin+"\n")
+	if !ok {
+		return parts{}, fmt.Errorf(
+			"%s: %s carries no %s line", target.Name, target.Path, target.Begin)
+	}
+	block, after, ok := strings.Cut(rest, target.End+"\n")
+	if !ok {
+		return parts{}, fmt.Errorf(
+			"%s: %s carries no %s line", target.Name, target.Path, target.End)
+	}
+	// padded added a leading newline so a marker on the first line is found by
+	// the same search as one anywhere else; strip it back off. The separator
+	// also consumed the newline that ENDED the line before the marker, so give
+	// it back -- without it a rewrite joins that line to the marker, and the
+	// document drifts by one line each time it is written.
+	head := strings.TrimPrefix(before, "\n")
+	if head != "" {
+		head += "\n"
+	}
+	return parts{Head: head, Body: block, Tail: after}, nil
+}
+
+// padded makes a first-line marker reachable by a search that anchors on the
+// newline before it, and guarantees the end marker has a newline after it.
+func padded(document string) string {
+	if !strings.HasSuffix(document, "\n") {
+		document += "\n"
+	}
+	return "\n" + document
 }
 
 // Replace returns the document with the target's block set to content.
@@ -95,21 +142,11 @@ func Replace(document, content string, target Target) (string, error) {
 	if target.WholeFile() {
 		return content, nil
 	}
-	if _, err := Extract(document, target); err != nil {
+	cut, err := split(document, target)
+	if err != nil {
 		return "", err
 	}
-	head, _, rest := cut(document, target.Begin+"\n")
-	_, _, tail := cut(rest, target.End)
-	return head + target.Begin + "\n" + content + target.End + tail, nil
-}
-
-// cut is strings.Cut with the three parts a marker split needs.
-func cut(s, sep string) (before, found, after string) {
-	head, tail, ok := strings.Cut(s, sep)
-	if !ok {
-		return s, "", ""
-	}
-	return head, sep, tail
+	return cut.Head + target.Begin + "\n" + content + target.End + "\n" + cut.Tail, nil
 }
 
 // Check reports whether the target's block in root matches what it renders.
