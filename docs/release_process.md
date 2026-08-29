@@ -4,10 +4,17 @@ Ptah releases are produced by GoReleaser from annotated version tags.
 
 ## Prerequisites
 
-- Optional, for Homebrew publishing: the `stokaro/homebrew-ptah` tap repository
-  and a `HOMEBREW_TAP_TOKEN` repository secret that can push to it. Neither
-  exists yet, so the formula is generated and its upload is skipped; the rest of
-  the release publishes normally. Create both to start shipping the tap.
+- For Homebrew publishing: the `stokaro/homebrew-ptah` tap repository and a
+  `HOMEBREW_TAP_TOKEN` repository secret that can push to it. The secret holds a
+  fine-grained token granting `Contents: Read and write` on that repository and
+  nothing else, which is the whole of what GoReleaser needs: it reads the
+  default branch, reads the formula path for its SHA, and writes the file.
+  Without the secret the formula is generated and its upload is skipped, and the
+  rest of the release publishes normally. With a secret whose token has
+  **expired** the release fails instead, because `skip_upload` in
+  `.goreleaser.yaml` asks whether the variable is set rather than whether its
+  value still works. The token's expiry is on its page under GitHub developer
+  settings; rotate it there and reset the secret.
 - GitHub Actions package permissions enabled for publishing
   `ghcr.io/stokaro/ptah`.
 - GoReleaser `v2.15.4`. The GitHub Actions workflow pins this version because
@@ -55,8 +62,7 @@ Ptah releases are produced by GoReleaser from annotated version tags.
    docker pull ghcr.io/stokaro/ptah:latest
    ```
 
-7. Verify the Homebrew install, once the tap repository and
-   `HOMEBREW_TAP_TOKEN` exist (until then the formula upload is skipped):
+7. Verify the Homebrew install:
 
    ```bash
    brew update
@@ -65,6 +71,25 @@ Ptah releases are produced by GoReleaser from annotated version tags.
    ptah-ls --version
    ptah-compat migrate --help
    ```
+
+## The Tap Holds Two Formulas
+
+`Formula/ptah.rb` is generated. GoReleaser renders it from the `brews:` section
+of `.goreleaser.yaml` and pushes it on every version tag, so it always names the
+newest release.
+
+`Formula/ptah-edge.rb` is written by hand and lives only in the tap. It is a
+head-only formula that compiles the tip of `master` on the user's machine, which
+is the one thing a generated formula cannot be: GoReleaser's `brews:` block has
+no field for a Homebrew `head`, and a release run overwrites `ptah.rb` whole.
+
+GoReleaser writes that one path and no other, so the hand-written file survives
+a release -- and nothing regenerates it either. **A change to how the release
+binaries are built belongs in both places.** The edge formula repeats the
+release build's `CGO_ENABLED=0`, its `-trimpath`, its `buildinfo` ldflags, and
+its list of three binaries; when any of those move in `.goreleaser.yaml` and not
+in the formula, edge quietly stops being the edge of what ships. There is no
+check for this today, because the two files are in different repositories.
 
 ## Local Snapshot
 
