@@ -48,7 +48,7 @@ func TestPlanner_GenerateMigrationAST_EnumsAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := mysql.New()
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
+			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired), tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -98,7 +98,7 @@ func TestPlanner_GenerateMigrationAST_EnumsModified(t *testing.T) {
 			c := qt.New(t)
 
 			planner := mysql.New()
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
+			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired), tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -177,7 +177,7 @@ func TestPlanner_GenerateMigrationAST_TablesAdded(t *testing.T) {
 			tt.diff.TablesAdded = difftypes.TableCreationsFor(tt.desired, tt.tablesAdded...)
 
 			planner := mysql.New()
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
+			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired), tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -318,7 +318,7 @@ func TestPlanner_GenerateMigrationAST_TablesModified(t *testing.T) {
 			c := qt.New(t)
 
 			planner := mysql.New()
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
+			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired), tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -365,7 +365,7 @@ func TestPlanner_GenerateMigrationAST_IndexesAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := mysql.New()
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
+			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired), tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -404,7 +404,7 @@ func TestPlanner_GenerateMigrationAST_EnumsRemoved(t *testing.T) {
 			c := qt.New(t)
 
 			planner := mysql.New()
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
+			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired), tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -442,7 +442,7 @@ func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 	}
 
 	planner := mysql.New()
-	result, err := planner.GenerateMigrationAST(diff, desired)
+	result, err := planner.GenerateMigrationAST(withDeclaredTables(diff, desired), desired)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(result, qt.HasLen, 1)
@@ -463,4 +463,23 @@ func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 	c.Assert(strings.Contains(sql, "id INT"), qt.Equals, true)
 	c.Assert(strings.Contains(sql, "AUTO_INCREMENT"), qt.Equals, true)
 	c.Assert(strings.Contains(sql, "PRIMARY KEY"), qt.Equals, true)
+}
+
+// withDeclaredTables fills a fixture diff's declared-table list from the
+// declaration the plan is applied against, leaving a diff that already carries
+// one alone.
+//
+// A planner asks the list whether the table a change names is declared at all: a
+// change naming `app.users` against a schema that declares `reporting.users`
+// must write no DDL, because the statement would apply cleanly to a relation
+// nobody declared. A comparison fills the list on every run, and restating the
+// declaration beside each fixture would put the same tables in two places where
+// a reader has to check they agree.
+func withDeclaredTables(diff *difftypes.SchemaDiff, desired *schemamodel.Database) *difftypes.SchemaDiff {
+	if diff == nil || desired == nil || len(diff.DeclaredTables) > 0 {
+		return diff
+	}
+	completed := *diff
+	completed.DeclaredTables = desired.Tables
+	return &completed
 }

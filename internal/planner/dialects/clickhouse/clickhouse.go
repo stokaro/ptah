@@ -159,7 +159,7 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff, de
 func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(platform.ClickHouse)
 	for _, td := range diff.TablesModified {
-		structName := lookupStructName(desired, td.TableName, semantics)
+		structName := lookupStructName(diff.DeclaredTables, td.TableName, semantics)
 		if structName == "" {
 			result = append(result, ast.NewComment(fmt.Sprintf("WARNING: ClickHouse planner could not find struct for table %s; skipping modifications", td.TableName)))
 			continue
@@ -264,11 +264,11 @@ func (p *Planner) removeTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 }
 
 func lookupStructName(
-	desired *schemamodel.Database,
+	declared []schemamodel.Table,
 	tableName string,
 	semantics identifier.Semantics,
 ) string {
-	table := objectlookup.Qualified(desired.Tables, tableName, semantics)
+	table := objectlookup.Qualified(declared, tableName, semantics)
 	if table == nil {
 		return ""
 	}

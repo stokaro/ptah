@@ -87,7 +87,7 @@ func TestPlanner_GenerateMigrationSQL_EnumsAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
+			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired), tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -183,7 +183,7 @@ func TestPlanner_GenerateMigrationSQL_EnumsModified(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
+			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired), tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -258,7 +258,7 @@ func TestPlanner_GenerateMigrationSQL_TablesAdded(t *testing.T) {
 			tt.diff.TablesAdded = difftypes.TableCreationsFor(tt.desired, tt.tablesAdded...)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
+			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired), tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -416,7 +416,7 @@ func TestPlanner_GenerateMigrationSQL_TablesModified(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
+			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired), tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -561,7 +561,7 @@ func TestPlanner_ForeignKeyDependencyOrdering(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
+			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired), tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -621,7 +621,7 @@ func TestPlanner_ForeignKeyDependencyOrdering_SQLOutput(t *testing.T) {
 	}
 
 	planner := &postgres.Planner{}
-	nodes, err := planner.GenerateMigrationAST(diff, desired)
+	nodes, err := planner.GenerateMigrationAST(withDeclaredTables(diff, desired), desired)
 	c.Assert(err, qt.IsNil)
 
 	// Render to SQL to verify the actual output
@@ -751,7 +751,7 @@ func TestPlanner_GenerateMigrationSQL_IndexesAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
+			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired), tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -819,7 +819,7 @@ func TestPlanner_GenerateMigrationSQL_IndexesRemoved(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
+			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired), tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -1006,7 +1006,7 @@ func TestPlanner_GenerateMigrationSQL_TablesRemoved(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
+			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired), tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -1047,7 +1047,7 @@ func TestPlanner_GenerateMigrationSQL_EnumsRemoved(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
+			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired), tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -1118,7 +1118,7 @@ func TestPlanner_GenerateMigrationSQL_ComplexScenario(t *testing.T) {
 			tt.diff.TablesAdded = difftypes.TableCreationsFor(tt.desired, tt.tablesAdded...)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
+			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired), tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -1184,7 +1184,7 @@ func TestPlanner_GenerateMigrationSQL_EdgeCases(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
+			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired), tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -1375,7 +1375,7 @@ func TestPlanner_GenerateMigrationAST_ExtensionsAdded(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
+			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired), tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -1550,7 +1550,7 @@ func TestPlanner_GenerateMigrationAST_ExtensionsRemoved(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
+			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired), tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(tt.expected(nodes), qt.IsTrue)
@@ -1629,7 +1629,7 @@ func TestPlanner_ExtensionSQL_Generation(t *testing.T) {
 			c := qt.New(t)
 
 			planner := &postgres.Planner{}
-			nodes, err := planner.GenerateMigrationAST(tt.diff, tt.desired)
+			nodes, err := planner.GenerateMigrationAST(withDeclaredTables(tt.diff, tt.desired), tt.desired)
 			c.Assert(err, qt.IsNil)
 
 			// Render nodes to SQL
@@ -1702,4 +1702,23 @@ func TestPlanner_AddNewTables_WithEmbeddedFields(t *testing.T) {
 	// Verify embedded field is included (this was the bug)
 	c.Assert(strings.Contains(sql, "id TEXT"), qt.Equals, true)
 	c.Assert(strings.Contains(sql, "PRIMARY KEY"), qt.Equals, true)
+}
+
+// withDeclaredTables fills a fixture diff's declared-table list from the
+// declaration the plan is applied against, leaving a diff that already carries
+// one alone.
+//
+// A planner asks the list whether the table a change names is declared at all: a
+// change naming `app.users` against a schema that declares `reporting.users`
+// must write no DDL, because the statement would apply cleanly to a relation
+// nobody declared. A comparison fills the list on every run. A fixture states
+// the CHANGE, and restating the declaration beside it would put the same tables
+// in two places where a reader has to check they agree.
+func withDeclaredTables(diff *difftypes.SchemaDiff, desired *schemamodel.Database) *difftypes.SchemaDiff {
+	if diff == nil || desired == nil || len(diff.DeclaredTables) > 0 {
+		return diff
+	}
+	completed := *diff
+	completed.DeclaredTables = desired.Tables
+	return &completed
 }

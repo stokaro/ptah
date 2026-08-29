@@ -109,17 +109,20 @@ func TestGenerateSchemaDiffSQL_SQLServerRejectsUnsupportedColumnDrift(t *testing
 func TestGenerateSchemaDiffSQL_SQLServerAddsColumnToQualifiedTable(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &difftypes.SchemaDiff{
-		TablesModified: []difftypes.TableDiff{{
-			TableName:    "dbo.users",
-			ColumnsAdded: difftypes.ColumnChanges{{StructName: "User", Name: "nickname", Type: "VARCHAR(64)", Nullable: true}},
-		}},
-	}
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "User", Schema: "dbo", Name: "users"}},
 		Fields: []schemamodel.Field{
 			{StructName: "User", Name: "nickname", Type: "VARCHAR(64)", Nullable: true},
 		},
+	}
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
+			TableName:    "dbo.users",
+			ColumnsAdded: difftypes.ColumnChanges{{StructName: "User", Name: "nickname", Type: "VARCHAR(64)", Nullable: true}},
+		}},
+		// The declared tables a comparison fills, which the planner asks whether
+		// the table this change names is declared at all.
+		DeclaredTables: desired.Tables,
 	}
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLServer)

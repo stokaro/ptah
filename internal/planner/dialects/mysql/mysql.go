@@ -309,7 +309,7 @@ func (p *Planner) createForeignKeyAlterStatement(tableName, constraintName strin
 func (p *Planner) addNewTableColumns(
 	result []ast.Node,
 	tableDiff *difftypes.TableDiff,
-	desired *schemamodel.Database,
+	declared []schemamodel.Table,
 	vocabulary difftypes.UserTypeVocabulary,
 	semantics identifier.Semantics,
 ) []ast.Node {
@@ -318,7 +318,7 @@ func (p *Planner) addNewTableColumns(
 	// it provided is load-bearing on its own: a diff naming `app.users` against
 	// a schema that declares `reporting.users` must write no DDL, because the
 	// statement would apply cleanly to a relation nobody declared.
-	if findGeneratedTable(desired.Tables, tableDiff.TableName, semantics) == nil {
+	if findGeneratedTable(declared, tableDiff.TableName, semantics) == nil {
 		return result
 	}
 
@@ -628,7 +628,7 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 		result = appendTableComment(result, tableDiff)
 
 		// Add new columns
-		result = p.addNewTableColumns(result, &tableDiff, desired, diff.DeclaredUserTypes, semantics)
+		result = p.addNewTableColumns(result, &tableDiff, diff.DeclaredTables, diff.DeclaredUserTypes, semantics)
 
 		// Modify existing columns
 		var err error
