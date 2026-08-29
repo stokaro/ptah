@@ -1722,8 +1722,9 @@ func (p *Planner) addNewConstraints(
 	bracketDropped map[constraintHostKey]struct{},
 ) []ast.Node {
 	// Resolve struct → table name once for the field-level synthesis fallbacks.
-	structToTable := make(map[string]string, len(desired.Tables))
-	for _, t := range desired.Tables {
+	// The declared tables the diff carries, indexed by struct name.
+	structToTable := make(map[string]string, len(diff.DeclaredTables))
+	for _, t := range diff.DeclaredTables {
 		structToTable[t.StructName] = t.Name
 	}
 

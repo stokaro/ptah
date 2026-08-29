@@ -44,7 +44,7 @@ func TestPlanner_GenerateMigrationAST_ViewsAndTriggersModified(t *testing.T) {
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, desired)
+	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -79,7 +79,7 @@ func TestPlanner_GenerateMigrationAST_RejectsUniqueIncludeColumns(t *testing.T) 
 		}},
 	}
 
-	_, err := planner.GenerateMigrationAST(diff, desired)
+	_, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, "MySQL-family does not support PostgreSQL INCLUDE columns on UNIQUE constraints.*")
@@ -134,7 +134,7 @@ func TestPlanner_GenerateMigrationAST_RejectsMaterializedViews(t *testing.T) {
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, desired)
+	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
 	c.Assert(nodes, qt.IsNil)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, "materialized views are not supported by MySQL or MariaDB.*")
