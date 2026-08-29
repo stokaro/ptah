@@ -201,7 +201,7 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 	return result
 }
 
-func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	return p.addForeignKeyConstraints(
 		result,
 		diff.TablesAdded.Qualified(diff.DeclaredUserTypes, p.targetDialect()).InDependencyOrder(),
@@ -386,7 +386,6 @@ func (p *Planner) modifyExistingColumns(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
 	tableDiff *difftypes.TableDiff,
-	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) ([]ast.Node, error) {
 	commentRidesAlong := p.columnCommentRidesWithTheColumn()
@@ -629,7 +628,7 @@ func appendTableComment(result []ast.Node, tableDiff difftypes.TableDiff) []ast.
 	})
 }
 
-func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) ([]ast.Node, error) {
+func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, tableDiff := range diff.TablesModified {
 		astCommentNode := ast.NewComment(fmt.Sprintf("Modify table: %s", tableDiff.TableName))
@@ -647,7 +646,7 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 
 		// Modify existing columns
 		var err error
-		result, err = p.modifyExistingColumns(result, diff, &tableDiff, desired, semantics)
+		result, err = p.modifyExistingColumns(result, diff, &tableDiff, semantics)
 		if err != nil {
 			return result, err
 		}
@@ -749,7 +748,6 @@ func (p *Planner) planColumnTypeForeignKeyChanges(diff *difftypes.SchemaDiff, de
 
 	addedHosts, removedHosts := foreignKeyConstraintDiffHosts(diff, semantics)
 	drops, readds := collectColumnTypeForeignKeyActions(
-		desired,
 		diff,
 		blockingChanges,
 		addedHosts,
@@ -776,7 +774,6 @@ func (p *Planner) planColumnTypeForeignKeyChanges(diff *difftypes.SchemaDiff, de
 // planner also re-adds. See planColumnTypeForeignKeyChanges for the ownership
 // rules.
 func collectColumnTypeForeignKeyActions(
-	desired *schemamodel.Database,
 	diff *difftypes.SchemaDiff,
 	typeChanged map[string]map[string]struct{},
 	addedHosts, removedHosts map[constraintHostKey]struct{},
@@ -1215,7 +1212,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 
 	// 0a2. Plan the roles this target does manage, before tables, because a
 	// grant names a role that has to exist.
-	result = p.planRoles(result, diff, desired)
+	result = p.planRoles(result, diff)
 
 	// 0a3. Plan the domains this target does host, before tables: a column may
 	// be declared with the domain as its type.
@@ -1225,7 +1222,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	// 0b. Plan the stored functions this target does host. Functions are
 	// planned before tables because a generated column or a CHECK constraint
 	// may call one, and the function must exist first.
-	result = p.planFunctions(result, diff, desired)
+	result = p.planFunctions(result, diff)
 
 	// 1. Add enum change warnings (MySQL limitations)
 	result = p.addEnumChangeWarnings(result, diff)
@@ -1251,7 +1248,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	fkPlan := p.planColumnTypeForeignKeyChanges(diff, desired)
 	result = append(result, fkPlan.drops...)
 
-	result, err = p.modifyExistingTables(result, diff, desired)
+	result, err = p.modifyExistingTables(result, diff)
 	if err != nil {
 		return nil, err
 	}
@@ -1288,7 +1285,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 
 	// 5.6. Add field-level foreign keys for new tables after referenced
 	// unique indexes and constraints have been created.
-	result = p.addForeignKeyConstraintsForNewTables(result, diff, desired)
+	result = p.addForeignKeyConstraintsForNewTables(result, diff)
 
 	// 5.7. Grant privileges once the objects they name exist.
 	result = p.planGrants(result, diff)
@@ -1297,7 +1294,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	// Unlike sequences, roles and functions this cannot run before tables: a
 	// security policy is schema-bound to the table it filters, and the engine
 	// resolves that name at creation time.
-	result = p.planRLS(result, diff, desired)
+	result = p.planRLS(result, diff)
 
 	// 6. Remove constraints before indexes. MySQL-family servers keep the
 	// backing index after DROP FOREIGN KEY when the index was auto-created, so

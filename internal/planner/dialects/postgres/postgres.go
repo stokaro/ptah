@@ -249,7 +249,7 @@ func (p *Planner) usesConcurrentIndexDrop(ref difftypes.IndexRef) bool {
 	return ok
 }
 
-func (p *Planner) addNewEnums(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) addNewEnums(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	// No lookup: the change carries the enum (stokaro/ptah#2315). Building the
 	// node through fromschema.FromEnum still keeps the CREATE TYPE identifier
 	// and the column type that references it derived from one place
@@ -260,7 +260,7 @@ func (p *Planner) addNewEnums(result []ast.Node, diff *difftypes.SchemaDiff, des
 	return result
 }
 
-func (p *Planner) modifyExistingEnums(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) modifyExistingEnums(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, enumDiff := range diff.EnumsModified {
 		if len(enumDiff.ValuesRemoved) > 0 {
@@ -424,7 +424,7 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 	return result
 }
 
-func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	return p.addForeignKeyConstraints(
 		result,
 		diff.TablesAdded.Qualified(diff.DeclaredUserTypes, DialectName).InDependencyOrder(),
@@ -460,7 +460,6 @@ func (p *Planner) addForeignKeyConstraintsForNewTables(result []ast.Node, diff *
 func (p *Planner) addSchemaPreconditions(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 ) []ast.Node {
 	names := make([]string, 0, len(diff.TablesAdded))
 	names = append(names, diff.TablesAdded.Names()...)
@@ -1017,7 +1016,7 @@ func appendTableComment(result []ast.Node, tableDiff difftypes.TableDiff) []ast.
 	})
 }
 
-func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, tableDiff := range diff.TablesModified {
 		// The table's own comment is emitted before its columns' changes, so a
@@ -1054,7 +1053,7 @@ func (p *Planner) addAndModifyTableColumns(result []ast.Node, diff *difftypes.Sc
 // addForeignKeyConstraintsForModifiedTables adds foreign key constraints for all newly added columns
 // across all modified tables. This ensures that all columns exist before any foreign key constraints
 // are created, preventing dependency ordering issues.
-func (p *Planner) addForeignKeyConstraintsForModifiedTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) addForeignKeyConstraintsForModifiedTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, tableDiff := range diff.TablesModified {
 		if len(tableDiff.ColumnsAdded) > 0 {
@@ -1272,8 +1271,8 @@ type plannedUserType struct {
 //
 // Enums are not in the set: they carry no reference to another user-defined
 // type and are already emitted before this runs.
-func (p *Planner) addNewUserTypes(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	planned := p.plannedUserTypes(diff, desired, diff.EffectiveIdentifierSemantics(p.targetDialect()))
+func (p *Planner) addNewUserTypes(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	planned := p.plannedUserTypes(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))
 	byName := make(map[string]ast.Node, len(planned))
 	deps := make([]deporder.UserType, 0, len(planned))
 	for _, userType := range planned {
@@ -1294,7 +1293,6 @@ func (p *Planner) addNewUserTypes(result []ast.Node, diff *difftypes.SchemaDiff,
 // modification, each with the type spellings its definition names.
 func (p *Planner) plannedUserTypes(
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) []plannedUserType {
 	rebuiltForAdd := rebuiltUserTypes(diff)
@@ -1612,7 +1610,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	if desired == nil {
 		desired = &schemamodel.Database{}
 	}
-	if err := p.validateExtensionInstallationSchemas(diff, desired); err != nil {
+	if err := p.validateExtensionInstallationSchemas(diff); err != nil {
 		return nil, err
 	}
 	if err := p.refuseHypertableChanges(diff); err != nil {
@@ -1664,10 +1662,10 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	// 0. Create the schemas this migration adds objects to, before anything is
 	// created in them. Every phase below can name a schema, so this cannot sit
 	// inside one of them.
-	result = p.addSchemaPreconditions(result, diff, desired)
+	result = p.addSchemaPreconditions(result, diff)
 
 	// 0b. Add new extensions (PostgreSQL extensions should be created before other objects)
-	result = p.addNewExtensions(result, diff, desired)
+	result = p.addNewExtensions(result, diff)
 
 	// 1. Add new roles (roles may be referenced by RLS policies and functions)
 	result = p.addNewRoles(result, diff)
@@ -1682,15 +1680,15 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 
 	// 2c. Add new sequences before tables, since a table column may draw its
 	// DEFAULT from a sequence. OWNED BY is applied later, after tables exist.
-	result = p.addNewSequences(result, diff, desired)
+	result = p.addNewSequences(result, diff)
 
 	// 3. Add new enums (PostgreSQL requires enum types to exist before tables use them)
-	result = p.addNewEnums(result, diff, desired)
+	result = p.addNewEnums(result, diff)
 
 	// 3c. Recreate changed user-defined types (drop then create), then create
 	// new domains/ranges/composites before tables can reference them.
 	result = p.dropModifiedUserTypes(result, diff)
-	result = p.addNewUserTypes(result, diff, desired)
+	result = p.addNewUserTypes(result, diff)
 
 	// 3d. Change in place the domains that need no rebuild. It follows the
 	// creations so that a domain added in this same plan is not also altered,
@@ -1700,25 +1698,25 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	result = p.alterModifiedCompositeTypes(result, diff)
 
 	// 4. Modify existing enums
-	result = p.modifyExistingEnums(result, diff, desired)
+	result = p.modifyExistingEnums(result, diff)
 
 	// 5. Add new tables
 	result = p.addNewTables(result, diff)
 
 	// 6. Add and modify table columns (must be done before creating RLS policies that depend on columns)
-	result = p.addAndModifyTableColumns(result, diff, desired)
+	result = p.addAndModifyTableColumns(result, diff)
 
 	// 6.5. Add foreign key constraints for newly added columns (must be done after all columns exist)
-	result = p.addForeignKeyConstraintsForModifiedTables(result, diff, desired)
+	result = p.addForeignKeyConstraintsForModifiedTables(result, diff)
 
 	// 6.7. Associate added sequences with their owning table.column and apply
 	// option changes to existing sequences, now that tables exist.
-	result = p.addSequenceOwnership(result, diff, desired)
+	result = p.addSequenceOwnership(result, diff)
 	result = p.modifyExistingSequences(result, diff)
 
 	// 6.6. Add and modify views, materialized views, and triggers after their tables/functions exist.
 	result = p.addNewViewLikeObjects(result, diff)
-	result = p.modifyExistingViews(result, diff, desired)
+	result = p.modifyExistingViews(result, diff)
 	result = p.retargetSynonyms(result, diff)
 	result = p.addNewSynonyms(result, diff)
 	result = p.addNewHypertables(result, diff)
@@ -1766,7 +1764,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 
 	// 10.6. Add field-level foreign keys for new tables after referenced
 	// unique indexes and constraints have been created.
-	result = p.addForeignKeyConstraintsForNewTables(result, diff, desired)
+	result = p.addForeignKeyConstraintsForNewTables(result, diff)
 
 	// 11. Remove indexes (safe operations)
 	result = p.removeIndexes(result, diff)
@@ -1836,7 +1834,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	return result, nil
 }
 
-func (p *Planner) validateExtensionInstallationSchemas(diff *difftypes.SchemaDiff, desired *schemamodel.Database) error {
+func (p *Planner) validateExtensionInstallationSchemas(diff *difftypes.SchemaDiff) error {
 	if p.targetDialect() == platform.Postgres || p.targetDialect() == platform.YugabyteDB || diff == nil {
 		return nil
 	}
@@ -2030,7 +2028,7 @@ func (p *Planner) revokeGrantOptions(result []ast.Node, diff *difftypes.SchemaDi
 	return result
 }
 
-func (p *Planner) addNewExtensions(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) addNewExtensions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	// No search: the change carries the extension (stokaro/ptah#2315), so one
 	// the desired schema does not declare no longer plans nothing.
 	for _, extension := range diff.ExtensionsAdded {
@@ -2144,7 +2142,7 @@ func (p *Planner) removeFunctions(result []ast.Node, diff *difftypes.SchemaDiff)
 // addSequenceOwnership, because a sequence referenced by a column DEFAULT must
 // be created before its table while OWNED BY requires the table to already
 // exist.
-func (p *Planner) addNewSequences(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) addNewSequences(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	// No lookup: the change carries the sequence (stokaro/ptah#2315).
 	for _, sequence := range diff.SequencesAdded {
 		sequenceNode := fromschema.FromSequence(sequence)
@@ -2156,7 +2154,7 @@ func (p *Planner) addNewSequences(result []ast.Node, diff *difftypes.SchemaDiff,
 
 // addSequenceOwnership emits ALTER SEQUENCE ... OWNED BY for newly added
 // sequences that declare an owner, after their owning tables exist.
-func (p *Planner) addSequenceOwnership(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) addSequenceOwnership(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, sequence := range diff.SequencesAdded {
 		if sequence.OwnedBy == "" {
 			continue
@@ -2328,7 +2326,7 @@ func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *difftypes.Schem
 // pushing the view into ViewsRemoved and ViewsAdded. The plan runs additions
 // before removals, so a modification expressed from outside comes out
 // create-then-drop and ends with no view at all.
-func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	var dropped []string
 	replaced := make([]deporder.ViewLike, 0, len(diff.ViewsModified))

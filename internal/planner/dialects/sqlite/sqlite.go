@@ -70,26 +70,26 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 		return nil, err
 	}
 	semantics := diff.EffectiveIdentifierSemantics(DialectName)
-	rebuilds, err := planTableRebuilds(diff, desired, semantics)
+	rebuilds, err := planTableRebuilds(diff, semantics)
 	if err != nil {
 		return nil, err
 	}
 
 	var result []ast.Node
-	addedTables, err := p.addTables(diff, desired, semantics)
+	addedTables, err := p.addTables(diff, semantics)
 	if err != nil {
 		return nil, err
 	}
 	result = append(result, addedTables...)
-	modifiedTables, err := p.modifyTables(diff, desired, rebuilds)
+	modifiedTables, err := p.modifyTables(diff, rebuilds)
 	if err != nil {
 		return nil, err
 	}
 	result = append(result, modifiedTables...)
-	result = append(result, p.addViews(diff, desired, semantics)...)
-	result = append(result, p.modifyViews(diff, desired, semantics)...)
-	result = append(result, p.addTriggers(diff, desired, rebuilds, semantics)...)
-	result = append(result, p.modifyTriggers(diff, desired, rebuilds, semantics)...)
+	result = append(result, p.addViews(diff, semantics)...)
+	result = append(result, p.modifyViews(diff, semantics)...)
+	result = append(result, p.addTriggers(diff, rebuilds, semantics)...)
+	result = append(result, p.modifyTriggers(diff, rebuilds, semantics)...)
 	addedIndexes, err := p.addIndexes(diff, indexes, rebuilds)
 	if err != nil {
 		return nil, err
@@ -212,7 +212,6 @@ func identity(name string) string { return name }
 // the table-rebuild cluster of stokaro/ptah#2315 rather than this change.
 func planTableRebuilds(
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) (tableRebuilds, error) {
 	rebuilds := tableRebuilds{targets: make(map[string]rebuildTarget), semantics: semantics}
@@ -457,7 +456,6 @@ func roleAndGrantNames(diff *difftypes.SchemaDiff) []string {
 // inline enum has no schema to name (stokaro/ptah#2315).
 func (p *Planner) addTables(
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 	_ identifier.Semantics,
 ) ([]ast.Node, error) {
 	var result []ast.Node
@@ -517,7 +515,6 @@ func withDefaultForeignKeyName(tableName string, constraint schemamodel.Constrai
 
 func (p *Planner) modifyTables(
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 	rebuilds tableRebuilds,
 ) ([]ast.Node, error) {
 	var result []ast.Node
@@ -552,7 +549,7 @@ func (p *Planner) modifyTables(
 		// declaration. The constraint records do not carry one either --
 		// that is stokaro/ptah#2315's constraint cluster -- so this path
 		// still assembles it from the declaration.
-		declared := declarationForRebuild(diff, desired, tableName)
+		declared := declarationForRebuild(diff, tableName)
 		nodes, err := p.rebuildTable(rebuilds.targets[tableName], declared, diff)
 		if err != nil {
 			return nil, err
@@ -977,7 +974,6 @@ func (p *Planner) removeTables(diff *difftypes.SchemaDiff) []ast.Node {
 
 func (p *Planner) addViews(
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) []ast.Node {
 	var result []ast.Node
@@ -991,7 +987,6 @@ func (p *Planner) addViews(
 
 func (p *Planner) modifyViews(
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 	semantics identifier.Semantics,
 ) []ast.Node {
 	var result []ast.Node
@@ -1018,7 +1013,6 @@ func (p *Planner) removeViews(diff *difftypes.SchemaDiff) []ast.Node {
 
 func (p *Planner) addTriggers(
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 	rebuilds tableRebuilds,
 	semantics identifier.Semantics,
 ) []ast.Node {
@@ -1039,7 +1033,6 @@ func (p *Planner) addTriggers(
 
 func (p *Planner) modifyTriggers(
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 	rebuilds tableRebuilds,
 	semantics identifier.Semantics,
 ) []ast.Node {
@@ -1173,7 +1166,6 @@ func userDefinedTypeNames(diff *difftypes.SchemaDiff) []string {
 // table.
 func declarationForRebuild(
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 	tableName string,
 ) difftypes.TableDeclaration {
 	for _, tableDiff := range diff.TablesModified {

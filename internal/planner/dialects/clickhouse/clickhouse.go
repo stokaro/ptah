@@ -111,7 +111,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	result = reportUnsupportedObjectsBeforeTables(result, diff)
 	result = p.addNewTables(result, diff)
 	result = p.modifyExistingTables(result, diff)
-	result, err = planObjectsAfterTables(result, diff, desired, p.capabilities())
+	result, err = planObjectsAfterTables(result, diff, p.capabilities())
 	if err != nil {
 		return nil, err
 	}

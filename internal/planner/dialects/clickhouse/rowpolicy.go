@@ -3,7 +3,6 @@ package clickhouse
 import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -22,7 +21,6 @@ import (
 func planRowPolicies(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 	caps capability.Capabilities,
 ) []ast.Node {
 	if !caps.Has(capability.RowLevelSecurity) {
