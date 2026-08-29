@@ -942,8 +942,10 @@ func assertResumeReturnsItToRunning(c *qt.C, ctx context.Context, specPath, dbUR
 	status := runInference(c, ctx, "status",
 		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID)
 	c.Assert(status, qt.Not(qt.Contains), "paused")
-	// The reason is gone with it: a running run carrying why it stopped reads
-	// as a run that stopped.
+	// And the reason goes with it. This asserts what an operator SEES: status
+	// prints a reason for a paused run, so a resumed one shows none either way.
+	// That the field is cleared in the run itself is asserted where it can be
+	// read directly, in TestResume_FencesTheWorkerThePauseStopped.
 	c.Assert(status, qt.Not(qt.Contains), "rate limiting")
 	// Resuming fences too. The worker the pause stopped is not necessarily
 	// gone, and returning the run to running under its token would put it back
