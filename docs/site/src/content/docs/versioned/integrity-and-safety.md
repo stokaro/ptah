@@ -1,6 +1,9 @@
 ---
 title: Integrity and safety
 description: Hash and validate the migration directory, replay it on a dev database, and assert data-state preconditions before a migration runs.
+owns:
+  - cli-ptah-migrations-hash
+  - cli-ptah-migrations-validate
 ---
 
 You are about to let migrations touch a database other people depend on. This

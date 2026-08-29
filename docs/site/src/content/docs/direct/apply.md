@@ -1,6 +1,8 @@
 ---
 title: Apply directly
 description: Apply desired-schema changes straight to a database with ptah schema apply, saved plan files, and hybrid patterns.
+owns:
+  - cli-ptah-schema-apply
 ---
 
 Direct application ships natively as `ptah schema apply`. The separate

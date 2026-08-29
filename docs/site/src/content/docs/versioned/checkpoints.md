@@ -1,6 +1,8 @@
 ---
 title: Checkpoints
 description: Squash migration history into a cumulative-schema checkpoint that fresh databases bootstrap from.
+owns:
+  - cli-ptah-migrations-checkpoint
 ---
 
 As a migration directory grows, every fresh database — a CI job, a new

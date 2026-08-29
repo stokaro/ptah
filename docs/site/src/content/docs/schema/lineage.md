@@ -1,6 +1,8 @@
 ---
 title: Trace view column lineage
 description: Run ptah schema lineage to find which base columns each view column and each routine reads, and which tables and columns each routine writes, before dropping or renaming one of them.
+owns:
+  - cli-ptah-schema-lineage
 ---
 
 `ptah schema lineage` derives column-to-column dependencies from the view and

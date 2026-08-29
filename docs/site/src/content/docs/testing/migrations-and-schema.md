@@ -1,6 +1,9 @@
 ---
 title: Test migrations and schemas
 description: Assert migration and schema behavior with declarative test cases against a throwaway database.
+owns:
+  - cli-ptah-migrations-test
+  - cli-ptah-schema-test
 ---
 
 Ptah can run declarative test cases that apply your migrations or desired schema

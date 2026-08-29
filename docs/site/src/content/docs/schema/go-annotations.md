@@ -1,6 +1,8 @@
 ---
 title: Go annotations
 description: Use annotated Go structs as the desired database schema.
+owns:
+  - gopkg-core-goschema
 ---
 
 Use Go annotations when your Go application owns the schema and the database

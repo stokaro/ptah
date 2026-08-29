@@ -10,16 +10,15 @@ trap 'rm -f "$allowlist" "$packages"' EXIT
 
 # List items only. A backticked package path in a prose paragraph is a
 # mention, not a listing, and must not join the allowlist.
-grep -Eo "^- \`${module_path}[^\`]+\`" docs/public_api.md |
-	tr -d '`' |
-	sed 's/^- //' |
-	sort -u >"$allowlist"
-
-if [[ ! -s "$allowlist" ]]; then
-	printf '%s: found no %s packages in docs/public_api.md; refusing to report a vacuous pass\n' \
-		"$0" "$module_path" >&2
-	exit 1
-fi
+#
+# The recognition lives in internal/featureinventory, not here. This gate and
+# the feature inventory need the identical set, and two implementations of one
+# rule is what AGENTS.md's "recognition that spans two functions belongs to one
+# of them" forbids -- with a quiet failure mode: a pattern that drifts by one
+# character produces a SMALLER allowlist, and a smaller allowlist reports fewer
+# undocumented packages rather than an error. The tool refuses a vacuous ledger
+# itself, so nothing below re-checks for an empty file.
+go run ./internal/cmd/featureinventory --list-ledger | sort -u >"$allowlist"
 
 go list -f '{{.ImportPath}}|{{.Name}}' ./... >"$packages"
 

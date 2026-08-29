@@ -1,6 +1,12 @@
 ---
 title: OCI registry artifacts
 description: Publish, pin, pull, and consume Ptah migrations and desired schemas through an OCI registry.
+owns:
+  - cli-ptah-migrations-pull
+  - cli-ptah-migrations-push
+  - cli-ptah-oci-referrers
+  - cli-ptah-schema-pull
+  - cli-ptah-schema-push
 ---
 
 Ptah can store migration directories and desired schemas as OCI 1.1 artifacts

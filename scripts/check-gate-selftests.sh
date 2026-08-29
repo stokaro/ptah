@@ -151,6 +151,35 @@ run_node_selftest_case() {
 	printf '  %-40s %s\n' "${gate} --selftest" "$description"
 }
 
+# run_shell_selftest_case is run_node_selftest_case for a shell gate: it breaks
+# the rule in the code the gate's `--selftest` covers and requires that
+# self-test to notice. Nothing else can tell a self-test that still asserts from
+# one reduced to a bare `OK (0 assertions)`, and the workflow reads only the
+# exit code.
+run_shell_selftest_case() {
+	local gate="$1" description="$2" mutation="$3"
+	checked=$((checked + 1))
+	fixtured+=("$gate")
+
+	if ! (cd "$worktree" && bash "scripts/${gate}" --selftest >/dev/null 2>&1); then
+		echo "check-gate-selftests: ${gate} --selftest fails on an UNMODIFIED tree; the fixture below proves nothing" >&2
+		failures=$((failures + 1))
+		return
+	fi
+
+	(cd "$worktree" && eval "$mutation")
+	local status=0
+	(cd "$worktree" && bash "scripts/${gate}" --selftest >/dev/null 2>&1) || status=$?
+	restore_worktree
+
+	if [ "$status" -eq 0 ]; then
+		echo "check-gate-selftests: ${gate} --selftest PASSED with ${description}" >&2
+		failures=$((failures + 1))
+		return
+	fi
+	printf '  %-40s %s\n' "${gate} --selftest" "$description"
+}
+
 echo "check-gate-selftests: breaking each gate's own rule and requiring it to notice"
 
 # The path is assembled rather than written out, because check-repository-local-
@@ -229,6 +258,56 @@ run_case check-command-reference.sh \
 run_case check-command-reference.sh \
 	"a flag's value type edited on the fully generated flag page" \
 	"perl -0pi -e 's/\*\*\x60ptah seed\x60\*\*.*?\| \x60--env\x60 \| \K\x60string\x60/\x60int\x60/s' docs/site/src/content/docs/reference/command-flags.md"
+
+# The derived feature inventory. Three fixtures, because the gate's rules fail
+# in three different places and only the first leaves a diff anyone would see.
+#
+# A row deleted from the committed artifact is the shape a merge produces, and
+# the byte comparison is the whole of the gate's coverage of every derived
+# column: kind, surface and identifier are checked by that one comparison and by
+# nothing else.
+run_case check-feature-inventory.sh \
+	"a row deleted from the committed inventory" \
+	"perl -0pi -e 's/\\{\\n      \"id\": \"cli-ptah-db-read\",.*?\\n    \\},\\n//s' docs/feature-inventory.json"
+
+# The one hand-written datum in the system. A page claiming an identifier the
+# derivation does not produce is the mistake the inverted direction exists to
+# catch: the closed attempt searched pages for a feature and credited any page
+# containing any token of its name.
+run_case check-feature-inventory.sh \
+	"a page claiming a feature the derivation does not produce" \
+	"perl -0pi -e 's/  - cli-ptah-schema-apply/  - cli-ptah-schema-aplly/' docs/site/src/content/docs/direct/apply.md"
+
+# The coverage floor. Removing an `owns:` line rewrites the artifact AND drops
+# the claimed count below the floor, so this fixture is the one that says the
+# floor is read rather than merely written down.
+run_case check-feature-inventory.sh \
+	"an owns: entry removed from a page that claims one feature" \
+	"perl -0pi -e 's/^owns:\\n  - cli-ptah-viz\\n//m' docs/site/src/content/docs/schema/visualize.md"
+
+# And the floor itself, edited in the artifact it governs. The floor used to be
+# read out of this file and written back by `--write`, which made it the one
+# field the byte comparison could not police: lowering the line lowered the
+# floor and the gate reported success, so a coverage regression could be
+# laundered through a regeneration. It is a source constant now, so the same
+# edit is a stale artifact. A tree whose floor is already 0 makes this mutation
+# a no-op and the harness reports the fixture as proving nothing.
+run_case check-feature-inventory.sh \
+	"the coverage floor lowered in the committed artifact" \
+	"perl -0pi -e 's/\"claimed_floor\": \\d+/\"claimed_floor\": 0/' docs/feature-inventory.json"
+
+# And the self-test itself, against a rule short-circuited in its own source.
+run_shell_selftest_case check-feature-inventory.sh \
+	"the unknown-claim refusal short-circuited inside applyClaims()" \
+	"perl -0pi -e 's/if !known \\{/if !known \\&\\& false \\{/' internal/featureinventory/pages.go"
+
+# A page listed under runnable_examples has to run something. The marking is
+# deliberate -- a page writes `quickstart: true` -- but a deliberate marking is
+# still a claim, and a page of prose carrying it was published as a runnable
+# example with the gate reporting success until this refusal existed.
+run_shell_selftest_case check-feature-inventory.sh \
+	"the runnable-example refusal short-circuited inside exampleProblems()" \
+	"perl -0pi -e 's/if len\\(example\\.Shells\\) == 0 \\{/if false \\&\\& len(example.Shells) == 0 {/' internal/featureinventory/inventory.go"
 
 run_case check-public-api.sh \
 	"an exported package with no doc comment" \

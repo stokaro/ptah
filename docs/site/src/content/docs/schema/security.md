@@ -1,6 +1,8 @@
 ---
 title: Report schema security findings
 description: Run ptah schema security over a live database to review privileges, owners, roles and tables with no row policy, and gate a pull request on the result.
+owns:
+  - cli-ptah-schema-security
 ---
 
 `ptah schema security` reads a live database and reports findings over what the

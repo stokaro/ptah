@@ -1,6 +1,8 @@
 ---
 title: PostgreSQL
 description: What Ptah manages on PostgreSQL - schema objects, roles and grants, RLS, extensions, sequences, user-defined types, and version-dependent behavior.
+owns:
+  - dialect-postgres
 ---
 
 PostgreSQL is Ptah's primary first-party target, and this page is the map of

@@ -1,6 +1,8 @@
 ---
 title: Reference data
 description: Declare reference/seed rows and generate reversible data migrations from the drift against a live database.
+owns:
+  - cli-ptah-migrations-data
 ---
 
 [`ptah seed`](../../operate/seed-data/) applies SQL seed files imperatively —

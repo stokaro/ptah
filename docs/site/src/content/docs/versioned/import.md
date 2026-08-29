@@ -1,6 +1,8 @@
 ---
 title: Import from another tool
 description: Convert a golang-migrate, Goose, Flyway, Liquibase, or dbmate migration directory into Ptah's native format.
+owns:
+  - cli-ptah-migrations-import
 ---
 
 Your project already has migration history in another tool, and you want Ptah

@@ -63,6 +63,30 @@ func TestSiteToolingIsNotEmbedded(t *testing.T) {
 	c.Assert(countWithPrefix(embedded, "site/CONTENT_INVENTORY"), qt.Equals, 0)
 }
 
+// The feature inventory is a contributor register, not product documentation.
+//
+// It sits in this directory because that is where a reader looks for it, and it
+// is `.json` because the patterns above name `*.md`, `adr/*.md` and the site
+// content: a Markdown file here would ship inside every binary and answer
+// `search_docs`, which is what happened to the attempt this replaces.
+//
+// Asserted against docs.FS DIRECTLY rather than through embeddedPaths. That
+// helper filters to Markdown, so a check routed through it would reduce to
+// `0 == 0` and stay green if the embed ever grew to include JSON -- the
+// tautology-on-the-half-you-are-not-looking-at hazard AGENTS.md names, which
+// applies here even though nothing about it is platform-specific.
+func TestFeatureInventoryIsNotEmbedded(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := fs.Stat(docs.FS, "feature-inventory.json")
+	c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
+
+	// The control: the file this asserts the absence of has to exist on disk,
+	// or the assertion above passes because nothing was ever generated.
+	_, diskErr := os.Stat("feature-inventory.json")
+	c.Assert(diskErr, qt.IsNil)
+}
+
 func embeddedPaths(c *qt.C) []string {
 	var paths []string
 	err := fs.WalkDir(docs.FS, ".", func(name string, entry fs.DirEntry, err error) error {

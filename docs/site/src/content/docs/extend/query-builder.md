@@ -1,6 +1,8 @@
 ---
 title: Query builder
 description: Build parameterized, dialect-aware SELECT statements with the core/query package.
+owns:
+  - gopkg-core-query
 ---
 
 Ptah's `core/query` package is a fluent builder for parameterized `SELECT`

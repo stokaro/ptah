@@ -1,6 +1,8 @@
 ---
 title: API schema export
 description: Project selected Go entities into OpenAPI or GraphQL contract candidates and review their trust-boundary limitations.
+owns:
+  - cli-ptah-schema-export
 ---
 
 Ptah projects a desired schema into API-facing formats: OpenAPI 3.0 component
