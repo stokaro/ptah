@@ -9,6 +9,7 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -1036,4 +1037,65 @@ func declaringTheOnlyTable(diff *difftypes.SchemaDiff, desired *schemamodel.Data
 	}
 	completed.DeclaredTables = desired.Tables
 	return &completed
+}
+
+// TestPlannerInlineConstraintsComeFromTheCreation pins WHERE a created table's
+// constraints are read from.
+//
+// Every other creation fixture builds the diff from the same declaration it
+// hands the planner, so either source answers alike and none of them separates
+// the two. These do. It matters because the two disagree by direction: a
+// rollback recreates the table the PRE-CHANGE database held, with the
+// constraints that database had, and the creation is what carries them.
+//
+// SQLite has no ADD CONSTRAINT, so a constraint missing from the CREATE has no
+// second chance -- the table comes back without it and the migration reports
+// success (stokaro/ptah#2315).
+func TestPlannerInlineConstraintsComeFromTheCreation(t *testing.T) {
+	t.Run("a constraint only the creation carries is rendered", func(t *testing.T) {
+		c := qt.New(t)
+		// The declaration holds no constraint at all: this one is the
+		// pre-change database's, which is what a rollback hands over.
+		desired := &schemamodel.Database{
+			Tables: []schemamodel.Table{{Name: "bookings", StructName: "Booking"}},
+			Fields: []schemamodel.Field{{Name: "code", Type: "TEXT", StructName: "Booking"}},
+		}
+		diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(desired, "bookings")}
+		diff.TablesAdded[0].Constraints = []schemamodel.Constraint{{
+			Name: "uq_bookings_code", Type: "UNIQUE", StructName: "Booking",
+			Table: "bookings", Columns: []string{"code"},
+		}}
+
+		nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.SQLite)
+
+		c.Assert(err, qt.IsNil)
+		sql, err := renderer.RenderSQL(platform.SQLite, nodes...)
+		c.Assert(err, qt.IsNil)
+		c.Assert(sql, qt.Contains, `CONSTRAINT "uq_bookings_code" UNIQUE ("code")`)
+	})
+
+	t.Run("a constraint only the declaration holds is not rendered", func(t *testing.T) {
+		c := qt.New(t)
+		desired := &schemamodel.Database{
+			Tables: []schemamodel.Table{{Name: "bookings", StructName: "Booking"}},
+			Fields: []schemamodel.Field{{Name: "code", Type: "TEXT", StructName: "Booking"}},
+			Constraints: []schemamodel.Constraint{{
+				Name: "uq_bookings_code", Type: "UNIQUE", StructName: "Booking",
+				Table: "bookings", Columns: []string{"code"},
+			}},
+		}
+		// A creation built without the constraint, which is what a diff
+		// describing a different schema than the one handed over looks like.
+		diff := &difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{
+			Name: "bookings", Table: desired.Tables[0], Fields: desired.Fields,
+		}}}
+
+		nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.SQLite)
+
+		c.Assert(err, qt.IsNil)
+		sql, err := renderer.RenderSQL(platform.SQLite, nodes...)
+		c.Assert(err, qt.IsNil)
+		c.Assert(sql, qt.Contains, `CREATE TABLE "bookings"`)
+		c.Assert(sql, qt.Not(qt.Contains), "uq_bookings_code")
+	})
 }
