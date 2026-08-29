@@ -94,6 +94,12 @@ jobs:
       # and macOS runners have neither busybox nor dash. The gate refuses to
       # pass under one shell, so this is what makes its matrix real rather than
       # a floor nobody meets.
+      #
+      # shellcheck comes with the Ubuntu image and not with the macOS one, and
+      # the gate refuses to run without it -- rightly, since it is the only
+      # mechanical guard against a bashism reaching a POSIX shell. Installing it
+      # here is what the macOS leg needs to reach the live install at all: it
+      # had never got past the refusal (stokaro/ptah#2533).
       - name: Install the other POSIX shells
         run: |
           set -eu
@@ -101,7 +107,7 @@ jobs:
             sudo apt-get update -qq
             sudo apt-get install -y -qq --no-install-recommends busybox-static
           else
-            brew install dash
+            brew install dash shellcheck
           fi
 
       # --live adds two runs against github.com on top of the fixture suite: a
@@ -177,3 +183,15 @@ jobs:
           if ($LASTEXITCODE -ne 6) { throw "a corrupted archive exited $LASTEXITCODE, expected 6" }
           if (Test-Path (Join-Path $target 'ptah-ls.exe')) { throw 'a refused archive was installed anyway' }
           Write-Output 'the corrupted archive was refused and nothing was installed'
+
+          # The 6 above is the whole point of the step, and it is still sitting
+          # in $LASTEXITCODE when the script ends, where a `powershell` step is
+          # read as having failed with it. So this step asserted everything it
+          # wanted and then reported failure (stokaro/ptah#2533).
+          #
+          # Clearing the variable rather than writing `exit 0`, deliberately. An
+          # explicit success would also pass if the step were failing for some
+          # reason other than the leftover code -- it would mask the very thing
+          # it was supposed to fix. This leaves every other failure path intact:
+          # each assertion above throws, and a throw still ends the step non-zero.
+          $global:LASTEXITCODE = 0
