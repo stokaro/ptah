@@ -1861,8 +1861,8 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 		if add.Type != "PRIMARY KEY" || add.TableName == "" || len(add.Columns) == 0 {
 			continue
 		}
-		if _, modified := state.removalByTableName[add.Identity]; modified {
-			continue
+		if info, modified := state.removalByTableName[add.Identity]; modified {
+			result = p.appendScopedDrop(result, info, state.droppedForModify, state.semantics)
 		}
 		result = append(result, &ast.AlterTableNode{
 			Name:       add.TableName,

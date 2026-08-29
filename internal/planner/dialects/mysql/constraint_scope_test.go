@@ -962,3 +962,53 @@ func synthesizedFieldCheck(desired *schemamodel.Database, name string) (schemamo
 	}
 	return schemamodel.Constraint{}, false
 }
+
+// TestPlanner_ModifiedPrimaryKeyIsDroppedThenReadded covers the one addition
+// kind whose pass emitted nothing for a modification.
+//
+// A PRIMARY KEY change reaches the planner as a removal and an addition sharing
+// one (table, name). The pass that owns primary keys skipped such a record
+// outright, and the re-ADD arrived from the name-resolving route instead — so
+// withdrawing that route left the drop with nothing after it, and the name it
+// never marked as handled reached the refusal for a constraint the diff does
+// not describe. It describes this one completely.
+//
+// The PostgreSQL planner already emitted the pair from the record
+// (stokaro/ptah#2199); this is the same shape, and the SQL is byte-identical to
+// what the withdrawn route produced.
+func TestPlanner_ModifiedPrimaryKeyIsDroppedThenReadded(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{
+		ConstraintsAdded:   []string{"pk_users"},
+		ConstraintsRemoved: []string{"pk_users"},
+		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+			Name: "pk_users", TableName: "users", Type: "PRIMARY KEY",
+			Columns: []string{"id", "tenant"},
+		}},
+		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
+			Name: "pk_users", TableName: "users", Type: "PRIMARY KEY",
+		}},
+	}
+	desired := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Constraints: []schemamodel.Constraint{{
+			StructName: "User", Name: "pk_users", Type: "PRIMARY KEY",
+			Table: "users", Columns: []string{"id", "tenant"},
+		}},
+	}
+
+	nodes, err := mysql.New().GenerateMigrationAST(diff, desired)
+
+	c.Assert(err, qt.IsNil)
+	sql, err := renderer.RenderSQL("mysql", nodes...)
+	c.Assert(err, qt.IsNil)
+	drop := strings.Index(sql, "ALTER TABLE `users` DROP PRIMARY KEY;")
+	add := strings.Index(sql, "ALTER TABLE `users` ADD PRIMARY KEY (`id`, `tenant`);")
+	c.Assert(drop >= 0, qt.IsTrue)
+	c.Assert(add >= 0, qt.IsTrue)
+	// The order is the property: MySQL 9.7.1 answers
+	// `ERROR 1068 (42000): Multiple primary key defined` to an ADD that
+	// precedes the DROP of the key it replaces.
+	c.Assert(drop < add, qt.IsTrue)
+	c.Assert(strings.Count(sql, "DROP PRIMARY KEY"), qt.Equals, 1)
+}
