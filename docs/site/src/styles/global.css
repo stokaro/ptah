@@ -53,6 +53,11 @@
 	}
 
 	[data-has-sidebar][data-has-toc] .main-pane {
+		/* Starlight right-aligns the reading column when both side rails are
+		 * present, putting every spare pixel between the navigation and the
+		 * page. Keep the page next to its navigation and put that space before
+		 * the table of contents instead. */
+		--sl-content-margin-inline: 0 auto;
 		width: calc(100% - var(--ptah-toc-width));
 	}
 
