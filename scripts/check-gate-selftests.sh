@@ -6,10 +6,17 @@
 # them say so in their own headers: "a gate that compares nothing to nothing
 # reports success at exactly the moment it stopped working."
 #
-# Some gates could already prove otherwise -- three shell ones carry a
-# `-selftest.sh` companion and twelve of the thirteen `check-*.mjs` take
-# `--selftest`. The rest carried nothing, and an audit that broke each rule by
-# hand is a photograph: nothing keeps it true (stokaro/ptah#1923).
+# A gate can prove otherwise where the proof lives beside it: a `-selftest.sh`
+# companion for a shell gate, a `--selftest` mode for a `.mjs` one, a test
+# package for a gate whose rules are Go. What has none of those carried nothing,
+# and an audit that broke each rule by hand is a photograph: nothing keeps it
+# true (stokaro/ptah#1923).
+#
+# Every `check-*.sh` now proves itself where it lives, so the mutation fixtures
+# left here are the `.mjs` half. The accounting below is the other half of the
+# job and outlives the fixtures: it walks the gates on disk and requires each to
+# be covered somewhere or to say why not, which is what makes "OK" a statement
+# about the tree rather than about this file (stokaro/ptah#2509).
 #
 # A `--selftest` is not by itself a proof either, and the gap is worth naming
 # because the docs job cannot see it: a self-test reduced to a bare
@@ -48,7 +55,7 @@ git worktree add --detach "$worktree" HEAD >/dev/null 2>&1
 
 failures=0
 checked=0
-# fixtured accumulates the gates run_case was given, so the coverage guard at
+# fixtured accumulates the gates a shell case was given, so the coverage guard at
 # the end reads what actually ran rather than a second list beside it.
 # mjs_fixtured does the same for the `.mjs` gates, which have their own guard.
 fixtured=()
@@ -67,31 +74,9 @@ restore_worktree() {
 	(cd "$worktree" && git reset -q --hard HEAD >/dev/null 2>&1 && git clean -fdq >/dev/null 2>&1)
 }
 
-run_case() {
-	local gate="$1" description="$2" mutation="$3"
-	checked=$((checked + 1))
-	fixtured+=("$gate")
 
-	if ! (cd "$worktree" && bash "scripts/${gate}" >/dev/null 2>&1); then
-		echo "check-gate-selftests: ${gate} fails on an UNMODIFIED tree; the fixture below proves nothing" >&2
-		failures=$((failures + 1))
-		return
-	fi
-
-	(cd "$worktree" && eval "$mutation")
-	local status=0
-	(cd "$worktree" && bash "scripts/${gate}" >/dev/null 2>&1) || status=$?
-	restore_worktree
-
-	if [ "$status" -eq 0 ]; then
-		echo "check-gate-selftests: ${gate} PASSED with ${description}" >&2
-		failures=$((failures + 1))
-		return
-	fi
-	printf '  %-40s %s\n' "$gate" "$description"
-}
-
-# run_node_gate_case is run_case for a `.mjs` gate under docs/site/scripts. The
+# run_node_gate_case breaks a rule and requires a `.mjs` gate under
+# docs/site/scripts to notice. The
 # gate is invoked directly rather than through npm, because the throwaway
 # worktree has no node_modules -- and these gates deliberately have no npm
 # dependency, which is the property that lets them be exercised here at all.
@@ -186,36 +171,6 @@ echo "check-gate-selftests: breaking each gate's own rule and requiring it to no
 # paths.sh reads this file too and would find its own fixture. Its exclusion
 # list names only the gate itself, which is the right list: a harness that had
 
-run_case check-go-module-lint-coverage.sh \
-	"working-directory for the nested module removed from one job" \
-	"perl -0pi -e 's|working-directory: examples/orm-loaders/gorm||' .github/workflows/go-lint.yml"
-
-
-
-run_case check-goreleaser-artifact-names.sh \
-	"the snapshot version taken from whatever tag git describe reaches" \
-	"perl -0pi -e 's|version_template: \"0\\.0\\.0-SNAPSHOT-\\{\\{ \\.ShortCommit \\}\\}\"|version_template: \"{{ .Version }}-SNAPSHOT-{{ .ShortCommit }}\"|' .goreleaser.yaml"
-
-run_case check-brand-assets.sh \
-	"the favicon drifting away from the header logo" \
-	"perl -0pi -e 's/fill=\"#f59e0b\"/fill=\"#38bdf8\"/' docs/site/public/favicon.svg"
-
-# The same edit applied to both files, so the drift rule stays satisfied and only
-# the legibility one can fire. A gate whose two rules are only ever broken
-# together cannot say which of them it still reads.
-run_case check-brand-assets.sh \
-	"two courses moved closer than one favicon pixel, in both files" \
-	"perl -0pi -e 's/y=\"27\"/y=\"25\"/' docs/site/src/assets/logo.svg docs/site/public/favicon.svg"
-
-run_case check-test-style.sh \
-	"a conditional added to a test function" \
-	"printf '\nfunc TestGateSelftestConditional(t *testing.T) {\n\tif t.Name() == \"\" {\n\t\tt.Fatal(\"unreachable\")\n\t}\n}\n' >>internal/dbtarget/dbtarget_test.go"
-
-run_case check-public-api-snapshot.sh \
-	"an exported field added to a documented struct" \
-	"perl -0pi -e 's/type DomainExpression struct \{/type DomainExpression struct {\n\t\/\/ GateSelftestField exists only inside this fixture.\n\tGateSelftestField string\n/' config/config.go"
-
-
 
 # Two fixtures, one per comparison mode. The command reference is three marker
 # blocks and one whole page, and a gate whose two rules are only ever broken
@@ -269,26 +224,6 @@ run_shell_selftest_case check-feature-inventory.sh \
 run_shell_selftest_case check-feature-inventory.sh \
 	"the runnable-example refusal short-circuited inside exampleProblems()" \
 	"perl -0pi -e 's/if len\\(example\\.Shells\\) == 0 \\{/if false \\&\\& len(example.Shells) == 0 {/' internal/featureinventory/inventory.go"
-
-run_case check-public-api.sh \
-	"an exported package with no doc comment" \
-	"mkdir -p gateselftest && printf 'package gateselftest\n\nfunc Exported() {}\n' >gateselftest/gateselftest.go"
-
-# The ledger scrape reads list items only. This fixture documents the new
-# package in a prose paragraph rather than a bullet: a scrape that let prose
-# mentions join the allowlist would accept it and pass (stokaro/ptah#2246).
-run_case check-public-api.sh \
-	"a package whose only ledger mention is a prose paragraph" \
-	'mkdir -p gateselftest && printf "package gateselftest\n\nfunc Exported() {}\n" >gateselftest/gateselftest.go && printf "\nA prose paragraph that mentions \`go.5x5.cz/ptah/gateselftest\` is not a listing.\n" >>docs/public_api.md'
-
-
-run_case check-public-api-docs-sync.sh \
-	"a ledger package's row removed from the site's stable-packages table" \
-	"perl -0pi -e 's/^\| \`core\/coverage\`[^\n]*\n//m' docs/site/src/content/docs/extend/public-api.md"
-
-run_case check-public-api-docs-sync.sh \
-	"a package the site table lists deleted from the ledger" \
-	"perl -0pi -e 's/^- \`go\.5x5\.cz\/ptah\/migration\/seeder\`\n//m' docs/public_api.md"
 
 
 # The `.mjs` route gates under docs/site/scripts. They take no npm dependency,
@@ -427,13 +362,37 @@ run_node_selftest_case lib/docroutes.mjs \
 # Each entry names where the fixtures are, so the claim is checkable rather than
 # asserted. This list is the harness shrinking toward its own deletion: it is
 # the direction, and a gate joins it by growing an adjacent test.
+# Three fields: the gate, the package holding its fixtures, and what those
+# fixtures say. The package is a field rather than a phrase inside the sentence
+# because the accounting below reads it: an entry naming a package that does not
+# exist, or one that carries no tests, is a gate excused from this harness on the
+# strength of a sentence. check-feature-inventory.sh is deliberately absent -- it
+# has fixtures ABOVE, and an entry here would let the summary count it twice.
 adjacent=(
-	"check-docsync.sh	internal/docsync: each fail-closed refusal, and Replace asserted idempotent"
-	"check-feature-inventory.sh	--selftest breaks every derivation rule against in-memory fixtures, and go-lint.yml runs it"
-	"check-go-toolchain-single-source.sh	internal/gotoolchain: every YAML spelling and both forwarding shapes, with controls"
-	"check-renovate-regex.sh	internal/renovateregex: the backreference that stopped Renovate, and the group spelling that is the control for it"
-	"check-exported-docs.sh	internal/cmd/exporteddocs: each rule over an AST fixture, and the method exemption that 148 of 158 findings turned on"
+	"check-docsync.sh	internal/docsync	each fail-closed refusal, and Replace asserted idempotent"
+	"check-go-toolchain-single-source.sh	internal/gotoolchain	every YAML spelling and both forwarding shapes, with controls"
+	"check-renovate-regex.sh	internal/renovateregex	the backreference that stopped Renovate, and the group spelling that is the control for it"
+	"check-exported-docs.sh	internal/cmd/exporteddocs	each rule over an AST fixture, and the method exemption that 148 of 158 findings turned on"
+	"check-public-api-snapshot.sh	internal/apiguard	the whole gate over a fixture module -- an added exported field, its control, and the scrape's vacuity refusal"
 )
+
+# The guard on that list. A gate leaves this harness by growing tests elsewhere,
+# and "elsewhere" is checkable: the package has to exist and to hold test files.
+# Without this, deleting internal/renovateregex would take its coverage with it
+# and leave the line here reporting that the gate is proven.
+adjacent_unproven=""
+for entry in "${adjacent[@]}"; do
+	adjacent_gate="${entry%%	*}"
+	adjacent_rest="${entry#*	}"
+	adjacent_package="${adjacent_rest%%	*}"
+	[ -d "$adjacent_package" ] || {
+		adjacent_unproven="${adjacent_unproven} ${adjacent_gate} (no ${adjacent_package})"
+		continue
+	}
+	ls "$adjacent_package"/*_test.go >/dev/null 2>&1 || {
+		adjacent_unproven="${adjacent_unproven} ${adjacent_gate} (${adjacent_package} holds no tests)"
+	}
+done
 
 uncovered=(
 	"check-coverage.sh	runs the whole test suite; minutes per fixture"
@@ -465,11 +424,35 @@ for entry in "${uncovered[@]}"; do
 	printf '    %-40s %s\n' "${entry%%	*}" "${entry##*	}"
 done
 for entry in "${adjacent[@]}"; do
-	printf '    %-40s %s\n' "${entry%%	*}" "proven beside the checker -- ${entry##*	}"
+	rest="${entry#*	}"
+	printf '    %-40s %s\n' "${entry%%	*}" "proven in ${rest%%	*}: ${rest#*	}"
 done
 for gate in $(companion_gates); do
 	printf '    %-40s %s\n' "$gate" "carries its own -selftest.sh companion"
 done
+
+# selftest_is_run answers whether a `.mjs` gate takes `--selftest` AND the docs
+# job actually runs it. Both halves, because the sentence printed for such a
+# gate -- "takes --selftest, run in the docs job" -- is two claims, and only the
+# first was ever checked: a grep for the string in the gate's own source. A
+# self-test nothing invokes is the exact shape this harness exists to refuse,
+# and it would have been reported here as coverage.
+#
+# The docs job spells the invocation two ways, and both count: `npm run
+# check:x:selftest`, whose command is read out of package.json rather than
+# guessed from the gate's name, and a direct `node docs/site/scripts/x.mjs
+# --selftest` for the gates that run before `npm ci`.
+selftest_is_run() {
+	local gate="$1" pattern script
+	grep -q -- "--selftest" "docs/site/scripts/${gate}" || return 1
+
+	grep -qF "node docs/site/scripts/${gate} --selftest" .github/workflows/docs.yml && return 0
+
+	pattern="${gate//./\\.}"
+	script="$(sed -n -E "s|^[[:space:]]*\"([^\"]+)\": \"node scripts/${pattern} --selftest\",?$|\1|p" docs/site/package.json)"
+	[ -n "$script" ] || return 1
+	grep -qF "npm run ${script}" .github/workflows/docs.yml
+}
 
 # The `.mjs` gates under docs/site/scripts, and what is claimed about each.
 #
@@ -487,9 +470,11 @@ done
 # carries its own `versions:selftest`; neither is a `check-*` gate and neither
 # is claimed here. `lib/docroutes.mjs` is a library, not a gate, and it is
 # covered by a fixture above instead.
-uncovered_mjs=(
-	"check-core-doc-links.mjs	a substring scan over pinned core paths; it takes no --selftest yet"
-)
+# Empty, and it stays declared: the accounting loop below reads it, and a list
+# that disappeared when it emptied would take its guard with it. The last entry
+# was check-core-doc-links.mjs, which now takes a --selftest that the docs job
+# runs.
+uncovered_mjs=()
 
 echo
 echo "  docs/site/scripts .mjs gates, and what is claimed about each:"
@@ -516,7 +501,7 @@ for path in docs/site/scripts/check-*.mjs; do
 		printf '    %-40s %s\n' "$gate" "$listed"
 		continue
 	fi
-	if grep -q -- '--selftest' "$path"; then
+	if selftest_is_run "$gate"; then
 		printf '    %-40s %s\n' "$gate" "takes --selftest, run in the docs job; no mutation fixture here"
 		continue
 	fi
@@ -546,9 +531,13 @@ for path in scripts/check-*.sh; do
 done
 
 echo
+if [ -n "$adjacent_unproven" ]; then
+	echo "check-gate-selftests: a gate is excused as proven beside its checker, but the tests are not there:${adjacent_unproven}" >&2
+	exit 1
+fi
 if [ -n "$unlisted" ]; then
 	echo "check-gate-selftests: no fixture, no companion and no reason for:${unlisted}" >&2
-	echo "  add a run_case for it, give it a -selftest.sh, or say in uncovered why not" >&2
+	echo "  give it a -selftest.sh beside the gate, or say in uncovered why not" >&2
 	exit 1
 fi
 if [ -n "$mjs_unlisted" ]; then

@@ -13,6 +13,7 @@
     "check:exit-codes": "node scripts/check-exit-codes.mjs",
     "check:exit-codes:selftest": "node scripts/check-exit-codes.mjs --selftest",
     "check:core-doc-links": "node scripts/check-core-doc-links.mjs",
+    "check:core-doc-links:selftest": "node scripts/check-core-doc-links.mjs --selftest",
     "check:docroutes:selftest": "node scripts/lib/docroutes.mjs --selftest",
     "check:page-health": "node scripts/check-page-health.mjs",
     "check:page-health:selftest": "node scripts/check-page-health.mjs --selftest",

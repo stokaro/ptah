@@ -60,7 +60,10 @@ jobs:
           scripts/check-architecture-boundaries-selftest.sh
 
       - name: Check the brand assets
-        run: scripts/check-brand-assets.sh
+        run: |
+          set -euo pipefail
+          scripts/check-brand-assets-selftest.sh
+          scripts/check-brand-assets.sh
 
       # The README's worked example, run for real. It lives in this workflow
       # rather than in docs.yml because both directions have to reach it: a
@@ -131,7 +134,10 @@ jobs:
         run: scripts/check-renovate-regex.sh
 
       - name: Check goreleaser artifact names
-        run: scripts/check-goreleaser-artifact-names.sh
+        run: |
+          set -euo pipefail
+          scripts/check-goreleaser-artifact-names-selftest.sh
+          scripts/check-goreleaser-artifact-names.sh
 
       # One step for every generated documentation block: the lint rules, the
       # agent-surface tables, the two command indexes, the strict-mode
@@ -156,7 +162,10 @@ jobs:
         run: scripts/check-feature-inventory.sh --selftest
 
       - name: Check public Go API ledger
-        run: scripts/check-public-api.sh
+        run: |
+          set -euo pipefail
+          scripts/check-public-api-selftest.sh
+          scripts/check-public-api.sh
 
       - name: Check public Go API snapshot
         run: scripts/check-public-api-snapshot.sh
@@ -165,7 +174,10 @@ jobs:
         run: scripts/check-public-api-released.sh --require-baseline
 
       - name: Check public Go API docs sync
-        run: scripts/check-public-api-docs-sync.sh
+        run: |
+          set -euo pipefail
+          scripts/check-public-api-docs-sync-selftest.sh
+          scripts/check-public-api-docs-sync.sh
 
       - name: Check public Go API doc comments
         run: scripts/check-exported-docs.sh
@@ -186,10 +198,16 @@ jobs:
         run: make lint-nolintguard
 
       - name: Check every Go module is linted
-        run: scripts/check-go-module-lint-coverage.sh
+        run: |
+          set -euo pipefail
+          scripts/check-go-module-lint-coverage-selftest.sh
+          scripts/check-go-module-lint-coverage.sh
 
       - name: Check test style baseline
-        run: scripts/check-test-style.sh
+        run: |
+          set -euo pipefail
+          scripts/check-test-style-selftest.sh
+          scripts/check-test-style.sh
 
       # A gate stops gating quietly: it discovers zero inputs and reports the
       # same success it reports on a clean tree. This breaks each gate's own
