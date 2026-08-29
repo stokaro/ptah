@@ -14339,6 +14339,21 @@ type SchemaDiff struct {
     // table that database had.
     DeclaredConstraintHosts []TableDeclaration `json:"-"`
 
+    // DeclaredTableDependencies is the table dependency graph of the schema
+    // this plan runs against, keyed by qualified table name and carried once
+    // for the whole diff and off the wire.
+    //
+    // Dropping tables is the mirror of creating them: a child goes before the
+    // parent it references, or the DROP is refused. A creation carries its own
+    // edges in [TableCreation.DependsOn], but a removal is a name -- DROP TABLE
+    // needs nothing else -- so the edges between removals have nowhere per-entry
+    // to live (stokaro/ptah#2315).
+    //
+    // It is the schema the plan runs against, so a reversal carries the
+    // pre-change database's graph. A table the graph does not name orders as it
+    // arrived, which is what leaves a rollback's own ordering standing.
+    DeclaredTableDependencies map[string][]string `json:"-"`
+
     // RLSEnabledTablesAdded contains names of tables that need RLS enabled
     RLSEnabledTablesAdded RLSEnabledTableChanges `json:"rls_enabled_tables_added"`
 

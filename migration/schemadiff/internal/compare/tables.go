@@ -11,6 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/crdbttl"
+	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/spannerttl"
 	"go.5x5.cz/ptah/internal/tableref"
@@ -159,6 +160,9 @@ func TablesAndColumnsWithGeneratedExpressions(
 	// Every declared foreign key, for the ones a column type change has to drop
 	// and put back -- keys this diff does not touch, under a column it does.
 	diff.DeclaredForeignKeys = difftypes.ForeignKeyDeclarationsOf(desired)
+	// The dependency graph between tables, for ordering the removals: a
+	// creation carries its own edges, a removal is only a name.
+	diff.DeclaredTableDependencies = deporder.GeneratedTableDependencies(desired)
 	for identity, table := range genTables {
 		if _, exists := dbTables[identity]; !exists {
 			diff.TablesAdded = append(diff.TablesAdded, difftypes.TableCreationFor(

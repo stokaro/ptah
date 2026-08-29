@@ -9,6 +9,7 @@ import (
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -831,6 +832,12 @@ func withDeclaredObjects(
 	}
 	if len(completed.DeclaredTables) == 0 {
 		completed.DeclaredTables = desired.Tables
+	}
+	if len(completed.DeclaredTableDependencies) == 0 {
+		completed.DeclaredTableDependencies = deporder.GeneratedTableDependencies(desired)
+	}
+	if len(completed.DeclaredTableDependencies) == 0 {
+		completed.DeclaredTableDependencies = deporder.GeneratedTableDependencies(desired)
 	}
 	if len(completed.DeclaredForeignKeys) == 0 {
 		completed.DeclaredForeignKeys = difftypes.ForeignKeyDeclarationsOf(desired)

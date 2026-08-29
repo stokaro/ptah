@@ -120,8 +120,13 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// it: a rollback restores the column the pre-change database had, so
 		// the keys to drop and put back are that database's.
 		DeclaredForeignKeys: difftypes.ForeignKeyDeclarationsOf(prior),
-		TablesRemoved:       deporder.TableDropOrder(diff.TablesAdded.Names(), schema), // Tables to add become tables to remove
-		TablesModified:      reverseTableDiffs(diff.TablesModified, prior),
+		// And the same for the graph the removals are ordered by. A table the
+		// pre-change database did not hold is not in it, so it orders as it
+		// arrived -- which is how the ordering this function already computed
+		// for TablesRemoved survives the planner reading it again.
+		DeclaredTableDependencies: priorTableDependencies(prior),
+		TablesRemoved:             deporder.TableDropOrder(diff.TablesAdded.Names(), schema), // Tables to add become tables to remove
+		TablesModified:            reverseTableDiffs(diff.TablesModified, prior),
 
 		// Reverse enum operations
 		EnumsAdded:    diff.EnumsRemoved, // Enums to remove become enums to add
@@ -399,4 +404,16 @@ func reverseRefreshChange(change *difftypes.MatViewRefreshChange) *difftypes.Mat
 		return nil
 	}
 	return &difftypes.MatViewRefreshChange{Desired: change.Current, Current: change.Desired}
+}
+
+// priorTableDependencies is the dependency graph of the pre-change database.
+//
+// nil is a real input: a reversal without a database read passes none, and the
+// planner treats an absent graph as no edges, which orders the removals exactly
+// as they arrived.
+func priorTableDependencies(prior *schemamodel.Database) map[string][]string {
+	if prior == nil {
+		return nil
+	}
+	return deporder.GeneratedTableDependencies(prior)
 }
