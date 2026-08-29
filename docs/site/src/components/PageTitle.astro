@@ -8,6 +8,7 @@ import { breadcrumbTrail } from '../lib/page-context.mjs';
 const PAGE_TITLE_ID = '_top';
 const { entry, sidebar, siteTitleHref } = Astro.locals.starlightRoute;
 const breadcrumbs = breadcrumbTrail(sidebar);
+const hasAncestors = breadcrumbs.some((crumb) => !crumb.current);
 const hasSource = Boolean(entry.filePath) && entry.id !== '404' && !entry.id.endsWith('/404');
 const markdownUrl = `${import.meta.env.BASE_URL}page-source/${entry.id}.md`;
 ---
@@ -24,6 +25,22 @@ const markdownUrl = `${import.meta.env.BASE_URL}page-source/${entry.id}.md`;
             </svg>
           </a>
         </li>
+        {
+          /*
+           * Stands in for the ancestors below 40rem, where they are taken out
+           * of the visual trail. It is `aria-hidden` because it says nothing a
+           * reader of the trail does not already get: the ancestors themselves
+           * stay in the accessibility tree at that width.
+           */
+          hasAncestors && (
+            <li class="collapsed-item" aria-hidden="true">
+              <svg class="separator" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="m6 3 5 5-5 5"></path>
+              </svg>
+              <span class="collapsed-crumb">…</span>
+            </li>
+          )
+        }
         {
           breadcrumbs.map((crumb) => (
             <li class:list={{ 'group-item': !crumb.current }}>
@@ -62,25 +79,63 @@ const markdownUrl = `${import.meta.env.BASE_URL}page-source/${entry.id}.md`;
   .breadcrumbs {
     min-width: 0;
     padding-block: 0.3rem;
-    overflow: hidden;
   }
 
   .breadcrumbs ol,
   .breadcrumbs li {
     display: flex;
     align-items: center;
-    min-width: 0;
     margin: 0;
     padding: 0;
     list-style: none;
   }
 
+  /*
+   * The trail wraps. It never truncates, and that is a property of the layout
+   * rather than a threshold someone has to keep tuned.
+   *
+   * Flexbox fills a line with items at their max-content size, starts a new
+   * line for the item that does not fit, and only then flexes what is on each
+   * line. Every line therefore already holds whole crumbs, and the only crumb
+   * that can be shortened at all is one sitting alone on a line still too
+   * narrow for it. That one wraps its own text rather than losing characters:
+   * `overflow-wrap: anywhere` covers a token with no break in it, and nothing
+   * here sets `text-overflow`, so there is no ellipsis left to draw.
+   *
+   * What it replaces, measured across every built page at 375, 640, 768, 900,
+   * 1024, 1280, 1440 and 1920: 133 clipped crumbs out of 816 measurements,
+   * against none now. Two independent causes, and reading only the first one
+   * fixes half the complaint.
+   *
+   * `min-width: 0` on the items let a shortfall be shared out among them all.
+   * The deepest trail this sidebar produces -- Workflows > Inference migrations
+   * > Concepts > Verification, cutover, and rollback -- measures 573px, and a
+   * 900px window offers it a 435px row beside the page actions. That deficit
+   * came out of all four crumbs at once, rendering "Concepts" as "Conc…", and
+   * at 1280 a 6px deficit was enough to do the same thing. Proportional
+   * shrinking has no way to say "this one matters most".
+   *
+   * The 13rem ceiling on the label was the other cause, and it needed no
+   * deficit at all: it cut the current page's own name at all eight widths,
+   * 1920 included, where the row is 943px wide and the whole trail wants 573.
+   * A ceiling written in rem is a guess about text nobody measured.
+   *
+   * Two other degradations were available. Dropping the oldest ancestors from
+   * the left is what a reader expects, but a trail that silently loses its head
+   * reads as a shallower trail, and marking the loss means knowing what was
+   * dropped -- content-aware, so JavaScript, running before the fonts settle
+   * and again on every resize, for a line of gray text. Scrolling the trail
+   * keeps every crumb but puts the current page off-screen unless the scroller
+   * is anchored to its end, which is the same problem wearing a scrollbar.
+   * Wrapping costs one line of vertical space, on the pages and at the widths
+   * where the alternative was cutting words in half.
+   */
   .breadcrumbs ol {
-    gap: 0.25rem;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.25rem;
     color: var(--sl-color-gray-3);
     font-size: var(--sl-text-xs);
     line-height: 1.4;
-    white-space: nowrap;
   }
 
   .home-crumb {
@@ -126,11 +181,9 @@ const markdownUrl = `${import.meta.env.BASE_URL}page-source/${entry.id}.md`;
   }
 
   .group-crumb,
-  .current-crumb {
-    display: block;
-    max-width: 13rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  .current-crumb,
+  .collapsed-crumb {
+    overflow-wrap: anywhere;
   }
 
   .current-crumb {
@@ -140,6 +193,10 @@ const markdownUrl = `${import.meta.env.BASE_URL}page-source/${entry.id}.md`;
     color: var(--sl-color-text-accent);
     background: color-mix(in srgb, var(--sl-color-accent-low) 58%, transparent);
     font-weight: 600;
+  }
+
+  .breadcrumbs .collapsed-item {
+    display: none;
   }
 
   h1 {
@@ -156,17 +213,29 @@ const markdownUrl = `${import.meta.env.BASE_URL}page-source/${entry.id}.md`;
       gap: 0.6rem;
     }
 
-    .breadcrumbs ol {
-      overflow-x: auto;
-      scrollbar-width: none;
-    }
-
-    .breadcrumbs ol::-webkit-scrollbar {
-      display: none;
-    }
-
+    /*
+     * A phone is the one width where wrapping the whole trail is the wrong
+     * trade. In the 257px row a 375px window leaves, the deepest trail takes
+     * three lines and 94px above the title; collapsed to the marker it takes
+     * two and 71px, and the current page's name is still whole. The ancestors
+     * can go because they are plain text rather than links -- the sidebar is
+     * how a reader moves between them -- but the fact that the page is nested
+     * cannot, which is what the marker keeps.
+     *
+     * They are hidden the accessible way rather than with `display: none`: a
+     * screen reader has no layout to run out of, and the trail it reads at
+     * 375px is the one it reads at 1280px, marker excluded.
+     */
     .breadcrumbs .group-item {
-      display: none;
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+
+    .breadcrumbs .collapsed-item {
+      display: flex;
     }
 
     h1 {

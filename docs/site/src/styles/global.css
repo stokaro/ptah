@@ -37,16 +37,141 @@
  * 16rem navigation rail and a narrower 14.5rem context rail.
  *
  * These rules are unlayered so they can override Starlight's layered component
- * styles without depending on selector weight. Below 72rem Starlight replaces
- * the desktop table of contents with its mobile disclosure, so only the left
- * rail width applies.
+ * styles without depending on selector weight. Below 80rem the page has no
+ * context rail at all -- the band below says why -- so only the left rail
+ * width applies there.
  */
 :root {
 	--sl-sidebar-width: 16rem;
 	--ptah-toc-width: 14.5rem;
+
+	/*
+	 * The reading column grows with the window and stops at 70rem.
+	 *
+	 * Starlight pins it at 45rem, which is a constant 720px at every width:
+	 * measured against the built site, the column read 720px at 1024, at 1440
+	 * and at 1920 alike, leaving 664px of a 1920 window empty between the text
+	 * and the table of contents. `ContentPanel`'s `.sl-container` reads this
+	 * variable as a `max-width`, which makes the column min(this, what the
+	 * rails leave) rather than a constant. The same gap measures 264px now.
+	 *
+	 * Overriding it is the whole change, and that is measured rather than read
+	 * off the cascade: with the cap effectively removed (500rem, injected into
+	 * the built site) the column took 2904px at 3440 and 1384px at 1920, and no
+	 * page scrolled sideways at any width. Nothing behind it constrains the
+	 * column -- the wrapper costs exactly the two rails plus the content
+	 * padding -- so this one value decides the measure.
+	 *
+	 * 70rem is the ceiling atlasgo.io/docs settles at, and what it costs is the
+	 * reading measure. Measured at 1920 across the 103 built routes that carry
+	 * body prose, counting only the lines the layout filled -- at least 80% of
+	 * their own paragraph's width, so that a one-line paragraph and a
+	 * paragraph's short last line are not scored as a measure no eye sweeps
+	 * back from:
+	 *
+	 *   cap     column   median chars/line   90th percentile
+	 *   45rem   720px    90                  99
+	 *   50rem   800px    99                  110
+	 *   55rem   880px    107                 121
+	 *   60rem   960px    117                 132
+	 *   65rem   1040px   125                 143
+	 *   70rem   1120px   134                 154
+	 *
+	 * Typography asks for 45-75 characters and tolerates 90. Starlight's 45rem
+	 * lands exactly on that ceiling and no wider cap comes back under it, which
+	 * is not a tuning problem: at one fixed 16px face, column width and
+	 * characters per line are the same dial turned opposite ways. So the choice
+	 * is between the pinned column and a long measure, not between a long
+	 * measure and a short one, and an intermediate cap settles for neither --
+	 * 60rem gives back 160px of the width at 1920 and still reads 30% over the
+	 * ceiling it was reached for.
+	 *
+	 * This takes the long measure, because it is the measure the reference has.
+	 * atlasgo.io/docs at 1920 renders a median of 144 characters per line and a
+	 * maximum of 160, measured live on its own concept pages at the same 16px
+	 * system face; 134 here is shorter than that, and the 1.75 line height
+	 * against its 1.5 gives the return sweep more to land on. What the width
+	 * buys is the rest of the page: code blocks, tables, diagrams and
+	 * admonitions all take the column the prose measure sets, and none of them
+	 * reads better for being narrow. A reader who wants a narrower measure can
+	 * narrow the window, where a reader looking at a pinned column cannot widen
+	 * it.
+	 */
+	--sl-content-width: 70rem;
 }
 
-@media (min-width: 72rem) {
+/*
+ * Starlight gives the table of contents a rail of its own from 72rem. That
+ * breakpoint belongs to a column pinned at 45rem, where the rail cost the
+ * reader nothing the layout was going to hand them anyway. Once the column can
+ * grow, the rail costs it 248px: measured, the column read 616px at 1152 --
+ * narrower than the same page reads at 1024 (736px) or at 1100 (812px) -- so
+ * widening the window by one pixel took 247px of text away.
+ *
+ * The rail therefore starts where it stops taking anything: at 80rem the
+ * column beside it measures 744px, still wider than the 45rem the site read
+ * before this change. Between 72rem and 80rem the page keeps its single column
+ * and Starlight's mobile disclosure, exactly as it does at 71rem.
+ *
+ * A media query cannot read a custom property, so 80rem is spelled out in both
+ * blocks and the two have to move together. The upper bound is exclusive
+ * (`width < 80rem`) rather than a `max-width` a hair below it: a `max-width` of
+ * 79.99rem and a `min-width` of 80rem leave 0.16px between them where neither
+ * block applies, and a fractional viewport landing there gets Starlight's own
+ * rail sizing against a full-width pane.
+ */
+@media (min-width: 72rem) and (width < 80rem) {
+	:root {
+		--sl-mobile-toc-height: 3rem;
+
+		/* Page.astro drops the disclosure from the anchor offset at 72em and is
+		 * bundled after this file, so an `html` selector here would lose on source
+		 * order. `:root` outweighs it instead. */
+		scroll-padding-top: calc(1.5rem + var(--sl-nav-height) + var(--sl-mobile-toc-height));
+	}
+
+	/* TwoColumnContent, back to the shape it has at 71rem: no flex row, and a
+	 * rail that is neither fixed nor bordered nor a column. */
+	.lg\:sl-flex {
+		display: block;
+	}
+
+	.right-sidebar-container {
+		position: static;
+		width: auto;
+	}
+
+	.right-sidebar {
+		position: static;
+		width: auto;
+		height: auto;
+		padding-top: 0;
+		border-inline-start: 0;
+		overflow: visible;
+	}
+
+	[data-has-sidebar][data-has-toc] .main-pane {
+		/* Starlight's own 72rem rule narrows this pane to leave room for the
+		 * rail, and right-aligns the column inside it. Neither is wanted with no
+		 * rail to leave room for: measured with this rule deleted, its `min()`
+		 * gives the pane 640px of an available 896px at 1152, and the column
+		 * 592px. */
+		--sl-content-margin-inline: 0 auto;
+		width: 100%;
+	}
+
+	/* PageSidebar renders both tables of contents and lets the breakpoint pick
+	 * one. Pick the disclosure. */
+	.right-sidebar-panel {
+		display: none;
+	}
+
+	.lg\:sl-hidden {
+		display: block;
+	}
+}
+
+@media (min-width: 80rem) {
 	.right-sidebar-container {
 		flex: 0 0 var(--ptah-toc-width);
 		width: var(--ptah-toc-width);
