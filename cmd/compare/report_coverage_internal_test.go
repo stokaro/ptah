@@ -15,27 +15,28 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/cmd/internal/diffreport"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
-// nonCategoryFields names the SchemaDiff fields that do not carry schema
-// changes, with the reason each is not reported as a difference. Everything
-// that is not a list is one by construction, and a list can be one too when it
-// qualifies another list rather than adding to it. This map is what forces that
-// judgment to be made rather than assumed: a field missing from both the
-// categories and this map fails TestSchemaDiffNonCategoryFieldsAreDocumented,
-// and a list listed here is a claim that reporting it would say nothing the
-// list it qualifies does not already say.
+// nonCategoryFields names the SchemaDiff fields that carry no schema changes
+// because of what they are, with the reason each is not reported as a
+// difference: a field that is not a list, and a list the wire does not carry.
+// This map is what forces that judgment to be made rather than assumed -- a
+// field excluded from the report and missing from here fails
+// TestSchemaDiffNonCategoryFieldsAreDocumented.
+//
+// A list that qualifies another list is NOT one of these. It says so at its own
+// declaration, with a ptah:"supplement=..." tag the report reads, so its reason
+// travels with the field: an entry here would be a second answer, and the two
+// this replaces named fields that stokaro/ptah#2315 had already retired while
+// the report went on printing the two it did name (stokaro/ptah#2476).
 var nonCategoryFields = map[string]string{
-	"IdentifierSemantics":             "records the live catalog identifier rules the diff was produced under, not a difference between the two schemas",
-	"ConstraintBackedIndexRemovals":   "a subset of IndexesRemoved, naming the removals whose object a UNIQUE constraint enforces so the planner spells the drop as a constraint drop; reporting it would print the same removed index a second time, and on its own it removes nothing",
-	"ForeignKeysRemovedWithTables":    "supplements matching ConstraintsRemovedWithTables entries with local and referenced columns for drop ordering; it is ignored without a base removal and reporting it would print the same foreign-key removal twice",
-	"FunctionsRemovedWithSignatures":  "the removals FunctionsRemoved already names, carrying the argument list that makes each one addressable; reporting it would print the same removed function twice, and on its own it removes nothing (stokaro/ptah#2296)",
-	"ProceduresRemovedWithSignatures": "ProceduresRemoved with signatures, for the same reason",
-	"DeclaredTables":                  "every table the declaration holds, carried so a foreign key can be resolved to the table it references; like the vocabulary below it is an input to rendering rather than a difference, and reporting it would print the whole document's tables as though they had changed (stokaro/ptah#2315)",
-	"DeclaredUserTypes":               "the declaration's type vocabulary, carried so a planner can resolve a created column's type to the user type it names; it is an input to rendering rather than a difference between the two schemas, and reporting it would print the whole document's domains and enums as though they had changed (stokaro/ptah#2315)",
-	"RLSPolicyIdentityConflicts":      "two declared policies that resolve to one identity, which is a defect in the declaration rather than a difference between the two schemas; the planner refuses the diff on it, so reporting it as a change would tell the operator the databases differ when what differs is the document they wrote (stokaro/ptah#2440)",
+	"IdentifierSemantics":        "records the live catalog identifier rules the diff was produced under, not a difference between the two schemas",
+	"DeclaredTables":             "every table the declaration holds, carried so a foreign key can be resolved to the table it references; like the vocabulary below it is an input to rendering rather than a difference, and reporting it would print the whole document's tables as though they had changed (stokaro/ptah#2315)",
+	"DeclaredUserTypes":          "the declaration's type vocabulary, carried so a planner can resolve a created column's type to the user type it names; it is an input to rendering rather than a difference between the two schemas, and reporting it would print the whole document's domains and enums as though they had changed (stokaro/ptah#2315)",
+	"RLSPolicyIdentityConflicts": "two declared policies that resolve to one identity, which is a defect in the declaration rather than a difference between the two schemas; the planner refuses the diff on it, so reporting it as a change would tell the operator the databases differ when what differs is the document they wrote (stokaro/ptah#2440)",
 }
 
 // TestWriteComparisonReportsEveryDiffCategory is the guard for
@@ -98,6 +99,29 @@ func TestSchemaDiffNonCategoryFieldsAreDocumented(t *testing.T) {
 	}
 }
 
+// TestSchemaDiffNonCategoryReasonsNameALiveField reads the map the other
+// direction. Without it a reason can outlive the field it was written for: two
+// did, naming routine lists stokaro/ptah#2315 had folded away, and nothing
+// noticed because every assertion ran from the struct towards the map and a
+// key nothing looks up is a key nothing checks (stokaro/ptah#2476).
+func TestSchemaDiffNonCategoryReasonsNameALiveField(t *testing.T) {
+	c := qt.New(t)
+
+	declared := make(map[string]struct{})
+	for field := range reflect.TypeFor[difftypes.SchemaDiff]().Fields() {
+		declared[field.Name] = struct{}{}
+	}
+	c.Assert(nonCategoryFields, qt.Not(qt.HasLen), 0)
+
+	for name := range nonCategoryFields {
+		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
+			_, exists := declared[name]
+			c.Assert(exists, qt.IsTrue, qt.Commentf("SchemaDiff has no field %s; the reason recorded for it outlived the field", name))
+		})
+	}
+}
+
 func TestWriteComparisonReportsNoDifferences(t *testing.T) {
 	c := qt.New(t)
 
@@ -134,18 +158,17 @@ ALTER TABLE "other"."secured" ENABLE ROW LEVEL SECURITY;
 	c.Assert(stderr.String(), qt.Equals, "")
 }
 
-// diffCategoryFields returns the SchemaDiff fields that carry changes: the
-// exported list fields, less the ones nonCategoryFields excludes with a stated
-// reason. It is a helper rather than an inline loop so the test bodies above
-// stay free of control flow.
+// diffCategoryFields returns the SchemaDiff fields that carry changes, asking
+// the predicate the report itself applies rather than deciding again here. A
+// guard with its own copy of the rule agrees with itself while the report
+// diverges, which is how two lists came to be printed as categories under a map
+// that said they would not be (stokaro/ptah#2476). It is a helper rather than
+// an inline loop so the test bodies above stay free of control flow.
 func diffCategoryFields() []reflect.StructField {
 	structType := reflect.TypeFor[difftypes.SchemaDiff]()
 	var fields []reflect.StructField
 	for field := range structType.Fields() {
-		if !field.IsExported() || field.Type.Kind() != reflect.Slice {
-			continue
-		}
-		if _, excluded := nonCategoryFields[field.Name]; excluded {
+		if !diffreport.IsChangeCategory(field) {
 			continue
 		}
 		fields = append(fields, field)
@@ -154,17 +177,23 @@ func diffCategoryFields() []reflect.StructField {
 }
 
 // diffNonCategoryFieldNames returns every SchemaDiff field the report guard
-// above does not exercise, which is exactly the set that has to carry a written
-// reason.
+// above does not exercise and that does not state its own reason for it, which
+// is exactly the set nonCategoryFields has to carry a written reason for. A
+// supplement states its reason at its declaration, so it is excluded here
+// rather than needing an entry that could outlive it.
 func diffNonCategoryFieldNames() []string {
 	categories := make(map[string]struct{})
 	for _, field := range diffCategoryFields() {
 		categories[field.Name] = struct{}{}
 	}
+	supplements := difftypes.SupplementLists()
 	structType := reflect.TypeFor[difftypes.SchemaDiff]()
 	var names []string
 	for field := range structType.Fields() {
 		if _, isCategory := categories[field.Name]; isCategory {
+			continue
+		}
+		if _, isSupplement := supplements[diffCategoryJSONName(field)]; isSupplement {
 			continue
 		}
 		names = append(names, field.Name)
