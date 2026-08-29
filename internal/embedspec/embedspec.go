@@ -10,12 +10,14 @@ package embedspec
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
 
 	"go.5x5.cz/ptah/internal/embedcatchup"
 	"go.5x5.cz/ptah/internal/embedcutover"
+	"go.5x5.cz/ptah/internal/embeddigest"
 	"go.5x5.cz/ptah/internal/embedgen"
 )
 
@@ -132,6 +134,19 @@ type Loaded struct {
 	Credential string
 	// Endpoint is the provider endpoint.
 	Endpoint string
+	// Digest is the content address of the document this was read from.
+	//
+	// It is NOT the generation identity, and the difference is the reason to
+	// carry it. The identity is taken over what decides the vectors, so two
+	// files that differ in a name, a description, a consistency mode or an
+	// approval policy address one generation. Which of those files proposed a
+	// change is a separate question, and it is the one somebody investigating a
+	// release six months later is asking.
+	//
+	// It is the document's bytes, so a reformatted file is a different
+	// document. `ptah inference describe --format json` is the semantic answer
+	// for a reader who wants an edit that changed nothing to read as nothing.
+	Digest string
 }
 
 // FormatVersion is the file format this build reads.
@@ -159,5 +174,13 @@ func Parse(body []byte, path string) (Loaded, error) {
 	if err := decoder.Decode(&document); err != nil {
 		return Loaded{}, fmt.Errorf("parse %s: %w", path, err)
 	}
-	return document.Resolve(path)
+	loaded, err := document.Resolve(path)
+	if err != nil {
+		return Loaded{}, err
+	}
+	// The digest is taken over the bytes rather than over the resolved
+	// document, so it answers "which file" and not "which meaning". The
+	// resolved answer already exists, as the generation identity.
+	loaded.Digest = embeddigest.Of("spec-document", strconv.Itoa(FormatVersion), string(body))
+	return loaded, nil
 }

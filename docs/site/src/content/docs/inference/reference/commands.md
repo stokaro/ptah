@@ -51,11 +51,24 @@ have to be computed again.
 ## `plan`
 
 Reports what a generation change would do, and where each answer came from.
-Reads the database; creates nothing and writes nothing.
+Reads the database; creates nothing in it.
 
 | Flag | Meaning |
 | --- | --- |
 | `--current` | Identity of the generation queries read now, when there is one |
+| `--publish-evidence` | OCI reference to publish the release record to |
+| `--evidence-file` | Path to write the release record to as JSON |
+| `--plain-http` | Allow an unencrypted connection to a trusted local registry |
+
+This is where a generation change is put on the record. Naming a destination
+leaves a **release**: what the change proposes — the generation, the document
+that proposed it, what it replaces, and whether it can be rebuilt — addressed by
+its own digest. A verification published later attaches to it with `--attach-to`,
+which is how several verifications of one generation are found without
+remembering a tag for each.
+
+Naming no destination leaves nothing behind, which is what an operator asking a
+question of a specification wants.
 
 Every fact is labeled with its provenance — `measured`, `configured`,
 `inferred`, `unknown`, or `unsupported`. A fact labeled `unknown` is telling you
@@ -125,8 +138,15 @@ what it did not measure.
 | --- | --- |
 | `--run-id` | Identifier of the run (required) |
 | `--publish-evidence` | OCI reference to publish this run's record to |
+| `--attach-to` | OCI reference of the release this record is about |
 | `--evidence-file` | Path to write this run's record to as JSON |
 | `--plain-http` | Allow an unencrypted connection to a trusted local registry |
+
+`--attach-to` publishes the record into the release's own repository, as a
+referrer of it. That is where a referrer lands, so a run naming
+`--publish-evidence` as well is refused: it would have said where the record went
+twice. A verification with no release to attach to is still publishable, and is
+addressed by its own digest.
 
 Exits non-zero when any finding is blocking. The record is kept either way — a
 verification that found something is the evidence somebody will want.
@@ -171,6 +191,7 @@ Makes the new generation the one queries read.
 | `--approver` | Who approved it |
 | `--stabilize-for` | How long the previous generation stays a way back; zero leaves no rollback |
 | `--publish-evidence` | OCI reference to publish this run's record to |
+| `--attach-to` | OCI reference of the release this record is about |
 | `--evidence-file` | Path to write this run's record to as JSON |
 | `--plain-http` | Allow an unencrypted connection to a trusted local registry |
 

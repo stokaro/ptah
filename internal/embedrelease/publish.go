@@ -111,21 +111,13 @@ func NewCutoverRecord(cutover Cutover) (Record, error) {
 func Publish(
 	ctx context.Context, reference string, record Record, opts PublishOptions,
 ) (ociartifact.PushResult, error) {
-	fsys := fstest.MapFS{record.FileName: &fstest.MapFile{Data: record.Body, Mode: 0o600}}
-	annotations := make(map[string]string, len(record.Annotations)+len(opts.Annotations))
-	maps.Copy(annotations, record.Annotations)
-	maps.Copy(annotations, opts.Annotations)
-	if !opts.RecordedAt.IsZero() {
-		annotations["org.opencontainers.image.created"] = opts.RecordedAt.UTC().Format(time.RFC3339)
-	}
-
 	client, err := ociartifact.NewClient(ociartifact.ClientOptions{PlainHTTP: opts.PlainHTTP})
 	if err != nil {
 		return ociartifact.PushResult{}, fmt.Errorf("publish %s: %w", record.ArtifactType, err)
 	}
-	result, err := client.Push(ctx, reference, fsys, ociartifact.PushOptions{
+	result, err := client.Push(ctx, reference, recordFS(record), ociartifact.PushOptions{
 		ArtifactType: record.ArtifactType,
-		Annotations:  annotations,
+		Annotations:  recordAnnotations(record, opts),
 		Subject:      opts.Subject,
 		Tags:         opts.Tags,
 	})
@@ -133,6 +125,50 @@ func Publish(
 		return ociartifact.PushResult{}, fmt.Errorf("publish %s: %w", record.ArtifactType, err)
 	}
 	return result, nil
+}
+
+// Attach publishes one record as a referrer of the artifact subjectRef names.
+//
+// It is a second function rather than a field on [Publish] because the two have
+// different destinations and only one of them is the caller's to choose: a
+// referrer lands in its subject's repository, so a reference saying where to
+// push it would be a second answer that the registry ignores.
+//
+// This is how a verification is found from the release it is about. A
+// generation gets one release and several verifications, and finding them by
+// remembering a tag for each is how a record goes missing.
+func Attach(
+	ctx context.Context, subjectRef string, record Record, opts PublishOptions,
+) (ociartifact.PushResult, error) {
+	client, err := ociartifact.NewClient(ociartifact.ClientOptions{PlainHTTP: opts.PlainHTTP})
+	if err != nil {
+		return ociartifact.PushResult{}, fmt.Errorf("attach %s: %w", record.ArtifactType, err)
+	}
+	result, err := client.Attach(ctx, subjectRef, recordFS(record), ociartifact.AttachmentOptions{
+		ArtifactType: record.ArtifactType,
+		Annotations:  recordAnnotations(record, opts),
+	})
+	if err != nil {
+		return ociartifact.PushResult{}, fmt.Errorf("attach %s: %w", record.ArtifactType, err)
+	}
+	return result, nil
+}
+
+// recordFS is the one-file archive a record travels as.
+func recordFS(record Record) fstest.MapFS {
+	return fstest.MapFS{record.FileName: &fstest.MapFile{Data: record.Body, Mode: 0o600}}
+}
+
+// recordAnnotations merges the record's own annotations with the caller's and
+// stamps when it was written down.
+func recordAnnotations(record Record, opts PublishOptions) map[string]string {
+	annotations := make(map[string]string, len(record.Annotations)+len(opts.Annotations))
+	maps.Copy(annotations, record.Annotations)
+	maps.Copy(annotations, opts.Annotations)
+	if !opts.RecordedAt.IsZero() {
+		annotations["org.opencontainers.image.created"] = opts.RecordedAt.UTC().Format(time.RFC3339)
+	}
+	return annotations
 }
 
 // PublishOptions are what a caller adds to a record.

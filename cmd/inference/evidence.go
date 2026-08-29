@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
@@ -14,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/internal/embedgen"
 	"go.5x5.cz/ptah/internal/embedrelease"
 	"go.5x5.cz/ptah/internal/embedverify"
+	"go.5x5.cz/ptah/internal/ociartifact"
 )
 
 // evidenceOptions are the flags every verb that can leave a record takes.
@@ -22,6 +24,10 @@ type evidenceOptions struct {
 	publishTo string
 	// writeTo is the local path the record is written to, empty for none.
 	writeTo string
+	// attachTo is the OCI reference of the release this record is about, empty
+	// for none. A record naming one is published into that release's own
+	// repository, as a referrer of it.
+	attachTo string
 	// plainHTTP permits an unencrypted connection to that registry.
 	plainHTTP bool
 }
@@ -33,6 +39,29 @@ func addEvidenceFlags(flags *pflag.FlagSet, options *evidenceOptions) {
 	flags.StringVar(&options.writeTo, "evidence-file", "",
 		"Path to write this run's record to as JSON; omitted writes no file")
 	dbcli.RegisterPlainHTTPFlag(flags, &options.plainHTTP)
+}
+
+// addSubjectFlag registers the flag that says what a record is about.
+//
+// Only the verbs that produce a record ABOUT something take it. A release is
+// what the others attach to, so a release attaching to a release would be a
+// question nothing asks.
+func addSubjectFlag(cmd *cobra.Command, options *evidenceOptions) {
+	cmd.Flags().StringVar(&options.attachTo, "attach-to", "",
+		"OCI reference of the release this record is about; the record is "+
+			"published into that release's repository as a referrer of it, "+
+			"which is how it is found without remembering a tag")
+	// A referrer lands in its subject's repository, so a run naming both would
+	// have said where the record went twice and the registry would have obeyed
+	// one of them.
+	cmd.MarkFlagsMutuallyExclusive("publish-evidence", "attach-to")
+}
+
+// destinationNamed reports whether this run was asked to leave a record
+// anywhere. Building one costs nothing next to the run that produced it, and
+// guarding on the registry alone made --evidence-file do nothing without one.
+func (e evidenceOptions) destinationNamed() bool {
+	return e.publishTo != "" || e.writeTo != "" || e.attachTo != ""
 }
 
 // verificationRecord turns a report into the record a registry holds.
@@ -88,17 +117,33 @@ func publishRecord(
 	if err := writeRecordFile(out, evidence.writeTo, record); err != nil {
 		return err
 	}
-	if evidence.publishTo == "" {
+	if evidence.publishTo == "" && evidence.attachTo == "" {
 		return nil
 	}
-	result, publishErr := embedrelease.Publish(ctx, evidence.publishTo, record,
-		embedrelease.PublishOptions{RecordedAt: time.Now().UTC(), PlainHTTP: evidence.plainHTTP})
+	result, publishErr := sendRecord(ctx, evidence, record)
 	if publishErr != nil {
 		return writeLines(out, bullet(fmt.Sprintf(
 			"the record was not published: %v", publishErr)))
 	}
 	return writeLines(out, bullet(fmt.Sprintf(
 		"record %s published as %s", record.Digest[:12], result.Descriptor.Digest)))
+}
+
+// sendRecord pushes a record, or attaches it to what it is about.
+//
+// The two are separate calls rather than one with an optional subject, because
+// a referrer lands in its subject's repository and a standalone record lands
+// where the operator said. Cobra has already refused a run naming both.
+func sendRecord(
+	ctx context.Context, evidence evidenceOptions, record embedrelease.Record,
+) (ociartifact.PushResult, error) {
+	options := embedrelease.PublishOptions{
+		RecordedAt: time.Now().UTC(), PlainHTTP: evidence.plainHTTP,
+	}
+	if evidence.attachTo != "" {
+		return embedrelease.Attach(ctx, evidence.attachTo, record, options)
+	}
+	return embedrelease.Publish(ctx, evidence.publishTo, record, options)
 }
 
 // writeRecordFile keeps the record where a registry is not.
