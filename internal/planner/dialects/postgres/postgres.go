@@ -1671,7 +1671,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	result = p.addNewRoles(result, diff)
 
 	// 2. Add new functions (functions may be used by RLS policies)
-	result = p.addNewFunctions(result, diff, desired)
+	result = p.addNewFunctions(result, diff)
 
 	// 2b. Modify existing function definitions (body, volatility, security, language).
 	// PostgreSQL CREATE OR REPLACE FUNCTION updates the live definition in place
@@ -2067,8 +2067,12 @@ func (p *Planner) removeExtensions(result []ast.Node, diff *difftypes.SchemaDiff
 	return result
 }
 
-func (p *Planner) addNewFunctions(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	for _, fn := range deporder.FunctionsForCreate(desired, diff.FunctionsAdded.Declarations()) {
+func (p *Planner) addNewFunctions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	for _, fn := range deporder.FunctionsForCreateWithOrdering(
+		diff.FunctionsAdded.Declarations(),
+		diff.DeclaredFunctions.Order,
+		diff.DeclaredFunctions.Dependencies,
+	) {
 		result = append(result, fromschema.FromFunction(fn))
 	}
 	return result

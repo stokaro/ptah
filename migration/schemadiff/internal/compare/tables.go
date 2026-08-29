@@ -163,6 +163,9 @@ func TablesAndColumnsWithGeneratedExpressions(
 	// The dependency graph between tables, for ordering the removals: a
 	// creation carries its own edges, a removal is only a name.
 	diff.DeclaredTableDependencies = deporder.GeneratedTableDependencies(desired)
+	// The ordering inputs for creating functions: a body may call another
+	// function, and the additions are sorted by name rather than by either.
+	diff.DeclaredFunctions = difftypes.FunctionOrderingOf(desired)
 	for identity, table := range genTables {
 		if _, exists := dbTables[identity]; !exists {
 			diff.TablesAdded = append(diff.TablesAdded, difftypes.TableCreationFor(

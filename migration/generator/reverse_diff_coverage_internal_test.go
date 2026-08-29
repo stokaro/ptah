@@ -105,6 +105,16 @@ func assertReverseCoverageField(
 		// what holds that, since this gate structurally cannot.
 		return
 	}
+	if field.Name == "DeclaredFunctions" {
+		// An OUTPUT of the reverse, for the reason the five below are. A
+		// rollback creates the functions the PRE-CHANGE database held, and
+		// what they call is what that database recorded -- the forward value
+		// describes the document the change was moving to.
+		//
+		// TestReverseSchemaDiff_ARolledBackFunctionOrderComesFromThePrior is
+		// what holds that, since this gate structurally cannot.
+		return
+	}
 	if field.Name == "DeclaredTableDependencies" {
 		// An OUTPUT of the reverse, for the reason the five below are. A
 		// rollback drops the tables the change created, and the edges between
@@ -892,4 +902,32 @@ func TestReverseSchemaDiff_ARolledBackDropOrderComesFromThePriorGraph(t *testing
 	_, declaredEdge := reversed.DeclaredTableDependencies["desired_child"]
 	c.Assert(declaredEdge, qt.IsFalse,
 		qt.Commentf("the declaration's own graph describes tables that database does not have"))
+}
+
+// TestReverseSchemaDiff_ARolledBackFunctionOrderComesFromThePrior is the
+// seventh schema-wide fact a rollback resolves rather than inherits.
+//
+// A rollback recreates the functions the change dropped, and one body may call
+// another. Which calls which is a fact about the database being rolled back TO.
+func TestReverseSchemaDiff_ARolledBackFunctionOrderComesFromThePrior(t *testing.T) {
+	c := qt.New(t)
+
+	// Both documents declare a function and they are different functions, so a
+	// reversal that inherited the forward value would still look populated.
+	schema := &schemamodel.Database{
+		Functions: []schemamodel.Function{{Name: "desired_only", Body: "SELECT 1"}},
+	}
+	dbSchema := &catalog.Database{
+		Functions: []catalog.Function{{Name: "prior_only", Body: "SELECT 2"}},
+	}
+	forward := &difftypes.SchemaDiff{
+		DeclaredFunctions: difftypes.FunctionOrderingOf(schema),
+	}
+
+	reversed := reverseSchemaDiffWithSchema(forward, schema, dbSchema)
+
+	c.Assert(reversed.DeclaredFunctions.Order, qt.Contains, "prior_only",
+		qt.Commentf("the ordering inputs come from the database being rolled back to"))
+	c.Assert(reversed.DeclaredFunctions.Order, qt.Not(qt.Contains), "desired_only",
+		qt.Commentf("the declaration's own functions are not in that database"))
 }

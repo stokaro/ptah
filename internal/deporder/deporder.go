@@ -474,7 +474,29 @@ func addGeneratedSelfReference(
 // -- a routine body names another routine, not one of its overloads -- so the
 // ORDER comes from the names and the OUTPUT is every routine that carries one.
 func FunctionsForCreate(schema *schemamodel.Database, routines []schemamodel.Function) []schemamodel.Function {
-	if schema == nil || len(routines) == 0 {
+	if schema == nil {
+		return nil
+	}
+	declared := make([]string, 0, len(schema.Functions))
+	for _, function := range schema.Functions {
+		declared = append(declared, function.Name)
+	}
+	return FunctionsForCreateWithOrdering(routines, declared, schema.FunctionDependencies)
+}
+
+// FunctionsForCreateWithOrdering is [FunctionsForCreate] for a caller holding
+// the two ordering inputs rather than the whole schema.
+//
+// A planner is that caller: the diff carries the bodies, the declaration order
+// and the call graph, and handing the pieces over is what lets it order what it
+// is about to create without being handed the schema they came out of
+// (stokaro/ptah#2315).
+func FunctionsForCreateWithOrdering(
+	routines []schemamodel.Function,
+	declaredOrder []string,
+	dependencies map[string][]string,
+) []schemamodel.Function {
+	if len(routines) == 0 {
 		return nil
 	}
 
@@ -483,23 +505,35 @@ func FunctionsForCreate(schema *schemamodel.Database, routines []schemamodel.Fun
 		byName[routine.Name] = append(byName[routine.Name], routine)
 	}
 
-	// Declaration order, so the sort below is stable against the schema rather
-	// than against a map walk.
+	// Declaration order, so the sort below is stable against the document
+	// rather than against a map walk.
 	names := make([]string, 0, len(routines))
 	seen := make(map[string]struct{}, len(routines))
-	for _, fn := range schema.Functions {
-		if _, wanted := byName[fn.Name]; !wanted {
+	for _, name := range declaredOrder {
+		if _, wanted := byName[name]; !wanted {
 			continue
 		}
-		if _, already := seen[fn.Name]; already {
+		if _, already := seen[name]; already {
 			continue
 		}
-		seen[fn.Name] = struct{}{}
-		names = append(names, fn.Name)
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	// A routine the order does not name is still created, in the order it
+	// arrived. An incomplete ordering input must cost the ORDER and not the
+	// statement: built the other way, a caller that filled the routines and
+	// forgot the order got an empty plan and a migration reporting success
+	// with no function in it (stokaro/ptah#2315).
+	for _, routine := range routines {
+		if _, already := seen[routine.Name]; already {
+			continue
+		}
+		seen[routine.Name] = struct{}{}
+		names = append(names, routine.Name)
 	}
 
 	ordered := make([]schemamodel.Function, 0, len(routines))
-	for _, name := range StableTopologicalSort(names, schema.FunctionDependencies) {
+	for _, name := range StableTopologicalSort(names, dependencies) {
 		ordered = append(ordered, byName[name]...)
 	}
 	return ordered

@@ -125,8 +125,11 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// arrived -- which is how the ordering this function already computed
 		// for TablesRemoved survives the planner reading it again.
 		DeclaredTableDependencies: priorTableDependencies(prior),
-		TablesRemoved:             deporder.TableDropOrder(diff.TablesAdded.Names(), schema), // Tables to add become tables to remove
-		TablesModified:            reverseTableDiffs(diff.TablesModified, prior),
+		// And the same for the functions this direction creates: they are the
+		// ones that database held, and what they call is what it recorded.
+		DeclaredFunctions: difftypes.FunctionOrderingOf(prior),
+		TablesRemoved:     deporder.TableDropOrder(diff.TablesAdded.Names(), schema), // Tables to add become tables to remove
+		TablesModified:    reverseTableDiffs(diff.TablesModified, prior),
 
 		// Reverse enum operations
 		EnumsAdded:    diff.EnumsRemoved, // Enums to remove become enums to add
