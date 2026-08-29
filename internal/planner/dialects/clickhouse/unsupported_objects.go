@@ -54,18 +54,17 @@ func reportUnsupportedObjectsBeforeTables(result []ast.Node, diff *difftypes.Sch
 func planObjectsAfterTables(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 	caps capability.Capabilities,
 ) ([]ast.Node, error) {
 	result = planRoles(result, diff)
 	result = reportFunctions(result, diff)
 	var err error
-	result, err = reportViewLikes(result, diff, desired, caps)
+	result, err = reportViewLikes(result, diff, caps)
 	if err != nil {
 		return nil, err
 	}
 	result = reportRowLevelSecurity(result, diff, caps)
-	result = planRowPolicies(result, diff, desired, caps)
+	result = planRowPolicies(result, diff, caps)
 	result = planGrants(result, diff)
 	result = reportTriggers(result, diff)
 	return result, nil
@@ -198,7 +197,6 @@ func identityOf(object deporder.ViewLike) viewLikeIdentity {
 func reportViewLikes(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 	caps capability.Capabilities,
 ) ([]ast.Node, error) {
 	semantics := diff.EffectiveIdentifierSemantics(platform.ClickHouse)

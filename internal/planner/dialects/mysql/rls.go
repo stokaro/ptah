@@ -4,7 +4,6 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/mssqlpolicy"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -23,7 +22,7 @@ import (
 // table its predicate filters and the engine resolves that name at creation
 // time, so the table has to exist first -- the opposite of a sequence, which a
 // column default may reference and which therefore goes first.
-func (p *Planner) planRLS(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) planRLS(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	if !p.capabilities().Has(capability.RowLevelSecurity) {
 		return result
 	}

@@ -214,7 +214,7 @@ func (p *Planner) reportUnsupportedRowLevelSecurity(result []ast.Node, diff *dif
 //
 // A target that declines capability.Functions plans nothing here; its named
 // skips come from reportUnsupportedRoutinesAndRoles.
-func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	if !p.capabilities().Has(capability.Functions) {
 		return result
 	}
