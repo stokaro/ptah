@@ -251,7 +251,7 @@ Ptah applies that literal meaning to every schema source. The pinned community
 binary applies it to live PostgreSQL inspection but accepts it without filtering
 tables in a SQLite file diff. Ptah keeps one source-independent selector meaning
 instead of reporting that the selector succeeded while leaving its tables in
-the plan. See the measured [comparison](../comparison/#leading-schema-type-selector).
+the plan. See the measured [retained divergence](../retained-divergences/#leading-schema-type-selector).
 
 A **field selector** — the `.field` suffix behind a type selector — names a
 field to subtract while the object it belongs to stays. Ptah honors:
@@ -261,9 +261,9 @@ field to subtract while the object it belongs to stays. Ptah honors:
 - `.*`, which names every field the selected types support
 
 Any other field is refused, by name, before a database is contacted. See
-[the comparison](../comparison/#exclude-field-selectors) for why Ptah refuses
-these rather than accepting and ignoring them the way the pinned community
-binary does.
+[Exclude field selectors](../retained-divergences/#exclude-field-selectors) for
+why Ptah refuses these rather than accepting and ignoring them the way the
+pinned community binary does.
 
 A pattern matches an object under either spelling: its bare name, or its name
 qualified by the schema that owns it. Introspection reports an object in the
@@ -984,8 +984,8 @@ add the missing objects to the selection or exclude the dependent objects
 The flag is not part of the pinned Atlas CE inspect surface: CE v1.2.0 rejects
 `schema inspect --include` with `Error: unknown flag: --include`. It is
 registered by Atlas, where its behavior differs from
-Ptah's in two measured ways, both documented in
-[the comparison](../comparison/#schema-inspect---include).
+Ptah's in two measured ways, both documented under
+[`schema inspect --include`](../retained-divergences/#schema-inspect---include).
 
 ## Apply a desired schema
 

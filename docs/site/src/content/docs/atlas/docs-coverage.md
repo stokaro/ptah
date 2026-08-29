@@ -125,14 +125,18 @@ the index; the sections carry the detail.
 
 **Conformance status.** Measured for selected command paths and flags only.
 
-**Follow-up.** [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510).
+**Follow-up.** [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510),
+[`stokaro/ptah#514`](https://github.com/stokaro/ptah/issues/514) for the command
+tree, [`stokaro/ptah#621`](https://github.com/stokaro/ptah/issues/621) for the
+Atlas shorthand aliases (`-u`, `-c`, `-s`, `schema diff -f`, and the hidden
+`schema apply --file/-f`).
 
 
 ### Schema inspection
 
 **Atlas availability.** Open
 
-**Ptah documentation.** [Atlas-compatible commands](../../reference/atlas-commands/), [Capabilities](../../reference/capabilities/), [Comparison](../comparison/)
+**Ptah documentation.** [Atlas-compatible commands](../../reference/atlas-commands/), [Capabilities](../../reference/capabilities/), [Feature matrix](../feature-matrix/)
 
 **Implementation status.** Partial. `ptah db read` remains the native Ptah schema-read path.
 
@@ -162,7 +166,7 @@ Local schema files, migration directories, and `env://` references are inspected
 
 **Atlas availability.** Open
 
-**Ptah documentation.** [Comparison](../comparison/), [Atlas schema commands](../schema-commands/)
+**Ptah documentation.** [Feature matrix](../feature-matrix/), [Atlas schema commands](../schema-commands/)
 
 **Implementation status.** Partial.
 
@@ -198,7 +202,7 @@ a synced schema.
 
 **Atlas availability.** Open
 
-**Ptah documentation.** [Comparison](../comparison/), [Atlas schema commands](../schema-commands/)
+**Ptah documentation.** [Feature matrix](../feature-matrix/), [Atlas schema commands](../schema-commands/)
 
 **Implementation status.** Partial. `ptah schema compare` covers Ptah's native Go/live-DB comparison path.
 
@@ -241,7 +245,7 @@ outside the supported compatibility subset.
 
 **Ptah documentation.** [HCL schema](../../schema/hcl/), site [HCL schema reference](../../reference/hcl-schema/)
 
-**Implementation status.** Partial. Ptah parses a strict supported subset and fails explicitly for unsupported constructs. Current support includes core tables, columns, indexes, constraints, enums, schemas, selected generated/identity forms, and recently added PostgreSQL include columns.
+**Implementation status.** Partial. Ptah parses a strict supported subset and fails explicitly for unsupported constructs. Current support includes core tables, columns, indexes, constraints, enums, schemas, selected generated/identity forms, and PostgreSQL include columns.
 
 **Conformance status.** Measured for current imported fixtures; not complete Atlas HCL coverage.
 
@@ -294,7 +298,7 @@ multi-target apply with partial failure and retry, and ignored-name warnings.
 
 **Atlas availability.** Core concept for Atlas diff/apply/lint planning; Docker/dev blocks include Pro-only baseline forms in current Atlas docs
 
-**Ptah documentation.** [Configuration](../../reference/configuration/), [Comparison](../comparison/)
+**Ptah documentation.** [Configuration](../../reference/configuration/), [Feature matrix](../feature-matrix/)
 
 **Implementation status.** Partial. Ptah has shadow/dev database concepts for migration generation and project config IR. `ptah-compat migrate validate --dev-url` and `ptah-compat migrate lint --dev-url` clean and replay directly connectable dev databases; Atlas-style `--dev-url` behavior remains incomplete for several other commands and Docker dev databases.
 
@@ -307,7 +311,7 @@ multi-target apply with partial failure and retry, and ignored-name warnings.
 
 **Atlas availability.** Open
 
-**Ptah documentation.** [Versioned migrations](../../versioned/overview/), [Atlas migrate commands](../migrate-commands/), [Comparison](../comparison/)
+**Ptah documentation.** [Versioned migrations](../../versioned/overview/), [Atlas migrate commands](../migrate-commands/), [Feature matrix](../feature-matrix/)
 
 **Implementation status.** Documented for Ptah native workflow and Atlas-compatible command names. Runtime parity still depends on command-specific rows below.
 
@@ -347,11 +351,15 @@ Behavior below was executed against a `ptah-compat` build from this repository, 
 
 **Atlas availability.** Open
 
-**Ptah documentation.** [Roll back migrations](../../versioned/rollback/), [Atlas migrate commands](../migrate-commands/), [Comparison](../comparison/)
+**Ptah documentation.** [Roll back migrations](../../versioned/rollback/), [Atlas migrate commands](../migrate-commands/), [Feature matrix](../feature-matrix/)
 
 **Implementation status.** Partial. Ptah rolls back through pre-planned down files. `ptah-compat migrate down --dev-url` replays and verifies the rollback plan on the dev database before touching the target (native `ptah migrations down --shadow-db`), and `--format` renders an Atlas Go-template report over `.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, and `.Error`.
 
-The registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded waivers that fail loudly with their rationale; Atlas's registry-approved dynamic down planning itself stays out of scope.
+`--to-tag` resolves against the tags `ptah migrations tag` records in the
+database rather than against a hosted registry, `--skip-checks` bypasses the
+pre-migration checks the down bodies carry, and `--plan` derives the rollback
+from the schema difference instead of running the down bodies. Atlas's
+registry-approved down planning stays out of scope.
 
 **Conformance status.** Partially measured.
 
@@ -362,7 +370,7 @@ The registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded 
 
 **Atlas availability.** Open
 
-**Ptah documentation.** [Generate migrations](../../versioned/generate/), [Atlas migrate commands](../migrate-commands/), [Comparison](../comparison/)
+**Ptah documentation.** [Generate migrations](../../versioned/generate/), [Atlas migrate commands](../migrate-commands/), [Feature matrix](../feature-matrix/)
 
 **Implementation status.** Partial. Native Ptah can generate migrations from schema differences.
 
@@ -383,14 +391,14 @@ writes Atlas-style migration files. It:
 
 **Conformance status.** Partially measured with local SQLite dev DB, local schema-file, schema-filter, custom-format, config-driven format/env defaults, dry-run, invalid-format, lock-timeout, qualifier, and txmode-split coverage, CLI-surface flag probes, and a real-PostgreSQL end-to-end test for database desired-state scoping, concurrent-index metadata, and qualifier artifacts, plus real MySQL and MariaDB source-preservation and convergence tests.
 
-**Follow-up.** [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510), [`stokaro/ptah#618`](https://github.com/stokaro/ptah/issues/618), [`stokaro/ptah#640`](https://github.com/stokaro/ptah/issues/640), [`stokaro/ptah#842`](https://github.com/stokaro/ptah/issues/842).
+**Follow-up.** [`stokaro/ptah#510`](https://github.com/stokaro/ptah/issues/510), [`stokaro/ptah#618`](https://github.com/stokaro/ptah/issues/618), [`stokaro/ptah#640`](https://github.com/stokaro/ptah/issues/640), [`stokaro/ptah#842`](https://github.com/stokaro/ptah/issues/842), [`stokaro/ptah#668`](https://github.com/stokaro/ptah/issues/668) for the `diff` policy block (`diff.skip`, `diff.concurrent_index`).
 
 
 ### Migration linting
 
 **Atlas availability.** Mixed in current Atlas docs: feature page lists migration linting CLI as Pro while also listing a basic Open lint-rule set
 
-**Ptah documentation.** [CI](../../testing/ci/), [Integrity and safety](../../versioned/integrity-and-safety/), [Comparison](../comparison/)
+**Ptah documentation.** [CI](../../testing/ci/), [Integrity and safety](../../versioned/integrity-and-safety/), [Feature matrix](../feature-matrix/)
 
 **Implementation status.** Partial.
 
@@ -420,7 +428,7 @@ Atlas check-level policy, custom rules, force/allow-list analyzer options, Docke
 
 **Atlas availability.** Open for local migration-directory formats
 
-**Ptah documentation.** [Atlas migrate commands](../migrate-commands/), [Comparison](../comparison/)
+**Ptah documentation.** [Atlas migrate commands](../migrate-commands/), [Feature matrix](../feature-matrix/)
 
 **Implementation status.** Partial. Ptah imports local `file://` directories into an Atlas single-file directory and writes `atlas.sum`; Flyway repeatable migrations are converted to one-time versioned files rather than emitted as Atlas `R`-suffixed files.
 
@@ -446,7 +454,7 @@ Atlas check-level policy, custom rules, force/allow-list analyzer options, Docke
 
 **Atlas availability.** Feature page lists drift detection as Pro
 
-**Ptah documentation.** [CI](../../testing/ci/), [Comparison](../comparison/)
+**Ptah documentation.** [CI](../../testing/ci/), [Feature matrix](../feature-matrix/)
 
 **Implementation status.** Ptah has native `ptah schema drift`; Atlas Cloud/Pro drift monitoring is out of scope.
 
@@ -459,7 +467,7 @@ Atlas check-level policy, custom rules, force/allow-list analyzer options, Docke
 
 **Atlas availability.** Feature page lists checkpoints as Pro
 
-**Ptah documentation.** [Comparison](../comparison/), [Conformance](../conformance/)
+**Ptah documentation.** [Feature matrix](../feature-matrix/), [Conformance](../conformance/)
 
 **Implementation status.** Implemented natively and free. `ptah migrations checkpoint` squashes a directory's history into a cumulative-schema checkpoint that fresh databases bootstrap from, and `ptah-compat migrate checkpoint` forwards to it on the Atlas-compatible surface — a workflow Atlas keeps in its Pro build.
 
@@ -474,7 +482,7 @@ Checkpoint output covers both conventions. `--dir-format=atlas` — the default 
 
 **Atlas availability.** Feature page lists pre-migration checks as Pro
 
-**Ptah documentation.** [CI](../../testing/ci/), [Comparison](../comparison/)
+**Ptah documentation.** [CI](../../testing/ci/), [Feature matrix](../feature-matrix/)
 
 **Implementation status.** Partial. The local assertion half is implemented in both spellings: the native `-- +ptah check` directive and Atlas txtar `checks.sql` / `checks/*.sql` sections, including file-level `atlas:assert oneof`. They are enforced as pre-migration gates rather than executed as plain SQL. The Atlas Cloud approval-policy half stays out of scope.
 
@@ -487,7 +495,7 @@ Checkpoint output covers both conventions. `--dir-format=atlas` — the default 
 
 **Atlas availability.** Feature page lists testing framework as Pro
 
-**Ptah documentation.** [Comparison](../comparison/), [Conformance](../conformance/)
+**Ptah documentation.** [Feature matrix](../feature-matrix/), [Conformance](../conformance/)
 
 **Implementation status.** Implemented natively and free. `ptah migrations test` and `ptah schema test` run declarative test cases against a throwaway database — a workflow Atlas keeps in its Pro build.
 
@@ -502,7 +510,7 @@ The Atlas-compatible `ptah-compat migrate test` and `ptah-compat schema test` ve
 
 **Atlas availability.** Feature page lists declarative data management as Pro
 
-**Ptah documentation.** [Comparison](../comparison/), [Reference data](../../versioned/reference-data/)
+**Ptah documentation.** [Feature matrix](../feature-matrix/), [Reference data](../../versioned/reference-data/)
 
 **Implementation status.** Implemented natively and free. `ptah migrations data` diffs declarative reference rows against a live table and writes a reversible data migration (`INSERT`/`UPDATE`/`DELETE`) with an exact inverse `down` — a workflow Atlas keeps in its Pro build and Atlas CE cannot inspect declaratively.
 
@@ -515,7 +523,7 @@ The Atlas-compatible `ptah-compat migrate test` and `ptah-compat schema test` ve
 
 **Atlas availability.** Open for PostgreSQL, MySQL, MariaDB, SQLite, TiDB, LibSQL in current Atlas feature matrix; many other drivers are Pro
 
-**Ptah documentation.** [Capabilities](../../reference/capabilities/), [Comparison](../comparison/)
+**Ptah documentation.** [Capabilities](../../reference/capabilities/), [Feature matrix](../feature-matrix/)
 
 **Implementation status.** Partial but intentionally not identical. Ptah supports PostgreSQL, SQLite, MySQL/MariaDB, SQL Server subsets, and capability-gated PostgreSQL-compatible or specialty targets. Object-level support varies by dialect.
 
@@ -541,7 +549,7 @@ The Atlas-compatible `ptah-compat migrate test` and `ptah-compat schema test` ve
 
 **Atlas availability.** Cloud
 
-**Ptah documentation.** [OCI registry artifacts](../../operate/oci-registry/), [License boundary](../license-boundary/), [Comparison](../comparison/)
+**Ptah documentation.** [OCI registry artifacts](../../operate/oci-registry/), [License boundary](../license-boundary/), [Feature matrix](../feature-matrix/)
 
 **Implementation status.** Atlas Registry remains out of scope: Ptah has no Atlas Cloud dependency, account model, `atlas://` resolver, hosted UI, or Atlas deployment API. Ptah independently provides native `ptah migrations push/pull`, `ptah schema push/pull`, and `ptah oci referrers` commands for bring-your-own OCI registries, plus direct native consumers and best-effort deployment-report referrers.
 
@@ -556,7 +564,7 @@ The referrers command lists descriptor metadata but does not pull report payload
 
 **Atlas availability.** Cloud
 
-**Ptah documentation.** [License boundary](../license-boundary/), [Comparison](../comparison/)
+**Ptah documentation.** [License boundary](../license-boundary/), [Feature matrix](../feature-matrix/)
 
 **Implementation status.** Out of scope. Ptah can be used in CI, but it does not report deployments to Atlas Cloud.
 
@@ -569,7 +577,7 @@ The referrers command lists descriptor metadata but does not pull report payload
 
 **Atlas availability.** Cloud/Pro
 
-**Ptah documentation.** [License boundary](../license-boundary/), [Comparison](../comparison/)
+**Ptah documentation.** [License boundary](../license-boundary/), [Feature matrix](../feature-matrix/)
 
 **Implementation status.** Out of scope. Login, registry, UI, promotion, monitoring, and Cloud APIs are not Atlas OSS drop-in targets.
 
@@ -595,7 +603,7 @@ The referrers command lists descriptor metadata but does not pull report payload
 
 **Atlas availability.** Atlas docs do not define Ptah conformance; this is Ptah-owned evidence
 
-**Ptah documentation.** [Conformance](../conformance/), [Comparison](../comparison/)
+**Ptah documentation.** [Conformance](../conformance/), [Feature matrix](../feature-matrix/)
 
 **Implementation status.** Documented. Regression budget and full-conformance gates are intentionally separate.
 
@@ -608,7 +616,7 @@ The referrers command lists descriptor metadata but does not pull report payload
 
 **Atlas availability.** Atlas source is a separate third-party project; Ptah compatibility must stay license-clean
 
-**Ptah documentation.** [License boundary](../license-boundary/), [Comparison](../comparison/)
+**Ptah documentation.** [License boundary](../license-boundary/), [Feature matrix](../feature-matrix/)
 
 **Implementation status.** Documented. Ptah does not import, vendor, port, or derive implementation code from Atlas. Public interfaces and separately held test assets are compatibility inputs.
 

@@ -153,6 +153,9 @@ func TablesAndColumnsWithGeneratedExpressions(
 	// Every declared table, for resolving the table a foreign key references --
 	// usually one this diff does not touch.
 	diff.DeclaredTables = desired.Tables
+	// Every declared view and materialized view, for resolving what a DROP
+	// cascades to -- usually a view this diff does not touch.
+	diff.DeclaredViewLikes = difftypes.ViewLikeVocabularyOf(desired)
 	for identity, table := range genTables {
 		if _, exists := dbTables[identity]; !exists {
 			diff.TablesAdded = append(diff.TablesAdded, difftypes.TableCreationFor(

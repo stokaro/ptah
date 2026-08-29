@@ -215,10 +215,16 @@ func TestPlannerRebuildStepsAsideFromADeclaredTableName(t *testing.T) {
 		},
 		Fields: []schemamodel.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
 	}
-	diff := &difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
-		TableName:      "users",
-		ColumnsRemoved: difftypes.ColumnChanges{{Name: "name"}},
-	}}}
+	diff := &difftypes.SchemaDiff{
+		TablesModified: []difftypes.TableDiff{{
+			TableName:      "users",
+			ColumnsRemoved: difftypes.ColumnChanges{{Name: "name"}},
+		}},
+		// The declared tables a comparison fills. The rebuild asks this list
+		// which names are taken, and the operator's own `__ptah_rebuild_users`
+		// being in it is the whole subject of this test.
+		DeclaredTables: desired.Tables,
+	}
 
 	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
 

@@ -36,6 +36,7 @@ var nonCategoryFields = map[string]string{
 	"IdentifierSemantics":        "records the live catalog identifier rules the diff was produced under, not a difference between the two schemas",
 	"DeclaredTables":             "every table the declaration holds, carried so a foreign key can be resolved to the table it references; like the vocabulary below it is an input to rendering rather than a difference, and reporting it would print the whole document's tables as though they had changed (stokaro/ptah#2315)",
 	"DeclaredUserTypes":          "the declaration's type vocabulary, carried so a planner can resolve a created column's type to the user type it names; it is an input to rendering rather than a difference between the two schemas, and reporting it would print the whole document's domains and enums as though they had changed (stokaro/ptah#2315)",
+	"DeclaredViewLikes":          "every declared view and materialized view, carried so a DROP that cascades can be resolved to the views it reaches -- usually views this diff does not touch. Like the two above it is an input to rendering rather than a difference, and reporting it would print the whole document's views as though they had changed (stokaro/ptah#2315)",
 	"RLSPolicyIdentityConflicts": "two declared policies that resolve to one identity, which is a defect in the declaration rather than a difference between the two schemas; the planner refuses the diff on it, so reporting it as a change would tell the operator the databases differ when what differs is the document they wrote (stokaro/ptah#2440)",
 }
 

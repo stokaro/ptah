@@ -116,7 +116,7 @@ func run(cmd *cobra.Command, opts options) error {
 		return cmdutil.Fail(cmd, err)
 	}
 	if format == formatSVG {
-		rendered, err = renderDOTToSVG(cmd.Context(), rendered)
+		rendered, err = renderDOTToSVG(cmd.Context(), rendered, defaultGraphvizBudget)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
@@ -198,15 +198,33 @@ func higherSeverity(current, candidate string) string {
 	return current
 }
 
-func renderDOTToSVG(ctx context.Context, dot []byte) ([]byte, error) {
+// defaultGraphvizBudget bounds a `dot` invocation for a caller that named no
+// deadline of its own. Long enough for an ordinary schema, short enough that a
+// wedged process does not hold a terminal.
+const defaultGraphvizBudget = 10 * time.Second
+
+// renderDOTToSVG pipes dot through Graphviz.
+//
+// budget is taken as an argument rather than read from the constant, because
+// the property worth testing is which of two deadlines governs, and a test that
+// had to outlast the real one would take ten seconds to say so.
+func renderDOTToSVG(ctx context.Context, dot []byte, budget time.Duration) ([]byte, error) {
 	if _, err := exec.LookPath("dot"); err != nil {
 		return nil, fmt.Errorf("Graphviz dot is required for --format svg; install graphviz or use --format dot: %w", err)
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
+	// The budget is a floor for a caller who named none, not a ceiling on one
+	// who did. Applying it unconditionally capped every caller at ten seconds:
+	// a large model's render, and a test whose assertion is about the
+	// diagnostic rather than the clock, both lost to a deadline nobody asked
+	// for and nothing could raise.
+	if _, named := ctx.Deadline(); !named {
+		timed, cancel := context.WithTimeout(ctx, budget)
+		defer cancel()
+		ctx = timed
+	}
 
 	cmd := exec.CommandContext(ctx, "dot", "-Tsvg")
 	cmd.Stdin = bytes.NewReader(dot)
@@ -216,6 +234,14 @@ func renderDOTToSVG(ctx context.Context, dot []byte) ([]byte, error) {
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		message := strings.TrimSpace(stderr.String())
+		// A render the deadline stopped reports the deadline. CommandContext
+		// kills the process, so cmd.Run answers `signal: killed` -- which names
+		// the symptom, tells an operator nothing about the budget they cannot
+		// see, and carries nothing a caller can branch on.
+		if deadline := ctx.Err(); deadline != nil {
+			return nil, fmt.Errorf(
+				"render SVG with Graphviz dot: %w, and dot was still running", deadline)
+		}
 		if message != "" {
 			return nil, fmt.Errorf("render SVG with Graphviz dot: %w: %s", err, message)
 		}

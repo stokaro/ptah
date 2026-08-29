@@ -202,7 +202,7 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 			c := qt.New(t)
 			test.diff.TablesAdded = difftypes.TableCreationsFor(test.desired, test.tablesAdded...)
 
-			nodes, err := postgres.New().GenerateMigrationAST(test.diff, test.desired)
+			nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(test.diff, test.desired), test.desired)
 			c.Assert(err, qt.IsNil)
 
 			sql, err := renderer.RenderSQL("postgres", nodes...)

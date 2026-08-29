@@ -1,6 +1,9 @@
 ---
 title: Validate and format schema files
 description: Check a desired schema for structural problems with ptah schema validate and keep HCL files canonically formatted with ptah schema fmt, both without a database.
+owns:
+  - cli-ptah-schema-fmt
+  - cli-ptah-schema-validate
 ---
 
 Two native verbs check schema files before anything connects to a database.

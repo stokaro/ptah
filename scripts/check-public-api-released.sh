@@ -27,6 +27,7 @@ while [[ "$#" -gt 0 ]]; do
 	esac
 done
 
+script_dir="$(cd "$(dirname "$0")" && pwd)"
 module_path="$(go list -m -f '{{.Path}}')"
 packages="$(mktemp)"
 approvals="docs/public_api_approvals.txt"
@@ -36,10 +37,13 @@ trap 'rm -f "$packages"; rm -rf "$baseline_dir" "$exports_dir"' EXIT
 
 # List items only. A backticked package path in a prose paragraph is a
 # mention, not a listing, and must not join the checked set.
-grep -Eo "^- \`${module_path}[^\`]+\`" docs/public_api.md |
-	tr -d '`' |
-	sed 's/^- //' |
-	sort -u >"$packages"
+#
+# Read through the snapshot gate's --list-packages mode, which forwards to
+# internal/featureinventory. This script carried a second copy of the pattern
+# and the copy had the quiet failure mode: apidiff is fed from this set, so a
+# pattern drifting by one character would compare FEWER packages and report
+# FEWER incompatible changes rather than fail.
+"$script_dir/check-public-api-snapshot.sh" --list-packages >"$packages"
 
 if [[ ! -s "$packages" ]]; then
 	printf '%s: found no %s packages in docs/public_api.md; refusing to report a vacuous pass\n' \

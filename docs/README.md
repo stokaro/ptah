@@ -22,6 +22,7 @@ contributor or implementation detail beyond the site.
 | `docs/adr` | Architecture decision records: the alternatives weighed and the boundary chosen, kept so a later reader can tell a decision from an accident. |
 | `docs/architecture_boundaries.md` | The measured boundary inventory and the executable invariant set, with the baseline the gate ratchets against. |
 | `docs/canonical_pipeline_prototype.md` | What the ADR 0001 prototype measured, and what it changed about the record. |
+| `docs/feature-inventory.json` | The derived feature register: every native verb, ledger package, released program and dialect, with the page that claims it. Generated. |
 | `examples/*` | Runnable local examples and generated artifacts. |
 | `ptah-atlas-conformance` | External Atlas compatibility evidence and gap reports. |
 
@@ -39,6 +40,54 @@ When Ptah behavior changes, update every relevant layer:
 
 Do not update only the nearest README when a command path, flag, config key,
 generated SQL shape, public API, or Atlas parity claim changes.
+
+### The feature inventory
+
+`docs/feature-inventory.json` is generated and carries no authored column.
+Adding a verb, a ledger package, a released binary or a dialect is not an edit
+here at all: the register is derived from the command tree, `docs/public_api.md`,
+`.goreleaser.yaml` and `renderer.SupportedDialects`, so the row appears when the
+declaration does.
+
+The one thing a person writes is a page claiming what it documents:
+
+```yaml
+---
+title: "Apply directly"
+owns:
+  - cli-ptah-schema-apply
+---
+```
+
+Then regenerate:
+
+```bash
+scripts/check-feature-inventory.sh --write
+```
+
+The identifier is compared to the derived one by string equality, so a claim
+naming nothing is refused with the page and the identifier. What the gate cannot
+do is read. The column is called `claimed_by` for that reason: it proves the
+claim resolves to a derived feature and that no second page makes it, and never
+that the page explains the feature. No column says canonical, because nothing
+here can check that.
+
+Two floors sit under the register, and neither one lives in it. The claimed-row
+count may not fall below `featureinventory.ClaimedFloor`, a constant in
+`internal/featureinventory`, so raising coverage is a reviewed source edit and
+lowering it is a red gate -- a ratchet read out of the file it guards is not a
+ratchet. And a page under `runnable_examples` has to publish a step: the
+`quickstart: true` marking is deliberate, but a deliberate marking is still a
+claim.
+
+The two words are deliberate. A page writes `owns:`, which is an author saying
+what their page is for; the register answers `claimed_by`, `claimed` and
+`claimed_floor`, which is all a machine can confirm about that sentence.
+
+The file states those limits in its own `notice` field, with the rest of what it
+does not claim. The count is not repeated here: `notice` is generated from
+`featureinventory.Notice`, so a number written beside it is one more thing to
+keep in step.
 
 ## Contributing to the documentation
 

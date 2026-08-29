@@ -244,7 +244,7 @@ func planTableRebuilds(
 		for _, field := range table.ColumnsAdded {
 			// The column travels WITH the change, so its shape is read off the
 			// change rather than looked back up (stokaro/ptah#2315).
-			if !addedColumnNeedsRebuild(fromschema.FromField(field, desired.Enums, DialectName)) {
+			if !addedColumnNeedsRebuild(fromschema.FromField(field, diff.DeclaredUserTypes.Enums, DialectName)) {
 				continue
 			}
 			add(table.TableName, table.ColumnsAdded.Names())
@@ -441,18 +441,29 @@ func roleAndGrantNames(diff *difftypes.SchemaDiff) []string {
 	return slices.Compact(names)
 }
 
+// addTables renders each created table from the creation the comparison
+// carried for it.
+//
+// It used to walk the DECLARATION and keep the tables the diff named, which
+// meant rendering from the declaration's fields and enums as well. That is
+// what made the enum vocabulary unsubstitutable here: SQLite is one of the
+// dialects the comparison normalizes enums away for, so the carried
+// vocabulary is empty while the DECLARATION's columns still name the enum.
+//
+// Reading the creation settles it, because the creation carries the columns
+// the comparison produced: already `TEXT` with the CHECK the enum folds to.
+// The vocabulary it is qualified against is empty on this dialect and the
+// qualification is a no-op, which is correct rather than incidental -- an
+// inline enum has no schema to name (stokaro/ptah#2315).
 func (p *Planner) addTables(
 	diff *difftypes.SchemaDiff,
 	desired *schemamodel.Database,
-	semantics identifier.Semantics,
+	_ identifier.Semantics,
 ) ([]ast.Node, error) {
 	var result []ast.Node
-	for _, table := range desired.Tables {
-		if !objectlookup.Contains(diff.TablesAdded.Names(), table.QualifiedName(), semantics) {
-			continue
-		}
-		node := fromschema.FromTable(table, desired.Fields, desired.Enums, DialectName)
-		if err := addInlineConstraints(node, table, desired.Constraints); err != nil {
+	for _, creation := range diff.TablesAdded.Qualified(diff.DeclaredUserTypes, DialectName).InDependencyOrder() {
+		node := fromschema.FromTable(creation.Table, creation.Fields, creation.Enums, DialectName)
+		if err := addInlineConstraints(node, creation.Table, desired.Constraints); err != nil {
 			return nil, err
 		}
 		result = append(result, node)
@@ -525,7 +536,7 @@ func (p *Planner) modifyTables(
 			result = append(result, &ast.AlterTableNode{
 				Name: tableDiff.TableName,
 				Operations: []ast.AlterOperation{&ast.AddColumnOperation{
-					Column: fromschema.FromField(field, desired.Enums, DialectName),
+					Column: fromschema.FromField(field, diff.DeclaredUserTypes.Enums, DialectName),
 				}},
 			})
 		}
@@ -634,7 +645,7 @@ func availableRebuildTableName(
 		if attempt > 0 {
 			candidate = base + "_" + strconv.Itoa(attempt)
 		}
-		if tableNameCollides(desired.Tables, table, candidate) {
+		if tableNameCollides(diff.DeclaredTables, table, candidate) {
 			continue
 		}
 		if removedTableNameCollides(diff.TablesRemoved, table, candidate) {

@@ -1283,8 +1283,8 @@ not be able to drop a diagnostic. That grammar boundary is why
 `TRUNCATE app.users;` and `DROP FUNCTION app.recalc();` are reported under
 `search_path=public` while counting no schema change.
 
-`DROP INDEX` used to be the largest example of it and no longer is: the parser
-models the statement, so `DROP INDEX public.idx;` counts one schema change,
+`DROP INDEX` is not an example of it: the parser models the statement, so
+`DROP INDEX public.idx;` counts one schema change,
 matching the pinned community binary v1.3.0, and `DROP INDEX app.idx;` is
 scoped out whole — no schema change and no `PG106`, which is also what the
 community binary reports. Ptah raised `PG106` for the `app` form before

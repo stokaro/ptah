@@ -39,20 +39,27 @@ emit_package_snapshot() {
 
 # list_ledger_packages emits the sorted package set docs/public_api.md lists,
 # one import path per line. Only list items count: the ledger's entries are
-# bullets of the shape `- \`<module>/<package>\``, and a backticked path inside
-# a prose paragraph is a mention, not a listing, so it must not join the set.
+# bullets, and a backticked path inside a prose paragraph is a mention, not a
+# listing, so it must not join the set.
 #
-# The package prefix is derived from the module itself. A literal here silently
-# stops matching the day the module path moves, and because the pipeline runs
-# under `set -euo pipefail` the failing grep aborts the script with zero bytes
-# on stdout and stderr -- a check that reports failure without saying anything.
+# The recognition itself lives in internal/featureinventory and this forwards to
+# it. Three gates used to scrape the ledger with a pattern each, which is what
+# AGENTS.md's "recognition that spans two functions belongs to one of them"
+# forbids -- with the quiet failure mode that rule describes: a pattern that
+# drifts by one character produces a SMALLER set, and a smaller set reports
+# FEWER undocumented packages and FEWER incompatible-change findings rather than
+# an error. The module path is read from go.mod there, so it still moves with
+# the module rather than being restated.
+#
+# The module directory is passed explicitly because internal/apiguard runs this
+# mode against a throwaway fixture module: the answer has to be about the
+# caller's directory, not about this one. `go -C` is what lets the command be
+# built from this repository while the ledger being read belongs to another.
 list_ledger_packages() {
-	local module_path
-	module_path="$(go list -m -f '{{.Path}}')"
-	grep -Eo "^- \`${module_path}[^\`]+\`" docs/public_api.md |
-		tr -d '`' |
-		sed 's/^- //' |
-		sort -u
+	local repo_root module_dir
+	repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+	module_dir="$(pwd)"
+	go -C "$repo_root" run ./internal/cmd/featureinventory --list-ledger --root "$module_dir"
 }
 
 # Internal mode used by the guard self-test (internal/apiguard): emit the

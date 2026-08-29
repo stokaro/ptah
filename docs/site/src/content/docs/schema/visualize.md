@@ -1,6 +1,8 @@
 ---
 title: Visualize the schema
 description: Render entity-relationship diagrams from the desired schema as Mermaid, DOT, or SVG with ptah viz.
+owns:
+  - cli-ptah-viz
 ---
 
 Render an entity-relationship diagram of the desired schema. `ptah viz` scans

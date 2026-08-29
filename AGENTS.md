@@ -336,11 +336,16 @@ ours inside an Atlas family adds a trailing `P`, a rule inside a family of ours
 is left unmarked — and the identifiers that predate it, a list that may shrink
 and must not grow.
 
-Prefer `go test ./... -count=1` over `test-ptah.sh` for a local unit run. The
-script is committed without an executable bit, so `./test-ptah.sh` cannot be
-invoked directly, and it exports `POSTGRES_TEST_DSN`, `MYSQL_TEST_DSN` and
-`MARIADB_TEST_DSN` unconditionally, which makes its `unit` mode depend on
-databases listening on those exact ports.
+`go test ./... -count=1` or `make test` is the local unit run, and
+`bin/ptah-integration-test` with the `make integration-test` targets is the
+integration one. There is no second entry point: a standalone runner bundle used
+to sit beside them and stopped receiving the repository's testing decisions --
+its `unit` mode exported three database DSNs before choosing a mode, its
+integration mode covered one of the twenty-odd package trees, and it rendered
+its own reports in shell while the supported runner already emitted four formats
+(stokaro/ptah#2507). A convenience entry point may come back as a thin wrapper
+over these commands; it must not be a second discovery, orchestration and
+reporting implementation.
 
 ### The Go toolchain
 
@@ -1009,6 +1014,8 @@ node docs/site/scripts/check-terminology.mjs --selftest
 node docs/site/scripts/check-terminology.mjs
 node docs/site/scripts/check-limitations.mjs --selftest
 node docs/site/scripts/check-limitations.mjs
+node docs/site/scripts/check-implementation-chronology.mjs --selftest
+node docs/site/scripts/check-implementation-chronology.mjs
 node docs/site/scripts/check-matrix-verdict-prose.mjs --selftest
 node docs/site/scripts/check-matrix-verdict-prose.mjs
 node docs/site/scripts/check-matrix-citations.mjs --selftest
@@ -1059,7 +1066,7 @@ node scripts above would not have produced.
 renamed with no redirect entry passes `check:redirects`, `check:links`,
 `check:page-health` and the site build alike -- measured, seven for seven --
 because every one of them reasons about what the tree holds now, and the defect
-is a route that used to be in it. The record it compares against is
+is a route the tree no longer holds and a reader still follows. The record it compares against is
 `docs/site/scripts/data/published-routes.json`, and a page added in a PR joins
 it in that PR:
 
@@ -1246,6 +1253,74 @@ For deep documentation maintenance, use the repo-local skill at
 it routes CLI, config, migration, parser/renderer, conformance, public API, and
 example changes to the right documentation surfaces and uses Inventario's docs
 site as the quality reference.
+
+### The feature register is derived, and a page declares what it owns
+
+`docs/feature-inventory.json` lists every native verb, stable-embedder package,
+released binary and dialect, with the documentation page that claims each one.
+It is **generated**, and adding a surface is not an edit to it: the row appears
+when the declaration does -- the walked command tree, `docs/public_api.md`,
+`.goreleaser.yaml`, and `renderer.SupportedDialects` folded through
+`platform.NormalizeDialect`.
+
+The one hand-written datum is an `owns:` list in a page's frontmatter, naming
+the identifiers that page documents. Claiming one is two steps:
+
+```yaml
+owns:
+  - cli-ptah-schema-apply
+```
+
+```bash
+scripts/check-feature-inventory.sh --write
+```
+
+Five rules are worth knowing before adding a column to it, because each is a
+false green a closed attempt or a review of this one shipped
+(stokaro/ptah#2402):
+
+- **A column exists only if the gate checks it exactly.** No comparison in that
+  file is a substring test. The canonical-page check that preceded it computed
+  identifying tokens and accepted a `strings.Contains` hit for any of them, so a
+  page passed without documenting the feature it was credited with. There is no
+  threshold that repairs that, which is why the direction is inverted: the page
+  declares, and the gate compares by string equality. A column that would need a
+  heuristic is dropped, or turned into a fact the product declares.
+- **A column is named for what is checked, not for what it suggests.** The
+  claiming page is `claimed_by`, the counts beside it are `claimed` and
+  `claimed_floor`, and the word canonical appears nowhere. What the gate proves
+  is that the claim resolves to a derived feature and that no second page makes
+  it; it cannot prove the page explains anything, and a name reading as the
+  stronger promise is the same false green in prose that the substring check was
+  in code. A page still writes `owns:`, because that half is an author saying
+  what their page is for -- the register's half is the one that had to stop
+  overstating.
+- **Runnable examples are marked, never inferred, and a marked page has to run
+  something.** The marking is `internal/quickstart`'s existing `quickstart: true`
+  frontmatter key, and the acceptance workflow is what proves the steps run. Do
+  not add a second marking: two lists of runnable pages can disagree, and the
+  older one is the one that actually executes. A deliberate marking is still a
+  claim, so a page publishing no step for any shell is refused rather than
+  listed -- otherwise a page of prose carrying the key ships under
+  `runnable_examples` and the gate reports success. No ROW claims an example:
+  knowing that an executed page exercises a named feature needs the argv the
+  shell produced, not the text of a fenced block.
+- **A floor does not live in the file it governs.** The claimed-row count is held
+  above `featureinventory.ClaimedFloor`, a source constant, because a ratchet read
+  out of the artifact and written back by `--write` is the one field a byte
+  comparison cannot police: editing that line lowered the floor, the gate
+  reported success, and a false claim raised the floor to lock itself in as
+  coverage. Raising it is a reviewed edit.
+- **A `package main` is a measurement, not a supported program.** `go list` can
+  find main packages; it cannot know which ones ship. The program rows come from
+  `.goreleaser.yaml` `builds[].binary`, which is the product declaring what it
+  releases, so `cmd/integration-test` is correctly absent rather than omitted.
+
+The file is `.json` under `docs/` because `docs/docs.go` embeds `*.md`,
+`adr/*.md` and the site content: a Markdown register there ships inside every
+binary and answers `search_docs`. `docs/docs_test.go` asserts its absence from
+`docs.FS` directly rather than through the Markdown-filtering helper, which
+would reduce the assertion to `0 == 0`.
 
 ### Label every issue you file
 

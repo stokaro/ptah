@@ -1,6 +1,15 @@
 ---
 title: Ptah Assist and your own model
 description: Configure a model provider for ptah assist with your own key, endpoint, and model, and check that it works.
+owns:
+  - cli-ptah-assist-context
+  - cli-ptah-assist-explain
+  - cli-ptah-assist-provider-list
+  - cli-ptah-assist-provider-test
+  - cli-ptah-assist-sessions-delete
+  - cli-ptah-assist-sessions-list
+  - cli-ptah-assist-sessions-prune
+  - cli-ptah-assist-sessions-show
 ---
 
 :::note[Experimental]

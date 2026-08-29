@@ -46,9 +46,21 @@ jobs:
           fi
 
       # Both targets run through scripts/run-fuzz.sh, which tells a finding
-      # apart from the -fuzztime clock running out mid-execution. Its selftest
-      # proves it still fails on a written corpus entry, a panic and a mixed
-      # failure, so the wrapper cannot quietly turn red into green.
+      # apart from the -fuzztime clock running out mid-execution.
+      #
+      # What the selftest proves is the property the wrapper needs and not a
+      # list of failures somebody thought of: a nonzero run is turned green only
+      # when EVERY line of its transcript is one a bare deadline explains, so an
+      # unrecognized shape stays red. It used to look for known-bad ones
+      # instead, and `fatal error: concurrent map writes` beside the deadline
+      # named no panic, no race, no source location and no second --- FAIL, so
+      # it laundered into a green job (stokaro/ptah#2501).
+      #
+      # The rows: a written corpus entry, a panic, a mixed failure, a runtime
+      # fatal, a deadlock and a killed process all stay red, and a deadline-only
+      # transcript still passes both bare and among the progress lines a real
+      # run prints -- the second control is what keeps "refuse everything" from
+      # satisfying the rest.
       - name: Check the fuzz wrapper
         run: scripts/run-fuzz-selftest.sh
 

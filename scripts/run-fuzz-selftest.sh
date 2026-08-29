@@ -64,8 +64,45 @@ context deadline exceeded')"
 expect "an unrelated failure fails" false "$(stub go_other 1 'build failed
 FAIL')"
 
+# The rows stokaro/ptah#2501 was filed for. Each is a real nonzero shape that
+# names no panic, no race, no source location and no second --- FAIL, so the
+# list of known-bad shapes this replaced passed every one of them.
+expect "a runtime fatal beside the deadline fails" false "$(stub go_fatal 2 '--- FAIL: FuzzThing (30.31s)
+    context deadline exceeded
+fatal error: concurrent map writes
+FAIL')"
+
+expect "a deadlock beside the deadline fails" false "$(stub go_deadlock 2 '--- FAIL: FuzzThing (30.31s)
+    context deadline exceeded
+fatal error: all goroutines are asleep - deadlock!
+FAIL')"
+
+expect "a killed process beside the deadline fails" false "$(stub go_killed 1 '--- FAIL: FuzzThing (30.31s)
+    context deadline exceeded
+signal: killed
+FAIL')"
+
+# A build failure carries no line of its own beyond go's package summary, so
+# this is the row that holds that summary's pattern to a duration. Loosened to
+# "any line beginning FAIL", every other row here still passes.
+expect "a build failure beside the deadline fails" false "$(stub go_build 1 '--- FAIL: FuzzThing (30.31s)
+    context deadline exceeded
+FAIL	go.5x5.cz/ptah/pkg [build failed]')"
+
+# The controls. A deadline-only transcript still passes, and it still passes
+# with the progress and package-summary lines a real run prints around it --
+# without these, refusing everything would satisfy every row above.
+expect "a deadline among a real run's own noise passes" true "$(stub go_deadline_noisy 1 'warning: starting with empty corpus
+fuzz: elapsed: 0s, gathering baseline coverage: 0/12 completed
+fuzz: elapsed: 3s, gathering baseline coverage: 12/12 completed, now fuzzing with 8 workers
+fuzz: elapsed: 30s, execs: 122333 (4077/sec), new interesting: 3 (total: 15)
+--- FAIL: FuzzThing (30.31s)
+    context deadline exceeded
+FAIL
+FAIL	go.5x5.cz/ptah/pkg	30.4s')"
+
 if [ "$failures" -ne 0 ]; then
 	printf 'run-fuzz-selftest: %d case(s) failed\n' "$failures" >&2
 	exit 1
 fi
-printf 'run-fuzz-selftest: the wrapper passes a bare deadline and refuses a finding, a panic, and a mixed failure\n'
+printf 'run-fuzz-selftest: the wrapper passes a bare deadline, with and without the progress lines a real run prints, and refuses a finding, a panic, a mixed failure, a runtime fatal, a deadlock and a killed process\n'

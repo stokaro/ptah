@@ -1,6 +1,8 @@
 ---
 title: Exit codes
 description: How Ptah commands behave when used as automation gates.
+owns:
+  - gopkg-core-ptaherr
 ---
 
 Native Ptah commands use exit codes as a public scripting contract:

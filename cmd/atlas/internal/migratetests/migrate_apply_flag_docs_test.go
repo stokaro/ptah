@@ -43,7 +43,6 @@ type migrateApplyDocPage struct {
 func migrateApplyInventoryDocPages() []migrateApplyDocPage {
 	return []migrateApplyDocPage{
 		{name: "atlas_migrate-commands", path: []string{"atlas", "migrate-commands.md"}},
-		{name: "atlas_comparison", path: []string{"atlas", "comparison.md"}},
 		{name: "atlas_docs-coverage", path: []string{"atlas", "docs-coverage.md"}},
 	}
 }
@@ -55,7 +54,6 @@ func migrateApplyInventoryDocPages() []migrateApplyDocPage {
 func migrateApplyClaimDocPages() []migrateApplyDocPage {
 	return []migrateApplyDocPage{
 		{name: "atlas_migrate-commands", path: []string{"atlas", "migrate-commands.md"}},
-		{name: "atlas_comparison", path: []string{"atlas", "comparison.md"}},
 		{name: "atlas_docs-coverage", path: []string{"atlas", "docs-coverage.md"}},
 		{name: "atlas_feature-matrix", path: []string{"atlas", "feature-matrix.md"}},
 		{name: "atlas_overview", path: []string{"atlas", "overview.md"}},

@@ -488,7 +488,6 @@ func dirQueryGovernedDocPages() []dirQueryDocPage {
 	return []dirQueryDocPage{
 		{name: "reference_atlas-commands", path: []string{"reference", "atlas-commands.md"}},
 		{name: "atlas_migrate-commands", path: []string{"atlas", "migrate-commands.md"}},
-		{name: "atlas_comparison", path: []string{"atlas", "comparison.md"}},
 		{name: "atlas_overview", path: []string{"atlas", "overview.md"}},
 		{name: "atlas_feature-matrix", path: []string{"atlas", "feature-matrix.md"}},
 	}

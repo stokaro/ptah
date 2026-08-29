@@ -1,6 +1,8 @@
 ---
 title: SQL Server
 description: SQL Server in Ptah - connection URLs, the supported T-SQL subset, collation-aware identifier comparison, and filtered indexes.
+owns:
+  - dialect-sqlserver
 ---
 
 Ptah supports SQL Server and Azure SQL as a deliberately conservative portable
@@ -305,4 +307,4 @@ rendered SQL always preserves your annotation text verbatim.
 
 - Comparing engine depth before committing: [Database support matrix](../support-matrix/).
 - Declaring indexes and constraints: [Go annotation reference](../../reference/go-annotations/).
-- Gating destructive changes on any engine: [Integrity and safety](../../versioned/integrity-and-safety/).
+- Gating destructive changes on any engine: [Lint and gate unsafe SQL](../../versioned/lint/).

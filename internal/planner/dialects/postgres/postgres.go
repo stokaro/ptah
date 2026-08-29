@@ -260,14 +260,6 @@ func (p *Planner) addNewEnums(result []ast.Node, diff *difftypes.SchemaDiff, des
 	return result
 }
 
-type postgresEnumColumnUsage struct {
-	Table       string
-	Column      string
-	Default     string
-	DefaultSet  bool
-	DefaultExpr string
-}
-
 func (p *Planner) modifyExistingEnums(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, enumDiff := range diff.EnumsModified {
@@ -284,7 +276,7 @@ func (p *Planner) modifyExistingEnums(result []ast.Node, diff *difftypes.SchemaD
 			result = append(result, ast.NewRawSQL(postgresEnumValueRemovalSQL(
 				enumDiff.EnumName,
 				values,
-				postgresEnumColumnUsages(desired, enumDiff.EnumName),
+				enumDiff.Usages,
 			)))
 			continue
 		}
@@ -316,43 +308,7 @@ func postgresEnumValues(
 	return append([]string(nil), enum.Values...), true
 }
 
-func postgresEnumColumnUsages(desired *schemamodel.Database, enumName string) []postgresEnumColumnUsage {
-	if desired == nil {
-		return nil
-	}
-	tablesByStruct := make(map[string]schemamodel.Table, len(desired.Tables))
-	for _, table := range desired.Tables {
-		tablesByStruct[table.StructName] = table
-	}
-
-	// A field names its declared type by bare name -- that is what
-	// fromschema.declaredEnum matches on -- while the diff names the enum by
-	// qualified name. Both spellings are accepted so a rebuild of an enum in a
-	// non-default schema still finds the columns it has to convert. Where two
-	// schemas hold an enum of one name the bare spelling cannot separate them;
-	// see the residual note on stokaro/ptah#1276.
-	bareName := postgresBaseName(enumName)
-	usages := make([]postgresEnumColumnUsage, 0)
-	for _, field := range desired.Fields {
-		if field.Type != enumName && field.Type != bareName {
-			continue
-		}
-		table, ok := tablesByStruct[field.StructName]
-		if !ok {
-			continue
-		}
-		usages = append(usages, postgresEnumColumnUsage{
-			Table:       table.QualifiedName(),
-			Column:      field.Name,
-			Default:     field.Default,
-			DefaultSet:  field.DefaultSet,
-			DefaultExpr: field.DefaultExpr,
-		})
-	}
-	return usages
-}
-
-func postgresEnumValueRemovalSQL(enumName string, values []string, usages []postgresEnumColumnUsage) string {
+func postgresEnumValueRemovalSQL(enumName string, values []string, usages []difftypes.EnumColumnUsage) string {
 	oldName := postgresTemporaryEnumName(enumName)
 	enumIdent := quotePostgresIdentifierPath(enumName)
 	oldIdent := quotePostgresIdentifierPath(oldName)
@@ -412,7 +368,7 @@ func postgresEnumValueList(values []string) string {
 	return strings.Join(quoted, ", ")
 }
 
-func postgresDefaultSQL(usage postgresEnumColumnUsage) (string, bool) {
+func postgresDefaultSQL(usage difftypes.EnumColumnUsage) (string, bool) {
 	if usage.DefaultExpr != "" {
 		return usage.DefaultExpr, true
 	}
@@ -1774,7 +1730,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	result = p.modifyExistingSequences(result, diff)
 
 	// 6.6. Add and modify views, materialized views, and triggers after their tables/functions exist.
-	result = p.addNewViewLikeObjects(result, diff, desired)
+	result = p.addNewViewLikeObjects(result, diff)
 	result = p.modifyExistingViews(result, diff, desired)
 	result = p.retargetSynonyms(result, diff)
 	result = p.addNewSynonyms(result, diff)
@@ -2308,7 +2264,7 @@ func splitQualifiedSequenceName(name string) (schema, sequence string) {
 	return ref.Schema, ref.Name
 }
 
-func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
+func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	objects := make([]deporder.ViewLike, 0, len(diff.ViewsAdded)+len(diff.MaterializedViewsAdded))
 	for _, view := range diff.ViewsAdded {
@@ -2329,12 +2285,12 @@ func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *difftypes.Schem
 	// renders cleanly and fails when it runs.
 	for _, object := range deporder.ViewLikesForCreateForDialect(objects, p.targetDialect()) {
 		if object.Materialized {
-			if view := findMaterializedView(desired.MaterializedViews, object.Name, semantics); view != nil {
+			if view := findMaterializedView(diff.DeclaredViewLikes.MaterializedViews, object.Name, semantics); view != nil {
 				result = append(result, fromschema.FromMaterializedView(*view))
 			}
 			continue
 		}
-		if view := findView(desired.Views, object.Name, semantics); view != nil {
+		if view := findView(diff.DeclaredViewLikes.Views, object.Name, semantics); view != nil {
 			result = append(result, fromschema.FromView(*view))
 		}
 	}
@@ -2406,7 +2362,7 @@ func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaD
 
 	// A view on the replace path can also be a dependent of one on the drop
 	// path, in which case it is on both lists and must still be rendered once.
-	recreate := viewLikesLostToCascade(desired, dropped, semantics)
+	recreate := viewLikesLostToCascade(diff.DeclaredViewLikes, dropped, semantics)
 	named := make(map[string]bool, len(recreate))
 	for _, object := range recreate {
 		named[object.Name] = true
@@ -2418,7 +2374,7 @@ func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaD
 	}
 
 	for _, object := range deporder.ViewLikesForCreateForDialect(recreate, p.targetDialect()) {
-		result = p.appendViewLikeRecreate(result, desired, object, dropped, semantics)
+		result = p.appendViewLikeRecreate(result, diff.DeclaredViewLikes, object, dropped, semantics)
 	}
 	return result
 }
@@ -2433,13 +2389,13 @@ func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaD
 // view has no in-place replace, so it is dropped first for the same reason.
 func (p *Planner) appendViewLikeRecreate(
 	result []ast.Node,
-	desired *schemamodel.Database,
+	declared difftypes.ViewLikeVocabulary,
 	object deporder.ViewLike,
 	dropped []string,
 	semantics identifier.Semantics,
 ) []ast.Node {
 	if object.Materialized {
-		view := objectlookup.MaterializedView(desired.MaterializedViews, object.Name, semantics)
+		view := objectlookup.MaterializedView(declared.MaterializedViews, object.Name, semantics)
 		if view == nil {
 			return result
 		}
@@ -2447,7 +2403,7 @@ func (p *Planner) appendViewLikeRecreate(
 		return append(result, fromschema.FromMaterializedView(*view))
 	}
 
-	view := objectlookup.View(desired.Views, object.Name, semantics)
+	view := objectlookup.View(declared.Views, object.Name, semantics)
 	if view == nil {
 		return result
 	}
@@ -2487,7 +2443,7 @@ func viewReplaceKeepsDependents(viewDiff difftypes.ViewDiff, targetBody string) 
 // dependent view, a unique index and a GRANT off an object no part of the
 // migration touched -- none of them declared, so nothing put them back.
 func viewLikesLostToCascade(
-	desired *schemamodel.Database,
+	declared difftypes.ViewLikeVocabulary,
 	dropped []string,
 	semantics identifier.Semantics,
 ) []deporder.ViewLike {
@@ -2495,11 +2451,11 @@ func viewLikesLostToCascade(
 		return nil
 	}
 
-	candidates := make([]deporder.ViewLike, 0, len(desired.Views)+len(desired.MaterializedViews))
-	for _, view := range desired.Views {
+	candidates := make([]deporder.ViewLike, 0, len(declared.Views)+len(declared.MaterializedViews))
+	for _, view := range declared.Views {
 		candidates = append(candidates, deporder.ViewLike{Name: view.Name, Body: view.Body})
 	}
-	for _, view := range desired.MaterializedViews {
+	for _, view := range declared.MaterializedViews {
 		candidates = append(candidates, deporder.ViewLike{Name: view.Name, Body: view.Body, Materialized: true})
 	}
 
@@ -2512,7 +2468,7 @@ func viewLikesLostToCascade(
 		}
 		taken[name] = true
 		frontier = append(frontier, name)
-		if view := objectlookup.View(desired.Views, name, semantics); view != nil {
+		if view := objectlookup.View(declared.Views, name, semantics); view != nil {
 			lost = append(lost, deporder.ViewLike{Name: view.Name, Body: view.Body})
 		}
 	}

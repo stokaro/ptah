@@ -3,13 +3,9 @@
 // policies, roles, and grants) produced by schemadiff and consumed by the
 // migration planner.
 //
-// The name is the one its callers already used. Before the package carried it,
-// `types` denoted two different packages in adjacent pipeline stages -- this one
-// and catalog -- and one package could not keep its own spelling
-// straight: schemadiff.go imported catalog bare while database.go beside
-// it aliased the same import. Across the tree the alias outnumbered the real
-// name 36 to 28, so most call sites were already spelled this way
-// (stokaro/ptah#2246 section 2.1).
+// The name is unambiguous on purpose: `types` would denote two packages in
+// adjacent pipeline stages, this one and catalog, and a reader of an import
+// line could not tell which was meant.
 package difftypes
 
 import (
@@ -27,10 +23,9 @@ import (
 // ViewChanges is a set of views one change applies to, carrying each one's
 // body and not only its name.
 //
-// The seventh family off `[]string` under stokaro/ptah#2315, and the first
-// whose name is ALREADY the identity: schemamodel.View has no Schema field
-// because the parser folds a declared schema into the name, so the carried
-// view's Name is the qualified spelling the name list held.
+// Its name IS the identity: schemamodel.View has no Schema field, because the
+// parser folds a declared schema into the name, so a carried view's Name is
+// already the qualified spelling.
 //
 // Its rule is the check option. The catalog reports a word -- NONE, LOCAL,
 // CASCADED, or an equivalent a dialect chose -- where the model has a bool, and
@@ -65,10 +60,9 @@ func (v ViewChanges) Names() []string {
 // MaterializedViewChanges is a set of materialized views one change applies to,
 // carrying each one's body and not only its name.
 //
-// The eighth family off `[]string` under stokaro/ptah#2315, and the plainest
-// carry of the eight: catalog.MaterializedView and schemamodel.MaterializedView
-// hold the same fields, including the refresh schedule, which is the ast type
-// on both sides rather than a copy of it.
+// catalog.MaterializedView and schemamodel.MaterializedView hold the same
+// fields, including the refresh schedule, which is the ast type on both sides
+// rather than a copy of it.
 //
 // See [ViewChanges] for why the name is the identity here, and [RangeChanges]
 // for why the wire shape does not change.
@@ -98,9 +92,9 @@ func (m MaterializedViewChanges) Names() []string {
 // SynonymChanges is a set of synonyms one change applies to, carrying each
 // one's target and not only its name.
 //
-// The ninth family off `[]string` under stokaro/ptah#2315. A synonym IS its
-// target -- there is nothing else to it -- so a change that carried only the
-// name carried the half that does not say what the statement should do.
+// A synonym IS its target -- there is nothing else to it -- so the target is
+// what the change has to carry: a name alone does not say what the statement
+// should do.
 //
 // Its rule is that target's spelling. A catalog records base_object_name with
 // the server's own bracket quoting and the parsed parts beside it, and a
@@ -136,9 +130,8 @@ func (s SynonymChanges) Names() []string {
 // HypertableChanges is a set of hypertables one change applies to, carrying
 // each one's partitioning and not only its table name.
 //
-// The tenth family off `[]string` under stokaro/ptah#2315. `create_hypertable`
-// takes the column to partition on and the chunk interval, neither of which a
-// table name carries.
+// `create_hypertable` takes the column to partition on and the chunk interval,
+// neither of which a table name carries.
 //
 // See [RangeChanges] for why both sides carry the operand and why the wire
 // shape does not change.
@@ -168,9 +161,8 @@ func (h HypertableChanges) Names() []string {
 // ContinuousAggregateChanges is a set of continuous aggregates one change
 // applies to, carrying each one's body and not only its name.
 //
-// The eleventh family off `[]string` under stokaro/ptah#2315, and the plain
-// twin of [HypertableChanges]: an aggregate is a materialized view over a
-// hypertable, so the body is the statement.
+// The plain twin of [HypertableChanges]: an aggregate is a materialized view
+// over a hypertable, so the body is the statement.
 //
 // See [RangeChanges] for why both sides carry the operand and why the wire
 // shape does not change.
@@ -200,12 +192,10 @@ func (a ContinuousAggregateChanges) Names() []string {
 // ColumnChanges is a set of columns one table change applies to, carrying each
 // one's definition and not only its name.
 //
-// The twelfth family off `[]string` under stokaro/ptah#2315, and the one a name
-// cost the most. `ALTER TABLE ... ADD COLUMN` needs the type, the nullability,
-// the default and everything else a column declares, and a planner handed a
-// name recovered them by finding the table's Go STRUCT name and then scanning
-// every field in the schema for one matching both -- a parser artifact reaching
-// into the planner, and a silent no-op when either half of the match failed.
+// `ALTER TABLE ... ADD COLUMN` needs the type, the nullability, the default and
+// everything else a column declares. None of that is recoverable from a name
+// without reaching back into the desired schema for it, which is a lookup that
+// plans nothing when it fails to match.
 //
 // Both sides carry, and they have to: `reverseTableDiffs` swaps the added and
 // removed lists to build a down migration, so a rollback that restores a
@@ -243,10 +233,8 @@ func (c ColumnChanges) Names() []string {
 // RoleChanges is a set of roles one change applies to, carrying each one's
 // attributes and not only its name.
 //
-// The thirteenth family off `[]string` under stokaro/ptah#2315. `CREATE ROLE`
-// takes LOGIN, SUPERUSER, CREATEDB, CREATEROLE, INHERIT and REPLICATION, none
-// of which a name carries, and both planners that emit one recovered them by
-// scanning the desired schema for a role of that name.
+// `CREATE ROLE` takes LOGIN, SUPERUSER, CREATEDB, CREATEROLE, INHERIT and
+// REPLICATION, none of which a name carries.
 //
 // Removals carry too, because `reverseSchemaDiff` swaps the two lists to build
 // a down migration and they have to be one type. The comparison itself never
@@ -306,10 +294,8 @@ type RoutineChange struct {
 // FunctionChanges is a set of routines one change applies to, carrying each
 // one's declaration and drop identity and not only its name.
 //
-// The fourteenth family off `[]string` under stokaro/ptah#2315, and the one
-// that retires a parallel field rather than only a lookup:
-// `FunctionsRemovedWithSignatures` existed because a name could not carry the
-// drop identity, which is this issue's problem solved once by hand.
+// A routine is addressed by its argument list as well as its name, so the drop
+// identity travels with the change rather than in a list beside it.
 //
 // See [RangeChanges] for why both sides carry and why the wire shape does not
 // change.
@@ -364,12 +350,10 @@ func (f FunctionChanges) Removals() []RoutineRemoval {
 // DomainChanges is a set of domain types one change applies to, carrying each
 // one's definition and not only its name.
 //
-// The sixth family off `[]string` under stokaro/ptah#2315, and the first whose
-// carry needed a RULE rather than a transcription: a catalog reports one
-// `Default` string for what the model splits into a literal value and an
-// expression. That rule now lives in [sqlutil.DefaultLooksLikeExpression],
-// where the column path and this one both reach it, rather than inside
-// internal/convert -- the package item 3 retires.
+// Carrying a domain needs a rule rather than a transcription: a catalog reports
+// one `Default` string for what the model splits into a literal value and an
+// expression. [sqlutil.DefaultLooksLikeExpression] is that rule, and the column
+// path reaches the same one, so the two cannot answer it differently.
 //
 // See [RangeChanges] for why both sides carry the operand and why the wire
 // shape does not change.
@@ -399,11 +383,10 @@ func (d DomainChanges) Names() []string {
 // EnumChanges is a set of enum types one change applies to, carrying each one's
 // values and not only its name.
 //
-// The fifth family off `[]string` under stokaro/ptah#2315, and the cleanest
-// carry of them: catalog.Enum and schemamodel.Enum declare the same three
-// properties -- name, schema and ordered values -- with nothing on either side
-// the other cannot hold. See [RangeChanges] for why both sides carry the
-// operand and why the wire shape does not change.
+// catalog.Enum and schemamodel.Enum declare the same three properties -- name,
+// schema and ordered values -- with nothing on either side the other cannot
+// hold. See [RangeChanges] for why both sides carry the operand and why the
+// wire shape is a list of names.
 type EnumChanges []schemamodel.Enum
 
 // MarshalJSON writes the names alone, the shape `enums_added` and
@@ -430,8 +413,8 @@ func (e EnumChanges) Names() []string {
 // ExtensionChanges is a set of extensions one change applies to, carrying each
 // one's declaration and not only its name.
 //
-// The fourth family off `[]string` under stokaro/ptah#2315. See [RangeChanges]
-// for why both sides carry the operand and why the wire shape does not change.
+// See [RangeChanges] for why both sides carry the operand and why the wire
+// shape is a list of names.
 //
 // An extension is named globally rather than per schema, so the name here is
 // the bare one, which is what the comparator has always keyed on.
@@ -461,8 +444,8 @@ func (e ExtensionChanges) Names() []string {
 // SequenceChanges is a set of sequences one change applies to, carrying each
 // one's definition and not only its name.
 //
-// The third family off `[]string` under stokaro/ptah#2315. See [RangeChanges]
-// for why both sides carry the operand and why the wire shape does not change.
+// See [RangeChanges] for why both sides carry the operand and why the wire
+// shape is a list of names.
 type SequenceChanges []schemamodel.Sequence
 
 // MarshalJSON writes the names alone, the shape `sequences_added` and
@@ -489,8 +472,8 @@ func (s SequenceChanges) Names() []string {
 // CompositeTypeChanges is a set of composite types one change applies to,
 // carrying each one's fields and not only its name.
 //
-// The second family off `[]string` under stokaro/ptah#2315. See [RangeChanges]
-// for why both sides carry the operand and why the wire shape does not change.
+// See [RangeChanges] for why both sides carry the operand and why the wire
+// shape is a list of names.
 type CompositeTypeChanges []schemamodel.CompositeType
 
 // MarshalJSON writes the names alone, the shape `composite_types_added` and
@@ -517,20 +500,21 @@ func (c CompositeTypeChanges) Names() []string {
 // RangeChanges is a set of range types one change applies to, carrying each
 // one's definition and not only its name.
 //
-// It is the first family to move off `[]string` under stokaro/ptah#2315, whose
-// measure of done is `GenerateSchemaDiffAST` no longer taking the desired
-// schema: the planner took it to recover, by name, what the diff had thrown
-// away. A change that carries its operands needs no such lookup -- and the
-// lookup it replaces had an `if found != nil` around it, so a name the planner
-// could not resolve silently planned nothing.
+// Carrying the operand is what lets a planner work from the change alone. The
+// alternative is to recover each definition by name from the desired schema,
+// and a name that fails to resolve there plans nothing at all -- silently,
+// because such a lookup is guarded rather than checked.
 //
-// ON THE WIRE IT IS STILL A LIST OF NAMES. `ptah schema diff --format json`
-// serializes this type as `format_version: 1` has always spelled it, because
-// 33 of these families remain and a format that changed shape once per family
-// would churn 33 times for one architectural move. The document is written and
-// never read back -- nothing in the tree unmarshals a SchemaDiff -- so the
-// encoding is a presentation choice, and the version bump belongs to the end of
-// the migration rather than to each step of it.
+// ON THE WIRE IT IS A LIST OF NAMES. `ptah schema diff --format json`
+// serializes this type under `format_version: 1` as the name list it has always
+// been, and every sibling family below does the same. The carried operand is
+// for a planner in the same process; the document is written and never read
+// back, so its encoding is a presentation choice rather than a contract the
+// operand has to fit.
+//
+// A nil list stays null and an empty one stays an empty array, which is the
+// distinction every field of this type keeps: null is a comparison that did not
+// run, and [] is one that found nothing.
 type RangeChanges []schemamodel.Range
 
 // MarshalJSON writes the names alone, preserving the shape `ranges_added` and
@@ -873,16 +857,15 @@ type SchemaDiff struct {
 
 	// DomainsAdded/Removed/Modified track PostgreSQL domain types.
 	//
-	// Both lists carry the domain itself, the sixth family to do so under
-	// stokaro/ptah#2315.
+	// Both lists carry the domain itself, for the reason [RangeChanges] gives.
 	DomainsAdded    DomainChanges `json:"domains_added"`
 	DomainsRemoved  DomainChanges `json:"domains_removed"`
 	DomainsModified []DomainDiff  `json:"domains_modified"`
 
 	// CompositeTypesAdded/Removed/Modified track PostgreSQL composite types.
 	//
-	// Both lists carry the composite type itself, the second family to do so
-	// under stokaro/ptah#2315, for the reason [RangeChanges] gives.
+	// Both lists carry the composite type itself, for the reason [RangeChanges]
+	// gives.
 	CompositeTypesAdded    CompositeTypeChanges `json:"composite_types_added"`
 	CompositeTypesRemoved  CompositeTypeChanges `json:"composite_types_removed"`
 	CompositeTypesModified []CompositeTypeDiff  `json:"composite_types_modified"`
@@ -892,16 +875,15 @@ type SchemaDiff struct {
 	// DROP TYPE followed by a CREATE TYPE, the same shape domains and composite
 	// types already use.
 	//
-	// Modified used to be absent, and the comparator built name sets only, so
-	// changing the subtype of an existing range type produced an empty plan and
-	// `schema apply` reported "Schema is synced" while the database still held
-	// the old definition (stokaro/ptah#931 item 2).
+	// Modified is what makes a changed subtype visible at all: a comparison that
+	// built name sets alone found no difference in it, so `schema apply` reported
+	// a synced schema while the database still holds the old definition
+	// (stokaro/ptah#931 item 2).
 	//
-	// The two name lists carry the range type itself rather than its name, the
-	// first family to do so under stokaro/ptah#2315. Both sides carry it: the
-	// reverse of an addition is a removal and the reverse of a removal is an
-	// addition, and a planner that had to look one of them up would need a
-	// schema again for exactly the direction that swap produces.
+	// The two lists carry the range type itself rather than its name, and both
+	// sides carry it: the reverse of an addition is a removal and the reverse of
+	// a removal is an addition, so a planner that had to look one of them up
+	// would need a schema again for exactly the direction that swap produces.
 	RangesAdded    RangeChanges `json:"ranges_added"`
 	RangesRemoved  RangeChanges `json:"ranges_removed"`
 	RangesModified []RangeDiff  `json:"ranges_modified"`
@@ -1057,6 +1039,20 @@ type SchemaDiff struct {
 	// It holds the tables, not their columns: what a reference resolution reads
 	// is the name and the schema.
 	DeclaredTables []schemamodel.Table `json:"-"`
+
+	// DeclaredViewLikes is every view and materialized view the declaration
+	// holds, carried once for the whole diff and off the wire.
+	//
+	// A DROP that cascades reaches a view by what the view SELECTS from, and
+	// that view is usually one this diff does not touch: it is not being
+	// added, removed or modified, it is collateral. So the set a planner has
+	// to walk is every declared view, which no per-entry operand can supply --
+	// the same shape [DeclaredTables] has for a foreign key's target
+	// (stokaro/ptah#2315).
+	//
+	// A recreate renders the view back, so this holds the whole declaration
+	// of each rather than its name.
+	DeclaredViewLikes ViewLikeVocabulary `json:"-"`
 
 	// RLSEnabledTablesAdded contains names of tables that need RLS enabled
 	RLSEnabledTablesAdded RLSEnabledTableChanges `json:"rls_enabled_tables_added"`
@@ -1644,6 +1640,41 @@ type EnumDiff struct {
 	// ValuesRemoved contains enum values that need to be removed from the enum type
 	// (may not be supported by all databases - see database limitations above)
 	ValuesRemoved []string `json:"values_removed"`
+
+	// Usages are the declared columns typed by this enum, carried off the wire.
+	//
+	// Removing a value is not an ALTER on PostgreSQL: the type is renamed
+	// aside, recreated without the value, and every column that names it is
+	// converted across -- with its default dropped first and restored after,
+	// because a default is typed by the type being replaced.
+	//
+	// Which columns those are is a question about the whole declaration, and a
+	// planner asked it by scanning every declared field for the type name. It
+	// belongs to the change instead: the comparison holds the declaration at
+	// the moment it decides a value is going (stokaro/ptah#2315).
+	//
+	// Empty for a change that only ADDS values, which needs no conversion.
+	Usages []EnumColumnUsage `json:"-"`
+}
+
+// EnumColumnUsage is one declared column typed by an enum, and what the
+// conversion has to put back around it.
+//
+// The default travels with the column because dropping it is half of the
+// conversion: `ALTER COLUMN ... TYPE` cannot run while a default typed by the
+// old type is attached, so the plan drops it, converts, and sets it again.
+type EnumColumnUsage struct {
+	// Table is the column's table, qualified as the declaration spells it.
+	Table string
+	// Column is the column name.
+	Column string
+	// Default is the declared default, empty when there is none.
+	Default string
+	// DefaultSet separates a declared empty default from no default at all.
+	DefaultSet bool
+	// DefaultExpr is the declared default expression, which is not quoted as
+	// a literal when it is restored.
+	DefaultExpr string
 }
 
 // FunctionDiff represents changes to PostgreSQL function definitions.
@@ -1847,10 +1878,10 @@ type ExtensionDiff struct {
 	FromSchema string `json:"from_schema"`
 	ToSchema   string `json:"to_schema"`
 	// FromVersion and ToVersion carry a declared version change. The version is
-	// the one attribute of an extension that moves over time, and it used to be
-	// rendered on the create and never compared: a team that raised the pin in
-	// its schema saw "Schema is synced" against a database still running the old
-	// one (stokaro/ptah#1718).
+	// the one attribute of an extension that moves over time, so it is compared
+	// rather than only rendered on the create: a version rendered and never
+	// compared reports a synced schema to a team that raised the pin against a
+	// database still running the older one (stokaro/ptah#1718).
 	//
 	// Both are empty when the declaration names no version, which is the common
 	// case and means "whatever the server installs".
@@ -1966,8 +1997,8 @@ type ViewDiff struct {
 	// the declaration; coming DOWN it is the view the database had before, so
 	// the rollback restores what it is undoing rather than reapplying it. The
 	// comparison sets the first and [reverseViewDiffs] rewrites it to the
-	// second -- which is what the planner used to get by being handed a
-	// different schema per direction (stokaro/ptah#2315).
+	// second, so the direction travels with the diff rather than in a separate
+	// schema handed to the planner per direction.
 	//
 	// It is not serialized: the document has always carried a name and a map of
 	// what changed, and a consumer reading it is unaffected.
@@ -2257,11 +2288,10 @@ type RoleDiff struct {
 // TableCreation is a table a diff creates, together with everything CREATE
 // TABLE renders from.
 //
-// The lists a planner used to reach for are keyed by the Go struct rather than
-// owned by the table -- `Database.Fields` holds every column of every table --
-// so rendering one table meant being handed the whole desired schema and
-// filtering it. The filtering happens once, where the schema is already in
-// hand, and the result travels with the change (stokaro/ptah#2315).
+// A schema's lists are keyed by the Go struct rather than owned by the table --
+// `Database.Fields` holds every column of every table -- so rendering one table
+// from a schema means filtering it. That filtering happens once, where the
+// schema is already in hand, and its result travels here with the change.
 type TableCreation struct {
 	// Name is the spelling the diff carries for this table, which is the one a
 	// plan and a report name it by. It is not derived from Table: the
@@ -2341,6 +2371,35 @@ func UserTypeVocabularyOf(desired *schemamodel.Database) UserTypeVocabulary {
 		CompositeTypes: nilWhenEmpty(desired.CompositeTypes),
 		Ranges:         nilWhenEmpty(desired.Ranges),
 		Enums:          nilWhenEmpty(desired.Enums),
+	}
+}
+
+// ViewLikeVocabulary is the declared view-like objects a planner resolves a
+// cascade against: the views and the materialized views.
+//
+// The two travel together because every reader of them reads both. A DROP
+// cascades to whichever kind selects from what it dropped, and the plan that
+// puts them back has to know which kind each was.
+type ViewLikeVocabulary struct {
+	// Views are the declared views.
+	Views []schemamodel.View
+	// MaterializedViews are the declared materialized views.
+	MaterializedViews []schemamodel.MaterializedView
+}
+
+// ViewLikeVocabularyOf reads the view-like vocabulary out of a declaration.
+//
+// Each list is nil when it holds nothing, for the reason
+// [UserTypeVocabularyOf] gives: two readers of one document disagree about
+// empty versus nil, and a vocabulary that kept the difference would make two
+// diffs of one schema compare unequal for a reason neither document states.
+func ViewLikeVocabularyOf(desired *schemamodel.Database) ViewLikeVocabulary {
+	if desired == nil {
+		return ViewLikeVocabulary{}
+	}
+	return ViewLikeVocabulary{
+		Views:             nilWhenEmpty(desired.Views),
+		MaterializedViews: nilWhenEmpty(desired.MaterializedViews),
 	}
 }
 
@@ -2558,10 +2617,11 @@ func (t TableChanges) Names() []string {
 // RLSEnabledTableChanges is a list of row-level-security enablements a diff
 // adds or removes.
 //
-// The list used to be table names alone, which meant a planner that renders
-// anything beyond the name -- a declared comment, on the targets that carry one
-// -- had to find the declaration in a schema handed to it alongside the diff,
-// and planned nothing for an enablement it could not find (stokaro/ptah#2315).
+// It carries the declaration and not the table name alone, because a planner
+// renders more than the name on the targets that have more -- a declared
+// comment, for one. A name would send it looking for the declaration in a
+// schema handed over beside the diff, and plan nothing for an enablement it
+// failed to find.
 type RLSEnabledTableChanges []schemamodel.RLSEnabledTable
 
 // MarshalJSON writes the table names alone, the shape

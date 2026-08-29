@@ -1,6 +1,12 @@
 ---
 title: OCI registry artifacts
 description: Publish, pin, pull, and consume Ptah migrations and desired schemas through an OCI registry.
+owns:
+  - cli-ptah-migrations-pull
+  - cli-ptah-migrations-push
+  - cli-ptah-oci-referrers
+  - cli-ptah-schema-pull
+  - cli-ptah-schema-push
 ---
 
 Ptah can store migration directories and desired schemas as OCI 1.1 artifacts
@@ -542,8 +548,10 @@ Actions](https://docs.github.com/en/packages/managing-github-packages-using-gith
 
 ## Next steps
 
-- Verifying and gating what you publish and apply:
+- Verifying what you publish and apply:
   [Integrity and safety](../../versioned/integrity-and-safety/).
+- Linting a published directory and gating destructive statements:
+  [Lint and gate unsafe SQL](../../versioned/lint/).
 - The complete verb and flag inventory for the OCI commands:
   [Native commands](../../reference/native-commands/).
 - Which registry-backed features are supported where:

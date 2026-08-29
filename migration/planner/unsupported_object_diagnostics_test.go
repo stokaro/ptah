@@ -66,7 +66,11 @@ func unhostableCreationDiff() *difftypes.SchemaDiff {
 		TablesAdded:            difftypes.TableChanges{{Name: "t"}},
 		ViewsAdded:             difftypes.ViewChanges{{Name: "v1", Body: "SELECT id FROM t"}},
 		MaterializedViewsAdded: difftypes.MaterializedViewChanges{{Name: "mv1", Body: "SELECT id FROM t"}},
-		RLSEnabledTablesAdded:  difftypes.RLSEnabledTableChanges{{Table: "t"}},
+		// The declared view-like objects a comparison fills. Rendering a view
+		// back reads its body from here, so a diff carrying none plans no views
+		// at all -- which is the opposite of what this test asserts.
+		DeclaredViewLikes:     difftypes.ViewLikeVocabularyOf(unhostableSchema()),
+		RLSEnabledTablesAdded: difftypes.RLSEnabledTableChanges{{Table: "t"}},
 		RLSPoliciesAdded: []difftypes.RLSPolicyRef{{
 			PolicyName: "p1", TableName: "t",
 			// An addition carries the declaration it renders from

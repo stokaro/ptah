@@ -1,6 +1,8 @@
 ---
 title: AI agents over MCP
 description: Connect an AI client to Ptah with ptah mcp, and decide what it may read, propose, and write.
+owns:
+  - cli-ptah-mcp
 ---
 
 :::note[Experimental]
@@ -136,8 +138,12 @@ capability on this surface grants one.
 Three of Ptah's own reading verbs are deliberately absent: `schema inspect`,
 `schema diff`, and `migrations lint`. Each needs a scratch database that Ptah
 resets destructively, and a destructive capability must not sit behind a
-read-only name on a surface an agent drives. They return when a later phase can
-supply that database out of band rather than from the caller.
+read-only name on a surface an agent drives.
+
+This surface has no way to be handed such a database out of band — the caller
+would have to name it, which is the arrangement the rule exists to prevent. So
+the three stay off it, and the place to run them is the CLI, where the flag
+naming the database is in front of the person who typed it.
 
 ## The artifact tools
 

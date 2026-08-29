@@ -136,6 +136,15 @@ jobs:
       - name: Check the generated command reference
         run: scripts/check-command-reference.sh
 
+      - name: Check the derived feature inventory
+        run: scripts/check-feature-inventory.sh
+
+      # The gate's own rules, broken against fixtures. A --selftest reduced to a
+      # bare OK still exits 0, so scripts/check-gate-selftests.sh additionally
+      # requires this one to go red on a rule short-circuited in its source.
+      - name: Check the feature inventory gate can still fail
+        run: scripts/check-feature-inventory.sh --selftest
+
       - name: Check public Go API ledger
         run: scripts/check-public-api.sh
 
