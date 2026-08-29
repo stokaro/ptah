@@ -481,11 +481,15 @@ jobs:
     name: tier 2 report
     needs: [cells, probe]
     # `always()` so a probe that failed still reaches the aggregation -- that is
-    # the whole point of the report. The second half is new: with no cells
-    # selected there is nothing to aggregate, and the report would otherwise run
-    # against an empty results directory and call every declared cell MISSING,
-    # turning an opt-out into a red check (stokaro/ptah#2185).
-    if: always() && needs.cells.outputs.selected != '[]'
+    # the whole point of the report. With no cells selected there is nothing to
+    # aggregate, and the report would otherwise run against an empty results
+    # directory and call every declared cell MISSING, turning an opt-out into a
+    # red check (stokaro/ptah#2185).
+    #
+    # A cancelled or failed `cells` publishes '' rather than '[]', so that
+    # clause is true and `fromJSON('')` below dies as a template error before
+    # any step runs. `result` is what covers it; measured on 9c6c8d546.
+    if: always() && needs.cells.result == 'success' && needs.cells.outputs.selected != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
