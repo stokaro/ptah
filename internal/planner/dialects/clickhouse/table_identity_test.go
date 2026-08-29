@@ -128,9 +128,15 @@ func TestCreateTableResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
+			// The creation carries the declaration, and its Name carries the
+			// spelling this row is about: the plan renders what the creation
+			// holds, and the diff naming the table differently is the subject.
+			declared := eventsTable(test.tableSchema)
+			creations := difftypes.TableCreationsFor(declared, "events")
+			creations[0].Name = test.diffName
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
-				&difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: test.diffName}}},
-				eventsTable(test.tableSchema),
+				&difftypes.SchemaDiff{TablesAdded: creations},
+				declared,
 				"clickhouse",
 			)
 			c.Assert(err, qt.IsNil)
@@ -147,7 +153,10 @@ func TestCreateTableDoesNotGuessBetweenSchemas(t *testing.T) {
 	c := qt.New(t)
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
-		&difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{{Name: "app.events"}}},
+		// The declaration holds `reporting.events`, so a creation for
+		// `app.events` cannot be assembled from it -- which is the control:
+		// nothing is created, rather than the wrong relation.
+		&difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(eventsTable("reporting"), "app.events")},
 		eventsTable("reporting"),
 		"clickhouse",
 	)
