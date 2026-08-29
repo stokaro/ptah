@@ -311,7 +311,14 @@ func TestGenerateMigrationAST_TableAdditionPreservesStructuralIdentity(t *testin
 	}
 
 	nodes, err := clickhouse.New().GenerateMigrationAST(
-		&difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(desired, "tenant.data")},
+		// Two declared tables answer to the string `tenant.data`: one literally
+		// named that, and one named `data` in schema `tenant`. A comparison
+		// produces the creation from the table it MATCHED, so the fixture names
+		// that table rather than the string -- TableCreationsFor resolves a
+		// colliding name to the first declared one, which is the other table.
+		&difftypes.SchemaDiff{TablesAdded: difftypes.TableChanges{
+			difftypes.TableCreationFor(desired, desired.Tables[1], "tenant.data"),
+		}},
 		desired,
 	)
 

@@ -109,7 +109,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 	}
 
 	result = reportUnsupportedObjectsBeforeTables(result, diff)
-	result = p.addNewTables(result, diff, desired)
+	result = p.addNewTables(result, diff)
 	result = p.modifyExistingTables(result, diff, desired)
 	result, err = planObjectsAfterTables(result, diff, desired, p.capabilities())
 	if err != nil {
@@ -136,20 +136,16 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *sche
 // comparator's spelling while `table.QualifiedName()` carries the declaration's,
 // and a table whose two sides disagree got no CREATE TABLE at all -- no
 // statement, no comment, and a plan that exits 0 having created nothing.
-func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []ast.Node {
-	if len(diff.TablesAdded) == 0 {
-		return result
-	}
-	semantics := diff.EffectiveIdentifierSemantics(platform.ClickHouse)
-
-	for _, table := range desired.Tables {
-		if !objectlookup.Contains(diff.TablesAdded.Names(), table.QualifiedName(), semantics) {
-			continue
-		}
+// addNewTables renders each created table from the creation the comparison
+// carried for it, rather than walking the declaration and keeping the tables
+// the diff named (stokaro/ptah#2315).
+func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
+	creations := diff.TablesAdded.Qualified(diff.DeclaredUserTypes, platform.ClickHouse).InDependencyOrder()
+	for _, creation := range creations {
 		// FromTable applies platform.clickhouse.* overrides into the AST
 		// node's Options map (uppercased), which the renderer then reads
 		// to build the ENGINE clause.
-		tableNode := fromschema.FromTable(table, desired.Fields, diff.DeclaredUserTypes.Enums, platform.ClickHouse)
+		tableNode := fromschema.FromTable(creation.Table, creation.Fields, creation.Enums, platform.ClickHouse)
 		result = append(result, tableNode)
 	}
 
