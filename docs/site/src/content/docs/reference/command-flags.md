@@ -271,6 +271,16 @@ Read the columns as follows.
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
+**`ptah inference pause`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--reason` | `string` | — | `PTAH_REASON` | — |
+| `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
+| `--spec` | `string` | — | `PTAH_SPEC` | — |
+| `--worker` | `string` | `ptah-cli` | `PTAH_WORKER` | — |
+
 **`ptah inference plan`**
 
 | Flag | Type | Default | Environment variable | Notes |
@@ -283,6 +293,15 @@ Read the columns as follows.
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
 **`ptah inference prepare`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
+| `--spec` | `string` | — | `PTAH_SPEC` | — |
+| `--worker` | `string` | `ptah-cli` | `PTAH_WORKER` | — |
+
+**`ptah inference resume`**
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |

@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -66,6 +67,8 @@ func TestInferenceCLIE2E(t *testing.T) {
 	assertCatchUpProcessesWhatChanged(c, ctx, db, specPath, dbName)
 	assertVerifyPasses(c, ctx, specPath, dbName)
 	assertStatusReportsTheRun(c, ctx, specPath, dbName)
+	assertPauseStopsTheRunAndSaysWhy(c, ctx, specPath, dbName)
+	assertResumeReturnsItToRunning(c, ctx, specPath, dbName)
 	assertCutoverBindsToItsPlan(c, ctx, specPath, dbName)
 	assertRetireIsRefusedWhileQueriesReadIt(c, ctx, specPath, dbName)
 	assertRollbackIsRefusedWithoutEvidence(c, ctx, specPath, dbName)
@@ -891,6 +894,80 @@ func assertStatusReportsTheRun(c *qt.C, ctx context.Context, specPath, dbURL str
 	c.Assert(output, qt.Contains, "scanned 6, embedded 5, skipped 0, deleted 1")
 	c.Assert(output, qt.Contains, "snapshot boundary: ")
 	c.Assert(output, qt.Contains, "catch-up watermark: ")
+}
+
+// assertPauseStopsTheRunAndSaysWhy is stokaro/ptah#2474: the run status had a
+// paused value and the checkpoint code knew how to enter it, and an operator
+// could not.
+//
+// A long backfill against a rate-limited provider is exactly when pausing is
+// the thing you want, and the answer was to kill the process -- which works,
+// because the run is resumable, but it leaves the run reading `running` while
+// nothing runs.
+func assertPauseStopsTheRunAndSaysWhy(c *qt.C, ctx context.Context, specPath, dbURL string) {
+	c.Helper()
+
+	before := fencingTokenOf(c, ctx, specPath, dbURL)
+	output := runInference(c, ctx, "pause",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID,
+		"--reason", "the provider is rate limiting us")
+
+	c.Assert(output, qt.Contains, "paused run "+cliRunID)
+	c.Assert(output, qt.Contains, "the provider is rate limiting us")
+
+	// The token moved, which is what makes a pause take effect against a worker
+	// that is running rather than take note beside it.
+	after := fencingTokenOf(c, ctx, specPath, dbURL)
+	c.Assert(after > before, qt.IsTrue, qt.Commentf("token %d did not move past %d", after, before))
+
+	// And status answers the question the reason was required for. It read the
+	// failure class alone, which a pause does not set, so the reason was stored
+	// and shown nowhere.
+	status := runInference(c, ctx, "status",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID)
+	c.Assert(status, qt.Contains, "paused")
+	c.Assert(status, qt.Contains, "paused: the provider is rate limiting us")
+}
+
+// assertResumeReturnsItToRunning is the other half, and the refusal that keeps
+// the verb from being a way to set a status.
+func assertResumeReturnsItToRunning(c *qt.C, ctx context.Context, specPath, dbURL string) {
+	c.Helper()
+
+	paused := fencingTokenOf(c, ctx, specPath, dbURL)
+	output := runInference(c, ctx, "resume",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID)
+	c.Assert(output, qt.Contains, "resumed run "+cliRunID)
+
+	status := runInference(c, ctx, "status",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID)
+	c.Assert(status, qt.Not(qt.Contains), "paused")
+	// The reason is gone with it: a running run carrying why it stopped reads
+	// as a run that stopped.
+	c.Assert(status, qt.Not(qt.Contains), "rate limiting")
+	// Resuming fences too. The worker the pause stopped is not necessarily
+	// gone, and returning the run to running under its token would put it back
+	// where the fence exists to stop it.
+	c.Assert(fencingTokenOf(c, ctx, specPath, dbURL) > paused, qt.IsTrue)
+
+	// A second resume is refused rather than quietly setting the status again.
+	_, err := runInferenceExpectingFailure(c, ctx, "resume",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID)
+	c.Assert(err, qt.ErrorMatches, `.*only a paused run resumes, and this one is running`)
+}
+
+// fencingTokenOf reads the run's token out of what status prints, which is the
+// number the refusal a fenced worker sees names.
+func fencingTokenOf(c *qt.C, ctx context.Context, specPath, dbURL string) int {
+	c.Helper()
+	output := runInference(c, ctx, "status",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID)
+	_, after, found := strings.Cut(output, "fencing token ")
+	c.Assert(found, qt.IsTrue, qt.Commentf("status printed no fencing token:\n%s", output))
+	line, _, _ := strings.Cut(after, "\n")
+	token, err := strconv.Atoi(strings.TrimSpace(line))
+	c.Assert(err, qt.IsNil)
+	return token
 }
 
 // assertCutoverBindsToItsPlan is what an approval is for.

@@ -301,10 +301,24 @@ func printStatus(out io.Writer, status embedreport.Status) error {
 		bullet(fmt.Sprintf("lease: %s, fencing token %d",
 			leaseText(status), status.FencingToken)),
 	}
+	return writeLines(out, append(lines, stoppedLines(status)...)...)
+}
+
+// stoppedLines says why a run is not running, if it is not.
+//
+// A pause and a failure both leave their explanation in FailureDetail, and only
+// a failure classifies it. Reading the class alone printed nothing at all for a
+// paused run, so "why did this stop" -- the first question a paused run's
+// operator asks, and the reason a pause without one is refused -- had an answer
+// stored and no verb that showed it (stokaro/ptah#2474).
+func stoppedLines(status embedreport.Status) []string {
 	if status.FailureClass != "" {
-		lines = append(lines, bullet("failed in "+status.FailureClass+": "+status.FailureDetail))
+		return []string{bullet("failed in " + status.FailureClass + ": " + status.FailureDetail)}
 	}
-	return writeLines(out, lines...)
+	if status.State == string(embedrun.StatusPaused) {
+		return []string{bullet("paused: " + status.FailureDetail)}
+	}
+	return nil
 }
 
 // leaseText renders who holds the run.

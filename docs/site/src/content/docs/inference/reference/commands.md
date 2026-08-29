@@ -175,11 +175,58 @@ and expected answers that you write.
 The numbers carry the query parameters they were taken under, because recall at
 one `ivfflat.probes` setting is not comparable to recall at another.
 
+## `pause`
+
+Stops a run at the boundary its last checkpoint reached.
+
+| Flag | Meaning |
+| --- | --- |
+| `--run-id` | Identifier of the run (required) |
+| `--reason` | Why the run is being stopped (required) |
+| `--worker` | Name recorded as the lease holder |
+
+Nothing is lost and nothing is undone. The work that is committed stays
+committed and the position the run reached stays recorded; `resume` picks it up
+from there.
+
+A pause **takes the run**, which moves the fencing token past the worker that
+held it. That is what makes it take effect rather than take note: without the
+claim, the pause lands in a row the running worker overwrites at its next
+checkpoint, and the run reads paused for a few seconds while the provider bill
+goes on.
+
+So a backfill that was running will fail at its next commit, saying the run has a
+newer fencing token. That is the pause working.
+
+The reason is required, and `status` prints it. A paused run whose reason is
+empty is one nobody can act on.
+
+## `resume`
+
+Returns a paused run to running and clears the reason it stopped for.
+
+| Flag | Meaning |
+| --- | --- |
+| `--run-id` | Identifier of the run (required) |
+| `--worker` | Name recorded as the lease holder |
+
+Nothing starts working here. This changes what the run is, not what is happening
+to it: `backfill` or `catchup` takes the run in turn and continues from the
+checkpoint.
+
+It claims for the same reason `pause` does, and for one more — the worker the
+pause fenced is not necessarily gone, and a resume that left the token where the
+pause put it would return the run to running with that worker still able to
+commit into it.
+
+Only a paused run resumes. Anything else is refused by name.
+
 ## `status`
 
 Reports what a run has done, how far it got, and what it is waiting for: the
 phase, the progress counts, the watermarks, the lease and its fencing token, and
-the failure if there was one.
+why it stopped if it did — the reason for a pause, the class and detail for a
+failure.
 
 ## `cutover`
 

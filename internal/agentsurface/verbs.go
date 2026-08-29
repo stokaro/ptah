@@ -93,6 +93,13 @@ var verbs = map[string]Verb{
 	"inference index": {TargetWrites, ScratchNone,
 		"builds the generation's vector index concurrently, which writes an index into the " +
 			"target database and drops an invalid leftover before rebuilding it"},
+	"inference pause": {TargetWrites, ScratchNone,
+		"stops a run at the boundary its last checkpoint reached, which writes the run's own " +
+			"row: it takes the run for this process, so a worker that was running is refused " +
+			"at its next commit"},
+	"inference resume": {TargetWrites, ScratchNone,
+		"returns a paused run to running, which writes the run's own row and takes the run for " +
+			"this process; nothing starts working here"},
 	"inference plan": {TargetReads, ScratchNone,
 		"resolves a specification against the database and prints what would happen; nothing is " +
 			"created and nothing is written"},
