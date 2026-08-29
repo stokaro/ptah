@@ -133,6 +133,14 @@ func TestPlanner_GenerateMigrationSQL_EnumsModified(t *testing.T) {
 						ValuesRemoved: []string{"deprecated"},
 					},
 				},
+				// The vocabulary a comparison fills on every run: recreating an enum
+				// reads the values it should hold, and those are the declaration's
+				// rather than anything the change carries.
+				DeclaredUserTypes: difftypes.UserTypeVocabulary{
+					Enums: []schemamodel.Enum{
+						{Name: "user_status", Values: []string{"active", "suspended"}},
+					},
+				},
 			},
 			desired: &schemamodel.Database{
 				Enums: []schemamodel.Enum{

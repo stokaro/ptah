@@ -149,7 +149,7 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff, de
 		// FromTable applies platform.clickhouse.* overrides into the AST
 		// node's Options map (uppercased), which the renderer then reads
 		// to build the ENGINE clause.
-		tableNode := fromschema.FromTable(table, desired.Fields, desired.Enums, platform.ClickHouse)
+		tableNode := fromschema.FromTable(table, desired.Fields, diff.DeclaredUserTypes.Enums, platform.ClickHouse)
 		result = append(result, tableNode)
 	}
 
@@ -170,7 +170,7 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 		// lookup left to fail. The modification path keeps both, because a
 		// ColumnDiff still carries a name alone (stokaro/ptah#2315).
 		for _, column := range td.ColumnsAdded {
-			col := fromschema.FromField(column, desired.Enums, platform.ClickHouse)
+			col := fromschema.FromField(column, diff.DeclaredUserTypes.Enums, platform.ClickHouse)
 			result = append(result, &ast.AlterTableNode{
 				Name:       td.TableName,
 				Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: col}},
@@ -183,7 +183,7 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 				result = append(result, ast.NewComment(fmt.Sprintf("WARNING: ClickHouse planner could not find field %s.%s; skipping MODIFY COLUMN", td.TableName, colDiff.ColumnName)))
 				continue
 			}
-			col := fromschema.FromField(*field, desired.Enums, platform.ClickHouse)
+			col := fromschema.FromField(*field, diff.DeclaredUserTypes.Enums, platform.ClickHouse)
 			result = append(result, &ast.AlterTableNode{
 				Name: td.TableName,
 				Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{
