@@ -38,19 +38,33 @@ if printf '%s' "$output" | grep -q 'Failing input written to'; then
 fi
 
 if printf '%s' "$output" | grep -q 'context deadline exceeded'; then
-	# Only when the deadline is the WHOLE story. A run that also panicked, hit
-	# the race detector, or failed an assertion is a failure like any other,
-	# and the deadline line beside it must not launder it.
+	# Only when the deadline is the WHOLE story, and "the whole story" is
+	# decided by recognizing every line rather than by looking for known bad
+	# ones. A list of bad shapes passes whatever is not on it: `fatal error:
+	# concurrent map writes` beside the deadline named no panic, no race, no
+	# source location and no second --- FAIL, so it laundered into a green job
+	# and took the only signal the run produced with it (stokaro/ptah#2501).
 	#
-	# The discriminators are what a real failure leaves and a bare deadline
-	# never does: a source location, a panic, a race report, or a second
-	# --- FAIL beneath the target's own.
-	noise="$(printf '%s' "$output" | grep -cE 'panic:|DATA RACE|\.go:[0-9]+:' || true)"
-	fails="$(printf '%s' "$output" | grep -cE '^[[:space:]]*--- FAIL' || true)"
-	if [ "$noise" -eq 0 ] && [ "$fails" -le 1 ]; then
+	# So: a line this does not recognize keeps the run red. False red is the
+	# safe direction here -- it costs a re-run, and the alternative costs a
+	# finding.
+	allowed="^--- FAIL: ${target} \([0-9.]+s\)$"
+	allowed="${allowed}|^[[:space:]]+context deadline exceeded$"
+	allowed="${allowed}|^FAIL$"
+	# go's own package summary line, and nothing else beginning FAIL: a
+	# `FAIL <pkg> [build failed]` carries no duration and stays unrecognized.
+	allowed="${allowed}|^FAIL[[:space:]]+[^[:space:]]+[[:space:]]+[0-9.]+s$"
+	allowed="${allowed}|^ok[[:space:]]"
+	# The progress and setup lines a fuzz run prints while it works.
+	allowed="${allowed}|^fuzz: elapsed:"
+	allowed="${allowed}|^warning: starting with empty corpus$"
+
+	unexplained="$(printf '%s\n' "$output" | grep -vE "$allowed" | grep -vE '^[[:space:]]*$' || true)"
+	if [ -z "$unexplained" ]; then
 		printf 'run-fuzz: %s hit the -fuzztime deadline mid-execution and found nothing; treating as a pass\n' "$target" >&2
 		exit 0
 	fi
+	printf 'run-fuzz: %s printed lines a bare deadline does not explain:\n%s\n' "$target" "$unexplained" >&2
 fi
 
 printf 'run-fuzz: %s failed for a reason other than the deadline\n' "$target" >&2
