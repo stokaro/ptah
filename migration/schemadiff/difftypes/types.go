@@ -2395,7 +2395,16 @@ func TableCreationFor(desired *schemamodel.Database, table schemamodel.Table, na
 	// relation-mode embedded field, and a table-level FOREIGN KEY constraint --
 	// so it is correct for a finalized declaration and for one built by hand.
 	creation.DependsOn = deporder.GeneratedTableDependencies(desired)[table.QualifiedName()]
-	creation.SelfReferencingForeignKeys = desired.SelfReferencingForeignKeys[table.QualifiedName()]
+	// Derived for the same reason DependsOn is, and it was read out of the map
+	// while the sentence above said not to. A self-reference produces no
+	// dependency edge -- a table cannot be created after itself -- so it
+	// travels separately, and reading the map alone made it depend on
+	// [schemamodel.Finalize] having run. An unfinalized declaration has an
+	// empty map, and an empty map is indistinguishable from a table with no
+	// self-reference: the table was created, the plan reported success, and the
+	// constraint was not there (stokaro/ptah#2471).
+	creation.SelfReferencingForeignKeys =
+		deporder.GeneratedSelfReferencingForeignKeys(desired)[table.QualifiedName()]
 	return creation
 }
 

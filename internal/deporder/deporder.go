@@ -348,6 +348,106 @@ func GeneratedTableDependencies(schema *schemamodel.Database) map[string][]strin
 	return dependencies
 }
 
+// GeneratedSelfReferencingForeignKeys derives the self-references a declaration
+// expresses, unioned with the ones it already carries.
+//
+// The sibling of [GeneratedTableDependencies] and for the same reason. A table
+// that references itself produces no dependency edge -- it cannot be created
+// after itself -- so the constraint travels separately, and reading it out of
+// `Database.SelfReferencingForeignKeys` alone made it depend on
+// [schemamodel.Finalize] having run. A declaration assembled in memory has an
+// empty map, and an empty map is indistinguishable from a table that has no
+// self-reference: the table was created, the plan reported success, and the
+// constraint was not there (stokaro/ptah#2471).
+//
+// It reads the same three kinds of edge the dependency derivation does -- a
+// field's `foreign=`, a relation-mode embedded field, and a table-level FOREIGN
+// KEY constraint -- and keeps only those whose reference resolves to the table
+// itself.
+func GeneratedSelfReferencingForeignKeys(
+	schema *schemamodel.Database,
+) map[string][]schemamodel.SelfReferencingFK {
+	selfReferences := make(map[string][]schemamodel.SelfReferencingFK, len(schema.Tables))
+	for _, table := range schema.Tables {
+		name := table.QualifiedName()
+		selfReferences[name] = append(
+			[]schemamodel.SelfReferencingFK(nil), schema.SelfReferencingForeignKeys[name]...)
+	}
+
+	for _, field := range schema.Fields {
+		if field.Foreign == "" {
+			continue
+		}
+		table := generatedTableByStructName(schema.Tables, field.StructName)
+		if table == nil {
+			continue
+		}
+		addGeneratedSelfReference(selfReferences, schema.Tables, *table,
+			foreignReferenceTable(field.Foreign), schemamodel.SelfReferencingFK{
+				FieldName: field.Name, Foreign: field.Foreign,
+				ForeignKeyName: field.ForeignKeyName,
+				OnDelete:       field.OnDelete, OnUpdate: field.OnUpdate,
+			})
+	}
+
+	for _, embedded := range schema.EmbeddedFields {
+		if embedded.Mode != "relation" || embedded.Ref == "" {
+			continue
+		}
+		table := generatedTableByStructName(schema.Tables, embedded.StructName)
+		if table == nil {
+			continue
+		}
+		addGeneratedSelfReference(selfReferences, schema.Tables, *table,
+			foreignReferenceTable(embedded.Ref), schemamodel.SelfReferencingFK{
+				FieldName: embedded.Field, Foreign: embedded.Ref,
+			})
+	}
+
+	for _, constraint := range schema.Constraints {
+		if constraint.ForeignTable == "" || !strings.EqualFold(constraint.Type, "FOREIGN KEY") {
+			continue
+		}
+		table := generatedTableReference(schema.Tables, constraint.StructName, constraint.Table)
+		if table == nil {
+			continue
+		}
+		addGeneratedSelfReference(selfReferences, schema.Tables, *table,
+			constraint.ForeignTable, schemamodel.SelfReferencingFK{
+				FieldName:      strings.Join(constraint.Columns, ", "),
+				Foreign:        constraint.ForeignTable + "(" + strings.Join(constraint.ForeignColumns, ", ") + ")",
+				ForeignKeyName: constraint.Name,
+			})
+	}
+
+	return selfReferences
+}
+
+// addGeneratedSelfReference records one, when the reference is to the table
+// itself and the declaration does not already carry it.
+func addGeneratedSelfReference(
+	selfReferences map[string][]schemamodel.SelfReferencingFK,
+	tables []schemamodel.Table,
+	table schemamodel.Table,
+	refTable string,
+	candidate schemamodel.SelfReferencingFK,
+) {
+	tableName := table.QualifiedName()
+	if tableName != resolveGeneratedReferenceTableName(tables, table, refTable) {
+		return
+	}
+	for _, held := range selfReferences[tableName] {
+		// By the field and the constraint name, which is what identifies one:
+		// two self-references on one column with different names are two
+		// constraints, and the same one derived twice is one.
+		if held.FieldName == candidate.FieldName &&
+			held.ForeignKeyName == candidate.ForeignKeyName {
+			return
+		}
+	}
+	selfReferences[tableName] = append(selfReferences[tableName], candidate)
+}
+
 // FunctionsForCreate orders the routines a change adds by their dependencies.
 //
 // It takes the routines rather than their names, and keeps every one of them.
