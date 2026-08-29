@@ -1,6 +1,19 @@
 ---
 title: PostgreSQL
 description: What Ptah manages on PostgreSQL - schema objects, roles and grants, RLS, extensions, sequences, user-defined types, and version-dependent behavior.
+type: reference
+audience:
+  - "database-engineer"
+readerQuestion: "Which PostgreSQL objects and release lines does Ptah manage?"
+goal: "Identify the PostgreSQL objects and release lines Ptah manages."
+sourceOfTruth:
+  - "internal/capabilityprobe/cells.go"
+  - "internal/dbschema"
+generated: false
+searchAliases:
+  - "PostgreSQL extension"
+overlaps: []
+disposition: keep
 owns:
   - dialect-postgres
 ---

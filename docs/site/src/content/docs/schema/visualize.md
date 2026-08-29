@@ -1,6 +1,21 @@
 ---
 title: Visualize the schema
 description: Render entity-relationship diagrams from the desired schema as Mermaid, DOT, or SVG with ptah viz.
+type: how-to
+audience:
+  - "schema-author"
+readerQuestion: "How do I generate and inspect a schema diagram?"
+goal: "Generate and inspect a schema diagram."
+sourceOfTruth:
+  - "cmd/viz"
+  - "internal/schemaviz"
+generated: false
+searchAliases:
+  - "visualize schema"
+overlaps:
+  - "/schema/document/"
+  - "/schema/serve/"
+disposition: rewrite
 owns:
   - cli-ptah-viz
 ---

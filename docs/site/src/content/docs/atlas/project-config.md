@@ -1,6 +1,18 @@
 ---
 title: Atlas project config
 description: Supported `atlas.hcl` project configuration subset.
+type: reference
+audience:
+  - "atlas-migrator"
+  - "evaluator"
+readerQuestion: "Which `atlas.hcl` blocks, attributes, and expressions does Ptah support?"
+goal: "Look up the supported `atlas.hcl` blocks, attributes, and expressions."
+sourceOfTruth:
+  - "cmd/atlas"
+  - "internal/atlascompatpolicy"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 Ptah can read a strict subset of Atlas project configuration from `atlas.hcl`

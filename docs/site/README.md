@@ -11,6 +11,10 @@ ASTRO_TELEMETRY_DISABLED=1 npm run check:route-retirement
 ASTRO_TELEMETRY_DISABLED=1 npm run check:core-doc-links
 ASTRO_TELEMETRY_DISABLED=1 npm run check:page-health:selftest
 ASTRO_TELEMETRY_DISABLED=1 npm run check:page-health
+ASTRO_TELEMETRY_DISABLED=1 npm run check:content-inventory:selftest
+ASTRO_TELEMETRY_DISABLED=1 npm run check:content-inventory
+ASTRO_TELEMETRY_DISABLED=1 npm run check:support-matrix:selftest
+ASTRO_TELEMETRY_DISABLED=1 npm run check:support-matrix
 ASTRO_TELEMETRY_DISABLED=1 npm run check:exit-codes
 ASTRO_TELEMETRY_DISABLED=1 npm run build
 npm run versions:selftest
@@ -32,6 +36,24 @@ page-health checks, route-retirement checks, and exit-code reference validation
 before building `edge` and before building released tags that include the
 relevant checker scripts. Older historical tags without those checkers are still
 built with a warning.
+
+## Content metadata and inventory
+
+Every published page declares its page type, audience, reader question,
+outcome, sources of truth, generated status, overlaps, and editorial
+disposition. `src/content.config.ts` validates the contract. Status pages also
+name a verification date and evidence; fully generated pages name their
+generator and edit source.
+
+`content-inventory.json` is generated from that metadata, the content
+collection, the sidebar, and the internal link graph:
+
+```bash
+npm run inventory:write
+```
+
+Do not edit the JSON by hand. `CONTENT_INVENTORY.md` contains reader journeys
+and editorial decisions only.
 
 ## Published routes
 

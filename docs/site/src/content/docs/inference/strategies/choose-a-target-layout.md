@@ -1,6 +1,18 @@
 ---
 title: Choose a target layout
 description: Where the vectors go - a column on the source table, or a table of their own - and what each choice makes easy.
+type: concept
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "Which target layout fits my query and lifecycle needs?"
+goal: "Choose a vector target layout for the query and lifecycle needs."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 Ptah writes vectors into a column. The choice is which table that column is on.

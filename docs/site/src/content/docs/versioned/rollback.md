@@ -1,6 +1,20 @@
 ---
 title: Roll back migrations
 description: Roll a database back to an explicit target version, verify the plan on a shadow database first, and understand the down-file contract.
+type: how-to
+audience:
+  - "database-engineer"
+  - "ci-operator"
+readerQuestion: "How do I roll back to an explicit revision safely?"
+goal: "Roll back to an explicit revision safely."
+sourceOfTruth:
+  - "cmd/migrations"
+  - "migration"
+generated: false
+searchAliases:
+  - "rollback migration"
+overlaps: []
+disposition: keep
 owns:
   - cli-ptah-migrations-down
   - cli-ptah-migrations-repair

@@ -1,6 +1,17 @@
 ---
 title: YAML schema
 description: Author the desired schema in Ptah's strict YAML format and feed it to render, compare, and migration commands.
+type: how-to
+audience:
+  - "schema-author"
+readerQuestion: "How do I author the desired schema in Ptah's strict YAML format and feed it to render, compare, and migration commands?"
+goal: "Render and validate a desired schema from Ptah YAML."
+sourceOfTruth:
+  - "cmd/schema"
+  - "internal/schemaload"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 Use YAML when Ptah owns the schema file and you want compact, explicit input

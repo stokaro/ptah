@@ -1,6 +1,18 @@
 ---
 title: Troubleshooting
 description: Fix common Ptah command, database, Graphviz, hash, config, and conformance problems.
+type: troubleshooting
+audience:
+  - "platform-engineer"
+readerQuestion: "How do I diagnose a Ptah failure from its stable symptom or error text?"
+goal: "Diagnose a Ptah failure from its stable symptom or error text."
+sourceOfTruth:
+  - "cmd"
+  - "dbschema"
+  - "migration"
+generated: false
+overlaps: []
+disposition: split
 ---
 
 ## SVG output says Graphviz is required

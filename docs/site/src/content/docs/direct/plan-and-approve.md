@@ -1,6 +1,19 @@
 ---
 title: Plan and approve changes
 description: Save a schema change as a plan file, sign it with an SSH key, and refuse an apply whose plan carries no matching approval.
+type: how-to
+audience:
+  - "database-engineer"
+  - "ci-operator"
+readerQuestion: "How do I save a schema change as a plan file, sign it with an SSH key, and refuse an apply whose plan carries no matching approval?"
+goal: "Apply only the reviewed and signed schema plan."
+sourceOfTruth:
+  - "cmd/schema"
+  - "migration/schemadiff"
+  - "migration/planner"
+generated: false
+overlaps: []
+disposition: keep
 owns:
   - cli-ptah-schema-approve
   - cli-ptah-schema-plan

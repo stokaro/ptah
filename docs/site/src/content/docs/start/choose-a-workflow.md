@@ -1,6 +1,18 @@
 ---
 title: Choose a workflow
 description: Decide between versioned migrations and direct schema changes for schema work. Persistent inference state uses a separate lifecycle.
+type: concept
+audience:
+  - "new-user"
+readerQuestion: "Should this schema change use versioned migrations or direct schema changes?"
+goal: "Choose whether a schema change should use versioned migrations or direct schema changes."
+sourceOfTruth:
+  - "cmd/root"
+  - "cmd/schema"
+  - "cmd/migrations"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 For schema changes, wiring Ptah into a project answers two questions, and they

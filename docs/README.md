@@ -93,7 +93,8 @@ keep in step.
 
 - [Style guide](STYLE_GUIDE.md) — authoritative rules for page types,
   templates, voice, terminology, examples, links, and the review checklist.
-- [Content inventory](site/CONTENT_INVENTORY.md) — per-page audit, reader
-  journeys, target navigation, and the inventory maintenance rule. Update it
-  in the same PR whenever a reader-facing page is added, moved, merged, split,
-  or retired.
+- [Generated content inventory](site/content-inventory.json) — the current
+  page map, metadata, navigation placement, link graph, source size, and word
+  counts. Regenerate it with `npm run inventory:write` in `docs/site`.
+- [Inventory decisions](site/CONTENT_INVENTORY.md) — reader journeys and
+  editorial decisions that cannot be derived mechanically.

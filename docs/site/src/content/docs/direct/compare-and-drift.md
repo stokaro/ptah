@@ -1,6 +1,21 @@
 ---
 title: Compare and drift
 description: See how a live database differs from the desired schema, and turn that difference into a check that gates pipelines.
+type: how-to
+audience:
+  - "database-engineer"
+  - "ci-operator"
+readerQuestion: "How do I detect schema drift and turn it into a CI gate?"
+goal: "Detect schema drift and turn it into a CI gate."
+sourceOfTruth:
+  - "cmd/schema"
+  - "migration/schemadiff"
+  - "migration/planner"
+generated: false
+searchAliases:
+  - "schema drift"
+overlaps: []
+disposition: keep
 owns:
   - cli-ptah-schema-compare
   - cli-ptah-schema-diff

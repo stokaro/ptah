@@ -1,6 +1,18 @@
 ---
 title: Run status and findings
 description: Reading what status reports, what each verification layer measures, and what a blocking finding means.
+type: reference
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "How do I interpret inference run status and verification findings?"
+goal: "Interpret inference run status and verification findings."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 ## Reading `status`

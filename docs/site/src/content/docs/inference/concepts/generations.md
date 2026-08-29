@@ -1,6 +1,18 @@
 ---
 title: Generations
 description: What a generation is, why its identity is computed rather than named, and why a new one needs its own column.
+type: concept
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "How does Ptah model generations?"
+goal: "Explain Ptah's model for generations."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 A **generation** is one complete set of vectors, produced one way, over one set

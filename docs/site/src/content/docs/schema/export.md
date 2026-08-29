@@ -1,6 +1,17 @@
 ---
 title: API schema export
 description: Project selected Go entities into OpenAPI or GraphQL contract candidates and review their trust-boundary limitations.
+type: how-to
+audience:
+  - "schema-author"
+readerQuestion: "How do I project selected Go entities into OpenAPI or GraphQL contract candidates and review their trust-boundary limitations?"
+goal: "Generate and review an OpenAPI or GraphQL contract candidate."
+sourceOfTruth:
+  - "cmd/schema"
+  - "internal/schemaload"
+generated: false
+overlaps: []
+disposition: keep
 owns:
   - cli-ptah-schema-export
 ---

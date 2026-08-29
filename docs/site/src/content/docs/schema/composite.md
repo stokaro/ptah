@@ -1,6 +1,17 @@
 ---
 title: Composite desired schema
 description: Merge Go packages, YAML, HCL, and SQL files, and an external loader into one desired schema.
+type: how-to
+audience:
+  - "schema-author"
+readerQuestion: "How do I merge Go packages, YAML, HCL, and SQL files, and an external loader into one desired schema?"
+goal: "Build and verify one desired schema from multiple sources."
+sourceOfTruth:
+  - "cmd/schema"
+  - "internal/schemaload"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 Assemble one desired schema from several sources. `--root-dir` and

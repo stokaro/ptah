@@ -1,6 +1,18 @@
 ---
 title: The lifecycle
 description: What each phase of a generation change does, why they are separate commands, and how a run records where it got to.
+type: concept
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "How does Ptah model the lifecycle?"
+goal: "Explain Ptah's model for the lifecycle."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 A generation change is a sequence of steps. Each is a separate command, because

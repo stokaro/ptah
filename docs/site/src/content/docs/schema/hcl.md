@@ -1,6 +1,17 @@
 ---
 title: HCL schema
 description: Reuse Atlas-compatible HCL schema files as Ptah's desired schema.
+type: how-to
+audience:
+  - "schema-author"
+readerQuestion: "How do I reuse Atlas-compatible HCL schema files as Ptah's desired schema?"
+goal: "Render a desired schema from Atlas-compatible HCL."
+sourceOfTruth:
+  - "cmd/schema"
+  - "internal/schemaload"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 Use HCL schema files when you already maintain schema files in Atlas-compatible

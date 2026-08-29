@@ -1,6 +1,18 @@
 ---
 title: Database test commands
 description: Exact flags, steps, assertions, reports, and isolation behavior for migration and schema tests.
+type: reference
+audience:
+  - "all-users"
+readerQuestion: "Which flags, assertions, and isolation rules do database test commands use?"
+goal: "Look up the flags, assertions, and isolation rules for database test commands."
+sourceOfTruth:
+  - "cmd"
+  - "core"
+  - "migration"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 Ptah has two native declarative test commands:

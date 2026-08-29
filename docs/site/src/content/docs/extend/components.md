@@ -1,6 +1,18 @@
 ---
 title: Reusable components
 description: Use Ptah as a Go schema engine, not only as a CLI.
+type: how-to
+audience:
+  - "go-developer"
+readerQuestion: "How do I use Ptah as a Go schema engine, not only as a CLI?"
+goal: "Select and call the public Go package for a schema task."
+sourceOfTruth:
+  - "core"
+  - "migration"
+  - "dbschema"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 Ptah can be used in three different ways:

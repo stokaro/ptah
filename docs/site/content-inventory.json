@@ -1,0 +1,4986 @@
+{
+  "notice": "Generated from page frontmatter, the content collection, the sidebar, and internal links. Edit page metadata or source, then run npm run inventory:write.",
+  "sources": [
+    "docs/site/src/content/docs/**",
+    "docs/site/src/sidebar.mjs",
+    "docs/site/src/lib/content-metadata.mjs"
+  ],
+  "summary": {
+    "pages": 108,
+    "authored": 106,
+    "generated": 2,
+    "byType": {
+      "concept": 15,
+      "how-to": 49,
+      "landing": 6,
+      "reference": 26,
+      "status": 6,
+      "troubleshooting": 3,
+      "tutorial": 3
+    }
+  },
+  "pages": [
+    {
+      "path": "docs/site/src/content/docs/atlas/adoption.md",
+      "route": "/atlas/adoption/",
+      "title": "Adopting an Atlas project",
+      "description": "The path from Atlas through `ptah-compat` to native Ptah, one reversible step at a time.",
+      "sidebarPath": "Atlas compatibility",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "atlas-migrator",
+        "evaluator"
+      ],
+      "readerQuestion": "How do I move an Atlas project to Ptah in reversible stages?",
+      "goal": "Move an Atlas project to Ptah in reversible stages.",
+      "sourceOfTruth": [
+        "cmd/atlas",
+        "internal/atlascompatpolicy"
+      ],
+      "owns": [
+        "cli-ptah-project-adopt",
+        "cli-ptah-project-inspect"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "migrate from Atlas"
+      ],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/overview/",
+        "/reference/configuration/"
+      ],
+      "inboundLinks": [
+        "/reference/configuration/"
+      ],
+      "visibleWords": 1053,
+      "sourceBytes": 7970
+    },
+    {
+      "path": "docs/site/src/content/docs/atlas/conformance.mdx",
+      "route": "/atlas/conformance/",
+      "title": "Conformance",
+      "description": "Where Atlas compatibility evidence lives and how to interpret it.",
+      "sidebarPath": "Atlas compatibility > Differences and evidence",
+      "sidebarLabel": null,
+      "type": "status",
+      "audience": [
+        "atlas-migrator",
+        "evaluator"
+      ],
+      "readerQuestion": "What does the current Atlas conformance evidence establish?",
+      "goal": "Interpret the current Atlas conformance evidence and its limits.",
+      "sourceOfTruth": [
+        "cmd/atlas",
+        "internal/atlascompatpolicy"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": "2026-08-30",
+      "evidence": [
+        "stokaro/ptah-atlas-conformance",
+        "scripts/atlas-ce-reference.lock"
+      ],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/feature-matrix/",
+        "/reference/lint-rules/"
+      ],
+      "inboundLinks": [
+        "/atlas/docs-coverage/",
+        "/atlas/feature-matrix/",
+        "/atlas/migrate-commands/",
+        "/atlas/overview/",
+        "/operate/troubleshooting/",
+        "/reference/atlas-commands/",
+        "/reference/hcl-schema/"
+      ],
+      "visibleWords": 2315,
+      "sourceBytes": 19413
+    },
+    {
+      "path": "docs/site/src/content/docs/atlas/docs-coverage.md",
+      "route": "/atlas/docs-coverage/",
+      "title": "Atlas docs coverage",
+      "description": "Current Atlas documentation crosswalk for Ptah compatibility, implementation, conformance, and follow-up work.",
+      "sidebarPath": "Atlas compatibility > Differences and evidence",
+      "sidebarLabel": null,
+      "type": "status",
+      "audience": [
+        "atlas-migrator",
+        "evaluator"
+      ],
+      "readerQuestion": "What does the current evidence establish about Atlas documentation coverage?",
+      "goal": "Interpret the current Atlas documentation coverage evidence and its gaps.",
+      "sourceOfTruth": [
+        "cmd/atlas",
+        "internal/atlascompatpolicy"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": "2026-08-30",
+      "evidence": [
+        "docs/site/src/content/docs/atlas/docs-coverage.md",
+        "scripts/atlas-ce-reference.lock"
+      ],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/conformance/",
+        "/atlas/feature-matrix/",
+        "/atlas/license-boundary/",
+        "/atlas/migrate-commands/",
+        "/atlas/overview/",
+        "/atlas/project-config/",
+        "/atlas/schema-commands/",
+        "/operate/oci-registry/",
+        "/operate/troubleshooting/",
+        "/reference/atlas-commands/",
+        "/reference/capabilities/",
+        "/reference/configuration/",
+        "/reference/exit-codes/",
+        "/reference/hcl-schema/",
+        "/reference/native-commands/",
+        "/schema/composite/",
+        "/schema/hcl/",
+        "/schema/orm-and-external/",
+        "/start/choose-a-workflow/",
+        "/start/install/",
+        "/start/quick-start/",
+        "/testing/ci/",
+        "/versioned/apply/",
+        "/versioned/generate/",
+        "/versioned/integrity-and-safety/",
+        "/versioned/overview/",
+        "/versioned/reference-data/",
+        "/versioned/rollback/"
+      ],
+      "inboundLinks": [
+        "/atlas/feature-matrix/",
+        "/atlas/overview/",
+        "/reference/hcl-schema/"
+      ],
+      "visibleWords": 4896,
+      "sourceBytes": 44837
+    },
+    {
+      "path": "docs/site/src/content/docs/atlas/feature-matrix.md",
+      "route": "/atlas/feature-matrix/",
+      "title": "Feature matrix",
+      "description": "Ptah and Atlas capabilities side by side, with the evidence behind every row.",
+      "sidebarPath": "Atlas compatibility > Differences and evidence",
+      "sidebarLabel": null,
+      "type": "status",
+      "audience": [
+        "atlas-migrator",
+        "evaluator"
+      ],
+      "readerQuestion": "What does the current evidence establish for one Ptah or Atlas capability?",
+      "goal": "Determine whether current evidence establishes, limits, or leaves a capability unresolved.",
+      "sourceOfTruth": [
+        "docs/site/scripts/data/feature-matrix-rows.json",
+        "stokaro/ptah-atlas-conformance"
+      ],
+      "owns": [],
+      "generated": true,
+      "generator": "docs/site/scripts/build-feature-matrix.mjs",
+      "editSource": "docs/site/scripts/data/feature-matrix-rows.json",
+      "lastVerified": "2026-08-30",
+      "evidence": [
+        "docs/site/scripts/data/feature-matrix-rows.json",
+        "stokaro/ptah-atlas-conformance"
+      ],
+      "searchAliases": [],
+      "overlaps": [
+        "/atlas/conformance/",
+        "/atlas/docs-coverage/",
+        "/atlas/retained-divergences/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/conformance/",
+        "/atlas/docs-coverage/",
+        "/atlas/license-boundary/",
+        "/atlas/retained-divergences/",
+        "/operate/oci-registry/"
+      ],
+      "inboundLinks": [
+        "/atlas/conformance/",
+        "/atlas/docs-coverage/",
+        "/atlas/overview/",
+        "/atlas/retained-divergences/",
+        "/operate/troubleshooting/",
+        "/start/choose-a-workflow/"
+      ],
+      "visibleWords": 8341,
+      "sourceBytes": 58664
+    },
+    {
+      "path": "docs/site/src/content/docs/atlas/license-boundary.md",
+      "route": "/atlas/license-boundary/",
+      "title": "License boundary",
+      "description": "Ptah's independent implementation boundary around Atlas compatibility work.",
+      "sidebarPath": "Atlas compatibility > Differences and evidence",
+      "sidebarLabel": null,
+      "type": "concept",
+      "audience": [
+        "atlas-migrator",
+        "evaluator"
+      ],
+      "readerQuestion": "What is Ptah's independent implementation boundary for Atlas compatibility?",
+      "goal": "Explain Ptah's independent implementation boundary for Atlas compatibility.",
+      "sourceOfTruth": [
+        "cmd/atlas",
+        "internal/atlascompatpolicy"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [],
+      "inboundLinks": [
+        "/",
+        "/atlas/docs-coverage/",
+        "/atlas/feature-matrix/"
+      ],
+      "visibleWords": 548,
+      "sourceBytes": 4490
+    },
+    {
+      "path": "docs/site/src/content/docs/atlas/migrate-commands.md",
+      "route": "/atlas/migrate-commands/",
+      "title": "Atlas migrate commands",
+      "description": "Run Atlas-style migration workflows with ptah-compat migrate apply, down, status, diff, lint, and the directory-maintenance verbs.",
+      "sidebarPath": "Atlas compatibility > Commands and configuration",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "atlas-migrator",
+        "evaluator"
+      ],
+      "readerQuestion": "How do I run Atlas-style migration workflows with ptah-compat migrate apply, down, status, diff, lint, and the directory-maintenance verbs?",
+      "goal": "Complete an Atlas-style migration task with the matching `ptah-compat` verb.",
+      "sourceOfTruth": [
+        "cmd/atlas",
+        "internal/atlascompatpolicy"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/conformance/",
+        "/atlas/overview/",
+        "/atlas/schema-commands/",
+        "/concepts/database-urls-and-dev-databases/",
+        "/reference/atlas-commands/",
+        "/reference/lint-rules/",
+        "/versioned/apply/",
+        "/versioned/import/",
+        "/versioned/integrity-and-safety/",
+        "/versioned/overview/"
+      ],
+      "inboundLinks": [
+        "/atlas/docs-coverage/",
+        "/atlas/overview/",
+        "/atlas/schema-commands/",
+        "/concepts/migration-directory/",
+        "/databases/postgresql/",
+        "/reference/atlas-commands/",
+        "/versioned/apply/",
+        "/versioned/lint/"
+      ],
+      "visibleWords": 13956,
+      "sourceBytes": 97757
+    },
+    {
+      "path": "docs/site/src/content/docs/atlas/overview.md",
+      "route": "/atlas/overview/",
+      "title": "Atlas compatibility overview",
+      "description": "How the ptah-compat drop-in binary replaces the Atlas CLI, and how Atlas-style flags translate to native Ptah concepts.",
+      "sidebarPath": "Atlas compatibility",
+      "sidebarLabel": "Overview",
+      "type": "landing",
+      "audience": [
+        "atlas-migrator",
+        "evaluator"
+      ],
+      "readerQuestion": "How do native Ptah, default ptah-compat, and strict CE mode differ?",
+      "goal": "Distinguish native Ptah, default ptah-compat, and strict CE mode.",
+      "sourceOfTruth": [
+        "cmd/atlas",
+        "internal/atlascompatpolicy"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [
+        "/atlas/adoption/",
+        "/reference/atlas-commands/",
+        "/atlas/conformance/"
+      ],
+      "disposition": "split",
+      "outboundLinks": [
+        "/atlas/conformance/",
+        "/atlas/docs-coverage/",
+        "/atlas/feature-matrix/",
+        "/atlas/migrate-commands/",
+        "/atlas/project-config/",
+        "/atlas/retained-divergences/",
+        "/atlas/schema-commands/",
+        "/operate/oci-registry/",
+        "/reference/atlas-commands/",
+        "/reference/extension-variables/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/atlas/adoption/",
+        "/atlas/docs-coverage/",
+        "/atlas/migrate-commands/",
+        "/atlas/project-config/",
+        "/atlas/schema-commands/",
+        "/concepts/migration-directory/",
+        "/direct/apply/",
+        "/reference/atlas-commands/",
+        "/reference/extension-variables/",
+        "/schema/hcl/",
+        "/schema/sql/",
+        "/start/choose-a-workflow/",
+        "/start/install/",
+        "/testing/migrations-and-schema/"
+      ],
+      "visibleWords": 1980,
+      "sourceBytes": 15422
+    },
+    {
+      "path": "docs/site/src/content/docs/atlas/project-config.md",
+      "route": "/atlas/project-config/",
+      "title": "Atlas project config",
+      "description": "Supported `atlas.hcl` project configuration subset.",
+      "sidebarPath": "Atlas compatibility > Commands and configuration",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "atlas-migrator",
+        "evaluator"
+      ],
+      "readerQuestion": "Which `atlas.hcl` blocks, attributes, and expressions does Ptah support?",
+      "goal": "Look up the supported `atlas.hcl` blocks, attributes, and expressions.",
+      "sourceOfTruth": [
+        "cmd/atlas",
+        "internal/atlascompatpolicy"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/overview/",
+        "/atlas/schema-commands/",
+        "/reference/hcl-schema/",
+        "/schema/orm-and-external/"
+      ],
+      "inboundLinks": [
+        "/atlas/docs-coverage/",
+        "/atlas/overview/",
+        "/atlas/schema-commands/",
+        "/operate/troubleshooting/",
+        "/reference/configuration/",
+        "/reference/hcl-schema/",
+        "/schema/hcl/",
+        "/schema/orm-and-external/"
+      ],
+      "visibleWords": 6744,
+      "sourceBytes": 49235
+    },
+    {
+      "path": "docs/site/src/content/docs/atlas/retained-divergences.md",
+      "route": "/atlas/retained-divergences/",
+      "title": "Retained divergences",
+      "description": "Cases where ptah-compat exits 1 and the pinned Atlas community binary exits 0, each with the measurement and the argument for keeping it.",
+      "sidebarPath": "Atlas compatibility > Differences and evidence",
+      "sidebarLabel": null,
+      "type": "status",
+      "audience": [
+        "atlas-migrator",
+        "evaluator"
+      ],
+      "readerQuestion": "What does the current evidence establish about retained divergences?",
+      "goal": "Evaluate each measured divergence and the reason Ptah retains it.",
+      "sourceOfTruth": [
+        "cmd/atlas",
+        "internal/atlascompatpolicy"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": "2026-08-30",
+      "evidence": [
+        "cmd/atlas/compat_1241_retained_divergence_test.go",
+        "stokaro/ptah#1241"
+      ],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/feature-matrix/",
+        "/versioned/integrity-and-safety/",
+        "/versioned/rollback/"
+      ],
+      "inboundLinks": [
+        "/atlas/feature-matrix/",
+        "/atlas/overview/",
+        "/atlas/schema-commands/",
+        "/reference/atlas-commands/"
+      ],
+      "visibleWords": 6118,
+      "sourceBytes": 42373
+    },
+    {
+      "path": "docs/site/src/content/docs/atlas/schema-commands.md",
+      "route": "/atlas/schema-commands/",
+      "title": "Atlas schema commands",
+      "description": "Inspect, diff, apply, plan, format, clean, and test schemas with the Atlas-style ptah-compat schema verbs.",
+      "sidebarPath": "Atlas compatibility > Commands and configuration",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "atlas-migrator",
+        "evaluator"
+      ],
+      "readerQuestion": "How do I inspect, diff, apply, plan, format, clean, and test schemas with the Atlas-style ptah-compat schema verbs?",
+      "goal": "Complete an Atlas-style schema task with the matching `ptah-compat` verb.",
+      "sourceOfTruth": [
+        "cmd/atlas",
+        "internal/atlascompatpolicy"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/migrate-commands/",
+        "/atlas/overview/",
+        "/atlas/project-config/",
+        "/atlas/retained-divergences/",
+        "/databases/postgresql/",
+        "/direct/apply/",
+        "/direct/inspect/",
+        "/reference/atlas-commands/",
+        "/reference/configuration/",
+        "/reference/lint-rules/"
+      ],
+      "inboundLinks": [
+        "/atlas/docs-coverage/",
+        "/atlas/migrate-commands/",
+        "/atlas/overview/",
+        "/atlas/project-config/",
+        "/direct/apply/",
+        "/direct/inspect/",
+        "/reference/atlas-commands/",
+        "/reference/hcl-schema/"
+      ],
+      "visibleWords": 12211,
+      "sourceBytes": 89188
+    },
+    {
+      "path": "docs/site/src/content/docs/concepts/database-urls-and-dev-databases.md",
+      "route": "/concepts/database-urls-and-dev-databases/",
+      "title": "Database URLs and dev databases",
+      "description": "Accepted database URL formats, and the difference between the target, dev, shadow, and throwaway databases.",
+      "sidebarPath": "Concepts and reference > Concepts",
+      "sidebarLabel": null,
+      "type": "concept",
+      "audience": [
+        "all-users"
+      ],
+      "readerQuestion": "How does Ptah model database URLs and dev databases?",
+      "goal": "Explain Ptah's model for database URLs and dev databases.",
+      "sourceOfTruth": [
+        "dbschema/connection.go",
+        "cmd"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/databases/sqlserver/",
+        "/databases/support-matrix/",
+        "/reference/configuration/",
+        "/start/adopt-an-existing-database/",
+        "/testing/migrations-and-schema/",
+        "/versioned/generate/",
+        "/versioned/integrity-and-safety/",
+        "/versioned/lint/"
+      ],
+      "inboundLinks": [
+        "/atlas/migrate-commands/",
+        "/databases/support-matrix/",
+        "/reference/atlas-commands/",
+        "/schema/security/",
+        "/schema/stats/",
+        "/start/adopt-an-existing-database/",
+        "/testing/migrations-and-schema/",
+        "/versioned/generate/",
+        "/versioned/integrity-and-safety/"
+      ],
+      "visibleWords": 1423,
+      "sourceBytes": 11252
+    },
+    {
+      "path": "docs/site/src/content/docs/concepts/desired-schema-and-sources.md",
+      "route": "/concepts/desired-schema-and-sources/",
+      "title": "Desired schema and schema sources",
+      "description": "The declarative idea behind Ptah - you declare the schema you want, from any mix of sources, and Ptah computes how to get there.",
+      "sidebarPath": "Concepts and reference > Concepts",
+      "sidebarLabel": null,
+      "type": "concept",
+      "audience": [
+        "all-users"
+      ],
+      "readerQuestion": "How does Ptah model desired schema and schema sources?",
+      "goal": "Explain Ptah's model for desired schema and schema sources.",
+      "sourceOfTruth": [
+        "internal/schemaload",
+        "core/schemamodel"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/concepts/dialects-and-capabilities/",
+        "/schema/composite/",
+        "/schema/go-annotations/",
+        "/schema/hcl/",
+        "/schema/orm-and-external/",
+        "/schema/sql/",
+        "/schema/work-with-a-source/",
+        "/schema/yaml/",
+        "/start/adopt-an-existing-database/",
+        "/start/choose-a-workflow/"
+      ],
+      "inboundLinks": [
+        "/schema/work-with-a-source/"
+      ],
+      "visibleWords": 384,
+      "sourceBytes": 3299
+    },
+    {
+      "path": "docs/site/src/content/docs/concepts/dialects-and-capabilities.md",
+      "route": "/concepts/dialects-and-capabilities/",
+      "title": "Dialects and capabilities",
+      "description": "Why Ptah separates the dialect it renders SQL for from the capabilities a concrete database target accepts.",
+      "sidebarPath": "Concepts and reference > Concepts",
+      "sidebarLabel": null,
+      "type": "concept",
+      "audience": [
+        "all-users"
+      ],
+      "readerQuestion": "How does Ptah model dialects and capabilities?",
+      "goal": "Explain Ptah's model for dialects and capabilities.",
+      "sourceOfTruth": [
+        "core/platform",
+        "core/platform/capability"
+      ],
+      "owns": [
+        "gopkg-core-platform",
+        "gopkg-core-platform-capability"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/databases/postgresql/",
+        "/databases/sqlite/",
+        "/databases/sqlserver/",
+        "/databases/support-matrix/",
+        "/extend/components/",
+        "/reference/capabilities/"
+      ],
+      "inboundLinks": [
+        "/concepts/desired-schema-and-sources/",
+        "/databases/postgresql/",
+        "/databases/support-matrix/",
+        "/reference/capabilities/",
+        "/versioned/lint/"
+      ],
+      "visibleWords": 627,
+      "sourceBytes": 4914
+    },
+    {
+      "path": "docs/site/src/content/docs/concepts/migration-directory.md",
+      "route": "/concepts/migration-directory/",
+      "title": "The migration directory",
+      "description": "The file layout, integrity file, revision table, and directory formats behind Ptah's versioned workflow.",
+      "sidebarPath": "Concepts and reference > Concepts",
+      "sidebarLabel": null,
+      "type": "concept",
+      "audience": [
+        "all-users"
+      ],
+      "readerQuestion": "How does Ptah model the migration directory?",
+      "goal": "Explain Ptah's model for the migration directory.",
+      "sourceOfTruth": [
+        "migration/migrationfile",
+        "migration/migrator"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/migrate-commands/",
+        "/atlas/overview/",
+        "/operate/oci-registry/",
+        "/versioned/apply/",
+        "/versioned/checkpoints/",
+        "/versioned/import/",
+        "/versioned/integrity-and-safety/",
+        "/versioned/maintain-history/",
+        "/versioned/overview/"
+      ],
+      "inboundLinks": [
+        "/versioned/overview/"
+      ],
+      "visibleWords": 1616,
+      "sourceBytes": 11505
+    },
+    {
+      "path": "docs/site/src/content/docs/databases/clickhouse.md",
+      "route": "/databases/clickhouse/",
+      "title": "ClickHouse",
+      "description": "ClickHouse in Ptah - the capability-limited preset, the MergeTree round trip, views and materialized views, roles and grants, and the revision table's engine.",
+      "sidebarPath": "Databases",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "database-engineer"
+      ],
+      "readerQuestion": "Which ClickHouse objects and operations does Ptah support?",
+      "goal": "Look up the ClickHouse objects and operations Ptah supports.",
+      "sourceOfTruth": [
+        "internal/capabilityprobe/cells.go",
+        "internal/dbschema"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/databases/support-matrix/",
+        "/reference/capabilities/",
+        "/reference/go-annotations/"
+      ],
+      "inboundLinks": [
+        "/databases/postgresql/",
+        "/databases/support-matrix/",
+        "/reference/capabilities/",
+        "/reference/go-annotations/",
+        "/versioned/apply/"
+      ],
+      "visibleWords": 3200,
+      "sourceBytes": 20992
+    },
+    {
+      "path": "docs/site/src/content/docs/databases/distributed.md",
+      "route": "/databases/distributed/",
+      "title": "CockroachDB, YugabyteDB, and Spanner",
+      "description": "The PostgreSQL-compatible distributed engines in Ptah - what each capability preset excludes, the coverage behind each one, and CockroachDB row-level TTL.",
+      "sidebarPath": "Databases",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "database-engineer"
+      ],
+      "readerQuestion": "How do capability and DDL support differ across CockroachDB, YugabyteDB, and Spanner?",
+      "goal": "Compare capability and DDL support across CockroachDB, YugabyteDB, and Spanner.",
+      "sourceOfTruth": [
+        "internal/capabilityprobe/cells.go",
+        "internal/dbschema"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/databases/postgresql/",
+        "/databases/support-matrix/",
+        "/reference/capabilities/"
+      ],
+      "inboundLinks": [
+        "/databases/postgresql/",
+        "/databases/support-matrix/",
+        "/reference/go-annotations/"
+      ],
+      "visibleWords": 1239,
+      "sourceBytes": 9303
+    },
+    {
+      "path": "docs/site/src/content/docs/databases/mysql.md",
+      "route": "/databases/mysql/",
+      "title": "MySQL and MariaDB",
+      "description": "MySQL and MariaDB in Ptah - the dialect differences that reach generated SQL, the foreign-key and routine rules, cleanup privileges, and online-DDL routing.",
+      "sidebarPath": "Databases",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "database-engineer"
+      ],
+      "readerQuestion": "Which MySQL and MariaDB differences affect Ptah workflows?",
+      "goal": "Compare the MySQL and MariaDB differences that affect Ptah workflows.",
+      "sourceOfTruth": [
+        "internal/capabilityprobe/cells.go",
+        "internal/dbschema"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/databases/support-matrix/",
+        "/reference/capabilities/",
+        "/reference/configuration/"
+      ],
+      "inboundLinks": [
+        "/databases/support-matrix/"
+      ],
+      "visibleWords": 468,
+      "sourceBytes": 3881
+    },
+    {
+      "path": "docs/site/src/content/docs/databases/oracle.md",
+      "route": "/databases/oracle/",
+      "title": "Oracle",
+      "description": "Oracle in Ptah - what renders, plans and reads back on the 23 and 21 release lines, bare identifiers, type mappings, object types, and PL/SQL routines.",
+      "sidebarPath": "Databases",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "database-engineer"
+      ],
+      "readerQuestion": "Which Oracle objects and operations does Ptah support?",
+      "goal": "Look up the Oracle objects and operations Ptah supports.",
+      "sourceOfTruth": [
+        "internal/capabilityprobe/cells.go",
+        "internal/dbschema"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/databases/support-matrix/",
+        "/reference/capabilities/",
+        "/reference/go-annotations/"
+      ],
+      "inboundLinks": [
+        "/databases/support-matrix/"
+      ],
+      "visibleWords": 917,
+      "sourceBytes": 6569
+    },
+    {
+      "path": "docs/site/src/content/docs/databases/postgresql.md",
+      "route": "/databases/postgresql/",
+      "title": "PostgreSQL",
+      "description": "What Ptah manages on PostgreSQL - schema objects, roles and grants, RLS, extensions, sequences, user-defined types, and version-dependent behavior.",
+      "sidebarPath": "Databases",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "database-engineer"
+      ],
+      "readerQuestion": "Which PostgreSQL objects and release lines does Ptah manage?",
+      "goal": "Identify the PostgreSQL objects and release lines Ptah manages.",
+      "sourceOfTruth": [
+        "internal/capabilityprobe/cells.go",
+        "internal/dbschema"
+      ],
+      "owns": [
+        "dialect-postgres"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "PostgreSQL extension"
+      ],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/migrate-commands/",
+        "/concepts/dialects-and-capabilities/",
+        "/databases/clickhouse/",
+        "/databases/distributed/",
+        "/extend/components/",
+        "/reference/configuration/",
+        "/reference/go-annotations/",
+        "/reference/lint-rules/",
+        "/versioned/apply/",
+        "/versioned/lint/"
+      ],
+      "inboundLinks": [
+        "/atlas/schema-commands/",
+        "/concepts/dialects-and-capabilities/",
+        "/databases/distributed/",
+        "/databases/support-matrix/",
+        "/direct/inspect/"
+      ],
+      "visibleWords": 5855,
+      "sourceBytes": 41967
+    },
+    {
+      "path": "docs/site/src/content/docs/databases/sqlite.md",
+      "route": "/databases/sqlite/",
+      "title": "SQLite",
+      "description": "SQLite in Ptah - URL forms, the supported DDL surface, and which schema changes require a table rebuild.",
+      "sidebarPath": "Databases",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "database-engineer"
+      ],
+      "readerQuestion": "Which SQLite URL forms and schema changes does Ptah support?",
+      "goal": "Look up the SQLite URL forms and schema changes Ptah supports.",
+      "sourceOfTruth": [
+        "internal/capabilityprobe/cells.go",
+        "internal/dbschema"
+      ],
+      "owns": [
+        "dialect-sqlite"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/databases/support-matrix/",
+        "/start/quick-start-migrations/",
+        "/testing/migrations-and-schema/",
+        "/versioned/generate/"
+      ],
+      "inboundLinks": [
+        "/concepts/dialects-and-capabilities/",
+        "/databases/support-matrix/",
+        "/reference/configuration/",
+        "/reference/extension-variables/"
+      ],
+      "visibleWords": 2878,
+      "sourceBytes": 19061
+    },
+    {
+      "path": "docs/site/src/content/docs/databases/sqlserver.md",
+      "route": "/databases/sqlserver/",
+      "title": "SQL Server",
+      "description": "SQL Server in Ptah - connection URLs, the supported T-SQL subset, collation-aware identifier comparison, and filtered indexes.",
+      "sidebarPath": "Databases",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "database-engineer"
+      ],
+      "readerQuestion": "Which SQL Server surface and release lines does Ptah support?",
+      "goal": "Identify the SQL Server surface and release lines Ptah supports.",
+      "sourceOfTruth": [
+        "internal/capabilityprobe/cells.go",
+        "internal/dbschema"
+      ],
+      "owns": [
+        "dialect-sqlserver"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "SQL Server support"
+      ],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/databases/support-matrix/",
+        "/extend/public-api/",
+        "/reference/go-annotations/",
+        "/versioned/lint/"
+      ],
+      "inboundLinks": [
+        "/concepts/database-urls-and-dev-databases/",
+        "/concepts/dialects-and-capabilities/",
+        "/databases/support-matrix/"
+      ],
+      "visibleWords": 1918,
+      "sourceBytes": 14710
+    },
+    {
+      "path": "docs/site/src/content/docs/databases/support-matrix.md",
+      "route": "/databases/support-matrix/",
+      "title": "Database support matrix",
+      "description": "The database engines Ptah supports, at what depth, and the operational differences to know before rollout.",
+      "sidebarPath": "Databases",
+      "sidebarLabel": null,
+      "type": "status",
+      "audience": [
+        "database-engineer"
+      ],
+      "readerQuestion": "Which database release lines does Ptah exercise, and what does each support level mean?",
+      "goal": "Identify the exercised release lines and interpret each support level.",
+      "sourceOfTruth": [
+        "internal/capabilityprobe/cells.go",
+        "internal/dbschema"
+      ],
+      "owns": [
+        "cli-ptah-db-capabilities"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": "2026-08-30",
+      "evidence": [
+        "internal/capabilityprobe/cells.go",
+        ".github/workflows/capability-matrix.yml",
+        ".github/workflows/go-integration-tests.yml"
+      ],
+      "searchAliases": [
+        "MySQL supported versions"
+      ],
+      "overlaps": [
+        "/reference/capabilities/",
+        "/concepts/dialects-and-capabilities/"
+      ],
+      "disposition": "split",
+      "outboundLinks": [
+        "/concepts/database-urls-and-dev-databases/",
+        "/concepts/dialects-and-capabilities/",
+        "/databases/clickhouse/",
+        "/databases/distributed/",
+        "/databases/mysql/",
+        "/databases/oracle/",
+        "/databases/postgresql/",
+        "/databases/sqlite/",
+        "/databases/sqlserver/",
+        "/reference/capabilities/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/concepts/database-urls-and-dev-databases/",
+        "/concepts/dialects-and-capabilities/",
+        "/databases/clickhouse/",
+        "/databases/distributed/",
+        "/databases/mysql/",
+        "/databases/oracle/",
+        "/databases/sqlite/",
+        "/databases/sqlserver/",
+        "/extend/query-builder/",
+        "/reference/capabilities/",
+        "/start/quick-start/"
+      ],
+      "visibleWords": 2905,
+      "sourceBytes": 21878
+    },
+    {
+      "path": "docs/site/src/content/docs/direct/apply.md",
+      "route": "/direct/apply/",
+      "title": "Apply directly",
+      "description": "Apply desired-schema changes straight to a database with ptah schema apply, saved plan files, and hybrid patterns.",
+      "sidebarPath": "Direct schema changes",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "database-engineer",
+        "ci-operator"
+      ],
+      "readerQuestion": "How do I apply a desired schema directly and verify the result?",
+      "goal": "Apply a desired schema directly and verify the result.",
+      "sourceOfTruth": [
+        "cmd/schema",
+        "migration/schemadiff",
+        "migration/planner"
+      ],
+      "owns": [
+        "cli-ptah-schema-apply"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "apply desired schema"
+      ],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/overview/",
+        "/atlas/schema-commands/",
+        "/direct/compare-and-drift/",
+        "/direct/plan-and-approve/",
+        "/start/choose-a-workflow/",
+        "/start/install/",
+        "/versioned/generate/",
+        "/versioned/overview/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/atlas/schema-commands/",
+        "/direct/compare-and-drift/",
+        "/direct/overview/",
+        "/direct/plan-and-approve/",
+        "/schema/lineage/",
+        "/schema/security/",
+        "/schema/serve/",
+        "/schema/work-with-a-source/",
+        "/start/choose-a-workflow/",
+        "/start/quick-start-direct/"
+      ],
+      "visibleWords": 803,
+      "sourceBytes": 8615
+    },
+    {
+      "path": "docs/site/src/content/docs/direct/compare-and-drift.md",
+      "route": "/direct/compare-and-drift/",
+      "title": "Compare and drift",
+      "description": "See how a live database differs from the desired schema, and turn that difference into a check that gates pipelines.",
+      "sidebarPath": "Direct schema changes",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "database-engineer",
+        "ci-operator"
+      ],
+      "readerQuestion": "How do I detect schema drift and turn it into a CI gate?",
+      "goal": "Detect schema drift and turn it into a CI gate.",
+      "sourceOfTruth": [
+        "cmd/schema",
+        "migration/schemadiff",
+        "migration/planner"
+      ],
+      "owns": [
+        "cli-ptah-schema-compare",
+        "cli-ptah-schema-diff",
+        "cli-ptah-schema-drift"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "schema drift"
+      ],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/direct/apply/",
+        "/operate/troubleshooting/",
+        "/reference/configuration/",
+        "/schema/composite/",
+        "/schema/lineage/",
+        "/start/install/",
+        "/testing/ci/",
+        "/versioned/generate/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/direct/apply/",
+        "/direct/inspect/",
+        "/direct/overview/",
+        "/direct/plan-and-approve/",
+        "/schema/serve/",
+        "/schema/stats/",
+        "/schema/validate-and-format/",
+        "/testing/ci/"
+      ],
+      "visibleWords": 1430,
+      "sourceBytes": 11908
+    },
+    {
+      "path": "docs/site/src/content/docs/direct/inspect.md",
+      "route": "/direct/inspect/",
+      "title": "Inspect a database",
+      "description": "Read a live database schema as SQL statements, annotated Go models, or Atlas-shaped HCL, SQL, and JSON.",
+      "sidebarPath": "Direct schema changes",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "database-engineer",
+        "ci-operator"
+      ],
+      "readerQuestion": "How do I read a live database schema as SQL statements, annotated Go models, or Atlas-shaped HCL, SQL, and JSON?",
+      "goal": "Choose the required output format and inspect a live schema.",
+      "sourceOfTruth": [
+        "cmd/schema",
+        "migration/schemadiff",
+        "migration/planner"
+      ],
+      "owns": [
+        "cli-ptah-db-read",
+        "cli-ptah-schema-inspect"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/schema-commands/",
+        "/databases/postgresql/",
+        "/direct/compare-and-drift/",
+        "/operate/troubleshooting/",
+        "/reference/configuration/",
+        "/schema/visualize/",
+        "/start/adopt-an-existing-database/",
+        "/start/install/"
+      ],
+      "inboundLinks": [
+        "/atlas/schema-commands/",
+        "/direct/overview/",
+        "/schema/security/"
+      ],
+      "visibleWords": 1713,
+      "sourceBytes": 13482
+    },
+    {
+      "path": "docs/site/src/content/docs/direct/overview.md",
+      "route": "/direct/overview/",
+      "title": "Direct schema changes",
+      "description": "How a change reaches a database without a migration file - the read, drift, plan, and apply loop, and the history it does not keep.",
+      "sidebarPath": "Direct schema changes",
+      "sidebarLabel": "Overview",
+      "type": "landing",
+      "audience": [
+        "database-engineer",
+        "ci-operator"
+      ],
+      "readerQuestion": "When should I use direct schema changes, and which command comes next?",
+      "goal": "Choose the direct workflow when appropriate and open the correct next task.",
+      "sourceOfTruth": [
+        "cmd/schema",
+        "migration/schemadiff",
+        "migration/planner"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [
+        "/start/choose-a-workflow/",
+        "/direct/apply/"
+      ],
+      "disposition": "rewrite",
+      "outboundLinks": [
+        "/direct/apply/",
+        "/direct/compare-and-drift/",
+        "/direct/inspect/",
+        "/direct/plan-and-approve/",
+        "/schema/work-with-a-source/",
+        "/start/choose-a-workflow/",
+        "/versioned/overview/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/start/choose-a-workflow/"
+      ],
+      "visibleWords": 470,
+      "sourceBytes": 3949
+    },
+    {
+      "path": "docs/site/src/content/docs/direct/plan-and-approve.md",
+      "route": "/direct/plan-and-approve/",
+      "title": "Plan and approve changes",
+      "description": "Save a schema change as a plan file, sign it with an SSH key, and refuse an apply whose plan carries no matching approval.",
+      "sidebarPath": "Direct schema changes",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "database-engineer",
+        "ci-operator"
+      ],
+      "readerQuestion": "How do I save a schema change as a plan file, sign it with an SSH key, and refuse an apply whose plan carries no matching approval?",
+      "goal": "Apply only the reviewed and signed schema plan.",
+      "sourceOfTruth": [
+        "cmd/schema",
+        "migration/schemadiff",
+        "migration/planner"
+      ],
+      "owns": [
+        "cli-ptah-schema-approve",
+        "cli-ptah-schema-plan",
+        "cli-ptah-schema-verify-approval"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/direct/apply/",
+        "/direct/compare-and-drift/",
+        "/reference/exit-codes/",
+        "/start/install/",
+        "/versioned/generate/"
+      ],
+      "inboundLinks": [
+        "/direct/apply/",
+        "/direct/overview/",
+        "/reference/native-commands/"
+      ],
+      "visibleWords": 1358,
+      "sourceBytes": 13156
+    },
+    {
+      "path": "docs/site/src/content/docs/extend/components.md",
+      "route": "/extend/components/",
+      "title": "Reusable components",
+      "description": "Use Ptah as a Go schema engine, not only as a CLI.",
+      "sidebarPath": "Integrations > Go integration",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "go-developer"
+      ],
+      "readerQuestion": "How do I use Ptah as a Go schema engine, not only as a CLI?",
+      "goal": "Select and call the public Go package for a schema task.",
+      "sourceOfTruth": [
+        "core",
+        "migration",
+        "dbschema"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/extend/public-api/",
+        "/extend/query-builder/",
+        "/schema/yaml/",
+        "/versioned/lint/"
+      ],
+      "inboundLinks": [
+        "/concepts/dialects-and-capabilities/",
+        "/databases/postgresql/",
+        "/extend/public-api/",
+        "/versioned/lint/"
+      ],
+      "visibleWords": 2426,
+      "sourceBytes": 24043
+    },
+    {
+      "path": "docs/site/src/content/docs/extend/public-api.md",
+      "route": "/extend/public-api/",
+      "title": "Public Go API",
+      "description": "Stable embedder packages and API compatibility guardrails.",
+      "sidebarPath": "Integrations > Go integration",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "go-developer"
+      ],
+      "readerQuestion": "Which Go packages and exported symbols are stable for embedders?",
+      "goal": "Identify the Go packages and exported symbols stable for embedders.",
+      "sourceOfTruth": [
+        "docs/public_api.md",
+        "docs/public_api.snapshot"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/extend/components/",
+        "/reference/test-cases/",
+        "/testing/migrations-and-schema/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/databases/sqlserver/",
+        "/extend/components/",
+        "/reference/test-cases/",
+        "/schema/go-annotations/"
+      ],
+      "visibleWords": 2981,
+      "sourceBytes": 24373
+    },
+    {
+      "path": "docs/site/src/content/docs/extend/query-builder.md",
+      "route": "/extend/query-builder/",
+      "title": "Query builder",
+      "description": "Build parameterized, dialect-aware SELECT statements with the core/query package.",
+      "sidebarPath": "Integrations > Go integration",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "go-developer"
+      ],
+      "readerQuestion": "How do I build parameterized, dialect-aware SELECT statements in Go?",
+      "goal": "Build parameterized, dialect-aware SELECT statements in Go.",
+      "sourceOfTruth": [
+        "core/query"
+      ],
+      "owns": [
+        "gopkg-core-query"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/databases/support-matrix/"
+      ],
+      "inboundLinks": [
+        "/extend/components/"
+      ],
+      "visibleWords": 2850,
+      "sourceBytes": 22362
+    },
+    {
+      "path": "docs/site/src/content/docs/index.mdx",
+      "route": "/",
+      "title": "Ptah",
+      "description": "Ptah manages database schema changes and persistent inference state through versioned migrations, direct schema changes, and verified generation cutovers.",
+      "sidebarPath": "",
+      "sidebarLabel": "Home",
+      "type": "landing",
+      "audience": [
+        "all-users"
+      ],
+      "readerQuestion": "Which Ptah workflow matches the change I need to make?",
+      "goal": "Choose the Ptah workflow that matches the change.",
+      "sourceOfTruth": [
+        "cmd/root",
+        "cmd/inference"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [
+        "/start/quick-start/",
+        "/start/choose-a-workflow/",
+        "/inference/overview/"
+      ],
+      "disposition": "rewrite",
+      "outboundLinks": [
+        "/atlas/license-boundary/",
+        "/atlas/overview/",
+        "/databases/support-matrix/",
+        "/direct/apply/",
+        "/direct/compare-and-drift/",
+        "/direct/overview/",
+        "/extend/public-api/",
+        "/inference/overview/",
+        "/operate/oci-registry/",
+        "/reference/native-commands/",
+        "/schema/go-annotations/",
+        "/schema/hcl/",
+        "/schema/orm-and-external/",
+        "/schema/sql/",
+        "/schema/work-with-a-source/",
+        "/schema/yaml/",
+        "/start/adopt-an-existing-database/",
+        "/start/choose-a-workflow/",
+        "/start/quick-start-migrations/",
+        "/start/quick-start/",
+        "/testing/ci/",
+        "/versioned/overview/"
+      ],
+      "inboundLinks": [],
+      "visibleWords": 965,
+      "sourceBytes": 16071
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/concepts/consistency.md",
+      "route": "/inference/concepts/consistency/",
+      "title": "Consistency modes",
+      "description": "How Ptah accounts for source rows that change during a migration, and exactly what each mode can and cannot promise.",
+      "sidebarPath": "Inference migrations > Concepts",
+      "sidebarLabel": null,
+      "type": "concept",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "How does Ptah model consistency modes?",
+      "goal": "Explain Ptah's model for consistency modes.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/inference/guides/migrate-a-paused-source/",
+        "/inference/strategies/choose-a-consistency-mode/"
+      ],
+      "inboundLinks": [
+        "/inference/concepts/lifecycle/",
+        "/inference/reference/specification/"
+      ],
+      "visibleWords": 497,
+      "sourceBytes": 3684
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/concepts/embeddings-and-inference-state.md",
+      "route": "/inference/concepts/embeddings-and-inference-state/",
+      "title": "Embeddings and inference state",
+      "description": "The terms this area uses - embedding, vector, source row, inference state - defined before anything relies on them.",
+      "sidebarPath": "Inference migrations > Concepts",
+      "sidebarLabel": null,
+      "type": "concept",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "How does Ptah model embeddings and inference state?",
+      "goal": "Explain Ptah's model for embeddings and inference state.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/inference/concepts/generations/",
+        "/inference/reference/commands/"
+      ],
+      "inboundLinks": [
+        "/inference/overview/"
+      ],
+      "visibleWords": 604,
+      "sourceBytes": 4094
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/concepts/generations.md",
+      "route": "/inference/concepts/generations/",
+      "title": "Generations",
+      "description": "What a generation is, why its identity is computed rather than named, and why a new one needs its own column.",
+      "sidebarPath": "Inference migrations > Concepts",
+      "sidebarLabel": null,
+      "type": "concept",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "How does Ptah model generations?",
+      "goal": "Explain Ptah's model for generations.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/inference/concepts/verification-and-cutover/"
+      ],
+      "inboundLinks": [
+        "/inference/concepts/embeddings-and-inference-state/"
+      ],
+      "visibleWords": 607,
+      "sourceBytes": 4457
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/concepts/lifecycle.md",
+      "route": "/inference/concepts/lifecycle/",
+      "title": "The lifecycle",
+      "description": "What each phase of a generation change does, why they are separate commands, and how a run records where it got to.",
+      "sidebarPath": "Inference migrations > Concepts",
+      "sidebarLabel": null,
+      "type": "concept",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "How does Ptah model the lifecycle?",
+      "goal": "Explain Ptah's model for the lifecycle.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/inference/concepts/consistency/",
+        "/inference/guides/resume-and-recover/"
+      ],
+      "inboundLinks": [],
+      "visibleWords": 557,
+      "sourceBytes": 3905
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/concepts/security-and-data-boundaries.md",
+      "route": "/inference/concepts/security-and-data-boundaries/",
+      "title": "Security and data boundaries",
+      "description": "What leaves your database during a migration, where the credential lives, and what Ptah refuses to expose.",
+      "sidebarPath": "Inference migrations > Concepts",
+      "sidebarLabel": null,
+      "type": "concept",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "How does Ptah model security and data boundaries?",
+      "goal": "Explain Ptah's model for security and data boundaries.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [],
+      "inboundLinks": [],
+      "visibleWords": 425,
+      "sourceBytes": 3258
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/concepts/verification-and-cutover.md",
+      "route": "/inference/concepts/verification-and-cutover/",
+      "title": "Verification, cutover, and rollback",
+      "description": "What Ptah checks before a switch, what a cutover binds to, and the conditions under which going back is actually possible.",
+      "sidebarPath": "Inference migrations > Concepts",
+      "sidebarLabel": null,
+      "type": "concept",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "How does Ptah model verification, cutover, and rollback?",
+      "goal": "Explain Ptah's model for verification, cutover, and rollback.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [],
+      "inboundLinks": [
+        "/inference/concepts/generations/"
+      ],
+      "visibleWords": 699,
+      "sourceBytes": 5250
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/guides/create-first-generation.md",
+      "route": "/inference/guides/create-first-generation/",
+      "title": "Create your first generation",
+      "description": "Add vectors to a table that has none, on a system where nothing is searching yet.",
+      "sidebarPath": "Inference migrations > Guides",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "How do I add vectors to a table that has none, on a system where nothing is searching yet?",
+      "goal": "Create and verify the first searchable vector generation.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/inference/guides/migrate-to-another-model/",
+        "/inference/quick-start/",
+        "/inference/strategies/choose-a-target-layout/",
+        "/inference/strategies/plan-provider-capacity/"
+      ],
+      "inboundLinks": [],
+      "visibleWords": 560,
+      "sourceBytes": 4967
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/guides/migrate-a-live-table.md",
+      "route": "/inference/guides/migrate-a-live-table/",
+      "title": "Migrate a live table",
+      "description": "Run a generation change against a table your application is inserting into, updating, and deleting from throughout.",
+      "sidebarPath": "Inference migrations > Guides",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "How do I migrate a table while my application continues writing to it?",
+      "goal": "Migrate a table while my application continues writing to it.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [],
+      "inboundLinks": [
+        "/inference/overview/"
+      ],
+      "visibleWords": 531,
+      "sourceBytes": 4335
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/guides/migrate-a-paused-source.md",
+      "route": "/inference/guides/migrate-a-paused-source/",
+      "title": "Migrate a source that is not changing",
+      "description": "The simpler path when writes are genuinely stopped, and what Ptah does and does not check about that claim.",
+      "sidebarPath": "Inference migrations > Guides",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "How do I migrate inference state while writes to the source table are paused?",
+      "goal": "Migrate inference state while writes to the source table are paused.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [],
+      "inboundLinks": [
+        "/inference/concepts/consistency/"
+      ],
+      "visibleWords": 369,
+      "sourceBytes": 3354
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/guides/migrate-to-another-model.md",
+      "route": "/inference/guides/migrate-to-another-model/",
+      "title": "Migrate to another model",
+      "description": "Replace the vectors on a table that already has them, with a second generation beside the first.",
+      "sidebarPath": "Inference migrations > Guides",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "How do I replace an active embedding generation with one from another model?",
+      "goal": "Replace an active embedding generation with one from another model.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "change embedding model"
+      ],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/inference/guides/rollback-and-retire/"
+      ],
+      "inboundLinks": [
+        "/inference/guides/create-first-generation/",
+        "/inference/quick-start/",
+        "/inference/strategies/production-rollout/"
+      ],
+      "visibleWords": 401,
+      "sourceBytes": 4384
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/guides/resume-and-recover.md",
+      "route": "/inference/guides/resume-and-recover/",
+      "title": "Resume and recover",
+      "description": "What to do when a run stops - an unreachable provider, a killed process, a lease taken by another worker.",
+      "sidebarPath": "Inference migrations > Guides",
+      "sidebarLabel": null,
+      "type": "troubleshooting",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "How do I recover an inference migration after a provider or worker failure?",
+      "goal": "Recover an inference migration after a provider or worker failure.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "resume inference migration"
+      ],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/inference/strategies/plan-provider-capacity/"
+      ],
+      "inboundLinks": [
+        "/inference/concepts/lifecycle/",
+        "/inference/troubleshooting/"
+      ],
+      "visibleWords": 491,
+      "sourceBytes": 4580
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/guides/rollback-and-retire.md",
+      "route": "/inference/guides/rollback-and-retire/",
+      "title": "Rollback and retire",
+      "description": "Going back to the previous generation, what keeps that possible, and when it is safe to destroy the old vectors.",
+      "sidebarPath": "Inference migrations > Guides",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "How do I roll back to a previous generation and retire old vectors safely?",
+      "goal": "Roll back to a previous generation and retire old vectors safely.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [],
+      "inboundLinks": [
+        "/inference/guides/migrate-to-another-model/",
+        "/inference/quick-start/",
+        "/inference/strategies/production-rollout/",
+        "/inference/troubleshooting/"
+      ],
+      "visibleWords": 501,
+      "sourceBytes": 4257
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/overview.md",
+      "route": "/inference/overview/",
+      "title": "Inference migrations",
+      "description": "What Ptah does with the vectors an application searches, and whether this feature applies to your system.",
+      "sidebarPath": "Inference migrations",
+      "sidebarLabel": "Overview",
+      "type": "landing",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "Do inference migrations apply to my persistent model output?",
+      "goal": "Determine whether inference migrations apply to my persistent model output.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "pgvector"
+      ],
+      "overlaps": [
+        "/inference/quick-start/",
+        "/inference/concepts/lifecycle/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/inference/concepts/embeddings-and-inference-state/",
+        "/inference/guides/migrate-a-live-table/",
+        "/inference/quick-start/",
+        "/inference/reference/support-and-limitations/",
+        "/inference/troubleshooting/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/reference/native-commands/",
+        "/start/choose-a-workflow/",
+        "/start/quick-start/"
+      ],
+      "visibleWords": 501,
+      "sourceBytes": 4282
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/quick-start.md",
+      "route": "/inference/quick-start/",
+      "title": "Quick start",
+      "description": "Run one complete generation change against a throwaway PostgreSQL database, from an empty table to a cutover.",
+      "sidebarPath": "Inference migrations",
+      "sidebarLabel": null,
+      "type": "tutorial",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "How do I run and verify one complete inference migration?",
+      "goal": "Run and verify one complete inference migration.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [
+        "/inference/guides/create-first-generation/",
+        "/inference/concepts/lifecycle/"
+      ],
+      "disposition": "rewrite",
+      "outboundLinks": [
+        "/inference/guides/migrate-to-another-model/",
+        "/inference/guides/rollback-and-retire/",
+        "/inference/reference/specification/"
+      ],
+      "inboundLinks": [
+        "/inference/guides/create-first-generation/",
+        "/inference/overview/"
+      ],
+      "visibleWords": 290,
+      "sourceBytes": 4701
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/reference/commands.md",
+      "route": "/inference/reference/commands/",
+      "title": "Command reference",
+      "description": "Every ptah inference verb, what it does, and the flags it takes.",
+      "sidebarPath": "Inference migrations > Reference",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "Which inference commands and flags does Ptah expose?",
+      "goal": "Look up the available inference commands and flags.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [
+        "cli-ptah-inference-describe",
+        "cli-ptah-inference-plan",
+        "cli-ptah-inference-prepare",
+        "cli-ptah-inference-backfill",
+        "cli-ptah-inference-catchup",
+        "cli-ptah-inference-index",
+        "cli-ptah-inference-verify",
+        "cli-ptah-inference-evaluate",
+        "cli-ptah-inference-pause",
+        "cli-ptah-inference-resume",
+        "cli-ptah-inference-status",
+        "cli-ptah-inference-cutover",
+        "cli-ptah-inference-rollback",
+        "cli-ptah-inference-retire"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [],
+      "inboundLinks": [
+        "/inference/concepts/embeddings-and-inference-state/"
+      ],
+      "visibleWords": 1604,
+      "sourceBytes": 11806
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/reference/run-status-and-findings.md",
+      "route": "/inference/reference/run-status-and-findings/",
+      "title": "Run status and findings",
+      "description": "Reading what status reports, what each verification layer measures, and what a blocking finding means.",
+      "sidebarPath": "Inference migrations > Reference",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "How do I interpret inference run status and verification findings?",
+      "goal": "Interpret inference run status and verification findings.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [],
+      "inboundLinks": [],
+      "visibleWords": 756,
+      "sourceBytes": 6353
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/reference/specification.md",
+      "route": "/inference/reference/specification/",
+      "title": "Specification reference",
+      "description": "Every field of an inference specification, its accepted values, and whether it is part of the generation identity.",
+      "sidebarPath": "Inference migrations > Reference",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "Which fields and values does an inference specification accept?",
+      "goal": "Look up the accepted inference specification fields and values.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/inference/concepts/consistency/"
+      ],
+      "inboundLinks": [
+        "/inference/quick-start/"
+      ],
+      "visibleWords": 821,
+      "sourceBytes": 7044
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/reference/support-and-limitations.md",
+      "route": "/inference/reference/support-and-limitations/",
+      "title": "Support and limitations",
+      "description": "Exactly what is implemented, what is not, and which guarantees depend on you rather than on Ptah.",
+      "sidebarPath": "Inference migrations > Reference",
+      "sidebarLabel": null,
+      "type": "status",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "Which inference migration guarantees are measured, unsupported, or owned by the operator?",
+      "goal": "Distinguish measured, unsupported, and operator-owned inference guarantees.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": "2026-08-30",
+      "evidence": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [],
+      "inboundLinks": [
+        "/inference/overview/"
+      ],
+      "visibleWords": 689,
+      "sourceBytes": 5157
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/strategies/choose-a-consistency-mode.md",
+      "route": "/inference/strategies/choose-a-consistency-mode/",
+      "title": "Choose a consistency mode",
+      "description": "The decision, its cost, and what each answer leaves you unable to prove.",
+      "sidebarPath": "Inference migrations > Strategies",
+      "sidebarLabel": null,
+      "type": "concept",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "Which consistency mode fits my source-write behavior?",
+      "goal": "Choose a consistency mode for the source-write behavior.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [],
+      "inboundLinks": [
+        "/inference/concepts/consistency/"
+      ],
+      "visibleWords": 488,
+      "sourceBytes": 3453
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/strategies/choose-a-target-layout.md",
+      "route": "/inference/strategies/choose-a-target-layout/",
+      "title": "Choose a target layout",
+      "description": "Where the vectors go - a column on the source table, or a table of their own - and what each choice makes easy.",
+      "sidebarPath": "Inference migrations > Strategies",
+      "sidebarLabel": null,
+      "type": "concept",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "Which target layout fits my query and lifecycle needs?",
+      "goal": "Choose a vector target layout for the query and lifecycle needs.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [],
+      "inboundLinks": [
+        "/inference/guides/create-first-generation/"
+      ],
+      "visibleWords": 422,
+      "sourceBytes": 3362
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/strategies/plan-provider-capacity.md",
+      "route": "/inference/strategies/plan-provider-capacity/",
+      "title": "Plan provider capacity",
+      "description": "Sizing a backfill against what your embedding endpoint can take, and what the numbers in the plan mean for cost.",
+      "sidebarPath": "Inference migrations > Strategies",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "How do I size a backfill for my embedding provider's capacity and cost?",
+      "goal": "Size a backfill for my embedding provider's capacity and cost.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [],
+      "inboundLinks": [
+        "/inference/guides/create-first-generation/",
+        "/inference/guides/resume-and-recover/",
+        "/inference/troubleshooting/"
+      ],
+      "visibleWords": 450,
+      "sourceBytes": 3847
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/strategies/plan-vector-indexes.md",
+      "route": "/inference/strategies/plan-vector-indexes/",
+      "title": "Plan vector indexes",
+      "description": "Which index to build, when to build it, and why the numbers a query returns depend on settings the index does not carry.",
+      "sidebarPath": "Inference migrations > Strategies",
+      "sidebarLabel": null,
+      "type": "concept",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "When should I build each type of vector index?",
+      "goal": "Choose a vector index type and when to build it.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [],
+      "inboundLinks": [],
+      "visibleWords": 499,
+      "sourceBytes": 3985
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/strategies/production-rollout.md",
+      "route": "/inference/strategies/production-rollout/",
+      "title": "Production rollout",
+      "description": "Ordering the steps, the evidence to keep, and the decisions to take before rather than during.",
+      "sidebarPath": "Inference migrations > Strategies",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "How do I order and verify a production inference migration?",
+      "goal": "Order and verify a production inference migration.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/inference/guides/migrate-to-another-model/",
+        "/inference/guides/rollback-and-retire/"
+      ],
+      "inboundLinks": [],
+      "visibleWords": 617,
+      "sourceBytes": 5928
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/troubleshooting.md",
+      "route": "/inference/troubleshooting/",
+      "title": "Troubleshooting",
+      "description": "Symptoms, what causes them, and what to do - for the failures a generation change actually produces.",
+      "sidebarPath": "Inference migrations",
+      "sidebarLabel": null,
+      "type": "troubleshooting",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "Which inference migration symptom am I seeing, and how do I recover?",
+      "goal": "Identify an inference migration symptom and follow its recovery path.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "integration/inference_cli_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/inference/guides/resume-and-recover/",
+        "/inference/guides/rollback-and-retire/",
+        "/inference/strategies/plan-provider-capacity/"
+      ],
+      "inboundLinks": [
+        "/inference/overview/"
+      ],
+      "visibleWords": 790,
+      "sourceBytes": 5605
+    },
+    {
+      "path": "docs/site/src/content/docs/operate/ai-agents.md",
+      "route": "/operate/ai-agents/",
+      "title": "AI agents over MCP",
+      "description": "Connect an AI client to Ptah with ptah mcp, and decide what it may read, propose, and write.",
+      "sidebarPath": "Integrations > AI and agents",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "application-developer",
+        "platform-engineer"
+      ],
+      "readerQuestion": "How do I connect an AI client to Ptah over MCP and constrain its authority?",
+      "goal": "Connect an AI client to Ptah over MCP and constrain its authority.",
+      "sourceOfTruth": [
+        "cmd/mcp",
+        "internal/mcpserver",
+        "internal/agentapi"
+      ],
+      "owns": [
+        "cli-ptah-mcp"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "MCP"
+      ],
+      "overlaps": [
+        "/operate/ai-assist/",
+        "/reference/native-commands/"
+      ],
+      "disposition": "split",
+      "outboundLinks": [
+        "/reference/native-commands/",
+        "/versioned/integrity-and-safety/"
+      ],
+      "inboundLinks": [
+        "/operate/ai-assist/",
+        "/reference/native-commands/"
+      ],
+      "visibleWords": 3987,
+      "sourceBytes": 30886
+    },
+    {
+      "path": "docs/site/src/content/docs/operate/ai-assist.md",
+      "route": "/operate/ai-assist/",
+      "title": "Ptah Assist and your own model",
+      "description": "Configure a model provider for ptah assist with your own key, endpoint, and model, and check that it works.",
+      "sidebarPath": "Integrations > AI and agents",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "application-developer",
+        "platform-engineer"
+      ],
+      "readerQuestion": "How do I connect Ptah Assist to my model endpoint and verify the session?",
+      "goal": "Connect Ptah Assist to my model endpoint and verify the session.",
+      "sourceOfTruth": [
+        "cmd/assist",
+        "internal/assistconfig",
+        "internal/assistloop"
+      ],
+      "owns": [
+        "cli-ptah-assist-context",
+        "cli-ptah-assist-explain",
+        "cli-ptah-assist-provider-list",
+        "cli-ptah-assist-provider-test",
+        "cli-ptah-assist-sessions-delete",
+        "cli-ptah-assist-sessions-list",
+        "cli-ptah-assist-sessions-prune",
+        "cli-ptah-assist-sessions-show"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [
+        "/operate/ai-agents/",
+        "/reference/native-commands/"
+      ],
+      "disposition": "split",
+      "outboundLinks": [
+        "/operate/ai-agents/"
+      ],
+      "inboundLinks": [
+        "/reference/native-commands/"
+      ],
+      "visibleWords": 2835,
+      "sourceBytes": 21665
+    },
+    {
+      "path": "docs/site/src/content/docs/operate/oci-registry.md",
+      "route": "/operate/oci-registry/",
+      "title": "OCI registry artifacts",
+      "description": "Publish, pin, pull, and consume Ptah migrations and desired schemas through an OCI registry.",
+      "sidebarPath": "Distribute and operate",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "platform-engineer"
+      ],
+      "readerQuestion": "How do I publish, pin, pull, and consume Ptah migrations and desired schemas through an OCI registry?",
+      "goal": "Publish and consume a pinned migration or schema artifact.",
+      "sourceOfTruth": [
+        "cmd/migrationspush",
+        "cmd/migrationspull",
+        "internal/schemaartifact"
+      ],
+      "owns": [
+        "cli-ptah-migrations-pull",
+        "cli-ptah-migrations-push",
+        "cli-ptah-oci-referrers",
+        "cli-ptah-schema-pull",
+        "cli-ptah-schema-push"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/reference/capabilities/",
+        "/reference/exit-codes/",
+        "/reference/native-commands/",
+        "/versioned/integrity-and-safety/",
+        "/versioned/lint/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/atlas/docs-coverage/",
+        "/atlas/feature-matrix/",
+        "/atlas/overview/",
+        "/concepts/migration-directory/",
+        "/reference/capabilities/",
+        "/reference/native-commands/",
+        "/versioned/apply/",
+        "/versioned/lint/"
+      ],
+      "visibleWords": 2436,
+      "sourceBytes": 21102
+    },
+    {
+      "path": "docs/site/src/content/docs/operate/seed-data.md",
+      "route": "/operate/seed-data/",
+      "title": "Seed data",
+      "description": "Apply one-off, environment-scoped SQL seed files with ptah seed and track them in schema_seeds.",
+      "sidebarPath": "Load data",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "platform-engineer"
+      ],
+      "readerQuestion": "How do I apply one-off, environment-scoped SQL seed files with ptah seed and track them in schema_seeds?",
+      "goal": "Apply a seed file once and confirm its tracked state.",
+      "sourceOfTruth": [
+        "cmd/seed",
+        "migration/seeder"
+      ],
+      "owns": [
+        "cli-ptah-seed"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/operate/troubleshooting/",
+        "/reference/exit-codes/",
+        "/reference/native-commands/",
+        "/versioned/reference-data/"
+      ],
+      "inboundLinks": [
+        "/versioned/reference-data/"
+      ],
+      "visibleWords": 490,
+      "sourceBytes": 4973
+    },
+    {
+      "path": "docs/site/src/content/docs/operate/troubleshooting.md",
+      "route": "/operate/troubleshooting/",
+      "title": "Troubleshooting",
+      "description": "Fix common Ptah command, database, Graphviz, hash, config, and conformance problems.",
+      "sidebarPath": "Distribute and operate",
+      "sidebarLabel": null,
+      "type": "troubleshooting",
+      "audience": [
+        "platform-engineer"
+      ],
+      "readerQuestion": "How do I diagnose a Ptah failure from its stable symptom or error text?",
+      "goal": "Diagnose a Ptah failure from its stable symptom or error text.",
+      "sourceOfTruth": [
+        "cmd",
+        "dbschema",
+        "migration"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "split",
+      "outboundLinks": [
+        "/atlas/conformance/",
+        "/atlas/feature-matrix/",
+        "/atlas/project-config/",
+        "/reference/capabilities/"
+      ],
+      "inboundLinks": [
+        "/atlas/docs-coverage/",
+        "/direct/compare-and-drift/",
+        "/direct/inspect/",
+        "/operate/seed-data/",
+        "/schema/visualize/",
+        "/start/adopt-an-existing-database/",
+        "/testing/ci/"
+      ],
+      "visibleWords": 431,
+      "sourceBytes": 4455
+    },
+    {
+      "path": "docs/site/src/content/docs/reference/atlas-commands.md",
+      "route": "/reference/atlas-commands/",
+      "title": "Atlas-compatible commands",
+      "description": "Per-command status for every ptah-compat verb, with Atlas differences and known gaps.",
+      "sidebarPath": "Concepts and reference > Command reference",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "all-users"
+      ],
+      "readerQuestion": "Which Atlas-compatible commands are implemented, limited, or unavailable?",
+      "goal": "Determine which Atlas-compatible commands are implemented, limited, or unavailable.",
+      "sourceOfTruth": [
+        "cmd/atlas",
+        "internal/cmdref"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [
+        "/reference/command-flags/",
+        "/reference/native-commands/"
+      ],
+      "disposition": "rewrite",
+      "outboundLinks": [
+        "/atlas/conformance/",
+        "/atlas/migrate-commands/",
+        "/atlas/overview/",
+        "/atlas/retained-divergences/",
+        "/atlas/schema-commands/",
+        "/concepts/database-urls-and-dev-databases/",
+        "/reference/configuration/",
+        "/reference/extension-variables/",
+        "/reference/lint-rules/",
+        "/reference/native-commands/",
+        "/versioned/integrity-and-safety/"
+      ],
+      "inboundLinks": [
+        "/atlas/docs-coverage/",
+        "/atlas/migrate-commands/",
+        "/atlas/overview/",
+        "/atlas/schema-commands/",
+        "/reference/command-flags/",
+        "/reference/extension-variables/",
+        "/reference/native-commands/"
+      ],
+      "visibleWords": 14291,
+      "sourceBytes": 99028
+    },
+    {
+      "path": "docs/site/src/content/docs/reference/capabilities.mdx",
+      "route": "/reference/capabilities/",
+      "title": "Capabilities",
+      "description": "The per-dialect capability gates Ptah tracks, plus cross-cutting testing and OCI capabilities.",
+      "sidebarPath": "Concepts and reference > Rules and diagnostics",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "all-users"
+      ],
+      "readerQuestion": "Which capability keys does Ptah use for each dialect?",
+      "goal": "Look up Ptah capability keys by dialect.",
+      "sourceOfTruth": [
+        "core/platform/capability",
+        "docs/capabilities.md"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/concepts/dialects-and-capabilities/",
+        "/databases/clickhouse/",
+        "/databases/support-matrix/",
+        "/operate/oci-registry/",
+        "/reference/test-cases/",
+        "/testing/migrations-and-schema/"
+      ],
+      "inboundLinks": [
+        "/atlas/docs-coverage/",
+        "/concepts/dialects-and-capabilities/",
+        "/databases/clickhouse/",
+        "/databases/distributed/",
+        "/databases/mysql/",
+        "/databases/oracle/",
+        "/databases/support-matrix/",
+        "/operate/oci-registry/",
+        "/operate/troubleshooting/",
+        "/reference/go-annotations/"
+      ],
+      "visibleWords": 1603,
+      "sourceBytes": 11572
+    },
+    {
+      "path": "docs/site/src/content/docs/reference/command-flags.md",
+      "route": "/reference/command-flags/",
+      "title": "Command flags",
+      "description": "Every flag both Ptah binaries register, with its type, default and environment variable.",
+      "sidebarPath": "Concepts and reference > Command reference",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "all-users"
+      ],
+      "readerQuestion": "Which flags and environment bindings does each current command expose?",
+      "goal": "Look up the flags, defaults, and environment bindings for a command.",
+      "sourceOfTruth": [
+        "cmd/root",
+        "cmd/atlas",
+        "internal/cmdref"
+      ],
+      "owns": [],
+      "generated": true,
+      "generator": "internal/cmd/docsync",
+      "editSource": "internal/cmdref/markdown.go",
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "command environment variables"
+      ],
+      "overlaps": [
+        "/reference/native-commands/",
+        "/reference/atlas-commands/"
+      ],
+      "disposition": "rewrite",
+      "outboundLinks": [
+        "/reference/atlas-commands/",
+        "/reference/native-commands/"
+      ],
+      "inboundLinks": [
+        "/reference/native-commands/"
+      ],
+      "visibleWords": 8331,
+      "sourceBytes": 76984
+    },
+    {
+      "path": "docs/site/src/content/docs/reference/configuration.mdx",
+      "route": "/reference/configuration/",
+      "title": "Configuration",
+      "description": "Project config files, Atlas config subset, environment variables, and precedence.",
+      "sidebarPath": "Concepts and reference > Format reference",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "all-users"
+      ],
+      "readerQuestion": "Which configuration sources does Ptah read, and in what precedence?",
+      "goal": "Determine Ptah configuration source precedence.",
+      "sourceOfTruth": [
+        "cmd",
+        "core",
+        "migration"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/adoption/",
+        "/atlas/project-config/",
+        "/databases/sqlite/",
+        "/reference/hcl-schema/"
+      ],
+      "inboundLinks": [
+        "/atlas/adoption/",
+        "/atlas/docs-coverage/",
+        "/atlas/schema-commands/",
+        "/concepts/database-urls-and-dev-databases/",
+        "/databases/mysql/",
+        "/databases/postgresql/",
+        "/direct/compare-and-drift/",
+        "/direct/inspect/",
+        "/reference/atlas-commands/",
+        "/reference/extension-variables/",
+        "/reference/lint-rules/",
+        "/reference/native-commands/",
+        "/schema/hcl/",
+        "/schema/orm-and-external/",
+        "/versioned/apply/"
+      ],
+      "visibleWords": 2846,
+      "sourceBytes": 20679
+    },
+    {
+      "path": "docs/site/src/content/docs/reference/exit-codes.md",
+      "route": "/reference/exit-codes/",
+      "title": "Exit codes",
+      "description": "How Ptah commands behave when used as automation gates.",
+      "sidebarPath": "Concepts and reference > Rules and diagnostics",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "all-users"
+      ],
+      "readerQuestion": "Which exit code should automation expect from each Ptah result?",
+      "goal": "Map each Ptah result to the exit code automation should expect.",
+      "sourceOfTruth": [
+        "docs/exit_codes.md",
+        "docs/site/scripts/check-exit-codes.mjs"
+      ],
+      "owns": [
+        "gopkg-core-ptaherr"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "exit code 2"
+      ],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [],
+      "inboundLinks": [
+        "/atlas/docs-coverage/",
+        "/direct/plan-and-approve/",
+        "/operate/oci-registry/",
+        "/operate/seed-data/",
+        "/schema/document/",
+        "/schema/lineage/",
+        "/schema/protobuf/",
+        "/schema/security/",
+        "/schema/serve/",
+        "/schema/stats/",
+        "/schema/validate-and-format/",
+        "/start/install/",
+        "/testing/ci/",
+        "/versioned/integrity-and-safety/"
+      ],
+      "visibleWords": 3001,
+      "sourceBytes": 21863
+    },
+    {
+      "path": "docs/site/src/content/docs/reference/extension-variables.md",
+      "route": "/reference/extension-variables/",
+      "title": "Extension environment variables",
+      "description": "The PTAH_* booleans that turn on behavior the pinned Atlas community CLI has no counterpart for, one entry per variable.",
+      "sidebarPath": "Concepts and reference > Command reference",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "all-users"
+      ],
+      "readerQuestion": "Which `PTAH_*` variables enable compatibility extensions?",
+      "goal": "Look up the `PTAH_*` variables that enable compatibility extensions.",
+      "sourceOfTruth": [
+        "cmd",
+        "core",
+        "migration"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/overview/",
+        "/databases/sqlite/",
+        "/reference/atlas-commands/",
+        "/reference/configuration/"
+      ],
+      "inboundLinks": [
+        "/atlas/overview/",
+        "/reference/atlas-commands/"
+      ],
+      "visibleWords": 2695,
+      "sourceBytes": 17571
+    },
+    {
+      "path": "docs/site/src/content/docs/reference/glossary.mdx",
+      "route": "/reference/glossary/",
+      "title": "Glossary",
+      "description": "Terms whose meaning a table can only show as a glyph, defined where they are used.",
+      "sidebarPath": "Concepts and reference > Rules and diagnostics",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "all-users"
+      ],
+      "readerQuestion": "What do Ptah's product and support terms mean?",
+      "goal": "Look up Ptah's product and support terms.",
+      "sourceOfTruth": [
+        "cmd",
+        "core",
+        "migration"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "rewrite",
+      "outboundLinks": [],
+      "inboundLinks": [],
+      "visibleWords": 281,
+      "sourceBytes": 2634
+    },
+    {
+      "path": "docs/site/src/content/docs/reference/go-annotations.md",
+      "route": "/reference/go-annotations/",
+      "title": "Go annotation reference",
+      "description": "Every //ptah directive and attribute accepted by Ptah's Go annotation parser.",
+      "sidebarPath": "Concepts and reference > Format reference",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "all-users"
+      ],
+      "readerQuestion": "Which Go annotation directives and attributes does Ptah accept?",
+      "goal": "Look up every accepted Go annotation directive and attribute.",
+      "sourceOfTruth": [
+        "internal/annotationmeta",
+        "schemas/ptah-annotations.schema.json"
+      ],
+      "owns": [
+        "cli-ptah-schema-annotations"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "Go annotations"
+      ],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/databases/clickhouse/",
+        "/databases/distributed/",
+        "/reference/capabilities/",
+        "/schema/go-annotations/",
+        "/versioned/reference-data/"
+      ],
+      "inboundLinks": [
+        "/databases/clickhouse/",
+        "/databases/oracle/",
+        "/databases/postgresql/",
+        "/databases/sqlserver/",
+        "/schema/go-annotations/",
+        "/start/install/"
+      ],
+      "visibleWords": 3866,
+      "sourceBytes": 31278
+    },
+    {
+      "path": "docs/site/src/content/docs/reference/hcl-schema.md",
+      "route": "/reference/hcl-schema/",
+      "title": "HCL schema reference",
+      "description": "Atlas-compatible HCL schema subset and Ptah parity extensions.",
+      "sidebarPath": "Concepts and reference > Format reference",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "all-users"
+      ],
+      "readerQuestion": "Which Atlas-compatible HCL schema constructs does Ptah accept?",
+      "goal": "Look up the Atlas-compatible HCL schema constructs Ptah accepts.",
+      "sourceOfTruth": [
+        "cmd",
+        "core",
+        "migration"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/conformance/",
+        "/atlas/docs-coverage/",
+        "/atlas/project-config/",
+        "/atlas/schema-commands/",
+        "/reference/native-commands/"
+      ],
+      "inboundLinks": [
+        "/atlas/docs-coverage/",
+        "/atlas/project-config/",
+        "/reference/configuration/",
+        "/schema/hcl/"
+      ],
+      "visibleWords": 1855,
+      "sourceBytes": 15109
+    },
+    {
+      "path": "docs/site/src/content/docs/reference/lint-rules.md",
+      "route": "/reference/lint-rules/",
+      "title": "Lint rules",
+      "description": "Every rule Ptah's linters report, with its meaning, dialects, surface, and whether the name is Atlas's or Ptah's.",
+      "sidebarPath": "Concepts and reference > Rules and diagnostics",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "all-users"
+      ],
+      "readerQuestion": "Which lint rule identifiers can Ptah report?",
+      "goal": "Look up every lint rule identifier Ptah can report.",
+      "sourceOfTruth": [
+        "migration/lint",
+        "internal/sqllint",
+        "internal/lintcatalog"
+      ],
+      "owns": [
+        "cli-ptah-sql-lint"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/reference/configuration/"
+      ],
+      "inboundLinks": [
+        "/atlas/conformance/",
+        "/atlas/migrate-commands/",
+        "/atlas/schema-commands/",
+        "/databases/postgresql/",
+        "/reference/atlas-commands/",
+        "/schema/security/",
+        "/versioned/lint/"
+      ],
+      "visibleWords": 3915,
+      "sourceBytes": 26448
+    },
+    {
+      "path": "docs/site/src/content/docs/reference/native-commands.md",
+      "route": "/reference/native-commands/",
+      "title": "Native commands",
+      "description": "Every command path the native ptah binary answers to, and the notes a verb table cannot hold.",
+      "sidebarPath": "Concepts and reference > Command reference",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "all-users"
+      ],
+      "readerQuestion": "Which command paths does the native `ptah` binary expose?",
+      "goal": "Look up every command path exposed by the native `ptah` binary.",
+      "sourceOfTruth": [
+        "cmd/root",
+        "internal/cmdref"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [
+        "/reference/command-flags/",
+        "/reference/atlas-commands/"
+      ],
+      "disposition": "rewrite",
+      "outboundLinks": [
+        "/direct/plan-and-approve/",
+        "/inference/overview/",
+        "/operate/ai-agents/",
+        "/operate/ai-assist/",
+        "/operate/oci-registry/",
+        "/reference/atlas-commands/",
+        "/reference/command-flags/",
+        "/reference/configuration/",
+        "/schema/document/",
+        "/schema/lineage/",
+        "/schema/security/",
+        "/schema/serve/",
+        "/schema/stats/",
+        "/start/choose-a-workflow/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/atlas/docs-coverage/",
+        "/operate/ai-agents/",
+        "/operate/oci-registry/",
+        "/operate/seed-data/",
+        "/reference/atlas-commands/",
+        "/reference/command-flags/",
+        "/reference/hcl-schema/",
+        "/reference/yaml-schema/",
+        "/schema/hcl/",
+        "/schema/lineage/",
+        "/schema/protobuf/",
+        "/schema/security/",
+        "/schema/serve/",
+        "/schema/sql/",
+        "/schema/stats/",
+        "/schema/validate-and-format/",
+        "/schema/visualize/",
+        "/schema/yaml/"
+      ],
+      "visibleWords": 7090,
+      "sourceBytes": 47710
+    },
+    {
+      "path": "docs/site/src/content/docs/reference/test-cases.md",
+      "route": "/reference/test-cases/",
+      "title": "Database test commands",
+      "description": "Exact flags, steps, assertions, reports, and isolation behavior for migration and schema tests.",
+      "sidebarPath": "Concepts and reference > Command reference",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "all-users"
+      ],
+      "readerQuestion": "Which flags, assertions, and isolation rules do database test commands use?",
+      "goal": "Look up the flags, assertions, and isolation rules for database test commands.",
+      "sourceOfTruth": [
+        "cmd",
+        "core",
+        "migration"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/extend/public-api/",
+        "/testing/migrations-and-schema/"
+      ],
+      "inboundLinks": [
+        "/extend/public-api/",
+        "/reference/capabilities/",
+        "/testing/migrations-and-schema/"
+      ],
+      "visibleWords": 412,
+      "sourceBytes": 3567
+    },
+    {
+      "path": "docs/site/src/content/docs/reference/yaml-schema.md",
+      "route": "/reference/yaml-schema/",
+      "title": "YAML Schema Reference",
+      "description": "Ptah's strict YAML schema-file format.",
+      "sidebarPath": "Concepts and reference > Format reference",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "all-users"
+      ],
+      "readerQuestion": "Which fields and values does Ptah's YAML schema format accept?",
+      "goal": "Look up the fields and values accepted by Ptah's YAML schema format.",
+      "sourceOfTruth": [
+        "cmd",
+        "core",
+        "migration"
+      ],
+      "owns": [
+        "gopkg-core-yamlschema"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/reference/native-commands/"
+      ],
+      "inboundLinks": [
+        "/schema/yaml/"
+      ],
+      "visibleWords": 899,
+      "sourceBytes": 7630
+    },
+    {
+      "path": "docs/site/src/content/docs/schema/composite.md",
+      "route": "/schema/composite/",
+      "title": "Composite desired schema",
+      "description": "Merge Go packages, YAML, HCL, and SQL files, and an external loader into one desired schema.",
+      "sidebarPath": "Schema > Sources",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "schema-author"
+      ],
+      "readerQuestion": "How do I merge Go packages, YAML, HCL, and SQL files, and an external loader into one desired schema?",
+      "goal": "Build and verify one desired schema from multiple sources.",
+      "sourceOfTruth": [
+        "cmd/schema",
+        "internal/schemaload"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/schema/orm-and-external/",
+        "/schema/visualize/",
+        "/versioned/generate/"
+      ],
+      "inboundLinks": [
+        "/atlas/docs-coverage/",
+        "/concepts/desired-schema-and-sources/",
+        "/direct/compare-and-drift/",
+        "/schema/document/",
+        "/schema/export/",
+        "/schema/hcl/",
+        "/schema/lineage/",
+        "/schema/orm-and-external/",
+        "/schema/sql/",
+        "/schema/validate-and-format/",
+        "/schema/work-with-a-source/",
+        "/schema/yaml/",
+        "/versioned/generate/"
+      ],
+      "visibleWords": 489,
+      "sourceBytes": 4346
+    },
+    {
+      "path": "docs/site/src/content/docs/schema/dbml.md",
+      "route": "/schema/dbml/",
+      "title": "DBML",
+      "description": "Read a DBML document as a desired schema, and write any Ptah schema back out as canonical DBML.",
+      "sidebarPath": "Schema > Sources",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "schema-author"
+      ],
+      "readerQuestion": "How do I read a DBML document as a desired schema, and write any Ptah schema back out as canonical DBML?",
+      "goal": "Round-trip a desired schema through canonical DBML.",
+      "sourceOfTruth": [
+        "cmd/schema",
+        "internal/schemaload"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/schema/export/",
+        "/schema/visualize/",
+        "/schema/work-with-a-source/",
+        "/versioned/reference-data/"
+      ],
+      "inboundLinks": [
+        "/schema/document/",
+        "/schema/export/",
+        "/schema/work-with-a-source/"
+      ],
+      "visibleWords": 691,
+      "sourceBytes": 5885
+    },
+    {
+      "path": "docs/site/src/content/docs/schema/document.md",
+      "route": "/schema/document/",
+      "title": "Generate schema documentation",
+      "description": "Write a desired schema as a Markdown reference or a self-contained HTML page with ptah schema export.",
+      "sidebarPath": "Schema > Analysis and documentation",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "schema-author"
+      ],
+      "readerQuestion": "How do I generate a browsable schema reference?",
+      "goal": "Generate a browsable schema reference.",
+      "sourceOfTruth": [
+        "cmd/schema",
+        "internal/schemadoc",
+        "cmd/internal/schemaserve"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [
+        "/schema/visualize/",
+        "/schema/serve/"
+      ],
+      "disposition": "rewrite",
+      "outboundLinks": [
+        "/reference/exit-codes/",
+        "/schema/composite/",
+        "/schema/dbml/",
+        "/schema/export/",
+        "/schema/go-annotations/",
+        "/schema/hcl/",
+        "/schema/sql/",
+        "/schema/visualize/",
+        "/schema/work-with-a-source/",
+        "/schema/yaml/",
+        "/start/adopt-an-existing-database/",
+        "/start/install/"
+      ],
+      "inboundLinks": [
+        "/reference/native-commands/",
+        "/schema/export/",
+        "/schema/hcl/",
+        "/schema/serve/",
+        "/schema/sql/",
+        "/schema/yaml/"
+      ],
+      "visibleWords": 1289,
+      "sourceBytes": 11015
+    },
+    {
+      "path": "docs/site/src/content/docs/schema/export.md",
+      "route": "/schema/export/",
+      "title": "API schema export",
+      "description": "Project selected Go entities into OpenAPI or GraphQL contract candidates and review their trust-boundary limitations.",
+      "sidebarPath": "Schema > Contract exports",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "schema-author"
+      ],
+      "readerQuestion": "How do I project selected Go entities into OpenAPI or GraphQL contract candidates and review their trust-boundary limitations?",
+      "goal": "Generate and review an OpenAPI or GraphQL contract candidate.",
+      "sourceOfTruth": [
+        "cmd/schema",
+        "internal/schemaload"
+      ],
+      "owns": [
+        "cli-ptah-schema-export"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/schema/composite/",
+        "/schema/dbml/",
+        "/schema/document/",
+        "/schema/go-annotations/",
+        "/schema/hcl/",
+        "/schema/protobuf/",
+        "/schema/sql/",
+        "/schema/yaml/",
+        "/start/adopt-an-existing-database/",
+        "/testing/ci/"
+      ],
+      "inboundLinks": [
+        "/schema/dbml/",
+        "/schema/document/",
+        "/schema/hcl/",
+        "/schema/protobuf/",
+        "/schema/sql/",
+        "/schema/visualize/",
+        "/schema/yaml/"
+      ],
+      "visibleWords": 3558,
+      "sourceBytes": 27278
+    },
+    {
+      "path": "docs/site/src/content/docs/schema/go-annotations.md",
+      "route": "/schema/go-annotations/",
+      "title": "Go annotations",
+      "description": "Use annotated Go structs as the desired database schema.",
+      "sidebarPath": "Schema > Sources",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "schema-author"
+      ],
+      "readerQuestion": "How do I use annotated Go structs as the desired database schema?",
+      "goal": "Render a desired schema from annotated Go structs.",
+      "sourceOfTruth": [
+        "cmd/schema",
+        "internal/schemaload"
+      ],
+      "owns": [
+        "gopkg-core-goschema"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/extend/public-api/",
+        "/reference/go-annotations/",
+        "/schema/hcl/",
+        "/schema/sql/",
+        "/schema/work-with-a-source/",
+        "/schema/yaml/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/concepts/desired-schema-and-sources/",
+        "/reference/go-annotations/",
+        "/schema/document/",
+        "/schema/export/",
+        "/schema/hcl/",
+        "/schema/lineage/",
+        "/schema/protobuf/",
+        "/schema/serve/",
+        "/schema/validate-and-format/",
+        "/schema/visualize/",
+        "/schema/work-with-a-source/"
+      ],
+      "visibleWords": 1213,
+      "sourceBytes": 10083
+    },
+    {
+      "path": "docs/site/src/content/docs/schema/hcl.md",
+      "route": "/schema/hcl/",
+      "title": "HCL schema",
+      "description": "Reuse Atlas-compatible HCL schema files as Ptah's desired schema.",
+      "sidebarPath": "Schema > Sources",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "schema-author"
+      ],
+      "readerQuestion": "How do I reuse Atlas-compatible HCL schema files as Ptah's desired schema?",
+      "goal": "Render a desired schema from Atlas-compatible HCL.",
+      "sourceOfTruth": [
+        "cmd/schema",
+        "internal/schemaload"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/overview/",
+        "/atlas/project-config/",
+        "/reference/configuration/",
+        "/reference/hcl-schema/",
+        "/reference/native-commands/",
+        "/schema/composite/",
+        "/schema/document/",
+        "/schema/export/",
+        "/schema/go-annotations/",
+        "/schema/work-with-a-source/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/atlas/docs-coverage/",
+        "/concepts/desired-schema-and-sources/",
+        "/schema/document/",
+        "/schema/export/",
+        "/schema/go-annotations/",
+        "/schema/work-with-a-source/"
+      ],
+      "visibleWords": 369,
+      "sourceBytes": 4315
+    },
+    {
+      "path": "docs/site/src/content/docs/schema/lineage.md",
+      "route": "/schema/lineage/",
+      "title": "Trace view column lineage",
+      "description": "Run ptah schema lineage to find which base columns each view column and each routine reads, and which tables and columns each routine writes, before dropping or renaming one of them.",
+      "sidebarPath": "Schema > Analysis and documentation",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "schema-author"
+      ],
+      "readerQuestion": "How do I run ptah schema lineage to find which base columns each view column and each routine reads, and which tables and columns each routine writes, before dropping or renaming one of them?",
+      "goal": "Identify dependencies before dropping or renaming a database object.",
+      "sourceOfTruth": [
+        "cmd/schema",
+        "internal/schemalineage"
+      ],
+      "owns": [
+        "cli-ptah-schema-lineage"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/direct/apply/",
+        "/reference/exit-codes/",
+        "/reference/native-commands/",
+        "/schema/composite/",
+        "/schema/go-annotations/",
+        "/schema/stats/",
+        "/schema/visualize/",
+        "/start/install/"
+      ],
+      "inboundLinks": [
+        "/direct/compare-and-drift/",
+        "/reference/native-commands/"
+      ],
+      "visibleWords": 1798,
+      "sourceBytes": 14787
+    },
+    {
+      "path": "docs/site/src/content/docs/schema/orm-and-external.md",
+      "route": "/schema/orm-and-external/",
+      "title": "ORM and external loaders",
+      "description": "Feed an ORM's or any external program's schema into Ptah as the desired schema.",
+      "sidebarPath": "Schema > Sources",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "schema-author"
+      ],
+      "readerQuestion": "How do I feed an ORM's or any external program's schema into Ptah as the desired schema?",
+      "goal": "Load an external schema into a Ptah workflow.",
+      "sourceOfTruth": [
+        "cmd/schema",
+        "internal/schemaload"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/project-config/",
+        "/reference/configuration/",
+        "/schema/composite/",
+        "/versioned/overview/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/atlas/docs-coverage/",
+        "/atlas/project-config/",
+        "/concepts/desired-schema-and-sources/",
+        "/schema/composite/",
+        "/schema/work-with-a-source/"
+      ],
+      "visibleWords": 964,
+      "sourceBytes": 8419
+    },
+    {
+      "path": "docs/site/src/content/docs/schema/protobuf.md",
+      "route": "/schema/protobuf/",
+      "title": "Protobuf schema export",
+      "description": "Export Go entities to a Protobuf Edition 2023 definition whose field numbers stay wire compatible as the schema changes.",
+      "sidebarPath": "Schema > Contract exports",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "schema-author"
+      ],
+      "readerQuestion": "How do I generate Protobuf while preserving field-number compatibility?",
+      "goal": "Generate Protobuf while preserving field-number compatibility.",
+      "sourceOfTruth": [
+        "cmd/schema",
+        "internal/schemaload"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "generate protobuf"
+      ],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/reference/exit-codes/",
+        "/reference/native-commands/",
+        "/schema/export/",
+        "/schema/go-annotations/",
+        "/start/adopt-an-existing-database/",
+        "/testing/ci/"
+      ],
+      "inboundLinks": [
+        "/schema/export/"
+      ],
+      "visibleWords": 4177,
+      "sourceBytes": 34676
+    },
+    {
+      "path": "docs/site/src/content/docs/schema/security.md",
+      "route": "/schema/security/",
+      "title": "Report schema security findings",
+      "description": "Run ptah schema security over a live database to review privileges, owners, roles and tables with no row policy, and gate a pull request on the result.",
+      "sidebarPath": "Schema > Analysis and documentation",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "schema-author"
+      ],
+      "readerQuestion": "How do I run ptah schema security over a live database to review privileges, owners, roles and tables with no row policy, and gate a pull request on the result?",
+      "goal": "Find and gate on actionable database security findings.",
+      "sourceOfTruth": [
+        "cmd/schema",
+        "internal/schemasecurity"
+      ],
+      "owns": [
+        "cli-ptah-schema-security"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/concepts/database-urls-and-dev-databases/",
+        "/direct/apply/",
+        "/direct/inspect/",
+        "/reference/exit-codes/",
+        "/reference/lint-rules/",
+        "/reference/native-commands/",
+        "/schema/stats/",
+        "/schema/visualize/",
+        "/start/install/"
+      ],
+      "inboundLinks": [
+        "/reference/native-commands/",
+        "/schema/stats/",
+        "/schema/visualize/",
+        "/testing/ci/"
+      ],
+      "visibleWords": 1057,
+      "sourceBytes": 10152
+    },
+    {
+      "path": "docs/site/src/content/docs/schema/serve.md",
+      "route": "/schema/serve/",
+      "title": "Serve a live schema view",
+      "description": "Run ptah schema serve to watch in a browser how a live database differs from the desired schema while you change it.",
+      "sidebarPath": "Schema > Analysis and documentation",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "schema-author"
+      ],
+      "readerQuestion": "How do I inspect schema drift in Ptah's live browser view?",
+      "goal": "Inspect schema drift in Ptah's live browser view.",
+      "sourceOfTruth": [
+        "cmd/schema",
+        "internal/schemadoc",
+        "cmd/internal/schemaserve"
+      ],
+      "owns": [
+        "cli-ptah-schema-serve"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [
+        "/schema/document/",
+        "/direct/compare-and-drift/"
+      ],
+      "disposition": "rewrite",
+      "outboundLinks": [
+        "/direct/apply/",
+        "/direct/compare-and-drift/",
+        "/reference/exit-codes/",
+        "/reference/native-commands/",
+        "/schema/document/",
+        "/schema/go-annotations/",
+        "/start/install/"
+      ],
+      "inboundLinks": [
+        "/reference/native-commands/"
+      ],
+      "visibleWords": 1325,
+      "sourceBytes": 10045
+    },
+    {
+      "path": "docs/site/src/content/docs/schema/sql.md",
+      "route": "/schema/sql/",
+      "title": "SQL schema",
+      "description": "Use plain SQL DDL files as Ptah's desired schema.",
+      "sidebarPath": "Schema > Sources",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "schema-author"
+      ],
+      "readerQuestion": "How do I use plain SQL DDL files as Ptah's desired schema?",
+      "goal": "Render a desired schema from SQL DDL.",
+      "sourceOfTruth": [
+        "cmd/schema",
+        "internal/schemaload"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/overview/",
+        "/reference/native-commands/",
+        "/schema/composite/",
+        "/schema/document/",
+        "/schema/export/",
+        "/schema/work-with-a-source/",
+        "/versioned/generate/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/concepts/desired-schema-and-sources/",
+        "/schema/document/",
+        "/schema/export/",
+        "/schema/go-annotations/",
+        "/schema/work-with-a-source/"
+      ],
+      "visibleWords": 706,
+      "sourceBytes": 6411
+    },
+    {
+      "path": "docs/site/src/content/docs/schema/stats.md",
+      "route": "/schema/stats/",
+      "title": "Count schema objects",
+      "description": "Run ptah schema stats to emit one OpenMetrics gauge per object kind in a live database and feed it to a metrics collector.",
+      "sidebarPath": "Schema > Analysis and documentation",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "schema-author"
+      ],
+      "readerQuestion": "How do I run ptah schema stats to emit one OpenMetrics gauge per object kind in a live database and feed it to a metrics collector?",
+      "goal": "Publish schema object counts as OpenMetrics gauges.",
+      "sourceOfTruth": [
+        "cmd/schema",
+        "internal/schemastats"
+      ],
+      "owns": [
+        "cli-ptah-schema-stats"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/concepts/database-urls-and-dev-databases/",
+        "/direct/compare-and-drift/",
+        "/reference/exit-codes/",
+        "/reference/native-commands/",
+        "/schema/security/",
+        "/schema/visualize/",
+        "/start/install/"
+      ],
+      "inboundLinks": [
+        "/reference/native-commands/",
+        "/schema/lineage/",
+        "/schema/security/"
+      ],
+      "visibleWords": 574,
+      "sourceBytes": 7631
+    },
+    {
+      "path": "docs/site/src/content/docs/schema/validate-and-format.md",
+      "route": "/schema/validate-and-format/",
+      "title": "Validate and format schema files",
+      "description": "Check a desired schema for structural problems with ptah schema validate and keep HCL files canonically formatted with ptah schema fmt, both without a database.",
+      "sidebarPath": "Schema > Analysis and documentation",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "schema-author"
+      ],
+      "readerQuestion": "How do I check a desired schema for structural problems with ptah schema validate and keep HCL files canonically formatted with ptah schema fmt, both without a database?",
+      "goal": "Validate schema structure and enforce canonical HCL formatting.",
+      "sourceOfTruth": [
+        "cmd/schema",
+        "internal/schemavalidate"
+      ],
+      "owns": [
+        "cli-ptah-schema-fmt",
+        "cli-ptah-schema-validate"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/direct/compare-and-drift/",
+        "/reference/exit-codes/",
+        "/reference/native-commands/",
+        "/schema/composite/",
+        "/schema/go-annotations/",
+        "/schema/work-with-a-source/",
+        "/start/install/",
+        "/testing/ci/"
+      ],
+      "inboundLinks": [
+        "/schema/work-with-a-source/",
+        "/testing/ci/"
+      ],
+      "visibleWords": 787,
+      "sourceBytes": 7428
+    },
+    {
+      "path": "docs/site/src/content/docs/schema/visualize.md",
+      "route": "/schema/visualize/",
+      "title": "Visualize the schema",
+      "description": "Render entity-relationship diagrams from the desired schema as Mermaid, DOT, or SVG with ptah viz.",
+      "sidebarPath": "Schema > Analysis and documentation",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "schema-author"
+      ],
+      "readerQuestion": "How do I generate and inspect a schema diagram?",
+      "goal": "Generate and inspect a schema diagram.",
+      "sourceOfTruth": [
+        "cmd/viz",
+        "internal/schemaviz"
+      ],
+      "owns": [
+        "cli-ptah-viz"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "visualize schema"
+      ],
+      "overlaps": [
+        "/schema/document/",
+        "/schema/serve/"
+      ],
+      "disposition": "rewrite",
+      "outboundLinks": [
+        "/operate/troubleshooting/",
+        "/reference/native-commands/",
+        "/schema/export/",
+        "/schema/go-annotations/",
+        "/schema/security/",
+        "/start/adopt-an-existing-database/"
+      ],
+      "inboundLinks": [
+        "/direct/inspect/",
+        "/schema/composite/",
+        "/schema/dbml/",
+        "/schema/document/",
+        "/schema/lineage/",
+        "/schema/security/",
+        "/schema/stats/",
+        "/start/install/"
+      ],
+      "visibleWords": 676,
+      "sourceBytes": 6315
+    },
+    {
+      "path": "docs/site/src/content/docs/schema/work-with-a-source.mdx",
+      "route": "/schema/work-with-a-source/",
+      "title": "Work with a desired schema",
+      "description": "The operations every schema source shares — render, compare, gate on drift, compose, and validate across dialects — with the flag that names each source.",
+      "sidebarPath": "Schema > Sources",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "schema-author"
+      ],
+      "readerQuestion": "Which operations and flags are shared by every schema source?",
+      "goal": "Identify the operations and flags shared by every schema source.",
+      "sourceOfTruth": [
+        "cmd/schema",
+        "internal/schemaload"
+      ],
+      "owns": [
+        "cli-ptah-schema-render"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/concepts/desired-schema-and-sources/",
+        "/direct/apply/",
+        "/schema/composite/",
+        "/schema/dbml/",
+        "/schema/go-annotations/",
+        "/schema/hcl/",
+        "/schema/orm-and-external/",
+        "/schema/sql/",
+        "/schema/validate-and-format/",
+        "/schema/yaml/",
+        "/start/choose-a-workflow/",
+        "/versioned/generate/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/concepts/desired-schema-and-sources/",
+        "/direct/overview/",
+        "/schema/dbml/",
+        "/schema/document/",
+        "/schema/go-annotations/",
+        "/schema/hcl/",
+        "/schema/sql/",
+        "/schema/validate-and-format/",
+        "/schema/yaml/",
+        "/start/quick-start-direct/",
+        "/start/quick-start/"
+      ],
+      "visibleWords": 525,
+      "sourceBytes": 5327
+    },
+    {
+      "path": "docs/site/src/content/docs/schema/yaml.md",
+      "route": "/schema/yaml/",
+      "title": "YAML schema",
+      "description": "Author the desired schema in Ptah's strict YAML format and feed it to render, compare, and migration commands.",
+      "sidebarPath": "Schema > Sources",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "schema-author"
+      ],
+      "readerQuestion": "How do I author the desired schema in Ptah's strict YAML format and feed it to render, compare, and migration commands?",
+      "goal": "Render and validate a desired schema from Ptah YAML.",
+      "sourceOfTruth": [
+        "cmd/schema",
+        "internal/schemaload"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/reference/native-commands/",
+        "/reference/yaml-schema/",
+        "/schema/composite/",
+        "/schema/document/",
+        "/schema/export/",
+        "/schema/work-with-a-source/",
+        "/versioned/overview/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/concepts/desired-schema-and-sources/",
+        "/extend/components/",
+        "/schema/document/",
+        "/schema/export/",
+        "/schema/go-annotations/",
+        "/schema/work-with-a-source/"
+      ],
+      "visibleWords": 252,
+      "sourceBytes": 3324
+    },
+    {
+      "path": "docs/site/src/content/docs/start/adopt-an-existing-database.mdx",
+      "route": "/start/adopt-an-existing-database/",
+      "title": "Adopt an existing database",
+      "description": "Put a live database under Ptah management with introspect, baseline, and import, without recreating anything.",
+      "sidebarPath": "Start",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "new-user"
+      ],
+      "readerQuestion": "How do I adopt a database without recreating its existing objects?",
+      "goal": "Adopt a database without recreating its existing objects.",
+      "sourceOfTruth": [
+        "cmd/root",
+        "cmd/schema",
+        "cmd/migrations"
+      ],
+      "owns": [
+        "cli-ptah-introspect",
+        "cli-ptah-migrations-baseline"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "adopt existing database"
+      ],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/concepts/database-urls-and-dev-databases/",
+        "/operate/troubleshooting/",
+        "/start/choose-a-workflow/",
+        "/start/install/",
+        "/versioned/checkpoints/",
+        "/versioned/overview/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/concepts/database-urls-and-dev-databases/",
+        "/concepts/desired-schema-and-sources/",
+        "/direct/inspect/",
+        "/schema/document/",
+        "/schema/export/",
+        "/schema/protobuf/",
+        "/schema/visualize/",
+        "/start/choose-a-workflow/",
+        "/start/quick-start/",
+        "/versioned/import/",
+        "/versioned/overview/"
+      ],
+      "visibleWords": 756,
+      "sourceBytes": 8546
+    },
+    {
+      "path": "docs/site/src/content/docs/start/choose-a-workflow.md",
+      "route": "/start/choose-a-workflow/",
+      "title": "Choose a workflow",
+      "description": "Decide between versioned migrations and direct schema changes for schema work. Persistent inference state uses a separate lifecycle.",
+      "sidebarPath": "Start",
+      "sidebarLabel": null,
+      "type": "concept",
+      "audience": [
+        "new-user"
+      ],
+      "readerQuestion": "Should this schema change use versioned migrations or direct schema changes?",
+      "goal": "Choose whether a schema change should use versioned migrations or direct schema changes.",
+      "sourceOfTruth": [
+        "cmd/root",
+        "cmd/schema",
+        "cmd/migrations"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/feature-matrix/",
+        "/atlas/overview/",
+        "/direct/apply/",
+        "/direct/overview/",
+        "/inference/overview/",
+        "/start/adopt-an-existing-database/",
+        "/start/quick-start-migrations/",
+        "/versioned/overview/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/atlas/docs-coverage/",
+        "/concepts/desired-schema-and-sources/",
+        "/direct/apply/",
+        "/direct/overview/",
+        "/reference/native-commands/",
+        "/schema/work-with-a-source/",
+        "/start/adopt-an-existing-database/",
+        "/start/install/",
+        "/start/quick-start/",
+        "/versioned/overview/"
+      ],
+      "visibleWords": 1062,
+      "sourceBytes": 8000
+    },
+    {
+      "path": "docs/site/src/content/docs/start/install.mdx",
+      "route": "/start/install/",
+      "title": "Install Ptah",
+      "description": "Install ptah, ptah-compat, and ptah-ls with one command, or download and verify a release archive by hand.",
+      "sidebarPath": "Start",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "new-user"
+      ],
+      "readerQuestion": "How do I install Ptah and verify the binary I will run?",
+      "goal": "Install Ptah and verify the binary I will run.",
+      "sourceOfTruth": [
+        "cmd/root",
+        "cmd/schema",
+        "cmd/migrations"
+      ],
+      "owns": [
+        "cli-ptah-version",
+        "program-ptah",
+        "program-ptah-compat",
+        "program-ptah-ls"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "install Ptah"
+      ],
+      "overlaps": [
+        "/operate/troubleshooting/"
+      ],
+      "disposition": "split",
+      "outboundLinks": [
+        "/atlas/overview/",
+        "/reference/exit-codes/",
+        "/reference/go-annotations/",
+        "/schema/visualize/",
+        "/start/choose-a-workflow/",
+        "/start/quick-start/",
+        "/testing/ci/"
+      ],
+      "inboundLinks": [
+        "/atlas/docs-coverage/",
+        "/direct/apply/",
+        "/direct/compare-and-drift/",
+        "/direct/inspect/",
+        "/direct/plan-and-approve/",
+        "/schema/document/",
+        "/schema/lineage/",
+        "/schema/security/",
+        "/schema/serve/",
+        "/schema/stats/",
+        "/schema/validate-and-format/",
+        "/start/adopt-an-existing-database/",
+        "/start/quick-start-direct/",
+        "/start/quick-start-migrations/",
+        "/start/quick-start/"
+      ],
+      "visibleWords": 2889,
+      "sourceBytes": 25147
+    },
+    {
+      "path": "docs/site/src/content/docs/start/quick-start-direct.mdx",
+      "route": "/start/quick-start-direct/",
+      "title": "Quick start: direct schema changes",
+      "description": "Describe a schema in one SQL file, let Ptah change a SQLite database to match, add a column, and check that the database still matches the file.",
+      "sidebarPath": "Start",
+      "sidebarLabel": null,
+      "type": "tutorial",
+      "audience": [
+        "new-user"
+      ],
+      "readerQuestion": "How do I apply and verify my first direct schema change?",
+      "goal": "Apply and verify my first direct schema change.",
+      "sourceOfTruth": [
+        "cmd/root",
+        "cmd/schema",
+        "cmd/migrations"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [
+        "/direct/overview/",
+        "/direct/apply/",
+        "/direct/compare-and-drift/"
+      ],
+      "disposition": "split",
+      "outboundLinks": [
+        "/direct/apply/",
+        "/schema/work-with-a-source/",
+        "/start/install/",
+        "/start/quick-start-migrations/",
+        "/testing/ci/"
+      ],
+      "inboundLinks": [
+        "/start/quick-start-migrations/",
+        "/start/quick-start/"
+      ],
+      "visibleWords": 787,
+      "sourceBytes": 10252
+    },
+    {
+      "path": "docs/site/src/content/docs/start/quick-start-migrations.mdx",
+      "route": "/start/quick-start-migrations/",
+      "title": "Quick start: versioned migrations",
+      "description": "Write a migration by hand, seal it with a checksum, apply it to a SQLite database, read the result back, and roll it back again.",
+      "sidebarPath": "Start",
+      "sidebarLabel": null,
+      "type": "tutorial",
+      "audience": [
+        "new-user"
+      ],
+      "readerQuestion": "How do I create, apply, verify, and roll back my first migration?",
+      "goal": "Create, apply, verify, and roll back my first migration.",
+      "sourceOfTruth": [
+        "cmd/root",
+        "cmd/schema",
+        "cmd/migrations"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "first migration"
+      ],
+      "overlaps": [
+        "/versioned/overview/",
+        "/versioned/generate/",
+        "/versioned/rollback/"
+      ],
+      "disposition": "split",
+      "outboundLinks": [
+        "/start/install/",
+        "/start/quick-start-direct/",
+        "/versioned/generate/",
+        "/versioned/integrity-and-safety/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/databases/sqlite/",
+        "/start/choose-a-workflow/",
+        "/start/quick-start-direct/",
+        "/start/quick-start/"
+      ],
+      "visibleWords": 813,
+      "sourceBytes": 10233
+    },
+    {
+      "path": "docs/site/src/content/docs/start/quick-start.mdx",
+      "route": "/start/quick-start/",
+      "title": "Quick start",
+      "description": "Choose one of two schema quick starts. Persistent inference state uses a separate generation lifecycle.",
+      "sidebarPath": "Start",
+      "sidebarLabel": null,
+      "type": "landing",
+      "audience": [
+        "new-user"
+      ],
+      "readerQuestion": "Which first Ptah workflow should I try?",
+      "goal": "Choose a first Ptah workflow to try.",
+      "sourceOfTruth": [
+        "cmd/root",
+        "cmd/schema",
+        "cmd/migrations"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [
+        "/start/choose-a-workflow/",
+        "/start/quick-start-migrations/",
+        "/start/quick-start-direct/"
+      ],
+      "disposition": "rewrite",
+      "outboundLinks": [
+        "/databases/support-matrix/",
+        "/inference/overview/",
+        "/schema/work-with-a-source/",
+        "/start/adopt-an-existing-database/",
+        "/start/choose-a-workflow/",
+        "/start/install/",
+        "/start/quick-start-direct/",
+        "/start/quick-start-migrations/",
+        "/versioned/generate/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/atlas/docs-coverage/",
+        "/start/install/"
+      ],
+      "visibleWords": 350,
+      "sourceBytes": 3628
+    },
+    {
+      "path": "docs/site/src/content/docs/testing/ci.md",
+      "route": "/testing/ci/",
+      "title": "CI",
+      "description": "Gate pull requests with the Ptah GitHub Action or shell checks, and read exit codes correctly.",
+      "sidebarPath": "Test and CI",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "ci-operator"
+      ],
+      "readerQuestion": "How do I gate pull requests with the Ptah GitHub Action or shell checks, and read exit codes correctly?",
+      "goal": "Gate a pull request on stable Ptah exit codes.",
+      "sourceOfTruth": [
+        "cmd/migrationstest",
+        "cmd/schema",
+        "integration"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/direct/compare-and-drift/",
+        "/operate/troubleshooting/",
+        "/reference/exit-codes/",
+        "/schema/security/",
+        "/schema/validate-and-format/",
+        "/testing/migrations-and-schema/",
+        "/versioned/integrity-and-safety/",
+        "/versioned/lint/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/atlas/docs-coverage/",
+        "/direct/compare-and-drift/",
+        "/schema/export/",
+        "/schema/protobuf/",
+        "/schema/validate-and-format/",
+        "/start/install/",
+        "/start/quick-start-direct/",
+        "/versioned/generate/",
+        "/versioned/integrity-and-safety/",
+        "/versioned/lint/"
+      ],
+      "visibleWords": 916,
+      "sourceBytes": 8271
+    },
+    {
+      "path": "docs/site/src/content/docs/testing/migrations-and-schema.md",
+      "route": "/testing/migrations-and-schema/",
+      "title": "Test migrations and schemas",
+      "description": "Assert migration and schema behavior with declarative test cases against a throwaway database.",
+      "sidebarPath": "Test and CI",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "ci-operator"
+      ],
+      "readerQuestion": "How do I assert migration and schema behavior with declarative test cases against a throwaway database?",
+      "goal": "Run isolated migration and schema assertions against a throwaway database.",
+      "sourceOfTruth": [
+        "cmd/migrationstest",
+        "cmd/schema",
+        "integration"
+      ],
+      "owns": [
+        "cli-ptah-migrations-test",
+        "cli-ptah-schema-test"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/overview/",
+        "/concepts/database-urls-and-dev-databases/",
+        "/reference/test-cases/"
+      ],
+      "inboundLinks": [
+        "/concepts/database-urls-and-dev-databases/",
+        "/databases/sqlite/",
+        "/extend/public-api/",
+        "/reference/capabilities/",
+        "/reference/test-cases/",
+        "/testing/ci/",
+        "/versioned/integrity-and-safety/"
+      ],
+      "visibleWords": 709,
+      "sourceBytes": 6037
+    },
+    {
+      "path": "docs/site/src/content/docs/versioned/apply.md",
+      "route": "/versioned/apply/",
+      "title": "Apply migrations",
+      "description": "Run pending migrations with integrity verification, inspect status, wire operational hooks, and apply from OCI artifacts.",
+      "sidebarPath": "Versioned migrations",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "database-engineer",
+        "ci-operator"
+      ],
+      "readerQuestion": "How do I apply pending migrations and verify their state?",
+      "goal": "Apply pending migrations and verify their state.",
+      "sourceOfTruth": [
+        "cmd/migrations",
+        "migration"
+      ],
+      "owns": [
+        "cli-ptah-migrations-up"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "apply migrations"
+      ],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/migrate-commands/",
+        "/databases/clickhouse/",
+        "/operate/oci-registry/",
+        "/reference/configuration/",
+        "/versioned/checkpoints/",
+        "/versioned/generate/",
+        "/versioned/integrity-and-safety/",
+        "/versioned/lint/",
+        "/versioned/maintain-history/",
+        "/versioned/rollback/"
+      ],
+      "inboundLinks": [
+        "/atlas/docs-coverage/",
+        "/atlas/migrate-commands/",
+        "/concepts/migration-directory/",
+        "/databases/postgresql/",
+        "/versioned/generate/",
+        "/versioned/import/",
+        "/versioned/integrity-and-safety/",
+        "/versioned/maintain-history/",
+        "/versioned/overview/",
+        "/versioned/rollback/"
+      ],
+      "visibleWords": 4285,
+      "sourceBytes": 31488
+    },
+    {
+      "path": "docs/site/src/content/docs/versioned/checkpoints.md",
+      "route": "/versioned/checkpoints/",
+      "title": "Checkpoints",
+      "description": "Squash migration history into a cumulative-schema checkpoint that fresh databases bootstrap from.",
+      "sidebarPath": "Versioned migrations",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "database-engineer",
+        "ci-operator"
+      ],
+      "readerQuestion": "How do I squash migration history into a cumulative-schema checkpoint that fresh databases bootstrap from?",
+      "goal": "Create a checkpoint and verify fresh-database bootstrap.",
+      "sourceOfTruth": [
+        "cmd/migrations",
+        "migration"
+      ],
+      "owns": [
+        "cli-ptah-migrations-checkpoint"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [],
+      "inboundLinks": [
+        "/concepts/migration-directory/",
+        "/start/adopt-an-existing-database/",
+        "/versioned/apply/",
+        "/versioned/import/",
+        "/versioned/maintain-history/",
+        "/versioned/overview/",
+        "/versioned/rollback/"
+      ],
+      "visibleWords": 1315,
+      "sourceBytes": 9950
+    },
+    {
+      "path": "docs/site/src/content/docs/versioned/generate.md",
+      "route": "/versioned/generate/",
+      "title": "Generate migrations",
+      "description": "Plan and generate migration files from the difference between your desired schema and a live database.",
+      "sidebarPath": "Versioned migrations",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "database-engineer",
+        "ci-operator"
+      ],
+      "readerQuestion": "How do I generate a migration from a reviewed desired schema?",
+      "goal": "Generate a migration from a reviewed desired schema.",
+      "sourceOfTruth": [
+        "cmd/migrations",
+        "migration"
+      ],
+      "owns": [
+        "cli-ptah-migrations-generate",
+        "cli-ptah-migrations-plan"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/concepts/database-urls-and-dev-databases/",
+        "/schema/composite/",
+        "/testing/ci/",
+        "/versioned/apply/",
+        "/versioned/integrity-and-safety/",
+        "/versioned/lint/",
+        "/versioned/maintain-history/"
+      ],
+      "inboundLinks": [
+        "/atlas/docs-coverage/",
+        "/concepts/database-urls-and-dev-databases/",
+        "/databases/sqlite/",
+        "/direct/apply/",
+        "/direct/compare-and-drift/",
+        "/direct/plan-and-approve/",
+        "/schema/composite/",
+        "/schema/sql/",
+        "/schema/work-with-a-source/",
+        "/start/quick-start-migrations/",
+        "/start/quick-start/",
+        "/versioned/apply/",
+        "/versioned/import/",
+        "/versioned/integrity-and-safety/",
+        "/versioned/lint/",
+        "/versioned/overview/"
+      ],
+      "visibleWords": 1128,
+      "sourceBytes": 11036
+    },
+    {
+      "path": "docs/site/src/content/docs/versioned/import.md",
+      "route": "/versioned/import/",
+      "title": "Import from another tool",
+      "description": "Convert a golang-migrate, Goose, Flyway, Liquibase, or dbmate migration directory into Ptah's native format.",
+      "sidebarPath": "Versioned migrations",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "database-engineer",
+        "ci-operator"
+      ],
+      "readerQuestion": "How do I convert a golang-migrate, Goose, Flyway, Liquibase, or dbmate migration directory into Ptah's native format?",
+      "goal": "Convert and verify a third-party migration directory.",
+      "sourceOfTruth": [
+        "cmd/migrations",
+        "migration"
+      ],
+      "owns": [
+        "cli-ptah-migrations-import"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/start/adopt-an-existing-database/",
+        "/versioned/apply/",
+        "/versioned/checkpoints/",
+        "/versioned/generate/",
+        "/versioned/rollback/"
+      ],
+      "inboundLinks": [
+        "/atlas/migrate-commands/",
+        "/concepts/migration-directory/",
+        "/versioned/overview/",
+        "/versioned/rollback/"
+      ],
+      "visibleWords": 612,
+      "sourceBytes": 6248
+    },
+    {
+      "path": "docs/site/src/content/docs/versioned/integrity-and-safety.md",
+      "route": "/versioned/integrity-and-safety/",
+      "title": "Integrity and safety",
+      "description": "Hash and validate the migration directory, replay it on a dev database, and assert data-state preconditions before a migration runs.",
+      "sidebarPath": "Versioned migrations",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "database-engineer",
+        "ci-operator"
+      ],
+      "readerQuestion": "How do I detect a changed migration or unsafe precondition before apply?",
+      "goal": "Detect a changed migration or unsafe precondition before apply.",
+      "sourceOfTruth": [
+        "cmd/migrations",
+        "migration"
+      ],
+      "owns": [
+        "cli-ptah-migrations-hash",
+        "cli-ptah-migrations-validate"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "checksum mismatch"
+      ],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/concepts/database-urls-and-dev-databases/",
+        "/reference/exit-codes/",
+        "/testing/ci/",
+        "/testing/migrations-and-schema/",
+        "/versioned/apply/",
+        "/versioned/generate/",
+        "/versioned/lint/",
+        "/versioned/maintain-history/"
+      ],
+      "inboundLinks": [
+        "/atlas/docs-coverage/",
+        "/atlas/migrate-commands/",
+        "/atlas/retained-divergences/",
+        "/concepts/database-urls-and-dev-databases/",
+        "/concepts/migration-directory/",
+        "/operate/ai-agents/",
+        "/operate/oci-registry/",
+        "/reference/atlas-commands/",
+        "/start/quick-start-migrations/",
+        "/testing/ci/",
+        "/versioned/apply/",
+        "/versioned/generate/",
+        "/versioned/lint/",
+        "/versioned/maintain-history/",
+        "/versioned/overview/",
+        "/versioned/rollback/"
+      ],
+      "visibleWords": 5256,
+      "sourceBytes": 36658
+    },
+    {
+      "path": "docs/site/src/content/docs/versioned/lint.md",
+      "route": "/versioned/lint/",
+      "title": "Lint and gate unsafe SQL",
+      "description": "Analyze migration files for production-unsafe patterns, set the rule policy, declare rules of your own, and gate destructive statements at apply time.",
+      "sidebarPath": "Versioned migrations",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "database-engineer",
+        "ci-operator"
+      ],
+      "readerQuestion": "How do I analyze migration files for production-unsafe patterns, set the rule policy, declare rules of your own, and gate destructive statements at apply time?",
+      "goal": "Define and enforce a migration safety policy.",
+      "sourceOfTruth": [
+        "cmd/migrations",
+        "migration"
+      ],
+      "owns": [
+        "cli-ptah-migrations-lint"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/migrate-commands/",
+        "/concepts/dialects-and-capabilities/",
+        "/extend/components/",
+        "/operate/oci-registry/",
+        "/reference/lint-rules/",
+        "/testing/ci/",
+        "/versioned/generate/",
+        "/versioned/integrity-and-safety/"
+      ],
+      "inboundLinks": [
+        "/concepts/database-urls-and-dev-databases/",
+        "/databases/postgresql/",
+        "/databases/sqlserver/",
+        "/extend/components/",
+        "/operate/oci-registry/",
+        "/testing/ci/",
+        "/versioned/apply/",
+        "/versioned/generate/",
+        "/versioned/integrity-and-safety/",
+        "/versioned/overview/"
+      ],
+      "visibleWords": 2462,
+      "sourceBytes": 18494
+    },
+    {
+      "path": "docs/site/src/content/docs/versioned/maintain-history.md",
+      "route": "/versioned/maintain-history/",
+      "title": "Maintain migration history",
+      "description": "Edit, reorder, and delete unapplied migrations with the integrity file kept true, and repair a dirty revision state after a partial failure.",
+      "sidebarPath": "Versioned migrations",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "database-engineer",
+        "ci-operator"
+      ],
+      "readerQuestion": "How do I edit, reorder, and delete unapplied migrations with the integrity file kept true, and repair a dirty revision state after a partial failure?",
+      "goal": "Safely maintain unapplied migrations and repair dirty state.",
+      "sourceOfTruth": [
+        "cmd/migrations",
+        "migration"
+      ],
+      "owns": [
+        "cli-ptah-migrations-rebase",
+        "cli-ptah-migrations-rm",
+        "cli-ptah-migrations-set"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/versioned/apply/",
+        "/versioned/checkpoints/",
+        "/versioned/integrity-and-safety/",
+        "/versioned/rollback/"
+      ],
+      "inboundLinks": [
+        "/concepts/migration-directory/",
+        "/versioned/apply/",
+        "/versioned/generate/",
+        "/versioned/integrity-and-safety/",
+        "/versioned/overview/",
+        "/versioned/rollback/"
+      ],
+      "visibleWords": 1462,
+      "sourceBytes": 13106
+    },
+    {
+      "path": "docs/site/src/content/docs/versioned/overview.md",
+      "route": "/versioned/overview/",
+      "title": "Versioned migrations",
+      "description": "The migration lifecycle in Ptah - what a migration directory is, the core loop, and where each task lives.",
+      "sidebarPath": "Versioned migrations",
+      "sidebarLabel": "Overview",
+      "type": "landing",
+      "audience": [
+        "database-engineer",
+        "ci-operator"
+      ],
+      "readerQuestion": "When should I use versioned migrations, and which task comes next?",
+      "goal": "Choose the versioned workflow when appropriate and open the correct next task.",
+      "sourceOfTruth": [
+        "cmd/migrations",
+        "migration"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [
+        "/start/choose-a-workflow/",
+        "/concepts/migration-directory/"
+      ],
+      "disposition": "rewrite",
+      "outboundLinks": [
+        "/concepts/migration-directory/",
+        "/start/adopt-an-existing-database/",
+        "/start/choose-a-workflow/",
+        "/versioned/apply/",
+        "/versioned/checkpoints/",
+        "/versioned/generate/",
+        "/versioned/import/",
+        "/versioned/integrity-and-safety/",
+        "/versioned/lint/",
+        "/versioned/maintain-history/",
+        "/versioned/reference-data/",
+        "/versioned/rollback/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/atlas/docs-coverage/",
+        "/atlas/migrate-commands/",
+        "/concepts/migration-directory/",
+        "/direct/apply/",
+        "/direct/overview/",
+        "/schema/orm-and-external/",
+        "/schema/yaml/",
+        "/start/adopt-an-existing-database/",
+        "/start/choose-a-workflow/"
+      ],
+      "visibleWords": 437,
+      "sourceBytes": 4384
+    },
+    {
+      "path": "docs/site/src/content/docs/versioned/reference-data.md",
+      "route": "/versioned/reference-data/",
+      "title": "Reference data",
+      "description": "Declare reference/seed rows and generate reversible data migrations from the drift against a live database.",
+      "sidebarPath": "Load data",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "database-engineer",
+        "ci-operator"
+      ],
+      "readerQuestion": "How do I declare reference/seed rows and generate reversible data migrations from the drift against a live database?",
+      "goal": "Generate and verify reversible reference-data migrations.",
+      "sourceOfTruth": [
+        "cmd/migrations",
+        "migration"
+      ],
+      "owns": [
+        "cli-ptah-migrations-data"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/operate/seed-data/"
+      ],
+      "inboundLinks": [
+        "/atlas/docs-coverage/",
+        "/operate/seed-data/",
+        "/reference/go-annotations/",
+        "/schema/dbml/",
+        "/versioned/overview/"
+      ],
+      "visibleWords": 859,
+      "sourceBytes": 6653
+    },
+    {
+      "path": "docs/site/src/content/docs/versioned/rollback.md",
+      "route": "/versioned/rollback/",
+      "title": "Roll back migrations",
+      "description": "Roll a database back to an explicit target version, verify the plan on a shadow database first, and understand the down-file contract.",
+      "sidebarPath": "Versioned migrations",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "database-engineer",
+        "ci-operator"
+      ],
+      "readerQuestion": "How do I roll back to an explicit revision safely?",
+      "goal": "Roll back to an explicit revision safely.",
+      "sourceOfTruth": [
+        "cmd/migrations",
+        "migration"
+      ],
+      "owns": [
+        "cli-ptah-migrations-down",
+        "cli-ptah-migrations-repair"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "rollback migration"
+      ],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/versioned/apply/",
+        "/versioned/checkpoints/",
+        "/versioned/import/",
+        "/versioned/integrity-and-safety/",
+        "/versioned/maintain-history/"
+      ],
+      "inboundLinks": [
+        "/atlas/docs-coverage/",
+        "/atlas/retained-divergences/",
+        "/versioned/apply/",
+        "/versioned/import/",
+        "/versioned/maintain-history/",
+        "/versioned/overview/"
+      ],
+      "visibleWords": 1727,
+      "sourceBytes": 13422
+    }
+  ]
+}

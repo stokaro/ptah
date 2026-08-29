@@ -1,6 +1,18 @@
 ---
 title: License boundary
 description: Ptah's independent implementation boundary around Atlas compatibility work.
+type: concept
+audience:
+  - "atlas-migrator"
+  - "evaluator"
+readerQuestion: "What is Ptah's independent implementation boundary for Atlas compatibility?"
+goal: "Explain Ptah's independent implementation boundary for Atlas compatibility."
+sourceOfTruth:
+  - "cmd/atlas"
+  - "internal/atlascompatpolicy"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 Ptah's implementation does not use Atlas source code.

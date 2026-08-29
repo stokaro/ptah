@@ -1,6 +1,17 @@
 ---
 title: CockroachDB, YugabyteDB, and Spanner
 description: The PostgreSQL-compatible distributed engines in Ptah - what each capability preset excludes, the coverage behind each one, and CockroachDB row-level TTL.
+type: reference
+audience:
+  - "database-engineer"
+readerQuestion: "How do capability and DDL support differ across CockroachDB, YugabyteDB, and Spanner?"
+goal: "Compare capability and DDL support across CockroachDB, YugabyteDB, and Spanner."
+sourceOfTruth:
+  - "internal/capabilityprobe/cells.go"
+  - "internal/dbschema"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 CockroachDB, YugabyteDB, and the Spanner PostgreSQL interface accept

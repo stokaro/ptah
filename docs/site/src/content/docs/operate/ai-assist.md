@@ -1,6 +1,21 @@
 ---
 title: Ptah Assist and your own model
 description: Configure a model provider for ptah assist with your own key, endpoint, and model, and check that it works.
+type: how-to
+audience:
+  - "application-developer"
+  - "platform-engineer"
+readerQuestion: "How do I connect Ptah Assist to my model endpoint and verify the session?"
+goal: "Connect Ptah Assist to my model endpoint and verify the session."
+sourceOfTruth:
+  - "cmd/assist"
+  - "internal/assistconfig"
+  - "internal/assistloop"
+generated: false
+overlaps:
+  - "/operate/ai-agents/"
+  - "/reference/native-commands/"
+disposition: split
 owns:
   - cli-ptah-assist-context
   - cli-ptah-assist-explain

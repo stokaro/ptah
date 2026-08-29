@@ -1,6 +1,18 @@
 ---
 title: Atlas schema commands
 description: Inspect, diff, apply, plan, format, clean, and test schemas with the Atlas-style ptah-compat schema verbs.
+type: how-to
+audience:
+  - "atlas-migrator"
+  - "evaluator"
+readerQuestion: "How do I inspect, diff, apply, plan, format, clean, and test schemas with the Atlas-style ptah-compat schema verbs?"
+goal: "Complete an Atlas-style schema task with the matching `ptah-compat` verb."
+sourceOfTruth:
+  - "cmd/atlas"
+  - "internal/atlascompatpolicy"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 You want Atlas-style declarative schema work — inspect a live database, diff

@@ -13,8 +13,9 @@ links from site content); no reader page needs to.
 
 Companion documents:
 
-- `docs/site/CONTENT_INVENTORY.md` — the page inventory, reader journeys,
-  target navigation, and the inventory maintenance rule.
+- `docs/site/content-inventory.json` — the generated factual page inventory.
+- `docs/site/CONTENT_INVENTORY.md` — reader journeys and editorial decisions
+  that cannot be derived from the tree.
 - `.agents/skills/ptah-documentation-maintenance/SKILL.md` — the workflow for
   keeping documentation aligned with behavior.
 
@@ -45,12 +46,13 @@ Every page has exactly one primary type. Choose it before writing a word.
 
 | Type | Purpose | Canonical example |
 | --- | --- | --- |
+| Landing | Route one product domain: orientation, common tasks, one decision cue, and links to canonical work | `inference/overview` |
 | Tutorial | Learning by doing: one happy path, guaranteed end state, cleanup | `start/quick-start-migrations` |
 | Concept | Why and when: mental model, minimal commands | license boundary page |
 | How-to | Goal-directed steps for a competent reader; variants and failure modes allowed | `versioned/checkpoints` |
 | Reference | Exhaustive and scannable; no narrative | `reference/exit-codes` |
 | Troubleshooting | Symptom-keyed diagnosis and fixes | `operate/troubleshooting` |
-| Compatibility/status | Evidence-dated claims about parity or coverage | `atlas/conformance` |
+| Status | Evidence-dated claims about parity or coverage | `atlas/conformance` |
 | Contributor | Repo-layer docs, out of reader navigation | `docs/system_design.md` |
 
 Mixing rule: a how-to may open with at most two short concept paragraphs;
@@ -61,6 +63,10 @@ pages.
 ## 3. Page templates
 
 Required section flow per type. Optional sections are marked.
+
+**Landing**: concise orientation → the situation in which the domain matters →
+three to five common tasks → one decision cue → canonical task links → route to
+reference. A landing page is not an exhaustive tutorial or flag inventory.
 
 **Tutorial**: goal → prerequisites → numbered steps (each step: command,
 expected output, one sentence of why) → verification → cleanup → next steps.
@@ -80,8 +86,67 @@ links to the owning workflow pages.
 (error text or observed behavior) → likely cause → diagnosis command → fix →
 verify.
 
-**Compatibility/status**: claim scope → evidence date and source → matrix →
+**Status**: claim scope → evidence date and source → matrix →
 how to re-verify.
+
+### 3.1 Frontmatter and the generated inventory
+
+Every published page declares the editorial contract that
+`src/content.config.ts` validates:
+
+```yaml
+type: how-to
+audience:
+  - database-engineer
+readerQuestion: How do I apply an already reviewed schema plan?
+goal: Apply the plan to a target database and verify the resulting schema.
+sourceOfTruth:
+  - cmd/schema
+  - migration/planner
+generated: false
+overlaps:
+  - /direct/apply/
+disposition: keep
+```
+
+Use exactly one `type`: `landing`, `tutorial`, `how-to`, `concept`,
+`reference`, `troubleshooting`, `status`, or `contributor`. Write
+`readerQuestion` as the one question the page answers. `goal` completes the
+sentence, "After reading this page, the reader can ...". If it contains two
+independent outcomes, split the page or record `disposition: split` until the
+split lands.
+
+`sourceOfTruth` names the implementation, declaration, test, or evidence that
+settles the page's claims. `owns` remains the optional feature identifier list
+used by `docs/feature-inventory.json`. `overlaps` uses live docs routes and is
+explicitly `[]` when the review found none. `disposition` is one of `keep`,
+`rewrite`, `split`, `merge`, `move`, or `retire`.
+
+A status page also requires:
+
+```yaml
+lastVerified: "2026-08-29"
+evidence:
+  - internal/capabilityprobe/cells.go
+```
+
+A fully generated page uses `generated: true` and requires both `generator` and
+`editSource`. Do not edit its rendered frontmatter separately from its
+generator.
+
+Regenerate the factual inventory after any page, frontmatter, sidebar, or
+internal-link change:
+
+```bash
+cd docs/site
+npm run inventory:write
+npm run check:content-inventory:selftest
+npm run check:content-inventory
+```
+
+The generated file records routes, navigation paths, links, word and byte
+counts, metadata, ownership, and freshness. Keep only non-derivable journey
+findings and editorial decisions in `CONTENT_INVENTORY.md`.
 
 ## 4. Voice and language
 
@@ -544,6 +609,9 @@ Complete this for every documentation PR:
    npm run check:route-retirement:selftest && npm run check:route-retirement &&
    npm run check:core-doc-links &&
    npm run check:page-health:selftest && npm run check:page-health &&
+   npm run check:content-inventory:selftest &&
+   npm run check:content-inventory &&
+   npm run check:support-matrix:selftest && npm run check:support-matrix &&
    npm run check:exit-codes:selftest && npm run check:exit-codes &&
    npm run check:style:selftest && npm run check:style &&
    npm run check:terminology:selftest && npm run check:terminology &&
@@ -554,8 +622,9 @@ Complete this for every documentation PR:
    all pass in `docs/site`. `check:responsive` and `check:glossary` read the
    built site, so they run last. Run every `:selftest` alongside its check: a
    check whose self-test is failing is not reporting on your content.
-6. `docs/site/CONTENT_INVENTORY.md` updated for any added, moved, merged,
-   split, or retired page.
+6. `docs/site/content-inventory.json` regenerated for any page, metadata,
+   sidebar, or internal-link change. Update `CONTENT_INVENTORY.md` only when a
+   journey or editorial decision changes.
 7. Redirects added for every moved URL; no content links through a redirect. A
    new page joins `published-routes.json` in the same PR, through
    `node scripts/check-route-retirement.mjs --write`. A line is never removed
@@ -601,6 +670,11 @@ in this guide is a review responsibility.
 | Native help text obeys the section 7 rows `terminologyguard` holds | 7 | `cmd/internal/terminologyguard` |
 | Every image carries alt text | 11.3 | `check:style` |
 | `title` and `description` frontmatter | 13 | `check:page-health` |
+| Page type, audience, reader question, goal, source, generated state, overlaps, and disposition | 3.1 | Astro content schema; `check:content-inventory` |
+| Status verification date and evidence | 3.1 | Astro content schema; `check:content-inventory` |
+| Generated page source metadata | 3.1 | Astro content schema; `check:content-inventory` |
+| Factual page inventory matches content, sidebar, and link graph | 3.1 | `check:content-inventory` |
+| Release-line support counts and classifications appear only in generated blocks | 12 | `check:support-matrix` |
 | Every page is named by a sidebar entry | 12 | `check:page-health` |
 | Every sidebar entry names a page or a route | 12 | `check:page-health` |
 | No `TODO`/`TBD`/`FIXME`/"coming soon" | 14 | `check:page-health` |

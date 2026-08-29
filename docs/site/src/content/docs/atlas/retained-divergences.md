@@ -1,6 +1,22 @@
 ---
 title: Retained divergences
 description: Cases where ptah-compat exits 1 and the pinned Atlas community binary exits 0, each with the measurement and the argument for keeping it.
+type: status
+audience:
+  - "atlas-migrator"
+  - "evaluator"
+readerQuestion: "What does the current evidence establish about retained divergences?"
+goal: "Evaluate each measured divergence and the reason Ptah retains it."
+sourceOfTruth:
+  - "cmd/atlas"
+  - "internal/atlascompatpolicy"
+generated: false
+lastVerified: "2026-08-30"
+evidence:
+  - "cmd/atlas/compat_1241_retained_divergence_test.go"
+  - "stokaro/ptah#1241"
+overlaps: []
+disposition: keep
 ---
 
 The drop-in rule has two directions and they are not symmetric. `ptah-compat`

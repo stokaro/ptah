@@ -1,6 +1,18 @@
 ---
 title: Reference data
 description: Declare reference/seed rows and generate reversible data migrations from the drift against a live database.
+type: how-to
+audience:
+  - "database-engineer"
+  - "ci-operator"
+readerQuestion: "How do I declare reference/seed rows and generate reversible data migrations from the drift against a live database?"
+goal: "Generate and verify reversible reference-data migrations."
+sourceOfTruth:
+  - "cmd/migrations"
+  - "migration"
+generated: false
+overlaps: []
+disposition: keep
 owns:
   - cli-ptah-migrations-data
 ---

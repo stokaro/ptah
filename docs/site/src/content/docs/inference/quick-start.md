@@ -1,6 +1,20 @@
 ---
 title: Quick start
 description: Run one complete generation change against a throwaway PostgreSQL database, from an empty table to a cutover.
+type: tutorial
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "How do I run and verify one complete inference migration?"
+goal: "Run and verify one complete inference migration."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+overlaps:
+  - "/inference/guides/create-first-generation/"
+  - "/inference/concepts/lifecycle/"
+disposition: rewrite
 ---
 
 This runs a full migration end to end. Use a throwaway database — the last step

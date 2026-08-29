@@ -1,6 +1,20 @@
 ---
 title: Adopting an Atlas project
 description: The path from Atlas through `ptah-compat` to native Ptah, one reversible step at a time.
+type: how-to
+audience:
+  - "atlas-migrator"
+  - "evaluator"
+readerQuestion: "How do I move an Atlas project to Ptah in reversible stages?"
+goal: "Move an Atlas project to Ptah in reversible stages."
+sourceOfTruth:
+  - "cmd/atlas"
+  - "internal/atlascompatpolicy"
+generated: false
+searchAliases:
+  - "migrate from Atlas"
+overlaps: []
+disposition: keep
 owns:
   - cli-ptah-project-adopt
   - cli-ptah-project-inspect

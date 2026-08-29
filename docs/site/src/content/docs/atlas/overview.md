@@ -1,6 +1,21 @@
 ---
 title: Atlas compatibility overview
 description: How the ptah-compat drop-in binary replaces the Atlas CLI, and how Atlas-style flags translate to native Ptah concepts.
+type: landing
+audience:
+  - "atlas-migrator"
+  - "evaluator"
+readerQuestion: "How do native Ptah, default ptah-compat, and strict CE mode differ?"
+goal: "Distinguish native Ptah, default ptah-compat, and strict CE mode."
+sourceOfTruth:
+  - "cmd/atlas"
+  - "internal/atlascompatpolicy"
+generated: false
+overlaps:
+  - "/atlas/adoption/"
+  - "/reference/atlas-commands/"
+  - "/atlas/conformance/"
+disposition: split
 ---
 
 You run scripts, CI jobs, or habits built around the Atlas CLI and want to know

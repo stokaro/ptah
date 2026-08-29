@@ -1,6 +1,17 @@
 ---
 title: Public Go API
 description: Stable embedder packages and API compatibility guardrails.
+type: reference
+audience:
+  - "go-developer"
+readerQuestion: "Which Go packages and exported symbols are stable for embedders?"
+goal: "Identify the Go packages and exported symbols stable for embedders."
+sourceOfTruth:
+  - "docs/public_api.md"
+  - "docs/public_api.snapshot"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 Ptah is pre-GA, but embedders need a documented import surface. The packages on

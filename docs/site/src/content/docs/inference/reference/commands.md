@@ -1,6 +1,18 @@
 ---
 title: Command reference
 description: Every ptah inference verb, what it does, and the flags it takes.
+type: reference
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "Which inference commands and flags does Ptah expose?"
+goal: "Look up the available inference commands and flags."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+overlaps: []
+disposition: keep
 owns:
   - cli-ptah-inference-describe
   - cli-ptah-inference-plan

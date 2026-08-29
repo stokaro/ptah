@@ -1,6 +1,18 @@
 ---
 title: Test migrations and schemas
 description: Assert migration and schema behavior with declarative test cases against a throwaway database.
+type: how-to
+audience:
+  - "ci-operator"
+readerQuestion: "How do I assert migration and schema behavior with declarative test cases against a throwaway database?"
+goal: "Run isolated migration and schema assertions against a throwaway database."
+sourceOfTruth:
+  - "cmd/migrationstest"
+  - "cmd/schema"
+  - "integration"
+generated: false
+overlaps: []
+disposition: keep
 owns:
   - cli-ptah-migrations-test
   - cli-ptah-schema-test

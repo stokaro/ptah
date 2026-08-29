@@ -1,6 +1,18 @@
 ---
 title: Consistency modes
 description: How Ptah accounts for source rows that change during a migration, and exactly what each mode can and cannot promise.
+type: concept
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "How does Ptah model consistency modes?"
+goal: "Explain Ptah's model for consistency modes."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 A backfill takes time. Your application writes during it. A consistency mode is

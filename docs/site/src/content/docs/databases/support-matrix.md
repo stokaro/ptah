@@ -1,6 +1,26 @@
 ---
 title: Database support matrix
 description: The database engines Ptah supports, at what depth, and the operational differences to know before rollout.
+type: status
+audience:
+  - "database-engineer"
+readerQuestion: "Which database release lines does Ptah exercise, and what does each support level mean?"
+goal: "Identify the exercised release lines and interpret each support level."
+sourceOfTruth:
+  - "internal/capabilityprobe/cells.go"
+  - "internal/dbschema"
+generated: false
+lastVerified: "2026-08-30"
+evidence:
+  - "internal/capabilityprobe/cells.go"
+  - ".github/workflows/capability-matrix.yml"
+  - ".github/workflows/go-integration-tests.yml"
+searchAliases:
+  - "MySQL supported versions"
+overlaps:
+  - "/reference/capabilities/"
+  - "/concepts/dialects-and-capabilities/"
+disposition: split
 owns:
   - cli-ptah-db-capabilities
 ---
@@ -221,14 +241,12 @@ for that target.
 | `certified` | Ptah exercises the line in continuous integration and commits to the tested feature surface. |
 | `legacy-tested` | Upstream end-of-life, kept on purpose as a regression sentinel. Runtime behavior is the same as a certified line; the promise is weaker. |
 | `best-effort` | Not regularly tested and not rejected. Capabilities are resolved as for any other server, and the operations they allow are performed. |
-| `known-incompatible` | A concrete technical incompatibility is known and named. A vendor end-of-life date is not one, and no release line carries this level today. |
+| `known-incompatible` | A concrete technical incompatibility is known and named. A vendor end-of-life date is not one. |
 
 Upstream end-of-life does not make a release unsupported by Ptah at runtime. It
 lowers the testing guarantee; it is not a refusal. No code in Ptah reads a
-support level to decide whether an operation may proceed. PostgreSQL 13 moved to
-`legacy-tested` when its final release shipped on 2025-11-13: measured against a
-live 13.23 server on 2026-08-16, the line reports `legacy-tested`, its
-capabilities resolve, and the operations they allow run.
+support level to decide whether an operation may proceed. The generated table
+is the only enumeration of which release line carries which level.
 
 ### A line Ptah does not declare
 
@@ -245,12 +263,11 @@ Ask the server in front of you what Ptah resolved for it:
 ptah db capabilities --db-url "$DATABASE_URL"
 ```
 
-Expected output includes the level and the line, here against a live PostgreSQL
-18.4:
+Expected output includes the level and the release line that Ptah resolved:
 
 ```text
-Support level:      certified
-Release line:       18
+Support level:      <resolved support level>
+Release line:       <declared release line or unmatched server line>
 ```
 
 The report also names the dialect, the server version and banner, the preset and
@@ -259,14 +276,12 @@ capability key as supported or unsupported; `--format json` emits everything the
 text form shows, plus each capability key's documentation string, as a stable
 sorted document.
 
-Against a MySQL 8.0.46 server, a line this matrix does not declare, the same
-command reports `best-effort` and says what it fell back to:
+For a server outside the declared set, the same command reports the fallback
+preset and why no exact measured line matched. The connection is not refused.
 
 ```text
-Note: mysql 8.0.46 is not a measured release line; capabilities fall back to the preset its ladder assigns (newest measured line: 26.7)
+Note: <dialect and version> is not a measured release line; capabilities fall back to <resolved preset>
 ```
-
-That server connects, resolves its capabilities, and works.
 
 ### How a level is assigned
 
@@ -276,23 +291,19 @@ exercise the line, and does the vendor still support it. Both yes is
 is `best-effort`, whatever the vendor says, because certification is a claim
 about Ptah's testing and an untested line has none to make.
 
-Five declared lines are `best-effort`: ClickHouse 26.3, ClickHouse 25.8, SQL
-Server 2022 (16.0), SQL Server 2019 (15.0), and Spanner. Four of the five sit
-inside their vendor's support window. What four of them lack is a run in this
-repository: the capability probe has no statement table for the `clickhouse` or
-`sqlserver` dialects, and the only ClickHouse and SQL Server versions the
-integration suite starts are ClickHouse 26.7, ClickHouse 24.10, and SQL Server
-2025.
+The generated table above is the current census. A non-emulated line that
+continuous integration exercises must carry `certified` or `legacy-tested`;
+one it does not exercise must carry `best-effort`. A test derives both sides of
+that rule from the matrix and the integration workflow.
 
-**Spanner is the exception, and it is deliberate.** Its capability rows are
-measured on every pull request, against the Cloud Spanner emulator behind
-PGAdapter — the only Spanner endpoint a container can provide. That run is worth
-having: it catches a preset drifting from the interface. It is not evidence
-about the managed service, and the two already differ measurably — the reference
-says a serial column needs the database option `default_sequence_kind` set
-first, and the emulator accepts one without it. So the line is exercised and
-stays `best-effort`, which is the one place those two answers come apart
-([issue 942](https://github.com/stokaro/ptah/issues/942)).
+An emulator is the deliberate exception. Running an emulator on every pull
+request catches a capability preset drifting from that interface, but it is not
+evidence about the managed service. The release-line declaration records this
+distinction explicitly, and the certification test excludes emulated evidence
+from a managed-service testing claim. The Spanner reference and emulator
+already differ measurably: the reference requires the database option
+`default_sequence_kind` before a serial column, while the emulator accepts one
+without it ([issue 942](https://github.com/stokaro/ptah/issues/942)).
 
 ### What Spanner models, and what it does not
 

@@ -1,6 +1,16 @@
 ---
 title: Query builder
 description: Build parameterized, dialect-aware SELECT statements with the core/query package.
+type: reference
+audience:
+  - "go-developer"
+readerQuestion: "How do I build parameterized, dialect-aware SELECT statements in Go?"
+goal: "Build parameterized, dialect-aware SELECT statements in Go."
+sourceOfTruth:
+  - "core/query"
+generated: false
+overlaps: []
+disposition: keep
 owns:
   - gopkg-core-query
 ---

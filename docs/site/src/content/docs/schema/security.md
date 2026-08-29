@@ -1,6 +1,17 @@
 ---
 title: Report schema security findings
 description: Run ptah schema security over a live database to review privileges, owners, roles and tables with no row policy, and gate a pull request on the result.
+type: how-to
+audience:
+  - "schema-author"
+readerQuestion: "How do I run ptah schema security over a live database to review privileges, owners, roles and tables with no row policy, and gate a pull request on the result?"
+goal: "Find and gate on actionable database security findings."
+sourceOfTruth:
+  - "cmd/schema"
+  - "internal/schemasecurity"
+generated: false
+overlaps: []
+disposition: keep
 owns:
   - cli-ptah-schema-security
 ---

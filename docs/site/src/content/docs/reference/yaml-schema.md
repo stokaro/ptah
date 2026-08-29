@@ -1,6 +1,18 @@
 ---
 title: YAML Schema Reference
 description: Ptah's strict YAML schema-file format.
+type: reference
+audience:
+  - "all-users"
+readerQuestion: "Which fields and values does Ptah's YAML schema format accept?"
+goal: "Look up the fields and values accepted by Ptah's YAML schema format."
+sourceOfTruth:
+  - "cmd"
+  - "core"
+  - "migration"
+generated: false
+overlaps: []
+disposition: keep
 owns:
   - gopkg-core-yamlschema
 ---

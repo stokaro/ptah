@@ -305,10 +305,11 @@ against the line. Three things can:
 
 `TestCells_CertificationMatchesWhatContinuousIntegrationRuns` reads that answer
 out of the matrix and the workflow rather than believing the literal, so a line
-cannot claim certification by being written down. Five declared lines are
-best-effort today because nothing here exercises them, and
-`ptah db capabilities` is where an operator sees the resolved answer for their
-own server.
+cannot claim certification by being written down. The generated support matrix
+is the only release-line census; authored documentation must not repeat its
+counts or classifications. `check-support-matrix.mjs` enforces that boundary,
+and `ptah db capabilities` is where an operator sees the resolved answer for
+their own server.
 
 ### The lint rule enumeration
 
@@ -971,10 +972,12 @@ token. Prefer spellings such as `behavior`, `color`, `canceled`, `initialize`,
 All documentation work must follow the authoritative style guide at
 [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md): classify the page type before
 writing, use the matching template, keep the canonical terminology, and run
-the style guide's review checklist. When a reader-facing page is added, moved,
-merged, split, or retired, update the content inventory at
-[`docs/site/CONTENT_INVENTORY.md`](docs/site/CONTENT_INVENTORY.md) in the same
-PR.
+the style guide's review checklist. Every site page carries the editorial
+metadata `src/content.config.ts` validates. When a page or its navigation
+changes, regenerate `docs/site/content-inventory.json` with
+`npm run inventory:write` in `docs/site`; keep only non-derivable decisions and
+journey findings in
+[`docs/site/CONTENT_INVENTORY.md`](docs/site/CONTENT_INVENTORY.md).
 
 **Section 7 of the style guide is the terminology authority.** Before writing a
 name for a Ptah thing — a workflow, a file, a command tree — look it up there

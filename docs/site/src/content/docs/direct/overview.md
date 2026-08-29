@@ -1,6 +1,21 @@
 ---
 title: Direct schema changes
 description: How a change reaches a database without a migration file - the read, drift, plan, and apply loop, and the history it does not keep.
+type: landing
+audience:
+  - "database-engineer"
+  - "ci-operator"
+readerQuestion: "When should I use direct schema changes, and which command comes next?"
+goal: "Choose the direct workflow when appropriate and open the correct next task."
+sourceOfTruth:
+  - "cmd/schema"
+  - "migration/schemadiff"
+  - "migration/planner"
+generated: false
+overlaps:
+  - "/start/choose-a-workflow/"
+  - "/direct/apply/"
+disposition: rewrite
 ---
 
 You have a description of the schema you want and a database that does not

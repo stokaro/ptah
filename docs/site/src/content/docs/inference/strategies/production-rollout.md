@@ -1,6 +1,18 @@
 ---
 title: Production rollout
 description: Ordering the steps, the evidence to keep, and the decisions to take before rather than during.
+type: how-to
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "How do I order and verify a production inference migration?"
+goal: "Order and verify a production inference migration."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 A production generation change is the same commands in the same order. What

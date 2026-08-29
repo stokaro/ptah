@@ -1,6 +1,17 @@
 ---
 title: Desired schema and schema sources
 description: The declarative idea behind Ptah - you declare the schema you want, from any mix of sources, and Ptah computes how to get there.
+type: concept
+audience:
+  - "all-users"
+readerQuestion: "How does Ptah model desired schema and schema sources?"
+goal: "Explain Ptah's model for desired schema and schema sources."
+sourceOfTruth:
+  - "internal/schemaload"
+  - "core/schemamodel"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 Everything in Ptah starts from one declarative idea: you describe the schema a

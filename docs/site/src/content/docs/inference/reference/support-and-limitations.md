@@ -1,6 +1,22 @@
 ---
 title: Support and limitations
 description: Exactly what is implemented, what is not, and which guarantees depend on you rather than on Ptah.
+type: status
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "Which inference migration guarantees are measured, unsupported, or owned by the operator?"
+goal: "Distinguish measured, unsupported, and operator-owned inference guarantees."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+lastVerified: "2026-08-30"
+evidence:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+overlaps: []
+disposition: keep
 ---
 
 ## What is supported

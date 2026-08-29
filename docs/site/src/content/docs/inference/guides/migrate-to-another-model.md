@@ -1,6 +1,20 @@
 ---
 title: Migrate to another model
 description: Replace the vectors on a table that already has them, with a second generation beside the first.
+type: how-to
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "How do I replace an active embedding generation with one from another model?"
+goal: "Replace an active embedding generation with one from another model."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+searchAliases:
+  - "change embedding model"
+overlaps: []
+disposition: keep
 ---
 
 You have a working generation and you are changing the model. The new vectors go

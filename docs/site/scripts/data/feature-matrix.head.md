@@ -1,6 +1,27 @@
 ---
 title: Feature matrix
 description: Ptah and Atlas capabilities side by side, with the evidence behind every row.
+type: status
+audience:
+  - atlas-migrator
+  - evaluator
+readerQuestion: What does the current evidence establish for one Ptah or Atlas capability?
+goal: Determine whether current evidence establishes, limits, or leaves a capability unresolved.
+sourceOfTruth:
+  - docs/site/scripts/data/feature-matrix-rows.json
+  - stokaro/ptah-atlas-conformance
+generated: true
+generator: docs/site/scripts/build-feature-matrix.mjs
+editSource: docs/site/scripts/data/feature-matrix-rows.json
+lastVerified: "2026-08-30"
+evidence:
+  - docs/site/scripts/data/feature-matrix-rows.json
+  - stokaro/ptah-atlas-conformance
+overlaps:
+  - /atlas/conformance/
+  - /atlas/docs-coverage/
+  - /atlas/retained-divergences/
+disposition: keep
 ---
 
 This page answers one question: for a given capability, what does Ptah do, what

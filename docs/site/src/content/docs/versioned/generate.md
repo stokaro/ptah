@@ -1,6 +1,18 @@
 ---
 title: Generate migrations
 description: Plan and generate migration files from the difference between your desired schema and a live database.
+type: how-to
+audience:
+  - "database-engineer"
+  - "ci-operator"
+readerQuestion: "How do I generate a migration from a reviewed desired schema?"
+goal: "Generate a migration from a reviewed desired schema."
+sourceOfTruth:
+  - "cmd/migrations"
+  - "migration"
+generated: false
+overlaps: []
+disposition: keep
 owns:
   - cli-ptah-migrations-generate
   - cli-ptah-migrations-plan
