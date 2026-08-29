@@ -380,15 +380,14 @@ jobs:
       # internal/capabilityprobe/cells.go and forgets the documentation matches
       # no filter there, and the drift check would never run on the change that
       # caused the drift.
-      - name: Check the documented version matrix
-        run: scripts/check-version-matrix.sh
-
-      # Same reasoning, same job: a pull request that registers a capability
-      # key or a preset touches no file under docs/, so a gate living behind
-      # the docs.yml path filter would not run on the change that caused the
-      # drift (stokaro/ptah#916).
-      - name: Check the documented capability tables
-        run: scripts/check-capability-tables.sh
+      # Same reasoning covers the capability tables: a pull request that
+      # registers a capability key or a preset touches no file under docs/, so
+      # a gate living behind the docs.yml path filter would not run on the
+      # change that caused the drift (stokaro/ptah#916). Both are targets of the
+      # one command now, so this step checks every generated block rather than
+      # the two this job used to name.
+      - name: Check the generated documentation blocks
+        run: scripts/check-docsync.sh
 
   probe:
     name: probe ${{ matrix.cell }}

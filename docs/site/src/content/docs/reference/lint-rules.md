@@ -10,7 +10,7 @@ Migration lint reads a migration directory; SQL lint reads standalone `.sql`
 files. This page enumerates every identifier either one can report.
 
 The tables below are generated from the rule registries themselves.
-`scripts/check-lint-rules.sh` fails when a rule exists in the code and not on
+`scripts/check-docsync.sh` fails when a rule exists in the code and not on
 this page, or when a row here names a rule that no longer exists.
 
 ## Which commands lint

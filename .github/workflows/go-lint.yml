@@ -127,14 +127,18 @@ jobs:
       - name: Check goreleaser artifact names
         run: scripts/check-goreleaser-artifact-names.sh
 
-      - name: Check documented lint rules
-        run: scripts/check-lint-rules.sh
-
-      - name: Check the generated agent-surface tables
-        run: scripts/check-agent-surface.sh
-
-      - name: Check the generated command reference
-        run: scripts/check-command-reference.sh
+      # One step for every generated documentation block: the lint rules, the
+      # agent-surface tables, the two command indexes, the strict-mode
+      # classification and the whole flag page. Five steps stood here, each
+      # starting its generator afresh; docsync renders them all in one process
+      # because every generator is already a library (stokaro/ptah#2510).
+      #
+      # The capability and version-matrix blocks are checked by the same command
+      # in capability-matrix.yml, where a change to the declaration that touches
+      # no documentation still reaches a gate. That workflow's step and this one
+      # run the same eleven targets, so either catches drift in any of them.
+      - name: Check the generated documentation blocks
+        run: scripts/check-docsync.sh
 
       - name: Check the derived feature inventory
         run: scripts/check-feature-inventory.sh

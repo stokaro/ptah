@@ -261,15 +261,15 @@ go run ./internal/cmd/capmatrix presets
 go run ./internal/cmd/capmatrix probe --cell postgres-17
 
 # Keep the documented matrix tied to the declaration
-scripts/check-version-matrix.sh
-scripts/check-version-matrix.sh --write
+scripts/check-docsync.sh
+scripts/check-docsync.sh --write
 ```
 
 `.github/workflows/capability-matrix.yml` runs the capability probe once per
 cell, and `capability-matrix-nightly.yml` runs the integration suite over the
 same cells on a schedule. Both read the declaration through `capmatrix matrix`,
 so adding a release line is a data change: one literal in `cells.go`, then
-`scripts/check-version-matrix.sh --write`.
+`scripts/check-docsync.sh --write`.
 
 **The probe fan-out does not run on a pull request by default.** It is one job
 per cell with a container each, and it outnumbered every other check until the
@@ -324,8 +324,8 @@ go run ./internal/cmd/lintrules markdown
 go run ./internal/cmd/lintrules check
 
 # Keep the page tied to the registries
-scripts/check-lint-rules.sh
-scripts/check-lint-rules.sh --write
+scripts/check-docsync.sh
+scripts/check-docsync.sh --write
 ```
 
 Adding a lint rule is therefore two edits: the rule itself, and its one-line

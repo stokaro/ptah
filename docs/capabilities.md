@@ -668,7 +668,7 @@ capabilities, and still performs the operations those capabilities allow.
 It is generated from `internal/capabilityprobe/cells.go`, which is the only
 place a release line is declared. The tiered pipeline of stokaro/ptah#1341
 reads the same declaration, so the workflow files carry no list of versions and
-`scripts/check-version-matrix.sh` fails the build when this table drifts from
+`scripts/check-docsync.sh` fails the build when this table drifts from
 the declaration it was generated from.
 
 Four columns need reading carefully.

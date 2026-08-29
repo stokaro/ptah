@@ -203,12 +203,12 @@ run_case check-go-module-lint-coverage.sh \
 	"working-directory for the nested module removed from one job" \
 	"perl -0pi -e 's|working-directory: examples/orm-loaders/gorm||' .github/workflows/go-lint.yml"
 
-run_case check-version-matrix.sh \
-	"a declared release line deleted from the documented block" \
+run_case check-docsync.sh \
+	"a declared release line deleted from the documented version matrix" \
 	"perl -0pi -e 's/^\|\s\`postgres\`\s\|\s18[^\n]*\n//m' docs/site/src/content/docs/databases/support-matrix.md"
 
-run_case check-lint-rules.sh \
-	"a heading removed from the generated block" \
+run_case check-docsync.sh \
+	"a heading removed from the generated lint-rule block" \
 	"perl -0pi -e 's/^## Identifier families\n//m' docs/site/src/content/docs/reference/lint-rules.md"
 
 run_case check-goreleaser-artifact-names.sh \
@@ -234,28 +234,32 @@ run_case check-public-api-snapshot.sh \
 	"an exported field added to a documented struct" \
 	"perl -0pi -e 's/type DomainExpression struct \{/type DomainExpression struct {\n\t\/\/ GateSelftestField exists only inside this fixture.\n\tGateSelftestField string\n/' config/config.go"
 
-run_case check-capability-tables.sh \
+run_case check-docsync.sh \
 	"a key removed from the generated capability table" \
 	"perl -0pi -e 's/^\| \`advisory_locks\`[^\n]*\n//m' docs/capabilities.md"
 
-run_case check-agent-surface.sh \
+run_case check-docsync.sh \
 	"a verb row removed from the generated agent-surface table" \
 	"perl -0pi -e 's/^.*introspects the database and prints what it found.*\\n//m' docs/agent-surface.md"
 
-# Two fixtures, one per comparison mode. The gate checks three marker blocks and
-# one whole page, and a gate whose two rules are only ever broken together
-# cannot say which of them it still reads.
+# Two fixtures, one per comparison mode. The command reference is three marker
+# blocks and one whole page, and a gate whose two rules are only ever broken
+# together cannot say which of them it still reads.
+#
+# Six fixtures on this one gate rather than one, for the same reason: docsync
+# checks eleven blocks from four generators, and a single fixture would leave
+# ten of them proven by nothing.
 #
 # Neither mutation writes a backtick or a dollar sign. The snippet is expanded
 # once by the caller and evaluated again by run_case, and a code span in a
 # generated table row would be command substitution on the second pass. `.`
 # matches the backtick in the pattern and perl's `\x60` writes one in the
 # replacement.
-run_case check-command-reference.sh \
+run_case check-docsync.sh \
 	"a verb row removed from the generated command index" \
 	"perl -0pi -e 's/^\| .ptah introspect. \|[^\n]*\n//m' docs/site/src/content/docs/reference/native-commands.md"
 
-run_case check-command-reference.sh \
+run_case check-docsync.sh \
 	"a flag's value type edited on the fully generated flag page" \
 	"perl -0pi -e 's/\*\*\x60ptah seed\x60\*\*.*?\| \x60--env\x60 \| \K\x60string\x60/\x60int\x60/s' docs/site/src/content/docs/reference/command-flags.md"
 

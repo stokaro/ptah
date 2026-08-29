@@ -178,7 +178,7 @@ Every analyzer check code the Atlas analyzers documentation
 on it — covered, partial, not implemented, or waived — in
 [Lint rules](./site/src/content/docs/reference/lint-rules.md), together with
 every rule identifier either binary can report. That page is generated from the
-rule registries and gated by `scripts/check-lint-rules.sh`, so the counts are
+rule registries and gated by `scripts/check-docsync.sh`, so the counts are
 derived rather than restated here.
 
 ## Verbs Beyond the CE Pin
