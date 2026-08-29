@@ -82,6 +82,8 @@ completed cutover does not throw the old vectors away.
 Two commands exist for what comes after: `rollback` puts the previous vectors
 back, and `retire` destroys a set of vectors permanently.
 
+![The active generation continues serving queries while Ptah prepares, backfills, catches up, indexes, and verifies a candidate. Cutover makes the verified candidate active; rollback can restore the retained previous generation, and retirement is separate and destructive.](../../../assets/inference-generation-lifecycle.svg)
+
 ## Where to go next
 
 - New to this? [Quick start](../quick-start/) runs one migration end to end

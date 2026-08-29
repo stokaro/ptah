@@ -32,6 +32,12 @@ Prerequisites: an installed `ptah` binary ([Install Ptah](../../start/install/))
 and a desired schema. Nothing else is needed — Ptah lays out the entity diagram
 in the HTML output itself, so Graphviz is not involved.
 
+![A generated Ptah schema reference with a table-of-contents sidebar, summary counts, an entity diagram, and per-table column and index details.](../../../assets/schema-document.png)
+
+The screenshot comes from the deterministic two-table fixture used by the
+asset generator. [Download the same self-contained HTML file](https://raw.githubusercontent.com/stokaro/ptah/master/docs/site/public/samples/schema-document.html)
+to inspect its navigation, diagram, and table cards without running a server.
+
 ## Starting state
 
 The examples run against one schema file. Save this as `schema.yaml`:

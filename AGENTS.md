@@ -1135,6 +1135,15 @@ View source, and Report actions with the keyboard. `check:search-ranking` asks
 the built Pagefind index the recorded reader queries and requires each canonical
 page in the first three results.
 
+Visual documentation has two different evidence paths. Authored explanatory
+diagrams are semantic SVG (or Mermaid, D2, or Graphviz source), never raster
+images containing generated text. PNGs are reserved for real browser UI and
+are regenerated from committed fixtures;
+`docs/site/scripts/check-visual-assets.mjs` holds that allowlist and source
+contract. `check-accessibility.mjs` runs axe and keyboard controls at mobile
+and desktop widths, while `check-visual-snapshots.mjs` produces review
+artifacts without treating platform-dependent pixels as a stable baseline.
+
 ### The quick starts run in CI
 
 The commands a quick-start page publishes are executed on every pull request by
@@ -1155,6 +1164,21 @@ scripts/check-quickstart.sh
 # Read one tree, or read the PowerShell tab from a machine that has pwsh
 go run ./internal/cmd/quickstart run --docs-dir docs/site/src/content/docs --shell powershell
 ```
+
+The inference quick start needs PostgreSQL, pgvector, and an HTTP provider, so
+it has a separate acceptance path rather than pretending those services fit the
+cross-platform fenced-block runner. Its committed Compose fixture supplies a
+deterministic provider and seeded database; the docs workflow runs
+`docs/site/scripts/check-inference-quick-start.sh` with an explicit Docker
+context and proves the active pointer after approval. The script cleans up only
+its named Compose project, volume, network, and locally built images.
+
+Every top-level `examples/*` directory carries the seven-section reader
+contract named in `docs/STYLE_GUIDE.md`. Regenerate `examples/README.md` with
+`npm run examples:write` from `docs/site`, then run both
+`npm run check:examples` and the repository-level
+`scripts/check-examples.sh`; the first checks navigation and contracts, and the
+second executes or mechanically verifies the artifacts.
 
 A page opts in with `quickstart: true` in its frontmatter. Everything else the
 runner needs it reads from the shape section 8 of

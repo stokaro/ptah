@@ -262,6 +262,10 @@ practical, live commands:
   npm run check:exit-codes
   npm run check:style:selftest
   npm run check:style
+  npm run check:examples:selftest
+  npm run check:examples
+  npm run check:visual-assets:selftest
+  npm run check:visual-assets
   npm run versions:selftest
   npm run build
   # Renders every built page at 390px and 1280px and fails on horizontal
@@ -270,8 +274,18 @@ practical, live commands:
   # check skips locally and fails in CI.
   npm run check:responsive:selftest
   npm run check:responsive
+  npm run check:accessibility:selftest
+  npm run check:accessibility
+  npm run check:visual-snapshots:selftest
+  npm run check:visual-snapshots -- --output /tmp/ptah-docs-snapshots
   npm audit --audit-level=low
   ```
+
+  From the repository root, also run `scripts/check-examples.sh`. When the
+  inference tutorial or its fixture changes, run
+  `docs/site/scripts/check-inference-quick-start.sh` with an explicit
+  `PTAH_DOCKER_CONTEXT`; the script removes only its named Compose project and
+  locally built images.
 
   `check:style` covers every layer the style guide governs — `docs/site`,
   `docs/*.md`, `examples/**`, `integration/*.md`, every package `README.md`,

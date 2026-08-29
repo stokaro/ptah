@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 390" role="img" aria-labelledby="title description">
+  <title id="title">Inference generation lifecycle</title>
+  <desc id="description">The current active generation continues serving queries while Ptah prepares, backfills, catches up, indexes, and verifies a candidate. Cutover makes the verified candidate active. Rollback can restore the retained previous generation, and retirement is a separate destructive action.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#0284c7"/>
+    </marker>
+    <style>
+      .panel { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 2; }
+      .active { fill: #dcfce7; stroke: #15803d; stroke-width: 2.5; }
+      .candidate { fill: #fef3c7; stroke: #b45309; stroke-width: 2.5; }
+      .step { fill: #ffffff; stroke: #64748b; stroke-width: 2; }
+      .decision { fill: #e0f2fe; stroke: #0284c7; stroke-width: 2.5; }
+      .destructive { fill: #fee2e2; stroke: #b91c1c; stroke-width: 2; }
+      .heading { fill: #0f172a; font: 700 25px system-ui, sans-serif; }
+      .label { fill: #0f172a; font: 650 19px system-ui, sans-serif; }
+      .detail { fill: #475569; font: 16px system-ui, sans-serif; }
+      .flow { fill: none; stroke: #0284c7; stroke-width: 3; marker-end: url(#arrow); }
+      .state { fill: none; stroke: #64748b; stroke-width: 2.5; stroke-dasharray: 8 7; marker-end: url(#arrow); }
+      @media (prefers-color-scheme: dark) {
+        .panel { fill: #111827; stroke: #475569; }
+        .active { fill: #14532d; stroke: #4ade80; }
+        .candidate { fill: #78350f; stroke: #fbbf24; }
+        .step { fill: #1f2937; stroke: #64748b; }
+        .decision { fill: #0c4a6e; stroke: #38bdf8; }
+        .destructive { fill: #7f1d1d; stroke: #f87171; }
+        .heading, .label { fill: #f8fafc; }
+        .detail { fill: #cbd5e1; }
+        .flow { stroke: #38bdf8; }
+        .state { stroke: #94a3b8; }
+        #arrow path { fill: #38bdf8; }
+      }
+    </style>
+  </defs>
+
+  <rect class="panel" x="20" y="20" width="1160" height="350" rx="22"/>
+  <text class="heading" x="52" y="62">One candidate moves through explicit gates</text>
+
+  <rect class="active" x="50" y="98" width="220" height="92" rx="16"/>
+  <text class="label" x="160" y="135" text-anchor="middle">Active generation</text>
+  <text class="detail" x="160" y="163" text-anchor="middle">continues serving queries</text>
+
+  <rect class="candidate" x="50" y="235" width="220" height="92" rx="16"/>
+  <text class="label" x="160" y="272" text-anchor="middle">Candidate generation</text>
+  <text class="detail" x="160" y="300" text-anchor="middle">isolated until cutover</text>
+
+  <rect class="step" x="325" y="235" width="135" height="92" rx="14"/>
+  <text class="label" x="392" y="272" text-anchor="middle">Prepare</text>
+  <text class="detail" x="392" y="299" text-anchor="middle">target storage</text>
+
+  <rect class="step" x="495" y="235" width="145" height="92" rx="14"/>
+  <text class="label" x="567" y="265" text-anchor="middle">Backfill</text>
+  <text class="detail" x="567" y="290" text-anchor="middle">then catch up</text>
+  <text class="detail" x="567" y="312" text-anchor="middle">and index</text>
+
+  <rect class="decision" x="675" y="235" width="145" height="92" rx="14"/>
+  <text class="label" x="747" y="272" text-anchor="middle">Verify</text>
+  <text class="detail" x="747" y="299" text-anchor="middle">required checks</text>
+
+  <rect class="decision" x="855" y="235" width="145" height="92" rx="14"/>
+  <text class="label" x="927" y="272" text-anchor="middle">Cut over</text>
+  <text class="detail" x="927" y="299" text-anchor="middle">switch pointer</text>
+
+  <rect class="destructive" x="1035" y="235" width="115" height="92" rx="14"/>
+  <text class="label" x="1092" y="272" text-anchor="middle">Retire</text>
+  <text class="detail" x="1092" y="299" text-anchor="middle">destructive</text>
+
+  <path class="flow" d="M270 281 H325"/>
+  <path class="flow" d="M460 281 H495"/>
+  <path class="flow" d="M640 281 H675"/>
+  <path class="flow" d="M820 281 H855"/>
+  <path class="flow" d="M1000 281 H1035"/>
+  <path class="state" d="M927 235 V144 H284"/>
+  <text class="detail" x="608" y="132" text-anchor="middle">cutover makes the verified candidate active</text>
+  <path class="state" d="M855 175 H550 Q520 175 520 145 H270"/>
+  <text class="detail" x="712" y="164" text-anchor="middle">rollback restores the retained previous generation</text>
+</svg>

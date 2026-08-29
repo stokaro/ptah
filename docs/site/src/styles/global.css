@@ -11,7 +11,10 @@
   --color-accent-300: oklch(0.8 0.11 230);
   --color-accent-400: oklch(0.71 0.15 230);
   --color-accent-500: oklch(0.63 0.18 230);
-  --color-accent-600: oklch(0.55 0.18 235);
+  /* Light-theme links and selected navigation use this value against white.
+   * Keep it at the same hue as the brand blue, but dark enough for WCAG AA
+   * body-text contrast and for white selected-item text. */
+  --color-accent-600: oklch(0.47 0.16 238);
   --color-accent-700: oklch(0.47 0.16 238);
   --color-accent-800: oklch(0.39 0.13 240);
   --color-accent-900: oklch(0.31 0.09 242);

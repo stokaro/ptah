@@ -1598,8 +1598,8 @@
         "/versioned/overview/"
       ],
       "inboundLinks": [],
-      "visibleWords": 285,
-      "sourceBytes": 4981
+      "visibleWords": 327,
+      "sourceBytes": 5315
     },
     {
       "path": "docs/site/src/content/docs/inference/concepts/consistency.md",
@@ -1707,7 +1707,8 @@
         "/inference/concepts/verification-and-cutover/"
       ],
       "inboundLinks": [
-        "/inference/concepts/embeddings-and-inference-state/"
+        "/inference/concepts/embeddings-and-inference-state/",
+        "/inference/quick-start/"
       ],
       "visibleWords": 607,
       "sourceBytes": 4457
@@ -2027,7 +2028,6 @@
       "outboundLinks": [],
       "inboundLinks": [
         "/inference/guides/migrate-to-another-model/",
-        "/inference/quick-start/",
         "/inference/strategies/production-rollout/",
         "/inference/troubleshooting/"
       ],
@@ -2079,14 +2079,14 @@
         "/start/choose-a-workflow/",
         "/start/overview/"
       ],
-      "visibleWords": 501,
-      "sourceBytes": 4282
+      "visibleWords": 537,
+      "sourceBytes": 4609
     },
     {
       "path": "docs/site/src/content/docs/inference/quick-start.md",
       "route": "/inference/quick-start/",
       "title": "Quick start",
-      "description": "Run one complete generation change against a throwaway PostgreSQL database, from an empty table to a cutover.",
+      "description": "Build, verify, and activate an embedding generation with a disposable PostgreSQL and local provider fixture.",
       "sidebarPath": "Inference migrations",
       "sidebarLabel": null,
       "type": "tutorial",
@@ -2095,20 +2095,22 @@
         "database-engineer"
       ],
       "readerQuestion": "How do I run and verify one complete inference migration?",
-      "goal": "Run and verify one complete inference migration.",
+      "goal": "Build, verify, and activate one embedding generation without an external model service.",
       "sourceOfTruth": [
         "cmd/inference",
-        "integration/inference_cli_e2e_test.go"
+        "integration/inference_cli_e2e_test.go",
+        "docs/site/fixtures/inference-quick-start"
       ],
       "owns": [],
       "generated": false,
       "generator": null,
       "editSource": null,
-      "lastVerified": null,
+      "lastVerified": "2026-08-30",
       "evidence": [],
       "searchAliases": [
         "pgvector",
-        "inference migration tutorial"
+        "inference migration tutorial",
+        "local embedding model"
       ],
       "overlaps": [
         "/inference/guides/create-first-generation/",
@@ -2116,16 +2118,16 @@
       ],
       "disposition": "rewrite",
       "outboundLinks": [
+        "/inference/concepts/generations/",
         "/inference/guides/migrate-to-another-model/",
-        "/inference/guides/rollback-and-retire/",
-        "/inference/reference/specification/"
+        "/start/install/"
       ],
       "inboundLinks": [
         "/inference/guides/create-first-generation/",
         "/inference/overview/"
       ],
-      "visibleWords": 290,
-      "sourceBytes": 4762
+      "visibleWords": 466,
+      "sourceBytes": 6365
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/commands.md",
@@ -2238,9 +2240,7 @@
       "outboundLinks": [
         "/inference/concepts/consistency/"
       ],
-      "inboundLinks": [
-        "/inference/quick-start/"
-      ],
+      "inboundLinks": [],
       "visibleWords": 821,
       "sourceBytes": 7044
     },
@@ -3579,8 +3579,8 @@
         "/schema/sql/",
         "/schema/yaml/"
       ],
-      "visibleWords": 1289,
-      "sourceBytes": 11015
+      "visibleWords": 1340,
+      "sourceBytes": 11515
     },
     {
       "path": "docs/site/src/content/docs/schema/export.md",
@@ -4009,8 +4009,8 @@
       "inboundLinks": [
         "/reference/native-commands/"
       ],
-      "visibleWords": 1325,
-      "sourceBytes": 10045
+      "visibleWords": 1386,
+      "sourceBytes": 10509
     },
     {
       "path": "docs/site/src/content/docs/schema/sql.md",
@@ -4200,8 +4200,8 @@
         "/schema/security/",
         "/schema/stats/"
       ],
-      "visibleWords": 676,
-      "sourceBytes": 6315
+      "visibleWords": 719,
+      "sourceBytes": 6676
     },
     {
       "path": "docs/site/src/content/docs/schema/work-with-a-source.mdx",
@@ -4513,6 +4513,7 @@
         "/direct/compare-and-drift/",
         "/direct/inspect/",
         "/direct/plan-and-approve/",
+        "/inference/quick-start/",
         "/schema/document/",
         "/schema/lineage/",
         "/schema/security/",

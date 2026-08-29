@@ -101,6 +101,37 @@ const verifiedDate = entry.data.lastVerified
   )}
 </div>
 
+<script>
+  /**
+   * Starlight and Expressive Code make wide tables and code blocks scroll
+   * horizontally, but a keyboard user cannot reach an unnamed scroll region
+   * unless it participates in the tab order. Only regions that actually
+   * overflow receive a tab stop; resizing removes stops that are no longer
+   * useful.
+   */
+  function updateScrollableRegions() {
+    const selector = [
+      '.sl-markdown-content pre',
+      '.sl-markdown-content table',
+      '.sl-markdown-content .ptah-wide-table',
+    ].join(',');
+
+    for (const region of document.querySelectorAll<HTMLElement>(selector)) {
+      const scrolls = region.scrollWidth > region.clientWidth || region.scrollHeight > region.clientHeight;
+      if (scrolls) {
+        region.tabIndex = 0;
+        region.dataset.ptahScrollable = 'true';
+      } else if (region.dataset.ptahScrollable === 'true') {
+        region.removeAttribute('tabindex');
+        delete region.dataset.ptahScrollable;
+      }
+    }
+  }
+
+  requestAnimationFrame(updateScrollableRegions);
+  addEventListener('resize', updateScrollableRegions, { passive: true });
+</script>
+
 <style>
   .page-heading {
     min-width: 0;

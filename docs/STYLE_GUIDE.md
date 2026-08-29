@@ -416,6 +416,16 @@ once on its concept page and link; do not re-define them per page.
   see `AGENTS.md`).
 - Every changed example is executed against a locally built `ptah` before
   merge, or the PR states why it cannot be.
+- Every top-level `examples/*` directory has a reader README with these exact
+  sections: `What this example demonstrates`, `Prerequisites`, `Run`,
+  `Expected result`, `Verify`, `Cleanup`, and `Learn more`.
+  `docs/site/scripts/check-examples.mjs` validates that contract and generates
+  `examples/README.md`; `scripts/check-examples.sh` executes or mechanically
+  verifies each supported example.
+- A tutorial that needs a service carries a disposable fixture and an
+  acceptance script. The fixture states its ports, pins service versions,
+  supplies stable input data, and removes its containers, network, volumes, and
+  locally built images in one cleanup command.
 
 ## 9. Warnings and limitations
 
@@ -474,14 +484,14 @@ a reader recognizes on sight and cannot reconstruct from a paragraph.
 
 ### 11.2 Which medium
 
-- Choose the medium for what the visual has to communicate. Prefer SVG for a
-  schematic whose value is precise geometry, labels, sharp lines at any zoom,
-  or direct use of the reader's theme. SVG is a preference, not a requirement.
-- PNG and WebP are valid for illustration-led or generative diagrams, and for
-  texture, lighting, gradients, or visual composition that loses explanatory
-  or aesthetic value when reduced to vector shapes. Render a raster diagram at
-  enough resolution to stay sharp at its largest intended size, and inspect it
-  at that size rather than assuming the source dimensions are sufficient.
+- Choose the medium for what the visual has to communicate. A schematic with
+  authored labels is Mermaid, D2, Graphviz, or hand-authored accessible SVG,
+  in that order of preference. Do not introduce a raster diagram containing
+  authored text, including one produced by an image generator.
+- PNG and WebP are reserved for real browser UI, photographs, or imagery that
+  cannot reasonably be expressed as semantic vector shapes. Render a raster
+  asset at enough resolution to stay sharp at its largest intended size and
+  inspect it there.
 - Every diagram works in both the light and dark theme. An SVG normally uses
   `currentColor` and the site's color tokens. A raster diagram uses transparency,
   theme-specific variants through `<picture>`, or a deliberate neutral
@@ -515,10 +525,17 @@ a reader recognizes on sight and cannot reconstruct from a paragraph.
   and any material post-processing. The record must let a later editor
   understand what they are changing; it does not have to make a stochastic
   generator deterministic.
-- A screenshot contains no local path, credential, token, host name, timestamp,
-  or other value that changes between runs.
+- A screenshot contains no local path, credential, token, or personal host
+  name. A time-bearing UI uses a fixed fixture timestamp, and a generated path
+  is sanitized before capture.
 - Review every page carrying a visual at 390px and 1280px, in both themes,
   before merge.
+- `check-visual-assets.mjs` holds the allowed raster-output list, editable SVG
+  metadata, source record, and useful-alt requirements. UI screenshots come
+  from `generate-schema-ui-assets.mjs`; do not edit their pixels by hand.
+- `check-visual-snapshots.mjs` captures selected desktop and mobile pages as a
+  CI review artifact and fails on a missing visual or page overflow. The
+  artifact is evidence for human review, not a cross-platform pixel baseline.
 
 ### 11.5 Tabs
 
@@ -636,9 +653,11 @@ Complete this for every documentation PR:
    npm run check:style:selftest && npm run check:style &&
    npm run check:terminology:selftest && npm run check:terminology &&
    npm run check:limitations:selftest && npm run check:limitations &&
-   npm run check:responsive:selftest && npm run check:navigation:selftest &&
+   npm run check:responsive:selftest && npm run check:accessibility:selftest &&
+   npm run check:visual-snapshots:selftest && npm run check:navigation:selftest &&
    npm run check:search-ranking:selftest && npm run versions:selftest &&
-   npm run build && npm run check:responsive &&
+   npm run build && npm run check:responsive && npm run check:accessibility &&
+   npm run check:visual-snapshots -- --output /tmp/ptah-docs-snapshots &&
    npm run check:glossary:selftest && npm run check:glossary &&
    npm run check:navigation && npm run check:search-ranking`
    all pass in `docs/site`. `check:responsive` and `check:glossary` read the
@@ -718,6 +737,12 @@ in this guide is a review responsibility.
 | Paragraphs under 900 rendered characters | 4 | `check:style` |
 | In-page and cross-page anchors resolve | 12 | `check:links` |
 | No page scrolls sideways at 390px or 1280px | 13 | `check:responsive` |
+| Allowed raster assets, editable visual source, and useful alt text | 11 | `check:visual-assets` |
+| Selected visual pages render at desktop and mobile widths | 11, 13 | `check:visual-snapshots` |
+| Representative pages pass WCAG A/AA and keyboard interaction checks | 13 | `check:accessibility` |
+| Every top-level example has the reader contract and generated index | 8 | `check:examples` |
+| Supported examples execute or pass their declared mechanical checks | 8 | `scripts/check-examples.sh` |
+| The inference quick start reaches a verified active generation | 8 | `check-inference-quick-start.sh` |
 | No table cell renders over 8 lines at 1280px | 10, 13 | `check:responsive` |
 | No table is wider than its container at 1280px | 10, 13 | `check:responsive` |
 
@@ -855,10 +880,10 @@ expression answers, and the gate says so where the list is declared.
 The rest of section 6 stays unenforced for the reason above and is item 12 of
 the review checklist.
 
-**Section 11 (visual documentation).** Presence of alt text is enforced.
-Whether the alt text says what the image shows, whether the medium suits the
-visual, whether its reproducibility or source is recorded, whether a screenshot
-leaked a local path, and whether a page that should carry a diagram has one are
-all read, not measured.
-`check:responsive` measures layout at 390px and 1280px; it performs no
-accessibility check.
+**Section 11 (visual documentation).** Alt presence, the allowed raster list,
+editable source records, named SVGs, and selected rendered page shapes are
+enforced. Whether a diagram teaches the right idea, whether the alt text is the
+best equivalent, and whether a screenshot shows the clearest state remain
+review responsibilities. `check:responsive` measures every page at 390px and
+1280px; `check:accessibility` separately runs axe and keyboard interaction on
+representative page shapes.

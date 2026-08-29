@@ -96,6 +96,11 @@ warning, safe — followed either by the sentence
 sits a timestamp reading `compared` and a UTC time, because a live view whose
 age is unknown is not a live view.
 
+![The live Shop schema view showing zero differing categories and the message that the database matches the declared schema.](../../../assets/schema-serve-matches.png)
+
+The matching view keeps the status decision above the diagram and table
+reference, so the first viewport answers whether action is needed.
+
 | Drift column | What it holds |
 | --- | --- |
 | Category | The difference category, for example `columns_added`. |
@@ -126,6 +131,8 @@ Reload the page. The counters read one differing category, of which one is a
 warning, and the Drift table gains a row: `columns_added`, 1 object, severity
 `warning`. The new column also appears in the `orders` section below, because
 that section renders the desired schema rather than the database.
+
+![The same live Shop schema view after drift, showing one warning category and a Drift row for one added column.](../../../assets/schema-serve-drift.png)
 
 The page reloads itself every 30 seconds through a `meta refresh` tag and
 carries no JavaScript. `--refresh 15s` shortens the interval; `--refresh 0`

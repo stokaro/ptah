@@ -39,7 +39,7 @@ components are available as Go packages.
 
 ## Schema changes
 
-<p align="center"><img src="docs/site/src/assets/readme-product-flow.png" alt="Schema sources and the current database meet at compare and plan. The plan follows either versioned migrations through generate, review, commit, and apply, or direct schema changes through review, approval, and apply. Both routes update the target database." width="1000"></p>
+<p align="center"><img src="docs/site/src/assets/product-journeys.svg" alt="Schema sources and a live database produce a reviewable plan that either becomes versioned migration files or is applied directly. Inference specifications and source rows produce a candidate generation that is verified before cutover while the active generation remains available for rollback." width="1000"></p>
 
 Both workflows use the same comparison and planning model. The difference is
 whether SQL becomes a reviewed artifact in version control before it runs.
@@ -50,7 +50,7 @@ Ptah orchestrates the migration; it does not run inference. It reads source
 rows, calls the external endpoint, and writes the candidate generation itself,
 leaving the active generation untouched until verification and cutover.
 
-<p align="center"><img src="docs/site/src/assets/inference-state-migration.png" alt="Ptah builds a candidate inference generation from a specification and source rows, calls an external embedding endpoint during backfill and catch-up, verifies the result, switches the active generation at cutover, and retains the previous generation for rollback." width="1000"></p>
+<p align="center"><img src="docs/site/src/assets/inference-generation-lifecycle.svg" alt="The active inference generation continues serving queries while Ptah prepares, backfills, catches up, indexes, and verifies a candidate. Cutover makes the verified candidate active; rollback can restore the retained previous generation, and retirement is separate and destructive." width="1000"></p>
 
 The [inference migrations guide](https://stokaro.github.io/ptah/edge/inference/overview/)
 covers the specification, concurrent-change catch-up, evaluation, approvals,
