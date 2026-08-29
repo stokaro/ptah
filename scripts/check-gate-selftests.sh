@@ -281,9 +281,6 @@ run_case check-public-api.sh \
 	"a package whose only ledger mention is a prose paragraph" \
 	'mkdir -p gateselftest && printf "package gateselftest\n\nfunc Exported() {}\n" >gateselftest/gateselftest.go && printf "\nA prose paragraph that mentions \`go.5x5.cz/ptah/gateselftest\` is not a listing.\n" >>docs/public_api.md'
 
-run_case check-exported-docs.sh \
-	"a doc comment is deleted from an exported function on the stable surface" \
-	"perl -0pi -e 's{// NormalizeDialect folds.*?\nfunc NormalizeDialect}{func NormalizeDialect}s' core/platform/constants.go"
 
 run_case check-public-api-docs-sync.sh \
 	"a ledger package's row removed from the site's stable-packages table" \
@@ -435,6 +432,7 @@ adjacent=(
 	"check-feature-inventory.sh	--selftest breaks every derivation rule against in-memory fixtures, and go-lint.yml runs it"
 	"check-go-toolchain-single-source.sh	internal/gotoolchain: every YAML spelling and both forwarding shapes, with controls"
 	"check-renovate-regex.sh	internal/renovateregex: the backreference that stopped Renovate, and the group spelling that is the control for it"
+	"check-exported-docs.sh	internal/cmd/exporteddocs: each rule over an AST fixture, and the method exemption that 148 of 158 findings turned on"
 )
 
 uncovered=(
