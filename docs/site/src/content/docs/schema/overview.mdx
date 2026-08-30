@@ -1,0 +1,57 @@
+---
+title: Define and understand schemas
+description: Choose a schema source, combine or validate it, and turn the result into documentation, diagrams, or API contracts.
+type: landing
+audience:
+  - database-engineer
+  - application-developer
+readerQuestion: How do I describe, inspect, validate, or export a schema with Ptah?
+goal: Open the canonical task for creating or analyzing a desired schema.
+sourceOfTruth:
+  - core/schemamodel
+  - core/goschema
+  - core/yamlschema
+  - cmd/schema
+generated: false
+searchAliases:
+  - Ptah schema formats
+  - desired schema tools
+overlaps:
+  - /schema/work-with-a-source/
+  - /concepts/desired-schema-and-sources/
+disposition: keep
+---
+
+import { LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+Ptah reads SQL, YAML, HCL, DBML, Go annotations, ORM loaders, and live databases
+into one schema model. Choose the format your project already owns; the
+validation, comparison, rendering, and export stages use the same model after
+the source is read.
+
+## Common tasks
+
+<CardGrid>
+  <LinkCard title="Choose a schema source" href="../work-with-a-source/" description="Compare the formats and decide which artifact remains authoritative." />
+  <LinkCard title="Validate and format" href="../validate-and-format/" description="Refuse invalid input and produce a stable formatted representation." />
+  <LinkCard title="Visualize the schema" href="../visualize/" description="Render table and relationship structure as Mermaid, DOT, SVG, or an image." />
+  <LinkCard title="Generate documentation" href="../document/" description="Create Markdown or a self-contained HTML reference from the schema." />
+  <LinkCard title="Export an API contract" href="../export/" description="Produce OpenAPI, GraphQL, or Protobuf output from the same schema model." />
+</CardGrid>
+
+## Decide what owns the schema
+
+Use one source when possible. Use a [composite desired schema](../composite/)
+only when separate sources own separate parts of the database and their object
+names do not conflict.
+
+A schema source describes what should exist. It does not decide whether the
+difference reaches the database as [versioned migrations](../../versioned/overview/)
+or a [direct schema change](../../direct/overview/).
+
+## Reference
+
+Use the format references for exact accepted fields and directives:
+[Go annotations](../../reference/go-annotations/),
+[HCL](../../reference/hcl-schema/), and
+[YAML](../../reference/yaml-schema/).

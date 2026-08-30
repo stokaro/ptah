@@ -1052,7 +1052,11 @@ npm run check:route-retirement:selftest && npm run check:route-retirement
 npm run check:core-doc-links:selftest && npm run check:core-doc-links
 npm run check:page-health:selftest && npm run check:page-health
 npm run check:exit-codes:selftest && npm run check:exit-codes
+npm run check:navigation:selftest
+npm run check:search-ranking:selftest
 DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run build
+npm run check:navigation
+npm run check:search-ranking
 ```
 
 `npm run build` is the one most often skipped and it is a gate: a page that
@@ -1122,6 +1126,14 @@ a `link:` entry in either direction, and to a commented-out entry, which it
 counts as coverage while the page vanishes from every reader's navigation. Add a
 page and its entry in the same change; the gate reports an entry naming no page
 and a page named by no entry alike.
+
+A top-level sidebar label is a disclosure control, not a route. Its first child
+is the section landing, usually labeled `Overview`; `check:navigation` rejects a
+linked group heading, a missing landing type, or a breadcrumb that does not link
+back to that explicit child. The same browser check exercises the Copy, Edit,
+View source, and Report actions with the keyboard. `check:search-ranking` asks
+the built Pagefind index the recorded reader queries and requires each canonical
+page in the first three results.
 
 ### The quick starts run in CI
 

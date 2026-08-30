@@ -71,6 +71,7 @@ export default defineConfig({
         alt: 'Ptah',
       },
       customCss: ['./src/styles/global.css'],
+      lastUpdated: true,
       components: {
         PageTitle: './src/components/PageTitle.astro',
         SiteTitle: './src/components/SiteTitle.astro',

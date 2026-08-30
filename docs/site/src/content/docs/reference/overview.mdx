@@ -1,0 +1,53 @@
+---
+title: Reference
+description: Look up commands, flags, configuration, schema formats, capabilities, lint rules, diagnostics, and product terms.
+type: landing
+audience:
+  - all-users
+readerQuestion: Where is the exact Ptah behavior or accepted value I need to look up?
+goal: Open the authoritative generated or authored reference for one concrete detail.
+sourceOfTruth:
+  - cmd
+  - docs/site/scripts
+  - docs/public_api.md
+generated: false
+searchAliases:
+  - Ptah command reference
+  - Ptah configuration reference
+overlaps:
+  - /reference/native-commands/
+  - /reference/configuration/
+disposition: keep
+---
+
+import { LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+Reference pages answer exact lookup questions. Start with the artifact you need
+to type or interpret; return to a task guide when you need an end-to-end
+procedure.
+
+## Common lookups
+
+<CardGrid>
+  <LinkCard title="Native commands" href="../native-commands/" description="Look up the current ptah command tree and one-line behavior summaries." />
+  <LinkCard title="Command flags" href="../command-flags/" description="Find accepted flags, defaults, environment bindings, and mutation behavior." />
+  <LinkCard title="Configuration" href="../configuration/" description="Look up project files, environments, variables, data sources, and policy fields." />
+  <LinkCard title="Schema formats" href="../go-annotations/" description="Open the Go, HCL, or YAML field and directive reference." />
+  <LinkCard title="Rules and diagnostics" href="../exit-codes/" description="Interpret capabilities, lint identifiers, exit codes, and stable failure contracts." />
+</CardGrid>
+
+## Generated versus authored reference
+
+Command, flag, lint-rule, capability, and support inventories come from the
+registries they describe. Their pages identify the generator and edit source in
+frontmatter. Do not copy those enumerations into a workflow page.
+
+Concept pages explain the mental model around desired schemas, migration
+directories, database URLs, dialects, and capabilities. They are grouped here
+because they support lookup, but they do not replace task guides.
+
+## Atlas compatibility
+
+Use the separate [Atlas compatibility overview](../../atlas/overview/) before
+the Atlas command reference. It distinguishes native Ptah, default
+`ptah-compat`, strict Community Edition mode, and measured conformance evidence.

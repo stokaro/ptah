@@ -73,6 +73,28 @@ landing page as an explicit child such as `Overview`.
   workflow matters. The direct landing already passed that test and retains its
   structure.
 
+### Findings resolved in navigation Phase 3
+
+- Every top-level group now begins with an explicit landing page. The group
+  heading remains a disclosure control, while its parent breadcrumb links to
+  that first child.
+- The validated top-level order is Start; Versioned migrations; Direct schema
+  changes; Inference migrations; Define and understand schemas; Databases;
+  Test, automate, and operate; Extend and integrate; Reference; Atlas
+  compatibility. Versioned and direct work remain separate because they are
+  different operational choices, not subdivisions of one reader task.
+- Advanced inference strategy, reference, generated reference, and Atlas
+  evidence groups are collapsed by default.
+- Page actions now prioritize copy, edit, source, and issue reporting. Git
+  history supplies Last updated; evidence-bearing pages also show their
+  independent verification date.
+- Search aliases are indexed without adding filler to visible introductions.
+  The documentation workflow requires the canonical page to rank in the top
+  three for all acceptance queries in `check-search-ranking.mjs`.
+- The navigation check renders every top-level parent breadcrumb and exercises
+  the page-action menu with the keyboard. A linked group heading or missing
+  landing fails before merge.
+
 ### Findings that remain valid
 
 - The inference quick start still needs a disposable local provider fixture and
@@ -83,9 +105,7 @@ landing page as an explicit child such as `Overview`.
 - Schema visualization does not show the generated diagram, and the generated
   documentation and live schema pages do not show their browser output.
 - Example directories do not yet share one reader contract.
-- Page actions prioritize assistant destinations before edit, source, and issue
-  actions.
-- Search ranking, axe, keyboard navigation, selected visual snapshots, and
+- Axe, complete keyboard coverage, selected visual snapshots, and
   diagram-source policy are not yet gated.
 
 ### Audit recommendation deliberately rejected
@@ -130,28 +150,25 @@ results are re-executed in the onboarding or examples phase.
 | Choose versioned or direct schema changes | `Start > Choose a workflow`; decide how a change reaches the database | `start/choose-a-workflow` → `versioned/overview` or `direct/overview` | Discoverable in one decision. |
 | Adopt an existing database | `Start > Adopt an existing database`; choose baseline, import, or desired-schema adoption | `start/adopt-an-existing-database` → `direct/inspect` → versioned or direct task | Discoverable; command evidence must be refreshed when the page is edited. |
 | Generate and apply a migration | `Versioned migrations > Overview`; decide whether the migration is authored or generated | `start/quick-start-migrations` or `versioned/overview` → `versioned/generate` → `versioned/apply` | Complete for an authored first migration; generated migrations remain a focused follow-up. |
-| Detect and fix schema drift | `Direct schema changes > Overview`; decide whether the result is a CI gate or an apply | `start/quick-start-direct` or `direct/overview` → `direct/compare-and-drift` → `direct/plan-and-approve` or `direct/apply` | Complete for the onboarding evolution and gate; search ranking is not yet measured. |
+| Detect and fix schema drift | `Direct schema changes > Overview`; decide whether the result is a CI gate or an apply | `start/quick-start-direct` or `direct/overview` → `direct/compare-and-drift` → `direct/plan-and-approve` or `direct/apply` | Complete for the onboarding evolution and gate; canonical search results are top-three gated. |
 | Migrate persistent inference state | `Inference migrations > Overview`; decide whether this lifecycle applies | `inference/overview` → `inference/quick-start` or a focused guide | Discoverable; the first tutorial still depends on an external model endpoint. |
-| Recover a failed inference migration | Copied error or inference sidebar | `inference/troubleshooting` → `inference/guides/resume-and-recover` | Symptom-oriented pages exist; copied-error search ranking is not yet measured. |
-| Check database and version support | `Databases > Database support matrix` | `databases/support-matrix` → engine page → `ptah db capabilities` | Correctness is generated and semantically gated in this phase. |
+| Recover a failed inference migration | Copied error or inference sidebar | `inference/troubleshooting` → `inference/guides/resume-and-recover` | Symptom-oriented pages exist; the recovery guide is top-three gated for the recorded search query. |
+| Check database and version support | `Databases > Overview`; choose lookup or live measurement | `databases/overview` → `databases/support-matrix` → engine page → `ptah db capabilities` | Correctness is generated and semantically gated; MySQL and SQL Server lookup queries are top-three gated. |
 | Migrate from Atlas | `Atlas compatibility > Overview`; decide default compatibility, strict CE, or native adoption | `atlas/overview` → `atlas/adoption` → command or evidence page | Discoverable; the overview still mixes policy, translation, and security detail. |
-| Embed Ptah as Go packages | `Integrations > Go integration` | `extend/public-api` → `extend/components` → `extend/query-builder` | Discoverable without the CLI reference. |
-| Connect an AI client through MCP | `Integrations > AI and agents` | `operate/ai-agents` → native command reference | Discoverable; connection, security model, tool reference, and artifact protocol still share one page. |
-| Arrive from a copied error | Search | subsystem troubleshooting page → canonical task page | Stable error headings exist in inference troubleshooting; site-wide ranking is not yet tested. |
+| Embed Ptah as Go packages | `Extend and integrate > Overview`; choose the Go API path | `extend/overview` → `extend/public-api` → `extend/components` → `extend/query-builder` | Discoverable without entering CLI reference. |
+| Connect an AI client through MCP | `Extend and integrate > Overview`; choose the AI client path | `extend/overview` → `operate/ai-agents` → native command reference | Discoverable and top-three gated for `MCP`; connection, security model, tool reference, and artifact protocol still share one page. |
+| Arrive from a copied error | Search | subsystem troubleshooting page → canonical task page | Stable error headings exist; canonical checksum, recovery, and exit-code results are top-three gated. |
 | Add or move a documentation page | `AGENTS.md` and the documentation-maintenance skill | style guide → page metadata → sidebar → redirect ledger → inventory regeneration | Governed by build checks and the current contributor instructions. |
 
 ## Implementation sequence
 
 The remaining work stays split into reviewable phases:
 
-1. Navigation and discoverability: validated information architecture,
-   breadcrumb links, page actions, edit and freshness affordances, aliases,
-   ranking tests, and redirects.
-2. Visuals and examples: semantic diagrams, real product output, deterministic
+1. Visuals and examples: semantic diagrams, real product output, deterministic
    fixtures, example contracts, accessibility checks, and selected snapshots.
-3. Reference and compatibility: compact generated indexes, support
+2. Reference and compatibility: compact generated indexes, support
    policy/evidence separation, Atlas and AI page splits, and glossary scope.
-4. Editorial sweep: duplication, generic introductions, redundant shell tabs,
+3. Editorial sweep: duplication, generic introductions, redundant shell tabs,
    time-sensitive prose, width waivers, and the final desktop/mobile review.
 
 Each phase must leave the current routes buildable and preserve redirects for

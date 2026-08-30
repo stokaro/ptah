@@ -1,6 +1,6 @@
 ---
-title: Adopting an Atlas project
-description: The path from Atlas through `ptah-compat` to native Ptah, one reversible step at a time.
+title: Migrate from Atlas
+description: Move from Atlas through ptah-compat to native Ptah, one reversible step at a time.
 type: how-to
 audience:
   - "atlas-migrator"

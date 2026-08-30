@@ -6,13 +6,13 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 109,
-    "authored": 107,
+    "pages": 115,
+    "authored": 113,
     "generated": 2,
     "byType": {
       "concept": 15,
       "how-to": 50,
-      "landing": 5,
+      "landing": 11,
       "reference": 27,
       "status": 6,
       "troubleshooting": 3,
@@ -23,8 +23,8 @@
     {
       "path": "docs/site/src/content/docs/atlas/adoption.md",
       "route": "/atlas/adoption/",
-      "title": "Adopting an Atlas project",
-      "description": "The path from Atlas through `ptah-compat` to native Ptah, one reversible step at a time.",
+      "title": "Migrate from Atlas",
+      "description": "Move from Atlas through ptah-compat to native Ptah, one reversible step at a time.",
       "sidebarPath": "Atlas compatibility",
       "sidebarLabel": null,
       "type": "how-to",
@@ -60,7 +60,7 @@
         "/reference/configuration/"
       ],
       "visibleWords": 1053,
-      "sourceBytes": 7970
+      "sourceBytes": 7957
     },
     {
       "path": "docs/site/src/content/docs/atlas/conformance.mdx",
@@ -370,6 +370,7 @@
         "/direct/apply/",
         "/reference/atlas-commands/",
         "/reference/extension-variables/",
+        "/reference/overview/",
         "/schema/hcl/",
         "/schema/sql/",
         "/start/choose-a-workflow/",
@@ -525,7 +526,7 @@
       "route": "/concepts/database-urls-and-dev-databases/",
       "title": "Database URLs and dev databases",
       "description": "Accepted database URL formats, and the difference between the target, dev, shadow, and throwaway databases.",
-      "sidebarPath": "Concepts and reference > Concepts",
+      "sidebarPath": "Reference > Concepts",
       "sidebarLabel": null,
       "type": "concept",
       "audience": [
@@ -558,7 +559,9 @@
       ],
       "inboundLinks": [
         "/atlas/migrate-commands/",
+        "/databases/overview/",
         "/databases/support-matrix/",
+        "/operate/overview/",
         "/reference/atlas-commands/",
         "/schema/security/",
         "/schema/stats/",
@@ -575,7 +578,7 @@
       "route": "/concepts/desired-schema-and-sources/",
       "title": "Desired schema and schema sources",
       "description": "The declarative idea behind Ptah - you declare the schema you want, from any mix of sources, and Ptah computes how to get there.",
-      "sidebarPath": "Concepts and reference > Concepts",
+      "sidebarPath": "Reference > Concepts",
       "sidebarLabel": null,
       "type": "concept",
       "audience": [
@@ -619,7 +622,7 @@
       "route": "/concepts/dialects-and-capabilities/",
       "title": "Dialects and capabilities",
       "description": "Why Ptah separates the dialect it renders SQL for from the capabilities a concrete database target accepts.",
-      "sidebarPath": "Concepts and reference > Concepts",
+      "sidebarPath": "Reference > Concepts",
       "sidebarLabel": null,
       "type": "concept",
       "audience": [
@@ -653,6 +656,7 @@
       ],
       "inboundLinks": [
         "/concepts/desired-schema-and-sources/",
+        "/databases/overview/",
         "/databases/postgresql/",
         "/databases/support-matrix/",
         "/reference/capabilities/",
@@ -666,7 +670,7 @@
       "route": "/concepts/migration-directory/",
       "title": "The migration directory",
       "description": "The file layout, integrity file, revision table, and directory formats behind Ptah's versioned workflow.",
-      "sidebarPath": "Concepts and reference > Concepts",
+      "sidebarPath": "Reference > Concepts",
       "sidebarLabel": null,
       "type": "concept",
       "audience": [
@@ -807,7 +811,10 @@
       "editSource": null,
       "lastVerified": null,
       "evidence": [],
-      "searchAliases": [],
+      "searchAliases": [
+        "MySQL supported versions",
+        "MariaDB supported versions"
+      ],
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -816,10 +823,11 @@
         "/reference/configuration/"
       ],
       "inboundLinks": [
+        "/databases/overview/",
         "/databases/support-matrix/"
       ],
       "visibleWords": 468,
-      "sourceBytes": 3881
+      "sourceBytes": 3956
     },
     {
       "path": "docs/site/src/content/docs/databases/oracle.md",
@@ -857,6 +865,53 @@
       ],
       "visibleWords": 917,
       "sourceBytes": 6569
+    },
+    {
+      "path": "docs/site/src/content/docs/databases/overview.mdx",
+      "route": "/databases/overview/",
+      "title": "Databases",
+      "description": "Check release-line evidence, choose the correct dialect and URL, and open engine-specific operating guidance.",
+      "sidebarPath": "Databases",
+      "sidebarLabel": "Overview",
+      "type": "landing",
+      "audience": [
+        "database-engineer",
+        "evaluator"
+      ],
+      "readerQuestion": "Does Ptah support my database, and what engine-specific guidance applies?",
+      "goal": "Verify support evidence and open the correct database guide.",
+      "sourceOfTruth": [
+        "internal/capabilityprobe",
+        "internal/serverprofile",
+        "dbschema/connection.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "supported databases",
+        "database version support"
+      ],
+      "overlaps": [
+        "/databases/support-matrix/",
+        "/concepts/dialects-and-capabilities/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/concepts/database-urls-and-dev-databases/",
+        "/concepts/dialects-and-capabilities/",
+        "/databases/mysql/",
+        "/databases/postgresql/",
+        "/databases/sqlite/",
+        "/databases/support-matrix/",
+        "/reference/capabilities/"
+      ],
+      "inboundLinks": [],
+      "visibleWords": 122,
+      "sourceBytes": 2444
     },
     {
       "path": "docs/site/src/content/docs/databases/postgresql.md",
@@ -904,6 +959,7 @@
         "/atlas/schema-commands/",
         "/concepts/dialects-and-capabilities/",
         "/databases/distributed/",
+        "/databases/overview/",
         "/databases/support-matrix/",
         "/direct/inspect/"
       ],
@@ -946,6 +1002,7 @@
       ],
       "inboundLinks": [
         "/concepts/dialects-and-capabilities/",
+        "/databases/overview/",
         "/databases/support-matrix/",
         "/reference/configuration/",
         "/reference/extension-variables/"
@@ -1054,6 +1111,7 @@
         "/databases/distributed/",
         "/databases/mysql/",
         "/databases/oracle/",
+        "/databases/overview/",
         "/databases/sqlite/",
         "/databases/sqlserver/",
         "/extend/query-builder/",
@@ -1065,8 +1123,8 @@
     {
       "path": "docs/site/src/content/docs/direct/apply.md",
       "route": "/direct/apply/",
-      "title": "Apply directly",
-      "description": "Apply desired-schema changes straight to a database with ptah schema apply, saved plan files, and hybrid patterns.",
+      "title": "Apply a desired schema",
+      "description": "Apply desired-schema changes to a database with ptah schema apply, saved plan files, and hybrid patterns.",
       "sidebarPath": "Direct schema changes",
       "sidebarLabel": null,
       "type": "how-to",
@@ -1116,7 +1174,7 @@
         "/start/choose-a-workflow/"
       ],
       "visibleWords": 803,
-      "sourceBytes": 8615
+      "sourceBytes": 8614
     },
     {
       "path": "docs/site/src/content/docs/direct/compare-and-drift.md",
@@ -1268,6 +1326,7 @@
       ],
       "inboundLinks": [
         "/",
+        "/schema/overview/",
         "/start/choose-a-workflow/"
       ],
       "visibleWords": 470,
@@ -1326,7 +1385,7 @@
       "route": "/extend/components/",
       "title": "Reusable components",
       "description": "Use Ptah as a Go schema engine, not only as a CLI.",
-      "sidebarPath": "Integrations > Go integration",
+      "sidebarPath": "Extend and integrate > Go integration",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -1357,6 +1416,7 @@
       "inboundLinks": [
         "/concepts/dialects-and-capabilities/",
         "/databases/postgresql/",
+        "/extend/overview/",
         "/extend/public-api/",
         "/versioned/lint/"
       ],
@@ -1364,11 +1424,57 @@
       "sourceBytes": 24043
     },
     {
+      "path": "docs/site/src/content/docs/extend/overview.mdx",
+      "route": "/extend/overview/",
+      "title": "Extend and integrate",
+      "description": "Embed stable Go packages, reuse Ptah components, or connect an AI client through the constrained MCP surface.",
+      "sidebarPath": "Extend and integrate",
+      "sidebarLabel": "Overview",
+      "type": "landing",
+      "audience": [
+        "application-developer",
+        "integration-developer"
+      ],
+      "readerQuestion": "How do I use Ptah from another program or tool?",
+      "goal": "Choose the supported Go, component, query-builder, MCP, or AI-assist integration.",
+      "sourceOfTruth": [
+        "docs/public_api.md",
+        "cmd/mcp",
+        "cmd/assist"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "integrate Ptah",
+        "embed Ptah"
+      ],
+      "overlaps": [
+        "/extend/public-api/",
+        "/operate/ai-agents/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/extend/components/",
+        "/extend/public-api/",
+        "/extend/query-builder/",
+        "/operate/ai-agents/",
+        "/operate/ai-assist/",
+        "/reference/native-commands/"
+      ],
+      "inboundLinks": [],
+      "visibleWords": 132,
+      "sourceBytes": 2403
+    },
+    {
       "path": "docs/site/src/content/docs/extend/public-api.md",
       "route": "/extend/public-api/",
       "title": "Public Go API",
       "description": "Stable embedder packages and API compatibility guardrails.",
-      "sidebarPath": "Integrations > Go integration",
+      "sidebarPath": "Extend and integrate > Go integration",
       "sidebarLabel": null,
       "type": "reference",
       "audience": [
@@ -1398,6 +1504,7 @@
         "/",
         "/databases/sqlserver/",
         "/extend/components/",
+        "/extend/overview/",
         "/reference/test-cases/",
         "/schema/go-annotations/"
       ],
@@ -1409,7 +1516,7 @@
       "route": "/extend/query-builder/",
       "title": "Query builder",
       "description": "Build parameterized, dialect-aware SELECT statements with the core/query package.",
-      "sidebarPath": "Integrations > Go integration",
+      "sidebarPath": "Extend and integrate > Go integration",
       "sidebarLabel": null,
       "type": "reference",
       "audience": [
@@ -1435,7 +1542,8 @@
         "/databases/support-matrix/"
       ],
       "inboundLinks": [
-        "/extend/components/"
+        "/extend/components/",
+        "/extend/overview/"
       ],
       "visibleWords": 2850,
       "sourceBytes": 22362
@@ -1813,8 +1921,8 @@
     {
       "path": "docs/site/src/content/docs/inference/guides/migrate-to-another-model.md",
       "route": "/inference/guides/migrate-to-another-model/",
-      "title": "Migrate to another model",
-      "description": "Replace the vectors on a table that already has them, with a second generation beside the first.",
+      "title": "Change an embedding model",
+      "description": "Replace a table's active embedding model with a second generation built and verified beside the first.",
       "sidebarPath": "Inference migrations > Guides",
       "sidebarLabel": null,
       "type": "how-to",
@@ -1848,7 +1956,7 @@
         "/inference/strategies/production-rollout/"
       ],
       "visibleWords": 401,
-      "sourceBytes": 4384
+      "sourceBytes": 4391
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/resume-and-recover.md",
@@ -1968,7 +2076,8 @@
       "inboundLinks": [
         "/",
         "/reference/native-commands/",
-        "/start/choose-a-workflow/"
+        "/start/choose-a-workflow/",
+        "/start/overview/"
       ],
       "visibleWords": 501,
       "sourceBytes": 4282
@@ -1997,7 +2106,10 @@
       "editSource": null,
       "lastVerified": null,
       "evidence": [],
-      "searchAliases": [],
+      "searchAliases": [
+        "pgvector",
+        "inference migration tutorial"
+      ],
       "overlaps": [
         "/inference/guides/create-first-generation/",
         "/inference/concepts/lifecycle/"
@@ -2013,7 +2125,7 @@
         "/inference/overview/"
       ],
       "visibleWords": 290,
-      "sourceBytes": 4701
+      "sourceBytes": 4762
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/commands.md",
@@ -2383,7 +2495,7 @@
       "route": "/operate/ai-agents/",
       "title": "AI agents over MCP",
       "description": "Connect an AI client to Ptah with ptah mcp, and decide what it may read, propose, and write.",
-      "sidebarPath": "Integrations > AI and agents",
+      "sidebarPath": "Extend and integrate > AI and agents",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -2419,6 +2531,7 @@
       ],
       "inboundLinks": [
         "/",
+        "/extend/overview/",
         "/operate/ai-assist/",
         "/reference/native-commands/"
       ],
@@ -2430,7 +2543,7 @@
       "route": "/operate/ai-assist/",
       "title": "Ptah Assist and your own model",
       "description": "Configure a model provider for ptah assist with your own key, endpoint, and model, and check that it works.",
-      "sidebarPath": "Integrations > AI and agents",
+      "sidebarPath": "Extend and integrate > AI and agents",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -2469,6 +2582,7 @@
         "/operate/ai-agents/"
       ],
       "inboundLinks": [
+        "/extend/overview/",
         "/reference/native-commands/"
       ],
       "visibleWords": 2835,
@@ -2479,7 +2593,7 @@
       "route": "/operate/oci-registry/",
       "title": "OCI registry artifacts",
       "description": "Publish, pin, pull, and consume Ptah migrations and desired schemas through an OCI registry.",
-      "sidebarPath": "Distribute and operate",
+      "sidebarPath": "Test, automate, and operate",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -2519,6 +2633,7 @@
         "/atlas/feature-matrix/",
         "/atlas/overview/",
         "/concepts/migration-directory/",
+        "/operate/overview/",
         "/reference/capabilities/",
         "/reference/native-commands/",
         "/versioned/apply/",
@@ -2528,11 +2643,60 @@
       "sourceBytes": 21102
     },
     {
+      "path": "docs/site/src/content/docs/operate/overview.mdx",
+      "route": "/operate/overview/",
+      "title": "Test, automate, and operate",
+      "description": "Test migrations and schemas, build CI gates, manage data artifacts, and diagnose failed runs.",
+      "sidebarPath": "Test, automate, and operate",
+      "sidebarLabel": "Overview",
+      "type": "landing",
+      "audience": [
+        "ci-operator",
+        "database-engineer"
+      ],
+      "readerQuestion": "How do I run Ptah safely in tests, automation, and operational workflows?",
+      "goal": "Open the canonical test, CI, artifact, data, or troubleshooting task.",
+      "sourceOfTruth": [
+        "cmd/migrations",
+        "cmd/schema",
+        "cmd/oci",
+        "cmd/seed"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "Ptah CI",
+        "Ptah operations"
+      ],
+      "overlaps": [
+        "/testing/ci/",
+        "/operate/troubleshooting/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/concepts/database-urls-and-dev-databases/",
+        "/operate/oci-registry/",
+        "/operate/troubleshooting/",
+        "/reference/exit-codes/",
+        "/reference/test-cases/",
+        "/testing/ci/",
+        "/testing/migrations-and-schema/",
+        "/versioned/reference-data/"
+      ],
+      "inboundLinks": [],
+      "visibleWords": 118,
+      "sourceBytes": 2330
+    },
+    {
       "path": "docs/site/src/content/docs/operate/seed-data.md",
       "route": "/operate/seed-data/",
       "title": "Seed data",
       "description": "Apply one-off, environment-scoped SQL seed files with ptah seed and track them in schema_seeds.",
-      "sidebarPath": "Load data",
+      "sidebarPath": "Test, automate, and operate",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -2572,7 +2736,7 @@
       "route": "/operate/troubleshooting/",
       "title": "Troubleshooting",
       "description": "Fix common Ptah command, database, Graphviz, hash, config, and conformance problems.",
-      "sidebarPath": "Distribute and operate",
+      "sidebarPath": "Test, automate, and operate",
       "sidebarLabel": null,
       "type": "troubleshooting",
       "audience": [
@@ -2604,6 +2768,7 @@
         "/atlas/docs-coverage/",
         "/direct/compare-and-drift/",
         "/direct/inspect/",
+        "/operate/overview/",
         "/operate/seed-data/",
         "/schema/visualize/",
         "/start/adopt-an-existing-database/",
@@ -2618,7 +2783,7 @@
       "route": "/reference/atlas-commands/",
       "title": "Atlas-compatible commands",
       "description": "Per-command status for every ptah-compat verb, with Atlas differences and known gaps.",
-      "sidebarPath": "Concepts and reference > Command reference",
+      "sidebarPath": "Reference > Command reference",
       "sidebarLabel": null,
       "type": "reference",
       "audience": [
@@ -2672,7 +2837,7 @@
       "route": "/reference/capabilities/",
       "title": "Capabilities",
       "description": "The per-dialect capability gates Ptah tracks, plus cross-cutting testing and OCI capabilities.",
-      "sidebarPath": "Concepts and reference > Rules and diagnostics",
+      "sidebarPath": "Reference > Rules and diagnostics",
       "sidebarLabel": null,
       "type": "reference",
       "audience": [
@@ -2708,6 +2873,7 @@
         "/databases/distributed/",
         "/databases/mysql/",
         "/databases/oracle/",
+        "/databases/overview/",
         "/databases/support-matrix/",
         "/operate/oci-registry/",
         "/operate/troubleshooting/",
@@ -2721,7 +2887,7 @@
       "route": "/reference/command-flags/",
       "title": "Command flags",
       "description": "Every flag both Ptah binaries register, with its type, default and environment variable.",
-      "sidebarPath": "Concepts and reference > Command reference",
+      "sidebarPath": "Reference > Command reference",
       "sidebarLabel": null,
       "type": "reference",
       "audience": [
@@ -2753,7 +2919,8 @@
         "/reference/native-commands/"
       ],
       "inboundLinks": [
-        "/reference/native-commands/"
+        "/reference/native-commands/",
+        "/reference/overview/"
       ],
       "visibleWords": 8331,
       "sourceBytes": 76984
@@ -2763,7 +2930,7 @@
       "route": "/reference/configuration/",
       "title": "Configuration",
       "description": "Project config files, Atlas config subset, environment variables, and precedence.",
-      "sidebarPath": "Concepts and reference > Format reference",
+      "sidebarPath": "Reference > Format reference",
       "sidebarLabel": null,
       "type": "reference",
       "audience": [
@@ -2804,6 +2971,7 @@
         "/reference/extension-variables/",
         "/reference/lint-rules/",
         "/reference/native-commands/",
+        "/reference/overview/",
         "/schema/hcl/",
         "/schema/orm-and-external/",
         "/versioned/apply/"
@@ -2816,7 +2984,7 @@
       "route": "/reference/exit-codes/",
       "title": "Exit codes",
       "description": "How Ptah commands behave when used as automation gates.",
-      "sidebarPath": "Concepts and reference > Rules and diagnostics",
+      "sidebarPath": "Reference > Rules and diagnostics",
       "sidebarLabel": null,
       "type": "reference",
       "audience": [
@@ -2846,7 +3014,9 @@
         "/atlas/docs-coverage/",
         "/direct/plan-and-approve/",
         "/operate/oci-registry/",
+        "/operate/overview/",
         "/operate/seed-data/",
+        "/reference/overview/",
         "/schema/document/",
         "/schema/lineage/",
         "/schema/protobuf/",
@@ -2865,7 +3035,7 @@
       "route": "/reference/extension-variables/",
       "title": "Extension environment variables",
       "description": "The PTAH_* booleans that turn on behavior the pinned Atlas community CLI has no counterpart for, one entry per variable.",
-      "sidebarPath": "Concepts and reference > Command reference",
+      "sidebarPath": "Reference > Command reference",
       "sidebarLabel": null,
       "type": "reference",
       "audience": [
@@ -2905,7 +3075,7 @@
       "route": "/reference/glossary/",
       "title": "Glossary",
       "description": "Terms whose meaning a table can only show as a glyph, defined where they are used.",
-      "sidebarPath": "Concepts and reference > Rules and diagnostics",
+      "sidebarPath": "Reference > Rules and diagnostics",
       "sidebarLabel": null,
       "type": "reference",
       "audience": [
@@ -2937,7 +3107,7 @@
       "route": "/reference/go-annotations/",
       "title": "Go annotation reference",
       "description": "Every //ptah directive and attribute accepted by Ptah's Go annotation parser.",
-      "sidebarPath": "Concepts and reference > Format reference",
+      "sidebarPath": "Reference > Format reference",
       "sidebarLabel": null,
       "type": "reference",
       "audience": [
@@ -2974,7 +3144,9 @@
         "/databases/oracle/",
         "/databases/postgresql/",
         "/databases/sqlserver/",
+        "/reference/overview/",
         "/schema/go-annotations/",
+        "/schema/overview/",
         "/start/install-options/"
       ],
       "visibleWords": 3866,
@@ -2985,7 +3157,7 @@
       "route": "/reference/hcl-schema/",
       "title": "HCL schema reference",
       "description": "Atlas-compatible HCL schema subset and Ptah parity extensions.",
-      "sidebarPath": "Concepts and reference > Format reference",
+      "sidebarPath": "Reference > Format reference",
       "sidebarLabel": null,
       "type": "reference",
       "audience": [
@@ -3018,7 +3190,8 @@
         "/atlas/docs-coverage/",
         "/atlas/project-config/",
         "/reference/configuration/",
-        "/schema/hcl/"
+        "/schema/hcl/",
+        "/schema/overview/"
       ],
       "visibleWords": 1855,
       "sourceBytes": 15109
@@ -3028,7 +3201,7 @@
       "route": "/reference/lint-rules/",
       "title": "Lint rules",
       "description": "Every rule Ptah's linters report, with its meaning, dialects, surface, and whether the name is Atlas's or Ptah's.",
-      "sidebarPath": "Concepts and reference > Rules and diagnostics",
+      "sidebarPath": "Reference > Rules and diagnostics",
       "sidebarLabel": null,
       "type": "reference",
       "audience": [
@@ -3072,7 +3245,7 @@
       "route": "/reference/native-commands/",
       "title": "Native commands",
       "description": "Every command path the native ptah binary answers to, and the notes a verb table cannot hold.",
-      "sidebarPath": "Concepts and reference > Command reference",
+      "sidebarPath": "Reference > Command reference",
       "sidebarLabel": null,
       "type": "reference",
       "audience": [
@@ -3114,12 +3287,14 @@
       ],
       "inboundLinks": [
         "/atlas/docs-coverage/",
+        "/extend/overview/",
         "/operate/ai-agents/",
         "/operate/oci-registry/",
         "/operate/seed-data/",
         "/reference/atlas-commands/",
         "/reference/command-flags/",
         "/reference/hcl-schema/",
+        "/reference/overview/",
         "/reference/yaml-schema/",
         "/schema/hcl/",
         "/schema/lineage/",
@@ -3136,11 +3311,58 @@
       "sourceBytes": 47710
     },
     {
+      "path": "docs/site/src/content/docs/reference/overview.mdx",
+      "route": "/reference/overview/",
+      "title": "Reference",
+      "description": "Look up commands, flags, configuration, schema formats, capabilities, lint rules, diagnostics, and product terms.",
+      "sidebarPath": "Reference",
+      "sidebarLabel": "Overview",
+      "type": "landing",
+      "audience": [
+        "all-users"
+      ],
+      "readerQuestion": "Where is the exact Ptah behavior or accepted value I need to look up?",
+      "goal": "Open the authoritative generated or authored reference for one concrete detail.",
+      "sourceOfTruth": [
+        "cmd",
+        "docs/site/scripts",
+        "docs/public_api.md"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "Ptah command reference",
+        "Ptah configuration reference"
+      ],
+      "overlaps": [
+        "/reference/native-commands/",
+        "/reference/configuration/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/atlas/overview/",
+        "/reference/command-flags/",
+        "/reference/configuration/",
+        "/reference/exit-codes/",
+        "/reference/go-annotations/",
+        "/reference/native-commands/"
+      ],
+      "inboundLinks": [
+        "/start/overview/"
+      ],
+      "visibleWords": 129,
+      "sourceBytes": 2381
+    },
+    {
       "path": "docs/site/src/content/docs/reference/test-cases.md",
       "route": "/reference/test-cases/",
       "title": "Database test commands",
       "description": "Exact flags, steps, assertions, reports, and isolation behavior for migration and schema tests.",
-      "sidebarPath": "Concepts and reference > Command reference",
+      "sidebarPath": "Reference > Command reference",
       "sidebarLabel": null,
       "type": "reference",
       "audience": [
@@ -3168,6 +3390,7 @@
       ],
       "inboundLinks": [
         "/extend/public-api/",
+        "/operate/overview/",
         "/reference/capabilities/",
         "/testing/migrations-and-schema/"
       ],
@@ -3179,7 +3402,7 @@
       "route": "/reference/yaml-schema/",
       "title": "YAML Schema Reference",
       "description": "Ptah's strict YAML schema-file format.",
-      "sidebarPath": "Concepts and reference > Format reference",
+      "sidebarPath": "Reference > Format reference",
       "sidebarLabel": null,
       "type": "reference",
       "audience": [
@@ -3207,6 +3430,7 @@
         "/reference/native-commands/"
       ],
       "inboundLinks": [
+        "/schema/overview/",
         "/schema/yaml/"
       ],
       "visibleWords": 899,
@@ -3217,7 +3441,7 @@
       "route": "/schema/composite/",
       "title": "Composite desired schema",
       "description": "Merge Go packages, YAML, HCL, and SQL files, and an external loader into one desired schema.",
-      "sidebarPath": "Schema > Sources",
+      "sidebarPath": "Define and understand schemas > Sources",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -3252,6 +3476,7 @@
         "/schema/hcl/",
         "/schema/lineage/",
         "/schema/orm-and-external/",
+        "/schema/overview/",
         "/schema/sql/",
         "/schema/validate-and-format/",
         "/schema/work-with-a-source/",
@@ -3266,7 +3491,7 @@
       "route": "/schema/dbml/",
       "title": "DBML",
       "description": "Read a DBML document as a desired schema, and write any Ptah schema back out as canonical DBML.",
-      "sidebarPath": "Schema > Sources",
+      "sidebarPath": "Define and understand schemas > Sources",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -3306,7 +3531,7 @@
       "route": "/schema/document/",
       "title": "Generate schema documentation",
       "description": "Write a desired schema as a Markdown reference or a self-contained HTML page with ptah schema export.",
-      "sidebarPath": "Schema > Analysis and documentation",
+      "sidebarPath": "Define and understand schemas > Analysis and documentation",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -3349,6 +3574,7 @@
         "/reference/native-commands/",
         "/schema/export/",
         "/schema/hcl/",
+        "/schema/overview/",
         "/schema/serve/",
         "/schema/sql/",
         "/schema/yaml/"
@@ -3361,7 +3587,7 @@
       "route": "/schema/export/",
       "title": "API schema export",
       "description": "Project selected Go entities into OpenAPI or GraphQL contract candidates and review their trust-boundary limitations.",
-      "sidebarPath": "Schema > Contract exports",
+      "sidebarPath": "Define and understand schemas > Contract exports",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -3400,6 +3626,7 @@
         "/schema/dbml/",
         "/schema/document/",
         "/schema/hcl/",
+        "/schema/overview/",
         "/schema/protobuf/",
         "/schema/sql/",
         "/schema/visualize/",
@@ -3413,7 +3640,7 @@
       "route": "/schema/go-annotations/",
       "title": "Go annotations",
       "description": "Use annotated Go structs as the desired database schema.",
-      "sidebarPath": "Schema > Sources",
+      "sidebarPath": "Define and understand schemas > Sources",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -3465,7 +3692,7 @@
       "route": "/schema/hcl/",
       "title": "HCL schema",
       "description": "Reuse Atlas-compatible HCL schema files as Ptah's desired schema.",
-      "sidebarPath": "Schema > Sources",
+      "sidebarPath": "Define and understand schemas > Sources",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -3514,7 +3741,7 @@
       "route": "/schema/lineage/",
       "title": "Trace view column lineage",
       "description": "Run ptah schema lineage to find which base columns each view column and each routine reads, and which tables and columns each routine writes, before dropping or renaming one of them.",
-      "sidebarPath": "Schema > Analysis and documentation",
+      "sidebarPath": "Define and understand schemas > Analysis and documentation",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -3559,7 +3786,7 @@
       "route": "/schema/orm-and-external/",
       "title": "ORM and external loaders",
       "description": "Feed an ORM's or any external program's schema into Ptah as the desired schema.",
-      "sidebarPath": "Schema > Sources",
+      "sidebarPath": "Define and understand schemas > Sources",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -3597,11 +3824,63 @@
       "sourceBytes": 8419
     },
     {
+      "path": "docs/site/src/content/docs/schema/overview.mdx",
+      "route": "/schema/overview/",
+      "title": "Define and understand schemas",
+      "description": "Choose a schema source, combine or validate it, and turn the result into documentation, diagrams, or API contracts.",
+      "sidebarPath": "Define and understand schemas",
+      "sidebarLabel": "Overview",
+      "type": "landing",
+      "audience": [
+        "database-engineer",
+        "application-developer"
+      ],
+      "readerQuestion": "How do I describe, inspect, validate, or export a schema with Ptah?",
+      "goal": "Open the canonical task for creating or analyzing a desired schema.",
+      "sourceOfTruth": [
+        "core/schemamodel",
+        "core/goschema",
+        "core/yamlschema",
+        "cmd/schema"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "Ptah schema formats",
+        "desired schema tools"
+      ],
+      "overlaps": [
+        "/schema/work-with-a-source/",
+        "/concepts/desired-schema-and-sources/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/direct/overview/",
+        "/reference/go-annotations/",
+        "/reference/hcl-schema/",
+        "/reference/yaml-schema/",
+        "/schema/composite/",
+        "/schema/document/",
+        "/schema/export/",
+        "/schema/validate-and-format/",
+        "/schema/visualize/",
+        "/schema/work-with-a-source/",
+        "/versioned/overview/"
+      ],
+      "inboundLinks": [],
+      "visibleWords": 120,
+      "sourceBytes": 2446
+    },
+    {
       "path": "docs/site/src/content/docs/schema/protobuf.md",
       "route": "/schema/protobuf/",
       "title": "Protobuf schema export",
       "description": "Export Go entities to a Protobuf Edition 2023 definition whose field numbers stay wire compatible as the schema changes.",
-      "sidebarPath": "Schema > Contract exports",
+      "sidebarPath": "Define and understand schemas > Contract exports",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -3643,7 +3922,7 @@
       "route": "/schema/security/",
       "title": "Report schema security findings",
       "description": "Run ptah schema security over a live database to review privileges, owners, roles and tables with no row policy, and gate a pull request on the result.",
-      "sidebarPath": "Schema > Analysis and documentation",
+      "sidebarPath": "Define and understand schemas > Analysis and documentation",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -3691,7 +3970,7 @@
       "route": "/schema/serve/",
       "title": "Serve a live schema view",
       "description": "Run ptah schema serve to watch in a browser how a live database differs from the desired schema while you change it.",
-      "sidebarPath": "Schema > Analysis and documentation",
+      "sidebarPath": "Define and understand schemas > Analysis and documentation",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -3738,7 +4017,7 @@
       "route": "/schema/sql/",
       "title": "SQL schema",
       "description": "Use plain SQL DDL files as Ptah's desired schema.",
-      "sidebarPath": "Schema > Sources",
+      "sidebarPath": "Define and understand schemas > Sources",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -3783,7 +4062,7 @@
       "route": "/schema/stats/",
       "title": "Count schema objects",
       "description": "Run ptah schema stats to emit one OpenMetrics gauge per object kind in a live database and feed it to a metrics collector.",
-      "sidebarPath": "Schema > Analysis and documentation",
+      "sidebarPath": "Define and understand schemas > Analysis and documentation",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -3828,7 +4107,7 @@
       "route": "/schema/validate-and-format/",
       "title": "Validate and format schema files",
       "description": "Check a desired schema for structural problems with ptah schema validate and keep HCL files canonically formatted with ptah schema fmt, both without a database.",
-      "sidebarPath": "Schema > Analysis and documentation",
+      "sidebarPath": "Define and understand schemas > Analysis and documentation",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -3863,6 +4142,7 @@
         "/testing/ci/"
       ],
       "inboundLinks": [
+        "/schema/overview/",
         "/schema/work-with-a-source/",
         "/testing/ci/"
       ],
@@ -3874,7 +4154,7 @@
       "route": "/schema/visualize/",
       "title": "Visualize the schema",
       "description": "Render entity-relationship diagrams from the desired schema as Mermaid, DOT, or SVG with ptah viz.",
-      "sidebarPath": "Schema > Analysis and documentation",
+      "sidebarPath": "Define and understand schemas > Analysis and documentation",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -3916,6 +4196,7 @@
         "/schema/dbml/",
         "/schema/document/",
         "/schema/lineage/",
+        "/schema/overview/",
         "/schema/security/",
         "/schema/stats/"
       ],
@@ -3927,7 +4208,7 @@
       "route": "/schema/work-with-a-source/",
       "title": "Work with a desired schema",
       "description": "The operations every schema source shares — render, compare, gate on drift, compose, and validate across dialects — with the flag that names each source.",
-      "sidebarPath": "Schema > Sources",
+      "sidebarPath": "Define and understand schemas > Sources",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -3971,6 +4252,7 @@
         "/schema/document/",
         "/schema/go-annotations/",
         "/schema/hcl/",
+        "/schema/overview/",
         "/schema/sql/",
         "/schema/validate-and-format/",
         "/schema/yaml/",
@@ -3984,7 +4266,7 @@
       "route": "/schema/yaml/",
       "title": "YAML schema",
       "description": "Author the desired schema in Ptah's strict YAML format and feed it to render, compare, and migration commands.",
-      "sidebarPath": "Schema > Sources",
+      "sidebarPath": "Define and understand schemas > Sources",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -4075,6 +4357,7 @@
         "/schema/protobuf/",
         "/schema/visualize/",
         "/start/choose-a-workflow/",
+        "/start/overview/",
         "/start/quick-start-direct/",
         "/versioned/import/",
         "/versioned/overview/"
@@ -4128,6 +4411,7 @@
         "/reference/native-commands/",
         "/schema/work-with-a-source/",
         "/start/adopt-an-existing-database/",
+        "/start/overview/",
         "/start/quick-start/",
         "/versioned/overview/"
       ],
@@ -4237,11 +4521,58 @@
         "/schema/validate-and-format/",
         "/start/adopt-an-existing-database/",
         "/start/install-options/",
+        "/start/overview/",
         "/start/quick-start-migrations/",
         "/start/quick-start/"
       ],
       "visibleWords": 414,
       "sourceBytes": 4151
+    },
+    {
+      "path": "docs/site/src/content/docs/start/overview.mdx",
+      "route": "/start/overview/",
+      "title": "Start with Ptah",
+      "description": "Install Ptah, get a verified result, choose a schema workflow, or adopt a database that already exists.",
+      "sidebarPath": "Start",
+      "sidebarLabel": "Overview",
+      "type": "landing",
+      "audience": [
+        "new-user"
+      ],
+      "readerQuestion": "Which starting path matches the database work in front of me?",
+      "goal": "Open the shortest safe starting path for a new or existing database.",
+      "sourceOfTruth": [
+        "cmd/root",
+        "cmd/schema",
+        "cmd/migrations"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "getting started with Ptah",
+        "Ptah tutorial"
+      ],
+      "overlaps": [
+        "/",
+        "/start/choose-a-workflow/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/inference/overview/",
+        "/reference/overview/",
+        "/start/adopt-an-existing-database/",
+        "/start/choose-a-workflow/",
+        "/start/install/",
+        "/start/quick-start-migrations/",
+        "/start/quick-start/"
+      ],
+      "inboundLinks": [],
+      "visibleWords": 151,
+      "sourceBytes": 2363
     },
     {
       "path": "docs/site/src/content/docs/start/quick-start-direct.mdx",
@@ -4336,6 +4667,7 @@
         "/",
         "/databases/sqlite/",
         "/start/choose-a-workflow/",
+        "/start/overview/",
         "/start/quick-start/"
       ],
       "visibleWords": 267,
@@ -4388,6 +4720,7 @@
         "/atlas/docs-coverage/",
         "/start/install-options/",
         "/start/install/",
+        "/start/overview/",
         "/start/quick-start-direct/"
       ],
       "visibleWords": 282,
@@ -4398,7 +4731,7 @@
       "route": "/testing/ci/",
       "title": "CI",
       "description": "Gate pull requests with the Ptah GitHub Action or shell checks, and read exit codes correctly.",
-      "sidebarPath": "Test and CI",
+      "sidebarPath": "Test, automate, and operate",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -4433,6 +4766,7 @@
       "inboundLinks": [
         "/atlas/docs-coverage/",
         "/direct/compare-and-drift/",
+        "/operate/overview/",
         "/schema/export/",
         "/schema/protobuf/",
         "/schema/validate-and-format/",
@@ -4450,7 +4784,7 @@
       "route": "/testing/migrations-and-schema/",
       "title": "Test migrations and schemas",
       "description": "Assert migration and schema behavior with declarative test cases against a throwaway database.",
-      "sidebarPath": "Test and CI",
+      "sidebarPath": "Test, automate, and operate",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -4484,6 +4818,7 @@
         "/concepts/database-urls-and-dev-databases/",
         "/databases/sqlite/",
         "/extend/public-api/",
+        "/operate/overview/",
         "/reference/capabilities/",
         "/reference/test-cases/",
         "/testing/ci/",
@@ -4915,6 +5250,7 @@
         "/direct/apply/",
         "/direct/overview/",
         "/schema/orm-and-external/",
+        "/schema/overview/",
         "/schema/yaml/",
         "/start/adopt-an-existing-database/",
         "/start/choose-a-workflow/"
@@ -4927,7 +5263,7 @@
       "route": "/versioned/reference-data/",
       "title": "Reference data",
       "description": "Declare reference/seed rows and generate reversible data migrations from the drift against a live database.",
-      "sidebarPath": "Load data",
+      "sidebarPath": "Test, automate, and operate",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -4956,6 +5292,7 @@
       ],
       "inboundLinks": [
         "/atlas/docs-coverage/",
+        "/operate/overview/",
         "/operate/seed-data/",
         "/reference/go-annotations/",
         "/schema/dbml/",

@@ -1,0 +1,57 @@
+---
+title: Start with Ptah
+description: Install Ptah, get a verified result, choose a schema workflow, or adopt a database that already exists.
+type: landing
+audience:
+  - new-user
+readerQuestion: Which starting path matches the database work in front of me?
+goal: Open the shortest safe starting path for a new or existing database.
+sourceOfTruth:
+  - cmd/root
+  - cmd/schema
+  - cmd/migrations
+generated: false
+searchAliases:
+  - getting started with Ptah
+  - Ptah tutorial
+overlaps:
+  - /
+  - /start/choose-a-workflow/
+disposition: keep
+---
+
+import { LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+Start with the state you have, not with a command namespace. A disposable
+database is the shortest route to a first result. A shared or existing database
+needs a workflow decision before anything changes.
+
+## Common starting points
+
+<CardGrid>
+  <LinkCard title="Install Ptah" href="../install/" description="Install and verify the native CLI, Atlas-compatible binary, and language server." />
+  <LinkCard title="Get a first result" href="../quick-start/" description="Apply and verify one schema against disposable SQLite in about five minutes." />
+  <LinkCard title="Create a first migration" href="../quick-start-migrations/" description="Write, seal, apply, and verify one versioned migration pair." />
+  <LinkCard title="Adopt an existing database" href="../adopt-an-existing-database/" description="Inspect what exists before choosing a baseline or desired-schema workflow." />
+</CardGrid>
+
+## One decision before a shared database
+
+Choose how changes reach the database:
+
+- **Versioned migrations** keep ordered SQL files in the repository and replay
+  them across environments.
+- **Direct schema changes** compute and apply the difference from the desired
+  schema without creating a migration file.
+
+[Choose a workflow](../choose-a-workflow/) compares those paths and the cases
+where a desired schema generates versioned migration files.
+
+Persistent embedding and model output use a different lifecycle. Start with
+[Inference migrations](../../inference/overview/) when the active data must stay
+available while Ptah builds and verifies a candidate generation.
+
+## Look up exact behavior
+
+Use the [reference landing](../../reference/overview/) for generated command,
+flag, configuration, format, rule, capability, and exit-code references.

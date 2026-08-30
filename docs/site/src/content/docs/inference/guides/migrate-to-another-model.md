@@ -1,6 +1,6 @@
 ---
-title: Migrate to another model
-description: Replace the vectors on a table that already has them, with a second generation beside the first.
+title: Change an embedding model
+description: Replace a table's active embedding model with a second generation built and verified beside the first.
 type: how-to
 audience:
   - "application-developer"

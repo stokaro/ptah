@@ -1,9 +1,12 @@
 ---
 interface Props {
   markdownUrl: string;
+  editUrl?: string;
+  sourceUrl: string;
+  reportUrl: string;
 }
 
-const { markdownUrl } = Astro.props;
+const { markdownUrl, editUrl, sourceUrl, reportUrl } = Astro.props;
 ---
 
 <ptah-page-actions data-markdown-url={markdownUrl}>
@@ -30,37 +33,36 @@ const { markdownUrl } = Astro.props;
       </summary>
 
       <div class="page-actions-menu">
-        <button type="button" class="page-action" data-copy-page disabled>
+        {
+          editUrl && (
+            <a class="page-action" href={editUrl} target="_blank" rel="noreferrer">
+              <span class="page-action-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <path d="m4 16-.8 4 4-.8L18.4 8 16 5.6 4 16Z"></path>
+                  <path d="m13.8 7.8 2.4 2.4"></path>
+                </svg>
+              </span>
+              <span>
+                <strong>Edit this page</strong>
+                <small>Propose a change on GitHub</small>
+              </span>
+              <svg class="external-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M14 5h5v5M19 5l-8 8"></path>
+                <path d="M18 13v5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"></path>
+              </svg>
+            </a>
+          )
+        }
+
+        <a class="page-action" href={sourceUrl} target="_blank" rel="noreferrer">
           <span class="page-action-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24">
-              <rect x="7" y="5" width="11" height="15" rx="2"></rect>
-              <path d="M9 5V3.75C9 2.78 9.78 2 10.75 2h3.5C15.22 2 16 2.78 16 3.75V5"></path>
+              <path d="m9 7-5 5 5 5M15 7l5 5-5 5"></path>
             </svg>
           </span>
           <span>
-            <strong>Copy as Markdown</strong>
-            <small>Use the page in an editor or assistant</small>
-          </span>
-        </button>
-
-        <a
-          class="page-action"
-          href="https://chatgpt.com/"
-          target="_blank"
-          rel="noreferrer"
-          data-copy-for="ChatGPT"
-          aria-disabled="true"
-          tabindex="-1"
-        >
-          <span class="page-action-icon assistant-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <path d="M12 3.5a4.2 4.2 0 0 1 4.1 3.25 4.2 4.2 0 0 1 1.15 8.02A4.2 4.2 0 0 1 10.1 18.3a4.2 4.2 0 0 1-6.2-4.15A4.2 4.2 0 0 1 6.85 6.4 4.2 4.2 0 0 1 12 3.5Z"></path>
-              <path d="m8.2 10 3.8-2.2 3.8 2.2v4.4L12 16.6l-3.8-2.2Z"></path>
-            </svg>
-          </span>
-          <span>
-            <strong>Open in ChatGPT</strong>
-            <small>Copy the page, then open a new chat</small>
+            <strong>View source</strong>
+            <small>Open the Markdown file on GitHub</small>
           </span>
           <svg class="external-icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M14 5h5v5M19 5l-8 8"></path>
@@ -68,23 +70,16 @@ const { markdownUrl } = Astro.props;
           </svg>
         </a>
 
-        <a
-          class="page-action"
-          href="https://claude.ai/new"
-          target="_blank"
-          rel="noreferrer"
-          data-copy-for="Claude"
-          aria-disabled="true"
-          tabindex="-1"
-        >
-          <span class="page-action-icon assistant-icon" aria-hidden="true">
+        <a class="page-action" href={reportUrl} target="_blank" rel="noreferrer">
+          <span class="page-action-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24">
-              <path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"></path>
+              <circle cx="12" cy="12" r="9"></circle>
+              <path d="M12 7v6M12 17h.01"></path>
             </svg>
           </span>
           <span>
-            <strong>Open in Claude</strong>
-            <small>Copy the page, then open a new chat</small>
+            <strong>Report a documentation issue</strong>
+            <small>Open a prefilled GitHub issue</small>
           </span>
           <svg class="external-icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M14 5h5v5M19 5l-8 8"></path>
@@ -180,7 +175,7 @@ const { markdownUrl } = Astro.props;
     z-index: calc(var(--sl-z-index-navbar) + 1);
     inset-block-start: calc(100% + 0.5rem);
     inset-inline-end: 0;
-    width: min(21rem, calc(100vw - 2rem));
+    width: min(22rem, calc(100vw - 2rem));
     padding: 0.4rem;
     border: 1px solid var(--sl-color-gray-5);
     border-radius: 0.75rem;
@@ -195,28 +190,15 @@ const { markdownUrl } = Astro.props;
     gap: 0.65rem;
     width: 100%;
     padding: 0.7rem;
-    border: 0;
     border-radius: 0.5rem;
     color: var(--sl-color-gray-1);
-    background: transparent;
-    font: inherit;
     text-align: start;
     text-decoration: none;
-    cursor: pointer;
   }
 
   .page-action:hover {
     color: var(--sl-color-white);
     background: var(--sl-color-gray-6);
-  }
-
-  .copy-page-button:disabled,
-  .page-action:disabled,
-  .page-action[aria-disabled='true'],
-  .page-action[aria-disabled='true']:hover {
-    color: var(--sl-color-gray-3);
-    background: transparent;
-    cursor: wait;
   }
 
   .page-action-icon {
@@ -240,10 +222,6 @@ const { markdownUrl } = Astro.props;
     stroke-linejoin: round;
   }
 
-  .assistant-icon svg {
-    stroke-width: 1.5;
-  }
-
   .page-action strong,
   .page-action small {
     display: block;
@@ -263,6 +241,11 @@ const { markdownUrl } = Astro.props;
 
   .external-icon {
     color: var(--sl-color-gray-3);
+  }
+
+  .copy-page-button:disabled {
+    color: var(--sl-color-gray-3);
+    cursor: wait;
   }
 
   .copy-status {
@@ -322,7 +305,7 @@ const { markdownUrl } = Astro.props;
         if (!copied) throw new Error('copy command failed');
       };
 
-      const copy = async (destination?: string) => {
+      const copy = async () => {
         try {
           const markdown = await this.loadMarkdown();
           if (navigator.clipboard?.writeText) {
@@ -330,7 +313,7 @@ const { markdownUrl } = Astro.props;
           } else {
             fallbackCopy();
           }
-          announce(destination ? `Page copied — paste it into ${destination}.` : 'Page copied as Markdown.');
+          announce('Page copied as Markdown.');
         } catch {
           announce('Copy failed. Select the page text instead.');
         }
@@ -340,10 +323,6 @@ const { markdownUrl } = Astro.props;
         this.querySelectorAll<HTMLButtonElement>('[data-copy-page]').forEach((button) => {
           button.disabled = false;
         });
-        this.querySelectorAll<HTMLAnchorElement>('[data-copy-for]').forEach((link) => {
-          link.removeAttribute('aria-disabled');
-          link.removeAttribute('tabindex');
-        });
       }).catch(() => {
         announce('The Markdown source could not be loaded.');
       });
@@ -351,17 +330,6 @@ const { markdownUrl } = Astro.props;
       this.querySelectorAll<HTMLElement>('[data-copy-page]').forEach((button) => {
         button.addEventListener('click', () => {
           void copy();
-          details?.removeAttribute('open');
-        });
-      });
-
-      this.querySelectorAll<HTMLAnchorElement>('[data-copy-for]').forEach((link) => {
-        link.addEventListener('click', (event) => {
-          if (link.getAttribute('aria-disabled') === 'true') {
-            event.preventDefault();
-            return;
-          }
-          void copy(link.dataset.copyFor);
           details?.removeAttribute('open');
         });
       });

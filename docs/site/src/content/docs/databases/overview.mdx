@@ -1,0 +1,53 @@
+---
+title: Databases
+description: Check release-line evidence, choose the correct dialect and URL, and open engine-specific operating guidance.
+type: landing
+audience:
+  - database-engineer
+  - evaluator
+readerQuestion: Does Ptah support my database, and what engine-specific guidance applies?
+goal: Verify support evidence and open the correct database guide.
+sourceOfTruth:
+  - internal/capabilityprobe
+  - internal/serverprofile
+  - dbschema/connection.go
+generated: false
+searchAliases:
+  - supported databases
+  - database version support
+overlaps:
+  - /databases/support-matrix/
+  - /concepts/dialects-and-capabilities/
+disposition: keep
+---
+
+import { LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+Start with measured support, then open the guide for the target engine. A
+dialect name tells Ptah which SQL rules to use; a release-line support level
+tells you what this repository continuously exercises. Neither is a promise
+that every construct renders on every target.
+
+## Common tasks
+
+<CardGrid>
+  <LinkCard title="Check database support" href="../support-matrix/" description="Read the generated release-line census, support policy, and evidence boundaries." />
+  <LinkCard title="Connect to PostgreSQL" href="../postgresql/" description="Use PostgreSQL URLs, schemas, extensions, capabilities, and inspection behavior." />
+  <LinkCard title="Connect to MySQL or MariaDB" href="../mysql/" description="Check URL forms, release lines, network transports, and family differences." />
+  <LinkCard title="Use SQLite or Turso" href="../sqlite/" description="Distinguish local SQLite files from remote libSQL targets and their URL forms." />
+  <LinkCard title="Check the live server" href="../../reference/capabilities/" description="Run capability discovery and interpret how Ptah resolved the server profile." />
+</CardGrid>
+
+## Choose by engine
+
+The sidebar includes focused guidance for SQL Server, Oracle, ClickHouse, and
+distributed SQL engines in addition to the common targets above. If an engine
+page and the generated matrix appear to disagree, the generated declaration and
+live capability output take precedence.
+
+## Reference
+
+[Database URLs and dev databases](../../concepts/database-urls-and-dev-databases/)
+separates connection scope from disposable replay targets.
+[Dialects and capabilities](../../concepts/dialects-and-capabilities/) explains
+why an accepted dialect can still refuse a concrete construct.
