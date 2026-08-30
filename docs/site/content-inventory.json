@@ -1684,7 +1684,7 @@
       "goal": "Identify the Go packages and exported symbols stable for embedders.",
       "sourceOfTruth": [
         "docs/public_api.md",
-        "docs/public_api.snapshot"
+        "scripts/check-public-api-released.sh"
       ],
       "owns": [],
       "generated": false,
@@ -1708,8 +1708,8 @@
         "/reference/test-cases/",
         "/schema/go-annotations/"
       ],
-      "visibleWords": 2988,
-      "sourceBytes": 24427
+      "visibleWords": 3000,
+      "sourceBytes": 24560
     },
     {
       "path": "docs/site/src/content/docs/extend/query-builder.md",

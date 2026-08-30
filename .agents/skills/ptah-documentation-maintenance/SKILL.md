@@ -263,7 +263,7 @@ practical, live commands:
 
   ```bash
   scripts/check-public-api.sh
-  scripts/check-public-api-snapshot.sh
+  scripts/check-exported-docs.sh
   scripts/check-public-api-released.sh
   ```
 

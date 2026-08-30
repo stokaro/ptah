@@ -853,8 +853,8 @@ layout and move when the documentation is reorganized.
 There is no provisional public surface. Packages that are not listed under
 Stable Embedder API are either command/example/fixture/test packages or are
 behind Go `internal/` boundaries. Promoting another package to public API must
-be an explicit design decision that updates this document and the snapshot in
-the same reviewed change.
+be an explicit design decision that updates this document in the same reviewed
+change.
 
 ## Compatibility Guard
 
@@ -863,28 +863,23 @@ CI runs four public API checks:
 - `scripts/check-public-api.sh` fails when `go list ./...` finds a
   non-command, non-example, non-fixture package that is importable from outside
   this module but not listed here.
-- `scripts/check-public-api-snapshot.sh` regenerates the `go doc -short`
-  exported-symbol snapshot for every package listed here, then appends the
-  comment-free `go doc -src` declaration for every exported named type (struct,
-  interface, alias, map, func type), and compares the result with
-  `docs/public_api.snapshot`. Changes to exported struct fields and to methods
-  on concrete named types are caught, not only interface method sets. Comment
-  wording is deliberately excluded: the exported-doc gate checks that prose is
-  present, while an editorial rewrite is not an API change. Any exported
-  surface change must update the snapshot in the same reviewed change. The
-  guard is itself covered by self-tests in `internal/apiguard` that fail if the
-  per-type coverage regresses or comments become API input again.
 - `scripts/check-public-api-released.sh` compares each stable package against
   the latest `v0.x` release tag with `apidiff -incompatible`. Until the first
   `v0.x` tag exists, the script reports that no released baseline is available
   and exits successfully. Once a `v0.x` tag exists, CI checks out repository
   tags and uses that real release tag as the baseline.
 - `scripts/check-exported-docs.sh` fails when a package listed here carries an
-  exported function or type with no doc comment. The three checks above measure
-  the shape of the surface and none of them can see a comment: the snapshot is
-  byte-identical whether a declaration is documented or not. Methods are exempt,
-  because an implementation of a documented interface repeats what the interface
-  already says.
+  exported function or type with no doc comment. Methods are exempt because an
+  implementation of a documented interface repeats what the interface already
+  says.
+- `scripts/check-public-api-docs-sync.sh` fails when the package table in the
+  reader-facing documentation differs from this ledger.
+
+Ptah does not commit a generated declaration snapshot. Such a file makes every
+additive change update a second copy of the source but does not decide whether
+the addition is well designed. Additive changes receive normal code review;
+the released-baseline check enforces the compatibility guarantee that clients
+actually depend on.
 
 ## Intentional API Changes Before v1
 
@@ -893,9 +888,6 @@ to the stable embedder API. Intentional approval must be explicit in the same
 reviewed change:
 
 - update this document if packages move between stable and non-public surfaces;
-- update `docs/public_api.snapshot` when any exported surface changes —
-  symbols, struct fields, interface method sets, or methods on concrete named
-  types;
 - add one package-level approval line to `docs/public_api_approvals.txt` when
   `scripts/check-public-api-released.sh` reports an incompatibility against the
   latest `v0.x` baseline;

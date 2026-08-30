@@ -9,9 +9,9 @@
 # (stokaro/ptah#2246). This gate compares the two sets and reports the
 # difference in both directions.
 #
-# The ledger side is read through `check-public-api-snapshot.sh
-# --list-packages`, the same scrape the API gates run, so this script cannot
-# drift from what those gates enforce.
+# The ledger side is read through `list-public-api-packages.sh`, the same
+# command the API gates run, so this script cannot drift from what those gates
+# enforce.
 set -euo pipefail
 
 export GOWORK=off
@@ -26,7 +26,7 @@ trap 'rm -f "$ledger_packages" "$site_packages"' EXIT
 
 # The ledger lists full import paths; the site table lists them without the
 # module prefix. Strip the prefix so the two sets compare in one spelling.
-"$script_dir/check-public-api-snapshot.sh" --list-packages |
+"$script_dir/list-public-api-packages.sh" |
 	sed "s|^${module_path}/||" |
 	sort -u >"$ledger_packages"
 

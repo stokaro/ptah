@@ -8,7 +8,7 @@ readerQuestion: "Which Go packages and exported symbols are stable for embedders
 goal: "Identify the Go packages and exported symbols stable for embedders."
 sourceOfTruth:
   - "docs/public_api.md"
-  - "docs/public_api.snapshot"
+  - "scripts/check-public-api-released.sh"
 generated: false
 overlaps: []
 disposition: keep
@@ -422,17 +422,19 @@ the error:
 
 ## API guardrails
 
-CI protects the public API in three layers:
+CI protects the public API without duplicating its declarations in a committed
+snapshot:
 
 | Check | Purpose |
 | --- | --- |
 | `scripts/check-public-api.sh` | Fails if a new importable package appears outside the stable list. |
-| `scripts/check-public-api-snapshot.sh` | Compares comment-free exported declarations with `docs/public_api.snapshot`; prose rewrites are not API changes. |
 | `scripts/check-public-api-released.sh` | Compares stable packages against the latest `v0.x` release tag with `apidiff`. |
+| `scripts/check-exported-docs.sh` | Requires documentation on exported functions and types. |
+| `scripts/check-public-api-docs-sync.sh` | Keeps this page's package table aligned with the canonical ledger. |
 
-Any intentional public API change must update the docs and snapshot in the same
-reviewed PR. Once release baselines exist, incompatible changes also require an
-explicit approval entry.
+Additive API changes receive normal code review. An intentional incompatible
+change must update the relevant documentation and include an explicit approval
+entry for the current release baseline in the same PR.
 
 ## Embedding guidance
 

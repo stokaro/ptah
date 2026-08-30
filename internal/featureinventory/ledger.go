@@ -10,11 +10,8 @@ import (
 // stable embedder API, sorted and deduplicated.
 //
 // This is the one implementation of that recognition, and every gate that needs
-// the set reaches it: scripts/check-public-api.sh calls
-// `featureinventory --list-ledger`, scripts/check-public-api-snapshot.sh's
-// `--list-packages` mode forwards to the same command, and
-// scripts/check-public-api-docs-sync.sh, scripts/check-exported-docs.sh and
-// scripts/check-public-api-released.sh read the ledger through that mode. Three
+// the set reaches it through `featureinventory --list-ledger`, directly or via
+// scripts/list-public-api-packages.sh. Three
 // grep pipelines used to answer this question separately, which is what
 // AGENTS.md's "recognition that spans two functions belongs to one of them"
 // forbids -- with the quiet failure mode that rule describes: a pattern that
@@ -26,12 +23,10 @@ import (
 // is a mention, not a listing, and must not join the set -- stokaro/ptah#2246 is
 // the fixture that says so.
 //
-// modulePath is a parameter rather than a constant because the callers do not
-// share one module: internal/apiguard drives this through --list-packages
-// against a throwaway fixture module, and a literal here would answer for the
-// wrong one. An empty modulePath returns nothing rather than matching every
-// backticked list item, so the mistake fails closed through empty-kind instead
-// of widening the set.
+// modulePath is a parameter rather than a constant so fixtures can prove the
+// parser does not accept paths from a different module. An empty modulePath
+// returns nothing rather than matching every backticked list item, so the
+// mistake fails closed through empty-kind instead of widening the set.
 func LedgerPackages(source []byte, modulePath string) []string {
 	if modulePath == "" {
 		return nil

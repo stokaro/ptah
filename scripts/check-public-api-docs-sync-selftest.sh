@@ -10,9 +10,8 @@
 #
 # The fixture supplies the ledger side by putting a stub next to a copy of the
 # gate. `script_dir` is derived from the gate's own path, so a copy in the
-# fixture's `scripts/` calls the fixture's `check-public-api-snapshot.sh` -- the
-# seam is the gate's existing structure rather than a hook added for the test,
-# and the production path still runs the real scrape.
+# fixture's `scripts/` calls the fixture's `list-public-api-packages.sh`. The
+# production path still runs the real parser through that command.
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
@@ -37,8 +36,8 @@ write_repo() {
 		for package in "$@"; do
 			printf 'printf %%s\\\\n %s/%s\n' "$module_path" "$package"
 		done
-	} >"$work_dir/repo/scripts/check-public-api-snapshot.sh"
-	chmod +x "$work_dir/repo/scripts/check-public-api-snapshot.sh"
+	} >"$work_dir/repo/scripts/list-public-api-packages.sh"
+	chmod +x "$work_dir/repo/scripts/list-public-api-packages.sh"
 
 	cat >"$work_dir/repo/$page_dir/public-api.md"
 }
