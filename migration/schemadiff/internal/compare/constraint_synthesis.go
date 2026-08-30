@@ -79,6 +79,46 @@ func synthesizeFieldLevelCheckConstraints(
 	return synthesized
 }
 
+// synthesizeTableLevelCheckConstraints turns each entry of a table's `checks`
+// list into the schemamodel.Constraint the renderer emits for it, so the list
+// participates in comparison the way the CHECK it becomes does.
+//
+// [fromschema.TableCheckConstraints] is the single answer both sides read --
+// the name it gives an entry is the name the DDL carries, so the constraint the
+// server reports lines up with the declaration. Deriving it twice is what this
+// avoids: measured before the synthesis existed, rendering the list alone made
+// the next plan emit
+// `ALTER TABLE "products" DROP CONSTRAINT IF EXISTS "products_check"`, so a
+// second apply deleted the check the first one created (stokaro/ptah#2590).
+//
+// Tables absent from the database are skipped, for the reason
+// [synthesizeFieldLevelCheckConstraints] skips absent columns: their checks
+// ship inline in CREATE TABLE, and an ADD CONSTRAINT beside it would create the
+// same constraint twice in one migration.
+func synthesizeTableLevelCheckConstraints(
+	desired *schemamodel.Database,
+	database *catalog.Database,
+	semantics identifier.Semantics,
+) []schemamodel.Constraint {
+	if desired == nil || database == nil {
+		return nil
+	}
+
+	dbTables := make(map[tableIdentity]struct{}, len(database.Tables))
+	for _, table := range database.Tables {
+		dbTables[newQualifiedTableIdentity(table.QualifiedName(), semantics)] = struct{}{}
+	}
+
+	var synthesized []schemamodel.Constraint
+	for _, table := range desired.Tables {
+		if _, exists := dbTables[newQualifiedTableIdentity(table.QualifiedName(), semantics)]; !exists {
+			continue
+		}
+		synthesized = append(synthesized, fromschema.TableCheckConstraints(table, desired.Constraints)...)
+	}
+	return synthesized
+}
+
 func synthesizeTablePrimaryKeyConstraints(
 	desired *schemamodel.Database,
 	database *catalog.Database,

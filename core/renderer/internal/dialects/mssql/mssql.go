@@ -140,8 +140,23 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 		}
 		r.w.WriteLinef("%s,", line)
 	}
-	r.w.WriteLine(");")
+	r.w.Write(")")
+	// The author's own raw tail closes the statement (stokaro/ptah#2590).
+	r.writeCustomSQL(node)
+	r.w.WriteLine(";")
 	return nil
+}
+
+// writeCustomSQL writes the raw SQL tail the author attached to CREATE TABLE,
+// preceded by one space, and writes nothing for a table declaring none.
+//
+// The text is emitted verbatim. Ptah does not parse it, so there is nothing to
+// validate it against and nothing to normalize -- see
+// [go.5x5.cz/ptah/core/ast.CreateTableNode.CustomSQL].
+func (r *Renderer) writeCustomSQL(node *ast.CreateTableNode) {
+	if custom := strings.TrimSpace(node.CustomSQL); custom != "" {
+		r.w.Write(" " + custom)
+	}
 }
 
 func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {

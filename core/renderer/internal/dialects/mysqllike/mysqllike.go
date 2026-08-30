@@ -382,6 +382,7 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 			r.w.Write(" ")
 			r.w.Write(options)
 		}
+		writeCustomSQL(r.w, node)
 		r.w.WriteLinef(" %s;", strings.TrimSpace(node.SelectBody))
 		r.w.WriteLine("")
 		return nil
@@ -438,6 +439,10 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 		r.w.Write(options)
 	}
 
+	// The author's own raw tail follows the table options and precedes any
+	// SELECT the table is populated from (stokaro/ptah#2590).
+	writeCustomSQL(r.w, node)
+
 	if node.SelectBody != "" {
 		r.w.Write(" ")
 		r.w.Write(strings.TrimSpace(node.SelectBody))
@@ -448,6 +453,18 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 
 	// Only one newline instead of two for better spacing
 	return nil
+}
+
+// writeCustomSQL writes the raw SQL tail the author attached to CREATE TABLE,
+// preceded by one space, and writes nothing for a table declaring none.
+//
+// The text is emitted verbatim. Ptah does not parse it, so there is nothing to
+// validate it against and nothing to normalize -- see
+// [go.5x5.cz/ptah/core/ast.CreateTableNode.CustomSQL].
+func writeCustomSQL(w *bufwriter.Writer, node *ast.CreateTableNode) {
+	if custom := strings.TrimSpace(node.CustomSQL); custom != "" {
+		w.Write(" " + custom)
+	}
 }
 
 // VisitAlterTable renders MariaDB-specific ALTER TABLE statements

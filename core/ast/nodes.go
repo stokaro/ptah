@@ -86,6 +86,21 @@ type CreateTableNode struct {
 	Indexes []*IndexNode
 	// SelectBody stores the SELECT tail for CREATE TABLE ... SELECT statements.
 	SelectBody string
+	// CustomSQL is raw SQL the author asked to be appended to CREATE TABLE,
+	// written verbatim after the closing parenthesis and before the statement
+	// terminator.
+	//
+	// It is a separate field from Options because Options is a key=value map a
+	// renderer spells as `KEY=VALUE`; a clause such as `PARTITION BY RANGE (id)`
+	// or `WITHOUT OIDS` has no key and no value, so routing it through Options
+	// produced `CUSTOM=PARTITION BY RANGE (id)`, which no server parses.
+	//
+	// Ptah does not read the text. It is emitted on every dialect rather than
+	// gated on one, because it is the author's own SQL for the target they
+	// wrote it against and Ptah has nothing to check it with -- a capability
+	// gate here would be a guess about text nobody parsed. See
+	// stokaro/ptah#2590.
+	CustomSQL string
 	// Comment is an optional table comment
 	Comment string
 	// RowTTL stores the CockroachDB row-level TTL storage parameters.

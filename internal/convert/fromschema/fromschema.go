@@ -605,6 +605,12 @@ func FromField(field schemamodel.Field, enums []schemamodel.Enum, targetPlatform
 	if !field.Nullable {
 		column.SetNotNull()
 	}
+	// The name is carried whatever the nullability is. A name on a nullable
+	// column names no constraint, and a name on a primary-key column names one
+	// the key already owns; both are REFUSED by the renderer that can keep a
+	// NOT NULL name, and neither refusal could fire while the name stopped here
+	// (stokaro/ptah#2161, stokaro/ptah#2590).
+	column.SetNotNullConstraintName(field.NotNullConstraintName)
 
 	// Set constraints
 	if field.Primary {
@@ -702,6 +708,8 @@ func FromFieldWithoutForeignKeys(field schemamodel.Field, enums []schemamodel.En
 	if !field.Nullable {
 		column.SetNotNull()
 	}
+	// Carried unconditionally, for the reason [FromField] states.
+	column.SetNotNullConstraintName(field.NotNullConstraintName)
 
 	// Set primary key
 	if field.Primary {
@@ -983,6 +991,10 @@ func fromTableWithFieldConverter(
 	// this was built from (stokaro/ptah#1027).
 	createTable.RowTTL = newTable.RowTTL.Clone()
 	createTable.RowDeletionPolicy = newTable.RowDeletionPolicy.Clone()
+	// Raw SQL the author asked to be appended to CREATE TABLE. It is carried
+	// verbatim; see [go.5x5.cz/ptah/core/ast.CreateTableNode.CustomSQL] for why
+	// it is not an Options entry (stokaro/ptah#2590).
+	createTable.CustomSQL = newTable.CustomSQL
 
 	// Add columns for fields that belong to this table
 	tableLevelPK := tableNeedsPrimaryKeyConstraint(newTable)
@@ -1000,6 +1012,13 @@ func fromTableWithFieldConverter(
 	if tableLevelPK {
 		constraint := newPrimaryKeyConstraint(newTable)
 		createTable.AddConstraint(constraint)
+	}
+
+	// Every entry, because this conversion never sees the schema's constraint
+	// list. [addTableConstraints] is where the overlap with an explicit CHECK
+	// is settled, and it is the only caller that has both.
+	for _, check := range TableCheckConstraints(newTable, nil) {
+		createTable.AddConstraint(FromConstraint(check))
 	}
 
 	return createTable
@@ -1076,6 +1095,101 @@ func primaryKeyPartsHaveAttributes(parts []schemamodel.PrimaryKeyPart) bool {
 	return false
 }
 
+// TableCheckConstraints is the constraint list a table's `checks` attribute
+// declares, given the constraints the schema declares for the same table.
+//
+// It is deliberately the ONE answer to "what does `checks` mean", read both by
+// the conversion that renders these inline in CREATE TABLE and by the
+// comparison that has to recognize them in a live catalog. Two answers diverge
+// into an apply loop, and this one was measured: rendering the list without
+// teaching the comparison about it made the next plan emit
+// `ALTER TABLE "products" DROP CONSTRAINT IF EXISTS "products_check"` --
+// deleting the check the apply before it had created.
+//
+// Nothing rendered these at all before stokaro/ptah#2590. The attribute has
+// been documented and parsed since the first commit, and a table declaring
+// `checks="price > 0"` reached the server with no CHECK on it.
+//
+// # Naming
+//
+// Each entry is named, following PostgreSQL's own convention for a table CHECK
+// nobody named: `<table>_check`, then `<table>_check1`. The declaration names
+// none, and an unnamed CHECK reads back under a name the server invented, which
+// is the name no comparison can predict. The name here is derived from the
+// entry's position in the list, so it is the same on every dialect and the same
+// across runs. It is the move [go.5x5.cz/ptah/core/schemamodel.Field.Check]
+// already makes, where an unnamed column check is compared as
+// `<table>_<column>_check`.
+//
+// # Overlap with an explicit constraint
+//
+// An entry an explicit CHECK constraint already spells is left out: the two are
+// one constraint the author wrote twice, and the explicit one carries the name
+// they chose. Matching is exact after trimming, because deciding that two
+// differently-spelled expressions are the same needs a parser, and guessing
+// wrong deletes a constraint the author wrote.
+func TableCheckConstraints(table schemamodel.Table, declared []schemamodel.Constraint) []schemamodel.Constraint {
+	if len(table.Checks) == 0 {
+		return nil
+	}
+	spelled := declaredCheckExpressions(table, declared)
+
+	constraints := make([]schemamodel.Constraint, 0, len(table.Checks))
+	for ordinal, check := range table.Checks {
+		expression := strings.TrimSpace(check)
+		if expression == "" {
+			continue
+		}
+		if _, superseded := spelled[expression]; superseded {
+			continue
+		}
+		constraints = append(constraints, schemamodel.Constraint{
+			StructName:      table.StructName,
+			Name:            tableCheckConstraintName(table.Name, ordinal),
+			Type:            "CHECK",
+			Table:           table.QualifiedName(),
+			CheckExpression: expression,
+		})
+	}
+	return constraints
+}
+
+// declaredCheckExpressions is the set of CHECK expressions the schema spells
+// for this table as explicit constraints.
+//
+// It is the one recognizer both halves of the overlap rule call:
+// [TableCheckConstraints] never produces a superseded entry, and
+// [dropSupersededTableChecks] removes one already rendered. Two lists of
+// "expressions already spelled" would agree when they were written and stop
+// agreeing the moment one was extended.
+func declaredCheckExpressions(table schemamodel.Table, declared []schemamodel.Constraint) map[string]struct{} {
+	spelled := make(map[string]struct{}, len(declared))
+	for _, constraint := range declared {
+		if !strings.EqualFold(constraint.Type, "CHECK") {
+			continue
+		}
+		if !constraintBelongsToTable(constraint, table) {
+			continue
+		}
+		spelled[strings.TrimSpace(constraint.CheckExpression)] = struct{}{}
+	}
+	return spelled
+}
+
+// tableCheckConstraintName spells the name [TableCheckConstraints] gives the
+// entry at this position. PostgreSQL's own convention for a table CHECK nobody
+// named is `<table>_check`, then `<table>_check1`.
+func tableCheckConstraintName(tableName string, ordinal int) string {
+	leaf := tableName
+	if ref, ok := tableref.Parse(tableName); ok {
+		leaf = ref.Name
+	}
+	if ordinal == 0 {
+		return leaf + "_check"
+	}
+	return fmt.Sprintf("%s_check%d", leaf, ordinal)
+}
+
 func newPrimaryKeyConstraint(table schemamodel.Table) *ast.ConstraintNode {
 	if len(table.PrimaryKeyParts) == 0 {
 		constraint := ast.NewPrimaryKeyConstraint(table.PrimaryKey...)
@@ -1114,6 +1228,9 @@ func FromConstraint(constraint schemamodel.Constraint) *ast.ConstraintNode {
 		// spelling already keeps both (newPrimaryKeyConstraint above), so this
 		// was the same key losing them for having been written as a constraint
 		// (stokaro/ptah#2538; the database-to-model direction was #2199).
+		//
+		// NullsDistinct is deliberately absent: it is a UNIQUE clause, and
+		// PostgreSQL rejects it on a primary key.
 		node := ast.NewPrimaryKeyConstraint(constraint.Columns...)
 		node.Name = constraint.Name
 		node.IncludeColumns = append([]string(nil), constraint.IncludeColumns...)
@@ -1162,6 +1279,11 @@ func addTableConstraints(
 	mode tableConstraintMode,
 	targetPlatform string,
 ) {
+	// The table conversion rendered every `checks` entry, because it never sees
+	// this list. Here it is visible, so an entry an explicit CHECK already
+	// spells is removed before that explicit one is added beside it.
+	dropSupersededTableChecks(createTable, table, constraints)
+
 	for _, constraint := range constraints {
 		if !constraintBelongsToTable(constraint, table) {
 			continue
@@ -1176,6 +1298,40 @@ func addTableConstraints(
 			createTable.AddConstraint(node)
 		}
 	}
+}
+
+// dropSupersededTableChecks removes the rendered `checks` entries an explicit
+// CHECK constraint already spells.
+//
+// A table may carry `checks = ["price > 0"]` and a `check "price_positive" { … }`
+// block over the same expression. Rendering both produces two CHECKs the author
+// asked for once; the explicit one survives because it carries the name they
+// chose, which is what a later DROP CONSTRAINT addresses.
+//
+// The only CHECK nodes on the table at this point are the ones
+// [TableCheckConstraints] produced -- a column's own check lives on the column,
+// and this function runs before any explicit constraint is added -- so an
+// author's two identical `check` blocks are still rendered as the two
+// constraints they are.
+func dropSupersededTableChecks(
+	createTable *ast.CreateTableNode,
+	table schemamodel.Table,
+	declared []schemamodel.Constraint,
+) {
+	spelled := declaredCheckExpressions(table, declared)
+	if len(spelled) == 0 {
+		return
+	}
+	kept := make([]*ast.ConstraintNode, 0, len(createTable.Constraints))
+	for _, node := range createTable.Constraints {
+		if node.Type == ast.CheckConstraint {
+			if _, superseded := spelled[strings.TrimSpace(node.Expression)]; superseded {
+				continue
+			}
+		}
+		kept = append(kept, node)
+	}
+	createTable.Constraints = kept
 }
 
 func isForeignKeyConstraint(constraint schemamodel.Constraint) bool {
