@@ -36,9 +36,10 @@ import (
 // whatever snapshot the caller supplies. It is dialect-neutral -- no dialect
 // scoping and no dialect-specific normalization runs -- so prefer
 // CompareWithDialect when the target dialect is known, or CompareWithDatabase
-// when a live connection can also answer identifier semantics. Output lists
-// are deterministically sorted, so two calls over the same two states produce
-// the same diff. For custom configuration, use CompareWithOptions.
+// when a live connection can also answer identifier semantics. The output
+// does not vary between runs and does not depend on the order the inputs list
+// their objects, so two comparisons of the same two states produce the same
+// diff. For custom configuration, use CompareWithOptions.
 func Compare(desired *schemamodel.Database, current *catalog.Database) *difftypes.SchemaDiff {
 	return CompareWithOptions(desired, current, nil)
 }
@@ -77,12 +78,12 @@ func CompareSchemas(desired, current *schemamodel.Database, dialect string) *dif
 //
 // Unlike the pure entry points, this variant also validates the declaration
 // against the target before comparing, and returns an error instead of a diff
-// that plans a statement the server would refuse: reserved PostgreSQL role
-// names, ClickHouse RBAC constraints and live partial revokes, SQLite
-// virtual-table rules (including the PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP
-// toggle, which is resolved on every SQLite comparison), TimescaleDB
-// continuous-aggregate name collisions, CockroachDB row-level TTL capability,
-// and declared PostgreSQL system schemas.
+// that plans a statement the server would refuse. Which rules apply is
+// dialect-specific and grows with the dialects; a reserved PostgreSQL role
+// name and SQLite's virtual-table rules are two of them. One of those checks
+// is a promise in its own right: PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP is
+// resolved on every SQLite comparison, so a malformed value is reported
+// whether or not this comparison reaches a virtual table.
 func CompareWithDatabaseInfo(
 	desired *schemamodel.Database,
 	database *catalog.Database,
@@ -197,7 +198,9 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 // matching scoped-away objects are suppressed on the current side too, so a
 // multi-dialect declaration converges instead of re-planning (or dropping) the
 // same objects forever. Default foreign-key names are also assigned under the
-// dialect, the way the renderer would assign them.
+// dialect, the way the renderer would assign them. All of that preparation
+// works on a copy: neither argument is mutated, here or on any other entry
+// point in this package.
 //
 // A non-nil opts.IdentifierSemantics is honored only when it is a valid
 // resolved snapshot that covers every compared identifier and admits no

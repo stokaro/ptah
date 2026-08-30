@@ -147,13 +147,11 @@ type CheckpointWriteOptions struct {
 // half, so a failure never leaves a migration with no rollback.
 //
 // When opts.AuthorizedMigrationsFS is set, publication is bound to the history
-// that produced the checkpoint body: a bound output directory that does not
-// match the authorized state fails with [ErrMigrationDirectoryChanged]
-// (errors.Is) before the checkpoint is created, or the checkpoint is withdrawn
-// before the sum is published, so a mismatch never leaves a half-published
-// checkpoint behind. The refreshed ptah.sum is computed from the authorized
-// state plus the new pair rather than from a reopened live directory, so a
-// concurrent edit cannot be legitimized by the new checksum.
+// that produced the checkpoint body: an output directory that does not match
+// the authorized state fails with [ErrMigrationDirectoryChanged] (errors.Is)
+// and leaves no half-published checkpoint behind. The refreshed ptah.sum
+// describes the authorized state plus the new pair, so a concurrent edit
+// cannot be legitimized by the new checksum.
 //
 // The whole transaction -- verification, both files, and the sum -- runs
 // through one rooted binding of outputDir (stokaro/ptah#1118).
@@ -252,11 +250,11 @@ func writeAtlasCheckpointFile(outputDir string, version int64, description, upSQ
 // silently choosing a different version.
 //
 // When opts.AuthorizedMigrationsFS is set, publication is bound to the history
-// that produced the checkpoint body: a bound output directory that does not
-// match the authorized state fails with [ErrMigrationDirectoryChanged]
-// (errors.Is) before the checkpoint is created, or the checkpoint is withdrawn
-// before atlas.sum is published. The whole transaction runs through one rooted
-// binding of outputDir (stokaro/ptah#1118).
+// that produced the checkpoint body: an output directory that does not match
+// the authorized state fails with [ErrMigrationDirectoryChanged] (errors.Is)
+// and leaves neither a checkpoint nor a refreshed atlas.sum behind. The whole
+// transaction runs through one rooted binding of outputDir
+// (stokaro/ptah#1118).
 func WriteAtlasCheckpointFileWithOptions(
 	outputDir string,
 	version int64,

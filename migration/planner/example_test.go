@@ -18,8 +18,10 @@ import (
 // core embedder flow: build or parse a desired *schemamodel.Database, diff it
 // against the current state (schemadiff.CompareSchemas diffs two in-memory
 // documents; use schemadiff.CompareWithDatabase for a live one), and hand the
-// diff to the planner. The output is deterministic: two runs over the same
-// inputs produce byte-identical SQL.
+// diff to the planner. The diff is the planner's whole input: the comparison
+// puts everything planning needs on it, the schema-wide Declared* carries
+// included. The output is deterministic: two runs over the same inputs
+// produce byte-identical SQL.
 func ExampleGenerateSchemaDiffSQL() {
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
@@ -33,7 +35,7 @@ func ExampleGenerateSchemaDiffSQL() {
 	}
 
 	diff := schemadiff.CompareSchemas(desired, &schemamodel.Database{}, "postgres")
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, "postgres")
+	sql, err := planner.GenerateSchemaDiffSQL(diff, "postgres")
 	if err != nil {
 		fmt.Println("plan failed:", err)
 		return
@@ -74,7 +76,7 @@ func ExampleGenerateSchemaDiffSQLStatements() {
 	}
 
 	diff := schemadiff.CompareSchemas(desired, current, "postgres")
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, "postgres")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "postgres")
 	if err != nil {
 		fmt.Println("plan failed:", err)
 		return
@@ -95,8 +97,9 @@ func ExampleGenerateSchemaDiffSQLStatements() {
 // ExampleGetPlanner_unsupportedDialect shows the failure contract a caller
 // branches on: a dialect no planner is registered for fails with a
 // *ptaherr.PlanError satisfying errors.Is against ptaherr.ErrUnsupportedDialect,
-// and errors.AsType retrieves the structured form carrying the dialect that was
-// asked for.
+// and errors.AsType retrieves the structured form carrying the dialect the
+// lookup was made for. Branch on the sentinel rather than on the message: the
+// wording printed below is not part of the contract.
 func ExampleGetPlanner_unsupportedDialect() {
 	_, err := planner.GetPlanner("dbase")
 	fmt.Println(err)
@@ -138,9 +141,9 @@ func ExampleRequiresNoTransaction() {
 	diff := schemadiff.CompareSchemas(desired, current, "postgres")
 
 	locking := must.Must(planner.GenerateSchemaDiffASTWithOptions(
-		diff, desired, "postgres", planner.Options{}))
+		diff, "postgres", planner.Options{}))
 	concurrent := must.Must(planner.GenerateSchemaDiffASTWithOptions(
-		diff, desired, "postgres", planner.Options{ConcurrentIndexes: true}))
+		diff, "postgres", planner.Options{ConcurrentIndexes: true}))
 
 	fmt.Println("locking build needs autocommit:", planner.RequiresNoTransaction("postgres", locking))
 	fmt.Println("concurrent build needs autocommit:", planner.RequiresNoTransaction("postgres", concurrent))

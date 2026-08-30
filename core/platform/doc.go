@@ -4,8 +4,7 @@
 // and IsPostgresFamily reports whether a dialect speaks the PostgreSQL wire
 // protocol and catalog.
 //
-// The ten canonical dialects are Postgres, MySQL, MariaDB, ClickHouse,
-// SQLite, SQLServer, CockroachDB, YugabyteDB, Spanner, and Oracle.
+// The canonical dialects are the constants this package declares.
 // NormalizeDialect is the one place an alias such as "pgx", "crdb", or
 // "libsql" becomes a dialect, and it returns "" for a name it does not know;
 // callers check that answer rather than pass it on. What a dialect being

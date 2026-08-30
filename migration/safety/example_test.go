@@ -13,7 +13,7 @@ import (
 
 // ExampleAssessSQL classifies raw SQL strings — the zero-dependency entry
 // point for a caller who already holds rendered statements rather than AST
-// nodes. Matching is keyword-based over the uppercased statement text, and a
+// nodes. Matching is keyword-based and insensitive to casing and layout; a
 // statement matching no known risky shape is Safe, so an unknown construct
 // never blocks by accident.
 func ExampleAssessSQL() {
@@ -63,12 +63,13 @@ func ExampleClassifySchemaDiff() {
 }
 
 // ExampleAssessRendered renders AST nodes for a dialect and classifies every
-// resulting statement. One node can yield several assessments — PostgreSQL
-// spells this column modification as separate TYPE, DROP NOT NULL, and DROP
-// DEFAULT statements — and Index counts over the flattened list, so the
-// numbering matches the script an operator will review. The AST-level
-// verdict (a narrowing type change) is raised onto the TYPE statement, while
-// the DROP DEFAULT statement keeps its own Safe classification.
+// resulting statement. One node can yield several assessments — this column
+// modification does on PostgreSQL — and Index counts over the flattened list,
+// so the numbering matches the script an operator will review. Each statement
+// is classified from its own SQL, and the node-level verdict, here a narrowing
+// type change, is folded in where it applies rather than lowering a
+// statement's own classification. How a node decomposes belongs to the
+// renderer, not to this classification.
 func ExampleAssessRendered() {
 	nodes := []ast.Node{
 		ast.NewDropTable("legacy_sessions"),

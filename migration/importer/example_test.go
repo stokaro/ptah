@@ -63,10 +63,10 @@ func ExampleImport_partialRefused() {
 	// 000002_add_email.sql: its name is not a golang-migrate migration file name (<version>_<name>.up.sql / .down.sql)
 }
 
-// ExampleDetectParser identifies the source tool from the directory shape
-// alone, which is what Import does when handed a nil parser. A Goose migration
-// is a single .sql file whose sections are separated by -- +goose Up and
-// -- +goose Down markers, and the marker is what detection reads.
+// ExampleDetectParser identifies the source tool from the directory alone,
+// which is what Import does when handed a nil parser. The directory below is
+// Goose's shape: a single .sql file whose sections are separated by
+// -- +goose Up and -- +goose Down markers.
 func ExampleDetectParser() {
 	source := fstest.MapFS{
 		"00001_create_users.sql": {Data: []byte(

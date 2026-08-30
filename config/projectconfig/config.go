@@ -558,11 +558,10 @@ func (c OnlineDDLConfig) Enabled() bool {
 // positive, requires a Tool.
 //
 // [ParsePtah] calls Validate during parse, so a policy read from ptah.yaml
-// arrives validated. An embedder constructing or mutating a Config
-// programmatically should call it before handing the config to migration
-// execution, which performs no second configuration-file read: an unknown
-// Tool is never re-checked there, and an unknown Fallback is refused only
-// late, when a routed ALTER first needs the policy.
+// arrives validated. An embedder that builds or mutates a Config
+// programmatically should call it before handing the config on: nothing
+// downstream re-reads the configuration file, so a value that never went
+// through a parse has not been checked for it.
 func (c OnlineDDLConfig) Validate() error {
 	switch c.Tool {
 	case "", OnlineDDLToolGhost, OnlineDDLToolPTOSC:
@@ -842,11 +841,11 @@ func appendDisabledMode(patterns []string, option ConfigBool, pattern string) []
 // marked present wins even when it is empty; a programmatic value with no
 // loader metadata wins only when it is non-zero.
 //
-// Diagnostic metadata survives the merge: the result's IgnoredConstructs is
-// the concatenation of both inputs', base first. The exporter and
-// migration-directory maps are copied into fresh maps rather than shared, so
-// one merged env instance cannot write into a map the base and its sibling
-// instances read (stokaro/ptah#1620).
+// Diagnostic metadata survives the merge: the result's IgnoredConstructs
+// keeps the entries of both inputs rather than letting the override's list
+// replace the base's. The exporter and migration-directory maps are copied
+// into fresh maps rather than shared, so one merged env instance cannot write
+// into a map the base and its sibling instances read (stokaro/ptah#1620).
 func Merge(base, override Config) Config {
 	result := base
 	// Exporters are copied rather than shared, so an env instance cannot write

@@ -20,14 +20,17 @@ var registeredRules = struct {
 // for request-scoped analyzers; Register exists for plugin-style integrations
 // that initialize rules once at process startup.
 //
-// An invalid rule is an error and registers nothing: a Code that does not
-// start with an uppercase ASCII letter or contains anything but uppercase
-// ASCII letters and digits, an empty Title, an unsupported Severity,
-// both or neither of CheckStatement and CheckFile set, an Input declaration
-// that disagrees with BaselineSubjects, or a Code already taken by a built-in
-// or previously registered rule ("duplicate rule code ..."). Register is safe
-// for concurrent use, and the registry keeps its own copy of the rule
-// (Dialects included), so mutating the argument afterwards does not reach it.
+// A rule must carry a Code of uppercase ASCII letters and digits beginning
+// with a letter, a non-empty Title, a supported Severity, exactly one of
+// CheckStatement and CheckFile, and a BaselineSubjects predicate if and only
+// if it declares [InputBaselineSchema]. Its Code must also be free: a code a
+// built-in or an already registered rule holds is refused rather than
+// shadowing that rule. Register reports an invalid or colliding rule as an
+// error and registers nothing, so a failed call leaves the registry as it was.
+//
+// Register is safe for concurrent use, and the registry keeps its own copy of
+// the rule (Dialects included), so mutating the argument afterwards does not
+// reach it.
 func Register(rule Rule) error {
 	if err := validateRule(rule); err != nil {
 		return err
@@ -2325,16 +2328,13 @@ func scanPinnedOnlineDDL(w []string) bool {
 	return false
 }
 
-// Describe renders one finding as a single human-readable line, in the shape
+// Describe renders one finding as a single human-readable line naming the
+// file, the line when the finding has one, the severity, the rule code, the
+// message and the rule title. File-level findings — naming and pairing — carry
+// no line number and render without one.
 //
-//	file[:line] [severity] RULE: message (title)
-//
-// for example
-//
-//	migrations/0000000001_drop.up.sql:2 [error] DS102: DROP COLUMN ... (column dropped)
-//
-// The :line suffix appears only when [Finding.Line] is positive; file-level
-// findings (naming, pairing) render without it.
+// The line is meant to be read, not parsed: consume [Finding] itself when the
+// fields matter to a caller.
 func Describe(f Finding) string {
 	location := f.File
 	if f.Line > 0 {

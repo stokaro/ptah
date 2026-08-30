@@ -25,19 +25,19 @@ import (
 type Options struct {
 	// Cases are the test cases to run, in order.
 	Cases []Case
-	// MigrationsDir is the directory containing migration files. It is required
-	// (non-empty after trimming whitespace) whenever a case has a migrate_to
-	// step, even when MigrationsFS is set; see MigrationsFS.
+	// MigrationsDir names the directory holding the migration files. Name it
+	// whenever a case has a migrate_to step, including when MigrationsFS
+	// supplies the bytes: [RunMigrationTest] refuses a run whose cases migrate
+	// and that names no directory, before it reaches a database.
 	MigrationsDir string
 	// MigrationsFS is the immutable migration history used by every migrate_to
 	// step. When nil, MigrationsDir is opened for compatibility with existing
 	// embedders. Command callers should capture once, authorize that snapshot,
 	// and pass it here so test steps cannot reopen different bytes.
 	//
-	// MigrationsDir still gates migrate_to when MigrationsFS is set:
-	// [RunMigrationTest] refuses a migrate_to case with an empty MigrationsDir
-	// regardless of this field, but with a non-nil MigrationsFS the directory is
-	// never opened, so any non-empty name satisfies the check.
+	// A non-nil MigrationsFS is the only source of migration bytes for the run.
+	// MigrationsDir is not read from disk, which is what makes the authorized
+	// snapshot authoritative.
 	MigrationsFS fs.FS
 	// RootDir is a directory of Go entity annotations describing the desired
 	// schema. It is required only when a case has an apply_schema step.
@@ -99,10 +99,9 @@ func (r *Report) Failed() bool {
 
 // Text renders a human-readable summary of the report: a header naming the
 // report kind, a PASS/FAIL row per case with a row per executed step (carrying
-// the step's detail when it has one), and a trailing
-// "%d cases, %d passed, %d failed" line. Cases and steps render in execution
-// order and the output is deterministic for a given report — the same stability
-// [Report.JSON] promises — so it is safe to assert against.
+// the step's detail when it has one), and a trailing totals line. Cases and
+// steps render in execution order, and the rendering is deterministic for a
+// given report. Consume [Report.JSON] where a machine reads the result.
 func (r *Report) Text() string {
 	var b strings.Builder
 	kind := r.kind

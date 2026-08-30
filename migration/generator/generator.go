@@ -198,9 +198,10 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 // A shadow-verification failure is returned as a *shadow.VerificationError,
 // inspectable with errors.As, carrying the stage and the deterministically
 // ordered mismatch list. When the URL or connection selects SQLite, a
-// malformed PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP value is refused before
-// OutputDir is resolved, so it fails before any filesystem work; non-SQLite
-// plans do not consult the variable.
+// malformed PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP value is refused up front
+// rather than resolved to the documented default, so a typo cannot lie
+// dormant until a run reaches the branch that would have read it; non-SQLite
+// plans do not consult the variable at all.
 func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationPlan, error) {
 	opts, err := normalizeGenerateMigrationOptions(opts)
 	if err != nil {

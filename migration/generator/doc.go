@@ -36,9 +36,10 @@
 // The returned [MigrationFiles].Files slice is the authoritative ordered list
 // of generated pairs and published paths, named
 // {version}_{name}.up.sql and {version}_{name}.down.sql with a Unix-seconds
-// version. One generation can publish several pairs: statements that cannot
-// share a transaction with the rest -- enum value additions, concurrent index
-// operations -- are split into files of their own, in the order they must run.
+// version. One generation can publish several pairs: statements the target
+// dialect cannot run in the same transaction as the rest -- a concurrent index
+// build, for one -- are split into files of their own, in the order they must
+// run, so a caller iterates Files rather than assuming a single pair.
 //
 // # Other writers
 //

@@ -50,16 +50,20 @@ table "users" {
 // from reading as an empty schema. An atlas.hcl carrying an env block is
 // configuration, not schema; parsing it as one would yield an empty IR, which
 // a caller diffing against a live database cannot tell apart from a request to
-// drop everything.
+// drop everything. The refusal is the contract here — the wording of the
+// message is not, so branch on the error rather than on its text.
 func ExampleParseAtlasHCL_projectFile() {
-	_, err := atlascompat.ParseAtlasHCL([]byte(`env "local" {
+	db, err := atlascompat.ParseAtlasHCL([]byte(`env "local" {
   url = "sqlite://local.db"
 }
 `), "atlas.hcl")
-	fmt.Println(err)
+
+	fmt.Println("refused:", err != nil)
+	fmt.Println("no schema returned:", db == nil)
 
 	// Output:
-	// cannot parse project file "atlas.hcl" as a schema file: top-level "env" block at atlas.hcl:1,1-4 is a project-file construct
+	// refused: true
+	// no schema returned: true
 }
 
 // ExampleParseSQL parses SQL DDL text into Ptah AST statements. The dialect
@@ -135,12 +139,24 @@ func ExampleVerifySum() {
 		},
 	}
 
-	result := must.Must(atlascompat.VerifySum(drifted, migrationfile.DirFormatAtlas))
+	// The two channels are separate on purpose: an error means the directory
+	// could not be verified at all — no integrity file, or an unparsable one —
+	// while drift arrives in the result.
+	result, err := atlascompat.VerifySum(drifted, migrationfile.DirFormatAtlas)
+	if err != nil {
+		fmt.Println("cannot verify:", err)
+		return
+	}
+
 	fmt.Println("ok:", result.OK())
+	fmt.Println("changed:", result.Changed)
+	fmt.Println("added:", result.Added)
 	fmt.Println(result.Describe())
 
 	// Output:
 	// ok: false
+	// changed: [20260721150000_init.sql]
+	// added: [20260721150500_add_email.sql]
 	// migration directory does not match atlas.sum:
 	//   changed: 20260721150000_init.sql
 	//   added (not in atlas.sum): 20260721150500_add_email.sql

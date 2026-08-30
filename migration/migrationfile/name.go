@@ -298,11 +298,12 @@ func splitAtlasStem(stem string) (versionDigits, rawName string, ok bool) {
 	return stem[:i], strings.TrimLeft(stem[i:], "_."), true
 }
 
-// FileName produces a Ptah migration file name in the shape
-// %010d_description.direction.sql. The description is normalized to the stem
-// the name grammar accepts — lowercased, spaces become underscores, and every
-// remaining character outside [a-z0-9_] is stripped — so the result
-// round-trips through [ParseFileName], which title-cases it back into
+// FileName returns the file name for one direction of a migration:
+// NNNNNNNNNN_description.(up|down).sql, with the version zero-padded to the
+// ten digits [ParseFileName] requires. The description is normalized to the
+// stem the name grammar accepts — lowercased, spaces become underscores, and
+// every remaining character outside [a-z0-9_] is stripped — so the result
+// round-trips through ParseFileName, which title-cases it back into
 // [File.Name], provided the normalized description is non-empty (a
 // description with no [a-z0-9_] characters produces a name ParseFileName
 // refuses). Direction is used verbatim and must be "up" or "down" for the

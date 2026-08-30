@@ -90,10 +90,17 @@ func ExampleApply() {
 // AllowProd. Apply performs the same check; calling ValidateOptions directly
 // lets a caller refuse early, before connecting anywhere.
 func ExampleValidateOptions() {
-	fmt.Println(seeder.ValidateOptions(seeder.Options{Env: "prod"}))
-	fmt.Println(seeder.ValidateOptions(seeder.Options{Env: "prod", AllowProd: true}))
+	err := seeder.ValidateOptions(seeder.Options{Env: "prod"})
+	fmt.Println("prod refused:", err != nil)
+
+	err = seeder.ValidateOptions(seeder.Options{Env: "prod", AllowProd: true})
+	fmt.Println("prod with AllowProd refused:", err != nil)
+
+	err = seeder.ValidateOptions(seeder.Options{})
+	fmt.Println("no environment refused:", err != nil)
 
 	// Output:
-	// refusing to seed protected environment "prod" without --allow-prod
-	// <nil>
+	// prod refused: true
+	// prod with AllowProd refused: false
+	// no environment refused: true
 }

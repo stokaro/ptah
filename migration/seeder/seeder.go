@@ -78,11 +78,11 @@ type Options struct {
 	// answer to a [ChecksumMismatchError]: it re-runs the edited file and
 	// records the new checksum.
 	Force bool
-	// Idempotent tolerates duplicate-key conflicts: each file's statements run
-	// under a savepoint, and a conflict (see [IsConflictError]) rolls the file
-	// back to it while the seed is still recorded as applied. Any other
-	// failure still fails the run. [Apply] refuses the option on ClickHouse,
-	// where transactions and savepoints do not exist.
+	// Idempotent tolerates duplicate-key conflicts: a file whose statements hit
+	// one (see [IsConflictError]) is rolled back as a unit and the run
+	// continues, with the seed still recorded as applied. Any other failure
+	// still fails the run. [Apply] refuses the option on ClickHouse, which has
+	// no transaction to roll back to.
 	Idempotent bool
 	// AllowProd disables both protections: the protected-environment refusal
 	// and the protected-tables probe.
@@ -239,17 +239,19 @@ func ValidateOptions(opts Options) error {
 //
 // Apply validates opts (see [ValidateOptions]), refuses a target holding any
 // of the [Options.ProtectedTables], creates the schema_seeds tracker table if
-// it is absent, then applies each seed selected for opts.Env (see [Select]) in
+// it is absent, and applies each seed selected for opts.Env (see [Select]) in
 // [Discover] order, each file in its own transaction -- except on ClickHouse,
-// where seeds run without one. A seed already recorded with a matching
-// checksum is skipped; a recorded seed whose file changed stops the run with a
+// where seeds run without one, so a failed file there can leave its earlier
+// statements applied. A seed already recorded with a matching checksum is
+// skipped; a recorded seed whose file changed stops the run with a
 // *[ChecksumMismatchError], retrieved with [errors.As]; [Options.Force]
-// re-applies both. When no seed matches the environment, Apply returns an
-// empty Result without creating the tracker.
+// re-applies both. An environment no seed matches is not an error: Apply
+// applies nothing and returns an empty Result.
 //
-// An error before the first seed is examined comes with a nil Result; from
-// there on the returned Result is non-nil alongside the error and reports what
-// was applied and skipped before it.
+// The returned Result may be nil when the run fails before any seed is
+// applied, so a caller that inspects it on the error path checks for nil.
+// Once seeds are running, a failure returns the Result alongside the error,
+// reporting what was applied and skipped before it.
 func Apply(ctx context.Context, conn *dbschema.DatabaseConnection, fsys fs.FS, opts Options) (*Result, error) {
 	opts.Env = normalizeEnv(opts.Env)
 	if len(opts.ProtectedEnvs) == 0 {

@@ -26,11 +26,11 @@ func ExampleIsBlocking() {
 	// destructive: true
 }
 
-// ExampleSARIFLevel prints the complete mapping of Ptah severities onto
-// three of SARIF's result levels, for an embedder publishing findings to a
-// SARIF consumer. Info maps to "note", the level below "warning": an advisory
-// finding a viewer should show and no gate should act on does not ask for the
-// review that "warning" implies.
+// ExampleSARIFLevel shows how each severity reaches a SARIF consumer, for an
+// embedder publishing findings to one. A blocking severity maps to "error",
+// and Info maps to "note", the level below "warning": an advisory finding a
+// viewer should show and no gate should act on does not ask for the review
+// that "warning" implies.
 func ExampleSARIFLevel() {
 	severities := []risk.Severity{risk.Safe, risk.Info, risk.Warning, risk.Error, risk.Destructive}
 

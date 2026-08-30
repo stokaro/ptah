@@ -1715,17 +1715,16 @@ type CreateViewNode struct {
 	// Name is the view name, written as an identifier and quoted by the
 	// renderer.
 	Name string
-	// Body is the view's SELECT statement, emitted verbatim after `AS` with
-	// only surrounding whitespace trimmed.
+	// Body is the view's SELECT statement. Ptah does not parse or rewrite it:
+	// it reaches the target as written, so it has to be valid there.
 	Body string
-	// Replace asks for replace-if-exists semantics. Each renderer picks its
-	// target's spelling: CREATE OR REPLACE VIEW where the target has it,
-	// CREATE OR ALTER VIEW on SQL Server, a preceding DROP VIEW IF EXISTS on
-	// SQLite.
+	// Replace asks for replace-if-exists semantics. Each renderer reaches them
+	// the way its target spells them, so the SQL differs while the outcome
+	// does not.
 	Replace bool
-	// WithCheck renders the WITH CHECK OPTION clause after the body. Targets
-	// without the clause (SQLite, ClickHouse) refuse the node rather than
-	// dropping it.
+	// WithCheck asks for the WITH CHECK OPTION clause. A target without the
+	// clause refuses the node rather than rendering a view that silently does
+	// not check.
 	WithCheck bool
 	// Comment is an optional comment emitted as a SQL comment above the
 	// statement.
@@ -2294,29 +2293,27 @@ type CreateTriggerNode struct {
 	Name string
 	// Table is the table the trigger fires on.
 	Table string
-	// Timing is the firing clause -- BEFORE or AFTER (INSTEAD OF where the
-	// target has it) -- passed through to the renderer as written on most
-	// targets; SQL Server uppercases it, defaults an empty value to AFTER,
-	// and refuses BEFORE.
+	// Timing is the firing clause: BEFORE or AFTER, and INSTEAD OF where the
+	// target has it. A timing the target does not have is refused rather than
+	// swapped for one that fires at a different moment.
 	Timing string
 	// Event names the triggering statement or statements, such as INSERT or
-	// UPDATE, passed through as written on most targets; SQL Server
-	// uppercases it and defaults an empty value to INSERT.
+	// UPDATE.
 	Event string
-	// ForEach is the trigger level: ROW or STATEMENT. Renderers with a FOR
-	// EACH clause treat empty as ROW, the value [NewCreateTrigger] starts
-	// from; MySQL, MariaDB, SQLite, and Oracle refuse STATEMENT rather than
-	// silently downgrading it. SQL Server has no trigger-level clause and
-	// ignores the field.
+	// ForEach is the trigger level: ROW or STATEMENT. Empty means ROW, the
+	// value [NewCreateTrigger] starts from. A target with row-level triggers
+	// only refuses STATEMENT rather than downgrading it: a trigger that fires
+	// once per row instead of once per statement is a different program.
 	ForEach string
-	// Body is the trigger code. The MySQL family emits it inline as the
-	// trigger body; PostgreSQL keeps trigger code in a function, so its
-	// renderer wraps Body into a generated trigger function -- unless
-	// ExternalFunction says the function already exists.
+	// Body is the trigger code, in whatever language the target runs triggers
+	// in. Where the target keeps that code in a routine of its own rather than
+	// inside the trigger, the renderer emits the routine from Body as well --
+	// unless ExternalFunction says the routine already exists.
 	Body string
-	// FunctionName is the function the trigger executes. On PostgreSQL an
-	// empty name derives a deterministic one from Table and Name; see
-	// ExternalFunction for referencing a function that already exists.
+	// FunctionName is the function the trigger executes, on a target that
+	// needs one. Leave it empty to have the renderer derive a name
+	// deterministically from Table and Name; see ExternalFunction for
+	// referencing a function that already exists.
 	FunctionName string
 	// ExternalFunction reports that FunctionName refers to a function that
 	// already exists rather than one rendered from Body. PostgreSQL keeps
@@ -2325,11 +2322,10 @@ type CreateTriggerNode struct {
 	// redefining a function they were only asked to reference would discard
 	// its body.
 	ExternalFunction bool
-	// Replace asks for replace-if-exists semantics. Renderers with CREATE OR
-	// REPLACE TRIGGER in their capabilities emit it; SQL Server spells it
-	// CREATE OR ALTER TRIGGER; PostgreSQL- and MySQL-family targets without
-	// the capability emit a preceding DROP TRIGGER IF EXISTS; Oracle without
-	// it refuses, having no DROP TRIGGER IF EXISTS to fall back on.
+	// Replace asks for replace-if-exists semantics. Each renderer reaches them
+	// the way its target allows, and a target that has no way to reach them
+	// refuses rather than emitting a plain CREATE that would fail against the
+	// trigger already there.
 	Replace bool
 	// Comment is an optional comment emitted as a SQL comment above the
 	// statement.

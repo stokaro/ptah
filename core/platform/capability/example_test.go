@@ -10,8 +10,9 @@ import (
 // ExampleForDialect resolves the default capability preset for a dialect name
 // and gates an emission with Has. Any spelling platform.NormalizeDialect
 // accepts works ("postgresql" here). An unknown dialect gets nil — the
-// conservative empty set — so every Has answer on it is false and a consumer
-// falls back to the most compatible emission.
+// conservative empty set — and reading it is safe: every Has answer on it is
+// false, so a target Ptah does not model is treated as having nothing rather
+// than everything.
 func ExampleForDialect() {
 	postgres := capability.ForDialect("postgresql")
 	mysql := capability.ForDialect("mysql")
@@ -56,25 +57,30 @@ func ExampleCapabilities_With() {
 // fast instead of reading as "capability absent"), an enabled capability's
 // requirements must be enabled too, a mutual-exclusion group admits at most
 // one member, and enabling ForeignKeys demands exactly one foreign-key
-// reference policy beside it. Presets already satisfy all of them; hand-built
-// sets are the ones to check.
+// reference policy beside it. A refusal names the key or the pair at fault:
+// report that text, branch on whether there is a refusal at all. Presets
+// satisfy every rule, which is the last line here — hand-built sets are the
+// ones to check.
 func ExampleCapabilities_Validate() {
 	typo := capability.Capabilities{"drop_index_if_exist": true}
-	fmt.Println(typo.Validate())
+	fmt.Println("unregistered key refused:", typo.Validate() != nil)
 
 	orphan := capability.Capabilities{capability.DropConstraintIfExists: true}
-	fmt.Println(orphan.Validate())
+	fmt.Println("unmet requirement refused:", orphan.Validate() != nil)
 
 	bothEnumModes := capability.Capabilities{
 		capability.EnumInlineColumn: true,
 		capability.EnumCustomType:   true,
 	}
-	fmt.Println(bothEnumModes.Validate())
+	fmt.Println("mutually exclusive pair refused:", bothEnumModes.Validate() != nil)
+
+	fmt.Println("shipped preset accepted:", capability.Postgres17().Validate() == nil)
 
 	// Output:
-	// unknown capability "drop_index_if_exist"
-	// capability "drop_constraint_if_exists" requires "drop_constraint_generic", which is not enabled
-	// capabilities enum_inline_column and enum_custom_type are mutually exclusive
+	// unregistered key refused: true
+	// unmet requirement refused: true
+	// mutually exclusive pair refused: true
+	// shipped preset accepted: true
 }
 
 // ExampleCapabilities_Established separates "decided false" from "never

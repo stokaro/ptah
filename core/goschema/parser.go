@@ -849,13 +849,13 @@ func ParseFile(filename string) (schemamodel.Database, error) {
 // [schemamodel.ManagedData.SourceDir] of any managed-data annotation the
 // source declares.
 //
-// The result is un-finalized exactly as ParseFile's is -- table-scoped names
-// resolved and the dependency graph built, embedded fields not expanded,
-// nothing deduplicated: one file is not a schema. Source that does not parse
-// as Go, and an annotation the parser refuses -- an unknown, retired, or
-// missing required attribute, or an invalid value -- both return a
-// [ptaherr.ParseError]; errors.Is against the ptaherr sentinels tells the
-// refusals apart.
+// The result is un-finalized exactly as ParseFile's is -- embedded fields not
+// expanded, nothing deduplicated: one file is not a schema. Run it through
+// [schemamodel.Merge] or [schemamodel.Finalize] before handing it to a
+// renderer or a diff. Source that does not parse as Go, and an annotation the
+// parser refuses -- an unknown, retired, or missing required attribute, or an
+// invalid value -- both return a [ptaherr.ParseError]; errors.Is against the
+// ptaherr sentinels tells the refusals apart.
 func ParseSource(filename string, source any) (schemamodel.Database, error) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, filename, source, parser.ParseComments)

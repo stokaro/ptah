@@ -79,10 +79,12 @@ type ResolvedName struct {
 
 // ForDialect returns conservative offline identifier semantics for dialect.
 // The argument is folded through [platform.NormalizeDialect], so every
-// accepted spelling of a dialect name selects the same rules. An unknown
-// dialect receives exact comparison for all three name kinds, table-scoped
-// index names, and no default schema -- rules that never merge two spellings,
-// though they also flag no collisions.
+// accepted spelling of a dialect name selects the same rules. A dialect Ptah
+// does not model still receives usable rules rather than a zero value:
+// comparison that never treats two different spellings as one object, and no
+// default schema. Those are a fallback for an unmodelled target rather than a
+// description of one, so a caller who knows the target's rules should build
+// [Semantics] directly.
 func ForDialect(dialect string) Semantics {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres, platform.YugabyteDB, platform.Spanner:
@@ -168,12 +170,15 @@ func ForSQLServerCatalog(catalogCollation string) Semantics {
 }
 
 // WithResolvedNames returns a copy with deterministic catalog-equivalence
-// mappings, sorted by raw name; the input may arrive in any order. For
-// [Semantics.Normalize] to keep them, the mappings must form canonical
-// equivalence classes: every Name and Key non-empty, at most one mapping per
-// raw name, every Key itself present as a Name, and each Key equal to the
-// byte-wise smallest Name in its class. Anything else makes Normalize fall
-// back to the conservative [ForDialect] rules.
+// mappings, sorted by raw name; the input may arrive in any order. The sort
+// is part of the value: lookups rely on it, and two semantics built from the
+// same mappings in different orders compare [Semantics.Equal].
+//
+// For [Semantics.Normalize] to keep them, the mappings must form canonical
+// equivalence classes: every Name and Key non-empty, Names strictly ascending
+// and therefore unique, every Key itself present as a Name, and each Key equal
+// to the byte-wise smallest Name in its class. Anything else makes Normalize
+// fall back to the conservative [ForDialect] rules.
 func (s Semantics) WithResolvedNames(names []ResolvedName) Semantics {
 	s.ResolvedNames = slices.Clone(names)
 	sort.Slice(s.ResolvedNames, func(i, j int) bool {

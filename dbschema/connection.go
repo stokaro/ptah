@@ -38,14 +38,14 @@ import (
 //
 // The URL scheme selects the dialect: every spelling platform.NormalizeDialect
 // resolves that URL syntax can carry as a scheme is accepted -- the canonical
-// names and the aliases that fold onto them, though the underscore spellings
-// cannot be spelled as a scheme -- and a scheme it does not know is refused
-// with an error rather than guessed at. Within SQLite's dialect the URL also selects the transport:
-// libsql:// and libsql+ws:// reach a remote libsql (Turso) server, while any
-// other sqlite URL opens a local file or an in-memory database. An in-memory
-// SQLite connection is capped at one open connection, so the database lives
-// exactly as long as the returned *DatabaseConnection and every caller shares
-// that one session.
+// names and the aliases that fold onto them, barring the underscore spellings,
+// which a scheme cannot hold -- and a scheme it does not know is refused with
+// an error rather than guessed at. Within SQLite's dialect the URL also
+// selects the transport: libsql:// and libsql+ws:// reach a remote libsql
+// (Turso) server, while any other sqlite URL opens a local file or an
+// in-memory database. An in-memory SQLite database has no existence apart from
+// its connection: every caller of the returned *DatabaseConnection shares one
+// session, and closing it discards the database.
 //
 // The provided context governs the initial Ping used to verify the connection
 // and the metadata queries issued to populate [catalog.ServerInfo]. Canceling
@@ -680,7 +680,7 @@ func recordUnmodeledObjectKinds(schema *catalog.Database, dialect string) *catal
 }
 
 // Info returns the connection's server metadata as a defensive copy: the
-// Capabilities and IdentifierSemantics it carries are cloned, so mutating the
+// mutable metadata it carries is cloned rather than shared, so mutating the
 // result never reaches the connection and concurrent calls are safe. Anything
 // serialized or displayed from it should read [catalog.ServerInfo]'s
 // RedactedURL rather than URL, which retains the credentials the connection
@@ -963,11 +963,13 @@ func (dc *DatabaseConnection) BeginTx(ctx context.Context, opts *sql.TxOptions) 
 	return dc.db.BeginTx(ctx, opts)
 }
 
-// Exec is the context-free twin of [DatabaseConnection.ExecContext]: a root
-// connection runs it under context.Background(), and a pinned session copy
-// (see [DatabaseConnection.WithSession]) under the context the session was
-// pinned with. It carries the same executor-routing contract, synthetic
-// result included.
+// Exec is the context-free twin of [DatabaseConnection.ExecContext], for a
+// caller with no context to hand. It carries the same executor-routing
+// contract, including the result a routed statement returns.
+//
+// Prefer ExecContext: only it can be told to stop. An Exec issued on a
+// session-scoped copy is bound to whatever lifetime that session was pinned
+// with rather than to the caller's own.
 func (dc *DatabaseConnection) Exec(query string, args ...any) (sql.Result, error) {
 	if executor, ok := dc.executor.(contextExecutor); ok {
 		return executor.ExecContext(context.Background(), query, args...)
@@ -985,11 +987,11 @@ func (dc *DatabaseConnection) Exec(query string, args ...any) (sql.Result, error
 //
 // On a transaction-scoped connection copy (see
 // [DatabaseConnection.WithExecutor]) the statement routes through the
-// installed executor so it joins that executor's session. When the executor
-// exposes no ExecContext of its own, the statement runs through its ExecuteSQL
-// and the returned [sql.Result] is a synthetic driver.RowsAffected(0) rather
-// than the driver's real count. On a root connection the statement goes
-// straight to the pool and the result is the driver's.
+// installed executor so it joins that executor's session. An executor that
+// reports no count of its own leaves the returned [sql.Result] synthetic: it
+// answers zero rows affected and has no insert id, so a caller that needs a
+// real count must not read one off a routed statement. On a root connection
+// the statement goes straight to the pool and the result is the driver's.
 func (dc *DatabaseConnection) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	if executor, ok := dc.executor.(contextExecutor); ok {
 		return executor.ExecContext(ctx, query, args...)
@@ -1066,11 +1068,10 @@ func (dc *DatabaseConnection) Conn(ctx context.Context) (*sql.Conn, error) {
 
 // Close closes the connection pool a root connection owns.
 //
-// A session-scoped connection copy -- the *DatabaseConnection a
-// [DatabaseConnection.WithSession] or
-// [DatabaseConnection.WithUntrustedSQLSession] callback receives -- does not
-// own the pool, so Close on it is a no-op returning nil: the session's
-// lifecycle belongs to the With method that pinned it. A connection holding no
+// A session-scoped connection copy -- the *DatabaseConnection a session
+// method such as [DatabaseConnection.WithSession] hands its callback -- does
+// not own the pool, so Close on it is a no-op returning nil: the session's
+// lifecycle belongs to the method that pinned it. A connection holding no
 // database is a no-op too, so Close composes with defer on every path.
 func (dc *DatabaseConnection) Close() error {
 	if dc.pinned {

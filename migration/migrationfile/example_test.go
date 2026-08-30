@@ -12,10 +12,11 @@ import (
 )
 
 // ExampleDiscover walks a migration directory in auto format. Results come
-// back sorted ascending by Version with ties broken by Path, so two runs over
-// the same filesystem print identically. Ptah files win in auto mode, so the
-// Atlas-shaped 20240101_seed.sql is not selected, and the stray notes.sql is
-// simply left out rather than failing the walk.
+// back ascending by Version, in an order two runs over the same filesystem
+// reproduce. Ptah files win in auto mode, so the Atlas-shaped
+// 20240101_seed.sql is not selected, and the stray notes.sql is simply left
+// out rather than failing the walk. A directory whose files match no name
+// grammar at all is refused, which is why the error is worth branching on.
 func ExampleDiscover() {
 	fsys := fstest.MapFS{
 		"0000000001_create_users.up.sql":   {Data: []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n")},
@@ -26,7 +27,11 @@ func ExampleDiscover() {
 		"notes.sql":                        {Data: []byte("-- scratch pad, not a migration\n")},
 	}
 
-	files := must.Must(migrationfile.Discover(fsys, migrationfile.DirFormatAuto))
+	files, err := migrationfile.Discover(fsys, migrationfile.DirFormatAuto)
+	if err != nil {
+		fmt.Println("discover:", err)
+		return
+	}
 	for _, file := range files {
 		fmt.Printf("%d %s %s (%s)\n", file.Version, file.Direction, file.Path, file.Name)
 	}
@@ -79,7 +84,11 @@ func ExampleFileName() {
 // extracted SQL back to the source file.
 func ExampleParseUp() {
 	plain := "-- +ptah no_transaction\nCREATE INDEX CONCURRENTLY idx_users_email ON users (email);\n"
-	up := must.Must(migrationfile.ParseUp("0000000001_add_email_index.up.sql", plain))
+	up, err := migrationfile.ParseUp("0000000001_add_email_index.up.sql", plain)
+	if err != nil {
+		fmt.Println("parse plain:", err)
+		return
+	}
 	fmt.Printf("plain: mode=%q offset=%d\n", up.TxMode, up.SourceLineOffset)
 
 	archive := `-- atlas:txtar
@@ -90,7 +99,11 @@ SELECT count(*) = 0 FROM users;
 -- migration.sql --
 CREATE TABLE users (id INTEGER PRIMARY KEY);
 `
-	up = must.Must(migrationfile.ParseUp("20240101000000_users.sql", archive))
+	up, err = migrationfile.ParseUp("20240101000000_users.sql", archive)
+	if err != nil {
+		fmt.Println("parse txtar:", err)
+		return
+	}
 	fmt.Printf("txtar: mode=%q offset=%d\n", up.TxMode, up.SourceLineOffset)
 	fmt.Print(up.SQL)
 

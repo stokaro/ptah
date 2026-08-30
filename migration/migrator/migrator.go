@@ -38,9 +38,10 @@ type MigrationStatus struct {
 	// repeatable migrations carry opaque tokens such as "2R".
 	CurrentVersionKey string `json:"current_version_key,omitempty"`
 	// CurrentVersionKeySet reports whether CurrentVersionKey carries an
-	// identity at all. It distinguishes an exact empty identity — the token one
-	// Flyway repeatable records — from no identity; MarshalJSON treats the bit
-	// as authoritative and UnmarshalJSON restores it.
+	// identity at all: it distinguishes an exact empty identity, which one
+	// Flyway repeatable migration records, from no identity. The bit is
+	// authoritative — a CurrentVersionKey left behind with the bit clear is not
+	// serialized as an identity — and it survives a JSON round trip.
 	CurrentVersionKeySet bool `json:"-"`
 	// AppliedMigrations holds the applied versions; AppliedMigrationKeys aligns
 	// with it index for index and carries each row's exact revision identity.
@@ -60,10 +61,10 @@ type MigrationStatus struct {
 	// HasPendingChanges reports that pending migrations exist or that a dirty
 	// revision does.
 	HasPendingChanges bool `json:"has_pending_changes"`
-	// DirtyRevision is the first revision row a failed or interrupted run left
-	// in a non-applied state, or nil when every row is clean. While it is
-	// non-nil, migration operations refuse to continue until the row is
-	// repaired; see [Migrator.RepairMigration].
+	// DirtyRevision is a revision row a failed or interrupted run left in a
+	// non-applied state, and nil when every row is clean. While it is non-nil,
+	// migration operations refuse to continue until the row is repaired; see
+	// [Migrator.RepairMigration].
 	DirtyRevision *MigrationRevision `json:"dirty_revision,omitempty"`
 }
 
@@ -649,9 +650,9 @@ func revisionEngineClauseFor(dialect, engine string) string {
 }
 
 // WithMigrationsTable returns a copy of the migrator that records applied
-// migrations in the named schema and table. An empty schema leaves the table
-// unqualified — the connection's default schema, dbo on SQL Server — and an
-// empty table falls back to the revision-table format's default name.
+// migrations in the named schema and table. An empty schema puts the table in
+// the connection's default schema, and an empty table name falls back to the
+// revision-table format's default name.
 func (m *Migrator) WithMigrationsTable(schema, table string) *Migrator {
 	tmp := *m
 	tmp.migrationsSchema = strings.TrimSpace(schema)
@@ -873,15 +874,15 @@ func (m *Migrator) deleteMigrationSQL() string {
 
 // Initialize prepares the revision metadata this migrator reads and writes. It
 // creates the metadata schema and the migrations table when they are absent,
-// validates the table's storage engine and, for the Atlas layout, its identity
-// collation, and migrates an existing Ptah-layout table to the current column
-// layout — so it can execute ALTER TABLE against live metadata. A configured
-// engine the revision table cannot use is refused before any statement runs.
+// refuses an existing table the configured layout cannot safely use, and
+// brings a table that predates the current layout up to it — so Initialize can
+// execute DDL, ALTER TABLE included, against live metadata. A refusal happens
+// before any statement runs, leaving the metadata untouched.
 //
 // Every read and write entry point calls Initialize implicitly, GetRevisions
 // included; a writer in dry-run mode, which only inspects the metadata, is the
-// one read-only route. The result is memoized per writer dry-run mode, so a
-// writer that later leaves dry-run mode still gets its table created.
+// one read-only route. Initialize is idempotent, and a migrator that later
+// leaves dry-run mode still gets its table created.
 func (m *Migrator) Initialize(ctx context.Context) error {
 	dryRun := m.conn.Writer().IsDryRun()
 

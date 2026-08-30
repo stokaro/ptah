@@ -51,16 +51,17 @@ var plannerRegistry struct {
 //   - Handle dialect-specific data types and constraints appropriately
 //   - Provide safe migration paths that minimize data loss risks
 //   - Support rollback scenarios where applicable
-//   - Expose only checked planning: malformed references, unresolved additions,
-//     and target index-namespace conflicts fail before SQL is returned
+//   - Refuse a diff they cannot plan into applicable SQL rather than emitting
+//     statements the target would reject
 //
 // # Parameters
 //
 // The diff is the whole input. Each change entry carries its own operands
 // (the difftypes Changes elements and Desired fields), and schema-wide
 // vocabulary travels on the diff's Declared* carries, so an implementation
-// reads everything it plans from the diff. The desired schema as a whole is taken by the package-level
-// helpers, which prepare and validate it before any planner runs; see
+// reads everything it plans from the diff. The desired schema itself stays
+// with the schemadiff package, which prepares and validates it where it is
+// supplied and puts on the diff what planning needs; see
 // GenerateSchemaDiffASTWithOptions.
 //
 // # Return Value
@@ -186,7 +187,8 @@ func RegisteredDialects() ([]string, error) {
 // that package accepts resolves to its canonical planner. An unknown, empty,
 // or unregistered dialect fails with a *ptaherr.PlanError satisfying
 // errors.Is against ptaherr.ErrUnsupportedDialect; errors.As retrieves the
-// structured form carrying the dialect as it was passed.
+// structured form, which carries the dialect the lookup was made for. Branch
+// on the sentinel rather than on the message text.
 //
 // # Usage Example
 //
@@ -368,7 +370,6 @@ func normalizeRegistryDialect(dialect string) string {
 // # Parameters
 //
 //   - diff: Schema differences identified by the schemadiff package
-//   - desired: The desired schema the diff was computed against
 //   - dialect: Database dialect identifier (use constants from platform package)
 //
 // # Return Value
@@ -403,27 +404,24 @@ func GenerateSchemaDiffAST(diff *difftypes.SchemaDiff, dialect string) ([]ast.No
 }
 
 // GenerateSchemaDiffASTWithOptions generates AST nodes with explicit planning
-// options. Every package-level generation helper funnels through it, and it is
-// where preparation and validation happen.
+// options. The refusals below hold for every package-level generation helper
+// in this package.
 //
-// Before planning, the desired schema is prepared: foreign keys are given
-// stable dialect-valid default names, and declared user types are
-// schema-qualified so a column naming one resolves to the declaring schema.
-// Preparation works on a clone; the caller's schema is never mutated.
-// Planning then refuses rather than guesses:
+// The diff is the whole input. The desired schema is prepared and validated
+// where it is supplied, in the schemadiff package, which puts on the diff what
+// planning needs, its Declared* carries included; a caller assembling a diff
+// by hand can run schemadiff.ValidateDesiredSchema itself. Planning refuses
+// rather than guesses:
 //
-//   - a diff whose IdentifierSemantics snapshot does not survive
-//     normalization for the dialect fails with an error satisfying
-//     errors.Is against ptaherr.ErrInvalidSchemaDiff, and a nil diff is
-//     refused the same way by every built-in planner
-//   - a desired schema that fails identifier validation or the dialect's
-//     capability validation (renderer.ValidateSchemaWithCapabilities, under
-//     the set Options.CapabilitiesFor resolves) is refused before any
-//     planner runs
+//   - a diff carrying an IdentifierSemantics snapshot that is not valid for
+//     the dialect fails with an error satisfying errors.Is against
+//     ptaherr.ErrInvalidSchemaDiff, and a nil diff is refused the same way by
+//     every built-in planner rather than planned as an empty migration
+//   - a dialect no planner is registered for fails with an error satisfying
+//     errors.Is against ptaherr.ErrUnsupportedDialect
 //
 // Every failure comes back as a *ptaherr.PlanError carrying the dialect, so
-// errors.As selects the structured form and errors.Is the sentinel. A nil
-// desired schema is tolerated; the diff's own entries are what gets planned.
+// errors.As selects the structured form and errors.Is the sentinel.
 func GenerateSchemaDiffASTWithOptions(
 	diff *difftypes.SchemaDiff,
 	dialect string,
@@ -488,23 +486,22 @@ func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
 // # Parameters
 //
 //   - diff: Schema differences identified by the schemadiff package
-//   - desired: The desired schema the diff was computed against
 //   - dialect: Database dialect identifier (use constants from platform package)
 //
 // # Return Value
 //
 // Returns a slice of individual SQL statements. A statement carries no
-// trailing semicolon (the splitter strips the terminator) and may open with
-// the comment lines the planner attached to it. The statements are ordered to
-// respect database dependencies and can be executed sequentially to perform
-// the migration.
+// trailing semicolon and may open with the comment lines the planner attached
+// to it, so each element is handed to the driver as-is. The statements are
+// ordered to respect database dependencies and can be executed sequentially to
+// perform the migration.
 //
 // # Statement Processing
 //
 // The function performs the following processing steps:
 //  1. Generate AST nodes using GenerateSchemaDiffAST
 //  2. Render AST nodes to complete SQL using the renderer package
-//  3. Split the SQL into statements using sqlutil.SplitSQLStatementsForDialect
+//  3. Split the rendered SQL under the dialect's statement grammar
 //  4. Return the statements as a string slice
 //
 // # Usage Example
@@ -568,7 +565,6 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 // # Parameters
 //
 //   - diff: Schema differences identified by the schemadiff package
-//   - desired: The desired schema the diff was computed against
 //   - dialect: Database dialect identifier (use constants from platform package)
 //
 // # Return Value
@@ -624,11 +620,11 @@ func GenerateSchemaDiffSQL(diff *difftypes.SchemaDiff, dialect string) (string, 
 // GenerateSchemaDiffSQLWithOptions generates complete SQL using explicit
 // planning options.
 //
-// Rendering capabilities are widened with the extensions the desired schema
-// declares (capability.WithDeclaredExtensions): a declared extension is one
-// this plan installs before the statements that need it, so those statements
-// must render even when the capability set was resolved from a server that
-// does not have the extension yet (stokaro/ptah#1026).
+// Rendering capabilities are widened with the extensions this plan itself
+// installs (diff.ExtensionsAdded): such an extension is in place before the
+// statements that need it, so those statements render even when the
+// capability set was resolved from a server that does not have the extension
+// yet (stokaro/ptah#1026).
 //
 // Planning failures come back as *ptaherr.PlanError (see
 // GenerateSchemaDiffASTWithOptions); rendering failures as

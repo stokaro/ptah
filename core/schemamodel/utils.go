@@ -255,8 +255,9 @@ func BuildDependencyGraph(r *Database) {
 // columns — see the field's own doc.
 //
 // Unlike [Merge], Finalize returns no error and validates nothing: two
-// declarations with the same identity are collapsed to the first rather than
-// reported as a conflict.
+// declarations with the same identity are collapsed rather than reported as a
+// conflict. Use [Merge] where a disagreement between sources has to be an
+// error instead of one of them silently winning.
 func Finalize(r *Database) {
 	restoreCompositeHelperDefinitions(r)
 	r.Fields = ProcessEmbeddedFields(r.EmbeddedFields, r.Fields)

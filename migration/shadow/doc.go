@@ -41,7 +41,7 @@
 // ordered, so the same drift reports the same way twice.
 //
 // [VerifyRollback] and [PlanDynamicRollback] report ordinary wrapped errors
-// prefixed with the operation name instead; their failures are operational,
-// so there is no mismatch list to carry. For the planner, a schema difference
-// is the successful output rather than a failure.
+// instead: their failures are operational, so there is no mismatch list to
+// carry and errors.As for a [VerificationError] does not match. For the
+// planner, a schema difference is the successful output rather than a failure.
 package shadow

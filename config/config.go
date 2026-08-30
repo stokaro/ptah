@@ -310,12 +310,10 @@ type DomainExpression struct {
 // DefaultCompareOptions returns comparison options that ignore exactly one
 // extension, plpgsql -- the procedural language PostgreSQL installs by
 // default, which a desired schema rarely declares and a migration must not
-// drop. Every other field is left at its zero value: no dialect fold applies,
-// and the server-resolved expression maps are nil, so each attribute takes
-// its field's documented nil-map behavior -- domain and continuous-aggregate
-// expressions stay uncompared, generated expressions stay uncompared only on
-// the rewrite dialects, and checks and policies fall back to the textual
-// normalizer.
+// drop. Every other field is left at its zero value, which is the supported
+// way to ask for Ptah's stock comparison behavior: each field documents what
+// its own zero value selects, including the server-resolved expression maps,
+// which are nil here because these options were built without a connection.
 func DefaultCompareOptions() *CompareOptions {
 	return &CompareOptions{
 		IgnoredExtensions: []string{

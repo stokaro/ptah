@@ -119,12 +119,10 @@ const (
 	// ordinary table and a diff between the two reports no difference
 	// (stokaro/ptah#1026).
 	//
-	// Hypertable is outside the serialized directive grammar: [ParseKind]
-	// refuses its token, [Object.Validate] refuses a record carrying it, and
-	// [DecodeHeader] refuses a directive naming it. A record with this kind
-	// therefore serves in-process consultation only -- [Set.Directives] still
-	// writes the line, and the result is a document this package refuses to
-	// read back.
+	// Hypertable is consulted in process rather than serialized: it is not
+	// part of the directive grammar this package encodes and decodes, so a
+	// [Set] carrying this kind does not survive a round trip through a
+	// document. Hold the record in memory and consult it there.
 	Hypertable Kind = "hypertable"
 
 	// ContinuousAggregate is a TimescaleDB continuous aggregate: a
@@ -138,9 +136,9 @@ const (
 	// refuses DROP VIEW on a continuous aggregate and the run reports the same
 	// pending change forever (stokaro/ptah#1026).
 	//
-	// ContinuousAggregate is outside the serialized directive grammar exactly
-	// as [Hypertable] is; see that constant for what this means for a [Set]
-	// carrying it.
+	// ContinuousAggregate is consulted in process rather than serialized,
+	// exactly as [Hypertable] is; see that constant for what this means for a
+	// [Set] carrying it.
 	ContinuousAggregate Kind = "continuous_aggregate"
 
 	// ChangeStream is a Spanner change stream (CREATE CHANGE STREAM): a

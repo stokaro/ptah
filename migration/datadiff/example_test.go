@@ -42,11 +42,12 @@ func ExampleCompute() {
 	// update id=1: "Czech Republic" -> "Czechia"
 }
 
-// ExampleCompute_nullVersusEmptyString shows the normalized value comparison at
-// its two edges. The one-byte type tag keeps a live SQL NULL distinct from a
-// desired empty string, so row 1 is reported as an update rather than silently
-// matching; the driver-agnostic "V" form lets a desired int compare equal to
-// the int64 a driver scans back, so row 2 reports nothing.
+// ExampleCompute_nullVersusEmptyString shows value comparison at its two edges.
+// A live SQL NULL stays distinct from a desired empty string, so row 1 is
+// reported as an update rather than silently matching; the comparison is
+// driver-agnostic, so a desired int matches the int64 a driver scans back and
+// row 2 reports nothing. The package documentation's value-comparison section
+// states the guarantee and the cross-dialect limits that come with it.
 func ExampleCompute_nullVersusEmptyString() {
 	desired := []datadiff.Row{
 		{"id": 1, "note": ""},
@@ -72,11 +73,15 @@ func ExampleCompute_nullVersusEmptyString() {
 	// update id=1: live NULL differs from desired ""
 }
 
-// ExampleRender turns a DataDiff into a pair of SQL scripts: up applies the
-// desired state in Inserts, Updates, Deletes order, and down is the exact
-// inverse in fully reversed order. Columns are sorted inside every statement,
-// identifiers are quoted for the dialect, and a set Schema qualifies the table
-// name.
+// ExampleRender turns a DataDiff — the value Compute returns, built here by
+// hand to show its shape — into a pair of SQL scripts: up applies the desired
+// state in Inserts, Updates, Deletes order, and down is the exact inverse in
+// fully reversed order. Columns are sorted inside every statement, identifiers
+// are quoted for the dialect, and a set Schema qualifies the table name.
+//
+// The two UPDATE statements are why RowUpdate carries both sides: the forward
+// one sets the Desired value and its inverse restores the Live value it
+// replaced, so up followed by down returns the table to its original contents.
 func ExampleRender() {
 	diff := &datadiff.DataDiff{
 		Schema: "app",
@@ -111,30 +116,4 @@ func ExampleRender() {
 	// INSERT INTO "app"."regions" ("code", "name") VALUES ('ZZ', 'Zeta');
 	// UPDATE "app"."regions" SET "name" = 'Czech Republic' WHERE "code" = 'CZ';
 	// DELETE FROM "app"."regions" WHERE "code" = 'AT';
-}
-
-// ExampleRender_roundTrip runs the whole pipeline — Compute, then Render — for
-// a single changed row, to show why RowUpdate carries both sides: the forward
-// UPDATE sets the Desired value and the down UPDATE restores the Live value it
-// replaced, so applying up followed by down returns the table to its original
-// contents.
-func ExampleRender_roundTrip() {
-	desired := []datadiff.Row{{"code": "CZ", "name": "Czechia"}}
-	live := []datadiff.Row{{"code": "CZ", "name": "Czech Republic"}}
-
-	diff, err := datadiff.Compute("", "regions", []string{"code"}, desired, live)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	up, down, err := datadiff.Render(diff, "postgres")
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	fmt.Print(up, down)
-
-	// Output:
-	// UPDATE "regions" SET "name" = 'Czechia' WHERE "code" = 'CZ';
-	// UPDATE "regions" SET "name" = 'Czech Republic' WHERE "code" = 'CZ';
 }

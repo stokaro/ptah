@@ -118,7 +118,8 @@ type DefaultValue struct {
 	// ValueSet distinguishes an explicitly empty literal from no literal.
 	ValueSet bool
 	// Expression contains function calls and other SQL expressions like NOW(),
-	// UUID(); renderers emit it verbatim, without quoting.
+	// UUID(). It is emitted as written and is never quoted, so it has to be
+	// valid SQL on the target.
 	Expression string
 }
 

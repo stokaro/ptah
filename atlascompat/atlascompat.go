@@ -45,8 +45,8 @@ func ParseAtlasHCLFile(path string) (*schemamodel.Database, error) {
 // ParseSQLOptions configures ParseSQL.
 type ParseSQLOptions struct {
 	// Dialect selects dialect-specific parsing behavior. It accepts every
-	// spelling core/platform.NormalizeDialect resolves; an unrecognized
-	// value is not an error and selects no dialect-specific behavior.
+	// spelling core/platform.NormalizeDialect resolves, and a name outside
+	// that set selects nothing in particular — pass one Ptah resolves.
 	// Empty means compatibility-oriented best effort.
 	Dialect string
 	// Capabilities selects dialect capabilities for syntax where the same
@@ -62,9 +62,10 @@ type ParseSQLOptions struct {
 // semicolons — returns an empty StatementList and a nil error. Statements
 // that do not describe schema, such as DML and transaction control, are
 // skipped and contribute no node. A syntax error, an unsupported statement,
-// and an expired Timeout each return a nil list and an error (most errors
-// name the byte position where parsing stopped); the package exports no
-// sentinel for these errors.
+// and an expired Timeout each return a nil list and an error saying what
+// stopped the parse. The package exports no sentinel for these errors: the
+// refusal is the contract, and the message is diagnostic text rather than
+// something to branch on.
 func ParseSQL(sql string, opts ParseSQLOptions) (*ast.StatementList, error) {
 	parserOpts := make([]parser.Option, 0, 3)
 	if strings.TrimSpace(opts.Dialect) != "" {
@@ -84,14 +85,17 @@ func ParseSQL(sql string, opts ParseSQLOptions) (*ast.StatementList, error) {
 //
 // The conversion never fails and refuses nothing: each declared object is
 // appended as its own statement or carried inline by the statement that
-// declares it — an enum on MySQL, MariaDB, SQLite, SQL Server, or Oracle
-// becomes the referencing column's type rather than a standalone statement
-// (so an enum nothing references on those dialects contributes no DDL), and
-// a SQLite foreign key stays inside CREATE TABLE. The platform also selects
-// naming and modeling — default foreign-key constraint names, user-type
-// qualification, statement order. Whether a statement can be rendered on a
-// concrete dialect is the renderer's capability decision, made downstream
-// where a refusal can be reported.
+// declares it. Which of the two applies is a deliberate per-platform
+// modeling decision rather than an accident — a dialect that has no
+// standalone enum type takes the enum on the referencing column instead, so
+// an enum nothing references contributes no DDL there, and a dialect that
+// cannot add a foreign key once the table exists keeps it inside CREATE
+// TABLE. The platform also selects naming and qualification, such as default
+// foreign-key constraint names and user-type qualification. Statement order
+// is dependency-aware and deterministic: a definition precedes what
+// references it, and the same input yields the same sequence. Whether a
+// statement can be rendered on a concrete dialect is the renderer's
+// capability decision, made downstream where a refusal can be reported.
 //
 // Canonical platform names are declared in core/platform.
 func SchemaToAST(database schemamodel.Database, targetPlatform string) *ast.StatementList {
@@ -99,13 +103,14 @@ func SchemaToAST(database schemamodel.Database, targetPlatform string) *ast.Stat
 }
 
 // DBSchemaToGoSchema converts an introspected database schema into Ptah's Go
-// schema IR, so a live database can flow through the same diff and planning
-// pipeline as an authored schema. Down-migration planning is the motivating
-// caller: it treats the introspected pre-change database as the target, so
-// what the reader observed — including single-column foreign-key referential
-// actions — survives the round trip into the IR.
+// schema IR, so a live database can be compared and planned against like an
+// authored schema. The conversion is faithful rather than lossy by design:
+// what the reader observed — referential actions among them — survives into
+// the IR, which is what lets a plan target the introspected database itself
+// instead of a reduced copy of it.
 //
-// dbSchema must be non-nil; a nil argument panics.
+// dbSchema must be non-nil: there is no error return, so a nil argument is a
+// programming error rather than a case this function reports.
 func DBSchemaToGoSchema(dbSchema *catalog.Database) *schemamodel.Database {
 	return dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
 }
@@ -156,11 +161,11 @@ func ParseSum(data []byte) (*SumFile, error) {
 // The sum covers exactly the migration files the selected format recognizes;
 // the integrity file itself and non-migration files contribute nothing.
 // Entries are sorted by name, so the result is deterministic for a given
-// tree. Under DirFormatPtah each file is hashed independently. Under
-// DirFormatAtlas — or DirFormatAuto over a directory that carries an
-// atlas.sum — every .sql file is hashed with Atlas's chained scheme, so the
-// rendered file matches the Atlas migration-directory integrity format byte
-// for byte. An unrecognized format is an error.
+// tree. DirFormatPtah computes Ptah's own integrity file. DirFormatAtlas —
+// or DirFormatAuto over a directory that carries an atlas.sum — computes the
+// Atlas migration-directory integrity format instead, byte for byte, so
+// Atlas tooling validates the same directory. An unrecognized format is an
+// error.
 func ComputeSum(fsys fs.FS, format migrationfile.DirFormat) (*SumFile, error) {
 	sum, err := migratesum.ComputeWithFormat(fsys, format)
 	if err != nil {
@@ -191,10 +196,9 @@ func WriteSum(dir string, format migrationfile.DirFormat) (*SumFile, error) {
 //
 // Drift is reported in the SumResult rather than as an error, so callers
 // choose the exit code. An error is reserved for a directory that cannot be
-// verified at all: a missing integrity file (the message names the
-// `ptah migrations hash` invocation that creates one) and a malformed one
-// (a parse error naming the file and wrapping the cause). This package
-// exports no sentinel for either, so callers match on the message.
+// verified at all: a missing integrity file, and one that cannot be parsed.
+// The package exports no sentinel for either, so the refusal is the contract
+// and the message is diagnostic text rather than something to branch on.
 //
 // An explicit format checks only its own integrity file: ptah.sum for
 // DirFormatPtah, atlas.sum for DirFormatAtlas. DirFormatAuto selects

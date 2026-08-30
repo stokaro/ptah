@@ -17,8 +17,8 @@ import (
 // empty DBURL provisions an ephemeral SQLite database per case, so the loop the
 // CLI runs as `ptah migrations test` is exercised without a server, a
 // migrations directory on disk, or a database URL of your own. MigrationsDir
-// still gates migrate_to when MigrationsFS
-// is set, so it carries a non-empty label; the directory is never opened.
+// names the history a migrate_to step moves through; with MigrationsFS set the
+// snapshot supplies every byte and the directory is never opened.
 func ExampleRunMigrationTest() {
 	migrations := fstest.MapFS{
 		"0000000001_create_products.up.sql": {Data: []byte(

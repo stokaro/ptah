@@ -16,21 +16,21 @@
 //   - catalog.ServerInfo: dialect, version, schema, capability and identifier
 //     metadata, returned by [DatabaseConnection.Info].
 //
-// The per-dialect reader and writer implementations live under
-// internal/dbschema and are not importable from another module;
-// [ConnectToDatabase] selects the pair matching the URL and hands them out
-// behind the catalog interfaces.
+// The per-dialect reader and writer implementations are internal to this
+// module and not importable from another one; [ConnectToDatabase] selects the
+// pair matching the URL and hands them out behind the catalog interfaces.
 //
 // # Supported Databases
 //
 // The package connects to these database platforms:
 //
 //   - PostgreSQL, with CockroachDB, YugabyteDB, and Spanner reached over the
-//     same wire protocol; the server's own version banner can override the
-//     scheme: a postgres:// URL to a server announcing CockroachDB, YugabyteDB,
-//     or Spanner resolves that product's dialect, while a banner naming only
-//     PostgreSQL leaves the scheme's dialect in place.
-//   - MySQL and MariaDB, one driver with the product told apart by version.
+//     same wire protocol; the product is detected from the server rather than
+//     assumed from the scheme, so a postgres:// URL to one of them resolves
+//     that product's dialect, and where the server identifies itself as
+//     nothing but PostgreSQL the scheme's dialect stands.
+//   - MySQL and MariaDB, reached with one driver and told apart by the server
+//     itself.
 //   - SQLite: local file, URI, and in-memory databases with PRAGMA-backed
 //     introspection -- plus a remote libsql (Turso) server through libsql://
 //     and libsql+ws://, which serves the same SQLite schema surface over a

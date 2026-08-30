@@ -61,15 +61,17 @@ var (
 // it. Err usually wraps one of the annotation sentinels --
 // [ErrUnknownAttribute], [ErrMissingRequiredAttribute],
 // [ErrInvalidAttributeValue] or [ErrRetiredAttribute] -- so errors.Is on the
-// same error tells the refusals apart; for source that does not parse as Go
-// at all, Err holds the go/parser error instead.
+// same error tells the refusals apart. Source that does not parse as Go at
+// all is reported the same way, with Err holding the syntax error rather than
+// an annotation sentinel, so a caller that branches on the sentinels needs a
+// default branch as well.
 type ParseError struct {
 	// File names the source file being parsed. For in-memory parsing it is
 	// the name the caller supplied for diagnostics.
 	File string
 	// Line is the 1-based line of the annotation comment at fault, and zero
-	// when the failure is not tied to one line -- a file that is not valid
-	// Go, for instance.
+	// when the failure is not tied to a single line. Check it before
+	// reporting a position.
 	Line int
 	// Directive names the //ptah: directive at fault without its leading
 	// slashes, such as "ptah:schema:field". Empty when the failure is not
@@ -84,8 +86,9 @@ type ParseError struct {
 	Message string
 }
 
-// Error returns Message when set, Err's text otherwise, and "parse error"
-// when both are empty. A nil receiver returns "<nil>" rather than panicking.
+// Error returns Message when set and Err's text otherwise. An error carrying
+// neither still formats as a non-empty description of its kind, and a nil
+// receiver formats rather than panicking.
 func (e *ParseError) Error() string {
 	if e == nil {
 		return "<nil>"
@@ -111,8 +114,8 @@ func (e *ParseError) Unwrap() error {
 // PlanError reports a migration planning failure. The migration/planner
 // package returns it, and errors.As(err, &planErr) retrieves it. Err
 // conventionally wraps [ErrInvalidSchemaDiff] for a schema diff the planner
-// refuses to plan and [ErrUnsupportedDialect] for a dialect no planner is
-// registered for, so errors.Is on the same error selects the branch.
+// refuses to plan and [ErrUnsupportedDialect] for a dialect Ptah cannot plan
+// for, so errors.Is on the same error selects the branch.
 type PlanError struct {
 	// Dialect names the dialect the plan targeted. It may be empty when the
 	// failure is not tied to one dialect.
@@ -123,8 +126,9 @@ type PlanError struct {
 	Message string
 }
 
-// Error returns Message when set, Err's text otherwise, and "plan error"
-// when both are empty. A nil receiver returns "<nil>" rather than panicking.
+// Error returns Message when set and Err's text otherwise. An error carrying
+// neither still formats as a non-empty description of its kind, and a nil
+// receiver formats rather than panicking.
 func (e *PlanError) Error() string {
 	if e == nil {
 		return "<nil>"
@@ -149,10 +153,11 @@ func (e *PlanError) Unwrap() error {
 
 // RenderError reports a SQL rendering failure. The core/renderer package
 // returns it, and errors.As(err, &renderErr) retrieves it. Err wraps
-// [ErrUnsupportedDialect] when no renderer exists for the requested dialect,
-// [ErrInvalidSchemaDiff] when the AST handed in is malformed -- a nil node,
-// an invalid foreign key -- and otherwise whatever the dialect renderer
-// reported.
+// [ErrUnsupportedDialect] for a dialect Ptah cannot render,
+// [ErrInvalidSchemaDiff] for a schema or node that is malformed, and
+// otherwise whatever the render target reported. Branch with errors.Is on the
+// sentinels rather than on this concrete type alone: a construct the target
+// refuses arrives as a [CapabilityError] instead.
 type RenderError struct {
 	// Dialect names the render target the failure occurred on.
 	Dialect string
@@ -165,8 +170,9 @@ type RenderError struct {
 	Message string
 }
 
-// Error returns Message when set, Err's text otherwise, and "render error"
-// when both are empty. A nil receiver returns "<nil>" rather than panicking.
+// Error returns Message when set and Err's text otherwise. An error carrying
+// neither still formats as a non-empty description of its kind, and a nil
+// receiver formats rather than panicking.
 func (e *RenderError) Error() string {
 	if e == nil {
 		return "<nil>"
@@ -196,8 +202,9 @@ func (e *RenderError) Unwrap() error {
 type CapabilityError struct {
 	// Dialect names the dialect or server the feature was refused for.
 	Dialect string
-	// Feature names the refused feature or capability, in the words the
-	// refusal message uses.
+	// Feature names the refused feature or capability. It is a diagnostic
+	// label meant to be reported, not a key to branch on -- branch on the
+	// sentinel Err wraps.
 	Feature string
 	// Err is the wrapped cause, reachable through Unwrap.
 	Err error
@@ -205,9 +212,9 @@ type CapabilityError struct {
 	Message string
 }
 
-// Error returns Message when set, Err's text otherwise, and "capability
-// error" when both are empty. A nil receiver returns "<nil>" rather than
-// panicking.
+// Error returns Message when set and Err's text otherwise. An error carrying
+// neither still formats as a non-empty description of its kind, and a nil
+// receiver formats rather than panicking.
 func (e *CapabilityError) Error() string {
 	if e == nil {
 		return "<nil>"

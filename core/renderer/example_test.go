@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
+	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/astbuilder"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
@@ -40,8 +41,8 @@ func ExampleRenderSQL() {
 
 // ExampleNewRenderer constructs one renderer and reuses it across several
 // nodes, which is what RenderSQL recommends once there is more than one call.
-// Render resets the internal buffer before each node, so sequential reuse is
-// safe; one renderer must not be shared between goroutines.
+// Each Render returns only the SQL for the node it was handed, so sequential
+// reuse is safe; one renderer must not be shared between goroutines.
 func ExampleNewRenderer() {
 	r := must.Must(renderer.NewRenderer("postgres"))
 
@@ -51,8 +52,14 @@ func ExampleNewRenderer() {
 		Build()
 	index := astbuilder.NewIndex("idx_users_email", "users", "email").Build()
 
-	fmt.Print(must.Must(r.Render(users)))
-	fmt.Print(must.Must(r.Render(index)))
+	for _, node := range []ast.Node{users, index} {
+		sql, err := r.Render(node)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Print(sql)
+	}
 
 	// Output:
 	// -- POSTGRES TABLE: users --
@@ -65,9 +72,9 @@ func ExampleNewRenderer() {
 }
 
 // ExampleNewRenderer_unsupportedDialect shows the error contract for a dialect
-// nothing renders for: a *ptaherr.RenderError satisfying errors.Is with
-// ptaherr.ErrUnsupportedDialect, so an embedder branches on the sentinel
-// instead of matching message text.
+// nothing renders for: an error satisfying errors.Is with
+// ptaherr.ErrUnsupportedDialect. The message is printed here to show what an
+// operator sees; branch on the sentinel rather than on its wording.
 func ExampleNewRenderer_unsupportedDialect() {
 	_, err := renderer.NewRenderer("db2")
 
@@ -140,9 +147,10 @@ tables:
 }
 
 // ExampleValidateSchema fails closed without rendering: the same schema passes
-// for a dialect that supports covering indexes and is refused, with a typed
-// error, for one that does not. Migration planning runs this validation before
-// it produces any statement.
+// for a dialect that supports covering indexes and is refused, against the
+// ptaherr.ErrUnsupportedFeature sentinel, for one that does not. It is the
+// pre-flight an embedder runs to learn whether a schema is renderable on a
+// target before asking for any SQL.
 func ExampleValidateSchema() {
 	db := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "Order", Name: "orders"}},

@@ -49,7 +49,12 @@ func ExampleReadSchemaWithSchemasContext() {
 	must.Must(conn.ExecContext(ctx,
 		"CREATE TABLE products (id INTEGER PRIMARY KEY, code VARCHAR(50) NOT NULL)"))
 
-	db := must.Must(dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"main"}))
+	db, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{"main"})
+	if err != nil {
+		fmt.Println("read:", err)
+		return
+	}
+
 	for _, table := range db.Tables {
 		fmt.Println("table:", table.QualifiedName())
 		for _, column := range table.Columns {
@@ -79,7 +84,12 @@ func ExampleReadTableRows() {
 	must.Must(conn.ExecContext(ctx,
 		"INSERT INTO regions (code, name, population) VALUES ('CZ', 'Czechia', 10), ('US', 'United States', 331)"))
 
-	rows := must.Must(dbschema.ReadTableRows(ctx, conn, "", "regions", []string{"code", "population"}))
+	rows, err := dbschema.ReadTableRows(ctx, conn, "", "regions",
+		[]string{"code", "population"})
+	if err != nil {
+		fmt.Println("read rows:", err)
+		return
+	}
 
 	slices.SortFunc(rows, func(a, b map[string]any) int {
 		return cmp.Compare(a["code"].(string), b["code"].(string))

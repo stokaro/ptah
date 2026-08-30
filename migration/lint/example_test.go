@@ -42,8 +42,8 @@ func ExampleLintFS() {
 // semantic schema changes each up migration expresses ([lint.File.Changes],
 // typed [lint.SchemaChange]) alongside the findings. One multi-action ALTER
 // TABLE statement yields two changes, so a change count is not a statement
-// count. Every accessor returns a deep copy, so the printed values cannot be
-// used to corrupt the analysis.
+// count. The Analysis is an immutable snapshot: what an accessor hands back
+// cannot be used to reach into it.
 func ExampleAnalyzeFS() {
 	fsys := fstest.MapFS{
 		"0000000001_reshape.up.sql": &fstest.MapFile{Data: []byte(

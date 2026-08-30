@@ -92,9 +92,15 @@ func ExampleParseAtlasCollectionWithOptions() {
 		fmt.Println(cfg.EnvName, cfg.DatabaseURL)
 	}
 
+	// The same document through a singular function is an error rather than an
+	// arbitrary pick. The refusal is the contract; its wording is not.
+	_, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "tenants")
+	fmt.Println("singular parse refused:", err != nil)
+
 	// Output:
 	// tenants sqlite://file:tenant-a.db
 	// tenants sqlite://file:tenant-b.db
+	// singular parse refused: true
 }
 
 // ExampleMerge combines two parsed configs with the package precedence: a

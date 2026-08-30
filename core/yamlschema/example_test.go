@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-extras/go-kit/must"
 
@@ -100,16 +101,21 @@ func ExampleParseFile() {
 }
 
 // ExampleParse_unknownKey shows the first of the two strict refusals: a
-// misspelled attribute is an error carrying the line it sits on, not a setting
+// misspelled attribute is an error naming the line it sits on, not a setting
 // that silently fails to apply. A permissive reader would drop the key and
 // render this table without the comment its author wrote.
 func ExampleParse_unknownKey() {
 	_, err := yamlschema.Parse([]byte("tables:\n  accounts:\n    commnet: Customer accounts\n"))
-	fmt.Println(err)
+
+	// The decoder closes the sentence by naming the Go type it was filling.
+	// That type is Ptah's internal representation of a table, not part of
+	// this package's API, so cut the clause instead of printing it.
+	message, _, _ := strings.Cut(err.Error(), " in type ")
+	fmt.Println(message)
 
 	// Output:
 	// parse YAML schema: yaml: unmarshal errors:
-	//   line 3: field commnet not found in type yamlschema.tableSpec
+	//   line 3: field commnet not found
 }
 
 // ExampleParse_strictness shows the second strict refusal: a schema split

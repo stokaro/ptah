@@ -35,15 +35,16 @@ type BaselineVerifyOptions struct {
 	// MigrationsDir is opened for compatibility with existing embedders.
 	MigrationsFS fs.FS
 	// Version is the version being baselined: every migration at or below it
-	// is replayed, and finding none fails at the load-prior stage.
+	// is replayed, and a Version the history holds no migration at or below is
+	// refused rather than verified as an empty baseline.
 	Version int64
 	// Dialect is the target dialect the shadow database must match. The two
 	// spellings are compared normalized, so an alias matches its canonical
 	// name.
 	Dialect string
 	// Capabilities, when non-nil, must equal the shadow connection's resolved
-	// capabilities exactly; a difference fails at the capability-check stage.
-	// Nil skips the check.
+	// capabilities exactly; a difference fails the verification. Nil skips the
+	// check, which is how a caller accepts whatever the shadow server offers.
 	Capabilities capability.Capabilities
 	// CompareOptions tunes the schema comparison; nil selects
 	// config.DefaultCompareOptions.

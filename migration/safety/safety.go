@@ -68,11 +68,14 @@ type Report struct {
 //
 // Each category appears at most once, with counts summed across all modified
 // tables and enums, and findings are sorted by severity (most severe first),
-// then by category name, so the output is deterministic and diffable. Two
-// categories are counted in addition to the generic ones that also cover
-// them: unique_protections_removed for removals that take a UNIQUE
-// constraint's enforcement with them, and vector_dimension_changed for
-// column modifications the server refuses to cast while rows hold values.
+// then by category name, so the output is deterministic and diffable.
+//
+// The categories are deliberately not disjoint: a change severe enough to
+// deserve its own category is counted there as well as under the generic
+// category that also covers it — a removal that takes a UNIQUE constraint's
+// enforcement with it, or a column modification the server refuses to cast
+// while rows hold values. Read the findings as reasons to look, not as a
+// partition whose counts sum to a statement total.
 func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	if diff == nil {
 		return nil
@@ -180,8 +183,8 @@ func Assess(nodes []ast.Node) []StatementAssessment {
 
 // AssessRendered returns per-rendered-SQL-statement risk classifications for
 // generated AST nodes, using the dialect's default capability preset
-// ([capability.ForDialect], the current supported version line). See
-// [AssessRenderedWithCapabilities] for the assessment and error contract.
+// ([capability.ForDialect]). See [AssessRenderedWithCapabilities] for the
+// assessment and error contract.
 func AssessRendered(nodes []ast.Node, dialect string) ([]StatementAssessment, error) {
 	return AssessRenderedWithCapabilities(nodes, dialect, capability.ForDialect(dialect))
 }
@@ -193,12 +196,14 @@ func AssessRendered(nodes []ast.Node, dialect string) ([]StatementAssessment, er
 //
 // Rendering is the only error source: a construct the dialect or capability
 // set cannot render fails here with the typed error documented on
-// [renderer.RenderSQLWithCapabilities] rather than being classified. A node
-// whose rendering splits into several statements — PostgreSQL's column
-// modification, for one — produces one assessment per statement; the
-// AST-level severity is raised onto a single-statement render and onto
-// type-change statements, and never lowers a statement's own classification.
-// Index is 1-based over the flattened statement list.
+// [renderer.RenderSQLWithCapabilities] rather than being classified.
+//
+// There is one assessment per rendered statement, not per node, because a node
+// can render into several statements on some dialects, and Index is 1-based
+// over that flattened list. Each statement is classified from its own SQL, and
+// the node-level verdict is folded into the statements it applies to — so a
+// narrowing type change stays destructive where the SQL alone would not say so
+// — never lowering a statement's own classification.
 func AssessRenderedWithCapabilities(
 	nodes []ast.Node,
 	dialect string,
@@ -232,10 +237,10 @@ func AssessRenderedWithCapabilities(
 }
 
 // AssessSQL returns a best-effort classification for one rendered SQL
-// statement. Matching is keyword-based over the uppercased,
-// punctuation-split statement text, so casing and parenthesization do not
-// change the answer; a statement matching no known destructive or warning
-// shape is reported Safe with the default reason.
+// statement. Matching is keyword-based and insensitive to the statement's
+// casing and layout, so the same statement classifies the same however it is
+// spelled; a statement matching no known destructive or warning shape is
+// reported Safe with the default reason.
 func AssessSQL(statement string) StatementAssessment {
 	assessment := StatementAssessment{
 		NodeType:  "sql",

@@ -3,8 +3,6 @@ package diffpolicy_test
 import (
 	"fmt"
 
-	"github.com/go-extras/go-kit/must"
-
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/diffpolicy"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -16,6 +14,11 @@ import (
 // skipped changes carry the comment a caller emits in place of the omitted
 // statement. This is the entry point for an embedder that wants to keep a
 // migration plan from destroying tables the target schema does not declare.
+//
+// SkippedChange.Comment is the single source of truth for that wording, for
+// the planner, the generator and an embedder alike; it carries no SQL comment
+// marker, so a caller writing its own migration output prefixes the string
+// rather than composing a second wording.
 func ExampleApply() {
 	diff := &difftypes.SchemaDiff{
 		TablesRemoved: []string{"legacy_orders"},
@@ -44,30 +47,22 @@ func ExampleApply() {
 // ExampleParseChangeKind validates the strings a project config (ptah.yaml
 // diff.skip) carries before they become a SkipSet. Matching is
 // case-insensitive and tolerant of surrounding whitespace; an unknown kind is
-// refused with an error naming the supported list, so a typo surfaces instead
-// of silently skipping nothing.
+// refused with an error naming the kinds that are supported, so a typo
+// surfaces instead of silently skipping nothing.
 func ExampleParseChangeKind() {
-	kind := must.Must(diffpolicy.ParseChangeKind("  Drop_Table "))
-	fmt.Println(kind)
+	kind, err := diffpolicy.ParseChangeKind("  Drop_Table ")
+	if err != nil {
+		fmt.Println("refused:", err)
+		return
+	}
+	fmt.Println("parsed:", kind)
 
-	_, err := diffpolicy.ParseChangeKind("drop_sequence")
-	fmt.Println(err)
-
-	// Output:
-	// drop_table
-	// unknown diff skip change kind "drop_sequence" (supported: drop_table, drop_column, drop_index, drop_enum)
-}
-
-// ExampleSkippedChange_Comment shows the exact SKIP wording. Comment is the
-// single source of truth for the text both the planner and the generator emit,
-// so an embedder writing its own migration output emits this string — prefixed
-// with its own SQL comment marker — rather than composing a second wording.
-func ExampleSkippedChange_Comment() {
-	change := diffpolicy.SkippedChange{Kind: diffpolicy.DropColumn, Object: "users.legacy_flags"}
-	fmt.Println(change.Comment())
+	_, err = diffpolicy.ParseChangeKind("drop_sequence")
+	fmt.Println("drop_sequence accepted:", err == nil)
 
 	// Output:
-	// SKIP: DROP COLUMN of users.legacy_flags omitted by diff policy (skip: drop_column)
+	// parsed: drop_table
+	// drop_sequence accepted: false
 }
 
 // ExampleApplyForDialect skips index drops for a PostgreSQL target, where

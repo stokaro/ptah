@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/go-extras/go-kit/must"
-
 	"go.5x5.cz/ptah/core/coverage"
 )
 
@@ -87,6 +85,11 @@ func ExampleSet_Describes() {
 // refused. The directive after the first content line is deliberately not
 // read -- a directive recognized anywhere in the file could be smuggled in
 // through a string literal -- so the sequence kind stays described.
+//
+// The error is not decoration. A directive this build cannot read is refused
+// rather than ignored, and a caller that swallows the refusal is back to
+// reading an unintelligible limit as no limit at all, which is the removal
+// this package exists to prevent.
 func ExampleDecodeHeader() {
 	document := `-- ptah:not-described extension reason=not-inspected provenance=observed
 -- ptah:not-described schema "extra reports"
@@ -96,7 +99,11 @@ CREATE TABLE users (id BIGINT PRIMARY KEY);
 
 -- ptah:not-described sequence
 `
-	set := must.Must(coverage.DecodeHeader(document))
+	set, err := coverage.DecodeHeader(document)
+	if err != nil {
+		fmt.Println("refused:", err)
+		return
+	}
 
 	for _, directive := range set.Directives() {
 		fmt.Println(directive)

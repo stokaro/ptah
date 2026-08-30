@@ -177,15 +177,15 @@ func (cb *ColumnBuilder) Check(expression string) *ColumnBuilder {
 // Generated marks the column as generated from the supplied raw SQL expression
 // and returns the ColumnBuilder for chaining.
 //
-// The expression is stored as written; renderers that spell the clause
-// GENERATED ALWAYS AS (...) — and SQL Server's AS (...) — supply the wrapping
-// parentheses, so it does not need its own, while ClickHouse emits it bare
-// after MATERIALIZED or ALIAS. kind selects the storage form, "VIRTUAL" or
-// "STORED", and is stored verbatim in ast.ColumnNode.GeneratedKind; each
-// dialect renderer interprets it when the SQL is generated: PostgreSQL refuses
-// any kind other than STORED at render time; MySQL and MariaDB emit the kind
-// uppercased; SQL Server honors only PERSISTED and emits nothing for other
-// kinds; ClickHouse maps VIRTUAL to ALIAS and everything else to MATERIALIZED.
+// The expression is stored as written and reaches the target unrewritten, so
+// it has to be valid SQL there. Write it bare: whatever punctuation the
+// target's clause needs around it, including the parentheses of GENERATED
+// ALWAYS AS (...), is the renderer's to supply.
+//
+// kind is the storage form, "VIRTUAL" or "STORED", and travels to the AST as
+// [ast.ColumnNode.GeneratedKind]. Which forms a target actually has is a
+// question for [go.5x5.cz/ptah/core/renderer], not for this package: nothing
+// here validates the pair.
 //
 // Example:
 //
@@ -442,15 +442,15 @@ func (scb *SchemaColumnBuilder) Check(expression string) *SchemaColumnBuilder {
 // Generated marks the column as generated from the supplied raw SQL expression
 // and returns the SchemaColumnBuilder for chaining.
 //
-// The expression is stored as written; renderers that spell the clause
-// GENERATED ALWAYS AS (...) — and SQL Server's AS (...) — supply the wrapping
-// parentheses, so it does not need its own, while ClickHouse emits it bare
-// after MATERIALIZED or ALIAS. kind selects the storage form, "VIRTUAL" or
-// "STORED", and is stored verbatim in ast.ColumnNode.GeneratedKind; each
-// dialect renderer interprets it when the SQL is generated: PostgreSQL refuses
-// any kind other than STORED at render time; MySQL and MariaDB emit the kind
-// uppercased; SQL Server honors only PERSISTED and emits nothing for other
-// kinds; ClickHouse maps VIRTUAL to ALIAS and everything else to MATERIALIZED.
+// The expression is stored as written and reaches the target unrewritten, so
+// it has to be valid SQL there. Write it bare: whatever punctuation the
+// target's clause needs around it, including the parentheses of GENERATED
+// ALWAYS AS (...), is the renderer's to supply.
+//
+// kind is the storage form, "VIRTUAL" or "STORED", and travels to the AST as
+// [ast.ColumnNode.GeneratedKind]. Which forms a target actually has is a
+// question for [go.5x5.cz/ptah/core/renderer], not for this package: nothing
+// here validates the pair.
 //
 // Example:
 //

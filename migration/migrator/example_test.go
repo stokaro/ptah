@@ -34,7 +34,9 @@ func exampleSQLiteConnection() (conn *dbschema.DatabaseConnection, cleanup func(
 // NNN_description.up.sql/.down.sql pairs, build the provider and the migrator
 // in one step, and apply everything pending. MigrateUp creates the revision
 // metadata table on first use, so a fresh database needs no setup beyond the
-// connection.
+// connection. The constructor reads and validates the whole directory, so its
+// error is one an embedder branches on; ExampleNewFSMigrator_errorHandling
+// shows a directory it refuses.
 func ExampleNewFSMigrator() {
 	ctx := context.Background()
 	conn, cleanup := exampleSQLiteConnection()
@@ -55,7 +57,11 @@ func ExampleNewFSMigrator() {
 		},
 	}
 
-	m := must.Must(migrator.NewFSMigrator(conn, fsys))
+	m, err := migrator.NewFSMigrator(conn, fsys)
+	if err != nil {
+		fmt.Println("new migrator:", err)
+		return
+	}
 	if err := m.MigrateUp(ctx); err != nil {
 		fmt.Println("migrate up:", err)
 		return
@@ -286,39 +292,6 @@ func ExampleResolveAtlasDirectiveTxMode() {
 	// global none + no directive: none
 	// directive error: true
 	// cannot set txmode directive to "none" in "20240101_create_index.sql" when txmode "all" is set globally
-}
-
-// ExampleCreateMigrationFromSQL builds a migration from SQL strings for
-// programmatic use, with the version, description, and both directions carried
-// as one value.
-func ExampleCreateMigrationFromSQL() {
-	upSQL := `
-		CREATE TABLE products (
-			id SERIAL PRIMARY KEY,
-			name VARCHAR(255) NOT NULL,
-			price DECIMAL(10,2) NOT NULL,
-			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-		);
-		CREATE INDEX idx_products_name ON products(name);
-	`
-
-	downSQL := `
-		DROP INDEX IF EXISTS idx_products_name;
-		DROP TABLE IF EXISTS products;
-	`
-
-	migration := migrator.CreateMigrationFromSQL(2, "Create products table", upSQL, downSQL)
-
-	fmt.Printf("Migration version: %d\n", migration.Version)
-	fmt.Printf("Migration description: %s\n", migration.Description)
-	fmt.Printf("Has up function: %t\n", migration.Up != nil)
-	fmt.Printf("Has down function: %t\n", migration.Down != nil)
-
-	// Output:
-	// Migration version: 2
-	// Migration description: Create products table
-	// Has up function: true
-	// Has down function: true
 }
 
 // Example demonstrates the three sources a migrator takes its migrations from:

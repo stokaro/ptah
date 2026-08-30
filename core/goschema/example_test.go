@@ -15,10 +15,10 @@ import (
 )
 
 // ExampleParseSource is the minimum viable embedding: one annotated struct,
-// parsed from source already in hand, no filesystem. The filename argument
-// only labels diagnostics. This is first contact with the annotation grammar —
-// a //ptah:schema:table directive on the struct and a //ptah:schema:field
-// directive on each column-bearing field.
+// parsed from source already in hand, no filesystem. The filename argument is
+// never opened; it labels the source. This is first contact with the
+// annotation grammar — a //ptah:schema:table directive on the struct and a
+// //ptah:schema:field directive on each column-bearing field.
 func ExampleParseSource() {
 	source := `package models
 
@@ -76,10 +76,10 @@ type Product struct {
 }
 
 // ExampleParseFS runs the finalized pipeline over an in-memory filesystem:
-// two entity files where posts foreign-keys users. The walk reads posts.go
-// first (lexical order), but the finalize pipeline orders tables by their
-// foreign-key dependencies, so users comes out first — the order tables must
-// be created in, and the same order on every run.
+// two entity files where posts foreign-keys users. The order the files are
+// read in does not decide the result: the finalize pipeline orders tables by
+// their foreign-key dependencies, so users comes out before posts — the order
+// tables must be created in, and the same order on every run.
 func ExampleParseFS() {
 	fsys := fstest.MapFS{
 		"posts.go": &fstest.MapFile{Data: []byte(`package models
@@ -115,15 +115,15 @@ type User struct {
 }
 
 // ExampleParseDirRaw contrasts the raw walk with the finalized one. The raw
-// schema keeps tables in file-walk order and skips the finalize pipeline;
-// handing it to schemamodel.Merge is what deduplicates and orders it. That
-// deferral is the point: parse each authoring source raw, then let one Merge
-// call apply the cross-source collision policy over all of them.
+// schema carries the declarations and none of the derived metadata — no
+// dependency graph, nothing deduplicated, embedded fields unexpanded — and
+// handing it to schemamodel.Merge is what derives all of that. The deferral
+// is the point: parse each authoring source raw, then let one Merge call
+// apply the cross-source collision policy over all of them.
 func ExampleParseDirRaw() {
 	dir := must.Must(os.MkdirTemp("", "goschema-example"))
 	defer os.RemoveAll(dir)
 
-	// a.go is walked before b.go, so the raw result sees posts first.
 	must.Assert(os.WriteFile(filepath.Join(dir, "a.go"), []byte(`package models
 
 //ptah:schema:table name="posts"
@@ -145,18 +145,15 @@ type User struct {
 `), 0o600))
 
 	raw := must.Must(goschema.ParseDirRaw(dir))
-	for _, table := range raw.Tables {
-		fmt.Println("raw:", table.Name)
-	}
+	fmt.Println("raw tables:", len(raw.Tables), "dependency entries:", len(raw.Dependencies))
 
 	merged := must.Must(schemamodel.Merge(raw))
 	for _, table := range merged.Tables {
-		fmt.Println("merged:", table.Name)
+		fmt.Println("merged:", table.Name, merged.Dependencies[table.QualifiedName()])
 	}
 
 	// Output:
-	// raw: posts
-	// raw: users
-	// merged: users
-	// merged: posts
+	// raw tables: 2 dependency entries: 0
+	// merged: users []
+	// merged: posts [users]
 }

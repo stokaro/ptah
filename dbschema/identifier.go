@@ -14,20 +14,24 @@ import (
 
 // ResolveIdentifierSemantics resolves how the connected catalog compares the
 // given identifiers. names is the finite set the caller is about to compare --
-// schema and table names, typically -- and the connection's default schema
-// always joins it, so a nil slice resolves the default schema alone.
+// schema and table names, typically -- and wherever the resolution consults
+// it, the connection's default schema joins the set whether the caller listed
+// it or not.
 //
-// On every dialect but SQL Server names is not consulted at all: the dialect's
-// static semantics are returned, normalized for that dialect. On SQL Server
-// the server itself evaluates equivalence under CATALOG_DEFAULT, and the
-// result's ResolvedName entries answer which of the names the catalog treats
-// as the same identifier -- names sharing a Key are one name to the catalog.
+// A dialect whose identifier rules are fixed answers from its own
+// deterministic local semantics without consulting names at all, so a nil
+// slice is a valid call. Where the server is the only authority on the answer
+// the resolution asks it: SQL Server evaluates equivalence under
+// CATALOG_DEFAULT, and the result's ResolvedName entries then report which of
+// the names the catalog treats as the same identifier -- names sharing a Key
+// are one name to the catalog.
 //
-// Errors: a nil connection; a SQL Server connection whose catalog collation
-// was not recorded at connect time; a name longer than SQL Server can hold;
-// and any failure of the catalog query itself. The names slice may gain the
-// default schema in place when its backing array has spare capacity, so pass a
-// clone when that array must stay untouched.
+// Asking the server can fail, and a failure is reported rather than guessed
+// around. A nil receiver, an identifier the dialect cannot hold, and a catalog
+// that cannot answer each return an error and a zero [identifier.Semantics].
+//
+// The call may append to names, so it can write into the caller's backing
+// array; pass a clone when that array must stay untouched.
 func (dc *DatabaseConnection) ResolveIdentifierSemantics(
 	ctx context.Context,
 	names []string,

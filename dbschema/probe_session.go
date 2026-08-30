@@ -31,14 +31,13 @@ import (
 // whole answer -- a caller that must not proceed without the transaction has
 // to check ran, not just err. label names the caller in every error.
 //
-// Do not call this on an in-memory SQLite connection. Unlike
+// Do not call this on an in-memory SQLite connection. Discarding the session
+// takes such a database with it, because it has no existence apart from its
+// only connection: the next statement runs against a fresh, empty one.
+// Measured: a table created before the call is gone after it.
 // [DatabaseConnection.WithSession] and
-// [DatabaseConnection.WithIsolatedQuerySession], which return an in-memory
-// database's sole connection to the pool, this method always discards the
-// physical session -- and discarding the only connection of an in-memory
-// database takes the database with it: the next statement on the connection
-// runs against a fresh, empty one. Measured: a table created before the call
-// is gone after it.
+// [DatabaseConnection.WithIsolatedQuerySession] keep an in-memory database
+// alive and are the methods to reach for there.
 func (dc *DatabaseConnection) WithRolledBackTransaction(
 	ctx context.Context,
 	label string,

@@ -25,9 +25,10 @@ import (
 // dialect's style ($1, $2, … for the PostgreSQL family; ? for MySQL, MariaDB,
 // SQLite, and ClickHouse; @p1, @p2, … for SQL Server; :1, :2, … for Oracle).
 // The table and column names are quoted for the dialect. An optional RETURNING
-// clause is emitted only on the PostgreSQL family and SQLite (see
-// renderReturning); on every other supported dialect a non-empty RETURNING is
-// an error.
+// clause is emitted only on the PostgreSQL family and SQLite; on every other
+// supported dialect a non-empty RETURNING is an error rather than a clause
+// quietly dropped from the statement. [InsertBuilder.Returning] records why
+// each dialect falls where it does.
 //
 // It returns an error for a nil statement, an unsupported dialect, a missing
 // table, an empty column list, an empty row list, or a row whose length does not

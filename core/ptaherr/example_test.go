@@ -13,12 +13,14 @@ import (
 // error: errors.Is against a sentinel selects the failure class, and
 // errors.AsType against the structured type reads the context the failure
 // carried. The error is a real one -- renderer.NewRenderer refuses a dialect
-// it has no renderer for -- not one constructed by hand.
+// Ptah cannot render -- not one constructed by hand. Branch on the sentinel
+// and read the fields: the message text is a diagnostic for a person, not a
+// value to match on.
 func Example() {
 	_, err := renderer.NewRenderer("dbase")
 
 	if errors.Is(err, ptaherr.ErrUnsupportedDialect) {
-		fmt.Println("branch:", err)
+		fmt.Println("branch: unsupported dialect")
 	}
 
 	if renderErr, ok := errors.AsType[*ptaherr.RenderError](err); ok {
@@ -26,16 +28,16 @@ func Example() {
 	}
 
 	// Output:
-	// branch: unsupported database dialect: dbase
+	// branch: unsupported dialect
 	// dialect: dbase
 }
 
 // ExampleParseError feeds the annotation parser source carrying an attribute
-// no directive declares, then reads the refusal both ways: errors.AsType reaches
-// the location fields that say where and what, and errors.Is through Unwrap
-// reaches the sentinel that says which kind of refusal it was -- an unknown
-// attribute is a typo, a retired one was spelled correctly and refused for a
-// stated reason, and the sentinels keep the two branches apart.
+// no directive declares, then reads the refusal both ways: errors.AsType
+// reaches the location fields that say where and what, and errors.Is through
+// Unwrap reaches the sentinel that says which kind of refusal it was -- an
+// unknown attribute is a typo, a retired one was spelled correctly and
+// refused for a stated reason, and the sentinels keep the two branches apart.
 func ExampleParseError() {
 	source := `package models
 

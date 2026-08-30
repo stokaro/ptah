@@ -55,13 +55,23 @@ func ExampleGenerateMigration() {
 	dir := must.Must(os.MkdirTemp("", "generator-example"))
 	defer os.RemoveAll(dir)
 
-	files := must.Must(generator.GenerateMigration(context.Background(), generator.GenerateMigrationOptions{
+	files, err := generator.GenerateMigration(context.Background(), generator.GenerateMigrationOptions{
 		GoEntitiesFS:  fstest.MapFS{"models/user.go": &fstest.MapFile{Data: []byte(exampleEntities)}},
 		GoEntitiesDir: "models",
 		DatabaseURL:   "sqlite://" + filepath.Join(dir, "app.db"),
 		MigrationName: "create_users",
 		OutputDir:     filepath.Join(dir, "migrations"),
-	}))
+	})
+	if err != nil {
+		fmt.Println("generation failed:", err)
+		return
+	}
+	// Nil files with a nil error is the no-changes outcome, and it is the
+	// branch an embedder has to take before touching Files.
+	if files == nil {
+		fmt.Println("schemas already match")
+		return
+	}
 
 	for _, pair := range files.Files {
 		fmt.Println("up:  ", stripVersion(pair.UpFile))
@@ -89,23 +99,31 @@ func ExamplePlanMigration() {
 	defer os.RemoveAll(dir)
 	ctx := context.Background()
 
-	plan := must.Must(generator.PlanMigration(ctx, generator.GenerateMigrationOptions{
+	plan, err := generator.PlanMigration(ctx, generator.GenerateMigrationOptions{
 		GoEntitiesFS:  fstest.MapFS{"models/user.go": &fstest.MapFile{Data: []byte(exampleEntities)}},
 		GoEntitiesDir: "models",
 		DatabaseURL:   "sqlite://" + filepath.Join(dir, "app.db"),
 		MigrationName: "create_users",
 		OutputDir:     filepath.Join(dir, "migrations"),
-	}))
+	})
+	if err != nil {
+		fmt.Println("planning failed:", err)
+		return
+	}
 	if plan == nil {
 		fmt.Println("schemas already match") // not reached: the database is empty
 		return
 	}
 	defer plan.Close()
 
-	files := must.Must(plan.WriteFilesContext(ctx))
+	files, err := plan.WriteFilesContext(ctx)
+	if err != nil {
+		fmt.Println("publication failed:", err)
+		return
+	}
 	fmt.Println("published pairs:", len(files.Files))
 
-	_, err := plan.WriteFilesContext(ctx)
+	_, err = plan.WriteFilesContext(ctx)
 	fmt.Println("second publication:", err)
 
 	// Output:

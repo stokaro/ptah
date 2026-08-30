@@ -27,10 +27,11 @@ func ExampleQualifyTableName() {
 }
 
 // ExampleColumn_RawType shows the one type spelling a comparator holds a
-// desired schema against. The catalog keeps a varchar's width and a
-// decimal's precision in fields of their own, and RawType folds them back
-// in; FormattedType, the server's own spelling, wins where the plain fields
-// cannot express the type -- an array or a domain.
+// desired schema against. The catalog keeps a varchar's width and a decimal's
+// precision in fields of their own, and RawType folds them back in;
+// FormattedType, the server's own spelling, takes precedence wherever a reader
+// filled it, which is how an array or a domain keeps the type the server
+// actually reports.
 func ExampleColumn_RawType() {
 	varchar := catalog.Column{
 		DataType:           "character varying",
@@ -132,7 +133,11 @@ func ExampleSchemaReader() {
 	must.Assert(writer.ExecuteSQL(ctx,
 		"CREATE TABLE products (id INTEGER PRIMARY KEY, code VARCHAR(50) NOT NULL)"))
 
-	db := must.Must(conn.Reader().ReadSchemaContext(ctx))
+	db, err := conn.Reader().ReadSchemaContext(ctx)
+	if err != nil {
+		fmt.Println("read:", err)
+		return
+	}
 
 	info := conn.Info()
 	fmt.Printf("dialect=%s schema=%s\n", info.Dialect, info.Schema)

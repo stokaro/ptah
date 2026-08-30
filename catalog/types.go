@@ -33,18 +33,19 @@ import (
 // implementation, stokaro/ptah-testkit's fakes included, constructs it
 // directly.
 //
-// The Schema field the object types here carry follows one convention:
-// readers blank it for an object in the read's default schema and fill it for
-// an object outside that schema. The PostgreSQL family follows it exactly;
-// the SQL Server reader blanks only an unscoped read's dbo and fills every
-// schema on a scoped read, so consumers tolerate a filled default schema
-// rather than relying on the blank. Empty therefore does not mean
-// "no schema" -- the qualified spelling is reconstructed from the
-// connection's default (ServerInfo.IdentifierSemantics.DefaultSchema), and
-// both sides of a comparison build their keys through the QualifiedName
-// methods, which delegate to [QualifyTableName]. Keying the two sides
-// differently is how a synced table turns into a phantom CREATE and DROP
-// pair (stokaro/ptah#1244, stokaro/ptah#1991).
+// The Schema field the object types here carry follows one convention: a
+// reader blanks it for an object in the read's default schema and fills it
+// for an object outside that schema. Empty therefore does not mean
+// "no schema" -- it means the connection's default, which
+// ServerInfo.IdentifierSemantics.DefaultSchema names and from which the
+// qualified spelling is reconstructed. It is a convention rather than an
+// invariant: a reader is free to fill the default schema instead of blanking
+// it, so a consumer tolerates both spellings rather than relying on the
+// blank. Both sides of a comparison then have to build their object keys the
+// same way, through the QualifiedName methods, which delegate to
+// [QualifyTableName]. Keying the two sides differently is how a synced table
+// turns into a phantom CREATE and DROP pair (stokaro/ptah#1244,
+// stokaro/ptah#1991).
 //
 // NotDescribed records what the read deliberately did not look at, which is a
 // different fact from an object being absent; see that field.
@@ -379,13 +380,16 @@ func (t Table) QualifiedName() string {
 // the string the QualifiedName methods in this package delegate to, and the
 // key both sides of a schema comparison must build object names through.
 //
-// The format is deterministic. Leading and trailing whitespace is trimmed
-// from each part; an empty schema yields the table part alone; otherwise the
-// two parts are joined with a dot. A part that itself contains a dot or a
-// quoting character (double quote, backtick, or square bracket) is wrapped in
-// double quotes with internal double quotes doubled, so a table named
-// "tenant.data" with no schema and a table named "data" in schema "tenant"
-// produce different keys.
+// The format is deterministic: the same pair always yields the same string,
+// and the two parts stay distinguishable in it. An empty schema yields the
+// table part alone; otherwise the two are joined with a dot, and a part that
+// would otherwise be misread -- one carrying a dot, or a quoting character of
+// its own -- is quoted, so a table named "tenant.data" with no schema and a
+// table named "data" in schema "tenant" produce different keys.
+//
+// The escaping is this package's own, not any one dialect's quoting rules.
+// Build keys through this function rather than joining the parts by hand, and
+// compare them rather than parsing them back apart.
 func QualifyTableName(schema, table string) string {
 	return tableref.Canonical(schema, table)
 }
@@ -989,20 +993,20 @@ func (s Sequence) QualifiedName() string {
 // and identifier semantics that follow from those answers.
 type ServerInfo struct {
 	// Dialect is a canonical dialect name from core/platform, the set
-	// platform.NormalizeDialect resolves to. For a wire-compatible server it
-	// names the detected product rather than the URL's scheme: a postgres://
-	// connection whose version banner announces CockroachDB, YugabyteDB, or
-	// Spanner reports that product here, and a mysql:// connection to MariaDB
-	// reports mariadb.
+	// platform.NormalizeDialect resolves to. Where several products share one
+	// wire protocol it names the product the connection actually reached
+	// rather than the URL's scheme, so a caller must not assume the two agree:
+	// a postgres:// connection can report cockroachdb, yugabytedb or spanner,
+	// and a mysql:// connection to MariaDB reports mariadb.
 	Dialect string `json:"dialect"`
 	Version string `json:"version"`
 	// Schema is the schema this connection resolves unqualified names
 	// against, and the value a blank Schema field means throughout a
-	// [Database] this connection read. Its spelling is per-dialect: the
-	// resolved search_path schema on the PostgreSQL family, the database name
-	// on the MySQL family and ClickHouse, main on SQLite, dbo on SQL Server,
-	// and the connected user's schema on Oracle -- either of the last two
-	// replaced by an explicit ?schema= on the URL.
+	// [Database] this connection read. It is the connected server's own notion
+	// of a current schema, so its spelling is per-dialect and is not "public"
+	// everywhere: it is a database name on the engines whose schemas are
+	// databases, main on SQLite, the connected user on Oracle. Where the
+	// dialect has a selectable schema, a URL naming one selects it here.
 	Schema string `json:"schema"`
 
 	// URL is the database connection URL the connection was opened from, with
@@ -1080,12 +1084,11 @@ type SchemaReader interface {
 // to invite (see issue #130). Identifiers (table/column names) cannot be
 // parameterized — route them through a validated escape helper instead.
 //
-// IsDryRun reports whether the executor is in dry-run mode. In that mode
-// nothing reaches the server: ExecuteSQL logs or records the statement it
-// would have run and returns nil. The mode is selected on a writer with
-// [SchemaWriter.SetDryRun]; IsDryRun is what lets a layer that rebinds an
-// executor carry the mode onto the replacement, which is how
-// dbschema's session pinning preserves it.
+// IsDryRun reports whether the executor is in dry-run mode. In that mode no
+// statement reaches the server: ExecuteSQL reports success without executing
+// anything. The mode is selected on a writer with [SchemaWriter.SetDryRun];
+// IsDryRun is what lets a layer that wraps or replaces an executor carry the
+// mode onto the replacement rather than silently losing it.
 type SchemaExecutor interface {
 	ExecuteSQL(ctx context.Context, sql string, args ...any) error
 	IsDryRun() bool
@@ -1109,12 +1112,11 @@ type SchemaWriter interface {
 	// the server.
 	BeginTransaction(ctx context.Context) (SchemaTransaction, error)
 	// SetDryRun turns dry-run mode on or off for this writer and for every
-	// transaction it begins afterward. A transaction begun by a
-	// transaction-capable dialect keeps the mode it was created under; the
-	// transactionless dialects (ClickHouse, Oracle) return transactions that
-	// delegate to the writer and follow its current mode. In dry-run mode
-	// every mutating call reports success without sending anything to the
-	// server -- see the contract on [SchemaExecutor].
+	// transaction it begins afterward. In dry-run mode every mutating call
+	// reports success without sending anything to the server -- see the
+	// contract on [SchemaExecutor]. Set the mode before beginning a
+	// transaction: whether a transaction already in flight observes a later
+	// change is the dialect's business, and must not be relied on either way.
 	SetDryRun(dryRun bool)
 }
 

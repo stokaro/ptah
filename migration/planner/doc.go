@@ -46,11 +46,9 @@
 // The diff is the whole input: each change entry carries its own operands
 // (the difftypes Changes elements and Desired fields), and schema-wide
 // vocabulary travels on the diff's Declared* carries, so a planner reads
-// everything it plans from the diff. The desired schema is taken by the
-// package-level helpers, which
-// prepare it (default foreign-key names assigned, declared user types
-// schema-qualified) and validate it against identifier semantics and the
-// dialect's capability set before any planner runs.
+// everything it plans from the diff. The desired schema is not this package's
+// input at all: it is prepared and validated where it is supplied, in the
+// schemadiff package, and the comparison puts on the diff what planning needs.
 //
 // Each implementation handles dialect-specific features, constraints, and SQL generation patterns.
 //

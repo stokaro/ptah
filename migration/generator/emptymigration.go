@@ -32,10 +32,11 @@ type EmptyMigrationOptions struct {
 //
 // What it writes follows the layout. The default (an empty DirFormat) is the
 // paired Ptah layout: an up and a down file, returned as the one pair in
-// [MigrationFiles], and no integrity file. DirFormatAtlas writes the up-only
-// Atlas convention instead: a single file, a pair whose DownFile is empty, and
-// the directory's atlas.sum recomputed and committed over it. A caller
-// iterating pairs must therefore not assume DownFile is set.
+// [MigrationFiles]. DirFormatAtlas writes the up-only Atlas convention
+// instead: a single file, a pair whose DownFile is empty, and the directory's
+// atlas.sum left valid over it, because an Atlas directory with a stale sum is
+// refused by the tools that read it. A caller iterating pairs must therefore
+// not assume DownFile is set.
 //
 // The whole creation runs through one rooted migration-directory handle, bound
 // before anything is read or written: the directory is materialized, the

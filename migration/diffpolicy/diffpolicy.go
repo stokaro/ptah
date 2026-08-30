@@ -147,18 +147,16 @@ func Apply(diff *difftypes.SchemaDiff, skip SkipSet) (*difftypes.SchemaDiff, []S
 // target dialect's index-name namespace. This preserves required drop/create
 // pairs without treating table-scoped same-name indexes as replacements.
 //
-// dialect accepts every spelling core/platform.NormalizeDialect resolves, and
-// it matters only when skip contains DropIndex: replacement detection then
-// compares index removals against additions under
-// diff.EffectiveIdentifierSemantics(dialect) — live identifier semantics
-// stored on the diff when the diff carries them, the offline
-// core/platform/identifier.ForDialect rules otherwise. Under a schema-scoped
-// index namespace (PostgreSQL, for one) a removal is preserved when any
-// addition recreates the name in the same schema, even on another table;
-// under a table-scoped namespace (MySQL, for one) only a recreation on the
-// same table counts. Without live semantics, an empty or unrecognized dialect
-// selects conservative exact-match, table-scoped rules, so
-// ApplyForDialect(diff, skip, "") is identical to Apply(diff, skip).
+// dialect accepts every spelling core/platform.NormalizeDialect resolves. It
+// selects the index-name namespace a removal and an addition are compared in,
+// through [difftypes.SchemaDiff.EffectiveIdentifierSemantics], which is what
+// decides between the live semantics a diff may carry and offline rules for
+// the dialect. Under a schema-scoped index namespace (PostgreSQL, for one) a
+// removal is preserved when any addition recreates the name in the same
+// schema, even on another table; under a table-scoped namespace (MySQL, for
+// one) only a recreation on the same table counts. An empty or unrecognized
+// dialect asks for no dialect rules at all, so ApplyForDialect(diff, skip, "")
+// is exactly Apply(diff, skip).
 func ApplyForDialect(diff *difftypes.SchemaDiff, skip SkipSet, dialect string) (*difftypes.SchemaDiff, []SkippedChange) {
 	return apply(diff, skip, dialect)
 }

@@ -208,13 +208,12 @@ type Options struct {
 	// runs every rule under a hybrid lexer — maximum visibility when the
 	// target is unknown.
 	//
-	// The value must be the canonical dialect name. [AnalyzeFS] and [LintFS]
-	// neither validate nor alias-fold it: rules are gated by exact string
-	// comparison and an unrecognized value selects the hybrid lexer, so an
-	// alias such as "postgresql" silently disables every PG rule instead of
-	// erroring. [LoadConfig] and [LoadConfigFS] canonicalize the dialect a
-	// configuration names and reject unsupported ones; resolve a user-typed
-	// spelling through them and store what they return.
+	// The value must be a canonical dialect name. [AnalyzeFS] and [LintFS]
+	// take it as given rather than alias-folding it, so a spelling such as
+	// "postgresql" is not recognized as "postgres" and the PG rules it was
+	// meant to enable do not run. [LoadConfig] and [LoadConfigFS] canonicalize
+	// the dialect a configuration names and reject unsupported ones; resolve a
+	// user-typed spelling through them and store what they return.
 	Dialect string
 	// Disabled lists rule codes or code prefixes to skip: "DS101" disables
 	// one rule, "DS" the whole data-safety family.

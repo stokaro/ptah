@@ -34,13 +34,12 @@ import (
 // Supported dialects are the PostgreSQL family (PostgreSQL itself, CockroachDB,
 // YugabyteDB, and Cloud Spanner's PostgreSQL interface — the set
 // platform.IsPostgresFamily reports), plus MySQL, MariaDB, SQLite, ClickHouse,
-// SQL Server, and Oracle. SQL Server pages with
-// OFFSET/FETCH rather than LIMIT, synthesizing ORDER BY (SELECT NULL) when the
-// caller ordered nothing, because T-SQL accepts neither clause without one.
-// Oracle takes the same OFFSET/FETCH pagination (measured on 23.26, LIMIT
-// answers ORA-03049) without the sentinel ORDER BY, which it does not require
-// — and which 21.3 refuses outright (ORA-00923), so the omission is
-// load-bearing.
+// SQL Server, and Oracle. SQL Server and Oracle both page with OFFSET/FETCH
+// rather than LIMIT, which neither of them accepts. Only SQL Server also gets a
+// synthesized ORDER BY (SELECT NULL) when the caller ordered nothing, because
+// only T-SQL refuses the row-limiting clause without an ORDER BY; Oracle needs
+// no sentinel and is given none, which keeps the query runnable on every Oracle
+// release Ptah targets rather than only the ones that parse the sentinel.
 // Any other dialect returns an error, as does a nil
 // statement, a statement without a FROM table, an empty IN list, a malformed
 // operator, a function call with an invalid name or a bad argument shape, a GROUP

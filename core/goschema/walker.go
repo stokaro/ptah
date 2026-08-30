@@ -18,9 +18,10 @@ import (
 // The walk is recursive from rootDir and reads every .go file except _test.go
 // files, skipping hidden directories and directories named exactly "vendor".
 // A symlinked or otherwise non-regular Go source file is refused rather than
-// followed. A file that fails to parse does not stop the walk: per-file errors
-// are collected and returned joined with errors.Join, so one error names every
-// failing file.
+// followed. A file that fails to parse does not stop the walk: the failures
+// are collected and returned as one error that names every failing file and
+// unwraps to the individual refusals, so a caller is never told about the
+// first one alone.
 //
 // The result has been through the finalize pipeline — embedded fields
 // expanded, identical repeated declarations folded, conflicting ones reported
@@ -44,8 +45,8 @@ func ParseDir(rootDir string) (*schemamodel.Database, error) {
 // [go.5x5.cz/ptah/core/schemamodel.Database] its annotations declare. It is
 // [ParseDir] for a caller holding a filesystem — an embed.FS, a
 // testing/fstest.MapFS, a source snapshot — rather than a host directory:
-// file selection, the refusal of symlinked and non-regular sources, joined
-// per-file parse errors, and the finalize pipeline are all the same.
+// file selection, the refusal of symlinked and non-regular sources, the
+// collected per-file parse errors, and the finalize pipeline are all the same.
 //
 // One thing differs by necessity: with no host root to anchor to,
 // managed-data annotations keep the filesystem-relative SourceDir they were

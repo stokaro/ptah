@@ -2,6 +2,7 @@ package schemamodel_test
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/go-extras/go-kit/must"
 
@@ -43,10 +44,11 @@ func ExampleMerge() {
 // ExampleMerge_conflict shows the collision policy. Identity is the database
 // name, not the Go struct name: two sources declaring table "users" through
 // different structs are declaring the same table, and when their desired
-// properties differ, Merge refuses with a descriptive error instead of
-// letting one source silently win. The errors are plain — there is no
-// sentinel to match with errors.Is; identical definitions would collapse to
-// one without an error.
+// properties differ, Merge refuses instead of letting one source silently
+// win, and the refusal identifies the object that collided. The errors are
+// plain — there is no sentinel to match with errors.Is, so branch on the
+// refusal itself rather than on its wording; identical definitions would
+// collapse to one without an error.
 func ExampleMerge_conflict() {
 	first := &schemamodel.Database{
 		Tables: []schemamodel.Table{
@@ -60,10 +62,12 @@ func ExampleMerge_conflict() {
 	}
 
 	_, err := schemamodel.Merge(first, second)
-	fmt.Println(err)
+	fmt.Println("refused:", err != nil)
+	fmt.Println("names the table:", strings.Contains(err.Error(), "users"))
 
 	// Output:
-	// conflicting table "users" definitions
+	// refused: true
+	// names the table: true
 }
 
 // ExampleFinalize assembles a Database by hand — the way an embedder with its

@@ -111,10 +111,10 @@
 //
 // # Package Organization
 //
-// The comparison logic and the result model live in two subpackages:
-//
-//   - internal/compare: per-object-kind comparison logic
-//   - difftypes: the public SchemaDiff model and its supplement lists
+// The result model is a package of its own: difftypes carries SchemaDiff, the
+// per-object-kind change lists, and the supplement lists that qualify them.
+// The comparison logic itself is internal to this package and is reached only
+// through the entry points above.
 //
 // # Integration with Ptah
 //

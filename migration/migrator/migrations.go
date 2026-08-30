@@ -666,11 +666,11 @@ func (m *Migration) executeDown(ctx context.Context, conn *dbschema.DatabaseConn
 
 // CreateMigrationFromSQL creates a programmatic migration from up and down SQL
 // strings. Transaction-mode directives in the SQL are honored exactly as they
-// are in a file: a `-- +ptah no_transaction` or `-- atlas:txmode` header sets
-// UpTxMode and DownTxMode at construction, a malformed directive surfaces as
-// an error when the migration runs, and description stands in for the file
-// name in those errors. Multi-statement bodies are split with the executing
-// connection's dialect rules, one statement at a time.
+// are in a file: a `-- +ptah no_transaction` or `-- atlas:txmode` header is
+// reflected in the returned [Migration.UpTxMode] and [Migration.DownTxMode],
+// and a malformed directive is not reported here — it surfaces as an error
+// when the migration runs. Multi-statement bodies are split with the executing
+// connection's dialect rules and executed one statement at a time.
 func CreateMigrationFromSQL(version int64, description, upSQL, downSQL string) *Migration {
 	upTxMode := migrationfile.ParseFileTxMode(description, upSQL)
 	downTxMode := migrationfile.ParseFileTxMode(description, downSQL)

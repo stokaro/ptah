@@ -46,10 +46,9 @@ func ExampleTableCreationsFor() {
 }
 
 // ExampleTableChanges_InDependencyOrder orders creations so that a table comes
-// after everything it references. The edge is the child's foreign= reference,
-// derived when the creation is assembled; the creations were deliberately
-// stated child-first, and the ordering still puts the parent first, which is
-// the property migration ordering rests on.
+// after everything it references. The edge is the child's foreign= reference;
+// the creations were deliberately stated child-first, and the ordering still
+// puts the parent first, which is the property migration ordering rests on.
 func ExampleTableChanges_InDependencyOrder() {
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{
@@ -110,8 +109,9 @@ func ExampleSupplementLists() {
 
 // ExampleRangeChanges_MarshalJSON shows the wire-shape guarantee every Changes
 // family in this package keeps: in memory the list carries whole definitions
-// for a planner, and the JSON stays the list of names it has always been. Nil and empty stay distinct on the wire — null is a comparison that
-// did not run, and [] is one that found nothing.
+// for a planner, and the JSON is the list of names. Nil and empty stay
+// distinct on the wire — null is a comparison that did not run, and [] is one
+// that found nothing.
 func ExampleRangeChanges_MarshalJSON() {
 	added := difftypes.RangeChanges{
 		{Name: "floatrange", Schema: "app", Subtype: "float8"},

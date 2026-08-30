@@ -1644,10 +1644,11 @@ Example tests follow the shape `core/astbuilder/example_test.go` and
   why a reader would reach for that entry point, in the same grounded voice as
   the rest of the documentation.
 
-Editing a doc comment on an exported type or field changes
-`docs/public_api.snapshot` — the snapshot records full `go doc` output, doc
-text included — so regenerate it with
-`scripts/check-public-api-snapshot.sh --update` in the same change.
+`scripts/check-exported-docs.sh` is the gate here, and it measures only
+presence: it reads the ledger packages through
+`scripts/list-public-api-packages.sh` and fails on an exported declaration
+with no doc comment. Whether a comment states the contract or restates the
+identifier is a reading responsibility, which is what the rules above are for.
 
 ## Testing Standards
 

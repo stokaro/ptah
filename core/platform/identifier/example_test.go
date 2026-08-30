@@ -7,39 +7,44 @@ import (
 )
 
 // ExampleForDialect contrasts two dialects' offline rules: SQLite folds ASCII
-// case, so Users and users are one table, while PostgreSQL compares exactly.
-// DefaultSchema is part of the answer too — it is what unqualified names are
-// resolved against.
+// case, so Users and users are one table, while PostgreSQL keeps them apart.
+// A key is a token to compare against another key, not a value to read, which
+// is why the question is asked as an equality. DefaultSchema is part of the
+// answer too — it is what unqualified names are resolved against.
 func ExampleForDialect() {
 	sqlite := identifier.ForDialect("sqlite")
 	postgres := identifier.ForDialect("postgres")
 
-	fmt.Println("sqlite:", sqlite.TableIdentityKey("Users"), "default schema:", sqlite.DefaultSchema)
-	fmt.Println("postgres:", postgres.TableIdentityKey("Users"), "default schema:", postgres.DefaultSchema)
+	fmt.Println("sqlite Users is users:",
+		sqlite.TableIdentityKey("Users") == sqlite.TableIdentityKey("users"))
+	fmt.Println("postgres Users is users:",
+		postgres.TableIdentityKey("Users") == postgres.TableIdentityKey("users"))
+	fmt.Println("default schema:", sqlite.DefaultSchema, postgres.DefaultSchema)
 
 	// Output:
-	// sqlite: users default schema: main
-	// postgres: Users default schema: public
+	// sqlite Users is users: true
+	// postgres Users is users: false
+	// default schema: main public
 }
 
 // ExampleSemantics_QualifiedTableIdentityKey shows why comparators key tables
 // through the qualified entry point: an unqualified name is resolved against
 // DefaultSchema, so users and public.users are the same object under
-// PostgreSQL semantics even though their spellings differ.
+// PostgreSQL semantics even though their spellings differ, while the same
+// table name in another schema stays a different object.
 func ExampleSemantics_QualifiedTableIdentityKey() {
 	semantics := identifier.ForDialect("postgres")
 
 	unqualified := semantics.QualifiedTableIdentityKey("users")
-	qualified := semantics.QualifiedTableIdentityKey("public.users")
 
-	fmt.Println(unqualified)
-	fmt.Println(qualified)
-	fmt.Println("same object:", unqualified == qualified)
+	fmt.Println("users is public.users:",
+		unqualified == semantics.QualifiedTableIdentityKey("public.users"))
+	fmt.Println("users is audit.users:",
+		unqualified == semantics.QualifiedTableIdentityKey("audit.users"))
 
 	// Output:
-	// public.users
-	// public.users
-	// same object: true
+	// users is public.users: true
+	// users is audit.users: false
 }
 
 // ExampleForSQLServerCatalog walks the live-catalog flow: seed the semantics

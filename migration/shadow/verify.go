@@ -21,14 +21,14 @@ import (
 // Errors preserve the text form through [VerificationError.Error] while
 // exposing mismatches to callers that need machine-readable diagnostics.
 type VerificationResult struct {
-	// Stage names the verification step that stopped. Candidate and baseline
-	// verification share stage names at their common boundaries: connect,
-	// dialect-check, realm-check, capability-check,
-	// identifier-semantics-check, drop-all, load-prior, replay, re-introspect,
-	// and schema-match. The round-trip-down and round-trip-up stages occur
-	// only during candidate verification ([VerifyMigration]); configuration,
-	// target-introspect, reset-schemas, and drop-metadata occur only during
-	// baseline verification ([VerifyBaseline]).
+	// Stage is a short lowercase token naming the verification boundary that
+	// stopped, such as connect, replay, or schema-match. Candidate and
+	// baseline verification use the same names at the boundaries they share,
+	// and each has boundaries the other never reaches: round-trip-down and
+	// round-trip-up occur only in [VerifyMigration], and target-introspect,
+	// reset-schemas, and drop-metadata only in [VerifyBaseline]. Treat the set
+	// as open -- it follows the verification's boundaries, and a caller that
+	// switches on it needs a default arm.
 	Stage string `json:"stage"`
 	// Mismatches contains every structural mismatch in deterministic category and object order.
 	Mismatches []Mismatch `json:"mismatches,omitempty"`
@@ -58,11 +58,14 @@ type Mismatch struct {
 	Table      string `json:"table,omitempty"`
 	Column     string `json:"column,omitempty"`
 	Constraint string `json:"constraint,omitempty"`
-	// Changes holds per-property old -> new details for *_mismatch kinds,
-	// keyed by property name; it is nil for missing_* and extra_* kinds.
+	// Changes holds per-property old -> new details, keyed by property name.
+	// It is nil whenever the mismatch carries no per-property detail -- a
+	// wholly missing or extra object has none -- so a caller must handle an
+	// absent map.
 	Changes map[string]string `json:"changes,omitempty"`
-	// Message is the human-readable sentence. The first mismatch's Message is
-	// what [VerificationError.Error] surfaces.
+	// Message is the human-readable sentence describing this mismatch. A
+	// caller rendering its own diagnostics builds them from the fields above;
+	// [VerificationError.Error] is the ready-made text form.
 	Message string `json:"message"`
 }
 
@@ -182,9 +185,9 @@ type MigrationVerifyOptions struct {
 	// ShadowDatabaseURL is an ephemeral database the verification drops clean
 	// and replays into. Its contents are discarded, and its live realm must
 	// be distinct from TargetConnection's. When empty, an ephemeral SQLite
-	// database is provisioned in a temporary directory and removed when
-	// verification finishes; a non-SQLite Dialect then fails the dialect
-	// check.
+	// database is provisioned for the call and removed when verification
+	// finishes; a non-SQLite Dialect is then refused rather than silently
+	// verified against the wrong engine.
 	ShadowDatabaseURL string
 	// TargetConnection is the already-open database the verified migration
 	// would eventually be applied to. It is read to prove the shadow database
@@ -203,12 +206,12 @@ type MigrationVerifyOptions struct {
 	// name.
 	Dialect string
 	// Capabilities, when non-nil, must equal the shadow connection's resolved
-	// capabilities exactly; a difference fails at the capability-check stage.
-	// Nil skips the check.
+	// capabilities exactly; a difference fails the verification. Nil skips the
+	// check, which is how a caller accepts whatever the shadow server offers.
 	Capabilities capability.Capabilities
 	// IdentifierSemantics, when non-zero, must agree with what the shadow
-	// database's catalog resolves; a disagreement fails at the
-	// identifier-semantics-check stage. The zero value skips the check.
+	// database's catalog resolves; a disagreement fails the verification. The
+	// zero value skips the check.
 	IdentifierSemantics identifier.Semantics
 	// Candidates are the planned migrations under verification. They are
 	// replayed on top of the prior history, then rolled back to the latest

@@ -118,8 +118,10 @@ func ExampleInsertInto() {
 // ExampleInsertBuilder_OnConflictDoUpdate renders one upsert twice. PostgreSQL
 // requires the conflict target and overwrites the named columns from the
 // proposed row (spelled excluded). MySQL cannot narrow ON DUPLICATE KEY UPDATE
-// to a named index, so the same statement is refused there rather than widened
-// to fire on every unique key the table happens to have.
+// to a named index, so RenderInsert returns an error there rather than widen
+// the statement to fire on every unique key the table happens to have. The
+// error is the contract; its wording is not, so branch on the error being
+// non-nil.
 func ExampleInsertBuilder_OnConflictDoUpdate() {
 	stmt := query.InsertInto("settings").
 		Columns("key", "value").
@@ -132,22 +134,23 @@ func ExampleInsertBuilder_OnConflictDoUpdate() {
 	fmt.Println(args)
 
 	_, _, err := query.RenderInsert(stmt, platform.MySQL)
-	fmt.Println(err)
+	fmt.Println("refused on mysql:", err != nil)
 
 	// Output:
 	// INSERT INTO "settings" ("key", "value") VALUES ($1, $2) ON CONFLICT ("key") DO UPDATE SET "value" = excluded."value"
 	// [theme dark]
-	// renderer: mysql cannot scope an upsert to named columns: ON DUPLICATE KEY UPDATE fires for every unique key on the table, so a conflict target would be ignored and the statement would overwrite on keys the caller did not name
+	// refused on mysql: true
 }
 
 // ExampleUpdateBuilder_Unconditional shows the whole-table safety rule: a
 // WHERE-less UPDATE is rejected at render time, so a forgotten filter cannot
 // silently rewrite every row, and the same statement renders once the builder
-// marks the missing filter deliberate.
+// marks the missing filter deliberate. Only the refusal is contract; the
+// message explaining it is free to change.
 func ExampleUpdateBuilder_Unconditional() {
 	forgotten := query.Update("sessions").Set("revoked", true).Build()
 	_, _, err := query.RenderUpdate(forgotten, platform.Postgres)
-	fmt.Println(err)
+	fmt.Println("refused without a WHERE:", err != nil)
 
 	deliberate := query.Update("sessions").Set("revoked", true).Unconditional().Build()
 	sql, args := must.Must2(query.RenderUpdate(deliberate, platform.Postgres))
@@ -155,7 +158,7 @@ func ExampleUpdateBuilder_Unconditional() {
 	fmt.Println(args)
 
 	// Output:
-	// renderer: update without a WHERE clause must be marked unconditional
+	// refused without a WHERE: true
 	// UPDATE "sessions" SET "revoked" = $1
 	// [true]
 }

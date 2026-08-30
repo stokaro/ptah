@@ -115,9 +115,10 @@ func ExampleNewTable_mixedWithAst() {
 }
 
 // ExampleNewTable_generatedColumn declares a computed column with
-// Generated(expression, kind). The expression is raw SQL rendered inside
-// GENERATED ALWAYS AS (...); kind selects the storage form, and each dialect
-// renderer decides what it accepts — PostgreSQL takes only STORED.
+// Generated(expression, kind). The expression is raw SQL this package does not
+// inspect, written bare because the punctuation each target's clause needs
+// around it is the renderer's to add; kind names the storage form, and which
+// forms a target has is settled by the renderer rather than here.
 func ExampleNewTable_generatedColumn() {
 	table := astbuilder.NewTable("order_lines").
 		Column("price", "NUMERIC(10,2)").NotNull().Check("price >= 0").End().

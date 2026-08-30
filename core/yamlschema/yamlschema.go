@@ -64,9 +64,9 @@ import (
 
 // ParseFile reads a YAML schema file and parses it with Parse, returning the
 // same *schemamodel.Database that Go annotations, HCL, SQL, and DBML produce.
-// A read failure is wrapped with the `read schema file:` prefix and keeps the
-// underlying *fs.PathError, so errors.Is(err, fs.ErrNotExist) still answers
-// for a missing file.
+// A read failure is wrapped but keeps the underlying filesystem error, so
+// errors.Is(err, fs.ErrNotExist) still answers for a missing file and
+// errors.As reaches the *fs.PathError naming the path.
 func ParseFile(path string) (*schemamodel.Database, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -81,17 +81,17 @@ func ParseFile(path string) (*schemamodel.Database, error) {
 //
 // The input is exactly one YAML document. An unknown key is an error rather
 // than a silent drop, and a second document after a `---` separator is
-// refused. Both refusals come back wrapped with the `parse YAML schema:`
-// prefix, and a decoding failure carries the parse position the YAML decoder
-// reported. A document that decodes but declares an incomplete object — an
+// refused. A document that decodes but declares an incomplete object — an
 // index without fields, a top-level constraint without a table, a duplicate
-// column — is refused by an error naming the object's key, without that
-// prefix.
+// column — is refused as well. Every refusal is returned as an error naming
+// the document position or the object key it concerns, so the author can find
+// it; none of the message text is contract.
 //
-// The model does not depend on YAML map order. Top-level collections are read
-// in sorted key order and a table's columns keep their declaration order;
-// schemamodel.Finalize then orders tables and functions by their
-// dependencies. Two calls over the same bytes return identical models.
+// The model does not depend on YAML map order: the same bytes always produce
+// the same model, whatever order the decoder walked the maps in. Within a
+// table, columns keep the order they were declared in, because column order
+// is part of the schema the author wrote. Tables and functions come back
+// ordered by their dependencies.
 func Parse(data []byte) (*schemamodel.Database, error) {
 	var doc document
 	decoder := yaml.NewDecoder(bytes.NewReader(data))

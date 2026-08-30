@@ -10,12 +10,12 @@ import (
 )
 
 // ExampleNewCreateTable builds one CREATE TABLE with the fluent node API and
-// renders it for two dialects. The node is dialect-agnostic; each renderer
-// decides quoting and clause choice — visible below in the auto-increment
-// column: MySQL renders AUTO_INCREMENT, while the PostgreSQL renderer
-// expresses auto-increment only through serial types (SERIAL, BIGSERIAL) and
-// emits nothing for this INTEGER column — and rendering the same node twice
-// produces byte-identical SQL.
+// renders it for two dialects. The node records what the author asked for and
+// nothing about how it is written: quoting, clause order, and the spelling of
+// a request such as auto-increment are the renderer's decisions, and a target
+// that carries such a request in the column type rather than in a clause of
+// its own adds nothing beside the column. Rendering is deterministic — the
+// same node renders to the same bytes on every run.
 func ExampleNewCreateTable() {
 	table := ast.NewCreateTable("users").
 		AddColumn(
@@ -57,11 +57,11 @@ func ExampleNewCreateTable() {
 	// );
 }
 
-// ExampleAlterTableNode composes ALTER TABLE from operations. The operations
-// have no rendering of their own — rendering never flows through an
-// operation's Accept — and each
-// dialect's VisitAlterTable decides the statement shape; both dialects here
-// split the node into one ALTER TABLE statement per operation.
+// ExampleAlterTableNode composes ALTER TABLE from a list of operations. An
+// operation is not a statement on its own: the renderer is handed the whole
+// node through [ast.Visitor], and it decides how many statements the list
+// becomes and what each one looks like — which is why calling an operation's
+// own Accept renders nothing.
 func ExampleAlterTableNode() {
 	alter := &ast.AlterTableNode{
 		Name: "users",
