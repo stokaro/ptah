@@ -23,8 +23,14 @@ derived by reading files.
 
 ## Current audit baseline
 
-The second restructuring audit was revalidated against `master` at
-`cfe896af7a8d289916bcb7ebd0e5fe519b7eecc5`. The attached audit used
+The hardening audit was revalidated against `master` at
+`d790ee0ff3c8ece86deececc838828ed2080102c`. Its historical audit references
+were `21e725e8524c6ad73256066a8f1068338578667c` and the same current commit.
+The complete reconciliation is in
+[`DOCUMENTATION_HARDENING_REPORT.md`](DOCUMENTATION_HARDENING_REPORT.md).
+
+The first restructuring was revalidated against `master` at
+`cfe896af7a8d289916bcb7ebd0e5fe519b7eecc5`; its attached audit used
 `5509bc64c02deb2e1c7676c4a63ace77b3eb1415`.
 
 The baseline comparison found one material documentation change between those

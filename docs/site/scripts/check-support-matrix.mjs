@@ -7,13 +7,14 @@
 // A second hand-written census is how the page contradicted its own table.
 
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, '..', '..', '..');
 const pagePath = resolve(scriptDir, '..', 'src', 'content', 'docs', 'databases', 'support-matrix.md');
+const waiverPath = resolve(scriptDir, 'data', 'support-fact-waivers.json');
 const begin = '<!-- BEGIN GENERATED VERSION MATRIX -->';
 const end = '<!-- END GENERATED VERSION MATRIX -->';
 const supportLevel = '(?:certified|legacy-tested|best-effort|known-incompatible)';
@@ -64,14 +65,6 @@ function rowsFrom(block) {
   return rows;
 }
 
-function prose(source) {
-  return source
-    .replace(/^---\r?\n[\s\S]*?\r?\n---/, ' ')
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/<!--[^]*?-->/g, ' ')
-    .replace(/\s+/g, ' ');
-}
-
 function withoutGeneratedMatrix(source) {
   return source.replace(
     new RegExp(`${escapeRegex(begin)}[\\s\\S]*?${escapeRegex(end)}`, 'g'),
@@ -79,8 +72,69 @@ function withoutGeneratedMatrix(source) {
   );
 }
 
-function checkAuthoredFacts(source, rows) {
-  const text = prose(withoutGeneratedMatrix(source));
+function inlineText(value) {
+  return value
+    .replace(/<[^>]+>/g, (tag) =>
+      [...tag.matchAll(/\b[\w:-]+\s*=\s*(["'])(.*?)\1/g)].map((match) => match[2]).join(' '),
+    )
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[`*_~{}|]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Return logical Markdown blocks. A table row is one block; wrapped prose and
+ * list-item continuations stay together; fenced code and comments disappear.
+ * MDX component attributes become text so release and level props cannot hide
+ * a second support census from the checker.
+ */
+function authoredBlocks(source) {
+  const text = withoutGeneratedMatrix(source)
+    .replace(/^---\r?\n[\s\S]*?\r?\n---/, '')
+    .replace(/```[\s\S]*?```/g, '\n')
+    .replace(/~~~[\s\S]*?~~~/g, '\n')
+    .replace(/<!--[^]*?-->/g, '\n');
+  const blocks = [];
+  let pending = [];
+  const flush = () => {
+    const normalized = inlineText(pending.join(' '));
+    if (normalized) blocks.push(normalized);
+    pending = [];
+  };
+
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line === '') {
+      flush();
+      continue;
+    }
+    if (line.startsWith('|')) {
+      flush();
+      const normalized = inlineText(line);
+      if (normalized) blocks.push(normalized);
+      continue;
+    }
+    if (/^(?:[-*+]\s+|\d+[.)]\s+)/.test(line) && pending.length > 0) flush();
+    pending.push(line);
+  }
+  flush();
+  return blocks;
+}
+
+function matchingWaiver(block, row, level, context) {
+  if (!context) return null;
+  return context.waivers.find((waiver) =>
+    waiver.file === context.file &&
+    waiver.dialect === row.dialect &&
+    waiver.releaseLine === row.line &&
+    waiver.support === level &&
+    block.includes(waiver.asOf),
+  ) ?? null;
+}
+
+function checkAuthoredFacts(source, rows, context = null) {
   const findings = [];
 
   const counted = new RegExp(
@@ -89,8 +143,10 @@ function checkAuthoredFacts(source, rows) {
       `.{0,180}\\b${supportLevel}\\b`,
     'i',
   );
-  const census = text.match(counted);
-  if (census) findings.push(`authored prose restates a support-level count: ${census[0]}`);
+  for (const block of authoredBlocks(source)) {
+    const census = block.match(counted);
+    if (census) findings.push(`authored prose restates a support-level count: ${census[0]}`);
+  }
 
   for (const row of rows) {
     const aliases = dialectNames[row.dialect] ?? [row.dialect];
@@ -102,22 +158,59 @@ function checkAuthoredFacts(source, rows) {
     }
     const identity = `(?:${identities.join('|')})`;
     const classification = new RegExp(
-      `(?:${identity}.{0,180}\\b${supportLevel}\\b|\\b${supportLevel}\\b.{0,180}${identity})`,
+      `(?:${identity}.*\\b${supportLevel}\\b|\\b${supportLevel}\\b.*${identity})`,
       'i',
     );
-    const matched = text.match(classification);
-    if (matched) {
-      findings.push(
-        `authored prose assigns a support level to ${row.dialect} ${row.line}; keep that fact in the generated table: ${matched[0]}`,
-      );
+    for (const block of authoredBlocks(source)) {
+      const matched = block.match(classification);
+      if (matched) {
+        const level = matched[0].match(new RegExp(`\\b(${supportLevel})\\b`, 'i'))?.[1]?.toLowerCase();
+        const waiver = level ? matchingWaiver(block, row, level, context) : null;
+        if (waiver) {
+          context.used.add(waiver.id);
+          continue;
+        }
+        findings.push(
+          `authored prose assigns a support level to ${row.dialect} ${row.line}; keep that fact in the generated table: ${matched[0]}`,
+        );
+        break;
+      }
     }
   }
   return findings;
 }
 
-function checkSource(source) {
+function checkSource(source, context = null) {
   const { generated, authored } = splitGenerated(source);
-  return checkAuthoredFacts(authored, rowsFrom(generated));
+  return checkAuthoredFacts(authored, rowsFrom(generated), context);
+}
+
+function validCalendarDate(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+    new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+}
+
+function waiverProblems(waivers, today = new Date().toISOString().slice(0, 10)) {
+  const problems = [];
+  const ids = new Set();
+  for (const [index, waiver] of waivers.entries()) {
+    const where = `waiver ${index + 1}`;
+    if (typeof waiver.id !== 'string' || waiver.id.trim() === '') problems.push(`${where}: id is missing`);
+    else if (ids.has(waiver.id)) problems.push(`${where}: duplicate id ${waiver.id}`);
+    else ids.add(waiver.id);
+    if (typeof waiver.file !== 'string' || !waiver.file.endsWith('.md') && !waiver.file.endsWith('.mdx')) {
+      problems.push(`${where}: file must name a Markdown file`);
+    } else if (!existsSync(resolve(repoRoot, waiver.file))) {
+      problems.push(`${where}: file does not exist: ${waiver.file}`);
+    }
+    if (!Object.hasOwn(dialectNames, waiver.dialect)) problems.push(`${where}: unknown dialect ${JSON.stringify(waiver.dialect)}`);
+    if (typeof waiver.releaseLine !== 'string' || waiver.releaseLine.trim() === '') problems.push(`${where}: releaseLine is missing`);
+    if (!new RegExp(`^${supportLevel}$`).test(waiver.support)) problems.push(`${where}: invalid support level ${JSON.stringify(waiver.support)}`);
+    if (!validCalendarDate(waiver.asOf)) problems.push(`${where}: asOf must be a real YYYY-MM-DD date`);
+    else if (waiver.asOf > today) problems.push(`${where}: asOf is in the future`);
+    if (typeof waiver.reason !== 'string' || waiver.reason.trim() === '') problems.push(`${where}: reason is missing`);
+  }
+  return problems;
 }
 
 function markdownFiles() {
@@ -161,7 +254,53 @@ function selftest() {
     checkSource(fixture('SQL Server 2022 (16.0) is `best-effort`.')).some((finding) => finding.includes('sqlserver 16.0')),
     'catches a labeled release line',
   );
-  console.log('check-support-matrix.mjs --selftest: OK (5 assertions)');
+  assert(
+    checkSource(fixture('| Release | Support |\n| --- | --- |\n| **ClickHouse 26.3** | `best-effort` |'))
+      .some((finding) => finding.includes('clickhouse 26.3')),
+    'catches a Markdown table row',
+  );
+  assert(
+    checkSource(fixture('- [ClickHouse **26.3**](https://example.test/release) is\n  `best-effort`.'))
+      .some((finding) => finding.includes('clickhouse 26.3')),
+    'catches a wrapped list item with inline formatting',
+  );
+  assert(
+    checkSource(fixture('<SupportLine\n  release="SQL Server 2022 (16.0)"\n  level="best-effort"\n/>'))
+      .some((finding) => finding.includes('sqlserver 16.0')),
+    'catches an MDX component classification',
+  );
+  assert(
+    checkSource(fixture('```text\nClickHouse 26.3 is best-effort.\n```')).length === 0,
+    'allows code fixtures',
+  );
+  assert(
+    checkSource(fixture('PostgreSQL 99.9 is `certified` in this fictional example.')).length === 0,
+    'allows fictional non-current release lines',
+  );
+  const historicalContext = {
+    file: 'docs/history.md',
+    waivers: [{
+      id: 'historical-example',
+      file: 'docs/history.md',
+      dialect: 'clickhouse',
+      releaseLine: '26.3',
+      support: 'best-effort',
+      asOf: '2026-01-15',
+      reason: 'Historical release-note evidence.',
+    }],
+    used: new Set(),
+  };
+  assert(
+    checkSource(fixture('As of 2026-01-15, ClickHouse 26.3 was `best-effort`.'), historicalContext).length === 0 &&
+      historicalContext.used.has('historical-example'),
+    'allows explicitly dated historical evidence only through the central waiver registry',
+  );
+  assert(
+    waiverProblems([{ ...historicalContext.waivers[0], asOf: '2026-02-30' }], '2026-08-30')
+      .some((problem) => problem.includes('real YYYY-MM-DD')),
+    'rejects impossible waiver dates',
+  );
+  console.log('check-support-matrix.mjs --selftest: OK (12 assertions)');
 }
 
 function main() {
@@ -180,10 +319,20 @@ function main() {
   try {
     const page = readFileSync(pagePath, 'utf8');
     const rows = rowsFrom(splitGenerated(page).generated);
+    const waiverDocument = JSON.parse(readFileSync(waiverPath, 'utf8'));
+    const waivers = waiverDocument.waivers;
+    if (!Array.isArray(waivers)) throw new Error('support matrix: waiver registry must contain a waivers array');
+    const invalidWaivers = waiverProblems(waivers);
+    if (invalidWaivers.length > 0) throw new Error(`support matrix: invalid waiver registry\n  ${invalidWaivers.join('\n  ')}`);
+    const used = new Set();
     findings = [];
     for (const file of markdownFiles()) {
       const source = readFileSync(resolve(repoRoot, file), 'utf8');
-      for (const finding of checkAuthoredFacts(source, rows)) findings.push(`${file}: ${finding}`);
+      const context = { file, waivers, used };
+      for (const finding of checkAuthoredFacts(source, rows, context)) findings.push(`${file}: ${finding}`);
+    }
+    for (const waiver of waivers) {
+      if (!used.has(waiver.id)) findings.push(`${waiverPath}: stale or unmatched waiver ${waiver.id}`);
     }
   } catch (error) {
     console.error(error.message);

@@ -239,13 +239,9 @@ export function scopedFiles(ban, corpus) {
 // The corpus has to be a corpus CI sees
 // ---------------------------------------------------------------------------
 
-// A gate reads what a workflow gives it. This one runs in the Docs workflow,
-// whose pull-request trigger carries a `paths:` filter, so a file inside this
-// corpus that no pattern in that filter reaches is a file the gate never runs
-// on -- and a pull request touching only that file gets the same green as one
-// the gate read. That is this repository's most-named failure, arrived at from
-// the other end: not a gate that stopped reading, but a gate that was never
-// started.
+// A gate reads what a workflow gives it. This one runs in the Docs workflow.
+// The workflow normally runs on every pull request; if a future edit restores
+// a `paths:` filter, every corpus file has to be reachable through it.
 //
 // It is read out of the workflow rather than restated here, because a copy of
 // the filter would be the claim it exists to check.
@@ -293,6 +289,18 @@ export function workflowTriggerPaths(source) {
     patterns.push(entry[1]);
   }
   return patterns;
+}
+
+/** Whether the workflow has an unfiltered pull_request trigger. */
+export function workflowRunsForEveryPullRequest(source) {
+  const lines = source.split('\n');
+  const start = lines.findIndex((line) => /^ {2}pull_request:\s*$/.test(line));
+  if (start === -1) return false;
+  for (const line of lines.slice(start + 1)) {
+    if (/^ {2}\S/.test(line)) break;
+    if (/^ {4}paths(?:-ignore)?:\s*$/.test(line)) return false;
+  }
+  return true;
 }
 
 /** Every corpus file the workflow's trigger cannot reach. */
@@ -772,10 +780,11 @@ function run({ write }) {
   const corpus = corpusOf(registry, files);
   const advisory = [];
 
-  const trigger = workflowTriggerPaths(readFileSync(join(repoRoot, workflowPath), 'utf8'));
-  if (trigger.length === 0) {
-    errors.push(`${workflowPath}: no pull-request path filter could be read; refusing to conclude that every file is reachable`);
-  } else {
+  const workflow = readFileSync(join(repoRoot, workflowPath), 'utf8');
+  const trigger = workflowTriggerPaths(workflow);
+  if (!workflowRunsForEveryPullRequest(workflow) && trigger.length === 0) {
+    errors.push(`${workflowPath}: no unfiltered pull-request trigger or readable path filter was found`);
+  } else if (trigger.length > 0) {
     const unreachable = unreachableFromWorkflow(corpus, trigger);
     for (const file of unreachable) {
       errors.push(
@@ -1029,12 +1038,12 @@ function selftest() {
     'a corpus.exclude pattern matching no file was not refused',
   );
 
-  // The corpus has to be a corpus CI sees. Both halves: the filter is really
-  // read out of the workflow, and a file no pattern in it reaches is named.
+  // The corpus has to be a corpus CI sees. The checked-in workflow is
+  // unfiltered; the reachability rule remains covered for any future filter.
   {
-    const patterns = workflowTriggerPaths(readFileSync(join(repoRoot, workflowPath), 'utf8'));
-    assert(patterns.length > 0, `no pull-request path filter could be read from ${workflowPath}`);
-    assert(patterns.includes('docs/**'), `the path filter read from ${workflowPath} does not look like one: ${patterns.join(', ')}`);
+    const workflow = readFileSync(join(repoRoot, workflowPath), 'utf8');
+    assert(workflowRunsForEveryPullRequest(workflow), `${workflowPath} no longer runs on every pull request`);
+    const patterns = ['docs/**', '**.md'];
     assert(
       unreachableFromWorkflow(['TESTING.md', 'docs/site/src/sidebar.mjs'], patterns).length === 0,
       'a root record and a site source were not reachable from the workflow trigger',
