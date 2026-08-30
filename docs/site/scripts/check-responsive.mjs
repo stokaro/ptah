@@ -25,8 +25,8 @@ const siteRoot = join(scriptDir, '..');
 
 // Widths chosen for what they expose: 390 is a common phone viewport and the
 // width at which Starlight collapses navigation; 1280 is a laptop; 1920 leaves
-// enough room for the 70rem content shell and therefore proves that prose still
-// stops at and is centered within its independent 60rem measure.
+// enough room for the article and table of contents to move as one centered
+// frame while the 60rem reading column and 70rem wide-content shell both fit.
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
   { name: 'desktop', width: 1280, height: 900 },
@@ -39,7 +39,10 @@ const overflowTolerance = 2;
 const maxProseWidth = 962;
 const targetProseWidth = 960;
 const minimumTargetProseWidth = targetProseWidth - overflowTolerance;
-const wideMeasureRoute = '/versioned/generate/';
+const targetWideContentWidth = 1120;
+const targetTocWidth = 232;
+const targetDocumentFrameWidth = 1400;
+const alignmentSentinelRoute = '/operate/seed-data/';
 
 // The tallest a table cell may render at desktop width. Character count cannot
 // see this: a short cell in a column squeezed narrow by an unbreakable code
@@ -276,23 +279,19 @@ const measure = ({ tolerance, cellLineLimit }) => {
     '.sl-markdown-content > ol',
     '.sl-markdown-content > blockquote',
     '.sl-markdown-content > dl',
-    '.sl-markdown-content > h2',
-    '.sl-markdown-content > h3',
-    '.sl-markdown-content > h4',
-    '.sl-markdown-content > h5',
-    '.sl-markdown-content > h6',
+    '.sl-markdown-content > .sl-heading-wrapper',
     '.sl-markdown-content > details',
     '.sl-markdown-content > .starlight-aside',
   ].join(',');
   const markdown = document.querySelector('.sl-markdown-content');
   const markdownRect = markdown?.getBoundingClientRect();
-  const proseCenterOffsets = [];
+  const proseLeftOffsets = [];
   for (const element of document.querySelectorAll(proseSelector)) {
     const rect = element.getBoundingClientRect();
     if (rect.width > 0) {
       proseWidths.push(Math.round(rect.width));
       if (markdownRect) {
-        proseCenterOffsets.push(Math.abs((rect.left + rect.right - markdownRect.left - markdownRect.right) / 2));
+        proseLeftOffsets.push(Math.abs(rect.left - markdownRect.left));
       }
     }
   }
@@ -304,6 +303,52 @@ const measure = ({ tolerance, cellLineLimit }) => {
   const heading = document.querySelector('.page-heading');
   const headingRect = heading?.getBoundingClientRect();
   const headingShellRect = heading?.parentElement?.getBoundingClientRect();
+  const alignmentRect = (element) => {
+    if (!element) return null;
+    const rect = element.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return null;
+    return { left: rect.left, right: rect.right, width: rect.width };
+  };
+  const articleAlignment = {
+    contentShell: alignmentRect(contentShell),
+    pageHeading: alignmentRect(heading),
+    markdownShell: alignmentRect(markdown),
+    ordinaryParagraph: alignmentRect(
+      document.querySelector('.sl-markdown-content > p:not(:has(> img:only-child))'),
+    ),
+    sectionHeading: alignmentRect(document.querySelector('.sl-markdown-content > .sl-heading-wrapper')),
+    codeBlock: alignmentRect(document.querySelector('.sl-markdown-content > .expressive-code')),
+  };
+  const customWidth = (property) => {
+    const value = getComputedStyle(document.documentElement).getPropertyValue(property).trim();
+    if (!value) return null;
+    const probe = document.createElement('div');
+    probe.style.cssText =
+      `position:fixed;visibility:hidden;pointer-events:none;inline-size:var(${property});max-inline-size:none`;
+    document.body.append(probe);
+    const width = probe.getBoundingClientRect().width;
+    probe.remove();
+    return width;
+  };
+  const documentFrame = document.querySelector('[data-has-sidebar][data-has-toc] .lg\\:sl-flex');
+  const mainFrame = documentFrame?.closest('.main-frame');
+  const navigation = alignmentRect(document.querySelector('.sidebar-pane'));
+  const articleFrame = {
+    navigation,
+    availableFrame: navigation
+      ? { left: navigation.right, right: viewportWidth, width: viewportWidth - navigation.right }
+      : alignmentRect(mainFrame),
+    documentFrame: alignmentRect(documentFrame),
+    mainPane: alignmentRect(document.querySelector('.main-pane')),
+    tocContainer: alignmentRect(document.querySelector('.right-sidebar-container')),
+    toc: alignmentRect(document.querySelector('.right-sidebar')),
+  };
+  const widthContract = {
+    prose: customWidth('--ptah-prose-width'),
+    wideContent: customWidth('--sl-content-width'),
+    toc: customWidth('--ptah-toc-width'),
+    documentFrame: customWidth('--ptah-doc-frame-width'),
+  };
 
   return {
     scrollWidth: doc.scrollWidth,
@@ -314,7 +359,7 @@ const measure = ({ tolerance, cellLineLimit }) => {
     widestProse: proseWidths.length > 0 ? Math.max(...proseWidths) : 0,
     proseElementCount: proseWidths.length,
     hasMarkdown: Boolean(markdown),
-    proseCenterOffset: proseCenterOffsets.length > 0 ? Math.max(...proseCenterOffsets) : 0,
+    proseLeftOffset: proseLeftOffsets.length > 0 ? Math.max(...proseLeftOffsets) : 0,
     hasContentShell: Boolean(shellRect),
     hasContentPanel: Boolean(panelRect),
     contentShellCenterOffset: shellRect && panelRect
@@ -322,44 +367,222 @@ const measure = ({ tolerance, cellLineLimit }) => {
       : 0,
     pageHeadingWidth: headingRect?.width ?? 0,
     hasPageHeading: Boolean(headingRect),
-    pageHeadingCenterOffset: headingRect && headingShellRect
-      ? Math.abs((headingRect.left + headingRect.right - headingShellRect.left - headingShellRect.right) / 2)
+    pageHeadingLeftOffset: headingRect && headingShellRect
+      ? Math.abs(headingRect.left - headingShellRect.left)
       : 0,
+    articleAlignment,
+    articleFrame,
+    widthContract,
   };
 };
+
+function articleAlignmentProblems(result, route, viewport) {
+  if (viewport.name !== 'wide-desktop' || route !== alignmentSentinelRoute) return [];
+
+  const problems = [];
+  const labels = new Map([
+    ['contentShell', 'wide content shell'],
+    ['pageHeading', 'page heading'],
+    ['markdownShell', 'Markdown shell'],
+    ['ordinaryParagraph', 'ordinary paragraph'],
+    ['sectionHeading', 'section heading wrapper'],
+    ['codeBlock', 'Expressive Code block'],
+  ]);
+  const geometry = result.articleAlignment ?? {};
+  for (const [key, label] of labels) {
+    if (!geometry[key]) problems.push(`${route}: ${label} was not rendered for the wide-desktop alignment check`);
+  }
+
+  const shell = geometry.contentShell;
+  if (!shell) return problems;
+  const expectedWideWidth = result.widthContract?.wideContent ?? targetWideContentWidth;
+  if (Math.abs(expectedWideWidth - targetWideContentWidth) > overflowTolerance) {
+    problems.push(
+      `${route}: --sl-content-width resolves to ${Math.round(expectedWideWidth)}px; ` +
+        `expected ${targetWideContentWidth}px (70rem)`,
+    );
+  }
+  if (
+    shell.width < expectedWideWidth - overflowTolerance ||
+    shell.width > expectedWideWidth + overflowTolerance
+  ) {
+    problems.push(
+      `${route}: content shell renders ${Math.round(shell.width)}px wide at 1920px; ` +
+        `expected ${Math.round(expectedWideWidth - overflowTolerance)}-${Math.round(expectedWideWidth + overflowTolerance)}px`,
+    );
+  }
+
+  const wideKeys = new Map([
+    ['markdownShell', 'Markdown shell'],
+    ['codeBlock', 'Expressive Code block'],
+  ]);
+  for (const [key, label] of wideKeys) {
+    const rect = geometry[key];
+    if (!rect) continue;
+    const leftDifference = Math.abs(rect.left - shell.left);
+    const rightDifference = Math.abs(rect.right - shell.right);
+    if (leftDifference <= overflowTolerance && rightDifference <= overflowTolerance) continue;
+    problems.push(
+      `${route}: ${label} does not share the content shell edges at 1920px ` +
+        `(left differs by ${Math.round(leftDifference)}px, right by ${Math.round(rightDifference)}px; ` +
+        `limit ${overflowTolerance}px)`,
+    );
+  }
+
+  const expectedProseWidth = result.widthContract?.prose ?? targetProseWidth;
+  if (Math.abs(expectedProseWidth - targetProseWidth) > overflowTolerance) {
+    problems.push(
+      `${route}: --ptah-prose-width resolves to ${Math.round(expectedProseWidth)}px; ` +
+        `expected ${targetProseWidth}px (60rem)`,
+    );
+  }
+  const proseKeys = new Map([
+    ['pageHeading', 'page heading'],
+    ['ordinaryParagraph', 'ordinary paragraph'],
+    ['sectionHeading', 'section heading wrapper'],
+  ]);
+  for (const [key, label] of proseKeys) {
+    const rect = geometry[key];
+    if (!rect) continue;
+    const leftDifference = Math.abs(rect.left - shell.left);
+    const widthDifference = Math.abs(rect.width - expectedProseWidth);
+    if (leftDifference <= overflowTolerance && widthDifference <= overflowTolerance) continue;
+    problems.push(
+      `${route}: ${label} does not share the content shell's left edge and ${Math.round(expectedProseWidth)}px ` +
+        `reading measure at 1920px (left differs by ${Math.round(leftDifference)}px, ` +
+        `width by ${Math.round(widthDifference)}px; limit ${overflowTolerance}px)`,
+    );
+  }
+
+  return problems;
+}
+
+function articleFrameProblems(result, route, viewport) {
+  if (viewport.name !== 'wide-desktop' || route !== alignmentSentinelRoute) return [];
+
+  const problems = [];
+  const geometry = result.articleFrame ?? {};
+  const labels = new Map([
+    ['navigation', 'navigation rail'],
+    ['availableFrame', 'space beside the navigation rail'],
+    ['documentFrame', 'article-and-TOC frame'],
+    ['mainPane', 'article pane'],
+    ['tocContainer', 'TOC container'],
+    ['toc', 'TOC rail'],
+  ]);
+  for (const [key, label] of labels) {
+    if (!geometry[key]) problems.push(`${route}: ${label} was not rendered for the wide-desktop frame check`);
+  }
+  if ([...labels.keys()].some((key) => !geometry[key])) return problems;
+
+  const { availableFrame, documentFrame, mainPane, tocContainer, toc } = geometry;
+  const expectedFrameWidth = result.widthContract?.documentFrame;
+  const expectedTocWidth = result.widthContract?.toc;
+  if (expectedFrameWidth == null || expectedTocWidth == null) {
+    problems.push(`${route}: frame width variables were not resolved`);
+    return problems;
+  }
+  if (Math.abs(expectedFrameWidth - targetDocumentFrameWidth) > overflowTolerance) {
+    problems.push(
+      `${route}: --ptah-doc-frame-width resolves to ${Math.round(expectedFrameWidth)}px; ` +
+        `expected ${targetDocumentFrameWidth}px`,
+    );
+  }
+  if (Math.abs(expectedTocWidth - targetTocWidth) > overflowTolerance) {
+    problems.push(
+      `${route}: --ptah-toc-width resolves to ${Math.round(expectedTocWidth)}px; ` +
+        `expected ${targetTocWidth}px (14.5rem)`,
+    );
+  }
+
+  if (Math.abs(documentFrame.width - expectedFrameWidth) > overflowTolerance) {
+    problems.push(
+      `${route}: article-and-TOC frame renders ${Math.round(documentFrame.width)}px wide at 1920px; ` +
+        `expected ${Math.round(expectedFrameWidth)}px`,
+    );
+  }
+  const leftGutter = documentFrame.left - availableFrame.left;
+  const rightGutter = availableFrame.right - documentFrame.right;
+  if (
+    leftGutter <= overflowTolerance ||
+    rightGutter <= overflowTolerance ||
+    Math.abs(leftGutter - rightGutter) > overflowTolerance
+  ) {
+    problems.push(
+      `${route}: article-and-TOC frame is not centered beside the navigation rail ` +
+        `(left gutter ${Math.round(leftGutter)}px, right gutter ${Math.round(rightGutter)}px; ` +
+        `limit ${overflowTolerance}px)`,
+    );
+  }
+  for (const [rect, label] of [[tocContainer, 'TOC container'], [toc, 'TOC rail']]) {
+    if (Math.abs(rect.width - expectedTocWidth) > overflowTolerance) {
+      problems.push(
+        `${route}: ${label} renders ${Math.round(rect.width)}px wide; expected ${Math.round(expectedTocWidth)}px`,
+      );
+    }
+  }
+  const tocLeftDifference = Math.abs(toc.left - tocContainer.left);
+  const tocRightDifference = Math.abs(toc.right - tocContainer.right);
+  if (tocLeftDifference > overflowTolerance || tocRightDifference > overflowTolerance) {
+    problems.push(
+      `${route}: TOC rail does not share its moving container edges ` +
+        `(left differs by ${Math.round(tocLeftDifference)}px, right by ${Math.round(tocRightDifference)}px; ` +
+        `limit ${overflowTolerance}px)`,
+    );
+  }
+  const paneTocGap = Math.abs(mainPane.right - tocContainer.left);
+  if (paneTocGap > overflowTolerance) {
+    problems.push(
+      `${route}: article pane and TOC are ${Math.round(paneTocGap)}px apart; expected adjacent frame columns`,
+    );
+  }
+  const contentsLeft = Math.min(mainPane.left, tocContainer.left);
+  const contentsRight = Math.max(mainPane.right, tocContainer.right);
+  if (
+    Math.abs(contentsLeft - documentFrame.left) > overflowTolerance ||
+    Math.abs(contentsRight - documentFrame.right) > overflowTolerance
+  ) {
+    problems.push(`${route}: article pane and TOC do not fill the declared document frame`);
+  }
+
+  return problems;
+}
 
 function readingMeasureProblems(result, route, viewport) {
   if (viewport.name === 'mobile') return [];
 
   const problems = [];
+  const isHome = route === '/';
   if (!result.hasMarkdown) problems.push(`${route}: Markdown content container was not rendered`);
   if (!result.hasContentShell || !result.hasContentPanel) {
     problems.push(`${route}: content shell or content panel was not rendered`);
   }
-  // The documentation home has an intentional custom hero. Every ordinary
-  // article must render the shared page heading so width and centering remain
-  // measurable instead of falling back to zero and passing silently.
-  if (!result.hasPageHeading && route !== '/') problems.push(`${route}: page heading was not rendered`);
+  // Every ordinary article must render the shared page heading so width and
+  // centering remain measurable instead of falling back to zero and passing
+  // silently.
+  if (!result.hasPageHeading && !isHome) problems.push(`${route}: page heading was not rendered`);
   if (result.widestProse > maxProseWidth) {
     problems.push(`${route}: prose renders ${result.widestProse}px wide, over the ${maxProseWidth}px reading measure`);
   }
-  if (result.proseCenterOffset > overflowTolerance) {
-    problems.push(`${route}: prose is ${Math.round(result.proseCenterOffset)}px off center in its content shell`);
+  if (result.proseLeftOffset > overflowTolerance) {
+    problems.push(
+      `${route}: prose starts ${Math.round(result.proseLeftOffset)}px away from the content shell's left edge`,
+    );
   }
   if (result.contentShellCenterOffset > overflowTolerance) {
     problems.push(`${route}: content shell is ${Math.round(result.contentShellCenterOffset)}px off center in its panel`);
   }
-  if (result.pageHeadingWidth > maxProseWidth) {
+  if (!isHome && result.pageHeadingWidth > maxProseWidth) {
     problems.push(`${route}: page heading renders ${Math.round(result.pageHeadingWidth)}px wide, over ${maxProseWidth}px`);
   }
-  if (result.pageHeadingCenterOffset > overflowTolerance) {
-    problems.push(`${route}: page heading is ${Math.round(result.pageHeadingCenterOffset)}px off center`);
+  if (!isHome && result.pageHeadingLeftOffset > overflowTolerance) {
+    problems.push(`${route}: page heading starts ${Math.round(result.pageHeadingLeftOffset)}px away from its content shell`);
   }
 
   // An upper bound alone would accept the old 40rem measure. Pin one ordinary
   // article at a viewport where the full 60rem measure fits, while leaving
   // narrow viewports and intentionally compact components responsive.
-  if (viewport.name === 'wide-desktop' && route === wideMeasureRoute) {
+  if (viewport.name === 'wide-desktop' && route === alignmentSentinelRoute) {
     if (result.proseElementCount === 0) {
       problems.push(`${route}: no ordinary prose element was rendered for the 60rem reading-measure check`);
     } else if (result.widestProse < minimumTargetProseWidth) {
@@ -368,7 +591,7 @@ function readingMeasureProblems(result, route, viewport) {
           'minimum for the 60rem reading measure',
       );
     }
-    if (result.pageHeadingWidth < minimumTargetProseWidth) {
+    if (!isHome && result.pageHeadingWidth < minimumTargetProseWidth) {
       problems.push(
         `${route}: page heading renders ${Math.round(result.pageHeadingWidth)}px wide at 1920px, below the ` +
           `${minimumTargetProseWidth}px minimum for the 60rem reading measure`,
@@ -376,7 +599,9 @@ function readingMeasureProblems(result, route, viewport) {
     }
   }
 
-  return problems;
+  return problems
+    .concat(articleAlignmentProblems(result, route, viewport))
+    .concat(articleFrameProblems(result, route, viewport));
 }
 
 async function loadChromium() {
@@ -526,58 +751,205 @@ async function main() {
       await page.setContent(
         '<main><div class="content-panel" style="width:1000px">' +
           '<div class="sl-container" style="width:800px;margin-inline:auto">' +
+          '<div class="page-heading" style="width:600px;margin-inline:0 auto">heading</div>' +
+          '<div class="sl-markdown-content"><p style="width:600px;margin-inline:0 auto">prose</p></div>' +
+          '</div></div></main>',
+      );
+      const alignedColumn = await page.evaluate(measure, {
+        tolerance: overflowTolerance,
+        cellLineLimit: maxCellLines,
+      });
+      await page.setContent(
+        '<main><div class="content-panel" style="width:1000px">' +
+          '<div class="sl-container" style="width:800px;margin-inline:auto">' +
           '<div class="page-heading" style="width:600px;margin-inline:auto">heading</div>' +
           '<div class="sl-markdown-content"><p style="width:600px;margin-inline:auto">prose</p></div>' +
           '</div></div></main>',
       );
-      const centered = await page.evaluate(measure, { tolerance: overflowTolerance, cellLineLimit: maxCellLines });
+      const staggeredColumn = await page.evaluate(measure, {
+        tolerance: overflowTolerance,
+        cellLineLimit: maxCellLines,
+      });
       await page.setContent(
         '<main><div class="content-panel" style="width:1000px">' +
           '<div class="sl-container" style="width:800px;margin-inline:0">' +
-          '<div class="page-heading" style="width:600px;margin-inline:0">heading</div>' +
-          '<div class="sl-markdown-content"><p style="width:600px;margin-inline:0">prose</p></div>' +
+          '<div class="page-heading" style="width:600px;margin-inline:0 auto">heading</div>' +
+          '<div class="sl-markdown-content"><p style="width:600px;margin-inline:0 auto">prose</p></div>' +
           '</div></div></main>',
       );
-      const leftAligned = await page.evaluate(measure, { tolerance: overflowTolerance, cellLineLimit: maxCellLines });
-      if (centered.proseCenterOffset > overflowTolerance || centered.contentShellCenterOffset > overflowTolerance ||
-          centered.pageHeadingCenterOffset > overflowTolerance) {
-        failures.push('centering detector rejected centered prose, shell, or page heading');
+      const offCenterShell = await page.evaluate(measure, {
+        tolerance: overflowTolerance,
+        cellLineLimit: maxCellLines,
+      });
+      if (
+        alignedColumn.proseLeftOffset > overflowTolerance ||
+        alignedColumn.contentShellCenterOffset > overflowTolerance ||
+        alignedColumn.pageHeadingLeftOffset > overflowTolerance
+      ) {
+        failures.push('reading-column detector rejected a centered shell with shared left edges');
       }
-      if (leftAligned.proseCenterOffset <= overflowTolerance ||
-          leftAligned.contentShellCenterOffset <= overflowTolerance ||
-          leftAligned.pageHeadingCenterOffset <= overflowTolerance) {
-        failures.push('centering detector accepted a left-aligned prose shell');
+      if (
+        staggeredColumn.proseLeftOffset <= overflowTolerance ||
+        staggeredColumn.pageHeadingLeftOffset <= overflowTolerance
+      ) {
+        failures.push('reading-column detector accepted independently centered prose and page heading');
+      }
+      if (offCenterShell.contentShellCenterOffset <= overflowTolerance) {
+        failures.push('reading-column detector accepted a content shell that is off center in its panel');
       }
 
       const wideViewport = { name: 'wide-desktop', width: 1920, height: 1080 };
-      const undersized = readingMeasureProblems(centered, wideMeasureRoute, wideViewport);
+      const undersized = readingMeasureProblems(alignedColumn, alignmentSentinelRoute, wideViewport);
       if (!undersized.some((problem) => problem.includes('below the 958px minimum'))) {
         failures.push('60rem target detector accepted the old, narrower reading measure');
       }
       await page.setViewportSize({ width: wideViewport.width, height: wideViewport.height });
-      await page.setContent(
-        '<main><div class="content-panel" style="width:1200px;margin-inline:auto">' +
-          '<div class="sl-container" style="width:1120px;margin-inline:auto">' +
-          '<div class="page-heading" style="width:960px;margin-inline:auto">heading</div>' +
-          '<div class="sl-markdown-content"><p style="width:960px;margin-inline:auto">prose</p></div>' +
-          '</div></div></main>',
-      );
-      const fullMeasure = await page.evaluate(measure, {
+      const articleFixture = ({
+        shellWidth = 1120,
+        contractWideWidth = 1120,
+        frameWidth = 1400,
+        contractFrameWidth = 1400,
+        centerReadingColumn = false,
+        offsetFrame = false,
+        offsetToc = false,
+      } = {}) => {
+        const readingMargin = centerReadingColumn ? 'auto' : '0 auto';
+        const headingWidth = centerReadingColumn ? shellWidth : 960;
+        const frameMargin = offsetFrame ? '0 auto' : 'auto';
+        const mainPaneWidth = frameWidth - 232;
+        const tocPosition = offsetToc ? 'position:fixed;right:0;top:0;' : '';
+        return '<style>' +
+          `:root{--ptah-prose-width:960px;--sl-content-width:${contractWideWidth}px;` +
+          `--ptah-toc-width:232px;--ptah-doc-frame-width:${contractFrameWidth}px}` +
+          '*{box-sizing:border-box}body{margin:0}' +
+          '</style>' +
+          '<div data-has-sidebar data-has-toc>' +
+          '<aside class="sidebar-pane" style="position:fixed;left:0;top:0;width:256px;height:1080px"></aside>' +
+          '<div class="main-frame" style="position:absolute;left:256px;top:0;width:1664px;height:1080px">' +
+          `<div class="lg:sl-flex" style="display:flex;width:${frameWidth}px;margin-inline:${frameMargin}">` +
+          '<aside class="right-sidebar-container" style="order:2;flex:0 0 232px;width:232px;height:300px">' +
+          `<div class="right-sidebar" style="${tocPosition}width:232px;height:300px"></div></aside>` +
+          `<div class="main-pane" style="order:1;flex:0 0 ${mainPaneWidth}px;width:${mainPaneWidth}px;height:300px">` +
+          `<main><div class="content-panel" style="width:${mainPaneWidth}px">` +
+          `<div class="sl-container" style="width:${shellWidth}px;margin-inline:auto">` +
+          `<div class="page-heading" style="width:960px;margin-inline:${readingMargin}">heading</div>` +
+          '</div></div>' +
+          `<div class="content-panel" style="width:${mainPaneWidth}px">` +
+          `<div class="sl-container" style="width:${shellWidth}px;margin-inline:auto">` +
+          `<div class="sl-markdown-content" style="width:${shellWidth}px">` +
+          `<p style="width:960px;margin-inline:${readingMargin}">prose</p>` +
+          `<div class="sl-heading-wrapper" style="width:${headingWidth}px;margin-inline:${readingMargin}">` +
+          '<h2>section</h2></div>' +
+          `<div class="expressive-code" style="width:${shellWidth}px"><pre>code</pre></div>` +
+          '</div></div></div></main></div></div></div></div>';
+      };
+
+      // This is the shipped regression: a 1120px Markdown shell and wide
+      // children surrounded centered 960px prose and a centered 960px page
+      // heading. Every block was individually centered, so the old check
+      // accepted the visible 80px stagger on each side.
+      await page.setContent(articleFixture({ centerReadingColumn: true }));
+      const staggeredMeasure = await page.evaluate(measure, {
         tolerance: overflowTolerance,
         cellLineLimit: maxCellLines,
       });
-      const fullMeasureProblems = readingMeasureProblems(fullMeasure, wideMeasureRoute, wideViewport);
-      if (fullMeasureProblems.length > 0) {
-        failures.push(`60rem target detector rejected the requested measure: ${fullMeasureProblems.join('; ')}`);
+      const staggeredProblems = readingMeasureProblems(
+        staggeredMeasure,
+        alignmentSentinelRoute,
+        wideViewport,
+      );
+      if (!staggeredProblems.some((problem) => problem.includes('page heading does not share'))) {
+        failures.push('article-alignment detector accepted the old page-heading stagger');
+      }
+      if (!staggeredProblems.some((problem) => problem.includes('ordinary paragraph does not share'))) {
+        failures.push('article-alignment detector accepted the old paragraph stagger');
+      }
+
+      await page.setContent(articleFixture({ shellWidth: 960, contractWideWidth: 960 }));
+      const missingWideMeasure = await page.evaluate(measure, {
+        tolerance: overflowTolerance,
+        cellLineLimit: maxCellLines,
+      });
+      const missingWideProblems = readingMeasureProblems(
+        missingWideMeasure,
+        alignmentSentinelRoute,
+        wideViewport,
+      );
+      if (!missingWideProblems.some((problem) => problem.includes('--sl-content-width resolves to 960px'))) {
+        failures.push('wide-content detector accepted a 60rem shell with no 70rem breakout');
+      }
+
+      await page.setContent(articleFixture({ offsetFrame: true }));
+      const offsetFrameMeasure = await page.evaluate(measure, {
+        tolerance: overflowTolerance,
+        cellLineLimit: maxCellLines,
+      });
+      const offsetFrameProblems = readingMeasureProblems(
+        offsetFrameMeasure,
+        alignmentSentinelRoute,
+        wideViewport,
+      );
+      if (!offsetFrameProblems.some((problem) => problem.includes('frame is not centered'))) {
+        failures.push('document-frame detector accepted a frame pinned beside the navigation rail');
+      }
+
+      await page.setContent(articleFixture({ offsetToc: true }));
+      const offsetTocMeasure = await page.evaluate(measure, {
+        tolerance: overflowTolerance,
+        cellLineLimit: maxCellLines,
+      });
+      const offsetTocProblems = readingMeasureProblems(
+        offsetTocMeasure,
+        alignmentSentinelRoute,
+        wideViewport,
+      );
+      if (!offsetTocProblems.some((problem) => problem.includes('TOC rail does not share'))) {
+        failures.push('document-frame detector accepted a TOC rail pinned outside its moving container');
+      }
+
+      await page.setContent(articleFixture({ frameWidth: 1500, contractFrameWidth: 1500 }));
+      const oversizedFrameMeasure = await page.evaluate(measure, {
+        tolerance: overflowTolerance,
+        cellLineLimit: maxCellLines,
+      });
+      const oversizedFrameProblems = readingMeasureProblems(
+        oversizedFrameMeasure,
+        alignmentSentinelRoute,
+        wideViewport,
+      );
+      if (!oversizedFrameProblems.some((problem) => problem.includes('--ptah-doc-frame-width resolves to 1500px'))) {
+        failures.push('document-frame detector accepted a self-consistent but oversized frame contract');
+      }
+
+      // The accepted shape has one centered article-and-TOC frame. Its 60rem
+      // reading column and 70rem wide-content shell share their left edge.
+      await page.setContent(articleFixture());
+      const alignedMeasure = await page.evaluate(measure, {
+        tolerance: overflowTolerance,
+        cellLineLimit: maxCellLines,
+      });
+      const alignedProblems = readingMeasureProblems(alignedMeasure, alignmentSentinelRoute, wideViewport);
+      if (alignedProblems.length > 0) {
+        failures.push(`article-frame detector rejected the aligned fixture: ${alignedProblems.join('; ')}`);
       }
       await page.setContent('<main></main>');
       const missingLayout = await page.evaluate(measure, {
         tolerance: overflowTolerance,
         cellLineLimit: maxCellLines,
       });
-      const missingProblems = readingMeasureProblems(missingLayout, wideMeasureRoute, wideViewport);
+      const missingProblems = readingMeasureProblems(missingLayout, alignmentSentinelRoute, wideViewport);
       if (!missingProblems.some((problem) => problem.includes('was not rendered'))) {
         failures.push('reading-measure detector accepted missing layout selectors');
+      }
+      const missingHomeProblems = readingMeasureProblems(missingLayout, '/', wideViewport);
+      if (
+        !missingHomeProblems.some((problem) => problem.includes('Markdown content container was not rendered')) ||
+        !missingHomeProblems.some((problem) => problem.includes('content shell or content panel was not rendered'))
+      ) {
+        failures.push('reading-measure detector silently exempted the documentation home');
+      }
+      if (missingHomeProblems.some((problem) => problem.includes('page heading was not rendered'))) {
+        failures.push('reading-measure detector required an article page heading from the splash home');
       }
 
       const fixtureBase = '/ptah/edge';
@@ -624,7 +996,7 @@ async function main() {
     }
     console.log(
       'check-responsive.mjs --selftest: OK ' +
-        '(overflow, prose-width, wide-table, tall-cell, and unstyled-page guards verified)',
+        '(overflow, document-frame, article-alignment, prose-width, wide-table, tall-cell, and unstyled-page guards verified)',
     );
     return;
   }
@@ -749,7 +1121,8 @@ async function main() {
   }
   console.log(
     `check-responsive.mjs: OK (${routes.length} routes x ${viewports.length} viewports, ` +
-      `prose centered with a ${targetProseWidth}px wide-screen target, cells within ${maxCellLines} lines)`,
+      `${targetProseWidth}px reading and ${targetWideContentWidth}px wide-content columns stay aligned, ` +
+      `the article-and-TOC frame stays centered, cells within ${maxCellLines} lines)`,
   );
 }
 

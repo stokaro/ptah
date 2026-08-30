@@ -47,18 +47,22 @@
 :root {
 	--sl-sidebar-width: 16rem;
 	--ptah-toc-width: 14.5rem;
-	/* Keep the page wide enough for reference material, but give prose its own
-	 * readable measure. Code, diagrams, and tables remain free to use the full
-	 * content column below. */
 	--sl-content-width: 70rem;
 	--ptah-prose-width: 60rem;
+	/* At wide viewports the article and table of contents form one centered
+	 * frame. The padding belongs to ContentPanel, so include it here rather than
+	 * making the article's wide-content measure narrower than 70rem. */
+	--ptah-doc-frame-width: calc(
+		var(--sl-content-width) + var(--sl-content-pad-x) + var(--sl-content-pad-x) +
+			var(--ptah-toc-width)
+	);
 }
 
 /*
- * Markdown renders ordinary prose as direct children of this container. The
- * page shell stays 70rem wide for material that benefits from it; prose uses a
- * centered 60rem measure whenever the viewport leaves room. Images and
- * explicit wide blocks opt back into the page measure.
+ * The outer article shell keeps 70rem available for code, diagrams, and wide
+ * tables. Ordinary prose and headings use a 60rem reading column with the same
+ * left edge. The article-and-TOC frame itself is centered below, so the layout
+ * does not create the staggered, independently centered grids this replaces.
  */
 .sl-markdown-content > :where(
 	p,
@@ -67,16 +71,12 @@
 	blockquote,
 	dl,
 	hr,
-	h2,
-	h3,
-	h4,
-	h5,
-	h6,
+	.sl-heading-wrapper,
 	details,
 	.starlight-aside
 ) {
 	max-inline-size: var(--ptah-prose-width);
-	margin-inline: auto;
+	margin-inline: 0 auto;
 }
 
 .sl-markdown-content > :where(p:has(> img:only-child), figure, .ptah-wide-content) {
@@ -85,7 +85,7 @@
 
 .main-pane .page-heading {
 	max-inline-size: var(--ptah-prose-width);
-	margin-inline: auto;
+	margin-inline: 0 auto;
 }
 
 /*
@@ -334,14 +334,25 @@
 }
 
 @media (min-width: 80rem) {
+	[data-has-sidebar][data-has-toc] .lg\:sl-flex {
+		width: min(100%, var(--ptah-doc-frame-width));
+		margin-inline: auto;
+	}
+
 	.right-sidebar-container {
 		flex: 0 0 var(--ptah-toc-width);
 		width: var(--ptah-toc-width);
 	}
 
+	.right-sidebar {
+		width: var(--ptah-toc-width);
+	}
+
 	[data-has-sidebar][data-has-toc] .main-pane {
-		/* Center the content shell between the navigation and context rails once
-		 * the viewport can provide spare horizontal room. */
+		/* The article and context rail share the centered frame above. The article
+		 * takes the remaining width, and its ContentPanel padding leaves the 70rem
+		 * wide-content shell with a left-aligned 60rem reading column. */
+		flex: 1 1 auto;
 		--sl-content-margin-inline: auto;
 		width: calc(100% - var(--ptah-toc-width));
 	}
