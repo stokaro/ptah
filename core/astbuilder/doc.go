@@ -18,8 +18,8 @@
 // reachable by building it directly.
 //
 // What consumes the result is unchanged either way. ptah/core/renderer turns the
-// nodes into SQL for PostgreSQL, MySQL, MariaDB, SQLite, ClickHouse, and SQL
-// Server; ptah/migration/planner emits the same nodes when it plans a change.
+// nodes into SQL for every dialect renderer.SupportedDialects names;
+// ptah/migration/planner emits the same nodes when it plans a change.
 //
 // This package covers DDL. ptah/core/query is the DML counterpart, building
 // SELECT, INSERT, UPDATE, and DELETE against the same AST.

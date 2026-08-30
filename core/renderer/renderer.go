@@ -16,12 +16,12 @@
 //
 // Example usage:
 //
-//	renderer, err := renderer.NewRenderer("postgresql")
+//	r, err := renderer.NewRenderer("postgresql")
 //	if err != nil {
 //		log.Fatal(err)
 //	}
 //
-//	sql, err := renderer.Render(astNode)
+//	sql, err := r.Render(astNode)
 //	if err != nil {
 //		log.Fatal(err)
 //	}
@@ -74,6 +74,11 @@ import (
 //
 // This interface extends ast.Visitor with methods for managing renderer state
 // and retrieving the generated SQL output.
+//
+// A RenderVisitor carries mutable output state, so one instance is not safe
+// for concurrent use. Render clears that state before it visits its node, so
+// each call returns only the SQL for the node it was handed and one renderer
+// may be reused across many nodes sequentially.
 type RenderVisitor interface {
 	ast.Visitor
 
@@ -97,7 +102,18 @@ type RenderVisitor interface {
 }
 
 // SupportedDialects returns a list of all supported database dialects.
+//
+// The list holds the canonical dialect names declared in [platform] together
+// with common alias spellings for them, so one target can appear under more
+// than one name. Every entry folds onto a canonical name through
+// [platform.NormalizeDialect], which also accepts aliases this list does not
+// repeat: normalize a caller-supplied dialect rather than comparing it
+// against these entries literally. Each call returns a fresh slice the caller
+// may keep or mutate.
 func SupportedDialects() []string {
+	// docs/feature-inventory.json derives its dialect rows from this list
+	// folded through platform.NormalizeDialect, so editing it is a
+	// documented-surface change.
 	return []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "sqlite", "sqlite3", "sqlserver", "mssql", "cockroachdb", "yugabytedb", "spanner", "oracle"}
 }
 
@@ -107,7 +123,9 @@ func SupportedDialects() []string {
 // SupportedDialects(). The function performs case-insensitive matching and
 // handles common dialect aliases (e.g., "postgres" for "postgresql").
 //
-// Returns an error if the dialect is not supported.
+// An unsupported dialect returns a [ptaherr.RenderError] satisfying
+// errors.Is(err, [ptaherr.ErrUnsupportedDialect]), so embedders can branch on
+// the sentinel without matching message text.
 func NewRenderer(dialect string) (RenderVisitor, error) {
 	return NewRendererWithCapabilities(dialect, capability.ForDialect(dialect))
 }
@@ -115,6 +133,12 @@ func NewRenderer(dialect string) (RenderVisitor, error) {
 // NewRendererWithCapabilities creates a renderer for a concrete server
 // capability set. Use this on live database paths where capabilities were
 // resolved from DBInfo.Version; NewRenderer remains the offline default.
+//
+// A capability set that fails caps.Validate is refused with a
+// [ptaherr.CapabilityError] wrapping the validation error; an unsupported
+// dialect is refused the way NewRenderer describes. The renderer does not
+// alias caps: mutating the argument after construction does not change what
+// the renderer accepts.
 func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (RenderVisitor, error) {
 	if err := caps.Validate(); err != nil {
 		return nil, &ptaherr.CapabilityError{
@@ -293,6 +317,21 @@ func RenderSQL(dialect string, nodes ...ast.Node) (string, error) {
 }
 
 // RenderSQLWithCapabilities renders SQL for a concrete server capability set.
+//
+// Every node is validated and prepared before anything renders, so a
+// construct the capability set does not carry is refused rather than emitted
+// or quietly downgraded. The input nodes are never mutated. On any failure
+// the result is an empty string and the error — never a partial script.
+//
+// The errors are typed, and the sentinel is the part to branch on. A refused
+// feature satisfies errors.Is(err, [ptaherr.ErrUnsupportedFeature]); an
+// unsupported dialect satisfies errors.Is with
+// [ptaherr.ErrUnsupportedDialect], and a malformed node with
+// [ptaherr.ErrInvalidSchemaDiff]. Refusals arrive as a
+// [ptaherr.CapabilityError] or a [ptaherr.RenderError] according to where
+// they were detected, and a RenderError names the offending node where the
+// reporting site held one; match the sentinel rather than the concrete type
+// or the message text.
 func RenderSQLWithCapabilities(dialect string, caps capability.Capabilities, nodes ...ast.Node) (string, error) {
 	r, err := NewRendererWithCapabilities(dialect, caps)
 	if err != nil {
@@ -819,6 +858,19 @@ func foreignKeysUnsupportedError(dialect string) error {
 // executable. SQLite keeps foreign keys inline because it cannot add them
 // after table creation.
 //
+// The schema is scoped to dialect through [schemamodel.ScopeToDialect] before
+// it is validated: an object the document declares for other dialects only is
+// excluded from the output rather than refused, and it is never checked
+// against this target's capabilities either. Statement counts therefore differ
+// legitimately across dialects. The input Database is not mutated.
+//
+// Output is deterministic: two calls over the same schema return identical
+// statements, ordered so that each object is created before the objects that
+// depend on it. The relative order of objects that do not depend on one
+// another is stable for a given input but is not otherwise promised — it is
+// derived from the schema's dependencies, not from the order the caller
+// declared things in.
+//
 // The function validates foreign key shape, actions, and target capabilities
 // before rendering. Unsupported or malformed constraints return an error and
 // no partial statement list.
@@ -839,7 +891,18 @@ func declaredExtensionNames(r *schemamodel.Database) []string {
 }
 
 // ValidateSchema validates a complete schema against the default capability
-// preset for dialect without rendering SQL.
+// preset for dialect without rendering SQL. It applies the schema-level
+// validation GetOrderedCreateStatements applies before it emits anything, and
+// refuses the same schemas.
+//
+// A nil schema is refused with a [ptaherr.RenderError] satisfying
+// errors.Is(err, [ptaherr.ErrInvalidSchemaDiff]). A declaration the target
+// cannot carry — a foreign key, a referential action, an extension
+// installation schema, an index INCLUDE list — is refused with an error
+// satisfying errors.Is(err, [ptaherr.ErrUnsupportedFeature]). Other
+// declaration refusals carry no sentinel of their own, so treat any non-nil
+// error as a refusal and branch with errors.Is on the sentinels rather than
+// errors.As on a single concrete type.
 func ValidateSchema(r *schemamodel.Database, dialect string) error {
 	return ValidateSchemaWithCapabilities(r, dialect, capability.ForDialect(dialect))
 }
@@ -866,8 +929,8 @@ func ValidateSchemaWithCapabilities(
 }
 
 // GetOrderedCreateStatementsWithCapabilities renders ordered create statements
-// for a concrete server capability set. It has the same two-phase and
-// fail-closed guarantees as GetOrderedCreateStatements.
+// for a concrete server capability set. It has the same dialect-scoping,
+// two-phase, and fail-closed guarantees as GetOrderedCreateStatements.
 func GetOrderedCreateStatementsWithCapabilities(
 	r *schemamodel.Database,
 	dialect string,

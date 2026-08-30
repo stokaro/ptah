@@ -7,9 +7,11 @@
 // diff so skipped change kinds — and, for a skipped table drop, the dependent
 // object removals that a kept table must retain — are dropped from the plan,
 // and reports what was omitted so callers can surface a clearly-marked comment
-// in the generated migration. Apply uses exact object identity; callers that
-// know the target database should use ApplyForDialect so index replacements
-// follow that dialect's table- or schema-scoped naming rules.
+// in the generated migration. Apply resolves index replacements without a
+// dialect, which means conservative exact-match rules for a diff carrying no
+// live identifier metadata; callers that know the target database should use
+// ApplyForDialect so index replacements follow that dialect's table- or
+// schema-scoped naming rules.
 //
 // The vocabulary here is the single source of truth shared by the project
 // config loader (config/projectconfig), the planner (migration/planner), and
@@ -133,9 +135,10 @@ func (k ChangeKind) ddl() string {
 // kind omitted, along with the omitted changes in emission order. For a skipped
 // table drop it also removes the dependent object removals (indexes,
 // constraints, triggers, RLS policies and enablement, and table-level grants)
-// that a kept table must retain, so the plan stays internally consistent. diff
-// is not mutated. A nil diff or empty skip set returns the input unchanged with
-// no skipped changes.
+// that a kept table must retain, so the plan stays internally consistent; those
+// pruned dependents are not reported individually — the skipped table drop is
+// the one record for the group. diff is not mutated. A nil diff or empty skip
+// set returns the input unchanged with no skipped changes.
 func Apply(diff *difftypes.SchemaDiff, skip SkipSet) (*difftypes.SchemaDiff, []SkippedChange) {
 	return apply(diff, skip, "")
 }
@@ -143,6 +146,17 @@ func Apply(diff *difftypes.SchemaDiff, skip SkipSet) (*difftypes.SchemaDiff, []S
 // ApplyForDialect is Apply with index-replacement detection matched to the
 // target dialect's index-name namespace. This preserves required drop/create
 // pairs without treating table-scoped same-name indexes as replacements.
+//
+// dialect accepts every spelling core/platform.NormalizeDialect resolves. It
+// selects the index-name namespace a removal and an addition are compared in,
+// through [difftypes.SchemaDiff.EffectiveIdentifierSemantics], which is what
+// decides between the live semantics a diff may carry and offline rules for
+// the dialect. Under a schema-scoped index namespace (PostgreSQL, for one) a
+// removal is preserved when any addition recreates the name in the same
+// schema, even on another table; under a table-scoped namespace (MySQL, for
+// one) only a recreation on the same table counts. An empty or unrecognized
+// dialect asks for no dialect rules at all, so ApplyForDialect(diff, skip, "")
+// is exactly Apply(diff, skip).
 func ApplyForDialect(diff *difftypes.SchemaDiff, skip SkipSet, dialect string) (*difftypes.SchemaDiff, []SkippedChange) {
 	return apply(diff, skip, dialect)
 }

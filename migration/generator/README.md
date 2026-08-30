@@ -6,7 +6,7 @@ The migration generator package provides functionality to automatically generate
 
 - **Automatic Schema Comparison**: Compares Go entity definitions with current database schema
 - **Bidirectional Migrations**: Generates both UP and DOWN migration files
-- **Multiple Database Support**: Works with PostgreSQL, MySQL, and MariaDB
+- **Multiple Database Support**: Works with any database URL `dbschema.ConnectToDatabase` accepts, PostgreSQL, MySQL, MariaDB, and SQLite among them
 - **Schema-Scoped Introspection**: Restricts PostgreSQL reads to selected schemas
 - **Proper File Naming**: Uses timestamp-based naming convention for migration files
 - **Embedded Field Support**: Handles embedded structs in Go entities
@@ -410,6 +410,7 @@ that measured capability combination. The forward file requires
 - PostgreSQL: `postgres://user:password@localhost:5432/database`
 - MySQL: `mysql://user:password@localhost:3306/database`
 - MariaDB: `mariadb://user:password@localhost:3306/database`
+- SQLite: `sqlite:///path/to/database.db`
 
 ## Best practices
 

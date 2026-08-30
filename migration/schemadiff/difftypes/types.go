@@ -900,25 +900,29 @@ type RoutineRemoval struct {
 //
 // # Example Usage
 //
-//	diff := &SchemaDiff{
-//		TablesAdded: []string{"users", "posts"},
-//		TablesModified: []TableDiff{
-//			{TableName: "products", ColumnsAdded: []string{"price", "category"}},
-//		},
-//		EnumsAdded: []string{"status_type"},
+//	diff := &difftypes.SchemaDiff{
+//		TablesAdded: difftypes.TableCreationsFor(desired, "users", "posts"),
+//		EnumsAdded:  difftypes.EnumChanges(desired.Enums),
 //	}
 //
 //	if diff.HasChanges() {
 //		fmt.Printf("Found %d new tables\n", len(diff.TablesAdded))
 //	}
+//
+// The list fields carry whole definitions rather than names, read out of the
+// desired schema by the constructor family: [TableCreationsFor],
+// [IndexAdditionsFor] and [ConstraintAdditionsFor].
 type SchemaDiff struct {
 	// IdentifierSemantics records live catalog identifier rules used to produce
 	// this diff. It is absent for dialect-only comparisons, whose planners use
 	// conservative offline defaults.
 	IdentifierSemantics *identifier.Semantics `json:"identifier_semantics,omitempty"`
 
-	// TablesAdded contains names of tables that exist in the target schema
-	// but not in the current database schema
+	// TablesAdded is the tables that exist in the target schema and not in
+	// the current database, each carried as the [TableCreation] CREATE TABLE
+	// renders from. Names gives the table spellings, and the JSON stays the
+	// array of names it has always been. TablesRemoved stays []string because
+	// DROP TABLE is written from the name.
 	TablesAdded TableChanges `json:"tables_added"`
 
 	// TablesRemoved contains names of tables that exist in the current database
@@ -929,12 +933,13 @@ type SchemaDiff struct {
 	// schemas but have structural differences (columns, constraints, etc.)
 	TablesModified []TableDiff `json:"tables_modified"`
 
-	// EnumsAdded contains names of enum types that exist in the target schema
-	// but not in the current database schema
+	// EnumsAdded is the enum types that exist in the target schema and not in
+	// the current database, each carrying its values; see [EnumChanges].
 	EnumsAdded EnumChanges `json:"enums_added"`
 
-	// EnumsRemoved contains names of enum types that exist in the current database
-	// but not in the target schema (potentially dangerous - may break existing data)
+	// EnumsRemoved is the enum types that exist in the current database and
+	// not in the target schema (potentially dangerous - may break existing
+	// data), each carrying its values; see [EnumChanges].
 	EnumsRemoved EnumChanges `json:"enums_removed"`
 
 	// EnumsModified contains detailed information about enum types that exist in both
@@ -973,24 +978,31 @@ type SchemaDiff struct {
 	// needs. See [SupplementLists] for what that means to a reader.
 	ConstraintBackedIndexRemovals []IndexRef `json:"constraint_backed_index_removals,omitempty" ptah:"supplement=indexes_removed"`
 
-	// ExtensionsAdded contains names of PostgreSQL extensions that exist in the target schema
-	// but not in the current database schema
+	// ExtensionsAdded is the PostgreSQL extensions that exist in the target
+	// schema and not in the current database, each carrying its declaration;
+	// see [ExtensionChanges].
 	ExtensionsAdded ExtensionChanges `json:"extensions_added"`
 
-	// ExtensionsRemoved contains names of PostgreSQL extensions that exist in the current database
-	// but not in the target schema (potentially dangerous - may break existing functionality)
+	// ExtensionsRemoved is the PostgreSQL extensions that exist in the current
+	// database and not in the target schema (potentially dangerous - may break
+	// existing functionality), each carrying its declaration; see
+	// [ExtensionChanges].
 	ExtensionsRemoved ExtensionChanges `json:"extensions_removed"`
 
 	// ExtensionsModified contains PostgreSQL extensions whose installation schema differs.
 	// PostgreSQL extension names are database-wide identities; schema is placement, not identity.
 	ExtensionsModified []ExtensionDiff `json:"extensions_modified"`
 
-	// FunctionsAdded contains names of PostgreSQL functions that exist in the target schema
-	// but not in the current database schema
+	// FunctionsAdded is the routines that exist in the target schema and not
+	// in the current database, each carrying its declaration and drop
+	// identity; see [FunctionChanges].
 	FunctionsAdded FunctionChanges `json:"functions_added"`
 
-	// FunctionsRemoved contains names of PostgreSQL functions that exist in the current database
-	// but not in the target schema (potentially dangerous - may break existing functionality)
+	// FunctionsRemoved is the functions that exist in the current database and
+	// not in the target schema (potentially dangerous - may break existing
+	// functionality), each carrying its declaration and drop identity; see
+	// [FunctionChanges]. A removed procedure is reported in ProceduresRemoved
+	// instead.
 	FunctionsRemoved FunctionChanges `json:"functions_removed"`
 	// ProceduresRemoved names the procedures the database holds and the desired
 	// state does not.
@@ -1007,12 +1019,14 @@ type SchemaDiff struct {
 	// schemas but have different definitions (parameters, body, attributes, etc.)
 	FunctionsModified []FunctionDiff `json:"functions_modified"`
 
-	// SequencesAdded contains names of standalone sequences that exist in the target
-	// schema but not in the current database schema.
+	// SequencesAdded is the standalone sequences that exist in the target
+	// schema and not in the current database, each carrying its definition;
+	// see [SequenceChanges].
 	SequencesAdded SequenceChanges `json:"sequences_added"`
 
-	// SequencesRemoved contains names of standalone sequences that exist in the current
-	// database but not in the target schema (potentially dangerous - may break defaults).
+	// SequencesRemoved is the standalone sequences that exist in the current
+	// database and not in the target schema (potentially dangerous - may break
+	// defaults), each carrying its definition; see [SequenceChanges].
 	SequencesRemoved SequenceChanges `json:"sequences_removed"`
 
 	// SequencesModified contains detailed information about sequences that exist in both
@@ -1052,12 +1066,12 @@ type SchemaDiff struct {
 	RangesRemoved  RangeChanges `json:"ranges_removed"`
 	RangesModified []RangeDiff  `json:"ranges_modified"`
 
-	// ViewsAdded contains names of views that exist in the target schema
-	// but not in the current database schema.
+	// ViewsAdded is the views that exist in the target schema and not in the
+	// current database, each carrying its body; see [ViewChanges].
 	ViewsAdded ViewChanges `json:"views_added"`
 
-	// ViewsRemoved contains names of views that exist in the current database
-	// but not in the target schema.
+	// ViewsRemoved is the views that exist in the current database and not in
+	// the target schema, each carrying its body; see [ViewChanges].
 	ViewsRemoved ViewChanges `json:"views_removed"`
 
 	// HypertablesAdded names the tables a declaration asks to partition and the
@@ -1101,12 +1115,12 @@ type SchemaDiff struct {
 	// MATERIALIZED VIEW` is `syntax error at or near "MATERIALIZED"`.
 	ContinuousAggregatesModified []ContinuousAggregateDiff `json:"continuous_aggregates_modified"`
 
-	// SynonymsAdded contains names of synonyms that exist in the target schema
-	// and not in the database.
+	// SynonymsAdded is the synonyms that exist in the target schema and not in
+	// the database, each carrying its target; see [SynonymChanges].
 	SynonymsAdded SynonymChanges `json:"synonyms_added"`
 
-	// SynonymsRemoved contains names of synonyms that exist in the database and
-	// not in the target schema.
+	// SynonymsRemoved is the synonyms that exist in the database and not in
+	// the target schema, each carrying its target; see [SynonymChanges].
 	SynonymsRemoved SynonymChanges `json:"synonyms_removed"`
 
 	// SynonymsModified contains synonyms whose target changed.
@@ -1137,12 +1151,14 @@ type SchemaDiff struct {
 	// ViewsModified contains detailed information about views with changed definitions.
 	ViewsModified []ViewDiff `json:"views_modified"`
 
-	// MaterializedViewsAdded contains names of materialized views that exist in the target schema
-	// but not in the current database schema.
+	// MaterializedViewsAdded is the materialized views that exist in the
+	// target schema and not in the current database, each carrying its body;
+	// see [MaterializedViewChanges].
 	MaterializedViewsAdded MaterializedViewChanges `json:"materialized_views_added"`
 
-	// MaterializedViewsRemoved contains names of materialized views that exist in the current database
-	// but not in the target schema.
+	// MaterializedViewsRemoved is the materialized views that exist in the
+	// current database and not in the target schema, each carrying its body;
+	// see [MaterializedViewChanges].
 	MaterializedViewsRemoved MaterializedViewChanges `json:"materialized_views_removed"`
 
 	// MaterializedViewsModified contains detailed information about changed materialized views.
@@ -1281,19 +1297,25 @@ type SchemaDiff struct {
 	// pre-change database's.
 	DeclaredFunctions FunctionOrdering `json:"-"`
 
-	// RLSEnabledTablesAdded contains names of tables that need RLS enabled
+	// RLSEnabledTablesAdded is the tables that need RLS enabled, each carried
+	// as its declaration; see [RLSEnabledTableChanges].
 	RLSEnabledTablesAdded RLSEnabledTableChanges `json:"rls_enabled_tables_added"`
 
-	// RLSEnabledTablesRemoved contains names of tables that need RLS disabled
-	// (potentially dangerous - removes row-level security)
+	// RLSEnabledTablesRemoved is the tables that need RLS disabled
+	// (potentially dangerous - removes row-level security). A removed entry
+	// carries the table name and nothing else, because the enablement being
+	// removed is one no declaration describes.
 	RLSEnabledTablesRemoved RLSEnabledTableChanges `json:"rls_enabled_tables_removed"`
 
-	// RolesAdded contains names of PostgreSQL roles that exist in the target schema
-	// but not in the current database schema
+	// RolesAdded is the PostgreSQL roles that exist in the target schema and
+	// not in the current database, each carrying its attributes; see
+	// [RoleChanges].
 	RolesAdded RoleChanges `json:"roles_added"`
 
-	// RolesRemoved contains names of PostgreSQL roles that exist in the current database
-	// but not in the target schema (potentially dangerous - may break existing functionality)
+	// RolesRemoved is the PostgreSQL roles that exist in the current database
+	// and not in the target schema (potentially dangerous - may break existing
+	// functionality). The comparison never fills it; see [RoleChanges] for
+	// where a filled removal comes from.
 	RolesRemoved RoleChanges `json:"roles_removed"`
 
 	// RolesModified contains detailed information about roles that exist in both
@@ -1661,14 +1683,19 @@ func (d *SchemaDiff) hasConstraintChanges() bool {
 //
 // # Example Usage
 //
-//	tableDiff := TableDiff{
+//	tableDiff := difftypes.TableDiff{
 //		TableName: "users",
-//		ColumnsAdded: []string{"email", "created_at"},
-//		ColumnsRemoved: []string{"legacy_field"},
-//		ColumnsModified: []ColumnDiff{
+//		ColumnsAdded: difftypes.ColumnChanges{
+//			{Name: "email", Type: "VARCHAR(255)"},
+//			{Name: "created_at", Type: "TIMESTAMP"},
+//		},
+//		ColumnsModified: []difftypes.ColumnDiff{
 //			{ColumnName: "name", Changes: map[string]string{"type": "VARCHAR(100) -> VARCHAR(255)"}},
 //		},
 //	}
+//
+// The column lists carry each column's definition rather than its name; see
+// [ColumnChanges] for why the definition travels on both directions.
 type TableDiff struct {
 	// TableName is the name of the table being modified
 	TableName string `json:"table_name"`

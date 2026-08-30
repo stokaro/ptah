@@ -10,8 +10,9 @@ import (
 	"go.5x5.cz/ptah/internal/dburldisplay"
 )
 
-// TestConnectToDatabase_FillsTheRedactedURL pins the field a marshalled DBInfo
-// serializes under `url` to the connection it describes. Without this the
+// TestConnectToDatabase_FillsTheRedactedURL pins the field a marshalled
+// catalog.ServerInfo serializes under `url` to the connection it describes.
+// Without this the
 // exclusion of the credential-bearing URL would leave `url` empty on every
 // connection, which is a different defect from the one it fixes.
 func TestConnectToDatabase_FillsTheRedactedURL(t *testing.T) {

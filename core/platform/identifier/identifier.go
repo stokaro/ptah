@@ -1,4 +1,23 @@
-// Package identifier describes database identifier comparison semantics.
+// Package identifier models how each database compares identifiers: schema,
+// table, column, and index names. Schema comparison and migration planning
+// consume it to decide whether two spellings name the same object and whether
+// two distinct names could collide in the target.
+//
+// Every comparison rule yields two keys per name. An identity key answers
+// "are these the same object": names with equal identity keys are confirmed
+// equal under the dialect's rules. A conflict key answers "could these
+// collide in the target": the conservative question, so names whose
+// equivalence class is unknown share one conflict key while keeping distinct
+// identity keys. The split matters most under [ComparisonCatalogResolved],
+// where a name the live catalog did not resolve stays a distinct object
+// without being promised unique.
+//
+// [ForDialect] returns conservative offline defaults for a dialect.
+// [ForSQLServerCatalog] with [Semantics.WithResolvedNames] carries the
+// equivalence classes a live SQL Server catalog resolved under its collation.
+// [Semantics] round-trips through JSON; [Semantics.Normalize] is the safety
+// valve for deserialized values, falling back to [ForDialect] rules for
+// anything incomplete or internally inconsistent.
 package identifier
 
 import (
@@ -59,6 +78,13 @@ type ResolvedName struct {
 }
 
 // ForDialect returns conservative offline identifier semantics for dialect.
+// The argument is folded through [platform.NormalizeDialect], so every
+// accepted spelling of a dialect name selects the same rules. A dialect Ptah
+// does not model still receives usable rules rather than a zero value:
+// comparison that never treats two different spellings as one object, and no
+// default schema. Those are a fallback for an unmodelled target rather than a
+// description of one, so a caller who knows the target's rules should build
+// [Semantics] directly.
 func ForDialect(dialect string) Semantics {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres, platform.YugabyteDB, platform.Spanner:
@@ -130,6 +156,8 @@ func ForDialect(dialect string) Semantics {
 // ForSQLServerCatalog returns SQL Server catalog identifier semantics.
 // Call WithResolvedNames before comparing or planning names against a live
 // catalog. Unresolved names deliberately share one conservative conflict key.
+// Without resolved names the value does not survive [Semantics.Normalize],
+// which falls back to the offline [ForDialect] rules instead.
 func ForSQLServerCatalog(catalogCollation string) Semantics {
 	return Semantics{
 		DefaultSchema:    "dbo",
@@ -142,8 +170,15 @@ func ForSQLServerCatalog(catalogCollation string) Semantics {
 }
 
 // WithResolvedNames returns a copy with deterministic catalog-equivalence
-// mappings. The input may be in any order but must contain at most one mapping
-// per raw name; invalid mappings make Normalize fall back conservatively.
+// mappings, sorted by raw name; the input may arrive in any order. The sort
+// is part of the value: lookups rely on it, and two semantics built from the
+// same mappings in different orders compare [Semantics.Equal].
+//
+// For [Semantics.Normalize] to keep them, the mappings must form canonical
+// equivalence classes: every Name and Key non-empty, Names strictly ascending
+// and therefore unique, every Key itself present as a Name, and each Key equal
+// to the byte-wise smallest Name in its class. Anything else makes Normalize
+// fall back to the conservative [ForDialect] rules.
 func (s Semantics) WithResolvedNames(names []ResolvedName) Semantics {
 	s.ResolvedNames = slices.Clone(names)
 	sort.Slice(s.ResolvedNames, func(i, j int) bool {
@@ -181,8 +216,15 @@ func (s Semantics) Equal(other Semantics) bool {
 		slices.Equal(s.ResolvedNames, other.ResolvedNames)
 }
 
-// Normalize returns s when it is complete and internally consistent. Zero,
-// partial, or invalid public values fall back to conservative dialect rules.
+// Normalize returns a deep copy of s when it is complete and internally
+// consistent, and the conservative [ForDialect] rules for dialect otherwise.
+// Complete means: IndexNamespace and all three comparison fields hold
+// declared values; catalog-resolved comparison is all-or-nothing across the
+// three name kinds and requires both a CatalogCollation and at least one
+// resolved name, while every other mode carries neither; and ResolvedNames
+// satisfy the validity rules on [Semantics.WithResolvedNames]. Zero and
+// partial values therefore fall back too, which is the safety valve for a
+// [Semantics] deserialized from JSON.
 func (s Semantics) Normalize(dialect string) Semantics {
 	fallback := ForDialect(dialect)
 	if !s.valid() {
@@ -267,7 +309,14 @@ func (s Semantics) ResolvesQualifiedTable(value string) bool {
 	return s.Resolves(schema) && s.Resolves(ref.Name)
 }
 
-// IdentityKey returns the canonical key used for confirmed identifier equality.
+// IdentityKey returns the canonical key used for confirmed identifier
+// equality: two values with equal keys are the same object under this
+// comparison. A bare Comparison holds no resolved-name table, so under
+// [ComparisonCatalogResolved] every value maps to one shared unresolved key
+// and compares identity-equal to every other. Callers holding a [Semantics]
+// must use its key methods -- [Semantics.TableIdentityKey] and its index and
+// column siblings -- which consult ResolvedNames and keep an unresolved
+// name's spelling as its identity (stokaro/ptah#1290).
 func (c Comparison) IdentityKey(value string) string {
 	switch c {
 	case ComparisonASCIIInsensitive:
@@ -282,7 +331,10 @@ func (c Comparison) IdentityKey(value string) string {
 }
 
 // ConflictKey returns the canonical key used to detect identifiers that may
-// collide in the target database.
+// collide in the target database. Under [ComparisonCatalogUnknown] and
+// [ComparisonCatalogResolved] every value shares one key -- the conservative
+// answer when nothing is known about the target's equivalence classes; the
+// other modes collide exactly where their identity keys agree.
 func (c Comparison) ConflictKey(value string) string {
 	switch c {
 	case ComparisonCatalogUnknown:

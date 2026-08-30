@@ -643,12 +643,6 @@
       "count": 1
     },
     {
-      "path": "migration/migrationfile/example_test.go",
-      "function": "ExampleParseFileName",
-      "kind": "if",
-      "count": 1
-    },
-    {
       "path": "migration/migrationfile/name_test.go",
       "function": "TestParseFileName",
       "kind": "if",
@@ -659,54 +653,6 @@
       "function": "TestParseTimeouts",
       "kind": "if",
       "count": 1
-    },
-    {
-      "path": "migration/migrator/example_test.go",
-      "function": "ExampleMigrator",
-      "kind": "if",
-      "count": 2
-    },
-    {
-      "path": "migration/migrator/example_test.go",
-      "function": "ExampleMigrator_GetMigrationStatus",
-      "kind": "if",
-      "count": 3
-    },
-    {
-      "path": "migration/migrator/example_test.go",
-      "function": "ExampleMigrator_GetPendingMigrations",
-      "kind": "if",
-      "count": 2
-    },
-    {
-      "path": "migration/migrator/example_test.go",
-      "function": "ExampleMigrator_MigrateDown",
-      "kind": "if",
-      "count": 2
-    },
-    {
-      "path": "migration/migrator/example_test.go",
-      "function": "ExampleMigrator_MigrateTo",
-      "kind": "if",
-      "count": 3
-    },
-    {
-      "path": "migration/migrator/example_test.go",
-      "function": "ExampleNewFSMigrator",
-      "kind": "if",
-      "count": 3
-    },
-    {
-      "path": "migration/migrator/example_test.go",
-      "function": "ExampleNewFSMigrator_errorHandling",
-      "kind": "if",
-      "count": 1
-    },
-    {
-      "path": "migration/migrator/example_test.go",
-      "function": "Example_completeWorkflow",
-      "kind": "if",
-      "count": 4
     },
     {
       "path": "migration/migrator/migration_provider_test.go",

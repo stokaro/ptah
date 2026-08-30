@@ -44,8 +44,10 @@ func ParseAtlasHCLFile(path string) (*schemamodel.Database, error) {
 
 // ParseSQLOptions configures ParseSQL.
 type ParseSQLOptions struct {
-	// Dialect selects dialect-specific parsing behavior. Empty means
-	// compatibility-oriented best effort.
+	// Dialect selects dialect-specific parsing behavior. It accepts every
+	// spelling core/platform.NormalizeDialect resolves, and a name outside
+	// that set selects nothing in particular — pass one Ptah resolves.
+	// Empty means compatibility-oriented best effort.
 	Dialect string
 	// Capabilities selects dialect capabilities for syntax where the same
 	// dialect has version-dependent behavior.
@@ -55,6 +57,15 @@ type ParseSQLOptions struct {
 }
 
 // ParseSQL parses SQL DDL into Ptah AST statements.
+//
+// Input holding no DDL — empty text, or only whitespace, comments, and
+// semicolons — returns an empty StatementList and a nil error. Statements
+// that do not describe schema, such as DML and transaction control, are
+// skipped and contribute no node. A syntax error, an unsupported statement,
+// and an expired Timeout each return a nil list and an error saying what
+// stopped the parse. The package exports no sentinel for these errors: the
+// refusal is the contract, and the message is diagnostic text rather than
+// something to branch on.
 func ParseSQL(sql string, opts ParseSQLOptions) (*ast.StatementList, error) {
 	parserOpts := make([]parser.Option, 0, 3)
 	if strings.TrimSpace(opts.Dialect) != "" {
@@ -71,12 +82,35 @@ func ParseSQL(sql string, opts ParseSQLOptions) (*ast.StatementList, error) {
 
 // SchemaToAST converts Ptah's Go schema IR into SQL AST statements for the
 // selected target platform.
+//
+// The conversion never fails and refuses nothing: each declared object is
+// appended as its own statement or carried inline by the statement that
+// declares it. Which of the two applies is a deliberate per-platform
+// modeling decision rather than an accident — a dialect that has no
+// standalone enum type takes the enum on the referencing column instead, so
+// an enum nothing references contributes no DDL there, and a dialect that
+// cannot add a foreign key once the table exists keeps it inside CREATE
+// TABLE. The platform also selects naming and qualification, such as default
+// foreign-key constraint names and user-type qualification. Statement order
+// is dependency-aware and deterministic: a definition precedes what
+// references it, and the same input yields the same sequence. Whether a
+// statement can be rendered on a concrete dialect is the renderer's
+// capability decision, made downstream where a refusal can be reported.
+//
+// Canonical platform names are declared in core/platform.
 func SchemaToAST(database schemamodel.Database, targetPlatform string) *ast.StatementList {
 	return fromschema.FromDatabase(database, targetPlatform)
 }
 
 // DBSchemaToGoSchema converts an introspected database schema into Ptah's Go
-// schema IR.
+// schema IR, so a live database can be compared and planned against like an
+// authored schema. The conversion is faithful rather than lossy by design:
+// what the reader observed — referential actions among them — survives into
+// the IR, which is what lets a plan target the introspected database itself
+// instead of a reduced copy of it.
+//
+// dbSchema must be non-nil: there is no error return, so a nil argument is a
+// programming error rather than a case this function reports.
 func DBSchemaToGoSchema(dbSchema *catalog.Database) *schemamodel.Database {
 	return dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
 }
@@ -98,7 +132,8 @@ type SumFile struct {
 	Entries []SumEntry
 }
 
-// Bytes renders the sum file in its on-disk form.
+// Bytes renders the sum file in its on-disk form. It returns nil for a nil
+// receiver.
 func (s *SumFile) Bytes() []byte {
 	internal := toInternalSum(s)
 	if internal == nil {
@@ -108,6 +143,11 @@ func (s *SumFile) Bytes() []byte {
 }
 
 // ParseSum parses a Ptah or Atlas h1 migration sum file.
+//
+// A trailing newline and CRLF line endings are tolerated — a checkout on
+// Windows must not report false drift — while structurally malformed content
+// (a bad hash, a malformed entry line, a duplicate entry) is an explicit
+// error rather than a silent mismatch.
 func ParseSum(data []byte) (*SumFile, error) {
 	sum, err := migratesum.Parse(data)
 	if err != nil {
@@ -117,6 +157,15 @@ func ParseSum(data []byte) (*SumFile, error) {
 }
 
 // ComputeSum computes a migration-directory sum over fsys.
+//
+// The sum covers exactly the migration files the selected format recognizes;
+// the integrity file itself and non-migration files contribute nothing.
+// Entries are sorted by name, so the result is deterministic for a given
+// tree. DirFormatPtah computes Ptah's own integrity file. DirFormatAtlas —
+// or DirFormatAuto over a directory that carries an atlas.sum — computes the
+// Atlas migration-directory integrity format instead, byte for byte, so
+// Atlas tooling validates the same directory. An unrecognized format is an
+// error.
 func ComputeSum(fsys fs.FS, format migrationfile.DirFormat) (*SumFile, error) {
 	sum, err := migratesum.ComputeWithFormat(fsys, format)
 	if err != nil {
@@ -126,12 +175,15 @@ func ComputeSum(fsys fs.FS, format migrationfile.DirFormat) (*SumFile, error) {
 }
 
 // SumFileNameForFormat returns the integrity file name for a migration
-// directory format.
+// directory format: atlas.sum for DirFormatAtlas, ptah.sum for DirFormatPtah
+// and DirFormatAuto. An unrecognized format is an error.
 func SumFileNameForFormat(format migrationfile.DirFormat) (string, error) {
 	return migratesum.FileNameForFormat(format)
 }
 
-// WriteSum computes and writes a migration-directory sum file.
+// WriteSum computes and writes a migration-directory sum file. The sum is
+// computed as by [ComputeSum], written atomically to the integrity file
+// [SumFileNameForFormat] names for format, and returned.
 func WriteSum(dir string, format migrationfile.DirFormat) (*SumFile, error) {
 	sum, err := migratesum.WriteWithFormat(dir, format)
 	if err != nil {
@@ -141,6 +193,18 @@ func WriteSum(dir string, format migrationfile.DirFormat) (*SumFile, error) {
 }
 
 // VerifySum verifies a migration-directory sum over fsys.
+//
+// Drift is reported in the SumResult rather than as an error, so callers
+// choose the exit code. An error is reserved for a directory that cannot be
+// verified at all: a missing integrity file, and one that cannot be parsed.
+// The package exports no sentinel for either, so the refusal is the contract
+// and the message is diagnostic text rather than something to branch on.
+//
+// An explicit format checks only its own integrity file: ptah.sum for
+// DirFormatPtah, atlas.sum for DirFormatAtlas. DirFormatAuto selects
+// atlas.sum when it is the only integrity file present, ptah.sum otherwise,
+// and refuses a directory carrying both. SumResult.SumFileName reports which
+// file was compared.
 func VerifySum(fsys fs.FS, format migrationfile.DirFormat) (*SumResult, error) {
 	result, err := migratesum.VerifyWithFormat(fsys, format)
 	if err != nil {
@@ -149,7 +213,8 @@ func VerifySum(fsys fs.FS, format migrationfile.DirFormat) (*SumResult, error) {
 	return fromInternalResult(result), nil
 }
 
-// VerifySumDir verifies a migration-directory sum on disk.
+// VerifySumDir verifies a migration-directory sum on disk. It is [VerifySum]
+// over the directory at dir, with the same error and drift contracts.
 func VerifySumDir(dir string, format migrationfile.DirFormat) (*SumResult, error) {
 	result, err := migratesum.VerifyDirWithFormat(dir, format)
 	if err != nil {
@@ -173,7 +238,8 @@ type SumResult struct {
 	SumFileName string
 }
 
-// OK reports whether the directory matches its recorded sum exactly.
+// OK reports whether the directory matches its recorded sum exactly. A nil
+// result reports false.
 func (r *SumResult) OK() bool {
 	return r != nil &&
 		len(r.Added) == 0 &&
@@ -182,7 +248,8 @@ func (r *SumResult) OK() bool {
 		!r.DirHashMismatch
 }
 
-// Describe renders a drift result as human-readable lines.
+// Describe renders a drift result as human-readable lines. It returns the
+// empty string when the result is nil or OK.
 func (r *SumResult) Describe() string {
 	if r == nil || r.OK() {
 		return ""

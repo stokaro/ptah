@@ -116,7 +116,17 @@ func loadPtahFile(path, envName string, source ptahConfigSource) (Config, error)
 	return parsePtah(raw, path, envName, source)
 }
 
-// ParsePtah parses Ptah's strict YAML project config.
+// ParsePtah parses Ptah's strict YAML project config from data. Strict means
+// an unknown key is refused rather than ignored, with a diagnostic that
+// locates it in the document, so a typo surfaces at parse time instead of as
+// a silently missing setting.
+//
+// filename is used in diagnostics only and may be empty. envName selects one
+// env block and merges it over the top-level settings; with an empty envName,
+// a document holding a lone env block selects it implicitly and one holding
+// several is refused. The online_ddl block is validated here
+// through [OnlineDDLConfig.Validate], so a malformed policy fails at parse
+// time rather than at migration execution.
 func ParsePtah(data []byte, filename, envName string) (Config, error) {
 	return parsePtah(data, filename, envName, discoveredPtahConfig)
 }

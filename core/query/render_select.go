@@ -17,7 +17,8 @@ import (
 // JOIN ON or a HAVING), IN list elements, function-call value arguments, and the
 // LIMIT/OFFSET bounds — is emitted as a placeholder and returned in args, never
 // interpolated into the SQL. Placeholder style follows the dialect: $1, $2, … for
-// the PostgreSQL family and ? for MySQL, MariaDB, and SQLite. Placeholders are
+// the PostgreSQL family; ? for MySQL, MariaDB, SQLite, and ClickHouse; @p1,
+// @p2, … for SQL Server; :1, :2, … for Oracle. Placeholders are
 // numbered in a single left-to-right pass over the projection, FROM, the joins,
 // WHERE, then HAVING, then LIMIT/OFFSET, so args are ordered to match; a JOIN ON
 // value is numbered before any WHERE value, and a HAVING value after every WHERE
@@ -32,10 +33,13 @@ import (
 //
 // Supported dialects are the PostgreSQL family (PostgreSQL itself, CockroachDB,
 // YugabyteDB, and Cloud Spanner's PostgreSQL interface — the set
-// platform.IsPostgresFamily reports), plus MySQL, MariaDB, SQLite, ClickHouse
-// and SQL Server. SQL Server binds @p1, @p2, … and pages with
-// OFFSET/FETCH rather than LIMIT, synthesizing ORDER BY (SELECT NULL) when the
-// caller ordered nothing, because T-SQL accepts neither clause without one.
+// platform.IsPostgresFamily reports), plus MySQL, MariaDB, SQLite, ClickHouse,
+// SQL Server, and Oracle. SQL Server and Oracle both page with OFFSET/FETCH
+// rather than LIMIT, which neither of them accepts. Only SQL Server also gets a
+// synthesized ORDER BY (SELECT NULL) when the caller ordered nothing, because
+// only T-SQL refuses the row-limiting clause without an ORDER BY; Oracle needs
+// no sentinel and is given none, which keeps the query runnable on every Oracle
+// release Ptah targets rather than only the ones that parse the sentinel.
 // Any other dialect returns an error, as does a nil
 // statement, a statement without a FROM table, an empty IN list, a malformed
 // operator, a function call with an invalid name or a bad argument shape, a GROUP

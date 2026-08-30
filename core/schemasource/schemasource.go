@@ -39,21 +39,42 @@ type Command struct {
 	// Format is the stdout format: "sql", "hcl", or "yaml". Empty defaults to
 	// "sql"; "yml" is accepted as an alias for "yaml".
 	Format string
-	// Dialect is an optional dialect hint used when parsing SQL output.
+	// Dialect is an optional dialect hint used when parsing SQL output; the
+	// other formats carry their own type information and need none. Empty
+	// parses the SQL without a dialect hint.
 	Dialect string
 	// Dir is the working directory for the program. Empty uses the current
-	// working directory.
+	// working directory. A non-empty Dir is also reflected in the program's
+	// PWD environment variable, on every platform.
 	Dir string
 	// Timeout bounds execution. Zero uses DefaultTimeout; a negative value
 	// disables the timeout.
 	Timeout time.Duration
 	// Env holds extra "KEY=VALUE" entries appended to the current environment.
-	// PATH and PWD cannot be overridden; use an explicit executable path and Dir.
+	// A malformed entry — no equals sign, or an empty key — is refused before
+	// the program starts. PATH and PWD cannot be overridden (matched
+	// case-insensitively); use an explicit executable path and Dir.
 	Env []string
 }
 
-// Run executes cmd and parses its standard output into a desired schema. It
-// bounds execution with a timeout, and on failure surfaces the program's stderr.
+// Run executes cmd and parses its standard output into a desired schema.
+//
+// Execution is bounded by the resolved timeout, and when Run returns — on
+// success, failure, cancellation, or timeout — descendant processes the
+// program started are terminated with it. Caller cancellation and a timeout
+// are distinguishable: both wrap the context error, so errors.Is against
+// context.Canceled or context.DeadlineExceeded tells them apart.
+//
+// Empty or whitespace-only stdout is rejected rather than parsed into an
+// empty desired schema, so an accidentally broken provider cannot silently
+// erase the desired state. Captured stdout is bounded, and a program that
+// exceeds the bound is refused rather than parsed from truncated output.
+//
+// When the program fails to start or exits nonzero, the error carries a
+// bounded excerpt of its stderr. That excerpt and any parse diagnostic (which
+// can quote program output) are redacted against the secret values visible in
+// the process environment and argv, and terminal control sequences in them
+// are escaped, so the error can be shown to an operator or written to a log.
 func Run(ctx context.Context, cmd Command) (*schemamodel.Database, error) {
 	if len(cmd.Args) == 0 || strings.TrimSpace(cmd.Args[0]) == "" {
 		return nil, errors.New("schema command is empty")

@@ -20,19 +20,45 @@ import (
 // BaselineVerifyOptions configures shadow verification before metadata
 // baselining.
 type BaselineVerifyOptions struct {
+	// ShadowDatabaseURL is an ephemeral database the verification drops clean
+	// and replays the history into. Its contents are discarded, and its live
+	// realm must be distinct from TargetConn's.
 	ShadowDatabaseURL string
-	TargetConn        *dbschema.DatabaseConnection
-	MigrationsDir     string
+	// TargetConn is the already-open database whose metadata would be
+	// baselined. It is introspected and compared against, never written, and
+	// it is required.
+	TargetConn *dbschema.DatabaseConnection
+	// MigrationsDir names the migration directory in messages and is opened
+	// as the history when MigrationsFS is nil.
+	MigrationsDir string
 	// MigrationsFS is the immutable migration history to replay. When nil,
 	// MigrationsDir is opened for compatibility with existing embedders.
-	MigrationsFS    fs.FS
-	Version         int64
-	Dialect         string
-	Capabilities    capability.Capabilities
-	CompareOptions  *config.CompareOptions
-	Schemas         []string
+	MigrationsFS fs.FS
+	// Version is the version being baselined: every migration at or below it
+	// is replayed, and a Version the history holds no migration at or below is
+	// refused rather than verified as an empty baseline.
+	Version int64
+	// Dialect is the target dialect the shadow database must match. The two
+	// spellings are compared normalized, so an alias matches its canonical
+	// name.
+	Dialect string
+	// Capabilities, when non-nil, must equal the shadow connection's resolved
+	// capabilities exactly; a difference fails the verification. Nil skips the
+	// check, which is how a caller accepts whatever the shadow server offers.
+	Capabilities capability.Capabilities
+	// CompareOptions tunes the schema comparison; nil selects
+	// config.DefaultCompareOptions.
+	CompareOptions *config.CompareOptions
+	// Schemas scopes both introspections to the named schemas; empty reads
+	// the connection's default scope. On PostgreSQL the named non-public
+	// schemas are also dropped from the shadow database before the replay, so
+	// a migration that creates one starts from nothing.
+	Schemas []string
+	// ProviderOptions are passed to the migration provider (e.g. dir format).
 	ProviderOptions []migrator.FSProviderOption
-	ConnectTimeout  time.Duration
+	// ConnectTimeout bounds the shadow database connection attempt; zero or
+	// negative means no bound beyond the caller's context.
+	ConnectTimeout time.Duration
 }
 
 // VerifyBaseline replays migrations up to Version on the shadow database

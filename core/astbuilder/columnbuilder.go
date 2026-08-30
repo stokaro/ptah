@@ -174,7 +174,22 @@ func (cb *ColumnBuilder) Check(expression string) *ColumnBuilder {
 	return cb
 }
 
-// Generated marks the column as generated from the supplied raw SQL expression.
+// Generated marks the column as generated from the supplied raw SQL expression
+// and returns the ColumnBuilder for chaining.
+//
+// The expression is stored as written and reaches the target unrewritten, so
+// it has to be valid SQL there. Write it bare: whatever punctuation the
+// target's clause needs around it, including the parentheses of GENERATED
+// ALWAYS AS (...), is the renderer's to supply.
+//
+// kind is the storage form, "VIRTUAL" or "STORED", and travels to the AST as
+// [ast.ColumnNode.GeneratedKind]. Which forms a target actually has is a
+// question for [go.5x5.cz/ptah/core/renderer], not for this package: nothing
+// here validates the pair.
+//
+// Example:
+//
+//	column := table.Column("total", "NUMERIC(10,2)").Generated("price * quantity", "STORED")
 func (cb *ColumnBuilder) Generated(expression, kind string) *ColumnBuilder {
 	cb.column.SetGenerated(expression, kind)
 	return cb
@@ -424,7 +439,22 @@ func (scb *SchemaColumnBuilder) Check(expression string) *SchemaColumnBuilder {
 	return scb
 }
 
-// Generated marks the column as generated from the supplied raw SQL expression.
+// Generated marks the column as generated from the supplied raw SQL expression
+// and returns the SchemaColumnBuilder for chaining.
+//
+// The expression is stored as written and reaches the target unrewritten, so
+// it has to be valid SQL there. Write it bare: whatever punctuation the
+// target's clause needs around it, including the parentheses of GENERATED
+// ALWAYS AS (...), is the renderer's to supply.
+//
+// kind is the storage form, "VIRTUAL" or "STORED", and travels to the AST as
+// [ast.ColumnNode.GeneratedKind]. Which forms a target actually has is a
+// question for [go.5x5.cz/ptah/core/renderer], not for this package: nothing
+// here validates the pair.
+//
+// Example:
+//
+//	column := schema.Table("orders").Column("total", "NUMERIC(10,2)").Generated("price * quantity", "STORED")
 func (scb *SchemaColumnBuilder) Generated(expression, kind string) *SchemaColumnBuilder {
 	scb.column.SetGenerated(expression, kind)
 	return scb

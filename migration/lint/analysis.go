@@ -383,6 +383,12 @@ func validateOptions(opts Options) (migrationfile.DirFormat, []Rule, error) {
 // AnalyzeFS captures and analyzes every *.sql file under fsys recursively.
 // Input file contents are read exactly once; template rendering, linting,
 // replay, and reporting can all consume the returned immutable snapshot.
+//
+// A filesystem holding no *.sql file at all is refused under the native
+// profile and yields an empty Analysis under [CompatibilityProfileAtlas],
+// which is the community binary's exit-0 behavior on an empty directory
+// (stokaro/ptah#1241). The divergence is deliberate, so a caller branching on
+// "empty directory" needs to know which profile it runs under.
 func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 	dirFormat, rules, err := validateOptions(opts)
 	if err != nil {
@@ -477,7 +483,8 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 
 // LintFS lints every *.sql file under fsys and returns findings ordered by
 // file, line, and rule code. Call [AnalyzeFS] when prepared files or the source
-// snapshot are also needed.
+// snapshot are also needed; option validation and the empty-directory behavior
+// are [AnalyzeFS]'s.
 func LintFS(fsys fs.FS, opts Options) ([]Finding, error) {
 	analysis, err := AnalyzeFS(fsys, opts)
 	if err != nil {
