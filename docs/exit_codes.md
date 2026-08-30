@@ -138,6 +138,20 @@ root-level command spellings are removed instead of preserved.
 | `ptah migrations edit` | Migration edited and the integrity file rewritten. | Not used. | Usage error, invalid directory or version, missing migration, refused because already applied without `--force`, database connection failure, editor failure, or write error. |
 | `ptah migrations rebase` | Migration re-timestamped to the end of history and the integrity file rewritten. | Not used. | Usage error, invalid directory or version, missing migration, already last, refused because already applied without `--force`, database connection failure, or write error. |
 | `ptah migrations rm` | Migration deleted and the integrity file rewritten. | Not used. | Usage error, invalid directory or version, missing migration, refused because already applied without `--force`, database connection failure, or write error. |
+| `ptah inference describe` | What the specification says, printed as text or JSON. | Not used. | Usage error, no `--spec` or `--release`, an unreadable or invalid specification, an unreachable release, or a release whose specification is not the one it records. |
+| `ptah inference plan` | Plan printed, including a plan that is blocked. | Not used. | Usage error, connection failure, specification failure, or schema-read failure. A registry that could not be reached is reported and does not fail the verb. |
+| `ptah inference prepare` | Target column, run state and outbox created, or already there. | Not used. | Usage error, connection failure, specification failure, or a create failure. |
+| `ptah inference backfill` | Source embedded into the generation, or the run resumed and finished. | Not used. | Usage error, connection failure, lease loss, provider failure, or target write failure. |
+| `ptah inference catchup` | Source changes processed into the generation. | Not used. | Usage error, connection failure, a consistency mode that records no boundary, provider failure, or target write failure. |
+| `ptah inference index` | Vector index built and valid, or the specification declares none. | Not used. | Usage error, connection failure, or an index build that failed or left an invalid index. |
+| `ptah inference pause` | Run paused at its last checkpoint. | Not used. | Usage error, no reason given, connection failure, or a run that cannot be paused from its current state. |
+| `ptah inference resume` | Paused run returned to running. | Not used. | Usage error, connection failure, or a run that is not paused. |
+| `ptah inference verify` | Every deterministic layer passed. | One or more blocking findings. | Usage error, connection failure, or a read failure. |
+| `ptah inference evaluate` | Retrieval measured and within every configured tolerance. | A configured retrieval tolerance was exceeded, or a required case was not answered. | Usage error, connection failure, an unreadable corpus, or a provider failure. |
+| `ptah inference status` | Status printed, including a generation that is not ready. | The generation is not verified and cutover-ready when `--require-ready` is set. | Usage error, an invalid `--format` value, connection failure, or a read failure. |
+| `ptah inference cutover` | Pointer moved to the generation. | Not used. | Usage error, connection failure, a refused cutover, a missing or mismatched approval, or a pointer move that failed. |
+| `ptah inference rollback` | Pointer moved back to the previous generation. | Not used. | Usage error, connection failure, a previous generation that is not eligible, or a pointer move that failed. |
+| `ptah inference retire` | Generation destroyed. | Not used. | Usage error, connection failure, a refused retirement, a missing or mismatched approval, or a drop failure. |
 | `ptah seed` | Seed files applied or already applied. | Not used. | Usage error, protected environment rejection, connection failure, invalid seed files, or seed execution failure. |
 | `ptah version` | Version information printed. | Not used. | Usage error. |
 

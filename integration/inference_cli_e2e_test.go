@@ -861,6 +861,18 @@ func assertCutoverIsRefusedBeforeCatchUp(c *qt.C, ctx context.Context, specPath,
 	c.Assert(document.Readiness.CutoverReady, qt.IsFalse)
 	c.Assert(document.Readiness.Blockers, qt.Contains,
 		"the source is mutable and the run declared no consistency mode")
+
+	// And as the refusal a gate waits on. An init container that keeps failing
+	// is the whole of a rollout gate, so this is the interface rather than the
+	// JSON for anyone who is not parsing it. The exit CODE is asserted from a
+	// process, in TestInferenceRolloutGateE2E: a command run in this process
+	// returns an error and never a status.
+	gate, gateErr := runInferenceExpectingFailure(c, ctx, "status",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID, "--require-ready")
+	c.Assert(gateErr, qt.ErrorMatches, `the generation is not ready: verified=.*, cutover ready=false`)
+	// The report is still on stdout. A gate that failed silently leaves whoever
+	// reads the pod's logs with a number and nothing else.
+	c.Assert(gate, qt.Contains, "cutover ready: false")
 }
 
 // assertCatchUpProcessesWhatChanged changes the source and catches up.
@@ -969,6 +981,13 @@ func assertStatusAnswersARolloutGate(c *qt.C, ctx context.Context, specPath, dbU
 	// with the verb by coincidence is one that will eventually let a deployment
 	// proceed against a generation the cutover then refuses.
 	c.Assert(document.Readiness.PlanDigest, qt.Contains, planDigestOf(c, ctx, specPath, dbURL))
+
+	// And the gate opens, which is the assertion the refused one before
+	// catch-up exists to give meaning to: a --require-ready that always
+	// succeeded would pass here and redden there.
+	gate := runInference(c, ctx, "status",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID, "--require-ready")
+	c.Assert(gate, qt.Contains, "verified: true, cutover ready: true")
 }
 
 // assertPauseStopsTheRunAndSaysWhy is stokaro/ptah#2474: the run status had a

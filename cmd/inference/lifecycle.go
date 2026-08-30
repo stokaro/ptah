@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/internal/embedcatchup"
 	"go.5x5.cz/ptah/internal/embedcutover"
 	"go.5x5.cz/ptah/internal/embeddigest"
@@ -249,6 +250,7 @@ func newStatusCommand() *cobra.Command {
 	var options commonOptions
 	var runID string
 	var format string
+	var requireReady bool
 
 	cmd := &cobra.Command{
 		Use:   "status",
@@ -271,15 +273,19 @@ a defect in the state, and a rollout gate waiting for one would wait forever
 under the policy most production environments run; the answer says separately
 whether one is owed, and names the plan digest it would bind to.
 
---format json is what a rollout system consumes.`,
+--format json is what a rollout system consumes, and --require-ready is what one
+gates on: exit 1 until both conditions hold, so an init container that keeps
+failing is the whole of the gate.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runStatus(cmd.Context(), cmd.OutOrStdout(), options, runID, format)
+			return runStatus(cmd.Context(), cmd.OutOrStdout(), options, runID, format, requireReady)
 		},
 	}
 	addCommonFlags(cmd, &options)
 	cmd.Flags().StringVar(&runID, "run-id", "", "Identifier of the run (required)")
 	cmd.Flags().StringVar(&format, "format", "text", "Output format: text or json")
+	cmd.Flags().BoolVar(&requireReady, "require-ready", false,
+		"Return 1 unless the generation is verified and ready to cut over; errors still return 2")
 	return cmd
 }
 
@@ -295,7 +301,8 @@ type statusDocument struct {
 
 // runStatus prints one run.
 func runStatus(
-	ctx context.Context, out io.Writer, options commonOptions, runID, format string,
+	ctx context.Context, out io.Writer, options commonOptions,
+	runID, format string, requireReady bool,
 ) error {
 	if runID == "" {
 		return fmt.Errorf("--run-id is required")
@@ -318,6 +325,16 @@ func runStatus(
 	if err != nil {
 		return err
 	}
+	if err := reportStatus(out, format, status, readiness); err != nil {
+		return err
+	}
+	return gateOnReadiness(requireReady, readiness)
+}
+
+// reportStatus writes the answer in whichever form was asked for.
+func reportStatus(
+	out io.Writer, format string, status embedreport.Status, readiness embedreport.Readiness,
+) error {
 	if format == "json" {
 		return writeStatusJSON(out, statusDocument{Run: status, Readiness: readiness})
 	}
@@ -325,6 +342,27 @@ func runStatus(
 		return err
 	}
 	return printReadiness(out, readiness)
+}
+
+// gateOnReadiness turns the two conditions into the exit code a rollout waits
+// on.
+//
+// Exit 1 rather than a message a caller has to parse, because the caller is a
+// container that has to keep failing until the state is there. It is the
+// documented code for an expected negative result, and the report is on stdout
+// either way: a gate that failed silently would leave whoever reads the pod's
+// logs with nothing but a number.
+//
+// The approval is deliberately not part of it. A generation waiting for a
+// person to sign is finished, and a gate holding a deployment for a signature
+// somebody gives in the same breath as the cutover would never open.
+func gateOnReadiness(requireReady bool, readiness embedreport.Readiness) error {
+	if !requireReady || (readiness.Verified && readiness.CutoverReady) {
+		return nil
+	}
+	return exitcode.New(1, fmt.Errorf(
+		"the generation is not ready: verified=%t, cutover ready=%t",
+		readiness.Verified, readiness.CutoverReady))
 }
 
 // writeStatusJSON is the form a rollout system consumes.
