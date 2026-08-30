@@ -128,7 +128,50 @@ const verifiedDate = entry.data.lastVerified
     }
   }
 
+  function initializeReferenceFilters() {
+    for (const filter of document.querySelectorAll<HTMLElement>('.ptah-reference-filter')) {
+      const input = filter.querySelector<HTMLInputElement>('input[type="search"]');
+      const status = filter.querySelector<HTMLElement>('[data-ptah-filter-status]');
+      if (!input || !status || input.dataset.ptahFilterReady === 'true') continue;
+      input.dataset.ptahFilterReady = 'true';
+
+      const content = filter.closest<HTMLElement>('.sl-markdown-content');
+      if (!content) continue;
+      const mode = filter.dataset.mode ?? 'next-table';
+      const following = [...content.querySelectorAll<HTMLTableElement>('table')].filter((table) =>
+        Boolean(filter.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING),
+      );
+      const tables = mode === 'all-tables' ? following : following.slice(0, 1);
+      const rows = tables.flatMap((table) => [...table.querySelectorAll<HTMLTableRowElement>('tbody tr')]);
+
+      const apply = () => {
+        const query = input.value.trim().toLocaleLowerCase();
+        let visible = 0;
+        for (const row of rows) {
+          const matches = query === '' || (row.textContent ?? '').toLocaleLowerCase().includes(query);
+          row.hidden = !matches;
+          if (matches) visible++;
+        }
+        for (const table of tables) {
+          const tableVisible = [...table.querySelectorAll('tbody tr')].some((row) => !row.hidden);
+          table.hidden = !tableVisible;
+          const label = table.previousElementSibling;
+          if (mode === 'all-tables' && label?.matches('p:has(> strong:only-child)')) {
+            (label as HTMLElement).hidden = !tableVisible;
+          }
+        }
+        status.textContent = query === ''
+          ? `${rows.length} entries`
+          : `${visible} of ${rows.length} entries`;
+      };
+
+      input.addEventListener('input', apply);
+      apply();
+    }
+  }
+
   requestAnimationFrame(updateScrollableRegions);
+  requestAnimationFrame(initializeReferenceFilters);
   addEventListener('resize', updateScrollableRegions, { passive: true });
 </script>
 

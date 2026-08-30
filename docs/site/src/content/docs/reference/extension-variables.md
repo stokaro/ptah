@@ -22,8 +22,8 @@ what each variable's default is, what setting it turns on, and why the default
 is what it is.
 
 They are environment variables rather than flags on purpose, and
-[Compatibility never costs you a
-capability](../../atlas/overview/#compatibility-never-costs-you-a-capability)
+[Capabilities retained
+deliberately](../../atlas/strict-ce-mode/#capabilities-retained-deliberately)
 carries that argument. Native `ptah` verbs always emit everything Ptah models,
 with no switch to set.
 
@@ -315,7 +315,7 @@ full description is one environment variable away.
 ## Next steps
 
 - The argument these variables implement:
-  [Atlas compatibility overview](../../atlas/overview/#compatibility-never-costs-you-a-capability).
+  [Capabilities retained deliberately](../../atlas/strict-ce-mode/#capabilities-retained-deliberately).
 - The boolean grammar and the strict-compatibility selector:
   [Configuration](../configuration/#boolean-environment-variables).
 - The per-verb flag surface that reads them:

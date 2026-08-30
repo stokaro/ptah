@@ -1135,6 +1135,14 @@ View source, and Report actions with the keyboard. `check:search-ranking` asks
 the built Pagefind index the recorded reader queries and requires each canonical
 page in the first three results.
 
+Keep three database-support jobs separate: `support-matrix.md` is the generated
+lookup, `support-policy.md` defines the testing promise, and
+`support-evidence.md` records measurement and dated external findings. Never
+move generated counts or release enumerations onto the latter two pages. Large
+command and flag inventories remain generator-owned and use the shared
+`.ptah-reference-filter` affordance for lookup; filtering must not remove rows
+from the source document. Product definitions live once in `src/glossary.ts`.
+
 Visual documentation has two different evidence paths. Authored explanatory
 diagrams are semantic SVG (or Mermaid, D2, or Graphviz source), never raster
 images containing generated text. PNGs are reserved for real browser UI and

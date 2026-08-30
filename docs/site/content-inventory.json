@@ -6,16 +6,16 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 115,
-    "authored": 113,
+    "pages": 126,
+    "authored": 124,
     "generated": 2,
     "byType": {
-      "concept": 15,
-      "how-to": 50,
-      "landing": 11,
-      "reference": 27,
-      "status": 6,
-      "troubleshooting": 3,
+      "concept": 16,
+      "how-to": 54,
+      "landing": 12,
+      "reference": 29,
+      "status": 8,
+      "troubleshooting": 4,
       "tutorial": 3
     }
   },
@@ -57,6 +57,7 @@
         "/reference/configuration/"
       ],
       "inboundLinks": [
+        "/atlas/overview/",
         "/reference/configuration/"
       ],
       "visibleWords": 1053,
@@ -101,6 +102,7 @@
         "/atlas/feature-matrix/",
         "/atlas/migrate-commands/",
         "/atlas/overview/",
+        "/atlas/strict-ce-mode/",
         "/operate/troubleshooting/",
         "/reference/atlas-commands/",
         "/reference/hcl-schema/"
@@ -222,6 +224,7 @@
         "/atlas/docs-coverage/",
         "/atlas/overview/",
         "/atlas/retained-divergences/",
+        "/atlas/strict-ce-mode/",
         "/operate/troubleshooting/",
         "/start/choose-a-workflow/"
       ],
@@ -293,6 +296,7 @@
       "disposition": "keep",
       "outboundLinks": [
         "/atlas/conformance/",
+        "/atlas/output-and-redaction/",
         "/atlas/overview/",
         "/atlas/schema-commands/",
         "/concepts/database-urls-and-dev-databases/",
@@ -305,6 +309,7 @@
       ],
       "inboundLinks": [
         "/atlas/docs-coverage/",
+        "/atlas/output-and-redaction/",
         "/atlas/overview/",
         "/atlas/schema-commands/",
         "/concepts/migration-directory/",
@@ -313,14 +318,57 @@
         "/versioned/apply/",
         "/versioned/lint/"
       ],
-      "visibleWords": 13956,
-      "sourceBytes": 97757
+      "visibleWords": 13955,
+      "sourceBytes": 97735
+    },
+    {
+      "path": "docs/site/src/content/docs/atlas/output-and-redaction.md",
+      "route": "/atlas/output-and-redaction/",
+      "title": "Atlas-compatible output and redaction",
+      "description": "Template data shapes and credential redaction rules for ptah-compat format output.",
+      "sidebarPath": "Atlas compatibility > Commands and configuration",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "atlas-migrator"
+      ],
+      "readerQuestion": "What data does ptah-compat expose to format templates, and how are URLs redacted?",
+      "goal": "Write an Atlas-compatible format template without exposing URL credentials.",
+      "sourceOfTruth": [
+        "cmd/atlas",
+        "internal/atlasreport"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "Atlas format template",
+        "ptah compat JSON URL"
+      ],
+      "overlaps": [
+        "/atlas/migrate-commands/",
+        "/atlas/schema-commands/"
+      ],
+      "disposition": "split",
+      "outboundLinks": [
+        "/atlas/migrate-commands/",
+        "/atlas/schema-commands/"
+      ],
+      "inboundLinks": [
+        "/atlas/migrate-commands/",
+        "/atlas/schema-commands/"
+      ],
+      "visibleWords": 131,
+      "sourceBytes": 1706
     },
     {
       "path": "docs/site/src/content/docs/atlas/overview.md",
       "route": "/atlas/overview/",
       "title": "Atlas compatibility overview",
-      "description": "How the ptah-compat drop-in binary replaces the Atlas CLI, and how Atlas-style flags translate to native Ptah concepts.",
+      "description": "Choose native Ptah, the default Atlas-compatible surface, or strict Community Edition conformance mode.",
       "sidebarPath": "Atlas compatibility",
       "sidebarLabel": "Overview",
       "type": "landing",
@@ -328,8 +376,8 @@
         "atlas-migrator",
         "evaluator"
       ],
-      "readerQuestion": "How do native Ptah, default ptah-compat, and strict CE mode differ?",
-      "goal": "Distinguish native Ptah, default ptah-compat, and strict CE mode.",
+      "readerQuestion": "Which Ptah surface should an Atlas user choose?",
+      "goal": "Choose the correct Ptah or ptah-compat surface for an Atlas workflow.",
       "sourceOfTruth": [
         "cmd/atlas",
         "internal/atlascompatpolicy"
@@ -340,24 +388,27 @@
       "editSource": null,
       "lastVerified": null,
       "evidence": [],
-      "searchAliases": [],
+      "searchAliases": [
+        "replace Atlas CLI",
+        "ptah compat"
+      ],
       "overlaps": [
         "/atlas/adoption/",
-        "/reference/atlas-commands/",
-        "/atlas/conformance/"
+        "/atlas/strict-ce-mode/",
+        "/reference/atlas-commands/"
       ],
       "disposition": "split",
       "outboundLinks": [
+        "/atlas/adoption/",
         "/atlas/conformance/",
         "/atlas/docs-coverage/",
         "/atlas/feature-matrix/",
         "/atlas/migrate-commands/",
-        "/atlas/project-config/",
         "/atlas/retained-divergences/",
         "/atlas/schema-commands/",
+        "/atlas/strict-ce-mode/",
         "/operate/oci-registry/",
-        "/reference/atlas-commands/",
-        "/reference/extension-variables/"
+        "/reference/atlas-commands/"
       ],
       "inboundLinks": [
         "/",
@@ -369,15 +420,14 @@
         "/concepts/migration-directory/",
         "/direct/apply/",
         "/reference/atlas-commands/",
-        "/reference/extension-variables/",
         "/reference/overview/",
         "/schema/hcl/",
         "/schema/sql/",
         "/start/choose-a-workflow/",
         "/testing/migrations-and-schema/"
       ],
-      "visibleWords": 1980,
-      "sourceBytes": 15422
+      "visibleWords": 497,
+      "sourceBytes": 4572
     },
     {
       "path": "docs/site/src/content/docs/atlas/project-config.md",
@@ -414,7 +464,6 @@
       ],
       "inboundLinks": [
         "/atlas/docs-coverage/",
-        "/atlas/overview/",
         "/atlas/schema-commands/",
         "/operate/troubleshooting/",
         "/reference/configuration/",
@@ -464,6 +513,7 @@
         "/atlas/feature-matrix/",
         "/atlas/overview/",
         "/atlas/schema-commands/",
+        "/atlas/strict-ce-mode/",
         "/reference/atlas-commands/"
       ],
       "visibleWords": 6118,
@@ -498,9 +548,11 @@
       "disposition": "keep",
       "outboundLinks": [
         "/atlas/migrate-commands/",
+        "/atlas/output-and-redaction/",
         "/atlas/overview/",
         "/atlas/project-config/",
         "/atlas/retained-divergences/",
+        "/atlas/strict-ce-mode/",
         "/databases/postgresql/",
         "/direct/apply/",
         "/direct/inspect/",
@@ -511,6 +563,7 @@
       "inboundLinks": [
         "/atlas/docs-coverage/",
         "/atlas/migrate-commands/",
+        "/atlas/output-and-redaction/",
         "/atlas/overview/",
         "/atlas/project-config/",
         "/direct/apply/",
@@ -518,8 +571,61 @@
         "/reference/atlas-commands/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 12211,
-      "sourceBytes": 89188
+      "visibleWords": 12207,
+      "sourceBytes": 89156
+    },
+    {
+      "path": "docs/site/src/content/docs/atlas/strict-ce-mode.md",
+      "route": "/atlas/strict-ce-mode/",
+      "title": "Strict Community Edition mode",
+      "description": "Run ptah-compat against the pinned Atlas Community Edition surface without silently losing Ptah capabilities.",
+      "sidebarPath": "Atlas compatibility",
+      "sidebarLabel": null,
+      "type": "status",
+      "audience": [
+        "atlas-migrator",
+        "evaluator"
+      ],
+      "readerQuestion": "What changes when PTAH_ATLAS_STRICT_COMPAT is enabled?",
+      "goal": "Run and interpret a strict Atlas CE conformance invocation.",
+      "sourceOfTruth": [
+        "internal/atlascompatpolicy",
+        "internal/envbool",
+        "cmd/atlas"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": "2026-08-30",
+      "evidence": [
+        "internal/atlascompatpolicy",
+        "cmd/atlas/strict_compat_policy_test.go",
+        "stokaro/ptah-atlas-conformance"
+      ],
+      "searchAliases": [
+        "PTAH_ATLAS_STRICT_COMPAT",
+        "Atlas CE mode"
+      ],
+      "overlaps": [
+        "/atlas/overview/",
+        "/atlas/conformance/",
+        "/reference/extension-variables/"
+      ],
+      "disposition": "split",
+      "outboundLinks": [
+        "/atlas/conformance/",
+        "/atlas/feature-matrix/",
+        "/atlas/retained-divergences/",
+        "/reference/extension-variables/"
+      ],
+      "inboundLinks": [
+        "/atlas/overview/",
+        "/atlas/schema-commands/",
+        "/reference/extension-variables/"
+      ],
+      "visibleWords": 416,
+      "sourceBytes": 3904
     },
     {
       "path": "docs/site/src/content/docs/concepts/database-urls-and-dev-databases.md",
@@ -658,7 +764,7 @@
         "/concepts/desired-schema-and-sources/",
         "/databases/overview/",
         "/databases/postgresql/",
-        "/databases/support-matrix/",
+        "/databases/support-policy/",
         "/reference/capabilities/",
         "/versioned/lint/"
       ],
@@ -1055,6 +1161,53 @@
       "sourceBytes": 14710
     },
     {
+      "path": "docs/site/src/content/docs/databases/support-evidence.md",
+      "route": "/databases/support-evidence/",
+      "title": "Database support evidence",
+      "description": "How Ptah measures release-line support, attributes observations, and evaluates engines without a dialect.",
+      "sidebarPath": "Databases",
+      "sidebarLabel": null,
+      "type": "status",
+      "audience": [
+        "database-engineer",
+        "evaluator"
+      ],
+      "readerQuestion": "What evidence supports Ptah's database support claims?",
+      "goal": "Trace support claims to release declarations, CI execution, and measured limitations.",
+      "sourceOfTruth": [
+        "internal/capabilityprobe/cells.go",
+        ".github/workflows/capability-matrix.yml",
+        ".github/workflows/go-integration-tests.yml"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": "2026-08-30",
+      "evidence": [
+        "internal/capabilityprobe/cells.go",
+        "internal/capabilityprobe/cells_test.go",
+        "stokaro/ptah#1879"
+      ],
+      "searchAliases": [
+        "database support measurement",
+        "unsupported database engines"
+      ],
+      "overlaps": [
+        "/databases/support-matrix/",
+        "/databases/support-policy/"
+      ],
+      "disposition": "split",
+      "outboundLinks": [
+        "/databases/support-matrix/"
+      ],
+      "inboundLinks": [
+        "/databases/support-matrix/"
+      ],
+      "visibleWords": 644,
+      "sourceBytes": 5476
+    },
+    {
       "path": "docs/site/src/content/docs/databases/support-matrix.md",
       "route": "/databases/support-matrix/",
       "title": "Database support matrix",
@@ -1093,7 +1246,6 @@
       "disposition": "split",
       "outboundLinks": [
         "/concepts/database-urls-and-dev-databases/",
-        "/concepts/dialects-and-capabilities/",
         "/databases/clickhouse/",
         "/databases/distributed/",
         "/databases/mysql/",
@@ -1101,7 +1253,8 @@
         "/databases/postgresql/",
         "/databases/sqlite/",
         "/databases/sqlserver/",
-        "/reference/capabilities/"
+        "/databases/support-evidence/",
+        "/databases/support-policy/"
       ],
       "inboundLinks": [
         "/",
@@ -1114,11 +1267,56 @@
         "/databases/overview/",
         "/databases/sqlite/",
         "/databases/sqlserver/",
+        "/databases/support-evidence/",
+        "/databases/support-policy/",
         "/extend/query-builder/",
         "/reference/capabilities/"
       ],
-      "visibleWords": 2905,
-      "sourceBytes": 21878
+      "visibleWords": 850,
+      "sourceBytes": 7913
+    },
+    {
+      "path": "docs/site/src/content/docs/databases/support-policy.md",
+      "route": "/databases/support-policy/",
+      "title": "Database support policy",
+      "description": "What Ptah support levels promise, how undeclared releases behave, and why capability gates remain separate.",
+      "sidebarPath": "Databases",
+      "sidebarLabel": null,
+      "type": "concept",
+      "audience": [
+        "database-engineer"
+      ],
+      "readerQuestion": "What does a Ptah database support level promise?",
+      "goal": "Interpret support levels without confusing testing coverage with runtime capability.",
+      "sourceOfTruth": [
+        "internal/capabilityprobe/cells.go",
+        "internal/serverprofile"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "certified database release",
+        "best-effort database support"
+      ],
+      "overlaps": [
+        "/databases/support-matrix/",
+        "/concepts/dialects-and-capabilities/"
+      ],
+      "disposition": "split",
+      "outboundLinks": [
+        "/concepts/dialects-and-capabilities/",
+        "/databases/support-matrix/",
+        "/reference/capabilities/"
+      ],
+      "inboundLinks": [
+        "/databases/support-matrix/"
+      ],
+      "visibleWords": 518,
+      "sourceBytes": 4346
     },
     {
       "path": "docs/site/src/content/docs/direct/apply.md",
@@ -2491,10 +2689,10 @@
       "sourceBytes": 5605
     },
     {
-      "path": "docs/site/src/content/docs/operate/ai-agents.md",
-      "route": "/operate/ai-agents/",
-      "title": "AI agents over MCP",
-      "description": "Connect an AI client to Ptah with ptah mcp, and decide what it may read, propose, and write.",
+      "path": "docs/site/src/content/docs/operate/ai-agent-changes.md",
+      "route": "/operate/ai-agent-changes/",
+      "title": "Review and apply an agent patch",
+      "description": "Use Ptah's digest-bound preview, approval, application, and verification workflow for migration, schema, or test files.",
       "sidebarPath": "Extend and integrate > AI and agents",
       "sidebarLabel": null,
       "type": "how-to",
@@ -2502,15 +2700,231 @@
         "application-developer",
         "platform-engineer"
       ],
-      "readerQuestion": "How do I connect an AI client to Ptah over MCP and constrain its authority?",
-      "goal": "Connect an AI client to Ptah over MCP and constrain its authority.",
+      "readerQuestion": "How does a model propose and safely apply a Ptah artifact change?",
+      "goal": "Review and apply one digest-bound agent patch, or stop after preview.",
+      "sourceOfTruth": [
+        "internal/mcpserver",
+        "internal/agentpatch"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "MCP preview patch",
+        "agent migration patch"
+      ],
+      "overlaps": [
+        "/operate/ai-agent-permissions/",
+        "/reference/mcp-tools/"
+      ],
+      "disposition": "split",
+      "outboundLinks": [],
+      "inboundLinks": [
+        "/operate/ai-agents/"
+      ],
+      "visibleWords": 438,
+      "sourceBytes": 3998
+    },
+    {
+      "path": "docs/site/src/content/docs/operate/ai-agent-connect.md",
+      "route": "/operate/ai-agent-connect/",
+      "title": "Connect an MCP client",
+      "description": "Start ptah mcp from Claude, Cursor, VS Code, Zed, or another stdio MCP client.",
+      "sidebarPath": "Extend and integrate > AI and agents",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "application-developer"
+      ],
+      "readerQuestion": "How do I connect my MCP client to Ptah?",
+      "goal": "Start a Ptah MCP session and verify the client can describe it.",
       "sourceOfTruth": [
         "cmd/mcp",
-        "internal/mcpserver",
-        "internal/agentapi"
+        "internal/mcpserver"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "Claude Ptah MCP",
+        "Cursor Ptah MCP",
+        "VS Code Ptah MCP"
+      ],
+      "overlaps": [
+        "/operate/ai-agents/"
+      ],
+      "disposition": "split",
+      "outboundLinks": [
+        "/operate/ai-agent-permissions/"
+      ],
+      "inboundLinks": [
+        "/operate/ai-agents/"
+      ],
+      "visibleWords": 274,
+      "sourceBytes": 3106
+    },
+    {
+      "path": "docs/site/src/content/docs/operate/ai-agent-permissions.md",
+      "route": "/operate/ai-agent-permissions/",
+      "title": "Configure agent permissions",
+      "description": "Limit which schemas, databases, and artifacts a Ptah agent session may read or change.",
+      "sidebarPath": "Extend and integrate > AI and agents",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "platform-engineer"
+      ],
+      "readerQuestion": "How do I constrain a Ptah MCP or Assist session?",
+      "goal": "Configure explicit read and write authority for one agent session.",
+      "sourceOfTruth": [
+        "internal/agentpolicy",
+        "internal/mcpserver"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "MCP approval policy",
+        "agent allow-write"
+      ],
+      "overlaps": [
+        "/operate/ai-agents/",
+        "/operate/ai-agent-changes/"
+      ],
+      "disposition": "split",
+      "outboundLinks": [],
+      "inboundLinks": [
+        "/operate/ai-agent-connect/",
+        "/operate/ai-agents/",
+        "/operate/ai-assist/",
+        "/reference/mcp-tools/"
+      ],
+      "visibleWords": 400,
+      "sourceBytes": 4376
+    },
+    {
+      "path": "docs/site/src/content/docs/operate/ai-agent-troubleshooting.md",
+      "route": "/operate/ai-agent-troubleshooting/",
+      "title": "Troubleshoot Ptah agent calls",
+      "description": "Resolve MCP scope, permission, digest, preview, database, and verification failures by diagnostic code.",
+      "sidebarPath": "Extend and integrate > AI and agents",
+      "sidebarLabel": null,
+      "type": "troubleshooting",
+      "audience": [
+        "application-developer",
+        "platform-engineer"
+      ],
+      "readerQuestion": "Why did a Ptah MCP tool call fail, and what should I change?",
+      "goal": "Resolve a Ptah agent diagnostic without granting unrelated authority.",
+      "sourceOfTruth": [
+        "internal/agentapi",
+        "internal/mcpserver"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "MCP error",
+        "approval_unavailable",
+        "digest_mismatch"
+      ],
+      "overlaps": [
+        "/operate/ai-agent-permissions/",
+        "/reference/mcp-tools/"
+      ],
+      "disposition": "split",
+      "outboundLinks": [],
+      "inboundLinks": [
+        "/operate/ai-agents/",
+        "/reference/mcp-tools/"
+      ],
+      "visibleWords": 543,
+      "sourceBytes": 4444
+    },
+    {
+      "path": "docs/site/src/content/docs/operate/ai-agents.md",
+      "route": "/operate/ai-agents/",
+      "title": "AI and agents overview",
+      "description": "Choose Ptah Assist or an MCP client, then give the model only the schema, database, and artifact authority it needs.",
+      "sidebarPath": "Extend and integrate > AI and agents",
+      "sidebarLabel": "Overview",
+      "type": "landing",
+      "audience": [
+        "application-developer",
+        "platform-engineer"
+      ],
+      "readerQuestion": "How can a model work with Ptah without receiving unrestricted project access?",
+      "goal": "Choose an AI surface and route to its setup and safety guidance.",
+      "sourceOfTruth": [
+        "cmd/assist",
+        "cmd/mcp",
+        "internal/mcpserver"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "MCP",
+        "AI database agent"
+      ],
+      "overlaps": [
+        "/operate/ai-assist/",
+        "/operate/ai-agent-connect/"
+      ],
+      "disposition": "split",
+      "outboundLinks": [
+        "/operate/ai-agent-changes/",
+        "/operate/ai-agent-connect/",
+        "/operate/ai-agent-permissions/",
+        "/operate/ai-agent-troubleshooting/",
+        "/operate/ai-assist-providers/",
+        "/operate/ai-assist/",
+        "/reference/mcp-tools/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/extend/overview/",
+        "/reference/native-commands/"
+      ],
+      "visibleWords": 417,
+      "sourceBytes": 3890
+    },
+    {
+      "path": "docs/site/src/content/docs/operate/ai-assist-providers.md",
+      "route": "/operate/ai-assist-providers/",
+      "title": "Configure a Ptah Assist provider",
+      "description": "Define, secure, and test an OpenAI-compatible or Anthropic model profile for Ptah Assist.",
+      "sidebarPath": "Extend and integrate > AI and agents",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "application-developer",
+        "platform-engineer"
+      ],
+      "readerQuestion": "How do I connect Ptah Assist to my model endpoint?",
+      "goal": "Configure a provider profile without storing a credential in the profile, then verify tool calling.",
+      "sourceOfTruth": [
+        "internal/assistconfig",
+        "internal/aiprovider"
       ],
       "owns": [
-        "cli-ptah-mcp"
+        "cli-ptah-assist-provider-list",
+        "cli-ptah-assist-provider-test"
       ],
       "generated": false,
       "generator": null,
@@ -2518,31 +2932,27 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [
-        "MCP"
+        "Ollama Ptah",
+        "OpenAI-compatible Ptah",
+        "Anthropic Ptah"
       ],
       "overlaps": [
-        "/operate/ai-assist/",
-        "/reference/native-commands/"
+        "/operate/ai-assist/"
       ],
       "disposition": "split",
-      "outboundLinks": [
-        "/reference/native-commands/",
-        "/versioned/integrity-and-safety/"
-      ],
+      "outboundLinks": [],
       "inboundLinks": [
-        "/",
-        "/extend/overview/",
-        "/operate/ai-assist/",
-        "/reference/native-commands/"
+        "/operate/ai-agents/",
+        "/operate/ai-assist/"
       ],
-      "visibleWords": 3987,
-      "sourceBytes": 30886
+      "visibleWords": 547,
+      "sourceBytes": 5195
     },
     {
-      "path": "docs/site/src/content/docs/operate/ai-assist.md",
-      "route": "/operate/ai-assist/",
-      "title": "Ptah Assist and your own model",
-      "description": "Configure a model provider for ptah assist with your own key, endpoint, and model, and check that it works.",
+      "path": "docs/site/src/content/docs/operate/ai-assist-sessions.md",
+      "route": "/operate/ai-assist-sessions/",
+      "title": "Manage Ptah Assist sessions",
+      "description": "Inspect, resume, retain, or remove Ptah Assist conversations and keep their audit record separate.",
       "sidebarPath": "Extend and integrate > AI and agents",
       "sidebarLabel": null,
       "type": "how-to",
@@ -2550,18 +2960,13 @@
         "application-developer",
         "platform-engineer"
       ],
-      "readerQuestion": "How do I connect Ptah Assist to my model endpoint and verify the session?",
-      "goal": "Connect Ptah Assist to my model endpoint and verify the session.",
+      "readerQuestion": "What does Ptah Assist save, and how do I manage it?",
+      "goal": "Inspect and manage saved conversations without confusing them with the agent audit log.",
       "sourceOfTruth": [
-        "cmd/assist",
-        "internal/assistconfig",
-        "internal/assistloop"
+        "internal/assistsession",
+        "cmd/assist"
       ],
       "owns": [
-        "cli-ptah-assist-context",
-        "cli-ptah-assist-explain",
-        "cli-ptah-assist-provider-list",
-        "cli-ptah-assist-provider-test",
         "cli-ptah-assist-sessions-delete",
         "cli-ptah-assist-sessions-list",
         "cli-ptah-assist-sessions-prune",
@@ -2572,21 +2977,70 @@
       "editSource": null,
       "lastVerified": null,
       "evidence": [],
-      "searchAliases": [],
+      "searchAliases": [
+        "Ptah Assist history",
+        ".ptah sessions"
+      ],
+      "overlaps": [
+        "/operate/ai-assist/"
+      ],
+      "disposition": "split",
+      "outboundLinks": [],
+      "inboundLinks": [
+        "/operate/ai-assist/"
+      ],
+      "visibleWords": 261,
+      "sourceBytes": 2659
+    },
+    {
+      "path": "docs/site/src/content/docs/operate/ai-assist.md",
+      "route": "/operate/ai-assist/",
+      "title": "Use Ptah Assist",
+      "description": "Ask one verified question or hold a conversation with a model provider you control.",
+      "sidebarPath": "Extend and integrate > AI and agents",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "application-developer",
+        "platform-engineer"
+      ],
+      "readerQuestion": "How do I ask Ptah a model-assisted question and see what it verified?",
+      "goal": "Run one Ptah Assist question and distinguish the model answer from Ptah tool evidence.",
+      "sourceOfTruth": [
+        "cmd/assist",
+        "internal/assistloop"
+      ],
+      "owns": [
+        "cli-ptah-assist-context",
+        "cli-ptah-assist-explain"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "Ptah AI assistant",
+        "explain migrations with AI"
+      ],
       "overlaps": [
         "/operate/ai-agents/",
-        "/reference/native-commands/"
+        "/operate/ai-assist-providers/",
+        "/operate/ai-assist-sessions/"
       ],
       "disposition": "split",
       "outboundLinks": [
-        "/operate/ai-agents/"
+        "/operate/ai-agent-permissions/",
+        "/operate/ai-assist-providers/",
+        "/operate/ai-assist-sessions/"
       ],
       "inboundLinks": [
         "/extend/overview/",
+        "/operate/ai-agents/",
         "/reference/native-commands/"
       ],
-      "visibleWords": 2835,
-      "sourceBytes": 21665
+      "visibleWords": 387,
+      "sourceBytes": 4072
     },
     {
       "path": "docs/site/src/content/docs/operate/oci-registry.md",
@@ -2829,8 +3283,8 @@
         "/reference/extension-variables/",
         "/reference/native-commands/"
       ],
-      "visibleWords": 14291,
-      "sourceBytes": 99028
+      "visibleWords": 14293,
+      "sourceBytes": 99316
     },
     {
       "path": "docs/site/src/content/docs/reference/capabilities.mdx",
@@ -2874,7 +3328,7 @@
         "/databases/mysql/",
         "/databases/oracle/",
         "/databases/overview/",
-        "/databases/support-matrix/",
+        "/databases/support-policy/",
         "/operate/oci-registry/",
         "/operate/troubleshooting/",
         "/reference/go-annotations/"
@@ -2922,8 +3376,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8331,
-      "sourceBytes": 76984
+      "visibleWords": 8335,
+      "sourceBytes": 77274
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",
@@ -3058,17 +3512,17 @@
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
-        "/atlas/overview/",
+        "/atlas/strict-ce-mode/",
         "/databases/sqlite/",
         "/reference/atlas-commands/",
         "/reference/configuration/"
       ],
       "inboundLinks": [
-        "/atlas/overview/",
+        "/atlas/strict-ce-mode/",
         "/reference/atlas-commands/"
       ],
-      "visibleWords": 2695,
-      "sourceBytes": 17571
+      "visibleWords": 2692,
+      "sourceBytes": 17565
     },
     {
       "path": "docs/site/src/content/docs/reference/glossary.mdx",
@@ -3099,8 +3553,8 @@
       "disposition": "rewrite",
       "outboundLinks": [],
       "inboundLinks": [],
-      "visibleWords": 281,
-      "sourceBytes": 2634
+      "visibleWords": 470,
+      "sourceBytes": 4786
     },
     {
       "path": "docs/site/src/content/docs/reference/go-annotations.md",
@@ -3241,6 +3695,49 @@
       "sourceBytes": 26448
     },
     {
+      "path": "docs/site/src/content/docs/reference/mcp-tools.md",
+      "route": "/reference/mcp-tools/",
+      "title": "MCP tools",
+      "description": "Complete lookup reference for the tools and argument shapes served by ptah mcp.",
+      "sidebarPath": "Reference > Rules and diagnostics",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "application-developer",
+        "platform-engineer"
+      ],
+      "readerQuestion": "Which tools does ptah mcp serve, and what arguments do they accept?",
+      "goal": "Look up a Ptah MCP tool and construct a valid call.",
+      "sourceOfTruth": [
+        "internal/mcpserver",
+        "internal/agentapi"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "MCP tool schema",
+        "tools list"
+      ],
+      "overlaps": [
+        "/operate/ai-agent-connect/",
+        "/operate/ai-agent-changes/"
+      ],
+      "disposition": "split",
+      "outboundLinks": [
+        "/operate/ai-agent-permissions/",
+        "/operate/ai-agent-troubleshooting/"
+      ],
+      "inboundLinks": [
+        "/operate/ai-agents/"
+      ],
+      "visibleWords": 575,
+      "sourceBytes": 4824
+    },
+    {
       "path": "docs/site/src/content/docs/reference/native-commands.md",
       "route": "/reference/native-commands/",
       "title": "Native commands",
@@ -3288,7 +3785,6 @@
       "inboundLinks": [
         "/atlas/docs-coverage/",
         "/extend/overview/",
-        "/operate/ai-agents/",
         "/operate/oci-registry/",
         "/operate/seed-data/",
         "/reference/atlas-commands/",
@@ -3307,8 +3803,8 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 7090,
-      "sourceBytes": 47710
+      "visibleWords": 7097,
+      "sourceBytes": 48060
     },
     {
       "path": "docs/site/src/content/docs/reference/overview.mdx",
@@ -5082,7 +5578,6 @@
         "/atlas/retained-divergences/",
         "/concepts/database-urls-and-dev-databases/",
         "/concepts/migration-directory/",
-        "/operate/ai-agents/",
         "/operate/oci-registry/",
         "/reference/atlas-commands/",
         "/start/quick-start-migrations/",

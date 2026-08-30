@@ -852,7 +852,7 @@ result describes the database in full and the community binary refuses it, which
 is the trade the variable exists to let you make. It is an environment variable
 rather than a flag because `ptah-compat`'s flag surface is held to parity with
 the pinned binary; see
-[Compatibility never costs you a capability](../overview/#compatibility-never-costs-you-a-capability).
+[Capabilities retained deliberately](../strict-ce-mode/#capabilities-retained-deliberately).
 
 ### Three rules a `permission` block is written by
 
@@ -1769,8 +1769,8 @@ Without `--dry-run`, cleanup drops the listed objects after confirmation
 Function entries in `.Objects` and `.Changes` also carry `.Parameters`, and
 their `.Cmd` includes the PostgreSQL signature so overloads remain distinct.
 
-The shared report shape and URL redaction rules are described on the
-[Atlas compatibility overview](../overview/#format-reports-and-redaction).
+The shared report shape and URL redaction rules are in
+[Atlas-compatible output and redaction](../output-and-redaction/).
 
 ## Next steps
 

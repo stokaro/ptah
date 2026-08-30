@@ -96,6 +96,22 @@ async function keyboardChecks(page, origin, base) {
     }
   }
 
+  await page.goto(`${origin}${base}/reference/native-commands/`, { waitUntil: 'load' });
+  const commandFilter = page.getByLabel('Filter commands');
+  await commandFilter.fill('ptah schema apply');
+  const commandRows = page.locator('.sl-markdown-content table').first().locator('tbody tr:visible');
+  if (await commandRows.count() !== 1 || !(await commandRows.first().innerText()).includes('ptah schema apply')) {
+    problems.push('/reference/native-commands/: command filter did not isolate ptah schema apply');
+  }
+
+  await page.goto(`${origin}${base}/reference/command-flags/`, { waitUntil: 'load' });
+  const flagFilter = page.getByLabel('Filter commands and flags');
+  await flagFilter.fill('allow-database-inspect');
+  const flagStatus = await page.locator('[data-ptah-filter-status]').innerText();
+  if (!/^\d+ of \d+ entries$/.test(flagStatus) || flagStatus.startsWith('0 of ')) {
+    problems.push('/reference/command-flags/: flag filter did not report matching entries');
+  }
+
   return problems;
 }
 

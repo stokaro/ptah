@@ -97,8 +97,7 @@ landing page as an explicit child such as `Overview`.
 
 ### Findings that remain valid
 
-- General troubleshooting, AI Assist, AI agents, Atlas overview, and database
-  support still mix independent documentation jobs.
+- General troubleshooting still mixes unrelated symptoms.
 - Prose and wide reference content still share one `70rem` measure.
 
 ### Findings resolved in visuals and examples Phase 4
@@ -117,6 +116,25 @@ landing page as an explicit child such as `Overview`.
   approval binding, and the active pointer.
 - Axe WCAG A/AA, keyboard interactions, scroll-region focus, visual-source
   policy, and selected desktop/mobile review snapshots are gated in CI.
+
+### Findings resolved in reference and compatibility Phase 5
+
+- The database support route is now a generated lookup. Support policy and
+  dated measurement evidence have separate canonical pages, so engine detail,
+  testing promises, and the current release census no longer compete on one
+  page.
+- Atlas compatibility overview now routes readers among native Ptah, default
+  `ptah-compat`, and strict CE conformance. Strict-mode content and shared output
+  redaction have focused pages.
+- AI and agent documentation now separates Assist use, provider configuration,
+  session retention, MCP connection, permissions, digest-bound patching,
+  troubleshooting, and tool lookup.
+- Native command, Atlas-compatible command, and generated flag references retain
+  every generated row and add a keyboard-accessible filter for first-level
+  lookup.
+- The glossary now defines product, schema, migration, inference, support, and
+  conformance terms from one registry instead of serving mainly as a support
+  matrix tooltip demonstration.
 
 ### Audit recommendation deliberately rejected
 
@@ -163,10 +181,10 @@ results are re-executed in the onboarding or examples phase.
 | Detect and fix schema drift | `Direct schema changes > Overview`; decide whether the result is a CI gate or an apply | `start/quick-start-direct` or `direct/overview` → `direct/compare-and-drift` → `direct/plan-and-approve` or `direct/apply` | Complete for the onboarding evolution and gate; canonical search results are top-three gated. |
 | Migrate persistent inference state | `Inference migrations > Overview`; decide whether this lifecycle applies | `inference/overview` → `inference/quick-start` or a focused guide | Complete: the tutorial uses disposable PostgreSQL and a deterministic local endpoint, and CI proves the generation reaches the active pointer. |
 | Recover a failed inference migration | Copied error or inference sidebar | `inference/troubleshooting` → `inference/guides/resume-and-recover` | Symptom-oriented pages exist; the recovery guide is top-three gated for the recorded search query. |
-| Check database and version support | `Databases > Overview`; choose lookup or live measurement | `databases/overview` → `databases/support-matrix` → engine page → `ptah db capabilities` | Correctness is generated and semantically gated; MySQL and SQL Server lookup queries are top-three gated. |
-| Migrate from Atlas | `Atlas compatibility > Overview`; decide default compatibility, strict CE, or native adoption | `atlas/overview` → `atlas/adoption` → command or evidence page | Discoverable; the overview still mixes policy, translation, and security detail. |
+| Check database and version support | `Databases > Overview`; choose lookup, policy, evidence, or live measurement | `databases/overview` → `databases/support-matrix` → `databases/support-policy` or `databases/support-evidence` → engine page or `ptah db capabilities` | Complete: generated lookup, testing promise, measurement evidence, and target capability report are distinct. |
+| Migrate from Atlas | `Atlas compatibility > Overview`; decide default compatibility, strict CE, or native adoption | `atlas/overview` → `atlas/adoption`, `atlas/strict-ce-mode`, command, or evidence page | Complete: the landing routes the three surfaces without carrying command reference or strict-policy internals. |
 | Embed Ptah as Go packages | `Extend and integrate > Overview`; choose the Go API path | `extend/overview` → `extend/public-api` → `extend/components` → `extend/query-builder` | Discoverable without entering CLI reference. |
-| Connect an AI client through MCP | `Extend and integrate > Overview`; choose the AI client path | `extend/overview` → `operate/ai-agents` → native command reference | Discoverable and top-three gated for `MCP`; connection, security model, tool reference, and artifact protocol still share one page. |
+| Connect an AI client through MCP | `Extend and integrate > Overview`; choose the AI client path | `extend/overview` → `operate/ai-agents` → `operate/ai-agent-connect` → permissions, patch workflow, or tool reference | Complete: setup, authority, changes, diagnostics, and exhaustive tool lookup are separate reader tasks. |
 | Arrive from a copied error | Search | subsystem troubleshooting page → canonical task page | Stable error headings exist; canonical checksum, recovery, and exit-code results are top-three gated. |
 | Add or move a documentation page | `AGENTS.md` and the documentation-maintenance skill | style guide → page metadata → sidebar → redirect ledger → inventory regeneration | Governed by build checks and the current contributor instructions. |
 
@@ -174,9 +192,7 @@ results are re-executed in the onboarding or examples phase.
 
 The remaining work stays split into reviewable phases:
 
-1. Reference and compatibility: compact generated indexes, support
-   policy/evidence separation, Atlas and AI page splits, and glossary scope.
-2. Editorial sweep: duplication, generic introductions, redundant shell tabs,
+1. Editorial sweep: duplication, generic introductions, redundant shell tabs,
    time-sensitive prose, width waivers, and the final desktop/mobile review.
 
 Each phase must leave the current routes buildable and preserve redirects for

@@ -246,6 +246,11 @@ var flagsPreamble = strings.Join([]string{
 	"- **Notes** carries `hidden` for a flag `--help` does not list and still",
 	"  parses, and `inherited by subcommands` for one declared on a group.",
 	"",
+	"<div class=\"ptah-reference-filter\" data-mode=\"all-tables\">",
+	"  <label for=\"command-flag-filter\">Filter commands and flags <input id=\"command-flag-filter\" type=\"search\" placeholder=\"db-url, schema apply…\" /></label>",
+	"  <p data-ptah-filter-status role=\"status\" aria-live=\"polite\"></p>",
+	"</div>",
+	"",
 	"",
 }, "\n")
 
