@@ -14,15 +14,17 @@ generated: false
 overlaps:
   - "/start/choose-a-workflow/"
   - "/concepts/migration-directory/"
-disposition: rewrite
+disposition: keep
 ---
 
-Versioned migrations are the operational boundary between a change and live
-database state: every change becomes a reviewed, ordered pair of SQL files that
-is hashed, linted, applied, and reversible. Whether you write those files or
-Ptah derives them from a desired schema is a separate decision, and this page
-covers both; each lifecycle step then has its own page with runnable examples
-and failure guidance.
+Use versioned migrations when a database change must be reviewed before it runs,
+replayed across environments, and visible in deployment history. Each change
+becomes an ordered pair of SQL files that Ptah hashes, validates, applies, and
+records in the database.
+
+You may write those files yourself or let Ptah derive them from a desired
+schema. That choice changes only how the files originate; the review and
+execution lifecycle is the same.
 
 Treat migration files as code. They live in your repository, they are covered
 by an integrity file, and they go through review before they reach a shared

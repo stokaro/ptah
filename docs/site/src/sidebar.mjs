@@ -54,9 +54,10 @@ export const sidebar = [
     label: 'Start',
     items: [
       { slug: 'start/install' },
+      { slug: 'start/install-options' },
       { slug: 'start/quick-start' },
       { slug: 'start/quick-start-migrations' },
-      { slug: 'start/quick-start-direct' },
+      { slug: 'start/quick-start-direct', label: 'Continue direct changes' },
       { slug: 'start/choose-a-workflow' },
       { slug: 'start/adopt-an-existing-database' },
     ],

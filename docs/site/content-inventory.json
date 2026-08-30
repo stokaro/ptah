@@ -6,14 +6,14 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 108,
-    "authored": 106,
+    "pages": 109,
+    "authored": 107,
     "generated": 2,
     "byType": {
       "concept": 15,
-      "how-to": 49,
-      "landing": 6,
-      "reference": 26,
+      "how-to": 50,
+      "landing": 5,
+      "reference": 27,
       "status": 6,
       "troubleshooting": 3,
       "tutorial": 3
@@ -373,7 +373,6 @@
         "/schema/hcl/",
         "/schema/sql/",
         "/start/choose-a-workflow/",
-        "/start/install/",
         "/testing/migrations-and-schema/"
       ],
       "visibleWords": 1980,
@@ -1058,8 +1057,7 @@
         "/databases/sqlite/",
         "/databases/sqlserver/",
         "/extend/query-builder/",
-        "/reference/capabilities/",
-        "/start/quick-start/"
+        "/reference/capabilities/"
       ],
       "visibleWords": 2905,
       "sourceBytes": 21878
@@ -1107,7 +1105,6 @@
         "/versioned/overview/"
       ],
       "inboundLinks": [
-        "/",
         "/atlas/schema-commands/",
         "/direct/compare-and-drift/",
         "/direct/overview/",
@@ -1116,8 +1113,7 @@
         "/schema/security/",
         "/schema/serve/",
         "/schema/work-with-a-source/",
-        "/start/choose-a-workflow/",
-        "/start/quick-start-direct/"
+        "/start/choose-a-workflow/"
       ],
       "visibleWords": 803,
       "sourceBytes": 8615
@@ -1175,6 +1171,7 @@
         "/schema/serve/",
         "/schema/stats/",
         "/schema/validate-and-format/",
+        "/start/quick-start-direct/",
         "/testing/ci/"
       ],
       "visibleWords": 1430,
@@ -1259,7 +1256,7 @@
         "/start/choose-a-workflow/",
         "/direct/apply/"
       ],
-      "disposition": "rewrite",
+      "disposition": "keep",
       "outboundLinks": [
         "/direct/apply/",
         "/direct/compare-and-drift/",
@@ -1274,7 +1271,7 @@
         "/start/choose-a-workflow/"
       ],
       "visibleWords": 470,
-      "sourceBytes": 3949
+      "sourceBytes": 3946
     },
     {
       "path": "docs/site/src/content/docs/direct/plan-and-approve.md",
@@ -1318,7 +1315,8 @@
       "inboundLinks": [
         "/direct/apply/",
         "/direct/overview/",
-        "/reference/native-commands/"
+        "/reference/native-commands/",
+        "/start/quick-start-direct/"
       ],
       "visibleWords": 1358,
       "sourceBytes": 13156
@@ -1446,7 +1444,7 @@
       "path": "docs/site/src/content/docs/index.mdx",
       "route": "/",
       "title": "Ptah",
-      "description": "Ptah manages database schema changes and persistent inference state through versioned migrations, direct schema changes, and verified generation cutovers.",
+      "description": "Choose a Ptah workflow, get a verified first result, and find the evidence behind database support and Atlas compatibility.",
       "sidebarPath": "",
       "sidebarLabel": "Home",
       "type": "landing",
@@ -1465,40 +1463,35 @@
       "editSource": null,
       "lastVerified": null,
       "evidence": [],
-      "searchAliases": [],
+      "searchAliases": [
+        "database schema migration tool",
+        "Atlas alternative"
+      ],
       "overlaps": [
         "/start/quick-start/",
         "/start/choose-a-workflow/",
         "/inference/overview/"
       ],
-      "disposition": "rewrite",
+      "disposition": "keep",
       "outboundLinks": [
         "/atlas/license-boundary/",
         "/atlas/overview/",
         "/databases/support-matrix/",
-        "/direct/apply/",
         "/direct/compare-and-drift/",
         "/direct/overview/",
         "/extend/public-api/",
         "/inference/overview/",
-        "/operate/oci-registry/",
-        "/reference/native-commands/",
-        "/schema/go-annotations/",
-        "/schema/hcl/",
-        "/schema/orm-and-external/",
-        "/schema/sql/",
-        "/schema/work-with-a-source/",
-        "/schema/yaml/",
+        "/operate/ai-agents/",
         "/start/adopt-an-existing-database/",
         "/start/choose-a-workflow/",
         "/start/quick-start-migrations/",
         "/start/quick-start/",
-        "/testing/ci/",
+        "/versioned/generate/",
         "/versioned/overview/"
       ],
       "inboundLinks": [],
-      "visibleWords": 965,
-      "sourceBytes": 16071
+      "visibleWords": 285,
+      "sourceBytes": 4981
     },
     {
       "path": "docs/site/src/content/docs/inference/concepts/consistency.md",
@@ -1975,8 +1968,7 @@
       "inboundLinks": [
         "/",
         "/reference/native-commands/",
-        "/start/choose-a-workflow/",
-        "/start/quick-start/"
+        "/start/choose-a-workflow/"
       ],
       "visibleWords": 501,
       "sourceBytes": 4282
@@ -2426,6 +2418,7 @@
         "/versioned/integrity-and-safety/"
       ],
       "inboundLinks": [
+        "/",
         "/operate/ai-assist/",
         "/reference/native-commands/"
       ],
@@ -2522,7 +2515,6 @@
         "/versioned/lint/"
       ],
       "inboundLinks": [
-        "/",
         "/atlas/docs-coverage/",
         "/atlas/feature-matrix/",
         "/atlas/overview/",
@@ -2615,6 +2607,7 @@
         "/operate/seed-data/",
         "/schema/visualize/",
         "/start/adopt-an-existing-database/",
+        "/start/install/",
         "/testing/ci/"
       ],
       "visibleWords": 431,
@@ -2861,7 +2854,6 @@
         "/schema/serve/",
         "/schema/stats/",
         "/schema/validate-and-format/",
-        "/start/install/",
         "/testing/ci/",
         "/versioned/integrity-and-safety/"
       ],
@@ -2983,7 +2975,7 @@
         "/databases/postgresql/",
         "/databases/sqlserver/",
         "/schema/go-annotations/",
-        "/start/install/"
+        "/start/install-options/"
       ],
       "visibleWords": 3866,
       "sourceBytes": 31278
@@ -3121,7 +3113,6 @@
         "/start/choose-a-workflow/"
       ],
       "inboundLinks": [
-        "/",
         "/atlas/docs-coverage/",
         "/operate/ai-agents/",
         "/operate/oci-registry/",
@@ -3454,7 +3445,6 @@
         "/schema/yaml/"
       ],
       "inboundLinks": [
-        "/",
         "/concepts/desired-schema-and-sources/",
         "/reference/go-annotations/",
         "/schema/document/",
@@ -3509,7 +3499,6 @@
         "/schema/work-with-a-source/"
       ],
       "inboundLinks": [
-        "/",
         "/atlas/docs-coverage/",
         "/concepts/desired-schema-and-sources/",
         "/schema/document/",
@@ -3598,7 +3587,6 @@
         "/versioned/overview/"
       ],
       "inboundLinks": [
-        "/",
         "/atlas/docs-coverage/",
         "/atlas/project-config/",
         "/concepts/desired-schema-and-sources/",
@@ -3781,7 +3769,6 @@
         "/versioned/generate/"
       ],
       "inboundLinks": [
-        "/",
         "/concepts/desired-schema-and-sources/",
         "/schema/document/",
         "/schema/export/",
@@ -3930,8 +3917,7 @@
         "/schema/document/",
         "/schema/lineage/",
         "/schema/security/",
-        "/schema/stats/",
-        "/start/install/"
+        "/schema/stats/"
       ],
       "visibleWords": 676,
       "sourceBytes": 6315
@@ -3979,7 +3965,6 @@
         "/versioned/generate/"
       ],
       "inboundLinks": [
-        "/",
         "/concepts/desired-schema-and-sources/",
         "/direct/overview/",
         "/schema/dbml/",
@@ -3989,7 +3974,6 @@
         "/schema/sql/",
         "/schema/validate-and-format/",
         "/schema/yaml/",
-        "/start/quick-start-direct/",
         "/start/quick-start/"
       ],
       "visibleWords": 525,
@@ -4031,7 +4015,6 @@
         "/versioned/overview/"
       ],
       "inboundLinks": [
-        "/",
         "/concepts/desired-schema-and-sources/",
         "/extend/components/",
         "/schema/document/",
@@ -4092,7 +4075,7 @@
         "/schema/protobuf/",
         "/schema/visualize/",
         "/start/choose-a-workflow/",
-        "/start/quick-start/",
+        "/start/quick-start-direct/",
         "/versioned/import/",
         "/versioned/overview/"
       ],
@@ -4145,7 +4128,6 @@
         "/reference/native-commands/",
         "/schema/work-with-a-source/",
         "/start/adopt-an-existing-database/",
-        "/start/install/",
         "/start/quick-start/",
         "/versioned/overview/"
       ],
@@ -4153,22 +4135,68 @@
       "sourceBytes": 8000
     },
     {
+      "path": "docs/site/src/content/docs/start/install-options.mdx",
+      "route": "/start/install-options/",
+      "title": "Other installation methods",
+      "description": "Pin or customize the installer, use Homebrew or Go, verify release artifacts, and build Ptah from source.",
+      "sidebarPath": "Start",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "new-user",
+        "ci-operator",
+        "security-reviewer"
+      ],
+      "readerQuestion": "Which Ptah installation and artifact-verification options are available?",
+      "goal": "Choose and verify an installation route beyond the default release script.",
+      "sourceOfTruth": [
+        "docs/site/public/install.sh",
+        "docs/site/public/install.ps1",
+        ".github/workflows/release.yml",
+        "Makefile"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "install Ptah with Homebrew",
+        "verify Ptah checksum",
+        "build Ptah from source"
+      ],
+      "overlaps": [
+        "/start/install/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/reference/go-annotations/",
+        "/start/install/",
+        "/start/quick-start/"
+      ],
+      "inboundLinks": [
+        "/start/install/"
+      ],
+      "visibleWords": 768,
+      "sourceBytes": 7528
+    },
+    {
       "path": "docs/site/src/content/docs/start/install.mdx",
       "route": "/start/install/",
       "title": "Install Ptah",
-      "description": "Install ptah, ptah-compat, and ptah-ls with one command, or download and verify a release archive by hand.",
+      "description": "Install the three Ptah binaries with the verified release script and confirm they run.",
       "sidebarPath": "Start",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
         "new-user"
       ],
-      "readerQuestion": "How do I install Ptah and verify the binary I will run?",
-      "goal": "Install Ptah and verify the binary I will run.",
+      "readerQuestion": "How do I install Ptah and verify the binaries I will run?",
+      "goal": "Install ptah, ptah-compat, and ptah-ls, then verify each binary.",
       "sourceOfTruth": [
-        "cmd/root",
-        "cmd/schema",
-        "cmd/migrations"
+        "docs/site/public/install.sh",
+        "docs/site/public/install.ps1"
       ],
       "owns": [
         "cli-ptah-version",
@@ -4182,20 +4210,18 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [
-        "install Ptah"
+        "install Ptah",
+        "download Ptah"
       ],
       "overlaps": [
+        "/start/install-options/",
         "/operate/troubleshooting/"
       ],
-      "disposition": "split",
+      "disposition": "keep",
       "outboundLinks": [
-        "/atlas/overview/",
-        "/reference/exit-codes/",
-        "/reference/go-annotations/",
-        "/schema/visualize/",
-        "/start/choose-a-workflow/",
-        "/start/quick-start/",
-        "/testing/ci/"
+        "/operate/troubleshooting/",
+        "/start/install-options/",
+        "/start/quick-start/"
       ],
       "inboundLinks": [
         "/atlas/docs-coverage/",
@@ -4210,75 +4236,30 @@
         "/schema/stats/",
         "/schema/validate-and-format/",
         "/start/adopt-an-existing-database/",
-        "/start/quick-start-direct/",
+        "/start/install-options/",
         "/start/quick-start-migrations/",
         "/start/quick-start/"
       ],
-      "visibleWords": 2889,
-      "sourceBytes": 25147
+      "visibleWords": 414,
+      "sourceBytes": 4151
     },
     {
       "path": "docs/site/src/content/docs/start/quick-start-direct.mdx",
       "route": "/start/quick-start-direct/",
-      "title": "Quick start: direct schema changes",
-      "description": "Describe a schema in one SQL file, let Ptah change a SQLite database to match, add a column, and check that the database still matches the file.",
+      "title": "Evolve and gate a direct schema",
+      "description": "Change an applied desired schema, review the ALTER plan, and gate CI on schema drift.",
       "sidebarPath": "Start",
-      "sidebarLabel": null,
-      "type": "tutorial",
+      "sidebarLabel": "Continue direct changes",
+      "type": "how-to",
       "audience": [
-        "new-user"
+        "new-user",
+        "ci-operator"
       ],
-      "readerQuestion": "How do I apply and verify my first direct schema change?",
-      "goal": "Apply and verify my first direct schema change.",
+      "readerQuestion": "How do I evolve a directly managed schema and detect later drift?",
+      "goal": "Apply one schema evolution and turn drift detection into an automation gate.",
       "sourceOfTruth": [
-        "cmd/root",
         "cmd/schema",
-        "cmd/migrations"
-      ],
-      "owns": [],
-      "generated": false,
-      "generator": null,
-      "editSource": null,
-      "lastVerified": null,
-      "evidence": [],
-      "searchAliases": [],
-      "overlaps": [
-        "/direct/overview/",
-        "/direct/apply/",
-        "/direct/compare-and-drift/"
-      ],
-      "disposition": "split",
-      "outboundLinks": [
-        "/direct/apply/",
-        "/schema/work-with-a-source/",
-        "/start/install/",
-        "/start/quick-start-migrations/",
-        "/testing/ci/"
-      ],
-      "inboundLinks": [
-        "/start/quick-start-migrations/",
-        "/start/quick-start/"
-      ],
-      "visibleWords": 787,
-      "sourceBytes": 10252
-    },
-    {
-      "path": "docs/site/src/content/docs/start/quick-start-migrations.mdx",
-      "route": "/start/quick-start-migrations/",
-      "title": "Quick start: versioned migrations",
-      "description": "Write a migration by hand, seal it with a checksum, apply it to a SQLite database, read the result back, and roll it back again.",
-      "sidebarPath": "Start",
-      "sidebarLabel": null,
-      "type": "tutorial",
-      "audience": [
-        "new-user"
-      ],
-      "readerQuestion": "How do I create, apply, verify, and roll back my first migration?",
-      "goal": "Create, apply, verify, and roll back my first migration.",
-      "sourceOfTruth": [
-        "cmd/root",
-        "cmd/schema",
-        "cmd/migrations"
+        "docs/exit_codes.md"
       ],
       "owns": [],
       "generated": false,
@@ -4287,47 +4268,46 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [
-        "first migration"
+        "direct schema evolution",
+        "schema drift CI"
       ],
       "overlaps": [
-        "/versioned/overview/",
-        "/versioned/generate/",
-        "/versioned/rollback/"
+        "/start/quick-start/",
+        "/direct/apply/",
+        "/direct/compare-and-drift/"
       ],
-      "disposition": "split",
+      "disposition": "keep",
       "outboundLinks": [
-        "/start/install/",
-        "/start/quick-start-direct/",
-        "/versioned/generate/",
-        "/versioned/integrity-and-safety/"
+        "/direct/compare-and-drift/",
+        "/direct/plan-and-approve/",
+        "/start/adopt-an-existing-database/",
+        "/start/quick-start/",
+        "/testing/ci/",
+        "/versioned/generate/"
       ],
       "inboundLinks": [
-        "/",
-        "/databases/sqlite/",
-        "/start/choose-a-workflow/",
-        "/start/quick-start-direct/",
         "/start/quick-start/"
       ],
-      "visibleWords": 813,
-      "sourceBytes": 10233
+      "visibleWords": 255,
+      "sourceBytes": 3628
     },
     {
-      "path": "docs/site/src/content/docs/start/quick-start.mdx",
-      "route": "/start/quick-start/",
-      "title": "Quick start",
-      "description": "Choose one of two schema quick starts. Persistent inference state uses a separate generation lifecycle.",
+      "path": "docs/site/src/content/docs/start/quick-start-migrations.mdx",
+      "route": "/start/quick-start-migrations/",
+      "title": "Quick start: versioned migrations",
+      "description": "Create, seal, apply, and verify one migration against a disposable SQLite database.",
       "sidebarPath": "Start",
       "sidebarLabel": null,
-      "type": "landing",
+      "type": "tutorial",
       "audience": [
         "new-user"
       ],
-      "readerQuestion": "Which first Ptah workflow should I try?",
-      "goal": "Choose a first Ptah workflow to try.",
+      "readerQuestion": "How do I create, apply, and verify my first versioned migration?",
+      "goal": "Apply one sealed migration and verify its recorded database state.",
       "sourceOfTruth": [
-        "cmd/root",
-        "cmd/schema",
-        "cmd/migrations"
+        "cmd/migrations",
+        "migration/migrator",
+        "migration/migrationfile"
       ],
       "owns": [],
       "generated": false,
@@ -4335,31 +4315,83 @@
       "editSource": null,
       "lastVerified": null,
       "evidence": [],
-      "searchAliases": [],
-      "overlaps": [
-        "/start/choose-a-workflow/",
-        "/start/quick-start-migrations/",
-        "/start/quick-start-direct/"
+      "searchAliases": [
+        "first migration",
+        "apply migrations"
       ],
-      "disposition": "rewrite",
+      "overlaps": [
+        "/versioned/overview/",
+        "/versioned/apply/",
+        "/versioned/integrity-and-safety/"
+      ],
+      "disposition": "keep",
       "outboundLinks": [
-        "/databases/support-matrix/",
-        "/inference/overview/",
+        "/start/install/",
+        "/testing/ci/",
+        "/versioned/generate/",
+        "/versioned/integrity-and-safety/",
+        "/versioned/rollback/"
+      ],
+      "inboundLinks": [
+        "/",
+        "/databases/sqlite/",
+        "/start/choose-a-workflow/",
+        "/start/quick-start/"
+      ],
+      "visibleWords": 267,
+      "sourceBytes": 4213
+    },
+    {
+      "path": "docs/site/src/content/docs/start/quick-start.mdx",
+      "route": "/start/quick-start/",
+      "title": "Quick start",
+      "description": "Apply and verify a first Ptah schema change against a disposable SQLite database.",
+      "sidebarPath": "Start",
+      "sidebarLabel": null,
+      "type": "tutorial",
+      "audience": [
+        "new-user"
+      ],
+      "readerQuestion": "How do I get a verified Ptah result in five minutes?",
+      "goal": "Apply a desired schema to SQLite and verify the live database matches it.",
+      "sourceOfTruth": [
+        "cmd/schema",
+        "cmd/db",
+        "cmd/schema/apply_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "first Ptah result",
+        "apply desired schema",
+        "SQLite quick start"
+      ],
+      "overlaps": [
+        "/direct/apply/",
+        "/start/quick-start-direct/",
+        "/start/choose-a-workflow/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [
         "/schema/work-with-a-source/",
-        "/start/adopt-an-existing-database/",
         "/start/choose-a-workflow/",
         "/start/install/",
         "/start/quick-start-direct/",
-        "/start/quick-start-migrations/",
-        "/versioned/generate/"
+        "/start/quick-start-migrations/"
       ],
       "inboundLinks": [
         "/",
         "/atlas/docs-coverage/",
-        "/start/install/"
+        "/start/install-options/",
+        "/start/install/",
+        "/start/quick-start-direct/"
       ],
-      "visibleWords": 350,
-      "sourceBytes": 3628
+      "visibleWords": 282,
+      "sourceBytes": 3927
     },
     {
       "path": "docs/site/src/content/docs/testing/ci.md",
@@ -4399,14 +4431,13 @@
         "/versioned/lint/"
       ],
       "inboundLinks": [
-        "/",
         "/atlas/docs-coverage/",
         "/direct/compare-and-drift/",
         "/schema/export/",
         "/schema/protobuf/",
         "/schema/validate-and-format/",
-        "/start/install/",
         "/start/quick-start-direct/",
+        "/start/quick-start-migrations/",
         "/versioned/generate/",
         "/versioned/integrity-and-safety/",
         "/versioned/lint/"
@@ -4601,6 +4632,7 @@
         "/versioned/maintain-history/"
       ],
       "inboundLinks": [
+        "/",
         "/atlas/docs-coverage/",
         "/concepts/database-urls-and-dev-databases/",
         "/databases/sqlite/",
@@ -4610,8 +4642,8 @@
         "/schema/composite/",
         "/schema/sql/",
         "/schema/work-with-a-source/",
+        "/start/quick-start-direct/",
         "/start/quick-start-migrations/",
-        "/start/quick-start/",
         "/versioned/apply/",
         "/versioned/import/",
         "/versioned/integrity-and-safety/",
@@ -4860,7 +4892,7 @@
         "/start/choose-a-workflow/",
         "/concepts/migration-directory/"
       ],
-      "disposition": "rewrite",
+      "disposition": "keep",
       "outboundLinks": [
         "/concepts/migration-directory/",
         "/start/adopt-an-existing-database/",
@@ -4887,8 +4919,8 @@
         "/start/adopt-an-existing-database/",
         "/start/choose-a-workflow/"
       ],
-      "visibleWords": 437,
-      "sourceBytes": 4384
+      "visibleWords": 442,
+      "sourceBytes": 4413
     },
     {
       "path": "docs/site/src/content/docs/versioned/reference-data.md",
@@ -4974,6 +5006,7 @@
       "inboundLinks": [
         "/atlas/docs-coverage/",
         "/atlas/retained-divergences/",
+        "/start/quick-start-migrations/",
         "/versioned/apply/",
         "/versioned/import/",
         "/versioned/maintain-history/",

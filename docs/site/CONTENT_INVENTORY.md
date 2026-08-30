@@ -42,7 +42,7 @@ landing page as an explicit child such as `Overview`.
 - Route retirement, link, style, terminology, responsive, glossary, and docs
   build checks already existed and remain enabled.
 
-### Findings resolved in this phase
+### Findings resolved in governance Phase 1
 
 - Authored support prose contradicted the generated release-line matrix. The
   authored census is removed. A semantic check now refuses hand-written counts
@@ -55,14 +55,30 @@ landing page as an explicit child such as `Overview`.
 - Status pages now name a verification date and evidence. Fully generated pages
   name both their generator and the file a contributor should edit.
 
+### Findings resolved in onboarding Phase 2
+
+- The docs home now routes by reader situation instead of repeating the same
+  product flow as a diagram, prose walkthrough, command sample, card grid, and
+  decision table.
+- `/start/quick-start/` now produces and verifies a SQLite result directly. The
+  longer workflow decision remains on `start/choose-a-workflow`.
+- The direct onboarding path separates initial apply from schema evolution and
+  CI drift detection.
+- The versioned quick start keeps one apply-and-verify path. Rollback, integrity
+  policy, generated migrations, and CI remain on their canonical task pages.
+- The default install page now ends with verified binaries and a next action.
+  Alternative methods and exhaustive installer options moved to
+  `start/install-options`.
+- The versioned landing now begins with the operational situation in which the
+  workflow matters. The direct landing already passed that test and retains its
+  structure.
+
 ### Findings that remain valid
 
-- The docs home repeats the product flow in several forms.
-- `/start/quick-start/` is a workflow selector, not a default tutorial.
-- The versioned, direct, and inference quick starts carry more than one reader
-  outcome and need a managed happy path.
-- Installation, general troubleshooting, AI Assist, AI agents, Atlas overview,
-  and database support mix independent documentation jobs.
+- The inference quick start still needs a disposable local provider fixture and
+  a managed happy path.
+- General troubleshooting, AI Assist, AI agents, Atlas overview, and database
+  support still mix independent documentation jobs.
 - Prose and wide reference content still share one `70rem` measure.
 - Schema visualization does not show the generated diagram, and the generated
   documentation and live schema pages do not show their browser output.
@@ -110,11 +126,11 @@ results are re-executed in the onboarding or examples phase.
 
 | Journey | Entry and decision | Canonical path | Current result |
 | --- | --- | --- | --- |
-| Install Ptah and get a first result | Home or `Start > Install Ptah`; choose an install route | `start/install` → `start/quick-start` | Discoverable; the first-result route still asks for another workflow decision. |
+| Install Ptah and get a first result | Home or `Start > Install Ptah`; run the default installer | `start/install` → `start/quick-start` | Complete: the tutorial applies and reads back a disposable SQLite schema in five primary steps. |
 | Choose versioned or direct schema changes | `Start > Choose a workflow`; decide how a change reaches the database | `start/choose-a-workflow` → `versioned/overview` or `direct/overview` | Discoverable in one decision. |
 | Adopt an existing database | `Start > Adopt an existing database`; choose baseline, import, or desired-schema adoption | `start/adopt-an-existing-database` → `direct/inspect` → versioned or direct task | Discoverable; command evidence must be refreshed when the page is edited. |
-| Generate and apply a migration | `Versioned migrations > Overview`; decide whether the migration is authored or generated | `versioned/overview` → `versioned/generate` → `versioned/apply` | Discoverable without entering reference. |
-| Detect and fix schema drift | `Direct schema changes > Overview`; decide whether the result is a CI gate or an apply | `direct/overview` → `direct/compare-and-drift` → `direct/plan-and-approve` or `direct/apply` | Discoverable; search ranking is not yet measured. |
+| Generate and apply a migration | `Versioned migrations > Overview`; decide whether the migration is authored or generated | `start/quick-start-migrations` or `versioned/overview` → `versioned/generate` → `versioned/apply` | Complete for an authored first migration; generated migrations remain a focused follow-up. |
+| Detect and fix schema drift | `Direct schema changes > Overview`; decide whether the result is a CI gate or an apply | `start/quick-start-direct` or `direct/overview` → `direct/compare-and-drift` → `direct/plan-and-approve` or `direct/apply` | Complete for the onboarding evolution and gate; search ranking is not yet measured. |
 | Migrate persistent inference state | `Inference migrations > Overview`; decide whether this lifecycle applies | `inference/overview` → `inference/quick-start` or a focused guide | Discoverable; the first tutorial still depends on an external model endpoint. |
 | Recover a failed inference migration | Copied error or inference sidebar | `inference/troubleshooting` → `inference/guides/resume-and-recover` | Symptom-oriented pages exist; copied-error search ranking is not yet measured. |
 | Check database and version support | `Databases > Database support matrix` | `databases/support-matrix` → engine page → `ptah db capabilities` | Correctness is generated and semantically gated in this phase. |
@@ -122,22 +138,20 @@ results are re-executed in the onboarding or examples phase.
 | Embed Ptah as Go packages | `Integrations > Go integration` | `extend/public-api` → `extend/components` → `extend/query-builder` | Discoverable without the CLI reference. |
 | Connect an AI client through MCP | `Integrations > AI and agents` | `operate/ai-agents` → native command reference | Discoverable; connection, security model, tool reference, and artifact protocol still share one page. |
 | Arrive from a copied error | Search | subsystem troubleshooting page → canonical task page | Stable error headings exist in inference troubleshooting; site-wide ranking is not yet tested. |
-| Add or move a documentation page | `AGENTS.md` and the documentation-maintenance skill | style guide → page metadata → sidebar → redirect ledger → inventory regeneration | Governed by build checks; the contributor instructions are updated in this phase. |
+| Add or move a documentation page | `AGENTS.md` and the documentation-maintenance skill | style guide → page metadata → sidebar → redirect ledger → inventory regeneration | Governed by build checks and the current contributor instructions. |
 
 ## Implementation sequence
 
 The remaining work stays split into reviewable phases:
 
-1. Onboarding: docs home, a true default quick start, focused workflow
-   tutorials, installation, and problem-first landing pages.
-2. Navigation and discoverability: validated information architecture,
+1. Navigation and discoverability: validated information architecture,
    breadcrumb links, page actions, edit and freshness affordances, aliases,
    ranking tests, and redirects.
-3. Visuals and examples: semantic diagrams, real product output, deterministic
+2. Visuals and examples: semantic diagrams, real product output, deterministic
    fixtures, example contracts, accessibility checks, and selected snapshots.
-4. Reference and compatibility: compact generated indexes, support
+3. Reference and compatibility: compact generated indexes, support
    policy/evidence separation, Atlas and AI page splits, and glossary scope.
-5. Editorial sweep: duplication, generic introductions, redundant shell tabs,
+4. Editorial sweep: duplication, generic introductions, redundant shell tabs,
    time-sensitive prose, width waivers, and the final desktop/mobile review.
 
 Each phase must leave the current routes buildable and preserve redirects for

@@ -395,10 +395,16 @@ once on its concept page and link; do not re-define them per page.
 
 - Runnable over pseudocode. Every example starts from a stated state and is
   copy-pasteable.
-- Fenced blocks always carry a language label: `bash`, `sql`, `yaml`, `hcl`,
-  `go`, or `text` for output.
-- Commands and expected output are separate blocks. Introduce output with
-  "Expected output includes".
+- Fenced blocks always carry a language label: `bash`, `powershell`, `console`,
+  `sql`, `yaml`, `hcl`, `go`, or `text` for output. In a page marked
+  `quickstart: true`, a `console` block outside shell tabs is a command the
+  acceptance runner executes in both Bash and PowerShell.
+- Commands and expected output are separate blocks. Introduce checkable output
+  with `Expected output ... on standard output:` or
+  `Expected output ... on standard error:` so the acceptance runner can attach
+  the assertion to the preceding command.
+- Do not publish identical Bash and PowerShell tabs. Use one `console` block
+  for a command that has the same bytes and semantics in both shells.
 - Placeholders are environment-variable style (`"$DATABASE_URL"`). Never real
   credentials, hosts, or tokens.
 - Prefer SQLite for examples that must run without a daemon.
