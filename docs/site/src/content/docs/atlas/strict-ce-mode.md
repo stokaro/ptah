@@ -24,7 +24,7 @@ overlaps:
   - "/atlas/overview/"
   - "/atlas/conformance/"
   - "/reference/extension-variables/"
-disposition: split
+disposition: keep
 ---
 
 Strict mode is a conformance profile for comparison with the pinned Atlas

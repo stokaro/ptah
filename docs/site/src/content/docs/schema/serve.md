@@ -14,7 +14,7 @@ generated: false
 overlaps:
   - "/schema/document/"
   - "/direct/compare-and-drift/"
-disposition: rewrite
+disposition: keep
 owns:
   - cli-ptah-schema-serve
 ---

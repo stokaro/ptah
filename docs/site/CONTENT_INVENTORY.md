@@ -95,11 +95,6 @@ landing page as an explicit child such as `Overview`.
   the page-action menu with the keyboard. A linked group heading or missing
   landing fails before merge.
 
-### Findings that remain valid
-
-- General troubleshooting still mixes unrelated symptoms.
-- Prose and wide reference content still share one `70rem` measure.
-
 ### Findings resolved in visuals and examples Phase 4
 
 - The product and inference raster diagrams were replaced by semantic,
@@ -136,6 +131,23 @@ landing page as an explicit child such as `Overview`.
   conformance terms from one registry instead of serving mainly as a support
   matrix tooltip demonstration.
 
+### Findings resolved in editorial Phase 6
+
+- General troubleshooting now routes by stable symptom and gives each entry a
+  likely cause, diagnosis, resolution, and verification. Inference and MCP
+  failures link to their focused symptom indexes.
+- Ordinary prose uses a `40rem` reading measure while code, diagrams, generated
+  matrices, and wide tables retain the `70rem` content shell. The responsive
+  gate measures the separation in the rendered site.
+- Atlas schema and migration command catalogs are classified as references,
+  not how-to guides. Completed split and rewrite dispositions now read `keep`.
+- Formulaic openings and one repeated schema-file-path paragraph were removed.
+  A new editorial check warns about long pages, mixed page types, generic first
+  paragraphs, and near-duplicate prose; twelve intentional long pages carry
+  specific, stale-checked waivers.
+- Identical tab panels are an objective failure. The existing Bash and
+  PowerShell tabs remain because their file creation or cleanup syntax differs.
+
 ### Audit recommendation deliberately rejected
 
 Sidebar group headings remain disclosure controls. A group does not sometimes
@@ -167,10 +179,9 @@ build and the inventory check.
 
 ## Reader-journey report
 
-The paths below are editorial acceptance criteria. The entry and canonical
-pages were verified against the current sidebar and link graph. A journey that
-depends on a runnable tutorial remains open until its commands and stable
-results are re-executed in the onboarding or examples phase.
+The paths below are editorial acceptance criteria. Their entry and canonical
+pages are verified against the current sidebar and link graph; runnable
+tutorials have separate acceptance checks for commands and stable results.
 
 | Journey | Entry and decision | Canonical path | Current result |
 | --- | --- | --- | --- |
@@ -185,15 +196,12 @@ results are re-executed in the onboarding or examples phase.
 | Migrate from Atlas | `Atlas compatibility > Overview`; decide default compatibility, strict CE, or native adoption | `atlas/overview` → `atlas/adoption`, `atlas/strict-ce-mode`, command, or evidence page | Complete: the landing routes the three surfaces without carrying command reference or strict-policy internals. |
 | Embed Ptah as Go packages | `Extend and integrate > Overview`; choose the Go API path | `extend/overview` → `extend/public-api` → `extend/components` → `extend/query-builder` | Discoverable without entering CLI reference. |
 | Connect an AI client through MCP | `Extend and integrate > Overview`; choose the AI client path | `extend/overview` → `operate/ai-agents` → `operate/ai-agent-connect` → permissions, patch workflow, or tool reference | Complete: setup, authority, changes, diagnostics, and exhaustive tool lookup are separate reader tasks. |
-| Arrive from a copied error | Search | subsystem troubleshooting page → canonical task page | Stable error headings exist; canonical checksum, recovery, and exit-code results are top-three gated. |
-| Add or move a documentation page | `AGENTS.md` and the documentation-maintenance skill | style guide → page metadata → sidebar → redirect ledger → inventory regeneration | Governed by build checks and the current contributor instructions. |
+| Arrive from a copied error | Search | subsystem troubleshooting page → canonical task page | Complete: general, inference, and AI-agent symptom indexes route to focused fixes; canonical checksum, recovery, and exit-code results are top-three gated. |
+| Add or move a documentation page | `AGENTS.md` and the documentation-maintenance skill | style guide → page metadata → sidebar → redirect ledger → inventory regeneration → editorial check | Governed by build checks, stale waiver detection, and the current contributor instructions. |
 
 ## Implementation sequence
 
-The remaining work stays split into reviewable phases:
-
-1. Editorial sweep: duplication, generic introductions, redundant shell tabs,
-   time-sensitive prose, width waivers, and the final desktop/mobile review.
-
-Each phase must leave the current routes buildable and preserve redirects for
-anything it moves.
+The restructuring is implemented as six stacked phases: governance,
+onboarding, navigation, visuals and examples, reference and compatibility, and
+the editorial sweep. Each phase leaves its target branch buildable. Published
+routes remain in the redirect ledger even when later work moves them.

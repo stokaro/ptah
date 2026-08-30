@@ -20,7 +20,7 @@ searchAliases:
 overlaps:
   - "/reference/capabilities/"
   - "/concepts/dialects-and-capabilities/"
-disposition: split
+disposition: keep
 owns:
   - cli-ptah-db-capabilities
 ---

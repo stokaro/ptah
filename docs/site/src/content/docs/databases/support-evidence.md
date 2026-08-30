@@ -23,7 +23,7 @@ searchAliases:
 overlaps:
   - "/databases/support-matrix/"
   - "/databases/support-policy/"
-disposition: split
+disposition: keep
 ---
 
 Ptah treats a support claim as a statement about executable evidence. A vendor

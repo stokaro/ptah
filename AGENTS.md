@@ -1019,6 +1019,10 @@ node docs/site/scripts/check-limitations.mjs --selftest
 node docs/site/scripts/check-limitations.mjs
 node docs/site/scripts/check-implementation-chronology.mjs --selftest
 node docs/site/scripts/check-implementation-chronology.mjs
+node docs/site/scripts/build-content-inventory.mjs --selftest
+node docs/site/scripts/build-content-inventory.mjs
+node docs/site/scripts/check-editorial-shape.mjs --selftest
+node docs/site/scripts/check-editorial-shape.mjs
 node docs/site/scripts/check-matrix-verdict-prose.mjs --selftest
 node docs/site/scripts/check-matrix-verdict-prose.mjs
 node docs/site/scripts/check-matrix-citations.mjs --selftest
@@ -1051,6 +1055,8 @@ npm run check:redirects:selftest && npm run check:redirects
 npm run check:route-retirement:selftest && npm run check:route-retirement
 npm run check:core-doc-links:selftest && npm run check:core-doc-links
 npm run check:page-health:selftest && npm run check:page-health
+npm run check:content-inventory:selftest && npm run check:content-inventory
+npm run check:editorial-shape:selftest && npm run check:editorial-shape
 npm run check:exit-codes:selftest && npm run check:exit-codes
 npm run check:navigation:selftest
 npm run check:search-ranking:selftest
@@ -1143,6 +1149,14 @@ command and flag inventories remain generator-owned and use the shared
 `.ptah-reference-filter` affordance for lookup; filtering must not remove rows
 from the source document. Product definitions live once in `src/glossary.ts`.
 
+The content shell stays `70rem` wide for code, diagrams, generated matrices,
+and wide tables. Ordinary prose stops at `40rem`; do not widen it to fit a
+reference artifact. `check:responsive` measures that separation.
+`check:editorial-shape` warns about page length, mixed-type signals, formulaic
+openings, and near-duplicate long paragraphs. A warning may be suppressed only
+by a current, reasoned entry in `scripts/data/editorial-waivers.json`; the check
+fails stale waivers and identical tab panels.
+
 Visual documentation has two different evidence paths. Authored explanatory
 diagrams are semantic SVG (or Mermaid, D2, or Graphviz source), never raster
 images containing generated text. PNGs are reserved for real browser UI and
@@ -1180,6 +1194,14 @@ deterministic provider and seeded database; the docs workflow runs
 `docs/site/scripts/check-inference-quick-start.sh` with an explicit Docker
 context and proves the active pointer after approval. The script cleans up only
 its named Compose project, volume, network, and locally built images.
+
+When the Docker context is remote, the CLI must reach the ports on that remote
+host rather than on local loopback:
+
+```bash
+PTAH_DOCKER_CONTEXT=remote-dev-container PTAH_FIXTURE_HOST=remote-dev \
+  docs/site/scripts/check-inference-quick-start.sh
+```
 
 Every top-level `examples/*` directory carries the seven-section reader
 contract named in `docs/STYLE_GUIDE.md`. Regenerate `examples/README.md` with

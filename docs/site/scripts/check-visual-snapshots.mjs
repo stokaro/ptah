@@ -14,7 +14,12 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const siteRoot = join(scriptDir, '..');
 const routes = [
   { route: '/', name: 'home', minimumImages: 1 },
+  { route: '/start/quick-start/', name: 'quick-start', minimumImages: 0 },
   { route: '/inference/overview/', name: 'inference-overview', minimumImages: 1 },
+  { route: '/databases/support-matrix/', name: 'support-matrix', minimumImages: 0 },
+  { route: '/operate/troubleshooting/', name: 'troubleshooting', minimumImages: 0 },
+  { route: '/reference/native-commands/', name: 'native-commands', minimumImages: 0 },
+  { route: '/atlas/overview/', name: 'atlas-overview', minimumImages: 0 },
   { route: '/schema/visualize/', name: 'schema-visualize', minimumImages: 1 },
   { route: '/schema/document/', name: 'schema-document', minimumImages: 1 },
   { route: '/schema/serve/', name: 'schema-serve', minimumImages: 2 },
@@ -36,7 +41,7 @@ function selftest() {
     process.exitCode = 1;
     return;
   }
-  if (routes.some(({ route, minimumImages }) => !route.startsWith('/') || minimumImages < 1)) {
+  if (routes.some(({ route, minimumImages }) => !route.startsWith('/') || minimumImages < 0)) {
     console.error('check-visual-snapshots.mjs --selftest: FAILED (invalid route contract)');
     process.exitCode = 1;
     return;

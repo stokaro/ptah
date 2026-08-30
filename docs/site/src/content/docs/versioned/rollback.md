@@ -21,9 +21,9 @@ owns:
 ---
 
 Something shipped that has to come back out, or a deploy is being unwound.
-This page shows how to roll back to an explicit target version, how to prove
-the rollback plan works before the target database is touched, and what the
-down-file contract guarantees.
+Roll back to an explicit target version, prove the plan on a shadow database
+before touching the target, and use the down-file contract to understand what
+Ptah can reverse.
 
 Prerequisites: a migration directory and a database with applied migrations.
 The examples use a local SQLite file with two applied migrations

@@ -269,4 +269,4 @@ Native `ptah migrations up` verifies a hashed directory the same way (exit `2`
 with Ptah's drift report) but applies a never-hashed directory unless
 `--verify-sum` is passed.
 
-This page is checked against the repository exit-code contract during docs CI.
+Docs CI checks these tables against the repository exit-code contract.

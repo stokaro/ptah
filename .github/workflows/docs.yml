@@ -119,6 +119,8 @@ jobs:
           node docs/site/scripts/check-implementation-chronology.mjs
           node docs/site/scripts/build-content-inventory.mjs --selftest
           node docs/site/scripts/build-content-inventory.mjs
+          node docs/site/scripts/check-editorial-shape.mjs --selftest
+          node docs/site/scripts/check-editorial-shape.mjs
           node docs/site/scripts/check-examples.mjs --selftest
           node docs/site/scripts/check-examples.mjs
           node docs/site/scripts/check-visual-assets.mjs --selftest
@@ -212,6 +214,8 @@ jobs:
           npm run check:page-health
           npm run check:content-inventory:selftest
           npm run check:content-inventory
+          npm run check:editorial-shape:selftest
+          npm run check:editorial-shape
           npm run check:support-matrix:selftest
           npm run check:support-matrix
           npm run check:exit-codes:selftest

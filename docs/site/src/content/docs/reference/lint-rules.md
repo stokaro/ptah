@@ -90,7 +90,7 @@ Two things follow from the declaration:
   A clean report with that line on stderr means the analysis was narrower than
   the directory allows, not that the directory is clean.
 
-`DD101` is the rule that reads the baseline today, for the add side of a column
+`DD101` reads the baseline for the add side of a column
 rename on the compatibility surface. The native surface models a rename as a
 rename, so it asks for no starting state and never prints the notice.
 
@@ -118,10 +118,10 @@ bottom of this page rather than left for a reader to notice.
 ## How the analysis is performed
 
 Three kinds of analyzer are worth telling apart, because they fail differently
-and because two of the three are not built. Nothing below is a plan; it is what
-the tree does today.
+and because two of the three are not built. The table records the behavior the
+rule registry and runners implement.
 
-| Kind | In Ptah today |
+| Kind | Ptah behavior |
 | --- | --- |
 | **Builtin** | Every rule on this page. It decides from what it is handed — the migration SQL, or the SQL file — and reaches no server and no other process. |
 | **Server-assisted** | One: the `baseline schema` input above, replayed onto the dev database `--dev-url` names. It is optional, and its absence is announced rather than absorbed. |

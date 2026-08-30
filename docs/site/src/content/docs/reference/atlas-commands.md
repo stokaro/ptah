@@ -13,12 +13,12 @@ generated: false
 overlaps:
   - "/reference/command-flags/"
   - "/reference/native-commands/"
-disposition: rewrite
+disposition: keep
 ---
 
-This page is the lookup reference for the Atlas-compatible surface: what each
-`ptah-compat <command>` does, where it differs from Atlas, and which inputs
-fail explicitly. Usage, flags, and worked examples live on
+The Atlas-compatible reference records what each `ptah-compat <command>` does,
+where it differs from Atlas, and which inputs fail explicitly. Usage, flags,
+and worked examples live on
 [Atlas migrate commands](../../atlas/migrate-commands/) and
 [Atlas schema commands](../../atlas/schema-commands/); the surfaces and
 translation model are on the
@@ -952,7 +952,7 @@ an Atlas CE stub.
 `?format=` on this verb's `--dir` URL is still refused; use `--dir-format`. CE
 aborts every `migrate checkpoint` invocation, so there is no CE behavior to
 diverge from here and refusing an unimplemented spelling loudly is the intended
-outcome. The eight verbs that accept a `--dir` query honor the parameter today;
+outcome. The eight verbs that accept a `--dir` query honor the parameter;
 `migrate diff` writes forward and reverse SQL in the selected layout.
 
 ### `ptah-compat migrate test [paths]`

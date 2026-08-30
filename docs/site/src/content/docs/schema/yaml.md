@@ -73,9 +73,8 @@ accepted wherever Ptah needs a desired schema: `ptah schema render`,
 documentation targets, so
 [a Markdown or HTML reference](../document/) can be generated from this file.
 
-Relative `--schema-file` inputs are confined to the process working directory
-after symbolic-link resolution; use an absolute pathname for an intentional
-source outside it, as detailed under [schema file paths](../../reference/native-commands/#schema-file-paths).
+Path confinement is shared by every `--schema-file` source; see
+[Schema file paths](../../reference/native-commands/#schema-file-paths).
 
 ## Use it
 

@@ -191,7 +191,7 @@ Atlas registers, so an unflagged Atlas pipeline gets an Atlas-format checkpoint
 back. The native command keeps `ptah` as its default. Pass `--dir-format ptah`
 on compat, or `--dir-format atlas` natively, to select the other convention.
 
-Reading Atlas-format checkpoints works today: a migration whose first line is
+Ptah reads Atlas-format checkpoints: a migration whose first line is
 the `-- atlas:checkpoint` file directive (as written by Atlas's own
 `migrate checkpoint`) gets the same semantics from both
 `ptah-compat migrate apply` and `ptah migrations up` — a fresh database

@@ -11,9 +11,9 @@
     "generated": 2,
     "byType": {
       "concept": 16,
-      "how-to": 54,
+      "how-to": 52,
       "landing": 12,
-      "reference": 29,
+      "reference": 31,
       "status": 8,
       "troubleshooting": 4,
       "tutorial": 3
@@ -60,8 +60,8 @@
         "/atlas/overview/",
         "/reference/configuration/"
       ],
-      "visibleWords": 1053,
-      "sourceBytes": 7957
+      "visibleWords": 1052,
+      "sourceBytes": 7951
     },
     {
       "path": "docs/site/src/content/docs/atlas/conformance.mdx",
@@ -175,8 +175,8 @@
         "/atlas/overview/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 4896,
-      "sourceBytes": 44837
+      "visibleWords": 4894,
+      "sourceBytes": 44830
     },
     {
       "path": "docs/site/src/content/docs/atlas/feature-matrix.md",
@@ -228,8 +228,8 @@
         "/operate/troubleshooting/",
         "/start/choose-a-workflow/"
       ],
-      "visibleWords": 8341,
-      "sourceBytes": 58664
+      "visibleWords": 8335,
+      "sourceBytes": 58638
     },
     {
       "path": "docs/site/src/content/docs/atlas/license-boundary.md",
@@ -274,13 +274,13 @@
       "description": "Run Atlas-style migration workflows with ptah-compat migrate apply, down, status, diff, lint, and the directory-maintenance verbs.",
       "sidebarPath": "Atlas compatibility > Commands and configuration",
       "sidebarLabel": null,
-      "type": "how-to",
+      "type": "reference",
       "audience": [
         "atlas-migrator",
         "evaluator"
       ],
-      "readerQuestion": "How do I run Atlas-style migration workflows with ptah-compat migrate apply, down, status, diff, lint, and the directory-maintenance verbs?",
-      "goal": "Complete an Atlas-style migration task with the matching `ptah-compat` verb.",
+      "readerQuestion": "What does each ptah-compat migrate verb accept, do, and return?",
+      "goal": "Look up the behavior and runnable form of an Atlas-compatible migration verb.",
       "sourceOfTruth": [
         "cmd/atlas",
         "internal/atlascompatpolicy"
@@ -319,7 +319,7 @@
         "/versioned/lint/"
       ],
       "visibleWords": 13955,
-      "sourceBytes": 97735
+      "sourceBytes": 97663
     },
     {
       "path": "docs/site/src/content/docs/atlas/output-and-redaction.md",
@@ -352,7 +352,7 @@
         "/atlas/migrate-commands/",
         "/atlas/schema-commands/"
       ],
-      "disposition": "split",
+      "disposition": "keep",
       "outboundLinks": [
         "/atlas/migrate-commands/",
         "/atlas/schema-commands/"
@@ -362,7 +362,7 @@
         "/atlas/schema-commands/"
       ],
       "visibleWords": 131,
-      "sourceBytes": 1706
+      "sourceBytes": 1705
     },
     {
       "path": "docs/site/src/content/docs/atlas/overview.md",
@@ -397,7 +397,7 @@
         "/atlas/strict-ce-mode/",
         "/reference/atlas-commands/"
       ],
-      "disposition": "split",
+      "disposition": "keep",
       "outboundLinks": [
         "/atlas/adoption/",
         "/atlas/conformance/",
@@ -427,7 +427,7 @@
         "/testing/migrations-and-schema/"
       ],
       "visibleWords": 497,
-      "sourceBytes": 4572
+      "sourceBytes": 4571
     },
     {
       "path": "docs/site/src/content/docs/atlas/project-config.md",
@@ -471,8 +471,8 @@
         "/schema/hcl/",
         "/schema/orm-and-external/"
       ],
-      "visibleWords": 6744,
-      "sourceBytes": 49235
+      "visibleWords": 6736,
+      "sourceBytes": 49203
     },
     {
       "path": "docs/site/src/content/docs/atlas/retained-divergences.md",
@@ -516,8 +516,8 @@
         "/atlas/strict-ce-mode/",
         "/reference/atlas-commands/"
       ],
-      "visibleWords": 6118,
-      "sourceBytes": 42373
+      "visibleWords": 6112,
+      "sourceBytes": 42347
     },
     {
       "path": "docs/site/src/content/docs/atlas/schema-commands.md",
@@ -526,13 +526,13 @@
       "description": "Inspect, diff, apply, plan, format, clean, and test schemas with the Atlas-style ptah-compat schema verbs.",
       "sidebarPath": "Atlas compatibility > Commands and configuration",
       "sidebarLabel": null,
-      "type": "how-to",
+      "type": "reference",
       "audience": [
         "atlas-migrator",
         "evaluator"
       ],
-      "readerQuestion": "How do I inspect, diff, apply, plan, format, clean, and test schemas with the Atlas-style ptah-compat schema verbs?",
-      "goal": "Complete an Atlas-style schema task with the matching `ptah-compat` verb.",
+      "readerQuestion": "What does each ptah-compat schema verb accept, do, and return?",
+      "goal": "Look up the behavior and runnable form of an Atlas-compatible schema verb.",
       "sourceOfTruth": [
         "cmd/atlas",
         "internal/atlascompatpolicy"
@@ -571,8 +571,8 @@
         "/reference/atlas-commands/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 12207,
-      "sourceBytes": 89156
+      "visibleWords": 12205,
+      "sourceBytes": 89085
     },
     {
       "path": "docs/site/src/content/docs/atlas/strict-ce-mode.md",
@@ -612,7 +612,7 @@
         "/atlas/conformance/",
         "/reference/extension-variables/"
       ],
-      "disposition": "split",
+      "disposition": "keep",
       "outboundLinks": [
         "/atlas/conformance/",
         "/atlas/feature-matrix/",
@@ -625,7 +625,7 @@
         "/reference/extension-variables/"
       ],
       "visibleWords": 416,
-      "sourceBytes": 3904
+      "sourceBytes": 3903
     },
     {
       "path": "docs/site/src/content/docs/concepts/database-urls-and-dev-databases.md",
@@ -1197,7 +1197,7 @@
         "/databases/support-matrix/",
         "/databases/support-policy/"
       ],
-      "disposition": "split",
+      "disposition": "keep",
       "outboundLinks": [
         "/databases/support-matrix/"
       ],
@@ -1205,7 +1205,7 @@
         "/databases/support-matrix/"
       ],
       "visibleWords": 644,
-      "sourceBytes": 5476
+      "sourceBytes": 5475
     },
     {
       "path": "docs/site/src/content/docs/databases/support-matrix.md",
@@ -1243,7 +1243,7 @@
         "/reference/capabilities/",
         "/concepts/dialects-and-capabilities/"
       ],
-      "disposition": "split",
+      "disposition": "keep",
       "outboundLinks": [
         "/concepts/database-urls-and-dev-databases/",
         "/databases/clickhouse/",
@@ -1273,7 +1273,7 @@
         "/reference/capabilities/"
       ],
       "visibleWords": 850,
-      "sourceBytes": 7913
+      "sourceBytes": 7912
     },
     {
       "path": "docs/site/src/content/docs/databases/support-policy.md",
@@ -1306,7 +1306,7 @@
         "/databases/support-matrix/",
         "/concepts/dialects-and-capabilities/"
       ],
-      "disposition": "split",
+      "disposition": "keep",
       "outboundLinks": [
         "/concepts/dialects-and-capabilities/",
         "/databases/support-matrix/",
@@ -1316,7 +1316,7 @@
         "/databases/support-matrix/"
       ],
       "visibleWords": 518,
-      "sourceBytes": 4346
+      "sourceBytes": 4345
     },
     {
       "path": "docs/site/src/content/docs/direct/apply.md",
@@ -1618,8 +1618,8 @@
         "/extend/public-api/",
         "/versioned/lint/"
       ],
-      "visibleWords": 2426,
-      "sourceBytes": 24043
+      "visibleWords": 2425,
+      "sourceBytes": 24017
     },
     {
       "path": "docs/site/src/content/docs/extend/overview.mdx",
@@ -1872,7 +1872,7 @@
         "/inference/overview/"
       ],
       "visibleWords": 604,
-      "sourceBytes": 4094
+      "sourceBytes": 4133
     },
     {
       "path": "docs/site/src/content/docs/inference/concepts/generations.md",
@@ -2314,7 +2314,7 @@
         "/inference/guides/create-first-generation/",
         "/inference/concepts/lifecycle/"
       ],
-      "disposition": "rewrite",
+      "disposition": "keep",
       "outboundLinks": [
         "/inference/concepts/generations/",
         "/inference/guides/migrate-to-another-model/",
@@ -2325,7 +2325,7 @@
         "/inference/overview/"
       ],
       "visibleWords": 466,
-      "sourceBytes": 6365
+      "sourceBytes": 6362
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/commands.md",
@@ -2476,8 +2476,8 @@
       "inboundLinks": [
         "/inference/overview/"
       ],
-      "visibleWords": 689,
-      "sourceBytes": 5157
+      "visibleWords": 675,
+      "sourceBytes": 5094
     },
     {
       "path": "docs/site/src/content/docs/inference/strategies/choose-a-consistency-mode.md",
@@ -2683,7 +2683,8 @@
         "/inference/strategies/plan-provider-capacity/"
       ],
       "inboundLinks": [
-        "/inference/overview/"
+        "/inference/overview/",
+        "/operate/troubleshooting/"
       ],
       "visibleWords": 790,
       "sourceBytes": 5605
@@ -2720,13 +2721,13 @@
         "/operate/ai-agent-permissions/",
         "/reference/mcp-tools/"
       ],
-      "disposition": "split",
+      "disposition": "keep",
       "outboundLinks": [],
       "inboundLinks": [
         "/operate/ai-agents/"
       ],
       "visibleWords": 438,
-      "sourceBytes": 3998
+      "sourceBytes": 3997
     },
     {
       "path": "docs/site/src/content/docs/operate/ai-agent-connect.md",
@@ -2759,7 +2760,7 @@
       "overlaps": [
         "/operate/ai-agents/"
       ],
-      "disposition": "split",
+      "disposition": "keep",
       "outboundLinks": [
         "/operate/ai-agent-permissions/"
       ],
@@ -2767,7 +2768,7 @@
         "/operate/ai-agents/"
       ],
       "visibleWords": 274,
-      "sourceBytes": 3106
+      "sourceBytes": 3105
     },
     {
       "path": "docs/site/src/content/docs/operate/ai-agent-permissions.md",
@@ -2800,7 +2801,7 @@
         "/operate/ai-agents/",
         "/operate/ai-agent-changes/"
       ],
-      "disposition": "split",
+      "disposition": "keep",
       "outboundLinks": [],
       "inboundLinks": [
         "/operate/ai-agent-connect/",
@@ -2809,7 +2810,7 @@
         "/reference/mcp-tools/"
       ],
       "visibleWords": 409,
-      "sourceBytes": 4863
+      "sourceBytes": 4862
     },
     {
       "path": "docs/site/src/content/docs/operate/ai-agent-troubleshooting.md",
@@ -2844,14 +2845,15 @@
         "/operate/ai-agent-permissions/",
         "/reference/mcp-tools/"
       ],
-      "disposition": "split",
+      "disposition": "keep",
       "outboundLinks": [],
       "inboundLinks": [
         "/operate/ai-agents/",
+        "/operate/troubleshooting/",
         "/reference/mcp-tools/"
       ],
       "visibleWords": 543,
-      "sourceBytes": 4444
+      "sourceBytes": 4443
     },
     {
       "path": "docs/site/src/content/docs/operate/ai-agents.md",
@@ -2886,7 +2888,7 @@
         "/operate/ai-assist/",
         "/operate/ai-agent-connect/"
       ],
-      "disposition": "split",
+      "disposition": "keep",
       "outboundLinks": [
         "/operate/ai-agent-changes/",
         "/operate/ai-agent-connect/",
@@ -2902,7 +2904,7 @@
         "/reference/native-commands/"
       ],
       "visibleWords": 417,
-      "sourceBytes": 3890
+      "sourceBytes": 3889
     },
     {
       "path": "docs/site/src/content/docs/operate/ai-assist-providers.md",
@@ -2939,14 +2941,14 @@
       "overlaps": [
         "/operate/ai-assist/"
       ],
-      "disposition": "split",
+      "disposition": "keep",
       "outboundLinks": [],
       "inboundLinks": [
         "/operate/ai-agents/",
         "/operate/ai-assist/"
       ],
       "visibleWords": 547,
-      "sourceBytes": 5195
+      "sourceBytes": 5194
     },
     {
       "path": "docs/site/src/content/docs/operate/ai-assist-sessions.md",
@@ -2984,13 +2986,13 @@
       "overlaps": [
         "/operate/ai-assist/"
       ],
-      "disposition": "split",
+      "disposition": "keep",
       "outboundLinks": [],
       "inboundLinks": [
         "/operate/ai-assist/"
       ],
       "visibleWords": 261,
-      "sourceBytes": 2659
+      "sourceBytes": 2658
     },
     {
       "path": "docs/site/src/content/docs/operate/ai-assist.md",
@@ -3028,7 +3030,7 @@
         "/operate/ai-assist-providers/",
         "/operate/ai-assist-sessions/"
       ],
-      "disposition": "split",
+      "disposition": "keep",
       "outboundLinks": [
         "/operate/ai-agent-permissions/",
         "/operate/ai-assist-providers/",
@@ -3040,7 +3042,7 @@
         "/reference/native-commands/"
       ],
       "visibleWords": 387,
-      "sourceBytes": 4072
+      "sourceBytes": 4071
     },
     {
       "path": "docs/site/src/content/docs/operate/oci-registry.md",
@@ -3211,11 +3213,14 @@
       "evidence": [],
       "searchAliases": [],
       "overlaps": [],
-      "disposition": "split",
+      "disposition": "keep",
       "outboundLinks": [
         "/atlas/conformance/",
         "/atlas/feature-matrix/",
         "/atlas/project-config/",
+        "/inference/troubleshooting/",
+        "/operate/ai-agent-troubleshooting/",
+        "/reference/atlas-commands/",
         "/reference/capabilities/"
       ],
       "inboundLinks": [
@@ -3229,8 +3234,8 @@
         "/start/install/",
         "/testing/ci/"
       ],
-      "visibleWords": 431,
-      "sourceBytes": 4455
+      "visibleWords": 959,
+      "sourceBytes": 8497
     },
     {
       "path": "docs/site/src/content/docs/reference/atlas-commands.md",
@@ -3260,7 +3265,7 @@
         "/reference/command-flags/",
         "/reference/native-commands/"
       ],
-      "disposition": "rewrite",
+      "disposition": "keep",
       "outboundLinks": [
         "/atlas/conformance/",
         "/atlas/migrate-commands/",
@@ -3279,12 +3284,13 @@
         "/atlas/migrate-commands/",
         "/atlas/overview/",
         "/atlas/schema-commands/",
+        "/operate/troubleshooting/",
         "/reference/command-flags/",
         "/reference/extension-variables/",
         "/reference/native-commands/"
       ],
-      "visibleWords": 14293,
-      "sourceBytes": 99316
+      "visibleWords": 14286,
+      "sourceBytes": 99278
     },
     {
       "path": "docs/site/src/content/docs/reference/capabilities.mdx",
@@ -3333,8 +3339,8 @@
         "/operate/troubleshooting/",
         "/reference/go-annotations/"
       ],
-      "visibleWords": 1603,
-      "sourceBytes": 11572
+      "visibleWords": 1602,
+      "sourceBytes": 11573
     },
     {
       "path": "docs/site/src/content/docs/reference/command-flags.md",
@@ -3367,7 +3373,7 @@
         "/reference/native-commands/",
         "/reference/atlas-commands/"
       ],
-      "disposition": "rewrite",
+      "disposition": "keep",
       "outboundLinks": [
         "/reference/atlas-commands/",
         "/reference/native-commands/"
@@ -3376,8 +3382,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8335,
-      "sourceBytes": 77274
+      "visibleWords": 8331,
+      "sourceBytes": 77257
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",
@@ -3481,8 +3487,8 @@
         "/testing/ci/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 3001,
-      "sourceBytes": 21863
+      "visibleWords": 2999,
+      "sourceBytes": 21855
     },
     {
       "path": "docs/site/src/content/docs/reference/extension-variables.md",
@@ -3550,11 +3556,11 @@
       "evidence": [],
       "searchAliases": [],
       "overlaps": [],
-      "disposition": "rewrite",
+      "disposition": "keep",
       "outboundLinks": [],
       "inboundLinks": [],
       "visibleWords": 470,
-      "sourceBytes": 4786
+      "sourceBytes": 4783
     },
     {
       "path": "docs/site/src/content/docs/reference/go-annotations.md",
@@ -3603,8 +3609,8 @@
         "/schema/overview/",
         "/start/install-options/"
       ],
-      "visibleWords": 3866,
-      "sourceBytes": 31278
+      "visibleWords": 3867,
+      "sourceBytes": 31282
     },
     {
       "path": "docs/site/src/content/docs/reference/hcl-schema.md",
@@ -3647,8 +3653,8 @@
         "/schema/hcl/",
         "/schema/overview/"
       ],
-      "visibleWords": 1855,
-      "sourceBytes": 15109
+      "visibleWords": 1834,
+      "sourceBytes": 14958
     },
     {
       "path": "docs/site/src/content/docs/reference/lint-rules.md",
@@ -3691,8 +3697,8 @@
         "/schema/security/",
         "/versioned/lint/"
       ],
-      "visibleWords": 3915,
-      "sourceBytes": 26448
+      "visibleWords": 3908,
+      "sourceBytes": 26439
     },
     {
       "path": "docs/site/src/content/docs/reference/mcp-tools.md",
@@ -3726,7 +3732,7 @@
         "/operate/ai-agent-connect/",
         "/operate/ai-agent-changes/"
       ],
-      "disposition": "split",
+      "disposition": "keep",
       "outboundLinks": [
         "/operate/ai-agent-permissions/",
         "/operate/ai-agent-troubleshooting/"
@@ -3734,8 +3740,8 @@
       "inboundLinks": [
         "/operate/ai-agents/"
       ],
-      "visibleWords": 572,
-      "sourceBytes": 4833
+      "visibleWords": 568,
+      "sourceBytes": 4804
     },
     {
       "path": "docs/site/src/content/docs/reference/native-commands.md",
@@ -3765,7 +3771,7 @@
         "/reference/command-flags/",
         "/reference/atlas-commands/"
       ],
-      "disposition": "rewrite",
+      "disposition": "keep",
       "outboundLinks": [
         "/direct/plan-and-approve/",
         "/inference/overview/",
@@ -3803,8 +3809,8 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 7097,
-      "sourceBytes": 48060
+      "visibleWords": 7081,
+      "sourceBytes": 47966
     },
     {
       "path": "docs/site/src/content/docs/reference/overview.mdx",
@@ -4051,7 +4057,7 @@
         "/schema/visualize/",
         "/schema/serve/"
       ],
-      "disposition": "rewrite",
+      "disposition": "keep",
       "outboundLinks": [
         "/reference/exit-codes/",
         "/schema/composite/",
@@ -4076,7 +4082,7 @@
         "/schema/yaml/"
       ],
       "visibleWords": 1340,
-      "sourceBytes": 11515
+      "sourceBytes": 11512
     },
     {
       "path": "docs/site/src/content/docs/schema/export.md",
@@ -4128,8 +4134,8 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 3558,
-      "sourceBytes": 27278
+      "visibleWords": 3553,
+      "sourceBytes": 27250
     },
     {
       "path": "docs/site/src/content/docs/schema/go-annotations.md",
@@ -4229,8 +4235,8 @@
         "/schema/go-annotations/",
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 369,
-      "sourceBytes": 4315
+      "visibleWords": 352,
+      "sourceBytes": 4188
     },
     {
       "path": "docs/site/src/content/docs/schema/lineage.md",
@@ -4492,7 +4498,7 @@
         "/schema/document/",
         "/direct/compare-and-drift/"
       ],
-      "disposition": "rewrite",
+      "disposition": "keep",
       "outboundLinks": [
         "/direct/apply/",
         "/direct/compare-and-drift/",
@@ -4506,7 +4512,7 @@
         "/reference/native-commands/"
       ],
       "visibleWords": 1386,
-      "sourceBytes": 10509
+      "sourceBytes": 10506
     },
     {
       "path": "docs/site/src/content/docs/schema/sql.md",
@@ -4550,8 +4556,8 @@
         "/schema/go-annotations/",
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 706,
-      "sourceBytes": 6411
+      "visibleWords": 689,
+      "sourceBytes": 6284
     },
     {
       "path": "docs/site/src/content/docs/schema/stats.md",
@@ -4677,7 +4683,7 @@
         "/schema/document/",
         "/schema/serve/"
       ],
-      "disposition": "rewrite",
+      "disposition": "keep",
       "outboundLinks": [
         "/operate/troubleshooting/",
         "/reference/native-commands/",
@@ -4696,8 +4702,8 @@
         "/schema/security/",
         "/schema/stats/"
       ],
-      "visibleWords": 719,
-      "sourceBytes": 6676
+      "visibleWords": 718,
+      "sourceBytes": 6667
     },
     {
       "path": "docs/site/src/content/docs/schema/work-with-a-source.mdx",
@@ -4800,8 +4806,8 @@
         "/schema/go-annotations/",
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 252,
-      "sourceBytes": 3324
+      "visibleWords": 235,
+      "sourceBytes": 3197
     },
     {
       "path": "docs/site/src/content/docs/start/adopt-an-existing-database.mdx",
@@ -5379,8 +5385,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 4285,
-      "sourceBytes": 31488
+      "visibleWords": 4279,
+      "sourceBytes": 31459
     },
     {
       "path": "docs/site/src/content/docs/versioned/checkpoints.md",
@@ -5421,8 +5427,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 1315,
-      "sourceBytes": 9950
+      "visibleWords": 1314,
+      "sourceBytes": 9941
     },
     {
       "path": "docs/site/src/content/docs/versioned/generate.md",
@@ -5643,8 +5649,8 @@
         "/versioned/integrity-and-safety/",
         "/versioned/overview/"
       ],
-      "visibleWords": 2462,
-      "sourceBytes": 18494
+      "visibleWords": 2451,
+      "sourceBytes": 18445
     },
     {
       "path": "docs/site/src/content/docs/versioned/maintain-history.md",
@@ -5845,8 +5851,8 @@
         "/versioned/maintain-history/",
         "/versioned/overview/"
       ],
-      "visibleWords": 1727,
-      "sourceBytes": 13422
+      "visibleWords": 1725,
+      "sourceBytes": 13411
     }
   ]
 }

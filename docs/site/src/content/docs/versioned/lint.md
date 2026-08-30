@@ -18,9 +18,8 @@ owns:
 ---
 
 Some SQL is legal and still wrong to run against a database people depend on.
-This page shows how Ptah reports those statements before they run, how you set
-the policy that decides which of them block a release, and what the apply-time
-destructive gate does with that policy.
+Ptah reports those statements before they run. You define which findings block
+a release and carry that policy into the apply-time destructive gate.
 
 Prerequisites: a migration directory (see
 [Generate migrations](../generate/)). Whether that directory is the one you

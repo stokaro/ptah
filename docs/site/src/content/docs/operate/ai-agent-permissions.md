@@ -16,7 +16,7 @@ searchAliases:
 overlaps:
   - "/operate/ai-agents/"
   - "/operate/ai-agent-changes/"
-disposition: split
+disposition: keep
 ---
 
 Every Ptah tool asks the capability policy before doing work. Authority comes

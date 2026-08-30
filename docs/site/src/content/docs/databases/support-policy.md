@@ -16,7 +16,7 @@ searchAliases:
 overlaps:
   - "/databases/support-matrix/"
   - "/concepts/dialects-and-capabilities/"
-disposition: split
+disposition: keep
 ---
 
 A support level says how much Ptah testing stands behind one database release

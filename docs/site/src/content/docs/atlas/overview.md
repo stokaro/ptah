@@ -18,7 +18,7 @@ overlaps:
   - "/atlas/adoption/"
   - "/atlas/strict-ce-mode/"
   - "/reference/atlas-commands/"
-disposition: split
+disposition: keep
 ---
 
 Ptah serves two migration paths. New projects use the native `ptah` command

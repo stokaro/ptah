@@ -92,9 +92,8 @@ every target of [`ptah schema export`](../export/#sources) except `hcl`, whose
 source is `--root-dir`. That includes the two documentation targets, so
 [a Markdown or HTML reference](../document/) can be generated from this file.
 
-Relative `--schema-file` inputs are confined to the process working directory
-after symbolic-link resolution; use an absolute pathname for an intentional
-source outside it, as detailed under [schema file paths](../../reference/native-commands/#schema-file-paths).
+Path confinement is shared by every `--schema-file` source; see
+[Schema file paths](../../reference/native-commands/#schema-file-paths).
 
 To replace Go annotations with an HCL source, use the review-aware one-time
 export workflow in [Go annotations](../go-annotations/#move-the-schema-to-hcl).

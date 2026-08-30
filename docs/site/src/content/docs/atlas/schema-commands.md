@@ -1,12 +1,12 @@
 ---
 title: Atlas schema commands
 description: Inspect, diff, apply, plan, format, clean, and test schemas with the Atlas-style ptah-compat schema verbs.
-type: how-to
+type: reference
 audience:
   - "atlas-migrator"
   - "evaluator"
-readerQuestion: "How do I inspect, diff, apply, plan, format, clean, and test schemas with the Atlas-style ptah-compat schema verbs?"
-goal: "Complete an Atlas-style schema task with the matching `ptah-compat` verb."
+readerQuestion: "What does each ptah-compat schema verb accept, do, and return?"
+goal: "Look up the behavior and runnable form of an Atlas-compatible schema verb."
 sourceOfTruth:
   - "cmd/atlas"
   - "internal/atlascompatpolicy"
@@ -1652,8 +1652,8 @@ files alone still require `--dev-url` for dialect selection. With `--env`,
 Ptah can read `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`,
 `format.schema.diff`, and supported `diff` policy from `atlas.hcl`.
 
-The current implementation does not execute Atlas's dev-database simulation;
-the dev URL selects the dialect and hosts migration-directory replays.
+Ptah does not execute Atlas's dev-database simulation. The dev URL selects the
+dialect and hosts migration-directory replays.
 
 PostgreSQL-family server namespaces are not migration-managed desired state.
 An authored `schema "pg_catalog" {}`, `schema "information_schema" {}`, or

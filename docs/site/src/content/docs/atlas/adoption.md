@@ -162,7 +162,7 @@ Without `--check`, the compat-only spellings are rewritten in place and
 everything else in the file is left byte for byte as it was. A project declaring
 anything `unsupported` is refused rather than half-converted.
 
-One compat-only spelling today is the `atlas://` migration-directory reference,
+One compat-only spelling is the `atlas://` migration-directory reference,
 which becomes an `oci://` reference to the same artifact. It needs somewhere to
 point: set `PTAH_ATLAS_REGISTRY` to the registry namespace holding your
 directories, and the rewrite names it. Without it the analysis reports the gap

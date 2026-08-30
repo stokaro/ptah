@@ -15,9 +15,9 @@ overlaps: []
 disposition: keep
 ---
 
-This page defines the words the rest of this area uses. If you already know what
-an embedding is, skip to [Inference state](#inference-state), which is the term
-that is specific to Ptah.
+Ptah keeps model-derived vectors separate from application rows and tracks each
+replacement as inference state. If you already know what an embedding is, skip
+to [Inference state](#inference-state), the term specific to Ptah.
 
 ## Embedding
 

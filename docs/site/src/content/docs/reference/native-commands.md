@@ -13,14 +13,13 @@ generated: false
 overlaps:
   - "/reference/command-flags/"
   - "/reference/atlas-commands/"
-disposition: rewrite
+disposition: keep
 ---
 
-This page is the lookup reference for the native `ptah` surface: every command
-path the binary answers to, and the per-verb detail a table cannot carry. Native
-commands use Ptah-owned spellings; Atlas aliases are intentionally absent from
-the `ptah` binary. The Atlas-compatible surface — the separate `ptah-compat`
-drop-in binary — has its own page:
+The native `ptah` surface uses Ptah-owned spellings; Atlas aliases are
+intentionally absent from this binary. The index below contains every command
+path it answers to, followed by per-verb details. The separate `ptah-compat`
+drop-in binary has its own reference:
 [Atlas-compatible commands](../atlas-commands/).
 
 ## Every native verb
