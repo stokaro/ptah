@@ -6,12 +6,12 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 127,
-    "authored": 125,
+    "pages": 128,
+    "authored": 126,
     "generated": 2,
     "byType": {
       "concept": 16,
-      "how-to": 53,
+      "how-to": 54,
       "landing": 12,
       "reference": 31,
       "status": 8,
@@ -2018,7 +2018,9 @@
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [],
-      "inboundLinks": [],
+      "inboundLinks": [
+        "/inference/guides/configure-a-provider/"
+      ],
       "visibleWords": 425,
       "sourceBytes": 3258
     },
@@ -2054,8 +2056,45 @@
       "inboundLinks": [
         "/inference/concepts/generations/"
       ],
-      "visibleWords": 699,
-      "sourceBytes": 5250
+      "visibleWords": 759,
+      "sourceBytes": 5648
+    },
+    {
+      "path": "docs/site/src/content/docs/inference/guides/configure-a-provider.md",
+      "route": "/inference/guides/configure-a-provider/",
+      "title": "Configure an embedding provider",
+      "description": "Naming an endpoint, pointing at a credential without holding one, and measuring the whole of it before a source row leaves.",
+      "sidebarPath": "Inference migrations > Guides",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "How do I configure and check the embedding endpoint a generation uses?",
+      "goal": "Configure an embedding endpoint and check it before running a migration.",
+      "sourceOfTruth": [
+        "internal/embedprovider",
+        "cmd/inference/probe.go"
+      ],
+      "owns": [
+        "cli-ptah-inference-probe"
+      ],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/inference/concepts/security-and-data-boundaries/",
+        "/inference/strategies/plan-provider-capacity/"
+      ],
+      "inboundLinks": [],
+      "visibleWords": 675,
+      "sourceBytes": 5745
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/create-first-generation.md",
@@ -2440,7 +2479,6 @@
       ],
       "owns": [
         "cli-ptah-inference-describe",
-        "cli-ptah-inference-probe",
         "cli-ptah-inference-plan",
         "cli-ptah-inference-prepare",
         "cli-ptah-inference-backfill",
@@ -2471,7 +2509,7 @@
         "/inference/concepts/embeddings-and-inference-state/"
       ],
       "visibleWords": 2031,
-      "sourceBytes": 15087
+      "sourceBytes": 15058
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/run-status-and-findings.md",
@@ -2682,6 +2720,7 @@
       "disposition": "keep",
       "outboundLinks": [],
       "inboundLinks": [
+        "/inference/guides/configure-a-provider/",
         "/inference/guides/create-first-generation/",
         "/inference/guides/resume-and-recover/",
         "/inference/troubleshooting/"

@@ -53,6 +53,13 @@ For quality, `ptah inference evaluate` measures retrieval against a corpus of
 questions and expected answers that you write. It is a separate command because
 it needs input Ptah cannot derive.
 
+Neither of them proves your application is correct. What a passing run
+establishes is narrower and worth stating in full: Ptah verified the configured
+structural, freshness, consistency and retrieval-evaluation conditions for the
+exact recorded generation. Whether the answers that corpus returns are the ones
+your users should get is a question about your application, and no check here
+asks it.
+
 ## A cutover binds to a plan
 
 Run `cutover` with no approval and it refuses, printing the digest of the plan it

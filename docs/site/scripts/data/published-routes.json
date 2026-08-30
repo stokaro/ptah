@@ -50,6 +50,7 @@
   "/inference/concepts/lifecycle/",
   "/inference/concepts/security-and-data-boundaries/",
   "/inference/concepts/verification-and-cutover/",
+  "/inference/guides/configure-a-provider/",
   "/inference/guides/create-first-generation/",
   "/inference/guides/migrate-a-live-table/",
   "/inference/guides/migrate-a-paused-source/",

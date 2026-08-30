@@ -15,7 +15,6 @@ overlaps: []
 disposition: keep
 owns:
   - cli-ptah-inference-describe
-  - cli-ptah-inference-probe
   - cli-ptah-inference-plan
   - cli-ptah-inference-prepare
   - cli-ptah-inference-backfill
