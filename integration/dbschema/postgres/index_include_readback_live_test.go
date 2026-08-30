@@ -44,20 +44,24 @@ func TestReaderIndexInclude_LiveCarriesPayloadAndAcceptedAccessMethod(t *testing
 		engine dbtarget.Engine
 		want   []observedIncludeIndex
 	}{
+		// The method each engine names for its own default index, and the row
+		// that separates a per-dialect rewrite from a blanket one. Measured:
+		// PostgreSQL 18 and YugabyteDB report a name they also accept as input,
+		// and CockroachDB reports `prefix`, which it refuses.
 		{
 			name:   "PostgreSQL",
 			engine: dbtarget.PostgreSQL,
-			want:   expectedIncludeIndexes(),
+			want:   expectedIncludeIndexes("btree"),
 		},
 		{
 			name:   "CockroachDB",
 			engine: dbtarget.CockroachDB,
-			want:   expectedIncludeIndexes(),
+			want:   expectedIncludeIndexes("btree"),
 		},
 		{
 			name:   "YugabyteDB",
 			engine: dbtarget.YugabyteDB,
-			want:   expectedIncludeIndexes(),
+			want:   expectedIncludeIndexes("lsm"),
 		},
 	}
 
@@ -170,9 +174,9 @@ func TestReadDescribesCoveringIndex_Live(t *testing.T) {
 	}
 }
 
-func expectedIncludeIndexes() []observedIncludeIndex {
+func expectedIncludeIndexes(method string) []observedIncludeIndex {
 	return []observedIncludeIndex{
-		{Name: "idx_covering_email", Method: "btree", IncludeColumns: []string{"display_name"}},
+		{Name: "idx_covering_email", Method: method, IncludeColumns: []string{"display_name"}},
 	}
 }
 
