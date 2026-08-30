@@ -1,3 +1,4 @@
+// Package models contains annotated schema-source fixtures for documentation tests.
 package models
 
 //ptah:schema:table name="authors"
