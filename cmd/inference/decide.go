@@ -190,8 +190,9 @@ func runCutover(
 	}
 	defer opened.close()
 
+	now := time.Now().UTC()
 	plan, observed, err := embedreport.BuildCutoverPlan(
-		ctx, opened.db, opened.store, opened.loaded, run, report)
+		ctx, opened.db, opened.store, opened.loaded, run, report, now)
 	if err != nil {
 		return err
 	}
@@ -207,7 +208,6 @@ func runCutover(
 		return refusal(out, "cutover refused", decision.Blockers)
 	}
 
-	now := time.Now().UTC()
 	if err := opened.store.MovePointer(ctx, embedstore.Pointer{
 		TargetTable: opened.loaded.Spec.Target.Table, Active: plan.Generation,
 		Previous: plan.Previous, CutOverAt: now,

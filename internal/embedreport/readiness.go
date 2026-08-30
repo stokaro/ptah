@@ -100,11 +100,10 @@ func ReadReadiness(
 			"["+string(finding.Layer)+"/"+string(finding.Severity)+"] "+finding.Summary)
 	}
 
-	plan, observed, err := BuildCutoverPlan(ctx, db, store, loaded, run, report)
+	plan, observed, err := BuildCutoverPlan(ctx, db, store, loaded, run, report, now)
 	if err != nil {
 		return Readiness{}, err
 	}
-	observed.Now = now.UTC()
 	assessed := embedcutover.AssessReadiness(plan, loaded.Policy, observed)
 	readiness.CutoverReady = assessed.Ready
 	readiness.Blockers = assessed.Blockers
@@ -160,9 +159,14 @@ func VerifyGeneration(
 }
 
 // BuildCutoverPlan assembles the plan and what is true now.
+//
+// The moment is a parameter rather than a clock read here, so that a caller
+// deciding and then acting -- or asking twice, as a readiness check and a
+// cutover do -- measures one instant rather than two that drift apart between
+// the plan's staleness check and the record it writes.
 func BuildCutoverPlan(
 	ctx context.Context, db *sql.DB, store *embedpg.Store,
-	loaded embedspec.Loaded, run embedrun.Run, report embedverify.Report,
+	loaded embedspec.Loaded, run embedrun.Run, report embedverify.Report, now time.Time,
 ) (embedcutover.Plan, embedcutover.Observed, error) {
 	spec := loaded.Spec
 	active := ActivePointer(ctx, store, spec.Target.Table)
@@ -221,7 +225,7 @@ func BuildCutoverPlan(
 		ActivePointer: active, ConsistencyWatermark: run.CatchUpWatermark,
 		IndexReady:  ready,
 		Permissions: []embedcutover.Permission{embedcutover.PermissionCutover},
-		Now:         time.Now().UTC(),
+		Now:         now.UTC(),
 	}, nil
 }
 
