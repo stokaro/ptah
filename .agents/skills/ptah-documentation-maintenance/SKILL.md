@@ -212,9 +212,12 @@ Match the discipline, not the product structure exactly:
 - Show expected output or verification commands when the result can be checked.
 - Use comparison tables for command parity, feature support, config precedence,
   or dialect behavior when prose would be ambiguous.
-- Keep prose inside the site's `40rem` reading measure. Tables, code, diagrams,
-  and explicit `.ptah-wide-content` blocks may use the `70rem` page measure;
-  never widen ordinary paragraphs for a reference artifact.
+- Keep prose inside the site's `60rem` reading measure and aligned with the
+  `70rem` content shell's left edge. Tables, code, diagrams, and explicit
+  `.ptah-wide-content` blocks may use the full page measure; never widen
+  ordinary paragraphs for a reference artifact. On ultra-wide two-rail pages,
+  additional space belongs between the content shell and the right rail after
+  the left gutter reaches the navigation rail's width.
 - Add troubleshooting notes for likely failure modes.
 - Link to related docs, examples, issues, or tests instead of duplicating large
   blocks.

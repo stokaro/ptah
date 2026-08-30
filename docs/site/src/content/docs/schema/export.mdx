@@ -9,6 +9,10 @@ goal: "Generate and review an OpenAPI or GraphQL contract candidate."
 sourceOfTruth:
   - "cmd/schema"
   - "internal/schemaload"
+  - "core/goschema"
+  - "internal/schemaexport"
+  - "internal/goannotationexport"
+  - "internal/schemaartifact"
 generated: false
 overlaps: []
 disposition: keep
@@ -126,9 +130,11 @@ default, which a schema-file export never picks up.
 Two combinations are refused rather than approximated:
 
 - `--to hcl` with `--schema-file`. That target rewrites the Go files it reads —
-  `--cleanup-go-annotations` removes their annotations after a lossless export —
-  so its source is `--root-dir`. Converting a schema file to HCL is a different
-  operation from migrating annotations out of Go code.
+  `--cleanup-go-annotations` removes their annotations after writing HCL — so
+  its source is `--root-dir`. Do not use cleanup when the annotations contain
+  [export-only naming metadata](#names-in-the-contract), because HCL cannot
+  preserve it. Converting a schema file to HCL is a different operation from
+  migrating annotations out of Go code.
 - `--from db`. An export reads a schema definition, not a live database. Run
   [`ptah schema inspect`](../../direct/inspect/) to write HCL, SQL, or DBML
   from a database URL, review the file, then export it.
@@ -270,7 +276,35 @@ A column or table has two identities, and they are not the same thing:
 
 By default the second is derived from the first, which couples them: renaming a
 column renames a published field, and a storage-shaped name has to become the
-public one. Declare `api_name` where they should differ.
+public one.
+
+Ptah can export SQL, YAML, HCL, DBML, Go, OCI, and composite desired schemas,
+but only Go annotations can author export-only naming metadata. The other
+accepted sources still produce OpenAPI, GraphQL, and Protobuf contracts; their
+published names are derived from the persistence names. Broader authoring
+support is tracked in
+[`stokaro/ptah#2607`](https://github.com/stokaro/ptah/issues/2607).
+
+| Desired-schema source | Naming behavior |
+| --- | --- |
+| SQL, YAML, HCL, or DBML file | Uses derived names; these formats have no `api_name` or target-specific name syntax. |
+| Go annotations | Can declare `api_name`, `openapi_name`, `graphql_name`, and `proto_name`. |
+| OCI artifact | Uses the names in its canonical HCL payload, which cannot carry export-only names. |
+| Composite source | Preserves overrides on objects loaded from Go; a static source cannot add or overlay them. |
+| External or configured loader | Is not an input to `schema export`; materialize its SQL, HCL, or YAML output first, which then uses derived names. |
+
+:::danger[Do not clean or publish these declarations through HCL]
+`ptah schema export --to hcl --cleanup-go-annotations` writes HCL without
+export-only metadata and then removes the Go annotations that held it. OCI
+capture uses the same canonical HCL representation, so an OCI artifact also
+loses these declarations. Keep the annotated Go source and export contracts
+directly from it until [`stokaro/ptah#2607`](https://github.com/stokaro/ptah/issues/2607)
+is resolved.
+:::
+
+The examples in this section therefore use Go annotations. There is no
+equivalent static-file spelling to substitute. Declare `api_name` on the table
+or field directive when the persistence and API identities should differ:
 
 ```go
 //ptah:schema:table name="billing_invoices" api_name="invoices"
@@ -287,8 +321,8 @@ The table exports as `invoices` in OpenAPI and as `type Invoice` in GraphQL —
 singularized and PascalCased from the API name exactly as it would be from a
 table name — and the column exports as `amount` in both.
 
-Nothing changes for a schema that declares no `api_name`: the derivation is the
-one it has always been, and an unannotated schema exports byte-identically.
+Without an explicit API name, each exporter derives the published name from the
+table or column name.
 
 ### What it does not do
 
@@ -309,22 +343,28 @@ one it has always been, and an unannotated schema exports byte-identically.
 `api_name` answers every target, and that is what a schema normally declares.
 A format's own naming rules are the case it cannot cover: `amountMinor` is
 idiomatic in GraphQL and fails `buf lint` in Protobuf, which wants
-`amount_minor`. Three attributes name one target each, on both the field and
-the table directive:
+`amount_minor`. Go annotations provide one shared attribute and three
+target-specific attributes on both the field and table directives:
+
+| Attribute | Export target |
+| --- | --- |
+| `api_name` | Shared fallback for OpenAPI, GraphQL, and Protobuf. |
+| `openapi_name` | OpenAPI only. |
+| `graphql_name` | GraphQL only. |
+| `proto_name` | Protobuf only. |
 
 ```go
-//ptah:schema:table name="billing_invoices" api_name="invoices" proto_name="invoice_records"
+//ptah:schema:table name="billing_invoices" api_name="invoices" openapi_name="invoice_documents" graphql_name="Invoice" proto_name="invoice_records"
 type Invoice struct {
-    //ptah:schema:field name="billing_amount_minor" type="INTEGER" api_name="amount" graphql_name="amountMinor" proto_name="amount_minor"
+    //ptah:schema:field name="billing_amount_minor" type="INTEGER" api_name="amount" openapi_name="amount_value" graphql_name="amountMinor" proto_name="amount_minor"
     AmountMinor int32
 }
 ```
 
-Three declarations answer in order — the target's own name, `api_name`, the
-database name — so the ordinary schema declares nothing and exports as it always
-did, a shared alias answers everywhere, and a scoped name changes one export
-without touching the other two. A target that declares none is unaffected by one
-declared for its neighbor.
+Names resolve in order — the target's own name, `api_name`, then the database
+name. A shared alias therefore answers every target, while a scoped name changes
+one export without touching the other two. A target with no scoped declaration
+is unaffected by one declared for its neighbor.
 
 Collisions are checked per target, because a collision can now exist in one
 export and not in another. The refusal says which export refused, and names both

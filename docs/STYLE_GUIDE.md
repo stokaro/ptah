@@ -683,15 +683,16 @@ a reader recognizes on sight and cannot reconstruct from a paragraph.
 - The site shell may use the full `70rem` content width for code, diagrams,
   generated matrices, and wide tables. Paragraphs, lists, blockquotes,
   admonitions, and ordinary headings stop at a `60rem` reading column and share
-  the wide shell's left edge. At wide viewports, center the combined article and
-  table-of-contents frame in the space beside the navigation rail. Do not center
-  prose and wide blocks as separate grids: their staggered left edges make the
-  page look disconnected.
+  the wide shell's left edge. On a two-rail page, center the article and
+  table-of-contents frame until the prose-to-navigation gap reaches the
+  navigation rail's width. Put any additional width between the content shell
+  and the right rail. Do not center prose and wide blocks as separate grids:
+  their staggered left edges make the page look disconnected.
 - A Markdown table or code block already uses the wide page measure. Give a
   custom visual or component `.ptah-wide-content`; use `.ptah-wide-table` when
   a table must preserve its desktop column widths and scroll locally on mobile.
-  `check:responsive` measures the prose cap and centering and rejects
-  document-level overflow.
+  `check:responsive` measures the prose cap, shared left edge, and two-rail
+  gutter behavior, and rejects document-level overflow.
 - Descriptive link text; never "here" or "this page".
 - Alt text on every image and diagram: section 11.3 states the rule and
   `check:style` enforces its presence.
