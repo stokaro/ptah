@@ -195,6 +195,14 @@ func TestCutover_TheDigestCoversWhatWasDone(t *testing.T) {
 			change: func(c *embedrelease.Cutover) { c.VerificationDigest = "other" },
 		},
 		{
+			// What the generation covers, which its identity does not carry:
+			// the identity says how a vector was computed and this says which
+			// source state was. Two cutovers of one generation at different
+			// watermarks are two different things done.
+			name:   "the watermark it was current to",
+			change: func(c *embedrelease.Cutover) { c.Watermark = "4288" },
+		},
+		{
 			name:   "the window it opened",
 			change: func(c *embedrelease.Cutover) { c.StabilizeUntil = at.Add(time.Hour) },
 		},
@@ -203,7 +211,7 @@ func TestCutover_TheDigestCoversWhatWasDone(t *testing.T) {
 	base := embedrelease.Cutover{
 		Generation: "gen-2", Replaced: "gen-1", Target: "public.articles",
 		PlanDigest: "plan-1", Approver: "an operator",
-		VerificationDigest: "report-1", CutOverAt: at,
+		VerificationDigest: "report-1", Watermark: "4210", CutOverAt: at,
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

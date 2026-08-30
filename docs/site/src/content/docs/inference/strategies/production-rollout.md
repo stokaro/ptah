@@ -97,7 +97,9 @@ evidence already lives:
 - the **verification** record carries the findings whole, not a verdict, plus
   what the run did not measure;
 - the **cutover** record carries the plan digest the approval bound to, the
-  approver, and the verification it cited.
+  approver, the verification it cited, and the watermark the source had been
+  accounted for up to — the generation identity says how a vector was computed,
+  and that says which source state was.
 
 `--attach-to` names the release a verification or a cutover is about, and
 publishes the record into that release's repository as a referrer of it. Step 0

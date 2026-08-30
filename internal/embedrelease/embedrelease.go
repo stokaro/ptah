@@ -135,6 +135,14 @@ type Cutover struct {
 	Approver   string `json:"approver,omitempty"`
 	// VerificationDigest is the report the plan rested on.
 	VerificationDigest string `json:"verification_digest"`
+	// Watermark is how far the source had been accounted for when the pointer
+	// moved, empty under a consistency mode that records no boundary.
+	//
+	// It is the answer to "what does this generation cover", which the
+	// generation identity does not carry: the identity says how a vector was
+	// computed and this says which source state was. A record without it can be
+	// read six months later for what was replaced and not for what was in it.
+	Watermark string `json:"watermark,omitempty"`
 	// StabilizeUntil is how long the replaced generation stays a way back, zero
 	// when nothing keeps it.
 	StabilizeUntil time.Time `json:"stabilize_until,omitzero"`
@@ -209,7 +217,7 @@ func (c Cutover) Digest() string {
 		"cutover", strconv.Itoa(RecordVersion),
 		"generation", c.Generation, "replaced", c.Replaced, "target", c.Target,
 		"plan", c.PlanDigest, "approver", c.Approver,
-		"verification", c.VerificationDigest,
+		"verification", c.VerificationDigest, "watermark", c.Watermark,
 		"stabilize_until", formatTime(c.StabilizeUntil),
 		"cut_over_at", c.CutOverAt.UTC().Format(time.RFC3339Nano))
 }

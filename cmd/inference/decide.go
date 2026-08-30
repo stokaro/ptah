@@ -244,6 +244,7 @@ func publishCutover(
 		PlanDigest: plan.Digest(), Approver: approver,
 		VerificationDigest: verificationRecord(
 			opened.loaded.Spec, report, nil, at).Digest(),
+		Watermark: plan.Evidence.ConsistencyWatermark,
 		CutOverAt: at,
 	}
 	if plan.Previous != "" && stabilizeFor > 0 {
