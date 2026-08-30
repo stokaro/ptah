@@ -49,20 +49,25 @@
 	--ptah-toc-width: 14.5rem;
 	--sl-content-width: 70rem;
 	--ptah-prose-width: 60rem;
-	/* At wide viewports the article and table of contents form one centered
-	 * frame. The padding belongs to ContentPanel, so include it here rather than
-	 * making the article's wide-content measure narrower than 70rem. */
-	--ptah-doc-frame-width: calc(
+	/* The article and table of contents need at least this much room. The
+	 * padding belongs to ContentPanel, so include it here rather than making the
+	 * article's wide-content measure narrower than 70rem. */
+	--ptah-doc-frame-min-width: calc(
 		var(--sl-content-width) + var(--sl-content-pad-x) + var(--sl-content-pad-x) +
 			var(--ptah-toc-width)
 	);
+	/* Cap the blank space between the navigation rail and the article frame so
+	 * the prose starts no farther from navigation than one navigation-rail
+	 * width. ContentPanel supplies the remaining padding before the prose. */
+	--ptah-doc-frame-gutter-cap: calc(var(--sl-sidebar-width) - var(--sl-content-pad-x));
 }
 
 /*
  * The outer article shell keeps 70rem available for code, diagrams, and wide
  * tables. Ordinary prose and headings use a 60rem reading column with the same
- * left edge. The article-and-TOC frame itself is centered below, so the layout
- * does not create the staggered, independently centered grids this replaces.
+ * left edge. The article-and-TOC frame below centers while its outer gutters
+ * fit below the cap. On wider screens it grows toward the TOC instead of
+ * pushing the reading column farther away from navigation.
  */
 .sl-markdown-content > :where(
 	p,
@@ -335,7 +340,19 @@
 
 @media (min-width: 80rem) {
 	[data-has-sidebar][data-has-toc] .lg\:sl-flex {
-		width: min(100%, var(--ptah-doc-frame-width));
+		/* Center the minimum frame until either outer gutter reaches the cap.
+		 * Past that point, keep both outer gutters fixed and put every additional
+		 * pixel into the article pane, between its 70rem shell and the TOC. */
+		width: min(
+			100%,
+			max(
+				var(--ptah-doc-frame-min-width),
+				calc(
+					100% - var(--ptah-doc-frame-gutter-cap) -
+						var(--ptah-doc-frame-gutter-cap)
+				)
+			)
+		);
 		margin-inline: auto;
 	}
 
@@ -349,11 +366,11 @@
 	}
 
 	[data-has-sidebar][data-has-toc] .main-pane {
-		/* The article and context rail share the centered frame above. The article
-		 * takes the remaining width, and its ContentPanel padding leaves the 70rem
-		 * wide-content shell with a left-aligned 60rem reading column. */
+		/* The article takes the remaining frame width. Keep the content shell at
+		 * its left edge so any ultra-wide surplus becomes space before the TOC,
+		 * not space between navigation and prose. */
 		flex: 1 1 auto;
-		--sl-content-margin-inline: auto;
+		--sl-content-margin-inline: 0 auto;
 		width: calc(100% - var(--ptah-toc-width));
 	}
 
