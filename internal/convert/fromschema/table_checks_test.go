@@ -6,9 +6,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
 // tableWithChecks is one table carrying the `checks` attribute the parser fills
@@ -165,4 +167,71 @@ func TestFromTable_AGeneratedCheckNameIsUnchangedWithoutACollision(t *testing.T)
 	sql := strings.Join(statements, "\n")
 	c.Assert(sql, qt.Contains, `CONSTRAINT "products_check" CHECK (price > 0)`)
 	c.Assert(sql, qt.Not(qt.Contains), "products_check1")
+}
+
+// TestFromTable_NodeCarriesOneConstraintPerDeclaredCheck counts on the node
+// itself, which is the only place the count is visible.
+//
+// The whole-schema path re-derives the synthesized checks in addTableConstraints
+// once the declared constraint list is visible, so a duplicate emission inside
+// FromTable is cleaned up before any statement is rendered and a test driving
+// GetOrderedCreateStatements cannot see it. The planners do not take that path:
+// they build a CREATE from FromTable/FromTableWithConstraints and add explicit
+// constraints as their own ALTER statements, so a duplicate here would ship in
+// every migration they plan.
+//
+// Established by mutation: restoring the second, unnamed pass over table.Checks
+// leaves every test that goes through the renderer green and reddens this one.
+func TestFromTable_NodeCarriesOneConstraintPerDeclaredCheck(t *testing.T) {
+	tests := []struct {
+		name   string
+		checks []string
+		want   int
+	}{
+		{name: "one check", checks: []string{"price > 0"}, want: 1},
+		{name: "two checks", checks: []string{"price > 0", "stock >= 0"}, want: 2},
+		{name: "no checks", checks: nil, want: 0},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			database := tableWithChecks(test.checks...)
+
+			node := fromschema.FromTable(
+				database.Tables[0], database.Fields, database.Enums, platform.Postgres)
+
+			checks := 0
+			for _, constraint := range node.Constraints {
+				if constraint.Type == ast.CheckConstraint {
+					checks++
+				}
+			}
+			c.Assert(checks, qt.Equals, test.want)
+		})
+	}
+}
+
+// TestFromTableWithConstraints_NodeSkipsADeclaredName is the planner's half of
+// the collision.
+//
+// A planner adds the explicit constraint through its own ALTER, so the CREATE it
+// builds must still leave that name free. Measured before the fix:
+// `schema apply` emitted the colliding pair and died on
+// `ERROR: constraint "products_check" for relation "products" already exists`
+// while `schema render` was already correct — the two paths had drifted apart.
+func TestFromTableWithConstraints_NodeSkipsADeclaredName(t *testing.T) {
+	c := qt.New(t)
+	database := tableWithChecksAndDeclaredConstraint("products_check")
+
+	node := fromschema.FromTableWithConstraints(
+		database.Tables[0], database.Fields, database.Enums, platform.Postgres, database.Constraints)
+
+	names := make([]string, 0)
+	for _, constraint := range node.Constraints {
+		if constraint.Type == ast.CheckConstraint {
+			names = append(names, constraint.Name)
+		}
+	}
+	c.Assert(names, qt.DeepEquals, []string{"products_check1"})
 }
