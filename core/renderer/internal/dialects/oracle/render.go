@@ -125,7 +125,18 @@ func mapColumnType(column *ast.ColumnNode) string {
 // the way it always did. Converting the common case into a message that names
 // the column and says what to write instead is the whole of the claim.
 func bareReferenceInExpression(columnName, expression string) bool {
-	if expression == "" || !requiresQuoting(columnName) {
+	// A column with no name names nothing in an expression, and it is also the
+	// one input the scan below cannot survive: strings.Index answers 0 for an
+	// empty needle in every haystack, so `index += len(target)` never advances
+	// and the loop has no other exit. `ptah schema render --dialect oracle`
+	// spun at 100% of one core and did not stop for SIGTERM
+	// (stokaro/ptah#2608).
+	//
+	// core/renderer.prepareColumnNode now refuses an unnamed column before this
+	// renderer is reached, so this is stated twice on purpose: a scan that
+	// cannot terminate should not depend on a caller having validated its
+	// input.
+	if expression == "" || columnName == "" || !requiresQuoting(columnName) {
 		return false
 	}
 	lowered := strings.ToLower(expression)

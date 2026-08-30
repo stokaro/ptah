@@ -244,7 +244,7 @@ func (r *validatingRenderer) VisitAlterTable(node *ast.AlterTableNode) error {
 }
 
 func (r *validatingRenderer) VisitColumn(node *ast.ColumnNode) error {
-	prepared, err := prepareColumnNode(r.dialect, r.capabilities, node)
+	prepared, err := prepareColumnNode(r.dialect, r.capabilities, "", node)
 	if err != nil {
 		r.Reset()
 		return err
@@ -404,7 +404,7 @@ func prepareASTNodeForRendering(
 	case *ast.ConstraintNode:
 		return prepareConstraintNode(dialect, caps, typed)
 	case *ast.ColumnNode:
-		return prepareColumnNode(dialect, caps, typed)
+		return prepareColumnNode(dialect, caps, "", typed)
 	case *ast.IndexNode:
 		return prepareIndexNode(dialect, caps, typed)
 	case *ast.ExtensionNode:
@@ -514,7 +514,7 @@ func prepareCreateTableNode(
 	cloned.Options = maps.Clone(node.Options)
 
 	for i, column := range cloned.Columns {
-		prepared, err := prepareColumnNode(dialect, caps, column)
+		prepared, err := prepareColumnNode(dialect, caps, node.Name, column)
 		if err != nil {
 			return nil, err
 		}
@@ -604,7 +604,7 @@ func prepareAlterTableNode(
 	cloned := *node
 	cloned.Operations = slices.Clone(node.Operations)
 	for i, operation := range cloned.Operations {
-		prepared, err := prepareAlterOperation(dialect, caps, operation)
+		prepared, err := prepareAlterOperation(dialect, caps, node.Name, operation)
 		if err != nil {
 			return nil, err
 		}
@@ -616,6 +616,7 @@ func prepareAlterTableNode(
 func prepareAlterOperation(
 	dialect string,
 	caps capability.Capabilities,
+	table string,
 	operation ast.AlterOperation,
 ) (ast.AlterOperation, error) {
 	if operation == nil {
@@ -638,7 +639,7 @@ func prepareAlterOperation(
 			return nil, invalidASTForeignKeyError(dialect, "add-column operation is nil")
 		}
 		cloned := *typed
-		column, err := prepareColumnNode(dialect, caps, typed.Column)
+		column, err := prepareColumnNode(dialect, caps, table, typed.Column)
 		if err != nil {
 			return nil, err
 		}
@@ -649,7 +650,7 @@ func prepareAlterOperation(
 			return nil, invalidASTForeignKeyError(dialect, "modify-column operation is nil")
 		}
 		cloned := *typed
-		column, err := prepareColumnNode(dialect, caps, typed.Column)
+		column, err := prepareColumnNode(dialect, caps, table, typed.Column)
 		if err != nil {
 			return nil, err
 		}
@@ -671,13 +672,20 @@ func isNilInterface(value any) bool {
 	return reflected.Kind() == reflect.Pointer && reflected.IsNil()
 }
 
+// prepareColumnNode validates one column against the target. table names the
+// column's owning table where the caller knows it, and is empty where the
+// column is rendered on its own.
 func prepareColumnNode(
 	dialect string,
 	caps capability.Capabilities,
+	table string,
 	node *ast.ColumnNode,
 ) (*ast.ColumnNode, error) {
 	if node == nil {
 		return nil, invalidASTForeignKeyError(dialect, "column node is nil")
+	}
+	if node.Name == "" {
+		return nil, unnamedColumnError(dialect, table)
 	}
 	if node.ForeignKey == nil {
 		return node, nil
@@ -844,6 +852,36 @@ func validateForeignKeyColumns(kind string, columns []string) error {
 		seen[column] = struct{}{}
 	}
 	return nil
+}
+
+// unnamedColumnError refuses a column whose name is the empty string.
+//
+// A column reaches a renderer with no name when the declaration lost one -- an
+// empty YAML mapping key is the reachable spelling -- and every target used to
+// write it out as an empty delimited identifier at exit 0. Measured 2026-08-30
+// against the DDL that was produced: PostgreSQL 18 answers `zero-length
+// delimited identifier`, MySQL 8.4 and MariaDB 11.8.9 answer `Incorrect column
+// name` naming the empty one, and SQLite 3.53.1 is the one engine that stores
+// it -- exactly one per table, since a second answers `duplicate column name`.
+// Comparison keys a column by its name, so a target taking two would leave this
+// pipeline nothing to tell them apart with.
+//
+// The refusal sits in prepareColumnNode rather than in a schema reader because
+// every column reaches that function: CREATE TABLE, ADD COLUMN, MODIFY COLUMN,
+// and a bare VisitColumn on the public renderer (stokaro/ptah#2608).
+func unnamedColumnError(dialect, table string) error {
+	subject := "a column"
+	if table != "" {
+		subject = fmt.Sprintf("table %q declares a column that", table)
+	}
+	return &ptaherr.RenderError{
+		Dialect: dialect,
+		Err:     ptaherr.ErrInvalidSchemaDiff,
+		Message: fmt.Sprintf(
+			"%s has no name; a column name is not optional, and an empty identifier is not a name this pipeline can address again",
+			subject,
+		),
+	}
 }
 
 func invalidASTForeignKeyError(dialect, message string) error {

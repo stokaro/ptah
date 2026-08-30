@@ -183,6 +183,11 @@ author order. Top-level maps render deterministically by sorted key.
 If `enum` is provided and `type` is empty or `ENUM`, Ptah creates a generated
 enum type name and uses that type for the column.
 
+A column needs a name. An empty column key, or an explicit `name: ""`, fails
+rendering on every dialect with `table "<name>" declares a column that has no
+name`; PostgreSQL answers `zero-length delimited identifier` and the MySQL
+family answers `Incorrect column name ''` for the DDL that used to be produced.
+
 ## Platform overrides
 
 Use `platform` when one dialect needs a different type or option:
