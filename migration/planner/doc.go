@@ -87,13 +87,13 @@
 // The three generation helpers sit at different levels of abstraction:
 //
 //	// High-level: individual SQL statements
-//	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, "postgres")
+//	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "postgres")
 //
 //	// Mid-level: one complete SQL string
-//	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, "postgres")
+//	sql, err := planner.GenerateSchemaDiffSQL(diff, "postgres")
 //
 //	// Low-level: AST nodes for custom processing
-//	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, "postgres")
+//	nodes, err := planner.GenerateSchemaDiffAST(diff, "postgres")
 //
 // Basic migration planning:
 //
@@ -101,7 +101,7 @@
 //	diff := schemadiff.Compare(generated, database)
 //
 //	// Generate SQL statements for PostgreSQL
-//	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, "postgres")
+//	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "postgres")
 //	if err != nil {
 //		log.Fatal(err)
 //	}

@@ -367,7 +367,7 @@ func normalizeRegistryDialect(dialect string) string {
 //	import "go.5x5.cz/ptah/core/platform"
 //
 //	// Generate AST nodes for PostgreSQL
-//	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, platform.Postgres)
+//	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.Postgres)
 //	if err != nil {
 //		return err
 //	}
@@ -476,7 +476,7 @@ func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
 //	import "go.5x5.cz/ptah/core/platform"
 //
 //	// Generate SQL statements for MySQL
-//	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, platform.MySQL)
+//	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.MySQL)
 //	if err != nil {
 //		return err
 //	}
@@ -560,7 +560,7 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 //	import "go.5x5.cz/ptah/core/platform"
 //
 //	// Generate complete SQL script for PostgreSQL
-//	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.Postgres)
+//	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
 //	if err != nil {
 //		return err
 //	}
