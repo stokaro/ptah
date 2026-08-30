@@ -11,8 +11,12 @@ sourceOfTruth:
   - "cmd/schema"
   - "integration"
 generated: false
+searchAliases:
+  - "test YAML schema"
+  - "test DBML schema"
 overlaps: []
 disposition: keep
+sourceMode: command-specific
 owns:
   - cli-ptah-migrations-test
   - cli-ptah-schema-test
@@ -34,8 +38,22 @@ Two commands share one test-case format:
 
 - `ptah migrations test` applies a migration directory (to a version, or all the
   way up) and asserts against the migrated database.
-- `ptah schema test` applies a desired schema once — from a SQL, YAML, HCL, or
-  DBML file, Go annotations, or a live database — then asserts against it.
+- `ptah schema test` applies one of the desired-schema inputs below once, then
+  asserts against it.
+
+{/* source-support-command: ptah schema test */}
+
+| Source | Legacy selector | Source-specific limitation |
+| --- | --- | --- |
+| SQL file | `--root-dir ./schema.sql` | Uses Ptah's DDL parser subset; the historical flag name does not make the file a directory. |
+| YAML file | `--root-dir ./schema.yaml` | Uses Ptah YAML schema objects; the suffix selects YAML. |
+| HCL file | `--root-dir ./schema.hcl` | Uses the Atlas-compatible HCL subset plus Ptah extensions. |
+| DBML file | `--root-dir ./schema.dbml` | DBML cannot express every Ptah object. |
+| Go annotations | `--root-dir ./models` | Uses the native Go annotation model and requires a Go source tree. |
+| Live database | `--root-dir sqlite://source.db` | The database reader measures the live catalog; the destination must be throwaway and a non-SQLite source needs an explicit matching `--db-url`. |
+
+The live database is the desired input; `--db-url` still names the separate
+throwaway database where the assertions run.
 
 Atlas keeps `migrate test` and `schema test` in its proprietary Pro build (an
 Atlas account and the closed-source binary). Ptah provides both as MIT, local,

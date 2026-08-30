@@ -3,16 +3,16 @@
 ptah_schema_schemas{dialect="sqlite"} 0
 # HELP ptah_schema_tables Tables.
 # TYPE ptah_schema_tables gauge
-ptah_schema_tables{dialect="sqlite"} 1
+ptah_schema_tables{dialect="sqlite"} 4
 # HELP ptah_schema_columns Columns across all tables.
 # TYPE ptah_schema_columns gauge
-ptah_schema_columns{dialect="sqlite"} 4
+ptah_schema_columns{dialect="sqlite"} 11
 # HELP ptah_schema_indexes Indexes.
 # TYPE ptah_schema_indexes gauge
-ptah_schema_indexes{dialect="sqlite"} 0
+ptah_schema_indexes{dialect="sqlite"} 2
 # HELP ptah_schema_constraints Table-level constraints.
 # TYPE ptah_schema_constraints gauge
-ptah_schema_constraints{dialect="sqlite"} 1
+ptah_schema_constraints{dialect="sqlite"} 0
 # HELP ptah_schema_enums Enum types.
 # TYPE ptah_schema_enums gauge
 ptah_schema_enums{dialect="sqlite"} 0

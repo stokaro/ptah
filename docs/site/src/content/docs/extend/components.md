@@ -13,6 +13,7 @@ sourceOfTruth:
 generated: false
 overlaps: []
 disposition: keep
+sourceMode: source-neutral
 ---
 
 Ptah can be used in three different ways:
@@ -156,7 +157,7 @@ database.
 
 The examples below use only stable public packages unless a block is explicitly
 marked as pseudo-code. Complete copy-pasteable versions are kept in
-[`examples/reusable_components/reusable_components_test.go`](https://github.com/stokaro/ptah/blob/master/examples/reusable_components/reusable_components_test.go)
+[`examples/reusable_components/reusable_components_test.go` in the latest development source](https://github.com/stokaro/ptah/blob/master/examples/reusable_components/reusable_components_test.go)
 and are validated with:
 
 ```bash

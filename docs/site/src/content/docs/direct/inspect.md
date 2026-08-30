@@ -14,6 +14,7 @@ sourceOfTruth:
 generated: false
 overlaps: []
 disposition: keep
+sourceMode: live-database-only
 owns:
   - cli-ptah-db-read
   - cli-ptah-schema-inspect

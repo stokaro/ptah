@@ -14,6 +14,7 @@ searchAliases:
   - "SQL Server support"
 overlaps: []
 disposition: keep
+sourceMode: live-database-only
 owns:
   - dialect-sqlserver
 ---
@@ -24,6 +25,7 @@ subset under the canonical dialect name `sqlserver` (the aliases `mssql`,
 connection URL, what the subset includes, and the two behaviors that most
 often surprise SQL Server users: collation-aware identifier comparison and
 filtered-index predicate spelling.
+Commands that introspect this behavior require a live SQL Server database URL.
 
 ## Connecting
 

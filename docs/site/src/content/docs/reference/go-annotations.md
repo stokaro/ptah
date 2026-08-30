@@ -21,7 +21,7 @@ owns:
 Every `//ptah` comment directive and attribute accepted by Ptah's Go annotation
 parser is listed below. The same metadata is exported as a JSON Schema
 document by `ptah schema annotations`, and the committed copy lives at
-[`schemas/ptah-annotations.schema.json`](https://github.com/stokaro/ptah/blob/master/schemas/ptah-annotations.schema.json).
+[`schemas/ptah-annotations.schema.json` in the latest development source](https://github.com/stokaro/ptah/blob/master/schemas/ptah-annotations.schema.json).
 For the workflow — modeling, rendering, and generating migrations from
 annotated structs — see [Go annotations](../../schema/go-annotations/).
 

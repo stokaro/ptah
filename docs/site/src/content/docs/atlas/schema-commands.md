@@ -263,7 +263,7 @@ Ptah applies that literal meaning to every schema source. The pinned community
 binary applies it to live PostgreSQL inspection but accepts it without filtering
 tables in a SQLite file diff. Ptah keeps one source-independent selector meaning
 instead of reporting that the selector succeeded while leaving its tables in
-the plan. See the measured [retained divergence](../retained-divergences/#leading-schema-type-selector).
+the plan. See the measured [compatibility difference](../retained-divergences/#leading-schema-type-selector).
 
 A **field selector** — the `.field` suffix behind a type selector — names a
 field to subtract while the object it belongs to stays. Ptah honors:
@@ -273,7 +273,7 @@ field to subtract while the object it belongs to stays. Ptah honors:
 - `.*`, which names every field the selected types support
 
 Any other field is refused, by name, before a database is contacted. See
-[Exclude field selectors](../retained-divergences/#exclude-field-selectors) for
+[Compatibility differences: exclude field selectors](../retained-divergences/#exclude-field-selectors) for
 why Ptah refuses these rather than accepting and ignoring them the way the
 pinned community binary does.
 

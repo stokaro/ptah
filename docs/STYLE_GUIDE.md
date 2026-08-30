@@ -114,11 +114,13 @@ generated: false
 overlaps:
   - /direct/apply/
 disposition: keep
+sourceMode: source-neutral
 ```
 
 Use exactly one `type`: `landing`, `tutorial`, `how-to`, `concept`,
 `reference`, `troubleshooting`, `status`, or `contributor`. Write
-`readerQuestion` as the one question the page answers. `goal` completes the
+`readerQuestion` as the one question the page answers, including its final
+question mark. `goal` completes the
 sentence, "After reading this page, the reader can ...". If it contains two
 independent outcomes, split the page or record `disposition: split` until the
 split lands.
@@ -129,6 +131,15 @@ used by `docs/feature-inventory.json`. `overlaps` uses live docs routes and is
 explicitly `[]` when the review found none. `disposition` is one of `keep`,
 `rewrite`, `split`, `merge`, `move`, or `retire`.
 
+Pages that consume a schema source declare `sourceMode`: `source-neutral`,
+`go-only`, `static-file-only`, `external-program-only`,
+`oci-artifact-only`, `live-database-only`, or `command-specific`.
+Pages that do not consume one omit the field. The source-page contract gate
+discovers authored task and concept pages from their runnable commands; it
+checks the first runnable input, early limitations, implementation ownership,
+and marked source-table selectors and limitations against
+`docs/source-support.json`.
+
 A status page also requires:
 
 ```yaml
@@ -136,6 +147,17 @@ lastVerified: "2026-08-29"
 evidence:
   - internal/capabilityprobe/cells.go
 ```
+
+`lastVerified` must be a real calendar date no later than the UTC build date.
+Repository-local paths in `sourceOfTruth`, `evidence`, `generator`, and
+`editSource` must exist. A bare value is a repository-local path. Use
+`owner/repository#123` for a GitHub issue, `github:owner/repository` for an
+external GitHub repository, `evidence:system/run/identifier` for a named
+external evidence record, or an absolute URL for external material. This
+explicit kind syntax prevents a mistyped local path from silently becoming an
+external identifier.
+Editorial waivers live only in `scripts/data/editorial-waivers.json`; a
+frontmatter `lengthWaiver` is rejected.
 
 A fully generated page uses `generated: true` and requires both `generator` and
 `editSource`. Do not edit its rendered frontmatter separately from its
@@ -337,13 +359,18 @@ record change, and none of them is in the reader sidebar.
 
 Reader documentation does not celebrate internal refactoring.
 
+Do not publish an upgrade procedure solely for a hypothetical legacy audience.
+It belongs in reader documentation only when a supported release exposed the
+state and there is a real upgrade journey to serve. Otherwise keep the recovery
+test and implementation history in code, an issue, or an ADR; an imagined user
+is not a reader journey.
+
 ### 6.5 Labels
 
 A reader-facing label names the current state, not the decision that produced
-it: "compatibility differences", not "retained divergences". The Atlas
-compatibility page still carries the older label; moving it is part of the same
-documentation rewrite as this rule, and the rule is what the new label answers
-to.
+it: "compatibility differences", not "retained divergences". The preserved
+`/atlas/retained-divergences/` route is a compatibility URL; its page title and
+navigation label describe the current differences directly.
 
 A literal compatibility identifier a user has to type — a flag, an environment
 variable, a file name — keeps the spelling the tree uses, appears in reference
@@ -412,6 +439,9 @@ once on its concept page and link; do not re-define them per page.
   an explicit external program; and `--config ... --allow-external-schema` for
   configured external execution. Do not imply that one flag covers every
   transport.
+- `ptah schema test --root-dir` is the one documented legacy exception that
+  also accepts static files and a live database URL. Do not copy that overload
+  to examples for another command.
 - A Go-only introduction is allowed only when current built help accepts no
   source-neutral alternative. State the limitation, cite the owning command
   or implementation in `sourceOfTruth`, and link to the source-neutral
@@ -436,6 +466,10 @@ once on its concept page and link; do not re-define them per page.
 - Tutorials end with cleanup.
 - Multi-dialect or multi-source variants are colocated (consecutive labeled
   blocks or tabs) when they answer the same reader question.
+- Source-neutral output fixtures use the canonical common-subset fixture when
+  it proves the same capability. A separate Go or UI fixture is appropriate
+  only for a source-specific command or a product state the common fixture
+  cannot express; record that reason in the asset source note.
 - No `testify` in any Go snippet; use `quicktest` imported as `qt`, the
   standard `testing` package, or existing project helpers (repository rule,
   see `AGENTS.md`).
@@ -647,13 +681,14 @@ a reader recognizes on sight and cannot reconstruct from a paragraph.
   skipping levels.
 - The site shell may use the full `70rem` content width for code, diagrams,
   generated matrices, and wide tables. Paragraphs, lists, blockquotes,
-  admonitions, and ordinary headings stop at `40rem`, which renders near a
-  72--80-character reading measure in the site typeface. Do not widen prose to
-  make one reference table fit.
+  admonitions, and ordinary headings stop at a centered `60rem`. Do not widen
+  prose to make one reference table fit or left-align it when the page has room
+  to center the reading column.
 - A Markdown table or code block already uses the wide page measure. Give a
   custom visual or component `.ptah-wide-content`; use `.ptah-wide-table` when
   a table must preserve its desktop column widths and scroll locally on mobile.
-  `check:responsive` measures the prose cap and rejects document-level overflow.
+  `check:responsive` measures the prose cap and centering and rejects
+  document-level overflow.
 - Descriptive link text; never "here" or "this page".
 - Alt text on every image and diagram: section 11.3 states the rule and
   `check:style` enforces its presence.
@@ -691,12 +726,14 @@ Forbidden in all Ptah documentation:
 - Work-in-progress markers (`TODO`, `TBD`, `FIXME`, "coming soon") — already
   rejected by `check-page-health.mjs`.
 
-`check:editorial-shape` warns on long pages, mixed page-type signals, generic
-first paragraphs, and near-duplicate long paragraphs. These are review prompts,
-not arbitrary merge failures. A deliberate finding belongs in
-`scripts/data/editorial-waivers.json` with a route, check name, and specific
-reason. The check fails when a waiver names no live finding, so exemptions must
-be removed after the page changes.
+`check:editorial-shape` reports long pages, mixed page-type signals, generic
+first paragraphs, and near-duplicate long paragraphs. The zero-regression
+ratchet makes every new unwaived finding fail. A deliberate finding belongs in
+`scripts/data/editorial-waivers.json` with a route, check name, stable finding
+target, and specific reason. The route, check, and target must match one exact
+live finding; a waiver cannot mask a second finding of the same kind on the
+same page. The check fails when a waiver names no live finding, so exemptions
+must be removed after the page changes.
 
 ## 15. Review checklist
 
@@ -720,6 +757,12 @@ Complete this for every documentation PR:
    npm run check:content-inventory &&
    npm run check:editorial-shape:selftest &&
    npm run check:editorial-shape &&
+   npm run check:source-page-contracts:selftest &&
+   npm run check:source-page-contracts &&
+   npm run check:mutable-source-links:selftest &&
+   npm run check:mutable-source-links &&
+   npm run check:inference-quick-start-archive:selftest &&
+   npm run check:inference-quick-start-archive &&
    npm run check:support-matrix:selftest && npm run check:support-matrix &&
    npm run check:exit-codes:selftest && npm run check:exit-codes &&
    npm run check:style:selftest && npm run check:style &&
@@ -786,9 +829,13 @@ in this guide is a review responsibility.
 | Page type, audience, reader question, goal, source, generated state, overlaps, and disposition | 3.1 | Astro content schema; `check:content-inventory` |
 | Status verification date and evidence | 3.1 | Astro content schema; `check:content-inventory` |
 | Generated page source metadata | 3.1 | Astro content schema; `check:content-inventory` |
+| Verification dates are real and not in the future | 3.1 | Astro content schema; `check:content-inventory` |
+| Repository-local metadata references exist | 3.1 | Astro content schema; `check:content-inventory` |
+| Source-consuming pages keep their declared input contract | 3.1, 8 | `check:source-page-contracts` |
 | Factual page inventory matches content, sidebar, and link graph | 3.1 | `check:content-inventory` |
 | Identical tab panels are not published | 8 | `check:editorial-shape` |
-| Editorial waivers name a live route and current finding | 13, 14 | `check:editorial-shape` |
+| New editorial findings fail unless a live, specific waiver covers them | 13, 14 | `check:editorial-shape` |
+| Mutable development-source links are labeled as latest | 13 | `check:mutable-source-links` |
 | Release-line support counts and classifications appear only in generated blocks | 12 | `check:support-matrix` |
 | Every page is named by a sidebar entry | 12 | `check:page-health` |
 | Every sidebar entry names a page or a route | 12 | `check:page-health` |
@@ -899,10 +946,12 @@ Anchor links are checked against the ids Starlight generates, so renaming a
 heading fails the build instead of silently dropping every reader who follows
 a link into it at the top of the page.
 
-`check:editorial-shape` separates objective defects from editorial judgment.
-Identical tab panels and invalid or stale waivers fail. Page length, mixed-type
-signals, formulaic openings, and near-duplicate paragraphs produce review
-warnings unless a current, reasoned waiver records why the page stays as it is.
+`check:editorial-shape` separates objective defects from editorial judgment
+without allowing findings to accumulate silently. Identical tab panels,
+invalid or stale waivers, and every unwaived page-length, mixed-type,
+formulaic-opening, or near-duplicate finding fail. A current, reasoned waiver
+records the reviewed exception and becomes stale as soon as its finding goes
+away.
 
 `check:responsive` needs a browser. Without one it skips locally with an install
 hint, and fails in CI — a green check that rendered nothing is worse than a red

@@ -14,6 +14,7 @@ overlaps:
   - "/reference/command-flags/"
   - "/reference/atlas-commands/"
 disposition: keep
+sourceMode: command-specific
 ---
 
 The native `ptah` surface uses Ptah-owned spellings; Atlas aliases are
@@ -21,6 +22,10 @@ intentionally absent from this binary. The index below contains every command
 path it answers to, followed by per-verb details. The separate `ptah-compat`
 drop-in binary has its own reference:
 [Atlas-compatible commands](../atlas-commands/).
+
+Desired-schema inputs are command-specific; each verb below names its own
+accepted selector, and [work with a schema source](../../schema/work-with-a-source/)
+routes source-neutral tasks.
 
 ## Every native verb
 

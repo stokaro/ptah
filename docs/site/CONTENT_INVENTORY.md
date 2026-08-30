@@ -142,9 +142,10 @@ landing page as an explicit child such as `Overview`.
 - General troubleshooting now routes by stable symptom and gives each entry a
   likely cause, diagnosis, resolution, and verification. Inference and MCP
   failures link to their focused symptom indexes.
-- Ordinary prose uses a `40rem` reading measure while code, diagrams, generated
-  matrices, and wide tables retain the `70rem` content shell. The responsive
-  gate measures the separation in the rendered site.
+- Ordinary prose uses a centered `60rem` measure while code, diagrams,
+  generated matrices, and wide tables retain the `70rem` content shell. The
+  responsive gate measures both the separation and centering in the rendered
+  site.
 - Atlas schema and migration command catalogs are classified as references,
   not how-to guides. Completed split and rewrite dispositions now read `keep`.
 - Formulaic openings and one repeated schema-file-path paragraph were removed.

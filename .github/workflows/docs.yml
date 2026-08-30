@@ -77,6 +77,9 @@ jobs:
               - 'cmd/inference/**'
               - 'internal/inference*/**'
               - 'docs/site/fixtures/inference-quick-start/**'
+              - 'docs/site/public/samples/inference-quick-start.zip'
+              - 'docs/site/public/samples/inference-quick-start.zip.sha256'
+              - 'docs/site/scripts/build-inference-quick-start.mjs'
               - 'docs/site/scripts/check-inference-quick-start.sh'
               - 'docs/site/src/content/docs/inference/**'
               - 'go.mod'
@@ -150,9 +153,18 @@ jobs:
           node docs/site/scripts/build-source-support.mjs --selftest
           node docs/site/scripts/build-source-support.mjs
           node docs/site/scripts/check-documentation-gate.mjs --selftest
+          node docs/site/scripts/check-deployment-candidate.mjs --selftest
           node docs/site/scripts/check-build-info.mjs --selftest
           node docs/site/scripts/write-build-info.mjs --selftest
           node docs/site/scripts/check-public-docs.mjs --selftest
+          node docs/site/scripts/apply-release-ui-overlay.mjs --selftest
+          node docs/site/scripts/check-release-page-actions.mjs --selftest
+          node docs/site/scripts/check-mutable-source-links.mjs --selftest
+          node docs/site/scripts/check-mutable-source-links.mjs
+          node docs/site/scripts/check-source-page-contracts.mjs --selftest
+          node docs/site/scripts/check-source-page-contracts.mjs
+          node docs/site/scripts/build-inference-quick-start.mjs --selftest
+          node docs/site/scripts/build-inference-quick-start.mjs
           node docs/site/scripts/check-matrix-verdict-prose.mjs --selftest
           node docs/site/scripts/check-matrix-verdict-prose.mjs
           node docs/site/scripts/check-matrix-citations.mjs --selftest
@@ -173,6 +185,9 @@ jobs:
   build:
     name: Build versioned site
     needs: changes
+    outputs:
+      edge-source-commit: ${{ steps.deployment-metadata.outputs.edge-source-commit }}
+      version-slugs: ${{ steps.deployment-metadata.outputs.version-slugs }}
     if: >-
       ( github.event_name == 'pull_request' && needs.changes.outputs.site == 'true' ) ||
       ( github.event_name == 'push' &&
@@ -222,6 +237,7 @@ jobs:
         if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master'
         env:
           DOCS_VERSION: edge
+          DOCS_SOURCE_COMMIT: ${{ github.sha }}
           ASTRO_TELEMETRY_DISABLED: "1"
         run: |
           set -euo pipefail
@@ -272,6 +288,40 @@ jobs:
             --version edge \
             --source-commit "$(git rev-parse HEAD)"
 
+      # This is deliberately a real tag worktree, not current content built
+      # under a release-looking DOCS_VERSION. The maintained overlay changes
+      # only site chrome; the page content and source ref remain v0.3.0.
+      - name: Build and verify the representative released documentation
+        if: github.event_name == 'pull_request'
+        env:
+          RELEASE_VERSION: v0.3.0
+        run: |
+          set -euo pipefail
+          workdir="$(mktemp -d)"
+          cleanup() {
+            git worktree remove --force "$workdir" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          release_commit="$(git rev-list -n 1 "$RELEASE_VERSION")"
+          git worktree add --force "$workdir" "refs/tags/$RELEASE_VERSION"
+          node docs/site/scripts/apply-release-ui-overlay.mjs \
+            --target "$workdir" \
+            --version "$RELEASE_VERSION"
+          (
+            cd "$workdir/docs/site"
+            export DOCS_SOURCE_COMMIT="$release_commit"
+            DOCS_VERSION="$RELEASE_VERSION" ASTRO_TELEMETRY_DISABLED=1 npm ci
+            DOCS_VERSION="$RELEASE_VERSION" ASTRO_TELEMETRY_DISABLED=1 npm run build
+          )
+          node docs/site/scripts/write-build-info.mjs \
+            --output "$workdir/docs/site/dist/build-info.json" \
+            --version "$RELEASE_VERSION" \
+            --source-commit "$release_commit"
+          node docs/site/scripts/check-release-page-actions.mjs \
+            --dist "$workdir/docs/site/dist" \
+            --version "$RELEASE_VERSION" \
+            --source-commit "$release_commit"
+
       - name: Upload desktop and mobile review snapshots
         if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master'
         uses: actions/upload-artifact@v7
@@ -287,9 +337,11 @@ jobs:
         run: |
           set -euo pipefail
           workdir="$(mktemp -d)"
+          edge_source_commit="$(git rev-parse origin/master)"
           git worktree add --force "$workdir" origin/master
           (
             cd "$workdir/docs/site"
+            export DOCS_SOURCE_COMMIT="$edge_source_commit"
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm ci
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:links:selftest
             DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run check:links
@@ -317,19 +369,39 @@ jobs:
           node docs/site/scripts/write-build-info.mjs \
             --output "$GITHUB_WORKSPACE/_site/edge/build-info.json" \
             --version edge \
-            --source-commit "$(git rev-parse origin/master)"
+            --source-commit "$edge_source_commit"
 
       - name: Build each released tag
         if: github.event_name == 'push'
         run: |
           set -euo pipefail
+          version_action_browser_marker="$RUNNER_TEMP/ptah-version-action-browser-ready"
           for tag in $(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+(\.[0-9]+)?$' | sort -V | tail -n "${MAX_DOC_TAG_VERSIONS:-10}" || true); do
             echo "::group::Building $tag"
             workdir="$(mktemp -d)"
+            tag_source_commit="$(git rev-list -n 1 "$tag")"
             git worktree add --force "$workdir" "refs/tags/$tag"
+            release_ui_overlay=false
+            if node docs/site/scripts/apply-release-ui-overlay.mjs --target "$workdir" --version "$tag"; then
+              release_ui_overlay=true
+            else
+              overlay_status="$?"
+              if [ "$overlay_status" -ne 3 ]; then
+                git worktree remove --force "$workdir" || true
+                exit "$overlay_status"
+              fi
+              echo "::notice::$tag predates the structurally validated release UI overlay; preserving its historical chrome"
+            fi
             if [ -f "$workdir/docs/site/package.json" ]; then
-              if (
+              # Capture the complete build/check status without placing the
+              # subshell in an `if` condition. Bash suppresses `errexit`
+              # inside such conditions, which previously let an early failed
+              # check fall through to a later successful command.
+              set +e
+              (
+                set -euo pipefail
                 cd "$workdir/docs/site"
+                export DOCS_SOURCE_COMMIT="$tag_source_commit"
                 DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm ci
                 if [ -f scripts/check-links.mjs ]; then
                   DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm run check:links:selftest
@@ -350,15 +422,44 @@ jobs:
                   DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm run check:page-health
                 fi
                 DOCS_VERSION="$tag" ASTRO_TELEMETRY_DISABLED=1 npm run build
-              ); then
+                node "$GITHUB_WORKSPACE/docs/site/scripts/write-build-info.mjs" \
+                  --output "$workdir/docs/site/dist/build-info.json" \
+                  --version "$tag" \
+                  --source-commit "$tag_source_commit"
+                # Current site chrome is overlaid onto structurally compatible
+                # immutable release content. The browser check runs from the
+                # current checkout and verifies the tag worktree's real output.
+                if [ "$release_ui_overlay" = true ]; then
+                  if [ ! -f "$version_action_browser_marker" ]; then
+                    (
+                      cd "$GITHUB_WORKSPACE/docs/site"
+                      npm ci
+                      npx playwright install --with-deps chromium
+                    )
+                    touch "$version_action_browser_marker"
+                  fi
+                  node "$GITHUB_WORKSPACE/docs/site/scripts/check-release-page-actions.mjs" \
+                    --dist "$workdir/docs/site/dist" \
+                    --version "$tag" \
+                    --source-commit "$tag_source_commit"
+                fi
+              )
+              release_build_status="$?"
+              set -e
+              if [ "$release_build_status" -eq 0 ]; then
                 mkdir -p "$GITHUB_WORKSPACE/_site/$tag"
                 cp -r "$workdir/docs/site/dist/." "$GITHUB_WORKSPACE/_site/$tag/"
                 node "$GITHUB_WORKSPACE/docs/site/scripts/write-build-info.mjs" \
                   --output "$GITHUB_WORKSPACE/_site/$tag/build-info.json" \
                   --version "$tag" \
-                  --source-commit "$(git rev-list -n 1 "$tag")"
+                  --source-commit "$tag_source_commit"
               else
-                echo "::warning::$tag failed to build; skipping this historical version"
+                if [ "$release_ui_overlay" = true ]; then
+                  git worktree remove --force "$workdir" || true
+                  echo "::endgroup::"
+                  exit "$release_build_status"
+                fi
+                echo "::warning::$tag predates the supported release overlay and failed to build; skipping this historical version"
               fi
             else
               echo "::warning::$tag has no docs/site; skipping"
@@ -389,6 +490,16 @@ jobs:
       - name: The assembled Pages root carries every published file
         if: github.event_name == 'push'
         run: node docs/site/scripts/check-pages-root.mjs --site "$GITHUB_WORKSPACE/_site"
+
+      - name: Record the edge source in the deployment candidate
+        id: deployment-metadata
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          source_commit="$(jq -er '.source_commit | select(test("^[0-9a-f]{40}$"))' _site/edge/build-info.json)"
+          version_slugs="$(jq -er '[.versions[].slug] | join(",")' _site/versions.json)"
+          echo "edge-source-commit=$source_commit" >> "$GITHUB_OUTPUT"
+          echo "version-slugs=$version_slugs" >> "$GITHUB_OUTPUT"
 
       - name: Upload Pages artifact
         if: github.event_name == 'push'
@@ -509,24 +620,62 @@ jobs:
         (github.ref == 'refs/heads/master' && needs.changes.outputs.site == 'true') )
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      deployed: ${{ steps.freshness.outputs.allowed }}
     concurrency:
       group: docs-pages-deploy
       cancel-in-progress: false
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Refuse a stale Pages candidate
+        id: freshness
+        env:
+          CANDIDATE_COMMIT: ${{ needs.build.outputs.edge-source-commit }}
+          CANDIDATE_VERSIONS: ${{ needs.build.outputs.version-slugs }}
+        run: |
+          set -euo pipefail
+          git fetch --force --no-tags origin master:refs/remotes/origin/master
+          node docs/site/scripts/check-deployment-candidate.mjs \
+            --candidate-commit "$CANDIDATE_COMMIT" \
+            --candidate-versions "$CANDIDATE_VERSIONS" \
+            --base-url https://stokaro.github.io/ptah/edge/
+
       - name: Deploy
         id: deployment
+        if: steps.freshness.outputs.allowed == 'true'
         uses: actions/deploy-pages@v5
+
+      # GitHub serializes the entire deploy job. Do not release that lock until
+      # Pages serves this exact candidate; an older build that finishes later
+      # will then observe the newer public commit and skip itself.
+      - name: Wait for the deployed candidate to become public
+        if: steps.freshness.outputs.allowed == 'true'
+        env:
+          CANDIDATE_COMMIT: ${{ needs.build.outputs.edge-source-commit }}
+          CANDIDATE_VERSIONS: ${{ needs.build.outputs.version-slugs }}
+        run: >-
+          node docs/site/scripts/check-deployment-candidate.mjs
+          --wait-for-deployment
+          --candidate-commit "$CANDIDATE_COMMIT"
+          --candidate-versions "$CANDIDATE_VERSIONS"
+          --base-url https://stokaro.github.io/ptah/edge/
 
   public-edge-smoke:
     name: Public edge smoke
     needs: deploy
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/master' &&
+      needs.deploy.outputs.deployed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

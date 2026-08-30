@@ -12,6 +12,7 @@ sourceOfTruth:
 generated: false
 overlaps: []
 disposition: keep
+sourceMode: static-file-only
 ---
 
 Use HCL schema files when you already maintain schema files in Atlas-compatible

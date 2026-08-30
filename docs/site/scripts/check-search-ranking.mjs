@@ -6,6 +6,7 @@ import { existsSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadChromium, startBuiltSite } from './lib/built-site.mjs';
+import { pagefindRanking } from '../src/lib/search-ranking.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const siteRoot = join(scriptDir, '..');
@@ -13,12 +14,22 @@ const siteRoot = join(scriptDir, '..');
 export const searchCases = [
   ['install Ptah', '/start/install/'],
   ['first migration', '/start/quick-start-migrations/'],
+  ['generate migration', '/versioned/generate/', { before: ['/schema/go-annotations/'] }],
+  ['generate migrations from SQL', '/versioned/generate/'],
+  ['generate migrations from YAML', '/versioned/generate/'],
+  ['generate migrations from HCL', '/versioned/generate/'],
+  ['generate migrations from DBML', '/versioned/generate/'],
+  ['generate migration without Go', '/versioned/generate/'],
   ['apply migrations', '/versioned/apply/'],
   ['rollback migration', '/versioned/rollback/'],
-  ['schema drift', '/direct/compare-and-drift/'],
-  ['apply desired schema', '/direct/apply/'],
+  ['schema drift', '/direct/compare-and-drift/', { before: ['/schema/go-annotations/'] }],
+  ['apply desired schema', '/direct/apply/', { before: ['/schema/go-annotations/'] }],
   ['adopt existing database', '/start/adopt-an-existing-database/'],
+  ['adopt database as SQL', '/start/adopt-an-existing-database/'],
+  ['adopt database as HCL', '/start/adopt-an-existing-database/'],
+  ['adopt database as DBML', '/start/adopt-an-existing-database/'],
   ['migrate from Atlas', '/atlas/adoption/'],
+  ['retained divergences', '/atlas/retained-divergences/'],
   ['checksum mismatch', '/versioned/integrity-and-safety/'],
   ['PostgreSQL extension', '/databases/postgresql/'],
   ['SQL Server support', '/databases/sqlserver/'],
@@ -28,6 +39,12 @@ export const searchCases = [
   ['resume inference migration', '/inference/guides/resume-and-recover/'],
   ['MCP', '/operate/ai-agents/'],
   ['Go annotations', '/schema/go-annotations/'],
+  ['generate migration from Go structs', '/schema/go-annotations/'],
+  ['test YAML schema', '/testing/migrations-and-schema/'],
+  ['test DBML schema', '/testing/migrations-and-schema/'],
+  ['external schema loader', '/schema/orm-and-external/'],
+  ['OCI schema source', '/operate/oci-registry/'],
+  ['use Ptah Action with schema file', '/testing/ci/'],
   ['visualize schema', '/schema/visualize/'],
   ['generate protobuf', '/schema/protobuf/'],
   ['exit code 2', '/reference/exit-codes/'],
@@ -43,7 +60,7 @@ export function rankingProblems(cases, rankings, base = '') {
   const observed = new Map(rankings.map(({ query, urls }) => [query, urls.map((url) => normalizeRoute(url, base))]));
   const problems = [];
 
-  for (const [query, expected] of cases) {
+  for (const [query, expected, options = {}] of cases) {
     const urls = observed.get(query) ?? [];
     const rank = urls.indexOf(expected);
     if (rank === -1 || rank >= 3) {
@@ -51,26 +68,41 @@ export function rankingProblems(cases, rankings, base = '') {
       problems.push(
         `${JSON.stringify(query)}: ${expected} was ${position}; top three: ${urls.slice(0, 3).join(', ') || '(none)'}`,
       );
+      continue;
+    }
+    for (const route of options.before ?? []) {
+      const otherRank = urls.indexOf(route);
+      if (otherRank !== -1 && otherRank < rank) {
+        problems.push(
+          `${JSON.stringify(query)}: source-neutral ${expected} ranked ${rank + 1}, below ${route} at ${otherRank + 1}`,
+        );
+      }
     }
   }
   return problems;
 }
 
 function selftest() {
-  const cases = [['find alpha', '/alpha/']];
-  const passing = rankingProblems(cases, [{ query: 'find alpha', urls: ['/docs/other/', '/docs/alpha/'] }], '/docs');
+  const cases = [['find alpha', '/alpha/', { before: ['/go-alpha/'] }]];
+  const passing = rankingProblems(cases, [{ query: 'find alpha', urls: ['/docs/other/', '/docs/alpha/', '/docs/go-alpha/'] }], '/docs');
   const missing = rankingProblems(cases, [{ query: 'find alpha', urls: ['/docs/other/'] }], '/docs');
   const fourth = rankingProblems(
     cases,
     [{ query: 'find alpha', urls: ['/docs/one/', '/docs/two/', '/docs/three/', '/docs/alpha/'] }],
     '/docs',
   );
-  if (passing.length !== 0 || missing.length !== 1 || fourth.length !== 1 || !fourth[0].includes('ranked 4')) {
+  const goFirst = rankingProblems(
+    cases,
+    [{ query: 'find alpha', urls: ['/docs/go-alpha/', '/docs/alpha/'] }],
+    '/docs',
+  );
+  if (passing.length !== 0 || missing.length !== 1 || fourth.length !== 1 || !fourth[0].includes('ranked 4') ||
+      goFirst.length !== 1 || !goFirst[0].includes('below /go-alpha/')) {
     console.error('check-search-ranking.mjs --selftest: FAILED');
     process.exitCode = 1;
     return;
   }
-  console.log('check-search-ranking.mjs --selftest: OK (missing and below-top-three results rejected)');
+  console.log('check-search-ranking.mjs --selftest: OK (missing, below-top-three, and wrong-source-order results rejected)');
 }
 
 async function main() {
@@ -98,8 +130,9 @@ async function main() {
     browser = await chromium.launch();
     const page = await browser.newPage();
     await page.goto(`http://127.0.0.1:${built.port}${built.base}/`, { waitUntil: 'load' });
-    const rankings = await page.evaluate(async ({ base, cases }) => {
+    const rankings = await page.evaluate(async ({ base, cases, ranking }) => {
       const pagefind = await import(`${base}/pagefind/pagefind.js`);
+      await pagefind.options({ ranking });
       const output = [];
       for (const [query] of cases) {
         const search = await pagefind.search(query);
@@ -107,7 +140,7 @@ async function main() {
         output.push({ query, urls: results.map(({ url }) => url) });
       }
       return output;
-    }, { base: built.base, cases: searchCases });
+    }, { base: built.base, cases: searchCases, ranking: pagefindRanking });
 
     const problems = rankingProblems(searchCases, rankings, built.base);
     if (problems.length > 0) {
@@ -115,6 +148,15 @@ async function main() {
       for (const problem of problems) console.error(`- ${problem}`);
       process.exitCode = 1;
       return;
+    }
+    if (process.argv.includes('--verbose')) {
+      const observed = new Map(rankings.map(({ query, urls }) => [
+        query,
+        urls.map((url) => normalizeRoute(url, built.base)),
+      ]));
+      for (const [query, expected] of searchCases) {
+        console.log(`${JSON.stringify(query)}: ${expected} rank ${(observed.get(query) ?? []).indexOf(expected) + 1}`);
+      }
     }
     console.log(`check-search-ranking.mjs: OK (${searchCases.length} queries; canonical page in top three)`);
   } finally {

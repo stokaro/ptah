@@ -11,8 +11,11 @@ sourceOfTruth:
   - "cmd/migrationspull"
   - "internal/schemaartifact"
 generated: false
+searchAliases:
+  - "OCI schema source"
 overlaps: []
 disposition: keep
+sourceMode: oci-artifact-only
 owns:
   - cli-ptah-migrations-pull
   - cli-ptah-migrations-push

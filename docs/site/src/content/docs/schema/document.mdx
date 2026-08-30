@@ -15,6 +15,7 @@ overlaps:
   - "/schema/visualize/"
   - "/schema/serve/"
 disposition: keep
+sourceMode: source-neutral
 ---
 
 import ProductPreview from '../../../components/ProductPreview.astro';
@@ -43,18 +44,18 @@ in the HTML output itself, so Graphviz is not involved.
   id="schema-document"
   src={schemaDocumentHero}
   alt="The top of a generated Ptah schema reference with table navigation, four summary counts, and a four-table entity diagram."
-  caption="Real self-contained HTML output generated from the four-table documentation fixture."
+  caption="Real self-contained HTML output generated from the source-neutral SQL fixture."
   notice="The first screen combines navigation, counts, and the relationship map; the table-detail variant shows the column-level lookup below it."
   fullSizeHref={schemaDocumentFull.src}
   downloadHref={schemaDocumentSample}
   sourceHref={schemaDocumentSample}
-  reproduce="ptah schema export --to html --root-dir docs/site/fixtures/schema-ui/internal/models --out schema-document.html"
+  reproduce="ptah schema export --to html --schema-file docs/site/fixtures/source-equivalence/schema.sql --out schema-document.html"
   variants={[
     {
       id: 'table-detail',
       label: 'One table and its columns',
       src: schemaDocumentTable,
-      alt: 'The orders table card in generated Ptah documentation, including its columns, key markers, defaults, references, and index.',
+      alt: 'The books table card in generated Ptah documentation, including its columns, key marker, nullability, and author reference.',
       fullSizeHref: schemaDocumentFull.src,
       downloadHref: schemaDocumentSample,
       sourceHref: schemaDocumentSample,

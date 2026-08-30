@@ -13,6 +13,7 @@ sourceOfTruth:
 generated: false
 overlaps: []
 disposition: keep
+sourceMode: source-neutral
 ---
 
 For schema changes, wiring Ptah into a project answers two questions, and they
@@ -107,29 +108,6 @@ With `--dry-run`, `ptah schema apply` prints the planned SQL under a `Planned sc
 The versioned workflow costs you a migration directory to maintain and the discipline of hashing and reviewing it. In exchange, changes are auditable, rollback is a committed file rather than an improvisation, and hashed directories verify integrity before anything touches a database, and `--verify-sum` additionally requires the sum file to exist. The direct workflow removes the file overhead and iterates fastest, but the apply-time approval is its only gate, and there is no history to replay or audit.
 
 A common hybrid uses both: iterate with `ptah schema apply` against a disposable local database, then run `ptah migrations generate` against a database at the released state so the reviewed migration file — not the ad-hoc changes — is what reaches shared environments. In either model, `ptah schema drift` works as a pipeline guard that fails when a database no longer matches the desired schema.
-
-## If you are comparing Ptah with another tool
-
-Both workflows above assume Ptah is the tool. If that is still open, the answer
-depends on which category the other tool is in.
-
-- `golang-migrate` and `goose` are versioned migration runners and nothing
-  else. Ptah adds a schema intermediate representation, diffing, planning,
-  rendering, linting, safety classification, capability gating, and the
-  Atlas-compatible surface. Ptah reads both layouts, so a directory written for
-  either can be brought across with `ptah migrations import`.
-- Prisma and Ent tie schema workflows to their own ecosystems. Ptah is Go-first
-  through its annotations and its embeddable packages, but it is not an ORM and
-  owns no query layer.
-- Skeema is a declarative schema tool for MySQL and MariaDB. Ptah reads several
-  schema sources and targets several dialects.
-- `sqlc` generates typed Go code from queries. Ptah works on schema and
-  migrations and generates no query code.
-
-Atlas is the one comparison with pages of its own, because Ptah is a drop-in
-replacement for its CLI rather than an alternative to it. Start at the
-[Feature matrix](../../atlas/feature-matrix/) for the per-capability status, or
-at [Atlas compatibility](../../atlas/overview/) if you have scripts to port.
 
 ## Where each workflow appears
 

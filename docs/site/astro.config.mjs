@@ -9,6 +9,7 @@ import tailwindcss from '@tailwindcss/vite';
 // reads that module, so the sidebar the gate checks is the sidebar the site
 // renders. See the header of src/sidebar.mjs.
 import { sidebar } from './src/sidebar.mjs';
+import { pagefindRanking } from './src/lib/search-ranking.mjs';
 
 const site = 'https://stokaro.github.io';
 const DOCS_VERSION = process.env.DOCS_VERSION || 'edge';
@@ -72,6 +73,9 @@ export default defineConfig({
       },
       customCss: ['./src/styles/global.css'],
       lastUpdated: true,
+      pagefind: {
+        ranking: pagefindRanking,
+      },
       components: {
         PageTitle: './src/components/PageTitle.astro',
         SiteTitle: './src/components/SiteTitle.astro',

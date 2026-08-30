@@ -12,6 +12,7 @@ sourceOfTruth:
 generated: false
 overlaps: []
 disposition: keep
+sourceMode: static-file-only
 ---
 
 Use YAML when Ptah owns the schema file and you want compact, explicit input

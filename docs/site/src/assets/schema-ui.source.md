@@ -4,11 +4,18 @@
 `schema-serve-drift.png` are screenshots of Ptah's generated HTML, not authored
 diagrams.
 
-Source fixture: `docs/site/fixtures/schema-ui/`
+The schema-document screenshots and downloadable HTML use the canonical static
+fixture at `docs/site/fixtures/source-equivalence/schema.sql`. This keeps the
+source-neutral `schema export` feature from looking dependent on Go annotations.
+
+The schema-serve screenshots use `docs/site/fixtures/schema-ui/`, a necessary
+Go-specific product UI fixture because `schema serve` currently accepts Go
+annotations only. Its matching and drift variants share the same conceptual
+shop schema on purpose.
 
 Generator: `docs/site/scripts/generate-schema-ui-assets.mjs`
 
-Viewport: 1440 by 900 CSS pixels, Chromium from the version pinned in
+Viewport: 1200 by 760 CSS pixels, Chromium from the version pinned in
 `docs/site/package-lock.json`.
 
 Regenerate from the repository root after building `bin/ptah`:
@@ -25,4 +32,5 @@ path in the rendered DOM before capture, so the committed pixels contain no
 machine-specific path or volatile timestamp.
 
 Review owner: documentation maintainers. Re-run the generator when
-`internal/schemadoc`, `cmd/internal/schemaserve`, or the fixture changes.
+`internal/schemadoc`, `cmd/internal/schemaserve`, or either named fixture
+changes.

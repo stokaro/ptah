@@ -11,8 +11,15 @@ sourceOfTruth:
   - "cmd/migrations"
   - "migration"
 generated: false
+searchAliases:
+  - "generate migrations from SQL"
+  - "generate migrations from YAML"
+  - "generate migrations from HCL"
+  - "generate migrations from DBML"
+  - "generate migration without Go"
 overlaps: []
 disposition: keep
+sourceMode: source-neutral
 owns:
   - cli-ptah-migrations-generate
   - cli-ptah-migrations-plan
@@ -33,9 +40,10 @@ same files, sealed and applied the same way.
 
 Prerequisites: an installed `ptah` binary. The main path uses one SQL file and
 local SQLite databases, so it needs no Go toolchain, database server, Docker,
-or repository checkout.
+or repository checkout. You can generate a migration without Go from SQL,
+YAML, HCL, or DBML.
 
-## Starting state
+## Generate a migration without Go
 
 Create an empty `./migrations` directory and save this desired schema as
 `schema.sql`. `app.db` does not need to exist yet.
@@ -48,23 +56,25 @@ CREATE TABLE users (
 );
 ```
 
-### Choose the source spelling
+### Generate migrations from SQL, YAML, HCL, DBML, or Go annotations
 
 The walkthrough below uses SQL. These are the exact source forms accepted by
 `migrations plan` and `migrations generate`; keep the remaining flags from the
 walkthrough unchanged.
 
+{/* source-support-command: ptah migrations generate */}
+
 | Source | Copyable source flags | Source-specific condition |
 | --- | --- | --- |
-| SQL | `--schema-file ./schema.sql` | Use `--schema-format sql` only for an external program, not for a file. |
-| YAML | `--schema-file ./schema.yaml` | The file extension selects YAML. |
-| HCL | `--schema-file ./schema.hcl --var tenant=main` | Add one `--var name=value` for each variable without a default. |
-| DBML | `--schema-file ./schema.dbml` | DBML covers its supported table, key, index, relationship, and note subset. |
-| Go annotations | `--root-dir ./models` | This is the only form that requires Go source. |
-| Explicit external program | `--schema-cmd "./load-schema --tenant acme" --schema-format sql` | Ptah starts the program directly, without a shell. Its stdout must be SQL, HCL, or YAML. |
-| Configured external source | `--config ./ptah.yaml --allow-external-schema` | The opt-in is mandatory because the configuration executes a program. |
-| OCI artifact | `--schema-file oci://registry.example/acme/app-schema:v1` | Registry credentials come from the Docker credential store. Add `--plain-http` only for an explicitly trusted local registry. |
-| Composite sources | `--schema-file ./schema.sql --schema-file ./shared.yaml --schema-file ./vendor.hcl` | Repeat inputs; compatible objects merge and conflicting definitions fail. |
+| SQL file | `--schema-file ./schema.sql` | Uses Ptah's DDL parser subset; `--schema-format sql` is only for an external program. |
+| YAML file | `--schema-file ./schema.yaml` | Uses Ptah YAML objects; the file extension selects YAML. |
+| HCL file | `--schema-file ./schema.hcl --var tenant=main` | Uses the Atlas-compatible HCL subset plus Ptah extensions; add each variable with `--var`. |
+| DBML file | `--schema-file ./schema.dbml` | DBML covers its supported table, key, index, relationship, and note subset. |
+| Go annotations | `--root-dir ./models` | Uses the native Go annotation model and therefore requires Go source. |
+| External program | `--schema-cmd "./load-schema --tenant acme" --schema-format sql` | Ptah starts the program directly, without a shell. Its stdout must be SQL, HCL, or YAML. |
+| Configured external source | `--config ./ptah.yaml --allow-external-schema` | The opt-in is mandatory; the selected block emits SQL, HCL, or YAML. |
+| OCI artifact | `--schema-file oci://registry.example/acme/app-schema:v1` | The artifact contains canonical HCL; registry credentials come from the Docker credential store. |
+| Composite source | `--schema-file ./schema.sql --schema-file ./shared.yaml --schema-file ./vendor.hcl` | Repeat inputs; compatible objects merge and conflicting definitions fail. |
 
 The generated source-support manifest distinguishes a verified command/source
 path from an accepted path that still lacks a focused command test. Source

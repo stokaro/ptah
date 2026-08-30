@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// Reports editorial heuristics that need judgment and fails only on objective
-// contract defects. Long pages and mixed page types may carry a reviewed
-// waiver; identical tab panels may not, because they give the reader no choice.
+// Reports editorial heuristics that need judgment. The current tree has no
+// unwaived findings, so a new finding fails until it is fixed or receives a
+// specific reviewed waiver. Identical tab panels may never be waived.
 
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -85,6 +86,14 @@ function jaccard(left, right) {
   return intersection / (left.size + right.size - intersection);
 }
 
+function fingerprint(value) {
+  return createHash('sha256').update(value).digest('hex').slice(0, 12);
+}
+
+function findingKey({ route, check, target }) {
+  return `${route}\0${check}\0${target}`;
+}
+
 export function duplicateTabFindings(source) {
   const findings = [];
   for (const [tabsIndex, tabs] of [...source.matchAll(/<Tabs\b[^>]*>([\s\S]*?)<\/Tabs>/g)].entries()) {
@@ -111,6 +120,7 @@ export function pageFindings(page, source) {
       route: page.route,
       path: page.path,
       check: 'page-length',
+      target: 'page',
       message: `${page.type} page has ${page.visibleWords} visible words; review it above ${limit}`,
     });
   }
@@ -120,6 +130,7 @@ export function pageFindings(page, source) {
       route: page.route,
       path: page.path,
       check: 'generic-introduction',
+      target: 'first-paragraph',
       message: 'first paragraph describes the page instead of the reader situation or lookup scope',
     });
   }
@@ -133,6 +144,7 @@ export function pageFindings(page, source) {
       route: page.route,
       path: page.path,
       check: 'mixed-page-type',
+      target: `heading:${normalizedProse(referenceHeading).replaceAll(' ', '-')}`,
       message: `${page.type} page contains reference section ${JSON.stringify(referenceHeading)}`,
     });
   }
@@ -141,6 +153,7 @@ export function pageFindings(page, source) {
       route: page.route,
       path: page.path,
       check: 'mixed-page-type',
+      target: 'section-count',
       message: `tutorial has ${headings.length} level-two sections; review the five-to-seven-step learning path`,
     });
   }
@@ -167,6 +180,7 @@ export function duplicateParagraphFindings(entries) {
             route: entry.page.route,
             path: entry.page.path,
             check: 'near-duplicate',
+            target: `paragraph:${fingerprint(paragraph)}:matches:${previous.page.route}`,
             message: `paragraph is ${Math.round(similarity * 100)}% similar to ${previous.page.route}`,
           });
           break;
@@ -182,7 +196,7 @@ export function duplicateParagraphFindings(entries) {
 export function waiverProblems(waivers, pages, findings) {
   const problems = [];
   const liveRoutes = new Set(pages.map((page) => page.route));
-  const findingKeys = new Set(findings.map((finding) => `${finding.route}\0${finding.check}`));
+  const findingKeys = new Set(findings.map(findingKey));
   const seen = new Set();
   if (!Array.isArray(waivers)) return ['editorial waivers must be a JSON array'];
 
@@ -194,15 +208,23 @@ export function waiverProblems(waivers, pages, findings) {
     }
     if (!liveRoutes.has(waiver.route)) problems.push(`${where}: ${waiver.route} is not a live route`);
     if (!waiverChecks.has(waiver.check)) problems.push(`${where}: unknown check ${waiver.check}`);
+    if (typeof waiver.target !== 'string' || waiver.target.trim() === '') {
+      problems.push(`${where}: target must identify the exact finding being waived`);
+    }
     if (typeof waiver.reason !== 'string' || waiver.reason.trim().length < 30) {
       problems.push(`${where}: reason must contain at least 30 characters`);
     }
-    const key = `${waiver.route}\0${waiver.check}`;
-    if (seen.has(key)) problems.push(`${where}: duplicates ${waiver.route} ${waiver.check}`);
+    const key = findingKey(waiver);
+    if (seen.has(key)) problems.push(`${where}: duplicates ${waiver.route} ${waiver.check} ${waiver.target}`);
     seen.add(key);
     if (!findingKeys.has(key)) problems.push(`${where}: stale; the waived finding no longer exists`);
   }
   return problems;
+}
+
+export function unwaivedFindings(waivers, findings) {
+  const waived = new Set(waivers.map(findingKey));
+  return findings.filter((finding) => !waived.has(findingKey(finding)));
 }
 
 function selftest() {
@@ -227,12 +249,30 @@ function selftest() {
   if (duplicates.length !== 1) throw new Error('near-duplicate paragraphs were not detected');
 
   const problems = waiverProblems(
-    [{ route: '/guide/', check: 'page-length', reason: 'The complete reference is intentionally kept together.' }],
+    [{ route: '/guide/', check: 'page-length', target: 'page', reason: 'The complete reference is intentionally kept together.' }],
     [page],
     findings,
   );
   if (problems.length !== 0) throw new Error(`valid waiver failed: ${problems.join('; ')}`);
-  console.log('check-editorial-shape.mjs --selftest: OK (7 assertions)');
+  const active = unwaivedFindings(
+    [{ route: '/guide/', check: 'page-length', target: 'page', reason: 'The complete reference is intentionally kept together.' }],
+    findings,
+  );
+  if (active.length !== 2 || active.some((finding) => finding.check === 'page-length')) {
+    throw new Error('new unwaived findings were not separated from reviewed waivers');
+  }
+  const sameCheckFindings = [
+    { route: '/guide/', path: 'guide.md', check: 'mixed-page-type', target: 'heading:flags', message: 'flags' },
+    { route: '/guide/', path: 'guide.md', check: 'mixed-page-type', target: 'section-count', message: 'sections' },
+  ];
+  const exactlyOne = unwaivedFindings(
+    [{ route: '/guide/', check: 'mixed-page-type', target: 'heading:flags', reason: 'The local flag lookup is intentionally task-scoped.' }],
+    sameCheckFindings,
+  );
+  if (exactlyOne.length !== 1 || exactlyOne[0].target !== 'section-count') {
+    throw new Error('one waiver masked another finding with the same route and check');
+  }
+  console.log('check-editorial-shape.mjs --selftest: OK (9 assertions)');
 }
 
 function main() {
@@ -264,8 +304,7 @@ function main() {
     process.exit(1);
   }
 
-  const waived = new Set(waivers.map((waiver) => `${waiver.route}\0${waiver.check}`));
-  const active = findings.filter((finding) => !waived.has(`${finding.route}\0${finding.check}`));
+  const active = unwaivedFindings(waivers, findings);
   for (const finding of active) {
     const message = `${finding.check}: ${finding.message}`;
     if (process.env.GITHUB_ACTIONS === 'true') {
@@ -273,6 +312,13 @@ function main() {
     } else {
       console.warn(`warning: ${finding.path}: ${message}`);
     }
+  }
+  if (active.length > 0) {
+    console.error(
+      `check-editorial-shape.mjs: FAILED (${active.length} unwaived review finding${active.length === 1 ? '' : 's'}; fix each finding or add a specific reviewed waiver)`,
+    );
+    process.exitCode = 1;
+    return;
   }
   console.log(
     `check-editorial-shape.mjs: OK (${inventory.pages.length} pages, ${active.length} review warnings, ${waivers.length} active waivers)`,

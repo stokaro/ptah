@@ -14,6 +14,7 @@ searchAliases:
   - "PostgreSQL extension"
 overlaps: []
 disposition: keep
+sourceMode: live-database-only
 owns:
   - dialect-postgres
 ---
@@ -23,6 +24,7 @@ what Ptah manages on it beyond portable table DDL. Every object family below
 is declared in your schema sources, flows through the full generate / compare
 / migrate / rollback lifecycle, and has its exact directive syntax in the
 [Go annotation reference](../../reference/go-annotations/).
+Commands that introspect this behavior require a live PostgreSQL database URL.
 
 ## Connecting
 

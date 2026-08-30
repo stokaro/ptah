@@ -1,5 +1,12 @@
 #!/usr/bin/env node
 
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const scriptDir = dirname(fileURLToPath(import.meta.url));
+const workflowPath = join(scriptDir, '..', '..', '..', '.github', 'workflows', 'docs.yml');
+
 const jobContracts = [
   { changed: 'SITE_CHANGED', result: 'SITE_RESULT', label: 'versioned site' },
   { changed: 'STYLE_CHANGED', result: 'STYLE_RESULT', label: 'documentation style' },
@@ -9,6 +16,56 @@ const jobContracts = [
   { changed: 'QUICKSTART_CHANGED', result: 'QUICKSTART_RESULT', label: 'quick-start acceptance' },
 ];
 
+export function changeFilters(workflow) {
+  const filters = {};
+  const lines = workflow.split(/\r?\n/);
+  const start = lines.findIndex((line) => /^\s+filters:\s*\|\s*$/.test(line));
+  if (start === -1) throw new Error('Docs workflow has no paths-filter block');
+  const baseIndent = lines[start].search(/\S/);
+  let group;
+  for (const line of lines.slice(start + 1)) {
+    if (line.trim() === '') continue;
+    const indent = line.search(/\S/);
+    if (indent <= baseIndent) break;
+    const groupMatch = line.match(/^\s{12}([a-z][a-z0-9-]*):\s*$/);
+    if (groupMatch) {
+      group = groupMatch[1];
+      filters[group] = [];
+      continue;
+    }
+    const patternMatch = line.match(/^\s{14}-\s+['"]([^'"]+)['"]\s*$/);
+    if (patternMatch && group) filters[group].push(patternMatch[1]);
+  }
+  return filters;
+}
+
+function globExpression(pattern) {
+  let expression = '^';
+  for (let index = 0; index < pattern.length;) {
+    if (pattern.startsWith('**/', index)) {
+      expression += '(?:.*/)?';
+      index += 3;
+    } else if (pattern.startsWith('**', index)) {
+      expression += '.*';
+      index += 2;
+    } else if (pattern[index] === '*') {
+      expression += '[^/]*';
+      index += 1;
+    } else {
+      expression += pattern[index].replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+      index += 1;
+    }
+  }
+  return new RegExp(`${expression}$`);
+}
+
+export function groupsForPaths(paths, filters) {
+  return Object.entries(filters)
+    .filter(([, patterns]) => paths.some((path) => patterns.some((pattern) => globExpression(pattern).test(path))))
+    .map(([group]) => group)
+    .sort();
+}
+
 export function aggregateGate(environment) {
   const problems = [];
   if (environment.CHANGES_RESULT !== 'success') {
@@ -16,6 +73,12 @@ export function aggregateGate(environment) {
   }
 
   for (const contract of jobContracts) {
+    if (environment[contract.changed] !== 'true' && environment[contract.changed] !== 'false') {
+      problems.push(
+        `${contract.label} classification ${contract.changed} is ${JSON.stringify(environment[contract.changed])}, want "true" or "false"`,
+      );
+      continue;
+    }
     const changed = environment[contract.changed] === 'true';
     const result = environment[contract.result];
     const wanted = changed ? 'success' : 'skipped';
@@ -55,7 +118,66 @@ function selftest() {
       .some((problem) => problem.includes('want skipped')),
     'unexpectedly executed no-change job was not detected',
   );
-  console.log('check-documentation-gate.mjs --selftest: OK (relevant and no-change paths)');
+  assert(
+    aggregateGate(fixture({ SITE_CHANGED: '' }))
+      .some((problem) => problem.includes('SITE_CHANGED') && problem.includes('"true" or "false"')),
+    'empty path-classification output false-greened',
+  );
+  assert(
+    aggregateGate(fixture({ STYLE_CHANGED: 'maybe' }))
+      .some((problem) => problem.includes('STYLE_CHANGED') && problem.includes('"true" or "false"')),
+    'invalid path-classification output false-greened',
+  );
+
+  const filters = changeFilters(readFileSync(workflowPath, 'utf8'));
+  const pathCases = [
+    {
+      label: 'unrelated Go-only change',
+      paths: ['internal/retry/backoff.go'],
+      groups: [],
+    },
+    {
+      label: 'documentation-only change',
+      paths: ['docs/site/src/content/docs/concepts/desired-schema-and-sources.md'],
+      groups: ['site', 'style'],
+    },
+    {
+      label: 'generated command-reference change',
+      paths: ['docs/site/src/content/docs/reference/command-flags.md'],
+      groups: ['generated', 'site', 'style'],
+    },
+    {
+      label: 'example change',
+      paths: ['examples/portable/README.md'],
+      groups: ['examples', 'style'],
+    },
+    {
+      label: 'inference quick-start change',
+      paths: ['docs/site/fixtures/inference-quick-start/compose.yaml'],
+      groups: ['inference', 'site', 'style'],
+    },
+    {
+      label: 'default quick-start change',
+      paths: ['docs/site/src/content/docs/start/quick-start.mdx'],
+      groups: ['quickstart', 'site', 'style'],
+    },
+  ];
+  for (const pathCase of pathCases) {
+    const actual = groupsForPaths(pathCase.paths, filters);
+    assert(
+      JSON.stringify(actual) === JSON.stringify(pathCase.groups),
+      `${pathCase.label} selected ${actual.join(', ') || '(none)'}, want ${pathCase.groups.join(', ') || '(none)'}`,
+    );
+    const environment = fixture();
+    for (const group of actual) {
+      const contract = jobContracts.find(({ changed }) => changed === `${group.toUpperCase()}_CHANGED`);
+      assert(contract, `${pathCase.label} selected unknown validation group ${group}`);
+      environment[contract.changed] = 'true';
+      environment[contract.result] = 'success';
+    }
+    assert(aggregateGate(environment).length === 0, `${pathCase.label} did not produce a successful aggregate`);
+  }
+  console.log('check-documentation-gate.mjs --selftest: OK (six path shapes and aggregate failures)');
 }
 
 function main() {

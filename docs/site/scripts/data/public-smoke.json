@@ -2,14 +2,39 @@
   "routes": [
     {
       "path": "",
-      "requiredText": "Ptah"
+      "requiredText": "Ptah",
+      "visuals": [
+        {
+          "selector": "[data-visual-id=\"product-journeys\"]",
+          "requiredActions": ["full-size", "download", "source"],
+          "checkLinks": true
+        }
+      ]
+    },
+    {
+      "path": "inference/quick-start/",
+      "requiredText": "Quick start",
+      "artifacts": [
+        {
+          "selector": "a[data-ptah-inference-archive][download]",
+          "expectedPath": "samples/inference-quick-start.zip",
+          "format": "zip"
+        },
+        {
+          "selector": "a[data-ptah-inference-checksum][download]",
+          "expectedPath": "samples/inference-quick-start.zip.sha256",
+          "format": "sha256"
+        }
+      ]
     },
     {
       "path": "schema/visualize/",
       "requiredText": "Visualize the schema",
       "visuals": [
         {
-          "selector": "img[alt*='Ptah-generated entity-relationship diagram']"
+          "selector": "[data-visual-id=\"schema-viz-relationships\"]",
+          "requiredActions": ["full-size", "download", "source"],
+          "checkLinks": true
         }
       ]
     },
@@ -18,7 +43,9 @@
       "requiredText": "Generate schema documentation",
       "visuals": [
         {
-          "selector": "img[alt*='generated Ptah schema reference']"
+          "selector": "[data-visual-id=\"schema-document\"]",
+          "requiredActions": ["full-size", "download", "source"],
+          "checkLinks": true
         }
       ]
     },
@@ -27,17 +54,64 @@
       "requiredText": "Serve a live schema view",
       "visuals": [
         {
-          "selector": "img[alt*='live Shop schema view']"
+          "selector": "[data-visual-id=\"schema-serve-matches\"]",
+          "requiredActions": ["full-size", "download", "source"],
+          "checkLinks": true
         }
       ]
     },
     {
       "path": "schema/security/",
-      "requiredText": "Report schema security findings"
+      "requiredText": "Report schema security findings",
+      "visuals": [
+        {
+          "selector": "[data-visual-id=\"schema-security-visual\"]",
+          "requiredActions": ["full-size", "download", "source"],
+          "checkLinks": true
+        }
+      ]
+    },
+    {
+      "path": "schema/lineage/",
+      "requiredText": "Trace view column lineage",
+      "visuals": [
+        {
+          "selector": "[data-visual-id=\"schema-lineage-explanatory\"]",
+          "requiredActions": ["full-size", "download", "source"],
+          "checkLinks": true
+        }
+      ],
+      "artifacts": [
+        { "selector": "a[download][href$=\"schema-lineage.txt\"]" },
+        { "selector": "a[download][href$=\"schema-lineage.json\"]" }
+      ]
     },
     {
       "path": "versioned/generate/",
-      "requiredText": "Generate migrations"
+      "requiredText": "Generate migrations",
+      "visuals": [
+        {
+          "selector": "[data-visual-id=\"migration-safety-report\"]",
+          "requiredActions": ["full-size", "download", "source"],
+          "checkLinks": true
+        }
+      ]
+    },
+    {
+      "path": "testing/migrations-and-schema/",
+      "requiredText": "Test migrations and schemas",
+      "visuals": [
+        {
+          "selector": "[data-visual-id=\"migration-test-report\"]",
+          "requiredActions": ["full-size", "download", "source"],
+          "checkLinks": true
+        },
+        {
+          "selector": "[data-visual-id=\"schema-test-report\"]",
+          "requiredActions": ["full-size", "download", "source"],
+          "checkLinks": true
+        }
+      ]
     }
   ]
 }

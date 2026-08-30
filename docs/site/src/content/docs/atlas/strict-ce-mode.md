@@ -16,7 +16,7 @@ lastVerified: "2026-08-30"
 evidence:
   - "internal/atlascompatpolicy"
   - "cmd/atlas/strict_compat_policy_test.go"
-  - "stokaro/ptah-atlas-conformance"
+  - "github:stokaro/ptah-atlas-conformance"
 searchAliases:
   - PTAH_ATLAS_STRICT_COMPAT
   - Atlas CE mode
@@ -78,7 +78,7 @@ writer's full destruction inventory, including dependent objects.
 
 Strict mode preserves safety and correctness changes where copying CE would
 lose data, hide state, or fail for an unrelated reason. Those measured
-differences are [Retained divergences](../retained-divergences/), not parity
+differences are [Compatibility differences](../retained-divergences/), not parity
 claims.
 
 With the selector absent, `ptah-compat` retains every implemented Atlas

@@ -50,6 +50,7 @@
       "searchAliases": [
         "migrate from Atlas"
       ],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -87,10 +88,11 @@
       "editSource": null,
       "lastVerified": "2026-08-30",
       "evidence": [
-        "stokaro/ptah-atlas-conformance",
+        "github:stokaro/ptah-atlas-conformance",
         "scripts/atlas-ce-reference.lock"
       ],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -108,7 +110,7 @@
         "/reference/hcl-schema/"
       ],
       "visibleWords": 2315,
-      "sourceBytes": 19413
+      "sourceBytes": 19420
     },
     {
       "path": "docs/site/src/content/docs/atlas/docs-coverage.md",
@@ -138,6 +140,7 @@
         "scripts/atlas-ce-reference.lock"
       ],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -194,7 +197,7 @@
       "goal": "Determine whether current evidence establishes, limits, or leaves a capability unresolved.",
       "sourceOfTruth": [
         "docs/site/scripts/data/feature-matrix-rows.json",
-        "stokaro/ptah-atlas-conformance"
+        "github:stokaro/ptah-atlas-conformance"
       ],
       "owns": [],
       "generated": true,
@@ -203,9 +206,10 @@
       "lastVerified": "2026-08-30",
       "evidence": [
         "docs/site/scripts/data/feature-matrix-rows.json",
-        "stokaro/ptah-atlas-conformance"
+        "github:stokaro/ptah-atlas-conformance"
       ],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [
         "/atlas/conformance/",
         "/atlas/docs-coverage/",
@@ -225,11 +229,10 @@
         "/atlas/overview/",
         "/atlas/retained-divergences/",
         "/atlas/strict-ce-mode/",
-        "/operate/troubleshooting/",
-        "/start/choose-a-workflow/"
+        "/operate/troubleshooting/"
       ],
       "visibleWords": 8335,
-      "sourceBytes": 58638
+      "sourceBytes": 58662
     },
     {
       "path": "docs/site/src/content/docs/atlas/license-boundary.md",
@@ -256,6 +259,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [],
@@ -292,6 +296,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -348,6 +353,7 @@
         "Atlas format template",
         "ptah compat JSON URL"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/atlas/migrate-commands/",
         "/atlas/schema-commands/"
@@ -392,6 +398,7 @@
         "replace Atlas CLI",
         "ptah compat"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/atlas/adoption/",
         "/atlas/strict-ce-mode/",
@@ -423,11 +430,10 @@
         "/reference/overview/",
         "/schema/hcl/",
         "/schema/sql/",
-        "/start/choose-a-workflow/",
         "/testing/migrations-and-schema/"
       ],
       "visibleWords": 497,
-      "sourceBytes": 4571
+      "sourceBytes": 4576
     },
     {
       "path": "docs/site/src/content/docs/atlas/project-config.md",
@@ -454,6 +460,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "command-specific",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -472,13 +479,13 @@
         "/schema/orm-and-external/"
       ],
       "visibleWords": 6736,
-      "sourceBytes": 49203
+      "sourceBytes": 49232
     },
     {
       "path": "docs/site/src/content/docs/atlas/retained-divergences.md",
       "route": "/atlas/retained-divergences/",
-      "title": "Retained divergences",
-      "description": "Cases where ptah-compat exits 1 and the pinned Atlas community binary exits 0, each with the measurement and the argument for keeping it.",
+      "title": "Compatibility differences",
+      "description": "Cases where ptah-compat deliberately differs from the pinned Atlas community binary, with the measurement and current policy for each case.",
       "sidebarPath": "Atlas compatibility > Differences and evidence",
       "sidebarLabel": null,
       "type": "status",
@@ -486,8 +493,8 @@
         "atlas-migrator",
         "evaluator"
       ],
-      "readerQuestion": "What does the current evidence establish about retained divergences?",
-      "goal": "Evaluate each measured divergence and the reason Ptah retains it.",
+      "readerQuestion": "Where does ptah-compat deliberately differ from the pinned Atlas community binary?",
+      "goal": "Evaluate each measured compatibility difference and its current policy.",
       "sourceOfTruth": [
         "cmd/atlas",
         "internal/atlascompatpolicy"
@@ -501,7 +508,10 @@
         "cmd/atlas/compat_1241_retained_divergence_test.go",
         "stokaro/ptah#1241"
       ],
-      "searchAliases": [],
+      "searchAliases": [
+        "retained divergences"
+      ],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -517,7 +527,7 @@
         "/reference/atlas-commands/"
       ],
       "visibleWords": 6112,
-      "sourceBytes": 42347
+      "sourceBytes": 42416
     },
     {
       "path": "docs/site/src/content/docs/atlas/schema-commands.md",
@@ -544,6 +554,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -571,8 +582,8 @@
         "/reference/atlas-commands/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 12205,
-      "sourceBytes": 89085
+      "visibleWords": 12207,
+      "sourceBytes": 89117
     },
     {
       "path": "docs/site/src/content/docs/atlas/strict-ce-mode.md",
@@ -601,12 +612,13 @@
       "evidence": [
         "internal/atlascompatpolicy",
         "cmd/atlas/strict_compat_policy_test.go",
-        "stokaro/ptah-atlas-conformance"
+        "github:stokaro/ptah-atlas-conformance"
       ],
       "searchAliases": [
         "PTAH_ATLAS_STRICT_COMPAT",
         "Atlas CE mode"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/atlas/overview/",
         "/atlas/conformance/",
@@ -625,7 +637,7 @@
         "/reference/extension-variables/"
       ],
       "visibleWords": 416,
-      "sourceBytes": 3903
+      "sourceBytes": 3915
     },
     {
       "path": "docs/site/src/content/docs/concepts/database-urls-and-dev-databases.md",
@@ -651,6 +663,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -703,6 +716,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -750,6 +764,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -795,6 +810,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -838,6 +854,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -879,6 +896,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -921,6 +939,7 @@
         "MySQL supported versions",
         "MariaDB supported versions"
       ],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -959,6 +978,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -1001,6 +1021,7 @@
         "supported databases",
         "database version support"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/databases/support-matrix/",
         "/concepts/dialects-and-capabilities/"
@@ -1047,6 +1068,7 @@
       "searchAliases": [
         "PostgreSQL extension"
       ],
+      "sourceMode": "live-database-only",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -1069,8 +1091,8 @@
         "/databases/support-matrix/",
         "/direct/inspect/"
       ],
-      "visibleWords": 5855,
-      "sourceBytes": 41967
+      "visibleWords": 5866,
+      "sourceBytes": 42077
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlite.md",
@@ -1098,6 +1120,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "source-neutral",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -1114,7 +1137,7 @@
         "/reference/extension-variables/"
       ],
       "visibleWords": 2878,
-      "sourceBytes": 19061
+      "sourceBytes": 19088
     },
     {
       "path": "docs/site/src/content/docs/databases/sqlserver.md",
@@ -1144,6 +1167,7 @@
       "searchAliases": [
         "SQL Server support"
       ],
+      "sourceMode": "live-database-only",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -1157,8 +1181,8 @@
         "/concepts/dialects-and-capabilities/",
         "/databases/support-matrix/"
       ],
-      "visibleWords": 1918,
-      "sourceBytes": 14710
+      "visibleWords": 1930,
+      "sourceBytes": 14820
     },
     {
       "path": "docs/site/src/content/docs/databases/support-evidence.md",
@@ -1193,6 +1217,7 @@
         "database support measurement",
         "unsupported database engines"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/databases/support-matrix/",
         "/databases/support-policy/"
@@ -1239,6 +1264,7 @@
       "searchAliases": [
         "MySQL supported versions"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/reference/capabilities/",
         "/concepts/dialects-and-capabilities/"
@@ -1302,6 +1328,7 @@
         "certified database release",
         "best-effort database support"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/databases/support-matrix/",
         "/concepts/dialects-and-capabilities/"
@@ -1348,6 +1375,7 @@
       "searchAliases": [
         "apply desired schema"
       ],
+      "sourceMode": "source-neutral",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -1372,7 +1400,7 @@
         "/start/choose-a-workflow/"
       ],
       "visibleWords": 830,
-      "sourceBytes": 8820
+      "sourceBytes": 8847
     },
     {
       "path": "docs/site/src/content/docs/direct/compare-and-drift.md",
@@ -1406,6 +1434,7 @@
       "searchAliases": [
         "schema drift"
       ],
+      "sourceMode": "source-neutral",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -1431,7 +1460,7 @@
         "/testing/ci/"
       ],
       "visibleWords": 1434,
-      "sourceBytes": 11966
+      "sourceBytes": 11993
     },
     {
       "path": "docs/site/src/content/docs/direct/inspect.md",
@@ -1462,6 +1491,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "live-database-only",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -1482,7 +1512,7 @@
         "/schema/security/"
       ],
       "visibleWords": 1831,
-      "sourceBytes": 14409
+      "sourceBytes": 14440
     },
     {
       "path": "docs/site/src/content/docs/direct/overview.md",
@@ -1510,6 +1540,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "source-neutral",
       "overlaps": [
         "/start/choose-a-workflow/",
         "/direct/apply/"
@@ -1530,7 +1561,7 @@
         "/start/choose-a-workflow/"
       ],
       "visibleWords": 471,
-      "sourceBytes": 3957
+      "sourceBytes": 3984
     },
     {
       "path": "docs/site/src/content/docs/direct/plan-and-approve.md",
@@ -1562,6 +1593,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "source-neutral",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -1578,7 +1610,7 @@
         "/start/quick-start-direct/"
       ],
       "visibleWords": 1358,
-      "sourceBytes": 13156
+      "sourceBytes": 13183
     },
     {
       "path": "docs/site/src/content/docs/extend/components.md",
@@ -1605,6 +1637,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "source-neutral",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -1620,8 +1653,8 @@
         "/extend/public-api/",
         "/versioned/lint/"
       ],
-      "visibleWords": 2425,
-      "sourceBytes": 24033
+      "visibleWords": 2430,
+      "sourceBytes": 24093
     },
     {
       "path": "docs/site/src/content/docs/extend/overview.mdx",
@@ -1652,6 +1685,7 @@
         "integrate Ptah",
         "embed Ptah"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/extend/public-api/",
         "/operate/ai-agents/"
@@ -1693,6 +1727,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -1736,6 +1771,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -1775,6 +1811,7 @@
         "database schema migration tool",
         "Atlas alternative"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/start/quick-start/",
         "/start/choose-a-workflow/",
@@ -1826,6 +1863,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -1864,6 +1902,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -1901,6 +1940,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -1938,6 +1978,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -1973,6 +2014,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [],
@@ -2005,6 +2047,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [],
@@ -2039,6 +2082,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -2076,6 +2120,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [],
@@ -2110,6 +2155,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [],
@@ -2146,6 +2192,7 @@
       "searchAliases": [
         "change embedding model"
       ],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -2186,6 +2233,7 @@
       "searchAliases": [
         "resume inference migration"
       ],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -2223,6 +2271,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [],
@@ -2261,6 +2310,7 @@
       "searchAliases": [
         "pgvector"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/inference/quick-start/",
         "/inference/concepts/lifecycle/"
@@ -2286,7 +2336,7 @@
       "path": "docs/site/src/content/docs/inference/quick-start.md",
       "route": "/inference/quick-start/",
       "title": "Quick start",
-      "description": "Build, verify, and activate an embedding generation with a disposable PostgreSQL and local provider fixture.",
+      "description": "Build, verify, and activate an embedding generation with a downloadable PostgreSQL and local-provider fixture.",
       "sidebarPath": "Inference migrations",
       "sidebarLabel": null,
       "type": "tutorial",
@@ -2312,6 +2362,7 @@
         "inference migration tutorial",
         "local embedding model"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/inference/guides/create-first-generation/",
         "/inference/concepts/lifecycle/"
@@ -2326,8 +2377,8 @@
         "/inference/guides/create-first-generation/",
         "/inference/overview/"
       ],
-      "visibleWords": 466,
-      "sourceBytes": 6362
+      "visibleWords": 566,
+      "sourceBytes": 7245
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/commands.md",
@@ -2369,6 +2420,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [],
@@ -2403,6 +2455,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [],
@@ -2435,6 +2488,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -2472,6 +2526,7 @@
         "integration/inference_cli_e2e_test.go"
       ],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [],
@@ -2506,6 +2561,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [],
@@ -2540,6 +2596,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [],
@@ -2574,6 +2631,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [],
@@ -2610,6 +2668,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [],
@@ -2642,6 +2701,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -2677,6 +2737,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -2719,6 +2780,7 @@
         "MCP preview patch",
         "agent migration patch"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/operate/ai-agent-permissions/",
         "/reference/mcp-tools/"
@@ -2759,6 +2821,7 @@
         "Cursor Ptah MCP",
         "VS Code Ptah MCP"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/operate/ai-agents/"
       ],
@@ -2799,6 +2862,7 @@
         "MCP approval policy",
         "agent allow-write"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/operate/ai-agents/",
         "/operate/ai-agent-changes/"
@@ -2843,6 +2907,7 @@
         "approval_unavailable",
         "digest_mismatch"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/operate/ai-agent-permissions/",
         "/reference/mcp-tools/"
@@ -2886,6 +2951,7 @@
         "MCP",
         "AI database agent"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/operate/ai-assist/",
         "/operate/ai-agent-connect/"
@@ -2940,6 +3006,7 @@
         "OpenAI-compatible Ptah",
         "Anthropic Ptah"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/operate/ai-assist/"
       ],
@@ -2985,6 +3052,7 @@
         "Ptah Assist history",
         ".ptah sessions"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/operate/ai-assist/"
       ],
@@ -3027,6 +3095,7 @@
         "Ptah AI assistant",
         "explain migrations with AI"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/operate/ai-agents/",
         "/operate/ai-assist-providers/",
@@ -3076,7 +3145,10 @@
       "editSource": null,
       "lastVerified": null,
       "evidence": [],
-      "searchAliases": [],
+      "searchAliases": [
+        "OCI schema source"
+      ],
+      "sourceMode": "oci-artifact-only",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -3098,7 +3170,7 @@
         "/versioned/lint/"
       ],
       "visibleWords": 2436,
-      "sourceBytes": 21102
+      "sourceBytes": 21171
     },
     {
       "path": "docs/site/src/content/docs/operate/overview.mdx",
@@ -3130,6 +3202,7 @@
         "Ptah CI",
         "Ptah operations"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/testing/ci/",
         "/operate/troubleshooting/"
@@ -3175,6 +3248,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -3214,6 +3288,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "command-specific",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -3237,7 +3312,7 @@
         "/testing/ci/"
       ],
       "visibleWords": 959,
-      "sourceBytes": 8497
+      "sourceBytes": 8526
     },
     {
       "path": "docs/site/src/content/docs/reference/atlas-commands.md",
@@ -3263,6 +3338,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [
         "/reference/command-flags/",
         "/reference/native-commands/"
@@ -3318,6 +3394,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -3371,6 +3448,7 @@
       "searchAliases": [
         "command environment variables"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/reference/native-commands/",
         "/reference/atlas-commands/"
@@ -3412,6 +3490,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -3469,6 +3548,7 @@
       "searchAliases": [
         "exit code 2"
       ],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [],
@@ -3517,6 +3597,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -3557,6 +3638,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [],
@@ -3592,6 +3674,7 @@
       "searchAliases": [
         "Go annotations"
       ],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -3611,8 +3694,8 @@
         "/schema/overview/",
         "/start/install-options/"
       ],
-      "visibleWords": 4131,
-      "sourceBytes": 32934
+      "visibleWords": 4135,
+      "sourceBytes": 32967
     },
     {
       "path": "docs/site/src/content/docs/reference/hcl-schema.md",
@@ -3639,6 +3722,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "static-file-only",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -3656,7 +3740,7 @@
         "/schema/overview/"
       ],
       "visibleWords": 1834,
-      "sourceBytes": 14961
+      "sourceBytes": 14990
     },
     {
       "path": "docs/site/src/content/docs/reference/lint-rules.md",
@@ -3685,6 +3769,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -3730,6 +3815,7 @@
         "MCP tool schema",
         "tools list"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/operate/ai-agent-connect/",
         "/operate/ai-agent-changes/"
@@ -3769,6 +3855,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "command-specific",
       "overlaps": [
         "/reference/command-flags/",
         "/reference/atlas-commands/"
@@ -3788,6 +3875,7 @@
         "/schema/security/",
         "/schema/serve/",
         "/schema/stats/",
+        "/schema/work-with-a-source/",
         "/start/choose-a-workflow/"
       ],
       "inboundLinks": [
@@ -3811,8 +3899,8 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 7087,
-      "sourceBytes": 48024
+      "visibleWords": 7108,
+      "sourceBytes": 48242
     },
     {
       "path": "docs/site/src/content/docs/reference/overview.mdx",
@@ -3842,6 +3930,7 @@
         "Ptah command reference",
         "Ptah configuration reference"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/reference/native-commands/",
         "/reference/configuration/"
@@ -3886,6 +3975,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "command-specific",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -3899,7 +3989,7 @@
         "/testing/migrations-and-schema/"
       ],
       "visibleWords": 519,
-      "sourceBytes": 4226
+      "sourceBytes": 4255
     },
     {
       "path": "docs/site/src/content/docs/reference/yaml-schema.md",
@@ -3928,6 +4018,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "static-file-only",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -3938,7 +4029,7 @@
         "/schema/yaml/"
       ],
       "visibleWords": 899,
-      "sourceBytes": 7630
+      "sourceBytes": 7659
     },
     {
       "path": "docs/site/src/content/docs/schema/composite.md",
@@ -3964,6 +4055,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "source-neutral",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -3988,7 +4080,7 @@
         "/versioned/generate/"
       ],
       "visibleWords": 456,
-      "sourceBytes": 4172
+      "sourceBytes": 4199
     },
     {
       "path": "docs/site/src/content/docs/schema/dbml.md",
@@ -4014,6 +4106,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "static-file-only",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -4028,7 +4121,7 @@
         "/schema/work-with-a-source/"
       ],
       "visibleWords": 691,
-      "sourceBytes": 5899
+      "sourceBytes": 5928
     },
     {
       "path": "docs/site/src/content/docs/schema/document.mdx",
@@ -4055,6 +4148,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "source-neutral",
       "overlaps": [
         "/schema/visualize/",
         "/schema/serve/"
@@ -4086,7 +4180,7 @@
         "/schema/yaml/"
       ],
       "visibleWords": 1352,
-      "sourceBytes": 12691
+      "sourceBytes": 12719
     },
     {
       "path": "docs/site/src/content/docs/schema/export.mdx",
@@ -4114,6 +4208,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "source-neutral",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -4138,8 +4233,8 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 3613,
-      "sourceBytes": 27744
+      "visibleWords": 3619,
+      "sourceBytes": 27818
     },
     {
       "path": "docs/site/src/content/docs/schema/go-annotations.md",
@@ -4166,7 +4261,10 @@
       "editSource": null,
       "lastVerified": null,
       "evidence": [],
-      "searchAliases": [],
+      "searchAliases": [
+        "generate migration from Go structs"
+      ],
+      "sourceMode": "go-only",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -4190,8 +4288,8 @@
         "/schema/visualize/",
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 1436,
-      "sourceBytes": 11940
+      "visibleWords": 1461,
+      "sourceBytes": 12213
     },
     {
       "path": "docs/site/src/content/docs/schema/hcl.md",
@@ -4217,6 +4315,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "static-file-only",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -4240,7 +4339,7 @@
         "/schema/work-with-a-source/"
       ],
       "visibleWords": 352,
-      "sourceBytes": 4188
+      "sourceBytes": 4217
     },
     {
       "path": "docs/site/src/content/docs/schema/lineage.mdx",
@@ -4268,6 +4367,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "source-neutral",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -4285,7 +4385,7 @@
         "/reference/native-commands/"
       ],
       "visibleWords": 1866,
-      "sourceBytes": 16289
+      "sourceBytes": 16316
     },
     {
       "path": "docs/site/src/content/docs/schema/orm-and-external.md",
@@ -4310,7 +4410,10 @@
       "editSource": null,
       "lastVerified": null,
       "evidence": [],
-      "searchAliases": [],
+      "searchAliases": [
+        "external schema loader"
+      ],
+      "sourceMode": "external-program-only",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -4327,7 +4430,7 @@
         "/schema/work-with-a-source/"
       ],
       "visibleWords": 964,
-      "sourceBytes": 8420
+      "sourceBytes": 8498
     },
     {
       "path": "docs/site/src/content/docs/schema/overview.mdx",
@@ -4359,6 +4462,7 @@
         "Ptah schema formats",
         "desired schema tools"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/schema/work-with-a-source/",
         "/concepts/desired-schema-and-sources/"
@@ -4407,6 +4511,7 @@
       "searchAliases": [
         "generate protobuf"
       ],
+      "sourceMode": "source-neutral",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -4421,7 +4526,7 @@
         "/schema/export/"
       ],
       "visibleWords": 4162,
-      "sourceBytes": 34305
+      "sourceBytes": 34332
     },
     {
       "path": "docs/site/src/content/docs/schema/security.mdx",
@@ -4449,6 +4554,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -4498,6 +4604,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "go-only",
       "overlaps": [
         "/schema/document/",
         "/direct/compare-and-drift/"
@@ -4515,8 +4622,8 @@
       "inboundLinks": [
         "/reference/native-commands/"
       ],
-      "visibleWords": 1385,
-      "sourceBytes": 11917
+      "visibleWords": 1431,
+      "sourceBytes": 12299
     },
     {
       "path": "docs/site/src/content/docs/schema/sql.md",
@@ -4542,6 +4649,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "static-file-only",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -4561,7 +4669,7 @@
         "/schema/work-with-a-source/"
       ],
       "visibleWords": 689,
-      "sourceBytes": 6284
+      "sourceBytes": 6313
     },
     {
       "path": "docs/site/src/content/docs/schema/stats.mdx",
@@ -4589,6 +4697,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "live-database-only",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -4606,7 +4715,7 @@
         "/schema/security/"
       ],
       "visibleWords": 622,
-      "sourceBytes": 8010
+      "sourceBytes": 8041
     },
     {
       "path": "docs/site/src/content/docs/schema/validate-and-format.md",
@@ -4635,6 +4744,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "command-specific",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -4652,8 +4762,8 @@
         "/schema/work-with-a-source/",
         "/testing/ci/"
       ],
-      "visibleWords": 787,
-      "sourceBytes": 7428
+      "visibleWords": 921,
+      "sourceBytes": 8585
     },
     {
       "path": "docs/site/src/content/docs/schema/visualize.mdx",
@@ -4683,6 +4793,7 @@
       "searchAliases": [
         "visualize schema"
       ],
+      "sourceMode": "go-only",
       "overlaps": [
         "/schema/document/",
         "/schema/serve/"
@@ -4708,7 +4819,7 @@
         "/schema/stats/"
       ],
       "visibleWords": 908,
-      "sourceBytes": 11125
+      "sourceBytes": 11145
     },
     {
       "path": "docs/site/src/content/docs/schema/work-with-a-source.mdx",
@@ -4736,6 +4847,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "source-neutral",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -4755,6 +4867,7 @@
       "inboundLinks": [
         "/concepts/desired-schema-and-sources/",
         "/direct/overview/",
+        "/reference/native-commands/",
         "/schema/dbml/",
         "/schema/document/",
         "/schema/go-annotations/",
@@ -4766,7 +4879,7 @@
         "/start/quick-start/"
       ],
       "visibleWords": 556,
-      "sourceBytes": 5719
+      "sourceBytes": 5746
     },
     {
       "path": "docs/site/src/content/docs/schema/yaml.md",
@@ -4792,6 +4905,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "static-file-only",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -4812,7 +4926,7 @@
         "/schema/work-with-a-source/"
       ],
       "visibleWords": 235,
-      "sourceBytes": 3197
+      "sourceBytes": 3226
     },
     {
       "path": "docs/site/src/content/docs/start/adopt-an-existing-database.mdx",
@@ -4842,8 +4956,12 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [
-        "adopt existing database"
+        "adopt existing database",
+        "adopt database as SQL",
+        "adopt database as HCL",
+        "adopt database as DBML"
       ],
+      "sourceMode": "source-neutral",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -4869,7 +4987,7 @@
         "/versioned/overview/"
       ],
       "visibleWords": 1019,
-      "sourceBytes": 12477
+      "sourceBytes": 12589
     },
     {
       "path": "docs/site/src/content/docs/start/choose-a-workflow.md",
@@ -4896,11 +5014,10 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "source-neutral",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
-        "/atlas/feature-matrix/",
-        "/atlas/overview/",
         "/direct/apply/",
         "/direct/overview/",
         "/inference/overview/",
@@ -4921,8 +5038,8 @@
         "/start/quick-start/",
         "/versioned/overview/"
       ],
-      "visibleWords": 1065,
-      "sourceBytes": 8027
+      "visibleWords": 870,
+      "sourceBytes": 6782
     },
     {
       "path": "docs/site/src/content/docs/start/install-options.mdx",
@@ -4956,6 +5073,7 @@
         "verify Ptah checksum",
         "build Ptah from source"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/start/install/"
       ],
@@ -5003,6 +5121,7 @@
         "install Ptah",
         "download Ptah"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/start/install-options/",
         "/operate/troubleshooting/"
@@ -5063,6 +5182,7 @@
         "getting started with Ptah",
         "Ptah tutorial"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/",
         "/start/choose-a-workflow/"
@@ -5109,6 +5229,7 @@
         "direct schema evolution",
         "schema drift CI"
       ],
+      "sourceMode": "source-neutral",
       "overlaps": [
         "/start/quick-start/",
         "/direct/apply/",
@@ -5127,7 +5248,7 @@
         "/start/quick-start/"
       ],
       "visibleWords": 255,
-      "sourceBytes": 3628
+      "sourceBytes": 3655
     },
     {
       "path": "docs/site/src/content/docs/start/quick-start-migrations.mdx",
@@ -5157,6 +5278,7 @@
         "first migration",
         "apply migrations"
       ],
+      "sourceMode": null,
       "overlaps": [
         "/versioned/overview/",
         "/versioned/apply/",
@@ -5177,8 +5299,8 @@
         "/start/overview/",
         "/start/quick-start/"
       ],
-      "visibleWords": 267,
-      "sourceBytes": 4213
+      "visibleWords": 268,
+      "sourceBytes": 4220
     },
     {
       "path": "docs/site/src/content/docs/start/quick-start.mdx",
@@ -5209,6 +5331,7 @@
         "apply desired schema",
         "SQLite quick start"
       ],
+      "sourceMode": "source-neutral",
       "overlaps": [
         "/direct/apply/",
         "/start/quick-start-direct/",
@@ -5231,7 +5354,7 @@
         "/start/quick-start-direct/"
       ],
       "visibleWords": 282,
-      "sourceBytes": 3927
+      "sourceBytes": 3954
     },
     {
       "path": "docs/site/src/content/docs/testing/ci.md",
@@ -5257,7 +5380,10 @@
       "editSource": null,
       "lastVerified": null,
       "evidence": [],
-      "searchAliases": [],
+      "searchAliases": [
+        "use Ptah Action with schema file"
+      ],
+      "sourceMode": "source-neutral",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -5284,7 +5410,7 @@
         "/versioned/lint/"
       ],
       "visibleWords": 983,
-      "sourceBytes": 9083
+      "sourceBytes": 9164
     },
     {
       "path": "docs/site/src/content/docs/testing/migrations-and-schema.mdx",
@@ -5313,7 +5439,11 @@
       "editSource": null,
       "lastVerified": null,
       "evidence": [],
-      "searchAliases": [],
+      "searchAliases": [
+        "test YAML schema",
+        "test DBML schema"
+      ],
+      "sourceMode": "command-specific",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -5331,8 +5461,8 @@
         "/testing/ci/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 1026,
-      "sourceBytes": 10382
+      "visibleWords": 1142,
+      "sourceBytes": 11398
     },
     {
       "path": "docs/site/src/content/docs/versioned/apply.md",
@@ -5363,6 +5493,7 @@
       "searchAliases": [
         "apply migrations"
       ],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -5419,6 +5550,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [],
@@ -5461,7 +5593,14 @@
       "editSource": null,
       "lastVerified": null,
       "evidence": [],
-      "searchAliases": [],
+      "searchAliases": [
+        "generate migrations from SQL",
+        "generate migrations from YAML",
+        "generate migrations from HCL",
+        "generate migrations from DBML",
+        "generate migration without Go"
+      ],
+      "sourceMode": "source-neutral",
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -5492,8 +5631,8 @@
         "/versioned/lint/",
         "/versioned/overview/"
       ],
-      "visibleWords": 1412,
-      "sourceBytes": 14232
+      "visibleWords": 1452,
+      "sourceBytes": 14703
     },
     {
       "path": "docs/site/src/content/docs/versioned/import.md",
@@ -5522,6 +5661,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -5570,6 +5710,7 @@
       "searchAliases": [
         "checksum mismatch"
       ],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -5599,8 +5740,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 5256,
-      "sourceBytes": 36658
+      "visibleWords": 5018,
+      "sourceBytes": 34961
     },
     {
       "path": "docs/site/src/content/docs/versioned/lint.md",
@@ -5629,6 +5770,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -5685,6 +5827,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -5729,6 +5872,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": "source-neutral",
       "overlaps": [
         "/start/choose-a-workflow/",
         "/concepts/migration-directory/"
@@ -5762,7 +5906,7 @@
         "/start/choose-a-workflow/"
       ],
       "visibleWords": 442,
-      "sourceBytes": 4423
+      "sourceBytes": 4450
     },
     {
       "path": "docs/site/src/content/docs/versioned/reference-data.md",
@@ -5791,6 +5935,7 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
@@ -5837,6 +5982,7 @@
       "searchAliases": [
         "rollback migration"
       ],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [

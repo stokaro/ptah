@@ -12,6 +12,7 @@ sourceOfTruth:
 generated: false
 overlaps: []
 disposition: keep
+sourceMode: command-specific
 owns:
   - cli-ptah-schema-fmt
   - cli-ptah-schema-validate
@@ -28,8 +29,24 @@ time a linter takes.
 
 | Command | Reads | Answers |
 | --- | --- | --- |
-| `ptah schema validate` | any desired-schema source | Is this schema structurally sound for the dialects I target? |
+| `ptah schema validate` | the supported sources listed below | Is this schema structurally sound for the dialects I target? |
 | `ptah schema fmt` | `.hcl` files on disk | Are these files in canonical HCL layout? |
+
+<!-- source-support-command: ptah schema validate -->
+
+| Source | Selector | Source-specific limitation |
+| --- | --- | --- |
+| SQL file | `--schema-file schema.sql` | Validates the Ptah DDL parser subset for the selected dialect. |
+| YAML file | `--schema-file schema.yaml` | Validates Ptah YAML schema objects and documented dialect overrides. |
+| HCL file | `--schema-file schema.hcl` | Validates the Atlas-compatible HCL subset plus Ptah extensions. |
+| DBML file | `--schema-file schema.dbml` | DBML cannot express every Ptah object. |
+| Go annotations | `--root-dir ./models` | Reads the native Go annotation model from a Go source tree. |
+| OCI artifact | `--schema-file oci://registry.example/app:v1` | Validates the canonical HCL stored in the artifact. |
+| Composite source | repeat `--schema-file` with compatible inputs | Uses the union of the selected formats; conflicting definitions fail. |
+
+The source-support manifest records focused command evidence separately from
+accepted transport. A supported input that lacks a focused command test is not
+a claim that its format can express every Ptah object.
 
 Prerequisites: an installed `ptah` binary ([Install Ptah](../../start/install/))
 and a desired schema as local files.

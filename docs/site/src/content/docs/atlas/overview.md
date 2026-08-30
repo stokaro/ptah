@@ -67,7 +67,7 @@ unsupported, waived, and externally measured behavior per capability.
 Ptah also refuses to copy defects. Strict CE mode never silently drops authored
 schema objects, hides a live object, or corrupts migration state merely because
 the pinned community binary does. Deliberate safety and correctness differences
-are listed in [Retained divergences](../retained-divergences/).
+are listed in [Compatibility differences](../retained-divergences/).
 
 Atlas Cloud registry operations have no account-independent protocol Ptah can
 implement. Compatibility stubs such as `migrate push` and `schema push` refuse

@@ -517,39 +517,6 @@ directory both tools apply — Atlas CE reports it as `Migrating to version 2 fr
 02`.
 :::
 
-:::danger[Upgrading a Flyway directory applied by an older Ptah build]
-Direct Flyway apply, status, lint, and set now use the exact source token as the
-Atlas revision identity. The numeric projection still exists, but only as the
-execution-order and linearity key. A pre-#1206 revision table may therefore
-contain the current numeric ordering key, while a pre-#982 table may contain an
-even older numeric encoding. Either obsolete row would otherwise leave the
-corresponding migration pending.
-
-`ptah-compat migrate apply` refuses before executing anything and prints the
-one-way repair to the exact token. For example, the old `V1` key `10000` becomes
-`1`, and the pre-#1206 `V2` ordering key becomes `2`:
-
-```sql
-UPDATE atlas_schema_revisions SET version = '1' WHERE version = '10000';
-UPDATE atlas_schema_revisions SET version = '2'
-  WHERE version = '4611686018427510315';
-```
-
-Run the statements against the schema selected by `--revisions-schema`, then
-re-run apply. If the exact token row already exists, the repair deletes the
-duplicate obsolete row instead of updating onto an occupied primary key. New
-exact-source rows carry `operator_version='Ptah/source-identity'`; only the
-generic `Ptah` marker written by older builds proves that a numeric candidate is
-an internal ordering key. A numeric candidate that is another covered or
-retired exact token, or that belongs to another writer, is ambiguous and is
-never rewritten automatically.
-
-This recovery is intentionally one way. Ptah is pre-v1, so the retired internal
-key is not retained as a second readable identity. Rewriting the version column
-is sufficient because the recorded hash still covers the same converted SQL
-body.
-:::
-
 :::note[Flyway revision identity matches Atlas CE]
 For direct Flyway directories, `migrate apply`, `migrate set`, `migrate status`,
 and `migrate lint` preserve exact plain, dotted, dot-prefixed, zero-padded,

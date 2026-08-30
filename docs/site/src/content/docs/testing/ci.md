@@ -11,8 +11,11 @@ sourceOfTruth:
   - "cmd/schema"
   - "integration"
 generated: false
+searchAliases:
+  - "use Ptah Action with schema file"
 overlaps: []
 disposition: keep
+sourceMode: source-neutral
 ---
 
 Run Ptah in CI to catch migration drift, destructive changes, hash mismatches,

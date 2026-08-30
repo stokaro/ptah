@@ -23,6 +23,30 @@ export function breadcrumbTrail(entries, landingHrefs = new Set()) {
   return [];
 }
 
+/**
+ * Infer section landings from the rendered sidebar when release content
+ * predates Ptah's `type: landing` frontmatter contract.
+ *
+ * An explicit Overview child is the release-compatible signal. Do not treat
+ * every group's first task as a landing: older sidebars contain groups whose
+ * first item is only the first task in that section.
+ */
+export function sidebarOverviewHrefs(entries) {
+  const hrefs = new Set();
+  for (const entry of entries) {
+    if (entry.type !== 'group') continue;
+    const first = entry.entries[0];
+    if (
+      first?.type === 'link' &&
+      (first.label === 'Overview' || /\/overview\/?$/.test(first.href))
+    ) {
+      hrefs.add(first.href);
+    }
+    for (const href of sidebarOverviewHrefs(entry.entries)) hrefs.add(href);
+  }
+  return hrefs;
+}
+
 /** Remove a Markdown or MDX frontmatter block without parsing its contents. */
 export function stripFrontmatter(source) {
   if (!source.startsWith('---')) return source.trim();
