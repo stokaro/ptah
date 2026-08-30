@@ -43,14 +43,15 @@ Two commands share one test-case format:
 
 {/* source-support-command: ptah schema test */}
 
-| Source | Legacy selector | Source-specific limitation |
+| Source | Selector | Source-specific limitation |
 | --- | --- | --- |
-| SQL file | `--root-dir ./schema.sql` | Uses Ptah's DDL parser subset; the historical flag name does not make the file a directory. |
-| YAML file | `--root-dir ./schema.yaml` | Uses Ptah YAML schema objects; the suffix selects YAML. |
-| HCL file | `--root-dir ./schema.hcl` | Uses the Atlas-compatible HCL subset plus Ptah extensions. |
-| DBML file | `--root-dir ./schema.dbml` | DBML cannot express every Ptah object. |
+| SQL file | `--schema-file ./schema.sql` | Uses Ptah's DDL parser subset for the selected dialect. |
+| YAML file | `--schema-file ./schema.yaml` | Uses Ptah YAML schema objects and their documented dialect overrides. |
+| HCL file | `--schema-file ./schema.hcl` | Uses the Atlas-compatible HCL subset plus named Ptah extensions. |
+| DBML file | `--schema-file ./schema.dbml` | Covers DBML tables, columns, keys, indexes, relationships, and notes, but not every Ptah object. |
 | Go annotations | `--root-dir ./models` | Uses the native Go annotation model and requires a Go source tree. |
-| Live database | `--root-dir sqlite://source.db` | The database reader measures the live catalog; the destination must be throwaway and a non-SQLite source needs an explicit matching `--db-url`. |
+| OCI artifact | `--schema-file oci://registry.example/app:v1` | Reads the artifact's lossless canonical HCL document. |
+| Live database | `--source-db-url sqlite://source.db` | The database reader measures the live catalog; the destination must be throwaway and a non-SQLite source needs an explicit matching `--db-url`. |
 
 The live database is the desired input; `--db-url` still names the separate
 throwaway database where the assertions run.
@@ -123,17 +124,13 @@ One selector names the desired schema, and each says what it takes:
 | Selector | Source |
 | --- | --- |
 | `--root-dir` | a directory of Go schema annotations |
-| `--schema-file` | a `.sql`, `.yaml`, `.yml`, `.hcl`, or `.dbml` file (repeatable) |
+| `--schema-file` | a `.sql`, `.yaml`, `.yml`, `.hcl`, or `.dbml` file, or an OCI artifact (repeatable) |
 | `--source-db-url` | a database URL whose live schema is introspected |
 
 Naming two of them is refused before the throwaway database is provisioned.
 `--source-db-url` is separate from `--db-url` because that one names the
 throwaway database the cases run against; a database source must share its
 dialect.
-
-`--root-dir` also accepts a file or a database URL, which is what it did before
-the other two selectors existed. Such a run works and reports on standard error
-which selector names that source exactly.
 
 Both commands load every `*.yaml`/`*.yml` file under `--dir`, run the cases, print
 a report, and exit non-zero if any case fails — so they slot straight into a CI

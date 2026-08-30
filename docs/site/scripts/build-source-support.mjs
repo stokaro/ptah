@@ -177,8 +177,8 @@ const commands = [
     design: ['external-program', 'configured-external', 'migration-directory'],
     gap: ['composite-source'],
     // One selector per source kind, and each names what it takes: --root-dir a
-    // directory of Go annotations, --schema-file a file, --source-db-url a live
-    // database. --db-url stays the throwaway target (stokaro/ptah#2571).
+    // directory of Go annotations, --schema-file a file or OCI artifact, and
+    // --source-db-url a live database. --db-url stays the throwaway target.
     invocations: Object.fromEntries([
       ...localFiles.map((id) => [id, `--schema-file schema.${id.split('-')[0]} --dir ./tests`]),
       ['go-annotations', '--root-dir ./models --dir ./tests'],

@@ -1511,8 +1511,8 @@
         "/schema/export/",
         "/schema/security/"
       ],
-      "visibleWords": 1831,
-      "sourceBytes": 14440
+      "visibleWords": 1813,
+      "sourceBytes": 14304
     },
     {
       "path": "docs/site/src/content/docs/direct/overview.md",
@@ -3169,8 +3169,8 @@
         "/versioned/apply/",
         "/versioned/lint/"
       ],
-      "visibleWords": 2436,
-      "sourceBytes": 21171
+      "visibleWords": 2424,
+      "sourceBytes": 21117
     },
     {
       "path": "docs/site/src/content/docs/operate/overview.mdx",
@@ -5461,8 +5461,8 @@
         "/testing/ci/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 1142,
-      "sourceBytes": 11398
+      "visibleWords": 1124,
+      "sourceBytes": 11388
     },
     {
       "path": "docs/site/src/content/docs/versioned/apply.md",

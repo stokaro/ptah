@@ -198,7 +198,7 @@ try {
 
   const schemaArgs = [
     'schema', 'test', '--dir', join(fixtureRoot, 'schema-tests'),
-    '--root-dir', join(fixtureRoot, 'schema.sql'), '--report', 'html',
+    '--schema-file', join(fixtureRoot, 'schema.sql'), '--report', 'html',
   ];
   const schemaPass = execute([...schemaArgs, '--run', '^product schema accepts a row$'], workRoot);
   const schemaFail = execute([...schemaArgs, '--run', '^empty product schema has two rows$'], workRoot, [1]);

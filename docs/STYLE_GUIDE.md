@@ -439,9 +439,10 @@ once on its concept page and link; do not re-define them per page.
   an explicit external program; and `--config ... --allow-external-schema` for
   configured external execution. Do not imply that one flag covers every
   transport.
-- `ptah schema test --root-dir` is the one documented legacy exception that
-  also accepts static files and a live database URL. Do not copy that overload
-  to examples for another command.
+- For `ptah schema test`, use `--schema-file` for static files and OCI
+  artifacts, `--source-db-url` for a live desired schema, and `--root-dir`
+  only for Go annotations. Do not promote the compatibility overload accepted
+  by `--root-dir` in reader workflows.
 - A Go-only introduction is allowed only when current built help accepts no
   source-neutral alternative. State the limitation, cite the owning command
   or implementation in `sourceOfTruth`, and link to the source-neutral

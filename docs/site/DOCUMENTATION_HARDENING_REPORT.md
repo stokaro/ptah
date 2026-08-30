@@ -18,12 +18,13 @@ commit was:
 
 That commit was both the current `master` tip and the independently reviewed
 historical baseline. Immediately before publication, the branch fetched
-`master` again and rebased cleanly except for regenerating the derived content
-inventory. A later default-branch change was fetched before final handoff and
-rebased without conflicts. The resulting base is
-`be2981e25668de794afa12e456f71843ad368fe7`.
+`master` again. Subsequent default-branch changes were fetched before final
+handoff and the branch was rebased onto
+`943501b3b44562d69642c4b974e6c5c0a5e54155`. The only textual conflict across
+those rebases was the derived content inventory, which was regenerated from
+the combined source tree.
 
-- Ending implementation commit: `01bdc0ddf7272d1ba740805108b71d71db6f77e4`
+- Ending implementation commit: `303eadaf1fbab1ab998ad60a0218388a83e7ee87`
 - Current implementation PR:
   [#2593](https://github.com/stokaro/ptah/pull/2593)
 
@@ -166,13 +167,21 @@ base that needs this migration history in the task flow.
 
 ## Findings intentionally left as product issues
 
-- [`stokaro/ptah#2571`](https://github.com/stokaro/ptah/issues/2571) owns the
-  neutral replacement for the overloaded legacy
-  `ptah schema test --root-dir` selector. Documentation states the current
-  command limit instead of inventing a replacement flag.
 - [`stokaro/ptah-action#1`](https://github.com/stokaro/ptah-action/issues/1)
   owns schema-file support in the separate GitHub Action repository. Ptah
   documentation continues to describe that action as Go-specific.
+
+## Finding changed during implementation
+
+The starting baseline treated source-specific `ptah schema test` selectors as
+an open product gap in `stokaro/ptah#2571`. That issue was implemented by
+[#2591](https://github.com/stokaro/ptah/pull/2591) on the default branch while
+this change was in progress. After rebasing, the how-to, OCI guidance,
+source-support table, generated product-output command, and regression
+contract use `--schema-file` for static files and OCI artifacts,
+`--source-db-url` for a live desired schema, and `--root-dir` only for Go
+annotations. The compatibility overload remains accepted by the CLI but is
+not promoted in reader workflows.
 
 ## Current repository ruleset status
 
@@ -445,9 +454,6 @@ reader-facing title is **Compatibility differences**.
 
 ## Remaining product gaps
 
-- `ptah schema test --root-dir` remains an overloaded legacy selector; the
-  source-neutral replacement is tracked in
-  [`stokaro/ptah#2571`](https://github.com/stokaro/ptah/issues/2571).
 - `stokaro/ptah-action` remains Go-specific; schema-file support is tracked in
   [`stokaro/ptah-action#1`](https://github.com/stokaro/ptah-action/issues/1).
 - `ptah viz` and `ptah schema serve` remain Go-annotation-only. Their pages

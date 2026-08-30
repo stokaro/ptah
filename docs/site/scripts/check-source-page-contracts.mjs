@@ -34,8 +34,8 @@ const commandSpecificCommands = new Map([
 const authoredReaderTypes = new Set([
   'landing', 'tutorial', 'how-to', 'concept', 'reference', 'troubleshooting', 'status',
 ]);
-const neutralSelector = /--(?:schema-file|schema-cmd|config|from|to)\b/;
-const staticLegacyRoot = /--root-dir(?:=|\s+)(?:['"]?)[^\s'"]+\.(?:sql|ya?ml|hcl|dbml)(?:['"]?)(?:\s|$)/i;
+const neutralSelector = /--(?:schema-file|schema-cmd|source-db-url|config|from|to)\b/;
+const schemaTestOverloadedRoot = /--root-dir(?:=|\s+)(?:['"]?)(?:[^\s'"]+\.(?:sql|ya?ml|hcl|dbml)|[a-z][a-z0-9+.-]*:\/\/[^\s'"]+)(?:['"]?)(?:\s|$)/i;
 const expressivenessOverclaim = /\b(?:all|every) (?:schema )?sources? (?:are|is) (?:fully |exactly )?(?:equivalent|interchangeable)|\bsame expressiveness\b/i;
 const supportedStatuses = new Set(['verified', 'supported-missing-command-test', 'supported-untested']);
 const acceptedStatuses = new Set([...supportedStatuses, 'conditional']);
@@ -165,9 +165,11 @@ function sharesSignificantToken(left, right) {
 }
 
 function expectedSelectorOptions(command, source) {
-  // schema test retains its historical overloaded selector. No other command
-  // may use a static file through --root-dir as evidence of a neutral input.
-  if (command === 'ptah schema test') return ['--root-dir'];
+  if (command === 'ptah schema test') {
+    if (source.id === 'go-annotations') return ['--root-dir'];
+    if (source.id === 'live-database') return ['--source-db-url'];
+    return ['--schema-file'];
+  }
   return optionNames(source.spelling ?? '');
 }
 
@@ -188,6 +190,7 @@ function commandName(invocation, manifest) {
 function selectedSourceID(command, invocation) {
   if (/--schema-cmd\b/.test(invocation)) return 'external-program';
   if (/--config\b/.test(invocation) && /--allow-external-schema\b/.test(invocation)) return 'configured-external';
+  if (command === 'ptah schema test' && /--source-db-url\b/.test(invocation)) return 'live-database';
   if (/--schema-file\b/.test(invocation)) {
     if (/oci:\/\//i.test(invocation)) return 'oci-artifact';
     if (/\.ya?ml\b/i.test(invocation)) return 'yaml-file';
@@ -197,13 +200,6 @@ function selectedSourceID(command, invocation) {
     return null;
   }
   if (/--root-dir\b/.test(invocation)) {
-    if (command === 'ptah schema test') {
-      if (/\.ya?ml\b/i.test(invocation)) return 'yaml-file';
-      if (/\.hcl\b/i.test(invocation)) return 'hcl-file';
-      if (/\.dbml\b/i.test(invocation)) return 'dbml-file';
-      if (/\.sql\b/i.test(invocation)) return 'sql-file';
-      if (/[a-z][a-z0-9+.-]*:\/\//i.test(invocation)) return 'live-database';
-    }
     return 'go-annotations';
   }
   if (command === 'ptah viz') return 'go-annotations';
@@ -314,6 +310,12 @@ export function pageContractProblems(page, source, manifest, options = {}) {
   const intro = firstProse(source);
   const opening = firstProse(source, 700);
 
+  for (const invocation of commandBlocks(source, manifest)) {
+    if (commandName(invocation, manifest) === 'ptah schema test' && schemaTestOverloadedRoot.test(invocation)) {
+      problems.push(`${label}: ptah schema test reader workflows must use --schema-file or --source-db-url instead of overloaded --root-dir`);
+    }
+  }
+
   if (page.sourceMode === 'source-neutral') {
     if (/\bGo (?:entities|models?)\b/i.test(`${page.title} ${page.description}`)) {
       problems.push(`${label}: source-neutral title or description frames the desired schema as Go`);
@@ -325,7 +327,6 @@ export function pageContractProblems(page, source, manifest, options = {}) {
     if (!first) {
       problems.push(`${label}: source-neutral page has no runnable source-consuming command`);
     } else if (!neutralSelector.test(first) &&
-        !(/\bptah\s+schema\s+test\b/.test(first) && staticLegacyRoot.test(first)) &&
         !(/\bptah schema inspect\b/.test(first) && /--db-url\b/.test(first))) {
       problems.push(`${label}: first source-consuming command has no non-Go primary path`);
     }
@@ -458,9 +459,10 @@ function selftest() {
   if (!pageContractProblems(fixturePage('source-neutral'), disguisedRoot, manifest).some((problem) => problem.includes('non-Go primary path'))) {
     throw new Error('static --root-dir was accepted outside schema test');
   }
-  const legacySchemaTest = 'Test a static schema.\n\n```bash\nptah schema test --root-dir schema.sql --dir ./tests\n```\n';
-  if (pageContractProblems(fixturePage('source-neutral'), legacySchemaTest, manifest).some((problem) => problem.includes('non-Go primary path'))) {
-    throw new Error('schema test legacy static --root-dir was rejected');
+  const overloadedSchemaTest = 'Test a static schema.\n\n```bash\nptah schema test --root-dir schema.sql --dir ./tests\n```\n';
+  if (!pageContractProblems(fixturePage('source-neutral'), overloadedSchemaTest, manifest)
+    .some((problem) => problem.includes('instead of overloaded --root-dir'))) {
+    throw new Error('schema test overloaded --root-dir passed as the primary neutral selector');
   }
   const goEarly = 'This command reads Go annotations only. Use the [source-neutral export](../document/).\n\n```bash\nptah viz --root-dir ./models\n```\n';
   if (pageContractProblems(
