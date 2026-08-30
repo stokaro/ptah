@@ -83,6 +83,106 @@
 }
 
 /*
+ * ProductPreview keeps real product output inspectable without giving every
+ * page a bespoke figure/action implementation. The image is a normal link, so
+ * full-size access still works when JavaScript is disabled.
+ */
+.ptah-product-preview {
+	margin-block: 1.5rem 2rem;
+	border: 1px solid var(--sl-color-gray-5);
+	border-radius: 0.75rem;
+	background: var(--sl-color-bg-nav);
+	overflow: hidden;
+}
+
+.ptah-product-preview__media {
+	display: block;
+	padding: clamp(0.5rem, 2vw, 1.25rem);
+	background: var(--sl-color-bg);
+	overflow-x: auto;
+}
+
+.ptah-product-preview__media img {
+	display: block;
+	width: 100%;
+	min-width: min(100%, 34rem);
+	height: auto;
+	margin-inline: auto;
+}
+
+.ptah-product-preview__media:focus-visible,
+.ptah-product-preview__actions a:focus-visible,
+.ptah-product-preview__reproduce summary:focus-visible {
+	outline: 3px solid var(--sl-color-accent-high);
+	outline-offset: 3px;
+}
+
+.ptah-product-preview figcaption {
+	display: grid;
+	gap: 0.65rem;
+	padding: 1rem 1.25rem 1.25rem;
+}
+
+.ptah-product-preview figcaption > * {
+	margin: 0;
+}
+
+.ptah-product-preview__caption {
+	font-weight: 700;
+}
+
+.ptah-product-preview__notice {
+	max-inline-size: var(--ptah-prose-width);
+	color: var(--sl-color-gray-2);
+}
+
+.ptah-product-preview__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem 1rem;
+}
+
+.ptah-product-preview__actions a {
+	font-weight: 650;
+}
+
+.ptah-product-preview__reproduce {
+	max-inline-size: var(--ptah-prose-width);
+}
+
+.ptah-product-preview__reproduce summary {
+	cursor: pointer;
+	font-weight: 650;
+}
+
+.ptah-product-preview__reproduce pre {
+	margin-block-start: 0.75rem;
+}
+
+.ptah-product-preview__variants {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+	gap: 1rem;
+	margin-block-start: 0.5rem;
+}
+
+.ptah-product-preview__variants article {
+	display: grid;
+	gap: 0.5rem;
+}
+
+.ptah-product-preview__variants img {
+	display: block;
+	width: 100%;
+	height: auto;
+}
+
+.ptah-product-preview__variants p {
+	margin: 0;
+	font-weight: 650;
+}
+
+/*
  * Starlight gives the table of contents a rail of its own from 72rem. That
  * breakpoint belongs to a column pinned at 45rem, where the rail cost the
  * reader nothing the layout was going to hand them anyway. Once the column can

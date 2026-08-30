@@ -1796,8 +1796,8 @@
         "/versioned/overview/"
       ],
       "inboundLinks": [],
-      "visibleWords": 327,
-      "sourceBytes": 5315
+      "visibleWords": 293,
+      "sourceBytes": 5905
     },
     {
       "path": "docs/site/src/content/docs/inference/concepts/consistency.md",
