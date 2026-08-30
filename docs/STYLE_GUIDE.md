@@ -682,11 +682,9 @@ a reader recognizes on sight and cannot reconstruct from a paragraph.
   skipping levels.
 - The site shell may use the full `70rem` content width for code, diagrams,
   generated matrices, and wide tables. Paragraphs, lists, blockquotes,
-  admonitions, and ordinary headings stop at a `60rem` reading column and share
-  the wide shell's left edge. At wide viewports, center the combined article and
-  table-of-contents frame in the space beside the navigation rail. Do not center
-  prose and wide blocks as separate grids: their staggered left edges make the
-  page look disconnected.
+  admonitions, and ordinary headings stop at a centered `60rem`. Do not widen
+  prose to make one reference table fit or left-align it when the page has room
+  to center the reading column.
 - A Markdown table or code block already uses the wide page measure. Give a
   custom visual or component `.ptah-wide-content`; use `.ptah-wide-table` when
   a table must preserve its desktop column widths and scroll locally on mobile.

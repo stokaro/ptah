@@ -190,6 +190,41 @@ The archive has no top-level directory. Extract it into a temporary directory,
 then install the three binaries by name so `LICENSE` and `README.md` do not land
 in the binary directory.
 
+### A macOS archive downloaded in a browser
+
+macOS refuses the binary if the archive was downloaded in a browser, and the
+dialog it shows offers **Move to Trash** as its default button. The binaries are
+signed ad hoc by the Go linker rather than with an Apple Developer ID, so
+Gatekeeper has nothing to verify:
+
+```console
+$ codesign -dv --verbose=4 ./ptah
+Identifier=a.out
+CodeDirectory v=20400 flags=0x20002(adhoc,linker-signed)
+Signature=adhoc
+TeamIdentifier=not set
+
+$ spctl --assess --type execute -vv ./ptah
+./ptah: rejected
+```
+
+What decides whether you meet this is the download method, not the archive. A
+browser sets the `com.apple.quarantine` attribute and Gatekeeper evaluates the
+binary; `curl`, `wget` and `gh release download` set no such attribute, so it
+never runs. That is why the installer above works and a click on the release
+asset may not.
+
+Clear the attribute on an archive that carries one:
+
+```bash
+xattr -d com.apple.quarantine ./ptah ./ptah-compat ./ptah-ls
+```
+
+Fetching the archive with `curl` instead avoids the attribute entirely. Signing
+and notarizing the macOS binaries is tracked in
+[issue #2363](https://github.com/stokaro/ptah/issues/2363); until that is done,
+this page describes what is true rather than what would be convenient.
+
 ## Verify the release signature
 
 The release workflow signs `checksums.txt` with Sigstore. After downloading

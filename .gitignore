@@ -47,20 +47,6 @@ cmd/atlas/dev
 # `ptah assist --ephemeral` keeps no record at all (stokaro/ptah#1489).
 .ptah/sessions/
 
-# Agent worktrees. AGENTS.md requires every change to be made in a linked
-# worktree parked at one of these two paths, so a whole second checkout of this
-# repository lives here routinely.
-#
-# Anchored, like /coverage above and for the same reason: unanchored, these
-# would match any path segment so named anywhere in the tree.
-#
-# Ignoring them is what makes the rule safe rather than merely tidy. The root of
-# a linked worktree is an ordinary directory, so without this a nested checkout
-# is thousands of untracked files that `git status` reports and `git add -A`
-# stages -- committing another branch's entire tree into this one.
-/.claude/worktrees/
-/.codex/worktrees/
-
 # goreleaser writes its build output here. `docs/release_process.md` asks for a
 # local snapshot before every release, and that snapshot is 1.2 GB.
 /dist/
