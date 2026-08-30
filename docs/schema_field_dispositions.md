@@ -58,7 +58,7 @@ exactly one disposition.
 
 ### Fields that should render and do not
 
-5, each recorded against the issue that tracks the repair. The gate
+4, each recorded against the issue that tracks the repair. The gate
 refuses a gap that has started rendering, so a repair fails the build until
 its entry is reclassified.
 
@@ -68,7 +68,6 @@ its entry is reclassified.
 | `schemamodel.Field.Enum` | https://github.com/stokaro/ptah/issues/2611 |
 | `schemamodel.Field.UniqueExpr` | https://github.com/stokaro/ptah/issues/2611 |
 | `schemamodel.Grant.GrantedBy` | https://github.com/stokaro/ptah/issues/2611 |
-| `schemamodel.Table.CustomSQL` | https://github.com/stokaro/ptah/issues/2590 |
 
 ### Every field
 

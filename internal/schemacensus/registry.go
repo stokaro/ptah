@@ -317,7 +317,7 @@ var registry = []Entry{
 	{Field: "schemamodel.Table.Checks", Disposition: DDL},
 	{Field: "schemamodel.Table.Collate", Disposition: DDL},
 	{Field: "schemamodel.Table.Comment", Disposition: DDL},
-	{Field: "schemamodel.Table.CustomSQL", Disposition: DDL, Gap: "https://github.com/stokaro/ptah/issues/2590"},
+	{Field: "schemamodel.Table.CustomSQL", Disposition: DDL},
 	{Field: "schemamodel.Table.Engine", Disposition: DDL},
 	{Field: "schemamodel.Table.Name", Disposition: DDL},
 	{Field: "schemamodel.Table.Overrides", Disposition: DDL},
