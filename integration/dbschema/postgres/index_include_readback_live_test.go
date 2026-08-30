@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,7 +14,9 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
@@ -23,19 +26,18 @@ type observedIncludeIndex struct {
 	IncludeColumns []string
 }
 
-// A covering index must come back carrying both the payload and an access
-// method the server that produced it will accept.
+// A covering index must come back carrying both the payload and an access method
+// the server that produced it will accept.
 //
-// Two separate defects made this fail on CockroachDB, and each hid behind the
-// other (stokaro/ptah#2584). The renderer refused INCLUDE for the dialect
-// outright, so a database holding one could not even be described; behind that,
-// pg_am reports `prefix` for every b-tree index there and CockroachDB rejects
-// that name as input, so the description replayed as
-// `unrecognized access method: prefix`.
+// This covers the READER half of stokaro/ptah#2584: pg_am reports `prefix` for
+// every b-tree index on CockroachDB and the server refuses that name as input,
+// so a description carrying it replayed as `unrecognized access method: prefix`.
+// The renderer half is TestReadDescribesCoveringIndex_Live below -- reverting
+// the renderer's dialect set leaves this test green, which is why both exist.
 //
-// PostgreSQL and YugabyteDB are here as controls rather than as coverage: they
-// report `btree` themselves, so a rewrite that fired on every dialect instead of
-// on CockroachDB alone still passes the CockroachDB row and fails these.
+// PostgreSQL and YugabyteDB are controls rather than coverage: they report
+// `btree` themselves, so a rewrite firing on every dialect instead of on
+// CockroachDB alone still passes the CockroachDB row and fails these.
 func TestReaderIndexInclude_LiveCarriesPayloadAndAcceptedAccessMethod(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -118,6 +120,52 @@ func TestReaderIndexInclude_LiveDescriptionReplays(t *testing.T) {
 				_, err = conn.ExecContext(ctx, statement)
 				c.Assert(err, qt.IsNil, qt.Commentf("replay index description: %s", statement))
 			}
+		})
+	}
+}
+
+// The renderer half. `ptah db read` reads, converts and renders, and the refusal
+// this issue is about lived in the last of the three: a CockroachDB database
+// holding a covering index could not be DESCRIBED at all, at a non-zero exit,
+// even though the reader had just read it correctly.
+//
+// Driving all three calls is what makes this test see that. Reverting the
+// renderer's dialect set reddens this and leaves the reader test above green.
+func TestReadDescribesCoveringIndex_Live(t *testing.T) {
+	tests := []struct {
+		name   string
+		engine dbtarget.Engine
+	}{
+		{name: "PostgreSQL", engine: dbtarget.PostgreSQL},
+		{name: "CockroachDB", engine: dbtarget.CockroachDB},
+		{name: "YugabyteDB", engine: dbtarget.YugabyteDB},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(c.Context(), time.Minute)
+			defer cancel()
+
+			conn, schemaName := prepareIncludeIndexFixture(c, ctx, test.engine)
+			schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
+			c.Assert(err, qt.IsNil)
+			info := conn.Info()
+
+			statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(
+				dbschematogo.ConvertDBSchemaToGoSchema(schema),
+				info.Dialect,
+				info.Capabilities,
+			)
+
+			c.Assert(err, qt.IsNil)
+			rendered := strings.Join(statements, "\n")
+			c.Assert(rendered, qt.Contains, `INCLUDE ("display_name")`)
+			// The catalog-only name must not reach the output. Asserting only on
+			// the payload above would pass with `USING prefix` beside it, which
+			// is DDL the server refuses.
+			c.Assert(strings.ToLower(rendered), qt.Not(qt.Contains), "using prefix")
+			c.Assert(strings.ToLower(rendered), qt.Not(qt.Contains), "using inverted")
 		})
 	}
 }
