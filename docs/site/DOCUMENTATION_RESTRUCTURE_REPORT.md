@@ -74,10 +74,9 @@ Content splits without route retirement:
 ## Reverified claims
 
 - `internal/capabilityprobe/cells.go` generates the complete release-line
-  table, census, non-probed reasons, and tag notes. The checked result contains
-  30 declared lines: 25 certified, two legacy-tested, and three best-effort;
-  26 are probed. ClickHouse 26.3 and 25.8 are certified and probed. Authored
-  prose cannot repeat these derived facts.
+  table, census, non-probed reasons, and tag notes. The audit's contradictory
+  authored counts and classifications are gone; authored prose cannot repeat
+  those derived facts.
 - The generated support lookup, authored policy, and dated evidence pages have
   separate sources and reader questions. A semantic gate rejects a future
   hand-maintained support census.
