@@ -547,7 +547,7 @@ func runRollback(
 		toGeneration, pointer.Active)); err != nil {
 		return err
 	}
-	return publishRollback(ctx, out, options, opened, embedrelease.Rollback{
+	return publishRollback(ctx, out, options, embedrelease.Rollback{
 		Generation: toGeneration, Replaced: pointer.Active,
 		Target:     opened.loaded.Spec.Target.Table,
 		Maintained: state.Maintained, VerifiedAt: state.VerifiedAt,
@@ -562,13 +562,12 @@ func runRollback(
 // every other record here is: the rollback happened, and a registry being
 // unreachable is not a fact about it.
 func publishRollback(
-	ctx context.Context, out io.Writer, options commonOptions, opened *session,
+	ctx context.Context, out io.Writer, options commonOptions,
 	rollback embedrelease.Rollback, evidence evidenceOptions,
 ) error {
 	if !evidence.destinationNamed() {
 		return nil
 	}
-	_ = opened
 	record, buildErr := embedrelease.NewRollbackRecord(rollback)
 	return publishRecord(ctx, out, options.spec.plainHTTP, evidence, record, buildErr)
 }
