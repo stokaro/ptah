@@ -1,0 +1,56 @@
+tables:
+  authors:
+    columns:
+      id:
+        type: INTEGER
+        primary: true
+        not_null: true
+      name:
+        type: VARCHAR(120)
+        not_null: true
+    indexes:
+      idx_authors_name:
+        fields: [name]
+        unique: true
+  books:
+    columns:
+      id:
+        type: INTEGER
+        primary: true
+        not_null: true
+      author_id:
+        type: INTEGER
+        not_null: true
+        foreign: authors(id)
+      title:
+        type: VARCHAR(240)
+        not_null: true
+      summary:
+        type: TEXT
+  tags:
+    columns:
+      id:
+        type: INTEGER
+        primary: true
+        not_null: true
+      name:
+        type: VARCHAR(80)
+        not_null: true
+  book_tags:
+    columns:
+      id:
+        type: INTEGER
+        primary: true
+        not_null: true
+      book_id:
+        type: INTEGER
+        not_null: true
+        foreign: books(id)
+      tag_id:
+        type: INTEGER
+        not_null: true
+        foreign: tags(id)
+    indexes:
+      idx_book_tags_pair:
+        fields: [book_id, tag_id]
+        unique: true

@@ -1,0 +1,3580 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-08-30",
+  "statuses": [
+    "verified",
+    "supported-missing-command-test",
+    "conditional",
+    "unsupported-design",
+    "unsupported-gap",
+    "not-applicable"
+  ],
+  "sources": [
+    {
+      "id": "sql-file",
+      "label": "SQL file",
+      "spelling": "--schema-file schema.sql",
+      "transport": "local file",
+      "expressiveness": "The Ptah DDL parser subset for the selected dialect."
+    },
+    {
+      "id": "yaml-file",
+      "label": "YAML file",
+      "spelling": "--schema-file schema.yaml",
+      "transport": "local file",
+      "expressiveness": "Ptah YAML schema objects and their documented dialect overrides."
+    },
+    {
+      "id": "hcl-file",
+      "label": "HCL file",
+      "spelling": "--schema-file schema.hcl",
+      "transport": "local file",
+      "expressiveness": "The documented Atlas-compatible HCL subset plus named Ptah extensions."
+    },
+    {
+      "id": "dbml-file",
+      "label": "DBML file",
+      "spelling": "--schema-file schema.dbml",
+      "transport": "local file",
+      "expressiveness": "DBML tables, columns, keys, indexes, relationships, and supported notes; not every Ptah object."
+    },
+    {
+      "id": "go-annotations",
+      "label": "Go annotations",
+      "spelling": "--root-dir ./models",
+      "transport": "local Go source tree",
+      "expressiveness": "The native annotation model, including Ptah-specific objects that narrower interchange formats may omit."
+    },
+    {
+      "id": "external-program",
+      "label": "External program",
+      "spelling": "--schema-cmd ./load-schema --schema-format sql",
+      "transport": "explicit child process",
+      "expressiveness": "Exactly the SQL, HCL, or YAML format declared by --schema-format."
+    },
+    {
+      "id": "configured-external",
+      "label": "Configured external source",
+      "spelling": "--config ptah.yaml --allow-external-schema",
+      "transport": "opt-in configured child process",
+      "expressiveness": "Exactly the SQL, HCL, or YAML format declared by the selected external_schema block."
+    },
+    {
+      "id": "oci-artifact",
+      "label": "OCI artifact",
+      "spelling": "--schema-file oci://registry.example/app:v1",
+      "transport": "OCI 1.1 artifact",
+      "expressiveness": "The lossless canonical HCL document stored in the artifact."
+    },
+    {
+      "id": "live-database",
+      "label": "Live database",
+      "spelling": "--db-url sqlite://app.db",
+      "transport": "database connection",
+      "expressiveness": "Objects and attributes the selected database reader can measure from that server."
+    },
+    {
+      "id": "migration-directory",
+      "label": "Migration directory",
+      "spelling": "--migrations-dir ./migrations",
+      "transport": "local directory or command-specific URL",
+      "expressiveness": "The schema produced by ordered replay on a disposable dev database."
+    },
+    {
+      "id": "composite-source",
+      "label": "Composite source",
+      "spelling": "--schema-file schema/tables.sql --schema-file schema/views.hcl",
+      "transport": "repeated and mixed accepted sources",
+      "expressiveness": "The union of the selected sources; conflicting definitions fail instead of silently choosing one."
+    }
+  ],
+  "entries": [
+    {
+      "command": "ptah schema render",
+      "source": "sql-file",
+      "status": "verified",
+      "invocation": "ptah schema render --schema-file schema.sql --dialect sqlite",
+      "implementationOwner": "cmd/generate",
+      "evidence": [
+        "cmd/generate/generate_test.go",
+        "scripts/check-source-equivalence.sh"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema render",
+      "source": "yaml-file",
+      "status": "verified",
+      "invocation": "ptah schema render --schema-file schema.yaml --dialect sqlite",
+      "implementationOwner": "cmd/generate",
+      "evidence": [
+        "cmd/generate/generate_test.go",
+        "scripts/check-source-equivalence.sh"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema render",
+      "source": "hcl-file",
+      "status": "verified",
+      "invocation": "ptah schema render --schema-file schema.hcl --dialect sqlite",
+      "implementationOwner": "cmd/generate",
+      "evidence": [
+        "cmd/generate/generate_test.go",
+        "scripts/check-source-equivalence.sh"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema render",
+      "source": "dbml-file",
+      "status": "verified",
+      "invocation": "ptah schema render --schema-file schema.dbml --dialect sqlite",
+      "implementationOwner": "cmd/generate",
+      "evidence": [
+        "cmd/generate/generate_test.go",
+        "scripts/check-source-equivalence.sh"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema render",
+      "source": "go-annotations",
+      "status": "verified",
+      "invocation": "ptah schema render --root-dir ./models --dialect sqlite",
+      "implementationOwner": "cmd/generate",
+      "evidence": [
+        "cmd/generate/generate_test.go",
+        "scripts/check-source-equivalence.sh"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema render",
+      "source": "external-program",
+      "status": "verified",
+      "invocation": "ptah schema render --schema-cmd ./load-schema --schema-format sql --dialect sqlite",
+      "implementationOwner": "cmd/generate",
+      "evidence": [
+        "cmd/generate/generate_test.go",
+        "scripts/check-source-equivalence.sh"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema render",
+      "source": "configured-external",
+      "status": "verified",
+      "invocation": "ptah schema render --config ptah.yaml --allow-external-schema --dialect sqlite",
+      "implementationOwner": "cmd/generate",
+      "evidence": [
+        "cmd/generate/generate_test.go",
+        "scripts/check-source-equivalence.sh"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah schema render",
+      "source": "oci-artifact",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema render --schema-file oci://registry.example/app:v1 --dialect sqlite",
+      "implementationOwner": "cmd/generate",
+      "evidence": [
+        "cmd/generate/generate_test.go",
+        "scripts/check-source-equivalence.sh"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema render",
+      "source": "live-database",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/generate",
+      "evidence": [
+        "cmd/generate/generate_test.go",
+        "scripts/check-source-equivalence.sh"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema render",
+      "source": "migration-directory",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/generate",
+      "evidence": [
+        "cmd/generate/generate_test.go",
+        "scripts/check-source-equivalence.sh"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema render",
+      "source": "composite-source",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema render --schema-file schema/tables.sql --schema-file schema/views.hcl --dialect sqlite",
+      "implementationOwner": "cmd/generate",
+      "evidence": [
+        "cmd/generate/generate_test.go",
+        "scripts/check-source-equivalence.sh"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema validate",
+      "source": "sql-file",
+      "status": "verified",
+      "invocation": "ptah schema validate --schema-file schema.sql --dialect sqlite",
+      "implementationOwner": "cmd/schema/validate.go",
+      "evidence": [
+        "cmd/schema/dbml_source_cli_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema validate",
+      "source": "yaml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema validate --schema-file schema.yaml --dialect sqlite",
+      "implementationOwner": "cmd/schema/validate.go",
+      "evidence": [
+        "cmd/schema/dbml_source_cli_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema validate",
+      "source": "hcl-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema validate --schema-file schema.hcl --dialect sqlite",
+      "implementationOwner": "cmd/schema/validate.go",
+      "evidence": [
+        "cmd/schema/dbml_source_cli_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema validate",
+      "source": "dbml-file",
+      "status": "verified",
+      "invocation": "ptah schema validate --schema-file schema.dbml --dialect sqlite",
+      "implementationOwner": "cmd/schema/validate.go",
+      "evidence": [
+        "cmd/schema/dbml_source_cli_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema validate",
+      "source": "go-annotations",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema validate --root-dir ./models --dialect sqlite",
+      "implementationOwner": "cmd/schema/validate.go",
+      "evidence": [
+        "cmd/schema/dbml_source_cli_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema validate",
+      "source": "external-program",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/validate.go",
+      "evidence": [
+        "cmd/schema/dbml_source_cli_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema validate",
+      "source": "configured-external",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/validate.go",
+      "evidence": [
+        "cmd/schema/dbml_source_cli_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah schema validate",
+      "source": "oci-artifact",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema validate --schema-file oci://registry.example/app:v1 --dialect sqlite",
+      "implementationOwner": "cmd/schema/validate.go",
+      "evidence": [
+        "cmd/schema/dbml_source_cli_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema validate",
+      "source": "live-database",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/validate.go",
+      "evidence": [
+        "cmd/schema/dbml_source_cli_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema validate",
+      "source": "migration-directory",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/validate.go",
+      "evidence": [
+        "cmd/schema/dbml_source_cli_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema validate",
+      "source": "composite-source",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema validate --schema-file schema/tables.sql --schema-file schema/views.hcl --dialect sqlite",
+      "implementationOwner": "cmd/schema/validate.go",
+      "evidence": [
+        "cmd/schema/dbml_source_cli_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema compare",
+      "source": "sql-file",
+      "status": "verified",
+      "invocation": "ptah schema compare --schema-file schema.sql --db-url sqlite://current.db",
+      "implementationOwner": "cmd/compare",
+      "evidence": [
+        "cmd/compare/compare_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema compare",
+      "source": "yaml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema compare --schema-file schema.yaml --db-url sqlite://current.db",
+      "implementationOwner": "cmd/compare",
+      "evidence": [
+        "cmd/compare/compare_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema compare",
+      "source": "hcl-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema compare --schema-file schema.hcl --db-url sqlite://current.db",
+      "implementationOwner": "cmd/compare",
+      "evidence": [
+        "cmd/compare/compare_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema compare",
+      "source": "dbml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema compare --schema-file schema.dbml --db-url sqlite://current.db",
+      "implementationOwner": "cmd/compare",
+      "evidence": [
+        "cmd/compare/compare_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema compare",
+      "source": "go-annotations",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema compare --root-dir ./models --db-url sqlite://current.db",
+      "implementationOwner": "cmd/compare",
+      "evidence": [
+        "cmd/compare/compare_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema compare",
+      "source": "external-program",
+      "status": "verified",
+      "invocation": "ptah schema compare --schema-cmd ./load-schema --schema-format sql --db-url sqlite://current.db",
+      "implementationOwner": "cmd/compare",
+      "evidence": [
+        "cmd/compare/compare_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema compare",
+      "source": "configured-external",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema compare --config ptah.yaml --allow-external-schema --db-url sqlite://current.db",
+      "implementationOwner": "cmd/compare",
+      "evidence": [
+        "cmd/compare/compare_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah schema compare",
+      "source": "oci-artifact",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema compare --schema-file oci://registry.example/app:v1 --db-url sqlite://current.db",
+      "implementationOwner": "cmd/compare",
+      "evidence": [
+        "cmd/compare/compare_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema compare",
+      "source": "live-database",
+      "status": "conditional",
+      "invocation": "ptah schema compare --schema-file desired.sql --db-url sqlite://current.db",
+      "implementationOwner": "cmd/compare",
+      "evidence": [
+        "cmd/compare/compare_test.go"
+      ],
+      "limitations": "The live database is the current state, not the desired-schema source.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema compare",
+      "source": "migration-directory",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/compare",
+      "evidence": [
+        "cmd/compare/compare_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema compare",
+      "source": "composite-source",
+      "status": "verified",
+      "invocation": "ptah schema compare --schema-file schema/tables.sql --schema-file schema/views.hcl --db-url sqlite://current.db",
+      "implementationOwner": "cmd/compare",
+      "evidence": [
+        "cmd/compare/compare_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema drift",
+      "source": "sql-file",
+      "status": "verified",
+      "invocation": "ptah schema drift --schema-file schema.sql --db-url sqlite://current.db --exit-code=false",
+      "implementationOwner": "cmd/drift",
+      "evidence": [
+        "cmd/drift/drift_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema drift",
+      "source": "yaml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema drift --schema-file schema.yaml --db-url sqlite://current.db --exit-code=false",
+      "implementationOwner": "cmd/drift",
+      "evidence": [
+        "cmd/drift/drift_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema drift",
+      "source": "hcl-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema drift --schema-file schema.hcl --db-url sqlite://current.db --exit-code=false",
+      "implementationOwner": "cmd/drift",
+      "evidence": [
+        "cmd/drift/drift_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema drift",
+      "source": "dbml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema drift --schema-file schema.dbml --db-url sqlite://current.db --exit-code=false",
+      "implementationOwner": "cmd/drift",
+      "evidence": [
+        "cmd/drift/drift_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema drift",
+      "source": "go-annotations",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema drift --root-dir ./models --db-url sqlite://current.db --exit-code=false",
+      "implementationOwner": "cmd/drift",
+      "evidence": [
+        "cmd/drift/drift_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema drift",
+      "source": "external-program",
+      "status": "verified",
+      "invocation": "ptah schema drift --schema-cmd ./load-schema --schema-format sql --db-url sqlite://current.db --exit-code=false",
+      "implementationOwner": "cmd/drift",
+      "evidence": [
+        "cmd/drift/drift_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema drift",
+      "source": "configured-external",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema drift --config ptah.yaml --allow-external-schema --db-url sqlite://current.db --exit-code=false",
+      "implementationOwner": "cmd/drift",
+      "evidence": [
+        "cmd/drift/drift_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah schema drift",
+      "source": "oci-artifact",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema drift --schema-file oci://registry.example/app:v1 --db-url sqlite://current.db --exit-code=false",
+      "implementationOwner": "cmd/drift",
+      "evidence": [
+        "cmd/drift/drift_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema drift",
+      "source": "live-database",
+      "status": "conditional",
+      "invocation": "ptah schema drift --schema-file desired.sql --db-url sqlite://current.db --exit-code=false",
+      "implementationOwner": "cmd/drift",
+      "evidence": [
+        "cmd/drift/drift_test.go"
+      ],
+      "limitations": "The live database is the measured state, not the declaration.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema drift",
+      "source": "migration-directory",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/drift",
+      "evidence": [
+        "cmd/drift/drift_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema drift",
+      "source": "composite-source",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema drift --schema-file schema/tables.sql --schema-file schema/views.hcl --db-url sqlite://current.db --exit-code=false",
+      "implementationOwner": "cmd/drift",
+      "evidence": [
+        "cmd/drift/drift_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema diff",
+      "source": "sql-file",
+      "status": "verified",
+      "invocation": "ptah schema diff --from current.sql --to desired.sql --dev-url sqlite://dev.db",
+      "implementationOwner": "cmd/schema/diff.go",
+      "evidence": [
+        "cmd/schema/diff_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema diff",
+      "source": "yaml-file",
+      "status": "verified",
+      "invocation": "ptah schema diff --from current.yaml --to desired.yaml --dev-url sqlite://dev.db",
+      "implementationOwner": "cmd/schema/diff.go",
+      "evidence": [
+        "cmd/schema/diff_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema diff",
+      "source": "hcl-file",
+      "status": "verified",
+      "invocation": "ptah schema diff --from current.hcl --to desired.hcl --dev-url sqlite://dev.db",
+      "implementationOwner": "cmd/schema/diff.go",
+      "evidence": [
+        "cmd/schema/diff_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema diff",
+      "source": "dbml-file",
+      "status": "verified",
+      "invocation": "ptah schema diff --from current.dbml --to desired.dbml --dev-url sqlite://dev.db",
+      "implementationOwner": "cmd/schema/diff.go",
+      "evidence": [
+        "cmd/schema/diff_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema diff",
+      "source": "go-annotations",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/diff.go",
+      "evidence": [
+        "cmd/schema/diff_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema diff",
+      "source": "external-program",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/diff.go",
+      "evidence": [
+        "cmd/schema/diff_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema diff",
+      "source": "configured-external",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/diff.go",
+      "evidence": [
+        "cmd/schema/diff_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah schema diff",
+      "source": "oci-artifact",
+      "status": "unsupported-gap",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/diff.go",
+      "evidence": [
+        "cmd/schema/diff_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema diff",
+      "source": "live-database",
+      "status": "verified",
+      "invocation": "ptah schema diff --from sqlite://current.db --to sqlite://desired.db",
+      "implementationOwner": "cmd/schema/diff.go",
+      "evidence": [
+        "cmd/schema/diff_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema diff",
+      "source": "migration-directory",
+      "status": "verified",
+      "invocation": "ptah schema diff --from file://migrations --to desired.hcl --dev-url sqlite://dev.db",
+      "implementationOwner": "cmd/schema/diff.go",
+      "evidence": [
+        "cmd/schema/diff_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema diff",
+      "source": "composite-source",
+      "status": "conditional",
+      "invocation": "ptah schema diff --from base.sql --from views.hcl --to desired.hcl --dev-url sqlite://dev.db",
+      "implementationOwner": "cmd/schema/diff.go",
+      "evidence": [
+        "cmd/schema/diff_test.go"
+      ],
+      "limitations": "Repeated sources on one side must all be the same source kind.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema plan",
+      "source": "sql-file",
+      "status": "verified",
+      "invocation": "ptah schema plan --schema-file schema.sql --db-url sqlite://target.db --dry-run",
+      "implementationOwner": "cmd/schema/plan.go",
+      "evidence": [
+        "cmd/schema/plan_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema plan",
+      "source": "yaml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema plan --schema-file schema.yaml --db-url sqlite://target.db --dry-run",
+      "implementationOwner": "cmd/schema/plan.go",
+      "evidence": [
+        "cmd/schema/plan_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema plan",
+      "source": "hcl-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema plan --schema-file schema.hcl --db-url sqlite://target.db --dry-run",
+      "implementationOwner": "cmd/schema/plan.go",
+      "evidence": [
+        "cmd/schema/plan_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema plan",
+      "source": "dbml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema plan --schema-file schema.dbml --db-url sqlite://target.db --dry-run",
+      "implementationOwner": "cmd/schema/plan.go",
+      "evidence": [
+        "cmd/schema/plan_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema plan",
+      "source": "go-annotations",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema plan --root-dir ./models --db-url sqlite://target.db --dry-run",
+      "implementationOwner": "cmd/schema/plan.go",
+      "evidence": [
+        "cmd/schema/plan_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema plan",
+      "source": "external-program",
+      "status": "unsupported-gap",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/plan.go",
+      "evidence": [
+        "cmd/schema/plan_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema plan",
+      "source": "configured-external",
+      "status": "unsupported-gap",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/plan.go",
+      "evidence": [
+        "cmd/schema/plan_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah schema plan",
+      "source": "oci-artifact",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema plan --schema-file oci://registry.example/app:v1 --db-url sqlite://target.db --dry-run",
+      "implementationOwner": "cmd/schema/plan.go",
+      "evidence": [
+        "cmd/schema/plan_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema plan",
+      "source": "live-database",
+      "status": "conditional",
+      "invocation": "ptah schema plan --schema-file desired.sql --db-url sqlite://target.db --dry-run",
+      "implementationOwner": "cmd/schema/plan.go",
+      "evidence": [
+        "cmd/schema/plan_test.go"
+      ],
+      "limitations": "The live database is the target whose fingerprint the saved plan records.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema plan",
+      "source": "migration-directory",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/plan.go",
+      "evidence": [
+        "cmd/schema/plan_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema plan",
+      "source": "composite-source",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema plan --schema-file schema/tables.sql --schema-file schema/views.hcl --db-url sqlite://target.db --dry-run",
+      "implementationOwner": "cmd/schema/plan.go",
+      "evidence": [
+        "cmd/schema/plan_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema apply",
+      "source": "sql-file",
+      "status": "verified",
+      "invocation": "ptah schema apply --schema-file schema.sql --db-url sqlite://target.db --dry-run",
+      "implementationOwner": "cmd/schema/apply.go",
+      "evidence": [
+        "cmd/schema/apply_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema apply",
+      "source": "yaml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema apply --schema-file schema.yaml --db-url sqlite://target.db --dry-run",
+      "implementationOwner": "cmd/schema/apply.go",
+      "evidence": [
+        "cmd/schema/apply_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema apply",
+      "source": "hcl-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema apply --schema-file schema.hcl --db-url sqlite://target.db --dry-run",
+      "implementationOwner": "cmd/schema/apply.go",
+      "evidence": [
+        "cmd/schema/apply_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema apply",
+      "source": "dbml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema apply --schema-file schema.dbml --db-url sqlite://target.db --dry-run",
+      "implementationOwner": "cmd/schema/apply.go",
+      "evidence": [
+        "cmd/schema/apply_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema apply",
+      "source": "go-annotations",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema apply --root-dir ./models --db-url sqlite://target.db --dry-run",
+      "implementationOwner": "cmd/schema/apply.go",
+      "evidence": [
+        "cmd/schema/apply_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema apply",
+      "source": "external-program",
+      "status": "unsupported-gap",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/apply.go",
+      "evidence": [
+        "cmd/schema/apply_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema apply",
+      "source": "configured-external",
+      "status": "unsupported-gap",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/apply.go",
+      "evidence": [
+        "cmd/schema/apply_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah schema apply",
+      "source": "oci-artifact",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema apply --schema-file oci://registry.example/app:v1 --db-url sqlite://target.db --dry-run",
+      "implementationOwner": "cmd/schema/apply.go",
+      "evidence": [
+        "cmd/schema/apply_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema apply",
+      "source": "live-database",
+      "status": "conditional",
+      "invocation": "ptah schema apply --to sqlite://desired.db --db-url sqlite://target.db --dry-run",
+      "implementationOwner": "cmd/schema/apply.go",
+      "evidence": [
+        "cmd/schema/apply_test.go"
+      ],
+      "limitations": "A live desired source uses --to; --db-url remains the mutation target.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema apply",
+      "source": "migration-directory",
+      "status": "conditional",
+      "invocation": "ptah schema apply --to file://migrations --dev-url sqlite://dev.db --db-url sqlite://target.db",
+      "implementationOwner": "cmd/schema/apply.go",
+      "evidence": [
+        "cmd/schema/apply_test.go"
+      ],
+      "limitations": "A migration directory uses --to and requires a destructive disposable --dev-url.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema apply",
+      "source": "composite-source",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema apply --schema-file schema/tables.sql --schema-file schema/views.hcl --db-url sqlite://target.db --dry-run",
+      "implementationOwner": "cmd/schema/apply.go",
+      "evidence": [
+        "cmd/schema/apply_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema inspect",
+      "source": "sql-file",
+      "status": "verified",
+      "invocation": "ptah schema inspect --schema-file schema.sql --dev-url sqlite://dev.db --format json",
+      "implementationOwner": "cmd/schema/inspect.go",
+      "evidence": [
+        "cmd/schema/inspect_dbml_test.go",
+        "cmd/schema/inspect_oci_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema inspect",
+      "source": "yaml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema inspect --schema-file schema.yaml --dev-url sqlite://dev.db --format json",
+      "implementationOwner": "cmd/schema/inspect.go",
+      "evidence": [
+        "cmd/schema/inspect_dbml_test.go",
+        "cmd/schema/inspect_oci_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema inspect",
+      "source": "hcl-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema inspect --schema-file schema.hcl --dev-url sqlite://dev.db --format json",
+      "implementationOwner": "cmd/schema/inspect.go",
+      "evidence": [
+        "cmd/schema/inspect_dbml_test.go",
+        "cmd/schema/inspect_oci_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema inspect",
+      "source": "dbml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema inspect --schema-file schema.dbml --dev-url sqlite://dev.db --format json",
+      "implementationOwner": "cmd/schema/inspect.go",
+      "evidence": [
+        "cmd/schema/inspect_dbml_test.go",
+        "cmd/schema/inspect_oci_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema inspect",
+      "source": "go-annotations",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/inspect.go",
+      "evidence": [
+        "cmd/schema/inspect_dbml_test.go",
+        "cmd/schema/inspect_oci_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema inspect",
+      "source": "external-program",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/inspect.go",
+      "evidence": [
+        "cmd/schema/inspect_dbml_test.go",
+        "cmd/schema/inspect_oci_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema inspect",
+      "source": "configured-external",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/inspect.go",
+      "evidence": [
+        "cmd/schema/inspect_dbml_test.go",
+        "cmd/schema/inspect_oci_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah schema inspect",
+      "source": "oci-artifact",
+      "status": "verified",
+      "invocation": "ptah schema inspect --schema-file oci://registry.example/app:v1 --dev-url sqlite://dev.db --format json",
+      "implementationOwner": "cmd/schema/inspect.go",
+      "evidence": [
+        "cmd/schema/inspect_dbml_test.go",
+        "cmd/schema/inspect_oci_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema inspect",
+      "source": "live-database",
+      "status": "verified",
+      "invocation": "ptah schema inspect --db-url sqlite://app.db --format json",
+      "implementationOwner": "cmd/schema/inspect.go",
+      "evidence": [
+        "cmd/schema/inspect_dbml_test.go",
+        "cmd/schema/inspect_oci_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema inspect",
+      "source": "migration-directory",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema inspect --migrations-dir ./migrations --dev-url sqlite://dev.db --format json",
+      "implementationOwner": "cmd/schema/inspect.go",
+      "evidence": [
+        "cmd/schema/inspect_dbml_test.go",
+        "cmd/schema/inspect_oci_test.go"
+      ],
+      "limitations": "Replay resets the required disposable dev database.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema inspect",
+      "source": "composite-source",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/inspect.go",
+      "evidence": [
+        "cmd/schema/inspect_dbml_test.go",
+        "cmd/schema/inspect_oci_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to openapi-v3",
+      "source": "sql-file",
+      "status": "verified",
+      "invocation": "ptah schema export --to openapi-v3 --schema-file schema.sql",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to openapi-v3",
+      "source": "yaml-file",
+      "status": "verified",
+      "invocation": "ptah schema export --to openapi-v3 --schema-file schema.yaml",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to openapi-v3",
+      "source": "hcl-file",
+      "status": "verified",
+      "invocation": "ptah schema export --to openapi-v3 --schema-file schema.hcl",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to openapi-v3",
+      "source": "dbml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to openapi-v3 --schema-file schema.dbml",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to openapi-v3",
+      "source": "go-annotations",
+      "status": "verified",
+      "invocation": "ptah schema export --to openapi-v3 --root-dir ./models",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to openapi-v3",
+      "source": "external-program",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to openapi-v3",
+      "source": "configured-external",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah schema export --to openapi-v3",
+      "source": "oci-artifact",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to openapi-v3 --schema-file oci://registry.example/app:v1",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to openapi-v3",
+      "source": "live-database",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to openapi-v3",
+      "source": "migration-directory",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to openapi-v3",
+      "source": "composite-source",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to openapi-v3 --schema-file schema/tables.sql --schema-file schema/views.hcl",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to graphql",
+      "source": "sql-file",
+      "status": "verified",
+      "invocation": "ptah schema export --to graphql --schema-file schema.sql",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to graphql",
+      "source": "yaml-file",
+      "status": "verified",
+      "invocation": "ptah schema export --to graphql --schema-file schema.yaml",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to graphql",
+      "source": "hcl-file",
+      "status": "verified",
+      "invocation": "ptah schema export --to graphql --schema-file schema.hcl",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to graphql",
+      "source": "dbml-file",
+      "status": "verified",
+      "invocation": "ptah schema export --to graphql --schema-file schema.dbml",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to graphql",
+      "source": "go-annotations",
+      "status": "verified",
+      "invocation": "ptah schema export --to graphql --root-dir ./models",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to graphql",
+      "source": "external-program",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to graphql",
+      "source": "configured-external",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah schema export --to graphql",
+      "source": "oci-artifact",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to graphql --schema-file oci://registry.example/app:v1",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to graphql",
+      "source": "live-database",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to graphql",
+      "source": "migration-directory",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to graphql",
+      "source": "composite-source",
+      "status": "verified",
+      "invocation": "ptah schema export --to graphql --schema-file schema/tables.sql --schema-file schema/views.hcl",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to protobuf",
+      "source": "sql-file",
+      "status": "verified",
+      "invocation": "ptah schema export --to protobuf --schema-file schema.sql",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to protobuf",
+      "source": "yaml-file",
+      "status": "verified",
+      "invocation": "ptah schema export --to protobuf --schema-file schema.yaml",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to protobuf",
+      "source": "hcl-file",
+      "status": "verified",
+      "invocation": "ptah schema export --to protobuf --schema-file schema.hcl",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to protobuf",
+      "source": "dbml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to protobuf --schema-file schema.dbml",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to protobuf",
+      "source": "go-annotations",
+      "status": "verified",
+      "invocation": "ptah schema export --to protobuf --root-dir ./models",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to protobuf",
+      "source": "external-program",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to protobuf",
+      "source": "configured-external",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah schema export --to protobuf",
+      "source": "oci-artifact",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to protobuf --schema-file oci://registry.example/app:v1",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to protobuf",
+      "source": "live-database",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to protobuf",
+      "source": "migration-directory",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to protobuf",
+      "source": "composite-source",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to protobuf --schema-file schema/tables.sql --schema-file schema/views.hcl",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to markdown",
+      "source": "sql-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to markdown --schema-file schema.sql",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to markdown",
+      "source": "yaml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to markdown --schema-file schema.yaml",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to markdown",
+      "source": "hcl-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to markdown --schema-file schema.hcl",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to markdown",
+      "source": "dbml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to markdown --schema-file schema.dbml",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to markdown",
+      "source": "go-annotations",
+      "status": "verified",
+      "invocation": "ptah schema export --to markdown --root-dir ./models",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to markdown",
+      "source": "external-program",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to markdown",
+      "source": "configured-external",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah schema export --to markdown",
+      "source": "oci-artifact",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to markdown --schema-file oci://registry.example/app:v1",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to markdown",
+      "source": "live-database",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to markdown",
+      "source": "migration-directory",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to markdown",
+      "source": "composite-source",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to markdown --schema-file schema/tables.sql --schema-file schema/views.hcl",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to html",
+      "source": "sql-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to html --schema-file schema.sql",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to html",
+      "source": "yaml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to html --schema-file schema.yaml",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to html",
+      "source": "hcl-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to html --schema-file schema.hcl",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to html",
+      "source": "dbml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to html --schema-file schema.dbml",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to html",
+      "source": "go-annotations",
+      "status": "verified",
+      "invocation": "ptah schema export --to html --root-dir ./models",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to html",
+      "source": "external-program",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to html",
+      "source": "configured-external",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah schema export --to html",
+      "source": "oci-artifact",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to html --schema-file oci://registry.example/app:v1",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to html",
+      "source": "live-database",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to html",
+      "source": "migration-directory",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to html",
+      "source": "composite-source",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to html --schema-file schema/tables.sql --schema-file schema/views.hcl",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to dbml",
+      "source": "sql-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to dbml --schema-file schema.sql",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to dbml",
+      "source": "yaml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to dbml --schema-file schema.yaml",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to dbml",
+      "source": "hcl-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to dbml --schema-file schema.hcl",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to dbml",
+      "source": "dbml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to dbml --schema-file schema.dbml",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to dbml",
+      "source": "go-annotations",
+      "status": "verified",
+      "invocation": "ptah schema export --to dbml --root-dir ./models",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to dbml",
+      "source": "external-program",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to dbml",
+      "source": "configured-external",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah schema export --to dbml",
+      "source": "oci-artifact",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to dbml --schema-file oci://registry.example/app:v1",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to dbml",
+      "source": "live-database",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to dbml",
+      "source": "migration-directory",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to dbml",
+      "source": "composite-source",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema export --to dbml --schema-file schema/tables.sql --schema-file schema/views.hcl",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_dbml_test.go",
+        "internal/schemaexport"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to hcl",
+      "source": "sql-file",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "HCL export rewrites Go annotations and deliberately accepts only --root-dir.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to hcl",
+      "source": "yaml-file",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "HCL export rewrites Go annotations and deliberately accepts only --root-dir.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to hcl",
+      "source": "hcl-file",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "HCL export rewrites Go annotations and deliberately accepts only --root-dir.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to hcl",
+      "source": "dbml-file",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "HCL export rewrites Go annotations and deliberately accepts only --root-dir.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to hcl",
+      "source": "go-annotations",
+      "status": "verified",
+      "invocation": "ptah schema export --to hcl --root-dir ./models",
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to hcl",
+      "source": "external-program",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "HCL export rewrites Go annotations and deliberately accepts only --root-dir.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to hcl",
+      "source": "configured-external",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "HCL export rewrites Go annotations and deliberately accepts only --root-dir.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah schema export --to hcl",
+      "source": "oci-artifact",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "HCL export rewrites Go annotations and deliberately accepts only --root-dir.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to hcl",
+      "source": "live-database",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "HCL export rewrites Go annotations and deliberately accepts only --root-dir.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to hcl",
+      "source": "migration-directory",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "HCL export rewrites Go annotations and deliberately accepts only --root-dir.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema export --to hcl",
+      "source": "composite-source",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema",
+      "evidence": [
+        "cmd/schema/export_source_test.go"
+      ],
+      "limitations": "HCL export rewrites Go annotations and deliberately accepts only --root-dir.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema test",
+      "source": "sql-file",
+      "status": "verified",
+      "invocation": "ptah schema test --root-dir schema.sql --dir ./tests",
+      "implementationOwner": "cmd/schema/test.go",
+      "evidence": [
+        "cmd/schema/test_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema test",
+      "source": "yaml-file",
+      "status": "verified",
+      "invocation": "ptah schema test --root-dir schema.yaml --dir ./tests",
+      "implementationOwner": "cmd/schema/test.go",
+      "evidence": [
+        "cmd/schema/test_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema test",
+      "source": "hcl-file",
+      "status": "verified",
+      "invocation": "ptah schema test --root-dir schema.hcl --dir ./tests",
+      "implementationOwner": "cmd/schema/test.go",
+      "evidence": [
+        "cmd/schema/test_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema test",
+      "source": "dbml-file",
+      "status": "verified",
+      "invocation": "ptah schema test --root-dir schema.dbml --dir ./tests",
+      "implementationOwner": "cmd/schema/test.go",
+      "evidence": [
+        "cmd/schema/test_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema test",
+      "source": "go-annotations",
+      "status": "verified",
+      "invocation": "ptah schema test --root-dir ./models --dir ./tests",
+      "implementationOwner": "cmd/schema/test.go",
+      "evidence": [
+        "cmd/schema/test_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema test",
+      "source": "external-program",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/test.go",
+      "evidence": [
+        "cmd/schema/test_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema test",
+      "source": "configured-external",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/test.go",
+      "evidence": [
+        "cmd/schema/test_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah schema test",
+      "source": "oci-artifact",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/test.go",
+      "evidence": [
+        "cmd/schema/test_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema test",
+      "source": "live-database",
+      "status": "verified",
+      "invocation": "ptah schema test --root-dir sqlite://source.db --db-url sqlite://throwaway.db --dir ./tests",
+      "implementationOwner": "cmd/schema/test.go",
+      "evidence": [
+        "cmd/schema/test_test.go"
+      ],
+      "limitations": "The destination must be throwaway; a non-SQLite source requires an explicit matching --db-url.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema test",
+      "source": "migration-directory",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/test.go",
+      "evidence": [
+        "cmd/schema/test_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema test",
+      "source": "composite-source",
+      "status": "unsupported-gap",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/test.go",
+      "evidence": [
+        "cmd/schema/test_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema lineage",
+      "source": "sql-file",
+      "status": "verified",
+      "invocation": "ptah schema lineage --schema-file schema.sql --dialect postgres --format json",
+      "implementationOwner": "cmd/schema/lineage.go",
+      "evidence": [
+        "cmd/schema/lineage_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema lineage",
+      "source": "yaml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema lineage --schema-file schema.yaml --dialect postgres --format json",
+      "implementationOwner": "cmd/schema/lineage.go",
+      "evidence": [
+        "cmd/schema/lineage_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema lineage",
+      "source": "hcl-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema lineage --schema-file schema.hcl --dialect postgres --format json",
+      "implementationOwner": "cmd/schema/lineage.go",
+      "evidence": [
+        "cmd/schema/lineage_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema lineage",
+      "source": "dbml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema lineage --schema-file schema.dbml --dialect postgres --format json",
+      "implementationOwner": "cmd/schema/lineage.go",
+      "evidence": [
+        "cmd/schema/lineage_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema lineage",
+      "source": "go-annotations",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema lineage --root-dir ./models --dialect postgres --format json",
+      "implementationOwner": "cmd/schema/lineage.go",
+      "evidence": [
+        "cmd/schema/lineage_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema lineage",
+      "source": "external-program",
+      "status": "unsupported-gap",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/lineage.go",
+      "evidence": [
+        "cmd/schema/lineage_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema lineage",
+      "source": "configured-external",
+      "status": "unsupported-gap",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/lineage.go",
+      "evidence": [
+        "cmd/schema/lineage_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah schema lineage",
+      "source": "oci-artifact",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema lineage --schema-file oci://registry.example/app:v1 --dialect postgres --format json",
+      "implementationOwner": "cmd/schema/lineage.go",
+      "evidence": [
+        "cmd/schema/lineage_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema lineage",
+      "source": "live-database",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema lineage --db-url sqlite://app.db --dialect postgres --format json",
+      "implementationOwner": "cmd/schema/lineage.go",
+      "evidence": [
+        "cmd/schema/lineage_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema lineage",
+      "source": "migration-directory",
+      "status": "not-applicable",
+      "invocation": null,
+      "implementationOwner": "cmd/schema/lineage.go",
+      "evidence": [
+        "cmd/schema/lineage_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema lineage",
+      "source": "composite-source",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema lineage --schema-file schema/tables.sql --schema-file schema/views.hcl --dialect postgres --format json",
+      "implementationOwner": "cmd/schema/lineage.go",
+      "evidence": [
+        "cmd/schema/lineage_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema push",
+      "source": "sql-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema push --schema-file schema.sql oci://registry.example/app:v1",
+      "implementationOwner": "cmd/schemapush",
+      "evidence": [
+        "cmd/schemapush/schemapush_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema push",
+      "source": "yaml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema push --schema-file schema.yaml oci://registry.example/app:v1",
+      "implementationOwner": "cmd/schemapush",
+      "evidence": [
+        "cmd/schemapush/schemapush_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema push",
+      "source": "hcl-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema push --schema-file schema.hcl oci://registry.example/app:v1",
+      "implementationOwner": "cmd/schemapush",
+      "evidence": [
+        "cmd/schemapush/schemapush_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema push",
+      "source": "dbml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema push --schema-file schema.dbml oci://registry.example/app:v1",
+      "implementationOwner": "cmd/schemapush",
+      "evidence": [
+        "cmd/schemapush/schemapush_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema push",
+      "source": "go-annotations",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema push --root-dir ./models oci://registry.example/app:v1",
+      "implementationOwner": "cmd/schemapush",
+      "evidence": [
+        "cmd/schemapush/schemapush_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema push",
+      "source": "external-program",
+      "status": "unsupported-gap",
+      "invocation": null,
+      "implementationOwner": "cmd/schemapush",
+      "evidence": [
+        "cmd/schemapush/schemapush_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema push",
+      "source": "configured-external",
+      "status": "unsupported-gap",
+      "invocation": null,
+      "implementationOwner": "cmd/schemapush",
+      "evidence": [
+        "cmd/schemapush/schemapush_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah schema push",
+      "source": "oci-artifact",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schemapush",
+      "evidence": [
+        "cmd/schemapush/schemapush_test.go"
+      ],
+      "limitations": "OCI is the destination of this command, not an input source.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema push",
+      "source": "live-database",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schemapush",
+      "evidence": [
+        "cmd/schemapush/schemapush_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema push",
+      "source": "migration-directory",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/schemapush",
+      "evidence": [
+        "cmd/schemapush/schemapush_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema push",
+      "source": "composite-source",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah schema push --schema-file schema/tables.sql --schema-file schema/views.hcl oci://registry.example/app:v1",
+      "implementationOwner": "cmd/schemapush",
+      "evidence": [
+        "cmd/schemapush/schemapush_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah migrations plan",
+      "source": "sql-file",
+      "status": "verified",
+      "invocation": "ptah migrations plan --schema-file schema.sql --db-url sqlite://current.db",
+      "implementationOwner": "cmd/migrate",
+      "evidence": [
+        "cmd/migrate/migrate_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah migrations plan",
+      "source": "yaml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah migrations plan --schema-file schema.yaml --db-url sqlite://current.db",
+      "implementationOwner": "cmd/migrate",
+      "evidence": [
+        "cmd/migrate/migrate_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah migrations plan",
+      "source": "hcl-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah migrations plan --schema-file schema.hcl --db-url sqlite://current.db",
+      "implementationOwner": "cmd/migrate",
+      "evidence": [
+        "cmd/migrate/migrate_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah migrations plan",
+      "source": "dbml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah migrations plan --schema-file schema.dbml --db-url sqlite://current.db",
+      "implementationOwner": "cmd/migrate",
+      "evidence": [
+        "cmd/migrate/migrate_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah migrations plan",
+      "source": "go-annotations",
+      "status": "verified",
+      "invocation": "ptah migrations plan --root-dir ./models --db-url sqlite://current.db",
+      "implementationOwner": "cmd/migrate",
+      "evidence": [
+        "cmd/migrate/migrate_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah migrations plan",
+      "source": "external-program",
+      "status": "verified",
+      "invocation": "ptah migrations plan --schema-cmd ./load-schema --schema-format sql --db-url sqlite://current.db",
+      "implementationOwner": "cmd/migrate",
+      "evidence": [
+        "cmd/migrate/migrate_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah migrations plan",
+      "source": "configured-external",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah migrations plan --config ptah.yaml --allow-external-schema --db-url sqlite://current.db",
+      "implementationOwner": "cmd/migrate",
+      "evidence": [
+        "cmd/migrate/migrate_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah migrations plan",
+      "source": "oci-artifact",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah migrations plan --schema-file oci://registry.example/app:v1 --db-url sqlite://current.db",
+      "implementationOwner": "cmd/migrate",
+      "evidence": [
+        "cmd/migrate/migrate_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah migrations plan",
+      "source": "live-database",
+      "status": "conditional",
+      "invocation": "ptah migrations plan --schema-file desired.sql --db-url sqlite://current.db",
+      "implementationOwner": "cmd/migrate",
+      "evidence": [
+        "cmd/migrate/migrate_test.go"
+      ],
+      "limitations": "The live database supplies the current state through --db-url.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah migrations plan",
+      "source": "migration-directory",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/migrate",
+      "evidence": [
+        "cmd/migrate/migrate_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah migrations plan",
+      "source": "composite-source",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah migrations plan --schema-file schema/tables.sql --schema-file schema/views.hcl --db-url sqlite://current.db",
+      "implementationOwner": "cmd/migrate",
+      "evidence": [
+        "cmd/migrate/migrate_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah migrations generate",
+      "source": "sql-file",
+      "status": "verified",
+      "invocation": "ptah migrations generate --schema-file schema.sql --db-url sqlite://current.db --migrations-dir ./migrations --name canonical",
+      "implementationOwner": "cmd/migrate",
+      "evidence": [
+        "cmd/migrate/generate_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah migrations generate",
+      "source": "yaml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah migrations generate --schema-file schema.yaml --db-url sqlite://current.db --migrations-dir ./migrations --name canonical",
+      "implementationOwner": "cmd/migrate",
+      "evidence": [
+        "cmd/migrate/generate_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah migrations generate",
+      "source": "hcl-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah migrations generate --schema-file schema.hcl --db-url sqlite://current.db --migrations-dir ./migrations --name canonical",
+      "implementationOwner": "cmd/migrate",
+      "evidence": [
+        "cmd/migrate/generate_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah migrations generate",
+      "source": "dbml-file",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah migrations generate --schema-file schema.dbml --db-url sqlite://current.db --migrations-dir ./migrations --name canonical",
+      "implementationOwner": "cmd/migrate",
+      "evidence": [
+        "cmd/migrate/generate_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah migrations generate",
+      "source": "go-annotations",
+      "status": "verified",
+      "invocation": "ptah migrations generate --root-dir ./models --db-url sqlite://current.db --migrations-dir ./migrations --name canonical",
+      "implementationOwner": "cmd/migrate",
+      "evidence": [
+        "cmd/migrate/generate_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah migrations generate",
+      "source": "external-program",
+      "status": "verified",
+      "invocation": "ptah migrations generate --schema-cmd ./load-schema --schema-format sql --db-url sqlite://current.db --migrations-dir ./migrations --name canonical",
+      "implementationOwner": "cmd/migrate",
+      "evidence": [
+        "cmd/migrate/generate_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah migrations generate",
+      "source": "configured-external",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah migrations generate --config ptah.yaml --allow-external-schema --db-url sqlite://current.db --migrations-dir ./migrations --name canonical",
+      "implementationOwner": "cmd/migrate",
+      "evidence": [
+        "cmd/migrate/generate_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah migrations generate",
+      "source": "oci-artifact",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah migrations generate --schema-file oci://registry.example/app:v1 --db-url sqlite://current.db --migrations-dir ./migrations --name canonical",
+      "implementationOwner": "cmd/migrate",
+      "evidence": [
+        "cmd/migrate/generate_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah migrations generate",
+      "source": "live-database",
+      "status": "conditional",
+      "invocation": "ptah migrations generate --schema-file desired.sql --db-url sqlite://current.db --migrations-dir ./migrations --name canonical",
+      "implementationOwner": "cmd/migrate",
+      "evidence": [
+        "cmd/migrate/generate_test.go"
+      ],
+      "limitations": "The live database supplies the current state through --db-url.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah migrations generate",
+      "source": "migration-directory",
+      "status": "conditional",
+      "invocation": "ptah migrations generate --replay --migrations-dir ./migrations --dev-url sqlite://dev.db --schema-file desired.sql",
+      "implementationOwner": "cmd/migrate",
+      "evidence": [
+        "cmd/migrate/generate_test.go"
+      ],
+      "limitations": "With --replay, the migration directory supplies current state and is reset on --dev-url.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah migrations generate",
+      "source": "composite-source",
+      "status": "supported-missing-command-test",
+      "invocation": "ptah migrations generate --schema-file schema/tables.sql --schema-file schema/views.hcl --db-url sqlite://current.db --migrations-dir ./migrations --name canonical",
+      "implementationOwner": "cmd/migrate",
+      "evidence": [
+        "cmd/migrate/generate_test.go"
+      ],
+      "limitations": "",
+      "composable": true,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah viz",
+      "source": "sql-file",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/viz",
+      "evidence": [
+        "cmd/viz/viz_test.go"
+      ],
+      "limitations": "The current command deliberately registers only --root-dir.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah viz",
+      "source": "yaml-file",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/viz",
+      "evidence": [
+        "cmd/viz/viz_test.go"
+      ],
+      "limitations": "The current command deliberately registers only --root-dir.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah viz",
+      "source": "hcl-file",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/viz",
+      "evidence": [
+        "cmd/viz/viz_test.go"
+      ],
+      "limitations": "The current command deliberately registers only --root-dir.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah viz",
+      "source": "dbml-file",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/viz",
+      "evidence": [
+        "cmd/viz/viz_test.go"
+      ],
+      "limitations": "The current command deliberately registers only --root-dir.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah viz",
+      "source": "go-annotations",
+      "status": "verified",
+      "invocation": "ptah viz --root-dir ./models",
+      "implementationOwner": "cmd/viz",
+      "evidence": [
+        "cmd/viz/viz_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah viz",
+      "source": "external-program",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/viz",
+      "evidence": [
+        "cmd/viz/viz_test.go"
+      ],
+      "limitations": "The current command deliberately registers only --root-dir.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah viz",
+      "source": "configured-external",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/viz",
+      "evidence": [
+        "cmd/viz/viz_test.go"
+      ],
+      "limitations": "The current command deliberately registers only --root-dir.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah viz",
+      "source": "oci-artifact",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/viz",
+      "evidence": [
+        "cmd/viz/viz_test.go"
+      ],
+      "limitations": "The current command deliberately registers only --root-dir.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah viz",
+      "source": "live-database",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/viz",
+      "evidence": [
+        "cmd/viz/viz_test.go"
+      ],
+      "limitations": "The current command deliberately registers only --root-dir.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah viz",
+      "source": "migration-directory",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/viz",
+      "evidence": [
+        "cmd/viz/viz_test.go"
+      ],
+      "limitations": "The current command deliberately registers only --root-dir.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah viz",
+      "source": "composite-source",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/viz",
+      "evidence": [
+        "cmd/viz/viz_test.go"
+      ],
+      "limitations": "The current command deliberately registers only --root-dir.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema serve",
+      "source": "sql-file",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/internal/schemaserve",
+      "evidence": [
+        "cmd/internal/schemaserve/schemaserve_test.go"
+      ],
+      "limitations": "A reloadable schema-file source has no defined refresh contract.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema serve",
+      "source": "yaml-file",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/internal/schemaserve",
+      "evidence": [
+        "cmd/internal/schemaserve/schemaserve_test.go"
+      ],
+      "limitations": "A reloadable schema-file source has no defined refresh contract.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema serve",
+      "source": "hcl-file",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/internal/schemaserve",
+      "evidence": [
+        "cmd/internal/schemaserve/schemaserve_test.go"
+      ],
+      "limitations": "A reloadable schema-file source has no defined refresh contract.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema serve",
+      "source": "dbml-file",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/internal/schemaserve",
+      "evidence": [
+        "cmd/internal/schemaserve/schemaserve_test.go"
+      ],
+      "limitations": "A reloadable schema-file source has no defined refresh contract.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema serve",
+      "source": "go-annotations",
+      "status": "verified",
+      "invocation": "ptah schema serve --root-dir ./models --db-url sqlite://current.db",
+      "implementationOwner": "cmd/internal/schemaserve",
+      "evidence": [
+        "cmd/internal/schemaserve/schemaserve_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema serve",
+      "source": "external-program",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/internal/schemaserve",
+      "evidence": [
+        "cmd/internal/schemaserve/schemaserve_test.go"
+      ],
+      "limitations": "A reloadable schema-file source has no defined refresh contract.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema serve",
+      "source": "configured-external",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/internal/schemaserve",
+      "evidence": [
+        "cmd/internal/schemaserve/schemaserve_test.go"
+      ],
+      "limitations": "A reloadable schema-file source has no defined refresh contract.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah schema serve",
+      "source": "oci-artifact",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/internal/schemaserve",
+      "evidence": [
+        "cmd/internal/schemaserve/schemaserve_test.go"
+      ],
+      "limitations": "A reloadable schema-file source has no defined refresh contract.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema serve",
+      "source": "live-database",
+      "status": "conditional",
+      "invocation": "ptah schema serve --root-dir ./models --db-url sqlite://current.db",
+      "implementationOwner": "cmd/internal/schemaserve",
+      "evidence": [
+        "cmd/internal/schemaserve/schemaserve_test.go"
+      ],
+      "limitations": "The live database is the read-only comparison target.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema serve",
+      "source": "migration-directory",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/internal/schemaserve",
+      "evidence": [
+        "cmd/internal/schemaserve/schemaserve_test.go"
+      ],
+      "limitations": "A reloadable schema-file source has no defined refresh contract.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah schema serve",
+      "source": "composite-source",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/internal/schemaserve",
+      "evidence": [
+        "cmd/internal/schemaserve/schemaserve_test.go"
+      ],
+      "limitations": "A reloadable schema-file source has no defined refresh contract.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah introspect",
+      "source": "sql-file",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/introspect",
+      "evidence": [
+        "cmd/introspect/introspect_internal_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah introspect",
+      "source": "yaml-file",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/introspect",
+      "evidence": [
+        "cmd/introspect/introspect_internal_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah introspect",
+      "source": "hcl-file",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/introspect",
+      "evidence": [
+        "cmd/introspect/introspect_internal_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah introspect",
+      "source": "dbml-file",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/introspect",
+      "evidence": [
+        "cmd/introspect/introspect_internal_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah introspect",
+      "source": "go-annotations",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/introspect",
+      "evidence": [
+        "cmd/introspect/introspect_internal_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah introspect",
+      "source": "external-program",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/introspect",
+      "evidence": [
+        "cmd/introspect/introspect_internal_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah introspect",
+      "source": "configured-external",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/introspect",
+      "evidence": [
+        "cmd/introspect/introspect_internal_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "ptah introspect",
+      "source": "oci-artifact",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/introspect",
+      "evidence": [
+        "cmd/introspect/introspect_internal_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah introspect",
+      "source": "live-database",
+      "status": "verified",
+      "invocation": "ptah introspect --db-url sqlite://app.db --out ./models",
+      "implementationOwner": "cmd/introspect",
+      "evidence": [
+        "cmd/introspect/introspect_internal_test.go"
+      ],
+      "limitations": "This is an output conversion to Go annotations, not a general desired-schema consumer.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah introspect",
+      "source": "migration-directory",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/introspect",
+      "evidence": [
+        "cmd/introspect/introspect_internal_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "ptah introspect",
+      "source": "composite-source",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": "cmd/introspect",
+      "evidence": [
+        "cmd/introspect/introspect_internal_test.go"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "stokaro/ptah-action",
+      "source": "sql-file",
+      "status": "unsupported-gap",
+      "invocation": null,
+      "implementationOwner": ".github/actions/ptah",
+      "evidence": [
+        ".github/actions/ptah/run.sh"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "stokaro/ptah-action",
+      "source": "yaml-file",
+      "status": "unsupported-gap",
+      "invocation": null,
+      "implementationOwner": ".github/actions/ptah",
+      "evidence": [
+        ".github/actions/ptah/run.sh"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "stokaro/ptah-action",
+      "source": "hcl-file",
+      "status": "unsupported-gap",
+      "invocation": null,
+      "implementationOwner": ".github/actions/ptah",
+      "evidence": [
+        ".github/actions/ptah/run.sh"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "stokaro/ptah-action",
+      "source": "dbml-file",
+      "status": "unsupported-gap",
+      "invocation": null,
+      "implementationOwner": ".github/actions/ptah",
+      "evidence": [
+        ".github/actions/ptah/run.sh"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "stokaro/ptah-action",
+      "source": "go-annotations",
+      "status": "verified",
+      "invocation": "stokaro/ptah-action uses: stokaro/ptah-action with input dir: ./models",
+      "implementationOwner": ".github/actions/ptah",
+      "evidence": [
+        ".github/actions/ptah/run.sh"
+      ],
+      "limitations": "The action hard-codes migrations plan --root-dir; this is an explicit Go-only scope until the companion action changes.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "stokaro/ptah-action",
+      "source": "external-program",
+      "status": "unsupported-gap",
+      "invocation": null,
+      "implementationOwner": ".github/actions/ptah",
+      "evidence": [
+        ".github/actions/ptah/run.sh"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "stokaro/ptah-action",
+      "source": "configured-external",
+      "status": "unsupported-gap",
+      "invocation": null,
+      "implementationOwner": ".github/actions/ptah",
+      "evidence": [
+        ".github/actions/ptah/run.sh"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": true
+    },
+    {
+      "command": "stokaro/ptah-action",
+      "source": "oci-artifact",
+      "status": "unsupported-gap",
+      "invocation": null,
+      "implementationOwner": ".github/actions/ptah",
+      "evidence": [
+        ".github/actions/ptah/run.sh"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "stokaro/ptah-action",
+      "source": "live-database",
+      "status": "conditional",
+      "invocation": "stokaro/ptah-action uses: stokaro/ptah-action with inputs dir: ./models and db-url: sqlite://app.db",
+      "implementationOwner": ".github/actions/ptah",
+      "evidence": [
+        ".github/actions/ptah/run.sh"
+      ],
+      "limitations": "The database is the current-state target.",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "stokaro/ptah-action",
+      "source": "migration-directory",
+      "status": "unsupported-design",
+      "invocation": null,
+      "implementationOwner": ".github/actions/ptah",
+      "evidence": [
+        ".github/actions/ptah/run.sh"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    },
+    {
+      "command": "stokaro/ptah-action",
+      "source": "composite-source",
+      "status": "unsupported-gap",
+      "invocation": null,
+      "implementationOwner": ".github/actions/ptah",
+      "evidence": [
+        ".github/actions/ptah/run.sh"
+      ],
+      "limitations": "",
+      "composable": false,
+      "externalExecutionRequiresOptIn": false
+    }
+  ]
+}

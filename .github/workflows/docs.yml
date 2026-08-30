@@ -51,12 +51,17 @@ jobs:
               - 'internal/featureinventory/**'
               - 'migration/**'
               - 'docs/feature-inventory.json'
+              - 'docs/source-support.json'
+              - 'docs/site/fixtures/source-equivalence/**'
+              - 'docs/site/scripts/build-source-support.mjs'
               - 'docs/site/src/content/docs/databases/support-matrix.md'
               - 'docs/site/src/content/docs/reference/native-commands.md'
               - 'docs/site/src/content/docs/reference/command-flags.md'
               - 'docs/site/src/content/docs/reference/lint-rules.md'
               - 'scripts/check-docsync.sh'
               - 'scripts/check-feature-inventory.sh'
+              - 'scripts/check-source-equivalence.sh'
+              - 'scripts/check-source-equivalence-selftest.sh'
               - '.github/workflows/docs.yml'
             examples:
               - 'cmd/**'
@@ -141,6 +146,8 @@ jobs:
           node docs/site/scripts/check-visual-assets.mjs
           node docs/site/scripts/check-support-matrix.mjs --selftest
           node docs/site/scripts/check-support-matrix.mjs
+          node docs/site/scripts/build-source-support.mjs --selftest
+          node docs/site/scripts/build-source-support.mjs
           node docs/site/scripts/check-documentation-gate.mjs --selftest
           node docs/site/scripts/check-build-info.mjs --selftest
           node docs/site/scripts/write-build-info.mjs --selftest
@@ -428,6 +435,10 @@ jobs:
           set -euo pipefail
           scripts/check-docsync.sh
           scripts/check-feature-inventory.sh
+          go build -o "$RUNNER_TEMP/ptah" ./cmd/ptah
+          node docs/site/scripts/build-source-support.mjs --binary "$RUNNER_TEMP/ptah"
+          PTAH_BIN="$RUNNER_TEMP/ptah" scripts/check-source-equivalence.sh
+          PTAH_BIN="$RUNNER_TEMP/ptah" scripts/check-source-equivalence-selftest.sh
           go test ./internal/cmdref -count=1
 
   example-acceptance:
