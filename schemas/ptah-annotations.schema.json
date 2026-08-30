@@ -638,7 +638,7 @@
               "x-ptah-bare-boolean": true
             },
             "unique_expr": {
-              "description": "Unique expression for dialects that support expression indexes.",
+              "description": "Uniqueness over an expression. Not implemented: rendering refuses a column that declares it.",
               "type": "string"
             }
           },

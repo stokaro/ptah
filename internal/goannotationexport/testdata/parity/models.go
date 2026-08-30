@@ -41,7 +41,13 @@ type User struct {
 	//ptah:schema:field name="account_id" type="BIGINT" foreign="app.accounts(id)" foreign_key_name="users_account_field_fk" on_delete="CASCADE" on_update="RESTRICT"
 	AccountID int64
 
-	//ptah:schema:field name="email" type="TEXT" unique="true" unique_expr="lower(email)" default="nobody@example.test" check="email <> ''" check_name="users_email_not_empty" comment="Email address"
+	// unique_expr is deliberately absent. The attribute is not implemented and
+	// rendering refuses it (stokaro/ptah#2611); while it was here this fixture
+	// declared uniqueness over lower(email) and every render produced UNIQUE on
+	// the raw column instead. Both halves of its HCL round trip are covered by
+	// TestParseColumnUniqueExpr and
+	// TestRenderColumnUniqueExprAndIdentityOptionsRoundTrip.
+	//ptah:schema:field name="email" type="TEXT" unique="true" default="nobody@example.test" check="email <> ''" check_name="users_email_not_empty" comment="Email address"
 	Email string
 
 	//ptah:schema:field name="score" type="DOUBLE PRECISION" default_expr="0.0"

@@ -225,7 +225,7 @@ Maps a Go struct field to a database column.
 | `stored` | No | Shortcut controlling generated column storage. `true`/`false`. |
 | `type` | No | Database column type. |
 | `unique` | No | Adds a single-column unique constraint. `true`/`false`; bare form allowed. |
-| `unique_expr` | No | Unique expression for dialects that support expression indexes. |
+| `unique_expr` | No | Uniqueness over an expression. Not implemented: rendering fails with `column "…" declares unique_expr`, because emitting the column's own `UNIQUE` instead would enforce a different constraint. |
 
 Platform overrides: yes.
 

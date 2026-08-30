@@ -1132,6 +1132,9 @@ func validateDatabaseDeclarations(
 	if err := validateDeclaredHosts(dialect, database); err != nil {
 		return err
 	}
+	if err := validateDeclaredColumns(dialect, database); err != nil {
+		return err
+	}
 	if err := validateExtensionInstallationSchemas(dialect, database.Extensions); err != nil {
 		return err
 	}

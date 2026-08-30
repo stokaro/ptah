@@ -164,7 +164,7 @@ author order. Top-level maps render deterministically by sorted key.
 | `identity_increment` | PostgreSQL identity `INCREMENT BY` value. |
 | `identity_options` | Raw PostgreSQL identity option clause. |
 | `unique` | Adds a unique constraint. |
-| `unique_expr` | Unique expression. |
+| `unique_expr` | Uniqueness over an expression. Not implemented; rendering refuses it rather than enforcing uniqueness on the column instead. |
 | `index` | Requests an index for the column. |
 | `generated` | Generated-column SQL expression. |
 | `generated_kind` | Generated-column kind, such as `STORED` or `VIRTUAL`. |

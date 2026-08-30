@@ -175,7 +175,7 @@ var registry = []Entry{
 	{Field: "schemamodel.Field.TypeIsDeclaredText", Disposition: DDL},
 	{Field: "schemamodel.Field.TypeRawSQL", Disposition: DDL},
 	{Field: "schemamodel.Field.Unique", Disposition: DDL},
-	{Field: "schemamodel.Field.UniqueExpr", Disposition: DDL, Gap: "https://github.com/stokaro/ptah/issues/2611"},
+	{Field: "schemamodel.Field.UniqueExpr", Disposition: DDL},
 	{Field: "schemamodel.Field.UpdateExpression", Disposition: DDL},
 	{Field: "schemamodel.Function.Body", Disposition: DDL},
 	{Field: "schemamodel.Function.Comment", Disposition: DDL},
