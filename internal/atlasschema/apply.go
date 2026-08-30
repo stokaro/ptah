@@ -311,7 +311,8 @@ func computeApplyPlan(
 	if emptySelection(currentErr) && emptySelection(desiredErr) {
 		return applyComputation{}, fmt.Errorf(
 			"%w; schema apply would change nothing",
-			currentErr)
+			currentErr,
+		)
 	}
 	applyExtensionSupportCoverage(desired, currentReports.Selection, desiredReports.Selection)
 
@@ -337,7 +338,7 @@ func computeApplyPlan(
 		return computation, nil
 	}
 
-	computation.statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, desired, info.Dialect, planner.Options{
+	computation.statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{
 		Capabilities:         info.Capabilities,
 		ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
 		ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
@@ -345,6 +346,7 @@ func computeApplyPlan(
 			opts.Policy, diff, desired, current, info.Dialect, info.Capabilities,
 		),
 	})
+
 	if err != nil {
 		return applyComputation{}, fmt.Errorf("generate schema apply SQL: %w", err)
 	}

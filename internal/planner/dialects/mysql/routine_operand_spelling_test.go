@@ -48,7 +48,7 @@ func TestCompare_AModifiedFunctionRendersTheDeclarationAsWritten(t *testing.T) {
 	c.Assert(diff.FunctionsModified[0].Desired.Returns, qt.Equals, "INTEGER")
 	c.Assert(diff.FunctionsModified[0].Desired.Security, qt.Equals, "")
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.MySQL)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.MySQL)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "RETURNS INTEGER",

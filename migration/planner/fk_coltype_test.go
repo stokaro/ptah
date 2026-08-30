@@ -51,13 +51,13 @@ func fkColumnTypeChangeInputs() (*difftypes.SchemaDiff, *schemamodel.Database) {
 // (issue #694), while the PostgreSQL planner keeps its single ALTER COLUMN ... TYPE
 // with no constraint churn.
 func TestGenerateSchemaDiffSQL_ForeignKeyColumnTypeChange_MySQLFamilyBrackets(t *testing.T) {
-	diff, desired := fkColumnTypeChangeInputs()
+	diff, _ := fkColumnTypeChangeInputs()
 
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, dialect)
+			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, dialect)
 			c.Assert(err, qt.IsNil)
 			sql := strings.Join(statements, "\n")
 
@@ -82,7 +82,7 @@ func TestGenerateSchemaDiffSQL_ForeignKeyColumnTypeChange_MySQLFamilyBrackets(t 
 func TestGenerateSchemaDiffSQL_ForeignKeyColumnTypeChange_SQLServerBrackets(t *testing.T) {
 	c := qt.New(t)
 
-	diff, desired := fkColumnTypeChangeInputs()
+	diff, _ := fkColumnTypeChangeInputs()
 	semantics := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").
 		WithResolvedNames([]identifier.ResolvedName{
 			{Name: "dbo", Key: "dbo"},
@@ -93,7 +93,7 @@ func TestGenerateSchemaDiffSQL_ForeignKeyColumnTypeChange_SQLServerBrackets(t *t
 		})
 	diff.IdentifierSemantics = &semantics
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, platform.SQLServer)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.SQLServer)
 	c.Assert(err, qt.IsNil)
 	sql := strings.Join(statements, "\n")
 
@@ -112,9 +112,9 @@ func TestGenerateSchemaDiffSQL_ForeignKeyColumnTypeChange_SQLServerBrackets(t *t
 func TestGenerateSchemaDiffSQL_ForeignKeyColumnTypeChange_PostgresUnchanged(t *testing.T) {
 	c := qt.New(t)
 
-	diff, desired := fkColumnTypeChangeInputs()
+	diff, _ := fkColumnTypeChangeInputs()
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, platform.Postgres)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	sql := strings.Join(statements, "\n")
 

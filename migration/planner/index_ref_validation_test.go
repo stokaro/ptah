@@ -33,7 +33,7 @@ func TestGenerateSchemaDiffAST_NilDiffRejected(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := planner.GenerateSchemaDiffAST(nil, &schemamodel.Database{}, test.dialect)
+			nodes, err := planner.GenerateSchemaDiffAST(nil, test.dialect)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(nodes, qt.IsNil)
@@ -65,7 +65,7 @@ func TestGenerateSchemaDiffAST_RemovalDoesNotRequireTargetSchema(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := planner.GenerateSchemaDiffAST(diff, nil, test.dialect)
+			nodes, err := planner.GenerateSchemaDiffAST(diff, test.dialect)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
@@ -78,34 +78,7 @@ func TestGenerateSchemaDiffAST_IndexRefMissingOwnerRejected(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
 		IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_email", Fields: []string{"email"}}}},
 	}
-	desired := &schemamodel.Database{
-		Indexes: []schemamodel.Index{
-			{Name: "idx_users_email", TableName: "users", Fields: []string{"email"}},
-		},
-	}
-
-	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.Postgres)
-
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(nodes, qt.IsNil)
-}
-
-func TestGenerateSchemaDiffAST_AmbiguousStructOwnerRejected(t *testing.T) {
-	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{
-		IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_shared", StructName: "Shared", Fields: []string{"email"}}, TableName: "app.users"}},
-	}
-	desired := &schemamodel.Database{
-		Tables: []schemamodel.Table{
-			{StructName: "Shared", Schema: "app", Name: "users"},
-			{StructName: "Shared", Schema: "archive", Name: "users"},
-		},
-		Indexes: []schemamodel.Index{
-			{Name: "idx_shared", StructName: "Shared", Fields: []string{"email"}},
-		},
-	}
-
-	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.Postgres)
+	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.Postgres)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 	c.Assert(nodes, qt.IsNil)
@@ -130,115 +103,12 @@ func TestGenerateSchemaDiffAST_SchemaScopedDuplicateAdditionsRejected(t *testing
 					{Index: schemamodel.Index{Name: "idx_shared", StructName: "Shared", Fields: []string{"email"}}, TableName: "orders"},
 				},
 			}
-			desired := duplicateIndexTarget("users", "orders")
-
-			nodes, err := planner.GenerateSchemaDiffAST(diff, desired, test.dialect)
+			nodes, err := planner.GenerateSchemaDiffAST(diff, test.dialect)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(nodes, qt.IsNil)
 		})
 	}
-}
-
-func TestGenerateSchemaDiffAST_UnchangedTargetIndexConflictRejected(t *testing.T) {
-	tests := []struct {
-		name          string
-		dialect       string
-		addedTable    string
-		existingTable string
-	}{
-		{
-			name:          "postgresql",
-			dialect:       platform.Postgres,
-			addedTable:    "app.orders",
-			existingTable: "app.users",
-		},
-		{
-			name:          "spanner",
-			dialect:       platform.Spanner,
-			addedTable:    "app.orders",
-			existingTable: "app.users",
-		},
-		{
-			name:          "sqlite",
-			dialect:       platform.SQLite,
-			addedTable:    "main.orders",
-			existingTable: "main.users",
-		},
-		{
-			name:          "postgresql mixed qualification",
-			dialect:       platform.Postgres,
-			addedTable:    "orders",
-			existingTable: "public.users",
-		},
-		{
-			name:          "yugabytedb mixed qualification",
-			dialect:       platform.YugabyteDB,
-			addedTable:    "orders",
-			existingTable: "public.users",
-		},
-		{
-			name:          "spanner mixed qualification",
-			dialect:       platform.Spanner,
-			addedTable:    "orders",
-			existingTable: "public.users",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			diff := &difftypes.SchemaDiff{
-				IndexesAdded: difftypes.IndexChanges{
-					{Index: schemamodel.Index{Name: "idx_shared", Fields: []string{"email"}}, TableName: test.addedTable},
-				},
-			}
-			desired := duplicateIndexTarget(test.addedTable, test.existingTable)
-
-			nodes, err := planner.GenerateSchemaDiffAST(diff, desired, test.dialect)
-
-			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-			c.Assert(nodes, qt.IsNil)
-		})
-	}
-}
-
-func TestGenerateSchemaDiffAST_TargetConflictRejectedWithoutIndexChanges(t *testing.T) {
-	c := qt.New(t)
-	desired := duplicateIndexTarget("app.users", "app.orders")
-
-	nodes, err := planner.GenerateSchemaDiffAST(
-		&difftypes.SchemaDiff{},
-		desired,
-		platform.Postgres,
-	)
-
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(nodes, qt.IsNil)
-}
-
-func TestGenerateSchemaDiffAST_UnknownQualifiedTargetOwnerRejected(t *testing.T) {
-	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{
-		IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_email", TableName: "users", Fields: []string{"email"}}, TableName: "publci.users"}},
-	}
-	desired := &schemamodel.Database{
-		Tables: []schemamodel.Table{
-			{StructName: "User", Schema: "public", Name: "users"},
-		},
-		Indexes: []schemamodel.Index{
-			{
-				Name:      "idx_users_email",
-				TableName: "publci.users",
-				Fields:    []string{"email"},
-			},
-		},
-	}
-
-	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.Postgres)
-
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(nodes, qt.IsNil)
 }
 
 func TestGenerateSchemaDiffAST_TableScopedDuplicateAdditionsAccepted(t *testing.T) {
@@ -260,9 +130,7 @@ func TestGenerateSchemaDiffAST_TableScopedDuplicateAdditionsAccepted(t *testing.
 					{Index: schemamodel.Index{Name: "idx_shared", StructName: "Shared", Fields: []string{"email"}}, TableName: "orders"},
 				},
 			}
-			desired := duplicateIndexTarget("users", "orders")
-
-			nodes, err := planner.GenerateSchemaDiffAST(diff, desired, test.dialect)
+			nodes, err := planner.GenerateSchemaDiffAST(diff, test.dialect)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 2)
@@ -278,13 +146,7 @@ func TestGenerateSchemaDiffAST_MariaDBUnicodeCaseReplacementDropsFirst(t *testin
 			{Name: "Ä_idx", TableName: "users"},
 		},
 	}
-	desired := &schemamodel.Database{
-		Indexes: []schemamodel.Index{
-			{Name: "ä_idx", TableName: "users", Fields: []string{"email"}},
-		},
-	}
-
-	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.MariaDB)
+	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.MariaDB)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
@@ -304,13 +166,7 @@ func TestGenerateSchemaDiffSQL_PostgreSQLRawDottedIndexNameIsOneIdentifier(t *te
 			{Name: "idx.users.email", TableName: "public.users"},
 		},
 	}
-	desired := &schemamodel.Database{
-		Indexes: []schemamodel.Index{
-			{Name: "idx.users.email", TableName: "public.users", Fields: []string{"email"}},
-		},
-	}
-
-	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.Postgres)
+	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL(platform.Postgres, nodes...)
 
@@ -327,13 +183,7 @@ func TestGenerateSchemaDiffSQL_SQLiteRawDottedIndexNameIsOneIdentifier(t *testin
 			{Name: "idx.users.email", TableName: "main.users"},
 		},
 	}
-	desired := &schemamodel.Database{
-		Indexes: []schemamodel.Index{
-			{Name: "idx.users.email", TableName: "main.users", Fields: []string{"email"}},
-		},
-	}
-
-	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.SQLite)
+	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.SQLite)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL(platform.SQLite, nodes...)
 
@@ -354,13 +204,7 @@ func TestGenerateSchemaDiffSQL_ClickHouseIndexIdentifiersAreInjectionSafe(t *tes
 			{Name: indexName, TableName: tableName},
 		},
 	}
-	desired := &schemamodel.Database{
-		Indexes: []schemamodel.Index{
-			{Name: indexName, TableName: tableName, Fields: []string{"payload"}, Type: "minmax"},
-		},
-	}
-
-	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.ClickHouse)
+	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.ClickHouse)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL(platform.ClickHouse, nodes...)
 
@@ -369,13 +213,4 @@ func TestGenerateSchemaDiffSQL_ClickHouseIndexIdentifiersAreInjectionSafe(t *tes
 		"ALTER TABLE `analytics`.`events``; DROP TABLE audit; --` DROP INDEX `idx``; DROP TABLE users; --`;")
 	c.Assert(sql, qt.Contains,
 		"ALTER TABLE `analytics`.`events``; DROP TABLE audit; --` ADD INDEX `idx``; DROP TABLE users; --` payload TYPE minmax GRANULARITY 8192;")
-}
-
-func duplicateIndexTarget(tableNames ...string) *schemamodel.Database {
-	return &schemamodel.Database{
-		Indexes: []schemamodel.Index{
-			{Name: "idx_shared", TableName: tableNames[0], Fields: []string{"tenant_id"}, Type: "minmax"},
-			{Name: "idx_shared", TableName: tableNames[1], Fields: []string{"tenant_id"}, Type: "minmax"},
-		},
-	}
 }

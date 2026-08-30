@@ -1,48 +1,54 @@
-package planner_test
+package schemadiff_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
-func TestGenerateSchemaDiffAST_ValidatesTargetForeignKeys_FailurePath(t *testing.T) {
+// TestCompareWithDatabaseInfo_ValidatesTargetForeignKeys_FailurePath covers the
+// foreign-key rules that read the whole declaration.
+//
+// Each of these is a relationship between two tables rather than a property of
+// one change: a referenced key that is not unique, a cascade path that closes
+// a cycle, a pair of columns whose types cannot be compared. The plan reads
+// only the diff, so the validation runs where the whole target is supplied
+// (stokaro/ptah#2315).
+func TestCompareWithDatabaseInfo_ValidatesTargetForeignKeys_FailurePath(t *testing.T) {
 	tests := []struct {
-		name    string
-		dialect string
-		diff    *difftypes.SchemaDiff
-		schema  *schemamodel.Database
-		wantIs  error
-		wantErr string
+		name      string
+		dialect   string
+		semantics identifier.Semantics
+		schema    *schemamodel.Database
+		wantIs    error
+		wantErr   string
 	}{
 		{
 			name:    "mysql nonunique referenced key",
 			dialect: platform.MySQL,
-			diff:    &difftypes.SchemaDiff{},
-			schema:  plannerIndexedForeignKeyDatabase(),
+			schema:  indexedForeignKeyDatabase(),
 			wantIs:  ptaherr.ErrUnsupportedFeature,
 			wantErr: `mysql requires referenced columns tenant_id, code on table "parents" to be declared unique`,
 		},
 		{
-			name:    "sql server cascade cycle",
-			dialect: platform.SQLServer,
-			diff:    plannerSQLServerDiff(),
-			schema:  plannerCascadeCycleDatabase(),
-			wantIs:  ptaherr.ErrUnsupportedFeature,
-			wantErr: `sqlserver does not allow ON DELETE cycles or multiple cascade paths reaching table .*`,
+			name:      "sql server cascade cycle",
+			dialect:   platform.SQLServer,
+			semantics: sqlServerCascadeCycleSemantics(),
+			schema:    cascadeCycleDatabase(),
+			wantIs:    ptaherr.ErrUnsupportedFeature,
+			wantErr:   `sqlserver does not allow ON DELETE cycles or multiple cascade paths reaching table .*`,
 		},
 		{
 			name:    "postgres incompatible types",
 			dialect: platform.Postgres,
-			diff:    &difftypes.SchemaDiff{},
-			schema:  plannerTypeMismatchDatabase(),
+			schema:  typeMismatchDatabase(),
 			wantIs:  ptaherr.ErrInvalidSchemaDiff,
 			wantErr: `foreign-key columns "children"\."parent_id" \(BIGINT\) and "parents"\."id" \(INTEGER\) have incompatible types`,
 		},
@@ -51,16 +57,23 @@ func TestGenerateSchemaDiffAST_ValidatesTargetForeignKeys_FailurePath(t *testing
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := planner.GenerateSchemaDiffAST(test.diff, test.schema, test.dialect)
+
+			diff, err := schemadiff.CompareWithDatabaseInfo(
+				test.schema,
+				&catalog.Database{},
+				catalog.ServerInfo{Dialect: test.dialect, IdentifierSemantics: test.semantics},
+				nil,
+			)
+
 			c.Assert(err, qt.ErrorIs, test.wantIs, qt.Commentf("error: %v", err))
 			c.Assert(err, qt.ErrorMatches, `.*`+test.wantErr)
-			c.Assert(nodes, qt.IsNil)
+			c.Assert(diff, qt.IsNil)
 		})
 	}
 }
 
-func plannerSQLServerDiff() *difftypes.SchemaDiff {
-	semantics := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").
+func sqlServerCascadeCycleSemantics() identifier.Semantics {
+	return identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").
 		WithResolvedNames([]identifier.ResolvedName{
 			{Name: "dbo", Key: "dbo"},
 			{Name: "left_nodes", Key: "left_nodes"},
@@ -69,10 +82,9 @@ func plannerSQLServerDiff() *difftypes.SchemaDiff {
 			{Name: "left_id", Key: "left_id"},
 			{Name: "right_id", Key: "right_id"},
 		})
-	return &difftypes.SchemaDiff{IdentifierSemantics: &semantics}
 }
 
-func plannerIndexedForeignKeyDatabase() *schemamodel.Database {
+func indexedForeignKeyDatabase() *schemamodel.Database {
 	return &schemamodel.Database{
 		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parents"},
@@ -100,7 +112,7 @@ func plannerIndexedForeignKeyDatabase() *schemamodel.Database {
 	}
 }
 
-func plannerCascadeCycleDatabase() *schemamodel.Database {
+func cascadeCycleDatabase() *schemamodel.Database {
 	return &schemamodel.Database{
 		Tables: []schemamodel.Table{
 			{StructName: "Left", Name: "left_nodes"},
@@ -115,7 +127,7 @@ func plannerCascadeCycleDatabase() *schemamodel.Database {
 	}
 }
 
-func plannerTypeMismatchDatabase() *schemamodel.Database {
+func typeMismatchDatabase() *schemamodel.Database {
 	return &schemamodel.Database{
 		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parents"},

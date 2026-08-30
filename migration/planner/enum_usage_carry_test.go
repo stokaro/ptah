@@ -61,7 +61,7 @@ func TestGenerateSchemaDiffSQL_AnEnumRemovalConvertsTheColumnsTheComparisonFound
 	c.Assert(diff.EnumsModified, qt.HasLen, 1)
 	c.Assert(diff.EnumsModified[0].ValuesRemoved, qt.DeepEquals, []string{"archived"})
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.Postgres)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 
 	// The conversion, and the default put back around it. Without the carried

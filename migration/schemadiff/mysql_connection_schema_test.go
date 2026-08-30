@@ -279,8 +279,12 @@ func mysqlForeignKeyDesired(schema string) *schemamodel.Database {
 			{StructName: "Posts", Name: "posts", Schema: schema},
 		},
 		Fields: []schemamodel.Field{
-			{StructName: "Users", Name: "id", Type: "BIGINT", Nullable: false},
-			{StructName: "Posts", Name: "id", Type: "BIGINT", Nullable: false},
+			// MySQL refuses a foreign key whose referenced columns are not
+			// declared unique, so the referenced key belongs to the fixture:
+			// without it this is a desired schema the server would reject, and
+			// the question the test asks never arises.
+			{StructName: "Users", Name: "id", Type: "BIGINT", Nullable: false, Primary: true},
+			{StructName: "Posts", Name: "id", Type: "BIGINT", Nullable: false, Primary: true},
 			{
 				StructName:     "Posts",
 				Name:           "user_id",

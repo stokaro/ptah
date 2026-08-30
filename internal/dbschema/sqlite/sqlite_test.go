@@ -331,7 +331,7 @@ func TestRoundTripGeneratedSchemaThroughSQLite(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	diff := schemadiff.CompareWithDialect(desired, initial, platform.SQLite)
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, platform.SQLite)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.SQLite)
 	c.Assert(err, qt.IsNil)
 	c.Assert(len(statements) > 0, qt.IsTrue)
 

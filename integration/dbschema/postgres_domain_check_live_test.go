@@ -104,8 +104,9 @@ func TestPostgresLiveDomainCheckConverges(t *testing.T) {
 	// 3. The plan runs against a database whose column has this domain's type.
 	//    A DROP DOMAIN would be refused here; these statements are not that.
 	planStatements, err := planner.GenerateSchemaDiffSQLStatements(
-		changed, declared(replacedCheck), platform.Postgres,
+		changed, platform.Postgres,
 	)
+
 	c.Assert(err, qt.IsNil)
 	c.Assert(planStatements, qt.Not(qt.HasLen), 0)
 	for _, statement := range planStatements {

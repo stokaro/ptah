@@ -12,9 +12,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/planner/dialects/clickhouse"
 	"go.5x5.cz/ptah/internal/planner/dialects/mssql"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
@@ -23,7 +21,6 @@ import (
 	"go.5x5.cz/ptah/internal/planner/dialects/sqlite"
 	"go.5x5.cz/ptah/internal/txrequire"
 	"go.5x5.cz/ptah/migration/diffpolicy"
-	"go.5x5.cz/ptah/migration/internal/identifiervalidation"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -370,7 +367,7 @@ func normalizeRegistryDialect(dialect string) string {
 //	import "go.5x5.cz/ptah/core/platform"
 //
 //	// Generate AST nodes for PostgreSQL
-//	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, platform.Postgres)
+//	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.Postgres)
 //	if err != nil {
 //		return err
 //	}
@@ -385,8 +382,8 @@ func normalizeRegistryDialect(dialect string) string {
 //   - GenerateSchemaDiffSQL: For complete SQL string generation
 //   - GenerateSchemaDiffSQLStatements: For individual SQL statements
 //   - GetPlanner: For direct planner access
-func GenerateSchemaDiffAST(diff *difftypes.SchemaDiff, desired *schemamodel.Database, dialect string) ([]ast.Node, error) {
-	return GenerateSchemaDiffASTWithOptions(diff, desired, dialect, Options{
+func GenerateSchemaDiffAST(diff *difftypes.SchemaDiff, dialect string) ([]ast.Node, error) {
+	return GenerateSchemaDiffASTWithOptions(diff, dialect, Options{
 		Capabilities: capability.ForDialect(dialect),
 	})
 }
@@ -395,20 +392,10 @@ func GenerateSchemaDiffAST(diff *difftypes.SchemaDiff, desired *schemamodel.Data
 // options.
 func GenerateSchemaDiffASTWithOptions(
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 	dialect string,
 	opts Options,
 ) ([]ast.Node, error) {
-	caps := opts.CapabilitiesFor(dialect)
 	semantics := diff.EffectiveIdentifierSemantics(dialect)
-	// Both normalizations belong here rather than in the dialect planners: a
-	// column does not carry the schema of the user type it names, only the
-	// declaration does, and every dialect planner reads its columns out of this
-	// one value (stokaro/ptah#1138).
-	preparedGenerated := fromschema.QualifyDeclaredUserTypes(
-		fromschema.AssignDefaultForeignKeyNames(desired, dialect),
-		dialect,
-	)
 	if diff != nil &&
 		diff.IdentifierSemantics != nil &&
 		!diff.IdentifierSemantics.IsZero() &&
@@ -420,18 +407,6 @@ func GenerateSchemaDiffASTWithOptions(
 				ptaherr.ErrInvalidSchemaDiff,
 			),
 		)
-	}
-	if err := identifiervalidation.ValidateTarget(
-		preparedGenerated,
-		dialect,
-		semantics,
-	); err != nil {
-		return nil, wrapPlanError(dialect, err)
-	}
-	if preparedGenerated != nil {
-		if err := renderer.ValidateSchemaWithCapabilities(preparedGenerated, dialect, caps); err != nil {
-			return nil, wrapPlanError(dialect, err)
-		}
 	}
 	planner, err := GetPlannerWithOptions(dialect, opts)
 	if err != nil {
@@ -501,7 +476,7 @@ func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
 //	import "go.5x5.cz/ptah/core/platform"
 //
 //	// Generate SQL statements for MySQL
-//	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, platform.MySQL)
+//	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.MySQL)
 //	if err != nil {
 //		return err
 //	}
@@ -517,8 +492,8 @@ func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
 //
 //   - GenerateSchemaDiffSQL: For complete SQL string without splitting
 //   - GenerateSchemaDiffAST: For AST nodes without rendering
-func GenerateSchemaDiffSQLStatements(diff *difftypes.SchemaDiff, desired *schemamodel.Database, dialect string) ([]string, error) {
-	output, err := GenerateSchemaDiffSQLWithOptions(diff, desired, dialect, Options{
+func GenerateSchemaDiffSQLStatements(diff *difftypes.SchemaDiff, dialect string) ([]string, error) {
+	output, err := GenerateSchemaDiffSQLWithOptions(diff, dialect, Options{
 		Capabilities: capability.ForDialect(dialect),
 	})
 	if err != nil {
@@ -532,11 +507,10 @@ func GenerateSchemaDiffSQLStatements(diff *difftypes.SchemaDiff, desired *schema
 // statements using explicit planning options.
 func GenerateSchemaDiffSQLStatementsWithOptions(
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 	dialect string,
 	opts Options,
 ) ([]string, error) {
-	output, err := GenerateSchemaDiffSQLWithOptions(diff, desired, dialect, opts)
+	output, err := GenerateSchemaDiffSQLWithOptions(diff, dialect, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -586,7 +560,7 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 //	import "go.5x5.cz/ptah/core/platform"
 //
 //	// Generate complete SQL script for PostgreSQL
-//	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.Postgres)
+//	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
 //	if err != nil {
 //		return err
 //	}
@@ -605,8 +579,8 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 //
 //   - GenerateSchemaDiffSQLStatements: For individual SQL statements
 //   - GenerateSchemaDiffAST: For AST nodes without rendering
-func GenerateSchemaDiffSQL(diff *difftypes.SchemaDiff, desired *schemamodel.Database, dialect string) (string, error) {
-	return GenerateSchemaDiffSQLWithOptions(diff, desired, dialect, Options{
+func GenerateSchemaDiffSQL(diff *difftypes.SchemaDiff, dialect string) (string, error) {
+	return GenerateSchemaDiffSQLWithOptions(diff, dialect, Options{
 		Capabilities: capability.ForDialect(dialect),
 	})
 }
@@ -615,18 +589,23 @@ func GenerateSchemaDiffSQL(diff *difftypes.SchemaDiff, desired *schemamodel.Data
 // planning options.
 func GenerateSchemaDiffSQLWithOptions(
 	diff *difftypes.SchemaDiff,
-	desired *schemamodel.Database,
 	dialect string,
 	opts Options,
 ) (string, error) {
-	// An extension the DESIRED schema declares is one the plan installs, and it
-	// is installed before the statements that need it. A connection opened
-	// before the extension existed answers about the past, so its capability
-	// set alone would emit `CREATE EXTENSION "timescaledb"` and then skip the
-	// create_hypertable that needs it (stokaro/ptah#1026).
+	// An extension this plan installs is installed before the statements that
+	// need it. A connection opened before the extension existed answers about
+	// the past, so its capability set alone would emit
+	// `CREATE EXTENSION "timescaledb"` and then skip the create_hypertable that
+	// needs it (stokaro/ptah#1026).
+	//
+	// The names come from the change rather than from the desired schema
+	// because installing is what makes them available: an extension the schema
+	// declares and the target already has is already in the capability set the
+	// connection reported (stokaro/ptah#2315).
 	caps := capability.WithDeclaredExtensions(
-		opts.CapabilitiesFor(dialect), declaredExtensionNames(desired))
-	astNodes, err := GenerateSchemaDiffASTWithOptions(diff, desired, dialect, opts)
+		opts.CapabilitiesFor(dialect), diff.ExtensionsAdded.Names(),
+	)
+	astNodes, err := GenerateSchemaDiffASTWithOptions(diff, dialect, opts)
 	if err != nil {
 		return "", err
 	}
@@ -635,19 +614,6 @@ func GenerateSchemaDiffSQLWithOptions(
 		return "", wrapRenderError(dialect, err)
 	}
 	return output, nil
-}
-
-// declaredExtensionNames is what the desired schema says the target will have
-// by the time these statements run.
-func declaredExtensionNames(desired *schemamodel.Database) []string {
-	if desired == nil {
-		return nil
-	}
-	names := make([]string, 0, len(desired.Extensions))
-	for _, extension := range desired.Extensions {
-		names = append(names, extension.Name)
-	}
-	return names
 }
 
 func wrapPlanError(dialect string, err error) error {

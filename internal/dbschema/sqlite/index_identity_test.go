@@ -78,7 +78,7 @@ func TestReaderAndSchemaDiff_PreserveAttachedSchemaIndexIdentity(t *testing.T) {
 
 	indexOnlyAddition := &difftypes.SchemaDiff{}
 	indexOnlyAddition.SetIndexAdditions(got.IndexesAdded)
-	addStatements, err := planner.GenerateSchemaDiffSQLStatements(indexOnlyAddition, target, platform.SQLite)
+	addStatements, err := planner.GenerateSchemaDiffSQLStatements(indexOnlyAddition, platform.SQLite)
 	c.Assert(err, qt.IsNil)
 	c.Assert(addStatements, qt.DeepEquals, []string{
 		`CREATE INDEX IF NOT EXISTS "tenant"."idx_shared_email" ON "users" ("email")`,
@@ -100,7 +100,7 @@ func TestReaderAndSchemaDiff_PreserveAttachedSchemaIndexIdentity(t *testing.T) {
 	})
 	indexOnlyRemoval := &difftypes.SchemaDiff{}
 	indexOnlyRemoval.SetIndexRemovals(removalDiff.IndexRemovals())
-	removeStatements, err := planner.GenerateSchemaDiffSQLStatements(indexOnlyRemoval, target, platform.SQLite)
+	removeStatements, err := planner.GenerateSchemaDiffSQLStatements(indexOnlyRemoval, platform.SQLite)
 	c.Assert(err, qt.IsNil)
 	c.Assert(removeStatements, qt.DeepEquals, []string{
 		`DROP INDEX IF EXISTS "tenant"."idx_shared_email"`,
@@ -145,7 +145,7 @@ func TestReaderAndSchemaDiff_MoveSameSchemaIndexWithoutNameCollision(t *testing.
 		{Name: "idx_shared", TableName: "users"},
 	})
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, target, platform.SQLite)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.SQLite)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.DeepEquals, []string{
 		`DROP INDEX IF EXISTS "idx_shared"`,

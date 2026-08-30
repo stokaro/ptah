@@ -94,7 +94,7 @@ func TestPostgresViewDependencyOrderE2E(t *testing.T) {
 			}
 
 			diff := schemadiff.CompareWithDialect(declared, read, "postgres")
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, declared, "postgres")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "postgres")
 			c.Assert(err, qt.IsNil)
 
 			// The judge is the server: a plan that creates the dependent view

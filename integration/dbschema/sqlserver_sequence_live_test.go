@@ -105,7 +105,7 @@ func TestSQLServerLiveSequenceRoundTrip(t *testing.T) {
 	changed.Sequences[0].Increment = &newIncrement
 	modification := schemadiff.CompareWithDialect(changed, live, platform.SQLServer)
 	c.Assert(modification.SequencesModified, qt.HasLen, 1)
-	nodes, err := planner.GenerateSchemaDiffAST(modification, changed, platform.SQLServer)
+	nodes, err := planner.GenerateSchemaDiffAST(modification, platform.SQLServer)
 	c.Assert(err, qt.IsNil)
 	alters := renderedStatementsNaming(c, nodes, "ALTER SEQUENCE")
 	c.Assert(alters, qt.HasLen, 1)

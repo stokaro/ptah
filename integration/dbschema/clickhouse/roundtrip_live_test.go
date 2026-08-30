@@ -62,7 +62,7 @@ func TestClickHouseReadRendersItsOwnRead(t *testing.T) {
 	applyStatements(c, conn, planAgainstLive(c, conn, roundTripDeclaration()))
 
 	live := readLive(c, conn)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(schemadiff.CompareWithDialect(&schemamodel.Database{}, live, platform.ClickHouse), &schemamodel.Database{}, platform.ClickHouse, planner.Options{Capabilities: conn.Info().Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(schemadiff.CompareWithDialect(&schemamodel.Database{}, live, platform.ClickHouse), platform.ClickHouse, planner.Options{Capabilities: conn.Info().Capabilities})
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.IsNotNil)
 }
@@ -105,7 +105,7 @@ func planAgainstLive(c *qt.C, conn *dbschema.DatabaseConnection, declared *schem
 	info := conn.Info()
 	diff, err := schemadiff.CompareWithDatabaseInfo(declared, live, info, nil)
 	c.Assert(err, qt.IsNil)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, declared, info.Dialect, planner.Options{Capabilities: info.Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{Capabilities: info.Capabilities})
 	c.Assert(err, qt.IsNil)
 	return statements
 }

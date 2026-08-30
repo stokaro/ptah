@@ -110,7 +110,7 @@ func TestPlan_IndexOnAMaterializedViewIsPlannedRatherThanRefused(t *testing.T) {
 	description := materializedViewIndexSchema()
 
 	diff := schemadiff.CompareWithDialect(description, &catalog.Database{}, platform.Postgres)
-	nodes, err := planner.GenerateSchemaDiffAST(diff, description, platform.Postgres)
+	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.Postgres)
 
 	c.Assert(err, qt.IsNil)
 	rendered := make([]string, 0, len(nodes))

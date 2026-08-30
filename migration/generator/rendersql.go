@@ -86,9 +86,10 @@ func generateUpMigrationSQLWithOptions(
 		caps = capsOverride[0]
 	}
 	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
-		diff, desired, dialect,
+		diff, dialect,
 		planner.Options{Capabilities: caps},
 	)
+
 	if err != nil {
 		return "", fmt.Errorf("error generating up migration SQL: %w", err)
 	}
@@ -164,10 +165,7 @@ func generateDownMigrationSQLQualified(
 	reverseDiff := reverseSchemaDiffWithSchemaForDialect(diff, desired, dbSchema, dialect)
 	if normalized := platform.NormalizeDialect(dialect); normalized == platform.MySQL || normalized == platform.MariaDB {
 		forwardNodes, err := planner.GenerateSchemaDiffASTWithOptions(
-			diff,
-			desired,
-			dialect,
-			planner.Options{Capabilities: opts.capabilities},
+			diff, dialect, planner.Options{Capabilities: opts.capabilities},
 		)
 		if err != nil {
 			return "", fmt.Errorf("error planning forward migration: %w", err)
@@ -218,14 +216,24 @@ func planDownMigrationStatements(
 	plannerOpts planner.Options,
 	qualifier atlasmigrate.Qualifier,
 ) ([]string, error) {
+	// The rollback's target is the schema the database currently holds. The
+	// forward direction's target is validated by the comparison that produced
+	// the forward diff; a reversal has no comparison of its own, so without
+	// this the assertion would be made for one direction only
+	// (stokaro/ptah#2315).
+	if err := validateRollbackTarget(
+		dbAsGoSchema, reverseDiff, dialect, plannerOpts.CapabilitiesFor(dialect),
+	); err != nil {
+		return nil, fmt.Errorf("error generating down migration SQL: %w", err)
+	}
 	if qualifier.IsZero() {
-		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(reverseDiff, dbAsGoSchema, dialect, plannerOpts)
+		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(reverseDiff, dialect, plannerOpts)
 		if err != nil {
 			return nil, fmt.Errorf("error generating down migration SQL: %w", err)
 		}
 		return statements, nil
 	}
-	nodes, err := planner.GenerateSchemaDiffASTWithOptions(reverseDiff, dbAsGoSchema, dialect, plannerOpts)
+	nodes, err := planner.GenerateSchemaDiffASTWithOptions(reverseDiff, dialect, plannerOpts)
 	if err != nil {
 		return nil, fmt.Errorf("error generating down migration SQL: %w", err)
 	}

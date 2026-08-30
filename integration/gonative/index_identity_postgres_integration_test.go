@@ -58,7 +58,7 @@ func TestPostgreSQLSchemaScopedIndexIdentity_MoveAndRoundTrip(t *testing.T) {
 		{Name: postgresIndexIdentityName, TableName: postgresIndexIdentitySchemaA + ".users"},
 	})
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, target, platform.Postgres)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)
 	c.Assert(statements[0], qt.Contains, "DROP INDEX")

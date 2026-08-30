@@ -125,7 +125,7 @@ func diagnosticLines(statements []string) []string {
 }
 
 func planStatements(c *qt.C, diff *difftypes.SchemaDiff, desired *schemamodel.Database, dialect string) []string {
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, dialect)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, dialect)
 	c.Assert(err, qt.IsNil)
 	return statements
 }
@@ -482,14 +482,10 @@ func TestPlan_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
 	diff := &difftypes.SchemaDiff{ExtensionsAdded: difftypes.ExtensionChanges{
 		{Name: "pgcrypto", Schema: "extensions"},
 	}}
-	desired := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: "extensions"}},
-	}
-
 	for _, dialect := range []string{platform.Postgres, platform.YugabyteDB} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, dialect)
+			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, dialect)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(statements, qt.DeepEquals, []string{
@@ -501,36 +497,34 @@ func TestPlan_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
 }
 
 func TestPlan_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *testing.T) {
-	diff := &difftypes.SchemaDiff{ExtensionsAdded: difftypes.ExtensionChanges{{Name: "pgcrypto"}}}
-	desired := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: "extensions"}},
-	}
-
+	// The installation schema travels WITH the addition, which is what the
+	// comparison produces: the planner refuses from the change rather than
+	// from a schema handed to it beside the change (stokaro/ptah#2315).
+	diff := &difftypes.SchemaDiff{ExtensionsAdded: difftypes.ExtensionChanges{{Name: "pgcrypto", Schema: "extensions"}}}
 	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := planner.GenerateSchemaDiffAST(diff, desired, dialect)
+			nodes, err := planner.GenerateSchemaDiffAST(diff, dialect)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err, qt.ErrorMatches, dialect+` does not support PostgreSQL extension installation schema "extensions" for extension "pgcrypto"`)
+			c.Assert(err, qt.ErrorMatches, `.*`+dialect+` does not support PostgreSQL extension installation schema "extensions" for extension "pgcrypto"`)
 			c.Assert(nodes, qt.IsNil)
 		})
 	}
 }
 
 func TestPlan_WhitespaceOnlyExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *testing.T) {
-	diff := &difftypes.SchemaDiff{ExtensionsAdded: difftypes.ExtensionChanges{{Name: "pgcrypto"}}}
-	desired := &schemamodel.Database{
-		Extensions: []schemamodel.Extension{{Name: "pgcrypto", Schema: " "}},
-	}
-
+	// The installation schema travels WITH the addition, which is what the
+	// comparison produces: the planner refuses from the change rather than
+	// from a schema handed to it beside the change (stokaro/ptah#2315).
+	diff := &difftypes.SchemaDiff{ExtensionsAdded: difftypes.ExtensionChanges{{Name: "pgcrypto", Schema: " "}}}
 	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := planner.GenerateSchemaDiffAST(diff, desired, dialect)
+			nodes, err := planner.GenerateSchemaDiffAST(diff, dialect)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err, qt.ErrorMatches, dialect+` does not support PostgreSQL extension installation schema " " for extension "pgcrypto"`)
+			c.Assert(err, qt.ErrorMatches, `.*`+dialect+` does not support PostgreSQL extension installation schema " " for extension "pgcrypto"`)
 			c.Assert(nodes, qt.IsNil)
 		})
 	}
@@ -629,7 +623,8 @@ func TestPlan_MySQLFamilyRoleRefusalNamesTheSameRoleAtEitherGate(t *testing.T) {
 				c := qt.New(t)
 
 				statements, err := planner.GenerateSchemaDiffSQLStatements(
-					&difftypes.SchemaDiff{RolesAdded: rolesCarrying(added...)}, test.desired, dialect)
+					&difftypes.SchemaDiff{RolesAdded: rolesCarrying(added...)}, dialect,
+				)
 
 				c.Assert(statements, qt.HasLen, 0)
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -691,7 +686,8 @@ func TestPlan_SQLServerPlansTheRoleAndGrantExactlyOnce(t *testing.T) {
 	c := qt.New(t)
 
 	planned := strings.Join(
-		planStatements(c, roleFamilyCreationDiff(), roleFamilySchema(), platform.SQLServer), "\n")
+		planStatements(c, roleFamilyCreationDiff(), roleFamilySchema(), platform.SQLServer), "\n",
+	)
 
 	executable := executableSQL(planned)
 	c.Assert(countStatement(executable, "CREATE ROLE"), qt.Equals, 1)
@@ -714,7 +710,8 @@ func TestPlan_SQLiteStillRefusesTheRoleItCannotManage(t *testing.T) {
 			c := qt.New(t)
 
 			_, err := planner.GenerateSchemaDiffAST(
-				roleFamilyCreationDiff(), roleFamilySchema(), dialect)
+				roleFamilyCreationDiff(), dialect,
+			)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err.Error(), qt.Contains, "app_reader")

@@ -78,14 +78,16 @@ func dropPropertyDatabase(c *qt.C, dsn string) {
 	var remaining int
 	c.Check(admin.QueryRow(
 		"SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?",
-		propertyRoundTripDatabase).Scan(&remaining), qt.IsNil)
+		propertyRoundTripDatabase,
+	).Scan(&remaining), qt.IsNil)
 	c.Check(remaining, qt.Equals, 0,
 		qt.Commentf("database %s survived cleanup", propertyRoundTripDatabase))
 
 	var routines int
 	c.Check(admin.QueryRow(
 		"SELECT COUNT(*) FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ?",
-		propertyRoundTripDatabase).Scan(&routines), qt.IsNil)
+		propertyRoundTripDatabase,
+	).Scan(&routines), qt.IsNil)
 	c.Check(routines, qt.Equals, 0,
 		qt.Commentf("routines survived in %s", propertyRoundTripDatabase))
 }
@@ -106,7 +108,7 @@ func applyPropertySQL(c *qt.C, db *sql.DB, dialect string, desired *schemamodel.
 	// name are one routine. Production reaches the same place through
 	// CompareWithDatabase, which sets opts.Dialect from the live connection.
 	diff := schemadiff.CompareWithDialect(desired, live, dialect)
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, dialect)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, dialect)
 	c.Assert(err, qt.IsNil)
 
 	for _, statement := range statements {
@@ -376,7 +378,8 @@ func queryRoutineCount(c *qt.C, dsn, name string) int {
 	var count int
 	c.Assert(admin.QueryRow(
 		"SELECT COUNT(*) FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ? AND ROUTINE_NAME = ? AND ROUTINE_TYPE = 'FUNCTION'",
-		propertyRoundTripDatabase, name).Scan(&count), qt.IsNil)
+		propertyRoundTripDatabase, name,
+	).Scan(&count), qt.IsNil)
 	return count
 }
 
@@ -490,7 +493,8 @@ func TestFunctionParametersIgnoreASameNamedProcedure_Integration(t *testing.T) {
 			c.Check(propertyDiff(c, db, target.dialect, desired).HasChanges(), qt.IsFalse)
 
 			_, err := db.Exec(
-				"CREATE PROCEDURE ptah_prop_fn(IN p_x VARCHAR(50), IN p_y DECIMAL(10,2)) SELECT 1")
+				"CREATE PROCEDURE ptah_prop_fn(IN p_x VARCHAR(50), IN p_y DECIMAL(10,2)) SELECT 1",
+			)
 			c.Assert(err, qt.IsNil)
 
 			// The procedure's arguments must not reach the function's signature.
@@ -668,11 +672,15 @@ func TestFunctionCaseCollidingDeclarationsAreRefused_Integration(t *testing.T) {
 			reader := mysql.NewMySQLReader(db, "")
 			live, err := reader.ReadSchemaContext(t.Context())
 			c.Assert(err, qt.IsNil)
-			diff := schemadiff.CompareWithDialect(colliding, live, target.dialect)
-
-			// Planning must refuse, naming both spellings, rather than
-			// producing statements for whichever declaration survived the map.
-			_, planErr := planner.GenerateSchemaDiffSQLStatements(diff, colliding, target.dialect)
+			// The comparison must refuse, naming both spellings, rather than
+			// producing a diff for whichever declaration survived the map.
+			// Whether two names are one object is a question about the whole
+			// declaration, so it is answered where the whole declaration is
+			// supplied rather than in a plan that reads only the diff
+			// (stokaro/ptah#2315).
+			_, planErr := schemadiff.CompareWithDatabaseInfo(
+				colliding, live, catalog.ServerInfo{Dialect: target.dialect}, nil,
+			)
 			c.Assert(planErr, qt.IsNotNil)
 			c.Check(planErr.Error(), qt.Contains, "Ptah_Dup_Fn")
 			c.Check(planErr.Error(), qt.Contains, "ptah_dup_fn")

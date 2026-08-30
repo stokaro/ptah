@@ -64,9 +64,10 @@ func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 					TableName:    test.diffName,
 					ColumnsAdded: difftypes.ColumnChanges{{StructName: "Event", Name: "note", Type: "String"}},
 				}}}, eventsTable(test.tableSchema)),
-				eventsTable(test.tableSchema),
+
 				"clickhouse",
 			)
+
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(plan, qt.Contains, "ADD COLUMN", qt.Commentf("plan:\n%s", plan))
@@ -87,9 +88,10 @@ func TestColumnDDLDoesNotGuessBetweenSchemas(t *testing.T) {
 			TableName:    "app.events",
 			ColumnsAdded: difftypes.ColumnChanges{{StructName: "Event", Name: "note", Type: "String"}},
 		}}}, eventsTable("reporting")),
-		eventsTable("reporting"),
+
 		"clickhouse",
 	)
+
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(statements, "\n"), qt.Not(qt.Contains), "ADD COLUMN")
 }
@@ -136,9 +138,10 @@ func TestCreateTableResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 			creations[0].Name = test.diffName
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
 				&difftypes.SchemaDiff{TablesAdded: creations},
-				declared,
+
 				"clickhouse",
 			)
+
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(plan, qt.Contains, "CREATE TABLE", qt.Commentf("plan:\n%s", plan))
@@ -153,13 +156,12 @@ func TestCreateTableDoesNotGuessBetweenSchemas(t *testing.T) {
 	c := qt.New(t)
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
-		// The declaration holds `reporting.events`, so a creation for
-		// `app.events` cannot be assembled from it -- which is the control:
-		// nothing is created, rather than the wrong relation.
+
 		&difftypes.SchemaDiff{TablesAdded: difftypes.TableCreationsFor(eventsTable("reporting"), "app.events")},
-		eventsTable("reporting"),
+
 		"clickhouse",
 	)
+
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(statements, "\n"), qt.Not(qt.Contains), "CREATE TABLE")
 }

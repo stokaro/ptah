@@ -9,8 +9,10 @@ import (
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/clickhouserbac"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
@@ -133,11 +135,7 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	if err := identifiervalidation.ValidateCoverage(semantics, names); err != nil {
 		return nil, nil, err
 	}
-	if err := identifiervalidation.ValidateTarget(
-		desired,
-		info.Dialect,
-		semantics,
-	); err != nil {
+	if err := ValidateDesiredSchema(desired, info); err != nil {
 		return nil, nil, err
 	}
 	merged.IdentifierSemantics = &semantics
@@ -289,7 +287,8 @@ func CompareReportingUndecidedAdditions(
 
 	// Compare database index definitions
 	compare.IndexesWithSemantics(
-		desired, database, diff, opts.Dialect, identifierSemantics, opts.IndexExpressions)
+		desired, database, diff, opts.Dialect, identifierSemantics, opts.IndexExpressions,
+	)
 
 	// Compare PostgreSQL extensions with configuration options
 	compare.ExtensionsWithSemantics(desired, database, diff, opts, cov, identifierSemantics)
@@ -312,7 +311,8 @@ func CompareReportingUndecidedAdditions(
 	// Compare TimescaleDB hypertables (PostgreSQL with the extension)
 	compare.Hypertables(desired, database, diff, cov)
 	compare.ContinuousAggregates(
-		desired, database, diff, cov, opts.ContinuousAggregateBodies, identifierSemantics)
+		desired, database, diff, cov, opts.ContinuousAggregateBodies, identifierSemantics,
+	)
 
 	// Compare SQL Server extended properties (schema, table and column scope)
 	compare.ExtendedProperties(desired, database, diff, cov)
@@ -321,7 +321,8 @@ func CompareReportingUndecidedAdditions(
 
 	// Compare RLS policies (PostgreSQL-specific feature)
 	compare.RLSPoliciesWithSemantics(
-		desired, database, diff, identifierSemantics, cov, opts.PolicyExpressions)
+		desired, database, diff, identifierSemantics, cov, opts.PolicyExpressions,
+	)
 
 	// Compare RLS enabled tables (PostgreSQL-specific feature)
 	compare.RLSEnabledTablesWithSemantics(desired, database, diff, identifierSemantics)
@@ -340,7 +341,8 @@ func CompareReportingUndecidedAdditions(
 	// other carries because it reads the constraint lists, which the call above
 	// is what fills (stokaro/ptah#2315).
 	diff.DeclaredConstraintHosts = difftypes.ConstraintHostDeclarationsOf(
-		desired, diff.ConstraintsAdded, diff.ConstraintsRemoved, identifierSemantics)
+		desired, diff.ConstraintsAdded, diff.ConstraintsRemoved, identifierSemantics,
+	)
 
 	// Every comparator sorts its own lists after filtering them, but the
 	// undecided additions arrive from several comparators, and the order inside
@@ -590,4 +592,57 @@ func validateDeclaredBeforeComparison(
 		return err
 	}
 	return nil
+}
+
+// ValidateDesiredSchema refuses a desired schema this target cannot be planned
+// against, before anything is compared.
+//
+// Two rules are asked, and both need the whole declaration rather than a set of
+// changes. Identifier validation answers questions between declarations -- an
+// index name used twice, a foreign key whose referenced columns are not unique,
+// two names one collation folds together -- and the renderer's validation
+// answers whether this target can host what the document declares at all. A
+// plan reads only the diff, so neither can run there: a conflict between two
+// unchanged tables is invisible to a change set that names neither
+// (stokaro/ptah#2315).
+//
+// It is exported because the comparison is reachable through variants that
+// return no error, and a surface that takes one of those has to make the same
+// refusal itself. Giving both ends one predicate is what keeps them from
+// drifting apart: the alternative is two lists of rules that agree when the
+// second is written and stop agreeing when the first is extended.
+//
+// Render and plan share this validation, which is what stokaro/ptah#1717 asks
+// for -- `schema render` reaches it through the renderer directly, and the plan
+// pipeline reaches it through the comparison that feeds the planner.
+func ValidateDesiredSchema(desired *schemamodel.Database, info catalog.ServerInfo) error {
+	if desired == nil {
+		return nil
+	}
+	// Both projections are idempotent, so a caller that already applied them
+	// gets the same schema back. A declaration this dialect was not given is
+	// not part of its desired state, and a foreign key without a name is one
+	// the plan would name the same way.
+	scoped := fromschema.AssignDefaultForeignKeyNames(
+		schemamodel.ScopeToDialect(desired, info.Dialect),
+		info.Dialect,
+	)
+	if err := identifiervalidation.ValidateTarget(
+		scoped,
+		info.Dialect,
+		info.IdentifierSemantics.Normalize(info.Dialect),
+	); err != nil {
+		return err
+	}
+	caps := info.Capabilities
+	if len(caps) == 0 {
+		caps = capability.ForDialect(info.Dialect)
+	}
+	// A column does not carry the schema of the user type it names, only the
+	// declaration does (stokaro/ptah#1138).
+	return renderer.ValidateSchemaWithCapabilities(
+		fromschema.QualifyDeclaredUserTypes(scoped, info.Dialect),
+		info.Dialect,
+		caps,
+	)
 }

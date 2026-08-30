@@ -534,11 +534,12 @@ func planDiffFileContents(
 ) ([]MigrationFileContent, error) {
 	var planned BidirectionalPlan
 	if opts.PlanBidirectional == nil {
-		upNodes, err := planner.GenerateSchemaDiffASTWithOptions(diff, desired, info.Dialect, planner.Options{
+		upNodes, err := planner.GenerateSchemaDiffASTWithOptions(diff, info.Dialect, planner.Options{
 			Capabilities:         info.Capabilities,
 			ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
 			ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
 		})
+
 		if err != nil {
 			return nil, fmt.Errorf("generate migration SQL: %w", err)
 		}

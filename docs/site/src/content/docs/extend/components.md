@@ -308,11 +308,10 @@ if err != nil {
 	return err
 }
 info := conn.Info()
-sql, err := planner.GenerateSchemaDiffSQLWithCapabilities(
+sql, err := planner.GenerateSchemaDiffSQLWithOptions(
 	diff,
-	desired,
 	info.Dialect,
-	info.Capabilities,
+	planner.Options{Capabilities: info.Capabilities},
 )
 if err != nil {
 	return err

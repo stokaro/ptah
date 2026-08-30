@@ -81,9 +81,10 @@ func TestMaterializedViewLifecycleRoundTripsLive(t *testing.T) {
 	c.Assert(creationDiff.MaterializedViewsAdded.Names(), qt.DeepEquals, []string{viewName})
 	createStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		creationDiff,
-		created,
+
 		platform.ClickHouse,
 	)
+
 	c.Assert(err, qt.IsNil)
 	c.Assert(createStatements, qt.HasLen, 1)
 	c.Assert(createStatements[0], qt.Contains, "CREATE MATERIALIZED VIEW ")
@@ -119,9 +120,10 @@ func TestMaterializedViewLifecycleRoundTripsLive(t *testing.T) {
 	c.Assert(changeDiff.MaterializedViewsRemoved, qt.HasLen, 0)
 	changeStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		changeDiff,
-		changed,
+
 		platform.ClickHouse,
 	)
+
 	c.Assert(err, qt.IsNil)
 	c.Assert(changeStatements, qt.HasLen, 2)
 	c.Assert(changeStatements[0], qt.Contains, "DROP VIEW IF EXISTS ")
@@ -142,9 +144,10 @@ func TestMaterializedViewLifecycleRoundTripsLive(t *testing.T) {
 	c.Assert(removalDiff.MaterializedViewsRemoved.Names(), qt.DeepEquals, []string{viewName})
 	dropStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		removalDiff,
-		&schemamodel.Database{},
+
 		platform.ClickHouse,
 	)
+
 	c.Assert(err, qt.IsNil)
 	c.Assert(dropStatements, qt.HasLen, 1)
 	c.Assert(dropStatements[0], qt.Contains, "DROP VIEW IF EXISTS ")
@@ -215,9 +218,10 @@ func TestMaterializedViewUnqualifiedBodyRoundTripsLive(t *testing.T) {
 	)
 	createStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		creationDiff,
-		declared,
+
 		platform.ClickHouse,
 	)
+
 	c.Assert(err, qt.IsNil)
 	c.Assert(createStatements, qt.HasLen, 2)
 	executeClickHouseViewPlan(t, db, createStatements)
@@ -295,9 +299,10 @@ func TestMaterializedViewAliasedBodyRoundTripsLive(t *testing.T) {
 	)
 	createStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		creationDiff,
-		declared,
+
 		platform.ClickHouse,
 	)
+
 	c.Assert(err, qt.IsNil)
 	c.Assert(createStatements, qt.HasLen, 2)
 	executeClickHouseViewPlan(t, db, createStatements)
@@ -371,9 +376,10 @@ func TestMaterializedViewAliasNamedLikeTheDatabaseRoundTripsLive(t *testing.T) {
 	)
 	createStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		creationDiff,
-		declared,
+
 		platform.ClickHouse,
 	)
+
 	c.Assert(err, qt.IsNil)
 	c.Assert(createStatements, qt.HasLen, 2)
 	executeClickHouseViewPlan(t, db, createStatements)
@@ -440,9 +446,10 @@ func TestMaterializedViewUnqualifiedNameRoundTripsLive(t *testing.T) {
 	)
 	createStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		creationDiff,
-		declared,
+
 		platform.ClickHouse,
 	)
+
 	c.Assert(err, qt.IsNil)
 	c.Assert(createStatements, qt.HasLen, 2)
 	executeClickHouseViewPlan(t, db, createStatements)
@@ -461,9 +468,10 @@ func TestMaterializedViewUnqualifiedNameRoundTripsLive(t *testing.T) {
 	// The second apply: an empty plan, executed.
 	settledStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		settledDiff,
-		declared,
+
 		platform.ClickHouse,
 	)
+
 	c.Assert(err, qt.IsNil)
 	c.Assert(settledStatements, qt.HasLen, 0)
 	executeClickHouseViewPlan(t, db, settledStatements)
@@ -608,9 +616,10 @@ func TestViewKindChangeAppliesLive(t *testing.T) {
 	c.Assert(toPlainDiff.MaterializedViewsRemoved.Names(), qt.DeepEquals, []string{viewName})
 	toPlainStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		toPlainDiff,
-		asPlainView,
+
 		platform.ClickHouse,
 	)
+
 	c.Assert(err, qt.IsNil)
 	c.Assert(toPlainStatements, qt.HasLen, 2)
 	// Executed before the shape is inspected, so the server is the one that
@@ -641,9 +650,10 @@ func TestViewKindChangeAppliesLive(t *testing.T) {
 	c.Assert(toMaterializedDiff.ViewsRemoved.Names(), qt.DeepEquals, []string{viewName})
 	toMaterializedStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		toMaterializedDiff,
-		asMaterialized,
+
 		platform.ClickHouse,
 	)
+
 	c.Assert(err, qt.IsNil)
 	c.Assert(toMaterializedStatements, qt.HasLen, 2)
 	executeClickHouseViewPlan(t, db, toMaterializedStatements)

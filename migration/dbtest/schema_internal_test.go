@@ -76,7 +76,7 @@ func TestPreserveUnmanagedObjects_NormalizesReplacementForPlanner(t *testing.T) 
 	}
 
 	preserveUnmanagedObjects(diff, "postgres")
-	sql, err := planner.GenerateSchemaDiffSQL(diff, &schemamodel.Database{}, "postgres")
+	sql, err := planner.GenerateSchemaDiffSQL(diff, "postgres")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Matches, `(?s).*DROP CONSTRAINT IF EXISTS "check_users_name".*ADD CONSTRAINT "check_users_name".*`)

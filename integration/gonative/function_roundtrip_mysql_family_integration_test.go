@@ -91,13 +91,15 @@ func dropOwnedDatabase(c *qt.C, dsn string) {
 	var remaining int
 	c.Check(admin.QueryRow(
 		"SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?",
-		roundTripDatabase).Scan(&remaining), qt.IsNil)
+		roundTripDatabase,
+	).Scan(&remaining), qt.IsNil)
 	c.Check(remaining, qt.Equals, 0, qt.Commentf("database %s survived cleanup", roundTripDatabase))
 
 	var routines int
 	c.Check(admin.QueryRow(
 		"SELECT COUNT(*) FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ?",
-		roundTripDatabase).Scan(&routines), qt.IsNil)
+		roundTripDatabase,
+	).Scan(&routines), qt.IsNil)
 	c.Check(routines, qt.Equals, 0, qt.Commentf("routines survived in %s", roundTripDatabase))
 }
 
@@ -125,7 +127,7 @@ func applyPlannedSQL(c *qt.C, db *sql.DB, dialect string, desired *schemamodel.D
 	c.Assert(err, qt.IsNil)
 
 	diff := schemadiff.Compare(desired, live)
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, dialect)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, dialect)
 	c.Assert(err, qt.IsNil)
 
 	for _, statement := range statements {
