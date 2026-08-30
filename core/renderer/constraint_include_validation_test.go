@@ -134,25 +134,6 @@ func TestPrimaryKeyIncludeUnsupportedDialectsFailClosed(t *testing.T) {
 	}
 }
 
-// The declared sweep and the AST sweep are separate gates, and this is the one
-// that proves the first exists. ClickHouse drops a UNIQUE constraint before it
-// becomes a statement, so a check that lived only in prepareConstraintNode would
-// report nothing here (stokaro/ptah#2586).
-func TestDeclaredConstraintIncludeFailsClosedOnATableWithNoRenderedConstraint(t *testing.T) {
-	c := qt.New(t)
-
-	statements, err := renderer.GetOrderedCreateStatements(uniqueIncludeSchema(), platform.ClickHouse)
-
-	c.Assert(statements, qt.IsNil)
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(
-		err,
-		qt.ErrorMatches,
-		`clickhouse does not support INCLUDE columns on UNIQUE constraint "uq_accounts_email"; `+
-			`target postgres, yugabytedb, or cockroachdb`,
-	)
-}
-
 func TestTablePrimaryKeyIncludeFailsClosed(t *testing.T) {
 	c := qt.New(t)
 	database := uniqueIncludeSchema()
@@ -175,6 +156,12 @@ func TestTablePrimaryKeyIncludeFailsClosed(t *testing.T) {
 
 // An unnamed primary key is reported by its table, because "" in the middle of a
 // sentence names nothing and the reader still has to find the declaration.
+//
+// This is one of the two things the declared gate covers that the AST gate does
+// not: a key with no name reaches prepareConstraintNode carrying "", so removing
+// validateDeclaredConstraintIncludes leaves the refusal firing and the sentence
+// naming nothing. Measured by deleting that call and watching this test, and
+// only this one of the primary-key tests, redden.
 func TestUnnamedTablePrimaryKeyIncludeIsReportedByItsTable(t *testing.T) {
 	c := qt.New(t)
 	database := uniqueIncludeSchema()
@@ -213,6 +200,11 @@ func TestConstraintIncludeEmptyColumnFailsClosed(t *testing.T) {
 // payload on any other kind is dropped on every dialect, PostgreSQL included.
 // That is a declaration error rather than a capability one, and it is refused as
 // one.
+//
+// This is the other thing only the declared gate sees. FromConstraint builds a
+// CHECK, FOREIGN KEY or EXCLUDE node without copying IncludeColumns at all, so
+// the payload is gone before prepareConstraintNode is reached and the AST gate
+// has nothing left to refuse.
 func TestConstraintIncludeOnAKindThatCannotCarryItFailsClosed(t *testing.T) {
 	tests := []struct {
 		name           string

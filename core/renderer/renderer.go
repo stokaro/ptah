@@ -1419,11 +1419,20 @@ func englishAlternatives(names []string) string {
 // validateDeclaredConstraintIncludes runs the same refusal over a whole
 // declaration, before any statement is emitted.
 //
-// The AST check in prepareConstraintNode catches every constraint that becomes a
-// node. This catches the ones that do not: a dialect renderer that drops the
-// constraint on its way out emits no node to inspect, and the author would learn
-// nothing at all. Both are needed for the same reason validateDeclaredIndexIncludes
-// sits beside validateIndexInclude.
+// It is not redundant with the AST check in prepareConstraintNode, and the two
+// things it alone catches were established by deleting this call and seeing
+// which tests reddened rather than by reasoning about the call graph:
+//
+//   - a payload on a kind that cannot carry one. FromConstraint builds a CHECK,
+//     FOREIGN KEY or EXCLUDE node without copying IncludeColumns, so the payload
+//     is already gone by the time a node exists and the AST gate has nothing to
+//     refuse.
+//   - a table-carried primary key with no declared name, which reaches the AST
+//     gate as "" and produces a sentence naming nothing. Here the table is still
+//     in hand, so the refusal can say which one.
+//
+// Everything else is caught by both, which is the same overlap
+// validateDeclaredIndexIncludes has with validateIndexInclude.
 func validateDeclaredConstraintIncludes(dialect string, database *schemamodel.Database) error {
 	for _, table := range database.Tables {
 		if err := validateConstraintInclude(
