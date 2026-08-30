@@ -1106,7 +1106,18 @@ func newPrimaryKeyConstraint(table schemamodel.Table) *ast.ConstraintNode {
 func FromConstraint(constraint schemamodel.Constraint) *ast.ConstraintNode {
 	switch strings.ToUpper(constraint.Type) {
 	case "PRIMARY KEY":
-		return ast.NewPrimaryKeyConstraint(constraint.Columns...)
+		// Name and IncludeColumns are carried here for the same reason every
+		// other arm below carries them: this one dropped both, so a declared
+		// `CONSTRAINT pk_accounts PRIMARY KEY (a) INCLUDE (payload)` rendered as
+		// a bare, unnamed `PRIMARY KEY ("a")` on every dialect -- PostgreSQL
+		// included, where the server takes the payload. The table-carried
+		// spelling already keeps both (newPrimaryKeyConstraint above), so this
+		// was the same key losing them for having been written as a constraint
+		// (stokaro/ptah#2538; the database-to-model direction was #2199).
+		node := ast.NewPrimaryKeyConstraint(constraint.Columns...)
+		node.Name = constraint.Name
+		node.IncludeColumns = append([]string(nil), constraint.IncludeColumns...)
+		return node
 	case "UNIQUE":
 		node := ast.NewUniqueConstraint(constraint.Name, constraint.Columns...)
 		node.IncludeColumns = append([]string(nil), constraint.IncludeColumns...)
