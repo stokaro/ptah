@@ -7,6 +7,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/clickhouse"
 )
 
@@ -174,7 +177,13 @@ func TestCreateTable_CheckConstraintRendered(t *testing.T) {
 	c.Assert(out, qt.Contains, "CONSTRAINT qty_pos CHECK (qty > 0)")
 }
 
-func TestCreateTable_ForeignKeyAndUniqueAreSilentlyDropped(t *testing.T) {
+// TestCreateTable_ForeignKeyIsNotEmittedInTheColumnList keeps the half of the
+// old silent-drop assertion that is still the behavior.
+//
+// A foreign key has no ClickHouse column-list form, and the schema path refuses
+// one before it reaches here -- `clickhouse does not support foreign keys`. What
+// this pins is only that the raw AST render invents no spelling for it.
+func TestCreateTable_ForeignKeyIsNotEmittedInTheColumnList(t *testing.T) {
 	c := qt.New(t)
 	tbl := ast.NewCreateTable("fk_table").
 		AddColumn(ast.NewColumn("id", "BIGINT").SetPrimary()).
@@ -188,11 +197,74 @@ func TestCreateTable_ForeignKeyAndUniqueAreSilentlyDropped(t *testing.T) {
 			Column: "id",
 		},
 	})
-	tbl.AddConstraint(ast.NewUniqueConstraint("uq_other", "other_id"))
 
 	out := render(t, tbl)
 	c.Assert(out, qt.Not(qt.Contains), "FOREIGN KEY")
-	c.Assert(out, qt.Not(qt.Contains), "UNIQUE")
+}
+
+// TestCreateTable_UniqueConstraintIsRefused covers stokaro/ptah#2586.
+//
+// The other half of the assertion this replaces read `qt.Not(qt.Contains),
+// "UNIQUE"` and passed: the constraint was dropped from the column list with no
+// statement, no comment and exit 0. ClickHouse's table-constraint grammar is
+// CHECK and ASSUME, so there is nothing to lower a UNIQUE to -- and a silently
+// absent uniqueness guarantee is the worst answer available, because the table
+// then accepts duplicates the author believes it refuses.
+func TestCreateTable_UniqueConstraintIsRefused(t *testing.T) {
+	c := qt.New(t)
+	tbl := ast.NewCreateTable("uq_table").
+		AddColumn(ast.NewColumn("id", "BIGINT").SetPrimary()).
+		AddColumn(ast.NewColumn("other_id", "BIGINT").SetNotNull())
+	tbl.AddConstraint(ast.NewUniqueConstraint("uq_other", "other_id"))
+
+	err := renderErr(tbl)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err.Error(), qt.Contains, `UNIQUE constraint "uq_other"`)
+	c.Assert(err.Error(), qt.Contains, "CHECK and ASSUME only")
+}
+
+// TestCreateTable_UniqueConstraintRefusalReadsTheCapability is the control that
+// the refusal is driven by [capability.UniqueConstraints] and not by the
+// dialect name.
+//
+// The key already carries this answer, and the PostgreSQL-family renderer
+// already refuses on it -- which is why the same declaration was refused on
+// Spanner (stokaro/ptah#2585) and dropped here. A renderer told the target has
+// the capability must stop refusing, or the gate is a dialect check wearing a
+// capability's name.
+func TestCreateTable_UniqueConstraintRefusalReadsTheCapability(t *testing.T) {
+	c := qt.New(t)
+	tbl := ast.NewCreateTable("uq_table").
+		AddColumn(ast.NewColumn("id", "BIGINT").SetPrimary()).
+		AddColumn(ast.NewColumn("other_id", "BIGINT").SetNotNull())
+	tbl.AddConstraint(ast.NewUniqueConstraint("uq_other", "other_id"))
+
+	caps := capability.ForDialect(platform.ClickHouse).With(capability.UniqueConstraints, true)
+	renderer := clickhouse.NewWithCapabilities(caps)
+	renderer.Reset()
+
+	c.Assert(tbl.Accept(renderer), qt.IsNil)
+}
+
+// TestCreateTable_PrimaryKeyConstraintIsNotRefused is the second control.
+//
+// ClickHouse expresses a table key through the engine clause, and a table-level
+// PRIMARY KEY is read into `ORDER BY`. Folding it into the refusal would reject
+// a declaration this target does host, which is why the two are asked
+// separately.
+func TestCreateTable_PrimaryKeyConstraintIsNotRefused(t *testing.T) {
+	c := qt.New(t)
+	tbl := ast.NewCreateTable("pk_table").
+		AddColumn(ast.NewColumn("id", "BIGINT").SetNotNull())
+	tbl.AddConstraint(&ast.ConstraintNode{
+		Type:    ast.PrimaryKeyConstraint,
+		Name:    "pk_table_pkey",
+		Columns: []string{"id"},
+	})
+
+	out := render(t, tbl)
+	c.Assert(out, qt.Contains, "ORDER BY (id)")
 }
 
 func TestColumnTypeMapping_HappyPath(t *testing.T) {

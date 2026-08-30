@@ -32,6 +32,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/bufwriter"
@@ -698,12 +699,58 @@ func (r *Renderer) renderTableBody(node *ast.CreateTableNode) ([]string, error) 
 		lines = append(lines, checkConstraintLine(checkConstraintName(col.CheckName, node.Name, col.Name), col.Check))
 	}
 	for _, c := range node.Constraints {
+		if err := r.refuseUnrepresentableConstraint(c); err != nil {
+			return nil, err
+		}
 		if c.Type != ast.CheckConstraint || c.Expression == "" {
 			continue
 		}
 		lines = append(lines, checkConstraintLine(checkConstraintName(c.Name, node.Name, ""), c.Expression))
 	}
 	return lines, nil
+}
+
+// refuseUnrepresentableConstraint refuses a declared table constraint this
+// target has no form for, instead of dropping it from the column list.
+//
+// ClickHouse's whole table-constraint grammar is CHECK and ASSUME -- measured,
+// the server answers `Expected one of: CHECK, ASSUME` for anything else -- so a
+// UNIQUE constraint has no spelling to lower it to. Dropping it is the worst
+// available answer: the author believes the column is unique, the table accepts
+// duplicates, and nothing between the annotation and the data says otherwise
+// (stokaro/ptah#2586).
+//
+// The gate is [capability.UniqueConstraints] rather than a dialect name,
+// because that key already carries this answer and the PostgreSQL-family
+// renderer already refuses on it -- which is why the same declaration is
+// refused on Spanner and was dropped here (stokaro/ptah#2585).
+//
+// A PRIMARY KEY constraint is deliberately not refused. ClickHouse expresses a
+// table key through the engine clause, and the primary-key reader above takes a
+// table-level PRIMARY KEY into `ORDER BY`, so it is a declaration this target
+// does host. The remaining kinds are left alone rather than swept in: a foreign
+// key is already refused before this point, and nothing has measured what the
+// others would need.
+func (r *Renderer) refuseUnrepresentableConstraint(c *ast.ConstraintNode) error {
+	if c == nil || c.Type != ast.UniqueConstraint {
+		return nil
+	}
+	if r.capabilities().Has(capability.UniqueConstraints) {
+		return nil
+	}
+	subject := fmt.Sprintf("the UNIQUE constraint on (%s)", strings.Join(c.Columns, ", "))
+	if c.Name != "" {
+		subject = fmt.Sprintf("UNIQUE constraint %q", c.Name)
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: platform.ClickHouse,
+		Feature: "unique constraints",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf(
+			"%s cannot be rendered: this target's table constraints are CHECK and ASSUME only,"+
+				" and it enforces no uniqueness — remove the constraint or move the guarantee"+
+				" to the ingestion side", subject),
+	}
 }
 
 // checkConstraintLine renders one ClickHouse CHECK constraint.
