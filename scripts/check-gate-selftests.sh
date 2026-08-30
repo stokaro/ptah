@@ -403,6 +403,7 @@ uncovered=(
 	"check-protobuf-export-acceptance.sh	the same"
 	"check-quickstart.sh	the same; internal/quickstart is where it is proven able to fail"
 	"check-examples.sh	compiles and runs four examples plus two provider modules; minutes per mutation fixture"
+	"check-source-workflows.sh	builds Ptah and executes eight migration plus four brownfield paths; minutes per mutation fixture"
 )
 
 # companion_gates lists the gates that prove themselves, derived from the files

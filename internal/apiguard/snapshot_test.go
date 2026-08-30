@@ -87,6 +87,34 @@ type Sink interface {
 }
 `
 
+// commentOnlyFixture changes every public comment while retaining the same API.
+// Prose quality has its own exported-doc gate; the structural snapshot must not
+// turn an editorial rewrite into a public API change.
+const commentOnlyFixture = `// Package fixture uses different package prose.
+package fixture
+
+// Widget now has a shorter explanation.
+type Widget struct {
+	// Name is described differently.
+	Name string
+
+	// Weight is also described differently.
+	Weight int
+}
+
+// Describe has replacement prose.
+func (w Widget) Describe() string { return w.Name }
+
+// Rank has replacement prose.
+func (w Widget) Rank() int { return w.Weight }
+
+// Sink has replacement prose.
+type Sink interface {
+	// Drain has replacement prose.
+	Drain(w Widget) error
+}
+`
+
 // TestSnapshotCapturesStructFields proves that removing an exported struct field
 // changes the generated snapshot fragment.
 func TestSnapshotCapturesStructFields(t *testing.T) {
@@ -124,6 +152,15 @@ func TestSnapshotRetainsInterfaceAndMethodCoverage(t *testing.T) {
 
 	c.Assert(base, qt.Contains, "Drain(w Widget) error")
 	c.Assert(base, qt.Contains, "func (w Widget) Describe() string")
+}
+
+func TestSnapshotIgnoresCommentOnlyChanges(t *testing.T) {
+	c := qt.New(t)
+
+	base := emitFragment(t, baselineFixture)
+	reworded := emitFragment(t, commentOnlyFixture)
+
+	c.Assert(reworded, qt.Equals, base)
 }
 
 // TestListPackagesReadsListItemsOnly proves that the ledger scrape behind

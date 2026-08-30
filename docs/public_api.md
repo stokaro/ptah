@@ -864,14 +864,16 @@ CI runs four public API checks:
   non-command, non-example, non-fixture package that is importable from outside
   this module but not listed here.
 - `scripts/check-public-api-snapshot.sh` regenerates the `go doc -short`
-  exported-symbol snapshot for every package listed here, then appends the full
-  `go doc` output for every exported named type (struct, interface, alias, map,
-  func type), and compares the result with `docs/public_api.snapshot`. Because
-  the full per-type output is recorded, changes to exported struct fields and to
-  methods on concrete named types are caught, not only interface method sets.
-  Any exported surface change must update the snapshot in the same reviewed
-  change. The guard is itself covered by a self-test in
-  `internal/apiguard` that fails if this per-type coverage regresses.
+  exported-symbol snapshot for every package listed here, then appends the
+  comment-free `go doc -src` declaration for every exported named type (struct,
+  interface, alias, map, func type), and compares the result with
+  `docs/public_api.snapshot`. Changes to exported struct fields and to methods
+  on concrete named types are caught, not only interface method sets. Comment
+  wording is deliberately excluded: the exported-doc gate checks that prose is
+  present, while an editorial rewrite is not an API change. Any exported
+  surface change must update the snapshot in the same reviewed change. The
+  guard is itself covered by self-tests in `internal/apiguard` that fail if the
+  per-type coverage regresses or comments become API input again.
 - `scripts/check-public-api-released.sh` compares each stable package against
   the latest `v0.x` release tag with `apidiff -incompatible`. Until the first
   `v0.x` tag exists, the script reports that no released baseline is available

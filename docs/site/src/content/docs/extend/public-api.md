@@ -427,7 +427,7 @@ CI protects the public API in three layers:
 | Check | Purpose |
 | --- | --- |
 | `scripts/check-public-api.sh` | Fails if a new importable package appears outside the stable list. |
-| `scripts/check-public-api-snapshot.sh` | Compares exported symbols with `docs/public_api.snapshot`. |
+| `scripts/check-public-api-snapshot.sh` | Compares comment-free exported declarations with `docs/public_api.snapshot`; prose rewrites are not API changes. |
 | `scripts/check-public-api-released.sh` | Compares stable packages against the latest `v0.x` release tag with `apidiff`. |
 
 Any intentional public API change must update the docs and snapshot in the same

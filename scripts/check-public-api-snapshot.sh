@@ -11,9 +11,10 @@ export GOWORK=off
 #      form of every type).
 #   2. A "### <package>.<Type>" section for EVERY exported named type — struct,
 #      interface, alias, map, func type, any `type X ...` where X is exported —
-#      followed by the full `go doc <package>.<Type>` output. This is what makes
-#      the guard sensitive to changes in exported struct fields and in methods on
-#      concrete named types, not just interface method sets.
+#      followed by comment-free `go doc -src <package>.<Type>` output. This is
+#      what makes the guard sensitive to changes in exported struct fields and
+#      in methods on concrete named types, not just interface method sets,
+#      without treating an editorial comment change as an API change.
 #
 # The exported type names are sorted (LC_ALL=C, byte order) before their blocks
 # are emitted so the fragment is reproducible regardless of the order `go doc`
@@ -32,7 +33,16 @@ emit_package_snapshot() {
 		LC_ALL=C sort -u |
 		while IFS= read -r type_name; do
 			printf '### %s.%s\n\n' "$package_path" "$type_name"
-			go doc "$package_path" "$type_name" | expand -t 4 | sed 's/[[:space:]]*$//'
+			go doc -src "$package_path" "$type_name" |
+				expand -t 4 |
+				sed -E \
+					-e '/^[[:space:]]*\/\//d' \
+					-e 's/[[:space:]]+\/\/.*$//' \
+					-e 's/[[:space:]]*$//' |
+				awk '
+					NF { if (blank && printed) print ""; print; printed = 1; blank = 0; next }
+					{ if (printed) blank = 1 }
+				'
 			printf '\n'
 		done
 }

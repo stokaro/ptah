@@ -51,7 +51,8 @@ it, and `scripts/check-public-api.sh` names its exemptions explicitly.
 
 That gate fails when `go list ./...` finds an importable package that is
 neither exempt nor in the ledger; `scripts/check-public-api-snapshot.sh`
-compares every exported symbol with `docs/public_api.snapshot`; and
+compares every exported declaration with `docs/public_api.snapshot` while
+ignoring doc-comment wording; and
 `scripts/check-public-api-released.sh` runs `apidiff` against the newest
 `v0.*` release tag. A change to any exported symbol in a ledger package must
 regenerate the snapshot in the same change, with
