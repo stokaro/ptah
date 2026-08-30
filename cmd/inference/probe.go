@@ -210,7 +210,7 @@ func writeProbeText(out io.Writer, report embedprovider.ProbeReport) error {
 	}
 	for _, check := range report.Checks {
 		lines = append(lines, bullet(fmt.Sprintf("%s %s: %s",
-			checkMark(check.Passed), check.Name, check.Detail)))
+			marks[check.Passed], check.Name, check.Detail)))
 	}
 	// What did not run, always. A report saying only what it checked reads as
 	// though it checked everything, and this one is read before a decision to
@@ -221,10 +221,5 @@ func writeProbeText(out io.Writer, report embedprovider.ProbeReport) error {
 	return writeLines(out, lines...)
 }
 
-// checkMark renders an answer.
-func checkMark(passed bool) string {
-	if passed {
-		return "ok  "
-	}
-	return "fail"
-}
+// marks render an answer, padded so the names below them line up.
+var marks = map[bool]string{true: "ok  ", false: "fail"}

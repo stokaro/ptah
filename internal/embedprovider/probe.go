@@ -133,7 +133,7 @@ func Probe(ctx context.Context, subject ProbeSubject) ProbeReport {
 
 	result, err := subject.Provider.Embed(ctx, ProbeInputs[:1])
 	if err != nil {
-		return probeRefusal(report, subject, err)
+		return probeRefusal(report, err)
 	}
 	report.Checks = append(report.Checks,
 		Check{Name: CheckReachable, Passed: true,
@@ -156,28 +156,34 @@ func Probe(ctx context.Context, subject ProbeSubject) ProbeReport {
 // The refusal itself is the measurement: the sentinel says which of the first
 // three checks failed, and everything after it is unmeasured because nothing
 // answered to measure.
-func probeRefusal(report ProbeReport, subject ProbeSubject, err error) ProbeReport {
-	reachable := !errors.Is(err, ErrUnreachable)
-	authorized := reachable && !errors.Is(err, ErrUnauthorized)
-
-	report.Checks = append(report.Checks, Check{
-		Name: CheckReachable, Passed: reachable,
-		Detail: reachabilityDetail(reachable, report.Profile, err),
-	})
-	if !reachable {
+func probeRefusal(report ProbeReport, err error) ProbeReport {
+	if errors.Is(err, ErrUnreachable) {
+		report.Checks = append(report.Checks, Check{
+			Name: CheckReachable, Passed: false,
+			Detail: fmt.Sprintf("the endpoint at %s could not be reached: %v",
+				report.Profile.EndpointHost, err),
+		})
 		report.Unmeasured = append(report.Unmeasured,
 			"everything after reachability, because nothing answered")
 		return report
 	}
 	report.Checks = append(report.Checks, Check{
-		Name: CheckAuthorized, Passed: authorized,
-		Detail: authorizationDetail(authorized, report.Profile, err),
+		Name: CheckReachable, Passed: true,
+		Detail: "the endpoint at " + report.Profile.EndpointHost + " answered",
 	})
-	if !authorized {
+
+	if errors.Is(err, ErrUnauthorized) {
+		report.Checks = append(report.Checks, Check{
+			Name: CheckAuthorized, Passed: false,
+			Detail: fmt.Sprintf("%s was refused: %v", credentialSource(report.Profile), err),
+		})
 		report.Unmeasured = append(report.Unmeasured,
 			"everything after authentication, because the credential was refused")
 		return report
 	}
+	report.Checks = append(report.Checks, Check{
+		Name: CheckAuthorized, Passed: true, Detail: credentialDetail(report.Profile),
+	})
 	report.Checks = append(report.Checks, Check{
 		Name: CheckEmbeds, Passed: false,
 		Detail: fmt.Sprintf("model %s did not answer an embedding request: %v",
@@ -185,24 +191,7 @@ func probeRefusal(report ProbeReport, subject ProbeSubject, err error) ProbeRepo
 	})
 	report.Unmeasured = append(report.Unmeasured,
 		"the shape, dimension, batch and cancellation checks, because there is no answer to measure")
-	_ = subject
 	return report
-}
-
-// reachabilityDetail says what happened, either way.
-func reachabilityDetail(reachable bool, profile Profile, err error) string {
-	if reachable {
-		return "the endpoint at " + profile.EndpointHost + " answered"
-	}
-	return fmt.Sprintf("the endpoint at %s could not be reached: %v", profile.EndpointHost, err)
-}
-
-// authorizationDetail says what happened, either way.
-func authorizationDetail(authorized bool, profile Profile, err error) string {
-	if authorized {
-		return credentialDetail(profile)
-	}
-	return fmt.Sprintf("%s was refused: %v", credentialSource(profile), err)
 }
 
 // credentialDetail names where the credential came from, never what it was.

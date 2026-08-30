@@ -71,6 +71,8 @@ func working() *fakeProvider {
 		profile: embedprovider.Profile{
 			Name: "local", Provider: "openai-compatible", EndpointClass: "local",
 			EndpointHost: "127.0.0.1:11434", Model: "test-embed", Dimension: 4,
+			// #nosec G101 -- a reference to where a credential lives, which is the
+			// only form this package ever holds; there is no credential here.
 			CredentialSource: "env:PTAH_EMBED_TOKEN",
 		},
 		width: 4,

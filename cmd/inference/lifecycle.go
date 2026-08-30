@@ -247,10 +247,7 @@ func indexOutcomeText(outcome embedpg.IndexOutcome, spec embedgen.Spec) string {
 
 // newStatusCommand returns "ptah inference status".
 func newStatusCommand() *cobra.Command {
-	var options commonOptions
-	var runID string
-	var format string
-	var requireReady bool
+	var options statusOptions
 
 	cmd := &cobra.Command{
 		Use:   "status",
@@ -278,15 +275,27 @@ gates on: exit 1 until both conditions hold, so an init container that keeps
 failing is the whole of the gate.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runStatus(cmd.Context(), cmd.OutOrStdout(), options, runID, format, requireReady)
+			return runStatus(cmd.Context(), cmd.OutOrStdout(), options)
 		},
 	}
-	addCommonFlags(cmd, &options)
-	cmd.Flags().StringVar(&runID, "run-id", "", "Identifier of the run (required)")
-	cmd.Flags().StringVar(&format, "format", "text", "Output format: text or json")
-	cmd.Flags().BoolVar(&requireReady, "require-ready", false,
+	addCommonFlags(cmd, &options.commonOptions)
+	cmd.Flags().StringVar(&options.runID, "run-id", "", "Identifier of the run (required)")
+	cmd.Flags().StringVar(&options.format, "format", "text", "Output format: text or json")
+	cmd.Flags().BoolVar(&options.requireReady, "require-ready", false,
 		"Return 1 unless the generation is verified and ready to cut over; errors still return 2")
 	return cmd
+}
+
+// statusOptions are what the verb was asked for.
+//
+// A struct rather than four parameters, because two of them are booleans and a
+// signature carrying one is a signature a caller reads backwards.
+type statusOptions struct {
+	commonOptions
+	runID  string
+	format string
+	// requireReady turns the two conditions into the process's exit status.
+	requireReady bool
 }
 
 // statusDocument is what --format json emits.
@@ -300,35 +309,35 @@ type statusDocument struct {
 }
 
 // runStatus prints one run.
-func runStatus(
-	ctx context.Context, out io.Writer, options commonOptions,
-	runID, format string, requireReady bool,
-) error {
-	if runID == "" {
+func runStatus(ctx context.Context, out io.Writer, options statusOptions) error {
+	if options.runID == "" {
 		return fmt.Errorf("--run-id is required")
 	}
-	if format != "text" && format != "json" {
-		return fmt.Errorf("invalid --format value %q: text or json", format)
+	if options.format != "text" && options.format != "json" {
+		return fmt.Errorf("invalid --format value %q: text or json", options.format)
 	}
-	opened, err := open(ctx, options)
+	opened, err := open(ctx, options.commonOptions)
 	if err != nil {
 		return err
 	}
 	defer opened.close()
 
-	status, err := embedreport.ReadStatus(ctx, opened.store, runID)
+	status, err := embedreport.ReadStatus(ctx, opened.store, options.runID)
 	if err != nil {
 		return err
 	}
 	readiness, err := embedreport.ReadReadiness(
-		ctx, opened.db, opened.store, opened.loaded, runID, time.Now())
+		ctx, opened.db, opened.store, opened.loaded, options.runID, time.Now())
 	if err != nil {
 		return err
 	}
-	if err := reportStatus(out, format, status, readiness); err != nil {
+	if err := reportStatus(out, options.format, status, readiness); err != nil {
 		return err
 	}
-	return gateOnReadiness(requireReady, readiness)
+	if !options.requireReady {
+		return nil
+	}
+	return gateOnReadiness(readiness)
 }
 
 // reportStatus writes the answer in whichever form was asked for.
@@ -356,8 +365,8 @@ func reportStatus(
 // The approval is deliberately not part of it. A generation waiting for a
 // person to sign is finished, and a gate holding a deployment for a signature
 // somebody gives in the same breath as the cutover would never open.
-func gateOnReadiness(requireReady bool, readiness embedreport.Readiness) error {
-	if !requireReady || (readiness.Verified && readiness.CutoverReady) {
+func gateOnReadiness(readiness embedreport.Readiness) error {
+	if readiness.Verified && readiness.CutoverReady {
 		return nil
 	}
 	return exitcode.New(1, fmt.Errorf(
