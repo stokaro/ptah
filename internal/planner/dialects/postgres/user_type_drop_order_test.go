@@ -50,7 +50,7 @@ func TestPlanner_GenerateMigrationAST_DropsModifiedUserTypesAgainstTheCurrentSha
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
+	nodes, err := planner.GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -98,7 +98,7 @@ func TestPlanner_GenerateMigrationAST_DropsModifiedUserTypesTheDesiredShapeNoLon
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
+	nodes, err := planner.GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -143,7 +143,7 @@ func TestPlanner_GenerateMigrationAST_DropsModifiedUserTypesWithinOneKind(t *tes
 		},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
+	nodes, err := planner.GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -179,7 +179,7 @@ func TestPlanner_GenerateMigrationAST_DropsModifiedUserTypesInCallerOrderWithout
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
+	nodes, err := planner.GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

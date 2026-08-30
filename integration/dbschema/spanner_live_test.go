@@ -88,7 +88,7 @@ func TestSpannerLiveSchemaRoundTrip(t *testing.T) {
 	c.Assert(settled.TablesModified, qt.HasLen, 0,
 		qt.Commentf("a second run must have nothing to do"))
 	c.Assert(settled.TablesAdded, qt.HasLen, 0)
-	c.Assert(settled.IndexesAdded, qt.HasLen, 0)
+	c.Assert(settled.IndexAdditions(), qt.HasLen, 0)
 }
 
 // TestSpannerLiveRefusesDDLInsideATransaction is the fact the apply path now

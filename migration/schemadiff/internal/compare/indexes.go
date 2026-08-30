@@ -231,7 +231,7 @@ func IndexesWithSemantics(
 		semantics,
 		indexes,
 	)
-	diff.SetIndexAdditions(diff.IndexAdditions())
+	diff.SetIndexAdditions(diff.IndexesAdded)
 	diff.SetIndexRemovals(diff.IndexRemovals())
 	diff.SetConstraintBackedIndexRemovals(diff.ConstraintBackedIndexRemovals)
 }
@@ -241,10 +241,10 @@ func collectGeneratedIndexes(
 	semantics identifier.Semantics,
 ) (
 	map[difftypes.IndexRef]generatedIndexEntry,
-	map[difftypes.IndexRef][]difftypes.IndexRef,
+	map[difftypes.IndexRef][]generatedIndexEntry,
 ) {
 	indexes := make(map[difftypes.IndexRef]generatedIndexEntry)
-	ambiguous := make(map[difftypes.IndexRef][]difftypes.IndexRef)
+	ambiguous := make(map[difftypes.IndexRef][]generatedIndexEntry)
 	// Materialized views are relations an index can belong to, not just
 	// tables: PostgreSQL accepts CREATE INDEX on one, and a UNIQUE index on
 	// one is what REFRESH MATERIALIZED VIEW CONCURRENTLY requires. Resolving
@@ -258,17 +258,15 @@ func collectGeneratedIndexes(
 			TableName: tableNames[position],
 		}
 		identity := indexscope.IdentityKeyWithSemantics(semantics, ref)
+		entry := generatedIndexEntry{ref: ref, index: index}
 		if previous, exists := indexes[identity]; exists {
-			refs := ambiguous[identity]
-			if len(refs) == 0 {
-				refs = append(refs, previous.ref)
+			entries := ambiguous[identity]
+			if len(entries) == 0 {
+				entries = append(entries, previous)
 			}
-			ambiguous[identity] = append(refs, ref)
+			ambiguous[identity] = append(entries, entry)
 		}
-		indexes[identity] = generatedIndexEntry{
-			ref:   ref,
-			index: index,
-		}
+		indexes[identity] = entry
 	}
 	return indexes, ambiguous
 }
@@ -621,15 +619,15 @@ func constraintOwnedDatabaseIndex(
 func appendIndexDifferences(
 	diff *difftypes.SchemaDiff,
 	desired map[difftypes.IndexRef]generatedIndexEntry,
-	ambiguousGenerated map[difftypes.IndexRef][]difftypes.IndexRef,
+	ambiguousGenerated map[difftypes.IndexRef][]generatedIndexEntry,
 	database map[difftypes.IndexRef]databaseIndexEntry,
 	dialect string,
 	semantics identifier.Semantics,
 	indexes map[string]config.IndexExpression,
 ) {
-	for identity, refs := range ambiguousGenerated {
-		for _, ref := range refs {
-			appendIndexAddition(diff, ref)
+	for identity, entries := range ambiguousGenerated {
+		for _, entry := range entries {
+			appendIndexAddition(diff, entry)
 		}
 		delete(desired, identity)
 	}
@@ -637,7 +635,7 @@ func appendIndexDifferences(
 		databaseEntry, exists := database[identity]
 		switch {
 		case !exists:
-			appendIndexAddition(diff, generatedEntry.ref)
+			appendIndexAddition(diff, generatedEntry)
 		case partitionAttachedIndexIsNotPlannable(databaseEntry):
 			continue
 		case indexReplacementRequired(
@@ -647,7 +645,7 @@ func appendIndexDifferences(
 			semantics,
 			indexes[exprkey.Index(semantics, generatedEntry.ref.TableName, generatedEntry.ref.Name)],
 		):
-			appendIndexAddition(diff, generatedEntry.ref)
+			appendIndexAddition(diff, generatedEntry)
 			appendIndexRemoval(diff, databaseEntry)
 		}
 	}
@@ -691,8 +689,15 @@ func partitionAttachedIndexIsNotPlannable(entry databaseIndexEntry) bool {
 	return entry.partitionAttached
 }
 
-func appendIndexAddition(diff *difftypes.SchemaDiff, ref difftypes.IndexRef) {
-	diff.IndexesAdded = append(diff.IndexesAdded, ref)
+// appendIndexAddition records an index the plan creates, with the declaration
+// it renders from. A reference alone is not enough to write a CREATE INDEX,
+// and looking one back up is what needed the whole document
+// (stokaro/ptah#2315).
+func appendIndexAddition(diff *difftypes.SchemaDiff, entry generatedIndexEntry) {
+	diff.IndexesAdded = append(diff.IndexesAdded, difftypes.IndexChange{
+		Index:     entry.index,
+		TableName: entry.ref.TableName,
+	})
 }
 
 // appendIndexRemoval records a database index the plan drops, and — when a

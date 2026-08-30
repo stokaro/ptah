@@ -101,9 +101,7 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_UsesServerVersionPreset(t *t
 func TestGetPlanner_DistributedSQLCapabilityWiring(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
-		{Name: "idx_users_email", TableName: "users"},
-	}}
+	diff := &difftypes.SchemaDiff{IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_email", Fields: []string{"email"}}, TableName: "users"}}}
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
 		Indexes: []schemamodel.Index{
@@ -125,8 +123,8 @@ func TestGetPlanner_DistributedSQLCapabilityWiring(t *testing.T) {
 func TestGetPlanner_CockroachDBTableQualifiedIndexReplacement(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions([]difftypes.IndexRef{
-		{Name: "idx_shared", TableName: "public.users"},
+	diff.SetIndexAdditions(difftypes.IndexChanges{
+		{Index: schemamodel.Index{Name: "idx_shared", TableName: "public.users", Fields: []string{"handle"}}, TableName: "public.users"},
 	})
 	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "public.users"},

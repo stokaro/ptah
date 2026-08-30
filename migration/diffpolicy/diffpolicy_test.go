@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/diffpolicy"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -146,8 +147,8 @@ func TestApplyDropIndexPreservesReplacements(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
 		// idx_rebuild is dropped and recreated (a replacement); idx_gone is a
 		// genuine standalone removal.
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_rebuild", TableName: "users"},
+		IndexesAdded: difftypes.IndexChanges{
+			{Index: schemamodel.Index{Name: "idx_rebuild", Fields: []string{"email"}}, TableName: "users"},
 		},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_rebuild", TableName: "users"},

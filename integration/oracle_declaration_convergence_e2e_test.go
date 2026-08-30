@@ -287,7 +287,7 @@ func oracleDiffSummary(diff *difftypes.SchemaDiff) []string {
 				table.TableName, column.ColumnName, column.Changes))
 		}
 	}
-	for _, index := range diff.IndexesAdded {
+	for _, index := range diff.IndexAdditions() {
 		changes = append(changes, "index added: "+index.TableName+"."+index.Name)
 	}
 	for _, index := range diff.IndexesRemoved {

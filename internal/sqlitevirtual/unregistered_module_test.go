@@ -934,8 +934,8 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			database: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
-				IndexesAdded: []difftypes.IndexRef{
-					{Name: "docs_content_title_idx", TableName: "docs_content"},
+				IndexesAdded: difftypes.IndexChanges{
+					{Index: schemamodel.Index{Name: "docs_content_title_idx", Fields: []string{"email"}}, TableName: "docs_content"},
 				},
 				TriggersAdded: []difftypes.TriggerRef{
 					{TriggerName: "docs_content_guard", TableName: "docs_content"},
@@ -972,8 +972,8 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 				IndexesRemoved: []difftypes.IndexRef{
 					{Name: "docs_content_title_idx", TableName: "docs_content"},
 				},
-				IndexesAdded: []difftypes.IndexRef{
-					{Name: "docs_content_title_idx", TableName: "docs_content"},
+				IndexesAdded: difftypes.IndexChanges{
+					{Index: schemamodel.Index{Name: "docs_content_title_idx", Fields: []string{"email"}}, TableName: "docs_content"},
 				},
 			},
 			policy:          sqlitevirtual.Policy{SkipDropIndex: true},
@@ -1186,8 +1186,8 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			dialect:  "sqlite",
 			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			database: holdingFTS4,
-			forward: &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
-				{Name: "docs_content_docid_idx", TableName: "docs_content"},
+			forward: &difftypes.SchemaDiff{IndexesAdded: difftypes.IndexChanges{
+				{Index: schemamodel.Index{Name: "docs_content_docid_idx", Fields: []string{"email"}}, TableName: "docs_content"},
 			}},
 			reverse: &difftypes.SchemaDiff{IndexesRemoved: []difftypes.IndexRef{
 				{Name: "docs_content_docid_idx", TableName: "docs_content"},
@@ -1204,8 +1204,8 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			database: holdingFTS4,
 			forward: &difftypes.SchemaDiff{
-				IndexesAdded: []difftypes.IndexRef{
-					{Name: "docs_content_docid_idx", TableName: "docs_content"},
+				IndexesAdded: difftypes.IndexChanges{
+					{Index: schemamodel.Index{Name: "docs_content_docid_idx", Fields: []string{"email"}}, TableName: "docs_content"},
 				},
 				IndexesRemoved: []difftypes.IndexRef{
 					{Name: "docs_content_docid_idx", TableName: "docs_content"},
@@ -1228,8 +1228,8 @@ func TestValidatePlannedRollbackRefusesADestructiveRollback(t *testing.T) {
 			dialect:  "sqlite",
 			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			database: holdingFTS4,
-			forward: &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
-				{Name: "docs_content_new_idx", TableName: "docs_content"},
+			forward: &difftypes.SchemaDiff{IndexesAdded: difftypes.IndexChanges{
+				{Index: schemamodel.Index{Name: "docs_content_new_idx", Fields: []string{"email"}}, TableName: "docs_content"},
 			}},
 			reverse: &difftypes.SchemaDiff{IndexesRemoved: []difftypes.IndexRef{
 				{Name: "docs_content_new_idx", TableName: "docs_content"},

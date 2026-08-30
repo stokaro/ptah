@@ -59,7 +59,7 @@ func TestYugabyteDBSchemaScopedIndexIdentity_RoundTrip(t *testing.T) {
 	})
 
 	indexDiff := &difftypes.SchemaDiff{}
-	indexDiff.SetIndexAdditions(diff.IndexAdditions())
+	indexDiff.SetIndexAdditions(diff.IndexesAdded)
 	indexDiff.SetIndexRemovals(diff.IndexRemovals())
 	planned, err := planner.GenerateSchemaDiffSQLStatements(indexDiff, target, platform.YugabyteDB)
 	c.Assert(err, qt.IsNil)

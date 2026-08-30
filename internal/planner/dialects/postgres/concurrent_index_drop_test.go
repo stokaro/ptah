@@ -28,7 +28,7 @@ func indexRemovalFixture() (*difftypes.SchemaDiff, *schemamodel.Database) {
 // across a transactional and a non-transactional file.
 func indexRedefinitionFixture() (*difftypes.SchemaDiff, *schemamodel.Database) {
 	diff := &difftypes.SchemaDiff{
-		IndexesAdded:   []difftypes.IndexRef{{Name: "idx_users_email", TableName: "users"}},
+		IndexesAdded:   difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_email", StructName: "User", Fields: []string{"email", "tenant"}}, TableName: "users"}},
 		IndexesRemoved: []difftypes.IndexRef{{Name: "idx_users_email", TableName: "users"}},
 	}
 	desired := &schemamodel.Database{
@@ -111,7 +111,7 @@ func TestPlanner_ConcurrentIndexDrops(t *testing.T) {
 			c := qt.New(t)
 			diff, desired := tt.fixture()
 
-			nodes, err := tt.planner().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+			nodes, err := tt.planner().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)

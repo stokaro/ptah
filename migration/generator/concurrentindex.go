@@ -229,7 +229,7 @@ func splitConcurrentIndexDiff(
 	noTxDiff := &difftypes.SchemaDiff{
 		IdentifierSemantics: cloneIdentifierSemantics(diff.IdentifierSemantics),
 	}
-	addTx, addNoTx := partitionIndexRefs(diff.IndexAdditions(), concurrentIndexRefs)
+	addTx, addNoTx := partitionIndexChanges(diff.IndexesAdded, concurrentIndexRefs)
 	txDiff.SetIndexAdditions(addTx)
 	noTxDiff.SetIndexAdditions(addNoTx)
 
@@ -265,4 +265,27 @@ func indexRefSet(values []difftypes.IndexRef) map[difftypes.IndexRef]struct{} {
 		out[value] = struct{}{}
 	}
 	return out
+}
+
+// partitionIndexChanges splits index ADDITIONS the way partitionIndexRefs
+// splits references, keeping each one's declaration with it: the two halves are
+// planned by separate migrations and each still has to render a CREATE INDEX
+// (stokaro/ptah#2315).
+func partitionIndexChanges(
+	changes difftypes.IndexChanges,
+	selected []difftypes.IndexRef,
+) (unselected, matched difftypes.IndexChanges) {
+	chosen := make(map[difftypes.IndexRef]struct{}, len(selected))
+	for _, ref := range selected {
+		chosen[ref] = struct{}{}
+	}
+	for _, change := range changes {
+		ref := difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}
+		if _, ok := chosen[ref]; ok {
+			matched = append(matched, change)
+			continue
+		}
+		unselected = append(unselected, change)
+	}
+	return unselected, matched
 }

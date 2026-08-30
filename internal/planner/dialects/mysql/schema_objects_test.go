@@ -44,7 +44,7 @@ func TestPlanner_GenerateMigrationAST_ViewsAndTriggersModified(t *testing.T) {
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -76,7 +76,7 @@ func TestPlanner_GenerateMigrationAST_RejectsUniqueIncludeColumns(t *testing.T) 
 		}},
 	}
 
-	_, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
+	_, err := planner.GenerateMigrationAST(diff)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, "MySQL-family does not support PostgreSQL INCLUDE columns on UNIQUE constraints.*")
@@ -96,19 +96,8 @@ func TestPlanner_GenerateMigrationAST_RejectsUniqueIncludeColumns(t *testing.T) 
 // above passing on a planner that had stopped refusing anything.
 func TestPlanner_GenerateMigrationAST_ACoveringUniqueThePlanDoesNotTouch(t *testing.T) {
 	c := qt.New(t)
-	desired := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
-		Constraints: []schemamodel.Constraint{{
-			StructName:     "User",
-			Name:           "users_email_key",
-			Type:           "UNIQUE",
-			Table:          "users",
-			Columns:        []string{"email"},
-			IncludeColumns: []string{"updated_at"},
-		}},
-	}
 
-	nodes, err := mysql.New().GenerateMigrationAST(&difftypes.SchemaDiff{}, desired)
+	nodes, err := mysql.New().GenerateMigrationAST(&difftypes.SchemaDiff{})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 0)
@@ -163,7 +152,7 @@ func TestPlanner_GenerateMigrationAST_RejectsMaterializedViews(t *testing.T) {
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(nodes, qt.IsNil)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err, qt.ErrorMatches, "materialized views are not supported by MySQL or MariaDB.*")
@@ -216,8 +205,7 @@ func TestPlanner_GenerateMigrationAST_RoutesEveryRoleChangeToItsStatement(t *tes
 			// The addition is planned from the declaration, so the desired
 			// schema has to hold what the diff names or the phase contributes
 			// nothing (stokaro/ptah#1762).
-			nodes, err := planner.GenerateMigrationAST(test.diff,
-				&schemamodel.Database{Roles: []schemamodel.Role{{Name: "app_role"}}})
+			nodes, err := planner.GenerateMigrationAST(test.diff)
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
 			c.Check(fmt.Sprintf("%T", nodes[0]), qt.Equals, test.wantNode)

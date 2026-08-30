@@ -50,16 +50,14 @@ func (p *Planner) capabilities() capability.Capabilities {
 	return p.caps
 }
 
-// The declaration is no longer read: every fact this planner needs travels
-// on the diff. The parameter stays until it leaves the Planner interface,
-// which is one mechanical sweep over 257 call sites (stokaro/ptah#2315).
-func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, _ *schemamodel.Database) ([]ast.Node, error) {
-	indexes, err := indexscope.NewResolverWithSemantics(
+func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
+	// The identity check the resolver used to carry. Nothing is resolved: an
+	// addition carries its own declaration (stokaro/ptah#2315).
+	if err := indexscope.ValidateDiffWithSemantics(
 		DialectName,
 		diff.EffectiveIdentifierSemantics(DialectName),
 		diff,
-	)
-	if err != nil {
+	); err != nil {
 		return nil, err
 	}
 	if err := rejectUnsupportedChanges(diff); err != nil {
@@ -89,7 +87,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, _ *schemamode
 	result = append(result, p.modifyViews(diff, semantics)...)
 	result = append(result, p.addTriggers(diff, rebuilds, semantics)...)
 	result = append(result, p.modifyTriggers(diff, rebuilds, semantics)...)
-	addedIndexes, err := p.addIndexes(diff, indexes, rebuilds)
+	addedIndexes, err := p.addIndexes(diff, rebuilds)
 	if err != nil {
 		return nil, err
 	}
@@ -916,7 +914,6 @@ func isNullLiteral(value string) bool {
 
 func (p *Planner) addIndexes(
 	diff *difftypes.SchemaDiff,
-	indexes *indexscope.Resolver,
 	rebuilds tableRebuilds,
 ) ([]ast.Node, error) {
 	var result []ast.Node
@@ -924,17 +921,16 @@ func (p *Planner) addIndexes(
 		diff.EffectiveIdentifierSemantics(platform.SQLite),
 		diff.IndexRemovals(),
 	)
-	for _, ref := range diff.IndexAdditions() {
+	// The declaration travels WITH the addition (stokaro/ptah#2315).
+	for _, change := range diff.IndexesAdded {
+		ref := difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}
 		// A rebuilt table drops every index with the old table and recreates
 		// the desired set from scratch, so repeating them here would emit the
 		// same CREATE INDEX twice.
 		if rebuilds.contains(ref.TableName) {
 			continue
 		}
-		index, err := indexes.Resolve(ref)
-		if err != nil {
-			return nil, err
-		}
+		index := change.Index
 		for removal := range indexRemovals.Matches(ref) {
 			result = append(result, ast.NewDropIndex(removal.Name).SetTable(removal.TableName).SetIfExists())
 		}

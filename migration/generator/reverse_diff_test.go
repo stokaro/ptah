@@ -273,9 +273,7 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 		TablesRemoved: []string{"old_table"},
 		EnumsAdded:    difftypes.EnumChanges{{Name: "status_type"}},
 		EnumsRemoved:  difftypes.EnumChanges{{Name: "old_enum"}},
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_users_email", TableName: "users"},
-		},
+		IndexesAdded:  difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_email", Fields: []string{"email"}}, TableName: "users"}},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_old", TableName: "old_table"},
 		},
@@ -315,8 +313,8 @@ func TestReverseSchemaDiff_CompleteReversal(t *testing.T) {
 	c.Assert(result.TablesRemoved, qt.DeepEquals, input.TablesAdded.Names())
 	c.Assert(result.EnumsAdded.Names(), qt.DeepEquals, input.EnumsRemoved.Names())
 	c.Assert(result.EnumsRemoved.Names(), qt.DeepEquals, input.EnumsAdded.Names())
-	c.Assert(result.IndexesAdded, qt.DeepEquals, input.IndexesRemoved)
-	c.Assert(result.IndexesRemoved, qt.DeepEquals, input.IndexesAdded)
+	c.Assert(result.IndexAdditions(), qt.DeepEquals, input.IndexesRemoved)
+	c.Assert(result.IndexesRemoved, qt.DeepEquals, input.IndexAdditions())
 	c.Assert(result.ExtensionsAdded.Names(), qt.DeepEquals, input.ExtensionsRemoved.Names())
 	c.Assert(result.ExtensionsRemoved.Names(), qt.DeepEquals, input.ExtensionsAdded.Names())
 
@@ -487,7 +485,7 @@ func TestReverseSchemaDiff_GrantOptionUpgradeDownRevokesOnlyOption(t *testing.T)
 	}
 
 	downDiff := reverseSchemaDiff(upDiff)
-	nodes, err := postgres.New().GenerateMigrationAST(downDiff, &schemamodel.Database{})
+	nodes, err := postgres.New().GenerateMigrationAST(downDiff)
 	c.Assert(err, qt.IsNil)
 	downSQL, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

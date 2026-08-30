@@ -1095,7 +1095,6 @@ func (p *Planner) removeTableColumns(result []ast.Node, diff *difftypes.SchemaDi
 func (p *Planner) addNewIndexes(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	indexes *indexscope.Resolver,
 ) ([]ast.Node, error) {
 	indexRemovals := indexscope.NewConflictSetWithSemantics(
 		diff.EffectiveIdentifierSemantics(p.targetDialect()),
@@ -1104,11 +1103,10 @@ func (p *Planner) addNewIndexes(
 	guardedDrops := p.capabilities().Has(capability.DropIndexIfExists)
 	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
 
-	for _, ref := range diff.IndexAdditions() {
-		index, err := indexes.Resolve(ref)
-		if err != nil {
-			return nil, err
-		}
+	// The declaration travels WITH the addition (stokaro/ptah#2315).
+	for _, change := range diff.IndexesAdded {
+		ref := difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}
+		index := change.Index
 		for removal := range indexRemovals.Matches(ref) {
 			if _, ownedByConstraint := constraintBacked[removal]; ownedByConstraint {
 				result = append(result, p.constraintBackedIndexDropNode(removal))
@@ -1605,10 +1603,7 @@ func currentRangeReferences(rangeDiff difftypes.RangeDiff) []string {
 // through. Keeping that answer in one place prevents the plan path from
 // silently dropping an unsupported object while `schema render` reports it
 // differently (stokaro/ptah#929).
-// The declaration is no longer read: every fact this planner needs travels
-// on the diff. The parameter stays until it leaves the Planner interface,
-// which is one mechanical sweep over 257 call sites (stokaro/ptah#2315).
-func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, _ *schemamodel.Database) ([]ast.Node, error) {
+func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	var result []ast.Node
 	if err := p.validateExtensionInstallationSchemas(diff); err != nil {
 		return nil, err
@@ -1625,12 +1620,13 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, _ *schemamode
 	// resolvers below and the statements that accompany what they resolve cannot
 	// disagree about which table a reference belongs to.
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
-	indexes, err := indexscope.NewResolverWithSemantics(
+	// The identity check the resolver used to carry. Nothing is resolved: an
+	// addition carries its own declaration (stokaro/ptah#2315).
+	if err := indexscope.ValidateDiffWithSemantics(
 		p.targetDialect(),
-		semantics,
+		diff.EffectiveIdentifierSemantics(p.targetDialect()),
 		diff,
-	)
-	if err != nil {
+	); err != nil {
 		return nil, err
 	}
 	// Row-level security entries are validated before any node is emitted, for
@@ -1750,7 +1746,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, _ *schemamode
 	result = p.addNewGrants(result, diff)
 
 	// 10. Add new indexes
-	result, err = p.addNewIndexes(result, diff, indexes)
+	result, err = p.addNewIndexes(result, diff)
 	if err != nil {
 		return nil, err
 	}

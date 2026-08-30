@@ -9,15 +9,16 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 func TestCollectMismatches_ReportsQualifiedIndex(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions([]difftypes.IndexRef{
-		{Name: "idx_shared", TableName: "users"},
-		{Name: "idx_shared", TableName: "orders"},
+	diff.SetIndexAdditions(difftypes.IndexChanges{
+		{Index: schemamodel.Index{Name: "idx_shared", Fields: []string{"code"}}, TableName: "users"},
+		{Index: schemamodel.Index{Name: "idx_shared", Fields: []string{"code"}}, TableName: "orders"},
 	})
 
 	got := collectMismatches(diff)

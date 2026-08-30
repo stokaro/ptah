@@ -9,7 +9,6 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -38,7 +37,7 @@ func TestPlannerRefusesABareNameConstraintAddition(t *testing.T) {
 		ConstraintsAdded: []string{"aaa_fk_child_parent"},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, bareConstraintKindSchema())
+	nodes, err := postgres.New().GenerateMigrationAST(diff)
 
 	c.Assert(nodes, qt.IsNil)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -69,7 +68,7 @@ func TestPlannerOrdersAForeignKeyAfterTheOtherKinds(t *testing.T) {
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, bareConstraintKindSchema())
+	nodes, err := postgres.New().GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
 	sql := renderPostgresNodes(c, nodes)
 
@@ -79,24 +78,6 @@ func TestPlannerOrdersAForeignKeyAfterTheOtherKinds(t *testing.T) {
 	c.Assert(foreignKey, qt.Not(qt.Equals), -1, qt.Commentf("plan:\n%s", sql))
 	c.Assert(check < foreignKey, qt.IsTrue,
 		qt.Commentf("a FOREIGN KEY must be added after the other kinds; plan:\n%s", sql))
-}
-
-// bareConstraintKindSchema declares the two tables the constraints above name.
-// It is handed to the planner because the signature still takes a declaration;
-// no constraint is resolved through it any more.
-func bareConstraintKindSchema() *schemamodel.Database {
-	return &schemamodel.Database{
-		Tables: []schemamodel.Table{
-			{StructName: "Parent", Name: "wf2315_parents"},
-			{StructName: "Child", Name: "wf2315_children"},
-		},
-		Fields: []schemamodel.Field{
-			{StructName: "Parent", Name: "id", Type: "BIGINT", Primary: true},
-			{StructName: "Child", Name: "id", Type: "BIGINT", Primary: true},
-			{StructName: "Child", Name: "parent_id", Type: "BIGINT"},
-			{StructName: "Child", Name: "amount", Type: "BIGINT"},
-		},
-	}
 }
 
 // renderPostgresNodes renders a plan, failing the test rather than returning an

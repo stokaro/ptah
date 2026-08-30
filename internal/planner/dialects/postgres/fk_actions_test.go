@@ -185,7 +185,7 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 				}
 			}
 
-			nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, tt.desired), tt.desired)
+			nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, tt.desired))
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
 			c.Assert(err, qt.IsNil)

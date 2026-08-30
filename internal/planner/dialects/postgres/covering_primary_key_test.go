@@ -24,7 +24,7 @@ func primaryKeyAdditionSQL(c *qt.C, include []string) string {
 			IncludeColumns: include,
 		}},
 	}
-	nodes, err := postgres.New().GenerateMigrationAST(diff, &schemamodel.Database{})
+	nodes, err := postgres.New().GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -83,7 +83,7 @@ func declaredPrimaryKeyAdditionSQL(c *qt.C, include []string) string {
 			IncludeColumns: include,
 		}},
 	}
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

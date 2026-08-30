@@ -88,20 +88,19 @@ func (p *Planner) capabilities() capability.Capabilities {
 // each to a named `-- CLICKHOUSE: ... is not supported` comment, in the order
 // `schema render` produces for the same model. Plain-view, role and grant nodes
 // are executable and retain what they declare.
-// The declaration is no longer read: every fact this planner needs travels
-// on the diff. The parameter stays until it leaves the Planner interface,
-// which is one mechanical sweep over 257 call sites (stokaro/ptah#2315).
-func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, _ *schemamodel.Database) ([]ast.Node, error) {
+func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	var result []ast.Node
 
-	indexes, err := indexscope.NewResolverWithSemantics(
+	// The identity check the resolver used to carry. Nothing is resolved: an
+	// addition carries its own declaration (stokaro/ptah#2315).
+	if err := indexscope.ValidateDiffWithSemantics(
 		platform.ClickHouse,
 		diff.EffectiveIdentifierSemantics(platform.ClickHouse),
 		diff,
-	)
-	if err != nil {
+	); err != nil {
 		return nil, err
 	}
+	var err error
 
 	if len(diff.EnumsAdded)+len(diff.EnumsRemoved)+len(diff.EnumsModified) > 0 {
 		result = append(result, ast.NewComment("CLICKHOUSE: enum changes are ignored; declare ClickHouse Enum8/Enum16 columns inline via platform.clickhouse.type"))
@@ -114,7 +113,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, _ *schemamode
 	if err != nil {
 		return nil, err
 	}
-	result, err = p.addNewIndexes(result, diff, indexes)
+	result, err = p.addNewIndexes(result, diff)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +200,6 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 func (p *Planner) addNewIndexes(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	indexes *indexscope.Resolver,
 ) ([]ast.Node, error) {
 	if len(diff.IndexesAdded) == 0 {
 		return result, nil
@@ -210,11 +208,10 @@ func (p *Planner) addNewIndexes(
 		diff.EffectiveIdentifierSemantics(platform.ClickHouse),
 		diff.IndexRemovals(),
 	)
-	for _, ref := range diff.IndexAdditions() {
-		index, err := indexes.Resolve(ref)
-		if err != nil {
-			return nil, err
-		}
+	// The declaration travels WITH the addition (stokaro/ptah#2315).
+	for _, change := range diff.IndexesAdded {
+		ref := difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}
+		index := change.Index
 		tableName := ref.TableName
 		if replacements.Contains(ref) {
 			result = append(result, ast.NewDropIndex(ref.Name).SetTable(tableName).SetIfExists())

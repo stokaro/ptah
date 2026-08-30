@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/safety"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -24,7 +25,7 @@ func TestClassifySchemaDiff_UniqueProtectionRemovalIsDestructive(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		IndexesAdded:   []difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}},
+		IndexesAdded:   difftypes.IndexChanges{{Index: schemamodel.Index{Name: "uq_users_email", Fields: []string{"email"}}, TableName: "users"}},
 		IndexesRemoved: []difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}},
 		ConstraintBackedIndexRemovals: []difftypes.IndexRef{
 			{Name: "uq_users_email", TableName: "users"},

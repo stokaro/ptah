@@ -175,6 +175,14 @@ func describe(element reflect.Value) string {
 	if element.Kind() != reflect.Struct {
 		return fmt.Sprint(element.Interface())
 	}
+	// An element that knows how to name itself says so. stringFields reads
+	// TOP-LEVEL string fields, so an element carrying its object inside a
+	// nested declaration -- an index addition, since stokaro/ptah#2315 --
+	// would be reported by its context alone, without the name of the thing
+	// that changed.
+	if named, ok := reflect.TypeAssert[fmt.Stringer](element); ok {
+		return named.String()
+	}
 
 	parts := stringFields(element)
 	if len(parts) == 0 {

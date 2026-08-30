@@ -92,7 +92,7 @@ func TestSQLServerTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 	createDiff := &difftypes.SchemaDiff{
 		IdentifierSemantics: addDiff.IdentifierSemantics,
 	}
-	createDiff.SetIndexAdditions(addDiff.IndexAdditions())
+	createDiff.SetIndexAdditions(addDiff.IndexesAdded)
 	planned, err = planner.GenerateSchemaDiffSQLStatements(
 		createDiff,
 		bothTarget,

@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/diffpolicy"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -13,8 +14,8 @@ import (
 func TestApplyDropIndex_PreservesOnlyExactReplacement(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions([]difftypes.IndexRef{
-		{Name: "idx_shared", TableName: "users"},
+	diff.SetIndexAdditions(difftypes.IndexChanges{
+		{Index: schemamodel.Index{Name: "idx_shared", Fields: []string{"code"}}, TableName: "users"},
 	})
 	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "users"},
@@ -38,8 +39,8 @@ func TestApplyDropIndex_PreservesOnlyExactReplacement(t *testing.T) {
 func TestApplyForDialectDropIndex_PreservesPostgresSchemaReplacement(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions([]difftypes.IndexRef{
-		{Name: "idx_shared", TableName: "app.orders"},
+	diff.SetIndexAdditions(difftypes.IndexChanges{
+		{Index: schemamodel.Index{Name: "idx_shared", Fields: []string{"code"}}, TableName: "app.orders"},
 	})
 	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "app.users"},
@@ -60,8 +61,8 @@ func TestApplyForDialectDropIndex_PreservesPostgresSchemaReplacement(t *testing.
 func TestApplyForDialectDropIndex_SkipsMySQLDifferentTableRemoval(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions([]difftypes.IndexRef{
-		{Name: "idx_shared", TableName: "orders"},
+	diff.SetIndexAdditions(difftypes.IndexChanges{
+		{Index: schemamodel.Index{Name: "idx_shared", Fields: []string{"code"}}, TableName: "orders"},
 	})
 	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "users"},
@@ -110,7 +111,7 @@ func TestApplyForDialectDropIndex_PreservesCaseInsensitiveReplacement(t *testing
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{
-				IndexesAdded:   []difftypes.IndexRef{test.addition},
+				IndexesAdded:   difftypes.IndexChangesFromRefs(test.addition),
 				IndexesRemoved: []difftypes.IndexRef{test.removal},
 			}
 
@@ -129,8 +130,8 @@ func TestApplyForDialectDropIndex_PreservesCaseInsensitiveReplacement(t *testing
 func TestApplyForDialectDropIndex_PreservesPotentialSQLServerReplacement(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "IDX_Shared", TableName: "users"},
+		IndexesAdded: difftypes.IndexChanges{
+			{Index: schemamodel.Index{Name: "IDX_Shared", Fields: []string{"email"}}, TableName: "users"},
 		},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_shared", TableName: "users"},
@@ -160,8 +161,8 @@ func TestApplyForDialectDropIndex_SQLServerCaseSensitiveSkipsIndependentRemoval(
 		})
 	diff := &difftypes.SchemaDiff{
 		IdentifierSemantics: &semantics,
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "IDX_Shared", TableName: "dbo.users"},
+		IndexesAdded: difftypes.IndexChanges{
+			{Index: schemamodel.Index{Name: "IDX_Shared", Fields: []string{"email"}}, TableName: "dbo.users"},
 		},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_shared", TableName: "dbo.users"},

@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -76,8 +77,8 @@ func TestSchemaDiff_HasChanges(t *testing.T) {
 		{
 			name: "indexes added",
 			diff: &difftypes.SchemaDiff{
-				IndexesAdded: []difftypes.IndexRef{
-					{Name: "idx_user_email", TableName: "users"},
+				IndexesAdded: difftypes.IndexChanges{
+					{Index: schemamodel.Index{Name: "idx_user_email", Fields: []string{"email"}}, TableName: "users"},
 				},
 			},
 			expected: true,

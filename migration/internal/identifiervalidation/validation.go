@@ -49,17 +49,7 @@ func ValidateTarget(
 	if err := validateTablesAndColumns(desired, semantics); err != nil {
 		return err
 	}
-	_, err := indexscope.NewResolverWithSemantics(
-		dialect,
-		semantics,
-		// The declaration's own index/owner pairs. This validator holds the
-		// declaration, so it builds the carry the resolver reads rather than
-		// being handed a diff that already has one -- an empty carry here
-		// would validate nothing and report every schema as clean
-		// (stokaro/ptah#2315).
-		&difftypes.SchemaDiff{DeclaredIndexes: difftypes.IndexDeclarationsOf(desired)},
-	)
-	return err
+	return indexscope.ValidateDeclared(dialect, semantics, difftypes.IndexDeclarationsOf(desired))
 }
 
 func targetIdentifierNames(

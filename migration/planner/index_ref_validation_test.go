@@ -76,7 +76,7 @@ func TestGenerateSchemaDiffAST_RemovalDoesNotRequireTargetSchema(t *testing.T) {
 func TestGenerateSchemaDiffAST_IndexRefMissingOwnerRejected(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{{Name: "idx_users_email"}},
+		IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_email", Fields: []string{"email"}}}},
 	}
 	desired := &schemamodel.Database{
 		Indexes: []schemamodel.Index{
@@ -93,9 +93,7 @@ func TestGenerateSchemaDiffAST_IndexRefMissingOwnerRejected(t *testing.T) {
 func TestGenerateSchemaDiffAST_AmbiguousStructOwnerRejected(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_shared", TableName: "app.users"},
-		},
+		IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_shared", StructName: "Shared", Fields: []string{"email"}}, TableName: "app.users"}},
 	}
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{
@@ -127,9 +125,9 @@ func TestGenerateSchemaDiffAST_SchemaScopedDuplicateAdditionsRejected(t *testing
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{
-				IndexesAdded: []difftypes.IndexRef{
-					{Name: "idx_shared", TableName: "users"},
-					{Name: "idx_shared", TableName: "orders"},
+				IndexesAdded: difftypes.IndexChanges{
+					{Index: schemamodel.Index{Name: "idx_shared", StructName: "Shared", Fields: []string{"email"}}, TableName: "users"},
+					{Index: schemamodel.Index{Name: "idx_shared", StructName: "Shared", Fields: []string{"email"}}, TableName: "orders"},
 				},
 			}
 			desired := duplicateIndexTarget("users", "orders")
@@ -191,8 +189,8 @@ func TestGenerateSchemaDiffAST_UnchangedTargetIndexConflictRejected(t *testing.T
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{
-				IndexesAdded: []difftypes.IndexRef{
-					{Name: "idx_shared", TableName: test.addedTable},
+				IndexesAdded: difftypes.IndexChanges{
+					{Index: schemamodel.Index{Name: "idx_shared", Fields: []string{"email"}}, TableName: test.addedTable},
 				},
 			}
 			desired := duplicateIndexTarget(test.addedTable, test.existingTable)
@@ -222,9 +220,7 @@ func TestGenerateSchemaDiffAST_TargetConflictRejectedWithoutIndexChanges(t *test
 func TestGenerateSchemaDiffAST_UnknownQualifiedTargetOwnerRejected(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_users_email", TableName: "publci.users"},
-		},
+		IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_email", TableName: "users", Fields: []string{"email"}}, TableName: "publci.users"}},
 	}
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{
@@ -259,9 +255,9 @@ func TestGenerateSchemaDiffAST_TableScopedDuplicateAdditionsAccepted(t *testing.
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{
-				IndexesAdded: []difftypes.IndexRef{
-					{Name: "idx_shared", TableName: "users"},
-					{Name: "idx_shared", TableName: "orders"},
+				IndexesAdded: difftypes.IndexChanges{
+					{Index: schemamodel.Index{Name: "idx_shared", StructName: "Shared", Fields: []string{"email"}}, TableName: "users"},
+					{Index: schemamodel.Index{Name: "idx_shared", StructName: "Shared", Fields: []string{"email"}}, TableName: "orders"},
 				},
 			}
 			desired := duplicateIndexTarget("users", "orders")
@@ -277,9 +273,7 @@ func TestGenerateSchemaDiffAST_TableScopedDuplicateAdditionsAccepted(t *testing.
 func TestGenerateSchemaDiffAST_MariaDBUnicodeCaseReplacementDropsFirst(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "ä_idx", TableName: "users"},
-		},
+		IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "ä_idx", TableName: "users", Fields: []string{"email"}}, TableName: "users"}},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "Ä_idx", TableName: "users"},
 		},
@@ -305,9 +299,7 @@ func TestGenerateSchemaDiffAST_MariaDBUnicodeCaseReplacementDropsFirst(t *testin
 func TestGenerateSchemaDiffSQL_PostgreSQLRawDottedIndexNameIsOneIdentifier(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx.users.email", TableName: "public.users"},
-		},
+		IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx.users.email", TableName: "public.users", Fields: []string{"email"}}, TableName: "public.users"}},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx.users.email", TableName: "public.users"},
 		},
@@ -330,9 +322,7 @@ func TestGenerateSchemaDiffSQL_PostgreSQLRawDottedIndexNameIsOneIdentifier(t *te
 func TestGenerateSchemaDiffSQL_SQLiteRawDottedIndexNameIsOneIdentifier(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx.users.email", TableName: "main.users"},
-		},
+		IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx.users.email", TableName: "main.users", Fields: []string{"email"}}, TableName: "main.users"}},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx.users.email", TableName: "main.users"},
 		},
@@ -357,8 +347,8 @@ func TestGenerateSchemaDiffSQL_ClickHouseIndexIdentifiersAreInjectionSafe(t *tes
 	tableName := "analytics.events`; DROP TABLE audit; --"
 	indexName := "idx`; DROP TABLE users; --"
 	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: indexName, TableName: tableName},
+		IndexesAdded: difftypes.IndexChanges{
+			{Index: schemamodel.Index{Name: indexName, TableName: tableName, Fields: []string{"payload"}, Type: "minmax"}, TableName: tableName},
 		},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: indexName, TableName: tableName},

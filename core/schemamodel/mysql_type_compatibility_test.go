@@ -118,7 +118,7 @@ func TestMySQLMigrationGeneratesCompatibleTypes(t *testing.T) {
 
 	// Generate migration using MySQL planner
 	planner := &mysql.Planner{}
-	nodes, err := planner.GenerateMigrationAST(diff, db)
+	nodes, err := planner.GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
 
 	// Render to SQL

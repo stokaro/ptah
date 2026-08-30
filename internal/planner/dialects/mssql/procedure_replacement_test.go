@@ -36,7 +36,7 @@ func planProcedureReplacement(c *qt.C, kind string) string {
 		}},
 	}
 
-	nodes, err := mssqlplanner.New().GenerateMigrationAST(diff, &schemamodel.Database{})
+	nodes, err := mssqlplanner.New().GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
 
 	var rendered strings.Builder

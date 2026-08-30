@@ -14,15 +14,13 @@ import (
 )
 
 func indexAdditionFixture() (*difftypes.SchemaDiff, *schemamodel.Database) {
-	diff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
-		{Name: "idx_users_email", TableName: "users"},
-	}}
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
 		Indexes: []schemamodel.Index{
 			{Name: "idx_users_email", StructName: "User", Fields: []string{"email"}},
 		},
 	}
+	diff := &difftypes.SchemaDiff{IndexesAdded: difftypes.IndexAdditionsFor(desired, difftypes.IndexRef{Name: "idx_users_email", TableName: "users"})}
 	return diff, desired
 }
 
@@ -39,7 +37,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 	t.Run("default policy stays non-concurrent", func(t *testing.T) {
 		c := qt.New(t)
 
-		nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+		nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -53,7 +51,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 	t.Run("policy plus capability emits CONCURRENTLY", func(t *testing.T) {
 		c := qt.New(t)
 
-		nodes, err := postgres.New().WithConcurrentIndexes().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+		nodes, err := postgres.New().WithConcurrentIndexes().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -67,7 +65,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 		c := qt.New(t)
 
 		caps := capability.Postgres16().With(capability.CreateIndexConcurrently, false)
-		nodes, err := postgres.NewWithCapabilities(caps).WithConcurrentIndexes().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+		nodes, err := postgres.NewWithCapabilities(caps).WithConcurrentIndexes().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -81,16 +79,16 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 	t.Run("unique concurrent index", func(t *testing.T) {
 		c := qt.New(t)
 
-		uniqueDiff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
-			{Name: "uq_users_email", TableName: "users"},
-		}}
 		uniqueGenerated := &schemamodel.Database{
 			Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
 			Indexes: []schemamodel.Index{
 				{Name: "uq_users_email", StructName: "User", Fields: []string{"email"}, Unique: true},
 			},
 		}
-		nodes, err := postgres.New().WithConcurrentIndexes().GenerateMigrationAST(withDeclaredObjects(uniqueDiff, uniqueGenerated), uniqueGenerated)
+		uniqueDiff := &difftypes.SchemaDiff{
+			IndexesAdded: difftypes.IndexAdditionsFor(uniqueGenerated, difftypes.IndexRef{Name: "uq_users_email", TableName: "users"}),
+		}
+		nodes, err := postgres.New().WithConcurrentIndexes().GenerateMigrationAST(withDeclaredObjects(uniqueDiff, uniqueGenerated))
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -106,7 +104,7 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 		base := postgres.New()
 		_ = base.WithConcurrentIndexes()
 
-		nodes, err := base.GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+		nodes, err := base.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -118,9 +116,9 @@ func TestPlanner_ConcurrentIndexes(t *testing.T) {
 
 func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_users_email", TableName: "users"},
-			{Name: "idx_users_name", TableName: "users"},
+		IndexesAdded: difftypes.IndexChanges{
+			{Index: schemamodel.Index{Name: "idx_users_email", StructName: "User", Fields: []string{"email"}}, TableName: "users"},
+			{Index: schemamodel.Index{Name: "idx_users_name", StructName: "User", Fields: []string{"name"}}, TableName: "users"},
 		},
 	}
 	desired := &schemamodel.Database{
@@ -137,7 +135,7 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 		nodes, err := postgres.New().WithConcurrentIndexRefs(
 			difftypes.IndexRef{},
 			difftypes.IndexRef{Name: "idx_users_email", TableName: "users"},
-		).GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+		).GenerateMigrationAST(withDeclaredObjects(diff, desired))
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -153,7 +151,7 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 		caps := capability.Postgres16().With(capability.CreateIndexConcurrently, false)
 		nodes, err := postgres.NewWithCapabilities(caps).WithConcurrentIndexRefs(
 			difftypes.IndexRef{Name: "idx_users_email", TableName: "users"},
-		).GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+		).GenerateMigrationAST(withDeclaredObjects(diff, desired))
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -167,7 +165,7 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 
 		base := postgres.New()
 		_ = base.WithConcurrentIndexRefs(difftypes.IndexRef{Name: "idx_users_email", TableName: "users"})
-		nodes, err := base.GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+		nodes, err := base.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("postgres", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -179,7 +177,7 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 	t.Run("preserves raw identifier spelling", func(t *testing.T) {
 		c := qt.New(t)
 		ref := difftypes.IndexRef{Name: " idx users email ", TableName: "users"}
-		rawDiff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{ref}}
+		rawDiff := &difftypes.SchemaDiff{IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: ref.Name, Fields: []string{"email"}}, TableName: ref.TableName}}}
 		rawGenerated := &schemamodel.Database{
 			Indexes: []schemamodel.Index{
 				{Name: ref.Name, TableName: ref.TableName, Fields: []string{"email"}},
@@ -187,7 +185,7 @@ func TestPlanner_ConcurrentIndexRefs(t *testing.T) {
 		}
 
 		nodes, err := postgres.New().WithConcurrentIndexRefs(ref).
-			GenerateMigrationAST(withDeclaredObjects(rawDiff, rawGenerated), rawGenerated)
+			GenerateMigrationAST(withDeclaredObjects(rawDiff, rawGenerated))
 		c.Assert(err, qt.IsNil)
 		c.Assert(nodes, qt.HasLen, 1)
 

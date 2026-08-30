@@ -9,131 +9,86 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
 // Resolver contains the validated target indexes needed by one migration plan.
 // Index lookup is constant time and uses the canonical table-qualified identity.
-type Resolver struct {
-	semantics identifier.Semantics
-	indexes   map[difftypes.IndexRef]schemamodel.Index
-}
-
-// Resolve returns the target index identified by ref.
-func (r *Resolver) Resolve(ref difftypes.IndexRef) (schemamodel.Index, error) {
-	if r == nil {
-		return schemamodel.Index{}, fmt.Errorf(
-			"%w: no validated target indexes are available",
-			ptaherr.ErrInvalidSchemaDiff,
-		)
-	}
-	index, ok := r.indexes[IdentityKeyWithSemantics(r.semantics, ref)]
-	if !ok {
-		return schemamodel.Index{}, fmt.Errorf(
-			"%w: target index %s.%s was not part of the validated plan",
-			ptaherr.ErrInvalidSchemaDiff,
-			ref.TableName,
-			ref.Name,
-		)
-	}
-	return index, nil
-}
-
 func validateDiff(dialect string, semantics identifier.Semantics, diff *difftypes.SchemaDiff) error {
 	if diff == nil {
 		return nil
 	}
-	if err := validateRefs(dialect, semantics, "added", diff.IndexesAdded); err != nil {
+	if err := validateRefs(dialect, semantics, "added", diff.IndexAdditions()); err != nil {
+		return err
+	}
+	if err := validateAdditionsAreDescribed(diff.IndexesAdded); err != nil {
 		return err
 	}
 	return validateRefs(dialect, semantics, "removed", diff.IndexesRemoved)
 }
 
-// NewResolver validates every index identity needed to plan diff and indexes
-// the target schema for constant-time addition lookup. Removals are
-// self-contained because their owning table is part of IndexRef.
-func NewResolver(dialect string, diff *difftypes.SchemaDiff) (*Resolver, error) {
-	return NewResolverWithSemantics(dialect, identifier.ForDialect(dialect), diff)
+// ValidateDiff refuses an index reference a plan could not act on: an empty
+// name or table, or a pair two dialect-folded spellings collapse onto.
+//
+// It no longer resolves anything. An addition carries its own definition
+// (stokaro/ptah#2315), so what is left here is the identity check that used to
+// travel with the lookup.
+func ValidateDiff(dialect string, diff *difftypes.SchemaDiff) error {
+	return ValidateDiffWithSemantics(dialect, identifier.ForDialect(dialect), diff)
 }
 
-// NewResolverWithSemantics validates and indexes target indexes using explicit
-// live or offline identifier semantics.
-func NewResolverWithSemantics(
+// ValidateDiffWithSemantics is [ValidateDiff] under explicit live or offline
+// identifier semantics.
+func ValidateDiffWithSemantics(
 	dialect string,
 	semantics identifier.Semantics,
 	diff *difftypes.SchemaDiff,
-) (*Resolver, error) {
+) error {
 	if diff == nil {
-		return nil, fmt.Errorf("%w: schema diff is nil", ptaherr.ErrInvalidSchemaDiff)
+		return fmt.Errorf("%w: schema diff is nil", ptaherr.ErrInvalidSchemaDiff)
 	}
-	if err := validateDiff(dialect, semantics, diff); err != nil {
-		return nil, err
-	}
-	resolver, err := newTargetResolver(dialect, semantics, diff.DeclaredIndexes)
-	if err != nil {
-		return nil, err
-	}
-	if len(diff.IndexesAdded) == 0 {
-		return resolver, nil
-	}
-	for index, ref := range diff.IndexesAdded {
-		if _, exists := resolver.indexes[IdentityKeyWithSemantics(semantics, ref)]; !exists {
-			return nil, fmt.Errorf(
-				"%w: added index %s.%s at position %d is missing or ambiguous in the target schema",
-				ptaherr.ErrInvalidSchemaDiff,
-				ref.TableName,
-				ref.Name,
-				index,
-			)
-		}
-	}
-	return resolver, nil
+	return validateDiff(dialect, semantics, diff)
 }
 
-// newTargetResolver builds the lookup from the declared index/owner pairs the
-// diff carries.
+// ValidateDeclared refuses a declaration whose indexes collide.
 //
-// Resolving the owner is the declaration's job and happens once, in
-// [difftypes.IndexDeclarationsOf]. Materialized views are relations an index
-// can belong to, not just tables: PostgreSQL accepts CREATE INDEX on one, and a
-// UNIQUE index on one is what REFRESH MATERIALIZED VIEW CONCURRENTLY requires.
-// Resolving against tables alone left the owner empty, and the refusal that
-// followed named a position in a slice rather than the index or the view
-// (stokaro/ptah#1725).
-func newTargetResolver(
+// Two indexes collide when the target's identifier rules fold their (name,
+// table) pairs onto one, which is a defect in the document rather than in any
+// plan -- so it is asked of the declaration, by whoever holds one.
+//
+// Materialized views are relations an index can belong to, not just tables:
+// PostgreSQL accepts CREATE INDEX on one, and a UNIQUE index on one is what
+// REFRESH MATERIALIZED VIEW CONCURRENTLY requires. Resolving against tables
+// alone left the owner empty, and the refusal that followed named a position in
+// a slice rather than the index or the view (stokaro/ptah#1725) --
+// [difftypes.IndexDeclarationsOf] is where that resolution happens now.
+func ValidateDeclared(
 	dialect string,
 	semantics identifier.Semantics,
-	declared []difftypes.IndexDeclaration,
-) (*Resolver, error) {
-	resolver := &Resolver{
-		semantics: semantics,
-		indexes:   make(map[difftypes.IndexRef]schemamodel.Index),
-	}
+	declared difftypes.IndexChanges,
+) error {
 	if len(declared) == 0 {
-		return resolver, nil
+		return nil
 	}
 	tracker := NewConflictSetWithSemantics(semantics, nil)
 	for position, declaration := range declared {
-		index := declaration.Index
 		ref := difftypes.IndexRef{
-			Name:      index.Name,
+			Name:      declaration.Index.Name,
 			TableName: declaration.TableName,
 		}
 		if err := validateRef("target", position, ref); err != nil {
-			return nil, err
+			return err
 		}
 		if err := validateResolvedRef(semantics, "target", position, ref); err != nil {
-			return nil, err
+			return err
 		}
 		if previous, conflict := tracker.firstMatch(ref); conflict {
-			return nil, conflictError(dialect, "target", previous, ref)
+			return conflictError(dialect, "target", previous, ref)
 		}
 		tracker.add(ref)
-		resolver.indexes[IdentityKeyWithSemantics(semantics, ref)] = index
 	}
-	return resolver, nil
+	return nil
 }
 
 // IdentityKey returns the dialect-aware comparison identity for ref. It is
@@ -311,4 +266,32 @@ func conflictError(dialect, operation string, previous, ref difftypes.IndexRef) 
 type namespaceKey struct {
 	namespace string
 	name      string
+}
+
+// validateAdditionsAreDescribed refuses an addition that names an index without
+// saying what it is.
+//
+// The resolver this replaced answered the same refusal by failing to find the
+// name in the declaration it was handed. An addition carries its declaration
+// now, so the question is asked of the addition -- and the answer has to stay a
+// refusal: a CREATE INDEX with neither a column list nor an expression is not
+// SQL, and emitting one would turn a diff nobody could plan into a migration
+// that fails on the server instead (stokaro/ptah#2315).
+//
+// Fields and Parts are both consulted because an expression index carries its
+// elements in Parts alone.
+func validateAdditionsAreDescribed(changes difftypes.IndexChanges) error {
+	for _, change := range changes {
+		if len(change.Index.Fields) > 0 || len(change.Index.Parts) > 0 {
+			continue
+		}
+		return fmt.Errorf(
+			"%w: added index %s.%s is not described by the diff; "+
+				"an addition has to carry the index it creates",
+			ptaherr.ErrInvalidSchemaDiff,
+			change.TableName,
+			change.Index.Name,
+		)
+	}
+	return nil
 }

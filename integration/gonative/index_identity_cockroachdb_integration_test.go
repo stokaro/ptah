@@ -88,7 +88,7 @@ func TestCockroachDBTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 	c.Assert(addDiff.IndexRemovals(), qt.HasLen, 0)
 
 	createDiff := &difftypes.SchemaDiff{}
-	createDiff.SetIndexAdditions(addDiff.IndexAdditions())
+	createDiff.SetIndexAdditions(addDiff.IndexesAdded)
 	statements, err = planner.GenerateSchemaDiffSQLStatements(createDiff, bothTarget, platform.CockroachDB)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 1)

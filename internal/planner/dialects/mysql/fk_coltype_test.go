@@ -569,7 +569,7 @@ func TestPlanner_ColumnTypeChange_MariaDBGuardsDrop(t *testing.T) {
 		},
 	}
 
-	nodes, err := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+	nodes, err := mysql.NewWithCapabilities(capability.MariaDB1011()).GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQLWithCapabilities("mariadb", capability.MariaDB1011(), nodes...)
 	c.Assert(err, qt.IsNil)
@@ -602,7 +602,7 @@ func TestPlanner_ColumnTypeChange_ForeignKeysComeFromTheDiff(t *testing.T) {
 			ForeignTable: "users", ForeignColumn: "id",
 		}}
 
-		nodes, err := mysql.New().GenerateMigrationAST(diff, desired)
+		nodes, err := mysql.New().GenerateMigrationAST(diff)
 
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("mysql", nodes...)
@@ -629,7 +629,7 @@ func TestPlanner_ColumnTypeChange_ForeignKeysComeFromTheDiff(t *testing.T) {
 		diff := typeChangeDiff("posts", "user_id", "INTEGER -> BIGINT")
 		diff.TablesModified[0].ColumnsModified[0].Desired = desired.Fields[1]
 
-		nodes, err := mysql.New().GenerateMigrationAST(diff, desired)
+		nodes, err := mysql.New().GenerateMigrationAST(diff)
 
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("mysql", nodes...)

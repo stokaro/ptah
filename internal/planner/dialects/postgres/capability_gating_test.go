@@ -62,7 +62,7 @@ func TestPlanner_CapabilityGatesRLSAndRoleManagement(t *testing.T) {
 		}},
 	}
 
-	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQLWithCapabilities(platform.Spanner, capability.SpannerPostgres(), nodes...)
 

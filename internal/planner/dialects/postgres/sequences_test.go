@@ -34,7 +34,7 @@ func TestPlanner_SequencesAdded_OrderedBeforeTablesWithOwnershipAfter(t *testing
 	// from, derived from the declaration (stokaro/ptah#2315).
 	diff.TablesAdded = difftypes.TableCreationsFor(desired, "orders")
 
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -69,7 +69,7 @@ func TestPlanner_SequencesModified_EmitsAlterForChangedOptionsOnly(t *testing.T)
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, &schemamodel.Database{})
+	nodes, err := postgres.New().GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

@@ -257,9 +257,7 @@ func nextExternalPlannerDialect(prefix string) string {
 	return fmt.Sprintf("%s_%d", prefix, externalPlannerDialectSeq.Add(1))
 }
 
-func (p externalPlanner) GenerateMigrationAST(
-	_ *difftypes.SchemaDiff,
-	_ *schemamodel.Database,
+func (p externalPlanner) GenerateMigrationAST(_ *difftypes.SchemaDiff,
 ) ([]ast.Node, error) {
 	return []ast.Node{ast.NewComment("external planner")}, nil
 }

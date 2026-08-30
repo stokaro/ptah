@@ -38,7 +38,7 @@ func TestPlanner_GenerateMigrationAST_FunctionsModified_EmitsCreateOrReplace(t *
 	}
 
 	planner := postgres.New()
-	nodes, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
+	nodes, err := planner.GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.Not(qt.HasLen), 0)
 
@@ -72,7 +72,7 @@ func TestPlanner_GenerateMigrationAST_FunctionsModified_SkippedWhenTargetMissing
 	desired := &schemamodel.Database{}
 
 	planner := postgres.New()
-	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
 
 	sql, err := renderer.RenderSQL("postgres", nodes...)

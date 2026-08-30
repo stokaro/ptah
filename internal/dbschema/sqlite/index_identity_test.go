@@ -77,7 +77,7 @@ func TestReaderAndSchemaDiff_PreserveAttachedSchemaIndexIdentity(t *testing.T) {
 	c.Assert(got.IndexRemovals(), qt.HasLen, 0)
 
 	indexOnlyAddition := &difftypes.SchemaDiff{}
-	indexOnlyAddition.SetIndexAdditions(got.IndexAdditions())
+	indexOnlyAddition.SetIndexAdditions(got.IndexesAdded)
 	addStatements, err := planner.GenerateSchemaDiffSQLStatements(indexOnlyAddition, target, platform.SQLite)
 	c.Assert(err, qt.IsNil)
 	c.Assert(addStatements, qt.DeepEquals, []string{
