@@ -74,15 +74,19 @@ func (s *session) close() {
 // reasons and send an operator to different places: a specification that will
 // not parse is a file to edit, and a database that will not open is a URL or a
 // server.
+//
+// The argument checks come first, before either. Resolving a --release reaches
+// a registry, and a run that was going to be refused for naming no database
+// should not spend a network round trip finding that out.
 func open(ctx context.Context, options commonOptions) (*session, error) {
-	loaded, err := options.spec.resolve(ctx)
-	if err != nil {
-		return nil, err
-	}
 	if strings.TrimSpace(options.dbURL) == "" {
 		return nil, fmt.Errorf("--db-url is required")
 	}
 	if err := refuseAnotherEngine(options.dbURL); err != nil {
+		return nil, err
+	}
+	loaded, err := options.spec.resolve(ctx)
+	if err != nil {
 		return nil, err
 	}
 	db, err := sql.Open("pgx", options.dbURL)

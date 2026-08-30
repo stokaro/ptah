@@ -176,3 +176,19 @@ func runInferenceCommand(c *qt.C, args ...string) (stdout, stderr string, err er
 	err = cmd.ExecuteContext(context.Background())
 	return out.String(), errs.String(), err
 }
+
+// TestOpen_AnArgumentErrorCostsNoRegistryRoundTrip pins the order of the
+// checks.
+//
+// Resolving a --release reaches a registry. A run that was going to be refused
+// for naming no database should not spend a network round trip finding that
+// out, and the reference here names an address nothing answers on -- so a
+// resolution that happened first would report that instead, and slowly.
+func TestOpen_AnArgumentErrorCostsNoRegistryRoundTrip(t *testing.T) {
+	c := qt.New(t)
+
+	_, _, err := runInferenceCommand(c, "status",
+		"--release", "oci://127.0.0.1:1/nothing-listens-here:v1", "--run-id", "r")
+
+	c.Assert(err, qt.ErrorMatches, `--db-url is required`)
+}
