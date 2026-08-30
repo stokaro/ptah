@@ -49,6 +49,7 @@ type OrderItem struct {
 // The PostgreSQL-only declarations give the security visualization a real
 // warning, an informational finding on the same table, and a routine finding
 // that cannot attach to an entity node. SQLite UI fixtures skip them.
+//
 //ptah:schema:role name="reporting" dialects="postgres"
 //ptah:schema:grant role="reporting" privilege="SELECT" on_table="orders" dialects="postgres"
 //ptah:schema:grant role="reporting" privilege="SELECT" on_table="products" dialects="postgres"

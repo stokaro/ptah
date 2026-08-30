@@ -4,7 +4,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
@@ -16,7 +16,9 @@ const desiredModels = join(fixtureRoot, 'internal', 'models');
 const baseModels = join(fixtureRoot, 'internal', 'base-models');
 const assetsRoot = join(siteRoot, 'src', 'assets');
 const samplesRoot = join(siteRoot, 'public', 'samples');
-const ptah = process.env.PTAH_BIN || join(repositoryRoot, 'bin', 'ptah');
+const ptah = process.env.PTAH_BIN
+  ? resolve(process.env.PTAH_BIN)
+  : join(repositoryRoot, 'bin', 'ptah');
 const viewport = { width: 1200, height: 760 };
 
 function run(args, cwd) {
