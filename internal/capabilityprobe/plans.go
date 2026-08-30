@@ -393,6 +393,10 @@ func postgresFamilyPlan(dialect string) plan {
 		// The deferral clause on a foreign key, asked as its own question
 		// because the PostgreSQL family splits on it: CockroachDB refuses every
 		// form while PostgreSQL and YugabyteDB accept them (stokaro/ptah#1624).
+		// UNIQUE as a CONSTRAINT rather than only as a unique index, which the
+		// Spanner interface in this family refuses. capability.UniqueConstraints
+		// carries the measurement (stokaro/ptah#2585).
+		acceptance(capability.UniqueConstraints, nil, t.table("uqc", "n int NOT NULL, CONSTRAINT uqc_uq UNIQUE (n)", "n")),
 		acceptance(capability.DeferrableConstraints,
 			append(t.uniquelyReferenced("dfp", "dfp_uq", "id"), t.table("dfc", "n int, id int", "n")),
 			"ALTER TABLE dfc ADD CONSTRAINT dfc_fk FOREIGN KEY (id) REFERENCES dfp (id) DEFERRABLE INITIALLY DEFERRED",
@@ -634,6 +638,11 @@ func mysqlFamilyPlan(dialect string) plan {
 		acceptanceNote(capability.CatalogViewDependencies, nil,
 			"SELECT 1 FROM information_schema.view_table_usage LIMIT 1",
 			"the catalog naming the tables a view reads",
+		),
+		// UNIQUE as a CONSTRAINT rather than only as a unique index. The MySQL
+		// family spells it the standard way (stokaro/ptah#2585).
+		acceptance(capability.UniqueConstraints, nil,
+			"CREATE TABLE uqc (n int NOT NULL, CONSTRAINT uqc_uq UNIQUE (n))",
 		),
 		// The MySQL family spells the table the same way, so the statement is
 		// the same question.

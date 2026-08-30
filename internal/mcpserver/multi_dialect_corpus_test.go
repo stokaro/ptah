@@ -72,7 +72,13 @@ var corpusRows = []corpusRow{
 	// (stokaro/ptah#1490).
 	{dialect: "cockroachdb"},
 	{dialect: "yugabytedb"},
-	{dialect: "spanner"},
+	// The corpus document declares a unique column, and the Spanner PostgreSQL
+	// interface has no UNIQUE constraint in either spelling -- measured, it
+	// answers `<UNIQUE> constraint is not supported, create a unique index
+	// instead.` Ptah refuses rather than emitting DDL the server rejects, so
+	// this row is a refusal for the same reason ClickHouse's is
+	// (stokaro/ptah#2585).
+	{dialect: "spanner", refusedBecause: "has no UNIQUE constraint"},
 	{dialect: "oracle"},
 }
 

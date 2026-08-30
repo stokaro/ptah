@@ -193,6 +193,10 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:          {true, "ACCEPTED CREATE TABLE xmlt (c XML)"},
 			},
 			carried: map[capability.Capability]string{
+				capability.UniqueConstraints: "this run predates the key and sent no UNIQUE constraint. The key was " +
+					"decided from the two servers that refuse the spelling -- the Spanner emulator and " +
+					"ClickHouse -- and carried true elsewhere, so this line inherits a value no statement " +
+					"here established (stokaro/ptah#2585)",
 				capability.ContinuousAggregates: "this run predates the key and sent no CREATE MATERIALIZED VIEW " +
 					"WITH (timescaledb.continuous). The key names a TimescaleDB object for the reason " +
 					"Hypertables does: what decides it is `pg_extension` on the connection, not the server " +
@@ -266,6 +270,10 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:                            {false, "REFUSED CREATE TABLE xmlt (c XML) -> Error 1064 (42000)"},
 			},
 			carried: map[capability.Capability]string{
+				capability.UniqueConstraints: "this run predates the key and sent no UNIQUE constraint. The key was " +
+					"decided from the two servers that refuse the spelling -- the Spanner emulator and " +
+					"ClickHouse -- and carried true elsewhere, so this line inherits a value no statement " +
+					"here established (stokaro/ptah#2585)",
 				capability.ContinuousAggregates: "this run predates the key and sent no CREATE MATERIALIZED VIEW " +
 					"WITH (timescaledb.continuous). The key names a TimescaleDB object for the reason " +
 					"Hypertables does: what decides it is `pg_extension` on the connection, not the server " +
@@ -340,6 +348,10 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:                            {false, "REFUSED CREATE TABLE xmlt (c XML) -> Error 4161 (HY000): Unknown data type: 'XML'"},
 			},
 			carried: map[capability.Capability]string{
+				capability.UniqueConstraints: "this run predates the key and sent no UNIQUE constraint. The key was " +
+					"decided from the two servers that refuse the spelling -- the Spanner emulator and " +
+					"ClickHouse -- and carried true elsewhere, so this line inherits a value no statement " +
+					"here established (stokaro/ptah#2585)",
 				capability.ContinuousAggregates: "this run predates the key and sent no CREATE MATERIALIZED VIEW " +
 					"WITH (timescaledb.continuous). The key names a TimescaleDB object for the reason " +
 					"Hypertables does: what decides it is `pg_extension` on the connection, not the server " +

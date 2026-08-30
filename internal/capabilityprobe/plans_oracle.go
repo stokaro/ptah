@@ -187,6 +187,12 @@ func oraclePlan() plan {
 			[]string{"CREATE TABLE rcc (n NUMBER(10))"},
 			"ALTER TABLE rcc RENAME COLUMN n TO m",
 		),
+		// UNIQUE as a CONSTRAINT, asked because two dialects in the registry
+		// refuse the spelling and Oracle is not expected to be one of them
+		// (stokaro/ptah#2585).
+		acceptance(capability.UniqueConstraints, nil,
+			"CREATE TABLE uqc (n NUMBER(10) NOT NULL, CONSTRAINT uqc_uq UNIQUE (n))",
+		),
 		acceptance(capability.DeferrableConstraints,
 			[]string{
 				"CREATE TABLE dfc_parent (id NUMBER(10) PRIMARY KEY)",

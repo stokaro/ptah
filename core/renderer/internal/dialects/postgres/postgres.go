@@ -1306,6 +1306,9 @@ func (r *Renderer) columnKeyAndNullability(column *ast.ColumnNode) ([]string, er
 
 	var parts []string
 	if column.Unique {
+		if !r.capabilities().Has(capability.UniqueConstraints) {
+			return nil, r.uniqueConstraintUnsupported("", []string{column.Name})
+		}
 		parts = append(parts, "UNIQUE")
 	}
 	if column.Nullable {
@@ -1525,6 +1528,9 @@ func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, err
 		}
 		return line, nil
 	case ast.UniqueConstraint:
+		if !r.capabilities().Has(capability.UniqueConstraints) {
+			return "", r.uniqueConstraintUnsupported(constraint.Name, constraint.Columns)
+		}
 		clause := "UNIQUE"
 		if constraint.NullsDistinct != nil {
 			clause += " " + renderNullsDistinctClause(constraint.NullsDistinct)
@@ -2946,6 +2952,28 @@ func looksEncrypted(password string) bool {
 
 	// If none of the above, likely plaintext
 	return false
+}
+
+// uniqueConstraintUnsupported is the refusal a target without
+// [capability.UniqueConstraints] gets. It names the remedy, because the target
+// that has this capability false is the one whose server names it too: Spanner
+// answers `<UNIQUE> constraint is not supported, create a unique index
+// instead.`
+//
+// Refused rather than lowered to that index. A declaration says constraint and
+// the author gets a constraint or an error, which is the same answer SERIAL
+// gets on the dialects that have no auto-increment: a construct the target
+// cannot host is not quietly replaced by a different object with a different
+// name in the catalog (stokaro/ptah#2585).
+func (r *Renderer) uniqueConstraintUnsupported(name string, columns []string) error {
+	subject := fmt.Sprintf("the UNIQUE constraint on (%s)", strings.Join(columns, ", "))
+	if name != "" {
+		subject = fmt.Sprintf("UNIQUE constraint %q", name)
+	}
+	return unsupportedFeaturef(
+		"%s: %s cannot be rendered: this target has no UNIQUE constraint and takes the same "+
+			"guarantee as a unique index — declare a unique index on those columns instead",
+		r.dialect, subject)
 }
 
 func unsupportedFeaturef(format string, args ...any) error {
