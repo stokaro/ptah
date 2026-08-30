@@ -2,6 +2,61 @@
 
 This file gives coding agents repository-local guidance for working in Ptah.
 
+## Where Work Happens
+
+**Every change is made in a linked git worktree. Never work in the main
+worktree.** Not a branch created in place, not a stash, and not a single file
+edited where it sits: create a worktree, work there, and open the pull request
+from it.
+
+The worktree goes under one of two directories, at the first level of the
+repository root, named for the agent that made it:
+
+```bash
+git worktree add .claude/worktrees/<name> -b <branch> origin/master
+git worktree add .codex/worktrees/<name>  -b <branch> origin/master
+```
+
+`<name>` describes the task -- `2538-constraint-include`, not `tmp` or `wt2`.
+Both directories are ignored, so a checkout parked there is invisible to
+`git status` and cannot be committed by a careless `git add -A`.
+
+Four things this buys, and each of them is a failure somebody already had:
+
+- **Two agents can work at once.** They do, constantly. A second agent that
+  checks out a branch in the shared main worktree moves the first one's work to
+  a branch it did not ask for, and the files it was editing appear to vanish.
+- **The main worktree stays a clean reference.** Measuring a claim against
+  master is the first step of most bug work here, and it needs a checkout that
+  is actually at master rather than one carrying half a fix.
+- **Abandoned work is deleted, not merged by accident.** `git worktree remove`
+  takes the whole attempt with it. A branch abandoned in place stays checked
+  out, and the next `git add -A` picks up whatever it left behind.
+- **The task's identity is in the path.** A directory named for one issue that
+  holds another issue's branch is a visible mistake; the same mistake in a
+  shared checkout is invisible.
+
+Branch from `origin/master`, not from the local `master` ref, and fetch first.
+A local `master` is whatever it was the last time somebody pulled -- measured
+once at 148 commits behind, which made every "measured against master" statement
+in that session wrong.
+
+**Clean up when the work merges.** `git worktree remove <path>`, then delete the
+local branch. A squash-merged branch is not "merged" as far as `git branch -d`
+is concerned, so confirm the content reached master and use `-D`. Never remove a
+worktree you did not create: a path that already exists is another agent's claim
+on that task, and `--force` on it destroys work that has no pull request yet.
+
+**A nested checkout is a hazard for any tool that walks the filesystem.** The
+root of a linked worktree is an ordinary directory whose `.git` is a regular
+file, so nothing prunes it by name and a walk descends into every checkout
+parked under the repository -- reporting another branch's files as this one's.
+`scripts/check-test-style.sh` and `scripts/list-go-modules.sh` both document
+this and both ask git instead, which cannot leave the working tree. **A new gate
+that enumerates files asks `git ls-files`.** One that walks is wrong here by
+construction, and it will be wrong quietly: it reports findings, they look real,
+and their paths point at a checkout the reader does not have.
+
 ## What Ptah Is
 
 Ptah generates SQL DDL from annotated Go structs, compares a desired schema
