@@ -1482,7 +1482,7 @@
         "/schema/security/"
       ],
       "visibleWords": 1831,
-      "sourceBytes": 14406
+      "sourceBytes": 14409
     },
     {
       "path": "docs/site/src/content/docs/direct/overview.md",
@@ -3384,8 +3384,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8331,
-      "sourceBytes": 77257
+      "visibleWords": 8352,
+      "sourceBytes": 77459
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",
@@ -3489,8 +3489,8 @@
         "/testing/ci/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 2999,
-      "sourceBytes": 21855
+      "visibleWords": 3003,
+      "sourceBytes": 21880
     },
     {
       "path": "docs/site/src/content/docs/reference/extension-variables.md",
@@ -3656,7 +3656,7 @@
         "/schema/overview/"
       ],
       "visibleWords": 1834,
-      "sourceBytes": 14958
+      "sourceBytes": 14961
     },
     {
       "path": "docs/site/src/content/docs/reference/lint-rules.md",
@@ -3811,8 +3811,8 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 7081,
-      "sourceBytes": 47966
+      "visibleWords": 7087,
+      "sourceBytes": 48024
     },
     {
       "path": "docs/site/src/content/docs/reference/overview.mdx",
@@ -3898,8 +3898,8 @@
         "/reference/capabilities/",
         "/testing/migrations-and-schema/"
       ],
-      "visibleWords": 471,
-      "sourceBytes": 3965
+      "visibleWords": 519,
+      "sourceBytes": 4226
     },
     {
       "path": "docs/site/src/content/docs/reference/yaml-schema.md",
@@ -5331,8 +5331,8 @@
         "/testing/ci/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 964,
-      "sourceBytes": 9818
+      "visibleWords": 1026,
+      "sourceBytes": 10382
     },
     {
       "path": "docs/site/src/content/docs/versioned/apply.md",

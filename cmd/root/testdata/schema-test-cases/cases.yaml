@@ -1,0 +1,11 @@
+# One valid case, so `schema test` reaches its desired-schema source.
+#
+# The OCI reachability probe drives the real command, and the command loads its
+# cases before it resolves the schema. Without a case file the run would fail on
+# the cases and the probe would measure that instead of the registry dial.
+cases:
+  - name: reaches the desired-schema source
+    steps:
+      - assert:
+          query: "SELECT 1"
+          row_count: 1

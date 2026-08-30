@@ -172,14 +172,18 @@ const commands = [
     design: [...localFiles, 'external-program', 'configured-external', 'oci-artifact', 'live-database', 'migration-directory', 'composite-source'],
     limitations: Object.fromEntries(allSourceIds.map((id) => [id, id === 'go-annotations' ? '' : 'HCL export rewrites Go annotations and deliberately accepts only --root-dir.'])),
   }),
-  desiredCommand('ptah schema test', ['schema', 'test'], 'cmd/schema/test.go', ['cmd/schema/test_test.go'], {
-    verified: [...localFiles, 'go-annotations', 'live-database'],
-    design: ['external-program', 'configured-external', 'oci-artifact', 'migration-directory'],
+  desiredCommand('ptah schema test', ['schema', 'test'], 'cmd/schema/test.go', ['cmd/schema/test_test.go', 'cmd/schema/test_source_test.go'], {
+    verified: [...localFiles, 'go-annotations', 'live-database', 'oci-artifact'],
+    design: ['external-program', 'configured-external', 'migration-directory'],
     gap: ['composite-source'],
+    // One selector per source kind, and each names what it takes: --root-dir a
+    // directory of Go annotations, --schema-file a file, --source-db-url a live
+    // database. --db-url stays the throwaway target (stokaro/ptah#2571).
     invocations: Object.fromEntries([
-      ...localFiles.map((id) => [id, `--root-dir schema.${id.split('-')[0]} --dir ./tests`]),
+      ...localFiles.map((id) => [id, `--schema-file schema.${id.split('-')[0]} --dir ./tests`]),
       ['go-annotations', '--root-dir ./models --dir ./tests'],
-      ['live-database', '--root-dir sqlite://source.db --db-url sqlite://throwaway.db --dir ./tests'],
+      ['live-database', '--source-db-url sqlite://source.db --db-url sqlite://throwaway.db --dir ./tests'],
+      ['oci-artifact', '--schema-file oci://registry.example/app:v1 --dir ./tests'],
     ]),
     limitations: { 'live-database': 'The destination must be throwaway; a non-SQLite source requires an explicit matching --db-url.' },
     suffix: '--dir ./tests',

@@ -269,7 +269,7 @@ target dialect.
 `--schema-file` also accepts an `oci://` schema artifact, the same way every
 other command with a `--schema-file` does. That is the selector the transport
 belongs to: `schema diff` takes its desired-schema sources through
-`--from`/`--to` and `schema test` through `--root-dir`, and neither resolves
+`--from`/`--to` and `schema test` through `--schema-file`, and neither resolves
 `oci://` — both answer `unsupported desired-state URL scheme "oci"` or treat
 the value as a path, and neither registers `--plain-http`. The artifact is
 pulled to its canonical HCL, then materialized and introspected like any other

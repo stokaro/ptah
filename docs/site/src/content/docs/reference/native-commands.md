@@ -641,6 +641,7 @@ named beside it:
 | `ptah schema plan` | `--schema-file` | desired schema |
 | `ptah schema apply` | `--schema-file` | desired schema |
 | `ptah schema push` | `--schema-file` | desired schema |
+| `ptah schema test` | `--schema-file` | desired schema |
 | `ptah migrations plan` | `--schema-file` | desired schema |
 | `ptah migrations generate` | `--schema-file` | desired schema |
 

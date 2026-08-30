@@ -1192,11 +1192,14 @@ Read the columns as follows.
 | --- | --- | --- | --- | --- |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--dir` | `string` | `./tests` | `PTAH_DIR` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--report` | `string` | `text` | `PTAH_REPORT` | — |
 | `--root-dir` | `string` | `./models` | `PTAH_ROOT_DIR` | — |
 | `--run` | `string` | — | `PTAH_RUN` | — |
 | `--schema` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
+| `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--seed-dir` | `string` | — | `PTAH_SEED_DIR` | — |
+| `--source-db-url` | `string` | — | `PTAH_SOURCE_DB_URL` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
 **`ptah schema validate`**
