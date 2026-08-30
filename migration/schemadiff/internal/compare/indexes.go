@@ -13,89 +13,6 @@ import (
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
-// isConstraintBasedUniqueIndex determines if a unique index was automatically created by a UNIQUE constraint.
-//
-// Different database systems create unique indexes with different naming patterns when UNIQUE
-// constraints are defined on columns:
-//
-// **PostgreSQL**:
-//   - tablename_columnname_key (single column)
-//   - tablename_columnname1_columnname2_key (multiple columns)
-//
-// **MySQL/MariaDB**:
-//   - Simple column names (e.g., "email", "username") for single-column constraints
-//   - Constraint names for multi-column constraints (e.g., "uk_users_email_name")
-//
-// This function identifies such constraint-based indexes to distinguish them from explicitly
-// defined unique indexes created via schema annotations.
-//
-// # Assumptions
-//
-// This function relies on standard naming conventions used by database systems for
-// constraint-based indexes. These patterns may vary with different database versions,
-// configurations, or custom naming schemes. The detection is based on common patterns
-// observed in PostgreSQL 12+, MySQL 8.0+, and MariaDB 10.5+.
-//
-// # Parameters
-//
-//   - indexName: The name of the index to check
-//   - tableName: The name of the table the index belongs to
-//   - columns: The columns that the index covers (used for MySQL/MariaDB detection)
-//
-// # Returns
-//
-// Returns true if the index appears to be constraint-based, false if it's explicitly defined.
-//
-// # Examples
-//
-//	// PostgreSQL
-//	isConstraintBasedUniqueIndex("users_email_key", "users", []string{"email"})     // true
-//	isConstraintBasedUniqueIndex("tenants_slug_idx", "tenants", []string{"slug"})   // false
-//
-//	// MySQL/MariaDB
-//	isConstraintBasedUniqueIndex("email", "users", []string{"email"})               // true
-//	isConstraintBasedUniqueIndex("idx_users_custom", "users", []string{"email"})    // false
-func isConstraintBasedUniqueIndex(indexName, tableName string, columns []string) bool {
-	// PostgreSQL pattern: tablename_columnname_key
-	if strings.HasSuffix(indexName, "_key") {
-		expectedPrefix := tableName + "_"
-		return strings.HasPrefix(indexName, expectedPrefix) && postgresConstraintPattern.MatchString(indexName)
-	}
-
-	// MySQL/MariaDB pattern: simple column name for single-column unique constraints
-	// MySQL automatically creates indexes with the same name as the column for UNIQUE constraints
-	if len(columns) == 1 {
-		// Only consider it constraint-based if the index name matches the column name,
-		// and it does NOT match custom index patterns (e.g., does not start with "idx_" or "index_").
-		// We don't check mysqlTableColumnsPattern here because simple column names like "email"
-		// don't match that pattern (it requires table_column format).
-		return indexName == columns[0] &&
-			!customIndexPattern.MatchString(indexName)
-	}
-
-	// MySQL/MariaDB constraint-based indexes with "uk_" prefix
-	if mysqlUKPattern.MatchString(indexName) {
-		return true
-	}
-
-	// Be more conservative about table_column patterns - only consider it constraint-based
-	// if it follows a very specific pattern and doesn't look like a custom index name
-	if isMySQLConstraintBasedUniqueIndex(indexName, tableName) {
-		return true
-	}
-
-	return false
-}
-
-// isMySQLConstraintBasedUniqueIndex checks if an index follows MySQL/MariaDB constraint-based patterns.
-// This helper function encapsulates the complex logic for detecting MySQL/MariaDB constraint-based
-// unique indexes that follow table_column naming patterns but are not custom indexes.
-func isMySQLConstraintBasedUniqueIndex(indexName, tableName string) bool {
-	return mysqlTableColumnsPattern.MatchString(indexName) &&
-		strings.HasPrefix(indexName, tableName+"_") &&
-		!customIndexPattern.MatchString(indexName)
-}
-
 // Indexes performs index comparison between generated and database schemas with intelligent filtering.
 //
 // This function handles the comparison of database indexes, which requires careful
@@ -449,7 +366,7 @@ func isHexDigit(b byte) bool {
 //
 //	fixture                     | filter that stranded it
 //	UNIQUE KEY uq_users_email   | the same-named UNIQUE constraint (#1245)
-//	UNIQUE KEY uk_users_email   | isConstraintBasedUniqueIndex's name pattern
+//	UNIQUE KEY uk_users_email   | a scan of the index's NAME, removed in #2615
 //	CONSTRAINT fk_posts_user    | the FOREIGN KEY backing index (#1258)
 //
 // and on PostgreSQL 17.10 for `CONSTRAINT uq_users_email UNIQUE (email)`
@@ -596,6 +513,23 @@ func unaddressableDatabaseIndex(index catalog.Index, dialect string) bool {
 // Only the UNIQUE set decides how a removal is spelled; an EXCLUDE's index
 // reaching a removal at all means the desired state declared an index under the
 // constraint's name, which is a separate question from this one.
+//
+// The three sets are the whole answer. A fourth branch used to follow them and
+// read the index's NAME -- a name ending in `_key` that begins with the table's
+// name, or a single-column index whose name equals the column -- on every
+// dialect but SQL Server. It compensated for a catalog that reports a backing
+// index without the constraint behind it, which is a shape a fixture can have
+// and a reader does not produce: measured on PostgreSQL 18, a real
+// `ALTER TABLE ... ADD CONSTRAINT ... UNIQUE` is reported as a constraint and
+// its index is caught by owned.unique above.
+//
+// What the branch actually did was hide a user's own index. Same table, same
+// column, same desired schema declaring no index: `ptah schema compare`
+// answered "No schema differences detected" for one named `slug` or
+// `tenants_slug_key`, and planned `DROP INDEX` for the identical object named
+// `tenants_slug`, `uk_tenants_slug` or `idx_tenants_slug`. The removal the
+// author asked for was never planned, and `--dry-run` reported the database in
+// sync (stokaro/ptah#2615).
 func constraintOwnedDatabaseIndex(
 	index catalog.Index,
 	dialect string,
@@ -608,12 +542,8 @@ func constraintOwnedDatabaseIndex(
 	if _, foreignKeyBacked := owned.foreignKeys[identity]; foreignKeyBacked {
 		return true
 	}
-	if _, exclusionBacked := owned.exclusions[identity]; exclusionBacked {
-		return true
-	}
-	return platform.NormalizeDialect(dialect) != platform.SQLServer &&
-		index.IsUnique &&
-		isConstraintBasedUniqueIndex(index.Name, index.TableName, index.Columns)
+	_, exclusionBacked := owned.exclusions[identity]
+	return exclusionBacked
 }
 
 func appendIndexDifferences(

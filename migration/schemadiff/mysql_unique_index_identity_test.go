@@ -140,13 +140,18 @@ func TestCompareWithDialect_NoObjectIsBothAddedAndRemoved(t *testing.T) {
 }
 
 // TestCompareWithDialect_NameHeuristicUniqueKeyIsSynced covers the other filter
-// that stranded the same object. isConstraintBasedUniqueIndex guesses from the
-// name that a unique index backs a constraint, and `uk_users_email` matches its
-// MySQL pattern, so the database index was dropped from the pool before the
-// same-name UNIQUE constraint was even consulted. Measured on MySQL 9.7.1,
-// replaying that database's own inspect output planned CREATE UNIQUE INDEX plus
-// ALTER TABLE DROP INDEX where the pinned community binary v1.3.0 reported
-// "Schema is synced".
+// that stranded the same object. A scan of the index's NAME guessed that a
+// unique index backs a constraint, and `uk_users_email` matched its MySQL
+// pattern, so the database index was dropped from the pool before the same-name
+// UNIQUE constraint was even consulted. Measured on MySQL 9.7.1, replaying that
+// database's own inspect output planned CREATE UNIQUE INDEX plus ALTER TABLE
+// DROP INDEX where the pinned community binary v1.3.0 reported "Schema is
+// synced".
+//
+// The scan is gone (stokaro/ptah#2615) and these rows now pass on the catalog's
+// evidence: the fixture carries the UNIQUE constraint beside its backing index,
+// which is what the reader reports. The name in each row is the one the scan
+// recognized, kept because it is the shape a regression would take.
 func TestCompareWithDialect_NameHeuristicUniqueKeyIsSynced(t *testing.T) {
 	tests := []struct {
 		name      string

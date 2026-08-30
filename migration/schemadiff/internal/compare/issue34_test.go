@@ -84,8 +84,15 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 			},
 		}
 
-		// Database has both constraint-based and explicitly defined indexes
+		// Database has both constraint-based and explicitly defined indexes.
+		// The constraints are named beside their backing indexes because that
+		// is what a catalog reports; the index's own name decides nothing
+		// (stokaro/ptah#2615).
 		database := &catalog.Database{
+			Constraints: []catalog.Constraint{
+				{Name: "users_email_key", TableName: "users", Type: "UNIQUE", ColumnNames: []string{"email"}},
+				{Name: "tenants_name_key", TableName: "tenants", Type: "UNIQUE", ColumnNames: []string{"name"}},
+			},
 			Indexes: []catalog.Index{
 				// Constraint-based indexes (should be ignored)
 				{Name: "tenants_pkey", TableName: "tenants", Columns: []string{"id"}, IsPrimary: true, IsUnique: false},
@@ -119,6 +126,9 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 
 		// Database has only one of the explicitly defined indexes
 		database := &catalog.Database{
+			Constraints: []catalog.Constraint{
+				{Name: "users_email_key", TableName: "users", Type: "UNIQUE", ColumnNames: []string{"email"}},
+			},
 			Indexes: []catalog.Index{
 				// Constraint-based indexes (should be ignored)
 				{Name: "users_email_key", TableName: "users", Columns: []string{"email"}, IsPrimary: false, IsUnique: true},
