@@ -243,7 +243,7 @@ jobs:
 
       - name: Upload desktop and mobile review snapshots
         if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master'
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ptah-docs-visual-snapshots
           path: ${{ runner.temp }}/ptah-docs-visual-snapshots
