@@ -43,6 +43,9 @@ func (d Document) Resolve(path string) (Loaded, error) {
 	if err != nil {
 		return Loaded{}, err
 	}
+	if err := d.checkApprovalPolicy(path); err != nil {
+		return Loaded{}, err
+	}
 
 	spec, err := d.spec(path)
 	if err != nil {
@@ -209,4 +212,24 @@ func resolveNormalization(raw, path string) (embedgen.VectorNormalization, error
 // resolveMetric reads target.metric.
 func resolveMetric(raw, path string) (embedgen.DistanceMetric, error) {
 	return resolveEnum(raw, path, "target.metric", embedgen.DistanceMetrics())
+}
+
+// checkApprovalPolicy refuses a signed-approval requirement standing alone.
+//
+// A signature is over an exact plan, so "signed but not exact" describes
+// nothing: every check that reads the signed requirement sits behind the exact
+// one, and a specification setting only the first got no approval requirement
+// at all -- a policy line that reads as the strictest setting available and
+// silently did nothing (stokaro/ptah#2068).
+//
+// Refused rather than implied. Implying it would make the file mean something
+// it does not say, and an operator reading their own specification back would
+// see one requirement where two are in force.
+func (d Document) checkApprovalPolicy(path string) error {
+	if d.Policy.RequireSignedApproval && !d.Policy.RequireExactApproval {
+		return fmt.Errorf(
+			"%s: policy.require_signed_approval needs policy.require_exact_approval, "+
+				"because a signature is given over one exact plan; set both or neither", path)
+	}
+	return nil
 }

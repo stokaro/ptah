@@ -62,3 +62,41 @@ func loadedDocument(c *qt.C, loaded embedspec.Loaded) []byte {
 	c.Assert(loaded.Document, qt.Not(qt.HasLen), 0)
 	return loaded.Document
 }
+
+// TestResolve_ASignedApprovalPolicyNeedsTheExactOne refuses a line that reads
+// as the strictest setting available and did nothing.
+//
+// A signature is given over one exact plan, so every check that reads the
+// signed requirement sits behind the exact one. A specification setting only
+// the first got no approval requirement at all: both a cutover and a retirement
+// proceeded with nothing signed and nobody named.
+func TestResolve_ASignedApprovalPolicyNeedsTheExactOne(t *testing.T) {
+	c := qt.New(t)
+	document := replaceOnce(complete,
+		"require_exact_approval: true", "require_exact_approval: false")
+	document = replaceOnce(document,
+		"require_consistency_mode: true",
+		"require_consistency_mode: true\n  require_signed_approval: true")
+
+	_, err := embedspec.Parse([]byte(document), "articles.yaml")
+
+	c.Assert(err, qt.ErrorMatches,
+		`.*policy.require_signed_approval needs policy.require_exact_approval.*`)
+}
+
+// TestResolve_BothTogetherAreAccepted is the control.
+//
+// Without it, a refusal written to reject the combination outright would
+// satisfy the test above and make a signed-approval policy unwritable.
+func TestResolve_BothTogetherAreAccepted(t *testing.T) {
+	c := qt.New(t)
+	document := replaceOnce(complete,
+		"require_consistency_mode: true",
+		"require_consistency_mode: true\n  require_signed_approval: true")
+
+	loaded, err := embedspec.Parse([]byte(document), "articles.yaml")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(loaded.Policy.RequireSignedApproval, qt.IsTrue)
+	c.Assert(loaded.Policy.RequireExactApproval, qt.IsTrue)
+}

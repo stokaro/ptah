@@ -2,7 +2,6 @@ package embedcutover
 
 import (
 	"strconv"
-	"strings"
 
 	"go.5x5.cz/ptah/internal/embeddigest"
 )
@@ -94,23 +93,7 @@ func DecideRetirement(
 	if !observed.holds(PermissionRetire) {
 		decision.refusef("the caller does not hold %s", PermissionRetire)
 	}
-	decideRetirementApproval(&decision, policy, approval, digest)
+	DecideApproval(&decision, policy, approval, digest)
 
 	return decision.settle()
-}
-
-// decideRetirementApproval holds a destructive plan to its approval.
-func decideRetirementApproval(decision *Decision, policy Policy, approval *Approval, digest string) {
-	if !policy.RequireExactApproval {
-		return
-	}
-	switch {
-	case approval == nil:
-		decision.refusef("this policy requires an approval and none was given")
-	case approval.PlanDigest != digest:
-		decision.refusef("the approval is bound to plan %s and this plan is %s",
-			shortOrNone(approval.PlanDigest), shortOrNone(digest))
-	case strings.TrimSpace(approval.Approver) == "":
-		decision.refusef("the approval names no approver")
-	}
 }

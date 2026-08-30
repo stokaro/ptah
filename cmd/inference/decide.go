@@ -96,7 +96,7 @@ func publishVerification(
 	defer opened.close()
 	record, buildErr := embedrelease.NewVerificationRecord(
 		verificationRecord(opened.loaded.Spec, report, nil, time.Now().UTC()))
-	return publishRecord(ctx, out, options.spec.plainHTTP, evidence, record, buildErr)
+	return publishRecord(ctx, out, options, evidence, record, buildErr)
 }
 
 // recordVerification writes the pass onto the generation.
@@ -221,7 +221,7 @@ func runCutover(
 	if err := reachPhase(ctx, options, runID, embedrun.PhaseCutOver); err != nil {
 		return err
 	}
-	return publishCutover(ctx, out, options.spec.plainHTTP, opened, plan, report,
+	return publishCutover(ctx, out, options, opened, plan, report,
 		approverName(approval), now, stabilizeFor, evidence)
 }
 
@@ -231,7 +231,7 @@ func runCutover(
 // reason the window is: the cutover happened, and a registry being unreachable
 // is not a fact about it.
 func publishCutover(
-	ctx context.Context, out io.Writer, plainHTTP bool, opened *session, plan embedcutover.Plan,
+	ctx context.Context, out io.Writer, options commonOptions, opened *session, plan embedcutover.Plan,
 	report embedverify.Report, approver string, at time.Time,
 	stabilizeFor time.Duration, evidence evidenceOptions,
 ) error {
@@ -251,7 +251,7 @@ func publishCutover(
 		cutover.StabilizeUntil = at.Add(stabilizeFor)
 	}
 	record, buildErr := embedrelease.NewCutoverRecord(cutover)
-	return publishRecord(ctx, out, plainHTTP, evidence, record, buildErr)
+	return publishRecord(ctx, out, options, evidence, record, buildErr)
 }
 
 // openStabilization starts the window in which the previous generation is still
@@ -463,7 +463,7 @@ func publishRetirement(
 		PlanDigest: identity.digest, Approver: approverName(approval),
 		RetiredAt: at,
 	})
-	return publishRecord(ctx, out, options.spec.plainHTTP, options.evidence, record, buildErr)
+	return publishRecord(ctx, out, options.commonOptions, options.evidence, record, buildErr)
 }
 
 // retiredObjects names what the retirement removed.

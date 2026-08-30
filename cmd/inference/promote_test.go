@@ -192,3 +192,51 @@ func TestOpen_AnArgumentErrorCostsNoRegistryRoundTrip(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `--db-url is required`)
 }
+
+// TestDescribe_RefusesAReleaseThatDoesNotDescribeWhatItHolds is the second half
+// of the release's internal consistency.
+//
+// The digest check establishes that the bytes are the document the record
+// named. This establishes that the document produces the generation the record
+// CLAIMS. Without it a release recording generation A while carrying a
+// correctly digested specification for B runs B, while the resolution notice,
+// the OCI subject and every verification attached to it go on identifying A.
+func TestDescribe_RefusesAReleaseThatDoesNotDescribeWhatItHolds(t *testing.T) {
+	c := qt.New(t)
+	specPath := writeDescribeSpec(c, "test-embed", "embedding")
+
+	_, _, err := runInferenceCommand(c, "describe",
+		"--release", publishReleaseClaiming(c, specPath, "a-generation-it-does-not-hold"))
+
+	c.Assert(err, qt.ErrorMatches,
+		`.*records generation .* and the specification it carries produces .*`)
+}
+
+// publishReleaseClaiming publishes a release whose record names a generation
+// its own specification does not produce.
+func publishReleaseClaiming(c *qt.C, specPath, generation string) string {
+	c.Helper()
+	declared, err := embedspec.Load(specPath)
+	c.Assert(err, qt.IsNil)
+
+	record, err := embedrelease.NewReleaseRecord(embedrelease.Release{
+		Generation: generation,
+		SpecDigest: declared.Digest,
+		Target:     declared.Spec.Target.Table,
+		CreatedAt:  time.Now().UTC(),
+	}, readFile(c, specPath))
+	c.Assert(err, qt.IsNil)
+
+	reference := ociartifact.LayoutScheme + c.TempDir() + "/release:v1"
+	target, tag, err := ociartifact.OpenLayout(reference)
+	c.Assert(err, qt.IsNil)
+	archive := fstest.MapFS{record.FileName: &fstest.MapFile{Data: record.Body}}
+	for name, body := range record.Files {
+		archive[name] = &fstest.MapFile{Data: body}
+	}
+	_, err = ociartifact.PushTo(c.Context(), target, archive, ociartifact.PushOptions{
+		ArtifactType: record.ArtifactType, Tags: []string{tag},
+	})
+	c.Assert(err, qt.IsNil)
+	return reference
+}

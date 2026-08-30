@@ -157,6 +157,19 @@ func decideAuthority(decision *Decision, policy Policy, observed Observed, appro
 	if !observed.holds(PermissionCutover) {
 		decision.refusef("the caller does not hold %s", PermissionCutover)
 	}
+	DecideApproval(decision, policy, approval, digest)
+}
+
+// DecideApproval answers whether one approval authorizes one exact plan.
+//
+// It is shared by the cutover and the retirement rather than written twice,
+// and the duplication it replaces is the reason to have it: the signed-approval
+// requirement was added to the cutover's copy alone, so
+// `retire --approve <digest> --approver <name>` satisfied a policy demanding a
+// cryptographically verified approval and authorized an irreversible deletion.
+// The colliding-short-digest diagnostic had reached only one copy for the same
+// reason.
+func DecideApproval(decision *Decision, policy Policy, approval *Approval, digest string) {
 	if !policy.RequireExactApproval {
 		return
 	}

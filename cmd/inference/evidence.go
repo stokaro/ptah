@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -109,7 +110,7 @@ func verificationRecord(
 // not do what it did, and the registry being unreachable is not a fact about the
 // generation.
 func publishRecord(
-	ctx context.Context, out io.Writer, plainHTTP bool, evidence evidenceOptions,
+	ctx context.Context, out io.Writer, options commonOptions, evidence evidenceOptions,
 	record embedrelease.Record, err error,
 ) error {
 	if err != nil {
@@ -121,7 +122,12 @@ func publishRecord(
 	if evidence.publishTo == "" && evidence.attachTo == "" {
 		return nil
 	}
-	result, publishErr := sendRecord(ctx, plainHTTP, evidence, record)
+	if err := refuseMixedPlainHTTP(options, evidence); err != nil {
+		// Before the push rather than after: the point is that a credential
+		// for the second registry never leaves over an unencrypted connection.
+		return err
+	}
+	result, publishErr := sendRecord(ctx, options.spec.plainHTTP, evidence, record)
 	if publishErr != nil {
 		return writeLines(out, bullet(fmt.Sprintf(
 			"the record was not published: %v", publishErr)))
@@ -145,6 +151,57 @@ func sendRecord(
 		return embedrelease.Attach(ctx, evidence.attachTo, record, options)
 	}
 	return embedrelease.Publish(ctx, evidence.publishTo, record, options)
+}
+
+// refuseMixedPlainHTTP stops one unencrypted-transport decision covering two
+// registries.
+//
+// --plain-http says "this registry speaks HTTP", and it is one flag because one
+// run usually names one registry. A run that fetches --release from a trusted
+// local registry and publishes its record to an authenticated production one
+// names two, and forwarding the exception to both would offer the second
+// registry's credential over an unencrypted connection -- which is the opposite
+// of what the flag's own help promises.
+//
+// Refused rather than scoped per host: a run that meant to reach two registries
+// on two transports can say so by publishing in a second command, and a flag
+// that quietly applied to one of them would be the silent half of this problem
+// rather than the fix.
+func refuseMixedPlainHTTP(options commonOptions, evidence evidenceOptions) error {
+	if !options.spec.plainHTTP || strings.TrimSpace(options.spec.reference) == "" {
+		return nil
+	}
+	release := registryHostOf(options.spec.reference)
+	destination := evidence.publishTo
+	if destination == "" {
+		destination = evidence.attachTo
+	}
+	if host := registryHostOf(destination); host == release {
+		return nil
+	}
+	return fmt.Errorf(
+		"--plain-http is one registry's exception and this run names two: %s for the release "+
+			"and %s for the record; publish the record in a separate command, or reach both "+
+			"over TLS",
+		registryHostOf(options.spec.reference), registryHostOf(destination))
+}
+
+// registryHostOf is the host an OCI reference addresses, for comparison only.
+//
+// An oci-layout:// directory has no host and compares equal to nothing, which
+// is the right answer: a local directory is not a registry a credential is
+// offered to.
+func registryHostOf(reference string) string {
+	trimmed := strings.TrimSpace(reference)
+	if ociartifact.IsLayoutRef(trimmed) {
+		return trimmed
+	}
+	_, rest, found := strings.Cut(trimmed, "://")
+	if !found {
+		rest = trimmed
+	}
+	host, _, _ := strings.Cut(rest, "/")
+	return host
 }
 
 // writeRecordFile keeps the record where a registry is not.

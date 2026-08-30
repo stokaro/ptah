@@ -10,6 +10,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // the driver the PostgreSQL vertical uses
 
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/embeddigest"
 	"go.5x5.cz/ptah/internal/embedpg"
 	"go.5x5.cz/ptah/internal/embedrelease"
 	"go.5x5.cz/ptah/internal/embedspec"
@@ -143,7 +144,31 @@ func (s *specSource) read(ctx context.Context) (embedspec.Loaded, error) {
 	if err != nil {
 		return embedspec.Loaded{}, err
 	}
+	if err := agreesWithItsRecord(reference, fetched, loaded); err != nil {
+		return embedspec.Loaded{}, err
+	}
 	return loaded, s.reportResolution(fetched)
+}
+
+// agreesWithItsRecord checks the release against the specification it carries.
+//
+// Two checks, and the digest one is not enough on its own. It establishes that
+// the bytes are the document the record named; this establishes that the
+// document produces the generation the record CLAIMS. A release whose record
+// says generation A while its correctly digested specification resolves to B
+// would otherwise run B while the resolution notice, the OCI subject and every
+// verification attached to it went on identifying A.
+func agreesWithItsRecord(
+	reference string, fetched embedrelease.Fetched, loaded embedspec.Loaded,
+) error {
+	identity := loaded.Spec.Identity().Digest
+	if fetched.Release.Generation == identity {
+		return nil
+	}
+	return fmt.Errorf(
+		"%s records generation %s and the specification it carries produces %s, "+
+			"so the release does not describe what it holds",
+		reference, embeddigest.Short(fetched.Release.Generation), embeddigest.Short(identity))
 }
 
 // reportResolution says which artifact a mutable reference turned out to name.

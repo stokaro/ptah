@@ -2577,8 +2577,8 @@
         "/inference/concepts/consistency/"
       ],
       "inboundLinks": [],
-      "visibleWords": 840,
-      "sourceBytes": 7165
+      "visibleWords": 854,
+      "sourceBytes": 7247
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/support-and-limitations.md",

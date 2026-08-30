@@ -105,7 +105,7 @@ func runPlan(
 	if err := printPlan(out, plan); err != nil {
 		return err
 	}
-	return publishRelease(ctx, out, options.spec.plainHTTP, opened.loaded, plan, evidence)
+	return publishRelease(ctx, out, options, opened.loaded, plan, evidence)
 }
 
 // publishRelease leaves the record of what this change proposes.
@@ -117,7 +117,7 @@ func runPlan(
 // Refusing here would lose the proposal an operator most wants to circulate,
 // the one that is waiting on something.
 func publishRelease(
-	ctx context.Context, out io.Writer, plainHTTP bool, loaded embedspec.Loaded,
+	ctx context.Context, out io.Writer, options commonOptions, loaded embedspec.Loaded,
 	plan embedreport.Plan, evidence evidenceOptions,
 ) error {
 	// Any destination is a reason to build the record, and none of them is a
@@ -128,7 +128,7 @@ func publishRelease(
 	}
 	record, buildErr := embedrelease.NewReleaseRecord(
 		embedreport.BuildRelease(loaded, plan, time.Now().UTC()), loaded.Document)
-	return publishRecord(ctx, out, plainHTTP, evidence, record, buildErr)
+	return publishRecord(ctx, out, options, evidence, record, buildErr)
 }
 
 // printPlan renders the plan for a person.

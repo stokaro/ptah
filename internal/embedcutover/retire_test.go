@@ -1,6 +1,7 @@
 package embedcutover_test
 
 import (
+	"fmt"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -200,4 +201,55 @@ func TestDecideRetirement_RequiresAnApprovalWhereThePolicyDoesAndNotWhereItDoesN
 // approvalForRetirement is an approval bound to exactly this retirement plan.
 func approvalForRetirement(plan embedcutover.RetirementPlan) *embedcutover.Approval {
 	return &embedcutover.Approval{PlanDigest: plan.Digest(), Approver: "an operator"}
+}
+
+// TestDecideRetirement_ASignedApprovalPolicyRefusesAName is the finding a
+// review caught: the signed requirement reached the cutover's copy of the
+// approval check and not the retirement's.
+//
+// Retirement is the one operation that cannot be undone, so a policy demanding
+// a cryptographically verified approver mattering less there than at a cutover
+// is exactly backwards.
+func TestDecideRetirement_ASignedApprovalPolicyRefusesAName(t *testing.T) {
+	c := qt.New(t)
+	plan, state, observed, approval, policy := retirable()
+	policy.RequireSignedApproval = true
+
+	decision := embedcutover.DecideRetirement(plan, state, observed, approval, policy)
+
+	c.Assert(decision.Allowed, qt.IsFalse)
+	c.Assert(decision.Blockers, qt.Contains,
+		`this policy requires a signed approval and the one given names "an operator" `+
+			`without a signature over the plan`)
+}
+
+// TestDecideRetirement_ASignedApprovalSatisfiesThatPolicy is the control.
+func TestDecideRetirement_ASignedApprovalSatisfiesThatPolicy(t *testing.T) {
+	c := qt.New(t)
+	plan, state, observed, approval, policy := retirable()
+	policy.RequireSignedApproval = true
+	approval.Signed = true
+
+	decision := embedcutover.DecideRetirement(plan, state, observed, approval, policy)
+
+	c.Assert(decision.Blockers, qt.HasLen, 0, qt.Commentf("%v", decision.Blockers))
+	c.Assert(decision.Allowed, qt.IsTrue)
+}
+
+// TestDecideRetirement_TwoPlansSharingAShortDigestAreToldApart is the other
+// thing the shared check carried over.
+//
+// The retirement's own copy rendered both sides short, so an operator who typed
+// the short form of a plan that had moved read "bound to plan X and this plan
+// is X".
+func TestDecideRetirement_TwoPlansSharingAShortDigestAreToldApart(t *testing.T) {
+	c := qt.New(t)
+	plan, state, observed, approval, policy := retirable()
+	approval.PlanDigest = plan.Short()
+
+	decision := embedcutover.DecideRetirement(plan, state, observed, approval, policy)
+
+	c.Assert(decision.Allowed, qt.IsFalse)
+	c.Assert(decision.Blockers, qt.Contains, fmt.Sprintf(
+		"the approval is bound to plan %s and this plan is %s", plan.Short(), plan.Digest()))
 }

@@ -222,3 +222,60 @@ func requireSSHKeygen(c *qt.C) {
 		c.Skip("ssh-keygen is not installed")
 	}
 }
+
+// TestRefuseMixedPlainHTTP_OneExceptionDoesNotCoverTwoRegistries is what stops
+// a credential leaving over an unencrypted connection.
+//
+// --plain-http says "this registry speaks HTTP", and it is one flag because one
+// run usually names one registry. A run that fetches its release from a trusted
+// local registry and publishes its record to an authenticated production one
+// names two, and forwarding the exception to both would offer the second
+// registry's credential in the clear.
+func TestRefuseMixedPlainHTTP_OneExceptionDoesNotCoverTwoRegistries(t *testing.T) {
+	c := qt.New(t)
+	options := commonOptions{spec: &specSource{
+		reference: "oci://localhost:5000/search:release", plainHTTP: true,
+	}}
+
+	err := refuseMixedPlainHTTP(options,
+		evidenceOptions{publishTo: "oci://ghcr.io/example/search-evidence:verification"})
+
+	c.Assert(err, qt.ErrorMatches,
+		`--plain-http is one registry's exception and this run names two: localhost:5000 for `+
+			`the release and ghcr.io for the record.*`)
+}
+
+// TestRefuseMixedPlainHTTP_OneRegistryIsFine is the control the guard exists
+// beside.
+//
+// The common case is one local registry holding both, and a guard that refused
+// it would take the flag away from the only workflow it was written for.
+func TestRefuseMixedPlainHTTP_OneRegistryIsFine(t *testing.T) {
+	c := qt.New(t)
+	options := commonOptions{spec: &specSource{
+		reference: "oci://localhost:5000/search:release", plainHTTP: true,
+	}}
+
+	c.Assert(refuseMixedPlainHTTP(options,
+		evidenceOptions{publishTo: "oci://localhost:5000/search:verification"}), qt.IsNil)
+	// And an attachment, which is the other destination a record can have.
+	c.Assert(refuseMixedPlainHTTP(options,
+		evidenceOptions{attachTo: "oci://localhost:5000/search:release"}), qt.IsNil)
+}
+
+// TestRefuseMixedPlainHTTP_WithoutTheFlagOrARelease is the other control.
+//
+// Two registries over TLS is an ordinary run, and a specification read from a
+// file names no registry at all. Refusing either would be the guard firing on
+// the case it was not written for.
+func TestRefuseMixedPlainHTTP_WithoutTheFlagOrARelease(t *testing.T) {
+	c := qt.New(t)
+	overTLS := commonOptions{spec: &specSource{
+		reference: "oci://registry.example.com/search:release",
+	}}
+	fromAFile := commonOptions{spec: &specSource{path: "spec.yaml", plainHTTP: true}}
+	elsewhere := evidenceOptions{publishTo: "oci://ghcr.io/example/search:verification"}
+
+	c.Assert(refuseMixedPlainHTTP(overTLS, elsewhere), qt.IsNil)
+	c.Assert(refuseMixedPlainHTTP(fromAFile, elsewhere), qt.IsNil)
+}

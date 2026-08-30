@@ -569,7 +569,7 @@ func publishRollback(
 		return nil
 	}
 	record, buildErr := embedrelease.NewRollbackRecord(rollback)
-	return publishRecord(ctx, out, options.spec.plainHTTP, evidence, record, buildErr)
+	return publishRecord(ctx, out, options, evidence, record, buildErr)
 }
 
 // rollbackPolicy is what a previous generation has to satisfy to be one you can
