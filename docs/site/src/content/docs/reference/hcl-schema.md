@@ -33,9 +33,8 @@ ptah schema render --schema-file schema.hcl --dialect postgres
 configuration in `atlas.hcl` is a different file type; see
 [Atlas project config](../../atlas/project-config/).
 
-Relative schema-file inputs are confined to the process working directory after
-symbolic-link resolution; use an absolute pathname for an intentional source
-outside it, as detailed under [schema file paths](../native-commands/#schema-file-paths).
+All schema-file sources use the path boundary documented under
+[Schema file paths](../native-commands/#schema-file-paths).
 
 `ptah schema fmt [path ...]` rewrites `.hcl` schema files into HashiCorp
 HCL's canonical layout, walking directory arguments recursively and printing
@@ -351,7 +350,7 @@ withhold description without making any document more readable to it.
 ## Function bodies
 
 Function bodies are stored as raw SQL text. Ptah does not parse the dialect
-sub-language inside each function body today. That is intentional: PostgreSQL,
+sub-language inside each function body. PostgreSQL,
 MySQL, SQL Server, and other dialects have different procedural languages and
 require dialect-specific parsers. Go-annotation export writes function, view,
 materialized-view, and trigger bodies as opaque HCL strings and reports a

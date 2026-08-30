@@ -24,9 +24,9 @@ overlaps:
 disposition: keep
 ---
 
-This page answers one question: for a given capability, what does Ptah do, what
-does the open Atlas community binary do, and what does Atlas keep outside its
-community build. Every row cites the evidence it rests on.
+For each capability, the matrix records what Ptah does, what the open Atlas
+community binary does, and what Atlas keeps outside its community build. Every
+row cites the evidence it rests on.
 
 It is a status index, not an argument. The measured evidence is on
 [Conformance](../conformance/), the differences Ptah keeps on purpose are on

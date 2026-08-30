@@ -35,6 +35,12 @@ Whenever page content, metadata, navigation, or internal links change, run
 journeys and non-derivable decisions in `docs/site/CONTENT_INVENTORY.md`; never
 copy mechanical counts or route lists back into that file.
 
+Run `npm run check:editorial-shape:selftest` and
+`npm run check:editorial-shape` after regenerating the inventory. Length,
+mixed-type, generic-introduction, and near-duplicate findings are review
+warnings. Keep a deliberate warning quiet only through a reasoned entry in
+`scripts/data/editorial-waivers.json`; the check rejects stale waivers.
+
 ## Preserve The Navigation Contract
 
 A top-level sidebar group is a disclosure control. Give it no route. Its first
@@ -206,6 +212,9 @@ Match the discipline, not the product structure exactly:
 - Show expected output or verification commands when the result can be checked.
 - Use comparison tables for command parity, feature support, config precedence,
   or dialect behavior when prose would be ambiguous.
+- Keep prose inside the site's `40rem` reading measure. Tables, code, diagrams,
+  and explicit `.ptah-wide-content` blocks may use the `70rem` page measure;
+  never widen ordinary paragraphs for a reference artifact.
 - Add troubleshooting notes for likely failure modes.
 - Link to related docs, examples, issues, or tests instead of duplicating large
   blocks.
@@ -265,6 +274,8 @@ practical, live commands:
   npm run check:page-health
   npm run check:content-inventory:selftest
   npm run check:content-inventory
+  npm run check:editorial-shape:selftest
+  npm run check:editorial-shape
   npm run check:support-matrix:selftest
   npm run check:support-matrix
   npm run check:exit-codes
@@ -292,8 +303,9 @@ practical, live commands:
   From the repository root, also run `scripts/check-examples.sh`. When the
   inference tutorial or its fixture changes, run
   `docs/site/scripts/check-inference-quick-start.sh` with an explicit
-  `PTAH_DOCKER_CONTEXT`; the script removes only its named Compose project and
-  locally built images.
+  `PTAH_DOCKER_CONTEXT`. For a remote context, also set `PTAH_FIXTURE_HOST` to
+  the remote host name so the locally built CLI reaches the published ports.
+  The script removes only its named Compose project and locally built images.
 
   `check:style` covers every layer the style guide governs — `docs/site`,
   `docs/*.md`, `examples/**`, `integration/*.md`, every package `README.md`,

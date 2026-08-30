@@ -16,7 +16,7 @@ searchAliases:
 overlaps:
   - "/atlas/migrate-commands/"
   - "/atlas/schema-commands/"
-disposition: split
+disposition: keep
 ---
 
 Atlas-compatible `--format` output uses the Atlas data shape expected by

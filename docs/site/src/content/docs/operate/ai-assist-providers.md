@@ -17,7 +17,7 @@ searchAliases:
   - Anthropic Ptah
 overlaps:
   - "/operate/ai-assist/"
-disposition: split
+disposition: keep
 owns:
   - cli-ptah-assist-provider-list
   - cli-ptah-assist-provider-test

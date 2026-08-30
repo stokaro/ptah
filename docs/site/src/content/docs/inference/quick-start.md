@@ -20,7 +20,7 @@ searchAliases:
 overlaps:
   - "/inference/guides/create-first-generation/"
   - "/inference/concepts/lifecycle/"
-disposition: rewrite
+disposition: keep
 ---
 
 Build and activate one embedding generation without sending data to an external

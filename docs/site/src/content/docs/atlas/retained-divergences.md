@@ -26,8 +26,8 @@ other direction — `ptah-compat` exits `1` where that binary exits `0` — is a
 usability failure for a drop-in replacement, and it is allowed only where the
 refusal is more useful than the acceptance.
 
-This page holds those cases. Each one carries what both binaries did, so a
-reader can argue with the decision rather than only with the outcome. The
+Each retained case records what both binaries did, so a reader can evaluate the
+decision rather than only the outcome. The
 one-line status per capability is on the [Feature matrix](../feature-matrix/).
 Most entries came out of
 [`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241); the project

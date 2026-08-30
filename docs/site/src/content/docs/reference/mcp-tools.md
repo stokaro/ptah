@@ -17,12 +17,12 @@ searchAliases:
 overlaps:
   - "/operate/ai-agent-connect/"
   - "/operate/ai-agent-changes/"
-disposition: split
+disposition: keep
 ---
 
-This page records the Ptah-owned tool surface. The running server's `tools/list`
-response is authoritative for its `agentapi.Version`; use this page to find the
-tool, then use that response for machine-generated JSON Schema.
+The running server's `tools/list` response is authoritative for its
+`agentapi.Version`. Use the index below to find a Ptah-owned tool, then use that
+response for its machine-generated JSON Schema.
 
 The server exposes tools only. It declares no MCP resources or prompts.
 

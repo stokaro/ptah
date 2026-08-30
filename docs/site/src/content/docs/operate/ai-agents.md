@@ -18,7 +18,7 @@ searchAliases:
 overlaps:
   - "/operate/ai-assist/"
   - "/operate/ai-agent-connect/"
-disposition: split
+disposition: keep
 ---
 
 Ptah exposes its schema and migration operations to a model without granting a

@@ -116,6 +116,5 @@ schedule a GPU, store model weights, or answer a search query.
 
 ## Version
 
-This page describes the behavior of the current build. Where a page in this area
-describes something not yet available, it says so in the sentence rather than
-leaving you to find out.
+The limits above describe the checked build. Any unavailable inference behavior
+is marked at the sentence that names it.

@@ -20,9 +20,8 @@ owns:
 ---
 
 You have a hashed migration directory and a database that needs to catch up.
-This page shows how to preview an apply, run it with integrity verification,
-read the resulting state in scripts and CI, and wire the operational controls
-a production run needs.
+Preview the apply, run it with integrity verification, read the resulting state
+in scripts and CI, and add the operational controls the target needs.
 
 Prerequisites: a migration directory sealed with `ptah migrations hash` (see
 [Generate migrations](../generate/)). The examples use a local SQLite file;

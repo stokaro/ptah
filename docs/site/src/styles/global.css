@@ -47,60 +47,39 @@
 :root {
 	--sl-sidebar-width: 16rem;
 	--ptah-toc-width: 14.5rem;
-
-	/*
-	 * The reading column grows with the window and stops at 70rem.
-	 *
-	 * Starlight pins it at 45rem, which is a constant 720px at every width:
-	 * measured against the built site, the column read 720px at 1024, at 1440
-	 * and at 1920 alike, leaving 664px of a 1920 window empty between the text
-	 * and the table of contents. `ContentPanel`'s `.sl-container` reads this
-	 * variable as a `max-width`, which makes the column min(this, what the
-	 * rails leave) rather than a constant. The same gap measures 264px now.
-	 *
-	 * Overriding it is the whole change, and that is measured rather than read
-	 * off the cascade: with the cap effectively removed (500rem, injected into
-	 * the built site) the column took 2904px at 3440 and 1384px at 1920, and no
-	 * page scrolled sideways at any width. Nothing behind it constrains the
-	 * column -- the wrapper costs exactly the two rails plus the content
-	 * padding -- so this one value decides the measure.
-	 *
-	 * 70rem is the ceiling atlasgo.io/docs settles at, and what it costs is the
-	 * reading measure. Measured at 1920 across the 103 built routes that carry
-	 * body prose, counting only the lines the layout filled -- at least 80% of
-	 * their own paragraph's width, so that a one-line paragraph and a
-	 * paragraph's short last line are not scored as a measure no eye sweeps
-	 * back from:
-	 *
-	 *   cap     column   median chars/line   90th percentile
-	 *   45rem   720px    90                  99
-	 *   50rem   800px    99                  110
-	 *   55rem   880px    107                 121
-	 *   60rem   960px    117                 132
-	 *   65rem   1040px   125                 143
-	 *   70rem   1120px   134                 154
-	 *
-	 * Typography asks for 45-75 characters and tolerates 90. Starlight's 45rem
-	 * lands exactly on that ceiling and no wider cap comes back under it, which
-	 * is not a tuning problem: at one fixed 16px face, column width and
-	 * characters per line are the same dial turned opposite ways. So the choice
-	 * is between the pinned column and a long measure, not between a long
-	 * measure and a short one, and an intermediate cap settles for neither --
-	 * 60rem gives back 160px of the width at 1920 and still reads 30% over the
-	 * ceiling it was reached for.
-	 *
-	 * This takes the long measure, because it is the measure the reference has.
-	 * atlasgo.io/docs at 1920 renders a median of 144 characters per line and a
-	 * maximum of 160, measured live on its own concept pages at the same 16px
-	 * system face; 134 here is shorter than that, and the 1.75 line height
-	 * against its 1.5 gives the return sweep more to land on. What the width
-	 * buys is the rest of the page: code blocks, tables, diagrams and
-	 * admonitions all take the column the prose measure sets, and none of them
-	 * reads better for being narrow. A reader who wants a narrower measure can
-	 * narrow the window, where a reader looking at a pinned column cannot widen
-	 * it.
-	 */
+	/* Keep the page wide enough for reference material, but give prose its own
+	 * readable measure. Code, diagrams, and tables remain free to use the full
+	 * content column below. */
 	--sl-content-width: 70rem;
+	--ptah-prose-width: 40rem;
+}
+
+/*
+ * Markdown renders ordinary prose as direct children of this container. The
+ * page shell stays 70rem wide for material that benefits from it; text that a
+ * reader follows line by line stops near 72--80 characters instead. Images and
+ * explicit wide blocks opt back into the page measure.
+ */
+.sl-markdown-content > :where(
+	p,
+	ul,
+	ol,
+	blockquote,
+	dl,
+	hr,
+	h2,
+	h3,
+	h4,
+	h5,
+	h6,
+	details,
+	.starlight-aside
+) {
+	max-inline-size: var(--ptah-prose-width);
+}
+
+.sl-markdown-content > :where(p:has(> img:only-child), figure, .ptah-wide-content) {
+	max-inline-size: none;
 }
 
 /*

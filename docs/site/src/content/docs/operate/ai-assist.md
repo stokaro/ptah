@@ -18,7 +18,7 @@ overlaps:
   - "/operate/ai-agents/"
   - "/operate/ai-assist-providers/"
   - "/operate/ai-assist-sessions/"
-disposition: split
+disposition: keep
 owns:
   - cli-ptah-assist-context
   - cli-ptah-assist-explain

@@ -16,7 +16,7 @@ searchAliases:
   - VS Code Ptah MCP
 overlaps:
   - "/operate/ai-agents/"
-disposition: split
+disposition: keep
 ---
 
 `ptah mcp` speaks the Model Context Protocol over standard input and output. An

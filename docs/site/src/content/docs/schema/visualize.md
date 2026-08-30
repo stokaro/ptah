@@ -15,7 +15,7 @@ searchAliases:
 overlaps:
   - "/schema/document/"
   - "/schema/serve/"
-disposition: rewrite
+disposition: keep
 owns:
   - cli-ptah-viz
 ---
@@ -123,7 +123,7 @@ its dialect from the database `--db-url` names.
 
 Measured on this tree, the one capability a rule reads — row-level security —
 varies by dialect and not within any release line, so the version changes no
-answer today. It is read so the rules see the target the operator named rather
+answer. It is read so the rules see the target the operator named rather
 than the dialect default. A rule that cannot be answered on the target is named
 in a comment rather than passed over:
 

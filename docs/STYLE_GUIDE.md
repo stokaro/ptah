@@ -412,6 +412,8 @@ once on its concept page and link; do not re-define them per page.
   the assertion to the preceding command.
 - Do not publish identical Bash and PowerShell tabs. Use one `console` block
   for a command that has the same bytes and semantics in both shells.
+  `check:editorial-shape` fails byte-equivalent tab panels after whitespace
+  normalization.
 - Placeholders are environment-variable style (`"$DATABASE_URL"`). Never real
   credentials, hosts, or tokens.
 - Prefer SQLite for examples that must run without a daemon.
@@ -606,6 +608,15 @@ a reader recognizes on sight and cannot reconstruct from a paragraph.
 
 - One `h1` per page (the frontmatter title). Headings descend without
   skipping levels.
+- The site shell may use the full `70rem` content width for code, diagrams,
+  generated matrices, and wide tables. Paragraphs, lists, blockquotes,
+  admonitions, and ordinary headings stop at `40rem`, which renders near a
+  72--80-character reading measure in the site typeface. Do not widen prose to
+  make one reference table fit.
+- A Markdown table or code block already uses the wide page measure. Give a
+  custom visual or component `.ptah-wide-content`; use `.ptah-wide-table` when
+  a table must preserve its desktop column widths and scroll locally on mobile.
+  `check:responsive` measures the prose cap and rejects document-level overflow.
 - Descriptive link text; never "here" or "this page".
 - Alt text on every image and diagram: section 11.3 states the rule and
   `check:style` enforces its presence.
@@ -629,6 +640,8 @@ a reader recognizes on sight and cannot reconstruct from a paragraph.
 Forbidden in all Ptah documentation:
 
 - Generic filler introductions ("In today's fast-paced world of databases...").
+- Meta introductions that start with "This page" or "This guide" when a reader
+  situation, outcome, or precise lookup scope can state the same thing directly.
 - Restating a command name as its description ("`ptah migrations up` runs
   migrations up").
 - Summary sections that repeat the page.
@@ -640,6 +653,13 @@ Forbidden in all Ptah documentation:
 - Enumerating every flag in a workflow page; that is the reference's job.
 - Work-in-progress markers (`TODO`, `TBD`, `FIXME`, "coming soon") — already
   rejected by `check-page-health.mjs`.
+
+`check:editorial-shape` warns on long pages, mixed page-type signals, generic
+first paragraphs, and near-duplicate long paragraphs. These are review prompts,
+not arbitrary merge failures. A deliberate finding belongs in
+`scripts/data/editorial-waivers.json` with a route, check name, and specific
+reason. The check fails when a waiver names no live finding, so exemptions must
+be removed after the page changes.
 
 ## 15. Review checklist
 
@@ -661,6 +681,8 @@ Complete this for every documentation PR:
    npm run check:page-health:selftest && npm run check:page-health &&
    npm run check:content-inventory:selftest &&
    npm run check:content-inventory &&
+   npm run check:editorial-shape:selftest &&
+   npm run check:editorial-shape &&
    npm run check:support-matrix:selftest && npm run check:support-matrix &&
    npm run check:exit-codes:selftest && npm run check:exit-codes &&
    npm run check:style:selftest && npm run check:style &&
@@ -728,6 +750,8 @@ in this guide is a review responsibility.
 | Status verification date and evidence | 3.1 | Astro content schema; `check:content-inventory` |
 | Generated page source metadata | 3.1 | Astro content schema; `check:content-inventory` |
 | Factual page inventory matches content, sidebar, and link graph | 3.1 | `check:content-inventory` |
+| Identical tab panels are not published | 8 | `check:editorial-shape` |
+| Editorial waivers name a live route and current finding | 13, 14 | `check:editorial-shape` |
 | Release-line support counts and classifications appear only in generated blocks | 12 | `check:support-matrix` |
 | Every page is named by a sidebar entry | 12 | `check:page-health` |
 | Every sidebar entry names a page or a route | 12 | `check:page-health` |
@@ -837,6 +861,11 @@ that page stops having dense cells, so an exemption cannot outlive its reason.
 Anchor links are checked against the ids Starlight generates, so renaming a
 heading fails the build instead of silently dropping every reader who follows
 a link into it at the top of the page.
+
+`check:editorial-shape` separates objective defects from editorial judgment.
+Identical tab panels and invalid or stale waivers fail. Page length, mixed-type
+signals, formulaic openings, and near-duplicate paragraphs produce review
+warnings unless a current, reasoned waiver records why the page stays as it is.
 
 `check:responsive` needs a browser. Without one it skips locally with an install
 hint, and fails in CI — a green check that rendered nothing is worse than a red

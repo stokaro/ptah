@@ -370,9 +370,9 @@ pinned community v1.3.0 build: an `atlas.hcl` calling `file("/etc/passwd")` or
 contents reach an observable place — a database URL, an error message on
 standard error. An `atlas.hcl` is repository-controlled and evaluated before
 anything is applied, so matching that would hand any config author an
-arbitrary-file read on the machine running the migration. The exit code is 1
-either way today, so no working configuration changes; what changes is that the
-refusal now names its reason. See
+arbitrary-file read on the machine running the migration. Both measured runs
+exit 1, so no working configuration changes; Ptah's refusal names its reason.
+See
 [`stokaro/ptah#1042`](https://github.com/stokaro/ptah/issues/1042).
 
 The confinement covers what `file()` and `fileset()` read. It is not a claim

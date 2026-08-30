@@ -17,7 +17,7 @@ searchAliases:
 overlaps:
   - "/operate/ai-agent-permissions/"
   - "/reference/mcp-tools/"
-disposition: split
+disposition: keep
 ---
 
 An agent change uses the same sequence for migration, schema, and test

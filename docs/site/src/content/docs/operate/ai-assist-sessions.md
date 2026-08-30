@@ -16,7 +16,7 @@ searchAliases:
   - .ptah sessions
 overlaps:
   - "/operate/ai-assist/"
-disposition: split
+disposition: keep
 owns:
   - cli-ptah-assist-sessions-delete
   - cli-ptah-assist-sessions-list

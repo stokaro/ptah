@@ -19,9 +19,9 @@ overlaps: []
 disposition: keep
 ---
 
-This page maps current Atlas documentation areas to Ptah documentation,
-implementation status, conformance coverage, and follow-up issues. It is a
-documentation coverage matrix, not a full parity claim.
+The matrix below maps the reviewed Atlas documentation areas to Ptah pages,
+implementation status, conformance coverage, and follow-up issues. It measures
+documentation coverage, not full parity.
 
 Research date: July 28, 2026.
 

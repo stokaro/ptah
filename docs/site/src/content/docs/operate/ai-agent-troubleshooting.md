@@ -18,7 +18,7 @@ searchAliases:
 overlaps:
   - "/operate/ai-agent-permissions/"
   - "/reference/mcp-tools/"
-disposition: split
+disposition: keep
 ---
 
 Ptah agent failures begin with a stable diagnostic code. Branch on the code,

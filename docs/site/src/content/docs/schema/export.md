@@ -34,9 +34,9 @@ The generated OpenAPI passes `redocly lint`; the generated GraphQL parses and
 builds with `graphql-js`, for the types-only default and for every operation
 profile.
 
-This page covers the OpenAPI and GraphQL targets, which are stateless. The
-Protobuf target is stateful — field numbers are persistent wire identifiers, so
-its generated file is committed compatibility state — and has its own page:
+OpenAPI and GraphQL exports are stateless. The Protobuf target is stateful —
+field numbers are persistent wire identifiers, so its generated file is
+committed compatibility state — and has its own page:
 [Protobuf schema export](../protobuf/).
 
 `--to` accepts seven targets in total, and the four this page does not cover

@@ -1,0 +1,62 @@
+[
+  {
+    "route": "/atlas/feature-matrix/",
+    "check": "page-length",
+    "reason": "The generated status matrix keeps one evidence-backed row per capability and is indexed by product area."
+  },
+  {
+    "route": "/atlas/migrate-commands/",
+    "check": "page-length",
+    "reason": "This command-family reference keeps the executable Atlas migration examples and exact behavior under stable verb anchors."
+  },
+  {
+    "route": "/atlas/project-config/",
+    "check": "page-length",
+    "reason": "The reference exhaustively records the accepted atlas.hcl subset; splitting it would fragment lookup for one configuration language."
+  },
+  {
+    "route": "/atlas/retained-divergences/",
+    "check": "page-length",
+    "reason": "Each retained divergence needs its paired measurement and rationale on the dated status record that owns the decision."
+  },
+  {
+    "route": "/atlas/schema-commands/",
+    "check": "page-length",
+    "reason": "This command-family reference keeps the executable Atlas schema examples and exact behavior under stable verb anchors."
+  },
+  {
+    "route": "/databases/postgresql/",
+    "check": "page-length",
+    "reason": "The engine reference keeps PostgreSQL-family object and release behavior together for target-specific lookup."
+  },
+  {
+    "route": "/reference/atlas-commands/",
+    "check": "page-length",
+    "reason": "The generated first-level index and filter lead to one measured status section for every Atlas-compatible command."
+  },
+  {
+    "route": "/reference/command-flags/",
+    "check": "page-length",
+    "reason": "The generated reference is exhaustive by design and provides a keyboard-accessible filter across all command and flag rows."
+  },
+  {
+    "route": "/reference/native-commands/",
+    "check": "page-length",
+    "reason": "The generated first-level index and filter lead to one exact behavior section for every native command."
+  },
+  {
+    "route": "/schema/protobuf/",
+    "check": "page-length",
+    "reason": "The task keeps field-number compatibility, review, and verification in one stateful export workflow."
+  },
+  {
+    "route": "/versioned/apply/",
+    "check": "page-length",
+    "reason": "The apply workflow keeps preview, execution, hooks, and post-apply verification around the same database mutation."
+  },
+  {
+    "route": "/versioned/integrity-and-safety/",
+    "check": "page-length",
+    "reason": "The page keeps checksum, replay, and assertion gates together because they establish one pre-apply trust boundary."
+  }
+]

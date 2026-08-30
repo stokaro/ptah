@@ -14,7 +14,7 @@ generated: false
 overlaps:
   - "/schema/visualize/"
   - "/schema/serve/"
-disposition: rewrite
+disposition: keep
 ---
 
 `ptah schema export --to markdown` and `ptah schema export --to html` write a

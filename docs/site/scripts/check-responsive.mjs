@@ -24,15 +24,19 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const siteRoot = join(scriptDir, '..');
 
 // Widths chosen for what they expose: 390 is a common phone viewport and the
-// width at which Starlight collapses navigation; 1280 is a laptop.
+// width at which Starlight collapses navigation; 1280 is a laptop; 1920 leaves
+// enough room for the 70rem content shell and therefore proves that prose still
+// stops at its independent 40rem measure.
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
   { name: 'desktop', width: 1280, height: 900 },
+  { name: 'wide-desktop', width: 1920, height: 1080 },
 ];
 
 // A few pixels of slack: sub-pixel rounding in the layout engine otherwise
 // reports overflow on pages that look correct.
 const overflowTolerance = 2;
+const maxProseWidth = 642;
 
 // The tallest a table cell may render at desktop width. Character count cannot
 // see this: a short cell in a column squeezed narrow by an unbreakable code
@@ -259,12 +263,31 @@ const measure = ({ tolerance, cellLineLimit }) => {
     });
   }
 
+  // Prose and reference material use different measures. The page shell may
+  // grow for code, diagrams, and tables, but ordinary text must not inherit
+  // that width. Image-only paragraphs are visual containers rather than prose.
+  const proseWidths = [];
+  const proseSelector = [
+    '.sl-markdown-content > p:not(:has(> img:only-child))',
+    '.sl-markdown-content > ul',
+    '.sl-markdown-content > ol',
+    '.sl-markdown-content > blockquote',
+    '.sl-markdown-content > dl',
+    '.sl-markdown-content > details',
+    '.sl-markdown-content > .starlight-aside',
+  ].join(',');
+  for (const element of document.querySelectorAll(proseSelector)) {
+    const rect = element.getBoundingClientRect();
+    if (rect.width > 0) proseWidths.push(Math.round(rect.width));
+  }
+
   return {
     scrollWidth: doc.scrollWidth,
     clientWidth: viewportWidth,
     offenders: offenders.slice(0, 5).map(({ tag, className, right }) => ({ tag, className, right })),
     tallCells: tallCells.sort((a, b) => b.lines - a.lines).slice(0, 5),
     wideTables: wideTables.sort((a, b) => b.overflow - a.overflow).slice(0, 3),
+    widestProse: proseWidths.length > 0 ? Math.max(...proseWidths) : 0,
   };
 };
 
@@ -401,6 +424,16 @@ async function main() {
         failures.push('wide-table detector fired on a table that fits its container');
       }
 
+      await page.setContent(
+        '<main><div class="sl-markdown-content">' +
+          '<p style="width:640px">prose</p><pre style="width:1000px">wide reference</pre>' +
+          '</div></main>',
+      );
+      const measures = await page.evaluate(measure, { tolerance: overflowTolerance, cellLineLimit: maxCellLines });
+      if (measures.widestProse !== 640) {
+        failures.push(`prose-width detector returned ${measures.widestProse}, expected 640`);
+      }
+
       const fixtureBase = '/ptah/edge';
       const distRoot = writeFixtureDist(fixtureBase);
       try {
@@ -443,7 +476,10 @@ async function main() {
       process.exitCode = 1;
       return;
     }
-    console.log('check-responsive.mjs --selftest: OK (overflow, wide-table, tall-cell, and unstyled-page guards verified)');
+    console.log(
+      'check-responsive.mjs --selftest: OK ' +
+        '(overflow, prose-width, wide-table, tall-cell, and unstyled-page guards verified)',
+    );
     return;
   }
 
@@ -504,7 +540,12 @@ async function main() {
               `extends to ${offender.right}px, past the ${result.clientWidth}px viewport`,
           );
         }
-        if (viewport.name === 'desktop') {
+        if (viewport.name !== 'mobile') {
+          if (result.widestProse > maxProseWidth) {
+            errors.push(
+              `${route}: prose renders ${result.widestProse}px wide, over the ${maxProseWidth}px reading measure`,
+            );
+          }
           for (const table of result.wideTables) {
             errors.push(
               `${route}: a table is ${table.width}px wide inside a ${table.container}px container ` +
@@ -516,7 +557,7 @@ async function main() {
         // Desktop measures every table. Mobile measures the wide ones, where
         // the cap is a statement about the layout rather than about the phone.
         const capped =
-          viewport.name === 'desktop'
+          viewport.name !== 'mobile'
             ? result.tallCells
             : mobileCapExemptions.has(route)
               ? []
@@ -566,7 +607,7 @@ async function main() {
   }
   console.log(
     `check-responsive.mjs: OK (${routes.length} routes x ${viewports.length} viewports, ` +
-      `cells within ${maxCellLines} lines)`,
+      `prose within ${maxProseWidth}px, cells within ${maxCellLines} lines)`,
   );
 }
 

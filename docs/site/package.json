@@ -16,6 +16,8 @@
     "check:exit-codes:selftest": "node scripts/check-exit-codes.mjs --selftest",
     "check:examples": "node scripts/check-examples.mjs",
     "check:examples:selftest": "node scripts/check-examples.mjs --selftest",
+    "check:editorial-shape": "node scripts/check-editorial-shape.mjs",
+    "check:editorial-shape:selftest": "node scripts/check-editorial-shape.mjs --selftest",
     "examples:write": "node scripts/check-examples.mjs --write",
     "check:core-doc-links": "node scripts/check-core-doc-links.mjs",
     "check:core-doc-links:selftest": "node scripts/check-core-doc-links.mjs --selftest",

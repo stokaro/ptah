@@ -639,8 +639,8 @@ changes.
 
 ## Follow-up gaps
 
-This page intentionally avoids documenting unsupported public APIs. Follow-up
-issues should be created before exposing:
+Unsupported public APIs stay out of this reference. Create a follow-up issue
+before exposing:
 
 - a stable Atlas HCL renderer package beyond `atlascompat` wrappers;
 - snippet validation that extracts docs code blocks automatically;
