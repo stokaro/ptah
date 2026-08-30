@@ -184,10 +184,11 @@ func applyDesiredSchema(
 
 	sql, err := planner.GenerateSchemaDiffSQLWithOptions(
 		diff,
-		schema,
+
 		info.Dialect,
 		planner.Options{Capabilities: info.Capabilities},
 	)
+
 	if err != nil {
 		return false, fmt.Errorf("plan desired schema for dialect %q: %w", info.Dialect, err)
 	}

@@ -426,7 +426,7 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			}
 
 			if len(tt.wantSQL) > 0 {
-				statements, err := planner.GenerateSchemaDiffSQLStatements(diff, tt.desired, "postgres")
+				statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "postgres")
 				c.Assert(err, qt.IsNil)
 				sql := strings.Join(statements, "\n")
 				for _, expected := range tt.wantSQL {

@@ -137,7 +137,8 @@ func inlineEnumDiff(
 	live, err := conn.Reader().ReadSchemaContext(c.Context())
 	c.Assert(err, qt.IsNil)
 	diff, err := schemadiff.CompareWithDatabase(
-		context.Background(), conn, description, live, config.DefaultCompareOptions())
+		context.Background(), conn, description, live, config.DefaultCompareOptions(),
+	)
 	c.Assert(err, qt.IsNil)
 	return diff
 }
@@ -169,7 +170,7 @@ func applyInlineEnum(
 	_ = dialect
 	diff := inlineEnumDiff(c, conn, description)
 	info := conn.Info()
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, description, info.Dialect, planner.Options{Capabilities: info.Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{Capabilities: info.Capabilities})
 	c.Assert(err, qt.IsNil)
 	for _, statement := range statements {
 		_, execErr := conn.ExecContext(ctx, statement)
@@ -191,7 +192,8 @@ func requireInlineEnumSQLiteConnection(t *testing.T) *dbschema.DatabaseConnectio
 	t.Helper()
 	c := qt.New(t)
 	conn, err := dbschema.ConnectToDatabase(
-		t.Context(), "sqlite://"+filepath.Join(t.TempDir(), "inline_enum.db"))
+		t.Context(), "sqlite://"+filepath.Join(t.TempDir(), "inline_enum.db"),
+	)
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
 	return conn

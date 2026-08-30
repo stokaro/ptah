@@ -39,7 +39,7 @@ func TestCompare_TwoAddedOverloadsAreTwoDifferentStatements(t *testing.T) {
 	diff := schemadiff.CompareWithDialect(desired, &catalog.Database{}, platform.Postgres)
 	c.Assert(diff.FunctionsAdded, qt.HasLen, 2)
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, platform.Postgres)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.Postgres)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)

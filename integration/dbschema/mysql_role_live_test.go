@@ -60,7 +60,7 @@ func TestMySQLLiveRoleRoundTrip(t *testing.T) {
 	creation := schemadiff.CompareWithDialect(declared, live, conn.Info().Dialect)
 	c.Assert(creation.RolesAdded.Names(), qt.Contains, role)
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(creation, declared, conn.Info().Dialect)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(creation, conn.Info().Dialect)
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(statements, "\n"), qt.Contains, "CREATE ROLE")
 	for _, statement := range statements {

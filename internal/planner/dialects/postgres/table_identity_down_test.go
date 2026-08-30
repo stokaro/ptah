@@ -8,7 +8,6 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -62,9 +61,10 @@ func planDownStatements(c *qt.C, desired *schemamodel.Database, current *catalog
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
 		plan.Reverse.Diff,
-		dbschematogo.ConvertDBSchemaToGoSchema(current),
+
 		"postgres",
 	)
+
 	c.Assert(err, qt.IsNil)
 	return statements
 }
@@ -185,7 +185,7 @@ func TestPlannerColumnLookupDoesNotGuessBetweenSchemas(t *testing.T) {
 			},
 		}
 		diff := schemadiff.CompareWithDialect(desired, database, "postgres")
-		statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, "postgres")
+		statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "postgres")
 		c.Assert(err, qt.IsNil)
 		c.Assert(
 			containsStatement(statements, `ALTER TABLE "app"."users" ADD COLUMN "note"`),
@@ -201,18 +201,15 @@ func TestPlannerColumnLookupDoesNotGuessBetweenSchemas(t *testing.T) {
 
 	t.Run("a table the schema does not declare gets no column DDL", func(t *testing.T) {
 		c := qt.New(t)
-		desired := &schemamodel.Database{
-			Tables: []schemamodel.Table{{StructName: "Other", Name: "other", Schema: "public"}},
-			Fields: []schemamodel.Field{{StructName: "Other", Name: "id", Type: "INTEGER", Primary: true}},
-		}
 		statements, err := planner.GenerateSchemaDiffSQLStatements(
 			&difftypes.SchemaDiff{TablesModified: []difftypes.TableDiff{{
 				TableName:    "reporting.users",
 				ColumnsAdded: difftypes.ColumnChanges{{StructName: "AppUser", Name: "note", Type: "TEXT"}},
 			}}},
-			desired,
+
 			"postgres",
 		)
+
 		c.Assert(err, qt.IsNil)
 		c.Assert(
 			containsStatement(statements, "ADD COLUMN"),

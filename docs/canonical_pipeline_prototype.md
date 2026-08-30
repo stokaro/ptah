@@ -55,15 +55,17 @@ The stage that matters most is the last arrow into `Plan`. Its signature is
 func Plan(changes []Change, profile schemastate.Profile) ([]PlannedOperation, error)
 ```
 
-against the existing path's
+against the shipping path's
 
 ```go
-func GenerateSchemaDiffAST(diff *difftypes.SchemaDiff, generated *schemamodel.Database, dialect string) ([]ast.Node, error)
+func GenerateSchemaDiffAST(diff *difftypes.SchemaDiff, dialect string) ([]ast.Node, error)
 ```
 
-The second parameter there is where the planner recovers what a diff of name
-lists dropped. The prototype has nothing for it to recover, so the compiler
-enforces the boundary rather than a convention.
+Both take the change set alone, so the compiler enforces the boundary rather
+than a convention. The measurement this prototype was written to make is what
+the shipping signature now records: when it was taken, the second parameter was
+where the planner recovered what a diff of name lists dropped, and stokaro/ptah#2315
+is the work that gave each change its own operands instead.
 
 ## What the prototype found
 

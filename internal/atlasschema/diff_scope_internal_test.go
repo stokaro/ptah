@@ -262,7 +262,7 @@ func TestScopeDiffStatePreservesDatabaseWideExtensionsAcrossSchemaUniverse(t *te
 	c.Assert(got.schema.Fields[0].Type, qt.Equals, "extensions.citext")
 
 	diff := schemadiff.CompareWithDialect(got.schema, &catalog.Database{}, platform.Postgres)
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, got.schema, platform.Postgres)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	sql := strings.Join(statements, ";\n")
 	c.Assert(sql, qt.Contains, `CREATE SCHEMA IF NOT EXISTS "extensions"`)

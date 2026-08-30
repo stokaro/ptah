@@ -7,7 +7,6 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -52,9 +51,10 @@ func planDownStatements(c *qt.C, desired *schemamodel.Database, current *catalog
 	c.Assert(err, qt.IsNil)
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
 		plan.Reverse.Diff,
-		dbschematogo.ConvertDBSchemaToGoSchema(current),
+
 		"postgres",
 	)
+
 	c.Assert(err, qt.IsNil)
 	return statements
 }

@@ -59,7 +59,7 @@ func TestGeneratedColumnAndPartialIndex_RoundTrip_Postgres(t *testing.T) {
 
 	changed := generatedPartialIndexSchema(schemaName, "upper(email)")
 	changedDiff := schemadiff.CompareWithDialect(changed, liveSchema, platform.Postgres)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(changedDiff, changed, platform.Postgres, planner.Options{Capabilities: capability.Postgres17()})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(changedDiff, platform.Postgres, planner.Options{Capabilities: capability.Postgres17()})
 	c.Assert(err, qt.IsNil)
 	plannedSQL := strings.Join(statements, "\n")
 	c.Assert(plannedSQL, qt.Contains, `ALTER COLUMN "email_lc" SET EXPRESSION AS (upper(email))`)

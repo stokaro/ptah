@@ -346,7 +346,7 @@ func TestOracleRoleManagementPlansAndConvergesE2E(t *testing.T) {
 	before, err := conn.Reader().ReadSchemaContext(ctx)
 	c.Assert(err, qt.IsNil)
 	diff := schemadiff.CompareWithDialect(declared, before, platform.Oracle)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, declared, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
 	c.Assert(err, qt.IsNil)
 
 	// Non-vacuity: the plan really carries the role and the grants. Without
@@ -374,7 +374,7 @@ func TestOracleRoleManagementPlansAndConvergesE2E(t *testing.T) {
 
 	// And the plan the settled comparison produces is empty, which is the
 	// statement-level form of the same claim.
-	settledStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(settled, declared, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
+	settledStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(settled, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleStatementsNaming(settledStatements, "ROLE"), qt.HasLen, 0)
 	c.Assert(oracleStatementsNaming(settledStatements, "GRANT"), qt.HasLen, 0)

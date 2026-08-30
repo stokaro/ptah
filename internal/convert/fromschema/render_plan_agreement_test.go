@@ -104,10 +104,12 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	desired := routingFixture()
 
 	// A target that cannot create a domain refuses the whole schema before
-	// SQL, on BOTH surfaces, because they share one validation. That is
-	// agreement too, and asserting it is stronger than adapting the fixture
-	// until the question goes away: the census below could not tell a shared
-	// refusal from a shared emission (stokaro/ptah#1717).
+	// SQL, on BOTH surfaces, because they share one validation -- the render
+	// call makes it directly and the plan pipeline makes it in the comparison
+	// that feeds the planner. That is agreement too, and asserting it is
+	// stronger than adapting the fixture until the question goes away: the
+	// census below could not tell a shared refusal from a shared emission
+	// (stokaro/ptah#1717).
 	if assertBothSurfacesRefuseTheDomain(c, dialect, &desired) {
 		return
 	}
@@ -117,9 +119,10 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 
 	planNodes, err := planner.GenerateSchemaDiffAST(
 		schemadiff.CompareWithDialect(&desired, &catalog.Database{}, dialect),
-		&desired,
+
 		dialect,
 	)
+
 	c.Assert(err, qt.IsNil)
 	planCensus := surfaceCensus(c, dialect, planNodes)
 
@@ -189,8 +192,14 @@ func assertBothSurfacesRefuseTheDomain(c *qt.C, dialect string, desired *schemam
 	if capability.ForDialect(dialect).Has(capability.DomainTypes) {
 		return false
 	}
-	_, planErr := planner.GenerateSchemaDiffAST(
-		schemadiff.CompareWithDialect(desired, &catalog.Database{}, dialect), desired, dialect)
+	// The plan surface refuses at the comparison that feeds it. A plan reads
+	// only the diff, so the validation that has to see the whole target runs
+	// where the whole target is supplied, and the pipeline still refuses
+	// before it plans (stokaro/ptah#2315).
+	_, planErr := schemadiff.CompareWithDatabaseInfo(
+		desired, &catalog.Database{}, catalog.ServerInfo{Dialect: dialect}, nil,
+	)
+
 	renderErr := renderer.ValidateSchema(desired, dialect)
 	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)

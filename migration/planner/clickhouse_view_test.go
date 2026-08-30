@@ -56,7 +56,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseViewLifecycle(t *testing.T) {
 			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
 				test.diff,
-				test.desired,
+
 				platform.ClickHouse,
 			)
 
@@ -68,11 +68,6 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseViewLifecycle(t *testing.T) {
 }
 
 func TestGenerateSchemaDiffSQLStatements_ClickHouseViewCapabilityDisabled(t *testing.T) {
-	desired := &schemamodel.Database{Views: []schemamodel.View{{
-		StructName: "ActiveUsers",
-		Name:       "analytics.active_users",
-		Body:       "SELECT 1",
-	}}}
 	caps := capability.ClickHouse24().
 		With(capability.MaterializedViews, false).
 		With(capability.Views, false)
@@ -109,7 +104,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseViewCapabilityDisabled(t *tes
 			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(
 				test.diff,
-				desired,
+
 				platform.ClickHouse,
 				planner.Options{Capabilities: caps},
 			)
@@ -129,7 +124,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseDropsViewBeforeSourceTable(t 
 			ViewsRemoved:  difftypes.ViewChanges{{Name: "analytics.active_users"}},
 			TablesRemoved: []string{"analytics.users"},
 		},
-		&schemamodel.Database{},
+
 		platform.ClickHouse,
 	)
 
@@ -159,12 +154,11 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseOrdersAddedViewDependencies(t
 			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
 				&difftypes.SchemaDiff{ViewsAdded: difftypes.ViewChanges{
-					// The bodies travel WITH the change, and the order this
-					// test is about is computed from them.
+
 					{Name: "analytics.a_dep", Body: test.dependentBody},
 					{Name: "analytics.z_base", Body: "SELECT 1 AS n"},
 				}},
-				clickHouseDependentViews(test.dependentBody),
+
 				platform.ClickHouse,
 			)
 
@@ -177,7 +171,6 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseOrdersAddedViewDependencies(t
 }
 
 func TestGenerateSchemaDiffSQLStatements_ClickHouseOrdersReplacementDependencies(t *testing.T) {
-	desired := clickHouseDependentViews("SELECT n FROM `analytics`.`z_base`")
 	tests := []struct {
 		name       string
 		diff       *difftypes.SchemaDiff
@@ -223,7 +216,7 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseOrdersReplacementDependencies
 			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
 				test.diff,
-				desired,
+
 				platform.ClickHouse,
 			)
 
@@ -235,36 +228,15 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseOrdersReplacementDependencies
 	}
 }
 
-func clickHouseDependentViews(dependentBody string) *schemamodel.Database {
-	return &schemamodel.Database{Views: []schemamodel.View{
-		{
-			StructName: "Dependent",
-			Name:       "analytics.a_dep",
-			Body:       dependentBody,
-		},
-		{
-			StructName: "Base",
-			Name:       "analytics.z_base",
-			Body:       "SELECT 1 AS n",
-		},
-	}}
-}
-
 // TestGenerateSchemaDiffSQLStatements_ClickHouseMaterializedViewCarriesItsBody
 // pins the whole plan surface, not the renderer alone: the statement the plan
 // hands to the executor has to be the executable one, qualified name and query
 // intact.
 func TestGenerateSchemaDiffSQLStatements_ClickHouseMaterializedViewCarriesItsBody(t *testing.T) {
 	c := qt.New(t)
-	desired := &schemamodel.Database{MaterializedViews: []schemamodel.MaterializedView{{
-		StructName: "UserCounts",
-		Name:       "analytics.user_counts",
-		Body:       "SELECT count() FROM users",
-	}}}
-
 	statements, err := planner.GenerateSchemaDiffSQLStatements(
 		&difftypes.SchemaDiff{MaterializedViewsAdded: difftypes.MaterializedViewChanges{{Name: "analytics.user_counts", Body: "SELECT count() FROM users"}}},
-		desired,
+
 		platform.ClickHouse,
 	)
 

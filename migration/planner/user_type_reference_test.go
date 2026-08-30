@@ -75,7 +75,7 @@ func TestGenerateSchemaDiffSQLQualifiesDeclaredUserTypes(t *testing.T) {
 				DeclaredUserTypes: difftypes.UserTypeVocabularyOf(schema),
 			}
 
-			sql, err := planner.GenerateSchemaDiffSQL(diff, schema, platform.Postgres)
+			sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, test.want)
@@ -143,7 +143,7 @@ func TestGenerateSchemaDiffSQLLeavesABuiltInTypeAlone(t *testing.T) {
 				DeclaredUserTypes: difftypes.UserTypeVocabularyOf(schema),
 			}
 
-			sql, err := planner.GenerateSchemaDiffSQL(diff, schema, platform.Postgres)
+			sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, test.want)
@@ -190,7 +190,7 @@ func TestCompare_ACreatedColumnIsTypedByTheComparisonsVocabulary(t *testing.T) {
 	c.Assert(diff.DeclaredUserTypes.Domains, qt.HasLen, 1,
 		qt.Commentf("the comparison carries the declaration's type vocabulary"))
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.Postgres)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `"c" app.positive_int`,
@@ -229,7 +229,7 @@ func TestCompare_AForeignKeyResolvesAgainstTheComparisonsTables(t *testing.T) {
 	c.Assert(diff.DeclaredTables, qt.HasLen, 2,
 		qt.Commentf("the comparison carries the declared tables a reference resolves against"))
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.Postgres)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `REFERENCES "app"."parents"`,

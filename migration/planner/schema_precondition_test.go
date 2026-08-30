@@ -201,7 +201,7 @@ func planForDialect(
 	diff := schemadiff.CompareWithOptions(declared, live, opts)
 	diff.IdentifierSemantics = &semantics
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, declared, dialect)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, dialect)
 	c.Assert(err, qt.IsNil)
 	return statements
 }

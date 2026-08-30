@@ -35,7 +35,7 @@ func TestRLSFixturePipeline(t *testing.T) {
 			c.Assert(desired.RLSPolicies, qt.HasLen, test.expectedPolicies)
 			c.Assert(desired.RLSEnabledTables, qt.HasLen, test.expectedEnabledTables)
 			diff := schemadiff.Compare(desired, &catalog.Database{})
-			sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.Postgres)
+			sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Not(qt.Equals), "")
 			c.Assert(sql, qt.Contains, "CREATE POLICY")

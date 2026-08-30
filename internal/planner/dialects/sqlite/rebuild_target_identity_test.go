@@ -64,9 +64,10 @@ func TestRebuildResolvesTheRetainedTableAcrossSchemaSpellings(t *testing.T) {
 			declared := identityRebuildSchema(test.tableSchema)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
 				declaringTheOnlyTable(diff, declared),
-				declared,
+
 				"sqlite",
 			)
+
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(plan, qt.Contains, "__ptah_rebuild_notes", qt.Commentf("plan:\n%s", plan))
@@ -156,7 +157,7 @@ func TestRebuiltTableDoesNotAlsoGetItsIndexAndTriggerRecreated(t *testing.T) {
 				}},
 			}
 
-			statements, err := planner.GenerateSchemaDiffSQLStatements(declaringTheOnlyTable(diff, desired), desired, "sqlite")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(declaringTheOnlyTable(diff, desired), "sqlite")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(strings.Count(plan, "CREATE INDEX"), qt.Equals, 1, qt.Commentf("plan:\n%s", plan))
@@ -179,6 +180,6 @@ func TestRebuildDoesNotResolveATableInAnotherSchema(t *testing.T) {
 			Changes:    map[string]string{"type": "TEXT -> BLOB"},
 		}},
 	}}}
-	_, err := planner.GenerateSchemaDiffSQLStatements(diff, identityRebuildSchema("main"), "sqlite")
+	_, err := planner.GenerateSchemaDiffSQLStatements(diff, "sqlite")
 	c.Assert(err, qt.ErrorMatches, `(?s).*requires its desired definition, and the diff carries none for it.*`)
 }

@@ -172,7 +172,7 @@ func planModifiedConstraint(c *qt.C, desired *schemamodel.Database, dialect, sch
 	diff := schemadiff.CompareWithOptions(desired, database, opts)
 	diff.IdentifierSemantics = &semantics
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, dialect)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, dialect)
 	c.Assert(err, qt.IsNil)
 	c.Assert(diff.TablesAdded, qt.HasLen, 0, qt.Commentf("the table itself must pair"))
 	c.Assert(diff.TablesRemoved, qt.HasLen, 0, qt.Commentf("the table itself must pair"))

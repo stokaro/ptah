@@ -439,9 +439,9 @@ tables:
 	handMergedDiff := schemadiff.CompareWithDialect(handMerged, emptyDatabase, "postgres")
 	c.Assert(compositeDiff, qt.DeepEquals, handMergedDiff)
 
-	compositeMigration, err := planner.GenerateSchemaDiffSQL(compositeDiff, composite, "postgres")
+	compositeMigration, err := planner.GenerateSchemaDiffSQL(compositeDiff, "postgres")
 	c.Assert(err, qt.IsNil)
-	handMergedMigration, err := planner.GenerateSchemaDiffSQL(handMergedDiff, handMerged, "postgres")
+	handMergedMigration, err := planner.GenerateSchemaDiffSQL(handMergedDiff, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Assert(compositeMigration, qt.Equals, handMergedMigration)
 }

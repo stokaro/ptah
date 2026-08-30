@@ -89,7 +89,7 @@ func TestPlannerDoesNotWriteToARelationTheSchemaNeverDeclaredLive(t *testing.T) 
 				DeclaredTables: desired.Tables,
 			}
 
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, "postgres")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "postgres")
 			c.Assert(err, qt.IsNil)
 			c.Logf("plan:\n%s", strings.Join(statements, "\n"))
 			executeSQL(c, dbURL, statements)

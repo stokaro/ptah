@@ -63,9 +63,10 @@ func TestSQLServerTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 	removeDiff.SetIndexRemovals(diff.IndexRemovals())
 	planned, err := planner.GenerateSchemaDiffSQLStatements(
 		removeDiff,
-		ordersTarget,
+
 		platform.SQLServer,
 	)
+
 	c.Assert(err, qt.IsNil)
 	c.Assert(planned, qt.DeepEquals, []string{
 		// IF EXISTS is part of the emission on SQL Server: the guard is
@@ -95,9 +96,10 @@ func TestSQLServerTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 	createDiff.SetIndexAdditions(addDiff.IndexesAdded)
 	planned, err = planner.GenerateSchemaDiffSQLStatements(
 		createDiff,
-		bothTarget,
+
 		platform.SQLServer,
 	)
+
 	c.Assert(err, qt.IsNil)
 	c.Assert(planned, qt.HasLen, 1)
 	c.Assert(planned[0], qt.Contains,

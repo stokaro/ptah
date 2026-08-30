@@ -33,7 +33,7 @@ func TestGenerateSchemaDiffSQL_AssignsLengthLimitedForeignKeyNames(t *testing.T)
 		DeclaredTables: named.Tables,
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, schema, platform.MySQL)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.MySQL)
 
 	c.Assert(err, qt.IsNil)
 	matches := generatedForeignKeyNamePattern.FindAllString(sql, -1)
@@ -59,7 +59,7 @@ func TestGenerateSchemaDiffSQL_AvoidsExplicitAndGeneratedForeignKeyNameCollision
 		DeclaredTables: named.Tables,
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, schema, platform.MySQL)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.MySQL)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "FK_CHILDREN_PARENT_ID")

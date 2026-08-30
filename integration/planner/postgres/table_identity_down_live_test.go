@@ -60,7 +60,7 @@ func TestDownMigrationRestoresDroppedColumnLive(t *testing.T) {
 			database := downColumnDatabase(test.dbSchema)
 
 			forward := schemadiff.CompareWithDialect(desired, database, "postgres")
-			up, err := planner.GenerateSchemaDiffSQLStatements(forward, desired, "postgres")
+			up, err := planner.GenerateSchemaDiffSQLStatements(forward, "postgres")
 			c.Assert(err, qt.IsNil)
 			executeSQL(c, dbURL, up)
 			c.Assert(usersColumns(c, dbURL), qt.DeepEquals, []string{"email", "id"})
@@ -128,9 +128,10 @@ func TestModifiedUserTypeDropWithoutRecreateLive(t *testing.T) {
 
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
 				modifiedZipDomainDiff(),
-				test.desired,
+
 				"postgres",
 			)
+
 			c.Assert(err, qt.IsNil)
 			c.Logf("plan:\n%s", strings.Join(statements, "\n"))
 			executeSQL(c, dbURL, statements)

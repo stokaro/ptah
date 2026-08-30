@@ -43,7 +43,7 @@ func TestPostgreSQLRolesGrantsRoundTripAndBehaviorIntegration(t *testing.T) {
 	diff := schemadiff.Compare(target, &catalog.Database{})
 	c.Assert(diff.HasChanges(), qt.IsTrue)
 
-	nodes, err := planner.GenerateSchemaDiffAST(diff, target, "postgres")
+	nodes, err := planner.GenerateSchemaDiffAST(diff, "postgres")
 	c.Assert(err, qt.IsNil)
 	migrationSQL, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -544,7 +544,7 @@ func TestPostgreSQLRoleOutOfScopeIsPresentNotAbsentIntegration(t *testing.T) {
 
 	// And the plan applies. Before this fix the same plan carried
 	// CREATE ROLE "ptah_scope_outside_137" and died on it.
-	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, "postgres")
+	nodes, err := planner.GenerateSchemaDiffAST(diff, "postgres")
 	c.Assert(err, qt.IsNil)
 	migrationSQL, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

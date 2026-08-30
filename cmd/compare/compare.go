@@ -190,9 +190,10 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 
 	// 4. Display differences: every category the comparator recorded, then the
 	// SQL that reconciles them.
-	output, err := planner.GenerateSchemaDiffSQLWithOptions(diff, result, info.Dialect, planner.Options{
+	output, err := planner.GenerateSchemaDiffSQLWithOptions(diff, info.Dialect, planner.Options{
 		Capabilities: info.Capabilities,
 	})
+
 	if err != nil {
 		return fmt.Errorf("error generating schema diff SQL: %w", err)
 	}

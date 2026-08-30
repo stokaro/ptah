@@ -24,12 +24,11 @@ func TestGetPlanner_CapabilityWiring(t *testing.T) {
 			{Name: "fk_posts_user", TableName: "posts", Type: "FOREIGN KEY"},
 		},
 	}
-	desired := &schemamodel.Database{}
 
 	t.Run("mariadb gets guarded drops", func(t *testing.T) {
 		c := qt.New(t)
 
-		nodes, err := planner.GenerateSchemaDiffAST(diff, desired, "mariadb")
+		nodes, err := planner.GenerateSchemaDiffAST(diff, "mariadb")
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("mariadb", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -41,7 +40,7 @@ func TestGetPlanner_CapabilityWiring(t *testing.T) {
 	t.Run("mysql stays unguarded", func(t *testing.T) {
 		c := qt.New(t)
 
-		nodes, err := planner.GenerateSchemaDiffAST(diff, desired, "mysql")
+		nodes, err := planner.GenerateSchemaDiffAST(diff, "mysql")
 		c.Assert(err, qt.IsNil)
 		sql, err := renderer.RenderSQL("mysql", nodes...)
 		c.Assert(err, qt.IsNil)
@@ -59,13 +58,12 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_UsesServerVersionPreset(t *t
 			{Name: "chk_qty", TableName: "things", Type: "CHECK"},
 		},
 	}
-	desired := &schemamodel.Database{}
 
 	t.Run("mysql 5.7 emits warning instead of invalid drop", func(t *testing.T) {
 		c := qt.New(t)
 		caps := capability.ForServerVersion("mysql", "5.7.44")
 
-		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, desired, "mysql", planner.Options{Capabilities: caps})
+		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, "mysql", planner.Options{Capabilities: caps})
 		c.Assert(err, qt.IsNil)
 		sql := legacyRenderedSQL(strings.Join(statements, "\n"))
 
@@ -77,7 +75,7 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_UsesServerVersionPreset(t *t
 		c := qt.New(t)
 		caps := capability.ForServerVersion("mysql", "8.0.17")
 
-		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, desired, "mysql", planner.Options{Capabilities: caps})
+		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, "mysql", planner.Options{Capabilities: caps})
 		c.Assert(err, qt.IsNil)
 		sql := legacyRenderedSQL(strings.Join(statements, "\n"))
 
@@ -88,7 +86,7 @@ func TestGenerateSchemaDiffSQLStatementsWithOptions_UsesServerVersionPreset(t *t
 		c := qt.New(t)
 		caps := capability.ForServerVersion("mysql", "8.0.19")
 
-		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, desired, "mysql", planner.Options{Capabilities: caps})
+		statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, "mysql", planner.Options{Capabilities: caps})
 		c.Assert(err, qt.IsNil)
 		sql := legacyRenderedSQL(strings.Join(statements, "\n"))
 
@@ -100,14 +98,7 @@ func TestGetPlanner_DistributedSQLCapabilityWiring(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_email", Fields: []string{"email"}}, TableName: "users"}}}
-	desired := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
-		Indexes: []schemamodel.Index{
-			{Name: "idx_users_email", StructName: "User", Fields: []string{"email"}},
-		},
-	}
-
-	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, platform.CockroachDB)
+	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.CockroachDB)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL(platform.CockroachDB, nodes...)
 	c.Assert(err, qt.IsNil)
@@ -127,13 +118,7 @@ func TestGetPlanner_CockroachDBTableQualifiedIndexReplacement(t *testing.T) {
 	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "public.users"},
 	})
-	desired := &schemamodel.Database{
-		Indexes: []schemamodel.Index{
-			{Name: "idx_shared", TableName: "public.users", Fields: []string{"handle"}},
-		},
-	}
-
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, platform.CockroachDB)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.CockroachDB)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)

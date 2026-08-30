@@ -25,7 +25,7 @@ func TestGenerate_ASelfReferencingForeignKeyIsPlannedWithoutFinalize(t *testing.
 
 	sql, err := planner.GenerateSchemaDiffSQL(&difftypes.SchemaDiff{
 		TablesAdded: difftypes.TableCreationsFor(desired, "nodes"),
-	}, desired, platform.Postgres)
+	}, platform.Postgres)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "fk_nodes_parent")
@@ -44,7 +44,7 @@ func TestGenerate_AFinalizedDeclarationPlansItOnce(t *testing.T) {
 
 	sql, err := planner.GenerateSchemaDiffSQL(&difftypes.SchemaDiff{
 		TablesAdded: difftypes.TableCreationsFor(desired, "nodes"),
-	}, desired, platform.Postgres)
+	}, platform.Postgres)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(countOccurrences(sql, "fk_nodes_parent"), qt.Equals, 1)
