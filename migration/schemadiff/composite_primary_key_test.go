@@ -52,11 +52,11 @@ func TestCompareWithDialect_TableLevelCompositePrimaryKeyMissingFromExistingTabl
 	}
 
 	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
-	c.Assert(diff.ConstraintsAdded, qt.DeepEquals, []string{"memberships_pkey"})
-	c.Assert(diff.ConstraintsAddedWithTables, qt.HasLen, 1)
-	c.Assert(diff.ConstraintsAddedWithTables[0].TableName, qt.Equals, "memberships")
-	c.Assert(diff.ConstraintsAddedWithTables[0].Type, qt.Equals, "PRIMARY KEY")
-	c.Assert(diff.ConstraintsAddedWithTables[0].Columns, qt.DeepEquals, []string{"org_id", "user_id"})
+	c.Assert(diff.ConstraintsAdded.Names(), qt.DeepEquals, []string{"memberships_pkey"})
+	c.Assert(diff.ConstraintsAdded, qt.HasLen, 1)
+	c.Assert(diff.ConstraintsAdded[0].TableName, qt.Equals, "memberships")
+	c.Assert(diff.ConstraintsAdded[0].Type, qt.Equals, "PRIMARY KEY")
+	c.Assert(diff.ConstraintsAdded[0].Columns, qt.DeepEquals, []string{"org_id", "user_id"})
 	c.Assert(diff.TablesModified, qt.HasLen, 0, qt.Commentf("diff: %#v", diff))
 }
 
@@ -87,7 +87,7 @@ func TestCompareWithDialect_BlankTablePrimaryKeyDoesNotSynthesizeConstraint(t *t
 
 	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0, qt.Commentf("diff: %#v", diff))
-	c.Assert(diff.ConstraintsAddedWithTables, qt.HasLen, 0, qt.Commentf("diff: %#v", diff))
+	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0, qt.Commentf("diff: %#v", diff))
 }
 
 func TestCompareWithDialect_SingleColumnFieldLevelPrimaryKeyIsNotDuplicated(t *testing.T) {
@@ -162,7 +162,7 @@ func TestCompareWithDialect_SingleColumnFieldLevelPrimaryKeyMissingFromDBIsDetec
 
 	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
 	c.Assert(diff.HasChanges(), qt.IsTrue, qt.Commentf("diff: %#v", diff))
-	c.Assert(diff.ConstraintsAdded, qt.Contains, "pets_pkey", qt.Commentf("diff: %#v", diff))
+	c.Assert(diff.ConstraintsAdded.Names(), qt.Contains, "pets_pkey", qt.Commentf("diff: %#v", diff))
 }
 
 func compositePrimaryKeySchema() *schemamodel.Database {

@@ -66,8 +66,7 @@ func TestPlanner_GenerateMigrationAST_RejectsUniqueIncludeColumns(t *testing.T) 
 	planner := mysql.New()
 
 	diff := &difftypes.SchemaDiff{
-		ConstraintsAdded: []string{"users_email_key"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name:           "users_email_key",
 			TableName:      "users",
 			Type:           "UNIQUE",

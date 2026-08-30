@@ -172,7 +172,7 @@ are one object.
 ```json
 {
   "diff": {
-    "constraints_removed_with_tables": [
+    "constraints_removed": [
       {
         "name": "uq_widget_scope",
         "table_name": "public.widget",

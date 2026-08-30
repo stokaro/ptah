@@ -34,7 +34,7 @@ func TestPlannerRefusesABareNameConstraintAddition(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		ConstraintsAdded: []string{"aaa_fk_child_parent"},
+		ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "aaa_fk_child_parent"}, {Name: "zzz_ck_child_amount"}},
 	}
 
 	nodes, err := postgres.New().GenerateMigrationAST(diff)
@@ -54,8 +54,7 @@ func TestPlannerOrdersAForeignKeyAfterTheOtherKinds(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		ConstraintsAdded: []string{"aaa_fk_child_parent", "zzz_ck_child_amount"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 			{
 				Name: "aaa_fk_child_parent", TableName: "wf2315_children", Type: "FOREIGN KEY",
 				Columns: []string{"parent_id"}, ForeignTable: "wf2315_parents", ForeignColumn: "id",

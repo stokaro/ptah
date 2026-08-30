@@ -98,8 +98,8 @@ func TestConstraints_ACheckIsComparedThroughTheServerWhenOneAnswered(t *testing.
 				&config.CompareOptions{Dialect: platform.Postgres, CheckExpressions: test.checks},
 				checkSemantics())
 
-			c.Assert(diff.ConstraintsAdded, qt.DeepEquals, test.wantAdded)
-			c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, test.wantRemove)
+			c.Assert(diff.ConstraintsAdded.Names(), qt.DeepEquals, test.wantAdded)
+			c.Assert(diff.ConstraintsRemoved.Names(), qt.DeepEquals, test.wantRemove)
 		})
 	}
 }

@@ -63,7 +63,7 @@ import (
 // against and the conservative answer is the behavior that was there before.
 func dropReverseConstraintsRestoredByTableCreation(
 	reversed *difftypes.SchemaDiff,
-	removedWithTables []difftypes.ConstraintRemovalInfo,
+	removedWithTables difftypes.ConstraintRemovals,
 	dbSchema *catalog.Database,
 ) {
 	if reversed == nil || dbSchema == nil || len(reversed.TablesAdded) == 0 {
@@ -74,17 +74,17 @@ func dropReverseConstraintsRestoredByTableCreation(
 		return
 	}
 
-	keptNames := make(map[string]struct{}, len(reversed.ConstraintsAddedWithTables))
-	keptAdditions := make([]difftypes.ConstraintAdditionInfo, 0, len(reversed.ConstraintsAddedWithTables))
-	for _, addition := range reversed.ConstraintsAddedWithTables {
+	keptNames := make(map[string]struct{}, len(reversed.ConstraintsAdded))
+	keptAdditions := make(difftypes.ConstraintAdditions, 0, len(reversed.ConstraintsAdded))
+	for _, addition := range reversed.ConstraintsAdded {
 		if restored.covers(addition.TableName, addition.Name, addition.Type) {
 			continue
 		}
 		keptAdditions = append(keptAdditions, addition)
 		keptNames[addition.Name] = struct{}{}
 	}
-	if len(keptAdditions) != len(reversed.ConstraintsAddedWithTables) {
-		reversed.ConstraintsAddedWithTables = keptAdditions
+	if len(keptAdditions) != len(reversed.ConstraintsAdded) {
+		reversed.ConstraintsAdded = keptAdditions
 	}
 
 	// The bare name list has to lose the same entries. Left behind, a name whose
@@ -94,24 +94,24 @@ func dropReverseConstraintsRestoredByTableCreation(
 	//
 	// A name is only dropped when EVERY host the comparator recorded for it is
 	// one of the re-created tables that restores it. A constraint name shared
-	// across host tables — the mixin case ConstraintsAddedWithTables exists for
+	// across host tables — the mixin case ConstraintsAdded exists for
 	// — keeps its name whenever any host still needs it.
 	hostsByName := make(map[string][]difftypes.ConstraintRemovalInfo, len(removedWithTables))
 	for _, removal := range removedWithTables {
 		hostsByName[removal.Name] = append(hostsByName[removal.Name], removal)
 	}
-	keptBareNames := make([]string, 0, len(reversed.ConstraintsAdded))
-	for _, name := range reversed.ConstraintsAdded {
-		if restored.coversEveryHost(name, keptNames, hostsByName[name]) {
+	kept := make(difftypes.ConstraintAdditions, 0, len(reversed.ConstraintsAdded))
+	for _, addition := range reversed.ConstraintsAdded {
+		if restored.coversEveryHost(addition.Name, keptNames, hostsByName[addition.Name]) {
 			continue
 		}
-		keptBareNames = append(keptBareNames, name)
+		kept = append(kept, addition)
 	}
-	if len(keptBareNames) != len(reversed.ConstraintsAdded) {
-		// Freshly allocated on purpose: ConstraintsAdded is the caller's
-		// ConstraintsRemoved slice, and reverseSchemaDiffWithSchema promises to
-		// leave the forward diff untouched.
-		reversed.ConstraintsAdded = keptBareNames
+	if len(kept) != len(reversed.ConstraintsAdded) {
+		// Freshly allocated on purpose: ConstraintsAdded is derived from the
+		// caller's ConstraintsRemoved, and reverseSchemaDiffWithSchema promises
+		// to leave the forward diff untouched.
+		reversed.ConstraintsAdded = kept
 	}
 }
 
@@ -209,7 +209,7 @@ func (r recreatedTableRestores) covers(tableName, constraintName, constraintType
 func (r recreatedTableRestores) coversEveryHost(
 	name string,
 	keptNames map[string]struct{},
-	hosts []difftypes.ConstraintRemovalInfo,
+	hosts difftypes.ConstraintRemovals,
 ) bool {
 	if _, kept := keptNames[name]; kept {
 		return false

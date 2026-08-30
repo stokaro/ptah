@@ -106,13 +106,13 @@ func TestPlanner_ColumnTypeChange_DefaultSchemaQualifiedRemovalMatchesBareAdditi
 	semantics.DefaultSchema = "app"
 	diff := typeChangeDiff("posts", "user_id", "INTEGER -> BIGINT")
 	diff.IdentifierSemantics = &semantics
-	diff.ConstraintsAdded = []string{"fk_posts_user_id"}
-	diff.ConstraintsAddedWithTables = []difftypes.ConstraintAdditionInfo{{
+	diff.ConstraintsAdded = difftypes.ConstraintAdditions{{Name: "fk_posts_user_id"}}
+	diff.ConstraintsAdded = []difftypes.ConstraintAdditionInfo{{
 		Name: "fk_posts_user_id", TableName: "posts", Type: "FOREIGN KEY",
 		Columns: []string{"user_id"}, ForeignTable: "users", ForeignColumns: []string{"id"},
 	}}
-	diff.ConstraintsRemoved = []string{"fk_posts_user_id"}
-	diff.ConstraintsRemovedWithTables = []difftypes.ConstraintRemovalInfo{{
+	diff.ConstraintsRemoved = difftypes.ConstraintRemovals{{Name: "fk_posts_user_id"}}
+	diff.ConstraintsRemoved = []difftypes.ConstraintRemovalInfo{{
 		Name: "fk_posts_user_id", TableName: "app.posts", Type: "FOREIGN KEY",
 	}}
 	diff.ForeignKeysRemovedWithTables = []difftypes.ForeignKeyRemovalInfo{{
@@ -343,13 +343,11 @@ func TestPlanner_ColumnTypeChange_CoincidentFKDefinitionChange(t *testing.T) {
 						{ColumnName: "user_id", Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
 					}},
 				},
-				ConstraintsAdded:   []string{"fk_posts_user_id"},
-				ConstraintsRemoved: []string{"fk_posts_user_id"},
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 					Name: "fk_posts_user_id", TableName: "posts", Type: "FOREIGN KEY",
 					Columns: []string{"user_id"}, ForeignTable: "users", ForeignColumn: "id", OnDelete: "SET NULL",
 				}},
-				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
+				ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{{
 					Name: "fk_posts_user_id", TableName: "posts", Type: "FOREIGN KEY",
 				}},
 			}
@@ -406,13 +404,11 @@ func TestPlanner_ColumnTypeChange_CoHostedSharedFKName(t *testing.T) {
 						{ColumnName: "user_id", Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
 					}},
 				},
-				ConstraintsAdded:   []string{"fk_shared"},
-				ConstraintsRemoved: []string{"fk_shared"},
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 					Name: "fk_shared", TableName: "posts", Type: "FOREIGN KEY",
 					Columns: []string{"user_id"}, ForeignTable: "users", ForeignColumn: "id", OnDelete: "SET NULL",
 				}},
-				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
+				ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{{
 					Name: "fk_shared", TableName: "posts", Type: "FOREIGN KEY",
 				}},
 			}
@@ -466,8 +462,7 @@ func TestPlanner_ColumnTypeChange_RemovedOnlyForeignKey(t *testing.T) {
 						{ColumnName: "author_id", Changes: map[string]string{"type": "INTEGER -> BIGINT"}},
 					}},
 				},
-				ConstraintsRemoved: []string{"fk_posts_author"},
-				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+				ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 					{Name: "fk_posts_author", TableName: "posts", Type: "FOREIGN KEY"},
 				},
 			}

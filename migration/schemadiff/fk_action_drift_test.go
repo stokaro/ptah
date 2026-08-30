@@ -80,8 +80,8 @@ func TestCompare_FieldLevelForeignKeyActionDrift(t *testing.T) {
 		c.Assert(diff.HasChanges(), qt.IsTrue)
 		// Drop + add of the same FK name (modified constraints are expressed as
 		// removed + added today).
-		c.Assert(diff.ConstraintsAdded, qt.Contains, "fk_export_file")
-		c.Assert(diff.ConstraintsRemoved, qt.Contains, "fk_export_file")
+		c.Assert(diff.ConstraintsAdded.Names(), qt.Contains, "fk_export_file")
+		c.Assert(diff.ConstraintsRemoved.Names(), qt.Contains, "fk_export_file")
 	})
 
 	t.Run("unchanged SET NULL FK is a no-op", func(t *testing.T) {

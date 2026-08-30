@@ -22,11 +22,9 @@ import (
 // table. (The generator's reverseSchemaDiffWithSchema is unexported; this
 // reproduces only the constraint reversal exercised here.)
 func reverseConstraintDiff(up *difftypes.SchemaDiff) *difftypes.SchemaDiff {
-	down := &difftypes.SchemaDiff{
-		ConstraintsRemoved: append([]string(nil), up.ConstraintsAdded...),
-	}
-	for _, add := range up.ConstraintsAddedWithTables {
-		down.ConstraintsRemovedWithTables = append(down.ConstraintsRemovedWithTables, difftypes.ConstraintRemovalInfo{
+	down := &difftypes.SchemaDiff{}
+	for _, add := range up.ConstraintsAdded {
+		down.ConstraintsRemoved = append(down.ConstraintsRemoved, difftypes.ConstraintRemovalInfo{
 			Name:      add.Name,
 			TableName: add.TableName,
 			Type:      add.Type,
@@ -210,8 +208,8 @@ func TestEmbeddedInlineMixinFK_MultiHostActionDrift(t *testing.T) {
 		diff := schemadiff.Compare(gen, ownableMixinConvergedDB(hosts...))
 		c.Assert(diff.HasChanges(), qt.IsTrue)
 		// The same FK name is added + removed once per host (a modification).
-		c.Assert(countName(diff.ConstraintsAdded, "fk_entity_tenant"), qt.Equals, len(hosts))
-		c.Assert(countName(diff.ConstraintsRemoved, "fk_entity_tenant"), qt.Equals, len(hosts))
+		c.Assert(countName(diff.ConstraintsAdded.Names(), "fk_entity_tenant"), qt.Equals, len(hosts))
+		c.Assert(countName(diff.ConstraintsRemoved.Names(), "fk_entity_tenant"), qt.Equals, len(hosts))
 
 		nodes, err := postgres.New().GenerateMigrationAST(diff)
 		c.Assert(err, qt.IsNil)

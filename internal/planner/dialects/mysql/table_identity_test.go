@@ -206,8 +206,7 @@ func TestPrimaryKeyIsPlannedOnceAcrossSchemaSpellings(t *testing.T) {
 						Changes:    map[string]string{"primary_key": "false -> true"},
 					}},
 				}},
-				ConstraintsAdded: []string{"pk_orders"},
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 					Name:      "pk_orders",
 					TableName: test.constraintTable,
 					Type:      "PRIMARY KEY",
@@ -240,8 +239,7 @@ func TestPrimaryKeyOwnershipDoesNotCrossSchemas(t *testing.T) {
 				Changes: map[string]string{"primary_key": "false -> true"},
 			}},
 		}},
-		ConstraintsAdded: []string{"pk_orders"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name:      "pk_orders",
 			TableName: "reporting.orders",
 			Type:      "PRIMARY KEY",

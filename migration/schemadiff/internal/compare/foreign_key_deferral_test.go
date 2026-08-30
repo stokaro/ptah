@@ -96,8 +96,8 @@ func TestConstraints_ADeferralThatAlreadyMatchesIsNotPlanned(t *testing.T) {
 				deferrableDeclaration(tt.deferrable, tt.initially),
 				deferrableCatalog(tt.deferrable, tt.initially))
 
-			c.Assert(diff.ConstraintsAddedWithTables, qt.HasLen, 0)
-			c.Assert(diff.ConstraintsRemovedWithTables, qt.HasLen, 0)
+			c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
+			c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
 		})
 	}
 }
@@ -128,8 +128,8 @@ func TestConstraints_AChangedDeferralIsStillPlanned(t *testing.T) {
 				deferrableDeclaration(tt.declared, tt.declaredAt),
 				deferrableCatalog(tt.live, tt.liveAt))
 
-			c.Assert(diff.ConstraintsAddedWithTables, qt.HasLen, 1)
-			c.Assert(diff.ConstraintsAddedWithTables[0].Type, qt.Equals, "FOREIGN KEY")
+			c.Assert(diff.ConstraintsAdded, qt.HasLen, 1)
+			c.Assert(diff.ConstraintsAdded[0].Type, qt.Equals, "FOREIGN KEY")
 		})
 	}
 }

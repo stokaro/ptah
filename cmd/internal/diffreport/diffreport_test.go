@@ -53,7 +53,7 @@ func TestCategoriesNamesEveryChangedObject(t *testing.T) {
 		{
 			name: "categories are reported in diff field order",
 			diff: &difftypes.SchemaDiff{
-				ConstraintsRemoved: []string{"uq_products_sku"},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "uq_products_sku"}},
 				TablesAdded:        difftypes.TableChanges{{Name: "public.orders"}},
 			},
 			want: []diffreport.Category{

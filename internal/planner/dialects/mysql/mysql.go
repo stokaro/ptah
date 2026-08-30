@@ -542,14 +542,14 @@ func primaryKeyColumnChangeOwnedByTableConstraint(
 	tableName, columnName string,
 	semantics identifier.Semantics,
 ) bool {
-	for _, info := range diff.ConstraintsAddedWithTables {
+	for _, info := range diff.ConstraintsAdded {
 		if strings.EqualFold(info.Type, "PRIMARY KEY") &&
 			objectlookup.Same(tableName, info.TableName, semantics) &&
 			slices.Contains(info.Columns, columnName) {
 			return true
 		}
 	}
-	for _, info := range diff.ConstraintsRemovedWithTables {
+	for _, info := range diff.ConstraintsRemoved {
 		if strings.EqualFold(info.Type, "PRIMARY KEY") &&
 			objectlookup.Same(tableName, info.TableName, semantics) {
 			return true
@@ -811,7 +811,7 @@ func collectColumnTypeForeignKeyActions(
 	// they are drawn from the removal list. They exist in the database and, when
 	// their table has a column-type change, must be pre-dropped before the bare
 	// MODIFY the server would otherwise reject; they have no re-add.
-	for _, info := range diff.ConstraintsRemovedWithTables {
+	for _, info := range diff.ConstraintsRemoved {
 		if !strings.EqualFold(info.Type, "FOREIGN KEY") {
 			continue
 		}
@@ -863,12 +863,12 @@ func foreignKeyConstraintDiffHosts(
 ) (added, removed map[constraintHostKey]struct{}) {
 	added = make(map[constraintHostKey]struct{})
 	removed = make(map[constraintHostKey]struct{})
-	for _, info := range diff.ConstraintsAddedWithTables {
+	for _, info := range diff.ConstraintsAdded {
 		if strings.EqualFold(info.Type, "FOREIGN KEY") {
 			added[info.Identity] = struct{}{}
 		}
 	}
-	for _, info := range diff.ConstraintsRemovedWithTables {
+	for _, info := range diff.ConstraintsRemoved {
 		if strings.EqualFold(info.Type, "FOREIGN KEY") {
 			removed[info.Identity] = struct{}{}
 		}
@@ -1351,7 +1351,7 @@ func (p *Planner) rejectUniqueIncludeConstraints(diff *difftypes.SchemaDiff) err
 	if diff == nil {
 		return nil
 	}
-	for _, add := range diff.ConstraintsAddedWithTables {
+	for _, add := range diff.ConstraintsAdded {
 		if !strings.EqualFold(add.Type, "UNIQUE") || len(add.IncludeColumns) == 0 {
 			continue
 		}
@@ -1652,10 +1652,10 @@ func (p *Planner) addNewConstraints(
 	// would abort the migration.
 	maps.Copy(state.droppedForModify, bracketDropped)
 
-	result = p.addPrimaryKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state)
+	result = p.addPrimaryKeyConstraintsWithTables(result, diff.ConstraintsAdded, state)
 	result = p.addNonForeignKeyConstraintsWithTables(
 		result,
-		diff.ConstraintsAddedWithTables,
+		diff.ConstraintsAdded,
 		state.removalByTableName,
 		state.handled,
 		state.droppedForModify,
@@ -1666,7 +1666,7 @@ func (p *Planner) addNewConstraints(
 	if err != nil {
 		return nil, err
 	}
-	result = p.addForeignKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state)
+	result = p.addForeignKeyConstraintsWithTables(result, diff.ConstraintsAdded, state)
 	result, err = p.addNamedConstraintsByKind(result, diff, state, foreignKeyConstraints)
 	if err != nil {
 		return nil, err
@@ -1701,7 +1701,7 @@ func newConstraintPlanState(
 	// FK, issue #189). Its old definition must be dropped before the re-add or
 	// the ADD CONSTRAINT collides with the still-present constraint of the same
 	// name (errno 1826 for FKs / 3822 for CHECKs).
-	removedNames := make(map[string]struct{}, len(diff.ConstraintsRemovedWithTables))
+	removedNames := make(map[string]struct{}, len(diff.ConstraintsRemoved))
 	for _, name := range constraintscope.RemovalNames(diff) {
 		removedNames[semantics.IndexIdentityKey(name)] = struct{}{}
 	}
@@ -1709,7 +1709,7 @@ func newConstraintPlanState(
 	// Removal info keyed by (table, name) so a same-name modification can be
 	// dropped from each owning table with the correct FK-aware syntax before
 	// being re-added. A mixin-shared FK name with on_delete/on_update drift on
-	// >=2 host tables produces one ConstraintsRemovedWithTables entry per host
+	// >=2 host tables produces one ConstraintsRemoved entry per host
 	// (same Name, distinct TableName); keying the map on the name alone would
 	// collapse them to the last host, so only that host's old FK would be
 	// dropped and the other hosts' ADD CONSTRAINT would collide with the
@@ -1717,19 +1717,19 @@ func newConstraintPlanState(
 	// name", errno 1826). Keying on (table, name) keeps one removal per host so
 	// each host gets its own DROP FOREIGN KEY. A single-host name still resolves
 	// to exactly one entry, so #189 stays byte-identical (one DROP + one ADD).
-	removalByTableName := make(map[constraintHostKey]difftypes.ConstraintRemovalInfo, len(diff.ConstraintsRemovedWithTables))
-	for _, info := range diff.ConstraintsRemovedWithTables {
+	removalByTableName := make(map[constraintHostKey]difftypes.ConstraintRemovalInfo, len(diff.ConstraintsRemoved))
+	for _, info := range diff.ConstraintsRemoved {
 		removalByTableName[info.Identity] = info
 	}
 
 	// Removal info grouped by bare name, so the name-only ConstraintsAdded loop
 	// below can scope a modified non-FK constraint's DROP to its concrete host
 	// table(s). The comparator records every removal in
-	// ConstraintsRemovedWithTables in lockstep with the bare ConstraintsRemoved
+	// ConstraintsRemoved in lockstep with the bare ConstraintsRemoved
 	// list, so a modified constraint's host is normally known here even though
 	// the bare loop iterates names alone.
-	removalsByName := make(map[string][]difftypes.ConstraintRemovalInfo, len(diff.ConstraintsRemovedWithTables))
-	for _, info := range diff.ConstraintsRemovedWithTables {
+	removalsByName := make(map[string][]difftypes.ConstraintRemovalInfo, len(diff.ConstraintsRemoved))
+	for _, info := range diff.ConstraintsRemoved {
 		name := semantics.IndexIdentityKey(info.Name)
 		removalsByName[name] = append(removalsByName[name], info)
 	}
@@ -1741,8 +1741,8 @@ func newConstraintPlanState(
 	// removal on host B (not re-added): B's drop is owned by removeConstraints,
 	// and MySQL has no IF EXISTS on constraint drops to absorb a duplicate, so
 	// dropping B here as well would abort the migration on the second drop.
-	addedHostsByName := make(map[string]map[string]struct{}, len(diff.ConstraintsAddedWithTables))
-	for _, add := range diff.ConstraintsAddedWithTables {
+	addedHostsByName := make(map[string]map[string]struct{}, len(diff.ConstraintsAdded))
+	for _, add := range diff.ConstraintsAdded {
 		if add.TableName == "" {
 			// An addition entry with no recorded host is hostless: a "" host
 			// would match no removal entry, so keeping it here would make
@@ -1773,13 +1773,13 @@ func newConstraintPlanState(
 
 func (p *Planner) addPrimaryKeyConstraintsWithTables(
 	result []ast.Node,
-	additions []difftypes.ConstraintAdditionInfo,
+	additions difftypes.ConstraintAdditions,
 	state constraintPlanState,
 ) []ast.Node {
 	// Prefer the table-qualified additions when present. A field-level FK from an
 	// embedded inline-relation mixin shares one name across every host table, and
 	// down migrations restore modified CHECK/UNIQUE definitions from the
-	// introspected DB schema. ConstraintsAddedWithTables carries the concrete
+	// introspected DB schema. ConstraintsAdded carries the concrete
 	// table + definition. Names handled here are recorded so the name-only loop
 	// skips them.
 	for _, add := range additions {
@@ -1823,7 +1823,7 @@ func (p *Planner) addNamedConstraintsByKind(
 		if _, done := state.handled[constraintIdentity]; done {
 			continue
 		}
-		if constraintRecordIsForeignKey(diff.ConstraintsAddedWithTables, constraintName) != wantForeignKey {
+		if constraintRecordIsForeignKey(diff.ConstraintsAdded, constraintName) != wantForeignKey {
 			continue
 		}
 		return nil, fmt.Errorf(
@@ -1840,7 +1840,7 @@ func (p *Planner) addNamedConstraintsByKind(
 //
 // A record carrying no kind answers false, so such a name is refused once, by
 // the non-foreign-key pass, rather than by both.
-func constraintRecordIsForeignKey(additions []difftypes.ConstraintAdditionInfo, name string) bool {
+func constraintRecordIsForeignKey(additions difftypes.ConstraintAdditions, name string) bool {
 	for _, add := range additions {
 		if add.Name == name {
 			return strings.EqualFold(add.Type, "FOREIGN KEY")
@@ -1851,7 +1851,7 @@ func constraintRecordIsForeignKey(additions []difftypes.ConstraintAdditionInfo, 
 
 func (p *Planner) addForeignKeyConstraintsWithTables(
 	result []ast.Node,
-	additions []difftypes.ConstraintAdditionInfo,
+	additions difftypes.ConstraintAdditions,
 	state constraintPlanState,
 ) []ast.Node {
 	for _, add := range additions {
@@ -1873,7 +1873,7 @@ func (p *Planner) addForeignKeyConstraintsWithTables(
 
 func (p *Planner) addNonForeignKeyConstraintsWithTables(
 	result []ast.Node,
-	additions []difftypes.ConstraintAdditionInfo,
+	additions difftypes.ConstraintAdditions,
 	removalByTableName map[constraintHostKey]difftypes.ConstraintRemovalInfo,
 	handled map[string]struct{},
 	droppedForModify map[constraintHostKey]struct{},
@@ -2000,7 +2000,7 @@ func (p *Planner) appendScopedDrop(
 }
 
 // foreignKeyAdditionNode builds the ALTER TABLE ADD CONSTRAINT node for a
-// table-qualified field-level FK addition (ConstraintsAddedWithTables). The
+// table-qualified field-level FK addition (ConstraintsAdded). The
 // concrete table comes from the comparator, so this is correct for FK names
 // that repeat across the many tables embedding an inline-relation mixin
 // (issue #197), unlike the legacy field scan keyed on a Go struct name.
@@ -2038,14 +2038,14 @@ func (p *Planner) checkNotEnforcedMessage() string {
 //   - DROP INDEX <name> for UNIQUE constraints
 //   - DROP PRIMARY KEY for PRIMARY KEY constraints
 //
-// The owning table is carried on diff.ConstraintsRemovedWithTables (the bare
+// The owning table is carried on diff.ConstraintsRemoved (the bare
 // ConstraintsRemoved name list does not retain it, and MySQL has no runtime
 // name-only fallback like the postgres information_schema DO block).
 //
 // # Modification skip — keyed on (table, name), not the bare name
 //
 // A constraint whose (table, name) appears in BOTH the additions
-// (ConstraintsAddedWithTables) and the removals is a modification: the
+// (ConstraintsAdded) and the removals is a modification: the
 // comparator expresses a changed constraint as remove + add of the same name
 // (e.g. an on_delete change on a field-level FK, issue #189). Those hosts are
 // emitted as DROP-then-ADD by addNewConstraints, which runs earlier in the
@@ -2058,7 +2058,7 @@ func (p *Planner) checkNotEnforcedMessage() string {
 // stale constraint in place forever (issue #207; postgres sibling #206).
 //
 // A name that is re-added with NO recorded host (ConstraintsAdded carries the
-// name but ConstraintsAddedWithTables has no entry — reverse/down and
+// name but ConstraintsAdded has no entry — reverse/down and
 // hand-built diffs) is skipped entirely: addNewConstraints already dropped
 // every recorded removal host for it (see emitModifyDropForName), and MySQL
 // accepts no DROP ... IF EXISTS to absorb a duplicate drop, so a second drop
@@ -2079,9 +2079,9 @@ func (p *Planner) removeConstraints(
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	// (table, name) pairs being re-added — modifications owned by
 	// addNewConstraints — plus, per name, how many hosts were recorded at all.
-	modifyHosts := make(map[constraintHostKey]struct{}, len(diff.ConstraintsAddedWithTables))
-	addedHostCounts := make(map[string]int, len(diff.ConstraintsAddedWithTables))
-	for _, add := range diff.ConstraintsAddedWithTables {
+	modifyHosts := make(map[constraintHostKey]struct{}, len(diff.ConstraintsAdded))
+	addedHostCounts := make(map[string]int, len(diff.ConstraintsAdded))
+	for _, add := range diff.ConstraintsAdded {
 		if add.TableName == "" {
 			// Hostless addition entries do not count as recorded hosts —
 			// mirroring addedHostsByName in addNewConstraints — so the
@@ -2092,7 +2092,7 @@ func (p *Planner) removeConstraints(
 		modifyHosts[add.Identity] = struct{}{}
 		addedHostCounts[semantics.IndexIdentityKey(add.Name)]++
 	}
-	addedBareNames := make(map[string]struct{}, len(diff.ConstraintsAddedWithTables))
+	addedBareNames := make(map[string]struct{}, len(diff.ConstraintsAdded))
 	for _, name := range constraintscope.AdditionNames(diff) {
 		addedBareNames[semantics.IndexIdentityKey(name)] = struct{}{}
 	}
@@ -2103,7 +2103,7 @@ func (p *Planner) removeConstraints(
 	}
 
 	dropped := make(map[constraintHostKey]struct{})
-	for _, info := range diff.ConstraintsRemovedWithTables {
+	for _, info := range diff.ConstraintsRemoved {
 		if info.TableName == "" {
 			// No host recorded: there is no valid table-qualified ALTER TABLE
 			// to emit and no runtime fallback on MySQL. Real comparator output

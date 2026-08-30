@@ -60,8 +60,7 @@ func TestPlanner_GenerateMigrationAST_CompositeForeignKeyAddition(t *testing.T) 
 			c := qt.New(t)
 
 			diff := &difftypes.SchemaDiff{
-				ConstraintsAdded: []string{"fk_orders_accounts"},
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 					{
 						Name:           "fk_orders_accounts",
 						TableName:      "orders",
@@ -89,8 +88,7 @@ func TestPlanner_GenerateMigrationAST_ForeignKeyIndexesDropAfterConstraints(t *t
 			c := qt.New(t)
 
 			diff := &difftypes.SchemaDiff{
-				ConstraintsRemoved: []string{"fk_users_account_id", "fk_users_manager_id"},
-				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+				ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 					{Name: "fk_users_account_id", TableName: "users", Type: "FOREIGN KEY"},
 					{Name: "fk_users_manager_id", TableName: "users", Type: "FOREIGN KEY"},
 				},
@@ -128,15 +126,13 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *t
 		{
 			name: "unique to check",
 			diff: &difftypes.SchemaDiff{
-				ConstraintsAdded: []string{"products_quantity_guard"},
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 					Name:            "products_quantity_guard",
 					TableName:       "products",
 					Type:            "CHECK",
 					CheckExpression: "quantity > 10",
 				}},
-				ConstraintsRemoved: []string{"products_quantity_guard"},
-				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
+				ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{{
 					Name:      "products_quantity_guard",
 					TableName: "products",
 					Type:      "UNIQUE",
@@ -148,15 +144,13 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *t
 		{
 			name: "check to unique",
 			diff: &difftypes.SchemaDiff{
-				ConstraintsAdded: []string{"accounts_identity"},
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 					Name:      "accounts_identity",
 					TableName: "accounts",
 					Type:      "UNIQUE",
 					Columns:   []string{"email", "region"},
 				}},
-				ConstraintsRemoved: []string{"accounts_identity"},
-				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
+				ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{{
 					Name:      "accounts_identity",
 					TableName: "accounts",
 					Type:      "CHECK",
@@ -185,7 +179,7 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *t
 func TestPlanner_GenerateMigrationAST_DropsFKBeforeRemovingItsTable(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
 		TablesRemoved: []string{"tasks", "projects", "accounts"},
-		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 			{Name: "fk_tasks_project", TableName: "tasks", Type: "FOREIGN KEY"},
 			{Name: "fk_projects_account", TableName: "projects", Type: "FOREIGN KEY"},
 		},
@@ -240,15 +234,13 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 					c := qt.New(t)
 
 					diff := &difftypes.SchemaDiff{
-						ConstraintsAdded:   []string{"shared_fk"},
-						ConstraintsRemoved: []string{"shared_fk"},
-						ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+						ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 							{
 								Name: "shared_fk", TableName: "articles", Type: "FOREIGN KEY",
 								Columns: []string{"author_id"}, ForeignTable: "users", ForeignColumn: "id", OnDelete: "CASCADE",
 							},
 						},
-						ConstraintsRemovedWithTables: removals,
+						ConstraintsRemoved: removals,
 					}
 
 					sql := renderMySQLFamily(c, dialect, diff, &schemamodel.Database{})
@@ -307,9 +299,7 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 					c := qt.New(t)
 
 					diff := &difftypes.SchemaDiff{
-						ConstraintsAdded:   []string{"shared_check"},
-						ConstraintsRemoved: []string{"shared_check"},
-						ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+						ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 							// The body a comparison carries. The assertions here are
 							// about statement ORDER, but a record with no expression
 							// describes no constraint (stokaro/ptah#2315).
@@ -318,7 +308,7 @@ func TestPlanner_GenerateMigrationAST_SharedConstraintName_ModifiedOnOneTablePur
 								CheckExpression: "status IN ('draft', 'published')",
 							},
 						},
-						ConstraintsRemovedWithTables: removals,
+						ConstraintsRemoved: removals,
 					}
 					desired := &schemamodel.Database{
 						Constraints: []schemamodel.Constraint{
@@ -372,9 +362,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_EveryHostDroppedAndReadded(t *t
 				c := qt.New(t)
 
 				diff := &difftypes.SchemaDiff{
-					ConstraintsAdded:   []string{"fk_customer"},
-					ConstraintsRemoved: []string{"fk_customer"},
-					ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+					ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 						{
 							Name: "fk_customer", TableName: "orders", Type: "FOREIGN KEY",
 							Columns: []string{"customer_id"}, ForeignTable: "customers", ForeignColumn: "id", OnDelete: "CASCADE",
@@ -384,7 +372,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_EveryHostDroppedAndReadded(t *t
 							Columns: []string{"customer_id"}, ForeignTable: "customers", ForeignColumn: "id", OnDelete: "SET NULL",
 						},
 					},
-					ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+					ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 						{Name: "fk_customer", TableName: "orders", Type: "FOREIGN KEY"},
 						{Name: "fk_customer", TableName: "invoices", Type: "FOREIGN KEY"},
 					},
@@ -418,15 +406,13 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_EveryHostDroppedAndReadded(t *t
 				c := qt.New(t)
 
 				diff := &difftypes.SchemaDiff{
-					ConstraintsAdded:   []string{"fk_post_owner"},
-					ConstraintsRemoved: []string{"fk_post_owner"},
-					ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+					ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 						{
 							Name: "fk_post_owner", TableName: "posts", Type: "FOREIGN KEY",
 							Columns: []string{"owner_id"}, ForeignTable: "users", ForeignColumn: "id", OnDelete: "SET NULL",
 						},
 					},
-					ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+					ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 						{Name: "fk_post_owner", TableName: "posts", Type: "FOREIGN KEY"},
 					},
 				}
@@ -448,7 +434,7 @@ func TestPlanner_GenerateMigrationAST_ModifiedFK_EveryHostDroppedAndReadded(t *t
 
 // TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent
 // guards the reverse/down shape: ConstraintsAdded carries the name but
-// ConstraintsAddedWithTables is EMPTY (reverseConstraintAdditions restores only
+// ConstraintsAdded is EMPTY (reverseConstraintAdditions restores only
 // FOREIGN KEYs, and nothing at all when the introspected schema is absent). The
 // add side must drop every recorded removal host, and removeConstraints must
 // then skip the name entirely — MySQL has no IF EXISTS on constraint drops, so
@@ -461,16 +447,15 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 			t.Run(dialect, func(t *testing.T) {
 				c := qt.New(t)
 
-				diff := &difftypes.SchemaDiff{
-					ConstraintsAdded:   []string{"chk_down"},
-					ConstraintsRemoved: []string{"chk_down"},
-					ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
-						{Name: "chk_down", TableName: "things", Type: "CHECK"},
-					},
-				}
 				desired := &schemamodel.Database{
 					Constraints: []schemamodel.Constraint{
 						{StructName: "Thing", Name: "chk_down", Type: "CHECK", Table: "things", CheckExpression: "qty >= 0"},
+					},
+				}
+				diff := &difftypes.SchemaDiff{
+					ConstraintsAdded: difftypes.ConstraintAdditionsFor(desired, "chk_down"),
+					ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
+						{Name: "chk_down", TableName: "things", Type: "CHECK"},
 					},
 				}
 
@@ -506,16 +491,14 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 				c := qt.New(t)
 
 				diff := &difftypes.SchemaDiff{
-					ConstraintsAdded:   []string{"shared_check", "shared_check"},
-					ConstraintsRemoved: []string{"shared_check", "shared_check"},
 					// A record per host. The reversal reconstructs a CHECK from the
 					// pre-change database, so this is the shape a down migration
 					// arrives in (stokaro/ptah#2315).
-					ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+					ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 						{Name: "shared_check", TableName: "articles", Type: "CHECK", CheckExpression: "qty >= 0"},
 						{Name: "shared_check", TableName: "pages", Type: "CHECK", CheckExpression: "qty >= 0"},
 					},
-					ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+					ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 						{Name: "shared_check", TableName: "articles", Type: "CHECK"},
 						{Name: "shared_check", TableName: "pages", Type: "CHECK"},
 					},
@@ -565,16 +548,15 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 			t.Run(dialect, func(t *testing.T) {
 				c := qt.New(t)
 
-				diff := &difftypes.SchemaDiff{
-					ConstraintsAdded:   []string{"chk_hostless"},
-					ConstraintsRemoved: []string{"chk_hostless"},
-					ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
-						{Name: "chk_hostless", TableName: "", Type: "CHECK"},
-					},
-				}
 				desired := &schemamodel.Database{
 					Constraints: []schemamodel.Constraint{
 						{StructName: "Thing", Name: "chk_hostless", Type: "CHECK", Table: "things", CheckExpression: "qty >= 0"},
+					},
+				}
+				diff := &difftypes.SchemaDiff{
+					ConstraintsAdded: difftypes.ConstraintAdditionsFor(desired, "chk_hostless"),
+					ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
+						{Name: "chk_hostless", TableName: "", Type: "CHECK"},
 					},
 				}
 
@@ -591,7 +573,7 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 	})
 
 	t.Run("empty-TableName addition entry is treated as hostless", func(t *testing.T) {
-		// A ConstraintsAddedWithTables entry with no recorded host must not
+		// A ConstraintsAdded entry with no recorded host must not
 		// count as a recorded addition host on either side. If it did, the
 		// add side would see a non-empty addedHosts set containing only ""
 		// (matching no real removal host) and skip the required pre-drop,
@@ -605,15 +587,13 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 				c := qt.New(t)
 
 				diff := &difftypes.SchemaDiff{
-					ConstraintsAdded:   []string{"chk_ghost"},
-					ConstraintsRemoved: []string{"chk_ghost"},
-					ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+					ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 						// The host and the body a comparison resolves. The record used
 						// to carry neither and the planner recovered both from the
 						// declaration; that route is withdrawn (stokaro/ptah#2315).
 						{Name: "chk_ghost", TableName: "things", Type: "CHECK", CheckExpression: "qty >= 0"},
 					},
-					ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+					ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 						{Name: "chk_ghost", TableName: "things", Type: "CHECK"},
 					},
 				}
@@ -642,23 +622,6 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 			t.Run(dialect, func(t *testing.T) {
 				c := qt.New(t)
 
-				diff := &difftypes.SchemaDiff{
-					ConstraintsAdded:   []string{"fk_post_owner"},
-					ConstraintsRemoved: []string{"fk_post_owner"},
-					// The record a comparison carries for a key synthesized from a
-					// field: it folds the synthesis into the same map before it
-					// compares, so this reaches a diff like any other addition
-					// (stokaro/ptah#2315).
-					ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
-						Name: "fk_post_owner", TableName: "posts", Type: "FOREIGN KEY",
-						Columns: []string{"owner_id"}, ForeignTable: "users",
-						ForeignColumn: "id", ForeignColumns: []string{"id"},
-						OnDelete: "CASCADE",
-					}},
-					ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
-						{Name: "fk_post_owner", TableName: "posts", Type: "FOREIGN KEY"},
-					},
-				}
 				desired := &schemamodel.Database{
 					Tables: []schemamodel.Table{
 						{StructName: "User", Name: "users"},
@@ -673,6 +636,21 @@ func TestPlanner_GenerateMigrationAST_ModifyDrop_HostScopedWhenAddedHostsAbsent(
 							ForeignKeyName: "fk_post_owner",
 							OnDelete:       "CASCADE",
 						},
+					},
+				}
+				diff := &difftypes.SchemaDiff{
+					// The record a comparison carries for a key synthesized from a
+					// field: it folds the synthesis into the same map before it
+					// compares, so this reaches a diff like any other addition
+					// (stokaro/ptah#2315).
+					ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
+						Name: "fk_post_owner", TableName: "posts", Type: "FOREIGN KEY",
+						Columns: []string{"owner_id"}, ForeignTable: "users",
+						ForeignColumn: "id", ForeignColumns: []string{"id"},
+						OnDelete: "CASCADE",
+					}},
+					ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
+						{Name: "fk_post_owner", TableName: "posts", Type: "FOREIGN KEY"},
 					},
 				}
 
@@ -704,10 +682,7 @@ func TestPlanner_GenerateMigrationAST_PureConstraintRemovals_TableQualified(t *t
 
 			diff := &difftypes.SchemaDiff{
 				TablesRemoved: []string{"obsolete"},
-				ConstraintsRemoved: []string{
-					"fk_orders_customer", "chk_qty", "pk_legacy", "chk_on_obsolete", "fk_orders_customer", "chk_orphan",
-				},
-				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+				ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 					{Name: "fk_orders_customer", TableName: "orders", Type: "FOREIGN KEY"},
 					{Name: "chk_qty", TableName: "things", Type: "CHECK"},
 					{Name: "pk_legacy", TableName: "legacy", Type: "PRIMARY KEY"},
@@ -754,8 +729,7 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedPrimaryKeyAddition(t *testin
 						{ColumnName: "user_id", Changes: map[string]string{"primary_key": "false -> true"}},
 					},
 				}},
-				ConstraintsAdded: []string{"PRIMARY"},
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 					Name:      "PRIMARY",
 					TableName: "memberships",
 					Type:      "PRIMARY KEY",
@@ -784,8 +758,7 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedPrimaryKeyRemovalSuppressesC
 						{ColumnName: "user_id", Changes: map[string]string{"primary_key": "true -> false"}},
 					},
 				}},
-				ConstraintsRemoved: []string{"PRIMARY"},
-				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
+				ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{{
 					Name:      "PRIMARY",
 					TableName: "memberships",
 					Type:      "PRIMARY KEY",
@@ -815,8 +788,22 @@ func withDeclaredObjects(
 	diff *difftypes.SchemaDiff,
 	desired *schemamodel.Database,
 ) *difftypes.SchemaDiff {
-	diff = withConstraintRecords(diff, desired)
 	completed := *diff
+	// An addition stated by name alone gets its definition from the declaration
+	// the fixture also states, which is what a comparison does
+	// (stokaro/ptah#2315).
+	if hostless := completed.ConstraintsAdded.Names(); len(hostless) > 0 {
+		described := true
+		for _, addition := range completed.ConstraintsAdded {
+			if addition.TableName == "" {
+				described = false
+				break
+			}
+		}
+		if !described {
+			completed.ConstraintsAdded = difftypes.ConstraintAdditionsFor(desired, hostless...)
+		}
+	}
 	completed.TablesModified = make([]difftypes.TableDiff, len(diff.TablesModified))
 	copy(completed.TablesModified, diff.TablesModified)
 	for tableIndex, tableDiff := range completed.TablesModified {
@@ -859,120 +846,6 @@ func declaredColumn(desired *schemamodel.Database, tableName, columnName string)
 	return schemamodel.Field{}
 }
 
-// withConstraintRecords fills a fixture diff's constraint additions from the
-// declaration, the way a comparison does.
-//
-// A comparison describes every constraint it adds: it resolves the host table,
-// folds in the ones synthesized from a field, and carries the body. A fixture
-// that states only names is standing in for that, so this does the same
-// resolution once rather than each fixture spelling the record out
-// (stokaro/ptah#2315).
-//
-// A name the declaration does not describe is left without a record, which is
-// what a test about a diff naming something undeclared needs.
-func withConstraintRecords(diff *difftypes.SchemaDiff, desired *schemamodel.Database) *difftypes.SchemaDiff {
-	if diff == nil || desired == nil || len(diff.ConstraintsAdded) == 0 {
-		return diff
-	}
-	completed := *diff
-	records := append([]difftypes.ConstraintAdditionInfo(nil), diff.ConstraintsAddedWithTables...)
-	described := make(map[string]bool, len(records))
-	for _, record := range records {
-		described[record.Name] = true
-	}
-	for _, name := range diff.ConstraintsAdded {
-		if described[name] {
-			continue
-		}
-		declared, ok := declaredConstraintNamed(desired, name)
-		if !ok {
-			declared, ok = synthesizedFieldCheck(desired, name)
-		}
-		if !ok {
-			continue
-		}
-		described[name] = true
-		records = append(records, difftypes.ConstraintAdditionInfo{
-			Name:            declared.Name,
-			TableName:       constraintHostTable(desired, declared),
-			Type:            declared.Type,
-			Columns:         append([]string(nil), declared.Columns...),
-			IncludeColumns:  append([]string(nil), declared.IncludeColumns...),
-			CheckExpression: declared.CheckExpression,
-			ForeignTable:    declared.ForeignTable,
-			ForeignColumn:   declared.ForeignColumn,
-			ForeignColumns:  append([]string(nil), declared.ForeignColumns...),
-			OnDelete:        declared.OnDelete,
-			OnUpdate:        declared.OnUpdate,
-			Deferrable:      declared.Deferrable,
-			Initially:       declared.Initially,
-			UsingMethod:     declared.UsingMethod,
-			ExcludeElements: declared.ExcludeElements,
-			WhereCondition:  declared.WhereCondition,
-		})
-	}
-	completed.ConstraintsAddedWithTables = records
-	return &completed
-}
-
-func declaredConstraintNamed(desired *schemamodel.Database, name string) (schemamodel.Constraint, bool) {
-	for _, constraint := range desired.Constraints {
-		if constraint.Name == name {
-			return constraint, true
-		}
-	}
-	return schemamodel.Constraint{}, false
-}
-
-// constraintHostTable resolves the table a declared constraint belongs to: the
-// one it names, or the one its struct declares.
-func constraintHostTable(desired *schemamodel.Database, constraint schemamodel.Constraint) string {
-	if constraint.Table != "" {
-		return constraint.Table
-	}
-	for _, table := range desired.Tables {
-		if table.StructName == constraint.StructName {
-			return table.QualifiedName()
-		}
-	}
-	return ""
-}
-
-// synthesizedFieldCheck rebuilds the constraint a comparison synthesizes from a
-// field's `check=`.
-//
-// The comparison folds these into the same map as the declared ones before it
-// compares, so they reach a diff as ordinary records. A fixture that names one
-// is standing in for that.
-func synthesizedFieldCheck(desired *schemamodel.Database, name string) (schemamodel.Constraint, bool) {
-	for _, field := range desired.Fields {
-		if field.Check == "" {
-			continue
-		}
-		table := ""
-		for _, candidate := range desired.Tables {
-			if candidate.StructName == field.StructName {
-				table = candidate.QualifiedName()
-			}
-		}
-		synthesized := field.CheckName
-		if synthesized == "" {
-			synthesized = table + "_" + field.Name + "_check"
-		}
-		if synthesized != name {
-			continue
-		}
-		return schemamodel.Constraint{
-			StructName:      field.StructName,
-			Name:            synthesized,
-			Type:            "CHECK",
-			Table:           table,
-			CheckExpression: field.Check,
-		}, true
-	}
-	return schemamodel.Constraint{}, false
-}
-
 // TestPlanner_ModifiedPrimaryKeyIsDroppedThenReadded covers the one addition
 // kind whose pass emitted nothing for a modification.
 //
@@ -989,13 +862,11 @@ func synthesizedFieldCheck(desired *schemamodel.Database, name string) (schemamo
 func TestPlanner_ModifiedPrimaryKeyIsDroppedThenReadded(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		ConstraintsAdded:   []string{"pk_users"},
-		ConstraintsRemoved: []string{"pk_users"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name: "pk_users", TableName: "users", Type: "PRIMARY KEY",
 			Columns: []string{"id", "tenant"},
 		}},
-		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
+		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{{
 			Name: "pk_users", TableName: "users", Type: "PRIMARY KEY",
 		}},
 	}

@@ -624,7 +624,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			// re-opening the constraint route the previous round closed: the
 			// same add-column-only table diff, beside a schema-level constraint
 			// change on that table. planTableRebuilds derives it from
-			// ConstraintsAddedWithTables and rebuilds it, so the gate must too.
+			// ConstraintsAdded and rebuilds it, so the gate must too.
 			name:     "an added column beside a schema level constraint change is still counted",
 			dialect:  "sqlite",
 			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
@@ -634,7 +634,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 					TableName:    "docs_content",
 					ColumnsAdded: difftypes.ColumnChanges{{Name: "spurious"}},
 				}},
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 					{Name: "docs_content_chk", TableName: "docs_content", Type: "CHECK"},
 				},
 			},
@@ -646,7 +646,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			// The constraint-only rebuild. Columns unchanged, so the change is
 			// recorded at schema level and TablesModified is empty -- but
 			// SQLite has no ALTER for a constraint, so planTableRebuilds
-			// derives this table from ConstraintsAddedWithTables and rebuilds
+			// derives this table from ConstraintsAdded and rebuilds
 			// it: drop, recreate, copy. Reading only the two table fields let
 			// it through, which review caught.
 			name:     "a constraint-only rebuild is refused",
@@ -654,7 +654,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			database: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 					{Name: "docs_content_chk", TableName: "docs_content", Type: "CHECK"},
 				},
 			},
@@ -668,7 +668,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			database: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
-				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+				ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 					{Name: "docs_content_chk", TableName: "docs_content", Type: "CHECK"},
 				},
 			},
@@ -687,7 +687,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			database: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
 				TablesAdded: difftypes.TableChanges{{Name: "audit"}},
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 					{Name: "audit_chk", TableName: "audit", Type: "CHECK"},
 				},
 			},
@@ -707,7 +707,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			database: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
 				TablesAdded: difftypes.TableChanges{{Name: "main.audit"}},
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 					{Name: "audit_chk", TableName: "audit", Type: "CHECK"},
 				},
 			},
@@ -721,7 +721,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			database: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
 				TablesAdded: difftypes.TableChanges{{Name: "AUDIT"}},
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 					{Name: "audit_chk", TableName: "audit", Type: "CHECK"},
 				},
 			},
@@ -737,7 +737,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			database: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
 				TablesAdded: difftypes.TableChanges{{Name: "main.audit"}},
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 					{Name: "docs_content_chk", TableName: "docs_content", Type: "CHECK"},
 				},
 			},
@@ -818,7 +818,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			database: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
 				TablesRemoved: []string{"main.docs_content"},
-				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+				ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 					{Name: "docs_content_chk", TableName: "docs_content", Type: "CHECK"},
 				},
 			},
@@ -851,7 +851,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 			env:      envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
 			database: holdingFTS4,
 			diff: &difftypes.SchemaDiff{
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 					{Name: "docs_content_chk", TableName: "docs_content", Type: "CHECK"},
 				},
 			},

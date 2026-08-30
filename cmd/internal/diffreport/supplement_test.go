@@ -28,11 +28,11 @@ func TestCategoriesOmitsASupplementList(t *testing.T) {
 		c := qt.New(t)
 
 		diff := &difftypes.SchemaDiff{
-			ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{Name: "fk_orders_user", TableName: "orders"}},
+			ConstraintsRemoved:           []difftypes.ConstraintRemovalInfo{{Name: "fk_orders_user", TableName: "orders"}},
 			ForeignKeysRemovedWithTables: []difftypes.ForeignKeyRemovalInfo{{Name: "fk_orders_user", TableName: "orders"}},
 		}
 
-		c.Assert(diffreport.Names(diffreport.Categories(diff)), qt.DeepEquals, []string{"constraints_removed_with_tables"})
+		c.Assert(diffreport.Names(diffreport.Categories(diff)), qt.DeepEquals, []string{"constraints_removed"})
 	})
 
 	t.Run("a supplement alone reports nothing", func(t *testing.T) {

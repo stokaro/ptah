@@ -77,7 +77,7 @@ func TestConstraints_TwoTablesDifferingOnlyByCaseKeepTheirOwnCheck(t *testing.T)
 		&config.CompareOptions{Dialect: platform.Postgres, CheckExpressions: checks},
 		checkSemantics())
 
-	c.Assert(diff.ConstraintsAdded, qt.DeepEquals, []string{"ck_score"},
+	c.Assert(diff.ConstraintsAdded.Names(), qt.DeepEquals, []string{"ck_score"},
 		qt.Commentf("T's declaration differs from its catalog CHECK and must be reported"))
-	c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, []string{"ck_score"})
+	c.Assert(diff.ConstraintsRemoved.Names(), qt.DeepEquals, []string{"ck_score"})
 }

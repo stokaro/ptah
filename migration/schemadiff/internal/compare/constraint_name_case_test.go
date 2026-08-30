@@ -66,8 +66,8 @@ func TestConstraints_NameCaseFollowsTheEngineThatResolvesIt(t *testing.T) {
 				diff, nil, identifier.ForDialect(test.dialect),
 			)
 
-			c.Assert(diff.ConstraintsAdded, qt.DeepEquals, test.wantAdded)
-			c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, test.wantRemoved)
+			c.Assert(diff.ConstraintsAdded.Names(), qt.DeepEquals, test.wantAdded)
+			c.Assert(diff.ConstraintsRemoved.Names(), qt.DeepEquals, test.wantRemoved)
 		})
 	}
 }

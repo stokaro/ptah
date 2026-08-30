@@ -255,7 +255,7 @@ func planTableRebuilds(
 	for _, tableName := range constrained {
 		// The columns this table gains in the SAME diff have to travel with it.
 		// A table reaches this loop when its constraint change arrived at schema
-		// level (ConstraintsAddedWithTables) rather than on the TableDiff, so
+		// level (ConstraintsAdded) rather than on the TableDiff, so
 		// [sqliterebuild.NeedsTableRebuild] answered false and the loop above
 		// skipped it -- even though the diff also adds columns to it.
 		//
@@ -310,21 +310,30 @@ func existingTablesWithConstraintChanges(
 			tables[key] = table
 		}
 	}
-	named := make(map[string]bool, len(diff.ConstraintsAddedWithTables)+len(diff.ConstraintsRemovedWithTables))
-	for _, constraint := range diff.ConstraintsAddedWithTables {
+	named := make(map[string]bool, len(diff.ConstraintsAdded)+len(diff.ConstraintsRemoved))
+	for _, constraint := range diff.ConstraintsAdded {
 		named[constraint.Name] = true
 		if !objectlookup.Contains(diff.TablesAdded.Names(), constraint.TableName, semantics) {
 			record(constraint.TableName)
 		}
 	}
-	for _, constraint := range diff.ConstraintsRemovedWithTables {
+	for _, constraint := range diff.ConstraintsRemoved {
 		named[constraint.Name] = true
 		if !objectlookup.Contains(diff.TablesRemoved, constraint.TableName, semantics) {
 			record(constraint.TableName)
 		}
 	}
-	unattributed := slices.ContainsFunc(diff.ConstraintsAdded, func(name string) bool { return !named[name] }) ||
-		slices.ContainsFunc(diff.ConstraintsRemoved, func(name string) bool { return !named[name] })
+	// A change that names no host cannot be planned here: SQLite rebuilds the
+	// table around a constraint, and there is no table to rebuild.
+	//
+	// It asked this of the bare NAME list until stokaro/ptah#2315 -- a name with
+	// no record beside it -- and a name is always described now, so the question
+	// is asked of the record that is missing a host.
+	unattributed := slices.ContainsFunc(diff.ConstraintsAdded, func(add difftypes.ConstraintAdditionInfo) bool {
+		return add.TableName == ""
+	}) || slices.ContainsFunc(diff.ConstraintsRemoved, func(removal difftypes.ConstraintRemovalInfo) bool {
+		return removal.TableName == ""
+	})
 	if unattributed {
 		return nil, unsupportedFeaturef("changing constraints on existing tables requires a table rebuild plan")
 	}

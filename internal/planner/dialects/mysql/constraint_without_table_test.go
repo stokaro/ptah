@@ -47,11 +47,11 @@ func TestPlanner_TableLevelConstraintWithoutAnExplicitTable(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{test.constraint.Name}}
 			desired := &schemamodel.Database{
 				Tables:      []schemamodel.Table{{StructName: "Booking", Name: "bookings"}},
 				Constraints: []schemamodel.Constraint{test.constraint},
 			}
+			diff := &difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditionsFor(desired, test.constraint.Name)}
 
 			nodes, err := mysql.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 
@@ -68,7 +68,6 @@ func TestPlanner_TableLevelConstraintWithoutAnExplicitTable(t *testing.T) {
 // something else so the two answers cannot be confused.
 func TestPlanner_TableLevelConstraintNamesItsOwnTable(t *testing.T) {
 	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{"positive_price"}}
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "Booking", Name: "bookings"}},
 		Constraints: []schemamodel.Constraint{{
@@ -76,6 +75,7 @@ func TestPlanner_TableLevelConstraintNamesItsOwnTable(t *testing.T) {
 			Table: "archived_bookings", CheckExpression: "price > 0",
 		}},
 	}
+	diff := &difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditionsFor(desired, "positive_price")}
 
 	nodes, err := mysql.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 
@@ -122,7 +122,6 @@ func TestPlanner_ExcludeConstraintIsReportedRatherThanEmitted(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{"one_active_session_per_user"}}
 			desired := &schemamodel.Database{
 				Tables: []schemamodel.Table{{StructName: "UserSession", Name: "user_sessions"}},
 				Constraints: []schemamodel.Constraint{{
@@ -130,6 +129,7 @@ func TestPlanner_ExcludeConstraintIsReportedRatherThanEmitted(t *testing.T) {
 					Table: "user_sessions", UsingMethod: "gist", ExcludeElements: "user_id WITH =",
 				}},
 			}
+			diff := &difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditionsFor(desired, "one_active_session_per_user")}
 
 			nodes, err := test.planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 

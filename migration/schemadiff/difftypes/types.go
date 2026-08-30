@@ -591,6 +591,154 @@ type ConstraintIdentity struct {
 	Name string `json:"name,omitempty"`
 }
 
+// ConstraintAdditionsFor builds the additions for the named constraints,
+// reading each one's definition out of desired.
+//
+// It is the constraint counterpart of [TableCreationsFor] and
+// [IndexAdditionsFor]: what a caller assembling a diff by hand needs, so that
+// stating which constraints are added does not also mean restating what they
+// are. A name the declaration does not describe is skipped, because a planner
+// refuses an addition it cannot render anyway (stokaro/ptah#2315).
+//
+// It resolves the two spellings a comparison folds together: a table-level
+// declaration, and the CHECK synthesized from a field's `check=`.
+func ConstraintAdditionsFor(desired *schemamodel.Database, names ...string) ConstraintAdditions {
+	if desired == nil || len(names) == 0 {
+		return nil
+	}
+	additions := make(ConstraintAdditions, 0, len(names))
+	for _, name := range names {
+		declared, ok := declaredConstraintNamed(desired, name)
+		if !ok {
+			declared, ok = synthesizedFieldCheck(desired, name)
+		}
+		if !ok {
+			continue
+		}
+		host := constraintHostTable(desired, declared)
+		additions = append(additions, ConstraintAdditionInfo{
+			Name:            declared.Name,
+			TableName:       host,
+			Type:            declared.Type,
+			Columns:         append([]string(nil), declared.Columns...),
+			IncludeColumns:  append([]string(nil), declared.IncludeColumns...),
+			NullsDistinct:   clonedBool(declared.NullsDistinct),
+			CheckExpression: declared.CheckExpression,
+			UsingMethod:     declared.UsingMethod,
+			ExcludeElements: declared.ExcludeElements,
+			WhereCondition:  declared.WhereCondition,
+			ForeignTable:    declared.ForeignTable,
+			ForeignColumn:   declared.ForeignColumn,
+			ForeignColumns:  append([]string(nil), declared.ForeignColumnsOrDefault()...),
+			OnDelete:        declared.OnDelete,
+			OnUpdate:        declared.OnUpdate,
+			Deferrable:      declared.Deferrable,
+			Initially:       declared.Initially,
+		})
+	}
+	return additions
+}
+
+// clonedBool copies an optional flag so a built addition never shares the
+// declaration's pointer.
+func clonedBool(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	return new(*value)
+}
+
+func declaredConstraintNamed(desired *schemamodel.Database, name string) (schemamodel.Constraint, bool) {
+	for _, constraint := range desired.Constraints {
+		if constraint.Name == name {
+			return constraint, true
+		}
+	}
+	return schemamodel.Constraint{}, false
+}
+
+// synthesizedFieldCheck answers for the CHECK a field's `check=` produces,
+// which the comparison folds in beside the table-level declarations.
+func synthesizedFieldCheck(desired *schemamodel.Database, name string) (schemamodel.Constraint, bool) {
+	for _, field := range desired.Fields {
+		if field.Check == "" {
+			continue
+		}
+		table := ""
+		for _, candidate := range desired.Tables {
+			if candidate.StructName == field.StructName {
+				table = candidate.QualifiedName()
+			}
+		}
+		synthesized := field.CheckName
+		if synthesized == "" {
+			synthesized = table + "_" + field.Name + "_check"
+		}
+		if synthesized != name {
+			continue
+		}
+		return schemamodel.Constraint{
+			StructName:      field.StructName,
+			Name:            synthesized,
+			Type:            "CHECK",
+			Table:           table,
+			CheckExpression: field.Check,
+		}, true
+	}
+	return schemamodel.Constraint{}, false
+}
+
+// constraintHostTable resolves the relation a constraint belongs to. A
+// declaration leaves `Table` empty whenever it matches the struct's own table,
+// which is the ordinary case.
+func constraintHostTable(desired *schemamodel.Database, constraint schemamodel.Constraint) string {
+	if constraint.Table != "" {
+		return constraint.Table
+	}
+	for _, table := range desired.Tables {
+		if table.StructName == constraint.StructName {
+			return table.QualifiedName()
+		}
+	}
+	return ""
+}
+
+// ConstraintAdditions is the set of constraints one diff creates, carrying each
+// one's definition and not only its name.
+type ConstraintAdditions []ConstraintAdditionInfo
+
+// Names is the constraint names, in the order the additions are held.
+//
+// A name repeats when one constraint name is hosted by several tables, which an
+// embedded inline-relation mixin produces (stokaro/ptah#197). That repetition is
+// the fact, not a defect: each host is its own object.
+func (c ConstraintAdditions) Names() []string {
+	if c == nil {
+		return nil
+	}
+	names := make([]string, 0, len(c))
+	for _, addition := range c {
+		names = append(names, addition.Name)
+	}
+	return names
+}
+
+// ConstraintRemovals is the set of constraints one diff drops, carrying each
+// one's host and kind and not only its name.
+type ConstraintRemovals []ConstraintRemovalInfo
+
+// Names is the constraint names, in the order the removals are held.
+func (c ConstraintRemovals) Names() []string {
+	if c == nil {
+		return nil
+	}
+	names := make([]string, 0, len(c))
+	for _, removal := range c {
+		names = append(names, removal.Name)
+	}
+	return names
+}
+
 // ConstraintRemovalInfo contains information about a constraint that needs to be
 // removed, including the constraint name, the table it belongs to, and its type.
 //
@@ -643,7 +791,7 @@ type ForeignKeyRemovalInfo struct {
 
 // ConstraintAdditionInfo contains the table-qualified definition of a
 // constraint that needs to be added, in parallel to the bare ConstraintsAdded
-// name list (mirroring ConstraintsRemovedWithTables).
+// name list (mirroring ConstraintsRemoved).
 //
 // This exists because a field-level FOREIGN KEY whose constraint name repeats
 // across several tables cannot be resolved from the name alone. The canonical
@@ -1168,41 +1316,40 @@ type SchemaDiff struct {
 	// flag exists in the database but not in the target schema.
 	GrantOptionsRevoked []GrantRef `json:"grant_options_revoked"`
 
-	// ConstraintsAdded contains names of constraints that exist in the target schema
-	// but not in the current database schema
-	ConstraintsAdded []string `json:"constraints_added"`
+	// ConstraintsAdded is the table-qualified definition of every constraint
+	// this diff creates.
+	//
+	// It used to be a name list beside a parallel record list, and the two were
+	// explicitly NOT index-aligned: each sorted independently, so a consumer
+	// had to correlate by name and a name with no record meant a planner had to
+	// go looking in the declaration. The record is the change now
+	// (stokaro/ptah#2315).
+	//
+	// `constraints_added` carries the records now. It was an array of names,
+	// with the same records under `constraints_added_with_tables` beside it;
+	// one field means one key, and the identity a consumer reads is on it.
+	ConstraintsAdded ConstraintAdditions `json:"constraints_added"`
 
-	// ConstraintsAddedWithTables contains the table-qualified definitions of the
-	// constraints in ConstraintsAdded. It is NOT index-aligned with
-	// ConstraintsAdded — each list is sorted independently (ConstraintsAdded by
-	// name, this one by table then name), so consumers must correlate entries
-	// by constraint name, never by position. Planners read this to add a
-	// field-level FK to its concrete host table rather than re-deriving the
-	// table from a Go struct name — which breaks for FK names shared across
-	// the many tables that embed an inline-relation mixin (issue #197).
-	ConstraintsAddedWithTables []ConstraintAdditionInfo `json:"constraints_added_with_tables"`
-
-	// ConstraintsRemoved contains names of constraints that exist in the current database
-	// but not in the target schema (potentially dangerous - may affect data integrity)
-	ConstraintsRemoved []string `json:"constraints_removed"`
-
-	// ConstraintsRemovedWithTables contains detailed information about constraints that
-	// need to be removed, including the constraint name, owning table, and type. This is
-	// used by database dialects that require the table name and a type-specific drop
-	// syntax (e.g. MySQL/MariaDB FOREIGN KEY constraints use DROP FOREIGN KEY). It is
-	// NOT index-aligned with ConstraintsRemoved — each list is sorted independently
-	// (ConstraintsRemoved by name, this one by table then name), so consumers must
-	// correlate entries by constraint name, never by position.
-	ConstraintsRemovedWithTables []ConstraintRemovalInfo `json:"constraints_removed_with_tables"`
+	// ConstraintsRemoved is the table-qualified identity of every constraint
+	// this diff drops.
+	//
+	// A drop needs more than a name here, unlike a table's: MySQL spells
+	// `ALTER TABLE <host> DROP FOREIGN KEY <name>` and needs the host and the
+	// kind. It used to be a name list beside a parallel record list, not
+	// index-aligned with it (stokaro/ptah#2315).
+	//
+	// `constraints_removed` carries the records now, for the reason
+	// `constraints_added` does.
+	ConstraintsRemoved ConstraintRemovals `json:"constraints_removed"`
 
 	// ForeignKeysRemovedWithTables carries the local and referenced column
 	// definitions needed to order foreign-key drops before column removals. It
-	// is a table-qualified subset of ConstraintsRemovedWithTables, correlated by
+	// is a table-qualified subset of ConstraintsRemoved, correlated by
 	// table and constraint name rather than slice position. It is supplemental:
-	// an entry without a matching ConstraintsRemovedWithTables value is ignored
+	// an entry without a matching ConstraintsRemoved value is ignored
 	// and does not independently make the diff non-empty. See [SupplementLists]
 	// for what that means to a reader.
-	ForeignKeysRemovedWithTables []ForeignKeyRemovalInfo `json:"foreign_keys_removed_with_tables" ptah:"supplement=constraints_removed_with_tables"`
+	ForeignKeysRemovedWithTables []ForeignKeyRemovalInfo `json:"foreign_keys_removed_with_tables" ptah:"supplement=constraints_removed"`
 }
 
 // EffectiveIdentifierSemantics returns live semantics stored on the diff, or
@@ -1371,11 +1518,11 @@ func (d *SchemaDiff) ConstraintBackedIndexRemovalSet() map[IndexRef]struct{} {
 // introspected object, recorded from one IndexRef by the reversal that built
 // the addition.
 func (d *SchemaDiff) IndexRemovalsRebuiltAsUniqueConstraints() map[IndexRef]struct{} {
-	if len(d.ConstraintsAddedWithTables) == 0 || len(d.IndexesRemoved) == 0 {
+	if len(d.ConstraintsAdded) == 0 || len(d.IndexesRemoved) == 0 {
 		return nil
 	}
-	additions := make(map[IndexRef]struct{}, len(d.ConstraintsAddedWithTables))
-	for _, add := range d.ConstraintsAddedWithTables {
+	additions := make(map[IndexRef]struct{}, len(d.ConstraintsAdded))
+	for _, add := range d.ConstraintsAdded {
 		if add.Type != "UNIQUE" || add.TableName == "" {
 			continue
 		}
@@ -1497,17 +1644,13 @@ func (d *SchemaDiff) hasRoleChanges() bool {
 
 // hasConstraintChanges returns true if there are any constraint-related changes.
 //
-// The table-qualified lists are consulted as well as the bare name lists. The
-// comparator fills both halves together, but a caller that builds a diff from
-// the table-qualified halves alone — a planner test, a policy filter that
-// rewrites one list — would otherwise hold a diff that carries constraints and
-// answers false to HasChanges, and every check built on HasChanges would report
-// a synced schema.
+// One list per direction answers it. There were two — a name list and a
+// table-qualified one, filled together by the comparator — so a caller that
+// built a diff from the table-qualified half alone held a diff that carried
+// constraints and answered false, and every check built on HasChanges reported
+// a synced schema (stokaro/ptah#2315).
 func (d *SchemaDiff) hasConstraintChanges() bool {
-	return len(d.ConstraintsAdded) > 0 ||
-		len(d.ConstraintsRemoved) > 0 ||
-		len(d.ConstraintsAddedWithTables) > 0 ||
-		len(d.ConstraintsRemovedWithTables) > 0
+	return len(d.ConstraintsAdded) > 0 || len(d.ConstraintsRemoved) > 0
 }
 
 // TableDiff represents structural differences within a specific database table.

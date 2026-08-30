@@ -74,9 +74,9 @@ func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {
 	clone.GrantOptionsAdded = slices.Clone(diff.GrantOptionsAdded)
 	clone.GrantOptionsRevoked = slices.Clone(diff.GrantOptionsRevoked)
 	clone.ConstraintsAdded = slices.Clone(diff.ConstraintsAdded)
-	clone.ConstraintsAddedWithTables = slices.Clone(diff.ConstraintsAddedWithTables)
+	clone.ConstraintsAdded = slices.Clone(diff.ConstraintsAdded)
 	clone.ConstraintsRemoved = slices.Clone(diff.ConstraintsRemoved)
-	clone.ConstraintsRemovedWithTables = slices.Clone(diff.ConstraintsRemovedWithTables)
+	clone.ConstraintsRemoved = slices.Clone(diff.ConstraintsRemoved)
 	clone.ForeignKeysRemovedWithTables = cloneForeignKeyRemovalInfos(diff.ForeignKeysRemovedWithTables)
 	return &clone
 }

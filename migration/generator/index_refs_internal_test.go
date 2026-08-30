@@ -260,7 +260,7 @@ func TestAddMySQLFamilyForeignKeyBackingIndexRemovals_PreservesDuplicateNames(t 
 	c := qt.New(t)
 	reverseDiff := &difftypes.SchemaDiff{}
 	upDiff := &difftypes.SchemaDiff{
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 			{Name: "fk_tenant", TableName: "orders", Type: "FOREIGN KEY"},
 			{Name: "fk_tenant", TableName: "users", Type: "FOREIGN KEY"},
 		},
@@ -292,7 +292,7 @@ func TestAddMySQLFamilyForeignKeyBackingIndexRemovals_DoesNotCollideOnDots(t *te
 	c := qt.New(t)
 	reverseDiff := &difftypes.SchemaDiff{}
 	upDiff := &difftypes.SchemaDiff{
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 			{Name: "c", TableName: "a.b", Type: "FOREIGN KEY"},
 		},
 	}

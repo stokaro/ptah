@@ -34,7 +34,7 @@ var supplementalDiffCategories = map[string]string{
 	"DeclaredUserTypes":               "the declaration's type vocabulary, which a created column's type is resolved THROUGH rather than rendered FROM. It creates no operation by itself: TestPlanner_CreatesAColumnTypedByADeclaredDomain drives it as part of a table creation, which is the only way it can be exercised (stokaro/ptah#2315)",
 	"DeclaredViewLikes":               "every declared view and materialized view, which a cascading DROP is resolved AGAINST rather than rendered from. The recreate it feeds belongs to the drop that cascaded, and several fixtures below carry it for exactly that reason; on its own it plans nothing (stokaro/ptah#2315)",
 	"DeclaredConstraintHosts":         "the declaration of every table a constraint change names, carried for a target that has to rebuild the table to change a constraint on it. PostgreSQL adds and drops constraints in place and never rebuilds, so this planner reads the field nowhere; a fixture here would assert that a list of table declarations plans nothing (stokaro/ptah#2315)",
-	"ForeignKeysRemovedWithTables":    "supplements matching ConstraintsRemovedWithTables entries with column identities for MySQL/MariaDB drop ordering; it creates no operation by itself and PostgreSQL deliberately ignores it",
+	"ForeignKeysRemovedWithTables":    "supplements matching ConstraintsRemoved entries with column identities for MySQL/MariaDB drop ordering; it creates no operation by itself and PostgreSQL deliberately ignores it",
 	"FunctionsRemovedWithSignatures":  "the same removals FunctionsRemoved names, with the argument list that makes each one addressable; the planner reads this list and falls back to the bare names, so it creates no operation of its own and a fixture would exercise the same DROP twice (stokaro/ptah#2296)",
 	"ProceduresRemovedWithSignatures": "ProceduresRemoved with signatures, supplemental for the same reason",
 }
@@ -518,11 +518,10 @@ func diffCategoryFixtures() []categoryFixture {
 		{
 			"ConstraintsAdded",
 			&difftypes.SchemaDiff{
-				ConstraintsAdded: []string{"uq"},
 				// The record a comparison carries. A name with no definition is
 				// refused, so a row carrying only the name would assert that this
 				// category cannot be planned (stokaro/ptah#2315).
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 					Name: "uq", TableName: "t", Type: "UNIQUE", Columns: []string{"c"},
 				}},
 			},
@@ -532,16 +531,16 @@ func diffCategoryFixtures() []categoryFixture {
 			},
 		},
 		{
-			"ConstraintsAddedWithTables",
-			&difftypes.SchemaDiff{ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+			"ConstraintsAdded",
+			&difftypes.SchemaDiff{ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 				{Name: "uq", TableName: "t", Type: "UNIQUE", Columns: []string{"c"}},
 			}},
 			&schemamodel.Database{},
 		},
-		{"ConstraintsRemoved", &difftypes.SchemaDiff{ConstraintsRemoved: []string{"uq"}}, &schemamodel.Database{}},
+		{"ConstraintsRemoved", &difftypes.SchemaDiff{ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "uq"}}}, &schemamodel.Database{}},
 		{
-			"ConstraintsRemovedWithTables",
-			&difftypes.SchemaDiff{ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+			"ConstraintsRemoved",
+			&difftypes.SchemaDiff{ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 				{Name: "uq", TableName: "t", Type: "UNIQUE"},
 			}},
 			&schemamodel.Database{},

@@ -85,7 +85,7 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded: []string{"fk_export_file"},
+				ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "fk_export_file"}},
 			},
 			wantSQL: []string{
 				`ALTER TABLE "exports"`,
@@ -117,8 +117,8 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 				Constraints: []catalog.Constraint{dbFK(new("NO ACTION"), new("NO ACTION"))},
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded:   []string{"fk_export_file"},
-				ConstraintsRemoved: []string{"fk_export_file"},
+				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "fk_export_file"}},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "fk_export_file"}},
 			},
 		},
 		{
@@ -264,8 +264,8 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 				Constraints: []catalog.Constraint{dbFK(new("NO ACTION"), new("NO ACTION"))},
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded:   []string{"fk_export_file"},
-				ConstraintsRemoved: []string{"fk_export_file"},
+				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "fk_export_file"}},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "fk_export_file"}},
 			},
 		},
 		{
@@ -303,8 +303,8 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded:   []string{"fk_exports_file_id"},
-				ConstraintsRemoved: []string{"fk_exports_file_id"},
+				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "fk_exports_file_id"}},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "fk_exports_file_id"}},
 			},
 		},
 		{
@@ -348,8 +348,8 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded:   []string{"fk_categories_parent"},
-				ConstraintsRemoved: []string{"fk_categories_parent"},
+				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "fk_categories_parent"}},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "fk_categories_parent"}},
 			},
 		},
 		{
@@ -400,8 +400,8 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 				Constraints: []catalog.Constraint{dbFK(new("NO ACTION"), new("NO ACTION"))},
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded:   []string{"fk_export_file"},
-				ConstraintsRemoved: []string{"fk_export_file"},
+				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "fk_export_file"}},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "fk_export_file"}},
 			},
 		},
 	}
@@ -416,13 +416,13 @@ func TestConstraints_FieldLevelForeignKey(t *testing.T) {
 			c.Assert(diff.ConstraintsAdded, qt.HasLen, len(tt.expected.ConstraintsAdded),
 				qt.Commentf("ConstraintsAdded=%v", diff.ConstraintsAdded))
 			for _, expected := range tt.expected.ConstraintsAdded {
-				c.Assert(diff.ConstraintsAdded, qt.Contains, expected)
+				c.Assert(diff.ConstraintsAdded.Names(), qt.Contains, expected.Name)
 			}
 
 			c.Assert(diff.ConstraintsRemoved, qt.HasLen, len(tt.expected.ConstraintsRemoved),
 				qt.Commentf("ConstraintsRemoved=%v", diff.ConstraintsRemoved))
 			for _, expected := range tt.expected.ConstraintsRemoved {
-				c.Assert(diff.ConstraintsRemoved, qt.Contains, expected)
+				c.Assert(diff.ConstraintsRemoved.Names(), qt.Contains, expected.Name)
 			}
 
 			if len(tt.wantSQL) > 0 {

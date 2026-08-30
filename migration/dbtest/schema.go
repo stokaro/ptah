@@ -235,12 +235,11 @@ func preserveUnmanagedObjects(diff *difftypes.SchemaDiff, dialect string) {
 	diff.RolesRemoved = nil
 	diff.GrantsRemoved = nil
 	diff.GrantOptionsRevoked = nil
-	diff.ConstraintsRemovedWithTables = matchingConstraintRemovals(
-		diff.ConstraintsRemovedWithTables,
-		diff.ConstraintsAddedWithTables,
+	diff.ConstraintsRemoved = matchingConstraintRemovals(
+		diff.ConstraintsRemoved,
+		diff.ConstraintsAdded,
 		semantics,
 	)
-	diff.ConstraintsRemoved = constraintRemovalNames(diff.ConstraintsRemovedWithTables)
 
 	tableDiffs := diff.TablesModified[:0]
 	for i := range diff.TablesModified {
@@ -314,11 +313,11 @@ func indexRefsEqual(left, right difftypes.IndexRef, semantics identifier.Semanti
 }
 
 func matchingConstraintRemovals(
-	removed []difftypes.ConstraintRemovalInfo,
-	added []difftypes.ConstraintAdditionInfo,
+	removed difftypes.ConstraintRemovals,
+	added difftypes.ConstraintAdditions,
 	semantics identifier.Semantics,
-) []difftypes.ConstraintRemovalInfo {
-	matching := make([]difftypes.ConstraintRemovalInfo, 0, len(removed))
+) difftypes.ConstraintRemovals {
+	matching := make(difftypes.ConstraintRemovals, 0, len(removed))
 	for _, removal := range removed {
 		position := slices.IndexFunc(added, func(addition difftypes.ConstraintAdditionInfo) bool {
 			return constraintRefsEqual(removal, addition, semantics)
@@ -341,16 +340,6 @@ func constraintRefsEqual(
 	return semantics.IndexIdentityKey(addition.Name) == semantics.IndexIdentityKey(removal.Name) &&
 		semantics.QualifiedTableIdentityKey(addition.TableName) ==
 			semantics.QualifiedTableIdentityKey(removal.TableName)
-}
-
-func constraintRemovalNames(removals []difftypes.ConstraintRemovalInfo) []string {
-	names := make([]string, 0, len(removals))
-	for _, removal := range removals {
-		if !slices.Contains(names, removal.Name) {
-			names = append(names, removal.Name)
-		}
-	}
-	return names
 }
 
 func validateTestSchema(schema *schemamodel.Database) error {

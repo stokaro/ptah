@@ -97,7 +97,7 @@ func TestPostgresCheckExpressionsConvergeE2E(t *testing.T) {
 		ctx, conn, changed, read, config.DefaultCompareOptions())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(changedDiff.ConstraintsAdded, qt.DeepEquals, []string{"ck_6"})
+	c.Assert(changedDiff.ConstraintsAdded.Names(), qt.DeepEquals, []string{"ck_6"})
 }
 
 // createCheckTable builds one table carrying every shape above.

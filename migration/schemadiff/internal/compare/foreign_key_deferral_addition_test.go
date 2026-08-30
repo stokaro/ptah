@@ -86,8 +86,8 @@ func TestConstraints_AnAddedForeignKeyCarriesItsDeferral(t *testing.T) {
 				multiColumnDeferrableDeclaration(tt.deferrable, tt.initially),
 				emptyChildCatalog(), diff, nil, identifier.ForDialect("postgres"))
 
-			c.Assert(diff.ConstraintsAddedWithTables, qt.HasLen, 1)
-			added := diff.ConstraintsAddedWithTables[0]
+			c.Assert(diff.ConstraintsAdded, qt.HasLen, 1)
+			added := diff.ConstraintsAdded[0]
 			c.Assert(added.Type, qt.Equals, "FOREIGN KEY")
 			c.Assert(added.Deferrable, qt.Equals, tt.deferrable)
 			c.Assert(added.Initially, qt.Equals, tt.initially)

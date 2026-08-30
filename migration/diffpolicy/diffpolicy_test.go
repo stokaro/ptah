@@ -74,8 +74,7 @@ func TestApplyDropTableRemovesDependents(t *testing.T) {
 			{Name: "idx_users_email", TableName: "users"},
 			{Name: "idx_orders_total", TableName: "orders"},
 		},
-		ConstraintsRemoved: []string{"uq_users_email", "chk_orders_total"},
-		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 			{Name: "uq_users_email", TableName: "users", Type: "UNIQUE"},
 			{Name: "chk_orders_total", TableName: "orders", Type: "CHECK"},
 		},
@@ -103,8 +102,8 @@ func TestApplyDropTableRemovesDependents(t *testing.T) {
 	c.Assert(got.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_orders_total", TableName: "orders"},
 	})
-	c.Assert(got.ConstraintsRemoved, qt.DeepEquals, []string{"chk_orders_total"})
-	c.Assert(got.ConstraintsRemovedWithTables, qt.HasLen, 1)
+	c.Assert(got.ConstraintsRemoved.Names(), qt.DeepEquals, []string{"chk_orders_total"})
+	c.Assert(got.ConstraintsRemoved, qt.HasLen, 1)
 	c.Assert(got.TriggersRemoved, qt.HasLen, 1)
 	c.Assert(got.TriggersRemoved[0].TableName, qt.Equals, "orders")
 	c.Assert(got.RLSPoliciesRemoved, qt.HasLen, 1)

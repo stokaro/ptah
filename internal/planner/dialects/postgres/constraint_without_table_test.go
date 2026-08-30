@@ -128,7 +128,7 @@ func TestPlanner_TableLevelConstraintNamesItsOwnTable(t *testing.T) {
 // nobody declared (stokaro/ptah#2315).
 func TestPlanner_RefusesAConstraintTheDiffDoesNotDescribe(t *testing.T) {
 	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{"positive_price"}}
+	diff := &difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "positive_price"}}}
 
 	nodes, err := postgres.New().GenerateMigrationAST(diff)
 

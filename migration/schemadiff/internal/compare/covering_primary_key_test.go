@@ -72,8 +72,8 @@ func TestConstraints_ACoveringPrimaryKeyThatAlreadyMatchesIsNotPlanned(t *testin
 
 	diff := constraintDiff(c, coveringDeclaration([]string{"payload"}), coveringCatalog([]string{"payload"}))
 
-	c.Assert(diff.ConstraintsAddedWithTables, qt.HasLen, 0)
-	c.Assert(diff.ConstraintsRemovedWithTables, qt.HasLen, 0)
+	c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
+	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
 }
 
 // TestConstraints_AChangedCoveringPayloadIsStillPlanned is the control that
@@ -99,11 +99,11 @@ func TestConstraints_AChangedCoveringPayloadIsStillPlanned(t *testing.T) {
 
 			diff := constraintDiff(c, coveringDeclaration(tt.declaredInclude), coveringCatalog(tt.liveInclude))
 
-			c.Assert(diff.ConstraintsAddedWithTables, qt.HasLen, 1)
-			c.Assert(diff.ConstraintsAddedWithTables[0].Type, qt.Equals, "PRIMARY KEY")
+			c.Assert(diff.ConstraintsAdded, qt.HasLen, 1)
+			c.Assert(diff.ConstraintsAdded[0].Type, qt.Equals, "PRIMARY KEY")
 			// The addition has to carry the payload the declaration asked for,
 			// or the statement it becomes rebuilds a plain key.
-			c.Assert(diff.ConstraintsAddedWithTables[0].IncludeColumns, qt.DeepEquals, tt.declaredInclude)
+			c.Assert(diff.ConstraintsAdded[0].IncludeColumns, qt.DeepEquals, tt.declaredInclude)
 		})
 	}
 }

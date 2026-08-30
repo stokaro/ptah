@@ -126,7 +126,7 @@ func TestCompareWithDatabaseInfo_MySQLConnectionSchemaMatchesTheDesiredSchema(t 
 			)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, test.wantRemoved,
+			c.Assert(diff.ConstraintsRemoved.Names(), qt.DeepEquals, test.wantRemoved,
 				qt.Commentf("diff: %#v", diff))
 		})
 	}
@@ -208,7 +208,7 @@ func TestCompareWithDatabaseInfo_MySQLForeignKeyOnTheConnectionSchema(t *testing
 			)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, test.wantRemoved,
+			c.Assert(diff.ConstraintsRemoved.Names(), qt.DeepEquals, test.wantRemoved,
 				qt.Commentf("diff: %#v", diff))
 		})
 	}

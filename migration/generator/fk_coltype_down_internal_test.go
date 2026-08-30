@@ -86,8 +86,8 @@ func TestGenerateMigration_ForeignKeyColumnTypeChange_CoincidentActionChange(t *
 			upDiff := schemadiff.CompareWithDialect(gen, dbSchema, tc.name)
 			c.Assert(upDiff.HasChanges(), qt.IsTrue)
 			// The FK definition change is recorded as a same-name add + remove.
-			c.Assert(upDiff.ConstraintsAdded, qt.Contains, "fk_posts_user_slug")
-			c.Assert(upDiff.ConstraintsRemoved, qt.Contains, "fk_posts_user_slug")
+			c.Assert(upDiff.ConstraintsAdded.Names(), qt.Contains, "fk_posts_user_slug")
+			c.Assert(upDiff.ConstraintsRemoved.Names(), qt.Contains, "fk_posts_user_slug")
 
 			up, err := generateUpMigrationSQL(upDiff, gen, tc.name)
 			c.Assert(err, qt.IsNil)

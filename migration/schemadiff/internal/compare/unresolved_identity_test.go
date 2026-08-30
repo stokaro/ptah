@@ -99,8 +99,8 @@ func TestConstraintsWithSemantics_UnresolvedTablesAreNotOneTable(t *testing.T) {
 
 	compare.ConstraintsWithSemantics(desired, &catalog.Database{}, diff, nil, unresolvedTargetSemantics())
 
-	tables := make([]string, 0, len(diff.ConstraintsAddedWithTables))
-	for _, constraint := range diff.ConstraintsAddedWithTables {
+	tables := make([]string, 0, len(diff.ConstraintsAdded))
+	for _, constraint := range diff.ConstraintsAdded {
 		tables = append(tables, constraint.TableName)
 	}
 	c.Assert(tables, qt.DeepEquals, []string{"alpha", "beta"})

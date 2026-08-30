@@ -279,25 +279,23 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// from the introspected schema for the constraint types whose down
 		// add-path needs more than a name.
 		//
-		// ConstraintsAddedWithTables carries the table-qualified prior body so
+		// ConstraintsAdded carries the table-qualified prior body so
 		// the down add-path can fan a shared constraint name out to every real
 		// host table. Without it the down add-path falls back to name-only
 		// resolution, which can emit one ADD for a single host while per-host
 		// DROP also resolves only one host; the 2nd host's re-add then collides
 		// with its still-present old constraint (Postgres 42710, MySQL 1826)
 		// and the rollback aborts half-applied.
-		ConstraintsAdded:             diff.ConstraintsRemoved,
-		ConstraintsRemoved:           diff.ConstraintsAdded,
-		ConstraintsRemovedWithTables: reverseConstraintRemovals(diff, schema, semantics),
+		ConstraintsRemoved:           reverseConstraintRemovals(diff, schema, semantics),
 		ForeignKeysRemovedWithTables: reverseForeignKeyRemovals(diff, schema, dialect),
-		ConstraintsAddedWithTables:   reverseConstraintAdditions(diff, dbSchema, semantics),
+		ConstraintsAdded:             reverseConstraintAdditions(diff, dbSchema, semantics),
 	}
 	// A re-created table brings its own primary key and field-level foreign keys
 	// back with it, so listing those a second time as constraint additions is
 	// how a rollback of a DROP TABLE became unexecutable. This runs before the
 	// index-removal restorations are appended purely for readability: those are
 	// UNIQUE constraints, which the rule deliberately never drops.
-	dropReverseConstraintsRestoredByTableCreation(reversed, diff.ConstraintsRemovedWithTables, dbSchema)
+	dropReverseConstraintsRestoredByTableCreation(reversed, diff.ConstraintsRemoved, dbSchema)
 	indexAdditions, constraintRestorations := reverseIndexRemovals(diff, dbSchema)
 	// The definitions come from the PRE-CHANGE database: this direction
 	// re-creates the indexes the change dropped, and an index the declaration
@@ -305,8 +303,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 	reversed.SetIndexAdditions(priorIndexChanges(prior, indexAdditions, semantics))
 	reversed.SetIndexRemovals(diff.IndexAdditions())
 	for _, restored := range constraintRestorations {
-		reversed.ConstraintsAdded = append(reversed.ConstraintsAdded, restored.Name)
-		reversed.ConstraintsAddedWithTables = append(reversed.ConstraintsAddedWithTables, restored)
+		reversed.ConstraintsAdded = append(reversed.ConstraintsAdded, restored)
 	}
 	// The tables those constraint changes name, as the PRE-CHANGE database
 	// declared them: a rollback rebuilds the table that database had, so the
@@ -314,7 +311,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 	// because the two lists it reads are still being appended to above
 	// (stokaro/ptah#2315).
 	reversed.DeclaredConstraintHosts = difftypes.ConstraintHostDeclarationsOf(
-		prior, reversed.ConstraintsAddedWithTables, reversed.ConstraintsRemovedWithTables, semantics)
+		prior, reversed.ConstraintsAdded, reversed.ConstraintsRemoved, semantics)
 	return reversed
 }
 
