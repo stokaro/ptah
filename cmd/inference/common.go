@@ -11,15 +11,47 @@ import (
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/internal/embedpg"
+	"go.5x5.cz/ptah/internal/embedrelease"
 	"go.5x5.cz/ptah/internal/embedspec"
 )
 
 // commonOptions are what every verb needs.
 type commonOptions struct {
-	// specPath is the specification file.
-	specPath string
+	// spec is where the specification comes from. It is a pointer so that every
+	// copy of these options shares one resolution; see [specSource].
+	spec *specSource
 	// dbURL is the database the generation lives in.
 	dbURL string
+}
+
+// specSource is where a verb's specification comes from, and the one copy of it
+// this invocation runs against.
+//
+// Resolved once rather than at each use. A verb opens the database several
+// times -- a cutover verifies, reads the pointer, then advances the phase --
+// and reading a local file three times is three reads of the same bytes.
+// Reading a MUTABLE OCI reference three times is three chances to be handed a
+// different specification, and a cutover carried out against two of them is one
+// that no record describes.
+//
+// Resolved lazily rather than in a PreRunE, because cobra runs PreRunE before
+// its own flag-group validation and before the verb has checked its arguments.
+// A run naming two destinations for one record, or naming no run at all, would
+// have reached a registry before being refused for a reason that has nothing to
+// do with one.
+type specSource struct {
+	// path is the specification file, and reference an OCI reference to a
+	// published release carrying one instead. Exactly one is given.
+	path      string
+	reference string
+	// plainHTTP permits an unencrypted connection to that registry.
+	plainHTTP bool
+	// notices is where the resolution of a mutable reference is reported. It is
+	// taken at resolution time rather than at flag registration, because a test
+	// installs its own streams on the root command afterwards.
+	notices func() io.Writer
+	// loaded is what the first resolution produced, nil until then.
+	loaded *embedspec.Loaded
 }
 
 // session is a resolved specification and an open connection.
@@ -36,17 +68,14 @@ func (s *session) close() {
 	}
 }
 
-// open reads the specification and connects.
+// open resolves the specification and connects.
 //
 // The two are separated in the error messages because they fail for different
 // reasons and send an operator to different places: a specification that will
 // not parse is a file to edit, and a database that will not open is a URL or a
 // server.
 func open(ctx context.Context, options commonOptions) (*session, error) {
-	if strings.TrimSpace(options.specPath) == "" {
-		return nil, fmt.Errorf("--spec is required")
-	}
-	loaded, err := embedspec.Load(options.specPath)
+	loaded, err := options.spec.resolve(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -65,6 +94,72 @@ func open(ctx context.Context, options commonOptions) (*session, error) {
 		return nil, fmt.Errorf("connect to %s: %w", redact(options.dbURL), err)
 	}
 	return &session{loaded: loaded, db: db, store: embedpg.NewStore(db)}, nil
+}
+
+// resolve reads the specification from wherever the operator put it: a file
+// they are editing, or a release somebody else published.
+//
+// The two are one function because everything downstream takes a resolved
+// specification and must not learn which. A verb that behaved differently on a
+// promoted release would make the promotion untestable by the environment that
+// published it.
+func (s *specSource) resolve(ctx context.Context) (embedspec.Loaded, error) {
+	if s == nil {
+		return embedspec.Loaded{}, fmt.Errorf("--spec or --release is required")
+	}
+	if s.loaded != nil {
+		return *s.loaded, nil
+	}
+	loaded, err := s.read(ctx)
+	if err != nil {
+		return embedspec.Loaded{}, err
+	}
+	s.loaded = &loaded
+	return loaded, nil
+}
+
+// read is the resolution itself, without the memory of having done it.
+func (s *specSource) read(ctx context.Context) (embedspec.Loaded, error) {
+	path := strings.TrimSpace(s.path)
+	reference := strings.TrimSpace(s.reference)
+	switch {
+	case path == "" && reference == "":
+		return embedspec.Loaded{}, fmt.Errorf("--spec or --release is required")
+	case path != "":
+		return embedspec.Load(path)
+	}
+
+	fetched, err := embedrelease.Fetch(ctx, reference,
+		embedrelease.FetchOptions{PlainHTTP: s.plainHTTP})
+	if err != nil {
+		return embedspec.Loaded{}, err
+	}
+	loaded, err := embedspec.ParsePublished(
+		fetched.Specification, reference, fetched.Release.SpecDigest)
+	if err != nil {
+		return embedspec.Loaded{}, err
+	}
+	return loaded, s.reportResolution(fetched)
+}
+
+// reportResolution says which artifact a mutable reference turned out to name.
+//
+// It goes to the notice stream rather than into the answer because the answer
+// is machine-read: `describe --format json` is diffed between two commits to
+// decide whether a corpus has to be recomputed, and a document that also
+// carried where it was fetched from would differ on every promotion for a
+// reason that changes no vector.
+//
+// Reported at all because a promotion whose record kept only the tag says two
+// environments agreed without establishing that they did. A tag moves.
+func (s *specSource) reportResolution(fetched embedrelease.Fetched) error {
+	if s.notices == nil {
+		return nil
+	}
+	_, err := fmt.Fprintf(s.notices(),
+		"release %s resolved to %s, generation %s\n",
+		fetched.Reference, fetched.Digest, fetched.Release.Generation)
+	return err
 }
 
 // refuseAnotherEngine says what this namespace speaks to, before pgx says it

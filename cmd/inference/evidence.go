@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/internal/embedeval"
 	"go.5x5.cz/ptah/internal/embedgen"
 	"go.5x5.cz/ptah/internal/embedrelease"
@@ -28,17 +27,19 @@ type evidenceOptions struct {
 	// for none. A record naming one is published into that release's own
 	// repository, as a referrer of it.
 	attachTo string
-	// plainHTTP permits an unencrypted connection to that registry.
-	plainHTTP bool
 }
 
 // addEvidenceFlags registers them.
+//
+// --plain-http is not among them. It belongs to the verb rather than to one
+// direction of traffic: the same run can fetch a release and publish a record,
+// and two flags meaning "this registry speaks HTTP" would let an operator
+// answer the question once and have it apply to half of what they did.
 func addEvidenceFlags(flags *pflag.FlagSet, options *evidenceOptions) {
 	flags.StringVar(&options.publishTo, "publish-evidence", "",
 		"OCI reference to publish this run's record to; omitted keeps it out of a registry")
 	flags.StringVar(&options.writeTo, "evidence-file", "",
 		"Path to write this run's record to as JSON; omitted writes no file")
-	dbcli.RegisterPlainHTTPFlag(flags, &options.plainHTTP)
 }
 
 // addSubjectFlag registers the flag that says what a record is about.
@@ -108,7 +109,7 @@ func verificationRecord(
 // not do what it did, and the registry being unreachable is not a fact about the
 // generation.
 func publishRecord(
-	ctx context.Context, out io.Writer, evidence evidenceOptions,
+	ctx context.Context, out io.Writer, plainHTTP bool, evidence evidenceOptions,
 	record embedrelease.Record, err error,
 ) error {
 	if err != nil {
@@ -120,7 +121,7 @@ func publishRecord(
 	if evidence.publishTo == "" && evidence.attachTo == "" {
 		return nil
 	}
-	result, publishErr := sendRecord(ctx, evidence, record)
+	result, publishErr := sendRecord(ctx, plainHTTP, evidence, record)
 	if publishErr != nil {
 		return writeLines(out, bullet(fmt.Sprintf(
 			"the record was not published: %v", publishErr)))
@@ -135,10 +136,10 @@ func publishRecord(
 // a referrer lands in its subject's repository and a standalone record lands
 // where the operator said. Cobra has already refused a run naming both.
 func sendRecord(
-	ctx context.Context, evidence evidenceOptions, record embedrelease.Record,
+	ctx context.Context, plainHTTP bool, evidence evidenceOptions, record embedrelease.Record,
 ) (ociartifact.PushResult, error) {
 	options := embedrelease.PublishOptions{
-		RecordedAt: time.Now().UTC(), PlainHTTP: evidence.plainHTTP,
+		RecordedAt: time.Now().UTC(), PlainHTTP: plainHTTP,
 	}
 	if evidence.attachTo != "" {
 		return embedrelease.Attach(ctx, evidence.attachTo, record, options)

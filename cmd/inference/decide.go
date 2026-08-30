@@ -98,7 +98,7 @@ func publishVerification(
 	defer opened.close()
 	record, buildErr := embedrelease.NewVerificationRecord(
 		verificationRecord(opened.loaded.Spec, report, nil, time.Now().UTC()))
-	return publishRecord(ctx, out, evidence, record, buildErr)
+	return publishRecord(ctx, out, options.spec.plainHTTP, evidence, record, buildErr)
 }
 
 // recordVerification writes the pass onto the generation.
@@ -329,7 +329,8 @@ func runCutover(
 	if err := reachPhase(ctx, options, runID, embedrun.PhaseCutOver); err != nil {
 		return err
 	}
-	return publishCutover(ctx, out, opened, plan, report, approver, now, stabilizeFor, evidence)
+	return publishCutover(ctx, out, options.spec.plainHTTP, opened, plan, report,
+		approver, now, stabilizeFor, evidence)
 }
 
 // publishCutover records what was done, where a registry was named.
@@ -338,7 +339,7 @@ func runCutover(
 // reason the window is: the cutover happened, and a registry being unreachable
 // is not a fact about it.
 func publishCutover(
-	ctx context.Context, out io.Writer, opened *session, plan embedcutover.Plan,
+	ctx context.Context, out io.Writer, plainHTTP bool, opened *session, plan embedcutover.Plan,
 	report embedverify.Report, approver string, at time.Time,
 	stabilizeFor time.Duration, evidence evidenceOptions,
 ) error {
@@ -357,7 +358,7 @@ func publishCutover(
 		cutover.StabilizeUntil = at.Add(stabilizeFor)
 	}
 	record, buildErr := embedrelease.NewCutoverRecord(cutover)
-	return publishRecord(ctx, out, evidence, record, buildErr)
+	return publishRecord(ctx, out, plainHTTP, evidence, record, buildErr)
 }
 
 // openStabilization starts the window in which the previous generation is still

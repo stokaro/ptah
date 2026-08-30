@@ -8,6 +8,8 @@
 package embedspec
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -147,6 +149,15 @@ type Loaded struct {
 	// document. `ptah inference describe --format json` is the semantic answer
 	// for a reader who wants an edit that changed nothing to read as nothing.
 	Digest string
+	// Document is the exact bytes Digest was taken over.
+	//
+	// Kept because a release is promoted by digest into an environment that has
+	// never seen the file. An artifact carrying the digest alone names a
+	// document nobody there can produce, so the file would have to arrive by
+	// some path beside the release -- and a specification that travelled beside
+	// its release is one nothing checked. [ParsePublished] is the other end of
+	// that journey.
+	Document []byte
 }
 
 // FormatVersion is the file format this build reads.
@@ -182,5 +193,36 @@ func Parse(body []byte, path string) (Loaded, error) {
 	// document, so it answers "which file" and not "which meaning". The
 	// resolved answer already exists, as the generation identity.
 	loaded.Digest = embeddigest.Of("spec-document", strconv.Itoa(FormatVersion), string(body))
+	loaded.Document = bytes.Clone(body)
+	return loaded, nil
+}
+
+// ErrDocumentMismatch reports a published specification whose bytes are not the
+// ones the release recorded.
+var ErrDocumentMismatch = errors.New("the published specification is not the one the release recorded")
+
+// ParsePublished reads a specification that arrived inside a release, and
+// refuses one whose bytes are not what the release said they were.
+//
+// The check is here rather than at the caller because this is where the digest
+// is defined, and a comparison written anywhere else would be a second
+// statement of how a document is addressed -- free to agree today and drift
+// the first time the encoding changes.
+//
+// It is a real check rather than a formality. Pulling by digest already
+// establishes that the artifact is the one the reference named; what it cannot
+// establish is that the artifact is internally consistent, and a release whose
+// record claims one specification while its layer carries another is the shape
+// that would let an approval, a cutover record and a verification all name a
+// document nobody ran.
+func ParsePublished(body []byte, source, recordedDigest string) (Loaded, error) {
+	loaded, err := Parse(body, source)
+	if err != nil {
+		return Loaded{}, err
+	}
+	if loaded.Digest != recordedDigest {
+		return Loaded{}, fmt.Errorf("%w: %s carries %s and the release records %s",
+			ErrDocumentMismatch, source, loaded.Digest, recordedDigest)
+	}
 	return loaded, nil
 }

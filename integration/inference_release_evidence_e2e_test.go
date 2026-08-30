@@ -45,6 +45,13 @@ func TestInferenceReleaseEvidenceE2E(t *testing.T) {
 	assertACutoverRecordsWhatAuthorizedIt(c, ctx, repository)
 }
 
+// publishedSpecification stands in for the document a release carries.
+//
+// This test drives the package, which publishes and reads bytes and never
+// parses them. The CLI test below carries a real specification through the same
+// path.
+const publishedSpecification = "version: 1\nname: articles v2\n"
+
 // assertReleaseRoundTrips publishes what a generation change proposes.
 func assertReleaseRoundTrips(
 	c *qt.C, ctx context.Context, repository string,
@@ -58,7 +65,7 @@ func assertReleaseRoundTrips(
 		Reason:          "the provider exposes no immutable revision",
 		CreatedAt:       time.Now().UTC().Truncate(time.Second),
 	}
-	record, err := embedrelease.NewReleaseRecord(release)
+	record, err := embedrelease.NewReleaseRecord(release, []byte(publishedSpecification))
 	c.Assert(err, qt.IsNil)
 
 	result, err := embedrelease.Publish(ctx, repository+":release", record,
@@ -69,6 +76,13 @@ func assertReleaseRoundTrips(
 		embedrelease.ReleaseArtifactType, embedrelease.ReleaseFileName)
 	var readBack embedrelease.Release
 	c.Assert(json.Unmarshal(pulled, &readBack), qt.IsNil)
+
+	// The document the change was built from travelled with the record, which
+	// is what lets another environment run this release rather than be told
+	// the digest of a file it has never seen.
+	carried := pullRecord(c, ctx, repository+"@"+result.Descriptor.Digest.String(),
+		embedrelease.ReleaseArtifactType, embedrelease.SpecificationFileName)
+	c.Assert(string(carried), qt.Equals, publishedSpecification)
 
 	c.Assert(readBack.Generation, qt.Equals, "gen-2")
 	c.Assert(readBack.Version, qt.Equals, embedrelease.RecordVersion)
@@ -235,6 +249,7 @@ func TestInferenceEvidencePublishedByTheCLIE2E(t *testing.T) {
 	assertPlanLeavesNoRecordUnasked(c, ctx, specPath, dbName)
 	assertPlanWritesTheReleaseToAFile(c, ctx, specPath, dbName, generation)
 	assertPlanPublishesTheRelease(c, ctx, specPath, dbName, repository, generation)
+	assertAPublishedReleaseRunsWithoutTheFile(c, ctx, dbName, repository, generation)
 	assertVerifyIsFoundFromTheReleaseItIsAbout(c, ctx, specPath, dbName, repository)
 	assertVerifyPublishesWhatItMeasured(c, ctx, specPath, dbName, repository, generation)
 	assertCutoverPublishesWhatAuthorizedIt(c, ctx, specPath, dbName, repository, generation)
@@ -313,6 +328,30 @@ func assertPlanPublishesTheRelease(
 	c.Assert(json.Unmarshal(pulled, &record), qt.IsNil)
 	c.Assert(record.Generation, qt.Equals, generation)
 	c.Assert(record.Digest(), qt.HasLen, 64)
+}
+
+// assertAPublishedReleaseRunsWithoutTheFile is the promotion the epic asks for:
+// one immutable release specification, promoted by digest through development,
+// staging and production, each environment producing its own run against the
+// same release identity.
+//
+// The environment receiving it has never seen the operator's file, which is why
+// the release carries the document rather than its digest. This runs the verb
+// with no --spec at all, and the file is on this machine only because the same
+// process published it a moment ago.
+func assertAPublishedReleaseRunsWithoutTheFile(
+	c *qt.C, ctx context.Context, dbURL, repository, generation string,
+) {
+	c.Helper()
+	output := runInference(c, ctx, "plan",
+		"--release", repository+":release", "--db-url", dbURL, "--plain-http")
+
+	// The same generation the file produced. A promotion answering with a
+	// different identity would recompute a corpus that is already correct.
+	c.Assert(output, qt.Contains, "generation "+generation)
+	// And it reached the database: the plan measured what only a server can
+	// answer, so this is the whole verb rather than a specification being read.
+	c.Assert(output, qt.Contains, "for 3 rows")
 }
 
 // assertVerifyIsFoundFromTheReleaseItIsAbout closes the chain the issue named.
