@@ -1347,8 +1347,7 @@ func constraintIncludeTargets(constraintKind string) []string {
 // at the point a declaration meets a target, which is every producer rather than
 // that one path.
 func validateConstraintInclude(
-	dialect string,
-	constraintKind, constraintName string,
+	dialect, constraintKind, constraintName string,
 	includeColumns []string,
 ) error {
 	if len(includeColumns) == 0 {
