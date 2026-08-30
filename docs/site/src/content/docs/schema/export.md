@@ -1,10 +1,10 @@
 ---
 title: API schema export
-description: Project selected Go entities into OpenAPI or GraphQL contract candidates and review their trust-boundary limitations.
+description: Project a desired schema into OpenAPI or GraphQL contract candidates and review their trust-boundary limitations.
 type: how-to
 audience:
   - "schema-author"
-readerQuestion: "How do I project selected Go entities into OpenAPI or GraphQL contract candidates and review their trust-boundary limitations?"
+readerQuestion: "How do I project a desired schema into OpenAPI or GraphQL contract candidates and review their trust-boundary limitations?"
 goal: "Generate and review an OpenAPI or GraphQL contract candidate."
 sourceOfTruth:
   - "cmd/schema"
@@ -21,8 +21,8 @@ schemas, GraphQL SDL, and Protobuf definitions. Use these artifacts when the
 selected database entities intentionally match your transport model, or as input
 to a separately designed contract.
 
-The source can be Go annotations under `--root-dir` or a YAML, HCL, SQL, or
-DBML schema file named by `--schema-file` — the same desired-schema sources
+The source can be a YAML, HCL, SQL, or DBML file named by `--schema-file`, or
+Go annotations under `--root-dir` — the same desired-schema sources
 `ptah schema render` reads.
 
 The export does not expose database rows or create a working API. It does not
@@ -50,20 +50,20 @@ removes the annotations from the Go files it reads.
 
 ```bash
 # OpenAPI 3.0 — components.schemas keyed by table name
-ptah schema export --to openapi-v3 --root-dir ./models --out openapi.yaml
+ptah schema export --to openapi-v3 --schema-file schema.yaml --out openapi.yaml
 
 # GraphQL SDL — one object type per table, and no operations
-ptah schema export --to graphql --root-dir ./models --out schema.graphql
+ptah schema export --to graphql --schema-file schema.yaml --out schema.graphql
 
 # Add operation shapes by name
-ptah schema export --to graphql --root-dir ./models \
+ptah schema export --to graphql --schema-file schema.yaml \
   --graphql-operations list,by-id,create-input --out schema.graphql
 
 # Omit --out to write the schema to stdout (for piping into a validator)
-ptah schema export --to graphql --root-dir ./models > schema.graphql
+ptah schema export --to graphql --schema-file schema.yaml > schema.graphql
 
-# Export a YAML, HCL, SQL, or DBML schema file instead of Go annotations
-ptah schema export --to openapi-v3 --schema-file schema.yaml --out openapi.yaml
+# Go annotations use --root-dir instead
+ptah schema export --to openapi-v3 --root-dir ./models --out openapi.yaml
 ```
 
 | Flag | Applies to | Meaning |
@@ -87,8 +87,6 @@ to stderr, so a schema piped from stdout is never corrupted.
 desired schema is spelled the same way on both commands. Every target except
 `hcl` reads all five sources below:
 
-- **Go annotations** — the directory named by `--root-dir`, which defaults to
-  `.`. This is `--from go`.
 - **[YAML schema](../yaml/)** — a `--schema-file` whose extension is `.yaml` or
   `.yml`. This is `--from yaml`.
 - **[HCL schema](../hcl/)** — a `--schema-file` whose extension is `.hcl`. This
@@ -97,6 +95,8 @@ desired schema is spelled the same way on both commands. Every target except
   is `--from sql`.
 - **[DBML document](../dbml/)** — a `--schema-file` whose extension is `.dbml`.
   This is `--from dbml`.
+- **Go annotations** — the directory named by `--root-dir`, which defaults to
+  `.`. This is `--from go`.
 
 An export taken from a schema file is byte-identical to the export taken from
 annotated Go models describing the same tables, so a project can change how it
@@ -116,8 +116,8 @@ Two combinations are refused rather than approximated:
   so its source is `--root-dir`. Converting a schema file to HCL is a different
   operation from migrating annotations out of Go code.
 - `--from db`. An export reads a schema definition, not a live database. Run
-  [`ptah introspect`](../../start/adopt-an-existing-database/) to generate
-  annotated models from a database URL, review them, then export those.
+  [`ptah schema inspect`](../../direct/inspect/) to write HCL, SQL, or DBML
+  from a database URL, review the file, then export it.
 
 ## OpenAPI
 

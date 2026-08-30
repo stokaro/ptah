@@ -51,14 +51,15 @@ func newSchemaPlanCommand() *cobra.Command {
 		Use:   "plan",
 		Short: "Save a fingerprinted direct apply plan",
 		Long: `Compute the direct schema plan from the --db-url target database to the
-local desired-state sources and save it as a fingerprinted local plan file
+local desired-schema sources and save it as a fingerprinted local plan file
 (JSON, format version 1).
 
 "ptah schema apply --plan <path>" executes the saved plan after verifying the
 database still matches the plan's source fingerprint, so a reviewed plan is
-exactly what runs — a drifted target refuses to execute. The desired state
-comes from Go annotations (--root-dir) or native schema files (--schema-file,
-repeatable; sources merge into one composite schema). Pass --save or
+exactly what runs — a drifted target refuses to execute. The desired schema
+comes from native schema files or OCI artifacts (--schema-file, repeatable),
+or Go annotations (--root-dir, repeatable). Sources merge into one composite
+schema. Pass --save or
 --output <path> to write the plan file, or --dry-run to print the plan
 document without saving it.`,
 		SilenceErrors: true,
@@ -69,7 +70,7 @@ document without saving it.`,
 	flags := cmd.Flags()
 	flags.StringVar(&opts.dbURL, planDBURLFlag, "", "Target database URL the plan applies to (required)")
 	flags.StringArrayVar(&opts.rootDirs, planRootDirFlag, nil, "Root directory to scan for Go entities (repeatable)")
-	flags.StringArrayVar(&opts.schemaFiles, planSchemaFileFlag, nil, "YAML, HCL, or SQL schema file describing the desired state (repeatable)")
+	flags.StringArrayVar(&opts.schemaFiles, planSchemaFileFlag, nil, "SQL, YAML, HCL, DBML, or OCI desired-schema source (repeatable)")
 	flags.StringVar(&opts.devURL, planDevURLFlag, "", "Dev database URL; must match the target dialect when set")
 	flags.StringArrayVar(&opts.exclude, planExcludeFlag, nil, "Schema objects to exclude from planning (Atlas-style selectors)")
 	flags.StringVar(&opts.name, planNameFlag, "", "Plan name recorded in the plan file")

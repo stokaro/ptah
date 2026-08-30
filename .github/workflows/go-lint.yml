@@ -170,9 +170,6 @@ jobs:
           scripts/check-public-api-selftest.sh
           scripts/check-public-api.sh
 
-      - name: Check public Go API snapshot
-        run: scripts/check-public-api-snapshot.sh
-
       - name: Check public Go API released baseline
         run: scripts/check-public-api-released.sh --require-baseline
 

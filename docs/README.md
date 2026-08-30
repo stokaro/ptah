@@ -110,12 +110,18 @@ Regenerate and check the manifest against the built command tree:
 node docs/site/scripts/build-source-support.mjs --write --binary ./bin/ptah
 node docs/site/scripts/build-source-support.mjs --binary ./bin/ptah
 scripts/check-source-equivalence.sh
+scripts/check-source-workflows.sh
 ```
 
 The equivalence gate renders every canonical source through the built CLI,
 materializes the result on a fresh SQLite database, and compares the resulting
 inspection JSON. Its fixture lives under
 `docs/site/fixtures/source-equivalence/`.
+
+The workflow gate takes the same fixtures through migration plan/generate,
+shadow-verified brownfield baseline, a first subsequent change, and a static
+Protobuf export. It also exercises OCI plan/generate through the focused Go
+command test named in the manifest.
 
 ## Contributing to the documentation
 

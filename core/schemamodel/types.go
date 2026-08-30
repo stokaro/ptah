@@ -11,10 +11,10 @@ import (
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
-// Database represents the complete database schema derived from Go struct annotations.
+// Database represents a complete desired or inspected database schema.
 //
 // This struct aggregates all database schema information discovered during the recursive
-// parsing process. It includes all entity types, their relationships, and dependency
+// source-loading process. It includes all object types, their relationships, and dependency
 // information needed for proper migration generation.
 //
 // The result is processed to:
@@ -24,7 +24,7 @@ import (
 //
 // Fields:
 //   - Schemas: All explicit database schema/namespace directives
-//   - Tables: All table directives found in the project
+//   - Tables: All tables found in the selected sources
 //   - Fields: All field definitions with their database mappings
 //   - Indexes: All index definitions for database optimization
 //   - Enums: Global enum definitions that can be referenced by fields

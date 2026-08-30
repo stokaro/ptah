@@ -50,11 +50,11 @@ a schema source, and nothing later asks for one.
 
 ```bash
 ptah migrations plan \
-  --root-dir ./models \
+  --schema-file schema.sql \
   --db-url "$DATABASE_URL"
 
 ptah migrations generate \
-  --root-dir ./models \
+  --schema-file schema.sql \
   --db-url "$DATABASE_URL" \
   --migrations-dir ./migrations
 ```

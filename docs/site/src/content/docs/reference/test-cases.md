@@ -31,7 +31,7 @@ render a report, and return a non-zero status when any case fails.
 | --- | --- | --- | --- |
 | `--dir` | Yes | Yes | `./tests` |
 | `--migrations-dir` | Yes | No | `./migrations` |
-| `--root-dir` | Used by `apply_schema` | Desired schema applied before cases | `./models` |
+| `--root-dir` | Go annotation directory used by `apply_schema` | Desired-schema source: a SQL, YAML, HCL, or DBML file, a Go annotation directory, or a live database URL | `./models` |
 | `--seed-dir` | Default for seed steps | Default for seed steps | No default |
 | `--dir-format` | `auto`, `ptah`, or `atlas` | No | `ptah` |
 | `--db-url` | Optional explicit throwaway database | Optional explicit throwaway database | Ephemeral SQLite |
@@ -48,7 +48,7 @@ sets exactly one action:
 | Action | Value | Scope |
 | --- | --- | --- |
 | `migrate_to` | Non-negative integer version, `latest`, or `0` | Migration tests |
-| `apply_schema` | `true` | Additively converge objects declared under `--root-dir` using the live target |
+| `apply_schema` | `true` | Additively converge the selected desired schema using the live target |
 | `seed` | Mapping with required `env`; optional `dir` overrides `--seed-dir` | Both |
 | `exec` | SQL string | Both |
 | `assert` | Mapping with `query` and one condition | Both |
@@ -69,6 +69,12 @@ concurrent runners are not serialized and arbitrary SQL is not rolled back.
 `apply_schema` preserves unrelated objects, uses live dialect capabilities and
 identifier semantics, and can repair supported drift. Roles and grants are
 rejected because their effects can escape the database-local test lifecycle.
+
+For `schema test`, `--root-dir` is the current compatibility spelling for all
+three source kinds; it does not imply that a file or database URL is a
+directory. [Issue #2571](https://github.com/stokaro/ptah/issues/2571) tracks a
+neutral source flag. HCL files also accept repeatable `--var name=value`
+overrides.
 
 ## Exit contract
 

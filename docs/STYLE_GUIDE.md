@@ -400,6 +400,22 @@ once on its concept page and link; do not re-define them per page.
 
 ## 8. Code and examples
 
+- Use **desired-schema source** or **schema source** for the input when a
+  command accepts more than Go annotations. Use `Go annotations`, `Go source
+  tree`, or `models` only when the format is material to the sentence.
+- The first complete example on a source-neutral workflow page must use a
+  static source and require no Go toolchain. SQL is the default when the page
+  does not need a format-specific feature. A later example may add Go
+  annotations as one supported source.
+- Name the exact selector for each source: `--schema-file` for SQL, YAML, HCL,
+  DBML, and OCI artifacts; `--root-dir` for Go annotations; `--schema-cmd` for
+  an explicit external program; and `--config ... --allow-external-schema` for
+  configured external execution. Do not imply that one flag covers every
+  transport.
+- A Go-only introduction is allowed only when current built help accepts no
+  source-neutral alternative. State the limitation, cite the owning command
+  or implementation in `sourceOfTruth`, and link to the source-neutral
+  alternative or the tracked product gap when one exists.
 - Runnable over pseudocode. Every example starts from a stated state and is
   copy-pasteable.
 - Fenced blocks always carry a language label: `bash`, `powershell`, `console`,

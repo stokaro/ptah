@@ -106,3 +106,11 @@ The action requires a database URL. Use a disposable database for pull request
 workflows. For SQLite smoke tests, `sqlite:///${{ runner.temp }}/ptah.db` is
 enough; for PostgreSQL, MySQL, MariaDB, SQL Server, CockroachDB, or YugabyteDB,
 start the database as a service container or provide a secret URL.
+
+The action's current desired-schema input is Go-specific: `dir` becomes
+`ptah migrations plan --root-dir`. Repositories whose source is SQL, YAML, HCL,
+DBML, OCI, or an external loader should invoke the CLI directly with the exact
+source selector; see the source-neutral contour in the site [CI
+guide](site/src/content/docs/testing/ci.md). The companion action's generic
+source support is tracked in
+[ptah-action issue #1](https://github.com/stokaro/ptah-action/issues/1).

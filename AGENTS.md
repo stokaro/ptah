@@ -44,19 +44,19 @@ check where a package actually lives before writing an import path for it.
 
 The ledger of the public Go surface is
 [`docs/public_api.md`](docs/public_api.md): it lists the stable embedder
-packages, and three CI gates hold the tree to the list. The ledger is the
-supported surface, not everything technically importable -- test fixtures and
-support trees such as `stubs/`, `integration/*`, and `examples/*` stay outside
-it, and `scripts/check-public-api.sh` names its exemptions explicitly.
+packages. The ledger is the supported surface, not everything technically
+importable -- test fixtures and support trees such as `stubs/`,
+`integration/*`, and `examples/*` stay outside it, and
+`scripts/check-public-api.sh` names its exemptions explicitly.
 
 That gate fails when `go list ./...` finds an importable package that is
-neither exempt nor in the ledger; `scripts/check-public-api-snapshot.sh`
-compares every exported symbol with `docs/public_api.snapshot`; and
-`scripts/check-public-api-released.sh` runs `apidiff` against the newest
-`v0.*` release tag. A change to any exported symbol in a ledger package must
-regenerate the snapshot in the same change, with
-`scripts/check-public-api-snapshot.sh --update`, and an incompatible change
-additionally needs a reviewed entry in `docs/public_api_approvals.txt`.
+neither exempt nor in the ledger. `scripts/check-public-api-released.sh` runs
+`apidiff` against the newest `v0.*` release tag and requires a reviewed entry
+in `docs/public_api_approvals.txt` for an intentional incompatible change.
+`scripts/check-exported-docs.sh` separately requires documentation on exported
+declarations. Additive API changes rely on normal code review; the repository
+does not commit a generated copy of declarations merely to make those changes
+appear twice in a diff.
 
 The list below is orientation, not the ledger: the core packages a reader
 meets first. `docs/public_api.md` is the authority on what is public.

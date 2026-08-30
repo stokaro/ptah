@@ -18,41 +18,53 @@ owns:
   - cli-ptah-migrations-plan
 ---
 
-A migration file has two origins, and this page covers both. Either you write
-it — `ptah migrations create`, then the SQL, which is the whole workflow for a
-project that keeps no desired schema — or you have a desired schema (Go
-annotations, YAML, HCL, or SQL files) and a database that should follow it, and
-Ptah writes the difference for you.
+A migration pair has two origins. Ptah can derive it from the difference
+between a desired schema and a live database, or you can write it with
+`ptah migrations create` when a change is not representable as schema state.
 
-Most of this page is the second origin, because it is the one with steps to
-explain. [Write a migration by hand](#write-a-migration-by-hand) is the first,
-and nothing after either origin differs: both produce the same pair of files,
-sealed and applied the same way.
+The main path below derives the pair. [Write a migration by
+hand](#write-a-migration-by-hand) covers the manual origin. Both produce the
+same files, sealed and applied the same way.
 
-Prerequisites: a built `ptah` binary and a schema source. The examples use a
-Go model and a local SQLite file so they run without a daemon; substitute your
-own `--db-url`.
+Prerequisites: an installed `ptah` binary. The main path uses one SQL file and
+local SQLite databases, so it needs no Go toolchain, database server, Docker,
+or repository checkout.
 
 ## Starting state
 
-One annotated model in `./models`, an empty `./migrations` directory, and an
-empty target database:
+Create an empty `./migrations` directory and save this desired schema as
+`schema.sql`. `app.db` does not need to exist yet.
 
-```go
-package models
-
-//ptah:schema:table name="users"
-type User struct {
-	//ptah:schema:field name="id" type="INTEGER" primary="true" auto_increment="true" not_null="true"
-	ID int
-
-	//ptah:schema:field name="email" type="TEXT" unique="true" not_null="true"
-	Email string
-
-	//ptah:schema:field name="name" type="TEXT"
-	Name string
-}
+```sql
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL UNIQUE,
+    name TEXT
+);
 ```
+
+### Choose the source spelling
+
+The walkthrough below uses SQL. These are the exact source forms accepted by
+`migrations plan` and `migrations generate`; keep the remaining flags from the
+walkthrough unchanged.
+
+| Source | Copyable source flags | Source-specific condition |
+| --- | --- | --- |
+| SQL | `--schema-file ./schema.sql` | Use `--schema-format sql` only for an external program, not for a file. |
+| YAML | `--schema-file ./schema.yaml` | The file extension selects YAML. |
+| HCL | `--schema-file ./schema.hcl --var tenant=main` | Add one `--var name=value` for each variable without a default. |
+| DBML | `--schema-file ./schema.dbml` | DBML covers its supported table, key, index, relationship, and note subset. |
+| Go annotations | `--root-dir ./models` | This is the only form that requires Go source. |
+| Explicit external program | `--schema-cmd "./load-schema --tenant acme" --schema-format sql` | Ptah starts the program directly, without a shell. Its stdout must be SQL, HCL, or YAML. |
+| Configured external source | `--config ./ptah.yaml --allow-external-schema` | The opt-in is mandatory because the configuration executes a program. |
+| OCI artifact | `--schema-file oci://registry.example/acme/app-schema:v1` | Registry credentials come from the Docker credential store. Add `--plain-http` only for an explicitly trusted local registry. |
+| Composite sources | `--schema-file ./schema.sql --schema-file ./shared.yaml --schema-file ./vendor.hcl` | Repeat inputs; compatible objects merge and conflicting definitions fail. |
+
+The generated source-support manifest distinguishes a verified command/source
+path from an accepted path that still lacks a focused command test. Source
+transport does not expand a format's expressiveness: DBML, for example, does
+not acquire every HCL object merely because both flags reach the same command.
 
 ## Preview the SQL with plan
 
@@ -62,7 +74,7 @@ any files:
 
 ```bash
 ptah migrations plan \
-  --root-dir ./models \
+  --schema-file ./schema.sql \
   --db-url "sqlite://app.db"
 ```
 
@@ -108,7 +120,7 @@ as the [CI](../../testing/ci/) workflow does.
 
 ```bash
 ptah migrations generate \
-  --root-dir ./models \
+  --schema-file ./schema.sql \
   --db-url "sqlite://app.db" \
   --migrations-dir ./migrations \
   --name init
@@ -168,13 +180,13 @@ Commit the migration pair and `ptah.sum` together, then continue with
 ## Generate from a composite desired schema
 
 `plan` and `generate` resolve the same composite desired schema as
-`ptah schema render` and `ptah schema compare`. Repeat `--root-dir` and
-`--schema-file` in any combination:
+`ptah schema render` and `ptah schema compare`. This example keeps three
+source-owned fragments separate and requires no Go toolchain:
 
 ```bash
 ptah migrations generate \
-  --root-dir ./common \
-  --root-dir ./services/orders \
+  --schema-file ./schema.sql \
+  --schema-file ./shared.yaml \
   --schema-file ./vendor/billing.hcl \
   --db-url "$DATABASE_URL" \
   --migrations-dir ./migrations
@@ -197,7 +209,7 @@ again, so both directions of the new migration are proven executable:
 
 ```bash
 ptah migrations generate \
-  --root-dir ./models \
+  --schema-file ./schema.sql \
   --db-url "$DATABASE_URL" \
   --migrations-dir ./migrations \
   --name add_posts \
@@ -235,7 +247,7 @@ can generate the next migration from the repository alone:
 ptah migrations generate \
   --replay \
   --dev-url "sqlite://replay-dev.db" \
-  --root-dir ./models \
+  --schema-file ./schema.sql \
   --migrations-dir ./migrations \
   --name add_posts
 ```

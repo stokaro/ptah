@@ -61,11 +61,11 @@ func NewCompareCommand() *cobra.Command {
 	opts := options{}
 	cmd := &cobra.Command{
 		Use:   "compare",
-		Short: "Compare generated schema with database",
-		Long: `Compare the schema generated from Go entities with the current database schema.
+		Short: "Compare a desired schema with a live database",
+		Long: `Compare a desired schema with a live database.
 
-This command shows differences between what your Go entities define and what
-currently exists in the database, helping you identify what needs to be migrated.`,
+The desired schema may come from repeatable SQL, YAML, HCL, or DBML files,
+directories of Go annotations, an OCI schema artifact, or an external program.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return compareCommand(cmd, &opts)
 		},
@@ -78,7 +78,7 @@ currently exists in the database, helping you identify what needs to be migrated
 func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
 	flags.StringArrayVar(&opts.rootDirs, rootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
-	flags.StringArrayVar(&opts.schemaFiles, schemaFileFlag, nil, "YAML, HCL, or SQL schema file to compare instead of, or combined with, Go entities (repeatable; multiple sources merge into one composite schema)")
+	flags.StringArrayVar(&opts.schemaFiles, schemaFileFlag, nil, "SQL, YAML, HCL, DBML, or OCI desired-schema source (repeatable; combines with other sources)")
 	flags.StringVar(&opts.schemaCmd, schemaCmdFlag, "", `External program whose stdout is the desired schema; run without a shell, split on whitespace. Example: "go run ./loader"`)
 	flags.StringVar(&opts.schemaFormat, schemaFormatFlag, "sql", "Format of the --schema-cmd output: sql, hcl, or yaml")
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")

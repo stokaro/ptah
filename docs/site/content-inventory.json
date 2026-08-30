@@ -1371,8 +1371,8 @@
         "/schema/work-with-a-source/",
         "/start/choose-a-workflow/"
       ],
-      "visibleWords": 803,
-      "sourceBytes": 8614
+      "visibleWords": 830,
+      "sourceBytes": 8820
     },
     {
       "path": "docs/site/src/content/docs/direct/compare-and-drift.md",
@@ -1430,14 +1430,14 @@
         "/start/quick-start-direct/",
         "/testing/ci/"
       ],
-      "visibleWords": 1430,
-      "sourceBytes": 11896
+      "visibleWords": 1434,
+      "sourceBytes": 11966
     },
     {
       "path": "docs/site/src/content/docs/direct/inspect.md",
       "route": "/direct/inspect/",
       "title": "Inspect a database",
-      "description": "Read a live database schema as SQL statements, annotated Go models, or Atlas-shaped HCL, SQL, and JSON.",
+      "description": "Read a live database schema as SQL, HCL, JSON, DBML, or annotated Go models.",
       "sidebarPath": "Direct schema changes",
       "sidebarLabel": null,
       "type": "how-to",
@@ -1445,7 +1445,7 @@
         "database-engineer",
         "ci-operator"
       ],
-      "readerQuestion": "How do I read a live database schema as SQL statements, annotated Go models, or Atlas-shaped HCL, SQL, and JSON?",
+      "readerQuestion": "How do I read a live database schema as SQL, HCL, JSON, DBML, or annotated Go models?",
       "goal": "Choose the required output format and inspect a live schema.",
       "sourceOfTruth": [
         "cmd/schema",
@@ -1477,10 +1477,12 @@
       "inboundLinks": [
         "/atlas/schema-commands/",
         "/direct/overview/",
+        "/schema/document/",
+        "/schema/export/",
         "/schema/security/"
       ],
-      "visibleWords": 1713,
-      "sourceBytes": 13482
+      "visibleWords": 1831,
+      "sourceBytes": 14406
     },
     {
       "path": "docs/site/src/content/docs/direct/overview.md",
@@ -1527,8 +1529,8 @@
         "/schema/overview/",
         "/start/choose-a-workflow/"
       ],
-      "visibleWords": 470,
-      "sourceBytes": 3946
+      "visibleWords": 471,
+      "sourceBytes": 3957
     },
     {
       "path": "docs/site/src/content/docs/direct/plan-and-approve.md",
@@ -1682,7 +1684,7 @@
       "goal": "Identify the Go packages and exported symbols stable for embedders.",
       "sourceOfTruth": [
         "docs/public_api.md",
-        "docs/public_api.snapshot"
+        "scripts/check-public-api-released.sh"
       ],
       "owns": [],
       "generated": false,
@@ -1706,8 +1708,8 @@
         "/reference/test-cases/",
         "/schema/go-annotations/"
       ],
-      "visibleWords": 2981,
-      "sourceBytes": 24373
+      "visibleWords": 3000,
+      "sourceBytes": 24560
     },
     {
       "path": "docs/site/src/content/docs/extend/query-builder.md",
@@ -3896,8 +3898,8 @@
         "/reference/capabilities/",
         "/testing/migrations-and-schema/"
       ],
-      "visibleWords": 412,
-      "sourceBytes": 3567
+      "visibleWords": 471,
+      "sourceBytes": 3965
     },
     {
       "path": "docs/site/src/content/docs/reference/yaml-schema.md",
@@ -3942,14 +3944,14 @@
       "path": "docs/site/src/content/docs/schema/composite.md",
       "route": "/schema/composite/",
       "title": "Composite desired schema",
-      "description": "Merge Go packages, YAML, HCL, and SQL files, and an external loader into one desired schema.",
+      "description": "Merge static schema files, Go annotations, and an external loader into one desired schema.",
       "sidebarPath": "Define and understand schemas > Sources",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
         "schema-author"
       ],
-      "readerQuestion": "How do I merge Go packages, YAML, HCL, and SQL files, and an external loader into one desired schema?",
+      "readerQuestion": "How do I merge several schema sources into one desired schema?",
       "goal": "Build and verify one desired schema from multiple sources.",
       "sourceOfTruth": [
         "cmd/schema",
@@ -3985,8 +3987,8 @@
         "/schema/yaml/",
         "/versioned/generate/"
       ],
-      "visibleWords": 489,
-      "sourceBytes": 4346
+      "visibleWords": 456,
+      "sourceBytes": 4172
     },
     {
       "path": "docs/site/src/content/docs/schema/dbml.md",
@@ -4026,7 +4028,7 @@
         "/schema/work-with-a-source/"
       ],
       "visibleWords": 691,
-      "sourceBytes": 5885
+      "sourceBytes": 5899
     },
     {
       "path": "docs/site/src/content/docs/schema/document.md",
@@ -4059,6 +4061,7 @@
       ],
       "disposition": "keep",
       "outboundLinks": [
+        "/direct/inspect/",
         "/reference/exit-codes/",
         "/schema/composite/",
         "/schema/dbml/",
@@ -4079,23 +4082,24 @@
         "/schema/overview/",
         "/schema/serve/",
         "/schema/sql/",
+        "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 1340,
-      "sourceBytes": 11512
+      "visibleWords": 1347,
+      "sourceBytes": 11515
     },
     {
       "path": "docs/site/src/content/docs/schema/export.md",
       "route": "/schema/export/",
       "title": "API schema export",
-      "description": "Project selected Go entities into OpenAPI or GraphQL contract candidates and review their trust-boundary limitations.",
+      "description": "Project a desired schema into OpenAPI or GraphQL contract candidates and review their trust-boundary limitations.",
       "sidebarPath": "Define and understand schemas > Contract exports",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
         "schema-author"
       ],
-      "readerQuestion": "How do I project selected Go entities into OpenAPI or GraphQL contract candidates and review their trust-boundary limitations?",
+      "readerQuestion": "How do I project a desired schema into OpenAPI or GraphQL contract candidates and review their trust-boundary limitations?",
       "goal": "Generate and review an OpenAPI or GraphQL contract candidate.",
       "sourceOfTruth": [
         "cmd/schema",
@@ -4113,6 +4117,7 @@
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
+        "/direct/inspect/",
         "/schema/composite/",
         "/schema/dbml/",
         "/schema/document/",
@@ -4121,7 +4126,6 @@
         "/schema/protobuf/",
         "/schema/sql/",
         "/schema/yaml/",
-        "/start/adopt-an-existing-database/",
         "/testing/ci/"
       ],
       "inboundLinks": [
@@ -4134,8 +4138,8 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 3553,
-      "sourceBytes": 27250
+      "visibleWords": 3557,
+      "sourceBytes": 27206
     },
     {
       "path": "docs/site/src/content/docs/schema/go-annotations.md",
@@ -4323,7 +4327,7 @@
         "/schema/work-with-a-source/"
       ],
       "visibleWords": 964,
-      "sourceBytes": 8419
+      "sourceBytes": 8420
     },
     {
       "path": "docs/site/src/content/docs/schema/overview.mdx",
@@ -4381,7 +4385,7 @@
       "path": "docs/site/src/content/docs/schema/protobuf.md",
       "route": "/schema/protobuf/",
       "title": "Protobuf schema export",
-      "description": "Export Go entities to a Protobuf Edition 2023 definition whose field numbers stay wire compatible as the schema changes.",
+      "description": "Export a desired schema to a Protobuf Edition 2023 definition whose field numbers stay wire compatible as the schema changes.",
       "sidebarPath": "Define and understand schemas > Contract exports",
       "sidebarLabel": null,
       "type": "how-to",
@@ -4416,8 +4420,8 @@
       "inboundLinks": [
         "/schema/export/"
       ],
-      "visibleWords": 4177,
-      "sourceBytes": 34676
+      "visibleWords": 4162,
+      "sourceBytes": 34305
     },
     {
       "path": "docs/site/src/content/docs/schema/security.md",
@@ -4687,6 +4691,7 @@
       "outboundLinks": [
         "/operate/troubleshooting/",
         "/reference/native-commands/",
+        "/schema/document/",
         "/schema/export/",
         "/schema/go-annotations/",
         "/schema/security/",
@@ -4702,8 +4707,8 @@
         "/schema/security/",
         "/schema/stats/"
       ],
-      "visibleWords": 718,
-      "sourceBytes": 6667
+      "visibleWords": 734,
+      "sourceBytes": 6793
     },
     {
       "path": "docs/site/src/content/docs/schema/work-with-a-source.mdx",
@@ -4760,8 +4765,8 @@
         "/schema/yaml/",
         "/start/quick-start/"
       ],
-      "visibleWords": 525,
-      "sourceBytes": 5327
+      "visibleWords": 556,
+      "sourceBytes": 5719
     },
     {
       "path": "docs/site/src/content/docs/schema/yaml.md",
@@ -4855,7 +4860,6 @@
         "/concepts/desired-schema-and-sources/",
         "/direct/inspect/",
         "/schema/document/",
-        "/schema/export/",
         "/schema/protobuf/",
         "/schema/visualize/",
         "/start/choose-a-workflow/",
@@ -4864,8 +4868,8 @@
         "/versioned/import/",
         "/versioned/overview/"
       ],
-      "visibleWords": 756,
-      "sourceBytes": 8546
+      "visibleWords": 1019,
+      "sourceBytes": 12477
     },
     {
       "path": "docs/site/src/content/docs/start/choose-a-workflow.md",
@@ -4917,8 +4921,8 @@
         "/start/quick-start/",
         "/versioned/overview/"
       ],
-      "visibleWords": 1062,
-      "sourceBytes": 8000
+      "visibleWords": 1065,
+      "sourceBytes": 8027
     },
     {
       "path": "docs/site/src/content/docs/start/install-options.mdx",
@@ -5279,8 +5283,8 @@
         "/versioned/integrity-and-safety/",
         "/versioned/lint/"
       ],
-      "visibleWords": 916,
-      "sourceBytes": 8271
+      "visibleWords": 983,
+      "sourceBytes": 9083
     },
     {
       "path": "docs/site/src/content/docs/testing/migrations-and-schema.md",
@@ -5327,8 +5331,8 @@
         "/testing/ci/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 709,
-      "sourceBytes": 6037
+      "visibleWords": 775,
+      "sourceBytes": 6551
     },
     {
       "path": "docs/site/src/content/docs/versioned/apply.md",
@@ -5488,8 +5492,8 @@
         "/versioned/lint/",
         "/versioned/overview/"
       ],
-      "visibleWords": 1128,
-      "sourceBytes": 11036
+      "visibleWords": 1322,
+      "sourceBytes": 12562
     },
     {
       "path": "docs/site/src/content/docs/versioned/import.md",
@@ -5758,7 +5762,7 @@
         "/start/choose-a-workflow/"
       ],
       "visibleWords": 442,
-      "sourceBytes": 4413
+      "sourceBytes": 4423
     },
     {
       "path": "docs/site/src/content/docs/versioned/reference-data.md",

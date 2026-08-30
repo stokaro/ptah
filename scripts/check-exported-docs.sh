@@ -2,17 +2,14 @@
 # Fails when a package the public API ledger declares stable carries an exported
 # declaration with no doc comment.
 #
-# The three Go-API gates measure the SHAPE of the public surface: which packages
-# are in it, which symbols they export, and whether a change to those is
-# compatible. None of them can see a doc comment. The snapshot in particular is
-# byte-identical whether a method is documented or not, which is why an audit
-# found ten exported declarations on the stable surface saying nothing about
-# themselves -- including `goschema.ParseFile`, one of the seven parse entry
-# points the library was pitched on (stokaro/ptah#2246 §8).
+# The package ledger and released-baseline API check do not assess doc comment
+# coverage. An audit found ten exported declarations on the stable surface
+# saying nothing about themselves -- including `goschema.ParseFile`, one of the
+# seven parse entry points the library was pitched on (stokaro/ptah#2246 §8).
 #
-# The package set is read through `check-public-api-snapshot.sh
-# --list-packages`, the same scrape those gates run, so this cannot enforce a
-# different surface than they do.
+# The package set is read through `list-public-api-packages.sh`, the same
+# command those gates run, so this cannot enforce a different surface than they
+# do.
 set -euo pipefail
 
 export GOWORK=off
@@ -31,7 +28,7 @@ package_dirs=()
 while IFS= read -r directory; do
 	[[ -n "$directory" ]] && package_dirs+=("$directory")
 done < <(
-	"$script_dir/check-public-api-snapshot.sh" --list-packages |
+	"$script_dir/list-public-api-packages.sh" |
 		sed "s|^${module_path}$|.|; s|^${module_path}/||" |
 		sort -u
 )

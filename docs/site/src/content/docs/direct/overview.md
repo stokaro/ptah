@@ -53,7 +53,7 @@ before executing it.
 
 | Task | Page |
 | --- | --- |
-| Read a live schema as SQL, Go models, HCL, or JSON | [Inspect a database](../inspect/) |
+| Read a live schema as SQL, HCL, JSON, DBML, or Go annotations | [Inspect a database](../inspect/) |
 | See how a database differs, and fail a pipeline when it does | [Compare and drift](../compare-and-drift/) |
 | Separate review from execution with a signed plan file | [Plan and approve changes](../plan-and-approve/) |
 | Run the change against the database | [Apply directly](../apply/) |

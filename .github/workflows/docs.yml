@@ -62,6 +62,7 @@ jobs:
               - 'scripts/check-feature-inventory.sh'
               - 'scripts/check-source-equivalence.sh'
               - 'scripts/check-source-equivalence-selftest.sh'
+              - 'scripts/check-source-workflows.sh'
               - '.github/workflows/docs.yml'
             examples:
               - 'cmd/**'
@@ -439,6 +440,7 @@ jobs:
           node docs/site/scripts/build-source-support.mjs --binary "$RUNNER_TEMP/ptah"
           PTAH_BIN="$RUNNER_TEMP/ptah" scripts/check-source-equivalence.sh
           PTAH_BIN="$RUNNER_TEMP/ptah" scripts/check-source-equivalence-selftest.sh
+          PTAH_BIN="$RUNNER_TEMP/ptah" scripts/check-source-workflows.sh
           go test ./internal/cmdref -count=1
 
   example-acceptance:
