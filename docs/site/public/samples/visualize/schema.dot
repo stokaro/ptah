@@ -1,0 +1,42 @@
+digraph ptah_schema {
+  graph [rankdir=LR, pad=0.2, nodesep=0.6, ranksep=0.8];
+  node [shape=plain, margin=0, fontname="Helvetica"];
+  edge [color="#2563eb", fontcolor="#1e3a8a"];
+  "customers" [label=<
+    <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#64748b">
+      <TR><TD BGCOLOR="#e2e8f0"><FONT COLOR="#0f172a"><B>customers</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">id : INTEGER PK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">email : TEXT</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">country : TEXT</FONT></TD></TR>
+    </TABLE>
+  >];
+  "orders" [label=<
+    <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#64748b">
+      <TR><TD BGCOLOR="#e2e8f0"><FONT COLOR="#0f172a"><B>orders</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">id : INTEGER PK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">customer_id : INTEGER FK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">status : TEXT</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">placed_at : TEXT</FONT></TD></TR>
+    </TABLE>
+  >];
+  "products" [label=<
+    <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#64748b">
+      <TR><TD BGCOLOR="#e2e8f0"><FONT COLOR="#0f172a"><B>products</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">id : INTEGER PK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">sku : TEXT</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">name : TEXT</FONT></TD></TR>
+    </TABLE>
+  >];
+  "order_items" [label=<
+    <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#64748b">
+      <TR><TD BGCOLOR="#e2e8f0"><FONT COLOR="#0f172a"><B>order_items</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">id : INTEGER PK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">order_id : INTEGER FK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">product_id : INTEGER FK</FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#334155">quantity : INTEGER</FONT></TD></TR>
+    </TABLE>
+  >];
+  "order_items" -> "orders" [label="fk_order_items_order_id"];
+  "order_items" -> "products" [label="fk_order_items_product_id"];
+  "orders" -> "customers" [label="fk_orders_customer_id"];
+}

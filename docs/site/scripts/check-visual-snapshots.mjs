@@ -62,16 +62,33 @@ async function inspectProof(page, proof, viewport, theme) {
   const figure = page.locator(proof.selector).first();
   if (await figure.count() !== 1 || !(await figure.isVisible())) return [`${prefix} primary visual is absent or hidden`];
 
-  const result = await figure.evaluate((element) => {
+  const result = await figure.evaluate((element, headingText) => {
     const image = element.querySelector('img');
     const box = image?.getBoundingClientRect();
     const caption = element.querySelector('figcaption')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
-    const main = element.closest('main');
+    // Measure reader prose, not breadcrumbs, the page title, or page actions.
+    // The contract's distance is about how far a reader scans inside the page
+    // before meeting proof; Starlight chrome is constant and not authored.
+    const main = element.closest('.sl-markdown-content') ?? element.closest('main');
     let words = 0;
+    let headingFound = !headingText;
     if (main) {
+      const headings = [...main.querySelectorAll('h2, h3')];
+      const heading = headingText
+        ? headings.reverse().find((candidate) =>
+          candidate.textContent?.replace(/\s+/g, ' ').trim() === headingText &&
+          Boolean(candidate.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING))
+        : null;
+      headingFound = !headingText || Boolean(heading);
+      let countWords = !heading;
       const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT);
       for (let node = walker.nextNode(); node; node = walker.nextNode()) {
         if (element.contains(node)) break;
+        if (heading?.contains(node)) {
+          countWords = true;
+          continue;
+        }
+        if (!countWords) continue;
         const parent = node.parentElement;
         if (!parent || parent.closest('[hidden], [aria-hidden="true"]')) continue;
         words += (node.textContent?.trim().match(/\S+/g) ?? []).length;
@@ -85,14 +102,16 @@ async function inspectProof(page, proof, viewport, theme) {
       width: box?.width ?? 0,
       height: box?.height ?? 0,
       wordsBefore: words,
+      headingFound,
     };
-  });
+  }, proof.headingText ?? null);
 
   if (!result.complete || result.naturalWidth === 0 || result.naturalHeight === 0) problems.push(`${prefix} primary visual did not load`);
   if (result.width < proof.minimumRenderedWidth || result.height < proof.minimumRenderedHeight) {
     problems.push(`${prefix} primary visual is ${Math.round(result.width)}x${Math.round(result.height)}; want at least ${proof.minimumRenderedWidth}x${proof.minimumRenderedHeight}`);
   }
   if (!result.caption.includes(proof.expectedCaption)) problems.push(`${prefix} expected caption is absent`);
+  if (!result.headingFound) problems.push(`${prefix} heading ${JSON.stringify(proof.headingText)} is absent or follows the visual`);
   if (result.wordsBefore > proof.maxVisibleWordsBeforeVisual) problems.push(`${prefix} primary visual starts after ${result.wordsBefore} visible words; maximum is ${proof.maxVisibleWordsBeforeVisual}`);
 
   for (const [required, action] of [

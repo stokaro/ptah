@@ -253,7 +253,7 @@
       "id": "cli-ptah-migrations-generate",
       "kind": "native-verb",
       "surface": "ptah migrations generate",
-      "claimed_by": "docs/site/src/content/docs/versioned/generate.md"
+      "claimed_by": "docs/site/src/content/docs/versioned/generate.mdx"
     },
     {
       "id": "cli-ptah-migrations-hash",
@@ -283,7 +283,7 @@
       "id": "cli-ptah-migrations-plan",
       "kind": "native-verb",
       "surface": "ptah migrations plan",
-      "claimed_by": "docs/site/src/content/docs/versioned/generate.md"
+      "claimed_by": "docs/site/src/content/docs/versioned/generate.mdx"
     },
     {
       "id": "cli-ptah-migrations-pull",
@@ -343,7 +343,7 @@
       "id": "cli-ptah-migrations-test",
       "kind": "native-verb",
       "surface": "ptah migrations test",
-      "claimed_by": "docs/site/src/content/docs/testing/migrations-and-schema.md"
+      "claimed_by": "docs/site/src/content/docs/testing/migrations-and-schema.mdx"
     },
     {
       "id": "cli-ptah-migrations-up",
@@ -481,7 +481,7 @@
       "id": "cli-ptah-schema-export",
       "kind": "native-verb",
       "surface": "ptah schema export",
-      "claimed_by": "docs/site/src/content/docs/schema/export.md"
+      "claimed_by": "docs/site/src/content/docs/schema/export.mdx"
     },
     {
       "id": "cli-ptah-schema-fmt",
@@ -499,7 +499,7 @@
       "id": "cli-ptah-schema-lineage",
       "kind": "native-verb",
       "surface": "ptah schema lineage",
-      "claimed_by": "docs/site/src/content/docs/schema/lineage.md"
+      "claimed_by": "docs/site/src/content/docs/schema/lineage.mdx"
     },
     {
       "id": "cli-ptah-schema-plan",
@@ -529,25 +529,25 @@
       "id": "cli-ptah-schema-security",
       "kind": "native-verb",
       "surface": "ptah schema security",
-      "claimed_by": "docs/site/src/content/docs/schema/security.md"
+      "claimed_by": "docs/site/src/content/docs/schema/security.mdx"
     },
     {
       "id": "cli-ptah-schema-serve",
       "kind": "native-verb",
       "surface": "ptah schema serve",
-      "claimed_by": "docs/site/src/content/docs/schema/serve.md"
+      "claimed_by": "docs/site/src/content/docs/schema/serve.mdx"
     },
     {
       "id": "cli-ptah-schema-stats",
       "kind": "native-verb",
       "surface": "ptah schema stats",
-      "claimed_by": "docs/site/src/content/docs/schema/stats.md"
+      "claimed_by": "docs/site/src/content/docs/schema/stats.mdx"
     },
     {
       "id": "cli-ptah-schema-test",
       "kind": "native-verb",
       "surface": "ptah schema test",
-      "claimed_by": "docs/site/src/content/docs/testing/migrations-and-schema.md"
+      "claimed_by": "docs/site/src/content/docs/testing/migrations-and-schema.mdx"
     },
     {
       "id": "cli-ptah-schema-validate",
@@ -583,7 +583,7 @@
       "id": "cli-ptah-viz",
       "kind": "native-verb",
       "surface": "ptah viz",
-      "claimed_by": "docs/site/src/content/docs/schema/visualize.md"
+      "claimed_by": "docs/site/src/content/docs/schema/visualize.mdx"
     },
     {
       "id": "gopkg-atlascompat",

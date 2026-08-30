@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SCHEMA test report</title>
+<style>
+body { font-family: system-ui, sans-serif; margin: 2rem; }
+.pass { color: #157f3b; }
+.fail { color: #b3261e; }
+.case { margin: 0.75rem 0; }
+.steps { margin: 0.25rem 0 0 1.5rem; padding: 0; list-style: none; }
+.detail { color: #555; }
+</style>
+</head>
+<body>
+<h1>SCHEMA test report</h1>
+<p>1 cases, 1 passed, 0 failed</p>
+
+<div class="case">
+  <strong class="pass">PASS</strong>
+  case &ldquo;product schema accepts a row&rdquo;
+  <ul class="steps">
+    
+    <li>
+      <span class="pass">PASS</span>
+      step &ldquo;insert a product&rdquo; <span class="detail">&mdash; exec ok</span>
+    </li>
+    
+    <li>
+      <span class="pass">PASS</span>
+      step &ldquo;inserted price is visible&rdquo; <span class="detail">&mdash; scalar &#34;1200&#34;</span>
+    </li>
+    
+  </ul>
+</div>
+
+</body>
+</html>

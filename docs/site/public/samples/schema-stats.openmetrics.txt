@@ -1,0 +1,55 @@
+# HELP ptah_schema_schemas Schemas declared or read.
+# TYPE ptah_schema_schemas gauge
+ptah_schema_schemas{dialect="sqlite"} 0
+# HELP ptah_schema_tables Tables.
+# TYPE ptah_schema_tables gauge
+ptah_schema_tables{dialect="sqlite"} 1
+# HELP ptah_schema_columns Columns across all tables.
+# TYPE ptah_schema_columns gauge
+ptah_schema_columns{dialect="sqlite"} 4
+# HELP ptah_schema_indexes Indexes.
+# TYPE ptah_schema_indexes gauge
+ptah_schema_indexes{dialect="sqlite"} 0
+# HELP ptah_schema_constraints Table-level constraints.
+# TYPE ptah_schema_constraints gauge
+ptah_schema_constraints{dialect="sqlite"} 1
+# HELP ptah_schema_enums Enum types.
+# TYPE ptah_schema_enums gauge
+ptah_schema_enums{dialect="sqlite"} 0
+# HELP ptah_schema_extensions Extensions.
+# TYPE ptah_schema_extensions gauge
+ptah_schema_extensions{dialect="sqlite"} 0
+# HELP ptah_schema_functions Functions and procedures.
+# TYPE ptah_schema_functions gauge
+ptah_schema_functions{dialect="sqlite"} 0
+# HELP ptah_schema_sequences Standalone sequences.
+# TYPE ptah_schema_sequences gauge
+ptah_schema_sequences{dialect="sqlite"} 0
+# HELP ptah_schema_domains Domain types.
+# TYPE ptah_schema_domains gauge
+ptah_schema_domains{dialect="sqlite"} 0
+# HELP ptah_schema_composite_types Composite types.
+# TYPE ptah_schema_composite_types gauge
+ptah_schema_composite_types{dialect="sqlite"} 0
+# HELP ptah_schema_range_types Range types.
+# TYPE ptah_schema_range_types gauge
+ptah_schema_range_types{dialect="sqlite"} 0
+# HELP ptah_schema_views Views.
+# TYPE ptah_schema_views gauge
+ptah_schema_views{dialect="sqlite"} 0
+# HELP ptah_schema_materialized_views Materialized views.
+# TYPE ptah_schema_materialized_views gauge
+ptah_schema_materialized_views{dialect="sqlite"} 0
+# HELP ptah_schema_triggers Triggers.
+# TYPE ptah_schema_triggers gauge
+ptah_schema_triggers{dialect="sqlite"} 0
+# HELP ptah_schema_rls_policies Row-level security policies.
+# TYPE ptah_schema_rls_policies gauge
+ptah_schema_rls_policies{dialect="sqlite"} 0
+# HELP ptah_schema_roles Roles.
+# TYPE ptah_schema_roles gauge
+ptah_schema_roles{dialect="sqlite"} 0
+# HELP ptah_schema_grants Privilege grants.
+# TYPE ptah_schema_grants gauge
+ptah_schema_grants{dialect="sqlite"} 0
+# EOF

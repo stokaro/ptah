@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ptah migration safety report</title>
+<style>
+body { font-family: system-ui, sans-serif; margin: 2rem; color: #1f2937; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border: 1px solid #d1d5db; padding: 0.5rem; text-align: left; vertical-align: top; }
+th { background: #f3f4f6; }
+.safe { color: #047857; font-weight: 700; }
+.warning { color: #b45309; font-weight: 700; }
+.destructive { color: #b91c1c; font-weight: 700; }
+pre { margin: 0; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+</style>
+</head>
+<body>
+<h1>Ptah migration safety report</h1>
+<table>
+<thead><tr><th>#</th><th>Severity</th><th>Subject</th><th>Reason</th><th>Statement</th></tr></thead>
+<tbody>
+
+<tr>
+<td>1</td>
+<td class="safe">safe</td>
+<td>*ast.CommentNode</td>
+<td>does not remove data or tighten constraints</td>
+<td><pre>-- Disable foreign-key enforcement for the table rebuild below</pre></td>
+</tr>
+
+<tr>
+<td>2</td>
+<td class="safe">safe</td>
+<td>*ast.RawSQLNode</td>
+<td>does not remove data or tighten constraints</td>
+<td><pre>PRAGMA foreign_keys = off</pre></td>
+</tr>
+
+<tr>
+<td>3</td>
+<td class="safe">safe</td>
+<td>*ast.CommentNode</td>
+<td>does not remove data or tighten constraints</td>
+<td><pre>-- SQLite table rebuild for changes ALTER TABLE cannot express on products</pre></td>
+</tr>
+
+<tr>
+<td>4</td>
+<td class="safe">safe</td>
+<td>*ast.CreateTableNode</td>
+<td>does not remove data or tighten constraints</td>
+<td><pre>CREATE TABLE &#34;__ptah_rebuild_products&#34; (
+  &#34;id&#34; INTEGER PRIMARY KEY AUTOINCREMENT,
+  &#34;sku&#34; TEXT NOT NULL UNIQUE,
+  &#34;name&#34; TEXT NOT NULL,
+  &#34;price_cents&#34; INTEGER NOT NULL
+)</pre></td>
+</tr>
+
+<tr>
+<td>5</td>
+<td class="safe">safe</td>
+<td>*ast.RawSQLNode</td>
+<td>does not remove data or tighten constraints</td>
+<td><pre>INSERT INTO &#34;__ptah_rebuild_products&#34; (&#34;id&#34;, &#34;sku&#34;, &#34;name&#34;, &#34;price_cents&#34;) SELECT &#34;id&#34;, &#34;sku&#34;, &#34;name&#34;, &#34;price_cents&#34; FROM &#34;products&#34;</pre></td>
+</tr>
+
+<tr>
+<td>6</td>
+<td class="destructive">destructive</td>
+<td>products</td>
+<td>DROP TABLE removes the table and all rows</td>
+<td><pre>DROP TABLE &#34;products&#34;</pre></td>
+</tr>
+
+<tr>
+<td>7</td>
+<td class="warning">warning</td>
+<td>*ast.RawSQLNode</td>
+<td>rename can break deployed readers and writers</td>
+<td><pre>ALTER TABLE &#34;__ptah_rebuild_products&#34; RENAME TO &#34;products&#34;</pre></td>
+</tr>
+
+<tr>
+<td>8</td>
+<td class="destructive">destructive</td>
+<td>legacy_inventory</td>
+<td>DROP TABLE removes the table and all rows</td>
+<td><pre>-- WARNING: This will delete all data!
+DROP TABLE IF EXISTS &#34;legacy_inventory&#34;</pre></td>
+</tr>
+
+<tr>
+<td>9</td>
+<td class="safe">safe</td>
+<td>*ast.CommentNode</td>
+<td>does not remove data or tighten constraints</td>
+<td><pre>-- Restore foreign-key enforcement after the table rebuild</pre></td>
+</tr>
+
+<tr>
+<td>10</td>
+<td class="safe">safe</td>
+<td>*ast.RawSQLNode</td>
+<td>does not remove data or tighten constraints</td>
+<td><pre>PRAGMA foreign_keys = on</pre></td>
+</tr>
+
+</tbody>
+</table>
+</body>
+</html>

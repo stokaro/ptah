@@ -19,6 +19,15 @@ owns:
   - cli-ptah-schema-serve
 ---
 
+import ProductPreview from '../../../components/ProductPreview.astro';
+import schemaServeDriftFull from '../../../assets/schema-serve-drift-full.png';
+import schemaServeDrift from '../../../assets/schema-serve-drift.png';
+import schemaServeMatchesFull from '../../../assets/schema-serve-matches-full.png';
+import schemaServeMatches from '../../../assets/schema-serve-matches.png';
+
+export const schemaServeMatchesSample = `${import.meta.env.BASE_URL}samples/schema-serve-matches.html`;
+export const schemaServeDriftSample = `${import.meta.env.BASE_URL}samples/schema-serve-drift.html`;
+
 `ptah schema serve` serves a read-only web page carrying two things: the desired
 schema, and how a live database differs from it. The page re-reads both on every
 request, so where `ptah schema compare` answers once, this keeps answering while
@@ -28,6 +37,29 @@ Use it as a second window beside the editor while you are changing models. It is
 not a pipeline tool: a pipeline wants an exit code, which
 [`ptah schema drift`](../../direct/compare-and-drift/) gives it. Nothing here
 writes to the database, and no migration depends on the server having run.
+
+<ProductPreview
+  id="schema-serve-matches"
+  src={schemaServeMatches}
+  alt="The live Shop schema view showing zero differing categories and the message that the database matches the declared schema."
+  caption="The live view before and after one desired column diverges from the SQLite database."
+  notice="Both states use the same framing: the verdict and severity counters stay above the schema diagram, while the drift state adds the exact differing category."
+  fullSizeHref={schemaServeMatchesFull.src}
+  downloadHref={schemaServeMatchesSample}
+  sourceHref={schemaServeMatchesSample}
+  reproduce="ptah schema serve --root-dir docs/site/fixtures/schema-ui/internal/models --db-url sqlite://shop.db --addr 127.0.0.1:7070 --refresh 0 --title 'Shop schema'"
+  variants={[
+    {
+      id: 'drift',
+      label: 'After drift: one warning category',
+      src: schemaServeDrift,
+      alt: 'The live Shop schema view after drift, showing one warning category and a Drift row for one added column.',
+      fullSizeHref: schemaServeDriftFull.src,
+      downloadHref: schemaServeDriftSample,
+      sourceHref: schemaServeDriftSample,
+    },
+  ]}
+/>
 
 Prerequisites:
 
@@ -96,8 +128,6 @@ warning, safe — followed either by the sentence
 sits a timestamp reading `compared` and a UTC time, because a live view whose
 age is unknown is not a live view.
 
-![The live Shop schema view showing zero differing categories and the message that the database matches the declared schema.](../../../assets/schema-serve-matches.png)
-
 The matching view keeps the status decision above the diagram and table
 reference, so the first viewport answers whether action is needed.
 
@@ -131,8 +161,6 @@ Reload the page. The counters read one differing category, of which one is a
 warning, and the Drift table gains a row: `columns_added`, 1 object, severity
 `warning`. The new column also appears in the `orders` section below, because
 that section renders the desired schema rather than the database.
-
-![The same live Shop schema view after drift, showing one warning category and a Drift row for one added column.](../../../assets/schema-serve-drift.png)
 
 The page reloads itself every 30 seconds through a `meta refresh` tag and
 carries no JavaScript. `--refresh 15s` shortens the interval; `--refresh 0`

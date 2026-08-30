@@ -16,10 +16,17 @@ owns:
   - cli-ptah-schema-stats
 ---
 
+export const statsSample = `${import.meta.env.BASE_URL}samples/schema-stats.openmetrics.txt`;
+
 `ptah schema stats` reads a live database and writes one gauge per object kind
 in the OpenMetrics text format. Use it to record how much a schema holds over
 time — tables, columns, indexes, views, policies, grants — on a dashboard beside
 the rest of your infrastructure metrics.
+
+Ptah emits metrics text and exits; it does not ship a dashboard or metrics
+server. <a href={statsSample} download>Download the real OpenMetrics output</a>
+generated from the committed SQLite fixture, then feed that text to the
+collector and visualization system you already operate.
 
 Prerequisites: an installed `ptah` binary ([Install Ptah](../../start/install/))
 and the URL of the database to read. The command connects and reads nothing

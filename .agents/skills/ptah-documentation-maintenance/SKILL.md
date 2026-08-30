@@ -259,6 +259,12 @@ practical, live commands:
 - For config docs, test parse/validation behavior with representative fixtures.
 - For generated SQL or migration docs, generate or apply a small fixture when
   feasible.
+- For a page that demonstrates a Ptah diagram, browser UI, HTML report,
+  lineage, metrics, or contract output, update both visual manifests and run
+  the committed generator. Build `bin/ptah`, then run
+  `PTAH_BIN=../../bin/ptah npm run assets:write` from `docs/site`. An
+  explanatory lineage diagram must say that it is not product output and keep
+  the real text and JSON artifacts beside it.
 - For public Go API docs, run the relevant guards:
 
   ```bash

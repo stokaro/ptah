@@ -2,7 +2,7 @@
 // Regenerates the real product screenshots used by the schema documentation.
 // The fixture has no network dependency, personal data, or credentials.
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -17,7 +17,7 @@ const baseModels = join(fixtureRoot, 'internal', 'base-models');
 const assetsRoot = join(siteRoot, 'src', 'assets');
 const samplesRoot = join(siteRoot, 'public', 'samples');
 const ptah = process.env.PTAH_BIN || join(repositoryRoot, 'bin', 'ptah');
-const viewport = { width: 1440, height: 900 };
+const viewport = { width: 1200, height: 760 };
 
 function run(args, cwd) {
   const result = spawnSync(ptah, args, { cwd, encoding: 'utf8' });
@@ -91,14 +91,19 @@ async function stabilizeDashboard(page) {
   });
 }
 
-async function screenshotDashboard(browser, databaseURL, output, cwd) {
+async function screenshotDashboard(browser, databaseURL, output, fullOutput, sampleOutput, cwd) {
   const server = startServer(databaseURL, cwd);
   try {
     const address = await server.address;
     const page = await browser.newPage({ viewport });
     await page.goto(address, { waitUntil: 'networkidle' });
     await stabilizeDashboard(page);
-    await page.screenshot({ path: output, fullPage: false });
+    await page.screenshot({
+      path: output,
+      clip: { x: 0, y: 0, width: viewport.width, height: 620 },
+    });
+    await page.screenshot({ path: fullOutput, fullPage: true });
+    writeFileSync(sampleOutput, `${await page.content()}\n`);
     await page.close();
   } finally {
     await stopServer(server);
@@ -117,7 +122,12 @@ try {
   browser = await chromium.launch();
   const documentPage = await browser.newPage({ viewport });
   await documentPage.goto(pathToFileURL(sample).href, { waitUntil: 'load' });
-  await documentPage.screenshot({ path: join(assetsRoot, 'schema-document.png'), fullPage: false });
+  await documentPage.screenshot({
+    path: join(assetsRoot, 'schema-document.png'),
+    clip: { x: 0, y: 0, width: viewport.width, height: 620 },
+  });
+  await documentPage.locator('#orders').screenshot({ path: join(assetsRoot, 'schema-document-table.png') });
+  await documentPage.screenshot({ path: join(assetsRoot, 'schema-document-full.png'), fullPage: true });
   await documentPage.close();
 
   const matchingDB = join(workRoot, 'matching.db');
@@ -125,14 +135,34 @@ try {
   run(['schema', 'apply', '--root-dir', desiredModels, '--db-url', `sqlite://${matchingDB}`, '--auto-approve'], workRoot);
   run(['schema', 'apply', '--root-dir', baseModels, '--db-url', `sqlite://${driftDB}`, '--auto-approve'], workRoot);
 
-  await screenshotDashboard(browser, `sqlite://${matchingDB}`, join(assetsRoot, 'schema-serve-matches.png'), workRoot);
-  await screenshotDashboard(browser, `sqlite://${driftDB}`, join(assetsRoot, 'schema-serve-drift.png'), workRoot);
+  await screenshotDashboard(
+    browser,
+    `sqlite://${matchingDB}`,
+    join(assetsRoot, 'schema-serve-matches.png'),
+    join(assetsRoot, 'schema-serve-matches-full.png'),
+    join(samplesRoot, 'schema-serve-matches.html'),
+    workRoot,
+  );
+  await screenshotDashboard(
+    browser,
+    `sqlite://${driftDB}`,
+    join(assetsRoot, 'schema-serve-drift.png'),
+    join(assetsRoot, 'schema-serve-drift-full.png'),
+    join(samplesRoot, 'schema-serve-drift.html'),
+    workRoot,
+  );
 
   console.log('generate-schema-ui-assets.mjs: wrote');
   for (const file of [
     join(assetsRoot, 'schema-document.png'),
+    join(assetsRoot, 'schema-document-table.png'),
+    join(assetsRoot, 'schema-document-full.png'),
     join(assetsRoot, 'schema-serve-matches.png'),
+    join(assetsRoot, 'schema-serve-matches-full.png'),
     join(assetsRoot, 'schema-serve-drift.png'),
+    join(assetsRoot, 'schema-serve-drift-full.png'),
+    join(samplesRoot, 'schema-serve-matches.html'),
+    join(samplesRoot, 'schema-serve-drift.html'),
     sample,
   ]) {
     console.log(`  ${relative(repositoryRoot, file)}`);

@@ -1,0 +1,9 @@
+erDiagram
+  customers {
+  }
+  orders {
+  }
+  order_items {
+  }
+  orders ||--o{ order_items : "fk_order_items_order_id"
+  customers ||--o{ orders : "fk_orders_customer_id"

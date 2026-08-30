@@ -116,7 +116,7 @@ export function manifestProblems({ assetManifest, outputInventory, repositoryRoo
     if (asset.type === 'semantic-diagram' && (!asset.editableSource || !existsSync(join(repositoryRoot, asset.editableSource)))) {
       problems.push(`${where}: semantic diagram has no committed editable source`);
     }
-    if (asset.type === 'product-screenshot') {
+    if (asset.type === 'product-screenshot' || asset.type === 'generated-report-preview') {
       if (!asset.fixture || !existsSync(join(repositoryRoot, asset.fixture))) problems.push(`${where}: screenshot fixture is missing`);
       if (!asset.generator || !existsSync(join(repositoryRoot, asset.generator))) problems.push(`${where}: screenshot generator is missing`);
       if (asset.volatileDataNormalized !== true) problems.push(`${where}: screenshot does not declare volatile-data normalization`);
@@ -158,6 +158,7 @@ export function manifestProblems({ assetManifest, outputInventory, repositoryRoo
     if (!snapshotRoutes.has(proof.route)) problems.push(`${where}: route is not captured`);
     if (!assetIds.has(proof.primaryVisualId)) problems.push(`${where}: unknown visual id`);
     if (!proof.selector || !proof.expectedCaption || !proof.expectedArtifact) problems.push(`${where}: selector, caption, and artifact are required`);
+    if (Object.hasOwn(proof, 'headingText') && (!proof.headingText || typeof proof.headingText !== 'string')) problems.push(`${where}: headingText must be a non-empty string`);
     if (!assetPaths.has(proof.expectedArtifact)) problems.push(`${where}: expected artifact is undeclared`);
     if (!Number.isInteger(proof.maxVisibleWordsBeforeVisual) || proof.maxVisibleWordsBeforeVisual < 0) problems.push(`${where}: invalid word-distance limit`);
     if (!Number.isInteger(proof.minimumRenderedWidth) || !Number.isInteger(proof.minimumRenderedHeight)) problems.push(`${where}: rendered dimensions are required`);

@@ -1,0 +1,16 @@
+cases:
+  - name: product schema accepts a row
+    steps:
+      - name: insert a product
+        exec: INSERT INTO products (sku, name, price_cents) VALUES ('gear-1', 'Gear', 1200)
+      - name: inserted price is visible
+        assert:
+          query: SELECT price_cents FROM products WHERE sku = 'gear-1'
+          scalar: "1200"
+
+  - name: empty product schema has two rows
+    steps:
+      - name: two products exist
+        assert:
+          query: SELECT id FROM products
+          row_count: 2

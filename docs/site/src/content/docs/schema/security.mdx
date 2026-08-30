@@ -16,6 +16,12 @@ owns:
   - cli-ptah-schema-security
 ---
 
+import ProductPreview from '../../../components/ProductPreview.astro';
+import securityDark from '../../../assets/schema-viz-security-dark.svg';
+import securityLight from '../../../assets/schema-viz-security-light.svg';
+
+export const securitySamples = `${import.meta.env.BASE_URL}samples/visualize/`;
+
 `ptah schema security` reads a live database and reports findings over what the
 schema declares about access: privileges granted to `PUBLIC`, tables reachable
 by a role with no row-level security (RLS) enabled, routines that run with their
@@ -26,6 +32,27 @@ using.
 Each finding is an observation paired with a suggestion, not a verdict. Use the
 command to put those observations in front of a person, and to gate a pull
 request once you have decided which of them should never appear again.
+
+The live-database command prints the complete report. When you need to locate
+the same class of findings on an entity diagram, `ptah viz --security` applies
+the rules to Go-annotated models and marks the table nodes it can attach to:
+
+<ProductPreview
+  id="schema-security-visual"
+  src={securityLight}
+  darkSrc={securityDark}
+  alt="A four-table schema diagram where orders has warning findings PRV01 and PRV03, products has informational PRV01, and a comment records a routine finding with no table node."
+  caption="Real `ptah viz --security` output connects findings to tables without hiding findings that have no table node."
+  notice="Orders shows two warning codes, products shows an informational code, and the DOT comment retains the SECURITY DEFINER routine finding; the command report remains the complete answer."
+  fullSizeHref={securityLight.src}
+  downloadHref={`${securitySamples}schema-security.svg`}
+  sourceHref={`${securitySamples}schema-security.dot`}
+  reproduce="ptah viz --root-dir docs/site/fixtures/schema-ui/internal/models --format svg --include-columns --security --dialect postgres > schema-security.svg"
+/>
+
+Amber is `warning`, blue is `info`, and neutral nodes have no attached finding.
+See [Visualize the schema](../visualize/#mark-where-the-security-findings-are)
+for the Mermaid limitation and the complete diagram-output contract.
 
 Prerequisites: an installed `ptah` binary ([Install Ptah](../../start/install/))
 and the URL of the database to read. The command registers `--db-url`,

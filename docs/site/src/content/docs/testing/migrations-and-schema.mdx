@@ -18,6 +18,14 @@ owns:
   - cli-ptah-schema-test
 ---
 
+import ProductPreview from '../../../components/ProductPreview.astro';
+import migrationTestFail from '../../../assets/migration-test-fail.png';
+import migrationTestPass from '../../../assets/migration-test-pass.png';
+import schemaTestFail from '../../../assets/schema-test-fail.png';
+import schemaTestPass from '../../../assets/schema-test-pass.png';
+
+export const reportSamples = `${import.meta.env.BASE_URL}samples/reports/`;
+
 Ptah can run declarative test cases that apply your migrations or desired schema
 to a throwaway database, load fixtures, run SQL, and assert on the result — so
 migration and schema behavior is exercised in CI without a bespoke harness.
@@ -105,6 +113,63 @@ migrations), and reported as a failed step rather than silently skipped.
 On `ptah-compat schema test`, an explicit `--url` uses the run's `--var`
 values. A source selected through `data.hcl_schema` uses only that block's
 `vars`; even an empty block scope prevents the run-wide values from leaking in.
+
+## Read migration test reports
+
+The HTML format keeps summary counts, each case, and every step result in one
+portable artifact. The passing and failing reports below come from the same
+migration directory; only the selected assertion changes.
+
+<ProductPreview
+  id="migration-test-report"
+  src={migrationTestPass}
+  alt="A migration test report showing one case passed and all three steps passed."
+  caption="A real passing migration test report beside the corresponding failing assertion."
+  notice="The summary distinguishes pass from fail immediately, while the case row names the exact step and observed row count that decided the result."
+  fullSizeHref={`${reportSamples}migration-test-pass.html`}
+  downloadHref={`${reportSamples}migration-test-pass.html`}
+  sourceHref={`${reportSamples}migration-test-pass.html`}
+  reproduce="ptah migrations test --dir docs/site/fixtures/product-output/migration-tests --migrations-dir docs/site/fixtures/product-output/migrations --run '^products accept a row$' --report html > migration-test-pass.html"
+  variants={[
+    {
+      id: 'failing',
+      label: 'Failing assertion: expected 2 rows, got 0',
+      src: migrationTestFail,
+      alt: 'A migration test report showing one failed case and the message expected row_count 2, got 0.',
+      fullSizeHref: `${reportSamples}migration-test-fail.html`,
+      downloadHref: `${reportSamples}migration-test-fail.html`,
+      sourceHref: `${reportSamples}migration-test-fail.html`,
+    },
+  ]}
+/>
+
+## Read schema test reports
+
+Schema tests use the same report shape but converge the desired schema before
+the case instead of applying a migration directory.
+
+<ProductPreview
+  id="schema-test-report"
+  src={schemaTestPass}
+  alt="A schema test report showing one case passed and both steps passed."
+  caption="A real passing schema test report beside a failing row-count assertion."
+  notice="The report names itself as a schema test, and the failing variant shows the stable assertion message that CI can route back to the case."
+  fullSizeHref={`${reportSamples}schema-test-pass.html`}
+  downloadHref={`${reportSamples}schema-test-pass.html`}
+  sourceHref={`${reportSamples}schema-test-pass.html`}
+  reproduce="ptah schema test --dir docs/site/fixtures/product-output/schema-tests --root-dir docs/site/fixtures/product-output/schema.sql --run '^product schema accepts a row$' --report html > schema-test-pass.html"
+  variants={[
+    {
+      id: 'failing',
+      label: 'Failing assertion: expected 2 rows, got 0',
+      src: schemaTestFail,
+      alt: 'A schema test report showing one failed case and the message expected row_count 2, got 0.',
+      fullSizeHref: `${reportSamples}schema-test-fail.html`,
+      downloadHref: `${reportSamples}schema-test-fail.html`,
+      sourceHref: `${reportSamples}schema-test-fail.html`,
+    },
+  ]}
+/>
 
 ## Database isolation
 

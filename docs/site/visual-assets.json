@@ -2,112 +2,166 @@
   "schemaVersion": 1,
   "assets": [
     {
-      "id": "ptah-logo",
-      "path": "docs/site/src/assets/logo.svg",
-      "type": "decorative",
-      "editableSource": "docs/site/src/assets/logo.svg",
-      "fixture": null,
-      "generator": null,
-      "pages": ["/"],
-      "titleRequired": true,
-      "descriptionRequired": false,
-      "sizeLimitBytes": 8192,
-      "themeBehavior": "fixed-brand-colors",
-      "fullSizeArtifact": "docs/site/src/assets/logo.svg",
-      "versionedDownload": true
+      "id": "ptah-logo", "path": "docs/site/src/assets/logo.svg", "type": "decorative",
+      "editableSource": "docs/site/src/assets/logo.svg", "fixture": null, "generator": null, "pages": ["/"],
+      "titleRequired": true, "descriptionRequired": false, "sizeLimitBytes": 8192,
+      "themeBehavior": "fixed-brand-colors", "fullSizeArtifact": "docs/site/src/assets/logo.svg", "versionedDownload": true
     },
     {
-      "id": "product-journeys",
-      "path": "docs/site/src/assets/product-journeys.svg",
-      "type": "semantic-diagram",
-      "editableSource": "docs/site/src/assets/product-journeys.svg",
-      "fixture": null,
-      "generator": null,
-      "pages": ["/"],
-      "titleRequired": true,
-      "descriptionRequired": true,
-      "sizeLimitBytes": 16384,
-      "themeBehavior": "prefers-color-scheme",
-      "fullSizeArtifact": "docs/site/src/assets/product-journeys.svg",
-      "versionedDownload": true
+      "id": "product-journeys", "path": "docs/site/src/assets/product-journeys.svg", "type": "semantic-diagram",
+      "editableSource": "docs/site/src/assets/product-journeys.svg", "fixture": null, "generator": null, "pages": ["/"],
+      "titleRequired": true, "descriptionRequired": true, "sizeLimitBytes": 16384,
+      "themeBehavior": "prefers-color-scheme", "fullSizeArtifact": "docs/site/src/assets/product-journeys.svg", "versionedDownload": true
     },
     {
-      "id": "inference-generation-lifecycle",
-      "path": "docs/site/src/assets/inference-generation-lifecycle.svg",
-      "type": "semantic-diagram",
-      "editableSource": "docs/site/src/assets/inference-generation-lifecycle.svg",
-      "fixture": null,
-      "generator": null,
-      "pages": ["/inference/overview/"],
-      "titleRequired": true,
-      "descriptionRequired": true,
-      "sizeLimitBytes": 16384,
-      "themeBehavior": "prefers-color-scheme",
-      "fullSizeArtifact": "docs/site/src/assets/inference-generation-lifecycle.svg",
-      "versionedDownload": true
+      "id": "inference-generation-lifecycle", "path": "docs/site/src/assets/inference-generation-lifecycle.svg", "type": "semantic-diagram",
+      "editableSource": "docs/site/src/assets/inference-generation-lifecycle.svg", "fixture": null, "generator": null, "pages": ["/inference/overview/"],
+      "titleRequired": true, "descriptionRequired": true, "sizeLimitBytes": 16384,
+      "themeBehavior": "prefers-color-scheme", "fullSizeArtifact": "docs/site/src/assets/inference-generation-lifecycle.svg", "versionedDownload": true
     },
     {
-      "id": "schema-document",
-      "path": "docs/site/src/assets/schema-document.png",
-      "type": "product-screenshot",
-      "editableSource": null,
-      "fixture": "docs/site/fixtures/schema-ui",
-      "generator": "docs/site/scripts/generate-schema-ui-assets.mjs",
-      "pages": ["/schema/document/"],
-      "titleRequired": false,
-      "descriptionRequired": false,
-      "sizeLimitBytes": 256000,
-      "themeBehavior": "captured-light",
-      "fullSizeArtifact": "docs/site/public/samples/schema-document.html",
-      "versionedDownload": true,
-      "volatileDataNormalized": true
+      "id": "schema-viz-relationships-light", "path": "docs/site/src/assets/schema-viz-relationships-light.svg", "type": "generated-product-output",
+      "editableSource": "docs/site/public/samples/visualize/schema-relationships.mmd", "fixture": "docs/site/fixtures/schema-ui", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/", "/schema/visualize/"],
+      "titleRequired": true, "descriptionRequired": true, "sizeLimitBytes": 128000,
+      "themeBehavior": "generated-light", "fullSizeArtifact": "docs/site/src/assets/schema-viz-relationships-light.svg", "versionedDownload": true
     },
     {
-      "id": "schema-serve-matches",
-      "path": "docs/site/src/assets/schema-serve-matches.png",
-      "type": "product-screenshot",
-      "editableSource": null,
-      "fixture": "docs/site/fixtures/schema-ui",
-      "generator": "docs/site/scripts/generate-schema-ui-assets.mjs",
-      "pages": ["/schema/serve/"],
-      "titleRequired": false,
-      "descriptionRequired": false,
-      "sizeLimitBytes": 256000,
-      "themeBehavior": "captured-light",
-      "fullSizeArtifact": "docs/site/src/assets/schema-serve-matches.png",
-      "versionedDownload": true,
-      "volatileDataNormalized": true
+      "id": "schema-viz-relationships-dark", "path": "docs/site/src/assets/schema-viz-relationships-dark.svg", "type": "generated-product-output",
+      "editableSource": "docs/site/public/samples/visualize/schema-relationships.mmd", "fixture": "docs/site/fixtures/schema-ui", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/", "/schema/visualize/"],
+      "titleRequired": true, "descriptionRequired": true, "sizeLimitBytes": 128000,
+      "themeBehavior": "generated-dark", "fullSizeArtifact": "docs/site/src/assets/schema-viz-relationships-dark.svg", "versionedDownload": true
     },
     {
-      "id": "schema-serve-drift",
-      "path": "docs/site/src/assets/schema-serve-drift.png",
-      "type": "product-screenshot",
-      "editableSource": null,
-      "fixture": "docs/site/fixtures/schema-ui",
-      "generator": "docs/site/scripts/generate-schema-ui-assets.mjs",
-      "pages": ["/schema/serve/"],
-      "titleRequired": false,
-      "descriptionRequired": false,
-      "sizeLimitBytes": 256000,
-      "themeBehavior": "captured-light",
-      "fullSizeArtifact": "docs/site/src/assets/schema-serve-drift.png",
-      "versionedDownload": true,
-      "volatileDataNormalized": true
+      "id": "schema-viz-columns", "path": "docs/site/src/assets/schema-viz-columns.svg", "type": "generated-product-output",
+      "editableSource": "docs/site/public/samples/visualize/schema-columns.mmd", "fixture": "docs/site/fixtures/schema-ui", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/schema/visualize/"],
+      "titleRequired": true, "descriptionRequired": true, "sizeLimitBytes": 128000,
+      "themeBehavior": "generated-light", "fullSizeArtifact": "docs/site/src/assets/schema-viz-columns.svg", "versionedDownload": true
     },
     {
-      "id": "viz-example",
-      "path": "examples/viz/schema.svg",
-      "type": "generated-product-output",
-      "editableSource": "examples/viz/schema.dot",
-      "fixture": "examples/viz/models",
-      "generator": "ptah viz --root-dir examples/viz/models --format svg --include-columns",
-      "pages": ["/schema/visualize/"],
-      "titleRequired": true,
-      "descriptionRequired": false,
-      "sizeLimitBytes": 256000,
-      "themeBehavior": "generated-light",
-      "fullSizeArtifact": "examples/viz/schema.svg",
-      "versionedDownload": true
+      "id": "schema-viz-excluded", "path": "docs/site/src/assets/schema-viz-excluded.svg", "type": "generated-product-output",
+      "editableSource": "docs/site/public/samples/visualize/schema-excluded.mmd", "fixture": "docs/site/fixtures/schema-ui", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/schema/visualize/"],
+      "titleRequired": true, "descriptionRequired": true, "sizeLimitBytes": 128000,
+      "themeBehavior": "generated-light", "fullSizeArtifact": "docs/site/src/assets/schema-viz-excluded.svg", "versionedDownload": true
+    },
+    {
+      "id": "schema-viz-security-light", "path": "docs/site/src/assets/schema-viz-security-light.svg", "type": "generated-product-output",
+      "editableSource": "docs/site/public/samples/visualize/schema-security.dot", "fixture": "docs/site/fixtures/schema-ui", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/schema/visualize/", "/schema/security/"],
+      "titleRequired": true, "descriptionRequired": false, "sizeLimitBytes": 128000,
+      "themeBehavior": "generated-light", "fullSizeArtifact": "docs/site/public/samples/visualize/schema-security.svg", "versionedDownload": true
+    },
+    {
+      "id": "schema-viz-security-dark", "path": "docs/site/src/assets/schema-viz-security-dark.svg", "type": "generated-product-output",
+      "editableSource": "docs/site/public/samples/visualize/schema-security.dot", "fixture": "docs/site/fixtures/schema-ui", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/schema/visualize/", "/schema/security/"],
+      "titleRequired": true, "descriptionRequired": false, "sizeLimitBytes": 128000,
+      "themeBehavior": "generated-dark", "fullSizeArtifact": "docs/site/src/assets/schema-viz-security-dark.svg", "versionedDownload": true
+    },
+    {
+      "id": "schema-document", "path": "docs/site/src/assets/schema-document.png", "type": "product-screenshot",
+      "editableSource": null, "fixture": "docs/site/fixtures/schema-ui", "generator": "docs/site/scripts/generate-schema-ui-assets.mjs", "pages": ["/", "/schema/document/"],
+      "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 256000,
+      "themeBehavior": "captured-light", "fullSizeArtifact": "docs/site/public/samples/schema-document.html", "versionedDownload": true, "volatileDataNormalized": true
+    },
+    {
+      "id": "schema-document-table", "path": "docs/site/src/assets/schema-document-table.png", "type": "product-screenshot",
+      "editableSource": null, "fixture": "docs/site/fixtures/schema-ui", "generator": "docs/site/scripts/generate-schema-ui-assets.mjs", "pages": ["/schema/document/"],
+      "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 256000,
+      "themeBehavior": "captured-light", "fullSizeArtifact": "docs/site/public/samples/schema-document.html", "versionedDownload": true, "volatileDataNormalized": true
+    },
+    {
+      "id": "schema-document-full", "path": "docs/site/src/assets/schema-document-full.png", "type": "product-screenshot",
+      "editableSource": null, "fixture": "docs/site/fixtures/schema-ui", "generator": "docs/site/scripts/generate-schema-ui-assets.mjs", "pages": ["/schema/document/"],
+      "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 256000,
+      "themeBehavior": "captured-light", "fullSizeArtifact": "docs/site/src/assets/schema-document-full.png", "versionedDownload": true, "volatileDataNormalized": true
+    },
+    {
+      "id": "schema-serve-matches", "path": "docs/site/src/assets/schema-serve-matches.png", "type": "product-screenshot",
+      "editableSource": null, "fixture": "docs/site/fixtures/schema-ui", "generator": "docs/site/scripts/generate-schema-ui-assets.mjs", "pages": ["/schema/serve/"],
+      "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 256000,
+      "themeBehavior": "captured-light", "fullSizeArtifact": "docs/site/public/samples/schema-serve-matches.html", "versionedDownload": true, "volatileDataNormalized": true
+    },
+    {
+      "id": "schema-serve-matches-full", "path": "docs/site/src/assets/schema-serve-matches-full.png", "type": "product-screenshot",
+      "editableSource": null, "fixture": "docs/site/fixtures/schema-ui", "generator": "docs/site/scripts/generate-schema-ui-assets.mjs", "pages": ["/schema/serve/"],
+      "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 256000,
+      "themeBehavior": "captured-light", "fullSizeArtifact": "docs/site/src/assets/schema-serve-matches-full.png", "versionedDownload": true, "volatileDataNormalized": true
+    },
+    {
+      "id": "schema-serve-drift", "path": "docs/site/src/assets/schema-serve-drift.png", "type": "product-screenshot",
+      "editableSource": null, "fixture": "docs/site/fixtures/schema-ui", "generator": "docs/site/scripts/generate-schema-ui-assets.mjs", "pages": ["/", "/schema/serve/"],
+      "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 256000,
+      "themeBehavior": "captured-light", "fullSizeArtifact": "docs/site/public/samples/schema-serve-drift.html", "versionedDownload": true, "volatileDataNormalized": true
+    },
+    {
+      "id": "schema-serve-drift-full", "path": "docs/site/src/assets/schema-serve-drift-full.png", "type": "product-screenshot",
+      "editableSource": null, "fixture": "docs/site/fixtures/schema-ui", "generator": "docs/site/scripts/generate-schema-ui-assets.mjs", "pages": ["/schema/serve/"],
+      "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 256000,
+      "themeBehavior": "captured-light", "fullSizeArtifact": "docs/site/src/assets/schema-serve-drift-full.png", "versionedDownload": true, "volatileDataNormalized": true
+    },
+    {
+      "id": "schema-lineage-explanatory", "path": "docs/site/src/assets/schema-lineage-explanatory.svg", "type": "semantic-diagram",
+      "editableSource": "docs/site/src/assets/schema-lineage-explanatory.svg", "fixture": "docs/site/fixtures/product-output", "generator": null, "pages": ["/schema/lineage/"],
+      "titleRequired": true, "descriptionRequired": true, "sizeLimitBytes": 16384,
+      "themeBehavior": "prefers-color-scheme", "fullSizeArtifact": "docs/site/src/assets/schema-lineage-explanatory.svg", "versionedDownload": true
+    },
+    {
+      "id": "migration-safety-report", "path": "docs/site/src/assets/migration-safety-report.png", "type": "generated-report-preview",
+      "editableSource": null, "fixture": "docs/site/fixtures/product-output", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/", "/versioned/generate/"],
+      "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 256000,
+      "themeBehavior": "generated-report-light", "fullSizeArtifact": "docs/site/public/samples/reports/migration-safety-report.html", "versionedDownload": true, "volatileDataNormalized": true
+    },
+    {
+      "id": "migration-test-pass", "path": "docs/site/src/assets/migration-test-pass.png", "type": "generated-report-preview",
+      "editableSource": null, "fixture": "docs/site/fixtures/product-output", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/testing/migrations-and-schema/"],
+      "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 128000,
+      "themeBehavior": "generated-report-light", "fullSizeArtifact": "docs/site/public/samples/reports/migration-test-pass.html", "versionedDownload": true, "volatileDataNormalized": true
+    },
+    {
+      "id": "migration-test-fail", "path": "docs/site/src/assets/migration-test-fail.png", "type": "generated-report-preview",
+      "editableSource": null, "fixture": "docs/site/fixtures/product-output", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/testing/migrations-and-schema/"],
+      "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 128000,
+      "themeBehavior": "generated-report-light", "fullSizeArtifact": "docs/site/public/samples/reports/migration-test-fail.html", "versionedDownload": true, "volatileDataNormalized": true
+    },
+    {
+      "id": "schema-test-pass", "path": "docs/site/src/assets/schema-test-pass.png", "type": "generated-report-preview",
+      "editableSource": null, "fixture": "docs/site/fixtures/product-output", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/testing/migrations-and-schema/"],
+      "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 128000,
+      "themeBehavior": "generated-report-light", "fullSizeArtifact": "docs/site/public/samples/reports/schema-test-pass.html", "versionedDownload": true, "volatileDataNormalized": true
+    },
+    {
+      "id": "schema-test-fail", "path": "docs/site/src/assets/schema-test-fail.png", "type": "generated-report-preview",
+      "editableSource": null, "fixture": "docs/site/fixtures/product-output", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/testing/migrations-and-schema/"],
+      "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 128000,
+      "themeBehavior": "generated-report-light", "fullSizeArtifact": "docs/site/public/samples/reports/schema-test-fail.html", "versionedDownload": true, "volatileDataNormalized": true
+    },
+    {
+      "id": "schema-stats-openmetrics", "path": "docs/site/public/samples/schema-stats.openmetrics.txt", "type": "generated-product-output",
+      "editableSource": null, "fixture": "docs/site/fixtures/product-output", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/schema/stats/"],
+      "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 16384,
+      "themeBehavior": "not-applicable-text-output", "fullSizeArtifact": "docs/site/public/samples/schema-stats.openmetrics.txt", "versionedDownload": true
+    },
+    {
+      "id": "schema-contract-openapi", "path": "docs/site/public/samples/contracts/shop-openapi.yaml", "type": "generated-product-output",
+      "editableSource": null, "fixture": "docs/site/fixtures/product-output", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/schema/export/"],
+      "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 16384,
+      "themeBehavior": "not-applicable-source-output", "fullSizeArtifact": "docs/site/public/samples/contracts/shop-openapi.yaml", "versionedDownload": true
+    },
+    {
+      "id": "schema-contract-graphql", "path": "docs/site/public/samples/contracts/shop.graphql", "type": "generated-product-output",
+      "editableSource": null, "fixture": "docs/site/fixtures/product-output", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/schema/export/"],
+      "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 16384,
+      "themeBehavior": "not-applicable-source-output", "fullSizeArtifact": "docs/site/public/samples/contracts/shop.graphql", "versionedDownload": true
+    },
+    {
+      "id": "schema-contract-protobuf", "path": "docs/site/public/samples/contracts/shop.proto", "type": "generated-product-output",
+      "editableSource": null, "fixture": "docs/site/fixtures/product-output", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/schema/export/"],
+      "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 16384,
+      "themeBehavior": "not-applicable-source-output", "fullSizeArtifact": "docs/site/public/samples/contracts/shop.proto", "versionedDownload": true
+    },
+    {
+      "id": "viz-example", "path": "examples/viz/schema.svg", "type": "generated-product-output",
+      "editableSource": "examples/viz/schema.dot", "fixture": "examples/viz/models", "generator": "ptah viz --root-dir examples/viz/models --format svg --include-columns", "pages": ["/schema/visualize/"],
+      "titleRequired": true, "descriptionRequired": false, "sizeLimitBytes": 256000,
+      "themeBehavior": "generated-light", "fullSizeArtifact": "examples/viz/schema.svg", "versionedDownload": true
     }
   ],
   "snapshotRoutes": [
@@ -118,26 +172,80 @@
     { "route": "/operate/troubleshooting/", "name": "troubleshooting" },
     { "route": "/reference/native-commands/", "name": "native-commands" },
     { "route": "/atlas/overview/", "name": "atlas-overview" },
+    { "route": "/versioned/generate/", "name": "versioned-generate" },
     { "route": "/schema/visualize/", "name": "schema-visualize" },
     { "route": "/schema/document/", "name": "schema-document" },
-    { "route": "/schema/serve/", "name": "schema-serve" }
+    { "route": "/schema/serve/", "name": "schema-serve" },
+    { "route": "/schema/security/", "name": "schema-security" },
+    { "route": "/schema/lineage/", "name": "schema-lineage" },
+    { "route": "/testing/migrations-and-schema/", "name": "migration-schema-tests" }
   ],
   "proofs": [
     {
-      "route": "/",
-      "primaryVisualId": "product-journeys",
-      "selector": "[data-visual-id=\"product-journeys\"]",
-      "expectedCaption": "Schema changes and persistent inference state use separate review and cutover paths.",
-      "expectedArtifact": "docs/site/src/assets/product-journeys.svg",
-      "maxVisibleWordsBeforeVisual": 250,
-      "minimumRenderedWidth": 280,
-      "minimumRenderedHeight": 120,
-      "fullSizeAction": true,
-      "sourceAction": true,
-      "downloadAction": true,
-      "requiredVariants": [],
-      "themes": ["light", "dark"],
-      "enforced": true
+      "route": "/", "primaryVisualId": "product-journeys", "selector": "[data-visual-id=\"product-journeys\"]",
+      "expectedCaption": "Schema changes and persistent inference state use separate review and cutover paths.", "expectedArtifact": "docs/site/src/assets/product-journeys.svg",
+      "maxVisibleWordsBeforeVisual": 250, "minimumRenderedWidth": 280, "minimumRenderedHeight": 120,
+      "fullSizeAction": true, "sourceAction": true, "downloadAction": true, "requiredVariants": [], "themes": ["light", "dark"], "enforced": true
+    },
+    {
+      "route": "/schema/visualize/", "primaryVisualId": "schema-viz-relationships-light", "selector": "[data-visual-id=\"schema-viz-relationships\"]",
+      "expectedCaption": "Default Mermaid output rendered from the compact four-table documentation fixture.", "expectedArtifact": "docs/site/src/assets/schema-viz-relationships-light.svg",
+      "maxVisibleWordsBeforeVisual": 250, "minimumRenderedWidth": 280, "minimumRenderedHeight": 120,
+      "fullSizeAction": true, "sourceAction": true, "downloadAction": true, "requiredVariants": [], "themes": ["light", "dark"], "enforced": true
+    },
+    {
+      "route": "/schema/visualize/", "primaryVisualId": "schema-viz-columns", "selector": "[data-visual-id=\"schema-viz-columns\"]",
+      "expectedCaption": "Adding `--include-columns` turns the relationship map into a field-level review artifact.", "expectedArtifact": "docs/site/src/assets/schema-viz-columns.svg", "headingText": "Compare real variants",
+      "maxVisibleWordsBeforeVisual": 80, "minimumRenderedWidth": 280, "minimumRenderedHeight": 120,
+      "fullSizeAction": true, "sourceAction": true, "downloadAction": true, "requiredVariants": ["excluded-tables"], "themes": ["light", "dark"], "enforced": true
+    },
+    {
+      "route": "/schema/visualize/", "primaryVisualId": "schema-viz-security-light", "selector": "[data-visual-id=\"schema-viz-security\"]",
+      "expectedCaption": "Real `ptah viz --security` output locates table findings; comments in the source retain findings that have no table node.", "expectedArtifact": "docs/site/src/assets/schema-viz-security-light.svg", "headingText": "Mark where the security findings are",
+      "maxVisibleWordsBeforeVisual": 180, "minimumRenderedWidth": 280, "minimumRenderedHeight": 120,
+      "fullSizeAction": true, "sourceAction": true, "downloadAction": true, "requiredVariants": [], "themes": ["light", "dark"], "enforced": true
+    },
+    {
+      "route": "/schema/document/", "primaryVisualId": "schema-document", "selector": "[data-visual-id=\"schema-document\"]",
+      "expectedCaption": "Real self-contained HTML output generated from the four-table documentation fixture.", "expectedArtifact": "docs/site/src/assets/schema-document.png",
+      "maxVisibleWordsBeforeVisual": 250, "minimumRenderedWidth": 280, "minimumRenderedHeight": 130,
+      "fullSizeAction": true, "sourceAction": true, "downloadAction": true, "requiredVariants": ["table-detail"], "themes": ["light", "dark"], "enforced": true
+    },
+    {
+      "route": "/schema/serve/", "primaryVisualId": "schema-serve-matches", "selector": "[data-visual-id=\"schema-serve-matches\"]",
+      "expectedCaption": "The live view before and after one desired column diverges from the SQLite database.", "expectedArtifact": "docs/site/src/assets/schema-serve-matches.png",
+      "maxVisibleWordsBeforeVisual": 250, "minimumRenderedWidth": 280, "minimumRenderedHeight": 130,
+      "fullSizeAction": true, "sourceAction": true, "downloadAction": true, "requiredVariants": ["drift"], "themes": ["light", "dark"], "enforced": true
+    },
+    {
+      "route": "/schema/security/", "primaryVisualId": "schema-viz-security-light", "selector": "[data-visual-id=\"schema-security-visual\"]",
+      "expectedCaption": "Real `ptah viz --security` output connects findings to tables without hiding findings that have no table node.", "expectedArtifact": "docs/site/src/assets/schema-viz-security-light.svg",
+      "maxVisibleWordsBeforeVisual": 250, "minimumRenderedWidth": 280, "minimumRenderedHeight": 120,
+      "fullSizeAction": true, "sourceAction": true, "downloadAction": true, "requiredVariants": [], "themes": ["light", "dark"], "enforced": true
+    },
+    {
+      "route": "/schema/lineage/", "primaryVisualId": "schema-lineage-explanatory", "selector": "[data-visual-id=\"schema-lineage-explanatory\"]",
+      "expectedCaption": "Explanatory diagram—not output from `ptah schema lineage`—of the real text and JSON fixture above.", "expectedArtifact": "docs/site/src/assets/schema-lineage-explanatory.svg",
+      "maxVisibleWordsBeforeVisual": 250, "minimumRenderedWidth": 280, "minimumRenderedHeight": 110,
+      "fullSizeAction": true, "sourceAction": true, "downloadAction": true, "requiredVariants": [], "themes": ["light", "dark"], "enforced": true
+    },
+    {
+      "route": "/versioned/generate/", "primaryVisualId": "migration-safety-report", "selector": "[data-visual-id=\"migration-safety-report\"]",
+      "expectedCaption": "A real `migrations generate --report html` artifact for a destructive SQLite table rebuild.", "expectedArtifact": "docs/site/src/assets/migration-safety-report.png", "headingText": "Review the HTML safety report",
+      "maxVisibleWordsBeforeVisual": 100, "minimumRenderedWidth": 280, "minimumRenderedHeight": 110,
+      "fullSizeAction": true, "sourceAction": true, "downloadAction": true, "requiredVariants": [], "themes": ["light", "dark"], "enforced": true
+    },
+    {
+      "route": "/testing/migrations-and-schema/", "primaryVisualId": "migration-test-pass", "selector": "[data-visual-id=\"migration-test-report\"]",
+      "expectedCaption": "A real passing migration test report beside the corresponding failing assertion.", "expectedArtifact": "docs/site/src/assets/migration-test-pass.png", "headingText": "Read migration test reports",
+      "maxVisibleWordsBeforeVisual": 90, "minimumRenderedWidth": 280, "minimumRenderedHeight": 100,
+      "fullSizeAction": true, "sourceAction": true, "downloadAction": true, "requiredVariants": ["failing"], "themes": ["light", "dark"], "enforced": true
+    },
+    {
+      "route": "/testing/migrations-and-schema/", "primaryVisualId": "schema-test-pass", "selector": "[data-visual-id=\"schema-test-report\"]",
+      "expectedCaption": "A real passing schema test report beside a failing row-count assertion.", "expectedArtifact": "docs/site/src/assets/schema-test-pass.png", "headingText": "Read schema test reports",
+      "maxVisibleWordsBeforeVisual": 70, "minimumRenderedWidth": 280, "minimumRenderedHeight": 100,
+      "fullSizeAction": true, "sourceAction": true, "downloadAction": true, "requiredVariants": ["failing"], "themes": ["light", "dark"], "enforced": true
     }
   ]
 }

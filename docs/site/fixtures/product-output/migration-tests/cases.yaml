@@ -1,0 +1,20 @@
+cases:
+  - name: products accept a row
+    steps:
+      - name: apply migrations
+        migrate_to: latest
+      - name: insert a product
+        exec: INSERT INTO products (sku, name) VALUES ('gear-1', 'Gear')
+      - name: one product exists
+        assert:
+          query: SELECT id FROM products
+          row_count: 1
+
+  - name: empty catalog has two products
+    steps:
+      - name: apply migrations
+        migrate_to: latest
+      - name: two products exist
+        assert:
+          query: SELECT id FROM products
+          row_count: 2

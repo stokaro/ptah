@@ -16,6 +16,8 @@ owns:
   - cli-ptah-schema-export
 ---
 
+export const contractSamples = `${import.meta.env.BASE_URL}samples/contracts/`;
+
 Ptah projects a desired schema into API-facing formats: OpenAPI 3.0 component
 schemas, GraphQL SDL, and Protobuf definitions. Use these artifacts when the
 selected database entities intentionally match your transport model, or as input
@@ -29,6 +31,16 @@ The export does not expose database rows or create a working API. It does not
 generate handlers, resolvers, Protobuf services, authentication, authorization,
 or database access. The generated schema is a contract candidate that you must
 review before publishing.
+
+Inspect the deterministic fixture outputs directly:
+
+- <a href={`${contractSamples}shop-openapi.yaml`} download>OpenAPI 3.0 YAML</a>
+- <a href={`${contractSamples}shop.graphql`} download>GraphQL SDL</a>
+- <a href={`${contractSamples}shop.proto`} download>Protobuf definition</a>
+
+These source artifacts are primary. Ptah does not bundle Swagger UI, GraphiQL,
+resolvers, or an API server, so this page does not show a consumer UI and imply
+that one exists.
 
 The generated OpenAPI passes `redocly lint`; the generated GraphQL parses and
 builds with `graphql-js`, for the types-only default and for every operation

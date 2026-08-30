@@ -240,7 +240,7 @@
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "Mermaid, DOT or SVG ERD from Go annotations only; SVG shells out to Graphviz dot. Atlas ERD lives in the hosted service (any plan per its pricing page); the CE binary rejects `--web`.",
-    "evidence": "ptah viz --help; docs/site/src/content/docs/schema/visualize.md; https://atlasgo.io/features (visualization is Pro); conformance cli-surface.md CE inventory. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas schema inspect --url sqlite://t.db --web` -> exit 1 'unknown flag: --web'. Atlas pricing page (retrieved 2026-08-01) checks ERD visualization for every plan including free Starter - hosted-service side. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'ERD visualization' is checked for the free Starter plan — a plan-level claim that may be login/cloud-side; the pinned CE v1.2.0 binary registers no visualization command, so atlas_oss stays no"
+    "evidence": "ptah viz --help; docs/site/src/content/docs/schema/visualize.mdx; https://atlasgo.io/features (visualization is Pro); conformance cli-surface.md CE inventory. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas schema inspect --url sqlite://t.db --web` -> exit 1 'unknown flag: --web'. Atlas pricing page (retrieved 2026-08-01) checks ERD visualization for every plan including free Starter - hosted-service side. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'ERD visualization' is checked for the free Starter plan — a plan-level claim that may be login/cloud-side; the pinned CE v1.2.0 binary registers no visualization command, so atlas_oss stays no"
   },
   {
     "area": "API schema export",
@@ -249,7 +249,7 @@
     "atlas_oss": "no",
     "atlas_pro": "no",
     "note": "Go annotations, or a YAML, HCL or SQL schema file, to OpenAPI components or GraphQL SDL; no handlers or resolvers. Absent from the CE inventory and the cited Pro list.",
-    "evidence": "ptah schema export --help (--to openapi-v3|graphql, --from, --schema-file); docs/site/src/content/docs/schema/export.md; cmd/schema/export_source_test.go TestSchemaExportReadsEveryNonGoSource pins each target against yaml/hcl/sql for byte-identical output; conformance cli-surface.md CE inventory; https://atlasgo.io/features (Pro list)"
+    "evidence": "ptah schema export --help (--to openapi-v3|graphql, --from, --schema-file); docs/site/src/content/docs/schema/export.mdx; cmd/schema/export_source_test.go TestSchemaExportReadsEveryNonGoSource pins each target against yaml/hcl/sql for byte-identical output; conformance cli-surface.md CE inventory; https://atlasgo.io/features (Pro list)"
   },
   {
     "area": "API schema export",

@@ -1,0 +1,27 @@
+{
+  "edges": [
+    {
+      "from_table": "orders",
+      "from_column": "customer_id",
+      "to_view": "order_totals",
+      "to_column": "buyer"
+    },
+    {
+      "from_table": "orders",
+      "from_column": "total_cents",
+      "to_view": "order_totals",
+      "to_column": "cents"
+    }
+  ],
+  "undecided": [
+    {
+      "view": "customer_orders",
+      "reason": "the FROM clause names more than one source, so an unqualified column cannot be attributed"
+    }
+  ],
+  "routines": {
+    "edges": [],
+    "reads": [],
+    "writes": []
+  }
+}

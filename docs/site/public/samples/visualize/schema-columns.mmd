@@ -1,0 +1,26 @@
+erDiagram
+  customers {
+    INTEGER id PK
+    TEXT email
+    TEXT country
+  }
+  orders {
+    INTEGER id PK
+    INTEGER customer_id FK
+    TEXT status
+    TEXT placed_at
+  }
+  products {
+    INTEGER id PK
+    TEXT sku
+    TEXT name
+  }
+  order_items {
+    INTEGER id PK
+    INTEGER order_id FK
+    INTEGER product_id FK
+    INTEGER quantity
+  }
+  orders ||--o{ order_items : "fk_order_items_order_id"
+  products ||--o{ order_items : "fk_order_items_product_id"
+  customers ||--o{ orders : "fk_orders_customer_id"
