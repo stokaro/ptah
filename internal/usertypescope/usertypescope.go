@@ -29,14 +29,43 @@ func ValidateDeclared(dialect string, caps capability.Capabilities, database *sc
 	if database == nil {
 		return nil
 	}
+	return ValidateCreations(
+		dialect,
+		caps,
+		domainNames(database),
+		compositeNames(database),
+		rangeNames(database),
+	)
+}
+
+// ValidateCreations is the same refusal asked of the types a plan CREATES
+// rather than of the types a document declares.
+//
+// The two questions have to be asked in two places and must give one answer. A
+// document scan runs where the whole declaration is -- the comparison -- and it
+// cannot see a diff somebody built by hand or one a comparator that returns no
+// error produced. A plan reads only its change set, and a type it creates on a
+// target that cannot host one is the same defect the document scan exists to
+// refuse: the declaration's own columns are left naming something the server
+// has no definition of.
+//
+// So the rule lives here once and both ends call it. Two lists of the same
+// three capability keys is how they would come to disagree -- and the disagreement
+// would be silent, because the renderer answers an ungated type with a named
+// skip rather than an error (stokaro/ptah#2561).
+func ValidateCreations(
+	dialect string,
+	caps capability.Capabilities,
+	domains, composites, ranges []string,
+) error {
 	for _, kind := range []struct {
 		key       capability.Capability
 		statement string
 		names     []string
 	}{
-		{capability.DomainTypes, "CREATE DOMAIN", domainNames(database)},
-		{capability.CompositeTypes, "CREATE TYPE ... AS (...)", compositeNames(database)},
-		{capability.RangeTypes, "CREATE TYPE ... AS RANGE", rangeNames(database)},
+		{capability.DomainTypes, "CREATE DOMAIN", domains},
+		{capability.CompositeTypes, "CREATE TYPE ... AS (...)", composites},
+		{capability.RangeTypes, "CREATE TYPE ... AS RANGE", ranges},
 	} {
 		if caps.Has(kind.key) || len(kind.names) == 0 {
 			continue

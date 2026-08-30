@@ -749,3 +749,97 @@ func rolesCarrying(names ...string) difftypes.RoleChanges {
 	}
 	return roles
 }
+
+// TestPlan_UserTypeCreationsOnTargetsThatCannotHostThem_FailurePath covers a
+// user type the PLAN creates on a target that has none.
+//
+// The refusal reads the change set rather than a document, which is what makes
+// it reachable at all: a diff built by hand, or one from a comparator that
+// returns no error, never passes a document scan. Without it the plan emits the
+// creation and the renderer answers with a named skip -- measured -- leaving the
+// declaration's own columns pointing at a type the server has no definition of
+// (stokaro/ptah#2561, stokaro/ptah#1717).
+func TestPlan_UserTypeCreationsOnTargetsThatCannotHostThem_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		diff    *difftypes.SchemaDiff
+		wantErr string
+	}{
+		{
+			name:    "cockroachdb domain",
+			dialect: platform.CockroachDB,
+			diff:    &difftypes.SchemaDiff{DomainsAdded: difftypes.DomainChanges{{Name: "email", BaseType: "TEXT"}}},
+			wantErr: `cockroachdb: CREATE DOMAIN email: this target does not create it.*`,
+		},
+		{
+			name:    "spanner domain",
+			dialect: platform.Spanner,
+			diff:    &difftypes.SchemaDiff{DomainsAdded: difftypes.DomainChanges{{Name: "email", BaseType: "TEXT"}}},
+			wantErr: `spanner: CREATE DOMAIN email: this target does not create it.*`,
+		},
+		{
+			name:    "cockroachdb range",
+			dialect: platform.CockroachDB,
+			diff:    &difftypes.SchemaDiff{RangesAdded: difftypes.RangeChanges{{Name: "span", Subtype: "int4"}}},
+			wantErr: `cockroachdb: CREATE TYPE \.\.\. AS RANGE span: this target does not create it.*`,
+		},
+		{
+			name:    "spanner composite",
+			dialect: platform.Spanner,
+			diff:    &difftypes.SchemaDiff{CompositeTypesAdded: difftypes.CompositeTypeChanges{{Name: "addr"}}},
+			wantErr: `spanner: CREATE TYPE \.\.\. AS \(\.\.\.\) addr: this target does not create it.*`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			nodes, err := planner.GenerateSchemaDiffAST(test.diff, test.dialect)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err, qt.ErrorMatches, `.*`+test.wantErr)
+			c.Assert(nodes, qt.IsNil)
+		})
+	}
+}
+
+// TestPlan_UserTypeCreationsOnTargetsThatHostThem_HappyPath is the control the
+// failure path needs.
+//
+// Each row is a kind a target above refuses, on a target that hosts it. The
+// CockroachDB composite is the row that matters: the three kinds are asked
+// separately because they do not travel together, so a rule that refused every
+// user type on every non-PostgreSQL target would pass the failure path above
+// and fail here.
+func TestPlan_UserTypeCreationsOnTargetsThatHostThem_HappyPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		diff    *difftypes.SchemaDiff
+	}{
+		{
+			name:    "cockroachdb composite",
+			dialect: platform.CockroachDB,
+			diff:    &difftypes.SchemaDiff{CompositeTypesAdded: difftypes.CompositeTypeChanges{{Name: "addr"}}},
+		},
+		{
+			name:    "postgres domain",
+			dialect: platform.Postgres,
+			diff:    &difftypes.SchemaDiff{DomainsAdded: difftypes.DomainChanges{{Name: "email", BaseType: "TEXT"}}},
+		},
+		{
+			name:    "postgres range",
+			dialect: platform.Postgres,
+			diff:    &difftypes.SchemaDiff{RangesAdded: difftypes.RangeChanges{{Name: "span", Subtype: "int4"}}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			nodes, err := planner.GenerateSchemaDiffAST(test.diff, test.dialect)
+			c.Assert(err, qt.IsNil)
+			c.Assert(nodes, qt.HasLen, 1)
+		})
+	}
+}
