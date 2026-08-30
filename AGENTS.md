@@ -1476,6 +1476,38 @@ golangci-lint run ./...
 
 The fix pass can leave second-pass fallout such as unused imports, removed helper functions, or staticcheck suggestions. Clean those manually before considering the lint run complete.
 
+### A closing parenthesis goes on its own line
+
+A call whose arguments begin on a line of their own closes on a line of its own:
+
+```go
+call(arg1, arg2)     // one line, nothing to place
+
+call(                // the shape this repository writes
+	arg1,
+	arg2,
+)
+
+call(                // the shape it refuses
+	arg1,
+	arg2)
+```
+
+Both are legal Go and `gofmt` keeps either, so no linter reports the second --
+measured against golangci-lint's registry rather than assumed. The cost is paid
+in review instead: adding an argument to the last line edits two lines rather
+than one, so the diff marks a line nobody meant to change and the reader has to
+work out that the parenthesis merely moved.
+
+Two shapes are not this rule. A call that merely wraps, `f(a,\n\tb)`, has its
+first argument on the opening line, so the parenthesis has nowhere else to go. A
+spread argument cannot take a trailing comma at all.
+
+**Re-read the diff after any mechanical call-site rewrite.** `gofmt -r` re-wraps
+what it rewrites: a rule dropping one argument collapsed forty-three calls into
+the refused shape in a single pass, and each one reached review as a line that
+had been touched for no reason.
+
 ### A module is covered because it exists, not because someone listed it
 
 This repository holds two Go modules — the root and
