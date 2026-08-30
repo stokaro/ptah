@@ -1798,8 +1798,8 @@
         "/versioned/overview/"
       ],
       "inboundLinks": [],
-      "visibleWords": 293,
-      "sourceBytes": 5905
+      "visibleWords": 339,
+      "sourceBytes": 7799
     },
     {
       "path": "docs/site/src/content/docs/inference/concepts/consistency.md",
@@ -4031,7 +4031,7 @@
       "sourceBytes": 5899
     },
     {
-      "path": "docs/site/src/content/docs/schema/document.md",
+      "path": "docs/site/src/content/docs/schema/document.mdx",
       "route": "/schema/document/",
       "title": "Generate schema documentation",
       "description": "Write a desired schema as a Markdown reference or a self-contained HTML page with ptah schema export.",
@@ -4085,11 +4085,11 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 1347,
-      "sourceBytes": 11515
+      "visibleWords": 1352,
+      "sourceBytes": 12691
     },
     {
-      "path": "docs/site/src/content/docs/schema/export.md",
+      "path": "docs/site/src/content/docs/schema/export.mdx",
       "route": "/schema/export/",
       "title": "API schema export",
       "description": "Project a desired schema into OpenAPI or GraphQL contract candidates and review their trust-boundary limitations.",
@@ -4138,8 +4138,8 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 3557,
-      "sourceBytes": 27206
+      "visibleWords": 3613,
+      "sourceBytes": 27744
     },
     {
       "path": "docs/site/src/content/docs/schema/go-annotations.md",
@@ -4243,7 +4243,7 @@
       "sourceBytes": 4188
     },
     {
-      "path": "docs/site/src/content/docs/schema/lineage.md",
+      "path": "docs/site/src/content/docs/schema/lineage.mdx",
       "route": "/schema/lineage/",
       "title": "Trace view column lineage",
       "description": "Run ptah schema lineage to find which base columns each view column and each routine reads, and which tables and columns each routine writes, before dropping or renaming one of them.",
@@ -4284,8 +4284,8 @@
         "/direct/compare-and-drift/",
         "/reference/native-commands/"
       ],
-      "visibleWords": 1798,
-      "sourceBytes": 14787
+      "visibleWords": 1866,
+      "sourceBytes": 16289
     },
     {
       "path": "docs/site/src/content/docs/schema/orm-and-external.md",
@@ -4424,7 +4424,7 @@
       "sourceBytes": 34305
     },
     {
-      "path": "docs/site/src/content/docs/schema/security.md",
+      "path": "docs/site/src/content/docs/schema/security.mdx",
       "route": "/schema/security/",
       "title": "Report schema security findings",
       "description": "Run ptah schema security over a live database to review privileges, owners, roles and tables with no row policy, and gate a pull request on the result.",
@@ -4468,11 +4468,11 @@
         "/schema/visualize/",
         "/testing/ci/"
       ],
-      "visibleWords": 1057,
-      "sourceBytes": 10152
+      "visibleWords": 1147,
+      "sourceBytes": 11822
     },
     {
-      "path": "docs/site/src/content/docs/schema/serve.md",
+      "path": "docs/site/src/content/docs/schema/serve.mdx",
       "route": "/schema/serve/",
       "title": "Serve a live schema view",
       "description": "Run ptah schema serve to watch in a browser how a live database differs from the desired schema while you change it.",
@@ -4515,8 +4515,8 @@
       "inboundLinks": [
         "/reference/native-commands/"
       ],
-      "visibleWords": 1386,
-      "sourceBytes": 10506
+      "visibleWords": 1385,
+      "sourceBytes": 11917
     },
     {
       "path": "docs/site/src/content/docs/schema/sql.md",
@@ -4564,7 +4564,7 @@
       "sourceBytes": 6284
     },
     {
-      "path": "docs/site/src/content/docs/schema/stats.md",
+      "path": "docs/site/src/content/docs/schema/stats.mdx",
       "route": "/schema/stats/",
       "title": "Count schema objects",
       "description": "Run ptah schema stats to emit one OpenMetrics gauge per object kind in a live database and feed it to a metrics collector.",
@@ -4605,8 +4605,8 @@
         "/schema/lineage/",
         "/schema/security/"
       ],
-      "visibleWords": 574,
-      "sourceBytes": 7631
+      "visibleWords": 622,
+      "sourceBytes": 8010
     },
     {
       "path": "docs/site/src/content/docs/schema/validate-and-format.md",
@@ -4656,7 +4656,7 @@
       "sourceBytes": 7428
     },
     {
-      "path": "docs/site/src/content/docs/schema/visualize.md",
+      "path": "docs/site/src/content/docs/schema/visualize.mdx",
       "route": "/schema/visualize/",
       "title": "Visualize the schema",
       "description": "Render entity-relationship diagrams from the desired schema as Mermaid, DOT, or SVG with ptah viz.",
@@ -4707,8 +4707,8 @@
         "/schema/security/",
         "/schema/stats/"
       ],
-      "visibleWords": 734,
-      "sourceBytes": 6793
+      "visibleWords": 908,
+      "sourceBytes": 11125
     },
     {
       "path": "docs/site/src/content/docs/schema/work-with-a-source.mdx",
@@ -5287,7 +5287,7 @@
       "sourceBytes": 9083
     },
     {
-      "path": "docs/site/src/content/docs/testing/migrations-and-schema.md",
+      "path": "docs/site/src/content/docs/testing/migrations-and-schema.mdx",
       "route": "/testing/migrations-and-schema/",
       "title": "Test migrations and schemas",
       "description": "Assert migration and schema behavior with declarative test cases against a throwaway database.",
@@ -5331,8 +5331,8 @@
         "/testing/ci/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 775,
-      "sourceBytes": 6551
+      "visibleWords": 964,
+      "sourceBytes": 9818
     },
     {
       "path": "docs/site/src/content/docs/versioned/apply.md",
@@ -5435,7 +5435,7 @@
       "sourceBytes": 9941
     },
     {
-      "path": "docs/site/src/content/docs/versioned/generate.md",
+      "path": "docs/site/src/content/docs/versioned/generate.mdx",
       "route": "/versioned/generate/",
       "title": "Generate migrations",
       "description": "Plan and generate migration files from the difference between your desired schema and a live database.",
@@ -5492,8 +5492,8 @@
         "/versioned/lint/",
         "/versioned/overview/"
       ],
-      "visibleWords": 1322,
-      "sourceBytes": 12562
+      "visibleWords": 1412,
+      "sourceBytes": 14232
     },
     {
       "path": "docs/site/src/content/docs/versioned/import.md",

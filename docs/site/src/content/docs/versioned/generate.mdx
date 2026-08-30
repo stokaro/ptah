@@ -18,6 +18,11 @@ owns:
   - cli-ptah-migrations-plan
 ---
 
+import ProductPreview from '../../../components/ProductPreview.astro';
+import migrationSafetyReport from '../../../assets/migration-safety-report.png';
+
+export const migrationSafetySample = `${import.meta.env.BASE_URL}samples/reports/migration-safety-report.html`;
+
 A migration pair has two origins. Ptah can derive it from the difference
 between a desired schema and a live database, or you can write it with
 `ptah migrations create` when a change is not representable as schema state.
@@ -138,13 +143,6 @@ The version prefix is a timestamp; `--name` becomes the description in the
 file name. Ptah writes both directions — the generated down file reverses the
 up file:
 
-Pass `--report json` to publish a machine-readable safety artifact with each
-generated pair. `generate` writes
-`<version>_<name>.safety.json` beside the up and down files and prints its path
-as `REPORT: ...`; unlike `plan --report json`, it does not write the JSON to
-standard output. HTML reports follow the same rule with a `.safety.html`
-suffix.
-
 ```sql
 -- Migration rollback
 -- Direction: DOWN
@@ -152,6 +150,36 @@ suffix.
 -- WARNING: This will delete all data!
 DROP TABLE IF EXISTS "users";
 ```
+
+Pass `--report json` to publish a machine-readable safety artifact with each
+generated pair. `generate` writes
+`<version>_<name>.safety.json` beside the up and down files and prints its path
+as `REPORT: ...`; unlike `plan --report json`, it does not write the JSON to
+standard output. HTML reports follow the same rule with a `.safety.html`
+suffix.
+
+### Review the HTML safety report
+
+The deterministic fixture starts with a SQLite table that has a legacy column,
+then asks Ptah to remove that column. SQLite performs the change as a physical
+table rebuild, so the report retains the destructive verdict, affected
+statement, and reason beside the generated migration pair.
+
+<ProductPreview
+  id="migration-safety-report"
+  src={migrationSafetyReport}
+  alt="A Ptah migration safety HTML report showing a destructive SQLite table rebuild, its affected statement, and the reason for the classification."
+  caption="A real `migrations generate --report html` artifact for a destructive SQLite table rebuild."
+  notice="The highest severity, affected statement, and reason are visible together, so a reviewer does not need to infer risk from generated SQL alone."
+  fullSizeHref={migrationSafetySample}
+  downloadHref={migrationSafetySample}
+  sourceHref={migrationSafetySample}
+  reproduce={`ptah schema apply --schema-file docs/site/fixtures/product-output/current.sql --db-url sqlite://current.db --auto-approve
+ptah migrations generate --schema-file docs/site/fixtures/product-output/schema.sql --db-url sqlite://current.db --migrations-dir ./generated --name remove_legacy_inventory --report html`}
+/>
+
+The full-size action opens the versioned HTML artifact. The screenshot is only
+the focused first view; the downloadable report is the review record.
 
 When the desired schema and the database already match, `generate` writes
 nothing and exits `0`.

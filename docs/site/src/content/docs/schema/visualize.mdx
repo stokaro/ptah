@@ -1,0 +1,270 @@
+---
+title: Visualize the schema
+description: Render entity-relationship diagrams from the desired schema as Mermaid, DOT, or SVG with ptah viz.
+type: how-to
+audience:
+  - "schema-author"
+readerQuestion: "How do I generate and inspect a schema diagram?"
+goal: "Generate and inspect a schema diagram."
+sourceOfTruth:
+  - "cmd/viz"
+  - "internal/schemaviz"
+generated: false
+searchAliases:
+  - "visualize schema"
+overlaps:
+  - "/schema/document/"
+  - "/schema/serve/"
+disposition: keep
+owns:
+  - cli-ptah-viz
+---
+
+import ProductPreview from '../../../components/ProductPreview.astro';
+import relationshipsLight from '../../../assets/schema-viz-relationships-light.svg';
+import relationshipsDark from '../../../assets/schema-viz-relationships-dark.svg';
+import columnsDiagram from '../../../assets/schema-viz-columns.svg';
+import excludedDiagram from '../../../assets/schema-viz-excluded.svg';
+import securityLight from '../../../assets/schema-viz-security-light.svg';
+import securityDark from '../../../assets/schema-viz-security-dark.svg';
+
+export const visualizeSamples = `${import.meta.env.BASE_URL}samples/visualize/`;
+
+`ptah viz` currently reads **Go annotations only**. It does not accept a schema
+file or database URL. Point it at annotated models to write Mermaid `erDiagram`,
+Graphviz DOT, or SVG output; use [schema export](../document/) for a
+source-neutral HTML diagram.
+
+Mermaid is the default. This rendered diagram is built from the exact Mermaid
+stdout produced by the command below:
+
+<ProductPreview
+  id="schema-viz-relationships"
+  src={relationshipsLight}
+  darkSrc={relationshipsDark}
+  alt="A four-table entity relationship diagram: customers place orders, orders contain order items, and each order item refers to a product."
+  caption="Default Mermaid output rendered from the compact four-table documentation fixture."
+  notice="The default keeps only table names and relationships, so the three foreign-key paths remain readable in the first viewport."
+  fullSizeHref={relationshipsLight.src}
+  downloadHref={relationshipsLight.src}
+  sourceHref={`${visualizeSamples}schema-relationships.mmd`}
+  reproduce="ptah viz --root-dir docs/site/fixtures/schema-ui/internal/models > schema-relationships.mmd"
+/>
+
+Prerequisites: a built `ptah` binary. Graphviz `dot` is needed only when Ptah
+itself renders `--format svg`; Mermaid and DOT source need no extra tool.
+
+## Render a diagram
+
+From a Ptah checkout, reproduce the compact diagram above:
+
+```bash
+ptah viz --root-dir docs/site/fixtures/schema-ui/internal/models
+```
+
+Expected output includes:
+
+```text
+erDiagram
+  customers {
+  }
+  order_items {
+  }
+  orders ||--o{ order_items : "fk_order_items_order_id"
+  products ||--o{ order_items : "fk_order_items_product_id"
+  customers ||--o{ orders : "fk_orders_customer_id"
+```
+
+The default keeps empty entity blocks and the foreign-key edges. Add
+`--include-columns` when the field-level rows matter. Point `--root-dir` at
+your own annotated models the same way.
+
+## Compare real variants
+
+<ProductPreview
+  id="schema-viz-columns"
+  src={columnsDiagram}
+  alt="The same four-table schema diagram with primary keys, foreign keys, and ordinary columns inside each table."
+  caption="Adding `--include-columns` turns the relationship map into a field-level review artifact."
+  notice="Primary-key and foreign-key markers make the join columns explicit without expanding to the seven-table stress fixture."
+  fullSizeHref={columnsDiagram.src}
+  downloadHref={columnsDiagram.src}
+  sourceHref={`${visualizeSamples}schema-columns.mmd`}
+  reproduce="ptah viz --root-dir docs/site/fixtures/schema-ui/internal/models --include-columns > schema-columns.mmd"
+  variants={[
+    {
+      id: 'excluded-tables',
+      label: 'Exclude the products table',
+      src: excludedDiagram,
+      alt: 'A compact relationship-only diagram where customers, orders, and order items remain after products is excluded.',
+      fullSizeHref: excludedDiagram.src,
+      downloadHref: excludedDiagram.src,
+      sourceHref: `${visualizeSamples}schema-excluded.mmd`,
+    },
+  ]}
+/>
+
+The excluded-table artifact comes from:
+
+```bash
+ptah viz --root-dir docs/site/fixtures/schema-ui/internal/models \
+  --exclude-tables products
+```
+
+## Choose an output format
+
+| Format | Use when |
+| --- | --- |
+| Mermaid | You want Markdown-friendly diagrams. |
+| DOT | You want Graphviz source for another renderer. |
+| SVG | You want a committed image artifact. |
+
+```bash
+ptah viz --root-dir ./models --format dot --include-columns > schema.dot
+ptah viz --root-dir ./models --format svg --include-columns --theme dark > schema.svg
+```
+
+For the exact compact fixture, download the generated
+<a href={`${visualizeSamples}schema.dot`} download>DOT source</a> or
+<a href={`${visualizeSamples}schema-dot.svg`} download>Ptah-rendered SVG</a>. The Mermaid sources
+and rendered SVGs are available from the preview actions above, so inspecting an
+artifact does not require browsing the repository.
+
+DOT output starts with `digraph ptah_schema`. SVG output shells out to
+Graphviz `dot`; `--theme` selects `light` (default) or `dark` colors.
+
+## Shape the diagram
+
+- `--include-columns` adds each table's columns with primary-key and
+  foreign-key markers. Without it, the diagram shows only tables and
+  relationships.
+- `--exclude-tables` takes comma-separated table names to omit, which keeps
+  join tables or audit tables from drowning the interesting edges:
+
+```bash
+ptah viz --root-dir ./models --exclude-tables task_comments,task_tags
+```
+
+## Mark where the security findings are
+
+`--security` runs the [schema security rules](../../reference/native-commands/#schema-security-findings)
+over the same schema and marks the tables they attach to, so the diagram shows
+where the findings are instead of sending the reader to a separate report. For
+the findings as a report over a live database, with the codes a rule reports and
+a `--fail-on` gate, use
+[`ptah schema security`](../security/):
+
+```bash
+ptah viz --root-dir docs/site/fixtures/schema-ui/internal/models \
+  --format svg --include-columns --security --dialect postgres
+```
+
+<ProductPreview
+  id="schema-viz-security"
+  src={securityLight}
+  darkSrc={securityDark}
+  alt="A schema diagram where orders has warning findings PRV01 and PRV03, products has informational PRV01, and the foreign-key relationships remain visible."
+  caption="Real `ptah viz --security` output locates table findings; comments in the source retain findings that have no table node."
+  notice="Orders carries two codes at warning severity, products carries an informational code, and the DOT source names the unattached SECURITY DEFINER routine finding. The full security report remains authoritative."
+  fullSizeHref={securityLight.src}
+  downloadHref={`${visualizeSamples}schema-security.svg`}
+  sourceHref={`${visualizeSamples}schema-security.dot`}
+  reproduce="ptah viz --root-dir docs/site/fixtures/schema-ui/internal/models --format svg --include-columns --security --dialect postgres > schema-security.svg"
+/>
+
+Legend: amber is `warning`; blue is `info`; the neutral nodes have no attached
+finding. The diagram locates findings, while
+[`ptah schema security`](../security/) provides the complete messages,
+suggestions, skipped-rule evidence, and gateable exit code.
+
+A marked node is drawn in its severity's color and carries a row naming the
+codes:
+
+```text
+  "audit_log" [label=<
+    <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#b45309">
+      <TR><TD BGCOLOR="#e2e8f0"><FONT COLOR="#0f172a"><B>audit_log</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#b45309">warning: PRV03</FONT></TD></TR>
+    </TABLE>
+  >];
+```
+
+Where a node is found by two rules, the row lists both codes and the color is
+the worse severity.
+
+`--dialect` (default `postgres`) decides which rules can run, and
+`--server-version` names the server that dialect stands for. Both belong to
+`ptah viz`. [`ptah schema security`](../security/) registers neither and takes
+its dialect from the database `--db-url` names.
+
+Measured on this tree, the one capability a rule reads — row-level security —
+varies by dialect and not within any release line, so the version changes no
+answer. It is read so the rules see the target the operator named rather
+than the dialect default. A rule that cannot be answered on the target is named
+in a comment rather than passed over:
+
+```text
+  // PRV01 not checked here: the target does not model row-level security
+```
+
+Findings about objects an entity diagram has no node for — a routine, a schema —
+are written the same way, so the diagram never shows three of five findings
+without saying so:
+
+```text
+  // routine escalate: info PRV02
+```
+
+**Mermaid carries the annotations as comments.** `erDiagram` has neither
+per-entity styling nor a display name, so a mark cannot be drawn on the node
+there. The `%%` lines beside each entity carry every finding, and `--format dot`
+or `--format svg` is what draws them.
+
+## The committed example
+
+[`examples/viz`](https://github.com/stokaro/ptah/tree/master/examples/viz)
+keeps generated artifacts in the repository so diagram output stays reviewable:
+
+![A larger Ptah-generated stress diagram showing organizations, users, projects, tasks, comments, and tags with their columns and foreign-key relationships.](../../../../../../examples/viz/schema.svg)
+
+Use this full-size stress fixture to review dense layouts; the compact fixture
+above remains the primary inline example.
+
+| File | Purpose |
+| --- | --- |
+| `schema.sql` | The SQLite input schema. |
+| `models/schema.go` | Annotated Go model generated from it by `ptah introspect`. |
+| `schema.mmd` | Mermaid `erDiagram` output. |
+| `schema.dot` | Graphviz DOT output. |
+| `schema.svg` | Dark-theme SVG rendered through Graphviz. |
+
+After regenerating, compare the committed artifacts:
+
+```bash
+git diff -- examples/viz/schema.mmd examples/viz/schema.dot examples/viz/schema.svg
+```
+
+The example should show a connected schema with readable table names,
+relationships, and columns. A diagram that renders but loses relationships is
+a bug in the visualization path, not an acceptable example.
+
+## Failure modes
+
+- `--format svg` without Graphviz installed fails with
+  `Graphviz dot is required for --format svg; install graphviz or use --format dot`.
+  See [Troubleshooting](../../operate/troubleshooting/).
+
+## Limitations
+
+- `ptah viz` reads Go annotations only (`--root-dir`); it does not accept
+  `--schema-file` or a database URL. To diagram a live database or a SQL
+  schema file, generate annotated models first with `ptah introspect` — the
+  committed example does exactly that. For a source-neutral HTML reference
+  with an embedded diagram, use
+  [`ptah schema export --to html`](../document/) instead.
+
+## Next steps
+
+- Diagramming a database that exists outside Ptah? [Adopt an existing database](../../start/adopt-an-existing-database/) covers `ptah introspect`.
+- Modeling the schema the diagram should follow? [Go annotations](../go-annotations/).
+- Projecting the schema into API formats instead? [API schema export](../export/).

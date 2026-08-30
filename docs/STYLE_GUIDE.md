@@ -567,8 +567,15 @@ a reader recognizes on sight and cannot reconstruct from a paragraph.
   command. Do not rebuild those controls ad hoc on each page.
 - `docs/site/visual-output-inventory.json` records every product capability
   that creates visual, browser, report, contract, lineage, or metrics output.
-  A missing proof remains `phase4`; do not fill the cell with an explanatory
-  reconstruction.
+  Use `verified` only when the real output, fixture, generator, reader page,
+  versioned artifact, and acceptance check are present. A missing proof remains
+  `phase4`; do not fill the cell with an explanatory reconstruction. Lineage is
+  the deliberate exception recorded as `proofType: explanatory`: the page must
+  label the diagram as explanatory and keep Ptah's real text and JSON beside it.
+- Regenerate the product fixtures with `PTAH_BIN=../../bin/ptah npm run
+  assets:write` from `docs/site`. Review the raster diff rather than making it a
+  cross-platform byte baseline; the manifest-backed browser gate owns stable
+  geometry and interaction assertions.
 - `check-visual-snapshots.mjs` derives its routes and proof assertions from the
   visual manifest. It captures mobile and desktop pages in both light and dark
   themes, and checks the declared visual's identity, placement, caption,

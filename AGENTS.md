@@ -1165,6 +1165,10 @@ are regenerated from committed fixtures;
 contract. `check-accessibility.mjs` runs axe and keyboard controls at mobile
 and desktop widths, while `check-visual-snapshots.mjs` produces review
 artifacts without treating platform-dependent pixels as a stable baseline.
+Run `PTAH_BIN=../../bin/ptah npm run assets:write` from `docs/site` after
+building `bin/ptah` whenever a visual-output fixture, generator, or owning page
+changes. Record a missing graphical product output as explanatory rather than
+presenting an authored diagram as something Ptah emitted.
 
 ### The quick starts run in CI
 

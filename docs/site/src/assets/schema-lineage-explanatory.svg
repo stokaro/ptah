@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 390" role="img" aria-labelledby="title description">
+  <title id="title">Explanatory map of schema lineage dependencies</title>
+  <desc id="description">Orders customer_id feeds order_totals buyer, orders total_cents feeds order_totals cents, and the join-backed customer_orders view remains undecided.</desc>
+  <style>
+    :root { color-scheme: light dark; }
+    .surface { fill: #f8fafc; stroke: #94a3b8; }
+    .heading { fill: #0f172a; font: 700 22px system-ui, sans-serif; }
+    .label { fill: #1e293b; font: 600 17px system-ui, sans-serif; }
+    .meta { fill: #475569; font: 15px system-ui, sans-serif; }
+    .edge { fill: none; stroke: #0284c7; stroke-width: 3; marker-end: url(#arrow); }
+    .unknown { fill: none; stroke: #d97706; stroke-width: 3; stroke-dasharray: 9 7; marker-end: url(#unknown-arrow); }
+    .badge { fill: #e0f2fe; stroke: #38bdf8; }
+    .badge-text { fill: #075985; font: 700 14px system-ui, sans-serif; letter-spacing: 0.06em; }
+    @media (prefers-color-scheme: dark) {
+      .surface { fill: #172033; stroke: #64748b; }
+      .heading, .label { fill: #f1f5f9; }
+      .meta { fill: #cbd5e1; }
+      .badge { fill: #0c4a6e; stroke: #38bdf8; }
+      .badge-text { fill: #e0f2fe; }
+      .edge { stroke: #38bdf8; }
+      .unknown { stroke: #fbbf24; }
+    }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#0284c7"/></marker>
+    <marker id="unknown-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#d97706"/></marker>
+  </defs>
+  <rect width="1000" height="390" rx="22" class="surface"/>
+  <rect x="34" y="28" width="198" height="32" rx="16" class="badge"/>
+  <text x="133" y="50" text-anchor="middle" class="badge-text">EXPLANATORY DIAGRAM</text>
+  <text x="34" y="96" class="heading">How to read the real lineage rows below</text>
+
+  <rect x="45" y="135" width="270" height="82" rx="14" class="surface"/>
+  <text x="65" y="168" class="label">orders.customer_id</text>
+  <text x="65" y="196" class="meta">base table column</text>
+  <rect x="685" y="135" width="270" height="82" rx="14" class="surface"/>
+  <text x="705" y="168" class="label">order_totals.buyer</text>
+  <text x="705" y="196" class="meta">resolved view column</text>
+  <path d="M315 176 C430 176 560 176 685 176" class="edge"/>
+  <text x="500" y="159" text-anchor="middle" class="meta">FEEDS</text>
+
+  <rect x="45" y="255" width="270" height="82" rx="14" class="surface"/>
+  <text x="65" y="288" class="label">customers + orders</text>
+  <text x="65" y="316" class="meta">join has two sources</text>
+  <rect x="685" y="255" width="270" height="82" rx="14" class="surface"/>
+  <text x="705" y="288" class="label">customer_orders</text>
+  <text x="705" y="316" class="meta">reported under undecided</text>
+  <path d="M315 296 C430 296 560 296 685 296" class="unknown"/>
+  <text x="500" y="279" text-anchor="middle" class="meta">NOT SILENTLY OMITTED</text>
+</svg>

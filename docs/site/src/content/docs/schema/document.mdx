@@ -17,6 +17,13 @@ overlaps:
 disposition: keep
 ---
 
+import ProductPreview from '../../../components/ProductPreview.astro';
+import schemaDocumentFull from '../../../assets/schema-document-full.png';
+import schemaDocumentHero from '../../../assets/schema-document.png';
+import schemaDocumentTable from '../../../assets/schema-document-table.png';
+
+export const schemaDocumentSample = `${import.meta.env.BASE_URL}samples/schema-document.html`;
+
 `ptah schema export --to markdown` and `ptah schema export --to html` write a
 desired schema as a document a person reads: one section per table with its
 columns, types, nullability, defaults, keys and comments, followed by that
@@ -32,11 +39,32 @@ Prerequisites: an installed `ptah` binary ([Install Ptah](../../start/install/))
 and a desired schema. Nothing else is needed — Ptah lays out the entity diagram
 in the HTML output itself, so Graphviz is not involved.
 
-![A generated Ptah schema reference with a table-of-contents sidebar, summary counts, an entity diagram, and per-table column and index details.](../../../assets/schema-document.png)
+<ProductPreview
+  id="schema-document"
+  src={schemaDocumentHero}
+  alt="The top of a generated Ptah schema reference with table navigation, four summary counts, and a four-table entity diagram."
+  caption="Real self-contained HTML output generated from the four-table documentation fixture."
+  notice="The first screen combines navigation, counts, and the relationship map; the table-detail variant shows the column-level lookup below it."
+  fullSizeHref={schemaDocumentFull.src}
+  downloadHref={schemaDocumentSample}
+  sourceHref={schemaDocumentSample}
+  reproduce="ptah schema export --to html --root-dir docs/site/fixtures/schema-ui/internal/models --out schema-document.html"
+  variants={[
+    {
+      id: 'table-detail',
+      label: 'One table and its columns',
+      src: schemaDocumentTable,
+      alt: 'The orders table card in generated Ptah documentation, including its columns, key markers, defaults, references, and index.',
+      fullSizeHref: schemaDocumentFull.src,
+      downloadHref: schemaDocumentSample,
+      sourceHref: schemaDocumentSample,
+    },
+  ]}
+/>
 
-The screenshot comes from the deterministic two-table fixture used by the
-asset generator. [Download the same self-contained HTML file](https://raw.githubusercontent.com/stokaro/ptah/master/docs/site/public/samples/schema-document.html)
-to inspect its navigation, diagram, and table cards without running a server.
+The full-size action opens the complete generated page. The download is the
+same versioned, self-contained HTML file, so you can inspect its navigation,
+diagram, and table cards without running a server.
 
 ## Starting state
 

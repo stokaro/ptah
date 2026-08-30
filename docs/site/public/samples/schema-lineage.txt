@@ -1,0 +1,6 @@
+SOURCE              FEEDS               KIND
+orders.customer_id  order_totals.buyer  view
+orders.total_cents  order_totals.cents  view
+
+1 view(s) not fully resolved:
+  customer_orders: the FROM clause names more than one source, so an unqualified column cannot be attributed

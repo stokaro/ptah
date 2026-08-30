@@ -1,0 +1,39 @@
+---
+import { Image } from 'astro:assets';
+
+interface GalleryItem {
+  title: string;
+  description: string;
+  href: string;
+  src: ImageMetadata;
+  darkSrc?: ImageMetadata;
+  alt: string;
+}
+
+interface Props {
+  items: GalleryItem[];
+}
+
+const { items } = Astro.props;
+---
+
+<div class="ptah-output-gallery">
+  {items.map((item) => (
+    <a class="ptah-output-gallery__item" href={item.href}>
+      <figure>
+        {item.darkSrc ? (
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset={item.darkSrc.src} />
+            <Image src={item.src} alt={item.alt} loading="lazy" />
+          </picture>
+        ) : (
+          <Image src={item.src} alt={item.alt} loading="lazy" />
+        )}
+        <figcaption>
+          <strong>{item.title}</strong>
+          <span>{item.description}</span>
+        </figcaption>
+      </figure>
+    </a>
+  ))}
+</div>

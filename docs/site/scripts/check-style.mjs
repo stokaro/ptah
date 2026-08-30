@@ -604,7 +604,20 @@ function bareFlagViolations(lines) {
   // strip mispairs the ticks on such lines and reports flags that are inside
   // a span.
   let inSpan = false;
+  let inReproduceTemplate = false;
   for (const [index, line] of lines.entries()) {
+    // ProductPreview renders `reproduce` inside <pre><code>. Its attribute is
+    // source code even though it sits outside a Markdown fence, so smartypants
+    // never touches the flags. Keep the prose rule out of both one-line string
+    // props and multiline template literals.
+    if (inReproduceTemplate) {
+      if (line.includes('`}')) inReproduceTemplate = false;
+      continue;
+    }
+    if (/\breproduce\s*=/.test(line)) {
+      if (line.includes('{`') && !line.includes('`}')) inReproduceTemplate = true;
+      continue;
+    }
     if (line.trim() === '') {
       inSpan = false;
       continue;
@@ -889,6 +902,15 @@ function selftest() {
     // backtick parity must carry over so this never reports.
     'Integrity checks such as `ptah migrations',
     'validate` and `up --verify-sum` still pass on a clean directory.',
+    '',
+    '<ProductPreview',
+    '  reproduce="ptah migrations plan --dry-run"',
+    '  notice="The command is rendered as code."',
+    '/>',
+    '<ProductPreview',
+    '  reproduce={`ptah migrations generate --report html',
+    'ptah migrations validate --dir ./migrations`}',
+    '/>',
     '',
     // Same prose words, different code spans: different capabilities, and the
     // differing verdicts are legitimate.
