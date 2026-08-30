@@ -107,9 +107,14 @@ done <"$path_list"
 # teststyle reports paths relative to -root, so the temporary root leaves baseline
 # keys unchanged. -baseline must be absolute: the CLI resolves it against the
 # working directory, not against -root.
+#
+# -skip-examples: Example* functions are documentation, and the idiomatic
+# error handling they show is often exactly what a reader should copy, so the
+# declarative-tests rule does not judge them. See AGENTS.md, "Public API Doc
+# Comments And Examples".
 if [ "$mode" = write ]; then
-	GOWORK=off go tool teststyle -baseline "$repo_root/.teststyle-baseline.json" -write-baseline -root "$scan_root"
+	GOWORK=off go tool teststyle -skip-examples -baseline "$repo_root/.teststyle-baseline.json" -write-baseline -root "$scan_root"
 	exit 0
 fi
 
-GOWORK=off go tool teststyle -baseline "$repo_root/.teststyle-baseline.json" -root "$scan_root"
+GOWORK=off go tool teststyle -skip-examples -baseline "$repo_root/.teststyle-baseline.json" -root "$scan_root"
