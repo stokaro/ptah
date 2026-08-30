@@ -155,7 +155,7 @@ breaks the product, which is not true of anything a parallel model holds.
 reviewed by reading. Rejected: the five repairs above were all in code that
 looked right, and a claim about a field is exactly the artifact that goes stale
 without being wrong on the day it is written. Measured against this tree, a
-review-only register would have recorded six fields as rendered that do not.
+review-only register would have recorded six fields as rendered that are not.
 
 **Rendering every field into the SQL and refusing what a target cannot carry.**
 Rejected because it is wrong for most of the surface: a Go struct name, an
@@ -173,7 +173,10 @@ the same shape.
 
 **What gets better.** A field added to the model fails a gate until somebody
 says what it is for. A field that stops rendering fails a gate the day it stops.
-The instrument found six such fields on its first complete run, plus a hang: an
+The instrument found five such fields on its first complete run, and forced a
+sixth question whose answer was a disposition rather than a repair --
+`Index.Concurrently` asks for a non-locking BUILD, which is a fact about adding
+an index to a live table and not about the schema. It also found a hang: an
 unnamed column made the Oracle renderer scan forever without stopping for
 SIGTERM ([#2608](https://github.com/stokaro/ptah/issues/2608)), and an unnamed
 host made three families answer three different ways

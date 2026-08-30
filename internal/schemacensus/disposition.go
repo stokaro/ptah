@@ -24,9 +24,17 @@ const (
 	// the example: it changes what a diff may conclude and nothing else.
 	Comparison Disposition = "comparison"
 
-	// Planning: read while a change set is assembled or ordered, and never
-	// written into DDL. A declared extension dependency decides what has to
-	// exist first; the CREATE statement it orders does not mention it.
+	// Planning: read while a change set is assembled or ordered, and written
+	// into no statement a render produces. A declared extension dependency
+	// decides what has to exist first, and the CREATE statement it orders does
+	// not mention it.
+	//
+	// One entry carries the other half of that sentence and is worth reading
+	// before the category is reused: Index.Concurrently asks that an index be
+	// BUILT without locking, which is a fact about adding it to a live table.
+	// A plan does write it into DDL. A render creates the whole schema from
+	// nothing, has no table to lock, and has neither of the two facts the
+	// decision needs.
 	Planning Disposition = "planning"
 
 	// Derived: computed from other fields by [schemamodel.Finalize] or by a

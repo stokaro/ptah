@@ -48,9 +48,9 @@ exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 297 | reaches rendered SQL on at least one target |
+| `ddl` | 296 | reaches rendered SQL on at least one target |
 | `comparison` | 7 | read when two schemas are compared, and written into no statement |
-| `planning` | 3 | read while a change set is assembled or ordered |
+| `planning` | 4 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
 | `source` | 14 | identifies the source text the declaration was read from |
 | `export` | 9 | a name or shape an exported API document carries |
@@ -58,7 +58,7 @@ exactly one disposition.
 
 ### Fields that should render and do not
 
-6, each recorded against the issue that tracks the repair. The gate
+5, each recorded against the issue that tracks the repair. The gate
 refuses a gap that has started rendering, so a repair fails the build until
 its entry is reclassified.
 
@@ -68,7 +68,6 @@ its entry is reclassified.
 | `schemamodel.Field.Enum` | https://github.com/stokaro/ptah/issues/2611 |
 | `schemamodel.Field.UniqueExpr` | https://github.com/stokaro/ptah/issues/2611 |
 | `schemamodel.Grant.GrantedBy` | https://github.com/stokaro/ptah/issues/2611 |
-| `schemamodel.Index.Concurrently` | https://github.com/stokaro/ptah/issues/2611 |
 | `schemamodel.Table.CustomSQL` | https://github.com/stokaro/ptah/issues/2590 |
 
 ### Every field
@@ -274,7 +273,7 @@ its entry is reclassified.
 | `schemamodel.Hypertable.StructName` | `source` | the Go struct the declaration was read from; the object's own name is its identity |
 | `schemamodel.Hypertable.Table` | `ddl` | — |
 | `schemamodel.Index.Comment` | `ddl` | — |
-| `schemamodel.Index.Concurrently` | `ddl` | — |
+| `schemamodel.Index.Concurrently` | `planning` | asks that the index be BUILT without locking when added to a live table; internal/concurrentindex owns that decision, and only a plan carries it into DDL |
 | `schemamodel.Index.Condition` | `ddl` | — |
 | `schemamodel.Index.Fields` | `ddl` | — |
 | `schemamodel.Index.Granularity` | `ddl` | — |

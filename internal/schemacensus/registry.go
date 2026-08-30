@@ -206,7 +206,7 @@ var registry = []Entry{
 	{Field: "schemamodel.Hypertable.StructName", Disposition: SourceOrigin, Reason: "the Go struct the declaration was read from; the object's own name is its identity"},
 	{Field: "schemamodel.Hypertable.Table", Disposition: DDL},
 	{Field: "schemamodel.Index.Comment", Disposition: DDL},
-	{Field: "schemamodel.Index.Concurrently", Disposition: DDL, Gap: "https://github.com/stokaro/ptah/issues/2611"},
+	{Field: "schemamodel.Index.Concurrently", Disposition: Planning, Reason: "asks that the index be BUILT without locking when added to a live table; internal/concurrentindex owns that decision, and only a plan carries it into DDL"},
 	{Field: "schemamodel.Index.Condition", Disposition: DDL},
 	{Field: "schemamodel.Index.Fields", Disposition: DDL},
 	{Field: "schemamodel.Index.Granularity", Disposition: DDL},
