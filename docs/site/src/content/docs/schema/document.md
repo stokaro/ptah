@@ -24,9 +24,9 @@ table's indexes and by the enums the schema declares.
 
 Both targets read the desired schema from the same sources `ptah schema render`
 reads. Neither connects to a database, so the document describes what your
-schema sources declare and not what a database currently holds. To
-document a database Ptah does not model yet, generate annotated models first
-with [`ptah introspect`](../../start/adopt-an-existing-database/).
+schema sources declare and not what a database currently holds. To document a
+live database, write an HCL, SQL, or DBML source with
+[`ptah schema inspect`](../../direct/inspect/), review it, then export that file.
 
 Prerequisites: an installed `ptah` binary ([Install Ptah](../../start/install/))
 and a desired schema. Nothing else is needed — Ptah lays out the entity diagram
@@ -265,8 +265,8 @@ Naming both `--root-dir` and `--schema-file` merges them into one
   read: `error: unsupported --to "pdf": expected hcl, openapi-v3, graphql,
   protobuf, markdown, html, or dbml`.
 - `--from db` is refused: `error: --from db is not supported: an export reads a
-  schema definition, not a live database; run "ptah introspect" to generate
-  annotated Go models from a database URL and export those`.
+  schema definition, not a live database; run "ptah schema inspect --db-url
+  <url>" to write HCL, SQL, or DBML, then export that file`.
 - A source that declares no tables, or a filter that matches none, is a warning
   and not an error. The command writes `warning: no tables matched the
   selection` to stderr, writes a document whose body is `No tables are

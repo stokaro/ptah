@@ -1,11 +1,11 @@
 ---
 title: Inspect a database
-description: Read a live database schema as SQL statements, annotated Go models, or Atlas-shaped HCL, SQL, and JSON.
+description: Read a live database schema as SQL, HCL, JSON, DBML, or annotated Go models.
 type: how-to
 audience:
   - "database-engineer"
   - "ci-operator"
-readerQuestion: "How do I read a live database schema as SQL statements, annotated Go models, or Atlas-shaped HCL, SQL, and JSON?"
+readerQuestion: "How do I read a live database schema as SQL, HCL, JSON, DBML, or annotated Go models?"
 goal: "Choose the required output format and inspect a live schema."
 sourceOfTruth:
   - "cmd/schema"
@@ -28,7 +28,7 @@ representation:
 | --- | --- | --- |
 | `ptah db read` | Executable SQL on stdout; connection status on stderr | You want a SQL snapshot you can review or redirect |
 | `ptah introspect` | Annotated Go model files | You want the live schema to become your desired schema |
-| `ptah schema inspect` | HCL, SQL, or JSON without banners | You want machine-readable output for files and scripts |
+| `ptah schema inspect` | HCL, SQL, JSON, or DBML without banners | You want normalized output for files, diagrams, or scripts |
 
 Prerequisites:
 
@@ -211,7 +211,27 @@ the kind of block the document declares for it — `view.<name>` for a view,
 `materialized.<name>` for a materialized view. See
 [Three rules a permission block is written by](../../atlas/schema-commands/#three-rules-a-permission-block-is-written-by).
 
-`--format sql` and `--format json` select SQL and JSON output. `--schemas`,
+`--format sql`, `--format json`, and `--format dbml` select SQL, JSON, and
+DBML output. DBML is useful for relationship diagrams, but it represents a
+narrower set of schema objects than HCL or SQL. Verify a DBML adoption with
+`ptah schema drift --schema-file schema.dbml` before treating it as the
+desired-schema source.
+
+| Output | Can Ptah load it back as a desired schema? | Role |
+| --- | --- | --- |
+| HCL | Yes, with `--schema-file schema.hcl` | Reusable authored source with the broadest static object model. |
+| SQL | Yes, with `--schema-file schema.sql` | Reusable executable DDL within Ptah's parser subset. |
+| DBML | Yes, with `--schema-file schema.dbml` | Reusable source for DBML's narrower table-and-relationship subset. |
+| JSON | No | Diagnostic and automation output; it is not a schema input format. |
+| Go annotations from `ptah introspect` | Yes, with `--root-dir ./models` | Reusable Go-specific source. |
+
+```bash
+ptah schema inspect \
+  --db-url "sqlite://$PWD/app.db" \
+  --format dbml > schema.dbml
+```
+
+`--schemas`,
 `--include`, and `--exclude` select what is inspected, in that order:
 `--schemas` names the database schemas, `--include` picks top-level resources
 inside them with Atlas-style glob patterns, and `--exclude` subtracts from the
@@ -240,15 +260,15 @@ A selection that keeps an object whose dependency it dropped is refused rather
 than rendered, so the output never references an object it omits.
 
 The source does not have to be a live database: `--schema-file` inspects a
-local `.hcl`, `.yaml`, `.yml`, or `.sql` schema file, and `--migrations-dir`
+local `.hcl`, `.yaml`, `.yml`, `.sql`, or `.dbml` schema file, and `--migrations-dir`
 inspects an Atlas-format migration directory. Both require `--dev-url` — a
 disposable database that is reset, has the source materialized on it, and is
 then introspected, so the output is normalized by a real database of the
 target dialect.
 
 `--schema-file` also accepts an `oci://` schema artifact, the same way every
-other command with a `--schema-file` does. That is the flag the scheme belongs
-to, not desired state in general: `schema diff` takes its sources through
+other command with a `--schema-file` does. That is the selector the transport
+belongs to: `schema diff` takes its desired-schema sources through
 `--from`/`--to` and `schema test` through `--root-dir`, and neither resolves
 `oci://` — both answer `unsupported desired-state URL scheme "oci"` or treat
 the value as a path, and neither registers `--plain-http`. The artifact is

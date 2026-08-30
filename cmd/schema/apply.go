@@ -76,12 +76,12 @@ func newSchemaApplyCommand() *cobra.Command {
 		Use:   "apply",
 		Short: "Apply a desired schema directly to a database",
 		Long: `Apply a desired schema directly to the --db-url database, without migration
-files: the live schema is compared with the desired state, the resulting SQL
+files: the live schema is compared with the desired schema, the resulting SQL
 plan is shown, and after confirmation the plan is executed.
 
-The desired state comes from Go annotations (--root-dir), native schema files
-(--schema-file, repeatable; sources merge into one composite schema), or --to
-source URLs (a database URL whose live schema becomes the desired state, or an
+The desired schema comes from native schema files or OCI artifacts
+(--schema-file, repeatable), Go annotations (--root-dir, repeatable), or --to
+source URLs (a database URL whose live schema becomes the desired schema, or an
 Atlas-format migration directory replayed on the required --dev-url dev
 database).
 
@@ -96,7 +96,7 @@ $EDITOR before confirmation, and the edited SQL is what gets applied. With
 executed instead of re-planning, after verifying the database still matches
 the plan's source fingerprint. --schemas and --include positively select what
 both comparison sides see; --exclude subtracts from the result. An --include
-selection that matches neither the target nor the desired state refuses the
+selection that matches neither the target nor the desired schema refuses the
 apply rather than reporting a synced schema for work that did not happen.`,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -106,7 +106,7 @@ apply rather than reporting a synced schema for work that did not happen.`,
 	flags := cmd.Flags()
 	flags.StringVar(&opts.dbURL, applyDBURLFlag, "", "Database URL the schema is applied to (required)")
 	flags.StringArrayVar(&opts.rootDirs, applyRootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple sources merge into one composite schema)")
-	flags.StringArrayVar(&opts.schemaFiles, applySchemaFileFlag, nil, "YAML, HCL, or SQL schema file describing the desired state (repeatable)")
+	flags.StringArrayVar(&opts.schemaFiles, applySchemaFileFlag, nil, "SQL, YAML, HCL, DBML, or OCI desired-schema source (repeatable)")
 	flags.StringArrayVar(&opts.toURLs, applyToFlag, nil, "Desired schema source URL: a database URL or an Atlas-format migration directory (repeatable)")
 	flags.StringVar(&opts.devURL, applyDevURLFlag, "", "Dev database URL the plan is rehearsed on before touching the target; also replays migration-directory --to sources")
 	flags.BoolVar(&opts.dryRun, applyDryRunFlag, false, "Show planned changes without applying them")
@@ -419,15 +419,15 @@ func runSchemaApplyPlanFile(cmd *cobra.Command, opts schemaApplyOptions) error {
 
 // validateSchemaApplyPlanOptions rejects flags that would recompute or
 // reshape the pre-approved plan: the plan file already fixes the desired
-// state, the exclude patterns, and the exact SQL that was reviewed.
+// schema, the exclude patterns, and the exact SQL that was reviewed.
 func validateSchemaApplyPlanOptions(cmd *cobra.Command) error {
 	conflicts := []struct {
 		flag   string
 		reason string
 	}{
-		{applyToFlag, "the plan file already fixes the desired state"},
-		{applyRootDirFlag, "the plan file already fixes the desired state"},
-		{applySchemaFileFlag, "the plan file already fixes the desired state"},
+		{applyToFlag, "the plan file already fixes the desired schema"},
+		{applyRootDirFlag, "the plan file already fixes the desired schema"},
+		{applySchemaFileFlag, "the plan file already fixes the desired schema"},
 		{applyDevURLFlag, "the plan is already computed; there is nothing to re-plan on a dev database"},
 		{applyExcludeFlag, "the plan file records the exclude patterns it was computed with"},
 		{applyEditFlag, "a pre-approved plan must execute exactly as reviewed; recompute the plan with `ptah schema plan` instead"},

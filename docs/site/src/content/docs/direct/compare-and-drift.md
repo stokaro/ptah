@@ -31,13 +31,12 @@ would reconcile the difference without executing anything.
 Prerequisites:
 
 - A `ptah` binary on your machine ([Install Ptah](../../start/install/)).
-- A desired schema, in any source Ptah reads. The examples use annotated Go
-  models under `./models`; `--schema-file schema.sql` reads a file instead, and
-  every command below takes either.
+- A desired schema, in any source Ptah reads. The examples use
+  `--schema-file schema.sql`, so they require no Go toolchain.
 - The URL of the database to check.
 
-The examples start from a synced state: the models in `./models` describe
-exactly the one `users` table in a local SQLite database,
+The examples start from a synced state: `schema.sql` describes exactly the one
+`users` table in a local SQLite database,
 `sqlite://$PWD/app.db`. Substitute your own database URL throughout.
 
 ## Compare: the difference as SQL
@@ -48,7 +47,7 @@ found, and once as the SQL that reconciles them. In the synced starting state
 there is neither:
 
 ```bash
-ptah schema compare --root-dir ./models --db-url "sqlite://$PWD/app.db"
+ptah schema compare --schema-file schema.sql --db-url "sqlite://$PWD/app.db"
 ```
 
 Expected output includes:
@@ -59,11 +58,13 @@ Expected output includes:
 No schema differences detected.
 ```
 
-Now add a column to the model:
+Now add a column to the table declaration in `schema.sql`:
 
-```go
-//ptah:schema:field name="created_at" type="TIMESTAMP"
-CreatedAt *string
+```sql
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY,
+    created_at TIMESTAMP
+);
 ```
 
 The comparison shows the change the database is missing:
@@ -98,7 +99,7 @@ cannot produce.
 severity-classified findings. With the extra model column still in place:
 
 ```bash
-ptah schema drift --root-dir ./models --db-url "sqlite://$PWD/app.db"
+ptah schema drift --schema-file schema.sql --db-url "sqlite://$PWD/app.db"
 ```
 
 Expected output includes:
@@ -202,7 +203,7 @@ When the drift check fails, the next question is what SQL would fix it.
 classification, without writing files or touching the database:
 
 ```bash
-ptah migrations plan --root-dir ./models --db-url "sqlite://$PWD/app.db"
+ptah migrations plan --schema-file schema.sql --db-url "sqlite://$PWD/app.db"
 ```
 
 Expected output includes:
@@ -225,11 +226,12 @@ database (`ptah schema apply --dry-run` is its plan-only form).
 
 ## Schema sources
 
-All three commands resolve the desired schema the same way: `--root-dir` scans
-Go annotations, `--schema-file` adds YAML, HCL, or SQL files, `--schema-cmd`
-runs an external loader, and repeated sources merge into one composite desired
-schema. See [Composite desired schema](../../schema/composite/) for the merge
-rules.
+All three commands resolve the desired schema the same way: `--schema-file`
+adds SQL, YAML, HCL, DBML, or OCI sources; `--root-dir` scans Go annotations;
+and `--schema-cmd` runs an explicit external loader. A configured
+`external_schema` needs `--config ... --allow-external-schema`. Repeated
+sources merge into one composite desired schema. See
+[Composite desired schema](../../schema/composite/) for the merge rules.
 
 ## Diff two arbitrary schema states
 

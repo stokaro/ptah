@@ -391,7 +391,7 @@ func TestSchemaExportRefusesSourcesItCannotRead(t *testing.T) {
 			name: "a live database",
 			args: []string{"--to", "graphql", "--from", "db"},
 			wantErr: `--from db is not supported: an export reads a schema definition, not a live database; ` +
-				`run "ptah introspect" to generate annotated Go models from a database URL and export those`,
+				`run "ptah schema inspect --db-url <url>" to write HCL, SQL, or DBML, then export that file`,
 		},
 		{
 			name:    "a format nothing reads",

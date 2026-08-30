@@ -62,12 +62,12 @@ func NewSchemaTestCommand() *cobra.Command {
 		SilenceUsage: true,
 		Long: `Run declarative YAML schema test cases against a throwaway database.
 
-The desired schema is read from --root-dir and converged through live
-introspection and planning before test steps run. Three source kinds are
-accepted: a directory of Go schema annotations, a schema file (.hcl, .yaml,
-.yml, .sql, or .dbml), and a database URL whose live schema is introspected. Each test file is a YAML
-document with a top-level cases: list. A case is a named, ordered list of steps;
-each step performs exactly one action:
+The desired schema source is selected by --root-dir and converged through live
+introspection and planning before test steps run. Despite the legacy flag name,
+it accepts a schema file (.hcl, .yaml, .yml, .sql, or .dbml), a directory of Go
+annotations, or a database URL whose live schema is introspected. Each test
+file is a YAML document with a top-level cases: list. A case is a named, ordered
+list of steps; each step performs exactly one action:
 
   - exec:   run raw SQL.
   - seed:   apply environment-scoped SQL seed files.

@@ -48,9 +48,9 @@ require a reviewer's signature on the plan with
 ## Native spellings
 
 The native verbs use Ptah's own flag spellings — `--db-url` for the target
-database, and `--root-dir` (Go annotations) or `--schema-file` (HCL, YAML, or
-SQL files; repeatable) for the desired state, matching `schema compare` and
-`migrations generate`:
+database, `--schema-file` (SQL, YAML, HCL, DBML, or OCI sources; repeatable),
+and `--root-dir` (Go annotations; repeatable) for the desired schema. These
+selectors match `schema compare` and `migrations generate`:
 
 ```bash
 ptah schema apply --db-url "sqlite://$PWD/app.db" --schema-file schema.sql --dry-run
@@ -59,7 +59,7 @@ ptah schema apply --db-url "sqlite://$PWD/app.db" --plan change.plan.json
 ```
 
 On the Atlas-compatible surface, `--to` additionally accepts a database URL
-whose live schema becomes the desired state, or an Atlas-format migration
+whose live schema becomes the desired schema, or an Atlas-format migration
 directory replayed on the required `--dev-url` dev database. When `--dev-url`
 is set, the ordered plan is rehearsed on the dev database before the target is
 touched, and a failed rehearsal refuses the apply. The rehearsal runs entirely
@@ -203,8 +203,9 @@ Expected output:
 Schema is synced, no changes to be made.
 ```
 
-When the desired schema also exists as native schema sources — Go models,
-YAML, or HCL — `ptah schema drift` gives the same confirmation with
+When the desired schema also exists as SQL, YAML, HCL, or DBML files, Go
+annotations, or an OCI artifact, `ptah schema drift` gives the same
+confirmation with
 `No schema drift detected.` and exits `0`.
 
 ## Hybrid patterns
@@ -237,9 +238,11 @@ YAML, or HCL — `ptah schema drift` gives the same confirmation with
 
 ## Limitations
 
-- `--schema-file` accepts local schema files (HCL, YAML, or SQL); database
-  URLs and migration directories as the desired schema are explicit gaps of
-  the native verb, and registry `atlas://` plan URLs are rejected.
+- `--schema-file` accepts local SQL, YAML, HCL, and DBML files plus OCI schema
+  artifacts. `--to` accepts a live database or a migration directory; a
+  migration directory requires a disposable `--dev-url`. Direct apply does
+  not register `--schema-cmd` or configured `external_schema` execution.
+- Registry `atlas://` plan URLs are rejected; saved plan files are local.
 - The Atlas-compatible flag surface, `--env` project-config support, and
   transaction modes are documented in
   [Atlas schema commands](../../atlas/schema-commands/#apply-a-desired-schema).

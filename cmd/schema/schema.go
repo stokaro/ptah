@@ -147,7 +147,7 @@ in the separate ptah-compat binary.`,
 	cmd.AddCommand(schemapull.NewSchemaPullCommand())
 	renderCmd := generate.NewGenerateCommand()
 	renderCmd.Short = "Render desired schema SQL"
-	renderCmd.Long = "Render desired schema SQL from Go annotations, YAML, HCL, or SQL schema files, or an external schema command."
+	renderCmd.Long = "Render desired schema SQL from SQL, YAML, HCL, or DBML files, Go annotations, OCI artifacts, or an external schema command."
 	cmd.AddCommand(renderCmd)
 
 	compareCmd := compare.NewCompareCommand()
@@ -257,7 +257,7 @@ reference documentation:
   ptah schema export --to dbml        --root-dir ./models --out schema.dbml
 
 The source is Go annotations under --root-dir by default. Every target except
-hcl also reads a YAML, HCL, or SQL schema file, which --schema-file names as
+hcl also reads a SQL, YAML, HCL, or DBML schema file, which --schema-file names as
 "ptah schema render" does:
 
   ptah schema export --to protobuf --schema-file schema.yaml \
@@ -340,7 +340,7 @@ part of the compatibility state, so all of them must be committed together.`,
 	flags.StringVar(&to, exportToFlag, exportFormatHCL, "Target schema format: "+exportTargetList())
 	flags.StringVar(&rootDir, exportRootDirFlag, ".", "Root directory to scan for Go annotations")
 	flags.StringArrayVar(&schemaFiles, exportSchemaFileFlag, nil,
-		"YAML, HCL, or SQL schema file to export instead of Go annotations (repeatable; "+
+		"SQL, YAML, HCL, or DBML schema file to export instead of Go annotations (repeatable; "+
 			"merged with --root-dir into one composite schema when both are given; "+
 			"not supported for --to hcl)")
 	flags.StringVar(&outPath, exportOutFlag, "", "Output file (optional for openapi-v3/graphql; required for protobuf)")

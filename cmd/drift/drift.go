@@ -74,7 +74,7 @@ func NewDriftCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringArrayVar(&rootDirs, "root-dir", nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
-	cmd.Flags().StringArrayVar(&schemaFiles, "schema-file", nil, "YAML, HCL, or SQL schema file to check drift against instead of, or combined with, Go entities (repeatable; multiple sources merge into one composite schema)")
+	cmd.Flags().StringArrayVar(&schemaFiles, "schema-file", nil, "SQL, YAML, HCL, DBML, or OCI desired-schema source (repeatable; combines with other sources)")
 	cmd.Flags().StringVar(&schemaCmd, "schema-cmd", "", `External program whose stdout is the desired schema; run without a shell, split on whitespace. Example: "go run ./loader"`)
 	cmd.Flags().StringVar(&schemaFormat, "schema-format", "sql", "Format of the --schema-cmd output: sql, hcl, or yaml")
 	cmd.Flags().StringVar(&dbURL, "db-url", "", "Database URL (required). Example: postgres://localhost:5432/dbname")

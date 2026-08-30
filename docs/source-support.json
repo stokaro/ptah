@@ -1548,7 +1548,8 @@
       "invocation": "ptah schema export --to protobuf --schema-file schema.sql",
       "implementationOwner": "cmd/schema",
       "evidence": [
-        "cmd/schema/export_source_test.go"
+        "cmd/schema/export_source_test.go",
+        "scripts/check-source-workflows.sh"
       ],
       "limitations": "",
       "composable": true,
@@ -1561,7 +1562,8 @@
       "invocation": "ptah schema export --to protobuf --schema-file schema.yaml",
       "implementationOwner": "cmd/schema",
       "evidence": [
-        "cmd/schema/export_source_test.go"
+        "cmd/schema/export_source_test.go",
+        "scripts/check-source-workflows.sh"
       ],
       "limitations": "",
       "composable": true,
@@ -1574,7 +1576,8 @@
       "invocation": "ptah schema export --to protobuf --schema-file schema.hcl",
       "implementationOwner": "cmd/schema",
       "evidence": [
-        "cmd/schema/export_source_test.go"
+        "cmd/schema/export_source_test.go",
+        "scripts/check-source-workflows.sh"
       ],
       "limitations": "",
       "composable": true,
@@ -1587,7 +1590,8 @@
       "invocation": "ptah schema export --to protobuf --schema-file schema.dbml",
       "implementationOwner": "cmd/schema",
       "evidence": [
-        "cmd/schema/export_source_test.go"
+        "cmd/schema/export_source_test.go",
+        "scripts/check-source-workflows.sh"
       ],
       "limitations": "",
       "composable": true,
@@ -1600,7 +1604,8 @@
       "invocation": "ptah schema export --to protobuf --root-dir ./models",
       "implementationOwner": "cmd/schema",
       "evidence": [
-        "cmd/schema/export_source_test.go"
+        "cmd/schema/export_source_test.go",
+        "scripts/check-source-workflows.sh"
       ],
       "limitations": "",
       "composable": true,
@@ -1613,7 +1618,8 @@
       "invocation": null,
       "implementationOwner": "cmd/schema",
       "evidence": [
-        "cmd/schema/export_source_test.go"
+        "cmd/schema/export_source_test.go",
+        "scripts/check-source-workflows.sh"
       ],
       "limitations": "",
       "composable": false,
@@ -1626,7 +1632,8 @@
       "invocation": null,
       "implementationOwner": "cmd/schema",
       "evidence": [
-        "cmd/schema/export_source_test.go"
+        "cmd/schema/export_source_test.go",
+        "scripts/check-source-workflows.sh"
       ],
       "limitations": "",
       "composable": false,
@@ -1639,7 +1646,8 @@
       "invocation": "ptah schema export --to protobuf --schema-file oci://registry.example/app:v1",
       "implementationOwner": "cmd/schema",
       "evidence": [
-        "cmd/schema/export_source_test.go"
+        "cmd/schema/export_source_test.go",
+        "scripts/check-source-workflows.sh"
       ],
       "limitations": "",
       "composable": false,
@@ -1652,7 +1660,8 @@
       "invocation": null,
       "implementationOwner": "cmd/schema",
       "evidence": [
-        "cmd/schema/export_source_test.go"
+        "cmd/schema/export_source_test.go",
+        "scripts/check-source-workflows.sh"
       ],
       "limitations": "",
       "composable": false,
@@ -1665,7 +1674,8 @@
       "invocation": null,
       "implementationOwner": "cmd/schema",
       "evidence": [
-        "cmd/schema/export_source_test.go"
+        "cmd/schema/export_source_test.go",
+        "scripts/check-source-workflows.sh"
       ],
       "limitations": "",
       "composable": false,
@@ -1678,7 +1688,8 @@
       "invocation": "ptah schema export --to protobuf --schema-file schema/tables.sql --schema-file schema/views.hcl",
       "implementationOwner": "cmd/schema",
       "evidence": [
-        "cmd/schema/export_source_test.go"
+        "cmd/schema/export_source_test.go",
+        "scripts/check-source-workflows.sh"
       ],
       "limitations": "",
       "composable": true,
@@ -2725,7 +2736,8 @@
       "invocation": "ptah migrations plan --schema-file schema.sql --db-url sqlite://current.db",
       "implementationOwner": "cmd/migrate",
       "evidence": [
-        "cmd/migrate/migrate_test.go"
+        "scripts/check-source-workflows.sh",
+        "cmd/migrate/source_oci_test.go"
       ],
       "limitations": "",
       "composable": true,
@@ -2734,11 +2746,12 @@
     {
       "command": "ptah migrations plan",
       "source": "yaml-file",
-      "status": "supported-missing-command-test",
+      "status": "verified",
       "invocation": "ptah migrations plan --schema-file schema.yaml --db-url sqlite://current.db",
       "implementationOwner": "cmd/migrate",
       "evidence": [
-        "cmd/migrate/migrate_test.go"
+        "scripts/check-source-workflows.sh",
+        "cmd/migrate/source_oci_test.go"
       ],
       "limitations": "",
       "composable": true,
@@ -2747,11 +2760,12 @@
     {
       "command": "ptah migrations plan",
       "source": "hcl-file",
-      "status": "supported-missing-command-test",
+      "status": "verified",
       "invocation": "ptah migrations plan --schema-file schema.hcl --db-url sqlite://current.db",
       "implementationOwner": "cmd/migrate",
       "evidence": [
-        "cmd/migrate/migrate_test.go"
+        "scripts/check-source-workflows.sh",
+        "cmd/migrate/source_oci_test.go"
       ],
       "limitations": "",
       "composable": true,
@@ -2760,11 +2774,12 @@
     {
       "command": "ptah migrations plan",
       "source": "dbml-file",
-      "status": "supported-missing-command-test",
+      "status": "verified",
       "invocation": "ptah migrations plan --schema-file schema.dbml --db-url sqlite://current.db",
       "implementationOwner": "cmd/migrate",
       "evidence": [
-        "cmd/migrate/migrate_test.go"
+        "scripts/check-source-workflows.sh",
+        "cmd/migrate/source_oci_test.go"
       ],
       "limitations": "",
       "composable": true,
@@ -2777,7 +2792,8 @@
       "invocation": "ptah migrations plan --root-dir ./models --db-url sqlite://current.db",
       "implementationOwner": "cmd/migrate",
       "evidence": [
-        "cmd/migrate/migrate_test.go"
+        "scripts/check-source-workflows.sh",
+        "cmd/migrate/source_oci_test.go"
       ],
       "limitations": "",
       "composable": true,
@@ -2790,7 +2806,8 @@
       "invocation": "ptah migrations plan --schema-cmd ./load-schema --schema-format sql --db-url sqlite://current.db",
       "implementationOwner": "cmd/migrate",
       "evidence": [
-        "cmd/migrate/migrate_test.go"
+        "scripts/check-source-workflows.sh",
+        "cmd/migrate/source_oci_test.go"
       ],
       "limitations": "",
       "composable": true,
@@ -2799,11 +2816,12 @@
     {
       "command": "ptah migrations plan",
       "source": "configured-external",
-      "status": "supported-missing-command-test",
+      "status": "verified",
       "invocation": "ptah migrations plan --config ptah.yaml --allow-external-schema --db-url sqlite://current.db",
       "implementationOwner": "cmd/migrate",
       "evidence": [
-        "cmd/migrate/migrate_test.go"
+        "scripts/check-source-workflows.sh",
+        "cmd/migrate/source_oci_test.go"
       ],
       "limitations": "",
       "composable": true,
@@ -2812,11 +2830,12 @@
     {
       "command": "ptah migrations plan",
       "source": "oci-artifact",
-      "status": "supported-missing-command-test",
+      "status": "verified",
       "invocation": "ptah migrations plan --schema-file oci://registry.example/app:v1 --db-url sqlite://current.db",
       "implementationOwner": "cmd/migrate",
       "evidence": [
-        "cmd/migrate/migrate_test.go"
+        "scripts/check-source-workflows.sh",
+        "cmd/migrate/source_oci_test.go"
       ],
       "limitations": "",
       "composable": false,
@@ -2829,7 +2848,8 @@
       "invocation": "ptah migrations plan --schema-file desired.sql --db-url sqlite://current.db",
       "implementationOwner": "cmd/migrate",
       "evidence": [
-        "cmd/migrate/migrate_test.go"
+        "scripts/check-source-workflows.sh",
+        "cmd/migrate/source_oci_test.go"
       ],
       "limitations": "The live database supplies the current state through --db-url.",
       "composable": false,
@@ -2842,7 +2862,8 @@
       "invocation": null,
       "implementationOwner": "cmd/migrate",
       "evidence": [
-        "cmd/migrate/migrate_test.go"
+        "scripts/check-source-workflows.sh",
+        "cmd/migrate/source_oci_test.go"
       ],
       "limitations": "",
       "composable": false,
@@ -2851,11 +2872,12 @@
     {
       "command": "ptah migrations plan",
       "source": "composite-source",
-      "status": "supported-missing-command-test",
+      "status": "verified",
       "invocation": "ptah migrations plan --schema-file schema/tables.sql --schema-file schema/views.hcl --db-url sqlite://current.db",
       "implementationOwner": "cmd/migrate",
       "evidence": [
-        "cmd/migrate/migrate_test.go"
+        "scripts/check-source-workflows.sh",
+        "cmd/migrate/source_oci_test.go"
       ],
       "limitations": "",
       "composable": true,
@@ -2868,7 +2890,8 @@
       "invocation": "ptah migrations generate --schema-file schema.sql --db-url sqlite://current.db --migrations-dir ./migrations --name canonical",
       "implementationOwner": "cmd/migrate",
       "evidence": [
-        "cmd/migrate/generate_test.go"
+        "scripts/check-source-workflows.sh",
+        "cmd/migrate/source_oci_test.go"
       ],
       "limitations": "",
       "composable": true,
@@ -2877,11 +2900,12 @@
     {
       "command": "ptah migrations generate",
       "source": "yaml-file",
-      "status": "supported-missing-command-test",
+      "status": "verified",
       "invocation": "ptah migrations generate --schema-file schema.yaml --db-url sqlite://current.db --migrations-dir ./migrations --name canonical",
       "implementationOwner": "cmd/migrate",
       "evidence": [
-        "cmd/migrate/generate_test.go"
+        "scripts/check-source-workflows.sh",
+        "cmd/migrate/source_oci_test.go"
       ],
       "limitations": "",
       "composable": true,
@@ -2890,11 +2914,12 @@
     {
       "command": "ptah migrations generate",
       "source": "hcl-file",
-      "status": "supported-missing-command-test",
+      "status": "verified",
       "invocation": "ptah migrations generate --schema-file schema.hcl --db-url sqlite://current.db --migrations-dir ./migrations --name canonical",
       "implementationOwner": "cmd/migrate",
       "evidence": [
-        "cmd/migrate/generate_test.go"
+        "scripts/check-source-workflows.sh",
+        "cmd/migrate/source_oci_test.go"
       ],
       "limitations": "",
       "composable": true,
@@ -2903,11 +2928,12 @@
     {
       "command": "ptah migrations generate",
       "source": "dbml-file",
-      "status": "supported-missing-command-test",
+      "status": "verified",
       "invocation": "ptah migrations generate --schema-file schema.dbml --db-url sqlite://current.db --migrations-dir ./migrations --name canonical",
       "implementationOwner": "cmd/migrate",
       "evidence": [
-        "cmd/migrate/generate_test.go"
+        "scripts/check-source-workflows.sh",
+        "cmd/migrate/source_oci_test.go"
       ],
       "limitations": "",
       "composable": true,
@@ -2920,7 +2946,8 @@
       "invocation": "ptah migrations generate --root-dir ./models --db-url sqlite://current.db --migrations-dir ./migrations --name canonical",
       "implementationOwner": "cmd/migrate",
       "evidence": [
-        "cmd/migrate/generate_test.go"
+        "scripts/check-source-workflows.sh",
+        "cmd/migrate/source_oci_test.go"
       ],
       "limitations": "",
       "composable": true,
@@ -2933,7 +2960,8 @@
       "invocation": "ptah migrations generate --schema-cmd ./load-schema --schema-format sql --db-url sqlite://current.db --migrations-dir ./migrations --name canonical",
       "implementationOwner": "cmd/migrate",
       "evidence": [
-        "cmd/migrate/generate_test.go"
+        "scripts/check-source-workflows.sh",
+        "cmd/migrate/source_oci_test.go"
       ],
       "limitations": "",
       "composable": true,
@@ -2942,11 +2970,12 @@
     {
       "command": "ptah migrations generate",
       "source": "configured-external",
-      "status": "supported-missing-command-test",
+      "status": "verified",
       "invocation": "ptah migrations generate --config ptah.yaml --allow-external-schema --db-url sqlite://current.db --migrations-dir ./migrations --name canonical",
       "implementationOwner": "cmd/migrate",
       "evidence": [
-        "cmd/migrate/generate_test.go"
+        "scripts/check-source-workflows.sh",
+        "cmd/migrate/source_oci_test.go"
       ],
       "limitations": "",
       "composable": true,
@@ -2955,11 +2984,12 @@
     {
       "command": "ptah migrations generate",
       "source": "oci-artifact",
-      "status": "supported-missing-command-test",
+      "status": "verified",
       "invocation": "ptah migrations generate --schema-file oci://registry.example/app:v1 --db-url sqlite://current.db --migrations-dir ./migrations --name canonical",
       "implementationOwner": "cmd/migrate",
       "evidence": [
-        "cmd/migrate/generate_test.go"
+        "scripts/check-source-workflows.sh",
+        "cmd/migrate/source_oci_test.go"
       ],
       "limitations": "",
       "composable": false,
@@ -2972,7 +3002,8 @@
       "invocation": "ptah migrations generate --schema-file desired.sql --db-url sqlite://current.db --migrations-dir ./migrations --name canonical",
       "implementationOwner": "cmd/migrate",
       "evidence": [
-        "cmd/migrate/generate_test.go"
+        "scripts/check-source-workflows.sh",
+        "cmd/migrate/source_oci_test.go"
       ],
       "limitations": "The live database supplies the current state through --db-url.",
       "composable": false,
@@ -2985,7 +3016,8 @@
       "invocation": "ptah migrations generate --replay --migrations-dir ./migrations --dev-url sqlite://dev.db --schema-file desired.sql",
       "implementationOwner": "cmd/migrate",
       "evidence": [
-        "cmd/migrate/generate_test.go"
+        "scripts/check-source-workflows.sh",
+        "cmd/migrate/source_oci_test.go"
       ],
       "limitations": "With --replay, the migration directory supplies current state and is reset on --dev-url.",
       "composable": false,
@@ -2994,11 +3026,12 @@
     {
       "command": "ptah migrations generate",
       "source": "composite-source",
-      "status": "supported-missing-command-test",
+      "status": "verified",
       "invocation": "ptah migrations generate --schema-file schema/tables.sql --schema-file schema/views.hcl --db-url sqlite://current.db --migrations-dir ./migrations --name canonical",
       "implementationOwner": "cmd/migrate",
       "evidence": [
-        "cmd/migrate/generate_test.go"
+        "scripts/check-source-workflows.sh",
+        "cmd/migrate/source_oci_test.go"
       ],
       "limitations": "",
       "composable": true,

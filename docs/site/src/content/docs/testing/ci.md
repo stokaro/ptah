@@ -16,8 +16,23 @@ disposition: keep
 ---
 
 Run Ptah in CI to catch migration drift, destructive changes, hash mismatches,
-and unsupported capabilities before merge. The GitHub Action is the packaged
-path; the shell checks below build the same gate on any CI system.
+and unsupported capabilities before merge. The source-neutral path invokes the
+CLI directly and names the desired-schema source explicitly:
+
+```bash
+ptah schema validate --schema-file schema.sql --dialect postgres
+ptah migrations plan \
+  --schema-file schema.sql \
+  --db-url "$PTAH_DATABASE_URL" \
+  --report json --check-destructive
+ptah schema drift \
+  --schema-file schema.sql \
+  --db-url "$PTAH_DATABASE_URL"
+```
+
+Replace `--schema-file schema.sql` with the exact selector for another source.
+Use a disposable database for the plan and a controlled long-lived environment
+for the drift gate.
 
 ## GitHub Action
 
@@ -26,6 +41,12 @@ request it generates a migration plan, evaluates the safety verdict, optionally
 lints the migration directory, updates one sticky pull request comment, and
 writes a `Ptah destructive-change verdict` check run from the machine-readable
 safety report.
+
+The current action is Go-specific: its `dir` input is passed to
+`ptah migrations plan --root-dir`, and it has no schema-file or external-loader
+input. Use the direct CLI form above for SQL, YAML, HCL, DBML, OCI, or external
+sources. [ptah-action issue #1](https://github.com/stokaro/ptah-action/issues/1)
+tracks generic desired-schema source inputs.
 
 ```yaml
 name: Ptah
@@ -113,7 +134,7 @@ The same gate on any CI system:
 ```bash
 ptah migrations validate --dir ./migrations
 ptah migrations lint --dir ./migrations --dialect postgres
-ptah schema render --root-dir ./models --dialect postgres >/tmp/ptah-schema.sql
+ptah schema render --schema-file schema.sql --dialect postgres >/tmp/ptah-schema.sql
 ```
 
 `schema render` writes executable SQL to stdout and diagnostics to stderr. A CI

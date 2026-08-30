@@ -249,6 +249,13 @@ practical, live commands:
   command cannot be run locally.
 - For CLI docs, compare against current help and output from the built `ptah`
   binary.
+- For a workflow that accepts several desired-schema sources, keep the prose
+  source-neutral and make the first complete example a static source that does
+  not require Go. Use the exact selector for the chosen transport:
+  `--schema-file`, `--root-dir`, `--schema-cmd`, or
+  `--config ... --allow-external-schema`. A Go-only opening must be proven by
+  current built help, recorded in the page's `sourceOfTruth`, and linked to a
+  source-neutral alternative or tracked product gap when one exists.
 - For config docs, test parse/validation behavior with representative fixtures.
 - For generated SQL or migration docs, generate or apply a small fixture when
   feasible.

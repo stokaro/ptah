@@ -60,11 +60,13 @@ func NewMigrateCommand() *cobra.Command {
 	opts := options{}
 	cmd := &cobra.Command{
 		Use:   "plan",
-		Short: "Generate migration SQL from differences",
-		Long: `Generate migration SQL statements based on differences between Go entities and database schema.
+		Short: "Plan migration SQL from schema differences",
+		Long: `Plan migration SQL from the difference between a desired schema and a live database.
 
-This command compares your Go entities with the current database schema and generates
-the SQL statements needed to update the database to match your entities.`,
+The desired schema may come from repeatable SQL, YAML, HCL, or DBML files,
+directories of Go annotations, an OCI schema artifact, or an external program.
+The command prints the statements and their safety classification without
+writing migration files.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return migrateCommandWithOptions(cmd, &opts)
 		},
@@ -77,7 +79,7 @@ the SQL statements needed to update the database to match your entities.`,
 func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
 	flags.StringArrayVar(&opts.rootDirs, rootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
-	flags.StringArrayVar(&opts.schemaFiles, schemaFileFlag, nil, "YAML, HCL, or SQL schema file to migrate toward instead of, or combined with, Go entities (repeatable; multiple sources merge into one composite schema)")
+	flags.StringArrayVar(&opts.schemaFiles, schemaFileFlag, nil, "SQL, YAML, HCL, DBML, or OCI desired-schema source (repeatable; combines with other sources)")
 	flags.StringVar(&opts.schemaCmd, schemaCmdFlag, "", `External program whose stdout is the desired schema; run without a shell, split on whitespace. Example: "go run ./loader"`)
 	flags.StringVar(&opts.schemaFormat, schemaFormatFlag, "sql", "Format of the --schema-cmd output: sql, hcl, or yaml")
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")

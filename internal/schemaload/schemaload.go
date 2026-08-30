@@ -29,7 +29,7 @@ import (
 type Options struct {
 	// RootDirs are Go entity roots scanned for migrator directives (repeatable).
 	RootDirs []string
-	// SchemaFiles are YAML, HCL, or SQL schema files (repeatable).
+	// SchemaFiles are SQL, YAML, HCL, DBML, or OCI desired-schema sources (repeatable).
 	SchemaFiles []string
 	// ProjectEnv is the evaluated atlas.hcl environment an `env://` schema file
 	// is expanded through. The zero value keeps the refusal
@@ -346,7 +346,7 @@ func isEnvReference(schemaFile string) bool {
 	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(schemaFile)), envScheme)
 }
 
-// loadSchemaFile resolves a single YAML, HCL, or SQL schema file — or a
+// loadSchemaFile resolves a single SQL, YAML, HCL, or DBML schema file — or a
 // directory of .sql or .hcl schema files — into a finalized schema.
 // supportedExtensions are the schema file extensions this loader reads.
 //

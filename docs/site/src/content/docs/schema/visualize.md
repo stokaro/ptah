@@ -178,7 +178,9 @@ a bug in the visualization path, not an acceptable example.
 - `ptah viz` reads Go annotations only (`--root-dir`); it does not accept
   `--schema-file` or a database URL. To diagram a live database or a SQL
   schema file, generate annotated models first with `ptah introspect` — the
-  committed example does exactly that.
+  committed example does exactly that. For a source-neutral HTML reference
+  with an embedded diagram, use
+  [`ptah schema export --to html`](../document/) instead.
 
 ## Next steps
 

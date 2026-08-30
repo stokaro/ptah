@@ -1,0 +1,16 @@
+tables:
+  books:
+    columns:
+      id:
+        type: INTEGER
+        primary: true
+        not_null: true
+      author_id:
+        type: INTEGER
+        not_null: true
+        foreign: authors(id)
+      title:
+        type: VARCHAR(240)
+        not_null: true
+      summary:
+        type: TEXT

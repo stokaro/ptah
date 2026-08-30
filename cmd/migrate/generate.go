@@ -52,7 +52,7 @@ func NewMigrateGenerateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "generate",
 		Short: "Generate migration files from schema differences",
-		Long: `Generate migration files by comparing Go entities with the current database schema.
+		Long: `Generate migration files from the difference between a desired schema and the current database schema.
 
 When --shadow-db is set, or migrate.generate.shadow_db is configured in ptah.yaml, Ptah verifies
 the generated candidate on the shadow database before writing files:
@@ -70,7 +70,7 @@ repository alone.`,
 
 	flags := cmd.Flags()
 	flags.StringArray(generateRootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
-	flags.StringArray(generateSchemaFileFlag, nil, "YAML, HCL, or SQL schema file to generate a migration toward instead of, or combined with, Go entities (repeatable; multiple sources merge into one composite schema)")
+	flags.StringArray(generateSchemaFileFlag, nil, "SQL, YAML, HCL, DBML, or OCI desired-schema source (repeatable; combines with other sources)")
 	flags.String(generateSchemaCmdFlag, "", `External program whose stdout is the desired schema; run without a shell, split on whitespace. Example: "go run ./loader"`)
 	flags.String(generateSchemaFormatFlag, "sql", "Format of the --schema-cmd output: sql, hcl, or yaml")
 	flags.String(generateDBURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")

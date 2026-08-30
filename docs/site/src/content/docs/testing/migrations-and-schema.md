@@ -26,8 +26,8 @@ Two commands share one test-case format:
 
 - `ptah migrations test` applies a migration directory (to a version, or all the
   way up) and asserts against the migrated database.
-- `ptah schema test` applies a desired schema once — from a SQL or HCL file, Go
-  annotations, or a live database — then asserts against it.
+- `ptah schema test` applies a desired schema once — from a SQL, YAML, HCL, or
+  DBML file, Go annotations, or a live database — then asserts against it.
 
 Atlas keeps `migrate test` and `schema test` in its proprietary Pro build (an
 Atlas account and the closed-source binary). Ptah provides both as MIT, local,
@@ -47,9 +47,10 @@ named, ordered list of steps, and each step performs exactly one action:
 - `migrate_to` — migrate the database to a target version: a non-negative
   integer, `latest` (migrate up to the newest migration), or `0` (roll
   everything back). Valid in migration tests only.
-- `apply_schema` — apply the Go-annotation desired schema under `--root-dir`.
-  Write `apply_schema: true`. Schema tests already converge this schema before a
-  case; the step rechecks live state and repairs supported drift.
+- `apply_schema` — reapply the selected desired schema. Write
+  `apply_schema: true`. Schema tests already converge this schema before a
+  case; the step rechecks live state and repairs supported drift. Migration
+  tests use the Go annotations under their `--root-dir` for this optional step.
 - `exec` — run raw SQL against the database.
 - `seed` — apply environment-scoped SQL seed files from a directory (the seeder's
   `NNN_description.env.sql` convention: files matching `env` plus `.all.sql`).
@@ -75,14 +76,23 @@ cases:
 
 ```bash
 # Migration tests: apply the migrations directory, then assert.
-ptah migrations test --dir ./tests --migrations-dir ./migrations --root-dir ./models --seed-dir ./seeds
+ptah migrations test --dir ./tests --migrations-dir ./migrations --seed-dir ./seeds
 
-# Schema tests: apply the desired schema from Go annotations, then assert.
-ptah schema test --dir ./tests --root-dir ./models --seed-dir ./seeds
+# Schema tests: apply a static desired schema, then assert.
+ptah schema test --dir ./tests --root-dir ./schema.sql --seed-dir ./seeds
 
 # HCL variables reach an HCL desired schema through repeatable --var values.
 ptah schema test --dir ./tests --root-dir ./schema.hcl --var tenant=test
+
+# Go annotations use the same historical selector.
+ptah schema test --dir ./tests --root-dir ./models --seed-dir ./seeds
 ```
+
+For `schema test`, `--root-dir` is a legacy name for the desired-schema source.
+It accepts a local `.sql`, `.yaml`, `.yml`, `.hcl`, or `.dbml` file, a Go
+annotation directory, or a live database URL. It does not mean every value is
+a directory. A neutral replacement is tracked in
+[issue #2571](https://github.com/stokaro/ptah/issues/2571).
 
 Both commands load every `*.yaml`/`*.yml` file under `--dir`, run the cases, print
 a report, and exit non-zero if any case fails — so they slot straight into a CI
