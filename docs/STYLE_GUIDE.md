@@ -539,12 +539,26 @@ a reader recognizes on sight and cannot reconstruct from a paragraph.
   is sanitized before capture.
 - Review every page carrying a visual at 390px and 1280px, in both themes,
   before merge.
-- `check-visual-assets.mjs` holds the allowed raster-output list, editable SVG
-  metadata, source record, and useful-alt requirements. UI screenshots come
-  from `generate-schema-ui-assets.mjs`; do not edit their pixels by hand.
-- `check-visual-snapshots.mjs` captures selected desktop and mobile pages as a
-  CI review artifact and fails on a missing visual or page overflow. The
-  artifact is evidence for human review, not a cross-platform pixel baseline.
+- `docs/site/visual-assets.json` declares every SVG and raster asset: its type,
+  source or generator, fixture, reader routes, size budget, theme behavior,
+  full-size artifact, and versioned-download requirement. Do not add an asset
+  without adding that declaration. `check-visual-assets.mjs` rejects
+  undeclared raster files, inaccessible semantic SVG, missing generators and
+  fixtures, and inventory rows with no owner.
+- Use `ProductPreview.astro` for primary product output. It provides one
+  figure/caption pattern, a plain-link full-size fallback, download and source
+  actions, a "what to notice" description, and an optional reproducible
+  command. Do not rebuild those controls ad hoc on each page.
+- `docs/site/visual-output-inventory.json` records every product capability
+  that creates visual, browser, report, contract, lineage, or metrics output.
+  A missing proof remains `phase4`; do not fill the cell with an explanatory
+  reconstruction.
+- `check-visual-snapshots.mjs` derives its routes and proof assertions from the
+  visual manifest. It captures mobile and desktop pages in both light and dark
+  themes, and checks the declared visual's identity, placement, caption,
+  rendered size, full-size/download/source actions, keyboard focus, and page
+  overflow. The artifact is evidence for human review, not a cross-platform
+  pixel baseline.
 
 ### 11.5 Tabs
 
@@ -775,8 +789,8 @@ in this guide is a review responsibility.
 | In-page and cross-page anchors resolve | 12 | `check:links` |
 | Command and flag reference filters work with the keyboard | 3, 13 | `check:accessibility` |
 | No page scrolls sideways at 390px or 1280px | 13 | `check:responsive` |
-| Allowed raster assets, editable visual source, and useful alt text | 11 | `check:visual-assets` |
-| Selected visual pages render at desktop and mobile widths | 11, 13 | `check:visual-snapshots` |
+| Manifest-backed visual assets, editable source, fixtures, and generators | 11 | `check:visual-assets` |
+| Declared product proof renders at desktop/mobile in light/dark and stays inspectable | 11, 13 | `check:visual-snapshots` |
 | Representative pages pass WCAG A/AA and keyboard interaction checks | 13 | `check:accessibility` |
 | Every top-level example has the reader contract and generated index | 8 | `check:examples` |
 | Supported examples execute or pass their declared mechanical checks | 8 | `scripts/check-examples.sh` |

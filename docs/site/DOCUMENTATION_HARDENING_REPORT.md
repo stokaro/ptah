@@ -155,6 +155,36 @@ Supported cells without a command-level test remain visibly distinct from
 verified cells. Later phases may close those test gaps, but this audit does not
 launder shared-loader evidence into command-level proof.
 
+## Visual proof infrastructure
+
+`visual-output-inventory.json` now records ten output-producing capabilities:
+schema visualization and its security form, generated schema documentation,
+the live schema server, migration safety, migration and schema test reports,
+lineage, statistics, and API contracts. Each row names the command, route,
+fixture, generator, product-output classification, primary asset, variants,
+downloads, theme behavior, required placement, acceptance test, owner, and
+delivery state. Missing Phase 4 proof stays explicitly missing instead of being
+replaced by an explanatory image.
+
+`visual-assets.json` is the only asset allowlist. Seven current assets declare
+their type, source or deterministic generator, fixture, reader routes, size
+budget, theme behavior, full-size artifact, and versioned-download requirement.
+The asset gate scans the tree for undeclared PNG or SVG files and validates the
+two manifests together.
+
+`ProductPreview.astro` establishes the reader contract for primary output: a
+semantic figure and caption, a useful alternative, "what to notice," direct
+full-size access that works without JavaScript, download/source actions, and an
+optional reproduction command. The home product model is the first enforced
+usage.
+
+The browser checker no longer accepts an image count as proof. It captures 40
+review artifacts — ten routes at mobile and desktop widths in light and dark
+themes — and enforces the declared visual ID, caption, maximum word distance,
+minimum dimensions, resolving actions, keyboard focus, and page overflow. The
+current contract is intentionally one enforced proof; Phase 4 promotes the
+product-output rows as their real variants and artifacts land.
+
 ## Remaining report sections
 
 The documentation rewrite, visual proof, tutorials, waivers, and remaining

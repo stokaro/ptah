@@ -1,0 +1,86 @@
+---
+import { Image } from 'astro:assets';
+
+interface Props {
+  id: string;
+  src: ImageMetadata | string;
+  darkSrc?: ImageMetadata | string;
+  alt: string;
+  caption: string;
+  notice: string;
+  fullSizeHref: string;
+  downloadHref?: string;
+  sourceHref?: string;
+  reproduce?: string;
+  variants?: Array<{
+    id: string;
+    label: string;
+    src: ImageMetadata | string;
+    alt: string;
+    fullSizeHref: string;
+  }>;
+}
+
+const {
+  id,
+  src,
+  darkSrc,
+  alt,
+  caption,
+  notice,
+  fullSizeHref,
+  downloadHref,
+  sourceHref,
+  reproduce,
+  variants = [],
+} = Astro.props;
+---
+
+<figure class="ptah-product-preview" data-product-preview data-visual-id={id}>
+  <a
+    class="ptah-product-preview__media"
+    href={fullSizeHref}
+    data-preview-action="full-size-media"
+    aria-label={`Open the full-size ${caption}`}
+  >
+    {darkSrc ? (
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset={typeof darkSrc === 'string' ? darkSrc : darkSrc.src} />
+        <Image src={src} alt={alt} loading="eager" />
+      </picture>
+    ) : (
+      <Image src={src} alt={alt} loading="eager" />
+    )}
+  </a>
+
+  <figcaption>
+    <p class="ptah-product-preview__caption">{caption}</p>
+    <p class="ptah-product-preview__notice"><strong>What to notice:</strong> {notice}</p>
+
+    <nav class="ptah-product-preview__actions" aria-label={`${caption} actions`}>
+      <a href={fullSizeHref} data-preview-action="full-size">Open full size</a>
+      {downloadHref && <a href={downloadHref} download data-preview-action="download">Download</a>}
+      {sourceHref && <a href={sourceHref} data-preview-action="source">View source</a>}
+    </nav>
+
+    {reproduce && (
+      <details class="ptah-product-preview__reproduce">
+        <summary>Reproduce this output</summary>
+        <pre><code>{reproduce}</code></pre>
+      </details>
+    )}
+
+    {variants.length > 0 && (
+      <div class="ptah-product-preview__variants" aria-label={`${caption} variants`}>
+        {variants.map((variant) => (
+          <article data-preview-variant={variant.id}>
+            <a href={variant.fullSizeHref} aria-label={`Open the full-size ${variant.label}`}>
+              <Image src={variant.src} alt={variant.alt} loading="lazy" />
+            </a>
+            <p>{variant.label}</p>
+          </article>
+        ))}
+      </div>
+    )}
+  </figcaption>
+</figure>
