@@ -263,7 +263,7 @@ Declares an index for a table.
 | `condition` | No | Partial index condition. |
 | `fields` | No | Comma-separated Go field or column names. |
 | `granularity` | No | ClickHouse data-skipping index granularity. |
-| `include` | No | Comma-separated INCLUDE columns for PostgreSQL, YugabyteDB, or the Spanner PostgreSQL dialect. Order is preserved. |
+| `include` | No | Comma-separated INCLUDE columns for PostgreSQL, YugabyteDB, CockroachDB, or the Spanner PostgreSQL dialect. Order is preserved. |
 | `name` | No | Index name. |
 | `nulls_distinct` | No | Controls NULLS DISTINCT behavior where supported. `true`/`false`. |
 | `ops` | No | PostgreSQL operator class. |
@@ -279,9 +279,15 @@ includes empty, whitespace-only, comma-only, sparse, and trailing-comma lists.
 The accepted access methods depend on the target: PostgreSQL accepts the
 default, `BTREE`, and `GIST`, plus `SPGIST` on PostgreSQL 14 and newer;
 YugabyteDB accepts the default and `LSM`, with `BTREE` normalized to its
-documented default-LSM alias; and the Spanner PostgreSQL dialect accepts only
-the default. CockroachDB and every other dialect reject `include` before
-emitting SQL.
+documented default-LSM alias; CockroachDB accepts the default and `BTREE`, and
+refuses `GIN` and `GIST`, both of which name an inverted index there; and the
+Spanner PostgreSQL dialect accepts only the default. Every other dialect rejects
+`include` before emitting SQL.
+
+CockroachDB's catalog names its access methods `prefix` and `inverted`, and it
+refuses both as input. `ptah db read` reports them as `btree` and `gin`, the
+spellings the same server prints in `pg_get_indexdef`, so a description it
+produces replays against the database it came from.
 
 ### `//ptah:schema:constraint`
 
@@ -327,7 +333,8 @@ are none; a present list with an empty element is refused rather than trimmed.
 
 The targets for a constraint are not the targets for an index. The Spanner
 PostgreSQL dialect takes `include` on an index and refuses it on a constraint,
-and CockroachDB is the reverse. See
+and CockroachDB takes it on an index and on a UNIQUE constraint but not on a
+primary key. See
 [`//ptah:schema:index`](#ptahschemaindex) for the index list.
 
 ## Reusable types

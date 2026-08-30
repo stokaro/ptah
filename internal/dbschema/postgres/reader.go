@@ -80,8 +80,7 @@ func NewPostgreSQLReaderWithCapabilities(
 // came from refuses (stokaro/ptah#2584).
 func NewPostgreSQLWireReaderWithCapabilities(
 	db sqlrunner.Runner,
-	schema string,
-	dialect string,
+	schema, dialect string,
 	caps capability.Capabilities,
 ) *Reader {
 	if schema == "" {
