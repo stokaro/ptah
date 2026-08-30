@@ -1003,8 +1003,38 @@ func fromTableWithFieldConverter(
 		constraint := newPrimaryKeyConstraint(newTable)
 		createTable.AddConstraint(constraint)
 	}
+	addDeclaredTableChecks(createTable, newTable)
 
 	return createTable
+}
+
+// addDeclaredTableChecks turns the table's `checks` attribute into the CHECK
+// constraints it names.
+//
+// `checks` is a documented table attribute -- internal/annotationmeta declares
+// it, the parser fills schemamodel.Table.Checks, and the HCL renderer writes it
+// back out. SQL rendering read it nowhere, so an author who wrote
+// `checks="price > 0"` got a table with no CHECK and exit 0: a constraint that
+// never reached the database and was never reported (stokaro/ptah#2590).
+//
+// They become ordinary CHECK constraint nodes rather than a new kind of node,
+// because that is what they are. Every dialect that renders a table CHECK
+// therefore renders these, and one that names its checks names these too --
+// ClickHouse requires a name and synthesizes one from the table, which is the
+// same path a column's `check=` already takes.
+//
+// The attribute carries an expression and no name, so none is set here. A name
+// no author wrote is a name no catalog can be asked about later.
+func addDeclaredTableChecks(createTable *ast.CreateTableNode, table schemamodel.Table) {
+	for _, expression := range table.Checks {
+		if strings.TrimSpace(expression) == "" {
+			continue
+		}
+		createTable.AddConstraint(&ast.ConstraintNode{
+			Type:       ast.CheckConstraint,
+			Expression: expression,
+		})
+	}
 }
 
 func renderTableName(table schemamodel.Table, targetPlatform string) string {
