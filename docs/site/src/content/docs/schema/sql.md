@@ -1,6 +1,17 @@
 ---
 title: SQL schema
 description: Use plain SQL DDL files as Ptah's desired schema.
+type: how-to
+audience:
+  - "schema-author"
+readerQuestion: "How do I use plain SQL DDL files as Ptah's desired schema?"
+goal: "Render a desired schema from SQL DDL."
+sourceOfTruth:
+  - "cmd/schema"
+  - "internal/schemaload"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 Use SQL schema files when the desired schema is already written as local DDL

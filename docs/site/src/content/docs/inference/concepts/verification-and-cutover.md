@@ -1,6 +1,18 @@
 ---
 title: Verification, cutover, and rollback
 description: What Ptah checks before a switch, what a cutover binds to, and the conditions under which going back is actually possible.
+type: concept
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "How does Ptah model verification, cutover, and rollback?"
+goal: "Explain Ptah's model for verification, cutover, and rollback."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 Three operations are easy to confuse, and confusing them is expensive. This page

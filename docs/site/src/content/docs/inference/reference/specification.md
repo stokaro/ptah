@@ -1,6 +1,18 @@
 ---
 title: Specification reference
 description: Every field of an inference specification, its accepted values, and whether it is part of the generation identity.
+type: reference
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "Which fields and values does an inference specification accept?"
+goal: "Look up the accepted inference specification fields and values."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 The specification is a YAML file. It describes the source rows, how they become

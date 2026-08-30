@@ -1,6 +1,20 @@
 ---
 title: Apply migrations
 description: Run pending migrations with integrity verification, inspect status, wire operational hooks, and apply from OCI artifacts.
+type: how-to
+audience:
+  - "database-engineer"
+  - "ci-operator"
+readerQuestion: "How do I apply pending migrations and verify their state?"
+goal: "Apply pending migrations and verify their state."
+sourceOfTruth:
+  - "cmd/migrations"
+  - "migration"
+generated: false
+searchAliases:
+  - "apply migrations"
+overlaps: []
+disposition: keep
 owns:
   - cli-ptah-migrations-up
 ---

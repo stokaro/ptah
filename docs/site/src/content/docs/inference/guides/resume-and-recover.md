@@ -1,6 +1,20 @@
 ---
 title: Resume and recover
 description: What to do when a run stops - an unreachable provider, a killed process, a lease taken by another worker.
+type: troubleshooting
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "How do I recover an inference migration after a provider or worker failure?"
+goal: "Recover an inference migration after a provider or worker failure."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+searchAliases:
+  - "resume inference migration"
+overlaps: []
+disposition: keep
 ---
 
 A run that stops leaves everything it committed and nothing it did not. There is

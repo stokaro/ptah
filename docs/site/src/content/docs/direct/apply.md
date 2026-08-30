@@ -1,6 +1,21 @@
 ---
 title: Apply directly
 description: Apply desired-schema changes straight to a database with ptah schema apply, saved plan files, and hybrid patterns.
+type: how-to
+audience:
+  - "database-engineer"
+  - "ci-operator"
+readerQuestion: "How do I apply a desired schema directly and verify the result?"
+goal: "Apply a desired schema directly and verify the result."
+sourceOfTruth:
+  - "cmd/schema"
+  - "migration/schemadiff"
+  - "migration/planner"
+generated: false
+searchAliases:
+  - "apply desired schema"
+overlaps: []
+disposition: keep
 owns:
   - cli-ptah-schema-apply
 ---

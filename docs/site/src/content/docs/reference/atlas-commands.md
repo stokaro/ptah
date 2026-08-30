@@ -1,6 +1,19 @@
 ---
 title: Atlas-compatible commands
 description: Per-command status for every ptah-compat verb, with Atlas differences and known gaps.
+type: reference
+audience:
+  - "all-users"
+readerQuestion: "Which Atlas-compatible commands are implemented, limited, or unavailable?"
+goal: "Determine which Atlas-compatible commands are implemented, limited, or unavailable."
+sourceOfTruth:
+  - "cmd/atlas"
+  - "internal/cmdref"
+generated: false
+overlaps:
+  - "/reference/command-flags/"
+  - "/reference/native-commands/"
+disposition: rewrite
 ---
 
 This page is the lookup reference for the Atlas-compatible surface: what each

@@ -1,6 +1,18 @@
 ---
 title: Troubleshooting
 description: Symptoms, what causes them, and what to do - for the failures a generation change actually produces.
+type: troubleshooting
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "Which inference migration symptom am I seeing, and how do I recover?"
+goal: "Identify an inference migration symptom and follow its recovery path."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 Each entry is a message you might see, what it means, and the fix.

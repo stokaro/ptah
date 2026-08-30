@@ -267,13 +267,12 @@ func (c Cell) String() string {
 //     exercises it. That is why sqlite-3 is certified with no image and no
 //     service anywhere.
 //
-// Nine of the twenty-six cells are outside the first and six are outside the
-// first two, of which the third mechanism covers SQLite alone. Five are outside
-// all three: ClickHouse 26.3 and 25.8, SQL Server 16.0 and 15.0, and Spanner.
-// They are declared, they resolve to a preset, and nothing here has ever run
-// against them. Calling them certified would be the false claim this vocabulary
-// exists to make impossible, so they are best-effort and the census test in
-// cells_test.go keeps them that way.
+// Which cells each mechanism reaches is derived by
+// TestCells_CertificationMatchesWhatContinuousIntegrationRuns. Keep no census
+// in this comment: a launch recipe can change the answer without touching this
+// declaration, which is exactly how the documentation acquired a stale list.
+// Calling an unexercised line certified remains the false claim this vocabulary
+// exists to make impossible.
 //
 // The upstream half was checked against the vendors on 2026-08-16, and each
 // verdict is recorded where it is not the obvious one. What that check may NOT

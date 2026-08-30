@@ -1,6 +1,17 @@
 ---
 title: Database URLs and dev databases
 description: Accepted database URL formats, and the difference between the target, dev, shadow, and throwaway databases.
+type: concept
+audience:
+  - "all-users"
+readerQuestion: "How does Ptah model database URLs and dev databases?"
+goal: "Explain Ptah's model for database URLs and dev databases."
+sourceOfTruth:
+  - "dbschema/connection.go"
+  - "cmd"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 Every Ptah command that touches a database takes a URL, and the URL's scheme

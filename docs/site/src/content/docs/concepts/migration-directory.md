@@ -1,6 +1,17 @@
 ---
 title: The migration directory
 description: The file layout, integrity file, revision table, and directory formats behind Ptah's versioned workflow.
+type: concept
+audience:
+  - "all-users"
+readerQuestion: "How does Ptah model the migration directory?"
+goal: "Explain Ptah's model for the migration directory."
+sourceOfTruth:
+  - "migration/migrationfile"
+  - "migration/migrator"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 A migration directory is versioned schema history as files: every change is an

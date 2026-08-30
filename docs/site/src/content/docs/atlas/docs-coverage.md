@@ -1,6 +1,22 @@
 ---
 title: Atlas docs coverage
 description: Current Atlas documentation crosswalk for Ptah compatibility, implementation, conformance, and follow-up work.
+type: status
+audience:
+  - "atlas-migrator"
+  - "evaluator"
+readerQuestion: "What does the current evidence establish about Atlas documentation coverage?"
+goal: "Interpret the current Atlas documentation coverage evidence and its gaps."
+sourceOfTruth:
+  - "cmd/atlas"
+  - "internal/atlascompatpolicy"
+generated: false
+lastVerified: "2026-08-30"
+evidence:
+  - "docs/site/src/content/docs/atlas/docs-coverage.md"
+  - "scripts/atlas-ce-reference.lock"
+overlaps: []
+disposition: keep
 ---
 
 This page maps current Atlas documentation areas to Ptah documentation,

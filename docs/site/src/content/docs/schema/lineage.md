@@ -1,6 +1,17 @@
 ---
 title: Trace view column lineage
 description: Run ptah schema lineage to find which base columns each view column and each routine reads, and which tables and columns each routine writes, before dropping or renaming one of them.
+type: how-to
+audience:
+  - "schema-author"
+readerQuestion: "How do I run ptah schema lineage to find which base columns each view column and each routine reads, and which tables and columns each routine writes, before dropping or renaming one of them?"
+goal: "Identify dependencies before dropping or renaming a database object."
+sourceOfTruth:
+  - "cmd/schema"
+  - "internal/schemalineage"
+generated: false
+overlaps: []
+disposition: keep
 owns:
   - cli-ptah-schema-lineage
 ---

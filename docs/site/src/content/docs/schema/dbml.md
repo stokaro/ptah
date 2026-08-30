@@ -1,6 +1,17 @@
 ---
 title: DBML
 description: Read a DBML document as a desired schema, and write any Ptah schema back out as canonical DBML.
+type: how-to
+audience:
+  - "schema-author"
+readerQuestion: "How do I read a DBML document as a desired schema, and write any Ptah schema back out as canonical DBML?"
+goal: "Round-trip a desired schema through canonical DBML."
+sourceOfTruth:
+  - "cmd/schema"
+  - "internal/schemaload"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 [DBML](https://dbml.dbdiagram.io/) is a compact way to write down tables,

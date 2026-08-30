@@ -766,15 +766,12 @@ to decide whether an operation may proceed. A line the vendor retires moves from
 not declare at all resolves to `best-effort` at runtime — capabilities are
 resolved for it and it is not refused.
 
-Measured live on 2026-08-16: PostgreSQL 13.23, whose upstream final release was
-2025-11-13, resolves to `legacy-tested`, has its capabilities resolved, and
-works. MySQL 8.0.46, a line the matrix does not declare, resolves to
-`best-effort`, works, and carries the note `mysql 8.0.46 is not a measured
-release line; capabilities fall back to the preset its ladder assigns (newest
-measured line: 26.7)`. A fourth level, `known-incompatible`, requires a concrete
-technical incompatibility rather than a vendor's calendar date; no release line
-carries it today. Each level is defined once, on the reader-facing
-[Database support matrix](./site/src/content/docs/databases/support-matrix.md).
+The generated matrix above is the only release-line classification in this
+document. Concrete examples, the current census, and the definitions of each
+level live on the reader-facing
+[Database support matrix](./site/src/content/docs/databases/support-matrix.md),
+which is generated from the same declaration and checked for authored copies of
+those facts.
 
 `ptah db capabilities --db-url <url>` reports the resolved profile of one live
 server: the preset, how that preset was reached, the support level and release

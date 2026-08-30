@@ -1,6 +1,18 @@
 ---
 title: Migrate a source that is not changing
 description: The simpler path when writes are genuinely stopped, and what Ptah does and does not check about that claim.
+type: how-to
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "How do I migrate inference state while writes to the source table are paused?"
+goal: "Migrate inference state while writes to the source table are paused."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 If nothing writes to the source during the migration, there is nothing to catch

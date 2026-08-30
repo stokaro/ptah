@@ -1,6 +1,18 @@
 ---
 title: Extension environment variables
 description: The PTAH_* booleans that turn on behavior the pinned Atlas community CLI has no counterpart for, one entry per variable.
+type: reference
+audience:
+  - "all-users"
+readerQuestion: "Which `PTAH_*` variables enable compatibility extensions?"
+goal: "Look up the `PTAH_*` variables that enable compatibility extensions."
+sourceOfTruth:
+  - "cmd"
+  - "core"
+  - "migration"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 You want a capability Ptah models and the community CLI does not, on the

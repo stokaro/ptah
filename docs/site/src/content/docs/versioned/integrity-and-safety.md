@@ -1,6 +1,20 @@
 ---
 title: Integrity and safety
 description: Hash and validate the migration directory, replay it on a dev database, and assert data-state preconditions before a migration runs.
+type: how-to
+audience:
+  - "database-engineer"
+  - "ci-operator"
+readerQuestion: "How do I detect a changed migration or unsafe precondition before apply?"
+goal: "Detect a changed migration or unsafe precondition before apply."
+sourceOfTruth:
+  - "cmd/migrations"
+  - "migration"
+generated: false
+searchAliases:
+  - "checksum mismatch"
+overlaps: []
+disposition: keep
 owns:
   - cli-ptah-migrations-hash
   - cli-ptah-migrations-validate

@@ -1,6 +1,17 @@
 ---
 title: Count schema objects
 description: Run ptah schema stats to emit one OpenMetrics gauge per object kind in a live database and feed it to a metrics collector.
+type: how-to
+audience:
+  - "schema-author"
+readerQuestion: "How do I run ptah schema stats to emit one OpenMetrics gauge per object kind in a live database and feed it to a metrics collector?"
+goal: "Publish schema object counts as OpenMetrics gauges."
+sourceOfTruth:
+  - "cmd/schema"
+  - "internal/schemastats"
+generated: false
+overlaps: []
+disposition: keep
 owns:
   - cli-ptah-schema-stats
 ---

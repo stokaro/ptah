@@ -1,6 +1,18 @@
 ---
 title: Plan provider capacity
 description: Sizing a backfill against what your embedding endpoint can take, and what the numbers in the plan mean for cost.
+type: how-to
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "How do I size a backfill for my embedding provider's capacity and cost?"
+goal: "Size a backfill for my embedding provider's capacity and cost."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 The backfill is one provider call per batch, repeated until the corpus is done.

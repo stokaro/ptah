@@ -1,6 +1,20 @@
 ---
 title: Versioned migrations
 description: The migration lifecycle in Ptah - what a migration directory is, the core loop, and where each task lives.
+type: landing
+audience:
+  - "database-engineer"
+  - "ci-operator"
+readerQuestion: "When should I use versioned migrations, and which task comes next?"
+goal: "Choose the versioned workflow when appropriate and open the correct next task."
+sourceOfTruth:
+  - "cmd/migrations"
+  - "migration"
+generated: false
+overlaps:
+  - "/start/choose-a-workflow/"
+  - "/concepts/migration-directory/"
+disposition: rewrite
 ---
 
 Versioned migrations are the operational boundary between a change and live

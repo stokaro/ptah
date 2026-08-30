@@ -1,6 +1,18 @@
 ---
 title: Choose a consistency mode
 description: The decision, its cost, and what each answer leaves you unable to prove.
+type: concept
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "Which consistency mode fits my source-write behavior?"
+goal: "Choose a consistency mode for the source-write behavior."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 Four answers, and the right one depends on whether you control the writes.

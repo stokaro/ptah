@@ -1,6 +1,20 @@
 ---
 title: Serve a live schema view
 description: Run ptah schema serve to watch in a browser how a live database differs from the desired schema while you change it.
+type: how-to
+audience:
+  - "schema-author"
+readerQuestion: "How do I inspect schema drift in Ptah's live browser view?"
+goal: "Inspect schema drift in Ptah's live browser view."
+sourceOfTruth:
+  - "cmd/schema"
+  - "internal/schemadoc"
+  - "cmd/internal/schemaserve"
+generated: false
+overlaps:
+  - "/schema/document/"
+  - "/direct/compare-and-drift/"
+disposition: rewrite
 owns:
   - cli-ptah-schema-serve
 ---

@@ -1,6 +1,19 @@
 ---
 title: Inspect a database
 description: Read a live database schema as SQL statements, annotated Go models, or Atlas-shaped HCL, SQL, and JSON.
+type: how-to
+audience:
+  - "database-engineer"
+  - "ci-operator"
+readerQuestion: "How do I read a live database schema as SQL statements, annotated Go models, or Atlas-shaped HCL, SQL, and JSON?"
+goal: "Choose the required output format and inspect a live schema."
+sourceOfTruth:
+  - "cmd/schema"
+  - "migration/schemadiff"
+  - "migration/planner"
+generated: false
+overlaps: []
+disposition: keep
 owns:
   - cli-ptah-db-read
   - cli-ptah-schema-inspect

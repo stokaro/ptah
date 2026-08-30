@@ -1,6 +1,18 @@
 ---
 title: Rollback and retire
 description: Going back to the previous generation, what keeps that possible, and when it is safe to destroy the old vectors.
+type: how-to
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "How do I roll back to a previous generation and retire old vectors safely?"
+goal: "Roll back to a previous generation and retire old vectors safely."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 These are two different operations and confusing them is expensive.

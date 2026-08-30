@@ -1,6 +1,17 @@
 ---
 title: Dialects and capabilities
 description: Why Ptah separates the dialect it renders SQL for from the capabilities a concrete database target accepts.
+type: concept
+audience:
+  - "all-users"
+readerQuestion: "How does Ptah model dialects and capabilities?"
+goal: "Explain Ptah's model for dialects and capabilities."
+sourceOfTruth:
+  - "core/platform"
+  - "core/platform/capability"
+generated: false
+overlaps: []
+disposition: keep
 owns:
   - gopkg-core-platform
   - gopkg-core-platform-capability

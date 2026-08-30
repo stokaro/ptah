@@ -1,6 +1,18 @@
 ---
 title: Security and data boundaries
 description: What leaves your database during a migration, where the credential lives, and what Ptah refuses to expose.
+type: concept
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "How does Ptah model security and data boundaries?"
+goal: "Explain Ptah's model for security and data boundaries."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 A migration sends your data to a third party. This page says exactly what, and

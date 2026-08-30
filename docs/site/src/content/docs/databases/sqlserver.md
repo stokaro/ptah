@@ -1,6 +1,19 @@
 ---
 title: SQL Server
 description: SQL Server in Ptah - connection URLs, the supported T-SQL subset, collation-aware identifier comparison, and filtered indexes.
+type: reference
+audience:
+  - "database-engineer"
+readerQuestion: "Which SQL Server surface and release lines does Ptah support?"
+goal: "Identify the SQL Server surface and release lines Ptah supports."
+sourceOfTruth:
+  - "internal/capabilityprobe/cells.go"
+  - "internal/dbschema"
+generated: false
+searchAliases:
+  - "SQL Server support"
+overlaps: []
+disposition: keep
 owns:
   - dialect-sqlserver
 ---

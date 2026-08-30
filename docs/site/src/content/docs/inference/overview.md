@@ -1,6 +1,22 @@
 ---
 title: Inference migrations
 description: What Ptah does with the vectors an application searches, and whether this feature applies to your system.
+type: landing
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "Do inference migrations apply to my persistent model output?"
+goal: "Determine whether inference migrations apply to my persistent model output."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+searchAliases:
+  - "pgvector"
+overlaps:
+  - "/inference/quick-start/"
+  - "/inference/concepts/lifecycle/"
+disposition: keep
 ---
 
 If your application stores embeddings in PostgreSQL and you need to change the

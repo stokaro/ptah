@@ -1,6 +1,19 @@
 ---
 title: Protobuf schema export
 description: Export Go entities to a Protobuf Edition 2023 definition whose field numbers stay wire compatible as the schema changes.
+type: how-to
+audience:
+  - "schema-author"
+readerQuestion: "How do I generate Protobuf while preserving field-number compatibility?"
+goal: "Generate Protobuf while preserving field-number compatibility."
+sourceOfTruth:
+  - "cmd/schema"
+  - "internal/schemaload"
+generated: false
+searchAliases:
+  - "generate protobuf"
+overlaps: []
+disposition: keep
 ---
 
 Project the desired schema Ptah parses — Go annotations under `--root-dir`, or a

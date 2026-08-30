@@ -1,6 +1,18 @@
 ---
 title: Create your first generation
 description: Add vectors to a table that has none, on a system where nothing is searching yet.
+type: how-to
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "How do I add vectors to a table that has none, on a system where nothing is searching yet?"
+goal: "Create and verify the first searchable vector generation."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 This is the easiest case: a table with no vector column, and no application

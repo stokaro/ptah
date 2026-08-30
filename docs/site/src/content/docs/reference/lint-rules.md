@@ -1,6 +1,18 @@
 ---
 title: Lint rules
 description: Every rule Ptah's linters report, with its meaning, dialects, surface, and whether the name is Atlas's or Ptah's.
+type: reference
+audience:
+  - "all-users"
+readerQuestion: "Which lint rule identifiers can Ptah report?"
+goal: "Look up every lint rule identifier Ptah can report."
+sourceOfTruth:
+  - "migration/lint"
+  - "internal/sqllint"
+  - "internal/lintcatalog"
+generated: false
+overlaps: []
+disposition: keep
 owns:
   - cli-ptah-sql-lint
 ---

@@ -1,6 +1,19 @@
 ---
 title: Go annotation reference
 description: Every //ptah directive and attribute accepted by Ptah's Go annotation parser.
+type: reference
+audience:
+  - "all-users"
+readerQuestion: "Which Go annotation directives and attributes does Ptah accept?"
+goal: "Look up every accepted Go annotation directive and attribute."
+sourceOfTruth:
+  - "internal/annotationmeta"
+  - "schemas/ptah-annotations.schema.json"
+generated: false
+searchAliases:
+  - "Go annotations"
+overlaps: []
+disposition: keep
 owns:
   - cli-ptah-schema-annotations
 ---

@@ -1,6 +1,19 @@
 ---
 title: Exit codes
 description: How Ptah commands behave when used as automation gates.
+type: reference
+audience:
+  - "all-users"
+readerQuestion: "Which exit code should automation expect from each Ptah result?"
+goal: "Map each Ptah result to the exit code automation should expect."
+sourceOfTruth:
+  - "docs/exit_codes.md"
+  - "docs/site/scripts/check-exit-codes.mjs"
+generated: false
+searchAliases:
+  - "exit code 2"
+overlaps: []
+disposition: keep
 owns:
   - gopkg-core-ptaherr
 ---

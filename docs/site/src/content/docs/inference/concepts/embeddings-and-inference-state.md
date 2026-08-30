@@ -1,6 +1,18 @@
 ---
 title: Embeddings and inference state
 description: The terms this area uses - embedding, vector, source row, inference state - defined before anything relies on them.
+type: concept
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "How does Ptah model embeddings and inference state?"
+goal: "Explain Ptah's model for embeddings and inference state."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 This page defines the words the rest of this area uses. If you already know what

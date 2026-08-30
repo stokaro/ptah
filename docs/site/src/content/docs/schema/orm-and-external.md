@@ -1,6 +1,17 @@
 ---
 title: ORM and external loaders
 description: Feed an ORM's or any external program's schema into Ptah as the desired schema.
+type: how-to
+audience:
+  - "schema-author"
+readerQuestion: "How do I feed an ORM's or any external program's schema into Ptah as the desired schema?"
+goal: "Load an external schema into a Ptah workflow."
+sourceOfTruth:
+  - "cmd/schema"
+  - "internal/schemaload"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 When the desired schema lives in an ORM or framework rather than in Go

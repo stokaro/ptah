@@ -1,6 +1,17 @@
 ---
 title: ClickHouse
 description: ClickHouse in Ptah - the capability-limited preset, the MergeTree round trip, views and materialized views, roles and grants, and the revision table's engine.
+type: reference
+audience:
+  - "database-engineer"
+readerQuestion: "Which ClickHouse objects and operations does Ptah support?"
+goal: "Look up the ClickHouse objects and operations Ptah supports."
+sourceOfTruth:
+  - "internal/capabilityprobe/cells.go"
+  - "internal/dbschema"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 ClickHouse support is capability-limited. The preset models enums as inline

@@ -1,6 +1,19 @@
 ---
 title: Native commands
 description: Every command path the native ptah binary answers to, and the notes a verb table cannot hold.
+type: reference
+audience:
+  - "all-users"
+readerQuestion: "Which command paths does the native `ptah` binary expose?"
+goal: "Look up every command path exposed by the native `ptah` binary."
+sourceOfTruth:
+  - "cmd/root"
+  - "internal/cmdref"
+generated: false
+overlaps:
+  - "/reference/command-flags/"
+  - "/reference/atlas-commands/"
+disposition: rewrite
 ---
 
 This page is the lookup reference for the native `ptah` surface: every command

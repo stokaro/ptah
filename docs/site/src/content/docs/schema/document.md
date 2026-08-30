@@ -1,6 +1,20 @@
 ---
 title: Generate schema documentation
 description: Write a desired schema as a Markdown reference or a self-contained HTML page with ptah schema export.
+type: how-to
+audience:
+  - "schema-author"
+readerQuestion: "How do I generate a browsable schema reference?"
+goal: "Generate a browsable schema reference."
+sourceOfTruth:
+  - "cmd/schema"
+  - "internal/schemadoc"
+  - "cmd/internal/schemaserve"
+generated: false
+overlaps:
+  - "/schema/visualize/"
+  - "/schema/serve/"
+disposition: rewrite
 ---
 
 `ptah schema export --to markdown` and `ptah schema export --to html` write a

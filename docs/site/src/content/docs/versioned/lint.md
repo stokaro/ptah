@@ -1,6 +1,18 @@
 ---
 title: Lint and gate unsafe SQL
 description: Analyze migration files for production-unsafe patterns, set the rule policy, declare rules of your own, and gate destructive statements at apply time.
+type: how-to
+audience:
+  - "database-engineer"
+  - "ci-operator"
+readerQuestion: "How do I analyze migration files for production-unsafe patterns, set the rule policy, declare rules of your own, and gate destructive statements at apply time?"
+goal: "Define and enforce a migration safety policy."
+sourceOfTruth:
+  - "cmd/migrations"
+  - "migration"
+generated: false
+overlaps: []
+disposition: keep
 owns:
   - cli-ptah-migrations-lint
 ---

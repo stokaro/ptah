@@ -1,6 +1,23 @@
 ---
 title: AI agents over MCP
 description: Connect an AI client to Ptah with ptah mcp, and decide what it may read, propose, and write.
+type: how-to
+audience:
+  - "application-developer"
+  - "platform-engineer"
+readerQuestion: "How do I connect an AI client to Ptah over MCP and constrain its authority?"
+goal: "Connect an AI client to Ptah over MCP and constrain its authority."
+sourceOfTruth:
+  - "cmd/mcp"
+  - "internal/mcpserver"
+  - "internal/agentapi"
+generated: false
+searchAliases:
+  - "MCP"
+overlaps:
+  - "/operate/ai-assist/"
+  - "/reference/native-commands/"
+disposition: split
 owns:
   - cli-ptah-mcp
 ---

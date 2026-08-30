@@ -1,6 +1,18 @@
 ---
 title: Migrate a live table
 description: Run a generation change against a table your application is inserting into, updating, and deleting from throughout.
+type: how-to
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "How do I migrate a table while my application continues writing to it?"
+goal: "Migrate a table while my application continues writing to it."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 The table keeps changing while the backfill runs. This page is about not losing

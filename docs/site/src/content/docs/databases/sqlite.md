@@ -1,6 +1,17 @@
 ---
 title: SQLite
 description: SQLite in Ptah - URL forms, the supported DDL surface, and which schema changes require a table rebuild.
+type: reference
+audience:
+  - "database-engineer"
+readerQuestion: "Which SQLite URL forms and schema changes does Ptah support?"
+goal: "Look up the SQLite URL forms and schema changes Ptah supports."
+sourceOfTruth:
+  - "internal/capabilityprobe/cells.go"
+  - "internal/dbschema"
+generated: false
+overlaps: []
+disposition: keep
 owns:
   - dialect-sqlite
 ---

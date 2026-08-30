@@ -1,6 +1,18 @@
 ---
 title: OCI registry artifacts
 description: Publish, pin, pull, and consume Ptah migrations and desired schemas through an OCI registry.
+type: how-to
+audience:
+  - "platform-engineer"
+readerQuestion: "How do I publish, pin, pull, and consume Ptah migrations and desired schemas through an OCI registry?"
+goal: "Publish and consume a pinned migration or schema artifact."
+sourceOfTruth:
+  - "cmd/migrationspush"
+  - "cmd/migrationspull"
+  - "internal/schemaartifact"
+generated: false
+overlaps: []
+disposition: keep
 owns:
   - cli-ptah-migrations-pull
   - cli-ptah-migrations-push

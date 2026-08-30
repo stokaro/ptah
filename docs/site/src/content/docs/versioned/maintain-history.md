@@ -1,6 +1,18 @@
 ---
 title: Maintain migration history
 description: Edit, reorder, and delete unapplied migrations with the integrity file kept true, and repair a dirty revision state after a partial failure.
+type: how-to
+audience:
+  - "database-engineer"
+  - "ci-operator"
+readerQuestion: "How do I edit, reorder, and delete unapplied migrations with the integrity file kept true, and repair a dirty revision state after a partial failure?"
+goal: "Safely maintain unapplied migrations and repair dirty state."
+sourceOfTruth:
+  - "cmd/migrations"
+  - "migration"
+generated: false
+overlaps: []
+disposition: keep
 owns:
   - cli-ptah-migrations-rebase
   - cli-ptah-migrations-rm

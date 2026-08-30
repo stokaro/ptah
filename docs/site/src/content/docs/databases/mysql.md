@@ -1,6 +1,17 @@
 ---
 title: MySQL and MariaDB
 description: MySQL and MariaDB in Ptah - the dialect differences that reach generated SQL, the foreign-key and routine rules, cleanup privileges, and online-DDL routing.
+type: reference
+audience:
+  - "database-engineer"
+readerQuestion: "Which MySQL and MariaDB differences affect Ptah workflows?"
+goal: "Compare the MySQL and MariaDB differences that affect Ptah workflows."
+sourceOfTruth:
+  - "internal/capabilityprobe/cells.go"
+  - "internal/dbschema"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 MySQL and MariaDB share one planner and renderer family, but they are separate

@@ -1,6 +1,18 @@
 ---
 title: HCL schema reference
 description: Atlas-compatible HCL schema subset and Ptah parity extensions.
+type: reference
+audience:
+  - "all-users"
+readerQuestion: "Which Atlas-compatible HCL schema constructs does Ptah accept?"
+goal: "Look up the Atlas-compatible HCL schema constructs Ptah accepts."
+sourceOfTruth:
+  - "cmd"
+  - "core"
+  - "migration"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 Ptah can read HCL schema files as desired schema input. The parser builds the

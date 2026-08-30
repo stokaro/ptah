@@ -1,6 +1,18 @@
 ---
 title: Plan vector indexes
 description: Which index to build, when to build it, and why the numbers a query returns depend on settings the index does not carry.
+type: concept
+audience:
+  - "application-developer"
+  - "database-engineer"
+readerQuestion: "When should I build each type of vector index?"
+goal: "Choose a vector index type and when to build it."
+sourceOfTruth:
+  - "cmd/inference"
+  - "integration/inference_cli_e2e_test.go"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 Without an index, every search is a sequential scan over the whole corpus. With

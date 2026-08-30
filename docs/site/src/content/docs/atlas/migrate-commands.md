@@ -1,6 +1,18 @@
 ---
 title: Atlas migrate commands
 description: Run Atlas-style migration workflows with ptah-compat migrate apply, down, status, diff, lint, and the directory-maintenance verbs.
+type: how-to
+audience:
+  - "atlas-migrator"
+  - "evaluator"
+readerQuestion: "How do I run Atlas-style migration workflows with ptah-compat migrate apply, down, status, diff, lint, and the directory-maintenance verbs?"
+goal: "Complete an Atlas-style migration task with the matching `ptah-compat` verb."
+sourceOfTruth:
+  - "cmd/atlas"
+  - "internal/atlascompatpolicy"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 You have an Atlas-format migration directory — or scripts that manage one with

@@ -1,6 +1,18 @@
 ---
 title: Checkpoints
 description: Squash migration history into a cumulative-schema checkpoint that fresh databases bootstrap from.
+type: how-to
+audience:
+  - "database-engineer"
+  - "ci-operator"
+readerQuestion: "How do I squash migration history into a cumulative-schema checkpoint that fresh databases bootstrap from?"
+goal: "Create a checkpoint and verify fresh-database bootstrap."
+sourceOfTruth:
+  - "cmd/migrations"
+  - "migration"
+generated: false
+overlaps: []
+disposition: keep
 owns:
   - cli-ptah-migrations-checkpoint
 ---

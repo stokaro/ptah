@@ -48,6 +48,12 @@ function walk(dir) {
   return files;
 }
 
+function withoutFrontmatter(source) {
+  if (!source.startsWith('---\n')) return source;
+  const end = source.indexOf('\n---\n', 4);
+  return end === -1 ? source : source.slice(end + 5);
+}
+
 // analyze takes the pages already read -- `{ path, source }` -- so the rules can
 // be driven over fixtures that never touch the filesystem, and returns one
 // problem per violation.
@@ -65,11 +71,16 @@ export function analyze(pages) {
 
   const problems = [];
   for (const page of pages) {
-    if (page.source.includes(forbiddenRootDocsURL)) {
+    // `sourceOfTruth` deliberately names repository declarations. It is
+    // machine-readable ownership metadata, not a link that sends a reader out
+    // of the published site, so this reader-navigation gate inspects only the
+    // page body.
+    const source = withoutFrontmatter(page.source);
+    if (source.includes(forbiddenRootDocsURL)) {
       problems.push(`${page.path}: links to root docs on GitHub; publish core information in docs/site instead`);
     }
     for (const target of forbidden) {
-      if (page.source.includes(target)) {
+      if (source.includes(target)) {
         problems.push(`${page.path}: links to ${target}; use the published site reference page instead`);
       }
     }
@@ -91,6 +102,11 @@ function selftest() {
   assert(
     analyze(page('See [capabilities](/reference/capabilities/) and the [public API](/extend/public-api/).\n')).length === 0,
     'a page linking to the published references is accepted',
+  );
+
+  assert(
+    analyze(page('---\nsourceOfTruth:\n  - docs/capabilities.md\n---\nSee [capabilities](/reference/capabilities/).\n')).length === 0,
+    'a protected repository path in source-of-truth metadata is accepted',
   );
 
   // Each half of the rule, one at a time, so a fixture cannot pass on the other

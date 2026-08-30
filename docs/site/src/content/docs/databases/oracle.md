@@ -1,6 +1,17 @@
 ---
 title: Oracle
 description: Oracle in Ptah - what renders, plans and reads back on the 23 and 21 release lines, bare identifiers, type mappings, object types, and PL/SQL routines.
+type: reference
+audience:
+  - "database-engineer"
+readerQuestion: "Which Oracle objects and operations does Ptah support?"
+goal: "Look up the Oracle objects and operations Ptah supports."
+sourceOfTruth:
+  - "internal/capabilityprobe/cells.go"
+  - "internal/dbschema"
+generated: false
+overlaps: []
+disposition: keep
 ---
 
 Oracle renders, plans, connects and reads a live catalog, against two measured
