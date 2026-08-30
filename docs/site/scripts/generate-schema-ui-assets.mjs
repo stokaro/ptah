@@ -12,6 +12,7 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const siteRoot = join(scriptDir, '..');
 const repositoryRoot = join(siteRoot, '..', '..');
 const fixtureRoot = join(siteRoot, 'fixtures', 'schema-ui');
+const documentSchema = join(siteRoot, 'fixtures', 'source-equivalence', 'schema.sql');
 const desiredModels = join(fixtureRoot, 'internal', 'models');
 const baseModels = join(fixtureRoot, 'internal', 'base-models');
 const assetsRoot = join(siteRoot, 'src', 'assets');
@@ -119,7 +120,7 @@ mkdirSync(samplesRoot, { recursive: true });
 let browser;
 try {
   const sample = join(samplesRoot, 'schema-document.html');
-  run(['schema', 'export', '--to', 'html', '--root-dir', desiredModels, '--out', sample], workRoot);
+  run(['schema', 'export', '--to', 'html', '--schema-file', documentSchema, '--out', sample], workRoot);
 
   browser = await chromium.launch();
   const documentPage = await browser.newPage({ viewport });
@@ -128,7 +129,7 @@ try {
     path: join(assetsRoot, 'schema-document.png'),
     clip: { x: 0, y: 0, width: viewport.width, height: 620 },
   });
-  await documentPage.locator('#orders').screenshot({ path: join(assetsRoot, 'schema-document-table.png') });
+  await documentPage.locator('#books').screenshot({ path: join(assetsRoot, 'schema-document-table.png') });
   await documentPage.screenshot({ path: join(assetsRoot, 'schema-document-full.png'), fullPage: true });
   await documentPage.close();
 

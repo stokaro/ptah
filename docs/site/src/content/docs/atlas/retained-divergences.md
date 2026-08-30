@@ -1,12 +1,12 @@
 ---
-title: Retained divergences
-description: Cases where ptah-compat exits 1 and the pinned Atlas community binary exits 0, each with the measurement and the argument for keeping it.
+title: Compatibility differences
+description: Cases where ptah-compat deliberately differs from the pinned Atlas community binary, with the measurement and current policy for each case.
 type: status
 audience:
   - "atlas-migrator"
   - "evaluator"
-readerQuestion: "What does the current evidence establish about retained divergences?"
-goal: "Evaluate each measured divergence and the reason Ptah retains it."
+readerQuestion: "Where does ptah-compat deliberately differ from the pinned Atlas community binary?"
+goal: "Evaluate each measured compatibility difference and its current policy."
 sourceOfTruth:
   - "cmd/atlas"
   - "internal/atlascompatpolicy"
@@ -15,6 +15,8 @@ lastVerified: "2026-08-30"
 evidence:
   - "cmd/atlas/compat_1241_retained_divergence_test.go"
   - "stokaro/ptah#1241"
+searchAliases:
+  - "retained divergences"
 overlaps: []
 disposition: keep
 ---

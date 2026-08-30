@@ -64,7 +64,7 @@ documented CLI surface.
 ## Next steps
 
 - Differences Ptah keeps on purpose, each with its measurement:
-  [Retained divergences](../retained-divergences/).
+  [Compatibility differences](../retained-divergences/).
 - The measured evidence and how to re-run it: [Conformance](../conformance/).
 - Which Atlas documentation area maps where: [Atlas docs coverage](../docs-coverage/).
 - Why Ptah can be Atlas-compatible without Atlas code:

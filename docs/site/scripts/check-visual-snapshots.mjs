@@ -20,6 +20,9 @@ const viewports = [
   { name: 'desktop', width: 1440, height: 900 },
 ];
 const themes = ['light', 'dark'];
+// A preview should leave enough of the current viewport for its caption and
+// actions. Readers who need every pixel already have the full-size action.
+const maximumPreviewViewportRatio = 0.72;
 
 function snapshotName(route, viewport, theme) {
   return `${route.name}-${viewport.name}-${theme}.png`;
@@ -41,6 +44,11 @@ function selftest() {
   }
   if (routes.some((route) => Object.hasOwn(route, 'minimumImages'))) {
     console.error('check-visual-snapshots.mjs --selftest: FAILED (image counts are not visual proof)');
+    process.exitCode = 1;
+    return;
+  }
+  if (!(maximumPreviewViewportRatio > 0 && maximumPreviewViewportRatio < 1)) {
+    console.error('check-visual-snapshots.mjs --selftest: FAILED (invalid preview height ratio)');
     process.exitCode = 1;
     return;
   }
@@ -109,6 +117,10 @@ async function inspectProof(page, proof, viewport, theme) {
   if (!result.complete || result.naturalWidth === 0 || result.naturalHeight === 0) problems.push(`${prefix} primary visual did not load`);
   if (result.width < proof.minimumRenderedWidth || result.height < proof.minimumRenderedHeight) {
     problems.push(`${prefix} primary visual is ${Math.round(result.width)}x${Math.round(result.height)}; want at least ${proof.minimumRenderedWidth}x${proof.minimumRenderedHeight}`);
+  }
+  const maximumHeight = viewport.height * maximumPreviewViewportRatio;
+  if (result.height > maximumHeight + 1) {
+    problems.push(`${prefix} primary visual is ${Math.round(result.height)}px tall; preview maximum is ${Math.round(maximumHeight)}px (${Math.round(maximumPreviewViewportRatio * 100)}% of the viewport)`);
   }
   if (!result.caption.includes(proof.expectedCaption)) problems.push(`${prefix} expected caption is absent`);
   if (!result.headingFound) problems.push(`${prefix} heading ${JSON.stringify(proof.headingText)} is absent or follows the visual`);

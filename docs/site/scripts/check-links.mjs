@@ -9,7 +9,7 @@
 // -- and it cannot see that a frontmatter `slug:` moves a page's route, which
 // is the difference between validating links against what the site serves and
 // validating them against what the file names suggest.
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
@@ -131,6 +131,23 @@ function resolveRoute(sourceRoute, href) {
   return { escaped: false, route: normalizeRoute(`/${parts.join('/')}/`) };
 }
 
+function publicFileForHref(docsContentRoot, sourceRoute, href) {
+  const parts = sourceRoute.split('/').filter(Boolean);
+  for (const segment of href.split('/')) {
+    if (segment === '' || segment === '.') continue;
+    if (segment === '..') {
+      if (parts.length === 0) return null;
+      parts.pop();
+      continue;
+    }
+    parts.push(segment);
+  }
+
+  // docsContentRoot is <site>/src/content/docs. Files in <site>/public are
+  // published beside the documentation routes inside every version root.
+  return join(docsContentRoot, '..', '..', '..', 'public', ...parts);
+}
+
 // anchorError reports an anchor that no heading on the target page produces.
 // A renamed heading silently breaks every link into it; nothing 404s, the
 // reader just lands at the top of a long page and has to hunt.
@@ -147,7 +164,7 @@ function anchorError(anchorsByRoute, page, href, route, cwd) {
   );
 }
 
-function validateLink(routes, anchorsByRoute, page, href, cwd) {
+function validateLink(routes, anchorsByRoute, docsContentRoot, page, href, cwd) {
   if (!href || externalSchemes.test(href)) {
     return null;
   }
@@ -174,6 +191,18 @@ function validateLink(routes, anchorsByRoute, page, href, cwd) {
   }
   if (routes.has(resolved)) return anchorError(anchorsByRoute, page, href, resolved, cwd);
 
+  const publicFile = publicFileForHref(docsContentRoot, sourceRoute, cleanHref);
+  if (publicFile && existsSync(publicFile)) {
+    const metadata = statSync(publicFile);
+    if (!metadata.isFile()) {
+      return `${toPosix(relative(cwd, page.absolute))}: ${href} resolves to a public path that is not a file`;
+    }
+    if (metadata.size === 0) {
+      return `${toPosix(relative(cwd, page.absolute))}: ${href} resolves to an empty public file`;
+    }
+    return null;
+  }
+
   return `${toPosix(relative(cwd, page.absolute))}: ${href} resolves to missing route ${resolved}`;
 }
 
@@ -187,7 +216,7 @@ function checkLinks(root, cwd) {
   for (const page of files) {
     for (const href of extractLinks(page.source)) {
       links += 1;
-      const error = validateLink(routes, anchorsByRoute, page, href, cwd);
+      const error = validateLink(routes, anchorsByRoute, root, page, href, cwd);
       if (error) errors.push(error);
     }
   }
@@ -315,6 +344,26 @@ function selftest() {
     // count is asserted because a pattern that silently stopped matching would
     // leave every other assertion here comparing two empty sets.
     assert(anchored.links === 10, `expected 10 links, got ${anchored.links}`);
+
+    // Version-relative downloads live under public/ rather than in the
+    // content collection. They must resolve from the page's route and must
+    // contain bytes; a placeholder file is not a usable download.
+    writeDoc(join(tmp, 'public'), 'samples/example.zip', 'archive bytes');
+    writeDoc(join(tmp, 'public'), 'samples/empty.zip', '');
+    writeDoc(
+      root,
+      'tutorial/downloads.md',
+      [
+        '---',
+        'title: Downloads',
+        '---',
+        '[Fixture](../../samples/example.zip)',
+        '[Empty fixture](../../samples/empty.zip)',
+      ].join('\n'),
+    );
+    const downloads = checkLinks(root, tmp);
+    assert(!downloads.errors.some((error) => error.includes('example.zip')), 'accepts a non-empty public file');
+    assert(downloads.errors.some((error) => error.includes('empty public file')), 'rejects an empty public file');
 
     console.log('check-links.mjs --selftest: OK');
   } finally {

@@ -16,6 +16,7 @@ searchAliases:
   - "apply desired schema"
 overlaps: []
 disposition: keep
+sourceMode: source-neutral
 owns:
   - cli-ptah-schema-apply
 ---

@@ -12,6 +12,7 @@ sourceOfTruth:
 generated: false
 overlaps: []
 disposition: keep
+sourceMode: source-neutral
 ---
 
 Assemble one desired schema from several ownership boundaries. Repeat

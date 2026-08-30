@@ -10,11 +10,18 @@ sourceOfTruth:
   - "cmd/schema"
   - "internal/schemaload"
 generated: false
+searchAliases:
+  - "generate migration from Go structs"
 overlaps: []
 disposition: keep
+sourceMode: go-only
 owns:
   - gopkg-core-goschema
 ---
+
+When annotated structs own the schema, use this Go-specific frontend. For a
+source-neutral starting point, see [work with a schema
+source](../work-with-a-source/).
 
 Use Go annotations when your Go application owns the schema and the database
 should follow annotated model types. Ptah reads comments, not runtime Go tags,
@@ -177,7 +184,7 @@ Ptah creates `extensions` first and renders `CREATE EXTENSION ... WITH SCHEMA
 extensions`. The same installation schema survives parsing from HCL or YAML,
 Go-to-HCL export, live inspection, comparison, and a later apply.
 
-## Use the schema
+## Render and generate migrations from Go structs
 
 Everything from here is the same for every source, and lives once on
 [Work with a desired schema](../work-with-a-source/): rendering the SQL a

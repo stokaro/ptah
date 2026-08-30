@@ -14,6 +14,7 @@ searchAliases:
   - "generate protobuf"
 overlaps: []
 disposition: keep
+sourceMode: source-neutral
 ---
 
 Project the desired schema Ptah parses — a YAML, HCL, SQL, or DBML file named

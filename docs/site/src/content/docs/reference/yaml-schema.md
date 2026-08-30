@@ -13,6 +13,7 @@ sourceOfTruth:
 generated: false
 overlaps: []
 disposition: keep
+sourceMode: static-file-only
 owns:
   - gopkg-core-yamlschema
 ---

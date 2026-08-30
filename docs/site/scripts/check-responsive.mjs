@@ -26,7 +26,7 @@ const siteRoot = join(scriptDir, '..');
 // Widths chosen for what they expose: 390 is a common phone viewport and the
 // width at which Starlight collapses navigation; 1280 is a laptop; 1920 leaves
 // enough room for the 70rem content shell and therefore proves that prose still
-// stops at its independent 40rem measure.
+// stops at and is centered within its independent 60rem measure.
 const viewports = [
   { name: 'mobile', width: 390, height: 844 },
   { name: 'desktop', width: 1280, height: 900 },
@@ -36,7 +36,10 @@ const viewports = [
 // A few pixels of slack: sub-pixel rounding in the layout engine otherwise
 // reports overflow on pages that look correct.
 const overflowTolerance = 2;
-const maxProseWidth = 642;
+const maxProseWidth = 962;
+const targetProseWidth = 960;
+const minimumTargetProseWidth = targetProseWidth - overflowTolerance;
+const wideMeasureRoute = '/versioned/generate/';
 
 // The tallest a table cell may render at desktop width. Character count cannot
 // see this: a short cell in a column squeezed narrow by an unbreakable code
@@ -273,13 +276,34 @@ const measure = ({ tolerance, cellLineLimit }) => {
     '.sl-markdown-content > ol',
     '.sl-markdown-content > blockquote',
     '.sl-markdown-content > dl',
+    '.sl-markdown-content > h2',
+    '.sl-markdown-content > h3',
+    '.sl-markdown-content > h4',
+    '.sl-markdown-content > h5',
+    '.sl-markdown-content > h6',
     '.sl-markdown-content > details',
     '.sl-markdown-content > .starlight-aside',
   ].join(',');
+  const markdown = document.querySelector('.sl-markdown-content');
+  const markdownRect = markdown?.getBoundingClientRect();
+  const proseCenterOffsets = [];
   for (const element of document.querySelectorAll(proseSelector)) {
     const rect = element.getBoundingClientRect();
-    if (rect.width > 0) proseWidths.push(Math.round(rect.width));
+    if (rect.width > 0) {
+      proseWidths.push(Math.round(rect.width));
+      if (markdownRect) {
+        proseCenterOffsets.push(Math.abs((rect.left + rect.right - markdownRect.left - markdownRect.right) / 2));
+      }
+    }
   }
+
+  const contentShell = markdown?.parentElement;
+  const contentPanel = contentShell?.closest('.content-panel');
+  const shellRect = contentShell?.getBoundingClientRect();
+  const panelRect = contentPanel?.getBoundingClientRect();
+  const heading = document.querySelector('.page-heading');
+  const headingRect = heading?.getBoundingClientRect();
+  const headingShellRect = heading?.parentElement?.getBoundingClientRect();
 
   return {
     scrollWidth: doc.scrollWidth,
@@ -288,8 +312,72 @@ const measure = ({ tolerance, cellLineLimit }) => {
     tallCells: tallCells.sort((a, b) => b.lines - a.lines).slice(0, 5),
     wideTables: wideTables.sort((a, b) => b.overflow - a.overflow).slice(0, 3),
     widestProse: proseWidths.length > 0 ? Math.max(...proseWidths) : 0,
+    proseElementCount: proseWidths.length,
+    hasMarkdown: Boolean(markdown),
+    proseCenterOffset: proseCenterOffsets.length > 0 ? Math.max(...proseCenterOffsets) : 0,
+    hasContentShell: Boolean(shellRect),
+    hasContentPanel: Boolean(panelRect),
+    contentShellCenterOffset: shellRect && panelRect
+      ? Math.abs((shellRect.left + shellRect.right - panelRect.left - panelRect.right) / 2)
+      : 0,
+    pageHeadingWidth: headingRect?.width ?? 0,
+    hasPageHeading: Boolean(headingRect),
+    pageHeadingCenterOffset: headingRect && headingShellRect
+      ? Math.abs((headingRect.left + headingRect.right - headingShellRect.left - headingShellRect.right) / 2)
+      : 0,
   };
 };
+
+function readingMeasureProblems(result, route, viewport) {
+  if (viewport.name === 'mobile') return [];
+
+  const problems = [];
+  if (!result.hasMarkdown) problems.push(`${route}: Markdown content container was not rendered`);
+  if (!result.hasContentShell || !result.hasContentPanel) {
+    problems.push(`${route}: content shell or content panel was not rendered`);
+  }
+  // The documentation home has an intentional custom hero. Every ordinary
+  // article must render the shared page heading so width and centering remain
+  // measurable instead of falling back to zero and passing silently.
+  if (!result.hasPageHeading && route !== '/') problems.push(`${route}: page heading was not rendered`);
+  if (result.widestProse > maxProseWidth) {
+    problems.push(`${route}: prose renders ${result.widestProse}px wide, over the ${maxProseWidth}px reading measure`);
+  }
+  if (result.proseCenterOffset > overflowTolerance) {
+    problems.push(`${route}: prose is ${Math.round(result.proseCenterOffset)}px off center in its content shell`);
+  }
+  if (result.contentShellCenterOffset > overflowTolerance) {
+    problems.push(`${route}: content shell is ${Math.round(result.contentShellCenterOffset)}px off center in its panel`);
+  }
+  if (result.pageHeadingWidth > maxProseWidth) {
+    problems.push(`${route}: page heading renders ${Math.round(result.pageHeadingWidth)}px wide, over ${maxProseWidth}px`);
+  }
+  if (result.pageHeadingCenterOffset > overflowTolerance) {
+    problems.push(`${route}: page heading is ${Math.round(result.pageHeadingCenterOffset)}px off center`);
+  }
+
+  // An upper bound alone would accept the old 40rem measure. Pin one ordinary
+  // article at a viewport where the full 60rem measure fits, while leaving
+  // narrow viewports and intentionally compact components responsive.
+  if (viewport.name === 'wide-desktop' && route === wideMeasureRoute) {
+    if (result.proseElementCount === 0) {
+      problems.push(`${route}: no ordinary prose element was rendered for the 60rem reading-measure check`);
+    } else if (result.widestProse < minimumTargetProseWidth) {
+      problems.push(
+        `${route}: prose renders ${result.widestProse}px wide at 1920px, below the ${minimumTargetProseWidth}px ` +
+          'minimum for the 60rem reading measure',
+      );
+    }
+    if (result.pageHeadingWidth < minimumTargetProseWidth) {
+      problems.push(
+        `${route}: page heading renders ${Math.round(result.pageHeadingWidth)}px wide at 1920px, below the ` +
+          `${minimumTargetProseWidth}px minimum for the 60rem reading measure`,
+      );
+    }
+  }
+
+  return problems;
+}
 
 async function loadChromium() {
   try {
@@ -434,6 +522,64 @@ async function main() {
         failures.push(`prose-width detector returned ${measures.widestProse}, expected 640`);
       }
 
+      await page.setViewportSize({ width: 1200, height: 900 });
+      await page.setContent(
+        '<main><div class="content-panel" style="width:1000px">' +
+          '<div class="sl-container" style="width:800px;margin-inline:auto">' +
+          '<div class="page-heading" style="width:600px;margin-inline:auto">heading</div>' +
+          '<div class="sl-markdown-content"><p style="width:600px;margin-inline:auto">prose</p></div>' +
+          '</div></div></main>',
+      );
+      const centered = await page.evaluate(measure, { tolerance: overflowTolerance, cellLineLimit: maxCellLines });
+      await page.setContent(
+        '<main><div class="content-panel" style="width:1000px">' +
+          '<div class="sl-container" style="width:800px;margin-inline:0">' +
+          '<div class="page-heading" style="width:600px;margin-inline:0">heading</div>' +
+          '<div class="sl-markdown-content"><p style="width:600px;margin-inline:0">prose</p></div>' +
+          '</div></div></main>',
+      );
+      const leftAligned = await page.evaluate(measure, { tolerance: overflowTolerance, cellLineLimit: maxCellLines });
+      if (centered.proseCenterOffset > overflowTolerance || centered.contentShellCenterOffset > overflowTolerance ||
+          centered.pageHeadingCenterOffset > overflowTolerance) {
+        failures.push('centering detector rejected centered prose, shell, or page heading');
+      }
+      if (leftAligned.proseCenterOffset <= overflowTolerance ||
+          leftAligned.contentShellCenterOffset <= overflowTolerance ||
+          leftAligned.pageHeadingCenterOffset <= overflowTolerance) {
+        failures.push('centering detector accepted a left-aligned prose shell');
+      }
+
+      const wideViewport = { name: 'wide-desktop', width: 1920, height: 1080 };
+      const undersized = readingMeasureProblems(centered, wideMeasureRoute, wideViewport);
+      if (!undersized.some((problem) => problem.includes('below the 958px minimum'))) {
+        failures.push('60rem target detector accepted the old, narrower reading measure');
+      }
+      await page.setViewportSize({ width: wideViewport.width, height: wideViewport.height });
+      await page.setContent(
+        '<main><div class="content-panel" style="width:1200px;margin-inline:auto">' +
+          '<div class="sl-container" style="width:1120px;margin-inline:auto">' +
+          '<div class="page-heading" style="width:960px;margin-inline:auto">heading</div>' +
+          '<div class="sl-markdown-content"><p style="width:960px;margin-inline:auto">prose</p></div>' +
+          '</div></div></main>',
+      );
+      const fullMeasure = await page.evaluate(measure, {
+        tolerance: overflowTolerance,
+        cellLineLimit: maxCellLines,
+      });
+      const fullMeasureProblems = readingMeasureProblems(fullMeasure, wideMeasureRoute, wideViewport);
+      if (fullMeasureProblems.length > 0) {
+        failures.push(`60rem target detector rejected the requested measure: ${fullMeasureProblems.join('; ')}`);
+      }
+      await page.setContent('<main></main>');
+      const missingLayout = await page.evaluate(measure, {
+        tolerance: overflowTolerance,
+        cellLineLimit: maxCellLines,
+      });
+      const missingProblems = readingMeasureProblems(missingLayout, wideMeasureRoute, wideViewport);
+      if (!missingProblems.some((problem) => problem.includes('was not rendered'))) {
+        failures.push('reading-measure detector accepted missing layout selectors');
+      }
+
       const fixtureBase = '/ptah/edge';
       const distRoot = writeFixtureDist(fixtureBase);
       try {
@@ -540,12 +686,8 @@ async function main() {
               `extends to ${offender.right}px, past the ${result.clientWidth}px viewport`,
           );
         }
+        errors.push(...readingMeasureProblems(result, route, viewport));
         if (viewport.name !== 'mobile') {
-          if (result.widestProse > maxProseWidth) {
-            errors.push(
-              `${route}: prose renders ${result.widestProse}px wide, over the ${maxProseWidth}px reading measure`,
-            );
-          }
           for (const table of result.wideTables) {
             errors.push(
               `${route}: a table is ${table.width}px wide inside a ${table.container}px container ` +
@@ -607,7 +749,7 @@ async function main() {
   }
   console.log(
     `check-responsive.mjs: OK (${routes.length} routes x ${viewports.length} viewports, ` +
-      `prose within ${maxProseWidth}px, cells within ${maxCellLines} lines)`,
+      `prose centered with a ${targetProseWidth}px wide-screen target, cells within ${maxCellLines} lines)`,
   );
 }
 

@@ -14,6 +14,7 @@ sourceOfTruth:
 generated: false
 overlaps: []
 disposition: keep
+sourceMode: source-neutral
 owns:
   - cli-ptah-schema-approve
   - cli-ptah-schema-plan

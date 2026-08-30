@@ -12,6 +12,7 @@ sourceOfTruth:
 generated: false
 overlaps: []
 disposition: keep
+sourceMode: source-neutral
 owns:
   - dialect-sqlite
 ---

@@ -15,6 +15,7 @@ overlaps:
   - "/schema/document/"
   - "/direct/compare-and-drift/"
 disposition: keep
+sourceMode: go-only
 owns:
   - cli-ptah-schema-serve
 ---
@@ -27,6 +28,12 @@ import schemaServeMatches from '../../../assets/schema-serve-matches.png';
 
 export const schemaServeMatchesSample = `${import.meta.env.BASE_URL}samples/schema-serve-matches.html`;
 export const schemaServeDriftSample = `${import.meta.env.BASE_URL}samples/schema-serve-drift.html`;
+
+`ptah schema serve` currently reads **Go annotations only** for the desired
+schema. It does not accept a schema file or external loader. Use
+[generated HTML schema documentation](../document/) for a source-neutral
+browsable reference, or [`ptah schema drift`](../../direct/compare-and-drift/)
+for a source-neutral live-database check with a pipeline exit code.
 
 `ptah schema serve` serves a read-only web page carrying two things: the desired
 schema, and how a live database differs from it. The page re-reads both on every

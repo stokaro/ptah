@@ -1,6 +1,6 @@
 ---
 title: Quick start
-description: Build, verify, and activate an embedding generation with a disposable PostgreSQL and local provider fixture.
+description: Build, verify, and activate an embedding generation with a downloadable PostgreSQL and local-provider fixture.
 type: tutorial
 audience:
   - "application-developer"
@@ -23,52 +23,106 @@ overlaps:
 disposition: keep
 ---
 
-Build and activate one embedding generation without sending data to an external
-model service. The fixture supplies a disposable PostgreSQL 17 database with
-pgvector 0.8.1, three source rows, and a deterministic local embeddings API.
+Build and activate one embedding generation without cloning the Ptah
+repository or sending data to an external model service. The downloadable
+fixture supplies PostgreSQL 17 with pgvector 0.8.6, three source rows, and a
+deterministic local embeddings API.
 
-The lifecycle keeps two roles separate: the **candidate generation** receives
-new vectors while the application continues to use the **active generation**.
-Only cutover changes the active pointer. On this empty fixture there is no old
-active generation, so the first candidate becomes the first active one.
+The **candidate generation** receives new vectors while the application keeps
+using the **active generation**. Only cutover changes the active pointer. This
+empty fixture has no older generation, so its first candidate becomes active.
 
 ## What you need
 
-- Ptah [installed](../../start/install/) or built as `bin/ptah`;
-- Docker Compose;
-- Bash, `sed`, and `tee` for the approval step;
-- ports `55432` and `58080` available on the Docker host.
+- Ptah [installed](../../start/install/) as `ptah` on `PATH`;
+- Docker with Compose and access to Linux containers;
+- Bash, or Windows PowerShell 5.1 or later;
+- a ZIP extractor.
 
-Run all commands from the repository root. If you installed Ptah elsewhere,
-replace `bin/ptah` below with `ptah`.
+The fixture defaults to host ports `55432` and `58080`. You can override both
+before startup. The cleanup step removes the containers, project network,
+database volume, locally built images, and extracted fixture.
 
-## 1. Start the disposable services
+## 1. Download the fixture
 
-```bash
-docker compose -f docs/site/fixtures/inference-quick-start/compose.yaml up -d --build --wait
-```
+<a href="../../samples/inference-quick-start.zip" download data-ptah-inference-archive>Download the inference quick-start archive</a>
+and its
+<a href="../../samples/inference-quick-start.zip.sha256" download data-ptah-inference-checksum>SHA-256 checksum</a>.
+Both links stay within the documentation version you selected.
 
-Compose reports both `postgres` and `embeddings` as healthy. The database init
-script installs pgvector and inserts the source rows; the provider maps each
-input deterministically to four numbers based on its UTF-8 length.
+Verify and extract the archive with your shell.
 
-Set names used by the remaining commands:
-
-```bash
-export PTAH_INFERENCE_DB='postgres://ptah:ptah@127.0.0.1:55432/ptah?sslmode=disable'
-export PTAH_INFERENCE_SPEC='docs/site/fixtures/inference-quick-start/spec.yaml'
-export PTAH_INFERENCE_RUN='quick-start'
-```
-
-## 2. Review the plan
+**Bash on Linux:**
 
 ```bash
-bin/ptah inference plan \
-  --spec "$PTAH_INFERENCE_SPEC" \
-  --db-url "$PTAH_INFERENCE_DB"
+sha256sum -c inference-quick-start.zip.sha256
+unzip inference-quick-start.zip
+cd inference-quick-start
 ```
 
-Check these stable facts in the output before continuing:
+On macOS, replace the first command with
+`shasum -a 256 -c inference-quick-start.zip.sha256`.
+
+**PowerShell:**
+
+```powershell
+$expected = (Get-Content .\inference-quick-start.zip.sha256).Split()[0]
+$actual = (Get-FileHash .\inference-quick-start.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($actual -ne $expected) { throw "inference fixture checksum mismatch" }
+Expand-Archive .\inference-quick-start.zip -DestinationPath .
+Set-Location .\inference-quick-start
+```
+
+The extracted directory contains the Compose project, database initialization,
+provider source, specification template, and Bash and PowerShell helpers. It
+has no repository-relative path.
+
+## 2. Start PostgreSQL and pgvector
+
+Set optional port or project overrides before startup. A distinct project name
+lets two extracted fixtures run without sharing Compose resources.
+
+**Bash:**
+
+```bash
+export PTAH_INFERENCE_POSTGRES_PORT=55432
+export PTAH_INFERENCE_EMBED_PORT=58080
+export PTAH_INFERENCE_PROJECT=ptah-inference-quick-start
+./run.sh up
+
+export PTAH_SPEC="$PWD/.ptah-inference/spec.yaml"
+export PTAH_DB_URL="postgres://ptah:ptah@127.0.0.1:${PTAH_INFERENCE_POSTGRES_PORT}/ptah?sslmode=disable"
+export PTAH_RUN_ID=quick-start
+```
+
+**PowerShell:**
+
+```powershell
+$env:PTAH_INFERENCE_POSTGRES_PORT = '55432'
+$env:PTAH_INFERENCE_EMBED_PORT = '58080'
+$env:PTAH_INFERENCE_PROJECT = 'ptah-inference-quick-start'
+.\run.ps1 up
+
+$env:PTAH_SPEC = (Resolve-Path .\.ptah-inference\spec.yaml).Path
+$env:PTAH_DB_URL = "postgres://ptah:ptah@127.0.0.1:$($env:PTAH_INFERENCE_POSTGRES_PORT)/ptah?sslmode=disable"
+$env:PTAH_RUN_ID = 'quick-start'
+```
+
+The helper passes the selected ports to Compose and writes their provider URL
+to `.ptah-inference/spec.yaml`. It passes an explicit Docker context named by
+`PTAH_DOCKER_CONTEXT`, or `default` when the variable is absent. Compose reports
+both `postgres` and `embeddings` as healthy.
+
+The remaining `ptah` commands read `PTAH_SPEC`, `PTAH_DB_URL`, and
+`PTAH_RUN_ID` through their normal flag environment bindings.
+
+## 3. Review the plan
+
+```console
+ptah inference plan
+```
+
+Expected output includes these stable facts:
 
 ```text
 source.estimated_rows = 3 (measured)
@@ -77,114 +131,132 @@ target.capability.vector_type = true (measured)
 Consistency mode: outbox
 ```
 
-The plan is read-only. It tells you how many rows are in scope and whether the
-target database actually provides the required vector type.
+The plan is read-only. It measures the source rows and confirms that the target
+database provides the required vector type.
 
-## 3. Prepare and backfill the candidate
+## 4. Prepare and fill the candidate
 
-```bash
-bin/ptah inference prepare \
-  --spec "$PTAH_INFERENCE_SPEC" --db-url "$PTAH_INFERENCE_DB" \
-  --run-id "$PTAH_INFERENCE_RUN"
-
-bin/ptah inference backfill \
-  --spec "$PTAH_INFERENCE_SPEC" --db-url "$PTAH_INFERENCE_DB" \
-  --run-id "$PTAH_INFERENCE_RUN" --batch-rows 10
+```console
+ptah inference prepare
+ptah inference backfill --batch-rows 10
 ```
 
-The second command ends with this stable summary:
+Expected output from backfill:
 
 ```text
 backfill finished: 3 scanned, 3 embedded, 0 skipped
 ```
 
-Ptah has now written the candidate vectors, their generation identity, source
-version, input hash, and state. Nothing has cut over.
+Ptah writes the candidate vectors, generation identity, source version, input
+hash, and state. Nothing has cut over.
 
-## 4. Catch up, index, and verify
+## 5. Catch up, index, and verify
 
-```bash
-bin/ptah inference catchup \
-  --spec "$PTAH_INFERENCE_SPEC" --db-url "$PTAH_INFERENCE_DB" \
-  --run-id "$PTAH_INFERENCE_RUN" --batch-rows 10
-
-bin/ptah inference index \
-  --spec "$PTAH_INFERENCE_SPEC" --db-url "$PTAH_INFERENCE_DB" \
-  --run-id "$PTAH_INFERENCE_RUN"
-
-bin/ptah inference verify \
-  --spec "$PTAH_INFERENCE_SPEC" --db-url "$PTAH_INFERENCE_DB" \
-  --run-id "$PTAH_INFERENCE_RUN"
+```console
+ptah inference catchup --batch-rows 10
+ptah inference index
+ptah inference verify
 ```
 
-Verification reports three source rows and three target rows, followed by
-`every deterministic layer passed`. A passing report makes the generation
-eligible for cutover; it does not activate it.
+Expected verification output includes:
 
-## 5. Inspect what Ptah wrote
-
-```bash
-bin/ptah inference status \
-  --spec "$PTAH_INFERENCE_SPEC" --db-url "$PTAH_INFERENCE_DB" \
-  --run-id "$PTAH_INFERENCE_RUN"
-
-docker compose -f docs/site/fixtures/inference-quick-start/compose.yaml \
-  exec -T postgres psql -U ptah -d ptah -c \
-  'SELECT id, embedding_generation, embedding_state FROM docs ORDER BY id;'
+```text
+3 source rows, 3 target rows
+every deterministic layer passed
 ```
 
-`status` names the run and its completed phase. The query returns three rows;
-each has the same nonempty generation identity and the state `upsert`.
+A passing report makes the generation eligible for cutover. It does not
+activate the generation.
 
-## 6. Approve the exact cutover plan
+Inspect the recorded run and candidate rows:
 
-First run cutover without approval. Refusal is deliberate: it prints the digest
-of the plan you are being asked to approve.
-
-```bash
-bin/ptah inference cutover \
-  --spec "$PTAH_INFERENCE_SPEC" --db-url "$PTAH_INFERENCE_DB" \
-  --run-id "$PTAH_INFERENCE_RUN" 2>&1 | tee /tmp/ptah-inference-cutover.txt
-
-export PTAH_INFERENCE_PLAN="$(sed -n 's/^plan //p' /tmp/ptah-inference-cutover.txt | head -1)"
+```console
+ptah inference status
 ```
 
-Confirm that `PTAH_INFERENCE_PLAN` is not empty, then bind the approval to it:
+**Bash:**
 
 ```bash
-test -n "$PTAH_INFERENCE_PLAN"
-
-bin/ptah inference cutover \
-  --spec "$PTAH_INFERENCE_SPEC" --db-url "$PTAH_INFERENCE_DB" \
-  --run-id "$PTAH_INFERENCE_RUN" \
-  --approve "$PTAH_INFERENCE_PLAN" --approver 'quick-start operator'
+./run.sh rows
 ```
 
-The successful command prints `queries now read generation …` with the same
-plan digest. Because no previous generation exists, there is nothing to keep as
-a rollback target in this first run.
+**PowerShell:**
 
-## 7. Verify the active pointer and clean up
-
-```bash
-docker compose -f docs/site/fixtures/inference-quick-start/compose.yaml \
-  exec -T postgres psql -U ptah -d ptah -c \
-  "SELECT target_table, active_generation FROM ptah_embedding_pointer;"
+```powershell
+.\run.ps1 rows
 ```
 
-The row for `docs` names the generation you inspected in step 5. That pointer,
-not the completion of backfill or verification, is what makes a generation
-active.
+The query returns three rows. Each row has the same nonempty generation
+identity and the state `upsert`.
 
-Remove the containers, network, and disposable database volume with one
-command:
+## 6. Bind approval and cut over
+
+Capture the digest from a deliberately unapproved `ptah inference cutover`.
+The helper prints the refusal and returns only its `plan <digest>` value.
+
+**Bash:**
 
 ```bash
-rm -f /tmp/ptah-inference-cutover.txt && \
-  docker compose -f docs/site/fixtures/inference-quick-start/compose.yaml down -v --rmi local
+export PTAH_APPROVE="$(./run.sh approval-digest)"
+test -n "$PTAH_APPROVE"
+```
+
+**PowerShell:**
+
+```powershell
+$env:PTAH_APPROVE = & .\run.ps1 approval-digest
+if (-not $env:PTAH_APPROVE) { throw "cutover printed no plan digest" }
+```
+
+Bind the approval to that digest. `PTAH_APPROVE` supplies the `--approve` flag.
+
+```console
+ptah inference cutover --approver "quick-start operator"
+```
+
+Expected output includes `queries now read generation` and the approved plan
+digest. This first run has no previous generation to retain as a rollback
+target.
+
+## 7. Verify and clean up
+
+Read the pointer that makes the generation active.
+
+**Bash:**
+
+```bash
+./run.sh pointer
+```
+
+**PowerShell:**
+
+```powershell
+.\run.ps1 pointer
+```
+
+The row for `docs` names the generation from the candidate rows. The pointer,
+not completion of backfill or verification, changes what queries read.
+
+Return to the directory that contains the extracted fixture, then remove every
+fixture resource and the extracted files. Run the cleanup helper even when an
+earlier step fails.
+
+**Bash:**
+
+```bash
+./cleanup.sh
+cd ..
+rm -rf inference-quick-start
+```
+
+**PowerShell:**
+
+```powershell
+.\cleanup.ps1
+Set-Location ..
+Remove-Item .\inference-quick-start -Recurse -Force
 ```
 
 Next, use [Migrate to another model](../guides/migrate-to-another-model/) to
-create a second generation and preserve the first through a stabilization
-window, or read [Generations](../concepts/generations/) for the complete active,
-candidate, previous, and retired state model.
+create a second generation, or read [Generations](../concepts/generations/) for
+the active, candidate, previous, and retired state model.

@@ -139,13 +139,9 @@ function resolveInternalRoute(sourceRoute, href) {
 }
 
 function metadataProblems(data, file) {
-  const problems = validatePageMetadata(data).map((problem) =>
+  return validatePageMetadata(data, { repositoryRoot: repoRoot }).map((problem) =>
     `${file}: ${problem.path.join('.')} ${problem.message}`,
   );
-  if (data.readerQuestion && !data.readerQuestion.endsWith('?')) {
-    problems.push(`${file}: readerQuestion must be written as a question`);
-  }
-  return problems;
 }
 
 function buildInventory() {
@@ -203,6 +199,7 @@ function buildInventory() {
       lastVerified: metadata.lastVerified ?? null,
       evidence: metadata.evidence ?? [],
       searchAliases: metadata.searchAliases ?? [],
+      sourceMode: metadata.sourceMode ?? null,
       overlaps: metadata.overlaps,
       disposition: metadata.disposition,
       outboundLinks: outbound,
@@ -291,7 +288,93 @@ function selftest() {
     }, 'fixture.md').some((problem) => problem.includes('reader outcome')),
     'a goal cannot repeat the description',
   );
-  console.log('build-content-inventory.mjs --selftest: OK (10 assertions)');
+  const metadataFixture = {
+    type: 'status', audience: ['operator'], readerQuestion: 'What is measured?', goal: 'Read the evidence.',
+    sourceOfTruth: ['cmd/schema'], overlaps: [], disposition: 'keep', generated: false,
+    evidence: ['stokaro/ptah#2571'],
+  };
+  assert(
+    metadataProblems({ ...metadataFixture, lastVerified: '2026-02-30' }, 'fixture.md')
+      .some((problem) => problem.includes('real calendar date')),
+    'impossible verification dates fail',
+  );
+  assert(
+    validatePageMetadata({ ...metadataFixture, lastVerified: '2026-08-31' }, { repositoryRoot: repoRoot, today: '2026-08-30' })
+      .some((problem) => problem.message.includes('future')),
+    'future verification dates fail',
+  );
+  assert(
+    validatePageMetadata({ ...metadataFixture, lastVerified: '2026-08-30', sourceOfTruth: ['cmd/does-not-exist'] }, { repositoryRoot: repoRoot, today: '2026-08-30' })
+      .some((problem) => problem.message.includes('missing repository path')),
+    'mistyped repository paths fail',
+  );
+  assert(
+    validatePageMetadata({ ...metadataFixture, lastVerified: '2026-08-30', evidence: ['stokaro/ptah#2571', 'github:stokaro/ptah-atlas-conformance'] }, { repositoryRoot: repoRoot, today: '2026-08-30' }).length === 0,
+    'issue and explicitly typed external repository identifiers pass',
+  );
+  assert(
+    validatePageMetadata({ ...metadataFixture, lastVerified: '2026-08-30', evidence: ['https://example.com/evidence', 'evidence:conformance/run/edge'] }, { repositoryRoot: repoRoot, today: '2026-08-30' }).length === 0,
+    'URLs and explicitly typed named evidence identifiers pass',
+  );
+  assert(
+    validatePageMetadata({ ...metadataFixture, lastVerified: '2026-08-30', sourceOfTruth: ['cmdd/schema'] }, { repositoryRoot: repoRoot, today: '2026-08-30' })
+      .some((problem) => problem.message.includes('missing repository path')),
+    'a mistyped local path cannot masquerade as an external repository identifier',
+  );
+  assert(
+    validatePageMetadata({ ...metadataFixture, lastVerified: '2026-08-30', readerQuestion: 'What is measured' }, { repositoryRoot: repoRoot, today: '2026-08-30' })
+      .some((problem) => problem.path[0] === 'readerQuestion' && problem.message.includes('ending in ?')),
+    'readerQuestion syntax is enforced by shared metadata validation',
+  );
+  assert(
+    validatePageMetadata({
+      ...metadataFixture, lastVerified: '2026-08-30', generated: true,
+      generator: 'docs/site/scripts/does-not-exist.mjs', editSource: 'internal/does-not-exist',
+    }, { repositoryRoot: repoRoot, today: '2026-08-30' })
+      .filter((problem) => problem.message.includes('missing repository path')).length === 2,
+    'mistyped generator and edit-source paths fail',
+  );
+  assert(
+    validatePageMetadata({ ...metadataFixture, lastVerified: '2026-08-30', lengthWaiver: 'old field' }, { repositoryRoot: repoRoot, today: '2026-08-30' })
+      .some((problem) => problem.path[0] === 'lengthWaiver'),
+    'the retired lengthWaiver field fails',
+  );
+  assert(
+    validatePageMetadata({
+      ...metadataFixture, lastVerified: '2026-08-30', generator: 'docs/site/scripts/build-content-inventory.mjs',
+    }, { repositoryRoot: repoRoot, today: '2026-08-30' })
+      .some((problem) => problem.path[0] === 'generator' && problem.message.includes('generated is true')),
+    'authored pages cannot declare a dead generator action',
+  );
+  assert(
+    validatePageMetadata({
+      ...metadataFixture, lastVerified: '2026-08-30', editSource: 'docs/site/src/content/docs/index.mdx',
+    }, { repositoryRoot: repoRoot, today: '2026-08-30' })
+      .some((problem) => problem.path[0] === 'editSource' && problem.message.includes('generated is true')),
+    'authored pages cannot declare a misleading editSource action',
+  );
+  assert(
+    validatePageMetadata({
+      ...metadataFixture, lastVerified: '2026-08-30', generated: true,
+      generator: 'https://example.com/generator', editSource: 'stokaro/ptah#2571',
+    }, { repositoryRoot: repoRoot, today: '2026-08-30' })
+      .filter((problem) => problem.message.includes('repository-relative path')).length === 2,
+    'generated-page actions require repository-local generator and edit-source paths',
+  );
+  assert(
+    validatePageMetadata({ ...metadataFixture, lastVerified: '2026-08-30', evidence: [] }, {
+      repositoryRoot: repoRoot, today: '2026-08-30',
+    }).some((problem) => problem.path[0] === 'evidence'),
+    'an explicitly present evidence list cannot be empty',
+  );
+  assert(
+    validatePageMetadata({
+      ...metadataFixture, lastVerified: '2026-08-30', owns: [''], searchAliases: [''], overlaps: [''],
+    }, { repositoryRoot: repoRoot, today: '2026-08-30' })
+      .filter((problem) => ['owns', 'searchAliases', 'overlaps'].includes(problem.path[0])).length === 3,
+    'shared validation rejects empty entries in optional and required string arrays',
+  );
+  console.log('build-content-inventory.mjs --selftest: OK (24 assertions)');
 }
 
 function main() {

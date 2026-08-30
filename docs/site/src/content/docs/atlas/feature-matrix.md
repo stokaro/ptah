@@ -9,14 +9,14 @@ readerQuestion: What does the current evidence establish for one Ptah or Atlas c
 goal: Determine whether current evidence establishes, limits, or leaves a capability unresolved.
 sourceOfTruth:
   - docs/site/scripts/data/feature-matrix-rows.json
-  - stokaro/ptah-atlas-conformance
+  - github:stokaro/ptah-atlas-conformance
 generated: true
 generator: docs/site/scripts/build-feature-matrix.mjs
 editSource: docs/site/scripts/data/feature-matrix-rows.json
 lastVerified: "2026-08-30"
 evidence:
   - docs/site/scripts/data/feature-matrix-rows.json
-  - stokaro/ptah-atlas-conformance
+  - github:stokaro/ptah-atlas-conformance
 overlaps:
   - /atlas/conformance/
   - /atlas/docs-coverage/
@@ -30,7 +30,7 @@ row cites the evidence it rests on.
 
 It is a status index, not an argument. The measured evidence is on
 [Conformance](../conformance/), the differences Ptah keeps on purpose are on
-[Retained divergences](../retained-divergences/), and the Atlas-documentation
+[Compatibility differences](../retained-divergences/), and the Atlas-documentation
 crosswalk is on [Atlas docs coverage](../docs-coverage/).
 
 ## How to read the tables
@@ -510,7 +510,7 @@ documented CLI surface.
 ## Next steps
 
 - Differences Ptah keeps on purpose, each with its measurement:
-  [Retained divergences](../retained-divergences/).
+  [Compatibility differences](../retained-divergences/).
 - The measured evidence and how to re-run it: [Conformance](../conformance/).
 - Which Atlas documentation area maps where: [Atlas docs coverage](../docs-coverage/).
 - Why Ptah can be Atlas-compatible without Atlas code:

@@ -10,8 +10,11 @@ sourceOfTruth:
   - "cmd/schema"
   - "internal/schemaload"
 generated: false
+searchAliases:
+  - "external schema loader"
 overlaps: []
 disposition: keep
+sourceMode: external-program-only
 ---
 
 When the desired schema lives in an ORM or framework rather than in Go

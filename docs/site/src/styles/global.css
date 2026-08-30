@@ -51,13 +51,13 @@
 	 * readable measure. Code, diagrams, and tables remain free to use the full
 	 * content column below. */
 	--sl-content-width: 70rem;
-	--ptah-prose-width: 40rem;
+	--ptah-prose-width: 60rem;
 }
 
 /*
  * Markdown renders ordinary prose as direct children of this container. The
- * page shell stays 70rem wide for material that benefits from it; text that a
- * reader follows line by line stops near 72--80 characters instead. Images and
+ * page shell stays 70rem wide for material that benefits from it; prose uses a
+ * centered 60rem measure whenever the viewport leaves room. Images and
  * explicit wide blocks opt back into the page measure.
  */
 .sl-markdown-content > :where(
@@ -76,10 +76,16 @@
 	.starlight-aside
 ) {
 	max-inline-size: var(--ptah-prose-width);
+	margin-inline: auto;
 }
 
 .sl-markdown-content > :where(p:has(> img:only-child), figure, .ptah-wide-content) {
 	max-inline-size: none;
+}
+
+.main-pane .page-heading {
+	max-inline-size: var(--ptah-prose-width);
+	margin-inline: auto;
 }
 
 /*
@@ -96,18 +102,20 @@
 }
 
 .ptah-product-preview__media {
-	display: block;
+	display: grid;
+	place-items: center;
 	padding: clamp(0.5rem, 2vw, 1.25rem);
 	background: var(--sl-color-bg);
-	overflow-x: auto;
+	overflow: auto;
 }
 
 .ptah-product-preview__media img {
 	display: block;
-	width: 100%;
-	min-width: min(100%, 34rem);
+	max-width: 100%;
+	max-height: min(70vh, 44rem);
 	height: auto;
 	margin-inline: auto;
+	object-fit: contain;
 }
 
 .ptah-product-preview__media:focus-visible,
@@ -173,8 +181,11 @@
 
 .ptah-product-preview__variants img {
 	display: block;
-	width: 100%;
+	max-width: 100%;
+	max-height: min(55vh, 32rem);
 	height: auto;
+	margin-inline: auto;
+	object-fit: contain;
 }
 
 .ptah-product-preview__variants p {
@@ -307,7 +318,7 @@
 		 * rail to leave room for: measured with this rule deleted, its `min()`
 		 * gives the pane 640px of an available 896px at 1152, and the column
 		 * 592px. */
-		--sl-content-margin-inline: 0 auto;
+		--sl-content-margin-inline: auto;
 		width: 100%;
 	}
 
@@ -329,11 +340,9 @@
 	}
 
 	[data-has-sidebar][data-has-toc] .main-pane {
-		/* Starlight right-aligns the reading column when both side rails are
-		 * present, putting every spare pixel between the navigation and the
-		 * page. Keep the page next to its navigation and put that space before
-		 * the table of contents instead. */
-		--sl-content-margin-inline: 0 auto;
+		/* Center the content shell between the navigation and context rails once
+		 * the viewport can provide spare horizontal room. */
+		--sl-content-margin-inline: auto;
 		width: calc(100% - var(--ptah-toc-width));
 	}
 

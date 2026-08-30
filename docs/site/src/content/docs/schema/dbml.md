@@ -12,6 +12,7 @@ sourceOfTruth:
 generated: false
 overlaps: []
 disposition: keep
+sourceMode: static-file-only
 ---
 
 [DBML](https://dbml.dbdiagram.io/) is a compact way to write down tables,

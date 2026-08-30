@@ -12,6 +12,7 @@ sourceOfTruth:
 generated: false
 overlaps: []
 disposition: keep
+sourceMode: static-file-only
 ---
 
 Use SQL schema files when the desired schema is already written as local DDL

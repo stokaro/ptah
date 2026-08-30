@@ -13,6 +13,7 @@ sourceOfTruth:
 generated: false
 overlaps: []
 disposition: keep
+sourceMode: command-specific
 ---
 
 Start with the exact error line, the command that produced it, and the inputs

@@ -1,7 +1,9 @@
 ---
 import { getCollection } from 'astro:content';
 import PageActions from './PageActions.astro';
-import { breadcrumbTrail } from '../lib/page-context.mjs';
+import { breadcrumbTrail, sidebarOverviewHrefs } from '../lib/page-context.mjs';
+import { pageActionsForSource, resolveSourceContext, sourceCommitForBuild } from '../lib/source-context.mjs';
+import releaseUiOverlay from '../../scripts/data/release-ui-overlay.json';
 
 // Starlight's table of contents targets this id for the page title. Its
 // constants module is internal and is intentionally not part of package
@@ -9,19 +11,32 @@ import { breadcrumbTrail } from '../lib/page-context.mjs';
 const PAGE_TITLE_ID = '_top';
 const { entry, sidebar, siteTitleHref } = Astro.locals.starlightRoute;
 const landingEntries = await getCollection('docs', ({ data }) => data.type === 'landing');
-const landingHrefs = new Set(landingEntries.map(({ id }) => `${siteTitleHref}${id ? `${id}/` : ''}`));
+const landingHrefs = new Set([
+  ...landingEntries.map(({ id }) => `${siteTitleHref}${id ? `${id}/` : ''}`),
+  ...sidebarOverviewHrefs(sidebar),
+]);
 const breadcrumbs = breadcrumbTrail(sidebar, landingHrefs);
 const hasAncestors = breadcrumbs.some((crumb) => !crumb.current);
 const hasSource = Boolean(entry.filePath) && entry.id !== '404' && !entry.id.endsWith('/404');
 const markdownUrl = `${import.meta.env.BASE_URL}page-source/${entry.id}.md`;
 const repositoryPath = `docs/site/${entry.filePath}`;
-const editUrl = `https://github.com/stokaro/ptah/edit/master/${repositoryPath}`;
-const sourceUrl = `https://github.com/stokaro/ptah/blob/master/${repositoryPath}`;
-const reportParams = new URLSearchParams({
-  title: `docs: ${entry.data.title}`,
-  body: `Page: ${Astro.url.href}\nSource: ${sourceUrl}\n\nWhat needs to change?\n`,
+const legacyGeneratedPages = releaseUiOverlay.legacyGeneratedPages as Record<
+  string,
+  { generator: string; editSource: string }
+>;
+const legacyGeneratedPage = legacyGeneratedPages[entry.id];
+const sourceContext = resolveSourceContext({
+  documentationVersion: process.env.DOCS_VERSION?.trim() || 'edge',
+  sourceCommit: sourceCommitForBuild(),
+  renderedSourcePath: repositoryPath,
+  generated: entry.data.generated ?? Boolean(legacyGeneratedPage),
+  generator: entry.data.generator ?? legacyGeneratedPage?.generator,
+  editSource: entry.data.editSource ?? legacyGeneratedPage?.editSource,
 });
-const reportUrl = `https://github.com/stokaro/ptah/issues/new?${reportParams}`;
+const pageActions = pageActionsForSource(sourceContext, {
+  pageUrl: Astro.url.href,
+  title: entry.data.title,
+});
 const searchAliases = entry.data.searchAliases ?? [];
 const verifiedDate = entry.data.lastVerified
   ? new Date(`${entry.data.lastVerified}T00:00:00Z`).toLocaleDateString('en-US', {
@@ -81,22 +96,21 @@ const verifiedDate = entry.data.lastVerified
     {hasSource && (
       <PageActions
         markdownUrl={markdownUrl}
-        editUrl={editUrl}
-        sourceUrl={sourceUrl}
-        reportUrl={reportUrl}
+        markdownLabel={pageActions.markdownLabel}
+        actions={pageActions.actions}
+        sourceContext={sourceContext}
       />
     )}
   </div>
 
-  <h1 id={PAGE_TITLE_ID}>{entry.data.title}</h1>
+  <h1
+    id={PAGE_TITLE_ID}
+    data-search-aliases={searchAliases.length > 0 ? searchAliases.join(' · ') : undefined}
+    data-pagefind-meta={searchAliases.length > 0 ? 'searchAliases[data-search-aliases]' : undefined}
+  >{entry.data.title}</h1>
   {verifiedDate && (
     <p class="verified-date">
       Evidence verified <time datetime={entry.data.lastVerified}>{verifiedDate}</time>
-    </p>
-  )}
-  {searchAliases.length > 0 && (
-    <p class="search-aliases" data-pagefind-weight="10">
-      {searchAliases.join(' · ')}
     </p>
   )}
 </div>
@@ -339,10 +353,6 @@ const verifiedDate = entry.data.lastVerified
     margin-top: 0.65rem;
     color: var(--sl-color-gray-3);
     font-size: var(--sl-text-sm);
-  }
-
-  .search-aliases {
-    display: none;
   }
 
   @media (max-width: 40rem) {

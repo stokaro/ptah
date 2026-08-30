@@ -15,6 +15,7 @@ overlaps:
   - "/start/choose-a-workflow/"
   - "/concepts/migration-directory/"
 disposition: keep
+sourceMode: source-neutral
 ---
 
 Use versioned migrations when a database change must be reviewed before it runs,

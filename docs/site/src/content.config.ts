@@ -2,7 +2,10 @@ import { defineCollection } from 'astro:content';
 import { z } from 'astro/zod';
 import { docsLoader } from '@astrojs/starlight/loaders';
 import { docsSchema } from '@astrojs/starlight/schema';
-import { dispositions, pageTypes, validatePageMetadata } from './lib/content-metadata.mjs';
+import { fileURLToPath } from 'node:url';
+import { dispositions, pageTypes, sourceModes, validatePageMetadata } from './lib/content-metadata.mjs';
+
+const repositoryRoot = fileURLToPath(new URL('../../../', import.meta.url));
 
 const pageMetadata = z.object({
   type: z.enum(pageTypes as [string, ...string[]]),
@@ -19,10 +22,13 @@ const pageMetadata = z.object({
   searchAliases: z.array(z.string().min(1)).optional(),
   overlaps: z.array(z.string().min(1)),
   disposition: z.enum(dispositions as [string, ...string[]]),
-  lengthWaiver: z.string().min(1).optional(),
+  sourceMode: z.enum(sourceModes as [string, ...string[]]).optional(),
+  // Keep the retired key visible only so Astro rejects it instead of silently
+  // stripping an unknown frontmatter field.
+  lengthWaiver: z.never().optional(),
   quickstart: z.boolean().optional(),
 }).superRefine((data, context) => {
-  for (const problem of validatePageMetadata(data)) {
+  for (const problem of validatePageMetadata(data, { repositoryRoot })) {
     context.addIssue({ code: 'custom', path: problem.path, message: problem.message });
   }
 });

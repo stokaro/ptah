@@ -16,6 +16,7 @@ searchAliases:
   - "schema drift"
 overlaps: []
 disposition: keep
+sourceMode: source-neutral
 owns:
   - cli-ptah-schema-compare
   - cli-ptah-schema-diff

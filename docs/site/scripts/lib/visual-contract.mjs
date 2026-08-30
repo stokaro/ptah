@@ -10,6 +10,12 @@ export const assetTypes = new Set([
 ]);
 
 export const deliveryStates = new Set(['verified', 'partial', 'phase4']);
+export const fixtureClasses = new Set([
+  'canonical-common-subset',
+  'necessary-source-specific',
+  'necessary-product-ui',
+  'redundant-duplicate',
+]);
 
 const requiredOutputIds = new Set([
   'schema-viz',
@@ -135,13 +141,18 @@ export function manifestProblems({ assetManifest, outputInventory, repositoryRoo
   }
   for (const output of outputs) {
     const where = output.id || '<output without id>';
-    for (const field of ['command', 'route', 'proofType', 'fixture', 'generator', 'themeBehavior', 'requiredPlacement', 'acceptanceTest', 'owner', 'deliveryState']) {
+    for (const field of ['command', 'route', 'proofType', 'fixture', 'fixtureClass', 'fixtureReason', 'generator', 'themeBehavior', 'requiredPlacement', 'acceptanceTest', 'owner', 'deliveryState']) {
       if (!output[field]) problems.push(`${where}: ${field} is required`);
     }
     if (!output.route?.startsWith('/')) problems.push(`${where}: route must start with /`);
     if (!['product-output', 'explanatory'].includes(output.proofType)) problems.push(`${where}: invalid proofType ${output.proofType}`);
     if (!Array.isArray(output.variants) || !Array.isArray(output.downloads)) problems.push(`${where}: variants and downloads must be arrays`);
     if (!deliveryStates.has(output.deliveryState)) problems.push(`${where}: invalid deliveryState ${output.deliveryState}`);
+    if (!fixtureClasses.has(output.fixtureClass)) problems.push(`${where}: invalid fixtureClass ${output.fixtureClass}`);
+    if (output.fixtureClass === 'redundant-duplicate') problems.push(`${where}: redundant duplicate fixture must be consolidated or justified as another class`);
+    if (typeof output.fixtureReason !== 'string' || output.fixtureReason.trim().length < 30) {
+      problems.push(`${where}: fixtureReason must contain at least 30 characters`);
+    }
     for (const field of ['fixture', 'generator', 'acceptanceTest', 'owner']) {
       if (output[field] && !existsSync(join(repositoryRoot, output[field]))) problems.push(`${where}: ${field} does not exist: ${output[field]}`);
     }

@@ -13,6 +13,7 @@ sourceOfTruth:
 generated: false
 overlaps: []
 disposition: keep
+sourceMode: command-specific
 ---
 
 Ptah can read a strict subset of Atlas project configuration from `atlas.hcl`

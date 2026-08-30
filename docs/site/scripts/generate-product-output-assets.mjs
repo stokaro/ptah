@@ -22,6 +22,7 @@ const siteRoot = join(scriptDir, '..');
 const repositoryRoot = join(siteRoot, '..', '..');
 const fixtureRoot = join(siteRoot, 'fixtures', 'product-output');
 const vizFixture = join(siteRoot, 'fixtures', 'schema-ui', 'internal', 'models');
+const commonSchema = join(siteRoot, 'fixtures', 'source-equivalence', 'schema.sql');
 const assetsRoot = join(siteRoot, 'src', 'assets');
 const samplesRoot = join(siteRoot, 'public', 'samples');
 const vizSamples = join(samplesRoot, 'visualize');
@@ -197,7 +198,7 @@ try {
 
   const schemaArgs = [
     'schema', 'test', '--dir', join(fixtureRoot, 'schema-tests'),
-    '--root-dir', join(fixtureRoot, 'schema.sql'), '--report', 'html',
+    '--schema-file', join(fixtureRoot, 'schema.sql'), '--report', 'html',
   ];
   const schemaPass = execute([...schemaArgs, '--run', '^product schema accepts a row$'], workRoot);
   const schemaFail = execute([...schemaArgs, '--run', '^empty product schema has two rows$'], workRoot, [1]);
@@ -217,7 +218,7 @@ try {
 
   const statsDB = join(workRoot, 'stats.db');
   run([
-    'schema', 'apply', '--schema-file', join(fixtureRoot, 'schema.sql'),
+    'schema', 'apply', '--schema-file', commonSchema,
     '--db-url', `sqlite://${statsDB}`, '--auto-approve',
   ], workRoot);
   writeSample(join(samplesRoot, 'schema-stats.openmetrics.txt'), run([
@@ -225,16 +226,16 @@ try {
   ], workRoot).replaceAll(statsDB, '/tmp/ptah-docs-stats.db'));
 
   writeSample(join(contractSamples, 'shop-openapi.yaml'), run([
-    'schema', 'export', '--to', 'openapi-v3', '--schema-file', join(fixtureRoot, 'schema.sql'), '--title', 'Shop schema',
+    'schema', 'export', '--to', 'openapi-v3', '--schema-file', commonSchema, '--title', 'Library schema',
   ], workRoot));
   writeSample(join(contractSamples, 'shop.graphql'), run([
-    'schema', 'export', '--to', 'graphql', '--schema-file', join(fixtureRoot, 'schema.sql'),
+    'schema', 'export', '--to', 'graphql', '--schema-file', commonSchema,
   ], workRoot));
-  const proto = join(workRoot, 'shop', 'v1', 'shop.proto');
+  const proto = join(workRoot, 'library', 'v1', 'library.proto');
   mkdirSync(dirname(proto), { recursive: true });
   run([
-    'schema', 'export', '--to', 'protobuf', '--schema-file', join(fixtureRoot, 'schema.sql'),
-    '--out', proto, '--proto-package', 'shop.v1',
+    'schema', 'export', '--to', 'protobuf', '--schema-file', commonSchema,
+    '--out', proto, '--proto-package', 'library.v1',
   ], workRoot);
   copyFileSync(proto, join(contractSamples, 'shop.proto'));
 

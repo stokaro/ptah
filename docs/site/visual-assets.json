@@ -57,19 +57,19 @@
     },
     {
       "id": "schema-document", "path": "docs/site/src/assets/schema-document.png", "type": "product-screenshot",
-      "editableSource": null, "fixture": "docs/site/fixtures/schema-ui", "generator": "docs/site/scripts/generate-schema-ui-assets.mjs", "pages": ["/", "/schema/document/"],
+      "editableSource": null, "fixture": "docs/site/fixtures/source-equivalence", "generator": "docs/site/scripts/generate-schema-ui-assets.mjs", "pages": ["/", "/schema/document/"],
       "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 256000,
       "themeBehavior": "captured-light", "fullSizeArtifact": "docs/site/public/samples/schema-document.html", "versionedDownload": true, "volatileDataNormalized": true
     },
     {
       "id": "schema-document-table", "path": "docs/site/src/assets/schema-document-table.png", "type": "product-screenshot",
-      "editableSource": null, "fixture": "docs/site/fixtures/schema-ui", "generator": "docs/site/scripts/generate-schema-ui-assets.mjs", "pages": ["/schema/document/"],
+      "editableSource": null, "fixture": "docs/site/fixtures/source-equivalence", "generator": "docs/site/scripts/generate-schema-ui-assets.mjs", "pages": ["/schema/document/"],
       "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 256000,
       "themeBehavior": "captured-light", "fullSizeArtifact": "docs/site/public/samples/schema-document.html", "versionedDownload": true, "volatileDataNormalized": true
     },
     {
       "id": "schema-document-full", "path": "docs/site/src/assets/schema-document-full.png", "type": "product-screenshot",
-      "editableSource": null, "fixture": "docs/site/fixtures/schema-ui", "generator": "docs/site/scripts/generate-schema-ui-assets.mjs", "pages": ["/schema/document/"],
+      "editableSource": null, "fixture": "docs/site/fixtures/source-equivalence", "generator": "docs/site/scripts/generate-schema-ui-assets.mjs", "pages": ["/schema/document/"],
       "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 256000,
       "themeBehavior": "captured-light", "fullSizeArtifact": "docs/site/src/assets/schema-document-full.png", "versionedDownload": true, "volatileDataNormalized": true
     },
@@ -135,25 +135,25 @@
     },
     {
       "id": "schema-stats-openmetrics", "path": "docs/site/public/samples/schema-stats.openmetrics.txt", "type": "generated-product-output",
-      "editableSource": null, "fixture": "docs/site/fixtures/product-output", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/schema/stats/"],
+      "editableSource": null, "fixture": "docs/site/fixtures/source-equivalence", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/schema/stats/"],
       "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 16384,
       "themeBehavior": "not-applicable-text-output", "fullSizeArtifact": "docs/site/public/samples/schema-stats.openmetrics.txt", "versionedDownload": true
     },
     {
       "id": "schema-contract-openapi", "path": "docs/site/public/samples/contracts/shop-openapi.yaml", "type": "generated-product-output",
-      "editableSource": null, "fixture": "docs/site/fixtures/product-output", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/schema/export/"],
+      "editableSource": null, "fixture": "docs/site/fixtures/source-equivalence", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/schema/export/"],
       "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 16384,
       "themeBehavior": "not-applicable-source-output", "fullSizeArtifact": "docs/site/public/samples/contracts/shop-openapi.yaml", "versionedDownload": true
     },
     {
       "id": "schema-contract-graphql", "path": "docs/site/public/samples/contracts/shop.graphql", "type": "generated-product-output",
-      "editableSource": null, "fixture": "docs/site/fixtures/product-output", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/schema/export/"],
+      "editableSource": null, "fixture": "docs/site/fixtures/source-equivalence", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/schema/export/"],
       "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 16384,
       "themeBehavior": "not-applicable-source-output", "fullSizeArtifact": "docs/site/public/samples/contracts/shop.graphql", "versionedDownload": true
     },
     {
       "id": "schema-contract-protobuf", "path": "docs/site/public/samples/contracts/shop.proto", "type": "generated-product-output",
-      "editableSource": null, "fixture": "docs/site/fixtures/product-output", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/schema/export/"],
+      "editableSource": null, "fixture": "docs/site/fixtures/source-equivalence", "generator": "docs/site/scripts/generate-product-output-assets.mjs", "pages": ["/schema/export/"],
       "titleRequired": false, "descriptionRequired": false, "sizeLimitBytes": 16384,
       "themeBehavior": "not-applicable-source-output", "fullSizeArtifact": "docs/site/public/samples/contracts/shop.proto", "versionedDownload": true
     },
@@ -167,11 +167,14 @@
   "snapshotRoutes": [
     { "route": "/", "name": "home" },
     { "route": "/start/quick-start/", "name": "quick-start" },
+    { "route": "/start/choose-a-workflow/", "name": "choose-workflow" },
     { "route": "/inference/overview/", "name": "inference-overview" },
+    { "route": "/inference/quick-start/", "name": "inference-quick-start" },
     { "route": "/databases/support-matrix/", "name": "support-matrix" },
     { "route": "/operate/troubleshooting/", "name": "troubleshooting" },
     { "route": "/reference/native-commands/", "name": "native-commands" },
     { "route": "/atlas/overview/", "name": "atlas-overview" },
+    { "route": "/atlas/retained-divergences/", "name": "compatibility-differences" },
     { "route": "/versioned/generate/", "name": "versioned-generate" },
     { "route": "/schema/visualize/", "name": "schema-visualize" },
     { "route": "/schema/document/", "name": "schema-document" },
@@ -207,7 +210,7 @@
     },
     {
       "route": "/schema/document/", "primaryVisualId": "schema-document", "selector": "[data-visual-id=\"schema-document\"]",
-      "expectedCaption": "Real self-contained HTML output generated from the four-table documentation fixture.", "expectedArtifact": "docs/site/src/assets/schema-document.png",
+      "expectedCaption": "Real self-contained HTML output generated from the source-neutral SQL fixture.", "expectedArtifact": "docs/site/src/assets/schema-document.png",
       "maxVisibleWordsBeforeVisual": 250, "minimumRenderedWidth": 280, "minimumRenderedHeight": 130,
       "fullSizeAction": true, "sourceAction": true, "downloadAction": true, "requiredVariants": ["table-detail"], "themes": ["light", "dark"], "enforced": true
     },
