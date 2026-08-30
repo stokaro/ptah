@@ -6,45 +6,9 @@ on:
     tags:
       - 'v*'
   pull_request:
-    paths:
-      # The style check governs every documentation layer and the terminology
-      # check governs every Markdown file in the repository, so the workflow has
-      # to see changes to all of them. `**.md` and `**.mdx` are what cover
-      # CLAUDE.md, TESTING.md and the other root records that belong to no
-      # layer; they subsume the README entries this list used to name.
-      #
-      # A corpus wider than this list would be a gate that reports without
-      # running, so check-terminology.mjs reads this block and fails when one of
-      # its own files is not reachable from it. Only the site build is gated on
-      # docs/site/** below.
-      - 'docs/**'
-      - 'examples/**'
-      - 'integration/**'
-      - '**.md'
-      - '**.mdx'
-      - '.github/workflows/docs.yml'
 
 permissions:
   contents: read
-
-# Serialize the DEPLOYMENT, not the validation.
-#
-# The group used to be the constant `docs-pages`, so every pull request and
-# every master push competed for one slot. `cancel-in-progress: false` protects
-# a run that has already STARTED; it does nothing for one still queued, and a
-# queued run superseded by a newer one ends as cancelled with zero jobs. A
-# cancelled run with no jobs does not appear in the pull request's check rollup
-# at all -- so a documentation-only pull request was green on every check while
-# the only gate governing the files it changed never ran, and nothing about the
-# page said so (stokaro/ptah#1652).
-#
-# GitHub Pages genuinely needs one deploy at a time, which is what the `deploy`
-# slot keeps. A pull request running three Node scripts needs nothing of the
-# sort, and gets one group per ref: a new push to the same branch supersedes its
-# own earlier run, which is what cancellation should mean here.
-concurrency:
-  group: docs-pages-${{ github.event_name == 'pull_request' && github.ref || 'deploy' }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   MAX_DOC_TAG_VERSIONS: ${{ vars.MAX_DOC_TAG_VERSIONS || 10 }}
@@ -55,15 +19,19 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
-      docs: ${{ steps.filter.outputs.docs }}
+      site: ${{ steps.filter.outputs.site }}
       style: ${{ steps.filter.outputs.style }}
+      generated: ${{ steps.filter.outputs.generated }}
+      examples: ${{ steps.filter.outputs.examples }}
+      inference: ${{ steps.filter.outputs.inference }}
+      quickstart: ${{ steps.filter.outputs.quickstart }}
     steps:
       - uses: actions/checkout@v7
       - id: filter
         uses: dorny/paths-filter@v4
         with:
           filters: |
-            docs:
+            site:
               - 'docs/site/**'
               - '.github/workflows/docs.yml'
             style:
@@ -74,6 +42,52 @@ jobs:
               - '**/README.md'
               - 'AGENTS.md'
               - '.github/workflows/docs.yml'
+            generated:
+              - 'cmd/**'
+              - 'core/**'
+              - 'dbschema/**'
+              - 'internal/capabilityprobe/**'
+              - 'internal/cmdref/**'
+              - 'internal/featureinventory/**'
+              - 'migration/**'
+              - 'docs/feature-inventory.json'
+              - 'docs/site/src/content/docs/databases/support-matrix.md'
+              - 'docs/site/src/content/docs/reference/native-commands.md'
+              - 'docs/site/src/content/docs/reference/command-flags.md'
+              - 'docs/site/src/content/docs/reference/lint-rules.md'
+              - 'scripts/check-docsync.sh'
+              - 'scripts/check-feature-inventory.sh'
+              - '.github/workflows/docs.yml'
+            examples:
+              - 'cmd/**'
+              - 'core/**'
+              - 'migration/**'
+              - 'examples/**'
+              - 'scripts/check-examples.sh'
+              - 'go.mod'
+              - 'go.sum'
+              - '.github/workflows/docs.yml'
+            inference:
+              - 'cmd/inference/**'
+              - 'internal/inference*/**'
+              - 'docs/site/fixtures/inference-quick-start/**'
+              - 'docs/site/scripts/check-inference-quick-start.sh'
+              - 'docs/site/src/content/docs/inference/**'
+              - 'go.mod'
+              - 'go.sum'
+              - '.github/workflows/docs.yml'
+            quickstart:
+              - 'cmd/**'
+              - 'core/**'
+              - 'dbschema/**'
+              - 'internal/quickstart/**'
+              - 'migration/**'
+              - 'docs/site/src/content/docs/start/**'
+              - 'scripts/check-quickstart.sh'
+              - 'go.mod'
+              - 'go.sum'
+              - '.github/workflows/docs.yml'
+              - '.github/workflows/quickstart-acceptance.yml'
 
   style:
     name: Documentation style
@@ -83,7 +97,7 @@ jobs:
     # and AGENTS.md. Those layers get their own job so a change to one of them
     # cannot merge unchecked.
     if: >-
-      github.event_name == 'pull_request' ||
+      ( github.event_name == 'pull_request' && needs.changes.outputs.style == 'true' ) ||
       ( github.event_name == 'push' && github.ref == 'refs/heads/master' &&
         needs.changes.outputs.style == 'true' )
     runs-on: ubuntu-latest
@@ -127,6 +141,10 @@ jobs:
           node docs/site/scripts/check-visual-assets.mjs
           node docs/site/scripts/check-support-matrix.mjs --selftest
           node docs/site/scripts/check-support-matrix.mjs
+          node docs/site/scripts/check-documentation-gate.mjs --selftest
+          node docs/site/scripts/check-build-info.mjs --selftest
+          node docs/site/scripts/write-build-info.mjs --selftest
+          node docs/site/scripts/check-public-docs.mjs --selftest
           node docs/site/scripts/check-matrix-verdict-prose.mjs --selftest
           node docs/site/scripts/check-matrix-verdict-prose.mjs
           node docs/site/scripts/check-matrix-citations.mjs --selftest
@@ -148,10 +166,10 @@ jobs:
     name: Build versioned site
     needs: changes
     if: >-
-      github.event_name == 'pull_request' ||
+      ( github.event_name == 'pull_request' && needs.changes.outputs.site == 'true' ) ||
       ( github.event_name == 'push' &&
         ( startsWith(github.ref, 'refs/tags/v') ||
-          (github.ref == 'refs/heads/master' && needs.changes.outputs.docs == 'true') ) )
+          (github.ref == 'refs/heads/master' && needs.changes.outputs.site == 'true') ) )
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -238,8 +256,13 @@ jobs:
           npm run check:visual-snapshots -- --output "$RUNNER_TEMP/ptah-docs-visual-snapshots"
           npm run check:navigation
           npm run check:search-ranking
+          npm run check:build-info
           mkdir -p "$GITHUB_WORKSPACE/_site/edge"
           cp -r dist/. "$GITHUB_WORKSPACE/_site/edge/"
+          node scripts/write-build-info.mjs \
+            --output "$GITHUB_WORKSPACE/_site/edge/build-info.json" \
+            --version edge \
+            --source-commit "$(git rev-parse HEAD)"
 
       - name: Upload desktop and mobile review snapshots
         if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master'
@@ -283,6 +306,10 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/_site/edge"
           cp -r "$workdir/docs/site/dist/." "$GITHUB_WORKSPACE/_site/edge/"
           git worktree remove --force "$workdir" || true
+          node docs/site/scripts/write-build-info.mjs \
+            --output "$GITHUB_WORKSPACE/_site/edge/build-info.json" \
+            --version edge \
+            --source-commit "$(git rev-parse origin/master)"
 
       - name: Build each released tag
         if: github.event_name == 'push'
@@ -318,6 +345,10 @@ jobs:
               ); then
                 mkdir -p "$GITHUB_WORKSPACE/_site/$tag"
                 cp -r "$workdir/docs/site/dist/." "$GITHUB_WORKSPACE/_site/$tag/"
+                node "$GITHUB_WORKSPACE/docs/site/scripts/write-build-info.mjs" \
+                  --output "$GITHUB_WORKSPACE/_site/$tag/build-info.json" \
+                  --version "$tag" \
+                  --source-commit "$(git rev-list -n 1 "$tag")"
               else
                 echo "::warning::$tag failed to build; skipping this historical version"
               fi
@@ -361,9 +392,9 @@ jobs:
     name: Inference quick-start acceptance
     needs: changes
     if: >-
-      github.event_name == 'pull_request' ||
+      ( github.event_name == 'pull_request' && needs.changes.outputs.inference == 'true' ) ||
       ( github.event_name == 'push' && github.ref == 'refs/heads/master' &&
-        needs.changes.outputs.docs == 'true' )
+        needs.changes.outputs.inference == 'true' )
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -378,15 +409,96 @@ jobs:
           PTAH_DOCKER_CONTEXT: default
         run: docs/site/scripts/check-inference-quick-start.sh
 
+  generated-documentation:
+    name: Generated documentation
+    needs: changes
+    if: >-
+      ( github.event_name == 'pull_request' && needs.changes.outputs.generated == 'true' ) ||
+      ( github.event_name == 'push' && github.ref == 'refs/heads/master' &&
+        needs.changes.outputs.generated == 'true' )
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Verify generated documentation
+        run: |
+          set -euo pipefail
+          scripts/check-docsync.sh
+          scripts/check-feature-inventory.sh
+          go test ./internal/cmdref -count=1
+
+  example-acceptance:
+    name: Example acceptance
+    needs: changes
+    if: >-
+      ( github.event_name == 'pull_request' && needs.changes.outputs.examples == 'true' ) ||
+      ( github.event_name == 'push' && github.ref == 'refs/heads/master' &&
+        needs.changes.outputs.examples == 'true' )
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Execute supported examples
+        run: scripts/check-examples.sh
+
+  quickstart-acceptance:
+    needs: changes
+    if: >-
+      github.event_name == 'pull_request' && needs.changes.outputs.quickstart == 'true'
+    uses: ./.github/workflows/quickstart-acceptance.yml
+
+  documentation-gate:
+    name: Documentation gate
+    if: always() && github.event_name == 'pull_request'
+    needs:
+      - changes
+      - style
+      - build
+      - generated-documentation
+      - example-acceptance
+      - inference-quick-start
+      - quickstart-acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify the aggregate result
+        env:
+          SITE_CHANGED: ${{ needs.changes.outputs.site }}
+          STYLE_CHANGED: ${{ needs.changes.outputs.style }}
+          GENERATED_CHANGED: ${{ needs.changes.outputs.generated }}
+          EXAMPLES_CHANGED: ${{ needs.changes.outputs.examples }}
+          INFERENCE_CHANGED: ${{ needs.changes.outputs.inference }}
+          QUICKSTART_CHANGED: ${{ needs.changes.outputs.quickstart }}
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          SITE_RESULT: ${{ needs.build.result }}
+          STYLE_RESULT: ${{ needs.style.result }}
+          GENERATED_RESULT: ${{ needs.generated-documentation.result }}
+          EXAMPLES_RESULT: ${{ needs.example-acceptance.result }}
+          INFERENCE_RESULT: ${{ needs.inference-quick-start.result }}
+          QUICKSTART_RESULT: ${{ needs.quickstart-acceptance.result }}
+        run: |
+          node docs/site/scripts/check-documentation-gate.mjs --selftest
+          node docs/site/scripts/check-documentation-gate.mjs
+
   deploy:
     name: Deploy to GitHub Pages
     needs: [changes, build]
     if: >-
       github.event_name == 'push' &&
-      ( startsWith(github.ref, 'refs/tags/v') ||
-        (github.ref == 'refs/heads/master' && needs.changes.outputs.docs == 'true') )
+        ( startsWith(github.ref, 'refs/tags/v') ||
+        (github.ref == 'refs/heads/master' && needs.changes.outputs.site == 'true') )
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    concurrency:
+      group: docs-pages-deploy
+      cancel-in-progress: false
     permissions:
       pages: write
       id-token: write
@@ -397,3 +509,28 @@ jobs:
       - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v5
+
+  public-edge-smoke:
+    name: Public edge smoke
+    needs: deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: docs/site/package-lock.json
+      - name: Install the public smoke-test browser
+        working-directory: docs/site
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Verify the deployed edge site
+        working-directory: docs/site
+        run: >-
+          node scripts/check-public-docs.mjs
+          --base-url https://stokaro.github.io/ptah/edge/
+          --expected-commit "${{ github.sha }}"

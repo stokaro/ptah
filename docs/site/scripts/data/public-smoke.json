@@ -1,0 +1,43 @@
+{
+  "routes": [
+    {
+      "path": "",
+      "requiredText": "Ptah"
+    },
+    {
+      "path": "schema/visualize/",
+      "requiredText": "Visualize the schema",
+      "visuals": [
+        {
+          "selector": "img[alt*='Ptah-generated entity-relationship diagram']"
+        }
+      ]
+    },
+    {
+      "path": "schema/document/",
+      "requiredText": "Generate schema documentation",
+      "visuals": [
+        {
+          "selector": "img[alt*='generated Ptah schema reference']"
+        }
+      ]
+    },
+    {
+      "path": "schema/serve/",
+      "requiredText": "Serve a live schema view",
+      "visuals": [
+        {
+          "selector": "img[alt*='live Shop schema view']"
+        }
+      ]
+    },
+    {
+      "path": "schema/security/",
+      "requiredText": "Report schema security findings"
+    },
+    {
+      "path": "versioned/generate/",
+      "requiredText": "Generate migrations"
+    }
+  ]
+}

@@ -12,6 +12,8 @@
     "astro": "astro",
     "check:accessibility": "node scripts/check-accessibility.mjs",
     "check:accessibility:selftest": "node scripts/check-accessibility.mjs --selftest",
+    "check:build-info": "node scripts/check-build-info.mjs",
+    "check:build-info:selftest": "node scripts/check-build-info.mjs --selftest",
     "check:exit-codes": "node scripts/check-exit-codes.mjs",
     "check:exit-codes:selftest": "node scripts/check-exit-codes.mjs --selftest",
     "check:examples": "node scripts/check-examples.mjs",

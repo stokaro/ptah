@@ -8,11 +8,11 @@ name: Quick Start Acceptance
 # own commands turns this job red, and a step deleted from a page stops being
 # covered by the same commit that deleted it.
 #
-# There is deliberately no `paths:` filter. A filtered workflow makes the check
-# ABSENT on the pull requests it does not match, and an absent check reads
-# exactly like a passing one -- the reasoning capability-matrix.yml writes down.
-# A change under cmd/ that alters what `ptah db read` prints has to redden this
-# job, and it cannot do that if the job only runs on documentation changes.
+# Pull requests reach this workflow through the unfiltered Docs workflow. Its
+# stable aggregate gate decides from the changed paths whether this acceptance
+# is applicable, and then depends on the complete matrix result. The workflow
+# stays directly triggered on master so the published quick starts are also
+# rechecked after merge.
 #
 # The three legs are not redundant. The published pages carry a Bash tab and a
 # PowerShell tab, and the PowerShell one has no other coverage anywhere in this
@@ -20,10 +20,10 @@ name: Quick Start Acceptance
 # documentation-only change, and go-unit-tests.yml's Windows job runs a
 # hand-written package list.
 on:
+  workflow_call:
   push:
     branches:
       - master
-  pull_request:
 
 permissions:
   contents: read

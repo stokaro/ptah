@@ -3559,8 +3559,8 @@
       "disposition": "keep",
       "outboundLinks": [],
       "inboundLinks": [],
-      "visibleWords": 470,
-      "sourceBytes": 4783
+      "visibleWords": 480,
+      "sourceBytes": 4864
     },
     {
       "path": "docs/site/src/content/docs/reference/go-annotations.md",
