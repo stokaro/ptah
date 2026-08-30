@@ -704,6 +704,28 @@ const (
 	// `unimplemented: this syntax`, including `NOT DEFERRABLE`, so the key is
 	// false there rather than partially true (stokaro/ptah#1624).
 	DeferrableConstraints Capability = "deferrable_constraints"
+
+	// UniqueConstraints reports whether the target accepts UNIQUE as a CONSTRAINT
+	// -- table-level `CONSTRAINT x UNIQUE (col)` or the column-level `col ... UNIQUE`
+	// -- rather than requiring a unique index for the same guarantee.
+	//
+	// Measured on the Cloud Spanner emulator behind PGAdapter 0.55.2, both
+	// spellings, each against a control that is the same statement without the
+	// UNIQUE: `<UNIQUE> constraint is not supported, create a unique index
+	// instead.` The control creates, and `CREATE UNIQUE INDEX` on the same column
+	// creates, so the refusal is the constraint spelling and not the payload
+	// (stokaro/ptah#2585).
+	//
+	// Measured on ClickHouse 26.7.5.10, both spellings: `Syntax error ... failed at
+	// position N (UNIQUE)`, with a CHECK constraint on the same table as the
+	// control, which creates -- so ClickHouse refuses this constraint kind rather
+	// than constraints. Its renderer drops a UNIQUE constraint instead of emitting
+	// one, so nothing there reads this key today; the value records what the
+	// server answered.
+	//
+	// True everywhere else: PostgreSQL, CockroachDB, YugabyteDB, MySQL, MariaDB,
+	// SQLite, SQL Server and Oracle all take the constraint spelling.
+	UniqueConstraints Capability = "unique_constraints"
 )
 
 // spec documents a registry entry and its implication edges.
@@ -888,6 +910,9 @@ var registry = map[Capability]spec{
 		// turn that composition into an error. Measured, the edge did exactly
 		// that -- four renderer tests that disable foreign keys stopped
 		// reaching their own refusal and failed on an invalid set instead.
+	},
+	UniqueConstraints: {
+		doc: "UNIQUE accepted as a constraint rather than only as a unique index (false on Spanner and ClickHouse)",
 	},
 }
 
@@ -1100,6 +1125,7 @@ func MySQL84() Capabilities {
 		CatalogCheckConstraintTableName:    false,
 		GeneratedColumns:                   true,
 		DeferrableConstraints:              false,
+		UniqueConstraints:                  true,
 	}
 }
 
@@ -1234,6 +1260,7 @@ func MariaDB1011() Capabilities {
 		CatalogCheckConstraintTableName: true,
 		GeneratedColumns:                true,
 		DeferrableConstraints:           false,
+		UniqueConstraints:               true,
 	}
 }
 
@@ -1313,6 +1340,7 @@ func Postgres16() Capabilities {
 		CatalogCheckConstraintTableName:    false,
 		GeneratedColumns:                   true,
 		DeferrableConstraints:              true,
+		UniqueConstraints:                  true,
 	}
 }
 
@@ -1496,6 +1524,7 @@ func ClickHouse24() Capabilities {
 		CatalogCheckConstraintTableName: false,
 		GeneratedColumns:                false,
 		DeferrableConstraints:           false,
+		UniqueConstraints:               false,
 	}
 }
 
@@ -1576,6 +1605,7 @@ func SQLite3() Capabilities {
 		CatalogCheckConstraintTableName:    false,
 		GeneratedColumns:                   true,
 		DeferrableConstraints:              true,
+		UniqueConstraints:                  true,
 	}
 }
 
@@ -1727,6 +1757,7 @@ func SQLServer2022() Capabilities {
 		CatalogCheckConstraintTableName: false,
 		GeneratedColumns:                false,
 		DeferrableConstraints:           false,
+		UniqueConstraints:               true,
 	}
 }
 
@@ -1967,6 +1998,12 @@ func SpannerPostgres() Capabilities {
 		// Measured on the Cloud Spanner emulator behind PGAdapter:
 		// `<DEFERRABLE> constraints are not supported` (stokaro/ptah#1624).
 		With(DeferrableConstraints, false).
+		// Measured on the Cloud Spanner emulator behind PGAdapter 0.55.2, both
+		// the table-level and the column-level spelling: `<UNIQUE> constraint
+		// is not supported, create a unique index instead.` The same statement
+		// without the UNIQUE creates, and CREATE UNIQUE INDEX on the same
+		// column creates (stokaro/ptah#2585).
+		With(UniqueConstraints, false).
 		// Measured: `Only <TABLE> is supported for renaming`.
 		With(RenameColumnClause, false).
 		// Measured on the Cloud Spanner emulator behind PGAdapter:
@@ -2205,6 +2242,7 @@ func Oracle23() Capabilities {
 		GeneratedColumns: true,
 		// DEFERRABLE INITIALLY DEFERRED is ACCEPTED on a foreign key.
 		DeferrableConstraints: true,
+		UniqueConstraints:     true,
 	}
 }
 

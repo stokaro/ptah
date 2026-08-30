@@ -242,6 +242,14 @@ func clickHousePlan() plan {
 		// a hole in coverage wearing the shape of an answer, and it is what the
 		// decided-versus-floor check exists to catch: measured on ClickHouse
 		// 24.10, 25.8, 26.3 and 26.7, the run decided 30 of 31 promised rows.
+		// UNIQUE as a CONSTRAINT. Measured on ClickHouse 26.7.5.10, both the
+		// table-level and the column-level spelling: `Syntax error ... failed
+		// at position N (UNIQUE)`. A CHECK constraint on the same table
+		// creates, so what it refuses is this constraint KIND rather than
+		// constraints (stokaro/ptah#2585).
+		acceptance(capability.UniqueConstraints, nil,
+			t.table("uqc", "n Int64, CONSTRAINT uqc_uq UNIQUE (n)", "n"),
+		),
 		acceptance(capability.DeferrableConstraints,
 			[]string{t.table("dfp", "id Int64", "id"), t.table("dfc", "n Int64, id Int64", "n")},
 			"ALTER TABLE dfc ADD CONSTRAINT dfc_fk FOREIGN KEY (id) REFERENCES dfp (id) DEFERRABLE INITIALLY DEFERRED",
