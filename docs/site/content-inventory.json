@@ -4197,7 +4197,11 @@
       "goal": "Generate and review an OpenAPI or GraphQL contract candidate.",
       "sourceOfTruth": [
         "cmd/schema",
-        "internal/schemaload"
+        "internal/schemaload",
+        "core/goschema",
+        "internal/schemaexport",
+        "internal/goannotationexport",
+        "internal/schemaartifact"
       ],
       "owns": [
         "cli-ptah-schema-export"
@@ -4233,8 +4237,8 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 3619,
-      "sourceBytes": 27818
+      "visibleWords": 3869,
+      "sourceBytes": 29851
     },
     {
       "path": "docs/site/src/content/docs/schema/go-annotations.md",
