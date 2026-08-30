@@ -466,7 +466,7 @@ func (p *Planner) addTables(
 ) ([]ast.Node, error) {
 	var result []ast.Node
 	for _, creation := range diff.TablesAdded.Qualified(diff.DeclaredUserTypes, DialectName).InDependencyOrder() {
-		node := fromschema.FromTable(creation.Table, creation.Fields, creation.Enums, DialectName)
+		node := fromschema.FromTableWithConstraints(creation.Table, creation.Fields, creation.Enums, DialectName, creation.Constraints)
 		if err := addInlineConstraints(node, creation.Table, creation.Constraints); err != nil {
 			return nil, err
 		}

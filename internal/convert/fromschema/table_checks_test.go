@@ -1,6 +1,7 @@
 package fromschema_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -91,4 +92,77 @@ func TestFromTable_NoDeclaredChecksAddsNothing(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(blank[0], qt.Not(qt.Contains), "CHECK")
+}
+
+// tableWithChecksAndDeclaredConstraint is the collision: a `checks` entry whose
+// generated name is the one an explicit constraint already answers to, over a
+// different expression.
+func tableWithChecksAndDeclaredConstraint(checkName string) *schemamodel.Database {
+	database := tableWithChecks("price > 0")
+	database.Constraints = []schemamodel.Constraint{{
+		StructName:      "P",
+		Name:            checkName,
+		Type:            "CHECK",
+		Table:           "products",
+		CheckExpression: "stock >= 0",
+	}}
+	database.Fields = append(database.Fields, schemamodel.Field{
+		StructName: "P", Name: "stock", Type: "BIGINT",
+	})
+	schemamodel.Finalize(database)
+	return database
+}
+
+// TestFromTable_ADeclaredCheckRendersOnce is the count, which nothing else
+// asserted.
+//
+// Two passes over table.Checks stood in the conversion at once -- an unnamed one
+// and a named one -- so every declared check rendered twice, as
+// `CHECK (price > 0)` and `CONSTRAINT "products_check" CHECK (price > 0)` in the
+// same CREATE TABLE. Every existing test asked whether the check was PRESENT,
+// which both copies satisfy.
+func TestFromTable_ADeclaredCheckRendersOnce(t *testing.T) {
+	c := qt.New(t)
+
+	statements, err := renderer.GetOrderedCreateStatements(tableWithChecks("price > 0"), platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	sql := strings.Join(statements, "\n")
+	c.Assert(strings.Count(sql, "price > 0"), qt.Equals, 1)
+	c.Assert(sql, qt.Contains, `CONSTRAINT "products_check" CHECK (price > 0)`)
+}
+
+// TestFromTable_AGeneratedCheckNameSkipsADeclaredOne covers the collision.
+//
+// Supersession is keyed by EXPRESSION, so it cannot settle this: the two
+// constraints say different things and only share a name. Measured on
+// PostgreSQL 18.6, the colliding pair is refused outright --
+// `ERROR: check constraint "products_check" already exists` -- so this is DDL
+// the server will not take rather than a cosmetic clash.
+func TestFromTable_AGeneratedCheckNameSkipsADeclaredOne(t *testing.T) {
+	c := qt.New(t)
+
+	statements, err := renderer.GetOrderedCreateStatements(
+		tableWithChecksAndDeclaredConstraint("products_check"), platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	sql := strings.Join(statements, "\n")
+	c.Assert(sql, qt.Contains, `CONSTRAINT "products_check1" CHECK (price > 0)`)
+	c.Assert(sql, qt.Contains, `CONSTRAINT "products_check" CHECK (stock >= 0)`)
+	c.Assert(strings.Count(sql, `CONSTRAINT "products_check" `), qt.Equals, 1)
+}
+
+// TestFromTable_AGeneratedCheckNameIsUnchangedWithoutACollision is the control.
+// Without it, a namer that always skipped to `_check1` would pass the test
+// above.
+func TestFromTable_AGeneratedCheckNameIsUnchangedWithoutACollision(t *testing.T) {
+	c := qt.New(t)
+
+	statements, err := renderer.GetOrderedCreateStatements(
+		tableWithChecksAndDeclaredConstraint("products_stock_positive"), platform.Postgres)
+
+	c.Assert(err, qt.IsNil)
+	sql := strings.Join(statements, "\n")
+	c.Assert(sql, qt.Contains, `CONSTRAINT "products_check" CHECK (price > 0)`)
+	c.Assert(sql, qt.Not(qt.Contains), "products_check1")
 }

@@ -191,7 +191,7 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 	// which travels too (stokaro/ptah#2315).
 	creations := diff.TablesAdded.Qualified(diff.DeclaredUserTypes, p.targetDialect()).InDependencyOrder()
 	for _, creation := range creations {
-		astNode := fromschema.FromTable(creation.Table, creation.Fields, creation.Enums, p.targetDialect())
+		astNode := fromschema.FromTableWithConstraints(creation.Table, creation.Fields, creation.Enums, p.targetDialect(), creation.Constraints)
 		for _, column := range astNode.Columns {
 			column.ForeignKey = nil
 		}

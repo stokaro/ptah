@@ -939,6 +939,32 @@ func FromTable(table schemamodel.Table, fields []schemamodel.Field, enums []sche
 	return fromTableWithFieldConverter(table, fields, enums, targetPlatform, FromField)
 }
 
+// FromTableWithConstraints is [FromTable] for a caller that also knows the
+// table-level constraints the declaration owns.
+//
+// The difference is the generated names of the table's `checks` entries. Without
+// the list, [TableCheckConstraints] names them blind and can hand a synthesized
+// CHECK the name an explicit constraint already answers to: a table declaring
+// `checks = ["price > 0"]` beside a check named `products_check` over
+// `stock >= 0` produced two constraints under one name, and PostgreSQL refuses
+// that with `constraint "products_check" for relation "products" already
+// exists`.
+//
+// A planner that adds explicit constraints through their own ALTER statements
+// still has to name what goes INSIDE the CREATE around them, so it wants this
+// rather than [FromTable] even though it renders the constraints separately.
+func FromTableWithConstraints(
+	table schemamodel.Table,
+	fields []schemamodel.Field,
+	enums []schemamodel.Enum,
+	targetPlatform string,
+	declared []schemamodel.Constraint,
+) *ast.CreateTableNode {
+	node := fromTableWithFieldConverter(table, fields, enums, targetPlatform, FromField)
+	replaceSynthesizedTableChecks(node, table, declared)
+	return node
+}
+
 func fromTableWithFieldConverter(
 	table schemamodel.Table,
 	fields []schemamodel.Field,
@@ -1017,45 +1043,20 @@ func fromTableWithFieldConverter(
 		constraint := newPrimaryKeyConstraint(newTable)
 		createTable.AddConstraint(constraint)
 	}
-	addDeclaredTableChecks(createTable, newTable)
-
-	// Every entry, because this conversion never sees the schema's constraint
-	// list. [addTableConstraints] is where the overlap with an explicit CHECK
-	// is settled, and it is the only caller that has both.
+	// Every entry, and named, because this conversion never sees the schema's
+	// constraint list. [addTableConstraints] is the only caller that has both,
+	// and it re-derives these once the explicit constraints are visible.
+	//
+	// One emission, not two. A second, UNNAMED pass over the same table.Checks
+	// stood here beside this one, so every declared check rendered twice --
+	// `CHECK (price > 0)` and `CONSTRAINT "products_check" CHECK (price > 0)`
+	// in one CREATE TABLE. The unnamed copy is the shape this change replaced,
+	// because a server-invented name is what stopped the schema converging.
 	for _, check := range TableCheckConstraints(newTable, nil) {
 		createTable.AddConstraint(FromConstraint(check))
 	}
 
 	return createTable
-}
-
-// addDeclaredTableChecks turns the table's `checks` attribute into the CHECK
-// constraints it names.
-//
-// `checks` is a documented table attribute -- internal/annotationmeta declares
-// it, the parser fills schemamodel.Table.Checks, and the HCL renderer writes it
-// back out. SQL rendering read it nowhere, so an author who wrote
-// `checks="price > 0"` got a table with no CHECK and exit 0: a constraint that
-// never reached the database and was never reported (stokaro/ptah#2590).
-//
-// They become ordinary CHECK constraint nodes rather than a new kind of node,
-// because that is what they are. Every dialect that renders a table CHECK
-// therefore renders these, and one that names its checks names these too --
-// ClickHouse requires a name and synthesizes one from the table, which is the
-// same path a column's `check=` already takes.
-//
-// The attribute carries an expression and no name, so none is set here. A name
-// no author wrote is a name no catalog can be asked about later.
-func addDeclaredTableChecks(createTable *ast.CreateTableNode, table schemamodel.Table) {
-	for _, expression := range table.Checks {
-		if strings.TrimSpace(expression) == "" {
-			continue
-		}
-		createTable.AddConstraint(&ast.ConstraintNode{
-			Type:       ast.CheckConstraint,
-			Expression: expression,
-		})
-	}
 }
 
 func renderTableName(table schemamodel.Table, targetPlatform string) string {
@@ -1167,9 +1168,11 @@ func TableCheckConstraints(table schemamodel.Table, declared []schemamodel.Const
 		return nil
 	}
 	spelled := declaredCheckExpressions(table, declared)
+	taken := declaredConstraintNames(table, declared)
 
 	constraints := make([]schemamodel.Constraint, 0, len(table.Checks))
-	for ordinal, check := range table.Checks {
+	ordinal := 0
+	for _, check := range table.Checks {
 		expression := strings.TrimSpace(check)
 		if expression == "" {
 			continue
@@ -1177,15 +1180,50 @@ func TableCheckConstraints(table schemamodel.Table, declared []schemamodel.Const
 		if _, superseded := spelled[expression]; superseded {
 			continue
 		}
+		name := tableCheckConstraintName(table.Name, ordinal)
+		// An explicit constraint may already answer to the name this ordinal
+		// would produce, and supersession cannot settle it because that is keyed
+		// by EXPRESSION: `checks = ["price > 0"]` beside a check named
+		// `products_check` over `stock >= 0` is two different constraints under
+		// one name, and PostgreSQL refuses the table with
+		// `check constraint "products_check" already exists`.
+		for {
+			if _, used := taken[name]; !used {
+				break
+			}
+			ordinal++
+			name = tableCheckConstraintName(table.Name, ordinal)
+		}
+		taken[name] = struct{}{}
+		ordinal++
 		constraints = append(constraints, schemamodel.Constraint{
 			StructName:      table.StructName,
-			Name:            tableCheckConstraintName(table.Name, ordinal),
+			Name:            name,
 			Type:            "CHECK",
 			Table:           table.QualifiedName(),
 			CheckExpression: expression,
 		})
 	}
 	return constraints
+}
+
+// declaredConstraintNames is the set of names explicit constraints occupy on
+// this table.
+//
+// Every kind counts, not only CHECK: the names share one namespace per table on
+// every engine here, so a UNIQUE called `products_check` takes the name just as
+// effectively as a CHECK does.
+func declaredConstraintNames(table schemamodel.Table, declared []schemamodel.Constraint) map[string]struct{} {
+	taken := make(map[string]struct{}, len(declared))
+	for _, constraint := range declared {
+		if !constraintBelongsToTable(constraint, table) {
+			continue
+		}
+		if name := strings.TrimSpace(constraint.Name); name != "" {
+			taken[name] = struct{}{}
+		}
+	}
+	return taken
 }
 
 // declaredCheckExpressions is the set of CHECK expressions the schema spells
@@ -1313,10 +1351,12 @@ func addTableConstraints(
 	mode tableConstraintMode,
 	targetPlatform string,
 ) {
-	// The table conversion rendered every `checks` entry, because it never sees
-	// this list. Here it is visible, so an entry an explicit CHECK already
-	// spells is removed before that explicit one is added beside it.
-	dropSupersededTableChecks(createTable, table, constraints)
+	// The table conversion rendered every `checks` entry blind, because it never
+	// sees this list. Here it is visible, so the synthesized checks are derived
+	// again from the same function the comparator calls -- one namer with one
+	// input, rather than a rendered name decided without the explicit
+	// constraints and a compared name decided with them.
+	replaceSynthesizedTableChecks(createTable, table, constraints)
 
 	for _, constraint := range constraints {
 		if !constraintBelongsToTable(constraint, table) {
@@ -1334,38 +1374,37 @@ func addTableConstraints(
 	}
 }
 
-// dropSupersededTableChecks removes the rendered `checks` entries an explicit
-// CHECK constraint already spells.
+// replaceSynthesizedTableChecks re-derives the table's `checks` entries now that
+// the explicit constraint list is visible.
 //
-// A table may carry `checks = ["price > 0"]` and a `check "price_positive" { … }`
-// block over the same expression. Rendering both produces two CHECKs the author
-// asked for once; the explicit one survives because it carries the name they
-// chose, which is what a later DROP CONSTRAINT addresses.
+// The table conversion produced them with a nil list, so both decisions it makes
+// were taken blind: whether an explicit CHECK already spells the expression, and
+// which generated name is still free. Deriving them again here, through the same
+// [TableCheckConstraints] the comparator calls, is what keeps the rendered name
+// and the compared name equal. Two lists of "already spelled" or two namers
+// would agree when written and stop agreeing the moment one was extended.
 //
-// The only CHECK nodes on the table at this point are the ones
-// [TableCheckConstraints] produced -- a column's own check lives on the column,
-// and this function runs before any explicit constraint is added -- so an
-// author's two identical `check` blocks are still rendered as the two
-// constraints they are.
-func dropSupersededTableChecks(
+// Every table-level CHECK node present at this point is one of those synthesized
+// entries -- a column's own check lives on the column, and this runs before any
+// explicit constraint is added -- so replacing the whole set is exactly the
+// set this function owns.
+func replaceSynthesizedTableChecks(
 	createTable *ast.CreateTableNode,
 	table schemamodel.Table,
 	declared []schemamodel.Constraint,
 ) {
-	spelled := declaredCheckExpressions(table, declared)
-	if len(spelled) == 0 {
-		return
-	}
 	kept := make([]*ast.ConstraintNode, 0, len(createTable.Constraints))
 	for _, node := range createTable.Constraints {
 		if node.Type == ast.CheckConstraint {
-			if _, superseded := spelled[strings.TrimSpace(node.Expression)]; superseded {
-				continue
-			}
+			continue
 		}
 		kept = append(kept, node)
 	}
 	createTable.Constraints = kept
+
+	for _, check := range TableCheckConstraints(table, declared) {
+		createTable.AddConstraint(FromConstraint(check))
+	}
 }
 
 func isForeignKeyConstraint(constraint schemamodel.Constraint) bool {
