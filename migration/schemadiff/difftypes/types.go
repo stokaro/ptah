@@ -1395,7 +1395,7 @@ func (d *SchemaDiff) EffectiveIdentifierSemantics(dialect string) identifier.Sem
 //	diff := schemadiff.Compare(generated, database)
 //	if diff.HasChanges() {
 //		log.Println("Schema changes detected, generating migration...")
-//		statements, err := planner.GenerateSchemaDiffAST(diff, generated, "postgres")
+//		statements, err := planner.GenerateSchemaDiffAST(diff, "postgres")
 //		if err != nil {
 //			return err
 //		}
