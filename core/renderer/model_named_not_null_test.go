@@ -65,10 +65,42 @@ func TestModelNamedNotNull_AnUnnamedConstraintIsUnaffected(t *testing.T) {
 	c.Assert(sql, qt.Not(qt.Contains), "CONSTRAINT")
 }
 
-// TestModelNamedNotNull_FailurePath drives the three refusals the name makes
-// reachable. Each of them was already implemented and none of them could fire
-// from a model, which is what the defect was: the branch that refuses rather
-// than dropping is only a guarantee while something can reach it.
+// TestModelNamedNotNull_APrimaryKeyColumnDropsTheName is the one column where
+// dropping is right, and it is why the model path cannot simply carry the name
+// through to the renderer's refusal.
+//
+// PostgreSQL 18 names the NOT NULL on a primary-key column by itself. Measured
+// on 18.6, `CREATE TABLE accounts (id BIGINT PRIMARY KEY, email TEXT NOT NULL)`
+// leaves pg_constraint holding `accounts_id_not_null` with contype 'n' beside
+// the key's own `accounts_pkey`. So every PG18 table with a primary key
+// produces such a name on the way in, and refusing it here made `ptah db read`
+// against any of them exit non-zero rather than describe the database.
+//
+// The refusal itself is right and still reachable; it belongs to an AST a
+// caller built, which is
+// TestNamedNotNull_ANameOnAPrimaryKeyColumnIsRefused in
+// core/renderer/named_not_null_test.go.
+func TestModelNamedNotNull_APrimaryKeyColumnDropsTheName(t *testing.T) {
+	c := qt.New(t)
+
+	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(
+		namedNotNullDatabase("widgets_a_nn", false, true), "postgres", capability.Postgres18())
+
+	c.Assert(err, qt.IsNil)
+	sql := strings.Join(statements, "\n")
+	c.Assert(sql, qt.Not(qt.Contains), "widgets_a_nn")
+	// The name is dropped for being on a key column, not because carrying it
+	// stopped working: a non-key column in the same table still keeps one.
+	nonKey, err := renderer.GetOrderedCreateStatementsWithCapabilities(
+		namedNotNullDatabase("widgets_a_nn", false, false), "postgres", capability.Postgres18())
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.Join(nonKey, "\n"), qt.Contains, `CONSTRAINT "widgets_a_nn" NOT NULL`)
+}
+
+// TestModelNamedNotNull_FailurePath drives the two refusals the name makes
+// reachable from a model. Each was already implemented and neither could fire
+// from one, which is what the defect was: the branch that refuses rather than
+// dropping is only a guarantee while something can reach it.
 func TestModelNamedNotNull_FailurePath(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -94,14 +126,6 @@ func TestModelNamedNotNull_FailurePath(t *testing.T) {
 			database:    namedNotNullDatabase("widgets_a_nn", true, false),
 			caps:        capability.Postgres18(),
 			wantErrLike: "names no constraint",
-		},
-		{
-			// The NOT NULL a primary-key column renders is synthesized for
-			// comparison, not declared; the addressable name is the key's own.
-			name:        "a name on a primary-key column",
-			database:    namedNotNullDatabase("widgets_a_nn", false, true),
-			caps:        capability.Postgres18(),
-			wantErrLike: "cannot be kept on a primary-key column",
 		},
 	}
 

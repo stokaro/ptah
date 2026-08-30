@@ -28,6 +28,16 @@ func nullableTableNamingItsNotNull(constraintName string) *ast.CreateTableNode {
 	return ast.NewCreateTable("widget").AddColumn(column)
 }
 
+// primaryTableNamingItsNotNull is the other inconsistent declaration: a NOT NULL
+// constraint name on a primary-key column, whose NOT NULL the key already
+// implies.
+func primaryTableNamingItsNotNull(constraintName string) *ast.CreateTableNode {
+	column := ast.NewColumn("a", "INTEGER").SetNotNull().SetPrimary()
+	column.SetNotNullConstraintName(constraintName)
+
+	return ast.NewCreateTable("widget").AddColumn(column)
+}
+
 // postgresCaps is a PostgreSQL 17 preset with the named-NOT-NULL answer under
 // the caller's control, which is what separates the two targets: 17 and 18
 // accept the identical syntax and only 18 keeps the name.
@@ -96,4 +106,43 @@ func TestNamedNotNull_ANameOnANullableColumnNamesNothing(t *testing.T) {
 
 	c.Assert(renderErr, qt.IsNotNil)
 	c.Assert(renderErr.Error(), qt.Contains, "names no constraint")
+}
+
+// TestNamedNotNull_ANameOnAPrimaryKeyColumnIsRefused keeps the third refusal
+// reachable.
+//
+// This is the layer that refusal belongs to. A caller building the AST by hand
+// has stated the contradiction itself, and nothing downstream can tell that it
+// was a mistake rather than a description. The model path cannot reach it,
+// because PostgreSQL 18 names the NOT NULL on every primary-key column and a
+// read carries that name in: refusing there turned `ptah db read` against any
+// PG18 database into an error, so the model-to-AST conversion drops it and
+// TestModelNamedNotNull_APrimaryKeyColumnDropsTheName pins that.
+//
+// Without this test the guard has no caller at all, which is the state
+// AGENTS.md calls a rule that is not in effect.
+func TestNamedNotNull_ANameOnAPrimaryKeyColumnIsRefused(t *testing.T) {
+	c := qt.New(t)
+	r, err := renderer.NewRendererWithCapabilities("postgres", postgresCaps(true))
+	c.Assert(err, qt.IsNil)
+
+	sql, renderErr := r.Render(primaryTableNamingItsNotNull("c_pk"))
+
+	c.Assert(renderErr, qt.IsNotNil)
+	c.Assert(renderErr.Error(), qt.Contains, "cannot be kept on a primary-key column")
+	c.Assert(sql, qt.Equals, "")
+}
+
+// TestNamedNotNull_AnUnnamedPrimaryKeyColumnIsUnaffected is its control: the
+// refusal is about the name, not about a primary key rendering at all.
+func TestNamedNotNull_AnUnnamedPrimaryKeyColumnIsUnaffected(t *testing.T) {
+	c := qt.New(t)
+	r, err := renderer.NewRendererWithCapabilities("postgres", postgresCaps(true))
+	c.Assert(err, qt.IsNil)
+
+	sql, renderErr := r.Render(primaryTableNamingItsNotNull(""))
+
+	c.Assert(renderErr, qt.IsNil)
+	c.Assert(sql, qt.Contains, "PRIMARY KEY")
+	c.Assert(sql, qt.Not(qt.Contains), "CONSTRAINT")
 }

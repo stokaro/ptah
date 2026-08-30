@@ -604,14 +604,17 @@ func FromField(field schemamodel.Field, enums []schemamodel.Enum, targetPlatform
 	// The default behavior should be nullable=true (which ast.NewColumn already sets)
 	if !field.Nullable {
 		column.SetNotNull()
-		column.NotNullConstraintName = keptNotNullConstraintName(field)
 	}
-	// The name is carried whatever the nullability is. A name on a nullable
-	// column names no constraint, and a name on a primary-key column names one
-	// the key already owns; both are REFUSED by the renderer that can keep a
-	// NOT NULL name, and neither refusal could fire while the name stopped here
-	// (stokaro/ptah#2161, stokaro/ptah#2590).
-	column.SetNotNullConstraintName(field.NotNullConstraintName)
+	// Carried whatever the nullability is, because a name on a NULLABLE column
+	// names no constraint and the renderer refuses it -- a refusal that could
+	// not fire while the name stopped here (stokaro/ptah#2161,
+	// stokaro/ptah#2590).
+	//
+	// One write, not two. Assigning the guarded name inside the branch above and
+	// then this one unconditionally left the second overwriting the first, so
+	// keptNotNullConstraintName never took effect and the key-column drop it
+	// exists for never happened.
+	column.SetNotNullConstraintName(keptNotNullConstraintName(field))
 
 	// Set constraints
 	if field.Primary {
@@ -708,10 +711,9 @@ func FromFieldWithoutForeignKeys(field schemamodel.Field, enums []schemamodel.En
 	// Set nullable (default is true, so only set if false)
 	if !field.Nullable {
 		column.SetNotNull()
-		column.NotNullConstraintName = keptNotNullConstraintName(field)
 	}
 	// Carried unconditionally, for the reason [FromField] states.
-	column.SetNotNullConstraintName(field.NotNullConstraintName)
+	column.SetNotNullConstraintName(keptNotNullConstraintName(field))
 
 	// Set primary key
 	if field.Primary {
