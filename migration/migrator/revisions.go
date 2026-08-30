@@ -182,15 +182,30 @@ const ConvertedFlywayRepeatableVersion int64 = math.MaxInt64
 
 // RepairMigrationOptions configures migration metadata repair.
 type RepairMigrationOptions struct {
-	Version    int64
-	Force      bool
+	// Version is the revision to repair. It is required:
+	// [Migrator.RepairMigration] refuses zero and negative values.
+	Version int64
+	// Force permits repair when no revision row exists for the version, or
+	// when the row is not dirty, recording it applied either way. It does not
+	// relax the PostgreSQL unusable-index refusal;
+	// [Migrator.RepairMigration] says why.
+	Force bool
+	// ResumeFrom, when positive, is the 1-based statement index the repair
+	// resumes execution from, in the direction the dirty row recorded: up
+	// statements before recording the migration applied, down statements
+	// before removing its revision. Zero repairs the metadata without
+	// resuming the body.
 	ResumeFrom int
 }
 
 // BaselineOptions configures migration metadata baselining.
 type BaselineOptions struct {
+	// Version is the baseline version and must be greater than zero.
 	Version int64
-	Force   bool
+	// Force permits a baseline over a revision table that already holds rows,
+	// which Baseline otherwise refuses. Even forced, a recorded revision above
+	// the baseline version is refused rather than rewritten.
+	Force bool
 }
 
 func migrationChecksum(sqlText string) string {

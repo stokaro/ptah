@@ -1,0 +1,201 @@
+---
+title: Test migrations and schemas
+description: Assert migration and schema behavior with declarative test cases against a throwaway database.
+type: how-to
+audience:
+  - "ci-operator"
+readerQuestion: "How do I assert migration and schema behavior with declarative test cases against a throwaway database?"
+goal: "Run isolated migration and schema assertions against a throwaway database."
+sourceOfTruth:
+  - "cmd/migrationstest"
+  - "cmd/schema"
+  - "integration"
+generated: false
+overlaps: []
+disposition: keep
+owns:
+  - cli-ptah-migrations-test
+  - cli-ptah-schema-test
+---
+
+import ProductPreview from '../../../components/ProductPreview.astro';
+import migrationTestFail from '../../../assets/migration-test-fail.png';
+import migrationTestPass from '../../../assets/migration-test-pass.png';
+import schemaTestFail from '../../../assets/schema-test-fail.png';
+import schemaTestPass from '../../../assets/schema-test-pass.png';
+
+export const reportSamples = `${import.meta.env.BASE_URL}samples/reports/`;
+
+Ptah can run declarative test cases that apply your migrations or desired schema
+to a throwaway database, load fixtures, run SQL, and assert on the result — so
+migration and schema behavior is exercised in CI without a bespoke harness.
+
+Two commands share one test-case format:
+
+- `ptah migrations test` applies a migration directory (to a version, or all the
+  way up) and asserts against the migrated database.
+- `ptah schema test` applies a desired schema once — from a SQL, YAML, HCL, or
+  DBML file, Go annotations, or a live database — then asserts against it.
+
+Atlas keeps `migrate test` and `schema test` in its proprietary Pro build (an
+Atlas account and the closed-source binary). Ptah provides both as MIT, local,
+no-account, embeddable capabilities. Scripts written against the Atlas Pro CLI
+can run them through the Atlas-compatible surface too: `migrate test` and
+`schema test` in the `ptah-compat` drop-in binary forward
+to the native runners with Atlas-shaped flags (`--dir` / `-u --url`,
+`--dev-url`, `--run`, `--config/--env/--var`) and the native exit codes, with
+Ptah-native YAML test files as the executable payload — see
+[Atlas compatibility overview](../../atlas/overview/).
+
+## Test-case format
+
+A test file is a YAML document with a top-level `cases:` list. Each case is a
+named, ordered list of steps, and each step performs exactly one action:
+
+- `migrate_to` — migrate the database to a target version: a non-negative
+  integer, `latest` (migrate up to the newest migration), or `0` (roll
+  everything back). Valid in migration tests only.
+- `apply_schema` — reapply the selected desired schema. Write
+  `apply_schema: true`. Schema tests already converge this schema before a
+  case; the step rechecks live state and repairs supported drift. Migration
+  tests use the Go annotations under their `--root-dir` for this optional step.
+- `exec` — run raw SQL against the database.
+- `seed` — apply environment-scoped SQL seed files from a directory (the seeder's
+  `NNN_description.env.sql` convention: files matching `env` plus `.all.sql`).
+  Set `dir` on the step, or provide a shared default with `--seed-dir`.
+- `assert` — run a query and check exactly one condition: `row_count`, `scalar`
+  (the first column of the first row, compared as text), or `error_contains`
+  (the query is expected to fail with a message containing the substring).
+
+```yaml
+cases:
+  - name: users table accepts rows
+    steps:
+      - migrate_to: latest
+      - apply_schema: true
+      - seed: { dir: ./seeds, env: test }
+      - exec: INSERT INTO users (name) VALUES ('ada')
+      - assert: { query: SELECT id FROM users, row_count: 2 }
+      - assert: { query: SELECT name FROM users ORDER BY id LIMIT 1, scalar: seeded }
+      - assert: { query: SELECT * FROM does_not_exist, error_contains: does_not_exist }
+```
+
+## Running tests
+
+```bash
+# Migration tests: apply the migrations directory, then assert.
+ptah migrations test --dir ./tests --migrations-dir ./migrations --seed-dir ./seeds
+
+# Schema tests: apply a static desired schema, then assert.
+ptah schema test --dir ./tests --root-dir ./schema.sql --seed-dir ./seeds
+
+# HCL variables reach an HCL desired schema through repeatable --var values.
+ptah schema test --dir ./tests --root-dir ./schema.hcl --var tenant=test
+
+# Go annotations use the same historical selector.
+ptah schema test --dir ./tests --root-dir ./models --seed-dir ./seeds
+```
+
+For `schema test`, `--root-dir` is a legacy name for the desired-schema source.
+It accepts a local `.sql`, `.yaml`, `.yml`, `.hcl`, or `.dbml` file, a Go
+annotation directory, or a live database URL. It does not mean every value is
+a directory. A neutral replacement is tracked in
+[issue #2571](https://github.com/stokaro/ptah/issues/2571).
+
+Both commands load every `*.yaml`/`*.yml` file under `--dir`, run the cases, print
+a report, and exit non-zero if any case fails — so they slot straight into a CI
+gate. `--run` accepts a Go regular expression and selects matching case names.
+`--seed-dir` is the default directory for seed steps that omit their own `dir`.
+`--report` selects the output format: `text` (default), `json` (for CI tooling),
+or `html`. A `migrate_to` step is rejected in a schema test (there are no
+migrations), and reported as a failed step rather than silently skipped.
+
+On `ptah-compat schema test`, an explicit `--url` uses the run's `--var`
+values. A source selected through `data.hcl_schema` uses only that block's
+`vars`; even an empty block scope prevents the run-wide values from leaking in.
+
+## Read migration test reports
+
+The HTML format keeps summary counts, each case, and every step result in one
+portable artifact. The passing and failing reports below come from the same
+migration directory; only the selected assertion changes.
+
+<ProductPreview
+  id="migration-test-report"
+  src={migrationTestPass}
+  alt="A migration test report showing one case passed and all three steps passed."
+  caption="A real passing migration test report beside the corresponding failing assertion."
+  notice="The summary distinguishes pass from fail immediately, while the case row names the exact step and observed row count that decided the result."
+  fullSizeHref={`${reportSamples}migration-test-pass.html`}
+  downloadHref={`${reportSamples}migration-test-pass.html`}
+  sourceHref={`${reportSamples}migration-test-pass.html`}
+  reproduce="ptah migrations test --dir docs/site/fixtures/product-output/migration-tests --migrations-dir docs/site/fixtures/product-output/migrations --run '^products accept a row$' --report html > migration-test-pass.html"
+  variants={[
+    {
+      id: 'failing',
+      label: 'Failing assertion: expected 2 rows, got 0',
+      src: migrationTestFail,
+      alt: 'A migration test report showing one failed case and the message expected row_count 2, got 0.',
+      fullSizeHref: `${reportSamples}migration-test-fail.html`,
+      downloadHref: `${reportSamples}migration-test-fail.html`,
+      sourceHref: `${reportSamples}migration-test-fail.html`,
+    },
+  ]}
+/>
+
+## Read schema test reports
+
+Schema tests use the same report shape but converge the desired schema before
+the case instead of applying a migration directory.
+
+<ProductPreview
+  id="schema-test-report"
+  src={schemaTestPass}
+  alt="A schema test report showing one case passed and both steps passed."
+  caption="A real passing schema test report beside a failing row-count assertion."
+  notice="The report names itself as a schema test, and the failing variant shows the stable assertion message that CI can route back to the case."
+  fullSizeHref={`${reportSamples}schema-test-pass.html`}
+  downloadHref={`${reportSamples}schema-test-pass.html`}
+  sourceHref={`${reportSamples}schema-test-pass.html`}
+  reproduce="ptah schema test --dir docs/site/fixtures/product-output/schema-tests --root-dir docs/site/fixtures/product-output/schema.sql --run '^product schema accepts a row$' --report html > schema-test-pass.html"
+  variants={[
+    {
+      id: 'failing',
+      label: 'Failing assertion: expected 2 rows, got 0',
+      src: schemaTestFail,
+      alt: 'A schema test report showing one failed case and the message expected row_count 2, got 0.',
+      fullSizeHref: `${reportSamples}schema-test-fail.html`,
+      downloadHref: `${reportSamples}schema-test-fail.html`,
+      sourceHref: `${reportSamples}schema-test-fail.html`,
+    },
+  ]}
+/>
+
+## Database isolation
+
+By default — no `--db-url` — each case runs against its **own fresh ephemeral
+SQLite database**, so state created by one case is never visible to another. For
+schema tests the desired schema is applied to each of those fresh databases.
+
+Pass `--db-url` to run against a specific
+[throwaway database](../../concepts/database-urls-and-dev-databases/) (for
+example to exercise a real PostgreSQL or MySQL dialect). All cases then share that one
+database — it is provisioned once, cases accumulate state, and keeping them
+independent is the caller's responsibility. Never point `--db-url` at a real
+database: tests mutate schema and data, and seed steps bypass the seeder's
+protected-environment guards.
+
+Desired-schema application is additive at object boundaries: unrelated objects
+created by migrations remain in place, while declared objects are planned with
+the live target's capabilities and identifier semantics. Roles and grants are
+not accepted because their security effects can be cluster-scoped.
+
+See [Database test commands](../../reference/test-cases/) for the exact flags,
+step scopes, assertions, reports, and exit contract.
+
+## Embedding
+
+The runner is exported as `go.5x5.cz/ptah/migration/dbtest`
+(`RunMigrationTest` / `RunSchemaTest`, with the `Case`/`Step`/`Assertion` model),
+so migration and schema tests can be driven directly from Go — no CLI, no account,
+no cloud.

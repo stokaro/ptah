@@ -3209,8 +3209,10 @@ func (p *Parser) parseForeignKeyReference() (*ast.ForeignKeyRef, error) {
 			actionValue = strings.ToUpper(p.current.Value)
 			p.advance()
 
-			// Handle multi-word actions like "SET NULL"
-			if actionValue == "SET" {
+			// Handle multi-word actions such as SET NULL and NO ACTION. The
+			// latter is emitted by database readers, so leaving ACTION behind
+			// makes Ptah unable to parse SQL it generated from a live schema.
+			if actionValue == "SET" || actionValue == "NO" {
 				p.skipWhitespace()
 				if p.current.Type == lexer.TokenIdentifier {
 					actionValue += " " + strings.ToUpper(p.current.Value)

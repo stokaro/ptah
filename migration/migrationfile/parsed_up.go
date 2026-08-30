@@ -4,13 +4,19 @@ import (
 	"fmt"
 )
 
-// Atlas txtar migration file.
+// ParsedUp is the executable up-direction view of one migration's content:
+// for a plain SQL file the whole file, for an Atlas txtar archive its
+// migration.sql section. [ParseUp] and [ParseUpForAnalysis] produce it.
 type ParsedUp struct {
 	// SQL is the plain file or the migration.sql section of a txtar file.
 	SQL string
-	// TxMode is the explicit transaction mode found in SQL.
+	// TxMode is the explicit transaction mode the file's directives select.
+	// [FileTxModeUnspecified] means no directive set one, and the caller's
+	// global mode applies.
 	TxMode FileTxMode
-	// SourceLineOffset maps line numbers in SQL back to the source file.
+	// SourceLineOffset maps line numbers in SQL back to the source file: line
+	// n of SQL is line n+SourceLineOffset of the file. It is 0 for a plain
+	// file.
 	SourceLineOffset int
 }
 

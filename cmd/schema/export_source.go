@@ -112,7 +112,7 @@ func validateExportSource(opts exportOptions) error {
 	case exportSourceDB:
 		return fmt.Errorf(
 			"--%s %s is not supported: an export reads a schema definition, not a live database; "+
-				"run \"ptah introspect\" to generate annotated Go models from a database URL and export those",
+				"run \"ptah schema inspect --db-url <url>\" to write HCL, SQL, or DBML, then export that file",
 			exportFromFlag, exportSourceDB,
 		)
 	default:

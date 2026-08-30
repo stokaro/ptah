@@ -48,7 +48,7 @@ Authentication comes from the Docker credential store.`,
 
 	flags := cmd.Flags()
 	flags.StringArrayVar(&opts.rootDirs, "root-dir", nil, "Root directory to scan for Go entities (repeatable; defaults to ./)")
-	flags.StringArrayVar(&opts.schemaFiles, "schema-file", nil, "YAML, HCL, or SQL desired-schema file (repeatable)")
+	flags.StringArrayVar(&opts.schemaFiles, "schema-file", nil, "SQL, YAML, HCL, or DBML desired-schema file (repeatable)")
 	flags.StringVar(&opts.dialect, "dialect", "", "Dialect hint used when parsing SQL schema files")
 	flags.StringArrayVar(&opts.tags, "tag", nil, "Additional movable tag to apply (repeatable)")
 	flags.StringVar(&opts.version, "version", "", "Write-once version tag (defaults to v<UTC timestamp>)")

@@ -110,12 +110,41 @@ Regenerate and check the manifest against the built command tree:
 node docs/site/scripts/build-source-support.mjs --write --binary ./bin/ptah
 node docs/site/scripts/build-source-support.mjs --binary ./bin/ptah
 scripts/check-source-equivalence.sh
+scripts/check-source-workflows.sh
 ```
 
 The equivalence gate renders every canonical source through the built CLI,
 materializes the result on a fresh SQLite database, and compares the resulting
 inspection JSON. Its fixture lives under
 `docs/site/fixtures/source-equivalence/`.
+
+The workflow gate takes the same fixtures through migration plan/generate,
+shadow-verified brownfield baseline, a first subsequent change, and a static
+Protobuf export. It also exercises OCI plan/generate through the focused Go
+command test named in the manifest.
+
+### The visual-output fixtures
+
+`docs/site/visual-output-inventory.json` names each browser UI, report, diagram,
+lineage, metrics, and contract output. `docs/site/visual-assets.json` connects
+the reader-facing artifact to its fixture, generator, full-size result, and
+manifest-backed browser proof.
+
+Build Ptah first, then regenerate every product artifact from the committed
+fixtures:
+
+```bash
+go build -o bin/ptah ./cmd/ptah
+cd docs/site
+PTAH_BIN=../../bin/ptah npm run assets:write
+npm run check:visual-assets
+```
+
+The generated PNGs are review artifacts, not cross-platform pixel baselines.
+Review their diff and the built pages at mobile and desktop widths; the browser
+gate checks identity, placement, dimensions, actions, variants, theme behavior,
+keyboard focus, and overflow without pretending that two rasterizers produce
+byte-identical pixels.
 
 ## Contributing to the documentation
 

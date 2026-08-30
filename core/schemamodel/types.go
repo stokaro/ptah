@@ -11,25 +11,25 @@ import (
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
-// Database represents the complete database schema derived from Go struct annotations.
+// Database is the desired-state model of a whole schema: every declared object
+// kind, plus the derived dependency maps that decide creation order. Every
+// authoring frontend produces one — Go annotations
+// ([go.5x5.cz/ptah/core/goschema]), YAML ([go.5x5.cz/ptah/core/yamlschema]),
+// HCL, SQL, DBML, and a caller assembling the struct by hand — and the
+// renderer, planner, and schema-diff layers consume it without knowing which
+// one did. The current-state counterpart is [go.5x5.cz/ptah/catalog].
 //
-// This struct aggregates all database schema information discovered during the recursive
-// parsing process. It includes all entity types, their relationships, and dependency
-// information needed for proper migration generation.
+// A Database assembled by hand is not finished until [Finalize] has run:
+// Dependencies, FunctionDependencies, SelfReferencingForeignKeys, the expanded
+// embedded columns, and the resolved table-scoped names are derived rather
+// than declared. [Merge] runs the same finalization over several sources and
+// additionally reports identity conflicts; Finalize alone validates nothing.
 //
-// The result is processed to:
-//   - Remove duplicates that may occur when entities are defined in multiple files
-//   - Build dependency graphs based on foreign key relationships
-//   - Sort tables in topological order to ensure proper creation sequence
-//
-// Fields:
-//   - Schemas: All explicit database schema/namespace directives
-//   - Tables: All table directives found in the project
-//   - Fields: All field definitions with their database mappings
-//   - Indexes: All index definitions for database optimization
-//   - Enums: Global enum definitions that can be referenced by fields
-//   - EmbeddedFields: Fields from embedded structs with their relation modes
-//   - Dependencies: Dependency graph mapping table names to their dependencies
+// The JSON encoding of this struct IS the desired-state fingerprint that plan
+// files record, so field tags are load-bearing: a new field must carry
+// `omitempty` or `omitzero` so a schema that does not use it keeps the
+// fingerprint it already had. [Database.NotDescribed] and [Field.APIExpose]
+// spell out the reasoning.
 type Database struct {
 	Schemas                    []Schema
 	Tables                     []Table
@@ -229,7 +229,7 @@ type Field struct {
 	// (`There is no type named "USER_DEFINED"`) and accepts only the call.
 	TypeRawSQL bool
 	// TypeIsDeclaredText records that Type is the text an author wrote, read
-	// back from a currentCatalog that stored it verbatim rather than resolving it.
+	// back from a catalog that stored it verbatim rather than resolving it.
 	//
 	// SQLite is the only engine where a read can say that. A renderer honors
 	// it by writing the type as it stands instead of canonicalizing the
@@ -278,7 +278,7 @@ type Field struct {
 	CheckName string   // Optional constraint name for the column-level CHECK; defaults to "<table>_<column>_check"
 	// NotNullConstraintName is an optional explicit constraint name for the
 	// column's NOT NULL, carried only where the target persists one as an
-	// addressable currentCatalog object. See
+	// addressable catalog object. See
 	// [go.5x5.cz/ptah/core/ast.ColumnNode.NotNullConstraintName].
 	NotNullConstraintName string
 	// GeneratedExpression stores the raw SQL expression for generated columns.
@@ -429,7 +429,7 @@ type Index struct {
 	Granularity int
 
 	// RequiresExtensions names the extensions this index cannot be built
-	// without, as the currentCatalog resolved them rather than as the index's own DDL
+	// without, as the catalog resolved them rather than as the index's own DDL
 	// spells them. It is filled in when the schema was read from a live
 	// PostgreSQL catalog.
 	//
@@ -437,15 +437,15 @@ type Index struct {
 	// type on the index's access method, so an index resting on a default class
 	// an extension supplies spells no token of that extension: `USING gin (n)`
 	// over an integer column needs btree_gin, and `isbn` at least says a word
-	// [Extension.Provides] can match. The currentCatalog is asked instead of the text
+	// [Extension.Provides] can match. The catalog is asked instead of the text
 	// (stokaro/ptah#1286).
 	//
 	// A printed class such as pg_trgm's `gin_trgm_ops` is recorded here too. The
-	// field is the currentCatalog's answer, not "the part the DDL left out", so a reader
+	// field is the catalog's answer, not "the part the DDL left out", so a reader
 	// of it must not conclude that the document names nothing behind the edge.
 	//
 	// Empty means not measured or nothing to report. Annotation and YAML sources
-	// have no currentCatalog to ask and leave it unset.
+	// have no catalog to ask and leave it unset.
 	RequiresExtensions []string
 }
 
@@ -508,9 +508,9 @@ type Constraint struct {
 	Initially string
 
 	// RequiresExtensions names the extensions the index backing this constraint
-	// cannot be built without, as the currentCatalog resolved them rather than as
+	// cannot be built without, as the catalog resolved them rather than as
 	// ExcludeElements spells them. It is filled in for EXCLUDE constraints read
-	// from a live PostgreSQL currentCatalog, where an element prints its operator and
+	// from a live PostgreSQL catalog, where an element prints its operator and
 	// prints its operator class only when that class is not the default:
 	// `EXCLUDE USING gist (room WITH =, during WITH &&)` over an integer column
 	// needs btree_gist and says so nowhere, while
@@ -552,9 +552,9 @@ type Extension struct {
 	Version     string // Specific version requirement (optional)
 	Comment     string // Extension comment/description
 
-	// Provides lists the currentCatalog names this extension supplies -- types,
+	// Provides lists the catalog names this extension supplies -- types,
 	// functions, relations, operator classes and operator families. It is filled
-	// in when the schema was read from a live PostgreSQL currentCatalog and answers
+	// in when the schema was read from a live PostgreSQL catalog and answers
 	// "what stops resolving without this extension", which is almost never the
 	// extension's own name: `isn` supplies the type `isbn`.
 	//
@@ -574,7 +574,7 @@ type Extension struct {
 	// no such type entry exists -- an extension supplying `merge(text, text)`
 	// and no type at all -- the name is the only evidence there is and it stays.
 	//
-	// Empty means not measured. Annotation and YAML sources have no currentCatalog to
+	// Empty means not measured. Annotation and YAML sources have no catalog to
 	// ask and leave it unset.
 	Provides []string
 
@@ -601,7 +601,7 @@ type Extension struct {
 //
 // Platform-specific configurations can be specified using overrides:
 //
-//	//ptah:schema:table name="products" platform.mysql.engine="InnoDB" platform.mysql.comment="Product currentCatalog"
+//	//ptah:schema:table name="products" platform.mysql.engine="InnoDB" platform.mysql.comment="Product catalog"
 //	type Product struct {
 //	    // ... fields
 //	}
@@ -889,7 +889,7 @@ type Range struct {
 	// in the fields above, and the comparator has to tell them apart. Omission
 	// means "say nothing about this", so adopting Ptah over a database whose
 	// range carries a SUBTYPE_DIFF does not plan its removal; `subtype_diff=""`
-	// means "this range has none", which is a difference from a currentCatalog that
+	// means "this range has none", which is a difference from a catalog that
 	// holds one (stokaro/ptah#2223).
 	//
 	// Only a surface that can spell an empty value fills this. A `CREATE TYPE
@@ -955,7 +955,7 @@ type Function struct {
 	// Kind separates a function from a procedure. Empty means "function",
 	// which is what every declaration written before procedures existed meant.
 	//
-	// The two are one model because they are one currentCatalog row on both engines
+	// The two are one model because they are one catalog row on both engines
 	// that have them -- pg_proc with prokind 'f' or 'p', ROUTINE_TYPE FUNCTION
 	// or PROCEDURE -- and they differ in exactly one property a schema can
 	// state: a procedure returns nothing and is invoked with CALL
@@ -1036,7 +1036,7 @@ type Sequence struct {
 // table's own definition, and a target that does not have the extension has a
 // table without it rather than a different table.
 //
-// Nothing outside TimescaleDB's own currentCatalog can see one. Measured on 2.29.2 /
+// Nothing outside TimescaleDB's own catalog can see one. Measured on 2.29.2 /
 // PostgreSQL 17.11 after `create_hypertable('conditions', by_range('time'))`,
 // `pg_class.relkind` answers `r`, `pg_depend` reports no extension ownership,
 // and the index the call created carries `deptype 'a'` -- the same as an
@@ -1064,7 +1064,7 @@ type Hypertable struct {
 	// It is a string rather than a duration because the server's own spelling
 	// is what `timescaledb_information.dimensions` reports back, and a
 	// declaration that had to be converted to compare would differ from the
-	// currentCatalog on every run.
+	// catalog on every run.
 	ChunkInterval string
 	// IfNotExists renders `if_not_exists => TRUE`, which turns the server's
 	// `table "x" is already a hypertable` error into a skipped notice.
@@ -1083,7 +1083,7 @@ type Hypertable struct {
 // answers, which selects from the materialization hypertable in a schema the
 // extension owns (stokaro/ptah#1026).
 //
-// Body is the SELECT as it was WRITTEN. The currentCatalog stores a rewritten one --
+// Body is the SELECT as it was WRITTEN. The catalog stores a rewritten one --
 // `time_bucket('1 hour', time)` comes back as
 // `time_bucket('01:00:00'::interval, "time")` -- so the two are compared by
 // putting the declaration through the same rewrite rather than by folding the
@@ -1106,7 +1106,7 @@ type ContinuousAggregate struct {
 	// whatever the server defaults to. The default is not a constant --
 	// measured on 2.29.2, an aggregate created without the option is reported
 	// `materialized_only = t` -- so comparing an unset declaration against the
-	// currentCatalog as if it said false would report a change on every run, and the
+	// catalog as if it said false would report a change on every run, and the
 	// plan for that change drops the aggregate and its materialization.
 	MaterializedOnly *bool
 	Comment          string // Optional comment for documentation
@@ -1401,27 +1401,6 @@ func isIdentifierPart(character byte) bool {
 		character == '_'
 }
 
-// Canonicalize fills in PostgreSQL's implicit defaults and case-folds the
-// attributes that pg_proc/pg_language always report in canonical form. Apply
-// this immediately after constructing or mutating a Function so every
-// downstream consumer — parser, planner, renderer, comparator — sees the same
-// values.
-//
-//   - Language: empty → "plpgsql"; otherwise lowercased. pg_language.lanname
-//     is stored lowercase, and the postgres renderer omits the LANGUAGE
-//     clause if this field is empty, which the server rejects with
-//     "ERROR: no language specified". Defaulting to plpgsql is what
-//     `CREATE FUNCTION` would assume in handwritten SQL too.
-//   - Security: empty → "INVOKER"; otherwise uppercased. pg_proc surfaces
-//     this as either "DEFINER" or "INVOKER".
-//   - Volatility: empty → "VOLATILE"; otherwise uppercased. pg_proc surfaces
-//     this as "IMMUTABLE", "STABLE", or "VOLATILE".
-//
-// The DB-side read path (internal/dbschema/postgres/reader.go) returns canonical case
-// by construction, so it does not need to call this. The motivating callers
-// are the annotation parser (which sees raw user-typed text) and any
-// programmatic constructor — test fixtures, downstream API consumers — that
-// builds Function values without going through the parser.
 // The two routine kinds one Function can carry.
 const (
 	// FunctionKindFunction returns a value and is called in an expression.
@@ -1435,6 +1414,34 @@ func (f Function) IsProcedure() bool {
 	return strings.EqualFold(strings.TrimSpace(f.Kind), FunctionKindProcedure)
 }
 
+// Canonicalize fills in PostgreSQL's implicit defaults and case-folds the
+// attributes that pg_proc/pg_language always report in canonical form. Apply
+// it immediately after constructing or mutating a Function so every downstream
+// consumer — parser, planner, renderer, comparator — sees the same values.
+//
+//   - Language: empty → "plpgsql"; otherwise lowercased. pg_language.lanname
+//     is stored lowercase, and the postgres renderer omits the LANGUAGE
+//     clause if this field is empty, which the server rejects with
+//     "ERROR: no language specified". Defaulting to plpgsql is what
+//     `CREATE FUNCTION` would assume in handwritten SQL too.
+//   - Security: empty → "INVOKER"; otherwise uppercased. pg_proc surfaces
+//     this as either "DEFINER" or "INVOKER".
+//   - Volatility: empty → "VOLATILE"; otherwise uppercased. pg_proc surfaces
+//     this as "IMMUTABLE", "STABLE", or "VOLATILE".
+//   - Kind: trimmed and lowercased but never defaulted. Empty already means
+//     function everywhere that reads it, and filling it in would rewrite every
+//     declaration written before procedures existed into a form its author did
+//     not type.
+//   - Returns and Parameters: lowercased, because PostgreSQL stores types in
+//     canonical lowercase (pg_get_function_result, pg_get_function_arguments)
+//     and lowercases unquoted parameter names too. An annotation written as
+//     returns="VOID" would otherwise false-diff against pg_proc on every run.
+//
+// The DB-side read path (internal/dbschema/postgres/reader.go) returns canonical case
+// by construction, so it does not need to call this. The motivating callers
+// are the annotation parser (which sees raw user-typed text) and any
+// programmatic constructor — test fixtures, downstream API consumers — that
+// builds Function values without going through the parser.
 func (f *Function) Canonicalize() {
 	// Lower-cased but NOT defaulted. Empty already means function everywhere
 	// that reads it, and filling it in would rewrite every declaration written
@@ -1693,10 +1700,16 @@ type ManagedData struct {
 //
 // Example:
 //
+//	//ptah:schema:table name="users"
 //	type User struct {
-//	    ID       int64  `db:"id"`
-//	    ParentID *int64 `db:"parent_id" foreign:"users(id)"`
-//	    Name     string `db:"name"`
+//	    //ptah:schema:field name="id" type="SERIAL" primary="true"
+//	    ID int64
+//
+//	    //ptah:schema:field name="parent_id" type="INTEGER" foreign="users(id)" foreign_key_name="fk_users_parent"
+//	    ParentID *int64
+//
+//	    //ptah:schema:field name="name" type="VARCHAR(255)"
+//	    Name string
 //	}
 //
 // This would generate:

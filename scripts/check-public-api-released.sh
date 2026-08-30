@@ -38,12 +38,12 @@ trap 'rm -f "$packages"; rm -rf "$baseline_dir" "$exports_dir"' EXIT
 # List items only. A backticked package path in a prose paragraph is a
 # mention, not a listing, and must not join the checked set.
 #
-# Read through the snapshot gate's --list-packages mode, which forwards to
+# Read through the shared ledger command, which forwards to
 # internal/featureinventory. This script carried a second copy of the pattern
 # and the copy had the quiet failure mode: apidiff is fed from this set, so a
 # pattern drifting by one character would compare FEWER packages and report
 # FEWER incompatible changes rather than fail.
-"$script_dir/check-public-api-snapshot.sh" --list-packages >"$packages"
+"$script_dir/list-public-api-packages.sh" >"$packages"
 
 if [[ ! -s "$packages" ]]; then
 	printf '%s: found no %s packages in docs/public_api.md; refusing to report a vacuous pass\n' \

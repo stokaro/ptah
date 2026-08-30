@@ -307,9 +307,13 @@ type DomainExpression struct {
 	Resolved bool
 }
 
-// DefaultCompareOptions returns the default comparison options with sensible defaults.
-// The default configuration includes commonly pre-installed PostgreSQL
-// extensions that should typically be ignored during migrations.
+// DefaultCompareOptions returns comparison options that ignore exactly one
+// extension, plpgsql -- the procedural language PostgreSQL installs by
+// default, which a desired schema rarely declares and a migration must not
+// drop. Every other field is left at its zero value, which is the supported
+// way to ask for Ptah's stock comparison behavior: each field documents what
+// its own zero value selects, including the server-resolved expression maps,
+// which are nil here because these options were built without a connection.
 func DefaultCompareOptions() *CompareOptions {
 	return &CompareOptions{
 		IgnoredExtensions: []string{
@@ -348,8 +352,13 @@ func WithAdditionalIgnoredExtensions(extensions ...string) *CompareOptions {
 	}
 }
 
-// IsExtensionIgnored checks if the given extension name should be ignored
-// during schema migrations based on the current configuration.
+// IsExtensionIgnored reports whether extensionName is one of the entries in
+// [CompareOptions.IgnoredExtensions]. The match is an exact, case-sensitive
+// string comparison -- no trimming, no case fold, no pattern syntax -- so
+// "PLPGSQL" does not match the default "plpgsql" entry. Calling it on a nil
+// *CompareOptions panics: a caller holding an optional options pointer must
+// check for nil first, and [DefaultCompareOptions] is the starting point when
+// no configuration was supplied.
 func (c *CompareOptions) IsExtensionIgnored(extensionName string) bool {
 	return slices.Contains(c.IgnoredExtensions, extensionName)
 }

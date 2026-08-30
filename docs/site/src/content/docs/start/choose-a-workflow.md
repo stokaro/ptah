@@ -24,8 +24,8 @@ Persistent inference state follows a separate generation lifecycle. Start with
 **Where does the change come from?** Either you write the migration yourself —
 `ptah migrations create`, then the SQL — or you describe the schema you want and
 Ptah works out the difference. The first needs no schema source at all; the
-second reads one from annotated Go structs, YAML, HCL, or SQL files, or an
-external loader.
+second reads one from SQL, YAML, HCL, or DBML files, Go annotations, an OCI
+artifact, or an external loader.
 
 **How does it reach the database?** Either as versioned migration files that are
 reviewed, committed, applied in order and recorded in a revision table, or as a
@@ -58,7 +58,7 @@ look like.
 
 ```bash
 ptah migrations generate \
-  --root-dir ./models \
+  --schema-file schema.sql \
   --db-url "$DATABASE_URL" \
   --migrations-dir ./migrations \
   --name add_orders
@@ -83,7 +83,7 @@ If you arrived looking for a "declarative" workflow, this is it. Ptah does not u
 Native commands cover the whole loop: `ptah db read` prints a live schema, `ptah schema compare` shows how it differs from the desired schema, `ptah schema drift` turns that difference into a check that exits non-zero when the database has diverged, and `ptah schema apply` applies the planned change directly.
 
 ```bash
-ptah schema drift --root-dir ./models --db-url "$DATABASE_URL"
+ptah schema drift --schema-file schema.sql --db-url "$DATABASE_URL"
 
 ptah schema apply \
   --db-url "$DATABASE_URL" \

@@ -62,7 +62,11 @@ import (
 	"go.5x5.cz/ptah/internal/matviewrefresh"
 )
 
-// ParseFile parses a YAML schema file into the same Database IR used by Go annotations.
+// ParseFile reads a YAML schema file and parses it with Parse, returning the
+// same *schemamodel.Database that Go annotations, HCL, SQL, and DBML produce.
+// A read failure is wrapped but keeps the underlying filesystem error, so
+// errors.Is(err, fs.ErrNotExist) still answers for a missing file and
+// errors.As reaches the *fs.PathError naming the path.
 func ParseFile(path string) (*schemamodel.Database, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -72,7 +76,22 @@ func ParseFile(path string) (*schemamodel.Database, error) {
 	return Parse(data)
 }
 
-// Parse parses a YAML schema document into the same Database IR used by Go annotations.
+// Parse parses a YAML schema document into the same *schemamodel.Database
+// that Go annotations, HCL, SQL, and DBML produce.
+//
+// The input is exactly one YAML document. An unknown key is an error rather
+// than a silent drop, and a second document after a `---` separator is
+// refused. A document that decodes but declares an incomplete object — an
+// index without fields, a top-level constraint without a table, a duplicate
+// column — is refused as well. Every refusal is returned as an error naming
+// the document position or the object key it concerns, so the author can find
+// it; none of the message text is contract.
+//
+// The model does not depend on YAML map order: the same bytes always produce
+// the same model, whatever order the decoder walked the maps in. Within a
+// table, columns keep the order they were declared in, because column order
+// is part of the schema the author wrote. Tables and functions come back
+// ordered by their dependencies.
 func Parse(data []byte) (*schemamodel.Database, error) {
 	var doc document
 	decoder := yaml.NewDecoder(bytes.NewReader(data))

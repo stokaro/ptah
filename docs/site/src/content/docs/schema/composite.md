@@ -1,10 +1,10 @@
 ---
 title: Composite desired schema
-description: Merge Go packages, YAML, HCL, and SQL files, and an external loader into one desired schema.
+description: Merge static schema files, Go annotations, and an external loader into one desired schema.
 type: how-to
 audience:
   - "schema-author"
-readerQuestion: "How do I merge Go packages, YAML, HCL, and SQL files, and an external loader into one desired schema?"
+readerQuestion: "How do I merge several schema sources into one desired schema?"
 goal: "Build and verify one desired schema from multiple sources."
 sourceOfTruth:
   - "cmd/schema"
@@ -14,27 +14,30 @@ overlaps: []
 disposition: keep
 ---
 
-Assemble one desired schema from several sources. `--root-dir` and
-`--schema-file` are repeatable, mix freely, and merge with a configured
-external loader, so a Go package for application tables, a vendored HCL file
-for third-party tables, and a YAML file for shared lookups become a single
-schema. This page is the canonical description of how sources merge; the
-per-source pages link here instead of restating the rules.
+Assemble one desired schema from several ownership boundaries. Repeat
+`--schema-file` for static files, add `--root-dir` for Go annotations when the
+project uses them, or add one external loader. Ptah merges every selected
+source before rendering or connecting to a database. This page owns the merge
+rules; source-specific pages link here instead of restating them.
 
 ## Combine sources
 
-Several Go packages — a shared `common` package plus per-service tables, for
-example — merge into one schema. Every root is parsed, merged, and finalized
-together, so a table in one root can reference a table in another:
+The first complete form uses three static sources and no Go toolchain. Each
+file owns different objects, and references may cross file boundaries:
 
 ```bash
 ptah schema render \
-  --root-dir ./common \
-  --root-dir ./services/orders \
+  --schema-file ./schema.sql \
+  --schema-file ./shared.yaml \
+  --schema-file ./vendor.hcl \
   --dialect postgres
 ```
 
-Formats mix freely, and file sources join the same merge:
+The same repeated sources work on `ptah schema compare`, `ptah schema drift`,
+`ptah migrations plan`, and `ptah migrations generate`, so the merged schema
+diffs, drift-checks, and migrates like one source.
+
+Go annotation roots join the same merge when a project uses them:
 
 ```bash
 ptah schema render \
@@ -46,11 +49,6 @@ ptah schema render \
 
 An [external loader](../orm-and-external/) composes the same way through
 `--schema-cmd` or the `external_schema` config block.
-
-The same repeatable sources work on `ptah schema compare`,
-`ptah schema drift`, `ptah migrations plan`, and `ptah migrations generate`,
-so a composite schema diffs, drift-checks, and migrates exactly like a
-single-source one.
 
 ## How sources merge
 
@@ -83,10 +81,11 @@ conflict.
 
 ## Source boundaries and type ownership
 
-Treat each repeatable `--root-dir` and `--schema-file` value, plus the
-selected `--schema-cmd` when present, as one ownership boundary. Ptah applies
-the same strict database-identity conflict checks inside a Go root and across
-source boundaries, while each boundary keeps its own Go type namespace:
+Treat each repeatable `--root-dir` and `--schema-file` value, plus the selected
+`--schema-cmd` when present, as one ownership boundary. Ptah applies the same
+strict database-identity conflict checks inside and across boundaries.
+
+Go roots also keep separate type namespaces:
 
 - Two roots may use the same Go type name for different schema-qualified
   tables without mixing their columns.

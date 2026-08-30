@@ -1,9 +1,15 @@
+// Command example demonstrates embedding go.5x5.cz/ptah/migration/generator
+// in a standalone program: it compares annotated Go entities against a live
+// database, publishes the migration pair, and prints what was written. The
+// package's testable examples are the reference for the API contracts; this
+// program shows the same call wired to command-line arguments.
 package main
 
 import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"time"
 
@@ -11,18 +17,15 @@ import (
 )
 
 func main() {
-	// Check command line arguments
 	if len(os.Args) < 4 {
 		fmt.Println("Usage: go run main.go <entities_dir> <database_url> <output_dir> [migration_name]")
 		fmt.Println("")
 		fmt.Println("Examples:")
-		fmt.Println("  go run main.go ./entities postgres://user:pass@localhost/db ./migrations")
+		fmt.Println("  go run main.go ./entities sqlite:///path/to/app.db ./migrations")
 		fmt.Println("  go run main.go ./entities postgres://user:pass@localhost/db ./migrations add_users_table")
 		fmt.Println("")
-		fmt.Println("Database URL formats:")
-		fmt.Println("  PostgreSQL: postgres://user:password@host:port/database")
-		fmt.Println("  MySQL:      mysql://user:password@host:port/database")
-		fmt.Println("  MariaDB:    mariadb://user:password@host:port/database")
+		fmt.Println("The database URL takes any scheme dbschema.ConnectToDatabase accepts,")
+		fmt.Println("for example sqlite://, postgres://, mysql://, or mariadb://.")
 		os.Exit(1)
 	}
 
@@ -35,7 +38,6 @@ func main() {
 		migrationName = os.Args[4]
 	}
 
-	// Configure migration generation options
 	opts := generator.GenerateMigrationOptions{
 		GoEntitiesDir: entitiesDir,
 		DatabaseURL:   databaseURL,
@@ -62,15 +64,14 @@ func main() {
 		log.Fatalf("Error generating migration: %v", err)
 	}
 
-	// Check if any migration was generated (nil means no changes detected)
+	// Nil files with a nil error means the comparison found no changes.
 	if files == nil {
-		fmt.Printf("✅ No schema changes detected - no migration needed!\n")
+		fmt.Println("No schema changes detected - no migration needed.")
 		fmt.Println("The database schema is already in sync with your Go entities.")
 		return
 	}
 
-	// Display results
-	fmt.Printf("✅ Migration generated successfully!\n")
+	fmt.Println("Migration generated successfully.")
 	for _, pair := range files.Files {
 		fmt.Printf("  Version: %d\n", pair.Version)
 		fmt.Printf("  UP file:   %s\n", pair.UpFile)
@@ -84,7 +85,6 @@ func main() {
 	}
 	fmt.Println()
 
-	// Display file contents for review
 	for _, pair := range files.Files {
 		fmt.Printf("=== UP MIGRATION %d ===\n", pair.Version)
 		upContent, err := os.ReadFile(pair.UpFile)
@@ -103,62 +103,25 @@ func main() {
 		}
 	}
 
-	fmt.Println("⚠️  Please review the generated SQL carefully before applying the migration!")
+	fmt.Println("Review the generated SQL carefully before applying the migration.")
 	fmt.Println()
 	fmt.Println("To apply the migration:")
-	fmt.Printf("  go run ./cmd/ptah migrations up --db-url %s --migrations-dir %s\n", databaseURL, outputDir)
+	fmt.Printf("  ptah migrations up --db-url %s --migrations-dir %s\n", maskPassword(databaseURL), outputDir)
 	fmt.Println()
-	fmt.Println("To rollback the migration:")
-	fmt.Printf("  go run ./cmd/ptah migrations down --db-url %s --migrations-dir %s --target <previous_version>\n", databaseURL, outputDir)
+	fmt.Println("To roll back the migration:")
+	fmt.Printf("  ptah migrations down --db-url %s --migrations-dir %s --target <previous_version>\n", maskPassword(databaseURL), outputDir)
 }
 
-// maskPassword masks the password in a database URL for display purposes
-func maskPassword(url string) string {
-	// Simple password masking - in a real implementation you might want more sophisticated parsing
-	// This is just for display purposes to avoid showing passwords in logs
-
-	// Find the pattern user:password@
-	start := -1
-	end := -1
-
-	for i := 0; i < len(url)-1; i++ {
-		if url[i] == ':' && url[i+1] == '/' && i+2 < len(url) && url[i+2] == '/' {
-			// Found ://
-			start = i + 3
-			break
-		}
+// maskPassword masks the password component of a database URL for display, so
+// the program never echoes a credential into a terminal or a log.
+func maskPassword(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.User == nil {
+		return rawURL
 	}
-
-	if start == -1 {
-		return url // No protocol found
+	if _, hasPassword := parsed.User.Password(); !hasPassword {
+		return rawURL
 	}
-
-	// Find the @ symbol after the protocol
-	for i := start; i < len(url); i++ {
-		if url[i] == '@' {
-			end = i
-			break
-		}
-	}
-
-	if end == -1 {
-		return url // No @ found, probably no password
-	}
-
-	// Find the : between user and password
-	colonPos := -1
-	for i := start; i < end; i++ {
-		if url[i] == ':' {
-			colonPos = i
-			break
-		}
-	}
-
-	if colonPos == -1 {
-		return url // No : found, probably no password
-	}
-
-	// Replace password with asterisks
-	masked := url[:colonPos+1] + "****" + url[end:]
-	return masked
+	parsed.User = url.UserPassword(parsed.User.Username(), "****")
+	return parsed.String()
 }

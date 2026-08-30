@@ -1,14 +1,15 @@
 // Package schemadiff provides comprehensive schema comparison and difference analysis for the Ptah schema management system.
 //
 // This package implements the core functionality for comparing database schemas and identifying
-// differences between a desired schema (generated from Go entity definitions) and the current
-// database state. It produces detailed difference reports that can be used for migration planning
-// and schema synchronization.
+// differences between a desired schema (authored as Go annotations, YAML, or any
+// other source that produces a schemamodel.Database) and the current database
+// state. It produces detailed difference reports that can be used for migration
+// planning and schema synchronization.
 //
 // # Overview
 //
-// The schemadiff package serves as the bridge between schema generation and migration planning.
-// It takes two schema representations - one from Go entity parsing and another from database
+// The schemadiff package serves as the bridge between schema authoring and migration planning.
+// It takes two schema representations - a desired state and one from database
 // introspection - and produces a comprehensive difference analysis that identifies all changes
 // needed to synchronize the schemas.
 //
@@ -24,8 +25,8 @@
 // # Core Functionality
 //
 // Every comparison has the same shape -- a desired schema and a current schema
-// in, a *types.SchemaDiff out. The entry points differ in what the caller can
-// supply and in what they report back:
+// in, a *difftypes.SchemaDiff out. The entry points differ in what the caller
+// can supply and in what they report back:
 //
 //   - Compare: the desired schema against a database schema, under
 //     config.DefaultCompareOptions
@@ -45,8 +46,8 @@
 //
 // # Comparison Categories
 //
-// The comparison covers every object kind types.SchemaDiff carries, which is
-// what types.SchemaDiff.HasChanges reads:
+// The comparison covers every object kind difftypes.SchemaDiff carries, which
+// is what difftypes.SchemaDiff.HasChanges reads:
 //
 //   - Tables: new, removed, and modified table structures
 //   - Columns: added, removed, and modified column definitions
@@ -64,43 +65,12 @@
 //   - TimescaleDB hypertables and continuous aggregates
 //   - SQL Server extended properties
 //
-// # Usage Example
-//
-// Basic schema comparison:
-//
-//	// Parse Go entities to get desired schema
-//	generated, err := goschema.ParseDir("./entities")
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//
-//	// Connect to database and read current schema (supply a context)
-//	conn, err := dbschema.ConnectToDatabase(ctx, "postgres://user:pass@localhost/db")
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//	defer dbschema.CloseAndWarn(conn)
-//
-//	database, err := conn.Reader().ReadSchemaContext(ctx)
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//
-//	// Compare schemas
-//	diff := schemadiff.Compare(generated, database)
-//
-//	// Check if there are any changes
-//	if diff.HasChanges() {
-//		fmt.Println("Schema differences detected:")
-//		// Process differences...
-//	}
-//
 // # Difference Types
 //
 // The comparison produces different types of changes:
 //
-//   - TablesAdded: Tables that exist in generated schema but not in database
-//   - TablesRemoved: Tables that exist in database but not in generated schema
+//   - TablesAdded: Tables that exist in the desired schema but not in the database
+//   - TablesRemoved: Tables that exist in the database but not in the desired schema
 //   - TablesModified: Tables that exist in both but have structural differences
 //   - EnumsAdded/EnumsRemoved/EnumsModified: Enum type changes
 //   - IndexesAdded/IndexesRemoved: Index changes
@@ -139,13 +109,12 @@
 //   - ValuesAdded: New enum values to be added
 //   - ValuesRemoved: Existing enum values to be removed
 //
-// # Internal Architecture
+// # Package Organization
 //
-// The package is organized with internal comparison modules:
-//
-//   - internal/compare: Core comparison logic for different schema objects
-//   - internal/normalize: Schema normalization utilities
-//   - types: Type definitions for difference structures
+// The result model is a package of its own: difftypes carries SchemaDiff, the
+// per-object-kind change lists, and the supplement lists that qualify them.
+// The comparison logic itself is internal to this package and is reached only
+// through the entry points above.
 //
 // # Integration with Ptah
 //
@@ -156,29 +125,24 @@
 //   - ptah/migration/planner: Provides difference data for migration planning
 //   - ptah/migration/generator: Used in migration file generation
 //
-// # Performance Considerations
-//
-// The comparison algorithm is optimized for:
-//
-//   - Efficient schema traversal and comparison
-//   - Memory-efficient difference storage
-//   - Fast lookup operations for schema objects
-//   - Minimal computational overhead for large schemas
-//
 // # Error Handling
 //
-// The comparison process is designed to be robust:
-//
-//   - Handles missing or malformed schema objects gracefully
-//   - Provides detailed error context for debugging
-//   - Continues comparison even when individual objects fail
-//   - Produces partial results when possible
+// The pure entry points -- Compare, CompareWithDialect, CompareWithOptions,
+// CompareSchemas, and CompareReportingUndecidedAdditions -- never return an
+// error. CompareWithDatabaseInfo and the CompareWithDatabase variants can
+// refuse a comparison: they validate the identifier-semantics snapshot (an
+// invalid one is reported with an error satisfying
+// errors.Is(err, ptaherr.ErrInvalidSchemaDiff)) and check the declaration
+// against the target before comparing, returning an error rather than a diff
+// that plans a statement the server would refuse.
 //
 // # Thread Safety
 //
-// The comparison functions are thread-safe and can be called concurrently
-// from multiple goroutines. The returned difference structures are immutable
-// and safe for concurrent access.
+// The comparison functions are safe to call concurrently from multiple
+// goroutines: each call reads its inputs and returns a fresh
+// *difftypes.SchemaDiff. The returned value is an ordinary mutable struct --
+// SetIndexAdditions and the other setters edit it in place -- so share one
+// diff across goroutines only with external synchronization.
 //
 // # Scope
 //

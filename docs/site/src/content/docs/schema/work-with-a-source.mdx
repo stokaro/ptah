@@ -18,10 +18,11 @@ owns:
 
 import { Tabs, TabItem } from '@astrojs/starlight/components';
 
-Ptah reads the desired schema from SQL, YAML, HCL or DBML files, from annotated
-Go structs, and from an external loader. Every one of them parses into the same
-internal representation before anything is planned or rendered, so the
-operations on this page work the same way whichever you keep.
+Ptah reads the desired schema from SQL, YAML, HCL, or DBML files, OCI schema
+artifacts, Go annotations, and explicit or configured external loaders. Every
+source parses into the same internal representation before anything is planned
+or rendered, so the operations on this page work the same way whichever you
+keep.
 
 What differs is one flag.
 
@@ -63,6 +64,15 @@ ptah schema render --root-dir ./models --dialect sqlite
 ```
 
 </TabItem>
+<TabItem label="OCI">
+
+```bash
+ptah schema render \
+  --schema-file oci://registry.example/acme/schema:v1 \
+  --dialect sqlite
+```
+
+</TabItem>
 <TabItem label="Loader">
 
 ```bash
@@ -72,8 +82,11 @@ ptah schema render --schema-cmd "go run ./loader" --schema-format sql --dialect 
 </TabItem>
 </Tabs>
 
-Both flags repeat, and they mix: `--schema-file` twice and `--root-dir` beside
-it is one composite desired schema.
+`--schema-file` and `--root-dir` repeat, and they mix: two files and one Go
+root become one composite desired schema. An explicit external loader uses
+`--schema-cmd ... --schema-format sql|hcl|yaml`. A configured loader uses
+`--config ptah.yaml --allow-external-schema`; the opt-in is mandatory because
+Ptah executes the configured program.
 
 ## Render the SQL a source produces
 

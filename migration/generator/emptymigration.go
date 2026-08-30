@@ -28,11 +28,19 @@ type EmptyMigrationOptions struct {
 }
 
 // GenerateEmptyMigration creates skeleton migration files for manual SQL
-// authoring.
+// authoring, with no database involved.
+//
+// What it writes follows the layout. The default (an empty DirFormat) is the
+// paired Ptah layout: an up and a down file, returned as the one pair in
+// [MigrationFiles]. DirFormatAtlas writes the up-only Atlas convention
+// instead: a single file, a pair whose DownFile is empty, and the directory's
+// atlas.sum left valid over it, because an Atlas directory with a stale sum is
+// refused by the tools that read it. A caller iterating pairs must therefore
+// not assume DownFile is set.
 //
 // The whole creation runs through one rooted migration-directory handle, bound
 // before anything is read or written: the directory is materialized, the
-// version scanned, the files created and atlas.sum committed through that one
+// version scanned, and the files and any checksum committed through that one
 // handle rather than through the pathname it was selected by
 // (stokaro/ptah#1118). When AllowedOutputRoot is set the handle is opened
 // through it, so the transaction stays inside that root even if the directory

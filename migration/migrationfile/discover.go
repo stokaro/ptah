@@ -8,9 +8,19 @@ import (
 	"strings"
 )
 
-// Discover walks fsys and returns files matching the requested
-// migration directory format. In auto mode Ptah files win when present, so
-// existing directories with stray single .sql files keep their old behavior.
+// Discover walks fsys and returns the files matching the requested migration
+// directory format, ordered ascending by Version and deterministically ordered
+// within a version, so two runs over the same filesystem return the same
+// order. An empty format behaves as [DirFormatAuto]. In auto mode Ptah files
+// win when present, so a directory holding a Ptah history beside a stray
+// single-file .sql still selects the Ptah files.
+//
+// A directory with no .sql files at all returns an empty result and no error.
+// A directory whose candidate .sql files match no name grammar the format
+// accepts is an error rather than an empty result, so a misnamed history is
+// refused rather than silently run as nothing. That refusal covers only files
+// that could have run: an Atlas-governed directory holding nothing outside
+// atlas.sum coverage (next paragraph) returns an empty result and no error.
 //
 // When atlas.sum governs the directory the candidate set is narrowed to exactly
 // the files that sum covers; see [atlasSumGovernsSelection] for why that is a

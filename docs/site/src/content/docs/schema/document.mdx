@@ -1,0 +1,338 @@
+---
+title: Generate schema documentation
+description: Write a desired schema as a Markdown reference or a self-contained HTML page with ptah schema export.
+type: how-to
+audience:
+  - "schema-author"
+readerQuestion: "How do I generate a browsable schema reference?"
+goal: "Generate a browsable schema reference."
+sourceOfTruth:
+  - "cmd/schema"
+  - "internal/schemadoc"
+  - "cmd/internal/schemaserve"
+generated: false
+overlaps:
+  - "/schema/visualize/"
+  - "/schema/serve/"
+disposition: keep
+---
+
+import ProductPreview from '../../../components/ProductPreview.astro';
+import schemaDocumentFull from '../../../assets/schema-document-full.png';
+import schemaDocumentHero from '../../../assets/schema-document.png';
+import schemaDocumentTable from '../../../assets/schema-document-table.png';
+
+export const schemaDocumentSample = `${import.meta.env.BASE_URL}samples/schema-document.html`;
+
+`ptah schema export --to markdown` and `ptah schema export --to html` write a
+desired schema as a document a person reads: one section per table with its
+columns, types, nullability, defaults, keys and comments, followed by that
+table's indexes and by the enums the schema declares.
+
+Both targets read the desired schema from the same sources `ptah schema render`
+reads. Neither connects to a database, so the document describes what your
+schema sources declare and not what a database currently holds. To document a
+live database, write an HCL, SQL, or DBML source with
+[`ptah schema inspect`](../../direct/inspect/), review it, then export that file.
+
+Prerequisites: an installed `ptah` binary ([Install Ptah](../../start/install/))
+and a desired schema. Nothing else is needed — Ptah lays out the entity diagram
+in the HTML output itself, so Graphviz is not involved.
+
+<ProductPreview
+  id="schema-document"
+  src={schemaDocumentHero}
+  alt="The top of a generated Ptah schema reference with table navigation, four summary counts, and a four-table entity diagram."
+  caption="Real self-contained HTML output generated from the four-table documentation fixture."
+  notice="The first screen combines navigation, counts, and the relationship map; the table-detail variant shows the column-level lookup below it."
+  fullSizeHref={schemaDocumentFull.src}
+  downloadHref={schemaDocumentSample}
+  sourceHref={schemaDocumentSample}
+  reproduce="ptah schema export --to html --root-dir docs/site/fixtures/schema-ui/internal/models --out schema-document.html"
+  variants={[
+    {
+      id: 'table-detail',
+      label: 'One table and its columns',
+      src: schemaDocumentTable,
+      alt: 'The orders table card in generated Ptah documentation, including its columns, key markers, defaults, references, and index.',
+      fullSizeHref: schemaDocumentFull.src,
+      downloadHref: schemaDocumentSample,
+      sourceHref: schemaDocumentSample,
+    },
+  ]}
+/>
+
+The full-size action opens the complete generated page. The download is the
+same versioned, self-contained HTML file, so you can inspect its navigation,
+diagram, and table cards without running a server.
+
+## Starting state
+
+The examples run against one schema file. Save this as `schema.yaml`:
+
+```yaml
+enums:
+  order_status:
+    values: [pending, shipped, canceled]
+tables:
+  customers:
+    columns:
+      id:
+        type: INTEGER
+        primary: true
+      email:
+        type: TEXT
+        not_null: true
+      country:
+        type: TEXT
+        not_null: true
+    indexes:
+      idx_customers_country:
+        fields: [country]
+  orders:
+    columns:
+      id:
+        type: INTEGER
+        primary: true
+      customer_id:
+        type: INTEGER
+        not_null: true
+        foreign: customers(id)
+      status:
+        type: order_status
+        not_null: true
+        default: pending
+```
+
+Substitute your own schema source throughout. Every source
+[`ptah schema render`](../work-with-a-source/) reads works here, a Go annotation
+tree behind `--root-dir` included. See
+[Document a schema from another source](#document-a-schema-from-another-source).
+
+## Choose a target
+
+| Target | Produces | Choose it when |
+| --- | --- | --- |
+| `markdown` | One Markdown document: a heading, an index of the tables, and a section per table. | You commit the document beside the schema, read it in a pull request diff, or paste it into a wiki. |
+| `html` | One HTML file: the same per-table sections, plus a table-of-contents sidebar, a count panel and an entity diagram. | You hand the document to somebody, attach it to a review, or open it on a machine with no network. |
+
+The diagram is the one difference in content: the `markdown` target emits no
+diagram. For a diagram you can commit on its own, in Mermaid, Graphviz DOT or
+SVG, use [`ptah viz`](../visualize/).
+
+## Write a Markdown reference
+
+Leave `--out` off and the document goes to stdout, which is where you want it
+when the next step is a pipe or a redirect:
+
+```bash
+ptah schema export --to markdown --schema-file schema.yaml
+```
+
+Expected output includes:
+
+```markdown
+# Schema reference
+
+- [customers](#customers)
+- [orders](#orders)
+
+## customers
+
+| Column | Type | Null | Default | Key | Comment |
+| --- | --- | --- | --- | --- | --- |
+| id | INTEGER | yes | — | PK | — |
+| email | TEXT | no | — | — | — |
+| country | TEXT | no | — | — | — |
+
+**Indexes**
+
+- `idx_customers_country` — index on country
+
+## orders
+
+| Column | Type | Null | Default | Key | Comment |
+| --- | --- | --- | --- | --- | --- |
+| id | INTEGER | yes | — | PK | — |
+| customer_id | INTEGER | no | — | FK → customers(id) | — |
+| status | order_status | no | pending | — | — |
+
+## Enums
+
+- `order_status` — pending, shipped, canceled
+```
+
+Tables appear in alphabetical order, and the index at the top links to each one
+through the anchor a Markdown renderer derives from its heading. The `Enums`
+section is last and carries one bullet per enum with its values.
+
+Name a file with `--out` to write the document instead of printing it. Stdout
+then carries a receipt rather than the document:
+
+```bash
+ptah schema export --to markdown --schema-file schema.yaml --out SCHEMA.md
+```
+
+Expected output includes:
+
+```text
+Exported schema documentation to .../SCHEMA.md
+Found 2 table(s), 6 field(s), 1 enum(s)
+```
+
+The receipt names an absolute path even when `--out` is relative.
+
+## Write a self-contained HTML page
+
+```bash
+ptah schema export --to html --schema-file schema.yaml --out schema.html
+```
+
+Expected output includes:
+
+```text
+Exported schema documentation to .../schema.html
+Found 2 table(s), 6 field(s), 1 enum(s)
+```
+
+For the two tables and six columns above, that file is about 10 KB.
+
+### What the page contains
+
+- A sidebar holding the document title, the table count, a link to each table's
+  section, and an `Enums` group listing each enum by name.
+- A count panel: tables, columns, references, enums.
+- A `Diagram` section holding one inline `<svg>` element, laid out left to
+  right by dependency, so reading it in that direction reads an order the
+  tables can be created in.
+- A `Tables` section holding one card per table. Each card carries a column
+  table with the headers `Column`, `Type`, `Null`, `Key`, `Default`,
+  `References` and `Comment`, and, where the table has indexes, a second table
+  with `Index`, `Columns` and `Unique`. A `References` cell is a link to the
+  referenced table's card.
+- A footer reading `Rendered by Ptah from the declared schema. This file is
+  self-contained: opening it fetches nothing.`
+
+The diagram element names itself, so a reader using a screen reader is told
+what it is rather than meeting an unlabeled graphic:
+
+```html
+<svg viewBox="0 0 335 66" width="335" height="66" role="img" aria-label="Entity relationship diagram">
+```
+
+The styling is defined inside the file and follows the reader's light or dark
+preference through a `prefers-color-scheme` block, rather than picking one.
+
+### Confirm that it fetches nothing
+
+The page is self-contained: it references no stylesheet, font, script or image
+outside itself, and every link in it is an in-page fragment. Check that on a
+file you are about to publish:
+
+```bash
+grep -c -E 'https?://|<script|<link|<img' schema.html
+```
+
+Expected output includes:
+
+```text
+0
+```
+
+`grep` also exits 1, because it matched nothing, and that is the result you
+want. No part of the file names a resource outside itself, so the page opens on
+a machine with no network access, and opening it sends your schema nowhere.
+
+## Set the document title
+
+Both targets head the document `Schema reference` unless `--title` says
+otherwise. `--title` sets the `<h1>` of the Markdown document, and the
+`<title>`, the `<h1>` and the sidebar heading of the HTML page:
+
+```bash
+ptah schema export --to html --schema-file schema.yaml \
+  --title "Shop schema" --out schema.html
+```
+
+## Select which tables appear
+
+`--include-tables` takes a comma-separated allowlist, and `--exclude-tables` a
+denylist applied after it. Both accept table names as the schema spells them:
+
+```bash
+ptah schema export --to markdown --schema-file schema.yaml \
+  --include-tables customers
+```
+
+The document then holds only those sections, and the index at the top lists
+only those entries. The `Enums` section is not filtered and keeps every enum
+the source declares. Read [Limitations](#limitations) before filtering out a
+table that other tables reference.
+
+## Document a schema from another source
+
+`--schema-file` reads one file and selects the reader from its extension:
+`.yaml`/`.yml`, `.hcl`, `.sql` and `.dbml` are read as [YAML](../yaml/),
+[HCL](../hcl/), [SQL](../sql/) and [DBML](../dbml/). `--from` declares that
+format explicitly and is checked against the extension.
+
+`--root-dir` scans a directory of [Go annotations](../go-annotations/) instead,
+and is repeatable:
+
+```bash
+ptah schema export --to markdown --root-dir ./models
+ptah schema export --to html --schema-file schema.hcl --out schema.html
+```
+
+Naming both `--root-dir` and `--schema-file` merges them into one
+[composite desired schema](../composite/).
+
+## Failure modes
+
+- A `--to` value the command does not recognize is refused before anything is
+  read: `error: unsupported --to "pdf": expected hcl, openapi-v3, graphql,
+  protobuf, markdown, html, or dbml`.
+- `--from db` is refused: `error: --from db is not supported: an export reads a
+  schema definition, not a live database; run "ptah schema inspect --db-url
+  <url>" to write HCL, SQL, or DBML, then export that file`.
+- A source that declares no tables, or a filter that matches none, is a warning
+  and not an error. The command writes `warning: no tables matched the
+  selection` to stderr, writes a document whose body is `No tables are
+  selected.`, and exits 0. A build step that reads only the exit code publishes
+  that empty document.
+
+See [Exit codes](../../reference/exit-codes/) for the codes
+`ptah schema export` returns.
+
+## Limitations
+
+- The document covers tables, columns, indexes, foreign keys and enums. A
+  view, materialized view, function, trigger, sequence, row-level security
+  (RLS) policy, role or grant is left out, and neither target reports the
+  omission. The `dbml` target does warn about what it cannot express; these two
+  do not.
+- An index declared in a `.sql` source reaches neither document. The same file
+  renders `CREATE INDEX` through `ptah schema render`, so the index is read and
+  then dropped on the way to the page. A Go, YAML, HCL or DBML source carries
+  its indexes through.
+- A foreign key whose referenced table is filtered out still appears. In
+  Markdown the cell reads `FK → customers(id)` with no `customers` section
+  anywhere in the document; in HTML the same reference is a link to
+  `#customers`, an anchor the file does not contain.
+- `--out` writes the file with mode `0600` under any umask. A build step that
+  serves or publishes the document has to widen the mode itself.
+
+:::caution[Field-level exposure controls do not reach these targets]
+Both documents show every column of every selected table.
+`api_expose="none"` on a field and `--api-field-policy allowlist` change what
+the [API targets](../export/#field-level-exposure) emit; passing either one
+here changes nothing and reports nothing. Do not rely on them to keep a column
+out of a document you publish. Filter whole tables with `--exclude-tables`, or
+document a schema source that does not declare the column.
+:::
+
+## Next steps
+
+- Need the diagram on its own, as Mermaid, DOT or SVG? [Visualize the schema](../visualize/).
+- Publishing a contract for API consumers rather than a reference for people? [API schema export](../export/).
+- Documenting a database that has no Ptah models yet? [Adopt an existing database](../../start/adopt-an-existing-database/).

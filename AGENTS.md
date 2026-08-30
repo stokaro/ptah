@@ -44,19 +44,19 @@ check where a package actually lives before writing an import path for it.
 
 The ledger of the public Go surface is
 [`docs/public_api.md`](docs/public_api.md): it lists the stable embedder
-packages, and three CI gates hold the tree to the list. The ledger is the
-supported surface, not everything technically importable -- test fixtures and
-support trees such as `stubs/`, `integration/*`, and `examples/*` stay outside
-it, and `scripts/check-public-api.sh` names its exemptions explicitly.
+packages. The ledger is the supported surface, not everything technically
+importable -- test fixtures and support trees such as `stubs/`,
+`integration/*`, and `examples/*` stay outside it, and
+`scripts/check-public-api.sh` names its exemptions explicitly.
 
 That gate fails when `go list ./...` finds an importable package that is
-neither exempt nor in the ledger; `scripts/check-public-api-snapshot.sh`
-compares every exported symbol with `docs/public_api.snapshot`; and
-`scripts/check-public-api-released.sh` runs `apidiff` against the newest
-`v0.*` release tag. A change to any exported symbol in a ledger package must
-regenerate the snapshot in the same change, with
-`scripts/check-public-api-snapshot.sh --update`, and an incompatible change
-additionally needs a reviewed entry in `docs/public_api_approvals.txt`.
+neither exempt nor in the ledger. `scripts/check-public-api-released.sh` runs
+`apidiff` against the newest `v0.*` release tag and requires a reviewed entry
+in `docs/public_api_approvals.txt` for an intentional incompatible change.
+`scripts/check-exported-docs.sh` separately requires documentation on exported
+declarations. Additive API changes rely on normal code review; the repository
+does not commit a generated copy of declarations merely to make those changes
+appear twice in a diff.
 
 The list below is orientation, not the ledger: the core packages a reader
 meets first. `docs/public_api.md` is the authority on what is public.
@@ -1165,6 +1165,10 @@ are regenerated from committed fixtures;
 contract. `check-accessibility.mjs` runs axe and keyboard controls at mobile
 and desktop widths, while `check-visual-snapshots.mjs` produces review
 artifacts without treating platform-dependent pixels as a stable baseline.
+Run `PTAH_BIN=../../bin/ptah npm run assets:write` from `docs/site` after
+building `bin/ptah` whenever a visual-output fixture, generator, or owning page
+changes. Record a missing graphical product output as explanatory rather than
+presenting an authored diagram as something Ptah emitted.
 
 ### The quick starts run in CI
 
@@ -1563,6 +1567,89 @@ it sits in the system, grounded in the package's actual code. Generic filler
 such as "Package x contains x utilities" is not acceptable — the anti-slop
 rules of [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) apply in spirit.
 
+### Public API Doc Comments And Examples
+
+The packages [`docs/public_api.md`](docs/public_api.md) lists are read through
+godoc by embedders who never open this repository, so their inline
+documentation carries the contract. Two obligations follow, beyond the
+`scripts/check-exported-docs.sh` gate that merely requires a comment to exist:
+
+- A doc comment on the stable surface states what a caller must know to hold
+  the value correctly: error semantics (which `ptaherr` sentinel,
+  `errors.Is`/`errors.As` support), zero-value and nil behavior, ordering and
+  determinism guarantees, mutation versus copy, and which dialects are
+  accepted. "Parse parses the input" is not documentation. Where
+  `docs/public_api.md` already explains a subtlety in prose, the doc comment
+  says it too — the godoc reader never sees the ledger.
+- **Document stable caller-observable behavior, not incidental implementation
+  behavior.** A statement in public godoc should be something we are prepared
+  to maintain as part of the API contract. Do not promote an implementation
+  detail into a compatibility guarantee merely because it can be observed in
+  the current implementation.
+- When a change adds an exported symbol to a ledger package, or substantially
+  changes how one is used, make sure the package's `example_test.go` still
+  shows the usage patterns an embedder needs, and extend it in the same change
+  where it does not. Judge "substantially" honestly: a new entry point,
+  option, or type usually needs one; a reworded error does not.
+
+The second rule is the one that takes judgment, and it cuts both ways. Writing
+down a detail we do not intend to keep hands an embedder a dependency we then
+have to honor or break; withholding one we do intend to keep leaves them
+guessing and reading our source. Before writing a sentence, ask which it is:
+
+> If we changed the internals tomorrow while preserving the intended public
+> API, would this sentence stop us?
+
+If it would, and we are not willing to call the change a compatibility break,
+generalize it — say that a refusal is an error rather than naming the exact
+message; say the plan is deterministic rather than transcribing the order; say
+which values are refused rather than which internal validator refuses first.
+Where we *do* intend the guarantee — a `ptaherr` sentinel a caller branches on,
+a documented zero value, a deliberate dialect divergence, a determinism promise
+a test pins — state it explicitly and precisely, because an unstated contract
+is one an embedder cannot use.
+
+**Every important public usage pattern should have an executable example.** Add
+symbol-attached examples where they materially improve discoverability or
+explain how that API is used; do not create redundant examples for symbols a
+broader workflow example already demonstrates naturally and clearly. The goal
+is executable documentation of the patterns an embedder actually needs, not one
+`ExampleFoo` per exported symbol — a package of near-identical examples is
+harder to read than the two that carry the information, and every one of them
+is a maintenance cost.
+
+Example tests follow the shape `core/astbuilder/example_test.go` and
+`core/yamlschema/example_test.go` establish:
+
+- Black-box: `package <name>_test`, exercising only exported API.
+- Named so godoc attaches them to the right symbol: `ExampleFoo`,
+  `ExampleFoo_variant`, `ExampleType_Method`, or `Example` for the package.
+- Deterministic `// Output:` wherever possible, so `go test` executes them and
+  drift fails the build. Offline fixtures only: an in-memory SQLite database
+  through `dbschema.ConnectToDatabase`, a `testing/fstest.MapFS`, or a
+  `t`-less temporary directory — never a network address or a live server. A
+  compile-only example (no `// Output:`) is the fallback when determinism is
+  impossible, and its doc comment says why it does not run.
+- Example functions are documentation first, so the
+  [declarative-tests rule](#declarative-tests-only) does not apply to them:
+  write the idiomatic `if err != nil` an embedder would write, especially
+  where the error handling is itself part of understanding the API. `must.Must`
+  from `github.com/go-extras/go-kit/must` is for fixture setup and other
+  boilerplate whose failure is not the point — not the default spelling for
+  brevity. `scripts/check-test-style.sh` passes `-skip-examples` to
+  `teststyle`, so a conditional in a parameterless `Example*` function produces
+  no finding and no baseline entry; for `Test*` functions the no-new-entries
+  rule stands.
+- Each example carries a doc comment saying what the example demonstrates and
+  why a reader would reach for that entry point, in the same grounded voice as
+  the rest of the documentation.
+
+`scripts/check-exported-docs.sh` is the gate here, and it measures only
+presence: it reads the ledger packages through
+`scripts/list-public-api-packages.sh` and fails on an exported declaration
+with no doc comment. Whether a comment states the contract or restates the
+identifier is a reading responsibility, which is what the rules above are for.
+
 ## Testing Standards
 
 ### Where Tests Live
@@ -1682,6 +1769,12 @@ functions:
 - `if` statements.
 - `switch` statements.
 - `goto` statements.
+
+`Example*` functions are exempt: they are documentation rather than
+assertions, so `scripts/check-test-style.sh` runs `teststyle` with
+`-skip-examples` and
+[Public API Doc Comments And Examples](#public-api-doc-comments-and-examples)
+governs them instead.
 
 `for` loops are allowed in test functions for table-driven tests that iterate
 over a static list of cases, and are not considered conditional logic for this

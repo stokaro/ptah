@@ -513,11 +513,12 @@ delete.
 **Decision: the canonical model is internal until the prototype in #1350 is
 accepted.**
 
-`goschema.Database` and `catalog.Database` are both in
-`docs/public_api.snapshot`, so neither can be changed in place before GA. That
-is a constraint on the migration, not on the model: the canonical state lives
-under `internal/`, the two public types become projections of it, and their
-current shape is preserved by the snapshot gate that already exists.
+`goschema.Database` and `catalog.Database` are both part of the stable embedder
+surface, so neither can be changed incompatibly in place before GA without an
+explicit pre-v1 approval. That is a constraint on the migration, not on the
+model: the canonical state lives under `internal/`, and the two public types
+become projections of it. The released-baseline `apidiff` gate preserves that
+compatibility contract.
 
 Promoting any of it before the slice has run is the mistake this ADR most wants
 to avoid. A public model is one that cannot be revised by what the prototype

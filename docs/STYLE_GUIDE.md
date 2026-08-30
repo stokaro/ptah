@@ -400,6 +400,22 @@ once on its concept page and link; do not re-define them per page.
 
 ## 8. Code and examples
 
+- Use **desired-schema source** or **schema source** for the input when a
+  command accepts more than Go annotations. Use `Go annotations`, `Go source
+  tree`, or `models` only when the format is material to the sentence.
+- The first complete example on a source-neutral workflow page must use a
+  static source and require no Go toolchain. SQL is the default when the page
+  does not need a format-specific feature. A later example may add Go
+  annotations as one supported source.
+- Name the exact selector for each source: `--schema-file` for SQL, YAML, HCL,
+  DBML, and OCI artifacts; `--root-dir` for Go annotations; `--schema-cmd` for
+  an explicit external program; and `--config ... --allow-external-schema` for
+  configured external execution. Do not imply that one flag covers every
+  transport.
+- A Go-only introduction is allowed only when current built help accepts no
+  source-neutral alternative. State the limitation, cite the owning command
+  or implementation in `sourceOfTruth`, and link to the source-neutral
+  alternative or the tracked product gap when one exists.
 - Runnable over pseudocode. Every example starts from a stated state and is
   copy-pasteable.
 - Fenced blocks always carry a language label: `bash`, `powershell`, `console`,
@@ -551,8 +567,15 @@ a reader recognizes on sight and cannot reconstruct from a paragraph.
   command. Do not rebuild those controls ad hoc on each page.
 - `docs/site/visual-output-inventory.json` records every product capability
   that creates visual, browser, report, contract, lineage, or metrics output.
-  A missing proof remains `phase4`; do not fill the cell with an explanatory
-  reconstruction.
+  Use `verified` only when the real output, fixture, generator, reader page,
+  versioned artifact, and acceptance check are present. A missing proof remains
+  `phase4`; do not fill the cell with an explanatory reconstruction. Lineage is
+  the deliberate exception recorded as `proofType: explanatory`: the page must
+  label the diagram as explanatory and keep Ptah's real text and JSON beside it.
+- Regenerate the product fixtures with `PTAH_BIN=../../bin/ptah npm run
+  assets:write` from `docs/site`. Review the raster diff rather than making it a
+  cross-platform byte baseline; the manifest-backed browser gate owns stable
+  geometry and interaction assertions.
 - `check-visual-snapshots.mjs` derives its routes and proof assertions from the
   visual manifest. It captures mobile and desktop pages in both light and dark
   themes, and checks the declared visual's identity, placement, caption,

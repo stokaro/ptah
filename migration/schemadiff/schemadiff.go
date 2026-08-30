@@ -28,9 +28,18 @@ import (
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 )
 
-// Compare performs schema comparison between generated and database schemas using default options.
-// This is a convenience function that uses default comparison options (ignores "plpgsql" extension).
-// For custom configuration, use CompareWithOptions.
+// Compare performs schema comparison between a desired schema and an
+// introspected database schema using default options
+// (config.DefaultCompareOptions, which ignores the "plpgsql" extension).
+//
+// The comparison never returns an error and reads no database: current is
+// whatever snapshot the caller supplies. It is dialect-neutral -- no dialect
+// scoping and no dialect-specific normalization runs -- so prefer
+// CompareWithDialect when the target dialect is known, or CompareWithDatabase
+// when a live connection can also answer identifier semantics. The output
+// does not vary between runs and does not depend on the order the inputs list
+// their objects, so two comparisons of the same two states produce the same
+// diff. For custom configuration, use CompareWithOptions.
 func Compare(desired *schemamodel.Database, current *catalog.Database) *difftypes.SchemaDiff {
 	return CompareWithOptions(desired, current, nil)
 }
@@ -58,9 +67,23 @@ func CompareSchemas(desired, current *schemamodel.Database, dialect string) *dif
 
 // CompareWithDatabaseInfo compares using caller-supplied database metadata.
 // SQL Server callers should prefer CompareWithDatabase, which resolves the
-// complete candidate identifier set under the live catalog collation. A
-// non-zero identifier snapshot must be valid, cover every compared identifier,
-// and admit no target identifier collisions.
+// complete candidate identifier set under the live catalog collation.
+//
+// info.Dialect selects the comparison dialect, overriding opts.Dialect. A
+// non-zero info.IdentifierSemantics snapshot must be valid, cover every
+// compared identifier, and admit no target identifier collisions; a snapshot
+// failing any of those checks is refused with an error satisfying
+// errors.Is(err, ptaherr.ErrInvalidSchemaDiff), where CompareWithOptions
+// would silently fall back to the dialect's offline rules.
+//
+// Unlike the pure entry points, this variant also validates the declaration
+// against the target before comparing, and returns an error instead of a diff
+// that plans a statement the server would refuse. Which rules apply is
+// dialect-specific and grows with the dialects; a reserved PostgreSQL role
+// name and SQLite's virtual-table rules are two of them. One of those checks
+// is a promise in its own right: PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP is
+// resolved on every SQLite comparison, so a malformed value is reported
+// whether or not this comparison reaches a virtual table.
 func CompareWithDatabaseInfo(
 	desired *schemamodel.Database,
 	database *catalog.Database,
@@ -163,31 +186,41 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	return diff, undecided, nil
 }
 
-// CompareWithOptions performs schema comparison between generated and database schemas
-// with custom configuration options.
+// CompareWithOptions performs schema comparison between a desired schema and an
+// introspected database schema with custom configuration options.
 //
-// This function provides full control over the comparison process, allowing users to
-// specify which extensions should be ignored, and other comparison behaviors.
+// A nil opts selects config.DefaultCompareOptions (which ignores the "plpgsql"
+// extension). The comparison never returns an error and reads no database.
 //
-// Parameters:
-//   - generated: Target schema parsed from Go struct annotations
-//   - database: Current database schema from database introspection
-//   - opts: Configuration options for comparison (can be nil for defaults)
+// Setting opts.Dialect selects more than normalization rules. The desired
+// state is first projected to that target -- an object whose declaration is
+// scoped to other dialects is absent rather than reported as added -- and the
+// matching scoped-away objects are suppressed on the current side too, so a
+// multi-dialect declaration converges instead of re-planning (or dropping) the
+// same objects forever. Default foreign-key names are also assigned under the
+// dialect, the way the renderer would assign them. All of that preparation
+// works on a copy: neither argument is mutated, here or on any other entry
+// point in this package.
 //
-// Returns a SchemaDiff containing all identified differences between the schemas.
+// A non-nil opts.IdentifierSemantics is honored only when it is a valid
+// resolved snapshot that covers every compared identifier and admits no
+// target identifier collisions. A snapshot failing any of those checks is
+// silently discarded here and the dialect's conservative offline rules apply;
+// use CompareWithDatabaseInfo to have an invalid snapshot refused with an
+// error instead.
 //
 // Example usage:
 //
 //	// Use default options (ignores "plpgsql")
-//	diff := schemadiff.CompareWithOptions(generated, database, nil)
+//	diff := schemadiff.CompareWithOptions(desired, current, nil)
 //
 //	// Ignore specific extensions
 //	opts := config.WithIgnoredExtensions("plpgsql", "adminpack")
-//	diff := schemadiff.CompareWithOptions(generated, database, opts)
+//	diff := schemadiff.CompareWithOptions(desired, current, opts)
 //
 //	// Don't ignore any extensions
 //	opts := config.WithIgnoredExtensions()
-//	diff := schemadiff.CompareWithOptions(generated, database, opts)
+//	diff := schemadiff.CompareWithOptions(desired, current, opts)
 func CompareWithOptions(desired *schemamodel.Database, current *catalog.Database, opts *config.CompareOptions) *difftypes.SchemaDiff {
 	diff, _ := CompareReportingUndecidedAdditions(desired, current, opts)
 	return diff

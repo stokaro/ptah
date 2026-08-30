@@ -10,6 +10,9 @@
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
+    "assets:product-output": "node scripts/generate-product-output-assets.mjs",
+    "assets:schema-ui": "node scripts/generate-schema-ui-assets.mjs",
+    "assets:write": "npm run assets:schema-ui && npm run assets:product-output",
     "check:accessibility": "node scripts/check-accessibility.mjs",
     "check:accessibility:selftest": "node scripts/check-accessibility.mjs --selftest",
     "check:build-info": "node scripts/check-build-info.mjs",
@@ -73,6 +76,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
+    "mermaid": "^11.17.2",
     "playwright": "^1.62.1"
   }
 }

@@ -44,12 +44,13 @@ func newSchemaValidateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "validate",
 		Short: "Report structural problems in a desired schema without a database",
-		Long: `Load the desired state and report every structural problem found in it, without
+		Long: `Load the desired schema and report every structural problem found in it, without
 connecting to any database.
 
-The desired state comes from Go annotations (--root-dir) or schema files
-(--schema-file, repeatable; sources merge into one composite schema), the same
-way every other verb that reads a desired schema takes it.
+The desired schema comes from schema files or OCI artifacts (--schema-file,
+repeatable) or Go annotations (--root-dir, repeatable). Sources merge into one
+composite schema, the same way every other verb that reads a desired schema
+takes them.
 
 Validation is per target, because a declaration valid for one dialect can be
 invalid for another. Pass --dialect once per target to check; repeated values
@@ -66,7 +67,7 @@ per problem otherwise, so a pre-commit hook can use the status alone.`,
 	}
 	flags := cmd.Flags()
 	flags.StringArrayVar(&opts.rootDirs, validateRootDirFlag, nil, "Root directory to scan for Go entities (repeatable)")
-	flags.StringArrayVar(&opts.schemaFiles, validateSchemaFileFlag, nil, "YAML, HCL, or SQL schema file describing the desired state (repeatable)")
+	flags.StringArrayVar(&opts.schemaFiles, validateSchemaFileFlag, nil, "SQL, YAML, HCL, DBML, or OCI desired-schema source (repeatable)")
 	flags.StringArrayVar(&opts.dialects, validateDialectFlag, nil, "Target dialect to validate against (repeatable; required)")
 	serverversion.Register(flags, &opts.serverVersion)
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)

@@ -147,7 +147,10 @@ const commands = [
     suffix: '--dev-url sqlite://dev.db --format json',
   }),
   ...['openapi-v3', 'graphql', 'protobuf'].map((target) =>
-    desiredCommand(`ptah schema export --to ${target}`, ['schema', 'export'], 'cmd/schema', ['cmd/schema/export_source_test.go'], {
+    desiredCommand(`ptah schema export --to ${target}`, ['schema', 'export'], 'cmd/schema', [
+      'cmd/schema/export_source_test.go',
+      ...(target === 'protobuf' ? ['scripts/check-source-workflows.sh'] : []),
+    ], {
       verified: target === 'graphql'
         ? [...localFiles, 'go-annotations', 'composite-source']
         : ['sql-file', 'yaml-file', 'hcl-file', 'go-annotations'],
@@ -196,9 +199,8 @@ const commands = [
     limitations: { 'oci-artifact': 'OCI is the destination of this command, not an input source.' },
     suffix: 'oci://registry.example/app:v1',
   }),
-  desiredCommand('ptah migrations plan', ['migrations', 'plan'], 'cmd/migrate', ['cmd/migrate/migrate_test.go'], {
-    verified: ['sql-file', 'go-annotations', 'external-program'],
-    missing: ['yaml-file', 'hcl-file', 'dbml-file', 'configured-external', 'oci-artifact', 'composite-source'],
+  desiredCommand('ptah migrations plan', ['migrations', 'plan'], 'cmd/migrate', ['scripts/check-source-workflows.sh', 'cmd/migrate/source_oci_test.go'], {
+    verified: [...localFiles, 'go-annotations', 'external-program', 'configured-external', 'oci-artifact', 'composite-source'],
     conditional: ['live-database'],
     design: ['migration-directory'],
     composableSources: [...localFiles, 'go-annotations', 'external-program', 'configured-external', 'composite-source'],
@@ -206,9 +208,8 @@ const commands = [
     limitations: { 'live-database': 'The live database supplies the current state through --db-url.' },
     suffix: '--db-url sqlite://current.db',
   }),
-  desiredCommand('ptah migrations generate', ['migrations', 'generate'], 'cmd/migrate', ['cmd/migrate/generate_test.go'], {
-    verified: ['sql-file', 'go-annotations', 'external-program'],
-    missing: ['yaml-file', 'hcl-file', 'dbml-file', 'configured-external', 'oci-artifact', 'composite-source'],
+  desiredCommand('ptah migrations generate', ['migrations', 'generate'], 'cmd/migrate', ['scripts/check-source-workflows.sh', 'cmd/migrate/source_oci_test.go'], {
+    verified: [...localFiles, 'go-annotations', 'external-program', 'configured-external', 'oci-artifact', 'composite-source'],
     conditional: ['live-database', 'migration-directory'],
     composableSources: [...localFiles, 'go-annotations', 'external-program', 'configured-external', 'composite-source'],
     invocations: {

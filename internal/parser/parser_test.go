@@ -3155,6 +3155,21 @@ func TestParser_ParseColumnWithForeignKey(t *testing.T) {
 	c.Assert(column.ForeignKey.OnDelete, qt.Equals, "CASCADE")
 }
 
+func TestParser_ParseColumnForeignKeyWithNoAction(t *testing.T) {
+	c := qt.New(t)
+
+	sql := "CREATE TABLE orders (user_id INTEGER REFERENCES users(id) ON DELETE NO ACTION ON UPDATE NO ACTION);"
+	p := parser.NewParser(sql)
+
+	statements, err := p.Parse()
+	c.Assert(err, qt.IsNil)
+	createTable := statements.Statements[0].(*ast.CreateTableNode)
+	foreignKey := createTable.Columns[0].ForeignKey
+	c.Assert(foreignKey, qt.IsNotNil)
+	c.Check(foreignKey.OnDelete, qt.Equals, "NO ACTION")
+	c.Check(foreignKey.OnUpdate, qt.Equals, "NO ACTION")
+}
+
 func TestParser_ParseColumnWithDefaultFunction(t *testing.T) {
 	c := qt.New(t)
 

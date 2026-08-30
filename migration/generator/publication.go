@@ -102,11 +102,16 @@ func (p *MigrationPlan) WriteFiles() (*MigrationFiles, error) {
 }
 
 // WriteFilesContext publishes the migration artifacts represented by the plan.
-// The context bounds waiting for the migration-directory publication lock.
+// The context bounds waiting for the migration-directory publication lock. A
+// concurrent call through the same plan returns [ErrMigrationPlanInUse]
+// rather than waiting; errors.Is is the supported check.
 //
 // The plan already holds the migration directory. This call does not reopen it:
 // under the lock it revalidates the handle it was given, compares the contents
-// against what planning recorded, and publishes through that same handle.
+// against what planning recorded, and publishes through that same handle. A
+// directory that no longer matches the recorded snapshot -- and, when
+// PriorMigrationsFS was set, the authorized history -- refuses publication
+// with [ErrMigrationDirectoryChanged], again for errors.Is.
 //
 // One call is one use of the plan. Whatever this call returns, it releases the
 // migration directory handles before returning, so a failed publication ends
@@ -116,13 +121,13 @@ func (p *MigrationPlan) WriteFiles() (*MigrationFiles, error) {
 // both describe a directory as it was before the attempt, so the honest retry
 // is a fresh PlanMigration.
 //
-// It used to reopen the directory by pathname here and decide whether it was
-// still the planned one by comparing an fs.FileInfo captured before any handle
-// existed. That comparison is only as good as the operating system's promise
-// not to reissue an identifier, and it makes no such promise: measured on ext4,
-// a directory removed and recreated at the same pathname took its inode number
-// back in 20 of 20 cycles, so the guard stayed silent on exactly the
-// substitution an attacker performs most easily (stokaro/ptah#1118).
+// The handle, not a pathname, is what settles which directory this commits
+// to. Reopening by pathname and comparing an fs.FileInfo captured before any
+// handle existed is only as good as the operating system's promise not to
+// reissue an identifier, and it makes no such promise: measured on ext4, a
+// directory removed and recreated at the same pathname took its inode number
+// back in 20 of 20 cycles, so a guard built that way stays silent on exactly
+// the substitution an attacker performs most easily (stokaro/ptah#1118).
 func (p *MigrationPlan) WriteFilesContext(ctx context.Context) (*MigrationFiles, error) {
 	if p == nil {
 		return nil, fmt.Errorf("migration plan is nil")

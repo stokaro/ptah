@@ -19,3 +19,8 @@ equivalent. Run
 The fixture intentionally omits source-specific features. Examples that teach
 features outside the common subset should use a separate, explicitly scoped
 fixture rather than weakening this equivalence contract.
+
+`composite/` partitions the same schema across SQL, YAML, and HCL. `next/`
+adds one nullable `books.published_at` column in SQL, HCL, DBML, and Go so the
+brownfield acceptance test proves the first change after baseline. These
+variants are exercised by `scripts/check-source-workflows.sh`.

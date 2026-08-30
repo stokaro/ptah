@@ -1,0 +1,12 @@
+erDiagram
+  customers {
+  }
+  orders {
+  }
+  products {
+  }
+  order_items {
+  }
+  orders ||--o{ order_items : "fk_order_items_order_id"
+  products ||--o{ order_items : "fk_order_items_product_id"
+  customers ||--o{ orders : "fk_orders_customer_id"

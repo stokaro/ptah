@@ -249,14 +249,27 @@ practical, live commands:
   command cannot be run locally.
 - For CLI docs, compare against current help and output from the built `ptah`
   binary.
+- For a workflow that accepts several desired-schema sources, keep the prose
+  source-neutral and make the first complete example a static source that does
+  not require Go. Use the exact selector for the chosen transport:
+  `--schema-file`, `--root-dir`, `--schema-cmd`, or
+  `--config ... --allow-external-schema`. A Go-only opening must be proven by
+  current built help, recorded in the page's `sourceOfTruth`, and linked to a
+  source-neutral alternative or tracked product gap when one exists.
 - For config docs, test parse/validation behavior with representative fixtures.
 - For generated SQL or migration docs, generate or apply a small fixture when
   feasible.
+- For a page that demonstrates a Ptah diagram, browser UI, HTML report,
+  lineage, metrics, or contract output, update both visual manifests and run
+  the committed generator. Build `bin/ptah`, then run
+  `PTAH_BIN=../../bin/ptah npm run assets:write` from `docs/site`. An
+  explanatory lineage diagram must say that it is not product output and keep
+  the real text and JSON artifacts beside it.
 - For public Go API docs, run the relevant guards:
 
   ```bash
   scripts/check-public-api.sh
-  scripts/check-public-api-snapshot.sh
+  scripts/check-exported-docs.sh
   scripts/check-public-api-released.sh
   ```
 

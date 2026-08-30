@@ -182,6 +182,75 @@
 	font-weight: 650;
 }
 
+.ptah-product-preview__variant-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem 1rem;
+	font-size: var(--sl-text-sm);
+}
+
+.ptah-output-gallery {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin-block: 1.25rem 2rem;
+}
+
+.ptah-output-gallery__item {
+  color: inherit;
+  text-decoration: none;
+}
+
+.ptah-output-gallery__item figure {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 0.75rem;
+  background: var(--sl-color-gray-7);
+}
+
+.ptah-output-gallery__item img {
+  display: block;
+  width: 100%;
+  height: 12rem;
+  object-fit: contain;
+  object-position: top center;
+  background: #fff;
+}
+
+.ptah-output-gallery__item figcaption {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.875rem 1rem 1rem;
+}
+
+.ptah-output-gallery__item figcaption span {
+  color: var(--sl-color-gray-2);
+  font-size: var(--sl-text-sm);
+  line-height: 1.45;
+}
+
+.ptah-output-gallery__item:hover figure {
+  border-color: var(--sl-color-accent);
+}
+
+.ptah-output-gallery__item:focus-visible {
+  border-radius: 0.75rem;
+  outline: 3px solid var(--sl-color-accent-high);
+  outline-offset: 3px;
+}
+
+@media (max-width: 50rem) {
+  .ptah-output-gallery {
+    grid-template-columns: 1fr;
+  }
+
+  .ptah-output-gallery__item img {
+    height: 10rem;
+  }
+}
+
 /*
  * Starlight gives the table of contents a rail of its own from 72rem. That
  * breakpoint belongs to a column pinned at 45rem, where the rail cost the

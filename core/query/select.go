@@ -52,9 +52,10 @@ func (*ColumnRef) expressionNode() {}
 
 // BoundValue is a parameter value.
 //
-// The renderer emits a dialect-specific placeholder ($1, $2, … for PostgreSQL;
-// ? for MySQL, MariaDB, and SQLite) and appends Value to the returned argument
-// slice. The value is never interpolated into the SQL string.
+// The renderer emits a dialect-specific placeholder ($1, $2, … for the
+// PostgreSQL family; ? for MySQL, MariaDB, SQLite, and ClickHouse; @p1, @p2, …
+// for SQL Server; :1, :2, … for Oracle) and appends Value to the returned
+// argument slice. The value is never interpolated into the SQL string.
 type BoundValue struct {
 	// Value is the parameter value, bound positionally at render time.
 	Value any

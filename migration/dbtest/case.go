@@ -69,7 +69,9 @@
 //
 // The supported step kinds are migrate_to (migration tests only), apply_schema,
 // exec, seed, and assert, with the row_count, scalar, and error_contains
-// assertions listed above. Reports render as text ([Report.Text]), JSON
+// assertions listed above. A plan test run — [RunSchemaTest] with
+// [SchemaOptions.ResolveSchema] and [SchemaOptions.ApplyPlan] wired — adds
+// establish_schema and apply_plan. Reports render as text ([Report.Text]), JSON
 // ([Report.JSON]), or HTML ([Report.HTML]); [Report.Render] selects by format
 // name.
 //
@@ -167,9 +169,10 @@ type Assertion struct {
 	RowCount *int `yaml:"row_count"`
 	// Scalar asserts that the first column of the first row of Query, formatted
 	// as a string, equals this value. Values are formatted deterministically:
-	// []byte and text as their string, time.Time as RFC3339, SQL NULL as
-	// "<nil>", and other types via fmt's default. Select a column as text (for
-	// example CAST(col AS TEXT)) to compare its raw stored form.
+	// []byte and text as their string, time.Time as RFC3339Nano (fractional
+	// seconds appear only when non-zero, with trailing zeros removed), SQL NULL
+	// as "<nil>", and other types via fmt's default. Select a column as text
+	// (for example CAST(col AS TEXT)) to compare its raw stored form.
 	Scalar *string `yaml:"scalar"`
 	// ErrorContains asserts that running Query fails with an error message that
 	// contains this substring.

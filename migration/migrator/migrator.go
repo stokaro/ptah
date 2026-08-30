@@ -22,20 +22,50 @@ import (
 	"go.5x5.cz/ptah/migration/migrationfile"
 )
 
-// MigrationStatus represents the current state of migrations
+// MigrationStatus represents the current state of migrations: what the
+// revision metadata table records, measured against what the migration
+// provider holds. [Migrator.GetMigrationStatus] computes it; MarshalJSON and
+// UnmarshalJSON keep the CurrentVersionKeySet presence bit across
+// serialization.
 type MigrationStatus struct {
-	CurrentVersion          int64              `json:"current_version"`
-	CurrentVersionKey       string             `json:"current_version_key,omitempty"`
-	CurrentVersionKeySet    bool               `json:"-"`
-	AppliedMigrations       []int64            `json:"applied_migrations"`
-	AppliedMigrationKeys    []string           `json:"applied_migration_keys,omitempty"`
-	PendingMigrations       []int64            `json:"pending_migrations"`
-	PendingMigrationKeys    []string           `json:"pending_migration_keys,omitempty"`
-	OutOfOrderMigrations    []int64            `json:"out_of_order_migrations"`
-	OutOfOrderMigrationKeys []string           `json:"out_of_order_migration_keys,omitempty"`
-	TotalMigrations         int                `json:"total_migrations"`
-	HasPendingChanges       bool               `json:"has_pending_changes"`
-	DirtyRevision           *MigrationRevision `json:"dirty_revision,omitempty"`
+	// CurrentVersion is the highest version the revision table records: the
+	// highest applied version under the Ptah format, and the highest recorded
+	// revision version under the Atlas format.
+	CurrentVersion int64 `json:"current_version"`
+	// CurrentVersionKey is the exact revision identity the status points at:
+	// the current version's identity, or the dirty revision's while one
+	// exists. For a native directory it is a decimal version spelling; Atlas
+	// repeatable migrations carry opaque tokens such as "2R".
+	CurrentVersionKey string `json:"current_version_key,omitempty"`
+	// CurrentVersionKeySet reports whether CurrentVersionKey carries an
+	// identity at all: it distinguishes an exact empty identity, which one
+	// Flyway repeatable migration records, from no identity. The bit is
+	// authoritative — a CurrentVersionKey left behind with the bit clear is not
+	// serialized as an identity — and it survives a JSON round trip.
+	CurrentVersionKeySet bool `json:"-"`
+	// AppliedMigrations holds the applied versions; AppliedMigrationKeys aligns
+	// with it index for index and carries each row's exact revision identity.
+	AppliedMigrations    []int64  `json:"applied_migrations"`
+	AppliedMigrationKeys []string `json:"applied_migration_keys,omitempty"`
+	// PendingMigrations holds the provider migrations not yet applied;
+	// PendingMigrationKeys aligns with it index for index.
+	PendingMigrations    []int64  `json:"pending_migrations"`
+	PendingMigrationKeys []string `json:"pending_migration_keys,omitempty"`
+	// OutOfOrderMigrations holds the pending versions below CurrentVersion;
+	// OutOfOrderMigrationKeys aligns with it index for index. Whether such a
+	// migration runs is decided by the migrator's [ExecOrder].
+	OutOfOrderMigrations    []int64  `json:"out_of_order_migrations"`
+	OutOfOrderMigrationKeys []string `json:"out_of_order_migration_keys,omitempty"`
+	// TotalMigrations counts the migrations the provider holds.
+	TotalMigrations int `json:"total_migrations"`
+	// HasPendingChanges reports that pending migrations exist or that a dirty
+	// revision does.
+	HasPendingChanges bool `json:"has_pending_changes"`
+	// DirtyRevision is a revision row a failed or interrupted run left in a
+	// non-applied state, and nil when every row is clean. While it is non-nil,
+	// migration operations refuse to continue until the row is repaired; see
+	// [Migrator.RepairMigration].
+	DirtyRevision *MigrationRevision `json:"dirty_revision,omitempty"`
 }
 
 // MigrationStatusSnapshot contains a migration status and the revision rows
@@ -126,7 +156,14 @@ type MigrateUpOptions struct {
 // caller and must not be retained.
 type ChecksDeferredObserver func(ctx context.Context, versions []int64)
 
-// Migrator handles database migrations for ptah
+// Migrator executes and tracks database migrations: it takes migrations from
+// a [MigrationProvider], applies or rolls them back over one
+// dbschema.DatabaseConnection, and records each outcome in the revision
+// metadata table. Configuration happens through the With* methods, which
+// return modified copies rather than mutating the receiver. A Migrator
+// instance is not safe for concurrent use from multiple goroutines; concurrent
+// runs from separate processes are serialized by the migration advisory lock
+// instead, on the dialects that support one.
 type Migrator struct {
 	conn                 *dbschema.DatabaseConnection
 	noTransactionSession *dbschema.DatabaseConnection
@@ -170,7 +207,15 @@ func NewFSMigrator(conn *dbschema.DatabaseConnection, fsys fs.FS, opts ...FSProv
 	return NewMigrator(conn, provider), nil
 }
 
-// NewMigrator creates a new migrator with the given database connection
+// NewMigrator creates a migrator that executes the provider's migrations over
+// conn. The returned migrator uses the Ptah revision-table format in a
+// schema_migrations table, linear execution order, per-file transaction mode,
+// the "ptah_migrate" advisory lock name, slog.Default() logging, a no-op
+// observer, and enforced pre-migration checks; the With* methods return
+// adjusted copies. A nil conn supports only work that never touches the
+// database, such as inspecting the provider through
+// [Migrator.MigrationProvider]; every migration, status, and revision method
+// requires a real connection.
 func NewMigrator(conn *dbschema.DatabaseConnection, provider MigrationProvider) *Migrator {
 	return &Migrator{
 		conn:                conn,
@@ -185,7 +230,8 @@ func NewMigrator(conn *dbschema.DatabaseConnection, provider MigrationProvider) 
 	}
 }
 
-// WithLogger sets the logger for the migrator
+// WithLogger returns a copy of the migrator that logs through l. A nil logger
+// falls back to slog.Default().
 func (m *Migrator) WithLogger(l *slog.Logger) *Migrator {
 	tmp := *m
 	if l == nil {
@@ -195,7 +241,8 @@ func (m *Migrator) WithLogger(l *slog.Logger) *Migrator {
 	return &tmp
 }
 
-// WithObserver sets the migration observer used for tracing and metrics.
+// WithObserver returns a copy of the migrator that reports tracing and metrics
+// through the given observer. A nil observer falls back to [NoopObserver].
 func (m *Migrator) WithObserver(observer Observer) *Migrator {
 	tmp := *m
 	if observer == nil {
@@ -205,10 +252,11 @@ func (m *Migrator) WithObserver(observer Observer) *Migrator {
 	return &tmp
 }
 
-// WithSkipChecks controls whether pre-migration `-- +ptah check` assertions and
-// Atlas txtar checks.sql and checks/*.sql sections are evaluated before
-// applying up migrations. The default (false) enforces checks; pass true as an
-// explicit emergency bypass, mirroring --allow-destructive.
+// WithSkipChecks returns a copy of the migrator with pre-migration check
+// enforcement configured: whether `-- +ptah check` assertions and Atlas txtar
+// checks.sql and checks/*.sql sections are evaluated before applying up
+// migrations. The default (false) enforces checks; pass true as an explicit
+// emergency bypass, mirroring --allow-destructive.
 func (m *Migrator) WithSkipChecks(skip bool) *Migrator {
 	tmp := *m
 	tmp.skipChecks = skip
@@ -380,8 +428,8 @@ func (m *Migrator) rejectChecksUnderTxModeAll(migration *Migration, direction Mi
 	return nil
 }
 
-// WithExecOrder sets how this migrator handles pending migrations whose
-// version is below the current high-water mark.
+// WithExecOrder returns a copy of the migrator that handles pending migrations
+// whose version is below the current high-water mark according to execOrder.
 func (m *Migrator) WithExecOrder(execOrder ExecOrder) *Migrator {
 	tmp := *m
 	tmp.execOrder = normalizeExecOrder(execOrder)
@@ -484,8 +532,9 @@ func (m *Migrator) WithAtlasRevisionVersionComparator(
 	return &tmp
 }
 
-// WithTransactionMode sets how pending up migrations are wrapped in
-// transactions.
+// WithTransactionMode returns a copy of the migrator that wraps pending up
+// migrations in transactions according to mode. An empty mode selects the
+// default, [MigrationTxModeFile].
 func (m *Migrator) WithTransactionMode(mode MigrationTxMode) *Migrator {
 	tmp := *m
 	tmp.txMode = normalizeMigrationTxMode(mode)
@@ -600,7 +649,10 @@ func revisionEngineClauseFor(dialect, engine string) string {
 	}
 }
 
-// WithMigrationsTable sets the table used to record applied migrations.
+// WithMigrationsTable returns a copy of the migrator that records applied
+// migrations in the named schema and table. An empty schema puts the table in
+// the connection's default schema, and an empty table name falls back to the
+// revision-table format's default name.
 func (m *Migrator) WithMigrationsTable(schema, table string) *Migrator {
 	tmp := *m
 	tmp.migrationsSchema = strings.TrimSpace(schema)
@@ -615,9 +667,11 @@ func (m *Migrator) WithMigrationsTable(schema, table string) *Migrator {
 	return &tmp
 }
 
-// WithRevisionTableFormat sets the database table layout used for migration
-// revisions. Both layouts retain Ptah's dirty-state protection; the Atlas
-// layout encodes rollback direction in its existing operator_version column.
+// WithRevisionTableFormat returns a copy of the migrator that uses the given
+// database table layout for migration revisions; a default table name follows
+// the format to its own default. Both layouts retain Ptah's dirty-state
+// protection; the Atlas layout encodes rollback direction in its existing
+// operator_version column.
 func (m *Migrator) WithRevisionTableFormat(format RevisionTableFormat) *Migrator {
 	tmp := *m
 	tmp.revisionTableFormat = format
@@ -818,7 +872,17 @@ func (m *Migrator) deleteMigrationSQL() string {
 	return fmt.Sprintf("DELETE FROM %s WHERE version = ?", m.qualifiedMigrationsTable())
 }
 
-// Initialize creates the migrations table if it doesn't exist
+// Initialize prepares the revision metadata this migrator reads and writes. It
+// creates the metadata schema and the migrations table when they are absent,
+// refuses an existing table the configured layout cannot safely use, and
+// brings a table that predates the current layout up to it — so Initialize can
+// execute DDL, ALTER TABLE included, against live metadata. A refusal happens
+// before any statement runs, leaving the metadata untouched.
+//
+// Every read and write entry point calls Initialize implicitly, GetRevisions
+// included; a writer in dry-run mode, which only inspects the metadata, is the
+// one read-only route. Initialize is idempotent, and a migrator that later
+// leaves dry-run mode still gets its table created.
 func (m *Migrator) Initialize(ctx context.Context) error {
 	dryRun := m.conn.Writer().IsDryRun()
 
@@ -1406,7 +1470,11 @@ func (m *Migrator) getPreviousMigrationVersion(ctx context.Context) (int64, erro
 	return applied[len(applied)-2], nil
 }
 
-// GetMigrationStatus returns information about the current migration status using the provided filesystem
+// GetMigrationStatus returns the current migration status derived from the
+// provider's migrations and the revision metadata rows: current version,
+// applied, pending, and out-of-order versions, and the dirty revision when one
+// blocks new work. It is [Migrator.GetMigrationStatusSnapshot] without the raw
+// revision rows.
 func (m *Migrator) GetMigrationStatus(ctx context.Context) (status *MigrationStatus, err error) {
 	snapshot, err := m.GetMigrationStatusSnapshot(ctx)
 	if err != nil {

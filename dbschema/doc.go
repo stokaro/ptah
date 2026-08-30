@@ -1,45 +1,47 @@
-// Package dbschema provides database schema operations and connection management for the Ptah schema management system.
-//
-// This package implements comprehensive database connectivity and schema manipulation capabilities
-// across multiple database platforms. It provides unified interfaces for reading database schemas,
-// writing schema changes, and managing database connections with proper abstraction over
-// platform-specific implementations.
-//
-// # Overview
-//
-// The dbschema package serves as the primary interface between Ptah and actual databases.
-// It abstracts away database-specific details while providing consistent APIs for schema
-// operations across PostgreSQL-family, MySQL, MariaDB, SQLite, ClickHouse, and
-// SQL Server platforms.
-//
-// # Key Features
-//
-//   - Unified database connection management across multiple platforms
-//   - Schema reading and introspection with detailed metadata extraction
-//   - Schema writing and modification with transaction support
-//   - Database URL parsing and connection string handling
-//   - Platform-specific optimizations and feature support
-//   - Comprehensive error handling and connection management
+// Package dbschema provides database connection management plus schema reading
+// and writing against a live database. It is the boundary where Ptah's
+// dialect-agnostic schema model meets a concrete server: [ConnectToDatabase]
+// picks the dialect from the URL scheme, and the returned [DatabaseConnection]
+// carries a schema reader, a schema writer, and direct SQL access bound to
+// that dialect.
 //
 // # Core Components
 //
 // The package provides these main types:
 //
-//   - DatabaseConnection: Main connection wrapper with unified interface
-//   - SchemaReader: Interface for reading database schemas
-//   - SchemaWriter: Interface for writing schema changes
-//   - DBInfo: Database connection and metadata information
+//   - [DatabaseConnection]: the connection every operation hangs off.
+//   - catalog.SchemaReader: reads the live schema into a *catalog.Database.
+//   - catalog.SchemaWriter: executes schema changes, transactionally on
+//     request.
+//   - catalog.ServerInfo: dialect, version, schema, capability and identifier
+//     metadata, returned by [DatabaseConnection.Info].
+//
+// The per-dialect reader and writer implementations are internal to this
+// module and not importable from another one; [ConnectToDatabase] selects the
+// pair matching the URL and hands them out behind the catalog interfaces.
 //
 // # Supported Databases
 //
-// The package supports these database platforms:
+// The package connects to these database platforms:
 //
-//   - PostgreSQL: Full support with enum types, SERIAL columns, and advanced constraints
-//   - MySQL: Complete support with AUTO_INCREMENT, ENGINE specifications, and charset handling
-//   - MariaDB: Full compatibility using MySQL driver with MariaDB-specific optimizations
-//   - SQLite: Local file, URI, and in-memory databases with PRAGMA-backed introspection
-//   - ClickHouse: MergeTree-family subset with system catalog introspection
-//   - SQL Server: T-SQL subset with schemas, IDENTITY, indexes, and core constraints
+//   - PostgreSQL, with CockroachDB, YugabyteDB, and Spanner reached over the
+//     same wire protocol; the product is detected from the server rather than
+//     assumed from the scheme, so a postgres:// URL to one of them resolves
+//     that product's dialect, and where the server identifies itself as
+//     nothing but PostgreSQL the scheme's dialect stands.
+//   - MySQL and MariaDB, reached with one driver and told apart by the server
+//     itself.
+//   - SQLite: local file, URI, and in-memory databases with PRAGMA-backed
+//     introspection -- plus a remote libsql (Turso) server through libsql://
+//     and libsql+ws://, which serves the same SQLite schema surface over a
+//     different transport.
+//   - ClickHouse: MergeTree-family subset with system catalog introspection.
+//   - SQL Server: T-SQL subset with schemas, IDENTITY, indexes, and core
+//     constraints.
+//   - Oracle: the connected user's schema, since in Oracle a schema is a
+//     user; ?schema= on the URL selects another user's objects.
+//
+// A URL scheme outside that set is refused rather than guessed at.
 //
 // # Connection Management
 //
@@ -76,7 +78,7 @@
 //	for _, table := range schema.Tables {
 //		fmt.Printf("Table: %s\n", table.Name)
 //		for _, column := range table.Columns {
-//			fmt.Printf("  Column: %s (%s)\n", column.Name, column.Type)
+//			fmt.Printf("  Column: %s (%s)\n", column.Name, column.RawType())
 //		}
 //	}
 //
@@ -130,17 +132,6 @@
 //	fmt.Printf("Version: %s\n", info.Version)
 //	fmt.Printf("Schema: %s\n", info.Schema)
 //
-// # Platform-Specific Implementations
-//
-// The package includes platform-specific implementations:
-//
-//   - postgres/: PostgreSQL-specific reader and writer implementations
-//   - mysql/: MySQL/MariaDB-specific reader and writer implementations
-//   - mssql/: SQL Server-specific reader and writer implementations
-//   - clickhouse/: ClickHouse-specific reader and writer implementations
-//   - sqlite/: SQLite-specific reader and writer implementations
-//   - types/: Common type definitions and interfaces
-//
 // # URL Format Support
 //
 // The package handles various database URL formats:
@@ -148,52 +139,18 @@
 //   - Standard URLs: postgres://user:pass@host:port/database
 //   - MySQL TCP URLs: mysql://user:pass@tcp(host:port)/database
 //   - SQLite URLs: sqlite:///absolute/path.db, sqlite://relative.db, sqlite:///:memory:
+//   - Remote libsql URLs: libsql://host and libsql+ws://host
 //   - SQL Server URLs: sqlserver://user:pass@host:1433?database=name&encrypt=disable
 //   - Connection parameters: URLs with query parameters for SSL, charset, etc.
-//
-// # Transaction Safety
-//
-// All schema writing operations support transactions:
-//
-//   - Automatic transaction management for complex operations
-//   - Rollback support for failed operations
-//   - Proper resource cleanup and connection management
-//   - Dry-run capabilities for testing schema changes
-//
-// # Error Handling
-//
-// The package provides comprehensive error handling:
-//
-//   - Database connection errors with detailed context
-//   - SQL execution errors with statement information
-//   - Transaction management errors with rollback support
-//   - Schema parsing errors with object-specific details
 //
 // # Integration with Ptah
 //
 // This package integrates with other Ptah components:
 //
-//   - ptah/migration/migrator: Uses connections for migration execution
-//   - ptah/migration/generator: Uses schema reading for migration generation
-//   - ptah/migration/schemadiff: Consumes database schema for comparison
-//   - ptah/core/goschema: Provides target schema for comparison
-//
-// # Performance Considerations
-//
-// The package is optimized for:
-//
-//   - Efficient database connection pooling and management
-//   - Fast schema introspection with minimal queries
-//   - Batch SQL execution for complex schema changes
-//   - Memory-efficient handling of large schema objects
-//
-// # Security Features
-//
-// The package includes security considerations:
-//
-//   - Proper SQL parameter binding to prevent injection
-//   - Connection validation and health checking
-//   - Secure handling of database credentials
+//   - migration/migrator: uses connections for migration execution
+//   - migration/generator: uses schema reading for migration generation
+//   - migration/schemadiff: consumes the read schema for comparison
+//   - core/goschema: provides the desired schema the comparison runs against
 //
 // # Thread Safety
 //

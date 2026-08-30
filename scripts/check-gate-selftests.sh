@@ -373,7 +373,6 @@ adjacent=(
 	"check-go-toolchain-single-source.sh	internal/gotoolchain	every YAML spelling and both forwarding shapes, with controls"
 	"check-renovate-regex.sh	internal/renovateregex	the backreference that stopped Renovate, and the group spelling that is the control for it"
 	"check-exported-docs.sh	internal/cmd/exporteddocs	each rule over an AST fixture, and the method exemption that 148 of 158 findings turned on"
-	"check-public-api-snapshot.sh	internal/apiguard	the whole gate over a fixture module -- an added exported field, its control, and the scrape's vacuity refusal"
 )
 
 # The guard on that list. A gate leaves this harness by growing tests elsewhere,
@@ -403,6 +402,7 @@ uncovered=(
 	"check-protobuf-export-acceptance.sh	the same"
 	"check-quickstart.sh	the same; internal/quickstart is where it is proven able to fail"
 	"check-examples.sh	compiles and runs four examples plus two provider modules; minutes per mutation fixture"
+	"check-source-workflows.sh	builds Ptah and executes eight migration plus four brownfield paths; minutes per mutation fixture"
 )
 
 # companion_gates lists the gates that prove themselves, derived from the files

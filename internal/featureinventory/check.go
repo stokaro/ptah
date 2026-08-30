@@ -87,9 +87,8 @@ func RulesOf(problems []Problem) []string {
 // fixtureModulePath is the module the self-test fixtures' ledger belongs to.
 //
 // It is deliberately not this repository's module path. LedgerPackages takes
-// the module as a parameter so internal/apiguard can drive it against a
-// throwaway fixture module through --list-packages, and a fixture that reused
-// the real path would pass whether the parameter were read or ignored.
+// the module as a parameter, and a fixture that reused the real path would pass
+// whether the parameter were read or ignored.
 const fixtureModulePath = "example.test/fixture"
 
 // cleanSources is the fixture every self-test case mutates: four kinds each

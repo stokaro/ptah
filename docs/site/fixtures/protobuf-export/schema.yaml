@@ -1,0 +1,13 @@
+tables:
+  products:
+    columns:
+      id: { type: SERIAL, primary: true }
+      name: { type: VARCHAR(255), not_null: true }
+      price: { type: "DECIMAL(10,2)", not_null: true }
+      status:
+        type: ENUM
+        enum: [active, inactive]
+        not_null: true
+      tags: { type: "TEXT[]" }
+      created_at: { type: TIMESTAMPTZ, not_null: true }
+      updated_at: { type: TIMESTAMP }

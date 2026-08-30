@@ -1,0 +1,621 @@
+---
+title: API schema export
+description: Project a desired schema into OpenAPI or GraphQL contract candidates and review their trust-boundary limitations.
+type: how-to
+audience:
+  - "schema-author"
+readerQuestion: "How do I project a desired schema into OpenAPI or GraphQL contract candidates and review their trust-boundary limitations?"
+goal: "Generate and review an OpenAPI or GraphQL contract candidate."
+sourceOfTruth:
+  - "cmd/schema"
+  - "internal/schemaload"
+generated: false
+overlaps: []
+disposition: keep
+owns:
+  - cli-ptah-schema-export
+---
+
+export const contractSamples = `${import.meta.env.BASE_URL}samples/contracts/`;
+
+Ptah projects a desired schema into API-facing formats: OpenAPI 3.0 component
+schemas, GraphQL SDL, and Protobuf definitions. Use these artifacts when the
+selected database entities intentionally match your transport model, or as input
+to a separately designed contract.
+
+The source can be a YAML, HCL, SQL, or DBML file named by `--schema-file`, or
+Go annotations under `--root-dir` — the same desired-schema sources
+`ptah schema render` reads.
+
+The export does not expose database rows or create a working API. It does not
+generate handlers, resolvers, Protobuf services, authentication, authorization,
+or database access. The generated schema is a contract candidate that you must
+review before publishing.
+
+Inspect the deterministic fixture outputs directly:
+
+- <a href={`${contractSamples}shop-openapi.yaml`} download>OpenAPI 3.0 YAML</a>
+- <a href={`${contractSamples}shop.graphql`} download>GraphQL SDL</a>
+- <a href={`${contractSamples}shop.proto`} download>Protobuf definition</a>
+
+These source artifacts are primary. Ptah does not bundle Swagger UI, GraphiQL,
+resolvers, or an API server, so this page does not show a consumer UI and imply
+that one exists.
+
+The generated OpenAPI passes `redocly lint`; the generated GraphQL parses and
+builds with `graphql-js`, for the types-only default and for every operation
+profile.
+
+OpenAPI and GraphQL exports are stateless. The Protobuf target is stateful —
+field numbers are persistent wire identifiers, so its generated file is
+committed compatibility state — and has its own page:
+[Protobuf schema export](../protobuf/).
+
+`--to` accepts seven targets in total, and the four this page does not cover
+answer different questions. `markdown` and `html` write
+[reference documentation for people](../document/) rather than a contract for
+machines, and `dbml` writes a [DBML document](../dbml/). `hcl` converts a Go
+annotation tree into an HCL schema, and with `--cleanup-go-annotations` it also
+removes the annotations from the Go files it reads.
+
+## Commands
+
+```bash
+# OpenAPI 3.0 — components.schemas keyed by table name
+ptah schema export --to openapi-v3 --schema-file schema.yaml --out openapi.yaml
+
+# GraphQL SDL — one object type per table, and no operations
+ptah schema export --to graphql --schema-file schema.yaml --out schema.graphql
+
+# Add operation shapes by name
+ptah schema export --to graphql --schema-file schema.yaml \
+  --graphql-operations list,by-id,create-input --out schema.graphql
+
+# Omit --out to write the schema to stdout (for piping into a validator)
+ptah schema export --to graphql --schema-file schema.yaml > schema.graphql
+
+# Go annotations use --root-dir instead
+ptah schema export --to openapi-v3 --root-dir ./models --out openapi.yaml
+```
+
+| Flag | Applies to | Meaning |
+| --- | --- | --- |
+| `--to` | all | `hcl`, `openapi-v3`, `graphql`, [`protobuf`](../protobuf/), [`markdown`](../document/), [`html`](../document/), or [`dbml`](../dbml/). `atlas-hcl` is accepted as an alias for `hcl`. |
+| `--from` | all | Format of the `--schema-file` value: `go` (default), `yaml`, `hcl`, `sql`, or `dbml`. |
+| `--root-dir` | all | Directory scanned for Go annotations. |
+| `--schema-file` | every target except `hcl` | YAML, HCL, SQL, or DBML schema file to export instead of Go annotations. Repeatable. |
+| `--out` | all | Output file. Optional for `openapi-v3`, `graphql`, `markdown`, `html`, and `dbml` (stdout when omitted); required for `hcl` and for [`protobuf`](../protobuf/), where it is also the compatibility state read back on the next run. |
+| `--include-tables` | every target except `hcl` | Comma-separated allowlist of tables. |
+| `--exclude-tables` | every target except `hcl` | Comma-separated denylist, applied after the allowlist. |
+| `--title` | `openapi-v3`, `markdown`, `html` | Value for `info.title` (default `Ptah Exported Schema`), or the heading of a [Markdown or HTML document](../document/) (default `Schema reference`). |
+| `--graphql-operations` | `graphql` | Comma-separated operation shapes: `none` (default), `list`, `by-id`, `create-input`, `update-input`. |
+
+Export warnings (for example an enum whose values cannot be resolved) are written
+to stderr, so a schema piped from stdout is never corrupted.
+
+## Sources
+
+`--schema-file` is read by the same resolver as `ptah schema render`, so a
+desired schema is spelled the same way on both commands. Every target except
+`hcl` reads all five sources below:
+
+- **[YAML schema](../yaml/)** — a `--schema-file` whose extension is `.yaml` or
+  `.yml`. This is `--from yaml`.
+- **[HCL schema](../hcl/)** — a `--schema-file` whose extension is `.hcl`. This
+  is `--from hcl`.
+- **[SQL schema](../sql/)** — a `--schema-file` whose extension is `.sql`. This
+  is `--from sql`.
+- **[DBML document](../dbml/)** — a `--schema-file` whose extension is `.dbml`.
+  This is `--from dbml`.
+- **Go annotations** — the directory named by `--root-dir`, which defaults to
+  `.`. This is `--from go`.
+
+An export taken from a schema file is byte-identical to the export taken from
+annotated Go models describing the same tables, so a project can change how it
+spells its schema without republishing a different contract.
+
+`--from` declares the file's format and is checked against its extension:
+`--from yaml --schema-file schema.sql` is refused rather than parsed as YAML.
+Leave `--from` unset and the extension decides. Naming both `--root-dir` and
+`--schema-file` merges them into one
+[composite desired schema](../composite/); `--root-dir` alone keeps its `.`
+default, which a schema-file export never picks up.
+
+Two combinations are refused rather than approximated:
+
+- `--to hcl` with `--schema-file`. That target rewrites the Go files it reads —
+  `--cleanup-go-annotations` removes their annotations after a lossless export —
+  so its source is `--root-dir`. Converting a schema file to HCL is a different
+  operation from migrating annotations out of Go code.
+- `--from db`. An export reads a schema definition, not a live database. Run
+  [`ptah schema inspect`](../../direct/inspect/) to write HCL, SQL, or DBML
+  from a database URL, review the file, then export it.
+
+## OpenAPI
+
+Each table becomes one Schema Object under `components.schemas`. Columns become
+properties; `NOT NULL` columns (and primary keys, which are `NOT NULL` by rule)
+go in `required`; nullable columns get `nullable: true`.
+
+```yaml
+openapi: 3.0.3
+info:
+  title: Ptah Exported Schema
+  version: 1.0.0
+servers:
+  - url: /
+paths: {}
+components:
+  schemas:
+    products:
+      type: object
+      required:
+        - id
+        - name
+        - price
+        - status
+      properties:
+        id:
+          type: integer
+          format: int32
+        name:
+          type: string
+          maxLength: 255
+        price:
+          type: number
+        status:
+          type: string
+          enum:
+            - active
+            - inactive
+```
+
+The document is minimal but valid: `paths` is empty and a placeholder `servers`
+entry is included so `redocly lint` passes. `components.schemas` can be `$ref`'d
+from, or merged into, a hand-authored specification.
+
+## GraphQL
+
+Each table becomes an object type. Enum columns become enum types, and foreign
+keys become object relations alongside the scalar id column. That is the whole
+default export: no `Query`, no inputs, no connections.
+
+```graphql
+scalar DateTime
+
+enum ProductStatus {
+  active
+  inactive
+}
+
+type Product {
+  id: ID!
+  name: String!
+  price: Float!
+  status: ProductStatus!
+  category_id: Int!
+  category: Category!
+}
+```
+
+A foreign key whose target table is filtered out is dropped and reported as a
+warning rather than producing a dangling reference.
+
+The document declares no root operation type, so `graphql-js` builds it and
+`validateSchema` reports the absent `Query`. That is the correct shape for a
+type-system document meant to be composed into a schema you design.
+
+### Operation shapes
+
+`--graphql-operations` adds operation-shaped definitions by name. Each value is
+selected independently.
+
+| Value | What it adds |
+| --- | --- |
+| `none` | Nothing; this is the default written out. |
+| `list` | A `Connection`/`Edge` pair per table, a shared `PageInfo`, and a `Query` field `<tables>(first: Int, after: String)`. |
+| `by-id` | A `Query` field `<table>(<key>: <KeyType>!)` per table with a single-column primary key. |
+| `create-input` | A `<Type>CreateInput` per table. |
+| `update-input` | A `<Type>UpdateInput` per table, without the primary key and with every field optional. |
+
+```graphql
+type Query {
+  products(first: Int, after: String): ProductConnection
+  product(id: ID!): Product
+}
+
+input ProductCreateInput {
+  name: String!
+  price: Float!
+  status: ProductStatus
+  category_id: Int!
+}
+
+input ProductUpdateInput {
+  name: String
+  price: Float
+  status: ProductStatus
+  category_id: Int
+}
+```
+
+Inputs come from the **write projection**: the columns a caller may assign.
+Auto-increment and `SERIAL` columns, `GENERATED ALWAYS AS IDENTITY` columns,
+generated/computed columns, and columns with a MySQL `ON UPDATE` expression are
+excluded, because the database produces their values. A column with a plain
+`DEFAULT` stays but becomes optional on create — `status` above.
+
+An operation Ptah cannot complete is omitted and reported, never emitted broken:
+a composite or absent primary key gets no `by-id` field, a key column that the
+object type did not publish gets none either, and an empty projection produces
+no input type. Selecting only input shapes leaves the document without a `Query`;
+selecting a query shape always produces a legal, non-empty one.
+
+:::caution[Generated operations are declarations, not an API]
+Ptah generates no resolvers, data access, authorization, tenant isolation,
+filtering, ordering, pagination behavior, or transactions. A `Connection`/`Edge`
+pair names the Relay shape without implementing cursors, and `first`/`after` are
+argument declarations rather than a pagination guarantee. The generated file
+says so in a comment when operation shapes are present.
+:::
+
+## Names in the contract
+
+A column or table has two identities, and they are not the same thing:
+
+- the **persistence identity** — the column and table names the database uses;
+- the **API identity** — the names the exported contract publishes.
+
+By default the second is derived from the first, which couples them: renaming a
+column renames a published field, and a storage-shaped name has to become the
+public one. Declare `api_name` where they should differ.
+
+```go
+//ptah:schema:table name="billing_invoices" api_name="invoices"
+type Invoice struct {
+    //ptah:schema:field name="id" type="BIGSERIAL" primary="true"
+    ID int64
+
+    //ptah:schema:field name="billing_amount_minor" api_name="amount" type="INTEGER"
+    AmountMinor int32
+}
+```
+
+The table exports as `invoices` in OpenAPI and as `type Invoice` in GraphQL —
+singularized and PascalCased from the API name exactly as it would be from a
+table name — and the column exports as `amount` in both.
+
+Nothing changes for a schema that declares no `api_name`: the derivation is the
+one it has always been, and an unannotated schema exports byte-identically.
+
+### What it does not do
+
+- It does not change a **type**. `api_name` renames, and it adds no runtime
+  validation of any kind. Re-mapping the exported representation is a separate
+  declaration — see [Types in the contract](#types-in-the-contract).
+- It does not sanitize away a format's naming rules. GraphQL still rewrites a
+  name that is not a legal identifier, and still reports having done so — the
+  per-target names above are how a schema chooses that name deliberately instead
+  of accepting the rewrite.
+- It does not rename the diagnostics you read. A GraphQL or Protobuf diagnostic
+  path names the **column**, because that is where you go to change something.
+  An OpenAPI diagnostic path names the published names, because that path is a
+  coordinate inside the generated document.
+
+### One name per target, where a format requires it
+
+`api_name` answers every target, and that is what a schema normally declares.
+A format's own naming rules are the case it cannot cover: `amountMinor` is
+idiomatic in GraphQL and fails `buf lint` in Protobuf, which wants
+`amount_minor`. Three attributes name one target each, on both the field and
+the table directive:
+
+```go
+//ptah:schema:table name="billing_invoices" api_name="invoices" proto_name="invoice_records"
+type Invoice struct {
+    //ptah:schema:field name="billing_amount_minor" type="INTEGER" api_name="amount" graphql_name="amountMinor" proto_name="amount_minor"
+    AmountMinor int32
+}
+```
+
+Three declarations answer in order — the target's own name, `api_name`, the
+database name — so the ordinary schema declares nothing and exports as it always
+did, a shared alias answers everywhere, and a scoped name changes one export
+without touching the other two. A target that declares none is unaffected by one
+declared for its neighbor.
+
+Collisions are checked per target, because a collision can now exist in one
+export and not in another. The refusal says which export refused, and names both
+attributes that would resolve it:
+
+```text
+table "invoices" exports two columns as "net" in GraphQL: "net_minor" and
+"gross_minor"; give one of them a distinct api_name, or a distinct graphql_name
+for this export only
+```
+
+### Collisions are refused, not resolved
+
+Two columns published under one name, or two tables, fail the export before
+anything is written, and the message names both sources:
+
+```text
+table "invoices" exports two columns as "amount": "amount" and
+"billing_amount_minor"; give one of them a distinct api_name
+```
+
+An alias that shadowed another column would drop it from the contract, and the
+contract has nothing in it to record the loss.
+
+### The Protobuf consequence
+
+Protobuf field numbers are keyed by the published field name, so the API
+identity is what carries wire compatibility: renaming a column while its
+`api_name` stays put keeps the field number. Changing the `api_name` retires an
+identity consumers hold and is refused unless the retirement is chosen
+explicitly. See [Protobuf schema export](../protobuf/).
+
+## Types in the contract
+
+The type mapping below decides the shape of every exported field, and it decides
+it from the stored type. That is the right answer nearly always, and the wrong
+one exactly where the stored type is not what the value means:
+
+- an exact `DECIMAL` amount arrives as OpenAPI `number` and GraphQL `Float`,
+  both double-precision, so the digits are not guaranteed to survive;
+- a `TIMESTAMP` carries no time zone, so Protobuf declines to publish it as
+  `google.protobuf.Timestamp` — nothing in the schema says which zone it is in,
+  though the person who wrote the schema knows.
+
+Declare `api_type` where the published representation should differ from the
+stored one. It names a type Ptah already maps — the left column of the table
+below, or a declared enum — so one declaration answers all three targets and no
+per-format type vocabulary is introduced:
+
+```go
+//ptah:schema:field name="amount" type="DECIMAL(12,2)" api_type="TEXT"
+Amount string
+
+//ptah:schema:field name="stored_utc_at" type="TIMESTAMP" api_type="TIMESTAMPTZ"
+StoredUTCAt time.Time
+```
+
+The first publishes as a string in all three formats and keeps its digits. The
+second publishes as `google.protobuf.Timestamp` in Protobuf, pulling in the
+import that goes with it, and as a date-time string in OpenAPI and GraphQL.
+
+Only the contract moves. `type` is what the migration engine plans against, and
+it is unaffected: the column stays `DECIMAL(12,2)` in the database, and
+`ptah migrate` never reads `api_type`.
+
+### Enums, in both directions
+
+An override reaches enum resolution as well as the scalar mapping, so it works
+whichever way the pair sits:
+
+```go
+//ptah:schema:field name="state" type="invoice_state" api_type="TEXT"
+State string
+
+//ptah:schema:field name="legacy_state" type="VARCHAR(32)" api_type="invoice_state"
+LegacyState string
+```
+
+The first publishes an enum column as a plain string. The second publishes a
+text column as the declared enum — which is the case worth having, because on a
+dialect with no native enum type the column genuinely is text, and the contract
+still wants the enum.
+
+Inline enum values are part of what the override replaces. A column declaring
+its values on the annotation and an `api_type` beside them publishes the
+`api_type`: the values describe what is stored, and enum resolution would
+otherwise consult them first and quietly make the override do nothing.
+
+### What an override does not do
+
+It does not convert anything. `api_type` changes what the **contract says** a
+field is; it generates no marshalling, no parsing, and no validation of any
+kind at runtime. A `DECIMAL` published as text is still a `DECIMAL` in the
+database, and the service that serves the contract is what has to render it as
+text and read it back — an override that nothing implements produces a document
+that lies about the API.
+
+Nor does it check that the two types are compatible. Publishing a `DECIMAL` as
+`BIGINT` is accepted, because there are schemas where that is correct and Ptah
+cannot tell them apart from the ones where it is not. Review the pair; the
+export only guarantees that the type you named is one it can produce.
+
+### An override that cannot be honored is refused
+
+An `api_type` the target cannot map fails the export, naming the column, the
+declared value and the type it would otherwise have used:
+
+```text
+column "amount" on table "invoices" declares api_type "money_ish", which the
+OpenAPI projection does not recognize; name a type Ptah maps, or drop the
+override to keep the column's own type "DECIMAL(12,2)"
+```
+
+A type this refuses is one no target can produce: neither the mapping table nor
+the declared enums have it. This is deliberately stricter than the treatment of
+an unrecognized **column** type, which exports as a string with a diagnostic. The two are different kinds
+of event: an unmapped column type is a fact about the schema, and the export
+still has something honest to say about it, while an unmapped override is an
+authoring mistake whose only possible outcome is a contract the author did not
+ask for.
+
+### The Protobuf consequence
+
+A pinned `api_type` makes the wire type independent of the column: re-typing the
+column underneath it changes nothing consumers can observe. Changing the
+`api_type` itself is a wire-incompatible change like any other, and goes through
+the same policy — refused unless `--proto-on-incompatible-change=renumber`
+reserves the old number and allocates a new one.
+
+## Type mapping
+
+The lookup is dialect-agnostic: Postgres and MySQL spellings (`SERIAL`,
+`INT AUTO_INCREMENT`, `DOUBLE PRECISION`) normalize to the same result.
+
+| Ptah type | OpenAPI (`type`/`format`) | GraphQL |
+| --- | --- | --- |
+| `SMALLINT`, `INT`, `SERIAL`, `INT AUTO_INCREMENT` | `integer` / `int32` | `Int` |
+| `BIGINT`, `BIGSERIAL` | `integer` / `int64` | `Int` |
+| `BOOLEAN` | `boolean` | `Boolean` |
+| `DECIMAL(p,s)`, `NUMERIC`, `REAL`, `DOUBLE PRECISION` | `number` | `Float` |
+| `VARCHAR(n)`, `CHAR(n)` | `string` (`maxLength: n`) | `String` |
+| `TEXT`, `UUID`, `INET`, … | `string` | `String` |
+| `DATE`, `TIMESTAMP`, `TIME` | `string` / `date-time` (or `date`) | `DateTime` (custom scalar) |
+| `JSON`, `JSONB` | `object` | `JSON` (custom scalar) |
+| enum column | `string` + `enum` | enum type |
+| single-column primary key | as above, in `required` | `ID!` |
+
+An unrecognized column type maps to `string`/`String` and emits a warning, so an
+unresolved custom type is visible rather than silently wrong.
+
+## What the projection does not preserve
+
+The generated contract is not a complete translation of database behavior:
+
+- OpenAPI and GraphQL do not carry database defaults, unique constraints, check
+  constraints, generated expressions, or transaction behavior. Enforce the API
+  rules in the implementing service even when the database also enforces them.
+- GraphQL `Int` is a signed 32-bit value. A non-primary-key `BIGINT` maps to
+  `Int`, so values outside that range need a separately designed scalar or
+  contract, or an `api_type` that publishes them as text.
+- `DECIMAL` and `NUMERIC` map to OpenAPI `number` and GraphQL `Float`. Those
+  representations can lose decimal precision; declare
+  [`api_type`](#types-in-the-contract) to publish the value as text instead.
+- GraphQL declares `DateTime` and `JSON` scalar names but does not provide their
+  parsing, serialization, or validation behavior.
+- The GraphQL write projection recognizes auto-increment, `SERIAL`,
+  `GENERATED ALWAYS AS IDENTITY`, generated/computed, and MySQL `ON UPDATE`
+  columns as server-owned. It cannot see a value supplied by a trigger or by an
+  application layer, so review every generated input field.
+- Foreign-key relation fields describe a possible object shape. They do not
+  define loading, batching, tenant checks, or authorization.
+
+## Scope and limitations
+
+The export describes selected table columns, primary keys, foreign keys, and
+enums. Non-column objects such as views, triggers, functions, row-level security
+(RLS) policies, and indexes are not emitted.
+
+Database and API models solve different problems. A database model can contain
+tenant identifiers, audit fields, internal states, credential material, and
+operational columns that no external caller should see. It can also change on a
+different schedule from a public API.
+
+Use direct projection for an internal contract or a deliberately isomorphic
+domain model. Use a curated API model when the contract crosses a trust boundary,
+must remain stable across storage refactors, or exposes only part of a row.
+
+## Field-level exposure
+
+`--include-tables` and `--exclude-tables` select whole tables. To select
+columns, declare `api_expose` on the field:
+
+| Value | Reaches |
+| --- | --- |
+| `read` | What the API returns |
+| `write` | What the API accepts |
+| `read-write` | Both |
+| `none` | Neither — the column is absent from the generated document |
+
+```go
+//ptah:schema:field name="password_hash" type="TEXT" api_expose="write"
+PasswordHash string
+```
+
+Each target expresses the two directions in its own vocabulary. OpenAPI marks
+the single schema's properties `readOnly` and `writeOnly`; GraphQL puts a read
+column on the object type and a write column on the input types; Protobuf
+carries one message, so a column reachable either way is in it. A column
+declared `none` is emitted by none of them.
+
+`--api-field-policy` decides what an **undeclared** column means:
+
+| Value | Meaning |
+| --- | --- |
+| `all` (default) | An undeclared column is exported, which is how every schema behaved before this existed |
+| `allowlist` | Only columns declaring `api_expose` are exported; every other one is withheld and reported |
+
+Use `allowlist` when the contract crosses a trust boundary. It is what stops an
+additive database migration from widening a published contract on its own: a
+column added tomorrow enters nothing until somebody declares that it should.
+
+:::caution[Exposure controls are not access control]
+`api_expose` and `--api-field-policy` decide what enters a generated
+**document**. They are not authorization, they are not row-level security, and
+they protect nothing at runtime — Ptah generates no server, resolver, or data
+access layer, so nothing it emits can enforce them. A column omitted here is
+absent from the contract you publish; whether a caller can reach the underlying
+data is decided entirely by the service you write and the privileges you grant.
+
+Ptah also does not classify columns by name. A column called `password` is
+treated exactly like any other until a declaration says otherwise, because a
+naming heuristic that is right most of the time is a security boundary that is
+wrong some of the time.
+:::
+
+The generated surface differs by target:
+
+| Target | Ptah emits | Ptah does not emit |
+| --- | --- | --- |
+| OpenAPI | Component schemas under `components.schemas` | Paths, operations, handlers, or authorization |
+| GraphQL | Object and enum types; input, connection, and `Query` shapes when `--graphql-operations` asks for them | Resolvers, a server, data access, or authorization |
+| Protobuf | Messages and enums | Services, remote procedure calls (RPCs), handlers, or authorization |
+
+Publishing any generated schema reveals the selected entity and field names,
+translated types, enum values, relations, and exported source comments. Schema
+metadata is not an authorization boundary, but you should not disclose internal
+metadata that consumers do not need.
+
+RLS omission is important: the generated schema cannot describe who may read or
+write a field or row. Keep authorization in the service that implements the
+contract. Do not infer API permissions from database constraints or from the
+presence or absence of a generated field.
+
+Database identifiers also become API identifiers after target-specific name
+normalization. Ptah does not currently provide a stable alias between a table or
+column name and its exported API name. A storage rename can therefore become a
+contract rename.
+
+GraphQL operation-shaped definitions do not grant access by themselves, but
+they can be wired unsafely. They are opt-in for that reason: request the shapes
+you have decided to implement, and do not pass generated input objects directly
+to persistence code without an explicit assignment allowlist.
+
+## Review before publishing
+
+Before publishing or generating runtime code from an export:
+
+1. Use `--include-tables` rather than exporting the entire model by default.
+2. Inspect every generated field, including identifiers, audit columns, and
+   server-managed values. Review exported table and field comments too.
+3. If a selected table contains a field that must not cross the trust boundary,
+   use a curated source model or a separately authored contract. Table filters
+   cannot remove individual fields.
+4. Define authentication, authorization, tenant isolation, validation, and
+   assignment rules in the implementing service.
+5. Review the generated diff when the database model changes. An additive
+   database column can be an additive but unintended API change.
+6. Run the target linter or compiler and the consumer compatibility tests before
+   publishing the artifact.
+
+For OpenAPI, merge selected components into a hand-authored specification when
+the public contract differs from storage. For GraphQL, start from the types-only
+default and add an operation shape only once you have decided how it will be
+resolved and authorized; the generated `Query` and input types are syntax, not
+an authorization or resolver design.
+For Protobuf, use generated messages behind separately designed services or
+wrapper messages when the public model must differ.
+
+## Next steps
+
+- Need a stateful wire contract? Use
+  [Protobuf schema export](../protobuf/).
+- Need to verify what the source model declares? Review
+  [Go annotations](../go-annotations/).
+- Publishing the artifact from a pull request? Add it to
+  [Continuous integration](../../testing/ci/).

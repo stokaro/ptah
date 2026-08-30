@@ -4,6 +4,12 @@ import (
 	"strings"
 )
 
+// The canonical dialect names. Every other accepted spelling folds onto one
+// of these through NormalizeDialect, and the layers that vary by target --
+// renderers, readers, planners, capability presets -- key off these values.
+// Use the constants rather than a string a user typed or a literal of your
+// own: the names are the public identifiers, and the values can still change
+// before a stable release.
 const (
 	Postgres    = "postgres"
 	MySQL       = "mysql"

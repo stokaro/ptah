@@ -43,7 +43,7 @@ ptah migrations generate --schema-file ./schema.dbml --db-url "$DATABASE_URL"
 ## Write one
 
 ```bash
-ptah schema export  --root-dir ./models --to dbml --out ./schema.dbml
+ptah schema export  --schema-file ./schema.hcl --to dbml --out ./schema.dbml
 ptah schema inspect --db-url "$DATABASE_URL" --format dbml > schema.dbml
 ```
 
@@ -89,7 +89,7 @@ is not intent.
 Going the other way, an export names what it left behind:
 
 ```console
-$ ptah schema export --root-dir ./models --to dbml --out ./schema.dbml
+$ ptah schema export --schema-file ./schema.hcl --to dbml --out ./schema.dbml
 warning: DBML cannot express views (2); the export leaves them out
 warning: DBML cannot express triggers (1); the export leaves them out
 ```

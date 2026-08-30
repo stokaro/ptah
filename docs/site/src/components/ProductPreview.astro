@@ -16,8 +16,11 @@ interface Props {
     id: string;
     label: string;
     src: ImageMetadata | string;
+    darkSrc?: ImageMetadata | string;
     alt: string;
     fullSizeHref: string;
+    downloadHref?: string;
+    sourceHref?: string;
   }>;
 }
 
@@ -75,9 +78,22 @@ const {
         {variants.map((variant) => (
           <article data-preview-variant={variant.id}>
             <a href={variant.fullSizeHref} aria-label={`Open the full-size ${variant.label}`}>
-              <Image src={variant.src} alt={variant.alt} loading="lazy" />
+              {variant.darkSrc ? (
+                <picture>
+                  <source media="(prefers-color-scheme: dark)" srcset={typeof variant.darkSrc === 'string' ? variant.darkSrc : variant.darkSrc.src} />
+                  <Image src={variant.src} alt={variant.alt} loading="lazy" />
+                </picture>
+              ) : (
+                <Image src={variant.src} alt={variant.alt} loading="lazy" />
+              )}
             </a>
             <p>{variant.label}</p>
+            {(variant.downloadHref || variant.sourceHref) && (
+              <nav class="ptah-product-preview__variant-actions" aria-label={`${variant.label} actions`}>
+                {variant.downloadHref && <a href={variant.downloadHref} download>Download</a>}
+                {variant.sourceHref && <a href={variant.sourceHref}>Source</a>}
+              </nav>
+            )}
           </article>
         ))}
       </div>

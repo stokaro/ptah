@@ -138,14 +138,12 @@ func runSelfTest() error {
 
 // runListLedger is how every gate that needs the stable-embedder package set
 // reads it, so the recognition of a listed package exists once rather than
-// three times: scripts/check-public-api.sh calls this directly, and
-// scripts/check-public-api-snapshot.sh's --list-packages mode forwards here for
-// scripts/check-public-api-docs-sync.sh, scripts/check-exported-docs.sh,
-// scripts/check-public-api-released.sh and internal/apiguard.
+// once per shell script. scripts/check-public-api.sh calls this directly;
+// scripts/list-public-api-packages.sh forwards here for the docs-sync,
+// exported-docs, and released-baseline checks.
 //
-// The module directory is a parameter because those callers do not share one:
-// internal/apiguard drives --list-packages against a throwaway fixture module,
-// so the module path is read from that directory's go.mod rather than assumed.
+// The module directory is a parameter so callers and unit fixtures can read a
+// ledger relative to its own go.mod rather than assuming this repository.
 func runListLedger(moduleRoot string) error {
 	modulePath, err := readModulePath(moduleRoot)
 	if err != nil {

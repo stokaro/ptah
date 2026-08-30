@@ -138,9 +138,23 @@ type CheckpointWriteOptions struct {
 	AuthorizedMigrationsFS fs.FS
 }
 
-// WriteCheckpointFilesWithOptions writes a checkpoint migration pair while
-// enforcing opts against the same rooted directory handle used for the files
-// and ptah.sum publication.
+// WriteCheckpointFilesWithOptions writes a reversible checkpoint migration
+// pair (NNNNNNNNNN_description.checkpoint.up.sql and .checkpoint.down.sql)
+// into outputDir at the given version and rewrites the directory's ptah.sum so
+// the new pair is integrity-protected. It refuses to overwrite existing files
+// -- the caller resolves a version above the existing history -- and returns
+// the two written paths. A down half that cannot be created withdraws the up
+// half, so a failure never leaves a migration with no rollback.
+//
+// When opts.AuthorizedMigrationsFS is set, publication is bound to the history
+// that produced the checkpoint body: an output directory that does not match
+// the authorized state fails with [ErrMigrationDirectoryChanged] (errors.Is)
+// and leaves no half-published checkpoint behind. The refreshed ptah.sum
+// describes the authorized state plus the new pair, so a concurrent edit
+// cannot be legitimized by the new checksum.
+//
+// The whole transaction -- verification, both files, and the sum -- runs
+// through one rooted binding of outputDir (stokaro/ptah#1118).
 func WriteCheckpointFilesWithOptions(
 	outputDir string,
 	version int64,
@@ -226,9 +240,21 @@ func writeAtlasCheckpointFile(outputDir string, version int64, description, upSQ
 	return WriteAtlasCheckpointFileWithOptions(outputDir, version, description, upSQL, CheckpointWriteOptions{})
 }
 
-// WriteAtlasCheckpointFileWithOptions writes an Atlas-format checkpoint while
-// enforcing opts against the same rooted directory handle used for the file
-// and atlas.sum publication.
+// WriteAtlasCheckpointFileWithOptions writes an Atlas-format checkpoint --
+// the exact file name and contents [AtlasCheckpointArtifact] renders, so a
+// preview cannot drift from what is written -- into outputDir and rewrites the
+// directory's atlas.sum so the new file is integrity-protected. The Atlas
+// convention is up-only; a caller that needs a reversible checkpoint uses
+// [WriteCheckpointFilesWithOptions]. A version of zero or less is refused, and
+// the file is created exclusively, so a name collision fails rather than
+// silently choosing a different version.
+//
+// When opts.AuthorizedMigrationsFS is set, publication is bound to the history
+// that produced the checkpoint body: an output directory that does not match
+// the authorized state fails with [ErrMigrationDirectoryChanged] (errors.Is)
+// and leaves neither a checkpoint nor a refreshed atlas.sum behind. The whole
+// transaction runs through one rooted binding of outputDir
+// (stokaro/ptah#1118).
 func WriteAtlasCheckpointFileWithOptions(
 	outputDir string,
 	version int64,

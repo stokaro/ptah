@@ -74,8 +74,8 @@ func TestLedgerPackages_HappyPath(t *testing.T) {
 // A backticked path in a paragraph is a mention, not a listing. This is the
 // distinction stokaro/ptah#2246 put a gate fixture on, and the recognition now
 // exists once -- every public-API gate reads the ledger through this function,
-// directly or through `check-public-api-snapshot.sh --list-packages` -- so they
-// can no longer drift into different answers.
+// directly or through `list-public-api-packages.sh` -- so they can no longer
+// drift into different answers.
 func TestLedgerPackages_FailurePath(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -289,9 +289,7 @@ func unclaimed(doc *featureinventory.Document) []string {
 	return ids
 }
 
-// The module path is a parameter, not a constant, because internal/apiguard
-// drives the same recognition against a throwaway fixture module through
-// `check-public-api-snapshot.sh --list-packages`. A fixture that only ever used
+// The module path is a parameter, not a constant. A fixture that only ever used
 // this repository's module path would pass whether the parameter were read or
 // ignored.
 func TestLedgerPackages_ForeignModule(t *testing.T) {

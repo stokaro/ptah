@@ -67,7 +67,7 @@ func TestScanPathsSelectsTheWorkingTreeOnly(t *testing.T) {
 			root:        moduleRoot,
 			wantAtLeast: 501,
 			wantSelected: []string{
-				"internal/apiguard/snapshot_test.go",
+				"internal/featureinventory/featureinventory_test.go",
 				"internal/teststyleguard/scanpaths_test.go",
 			},
 			wantNothingUnder: []string{".claude/worktrees/", ".codex/"},

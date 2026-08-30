@@ -50,14 +50,13 @@ func NewGenerateCommand() *cobra.Command {
 	opts := options{}
 	cmd := &cobra.Command{
 		Use:   "render",
-		Short: "Generate schema from Go entities or local schema files",
-		Long: `Generate database schema from Go entities in the specified directory or from a schema file.
+		Short: "Render a desired schema as SQL",
+		Long: `Render a desired schema as SQL.
 
-By default, this command scans the directory recursively for Go files with migrator directives.
-When --schema-file is set, it reads a language-agnostic YAML schema, HCL
-schema, or SQL schema file instead. An external program configured with
---schema-cmd, ptah.yaml external_schema, or an atlas.hcl data.external_schema
-source can provide the desired schema too.`,
+The desired schema may come from repeatable local SQL, YAML, HCL, or DBML
+files, repeatable directories of Go annotations, an OCI schema artifact, or an
+external program. Sources combine into one schema. Configured external_schema
+programs require --allow-external-schema.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return generateCommand(cmd, &opts)
 		},
@@ -87,7 +86,7 @@ func dialectUsage() string {
 func registerFlags(cmd *cobra.Command, opts *options) {
 	flags := cmd.Flags()
 	flags.StringArrayVar(&opts.rootDirs, rootDirFlag, nil, "Root directory to scan for Go entities (repeatable; multiple roots merge into one composite schema; defaults to ./)")
-	flags.StringArrayVar(&opts.schemaFiles, schemaFileFlag, nil, "YAML, HCL, or SQL schema file to generate from instead of, or combined with, Go entities (repeatable; multiple sources merge into one composite schema)")
+	flags.StringArrayVar(&opts.schemaFiles, schemaFileFlag, nil, "SQL, YAML, HCL, DBML, or OCI desired-schema source (repeatable; combines with other sources)")
 	flags.StringVar(&opts.schemaCmd, schemaCmdFlag, "", schemaCmdUsage)
 	flags.StringVar(&opts.schemaFormat, schemaFormatFlag, "sql", "Format of the --schema-cmd output: sql, hcl, or yaml")
 	flags.StringVar(&opts.dialect, dialectFlag, "", dialectUsage())

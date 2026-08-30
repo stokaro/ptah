@@ -388,10 +388,6 @@ type SetCommentOperation struct {
 	HasCurrent bool
 }
 
-// Accept implements the Node interface for SetCommentOperation.
-//
-// The actual rendering is handled by the dialect's VisitAlterTable method;
-// this stub exists to satisfy the Node interface.
 // RenameConstraintOperation renames a constraint in place.
 //
 // It exists for a NOT NULL constraint whose name drifted, which is the one
@@ -410,10 +406,19 @@ type RenameConstraintOperation struct {
 	To string
 }
 
+// Accept implements the Node interface for RenameConstraintOperation.
+//
+// The actual rendering is handled by the dialect's VisitAlterTable method;
+// this stub exists to satisfy the Node interface.
 func (op *RenameConstraintOperation) Accept(_visitor Visitor) error { return nil }
 
+// alterOperation implements the marker method for type safety.
 func (op *RenameConstraintOperation) alterOperation() {}
 
+// Accept implements the Node interface for SetCommentOperation.
+//
+// The actual rendering is handled by the dialect's VisitAlterTable method;
+// this stub exists to satisfy the Node interface.
 func (op *SetCommentOperation) Accept(_visitor Visitor) error { return nil }
 
 // alterOperation implements the marker method for type safety.

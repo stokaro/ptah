@@ -2,9 +2,9 @@ package migrator_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"testing/fstest"
@@ -13,151 +13,285 @@ import (
 
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/examples/migrator"
+	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
-// Example demonstrates how to use the migrator programmatically
-func ExampleMigrator() {
-	// This is a demonstration - in real usage you would have a valid database URL
-	dbURL := "postgres://user:pass@localhost/db"
-
-	// Connect to database
-	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
-	if err != nil {
-		fmt.Printf("Failed to connect: %v\n", err)
-		return
+// exampleSQLiteConnection opens a real SQLite database in a fresh temporary
+// directory, so the examples in this file execute their migrations for real.
+// SQLite ships compiled into ptah; a caller targeting a server passes that
+// server's URL to dbschema.ConnectToDatabase instead.
+func exampleSQLiteConnection() (conn *dbschema.DatabaseConnection, cleanup func()) {
+	dir := must.Must(os.MkdirTemp("", "ptah-migrator-example"))
+	conn = must.Must(dbschema.ConnectToDatabase(context.Background(), "sqlite://"+filepath.Join(dir, "app.db")))
+	return conn, func() {
+		_ = conn.Close()
+		_ = os.RemoveAll(dir)
 	}
-	defer conn.Close()
-
-	// Register a simple migration
-	migration := &migrator.Migration{
-		Version:     1,
-		Description: "Create users table",
-		Up: func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-			return conn.Writer().ExecuteSQL(ctx, `
-				CREATE TABLE users (
-					id SERIAL PRIMARY KEY,
-					email VARCHAR(255) NOT NULL UNIQUE,
-					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-				)
-			`)
-		},
-		Down: func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-			return conn.Writer().ExecuteSQL(ctx, "DROP TABLE users")
-		},
-	}
-
-	// Create a migrator and register all migrations with both up and down
-	m := migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration))
-
-	// Run migrations
-	err = m.MigrateUp(context.Background())
-	if err != nil {
-		fmt.Printf("Migration failed: %v\n", err)
-		return
-	}
-
-	fmt.Println("Migration completed successfully")
 }
 
-// Example demonstrates how to use the filesystem-based migrator
+// ExampleNewFSMigrator is the one-call filesystem path: discover the
+// NNN_description.up.sql/.down.sql pairs, build the provider and the migrator
+// in one step, and apply everything pending. MigrateUp creates the revision
+// metadata table on first use, so a fresh database needs no setup beyond the
+// connection. The constructor reads and validates the whole directory, so its
+// error is one an embedder branches on; ExampleNewFSMigrator_errorHandling
+// shows a directory it refuses.
 func ExampleNewFSMigrator() {
-	// This is a demonstration - in real usage you would have a valid database URL
-	dbURL := "postgres://user:pass@localhost/db"
+	ctx := context.Background()
+	conn, cleanup := exampleSQLiteConnection()
+	defer cleanup()
 
-	// Connect to database
-	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
-	if err != nil {
-		fmt.Printf("Failed to connect: %v\n", err)
-		return
-	}
-	defer conn.Close()
-
-	// Get example migrations filesystem
-	exampleFS := examplemigrations.GetExampleMigrations()
-	migrationsFS := must.Must(fs.Sub(exampleFS, "migrations"))
-
-	mig, err := migrator.NewFSMigrator(conn, migrationsFS)
-	if err != nil {
-		fmt.Printf("Failed to create migrator: %v\n", err)
-		return
+	fsys := fstest.MapFS{
+		"0000000001_create_users.up.sql": &fstest.MapFile{
+			Data: []byte("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE);"),
+		},
+		"0000000001_create_users.down.sql": &fstest.MapFile{
+			Data: []byte("DROP TABLE users;"),
+		},
+		"0000000002_add_name.up.sql": &fstest.MapFile{
+			Data: []byte("ALTER TABLE users ADD COLUMN name TEXT;"),
+		},
+		"0000000002_add_name.down.sql": &fstest.MapFile{
+			Data: []byte("ALTER TABLE users DROP COLUMN name;"),
+		},
 	}
 
-	// Run all migrations from the filesystem
-	err = mig.MigrateUp(context.Background())
+	m, err := migrator.NewFSMigrator(conn, fsys)
 	if err != nil {
-		fmt.Printf("Migration failed: %v\n", err)
+		fmt.Println("new migrator:", err)
 		return
 	}
-
-	fmt.Println("All migrations completed successfully")
-}
-
-// Example demonstrates how to check migration status
-func ExampleMigrator_GetMigrationStatus() {
-	// This is a demonstration - in real usage you would have a valid database URL
-	dbURL := "postgres://user:pass@localhost/db"
-
-	// Connect to database
-	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
-	if err != nil {
-		fmt.Printf("Failed to connect: %v\n", err)
-		return
-	}
-	defer conn.Close()
-
-	// Get example migrations filesystem
-	exampleFS := examplemigrations.GetExampleMigrations()
-	migrationsFS := must.Must(fs.Sub(exampleFS, "migrations"))
-
-	mig, err := migrator.NewFSMigrator(conn, migrationsFS)
-	if err != nil {
-		fmt.Printf("Failed to create migrator: %v\n", err)
+	if err := m.MigrateUp(ctx); err != nil {
+		fmt.Println("migrate up:", err)
 		return
 	}
 
-	// Get migration status
-	status, err := mig.GetMigrationStatus(context.Background())
-	if err != nil {
-		fmt.Printf("Failed to get status: %v\n", err)
-		return
-	}
-
-	fmt.Printf("Current version: %d\n", status.CurrentVersion)
-	fmt.Printf("Total migrations: %d\n", status.TotalMigrations)
-	fmt.Printf("Pending migrations: %d\n", len(status.PendingMigrations))
-	fmt.Printf("Has pending changes: %t\n", status.HasPendingChanges)
-}
-
-// Example demonstrates how to create migrations from SQL strings
-func ExampleCreateMigrationFromSQL() {
-	upSQL := `
-		CREATE TABLE products (
-			id SERIAL PRIMARY KEY,
-			name VARCHAR(255) NOT NULL,
-			price DECIMAL(10,2) NOT NULL,
-			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-		);
-		CREATE INDEX idx_products_name ON products(name);
-	`
-
-	downSQL := `
-		DROP INDEX IF EXISTS idx_products_name;
-		DROP TABLE IF EXISTS products;
-	`
-
-	migration := migrator.CreateMigrationFromSQL(2, "Create products table", upSQL, downSQL)
-
-	fmt.Printf("Migration version: %d\n", migration.Version)
-	fmt.Printf("Migration description: %s\n", migration.Description)
-	fmt.Printf("Has up function: %t\n", migration.Up != nil)
-	fmt.Printf("Has down function: %t\n", migration.Down != nil)
+	fmt.Println("applied:", must.Must(m.GetAppliedMigrations(ctx)))
 
 	// Output:
-	// Migration version: 2
-	// Migration description: Create products table
-	// Has up function: true
-	// Has down function: true
+	// applied: [1 2]
+}
+
+// ExampleMigrator_MigrateTo moves a database to an exact version in whichever
+// direction that takes: past the target it rolls migrations back with their
+// down bodies, behind it it applies the pending up bodies. Here the schema is
+// migrated all the way up and then back down to version 1.
+func ExampleMigrator_MigrateTo() {
+	ctx := context.Background()
+	conn, cleanup := exampleSQLiteConnection()
+	defer cleanup()
+
+	fsys := fstest.MapFS{
+		"0000000001_create_users.up.sql": &fstest.MapFile{
+			Data: []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);"),
+		},
+		"0000000001_create_users.down.sql": &fstest.MapFile{
+			Data: []byte("DROP TABLE users;"),
+		},
+		"0000000002_add_email.up.sql": &fstest.MapFile{
+			Data: []byte("ALTER TABLE users ADD COLUMN email TEXT;"),
+		},
+		"0000000002_add_email.down.sql": &fstest.MapFile{
+			Data: []byte("ALTER TABLE users DROP COLUMN email;"),
+		},
+		"0000000003_add_index.up.sql": &fstest.MapFile{
+			Data: []byte("CREATE UNIQUE INDEX idx_users_email ON users(email);"),
+		},
+		"0000000003_add_index.down.sql": &fstest.MapFile{
+			Data: []byte("DROP INDEX idx_users_email;"),
+		},
+	}
+
+	m := must.Must(migrator.NewFSMigrator(conn, fsys))
+	if err := m.MigrateUp(ctx); err != nil {
+		fmt.Println("migrate up:", err)
+		return
+	}
+	fmt.Println("after MigrateUp:", must.Must(m.GetCurrentVersion(ctx)))
+
+	if err := m.MigrateTo(ctx, 1); err != nil {
+		fmt.Println("migrate to 1:", err)
+		return
+	}
+	fmt.Println("after MigrateTo(1):", must.Must(m.GetCurrentVersion(ctx)))
+
+	// Output:
+	// after MigrateUp: 3
+	// after MigrateTo(1): 1
+}
+
+// ExampleMigrator_MigrateDown rolls back exactly one migration: the newest
+// applied version's down body runs and its revision row is removed, leaving
+// the previous version current.
+func ExampleMigrator_MigrateDown() {
+	ctx := context.Background()
+	conn, cleanup := exampleSQLiteConnection()
+	defer cleanup()
+
+	provider := migrator.NewRegisteredMigrationProvider(
+		migrator.CreateMigrationFromSQL(1, "Create orders",
+			"CREATE TABLE orders (id INTEGER PRIMARY KEY);",
+			"DROP TABLE orders;"),
+		migrator.CreateMigrationFromSQL(2, "Add total column",
+			"ALTER TABLE orders ADD COLUMN total REAL;",
+			"ALTER TABLE orders DROP COLUMN total;"),
+	)
+	m := migrator.NewMigrator(conn, provider)
+
+	if err := m.MigrateUp(ctx); err != nil {
+		fmt.Println("migrate up:", err)
+		return
+	}
+	if err := m.MigrateDown(ctx); err != nil {
+		fmt.Println("migrate down:", err)
+		return
+	}
+
+	fmt.Println("current version:", must.Must(m.GetCurrentVersion(ctx)))
+
+	// Output:
+	// current version: 1
+}
+
+// ExampleMigrator_GetMigrationStatus reads the status an embedder actually
+// renders: after applying one of two registered migrations
+// (MigrateUpOptions.Amount limits the run), the report names the current
+// version, what is applied, what is still pending, and whether work remains.
+func ExampleMigrator_GetMigrationStatus() {
+	ctx := context.Background()
+	conn, cleanup := exampleSQLiteConnection()
+	defer cleanup()
+
+	fsys := fstest.MapFS{
+		"0000000001_create_users.up.sql": &fstest.MapFile{
+			Data: []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);"),
+		},
+		"0000000001_create_users.down.sql": &fstest.MapFile{
+			Data: []byte("DROP TABLE users;"),
+		},
+		"0000000002_create_posts.up.sql": &fstest.MapFile{
+			Data: []byte("CREATE TABLE posts (id INTEGER PRIMARY KEY);"),
+		},
+		"0000000002_create_posts.down.sql": &fstest.MapFile{
+			Data: []byte("DROP TABLE posts;"),
+		},
+	}
+
+	m := must.Must(migrator.NewFSMigrator(conn, fsys))
+	if err := m.MigrateUpWithOptions(ctx, migrator.MigrateUpOptions{Amount: 1}); err != nil {
+		fmt.Println("migrate up:", err)
+		return
+	}
+
+	status, err := m.GetMigrationStatus(ctx)
+	if err != nil {
+		fmt.Println("get status:", err)
+		return
+	}
+	fmt.Println("current version:", status.CurrentVersion)
+	fmt.Println("applied:", status.AppliedMigrations)
+	fmt.Println("pending:", status.PendingMigrations)
+	fmt.Println("total migrations:", status.TotalMigrations)
+	fmt.Println("has pending changes:", status.HasPendingChanges)
+
+	// Output:
+	// current version: 1
+	// applied: [1]
+	// pending: [2]
+	// total migrations: 2
+	// has pending changes: true
+}
+
+// ExampleWithStatementObserver installs the auditing hook for tools that need
+// to see every successfully executed statement without taking over execution:
+// the observer receives structured source and statement metadata after each
+// statement runs, but no connection handle, so it cannot alter the migration
+// path.
+func ExampleWithStatementObserver() {
+	ctx := context.Background()
+	conn, cleanup := exampleSQLiteConnection()
+	defer cleanup()
+
+	fsys := fstest.MapFS{
+		"0000000001_create_users.up.sql": &fstest.MapFile{
+			Data: []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE INDEX idx_users_id ON users(id);"),
+		},
+		"0000000001_create_users.down.sql": &fstest.MapFile{
+			Data: []byte("DROP TABLE users;"),
+		},
+	}
+
+	observer := migrator.StatementObserverFunc(func(_ context.Context, event migrator.StatementEvent) error {
+		fmt.Printf("%s %d/%d: %s\n", event.SourcePath, event.Index, event.Total, event.Statement)
+		return nil
+	})
+	provider := must.Must(migrator.NewFSMigrationProvider(fsys, migrator.WithStatementObserver(observer)))
+
+	m := migrator.NewMigrator(conn, provider)
+	if err := m.MigrateUp(ctx); err != nil {
+		fmt.Println("migrate up:", err)
+		return
+	}
+
+	// Output:
+	// 0000000001_create_users.up.sql 1/2: CREATE TABLE users (id INTEGER PRIMARY KEY)
+	// 0000000001_create_users.up.sql 2/2: CREATE INDEX idx_users_id ON users(id)
+}
+
+// ExampleParseChecks parses the pre-migration assertions a migration body
+// declares, with no database involved. Checks are an ordered list rather than
+// a merged map, a quoted assert value can carry spaces and equals signs, and a
+// malformed directive is a hard error instead of a silently skipped safety
+// gate.
+func ExampleParseChecks() {
+	sql := `-- +ptah check name=users_exist assert="SELECT COUNT(*) > 0 FROM users"
+-- +ptah check name=emails_unique assert="SELECT COUNT(*) = COUNT(DISTINCT email) FROM users"
+ALTER TABLE users ADD COLUMN verified BOOLEAN;`
+
+	checks := must.Must(migrator.ParseChecks(sql, "postgres"))
+	for _, check := range checks {
+		fmt.Printf("%s | %s | on_fail=%s\n", check.Name, check.Assert, check.OnFail)
+	}
+
+	_, err := migrator.ParseChecks("-- +ptah check name=broken\nSELECT 1;", "postgres")
+	fmt.Println("error:", err)
+
+	// Output:
+	// users_exist | SELECT COUNT(*) > 0 FROM users | on_fail=abort
+	// emails_unique | SELECT COUNT(*) = COUNT(DISTINCT email) FROM users | on_fail=abort
+	// error: +ptah check requires a non-empty assert predicate
+}
+
+// ExampleResolveAtlasDirectiveTxMode resolves a file's `-- atlas:txmode`
+// directive against the migrator's global transaction mode as pure logic: the
+// directive overrides the global mode, except under all, where the combination
+// is refused with an error errors.As can identify as a
+// migrationfile.AtlasTxModeDirectiveError.
+func ExampleResolveAtlasDirectiveTxMode() {
+	// A file directive overrides the global per-file default.
+	mode := must.Must(migrator.ResolveAtlasDirectiveTxMode(
+		migrator.MigrationTxModeFile, migrationfile.FileTxModeNone, "20240101_create_index.sql"))
+	fmt.Println("global file + directive none:", mode)
+
+	// A file with no directive inherits the global mode.
+	mode = must.Must(migrator.ResolveAtlasDirectiveTxMode(
+		migrator.MigrationTxModeNone, migrationfile.FileTxModeUnspecified, "20240102_add_column.sql"))
+	fmt.Println("global none + no directive:", mode)
+
+	// Under global all, one transaction spans the whole run, so a per-file
+	// directive cannot be honored and the combination is refused.
+	_, err := migrator.ResolveAtlasDirectiveTxMode(
+		migrator.MigrationTxModeAll, migrationfile.FileTxModeNone, "20240101_create_index.sql")
+	var directiveErr *migrationfile.AtlasTxModeDirectiveError
+	fmt.Println("directive error:", errors.As(err, &directiveErr))
+	fmt.Println(err)
+
+	// Output:
+	// global file + directive none: none
+	// global none + no directive: none
+	// directive error: true
+	// cannot set txmode directive to "none" in "20240101_create_index.sql" when txmode "all" is set globally
 }
 
 // Example demonstrates the three sources a migrator takes its migrations from:
@@ -215,44 +349,28 @@ func exampleMigrationDir() (dir string, cleanup func()) {
 }
 
 func writeExampleMigration(dir, name, sql string) {
-	if err := os.WriteFile(filepath.Join(dir, name), []byte(sql), 0o600); err != nil {
-		panic(err)
-	}
+	must.Assert(os.WriteFile(filepath.Join(dir, name), []byte(sql), 0o600))
 }
 
-// Example demonstrates how to use RegisteredMigrationProvider for programmatic migrations
+// ExampleNewRegisteredMigrationProvider registers programmatic migrations in
+// memory, with no files at all; Migrations returns them sorted by version.
+// Register also accepts hand-built Migration values whose Up and Down are Go
+// functions rather than SQL.
 func ExampleNewRegisteredMigrationProvider() {
-	// Create a provider and register multiple migrations
 	provider := migrator.NewRegisteredMigrationProvider()
 
-	// Register first migration
-	migration1 := &migrator.Migration{
-		Version:     20240101120000,
-		Description: "Create users table",
-		Up: func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-			return conn.Writer().ExecuteSQL(ctx, `
-				CREATE TABLE users (
-					id SERIAL PRIMARY KEY,
-					email VARCHAR(255) NOT NULL UNIQUE,
-					name VARCHAR(255) NOT NULL,
-					created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-				)
-			`)
-		},
-		Down: func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
-			return conn.Writer().ExecuteSQL(ctx, "DROP TABLE users")
-		},
-	}
-	provider.Register(migration1)
-
-	// Register second migration
-	migration2 := migrator.CreateMigrationFromSQL(
+	provider.Register(migrator.CreateMigrationFromSQL(
+		20240101120000,
+		"Create users table",
+		"CREATE TABLE users (id SERIAL PRIMARY KEY, email VARCHAR(255) NOT NULL UNIQUE);",
+		"DROP TABLE users;",
+	))
+	provider.Register(migrator.CreateMigrationFromSQL(
 		20240101130000,
 		"Add users index",
 		"CREATE INDEX idx_users_email ON users(email);",
 		"DROP INDEX IF EXISTS idx_users_email;",
-	)
-	provider.Register(migration2)
+	))
 
 	fmt.Printf("Registered %d migrations\n", len(provider.Migrations()))
 	fmt.Printf("First migration: v%d - %s\n",
@@ -264,151 +382,9 @@ func ExampleNewRegisteredMigrationProvider() {
 	// First migration: v20240101120000 - Create users table
 }
 
-// Example demonstrates migration rollback operations
-func ExampleMigrator_MigrateDown() {
-	// This is a demonstration - in real usage you would have a valid database URL
-	dbURL := "postgres://user:pass@localhost/db"
-
-	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
-	if err != nil {
-		fmt.Printf("Failed to connect: %v\n", err)
-		return
-	}
-	defer conn.Close()
-
-	// Create migrations
-	provider := migrator.NewRegisteredMigrationProvider()
-
-	migration1 := migrator.CreateMigrationFromSQL(1, "Create table",
-		"CREATE TABLE test (id SERIAL PRIMARY KEY);",
-		"DROP TABLE test;")
-	migration2 := migrator.CreateMigrationFromSQL(2, "Add column",
-		"ALTER TABLE test ADD COLUMN name VARCHAR(255);",
-		"ALTER TABLE test DROP COLUMN name;")
-
-	provider.Register(migration1)
-	provider.Register(migration2)
-
-	m := migrator.NewMigrator(conn, provider)
-
-	// Roll back one migration (to previous version)
-	err = m.MigrateDown(context.Background())
-	if err != nil {
-		fmt.Printf("Rollback failed: %v\n", err)
-		return
-	}
-
-	fmt.Println("Successfully rolled back one migration")
-}
-
-// Example demonstrates migrating to a specific version
-func ExampleMigrator_MigrateTo() {
-	// This is a demonstration - in real usage you would have a valid database URL
-	dbURL := "postgres://user:pass@localhost/db"
-
-	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
-	if err != nil {
-		fmt.Printf("Failed to connect: %v\n", err)
-		return
-	}
-	defer conn.Close()
-
-	// Create test filesystem with migrations
-	fsys := fstest.MapFS{
-		"0000000001_create_users.up.sql": &fstest.MapFile{
-			Data: []byte("CREATE TABLE users (id SERIAL PRIMARY KEY);"),
-		},
-		"0000000001_create_users.down.sql": &fstest.MapFile{
-			Data: []byte("DROP TABLE users;"),
-		},
-		"0000000002_add_email.up.sql": &fstest.MapFile{
-			Data: []byte("ALTER TABLE users ADD COLUMN email VARCHAR(255);"),
-		},
-		"0000000002_add_email.down.sql": &fstest.MapFile{
-			Data: []byte("ALTER TABLE users DROP COLUMN email;"),
-		},
-		"0000000003_add_index.up.sql": &fstest.MapFile{
-			Data: []byte("CREATE INDEX idx_users_email ON users(email);"),
-		},
-		"0000000003_add_index.down.sql": &fstest.MapFile{
-			Data: []byte("DROP INDEX IF EXISTS idx_users_email;"),
-		},
-	}
-
-	m, err := migrator.NewFSMigrator(conn, fsys)
-	if err != nil {
-		fmt.Printf("Failed to create migrator: %v\n", err)
-		return
-	}
-
-	// Migrate to specific version (version 2)
-	err = m.MigrateTo(context.Background(), 2)
-	if err != nil {
-		fmt.Printf("Migration to version 2 failed: %v\n", err)
-		return
-	}
-
-	fmt.Println("Successfully migrated to version 2")
-}
-
-// Example demonstrates using custom logger with migrator
-func ExampleMigrator_WithLogger() {
-	// Create a custom logger
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
-
-	// Create migrator with custom logger
-	provider := migrator.NewRegisteredMigrationProvider()
-	m := migrator.NewMigrator(nil, provider).WithLogger(logger)
-
-	fmt.Printf("Migrator configured with custom logger: %t\n", m != nil)
-
-	// Output:
-	// Migrator configured with custom logger: true
-}
-
-// Example demonstrates checking for pending migrations
-func ExampleMigrator_GetPendingMigrations() {
-	// This is a demonstration - in real usage you would have a valid database URL
-	dbURL := "postgres://user:pass@localhost/db"
-
-	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
-	if err != nil {
-		fmt.Printf("Failed to connect: %v\n", err)
-		return
-	}
-	defer conn.Close()
-
-	// Create migrations
-	provider := migrator.NewRegisteredMigrationProvider()
-
-	migration1 := migrator.CreateMigrationFromSQL(1, "Create users",
-		"CREATE TABLE users (id SERIAL PRIMARY KEY);",
-		"DROP TABLE users;")
-	migration2 := migrator.CreateMigrationFromSQL(2, "Create products",
-		"CREATE TABLE products (id SERIAL PRIMARY KEY);",
-		"DROP TABLE products;")
-
-	provider.Register(migration1)
-	provider.Register(migration2)
-
-	m := migrator.NewMigrator(conn, provider)
-
-	// Get pending migrations
-	pending, err := m.GetPendingMigrations(context.Background())
-	if err != nil {
-		fmt.Printf("Failed to get pending migrations: %v\n", err)
-		return
-	}
-
-	fmt.Printf("Found %d pending migrations\n", len(pending))
-	for _, version := range pending {
-		fmt.Printf("- Migration version: %d\n", version)
-	}
-}
-
-// Example demonstrates creating migrations from filesystem with error handling
+// ExampleNewFSMigrator_errorHandling shows the constructor refusing an
+// incomplete directory: a version missing its up or down half fails loading,
+// before anything touches a database.
 func ExampleNewFSMigrator_errorHandling() {
 	// Create a filesystem with incomplete migrations (missing down file)
 	incompleteFS := fstest.MapFS{
@@ -429,100 +405,4 @@ func ExampleNewFSMigrator_errorHandling() {
 
 	// Output:
 	// Failed to create migrator: incomplete migrations found (missing up or down files): [1]
-}
-
-// Example demonstrates a complete migration workflow with status checking
-func Example_completeWorkflow() {
-	// This is a demonstration - in real usage you would have a valid database URL
-	dbURL := "postgres://user:pass@localhost/db"
-
-	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
-	if err != nil {
-		fmt.Printf("Failed to connect: %v\n", err)
-		return
-	}
-	defer conn.Close()
-
-	// Create a realistic set of migrations
-	provider := migrator.NewRegisteredMigrationProvider()
-
-	// Migration 1: Create users table
-	migration1 := migrator.CreateMigrationFromSQL(
-		20240101120000,
-		"Create users table",
-		`CREATE TABLE users (
-			id SERIAL PRIMARY KEY,
-			email VARCHAR(255) NOT NULL UNIQUE,
-			name VARCHAR(255) NOT NULL,
-			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-		);`,
-		`DROP TABLE IF EXISTS users;`,
-	)
-
-	// Migration 2: Create products table
-	migration2 := migrator.CreateMigrationFromSQL(
-		20240101130000,
-		"Create products table",
-		`CREATE TABLE products (
-			id SERIAL PRIMARY KEY,
-			name VARCHAR(255) NOT NULL,
-			price DECIMAL(10,2) NOT NULL,
-			user_id INTEGER REFERENCES users(id),
-			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-		);`,
-		`DROP TABLE IF EXISTS products;`,
-	)
-
-	// Migration 3: Add indexes
-	migration3 := migrator.CreateMigrationFromSQL(
-		20240101140000,
-		"Add performance indexes",
-		`CREATE INDEX idx_users_email ON users(email);
-		 CREATE INDEX idx_products_user_id ON products(user_id);
-		 CREATE INDEX idx_products_created_at ON products(created_at);`,
-		`DROP INDEX IF EXISTS idx_users_email;
-		 DROP INDEX IF EXISTS idx_products_user_id;
-		 DROP INDEX IF EXISTS idx_products_created_at;`,
-	)
-
-	provider.Register(migration1)
-	provider.Register(migration2)
-	provider.Register(migration3)
-
-	m := migrator.NewMigrator(conn, provider)
-
-	// Check initial status
-	status, err := m.GetMigrationStatus(context.Background())
-	if err != nil {
-		fmt.Printf("Failed to get status: %v\n", err)
-		return
-	}
-
-	fmt.Printf("Initial status:\n")
-	fmt.Printf("  Current version: %d\n", status.CurrentVersion)
-	fmt.Printf("  Total migrations: %d\n", status.TotalMigrations)
-	fmt.Printf("  Pending migrations: %d\n", len(status.PendingMigrations))
-	fmt.Printf("  Has pending changes: %t\n", status.HasPendingChanges)
-
-	// Apply all migrations
-	err = m.MigrateUp(context.Background())
-	if err != nil {
-		fmt.Printf("Migration failed: %v\n", err)
-		return
-	}
-
-	// Check final status
-	status, err = m.GetMigrationStatus(context.Background())
-	if err != nil {
-		fmt.Printf("Failed to get final status: %v\n", err)
-		return
-	}
-
-	fmt.Printf("\nFinal status:\n")
-	fmt.Printf("  Current version: %d\n", status.CurrentVersion)
-	fmt.Printf("  Pending migrations: %d\n", len(status.PendingMigrations))
-	fmt.Printf("  Has pending changes: %t\n", status.HasPendingChanges)
-
-	fmt.Println("\nMigration workflow completed successfully!")
 }
