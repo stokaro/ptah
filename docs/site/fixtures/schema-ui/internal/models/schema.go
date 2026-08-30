@@ -1,3 +1,4 @@
+// Package models declares the desired schema used by documentation UI fixtures.
 package models
 
 //ptah:schema:table name="customers" comment="Customers who can place orders"
