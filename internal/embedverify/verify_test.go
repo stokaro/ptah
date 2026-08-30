@@ -34,8 +34,10 @@ func healthy() (
 		{Key: "2", Version: "7", InputHash: "hash-2"},
 	}
 	target := []embedverify.TargetRow{
-		{Key: "1", Generation: generation, Version: "7", InputHash: "hash-1", Vector: []float32{1, 2, 3}},
-		{Key: "2", Generation: generation, Version: "7", InputHash: "hash-2", Vector: []float32{4, 5, 6}},
+		{Key: "1", Generation: generation, Version: "7", InputHash: "hash-1",
+			Dimension: 3, Vector: []float32{1, 2, 3}},
+		{Key: "2", Generation: generation, Version: "7", InputHash: "hash-2",
+			Dimension: 3, Vector: []float32{4, 5, 6}},
 	}
 	state := embedverify.RunState{SnapshotComplete: true, CatchUpReached: true}
 	return expectation, structure, source, target, state
@@ -197,13 +199,29 @@ func TestVerify_VectorValidityBlocks(t *testing.T) {
 		want   string
 	}{
 		{
-			name: "no payload", change: func(rows []embedverify.TargetRow) { rows[0].Vector = nil },
+			name: "no payload",
+			change: func(rows []embedverify.TargetRow) {
+				rows[0].Dimension, rows[0].Vector = 0, nil
+			},
 			want: "1 rows carry no vector and are not marked skipped or deleted",
 		},
 		{
-			name:   "the wrong dimension",
-			change: func(rows []embedverify.TargetRow) { rows[0].Vector = []float32{1, 2} },
-			want:   "1 stored vectors do not have the generation's dimension",
+			name: "the wrong dimension",
+			change: func(rows []embedverify.TargetRow) {
+				rows[0].Dimension, rows[0].Vector = 2, []float32{1, 2}
+			},
+			want: "1 stored vectors do not have the generation's dimension",
+		},
+		{
+			// The width comes from what the server reported, not from a slice
+			// somebody built. A caller that read no values reports the
+			// dimension alone, and this is the case that catches a check
+			// reading the wrong one.
+			name: "the wrong dimension, with no values read",
+			change: func(rows []embedverify.TargetRow) {
+				rows[0].Dimension, rows[0].Vector = 2, nil
+			},
+			want: "1 stored vectors do not have the generation's dimension",
 		},
 		{
 			name:   "NaN",

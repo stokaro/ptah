@@ -236,3 +236,44 @@ policy:
 	c.Assert(err, qt.IsNil)
 	return loaded.Spec
 }
+
+// TestReadVerificationRows_ReportsTheWidthAndNotTheVectorLive is what keeps a
+// verification's memory proportional to the corpus rather than to the corpus
+// times its dimension.
+//
+// The read used to answer with `make([]float32, dimension)` per row: a
+// zero-filled slice carrying nothing the width does not, because pgvector
+// refuses a NaN or an infinity on write and the layer that reads it asks about
+// length. Over a million rows at 1536 dimensions that is six gigabytes of
+// zeroes, and `ptah inference verify` ran the process out of memory on a corpus
+// it could otherwise measure in a third of a second (stokaro/ptah#2068).
+//
+// A live test because the placeholder was built where the server's answer was
+// scanned, and every assertion about it that did not go through a real read
+// would be an assertion about a fixture.
+func TestReadVerificationRows_ReportsTheWidthAndNotTheVectorLive(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	db, table := targetColumnsDatabase(c, ctx, withVector)
+
+	spec := loadTargetSpec(c, table)
+	c.Assert(embedpg.EnsureTarget(ctx, db, spec), qt.IsNil)
+	// The row the helper seeded, given a vector and the metadata a written
+	// generation carries.
+	_, err := db.ExecContext(ctx, fmt.Sprintf(
+		`UPDATE %s SET %s = $1, %s_generation = 'gen-1', %s_input_hash = 'hash-1',
+			%s_source_version = updated_at, %s_state = 'embedded' WHERE id = 1`,
+		table, spec.Target.Column, spec.Target.Column, spec.Target.Column,
+		spec.Target.Column, spec.Target.Column), "[1,2,3,4]")
+	c.Assert(err, qt.IsNil)
+
+	_, target, err := embedpg.ReadVerificationRows(ctx, db, spec)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(target, qt.HasLen, 1)
+	// The server's own answer to how wide the stored vector is.
+	c.Assert(target[0].Dimension, qt.Equals, 4)
+	// And nothing was allocated to carry values nobody read.
+	c.Assert(target[0].Vector, qt.HasLen, 0)
+}

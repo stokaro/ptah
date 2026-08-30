@@ -32,7 +32,19 @@ type TargetRow struct {
 	// Version and InputHash are what the vector was computed from.
 	Version   string
 	InputHash string
-	// Vector is the stored embedding, empty for a skip or a tombstone.
+	// Dimension is the width of the stored vector, zero when there is none --
+	// a skip, a tombstone, or a row nothing ever wrote.
+	//
+	// The width rather than the vector, because a corpus is millions of rows
+	// and the width is the whole of what the layer below asks about. A caller
+	// that answered it with a zero-filled slice of the right length allocated
+	// the corpus twice over -- 1536 float32s per row, carrying no information
+	// the integer does not -- and a verification over a few million rows ran
+	// the process out of memory (stokaro/ptah#2068).
+	Dimension int
+	// Vector is the stored embedding, present only where a caller actually read
+	// the values back. It is never the answer to how wide the vector is; see
+	// [RunState.VectorValuesRead], which is how a caller says which it did.
 	Vector []float32
 	// Tombstone marks a row whose source is gone.
 	Tombstone bool
@@ -307,11 +319,23 @@ func verifyVectors(report *Report, expectation Expectation, target []TargetRow) 
 			continue
 		}
 		switch {
-		case len(row.Vector) == 0:
+		case row.Dimension == 0:
 			missingPayload = append(missingPayload, row.Key)
-		case expectation.Dimension > 0 && len(row.Vector) != expectation.Dimension:
+		case expectation.Dimension > 0 && row.Dimension != expectation.Dimension:
 			wrongDimension = append(wrongDimension, row.Key)
-		case !finite(row.Vector):
+		case len(row.Vector) > 0 && !finite(row.Vector):
+			// Only where the values were read. A caller that reported the width
+			// alone has said so, and asking about numbers it did not fetch
+			// would answer "finite" about a vector nobody looked at.
+			//
+			// No caller reads them today, and the report says so on every run.
+			// Measured on pgvector 0.8.1: `vector`, `halfvec` and `sparsevec`
+			// each refuse a NaN and an infinity on write -- `NaN not allowed in
+			// vector` and so on -- so against every target this build supports,
+			// reading the values back would measure the write path a second
+			// time. It stays because the layer is the general one and a target
+			// that permits such a value is what RunState.VectorValuesRead
+			// exists to describe.
 			notFinite = append(notFinite, row.Key)
 		}
 	}
