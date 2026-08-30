@@ -186,17 +186,33 @@ points at them.
 
 ## Visuals, screenshots, and accessibility
 
+`visual-output-inventory.json` records every product command that creates
+visual, browser, report, contract, lineage, or metrics output. A row names the
+fixture, generator, primary artifact, variants, downloads, theme behavior,
+placement, acceptance test, and implementation owner. `visual-assets.json`
+declares the corresponding files; it replaces the former hard-coded filename
+sets in the checker.
+
 Authored diagrams live under `src/assets/` as semantic SVG. Real schema UI
 screenshots come from `fixtures/schema-ui/` through
 `scripts/generate-schema-ui-assets.mjs`; the source record beside the PNGs
-states the fixed viewport and sanitization. `check-visual-assets.mjs` rejects a
-new text-bearing raster diagram, an unnamed SVG, or an unrecorded screenshot.
+states the fixed viewport and sanitization. `check-visual-assets.mjs` rejects
+an undeclared raster file, an inaccessible semantic SVG, a missing fixture or
+generator, and an incomplete product-output inventory.
+
+`src/components/ProductPreview.astro` is the primary-output wrapper. It emits
+a figure and caption, a plain-link full-size fallback, a "what to notice"
+description, download/source actions, and an optional reproduction command.
+The home-page usage is the executable contract for the component.
 
 `check-accessibility.mjs` runs axe at mobile and desktop widths and exercises
 sidebar disclosures, tabs, glossary popovers, breadcrumbs, and page actions by
-keyboard. `check-visual-snapshots.mjs` captures selected full pages and uploads
-them from CI for human review; it checks rendering and geometry rather than
-comparing platform-dependent pixels.
+keyboard. `check-visual-snapshots.mjs` derives its routes and proof assertions
+from `visual-assets.json`. It captures selected full pages at mobile and
+desktop widths in light and dark themes, and verifies the declared primary
+visual's caption, placement, dimensions, full-size/download/source actions,
+keyboard focus, and local overflow. CI uploads all snapshots for human review;
+it does not compare platform-dependent pixels.
 
 ## The Pages root
 

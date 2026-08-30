@@ -41,6 +41,8 @@ hero:
 ---
 
 import { LinkCard, CardGrid } from '@astrojs/starlight/components';
+import ProductPreview from '../../components/ProductPreview.astro';
+import productJourneys from '../../assets/product-journeys.svg';
 
 Ptah compares the state you want with the state a database has, then produces a
 change you can inspect before it runs. Schema work can land as versioned SQL
@@ -50,7 +52,16 @@ verification, cutover, and rollback lifecycle.
 The default quick start creates and verifies a SQLite database in about five
 minutes. It needs no database server, Docker, or Go toolchain.
 
-![Schema sources and a live database produce a reviewable plan that either becomes versioned migration files or is applied directly. Inference specifications and source rows produce a candidate generation that is verified before cutover while the active generation remains available for rollback.](../../assets/product-journeys.svg)
+<ProductPreview
+  id="product-journeys"
+  src={productJourneys}
+  alt="Schema sources and a live database produce a reviewable plan that either becomes versioned migration files or is applied directly. Inference specifications and source rows produce a candidate generation that is verified before cutover while the active generation remains available for rollback."
+  caption="Schema changes and persistent inference state use separate review and cutover paths."
+  notice="Schema changes converge a desired schema and a database through versioned files or direct apply. Inference changes keep the active generation available until a candidate passes verification and cutover."
+  fullSizeHref={productJourneys.src}
+  downloadHref={productJourneys.src}
+  sourceHref={productJourneys.src}
+/>
 
 ## Start with your situation
 
