@@ -33,8 +33,11 @@ func ConvertDBSchemaToGoSchema(dbSchema *catalog.Database) *schemamodel.Database
 	tablePKColumns := primaryKeyColumnSets(tablePrimaryKeys)
 	tableStructNames := convertTablesAndFields(database, dbSchema, fkByColumn, tablePrimaryKeys, tablePKColumns)
 
-	database.Indexes = convertIndexes(dbSchema, tableStructNames)
-	database.Constraints = convertConstraints(dbSchema, tableStructNames)
+	// One decision, consulted by both pools below. A unique constraint and its
+	// backing index describe one object, so exactly one of them may be emitted.
+	indexDescribed := indexDescribedUniques(dbSchema)
+	database.Indexes = convertIndexes(dbSchema, tableStructNames, indexDescribed)
+	database.Constraints = convertConstraints(dbSchema, tableStructNames, indexDescribed)
 	clearColumnUniqueForNamedConstraints(database)
 	convertExtensions(database, dbSchema.Extensions)
 	convertRLSPolicies(database, dbSchema.RLSPolicies, tableStructNames)
@@ -200,8 +203,12 @@ func dbTableStructName(table catalog.Table, tableNameCounts map[string]int) stri
 	return generateStructName(table.Name)
 }
 
-func convertIndexes(dbSchema *catalog.Database, tableStructNames map[string]string) []schemamodel.Index {
-	constraintBackedIndexes := constraintBackedIndexesByTable(dbSchema)
+func convertIndexes(
+	dbSchema *catalog.Database,
+	tableStructNames map[string]string,
+	indexDescribed map[tableMemberKey]struct{},
+) []schemamodel.Index {
+	constraintBackedIndexes := constraintBackedIndexesByTable(dbSchema, indexDescribed)
 	indexes := make([]schemamodel.Index, 0, len(dbSchema.Indexes))
 	for _, dbIndex := range dbSchema.Indexes {
 		// Skip primary key indexes as they're handled by primary key fields
@@ -695,6 +702,20 @@ func clearColumnUniqueForNamedConstraints(database *schemamodel.Database) {
 		}
 		named[tableMemberKey{table: constraint.StructName, member: constraint.Columns[0]}] = struct{}{}
 	}
+	// A named unique INDEX covering the column describes the same object, and
+	// the column's inline UNIQUE would be a second one. The two pools have to
+	// be read together here for the same reason ownership is decided in one
+	// place: an object moving between them must not change what the column
+	// says. Measured on CockroachDB -- with the covering index owning the
+	// object, clearing on constraints alone emitted `email text UNIQUE` beside
+	// it and the replay grew an `a_email_key` the source never had
+	// (stokaro/ptah#2589).
+	for _, index := range database.Indexes {
+		if !index.Unique || len(index.Fields) != 1 {
+			continue
+		}
+		named[tableMemberKey{table: index.StructName, member: index.Fields[0]}] = struct{}{}
+	}
 	for i := range database.Fields {
 		field := &database.Fields[i]
 		if _, isNamed := named[tableMemberKey{table: field.StructName, member: field.Name}]; isNamed {
@@ -703,9 +724,17 @@ func clearColumnUniqueForNamedConstraints(database *schemamodel.Database) {
 	}
 }
 
-func convertConstraints(dbSchema *catalog.Database, tableStructNames map[string]string) []schemamodel.Constraint {
+func convertConstraints(
+	dbSchema *catalog.Database,
+	tableStructNames map[string]string,
+	indexDescribed map[tableMemberKey]struct{},
+) []schemamodel.Constraint {
 	constraints := make([]schemamodel.Constraint, 0, len(dbSchema.Constraints))
 	for _, dbConstraint := range dbSchema.Constraints {
+		key := tableMemberKey{table: dbConstraint.QualifiedTableName(), member: dbConstraint.Name}
+		if _, ok := indexDescribed[key]; ok {
+			continue
+		}
 		constraint, ok := convertConstraint(dbConstraint, tableStructNames)
 		if ok {
 			constraints = append(constraints, constraint)
@@ -776,15 +805,66 @@ func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[str
 	}, true
 }
 
-func constraintBackedIndexesByTable(dbSchema *catalog.Database) map[tableMemberKey]struct{} {
+func constraintBackedIndexesByTable(
+	dbSchema *catalog.Database,
+	indexDescribed map[tableMemberKey]struct{},
+) map[tableMemberKey]struct{} {
 	result := make(map[tableMemberKey]struct{}, len(dbSchema.Constraints))
 	for _, constraint := range dbSchema.Constraints {
+		key := tableMemberKey{table: constraint.QualifiedTableName(), member: constraint.Name}
+		if _, ok := indexDescribed[key]; ok {
+			// The index is the description this object keeps, so it is not
+			// suppressed and the constraint is dropped instead.
+			continue
+		}
 		switch strings.ToUpper(constraint.Type) {
 		case "PRIMARY KEY", "UNIQUE", "EXCLUDE":
-			result[tableMemberKey{table: constraint.QualifiedTableName(), member: constraint.Name}] = struct{}{}
+			result[key] = struct{}{}
 		}
 	}
 	return result
+}
+
+// indexDescribedUniques names the UNIQUE constraints whose same-named index is
+// the fuller description of the same object.
+//
+// A unique constraint and its backing index are one object, and exactly one of
+// them may be described: emitting both produces one name and two objects, which
+// is worse than the loss it would fix. Which description is kept is decided
+// here, once, and both pools consult the answer. Each side filtering the other
+// independently is how the payload came to be dropped -- the same rule
+// stokaro/ptah#1245 established for the comparator, applied to the description
+// path (stokaro/ptah#2589).
+//
+// The discriminator is a payload the constraint view does not carry. CockroachDB
+// reports a bare covering unique index in pg_constraint as well as in pg_index,
+// and its pg_get_constraintdef prints no INCLUDE, so describing that object by
+// its constraint loses the payload silently. PostgreSQL does not report such an
+// index in pg_constraint at all, and MySQL and MariaDB have no payload to lose,
+// so on those servers this set is empty and nothing moves -- which is what keeps
+// the fix from reaching a server that never had the defect.
+func indexDescribedUniques(dbSchema *catalog.Database) map[tableMemberKey]struct{} {
+	covering := make(map[tableMemberKey]struct{})
+	for _, index := range dbSchema.Indexes {
+		if !index.IsUnique || index.IsPrimary || len(index.IncludeColumns) == 0 {
+			continue
+		}
+		covering[tableMemberKey{table: index.QualifiedTableName(), member: index.Name}] = struct{}{}
+	}
+	if len(covering) == 0 {
+		return nil
+	}
+	owned := make(map[tableMemberKey]struct{}, len(covering))
+	for _, constraint := range dbSchema.Constraints {
+		if !strings.EqualFold(constraint.Type, "UNIQUE") || len(constraint.IncludeColumns) != 0 {
+			continue
+		}
+		key := tableMemberKey{table: constraint.QualifiedTableName(), member: constraint.Name}
+		if _, ok := covering[key]; ok {
+			owned[key] = struct{}{}
+		}
+	}
+	return owned
 }
 
 func isPostgresSyntheticNotNullCheck(constraint catalog.Constraint) bool {

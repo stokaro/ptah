@@ -604,6 +604,7 @@ func FromField(field schemamodel.Field, enums []schemamodel.Enum, targetPlatform
 	// The default behavior should be nullable=true (which ast.NewColumn already sets)
 	if !field.Nullable {
 		column.SetNotNull()
+		column.NotNullConstraintName = keptNotNullConstraintName(field)
 	}
 	// The name is carried whatever the nullability is. A name on a nullable
 	// column names no constraint, and a name on a primary-key column names one
@@ -707,6 +708,7 @@ func FromFieldWithoutForeignKeys(field schemamodel.Field, enums []schemamodel.En
 	// Set nullable (default is true, so only set if false)
 	if !field.Nullable {
 		column.SetNotNull()
+		column.NotNullConstraintName = keptNotNullConstraintName(field)
 	}
 	// Carried unconditionally, for the reason [FromField] states.
 	column.SetNotNullConstraintName(field.NotNullConstraintName)
@@ -1013,6 +1015,7 @@ func fromTableWithFieldConverter(
 		constraint := newPrimaryKeyConstraint(newTable)
 		createTable.AddConstraint(constraint)
 	}
+	addDeclaredTableChecks(createTable, newTable)
 
 	// Every entry, because this conversion never sees the schema's constraint
 	// list. [addTableConstraints] is where the overlap with an explicit CHECK
@@ -1022,6 +1025,35 @@ func fromTableWithFieldConverter(
 	}
 
 	return createTable
+}
+
+// addDeclaredTableChecks turns the table's `checks` attribute into the CHECK
+// constraints it names.
+//
+// `checks` is a documented table attribute -- internal/annotationmeta declares
+// it, the parser fills schemamodel.Table.Checks, and the HCL renderer writes it
+// back out. SQL rendering read it nowhere, so an author who wrote
+// `checks="price > 0"` got a table with no CHECK and exit 0: a constraint that
+// never reached the database and was never reported (stokaro/ptah#2590).
+//
+// They become ordinary CHECK constraint nodes rather than a new kind of node,
+// because that is what they are. Every dialect that renders a table CHECK
+// therefore renders these, and one that names its checks names these too --
+// ClickHouse requires a name and synthesizes one from the table, which is the
+// same path a column's `check=` already takes.
+//
+// The attribute carries an expression and no name, so none is set here. A name
+// no author wrote is a name no catalog can be asked about later.
+func addDeclaredTableChecks(createTable *ast.CreateTableNode, table schemamodel.Table) {
+	for _, expression := range table.Checks {
+		if strings.TrimSpace(expression) == "" {
+			continue
+		}
+		createTable.AddConstraint(&ast.ConstraintNode{
+			Type:       ast.CheckConstraint,
+			Expression: expression,
+		})
+	}
 }
 
 func renderTableName(table schemamodel.Table, targetPlatform string) string {
@@ -3414,4 +3446,25 @@ func QualifyRLSPolicyForTarget(
 	policy.Table = tableSchema + "." + policy.Table
 	policy.Name = tableSchema + "." + policy.Name
 	return policy
+}
+
+// keptNotNullConstraintName is the NOT NULL constraint name this column carries
+// into the AST, which is the declared one unless the column is a primary key.
+//
+// The renderer refuses a named NOT NULL on a primary-key column, and it is right
+// to: the NOT NULL there is synthesized for comparison rather than declared, the
+// key is the constraint the column actually has, and its name is the addressable
+// one. A reader supplies such a name on every PostgreSQL 18 primary key, because
+// that server names every NOT NULL, so carrying it through would turn reading a
+// database back into a refusal.
+//
+// Dropping it here is therefore the deliberate half of the same rule, and it is
+// the only place where dropping a name is correct: on any other column the name
+// travels, and a target that cannot keep it refuses rather than losing it
+// silently (stokaro/ptah#2590, stokaro/ptah#2161).
+func keptNotNullConstraintName(field schemamodel.Field) string {
+	if field.Primary {
+		return ""
+	}
+	return field.NotNullConstraintName
 }
