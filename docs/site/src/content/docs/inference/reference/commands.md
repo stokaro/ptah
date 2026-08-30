@@ -376,6 +376,9 @@ Puts the previous generation back, while it is still a place to go back to.
 | Flag | Meaning |
 | --- | --- |
 | `--to` | Identity of the generation to return to (required) |
+| `--publish-evidence` | OCI reference to publish the rollback record to |
+| `--attach-to` | OCI reference of the release this record is about |
+| `--evidence-file` | Path to write the rollback record to as JSON |
 | `--window` | How long after a cutover the previous generation stays eligible; zero for no limit |
 
 Measures the generation before moving anything: present, maintained, complete,
@@ -395,6 +398,9 @@ Destroys a generation. This cannot be undone.
 | `--approval` | Path to a plan file signed with `ptah schema approve` |
 | `--allowed-signers` | OpenSSH allowed_signers file listing approvers |
 | `--signer` | Require the approval to belong to this principal |
+| `--publish-evidence` | OCI reference to publish the retirement record to |
+| `--attach-to` | OCI reference of the release this record is about |
+| `--evidence-file` | Path to write the retirement record to as JSON |
 
 Refused while queries still read the generation.
 

@@ -22,6 +22,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/root"
 	"go.5x5.cz/ptah/internal/dbtarget"
+	"go.5x5.cz/ptah/internal/embedrelease"
 )
 
 // TestInferenceCLIE2E drives the whole lifecycle through the command line.
@@ -147,6 +148,55 @@ func TestInferenceCLIRollbackE2E(t *testing.T) {
 	assertADriftedGenerationIsNotAWayBack(c, ctx, db, specPath, dbName, generation)
 	assertASkipIsNotAGapAndAGapIsNotASkip(c, ctx, db, specPath, dbName, generation)
 	assertMaintainingAGenerationKeepsItAWayBack(c, ctx, db, specPath, dbName, generation)
+	assertRetirementRecordsWhatItDestroyed(c, ctx, db, specPath, dbName)
+}
+
+// assertRetirementRecordsWhatItDestroyed is the one record whose subject cannot
+// be inspected afterwards.
+//
+// Every other record here describes something still in the database. This
+// describes an absence, so it names the objects that went rather than counting
+// them -- and it is asserted last, because what it does cannot be undone.
+func assertRetirementRecordsWhatItDestroyed(
+	c *qt.C, ctx context.Context, db *sql.DB, specPath, dbURL string,
+) {
+	c.Helper()
+	// A generation nothing points at: registered, never built, and safe to
+	// destroy because there is nothing behind it to lose.
+	registerBareGeneration(c, ctx, db, "a-retirable-one")
+	path := filepath.Join(c.TempDir(), "retirement.json")
+
+	digest := retirementDigestOf(c, ctx, specPath, dbURL, "a-retirable-one")
+	output := runInference(c, ctx, "retire",
+		"--spec", specPath, "--db-url", dbURL, "--generation", "a-retirable-one",
+		"--approve", digest, "--approver", "an operator",
+		"--drop-column=false", "--evidence-file", path)
+	c.Assert(output, qt.Contains, "is gone")
+
+	body, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
+	var record embedrelease.Retirement
+	c.Assert(json.Unmarshal(body, &record), qt.IsNil)
+	c.Assert(record.Generation, qt.Equals, "a-retirable-one")
+	c.Assert(record.Approver, qt.Equals, "an operator")
+	// Named rather than counted. The column survived this run, and "one object"
+	// would not say which.
+	c.Assert(record.Objects, qt.HasLen, 1)
+	c.Assert(record.Objects[0], qt.Contains, "index over")
+	c.Assert(record.PlanDigest, qt.HasLen, 64)
+	c.Assert(record.RetiredAt.IsZero(), qt.IsFalse)
+}
+
+// retirementDigestOf runs a refused retirement to read its plan digest.
+func retirementDigestOf(
+	c *qt.C, ctx context.Context, specPath, dbURL, generation string,
+) string {
+	c.Helper()
+	refused, err := runInferenceExpectingFailure(c, ctx, "retire",
+		"--spec", specPath, "--db-url", dbURL, "--generation", generation,
+		"--drop-column=false")
+	c.Assert(err, qt.IsNotNil)
+	return planDigestFrom(c, refused)
 }
 
 // assertMaintainingAGenerationKeepsItAWayBack is what makes a stabilization
@@ -417,12 +467,28 @@ func assertRollbackMovesThePointerBack(
 ) {
 	c.Helper()
 
+	path := filepath.Join(c.TempDir(), "rollback.json")
 	output := runInference(c, ctx, "rollback",
-		"--spec", specPath, "--db-url", dbURL, "--to", generation, "--window", "24h")
+		"--spec", specPath, "--db-url", dbURL, "--to", generation, "--window", "24h",
+		"--evidence-file", path)
 
 	c.Assert(output, qt.Contains, "queries now read "+generation)
 	c.Assert(output, qt.Contains, "which replaced the-newer-one")
 	c.Assert(activeGenerationFrom(c, ctx, specPath, dbURL), qt.Equals, generation)
+
+	// And a record of what was undone, which is a different question from why
+	// the corpus changed: a reader looking for it in a list of cutovers finds a
+	// pointer move with nothing attached to it.
+	body, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
+	var record embedrelease.Rollback
+	c.Assert(json.Unmarshal(body, &record), qt.IsNil)
+	c.Assert(record.Generation, qt.Equals, generation)
+	c.Assert(record.Replaced, qt.Equals, "the-newer-one")
+	// What made going back possible, rather than only that it happened.
+	c.Assert(record.Maintained, qt.IsTrue)
+	c.Assert(record.Expires.IsZero(), qt.IsFalse)
+	c.Assert(record.RolledBackAt.IsZero(), qt.IsFalse)
 }
 
 // planDigestOf runs a cutover without an approval to read the plan's digest.
@@ -1096,11 +1162,17 @@ func assertCutoverBindsToItsPlan(c *qt.C, ctx context.Context, specPath, dbURL s
 }
 
 // planDigestFrom reads the short plan digest a refusal printed.
+//
+// The first field after the word rather than the rest of the line: a cutover
+// prints the digest alone and a retirement prints it with the row count beside
+// it, and a helper that took the whole remainder handed the second one a string
+// no approval could ever match -- while the refusal rendered both to the same
+// twelve characters and read as though they agreed.
 func planDigestFrom(c *qt.C, output string) string {
 	c.Helper()
 	for line := range strings.SplitSeq(output, "\n") {
 		if after, found := strings.CutPrefix(line, "plan "); found {
-			return strings.TrimSpace(after)
+			return strings.Fields(after)[0]
 		}
 	}
 	c.Fatalf("no plan digest in:\n%s", output)

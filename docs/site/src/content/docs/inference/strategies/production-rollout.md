@@ -99,7 +99,15 @@ evidence already lives:
 - the **cutover** record carries the plan digest the approval bound to, the
   approver, the verification it cited, and the watermark the source had been
   accounted for up to — the generation identity says how a vector was computed,
-  and that says which source state was.
+  and that says which source state was;
+- the **rollback** record carries what made going back possible: whether the
+  generation returned to was still being maintained, when its freshness was last
+  measured, and what that measurement found. It is separate from a cutover
+  because "why did the corpus change" and "why did we go back" are different
+  questions;
+- the **retirement** record names the objects that were destroyed and how many
+  vectors went with them. It is the only one whose subject cannot be inspected
+  afterwards, which is why it names them rather than counting them.
 
 `--attach-to` names the release a verification or a cutover is about, and
 publishes the record into that release's repository as a referrer of it. Step 0

@@ -16,6 +16,7 @@ import (
 	"go.5x5.cz/ptah/internal/embeddigest"
 	"go.5x5.cz/ptah/internal/embedgen"
 	"go.5x5.cz/ptah/internal/embedpg"
+	"go.5x5.cz/ptah/internal/embedrelease"
 	"go.5x5.cz/ptah/internal/embedreport"
 	"go.5x5.cz/ptah/internal/embedrun"
 	"go.5x5.cz/ptah/internal/embedstore"
@@ -469,6 +470,7 @@ func newRollbackCommand() *cobra.Command {
 	var options commonOptions
 	var toGeneration string
 	var window time.Duration
+	var evidence evidenceOptions
 
 	cmd := &cobra.Command{
 		Use:   "rollback",
@@ -479,22 +481,32 @@ Whether that is possible is measured rather than assumed. A generation whose
 tables still exist is not necessarily one you can return to: it may never have
 been verified, it may have stopped being maintained and drifted from the source,
 or its index may have been dropped -- which makes going back the same queries
-against a sequential scan.`,
+against a sequential scan.
+
+Naming --publish-evidence, --attach-to or --evidence-file leaves a record of
+what was undone: a separate record from a cutover, because "why did the corpus
+change" and "why did we go back" are different questions and a reader looking
+for the second in a list of the first finds a pointer move with nothing attached
+to it.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runRollback(cmd.Context(), cmd.OutOrStdout(), options, toGeneration, window)
+			return runRollback(cmd.Context(), cmd.OutOrStdout(), options,
+				toGeneration, window, evidence)
 		},
 	}
 	addCommonFlags(cmd, &options)
 	cmd.Flags().StringVar(&toGeneration, "to", "", "Identity of the generation to return to (required)")
 	cmd.Flags().DurationVar(&window, "window", 0,
 		"How long after a cutover the previous generation stays eligible; zero for no limit")
+	addEvidenceFlags(cmd.Flags(), &evidence)
+	addSubjectFlag(cmd, &evidence)
 	return cmd
 }
 
 // runRollback evaluates eligibility and moves the pointer.
 func runRollback(
-	ctx context.Context, out io.Writer, options commonOptions, toGeneration string, window time.Duration,
+	ctx context.Context, out io.Writer, options commonOptions,
+	toGeneration string, window time.Duration, evidence evidenceOptions,
 ) error {
 	if toGeneration == "" {
 		return fmt.Errorf("--to is required")
@@ -524,14 +536,41 @@ func runRollback(
 		return refusal(out, "rollback refused", eligibility.Blockers)
 	}
 
+	now := time.Now().UTC()
 	if err := opened.store.MovePointer(ctx, embedstore.Pointer{
 		TargetTable: table, Active: toGeneration, Previous: pointer.Active,
-		CutOverAt: time.Now().UTC(), CutOverBy: "ptah-cli",
+		CutOverAt: now, CutOverBy: "ptah-cli",
 	}, pointer.Active); err != nil {
 		return err
 	}
-	return writeLines(out, fmt.Sprintf("queries now read %s, which replaced %s",
-		toGeneration, pointer.Active))
+	if err := writeLines(out, fmt.Sprintf("queries now read %s, which replaced %s",
+		toGeneration, pointer.Active)); err != nil {
+		return err
+	}
+	return publishRollback(ctx, out, options, opened, embedrelease.Rollback{
+		Generation: toGeneration, Replaced: pointer.Active,
+		Target:     opened.loaded.Spec.Target.Table,
+		Maintained: state.Maintained, VerifiedAt: state.VerifiedAt,
+		StaleRows: state.StaleRows, MissingRows: state.MissingRows,
+		Expires: eligibility.Expires, RolledBackAt: now,
+	}, evidence)
+}
+
+// publishRollback records what was undone, where a destination was named.
+//
+// After the pointer has moved, and reported rather than fatal for the reason
+// every other record here is: the rollback happened, and a registry being
+// unreachable is not a fact about it.
+func publishRollback(
+	ctx context.Context, out io.Writer, options commonOptions, opened *session,
+	rollback embedrelease.Rollback, evidence evidenceOptions,
+) error {
+	if !evidence.destinationNamed() {
+		return nil
+	}
+	_ = opened
+	record, buildErr := embedrelease.NewRollbackRecord(rollback)
+	return publishRecord(ctx, out, options.spec.plainHTTP, evidence, record, buildErr)
 }
 
 // rollbackPolicy is what a previous generation has to satisfy to be one you can

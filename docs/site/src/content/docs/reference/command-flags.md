@@ -373,11 +373,14 @@ Read the columns as follows.
 | `--approval` | `string` | — | `PTAH_APPROVAL` | — |
 | `--approve` | `string` | — | `PTAH_APPROVE` | — |
 | `--approver` | `string` | — | `PTAH_APPROVER` | — |
+| `--attach-to` | `string` | — | `PTAH_ATTACH_TO` | — |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--drop-column` | `bool` | `true` | `PTAH_DROP_COLUMN` | — |
+| `--evidence-file` | `string` | — | `PTAH_EVIDENCE_FILE` | — |
 | `--generation` | `string` | — | `PTAH_GENERATION` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--plan-file` | `string` | — | `PTAH_PLAN_FILE` | — |
+| `--publish-evidence` | `string` | — | `PTAH_PUBLISH_EVIDENCE` | — |
 | `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--signer` | `string` | — | `PTAH_SIGNER` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
@@ -386,8 +389,11 @@ Read the columns as follows.
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
+| `--attach-to` | `string` | — | `PTAH_ATTACH_TO` | — |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--evidence-file` | `string` | — | `PTAH_EVIDENCE_FILE` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--publish-evidence` | `string` | — | `PTAH_PUBLISH_EVIDENCE` | — |
 | `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 | `--to` | `string` | — | `PTAH_TO` | — |

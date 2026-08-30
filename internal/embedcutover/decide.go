@@ -171,8 +171,8 @@ func decideAuthority(decision *Decision, policy Policy, observed Observed, appro
 		// The approval is real and it is for a different plan. Saying so is
 		// the difference between an operator re-approving and an operator
 		// hunting for a missing record.
-		decision.refusef("the approval is bound to plan %s and this plan is %s",
-			shortOrNone(approval.PlanDigest), shortOrNone(digest))
+		given, want := distinguish(approval.PlanDigest, digest)
+		decision.refusef("the approval is bound to plan %s and this plan is %s", given, want)
 	case strings.TrimSpace(approval.Approver) == "":
 		decision.refusef("the approval names no approver")
 	}
@@ -184,4 +184,31 @@ func shortOrNone(digest string) string {
 		return "(none)"
 	}
 	return embeddigest.Short(digest)
+}
+
+// distinguish renders two digests so that a reader can tell them apart.
+//
+// Short forms are a prefix, so two different digests can render identically --
+// and one of them does, routinely: an operator who typed the short form of a
+// plan that is no longer current supplies exactly the twelve characters this
+// plan also begins with. The refusal then read "the approval is bound to plan
+// 274097930339 and this plan is 274097930339", which is a sentence that sends
+// somebody looking for a bug in the comparison.
+//
+// Where the short forms collide the full values are printed. Sixty-four
+// characters twice is worse to read than twelve, and it is the only rendering
+// that answers the question the sentence is asking.
+func distinguish(given, want string) (givenText, wantText string) {
+	if shortOrNone(given) != shortOrNone(want) {
+		return shortOrNone(given), shortOrNone(want)
+	}
+	return quotedOrNone(given), quotedOrNone(want)
+}
+
+// quotedOrNone renders a digest in full, or says there is none.
+func quotedOrNone(digest string) string {
+	if digest == "" {
+		return "(none)"
+	}
+	return digest
 }

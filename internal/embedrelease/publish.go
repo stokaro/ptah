@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"strconv"
 	"testing/fstest"
 	"time"
 
@@ -21,6 +22,8 @@ const (
 	ReleaseFileName      = "release.json"
 	VerificationFileName = "verification.json"
 	CutoverFileName      = "cutover.json"
+	RollbackFileName     = "rollback.json"
+	RetirementFileName   = "retirement.json"
 	// SpecificationFileName is the document a release was built from, carried
 	// beside the record rather than described by it.
 	//
@@ -127,6 +130,45 @@ func NewCutoverRecord(cutover Cutover) (Record, error) {
 			"cz.5x5.ptah.inference.generation": cutover.Generation,
 			"cz.5x5.ptah.inference.record":     cutover.Digest(),
 			"cz.5x5.ptah.inference.plan":       cutover.PlanDigest,
+		},
+	}, nil
+}
+
+// NewRollbackRecord prepares a rollback record for publication.
+func NewRollbackRecord(rollback Rollback) (Record, error) {
+	rollback.Version = RecordVersion
+	body, err := Encode(rollback)
+	if err != nil {
+		return Record{}, err
+	}
+	return Record{
+		ArtifactType: RollbackArtifactType, FileName: RollbackFileName,
+		Body: body, Digest: rollback.Digest(),
+		Annotations: map[string]string{
+			"cz.5x5.ptah.inference.generation": rollback.Generation,
+			"cz.5x5.ptah.inference.record":     rollback.Digest(),
+			"cz.5x5.ptah.inference.replaced":   rollback.Replaced,
+		},
+	}, nil
+}
+
+// NewRetirementRecord prepares a retirement record for publication.
+//
+// The annotations name the generation and how much went with it, because this
+// is the one record whose subject a reader cannot go and look at.
+func NewRetirementRecord(retirement Retirement) (Record, error) {
+	retirement.Version = RecordVersion
+	body, err := Encode(retirement)
+	if err != nil {
+		return Record{}, err
+	}
+	return Record{
+		ArtifactType: RetirementArtifactType, FileName: RetirementFileName,
+		Body: body, Digest: retirement.Digest(),
+		Annotations: map[string]string{
+			"cz.5x5.ptah.inference.generation": retirement.Generation,
+			"cz.5x5.ptah.inference.record":     retirement.Digest(),
+			"cz.5x5.ptah.inference.rows":       strconv.FormatInt(retirement.Rows, 10),
 		},
 	}, nil
 }

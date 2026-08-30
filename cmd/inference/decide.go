@@ -316,6 +316,7 @@ func newRetireCommand() *cobra.Command {
 	var generation string
 	var approval approvalOptions
 	var dropColumn bool
+	var evidence evidenceOptions
 
 	cmd := &cobra.Command{
 		Use:   "retire",
@@ -339,7 +340,7 @@ a shell history.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runRetire(cmd.Context(), cmd.OutOrStdout(), retireOptions{
 				commonOptions: options, generation: generation,
-				approval: approval, dropColumn: dropColumn,
+				approval: approval, dropColumn: dropColumn, evidence: evidence,
 			})
 		},
 	}
@@ -348,6 +349,8 @@ a shell history.`,
 	addApprovalFlags(cmd, &approval)
 	cmd.Flags().BoolVar(&dropColumn, "drop-column", true,
 		"Drop the vector column as well as the index")
+	addEvidenceFlags(cmd.Flags(), &evidence)
+	addSubjectFlag(cmd, &evidence)
 	return cmd
 }
 
@@ -357,6 +360,7 @@ type retireOptions struct {
 	generation string
 	approval   approvalOptions
 	dropColumn bool
+	evidence   evidenceOptions
 }
 
 // reachPhase records how far a verb got, on its own connection.
@@ -424,11 +428,66 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 			return err
 		}
 	}
-	if err := opened.store.RetireGeneration(ctx, options.generation, time.Now().UTC()); err != nil {
+	retiredAt := time.Now().UTC()
+	if err := opened.store.RetireGeneration(ctx, options.generation, retiredAt); err != nil {
 		return err
 	}
-	return writeLines(out, fmt.Sprintf("generation %s is gone, with %d vectors",
-		options.generation, rows))
+	if err := writeLines(out, fmt.Sprintf("generation %s is gone, with %d vectors",
+		options.generation, rows)); err != nil {
+		return err
+	}
+	return publishRetirement(ctx, out, options, plan, identity, approval, rows, retiredAt)
+}
+
+// publishRetirement records what was destroyed, where a destination was named.
+//
+// This is the one record whose subject cannot be inspected afterwards. Every
+// other one here describes something still in the database; this describes an
+// absence, so it names the objects rather than counting them.
+//
+// Reported rather than fatal, for the reason the others are, and more so: the
+// vectors are already gone and a failed publication cannot bring them back.
+func publishRetirement(
+	ctx context.Context, out io.Writer, options retireOptions,
+	plan embedcutover.RetirementPlan, identity planIdentity,
+	approval *embedcutover.Approval, rows int, at time.Time,
+) error {
+	if !options.evidence.destinationNamed() {
+		return nil
+	}
+	record, buildErr := embedrelease.NewRetirementRecord(embedrelease.Retirement{
+		Generation: plan.Generation,
+		Target:     plan.Schema + "." + plan.Table + "." + plan.Column,
+		Objects:    retiredObjects(plan),
+		Rows:       int64(rows),
+		PlanDigest: identity.digest, Approver: approverName(approval),
+		RetiredAt: at,
+	})
+	return publishRecord(ctx, out, options.spec.plainHTTP, options.evidence, record, buildErr)
+}
+
+// retiredObjects names what the retirement removed.
+//
+// Named rather than described as a count, because a reader of this record
+// cannot go and look: the column either is in the list or it survived, and
+// "two objects" answers neither.
+func retiredObjects(plan embedcutover.RetirementPlan) []string {
+	objects := make([]string, 0, 2)
+	if plan.DropsIndex {
+		objects = append(objects, "index over "+plan.Schema+"."+plan.Table+"."+plan.Column)
+	}
+	if plan.DropsColumn {
+		objects = append(objects, "column "+plan.Schema+"."+plan.Table+"."+plan.Column)
+	}
+	return objects
+}
+
+// approverName is who authorized it, or nobody.
+func approverName(approval *embedcutover.Approval) string {
+	if approval == nil {
+		return ""
+	}
+	return approval.Approver
 }
 
 // retirementContext says what was measured, beside what was decided.

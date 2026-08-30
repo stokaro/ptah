@@ -1,6 +1,7 @@
 package embedcutover_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -474,4 +475,40 @@ func TestDecide_AnUnsignedApprovalIsEnoughWithoutThatPolicy(t *testing.T) {
 
 	c.Assert(decision.Allowed, qt.IsTrue)
 	c.Assert(approval.Signed, qt.IsFalse)
+}
+
+// TestDecide_TwoPlansThatShareAShortDigestAreStillToldApart is a diagnostic
+// that read as a contradiction.
+//
+// A short digest is a prefix, so an operator who types the short form of a plan
+// that is no longer current supplies exactly the twelve characters this plan
+// also begins with. The refusal then said the approval is bound to plan X and
+// this plan is X, which sends somebody looking for a bug in the comparison.
+func TestDecide_TwoPlansThatShareAShortDigestAreStillToldApart(t *testing.T) {
+	c := qt.New(t)
+	plan, policy, observed, approval := ready()
+	// What an operator types: the short form, which no longer expands because
+	// the evidence moved and this is a different plan.
+	approval.PlanDigest = plan.Short()
+
+	decision := embedcutover.Decide(plan, policy, observed, approval)
+
+	c.Assert(decision.Allowed, qt.IsFalse)
+	c.Assert(decision.Blockers, qt.Contains, fmt.Sprintf(
+		"the approval is bound to plan %s and this plan is %s", plan.Short(), plan.Digest()))
+}
+
+// TestDecide_TwoPlansThatDoNotShareOneAreStillShort is the control.
+//
+// Sixty-four characters twice is worse to read, and it is only worth it where
+// twelve cannot answer the question.
+func TestDecide_TwoPlansThatDoNotShareOneAreStillShort(t *testing.T) {
+	c := qt.New(t)
+	plan, policy, observed, approval := ready()
+	approval.PlanDigest = "0000000000000000000000000000000000000000000000000000000000000000"
+
+	decision := embedcutover.Decide(plan, policy, observed, approval)
+
+	c.Assert(decision.Blockers, qt.Contains, fmt.Sprintf(
+		"the approval is bound to plan %s and this plan is %s", "000000000000", plan.Short()))
 }

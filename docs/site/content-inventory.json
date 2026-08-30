@@ -2509,8 +2509,8 @@
       "inboundLinks": [
         "/inference/concepts/embeddings-and-inference-state/"
       ],
-      "visibleWords": 2258,
-      "sourceBytes": 16970
+      "visibleWords": 2316,
+      "sourceBytes": 17402
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/run-status-and-findings.md",
@@ -2796,8 +2796,8 @@
         "/inference/guides/run-in-kubernetes/"
       ],
       "inboundLinks": [],
-      "visibleWords": 847,
-      "sourceBytes": 7805
+      "visibleWords": 963,
+      "sourceBytes": 8510
     },
     {
       "path": "docs/site/src/content/docs/inference/troubleshooting.md",
@@ -3549,8 +3549,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8624,
-      "sourceBytes": 79985
+      "visibleWords": 8666,
+      "sourceBytes": 80389
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",
