@@ -212,6 +212,17 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	if err := validateRowTTL(dialect, to); err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
+	// The target validation the erroring comparator makes, applied here for
+	// the same reason the refusals above are: this surface reaches the
+	// comparator through the variant that returns no error, so a desired
+	// schema this target cannot host would otherwise reach the planner
+	// (stokaro/ptah#2315).
+	if err := schemadiff.ValidateDesiredSchema(to, catalog.ServerInfo{
+		Dialect:      dialect,
+		Capabilities: target.Capabilities,
+	}); err != nil {
+		return atlasreport.SchemaDiff{}, nil, err
+	}
 
 	// The comparison reports what the --from document's coverage record made
 	// undecidable alongside what it decided. The list is empty for every --from
@@ -232,9 +243,8 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	diff := applyDiffPolicy(compared, opts.Policy)
 	var statements []string
 	if diff.HasChanges() {
-		statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, to, dialect, planner.Options{
-			// Nil when no version was pinned, which is the planner's own
-			// "use the dialect default" and the behavior this command had.
+		statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, dialect, planner.Options{
+
 			Capabilities:         target.Capabilities,
 			ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
 			ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
@@ -242,6 +252,7 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 				opts.Policy, diff, to, fromSide.database, dialect, target.Capabilities,
 			),
 		})
+
 		if err != nil {
 			return atlasreport.SchemaDiff{}, nil, fmt.Errorf("generate schema diff SQL: %w", err)
 		}

@@ -8,10 +8,13 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/concurrentindex"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
+	"go.5x5.cz/ptah/migration/internal/identifiervalidation"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -167,12 +170,7 @@ func planBidirectionalSchemaDiffWithRefs(
 		ConcurrentIndexRefs:     forwardCreateRefs,
 		ConcurrentIndexDropRefs: forwardDropRefs,
 	}
-	forwardNodes, err := planner.GenerateSchemaDiffASTWithOptions(
-		opts.Diff,
-		opts.DesiredSchema,
-		dialect,
-		forwardOpts,
-	)
+	forwardNodes, err := planner.GenerateSchemaDiffASTWithOptions(opts.Diff, dialect, forwardOpts)
 	if err != nil {
 		return nil, fmt.Errorf("error planning forward migration: %w", err)
 	}
@@ -229,8 +227,17 @@ func planBidirectionalSchemaDiffWithRefs(
 		ConcurrentIndexRefs:     reverseCreate,
 		ConcurrentIndexDropRefs: reverseDrop,
 	}
-	priorSchema := dbschematogo.ConvertDBSchemaToGoSchema(opts.CurrentSchema)
-	reverseNodes, err := planner.GenerateSchemaDiffASTWithOptions(reverseDiff, priorSchema, dialect, reverseOpts)
+	// The rollback's target is the schema the database currently holds, and it
+	// is validated here because this is where that schema exists. The forward
+	// direction's target is validated by the comparison that produced the
+	// forward diff; a reversal has no comparison of its own, so the assertion
+	// would otherwise be made for one direction only (stokaro/ptah#2315).
+	if err := validateRollbackTarget(
+		dbschematogo.ConvertDBSchemaToGoSchema(opts.CurrentSchema), reverseDiff, dialect, caps,
+	); err != nil {
+		return nil, fmt.Errorf("error planning reverse migration: %w", err)
+	}
+	reverseNodes, err := planner.GenerateSchemaDiffASTWithOptions(reverseDiff, dialect, reverseOpts)
 	if err != nil {
 		return nil, fmt.Errorf("error planning reverse migration: %w", err)
 	}
@@ -379,4 +386,35 @@ func selectIndexRefOccurrences(
 		}
 	}
 	return out
+}
+
+// validateRollbackTarget refuses a prior schema a rollback could not be written
+// against, such as one whose constraint namespace holds a name twice.
+//
+// prior is the database's own schema in declaration form, which is what a
+// rollback restores. Both halves of the target validation are asked, for the
+// reason the duplicate-name case shows: a name collision the renderer reports
+// is not an identifier question, and asking only the identifier half let a
+// rollback be written against a schema that cannot be rendered.
+func validateRollbackTarget(
+	prior *schemamodel.Database,
+	reverseDiff *difftypes.SchemaDiff,
+	dialect string,
+	caps capability.Capabilities,
+) error {
+	prepared := fromschema.QualifyDeclaredUserTypes(
+		fromschema.AssignDefaultForeignKeyNames(prior, dialect),
+		dialect,
+	)
+	if prepared == nil {
+		return nil
+	}
+	if err := identifiervalidation.ValidateTarget(
+		prepared,
+		dialect,
+		reverseDiff.EffectiveIdentifierSemantics(dialect),
+	); err != nil {
+		return err
+	}
+	return renderer.ValidateSchemaWithCapabilities(prepared, dialect, caps)
 }

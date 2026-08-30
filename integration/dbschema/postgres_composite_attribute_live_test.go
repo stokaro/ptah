@@ -98,7 +98,8 @@ func TestPostgresLiveCompositeAttributeConverges(t *testing.T) {
 	// 5. The type is a working one: a row can be written through it with the
 	//    shape the declaration now says it has.
 	_, err = conn.ExecContext(ctx, fmt.Sprintf(
-		`INSERT INTO %q."s" (id, home) VALUES (1, ROW('main', '11111')::%q."addr")`, schemaName, schemaName))
+		`INSERT INTO %q."s" (id, home) VALUES (1, ROW('main', '11111')::%q."addr")`, schemaName, schemaName,
+	))
 	c.Assert(err, qt.IsNil)
 }
 
@@ -127,7 +128,7 @@ func applyLiveComposite(
 	declared *schemamodel.Database,
 ) {
 	c.Helper()
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, declared, platform.Postgres)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.Not(qt.HasLen), 0)
 	for _, statement := range statements {

@@ -69,7 +69,7 @@ func executeSQL(c *qt.C, dbURL string, statements []string) {
 // protects rows from one that is inert.
 func planAndApply(c *qt.C, dbURL string, diff *difftypes.SchemaDiff, desired *schemamodel.Database) []string {
 	c.Helper()
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, "postgres")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "postgres")
 	c.Assert(err, qt.IsNil)
 	c.Logf("planned SQL:\n%s", strings.Join(statements, "\n"))
 	executeSQL(c, dbURL, statements)

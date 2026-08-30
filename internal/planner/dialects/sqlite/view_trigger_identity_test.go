@@ -45,7 +45,7 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(withDeclaredTable(test.diff, test.desired), test.desired, "sqlite")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(withDeclaredTable(test.diff, test.desired), "sqlite")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(plan, qt.Not(qt.Contains), test.unwantedSQL, qt.Commentf("plan:\n%s", plan))
@@ -93,7 +93,7 @@ func TestCompare_ATriggerFoldsACaseDifference(t *testing.T) {
 	c.Assert(diff.TriggersModified[0].Desired.Table, qt.Equals, "Notes",
 		qt.Commentf("the entry carries the declaration as written, not the folded spelling"))
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(withDeclaredTable(diff, desired), desired, "sqlite")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(withDeclaredTable(diff, desired), "sqlite")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(statements, "\n"), qt.Contains, "TRIGGER")
@@ -123,7 +123,7 @@ func TestCompare_AModifiedViewResolvesACaseDifference(t *testing.T) {
 	c.Assert(diff.ViewsModified[0].Desired.Name, qt.Equals, "Active_Notes",
 		qt.Commentf("the comparison folded the case and resolved to the declaration"))
 
-	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), desired, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), platform.SQLite)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "VIEW")

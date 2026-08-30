@@ -66,7 +66,7 @@ func TestViewAndTriggerLookupsDoNotCrossSchemas(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.desired, "postgres")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, "postgres")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(plan, qt.Not(qt.Contains), test.unwantedSQL, qt.Commentf("plan:\n%s", plan))
@@ -119,7 +119,7 @@ func TestCompare_ATriggerResolvesTheDiffSpelling(t *testing.T) {
 	c.Assert(diff.TriggersModified[0].Desired.Name, qt.Equals, "touch",
 		qt.Commentf("the comparison resolved the two spellings to one declaration"))
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, "postgres")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "postgres")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(statements, "\n"), qt.Contains, "TRIGGER")
@@ -149,7 +149,7 @@ func TestCompare_AModifiedViewResolvesTheDiffSpelling(t *testing.T) {
 	c.Assert(diff.ViewsModified[0].Desired.Name, qt.Equals, "active_users",
 		qt.Commentf("the comparison resolved the two spellings to one declaration"))
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, "postgres")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "postgres")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(statements, "\n"), qt.Contains, "VIEW")

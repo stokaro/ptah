@@ -65,7 +65,7 @@ func TestCockroachDBTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 
 	removeDiff := &difftypes.SchemaDiff{}
 	removeDiff.SetIndexRemovals(diff.IndexRemovals())
-	statements, err := planner.GenerateSchemaDiffSQLStatements(removeDiff, ordersTarget, platform.CockroachDB)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(removeDiff, platform.CockroachDB)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.DeepEquals, []string{
 		`DROP INDEX IF EXISTS "` + cockroachIndexIdentityUsersTable + `"@"` +
@@ -89,7 +89,7 @@ func TestCockroachDBTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 
 	createDiff := &difftypes.SchemaDiff{}
 	createDiff.SetIndexAdditions(addDiff.IndexesAdded)
-	statements, err = planner.GenerateSchemaDiffSQLStatements(createDiff, bothTarget, platform.CockroachDB)
+	statements, err = planner.GenerateSchemaDiffSQLStatements(createDiff, platform.CockroachDB)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 1)
 	c.Assert(statements[0], qt.Contains,

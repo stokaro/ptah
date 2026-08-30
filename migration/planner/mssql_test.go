@@ -53,7 +53,7 @@ func TestGenerateSchemaDiffSQL_SQLServerCreatesTSQL(t *testing.T) {
 	// from, derived from the declaration (stokaro/ptah#2315).
 	diff.TablesAdded = difftypes.TableCreationsFor(desired, "users")
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLServer)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.SQLServer)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "CREATE TABLE [dbo].[users] (")
@@ -92,14 +92,7 @@ func TestGenerateSchemaDiffSQL_SQLServerRejectsUnsupportedColumnDrift(t *testing
 			}},
 		}},
 	}
-	desired := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
-		Fields: []schemamodel.Field{
-			{StructName: "User", Name: "status", Type: "NVARCHAR(255)", Default: "active"},
-		},
-	}
-
-	_, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLServer)
+	_, err := planner.GenerateSchemaDiffSQL(diff, platform.SQLServer)
 
 	c.Assert(err, qt.ErrorMatches, `.*SQL Server planner only supports ALTER COLUMN for type/nullability changes on users\.status; unsupported changes: default.*`)
 }
@@ -123,7 +116,7 @@ func TestGenerateSchemaDiffSQL_SQLServerAddsColumnToQualifiedTable(t *testing.T)
 		DeclaredTables: desired.Tables,
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLServer)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.SQLServer)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "ALTER TABLE [dbo].[users] ADD [nickname] NVARCHAR(64);")
@@ -145,14 +138,7 @@ func TestGenerateSchemaDiffSQL_SQLServerModifiesColumnOnQualifiedTable(t *testin
 			}},
 		}},
 	}
-	desired := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "User", Schema: "dbo", Name: "users"}},
-		Fields: []schemamodel.Field{
-			{StructName: "User", Name: "email", Type: "NVARCHAR(320)", Nullable: false},
-		},
-	}
-
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLServer)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.SQLServer)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "ALTER TABLE [dbo].[users] ALTER COLUMN [email] NVARCHAR(320) NOT NULL;")
@@ -168,11 +154,7 @@ func TestGenerateSchemaDiffSQL_SQLServerRejectsColumnRemoval(t *testing.T) {
 			ColumnsRemoved: difftypes.ColumnChanges{{Name: "legacy_id"}},
 		}},
 	}
-	desired := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
-	}
-
-	_, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLServer)
+	_, err := planner.GenerateSchemaDiffSQL(diff, platform.SQLServer)
 
 	c.Assert(err, qt.ErrorMatches, `.*SQL Server planner does not support automatic DROP COLUMN for users; write an explicit migration that drops dependent constraints and indexes first.*`)
 }
@@ -203,21 +185,7 @@ func TestGenerateSchemaDiffSQL_SQLServerFilteredIndexPredicateChange(t *testing.
 			{Name: "users", Key: "users"},
 		})
 	diff.IdentifierSemantics = &semantics
-	desired := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "User", Schema: "dbo", Name: "users"}},
-		Fields: []schemamodel.Field{
-			{StructName: "User", Name: "id", Type: "INT", Primary: true},
-			{StructName: "User", Name: "status", Type: "INT", Nullable: false},
-		},
-		Indexes: []schemamodel.Index{{
-			StructName: "User",
-			Name:       "idx_active_users",
-			Fields:     []string{"status"},
-			Condition:  "[status] = (2)",
-		}},
-	}
-
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, platform.SQLServer)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.SQLServer)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)
@@ -245,19 +213,7 @@ func TestGenerateSchemaDiffSQL_SQLServerUnfilteredIndexStaysWithoutWhere(t *test
 			{Name: "users", Key: "users"},
 		})
 	diff.IdentifierSemantics = &semantics
-	desired := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "User", Schema: "dbo", Name: "users"}},
-		Fields: []schemamodel.Field{
-			{StructName: "User", Name: "status", Type: "INT", Nullable: false},
-		},
-		Indexes: []schemamodel.Index{{
-			StructName: "User",
-			Name:       "idx_users_status",
-			Fields:     []string{"status"},
-		}},
-	}
-
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, platform.SQLServer)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.SQLServer)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 1)

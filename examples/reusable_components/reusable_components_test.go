@@ -100,7 +100,7 @@ func TestDiffAndPlan(t *testing.T) {
 	live := &catalog.Database{}
 
 	diff := schemadiff.CompareWithDialect(desired, live, "sqlite")
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, "sqlite")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "sqlite")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 1)

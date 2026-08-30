@@ -77,7 +77,7 @@ func TestExtensionVersionAndSchemaConvergeLive(t *testing.T) {
 	c.Assert(raised.ExtensionsModified[0].ToVersion, qt.Equals, "1.6")
 
 	// 2. It plans a statement the server accepts.
-	statements, err := planner.GenerateSchemaDiffSQLStatements(raised, declared, platform.Postgres)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(raised, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(statements, "\n"), qt.Contains, "ALTER EXTENSION")
 	for _, statement := range statements {
@@ -100,7 +100,7 @@ func TestExtensionVersionAndSchemaConvergeLive(t *testing.T) {
 	move := schemadiff.CompareWithDialect(moved, settled, platform.Postgres)
 	c.Assert(move.ExtensionsModified, qt.HasLen, 1)
 	c.Assert(move.ExtensionsModified[0].Relocatable, qt.IsTrue)
-	moveStatements, err := planner.GenerateSchemaDiffSQLStatements(move, moved, platform.Postgres)
+	moveStatements, err := planner.GenerateSchemaDiffSQLStatements(move, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(moveStatements, "\n"), qt.Contains, "SET SCHEMA")
 	for _, statement := range moveStatements {

@@ -107,9 +107,10 @@ func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 					TableName:    test.diffName,
 					ColumnsAdded: difftypes.ColumnChanges{{StructName: "Order", Name: "note", Type: "TEXT"}},
 				}}}, test.desired),
-				test.desired,
+
 				test.dialect,
 			)
+
 			c.Assert(err, qt.IsNil)
 			addedPlan := strings.Join(added, "\n")
 			c.Assert(addedPlan, qt.Contains, test.wantAdd, qt.Commentf("plan:\n%s", addedPlan))
@@ -122,9 +123,10 @@ func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 						Changes:    map[string]string{"type": "VARCHAR(10) -> TEXT"},
 					}},
 				}}}, test.desired),
-				test.desired,
+
 				test.dialect,
 			)
+
 			c.Assert(err, qt.IsNil)
 			modifiedPlan := strings.Join(modified, "\n")
 			c.Assert(modifiedPlan, qt.Not(qt.Contains), "Could not find field definition",
@@ -146,9 +148,10 @@ func TestColumnDDLDoesNotGuessBetweenSchemas(t *testing.T) {
 			TableName:    "app.orders",
 			ColumnsAdded: difftypes.ColumnChanges{{StructName: "Order", Name: "note", Type: "TEXT"}},
 		}}},
-		ordersTable("reporting"),
+
 		"mysql",
 	)
+
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(statements, "\n"), qt.Not(qt.Contains), "ADD COLUMN")
 }
@@ -213,7 +216,7 @@ func TestPrimaryKeyIsPlannedOnceAcrossSchemaSpellings(t *testing.T) {
 					Columns:   []string{"id"},
 				}},
 			}
-			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, ordersTable(test.tableSchema), "mysql")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "mysql")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(strings.Count(plan, "PRIMARY KEY"), qt.Equals, 1, qt.Commentf("plan:\n%s", plan))
@@ -246,7 +249,7 @@ func TestPrimaryKeyOwnershipDoesNotCrossSchemas(t *testing.T) {
 			Columns:   []string{"id"},
 		}},
 	}
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, ordersTable("app"), "mysql")
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, "mysql")
 	c.Assert(err, qt.IsNil)
 	plan := strings.Join(statements, "\n")
 	c.Assert(plan, qt.Contains, "MODIFY COLUMN `id` INT PRIMARY KEY", qt.Commentf("plan:\n%s", plan))

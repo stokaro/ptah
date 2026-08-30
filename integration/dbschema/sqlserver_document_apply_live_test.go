@@ -120,7 +120,7 @@ func planDocumentAgainstLive(
 	diff, err := schemadiff.CompareWithDatabase(c.Context(), conn, declared, live, nil)
 	c.Assert(err, qt.IsNil)
 
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, declared, conn.Info().Dialect)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, conn.Info().Dialect)
 	c.Assert(err, qt.IsNil)
 	return statements
 }

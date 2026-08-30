@@ -123,7 +123,7 @@ func runEmbedPath(root string) error {
 		return err
 	}
 	diff := schemadiff.Compare(desired, &catalog.Database{})
-	nodes, err := planner.GenerateSchemaDiffAST(diff, desired, "postgres")
+	nodes, err := planner.GenerateSchemaDiffAST(diff, "postgres")
 	if err != nil {
 		return err
 	}

@@ -119,7 +119,7 @@ func inlineEnumPending(c *qt.C, db *sql.DB, dialect string, desired *schemamodel
 	// against a catalog that has none and report a difference on every run --
 	// which is the shape the issue describes.
 	diff := schemadiff.CompareWithDialect(desired, live, dialect)
-	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, desired, dialect)
+	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, dialect)
 	c.Assert(err, qt.IsNil)
 	return statements
 }

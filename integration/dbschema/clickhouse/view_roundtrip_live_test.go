@@ -58,9 +58,10 @@ func TestViewLifecycleRoundTripsLive(t *testing.T) {
 	c.Assert(creationDiff.ViewsAdded.Names(), qt.DeepEquals, []string{viewName})
 	createStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		creationDiff,
-		created,
+
 		platform.ClickHouse,
 	)
+
 	c.Assert(err, qt.IsNil)
 	c.Assert(createStatements, qt.HasLen, 1)
 	c.Assert(createStatements[0], qt.Contains, "CREATE VIEW ")
@@ -87,9 +88,10 @@ func TestViewLifecycleRoundTripsLive(t *testing.T) {
 	c.Assert(replacementDiff.ViewsModified, qt.HasLen, 1)
 	replaceStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		replacementDiff,
-		replaced,
+
 		platform.ClickHouse,
 	)
+
 	c.Assert(err, qt.IsNil)
 	c.Assert(replaceStatements, qt.HasLen, 1)
 	c.Assert(replaceStatements[0], qt.Contains, "CREATE OR REPLACE VIEW ")
@@ -109,9 +111,10 @@ func TestViewLifecycleRoundTripsLive(t *testing.T) {
 	c.Assert(removalDiff.ViewsRemoved.Names(), qt.DeepEquals, []string{viewName})
 	dropStatements, err := planner.GenerateSchemaDiffSQLStatements(
 		removalDiff,
-		&schemamodel.Database{},
+
 		platform.ClickHouse,
 	)
+
 	c.Assert(err, qt.IsNil)
 	c.Assert(dropStatements, qt.HasLen, 1)
 	c.Assert(dropStatements[0], qt.Contains, "DROP VIEW IF EXISTS ")

@@ -145,7 +145,7 @@ func applyLiveStatements(
 	dialect string,
 ) {
 	c.Helper()
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, declared, dialect, planner.Options{Capabilities: conn.Info().Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, dialect, planner.Options{Capabilities: conn.Info().Capabilities})
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.Not(qt.HasLen), 0)
 	for _, statement := range statements {

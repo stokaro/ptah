@@ -49,7 +49,7 @@ func TestViewAndTriggerLookupsDoNotCrossDatabases(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.desired, "mysql")
+			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, "mysql")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
 			c.Assert(plan, qt.Not(qt.Contains), test.unwantedSQL, qt.Commentf("plan:\n%s", plan))
@@ -102,7 +102,7 @@ func TestCompare_ATriggerResolvesTheDatabaseQualifier(t *testing.T) {
 	c.Assert(diff.TriggersModified[0].Desired.Name, qt.Equals, "touch",
 		qt.Commentf("the change carries the declaration the comparison resolved to"))
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.MySQL)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.MySQL)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "TRIGGER")
@@ -131,7 +131,7 @@ func TestCompare_AModifiedViewResolvesTheDatabaseQualifier(t *testing.T) {
 	c.Assert(diff.ViewsModified[0].Desired.Name, qt.Equals, "active_orders",
 		qt.Commentf("the comparison resolved the qualified readback to the declaration"))
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.MySQL)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.MySQL)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "VIEW")

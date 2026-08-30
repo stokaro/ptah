@@ -276,7 +276,8 @@ func rehearseStatementsOnDev(
 		return errors.New("schema apply simulation requires target database connection")
 	}
 	statements, err := rescopeStatementsForDevDatabase(
-		statements, devConn.Info().Dialect, targetConn.Info().Schema, devConn.Info().Schema)
+		statements, devConn.Info().Dialect, targetConn.Info().Schema, devConn.Info().Schema,
+	)
 	if err != nil {
 		return err
 	}
@@ -370,9 +371,10 @@ func recreateCurrentSchema(
 	if !diff.HasChanges() {
 		return nil
 	}
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, baseline, info.Dialect, planner.Options{
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, info.Dialect, planner.Options{
 		Capabilities: info.Capabilities,
 	})
+
 	if err != nil {
 		return fmt.Errorf("generate current schema DDL for dev database: %w", err)
 	}

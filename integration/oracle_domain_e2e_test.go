@@ -81,11 +81,11 @@ func assertOracleDomainBehavior(ctx context.Context, c *qt.C, conn *dbschema.Dat
 
 // assertOracleDomainsAreRefused is the Oracle 21 half.
 //
-// The refusal is usertypescope.ValidateDeclared's, and it fires when the plan
-// is rendered rather than when it is compared: a column declared with a type
+// The refusal is usertypescope.ValidateDeclared's: a column declared with a type
 // the target cannot create would be left naming something the server has no
-// definition of. The comparison itself is not the gate and does not error,
-// which is asserted here so the two are not confused.
+// definition of. It fires when the desired schema is validated, which is the
+// comparison -- a plan reads only the diff, and whether this target can host a
+// domain at all is a question about the declaration (stokaro/ptah#2315).
 //
 // The read is asserted empty as well, and that is the other half of the same
 // preset: ALL_DOMAINS does not exist on this line -- measured, ORA-00942 --
@@ -98,10 +98,7 @@ func assertOracleDomainsAreRefused(ctx context.Context, c *qt.C, conn *dbschema.
 	c.Assert(live.Domains, qt.HasLen, 0)
 
 	declared := oracleDomainDeclaration()
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, live, nil)
-	c.Assert(err, qt.IsNil)
-
-	_, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, declared, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
+	_, err = schemadiff.CompareWithDatabase(ctx, conn, declared, live, nil)
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "CREATE DOMAIN")
 }
@@ -115,7 +112,7 @@ func assertOracleDomainsConverge(ctx context.Context, c *qt.C, conn *dbschema.Da
 	c.Assert(err, qt.IsNil)
 	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, before, nil)
 	c.Assert(err, qt.IsNil)
-	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, declared, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
 	c.Assert(err, qt.IsNil)
 
 	// Non-vacuity: the plan really carries both domains, and it carries them
@@ -149,7 +146,7 @@ func assertOracleDomainsConverge(ctx context.Context, c *qt.C, conn *dbschema.Da
 	// measured, dropping a domain a table still uses answers ORA-11502.
 	teardown, err := schemadiff.CompareWithDatabase(ctx, conn, &schemamodel.Database{}, after, nil)
 	c.Assert(err, qt.IsNil)
-	teardownStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(teardown, &schemamodel.Database{}, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
+	teardownStatements, err := planner.GenerateSchemaDiffSQLStatementsWithOptions(teardown, platform.Oracle, planner.Options{Capabilities: conn.Info().Capabilities})
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleFirstIndexOf(c, teardownStatements, "DROP TABLE") <
 		oracleFirstIndexOf(c, teardownStatements, "DROP DOMAIN"), qt.IsTrue)

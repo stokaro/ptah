@@ -123,7 +123,7 @@ func TestPlanner_GenerateSchemaDiffSQLStatements_CompoundTriggerBody(t *testing.
 		}},
 	}
 
-	statements, err := migrationplanner.GenerateSchemaDiffSQLStatements(diff, desired, "mysql")
+	statements, err := migrationplanner.GenerateSchemaDiffSQLStatements(diff, "mysql")
 	c.Assert(err, qt.IsNil)
 	for i, statement := range statements {
 		statements[i] = legacyRenderedSQL(statement)

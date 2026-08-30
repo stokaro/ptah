@@ -119,13 +119,17 @@ func TestGenerateSchemaDiffSQL_Deterministic(t *testing.T) {
 				dialectGen, dialectDB := determinismInputsForDialect(gen, scenario.db, dialect)
 
 				first, err := planner.GenerateSchemaDiffSQL(
-					schemadiff.CompareWithDialect(dialectGen, dialectDB, dialect), dialectGen, dialect)
+					schemadiff.CompareWithDialect(dialectGen, dialectDB, dialect), dialect,
+				)
+
 				c.Assert(err, qt.IsNil)
 				c.Assert(first, qt.Not(qt.Equals), "")
 
 				for i := range 100 {
 					sql, err := planner.GenerateSchemaDiffSQL(
-						schemadiff.CompareWithDialect(dialectGen, dialectDB, dialect), dialectGen, dialect)
+						schemadiff.CompareWithDialect(dialectGen, dialectDB, dialect), dialect,
+					)
+
 					c.Assert(err, qt.IsNil)
 					c.Assert(sql, qt.Equals, first, qt.Commentf("iteration %d produced different SQL", i))
 				}
@@ -189,7 +193,7 @@ func TestGenerateSchemaDiffSQL_EnableRLSSorted(t *testing.T) {
 	c := qt.New(t)
 
 	gen := multiTenantRLSSchema()
-	sql, err := planner.GenerateSchemaDiffSQL(schemadiff.Compare(gen, &catalog.Database{}), gen, "postgres")
+	sql, err := planner.GenerateSchemaDiffSQL(schemadiff.Compare(gen, &catalog.Database{}), "postgres")
 	c.Assert(err, qt.IsNil)
 
 	var enableStmts []string

@@ -162,7 +162,7 @@ func renderedSchema(c *qt.C, database schemamodel.Database, dialect string) stri
 // and the same renderer.
 func plannedSchema(c *qt.C, database schemamodel.Database, dialect string) string {
 	diff := schemadiff.CompareWithDialect(&database, &catalog.Database{}, dialect)
-	sql, err := planner.GenerateSchemaDiffSQL(diff, &database, dialect)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, dialect)
 	c.Assert(err, qt.IsNil, qt.Commentf("plan path failed for %s", dialect))
 	return sql
 }
@@ -180,7 +180,7 @@ func renderedOrRefusal(database schemamodel.Database, dialect string) string {
 
 func plannedOrRefusal(database schemamodel.Database, dialect string) string {
 	diff := schemadiff.CompareWithDialect(&database, &catalog.Database{}, dialect)
-	sql, err := planner.GenerateSchemaDiffSQL(diff, &database, dialect)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, dialect)
 	return fmt.Sprintf("%s | err=%v", sql, err)
 }
 

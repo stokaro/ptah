@@ -31,12 +31,12 @@ func TestGenerateSchemaDiffSQL_TableModificationUsesStructuralIdentity(t *testin
 		}},
 	}
 
-	postgresSQL, err := planner.GenerateSchemaDiffSQL(diff, referenceCollisionSchema(), platform.Postgres)
+	postgresSQL, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	c.Assert(postgresSQL, qt.Contains, `ALTER TABLE "tenant"."data" ALTER COLUMN "payload" TYPE BIGINT`)
 	c.Assert(postgresSQL, qt.Not(qt.Contains), `ALTER TABLE "tenant.data"`)
 
-	mysqlSQL, err := planner.GenerateSchemaDiffSQL(diff, referenceCollisionSchema(), platform.MySQL)
+	mysqlSQL, err := planner.GenerateSchemaDiffSQL(diff, platform.MySQL)
 	c.Assert(err, qt.IsNil)
 	c.Assert(mysqlSQL, qt.Contains, "ALTER TABLE `tenant`.`data` MODIFY COLUMN `payload` BIGINT")
 	c.Assert(mysqlSQL, qt.Not(qt.Contains), "ALTER TABLE `tenant.data`")
@@ -57,7 +57,7 @@ func TestGenerateSchemaDiffSQL_SQLiteRebuildUsesStructuralIdentity(t *testing.T)
 		}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, declared, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.SQLite)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `FROM "tenant"."data"`)
@@ -95,7 +95,7 @@ func TestGenerateSchemaDiffSQL_SQLiteTableCreationUsesStructuralIdentity(t *test
 		DeclaredUserTypes: difftypes.UserTypeVocabularyOf(desired),
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.SQLite)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Count(sql, "CREATE TABLE"), qt.Equals, 2)
@@ -137,7 +137,7 @@ func TestGenerateSchemaDiffSQL_ForeignKeyPreservesStructuralIdentity(t *testing.
 					DeclaredTables:    desired.Tables,
 					DeclaredUserTypes: difftypes.UserTypeVocabularyOf(desired),
 				},
-				desired,
+
 				tt.dialect,
 			)
 
@@ -177,7 +177,7 @@ func TestGenerateSchemaDiffSQL_MySQLSelfForeignKeyTypeChangePreservesStructuralI
 		DeclaredForeignKeys: difftypes.ForeignKeyDeclarationsOf(desired),
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.MySQL)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.MySQL)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "ALTER TABLE `tenant`.`data` DROP FOREIGN KEY `fk_qualified_parent`")
@@ -218,7 +218,7 @@ func TestGenerateSchemaDiffSQL_PostgresEnumRemovalPreservesLiteralDotIdentity(t 
 		DeclaredUserTypes: difftypes.UserTypeVocabularyOf(desired),
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, desired, platform.Postgres)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `ALTER TYPE "tenant.data" RENAME TO "tenant.data__ptah_old"`)
@@ -233,7 +233,7 @@ func TestGenerateSchemaDiffSQL_PostgresSequenceRemovalPreservesLiteralDotIdentit
 		SequencesRemoved: difftypes.SequenceChanges{{Name: "tenant.data"}},
 	}
 
-	sql, err := planner.GenerateSchemaDiffSQL(diff, &schemamodel.Database{}, platform.Postgres)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `DROP SEQUENCE IF EXISTS "tenant.data"`)
