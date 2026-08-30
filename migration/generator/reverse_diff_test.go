@@ -712,15 +712,24 @@ func TestReverseSchemaDiff_ConstraintReversal(t *testing.T) {
 	input := &difftypes.SchemaDiff{
 		// Up: change fk_export_file's action -> remove(old) + add(new) of the
 		// same name.
-		ConstraintsRemoved: []string{"fk_export_file"},
-		ConstraintsAdded:   []string{"fk_export_file"},
+		ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "fk_export_file", TableName: "exports", Type: "FOREIGN KEY"}},
+		ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "fk_export_file", TableName: "exports", Type: "FOREIGN KEY"}},
 	}
 
 	result := reverseSchemaDiff(input)
 
-	// Down: the slices swap, so the down re-adds the old and drops the new.
-	c.Assert(result.ConstraintsAdded, qt.DeepEquals, []string{"fk_export_file"})
-	c.Assert(result.ConstraintsRemoved, qt.DeepEquals, []string{"fk_export_file"})
+	// Neither direction is reconstructed without the schemas, and that is the
+	// answer rather than a gap. A reversed constraint needs a definition -- the
+	// prior one to re-add, the host to drop -- and both come from the schema
+	// and the pre-change database this entry point was not given.
+	//
+	// It swapped the bare NAME lists until stokaro/ptah#2315, which produced a
+	// down diff naming constraints it could not describe; a planner refuses
+	// exactly that now (stokaro/ptah#2532). Carrying nothing is what a caller
+	// that supplied nothing gets, and TestReverseConstraintAdditions_* cover
+	// the direction that is given a database.
+	c.Assert(result.ConstraintsAdded, qt.HasLen, 0)
+	c.Assert(result.ConstraintsRemoved, qt.HasLen, 0)
 }
 
 // TestReverseSchemaDiff_FieldLevelCheckRemovalsWithTables verifies that field-level
@@ -749,13 +758,18 @@ func TestReverseSchemaDiff_FieldLevelCheckRemovalsWithTables(t *testing.T) {
 		},
 	}
 	upDiff := &difftypes.SchemaDiff{
-		ConstraintsAdded: []string{"files_category_check", "files_status_valid"},
+		ConstraintsAdded: difftypes.ConstraintAdditionsFor(generatedSchema, "files_category_check", "files_status_valid"),
 	}
+	// A hand-built diff carries no identities, and the reversal CARRIES the
+	// forward one rather than deriving it again. Normalize is where a diff that
+	// no comparator produced gets them, which is what a planner does at its own
+	// door (stokaro/ptah#2315).
+	constraintscope.Normalize(upDiff, identifier.Semantics{})
 
 	result := reverseSchemaDiffWithSchema(upDiff, generatedSchema, nil)
 
-	c.Assert(result.ConstraintsRemoved, qt.DeepEquals, []string{"files_category_check", "files_status_valid"})
-	c.Assert(result.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{
+	c.Assert(result.ConstraintsRemoved.Names(), qt.DeepEquals, []string{"files_category_check", "files_status_valid"})
+	c.Assert(result.ConstraintsRemoved, qt.DeepEquals, difftypes.ConstraintRemovals{
 		{Name: "files_category_check", TableName: "files", Type: "CHECK", Identity: constraintscope.Identity(identifier.Semantics{}, "files", "files_category_check")},
 		{Name: "files_status_valid", TableName: "files", Type: "CHECK", Identity: constraintscope.Identity(identifier.Semantics{}, "files", "files_status_valid")},
 	})
@@ -806,7 +820,7 @@ func TestReverseSchemaDiff_AddedTableForeignKeyRemovalsWithTables(t *testing.T) 
 
 	result := reverseSchemaDiffWithSchema(upDiff, generatedSchema, nil)
 
-	c.Assert(result.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{
+	c.Assert(result.ConstraintsRemoved, qt.DeepEquals, difftypes.ConstraintRemovals{
 		{Name: "fk_projects_account_id", TableName: "app.projects", Type: "FOREIGN KEY"},
 		{Name: "fk_project_owner_id", TableName: "app.projects", Type: "FOREIGN KEY"},
 		{Name: "fk_projects_tenant_id_reviewer_id", TableName: "app.projects", Type: "FOREIGN KEY"},
@@ -853,7 +867,7 @@ func TestForeignKeyAdditionFromDBConstraint_DeduplicatesRepeatedIntrospectionCol
 func TestReverseSchemaDiff_MySQLSparseForeignKeyAdditionUsesCaseInsensitiveSchemaBody(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name: "fk_parent_code", TableName: "children", Type: "FOREIGN KEY",
 		}},
 	}
@@ -870,7 +884,7 @@ func TestReverseSchemaDiff_MySQLSparseForeignKeyAdditionUsesCaseInsensitiveSchem
 
 	reversed := reverseSchemaDiffWithSchemaForDialect(diff, desired, nil, platform.MySQL)
 
-	c.Assert(reversed.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{{
+	c.Assert(reversed.ConstraintsRemoved, qt.DeepEquals, difftypes.ConstraintRemovals{{
 		Name: "fk_parent_code", TableName: "children", Type: "FOREIGN KEY",
 	}})
 	c.Assert(reversed.ForeignKeysRemovedWithTables, qt.DeepEquals, []difftypes.ForeignKeyRemovalInfo{{
@@ -1035,12 +1049,10 @@ func TestGenerateDownMigrationSQL_Issue189_RestoresPriorForeignKeyAction(t *test
 	// record is required because a diff has to describe what it names
 	// (stokaro/ptah#2315).
 	upDiff := &difftypes.SchemaDiff{
-		ConstraintsRemoved: []string{"fk_export_file"},
-		ConstraintsAdded:   []string{"fk_export_file"},
-		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
+		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{{
 			Name: "fk_export_file", TableName: "exports", Type: "FOREIGN KEY",
 		}},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name: "fk_export_file", TableName: "exports", Type: "FOREIGN KEY",
 			Columns: []string{"file_id"}, ForeignTable: "files", ForeignColumn: "id",
 			ForeignColumns: []string{"id"}, OnDelete: "SET NULL",
@@ -1105,7 +1117,7 @@ func TestGenerateDownMigrationSQL_Issue194_DropsFieldLevelCheckMySQLFamily(t *te
 	}
 	upDiff := schemadiff.Compare(generatedSchema, dbSchema)
 	c := qt.New(t)
-	c.Assert(upDiff.ConstraintsAdded, qt.DeepEquals, []string{"files_category_check"})
+	c.Assert(upDiff.ConstraintsAdded.Names(), qt.DeepEquals, []string{"files_category_check"})
 
 	for _, dialect := range []string{"mysql", "mariadb"} {
 		t.Run(dialect, func(t *testing.T) {
@@ -1131,8 +1143,7 @@ func TestGenerateDownMigrationSQL_Issue194_DropsFieldLevelCheckMySQLFamily(t *te
 func TestGenerateDownMigrationSQL_MySQLFamilyDropsGeneratedForeignKeyBackingIndex(t *testing.T) {
 	generatedSchema := &schemamodel.Database{}
 	upDiff := &difftypes.SchemaDiff{
-		ConstraintsAdded: []string{"fk_users_account_id"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 			{
 				Name:         "fk_users_account_id",
 				TableName:    "users",

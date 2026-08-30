@@ -9,25 +9,25 @@ import (
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
-// TestCompareWithDialect_TheBareConstraintListsAgreeWithTheHostedOnes pins that
-// the two answers a [difftypes.SchemaDiff] carries about the same question are
-// the same answer.
+// TestCompareWithDialect_TheConstraintListsCarryTheNamesTheirFixturesExpect
+// pins the names and the multiplicity the one constraint list carries.
 //
-// ConstraintsAdded is a list of names and ConstraintsAddedWithTables is a list
-// of records; the comparator fills both, and everything downstream pairs them
-// by name. Whether they can disagree decides whether one can be retired:
-// migration/safety classifies a diff by the LENGTH of the bare lists, so a
-// consumer switched to the hosted list would keep the same verdict only if the
-// two carry the same names, with the same multiplicity, in every case
-// (stokaro/ptah#1663).
+// It asked a different question until the second list went: there were two, a
+// list of names and a list of records, and whether they could disagree decided
+// whether either could be retired -- because migration/safety classifies a diff
+// by the LENGTH of the list (stokaro/ptah#1663). They could not, so the name
+// list was retired (stokaro/ptah#2315).
+//
+// What survives the retirement is the property that made it safe: a name
+// repeats once per HOST, so the length is the number of objects rather than the
+// number of distinct names, and the safety verdict is unchanged.
 //
 // The multiplicity matters and is why this asserts a sorted list rather than a
 // set: one name on two tables is two constraints, and a modify contributes the
 // same name to added and removed at once.
-func TestCompareWithDialect_TheBareConstraintListsAgreeWithTheHostedOnes(t *testing.T) {
+func TestCompareWithDialect_TheConstraintListsCarryTheNamesTheirFixturesExpect(t *testing.T) {
 	rows := []struct {
 		name     string
 		dialect  string
@@ -87,12 +87,13 @@ func TestCompareWithDialect_TheBareConstraintListsAgreeWithTheHostedOnes(t *test
 
 			diff := schemadiff.CompareWithDialect(row.desired(), row.current(), row.dialect)
 
-			c.Assert(sortedCopy(diff.ConstraintsAdded), qt.DeepEquals, sortedCopy(row.wantAdds),
+			c.Assert(sortedCopy(diff.ConstraintsAdded.Names()), qt.DeepEquals, sortedCopy(row.wantAdds),
 				qt.Commentf("the fixture did not produce the additions it was written for"))
-			c.Assert(sortedCopy(diff.ConstraintsRemoved), qt.DeepEquals, sortedCopy(row.wantDrop),
+			c.Assert(sortedCopy(diff.ConstraintsRemoved.Names()), qt.DeepEquals, sortedCopy(row.wantDrop),
 				qt.Commentf("the fixture did not produce the removals it was written for"))
-			c.Assert(sortedCopy(diff.ConstraintsAdded), qt.DeepEquals, additionNames(diff.ConstraintsAddedWithTables))
-			c.Assert(sortedCopy(diff.ConstraintsRemoved), qt.DeepEquals, removalNames(diff.ConstraintsRemovedWithTables))
+			c.Assert(diff.ConstraintsAdded, qt.HasLen, len(row.wantAdds),
+				qt.Commentf("one entry per host, which is what migration/safety counts"))
+			c.Assert(diff.ConstraintsRemoved, qt.HasLen, len(row.wantDrop))
 		})
 	}
 }
@@ -150,22 +151,6 @@ func constraintDatabase(constraints ...catalog.Constraint) func() *catalog.Datab
 			Constraints: slices.Clone(constraints),
 		}
 	}
-}
-
-func additionNames(infos []difftypes.ConstraintAdditionInfo) []string {
-	names := make([]string, 0, len(infos))
-	for _, info := range infos {
-		names = append(names, info.Name)
-	}
-	return sortedCopy(names)
-}
-
-func removalNames(infos []difftypes.ConstraintRemovalInfo) []string {
-	names := make([]string, 0, len(infos))
-	for _, info := range infos {
-		names = append(names, info.Name)
-	}
-	return sortedCopy(names)
 }
 
 // sortedCopy sorts a copy, so an assertion cannot reorder the diff it reads.

@@ -62,14 +62,16 @@ func Identity(
 //
 // It never rewrites a spelling and never replaces an identity a producer
 // resolved, so running it twice changes nothing.
+//
+// It used to do a second job: synthesize a record for a name the diff carried
+// with none. There are no bare names any more -- a constraint change IS its
+// record -- so that half is gone (stokaro/ptah#2315).
 func Normalize(diff *difftypes.SchemaDiff, semantics identifier.Semantics) {
 	if diff == nil {
 		return
 	}
-	coverBareAdditions(diff)
-	coverBareRemovals(diff)
-	for i := range diff.ConstraintsAddedWithTables {
-		add := &diff.ConstraintsAddedWithTables[i]
+	for i := range diff.ConstraintsAdded {
+		add := &diff.ConstraintsAdded[i]
 		if add.Identity == (difftypes.ConstraintIdentity{}) {
 			add.Identity = Identity(semantics, add.TableName, add.Name)
 		}
@@ -80,8 +82,8 @@ func Normalize(diff *difftypes.SchemaDiff, semantics identifier.Semantics) {
 			removal.Identity = Identity(semantics, removal.TableName, removal.Name)
 		}
 	}
-	for i := range diff.ConstraintsRemovedWithTables {
-		removal := &diff.ConstraintsRemovedWithTables[i]
+	for i := range diff.ConstraintsRemoved {
+		removal := &diff.ConstraintsRemoved[i]
 		if removal.Identity == (difftypes.ConstraintIdentity{}) {
 			removal.Identity = Identity(semantics, removal.TableName, removal.Name)
 		}
@@ -104,46 +106,11 @@ func AdditionNames(diff *difftypes.SchemaDiff) []string {
 	if diff == nil {
 		return nil
 	}
-	names := make([]string, 0, len(diff.ConstraintsAddedWithTables))
-	for _, info := range diff.ConstraintsAddedWithTables {
+	names := make([]string, 0, len(diff.ConstraintsAdded))
+	for _, info := range diff.ConstraintsAdded {
 		names = append(names, info.Name)
 	}
 	return names
-}
-
-// coverBareAdditions gives every name in the bare addition list a record, so a
-// consumer reading records sees everything the name list holds.
-//
-// A diff the comparator built carries both. One built by hand -- which is what
-// [difftypes.SchemaDiff] is, a surface an embedder constructs directly -- may
-// carry only the names, and so may a reverse diff, whose add-path restores a
-// body only from an introspected constraint it can find. Before this, those
-// names were reachable only through the bare list, which is why the bare list
-// could not be retired (stokaro/ptah#1663).
-//
-// The record carries no table, which is not a placeholder: it is the same "no
-// host recorded" state the planners already read, and the state a name-only add
-// path is for.
-//
-// Counted by name rather than checked for presence, because one name can be two
-// constraints on two tables: a list holding it twice and a record list holding
-// it once is one record short, not covered.
-func coverBareAdditions(diff *difftypes.SchemaDiff) {
-	if len(diff.ConstraintsAdded) == 0 {
-		return
-	}
-	recorded := make(map[string]int, len(diff.ConstraintsAddedWithTables))
-	for _, info := range diff.ConstraintsAddedWithTables {
-		recorded[info.Name]++
-	}
-	for _, name := range diff.ConstraintsAdded {
-		if recorded[name] > 0 {
-			recorded[name]--
-			continue
-		}
-		diff.ConstraintsAddedWithTables = append(diff.ConstraintsAddedWithTables,
-			difftypes.ConstraintAdditionInfo{Name: name})
-	}
 }
 
 // RemovalNames lists the constraints a diff removes, by name, from the records.
@@ -157,37 +124,9 @@ func RemovalNames(diff *difftypes.SchemaDiff) []string {
 	if diff == nil {
 		return nil
 	}
-	names := make([]string, 0, len(diff.ConstraintsRemovedWithTables))
-	for _, info := range diff.ConstraintsRemovedWithTables {
+	names := make([]string, 0, len(diff.ConstraintsRemoved))
+	for _, info := range diff.ConstraintsRemoved {
 		names = append(names, info.Name)
 	}
 	return names
-}
-
-// coverBareRemovals gives every name in the bare removal list a record.
-//
-// The mirror of [coverBareAdditions], and needed for the same two producers: a
-// hand-built diff, and a reverse diff whose removal list is the forward diff's
-// addition list swapped in whole while the records are rebuilt from what the
-// schema could describe.
-//
-// The record carries no table, which is the state the PostgreSQL drop path
-// already reads: it defers such an entry to the name-only fallback rather than
-// scoping a DROP to a table nobody named.
-func coverBareRemovals(diff *difftypes.SchemaDiff) {
-	if len(diff.ConstraintsRemoved) == 0 {
-		return
-	}
-	recorded := make(map[string]int, len(diff.ConstraintsRemovedWithTables))
-	for _, info := range diff.ConstraintsRemovedWithTables {
-		recorded[info.Name]++
-	}
-	for _, name := range diff.ConstraintsRemoved {
-		if recorded[name] > 0 {
-			recorded[name]--
-			continue
-		}
-		diff.ConstraintsRemovedWithTables = append(diff.ConstraintsRemovedWithTables,
-			difftypes.ConstraintRemovalInfo{Name: name})
-	}
 }

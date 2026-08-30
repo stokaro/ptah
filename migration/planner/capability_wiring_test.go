@@ -20,8 +20,7 @@ import (
 // end through GenerateSchemaDiffAST + the dialect renderer.
 func TestGetPlanner_CapabilityWiring(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
-		ConstraintsRemoved: []string{"fk_posts_user"},
-		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 			{Name: "fk_posts_user", TableName: "posts", Type: "FOREIGN KEY"},
 		},
 	}
@@ -56,8 +55,7 @@ func TestGetPlanner_CapabilityWiring(t *testing.T) {
 
 func TestGenerateSchemaDiffSQLStatementsWithOptions_UsesServerVersionPreset(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
-		ConstraintsRemoved: []string{"chk_qty"},
-		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 			{Name: "chk_qty", TableName: "things", Type: "CHECK"},
 		},
 	}

@@ -920,7 +920,7 @@ func refusePlanTouchingUnclassifiedStorage(
 // It has to be a SUPERSET of what the SQLite planner acts on, and the planner
 // derives its rebuild set from more than the obvious two fields. Beside
 // TablesModified it calls existingTablesWithConstraintChanges, which reads
-// ConstraintsAddedWithTables and ConstraintsRemovedWithTables: a table whose
+// ConstraintsAdded and ConstraintsRemoved: a table whose
 // columns are unchanged and whose constraint changed is recorded only at schema
 // level, and SQLite has no ALTER for a constraint, so that table is rebuilt --
 // drop, recreate, copy -- exactly like any other. Reading the two table fields
@@ -1028,10 +1028,10 @@ func tablesTouchedBy(diff *difftypes.SchemaDiff, makes created, policy Policy) [
 		}
 		touched = append(touched, table.TableName)
 	}
-	for _, constraint := range planned.ConstraintsAddedWithTables {
+	for _, constraint := range planned.ConstraintsAdded {
 		touched = append(touched, constraint.TableName)
 	}
-	for _, constraint := range planned.ConstraintsRemovedWithTables {
+	for _, constraint := range planned.ConstraintsRemoved {
 		touched = append(touched, constraint.TableName)
 	}
 	// The objects a table CARRIES, which the planner drops and replaces without

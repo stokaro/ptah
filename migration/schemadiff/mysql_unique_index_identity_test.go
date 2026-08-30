@@ -203,7 +203,7 @@ func TestCompareWithDialect_UndeclaredUniqueKeyIsStillRemoved(t *testing.T) {
 				test.dialect,
 			)
 
-			c.Assert(diff.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{{
+			c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, difftypes.ConstraintRemovals{{
 				Name:      "uq_users_email",
 				TableName: "users",
 				Type:      "UNIQUE",
@@ -269,7 +269,7 @@ func TestCompareWithDialect_UniqueKeyOnAnotherTableIsNotTheSameObject(t *testing
 				Name:      "uq_users_email",
 				TableName: "orders",
 			}})
-			c.Assert(diff.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{{
+			c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, difftypes.ConstraintRemovals{{
 				Name:      "uq_users_email",
 				TableName: "users",
 				Type:      "UNIQUE",
@@ -318,7 +318,7 @@ func TestCompareWithDialect_DeclaredIndexUniquenessStillCompared(t *testing.T) {
 				Name:      "uq_users_email",
 				TableName: "users",
 			}})
-			c.Assert(diff.ConstraintsRemovedWithTables, qt.HasLen, 0)
+			c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
 		})
 	}
 }
@@ -366,7 +366,7 @@ func TestCompareWithDialect_DeclaredIndexColumnsStillCompared(t *testing.T) {
 				Name:      "uq_users_email",
 				TableName: "users",
 			}})
-			c.Assert(diff.ConstraintsRemovedWithTables, qt.HasLen, 0)
+			c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
 		})
 	}
 }
@@ -666,8 +666,8 @@ func expressionKeyGeneratedSchema() *schemamodel.Database {
 // addedIndexesAlsoRemovedAsConstraints reports every table-qualified name the
 // plan creates as an index and drops as a constraint in the same run.
 func addedIndexesAlsoRemovedAsConstraints(diff *difftypes.SchemaDiff) []string {
-	removed := make(map[difftypes.IndexRef]struct{}, len(diff.ConstraintsRemovedWithTables))
-	for _, constraint := range diff.ConstraintsRemovedWithTables {
+	removed := make(map[difftypes.IndexRef]struct{}, len(diff.ConstraintsRemoved))
+	for _, constraint := range diff.ConstraintsRemoved {
 		removed[difftypes.IndexRef{
 			Name:      constraint.Name,
 			TableName: constraint.TableName,

@@ -22,15 +22,13 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *t
 		{
 			name: "unique to check",
 			diff: &difftypes.SchemaDiff{
-				ConstraintsAdded: []string{"products_quantity_guard"},
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 					Name:            "products_quantity_guard",
 					TableName:       "products",
 					Type:            "CHECK",
 					CheckExpression: "quantity > 10",
 				}},
-				ConstraintsRemoved: []string{"products_quantity_guard"},
-				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
+				ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{{
 					Name:      "products_quantity_guard",
 					TableName: "products",
 					Type:      "UNIQUE",
@@ -42,16 +40,14 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *t
 		{
 			name: "check to unique",
 			diff: &difftypes.SchemaDiff{
-				ConstraintsAdded: []string{"accounts_identity"},
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 					Name:           "accounts_identity",
 					TableName:      "accounts",
 					Type:           "UNIQUE",
 					Columns:        []string{"email", "region"},
 					IncludeColumns: []string{"updated_at"},
 				}},
-				ConstraintsRemoved: []string{"accounts_identity"},
-				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
+				ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{{
 					Name:      "accounts_identity",
 					TableName: "accounts",
 					Type:      "CHECK",
@@ -84,7 +80,7 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedCheckAndUniqueAdditions(t *t
 // TestPlanner_GenerateMigrationAST_HostlessReAdd_DropsExactlyOnce guards the
 // hostless-re-add ownership rule (issue #229). When a name is re-added with NO
 // recorded addition hosts (ConstraintsAdded carries it but
-// ConstraintsAddedWithTables has no entry — the shape of every reverse/down
+// ConstraintsAdded has no entry — the shape of every reverse/down
 // diff whose old constraint body could not be reconstructed), the add side
 // drops every recorded removal host BEFORE the re-add, and removeConstraints
 // must skip the name entirely.
@@ -99,15 +95,13 @@ func TestPlanner_GenerateMigrationAST_HostlessReAdd_DropsExactlyOnce(t *testing.
 		c := qt.New(t)
 
 		diff := &difftypes.SchemaDiff{
-			ConstraintsAdded:   []string{"chk_down"},
-			ConstraintsRemoved: []string{"chk_down"},
 			// The addition carries its body, because a diff has to describe what it
 			// names; the removal carries the host this test is about
 			// (stokaro/ptah#2315).
-			ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+			ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 				{Name: "chk_down", TableName: "things", Type: "CHECK", CheckExpression: "qty >= 0"},
 			},
-			ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+			ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 				{Name: "chk_down", TableName: "things", Type: "CHECK"},
 			},
 		}
@@ -145,13 +139,11 @@ func TestPlanner_GenerateMigrationAST_HostlessReAdd_DropsExactlyOnce(t *testing.
 		c := qt.New(t)
 
 		diff := &difftypes.SchemaDiff{
-			ConstraintsAdded:   []string{"shared_check", "shared_check"},
-			ConstraintsRemoved: []string{"shared_check", "shared_check"},
-			ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+			ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 				{Name: "shared_check", TableName: "articles", Type: "CHECK", CheckExpression: "qty >= 0"},
 				{Name: "shared_check", TableName: "pages", Type: "CHECK", CheckExpression: "qty >= 0"},
 			},
-			ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+			ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 				{Name: "shared_check", TableName: "articles", Type: "CHECK"},
 				{Name: "shared_check", TableName: "pages", Type: "CHECK"},
 			},
@@ -191,7 +183,7 @@ func TestPlanner_GenerateMigrationAST_HostlessReAdd_DropsExactlyOnce(t *testing.
 
 // TestPlanner_GenerateMigrationAST_EmptyTableNameAdditionTreatedAsHostless is
 // the postgres port of the MySQL guard from PR #228 (the literal issue #229
-// trigger). A ConstraintsAddedWithTables entry with an empty TableName must
+// trigger). A ConstraintsAdded entry with an empty TableName must
 // not count as a recorded addition host: if it did, addedHostsByName would
 // contain only "" (matching no real removal host), the required pre-drop
 // would be skipped, and the re-ADD would collide with the still-present
@@ -202,15 +194,13 @@ func TestPlanner_GenerateMigrationAST_EmptyTableNameAdditionTreatedAsHostless(t 
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		ConstraintsAdded:   []string{"chk_ghost"},
-		ConstraintsRemoved: []string{"chk_ghost"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 			// The host and the body a comparison resolves. The record used to
 			// carry neither and the planner recovered both from the declaration;
 			// that route is withdrawn (stokaro/ptah#2315).
 			{Name: "chk_ghost", TableName: "things", Type: "CHECK", CheckExpression: "qty >= 0"},
 		},
-		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 			{Name: "chk_ghost", TableName: "things", Type: "CHECK"},
 		},
 	}
@@ -246,8 +236,7 @@ func TestPlanner_GenerateMigrationAST_TableQualifiedPrimaryKeyAddition(t *testin
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		ConstraintsAdded: []string{"memberships_pkey"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name:      "memberships_pkey",
 			TableName: "memberships",
 			Type:      "PRIMARY KEY",

@@ -128,9 +128,9 @@ func TestCompare_Deterministic(t *testing.T) {
 	c.Assert(len(first.RolesModified[0].Changes) > 1, qt.IsTrue,
 		qt.Commentf("modified roles must carry 2+ changes to catch unsorted Changes-map consumers"))
 	c.Assert(len(first.ConstraintsAdded) > 1, qt.IsTrue)
-	c.Assert(len(first.ConstraintsAddedWithTables) > 1, qt.IsTrue)
+	c.Assert(len(first.ConstraintsAdded) > 1, qt.IsTrue)
 	c.Assert(len(first.ConstraintsRemoved) > 1, qt.IsTrue)
-	c.Assert(len(first.ConstraintsRemovedWithTables) > 1, qt.IsTrue)
+	c.Assert(len(first.ConstraintsRemoved) > 1, qt.IsTrue)
 
 	for i := range 100 {
 		c.Assert(schemadiff.Compare(gen, db), qt.DeepEquals, first,
@@ -158,17 +158,17 @@ func TestCompare_ModifiedListsSorted(t *testing.T) {
 	c.Assert(sort.SliceIsSorted(diff.RLSPoliciesModified, func(i, j int) bool {
 		return diff.RLSPoliciesModified[i].PolicyName < diff.RLSPoliciesModified[j].PolicyName
 	}), qt.IsTrue)
-	c.Assert(sort.StringsAreSorted(diff.ConstraintsAdded), qt.IsTrue)
-	c.Assert(sort.SliceIsSorted(diff.ConstraintsAddedWithTables, func(i, j int) bool {
-		a, b := diff.ConstraintsAddedWithTables[i], diff.ConstraintsAddedWithTables[j]
+	c.Assert(sort.StringsAreSorted(diff.ConstraintsAdded.Names()), qt.IsTrue)
+	c.Assert(sort.SliceIsSorted(diff.ConstraintsAdded, func(i, j int) bool {
+		a, b := diff.ConstraintsAdded[i], diff.ConstraintsAdded[j]
 		if a.TableName != b.TableName {
 			return a.TableName < b.TableName
 		}
 		return a.Name < b.Name
 	}), qt.IsTrue)
-	c.Assert(sort.StringsAreSorted(diff.ConstraintsRemoved), qt.IsTrue)
-	c.Assert(sort.SliceIsSorted(diff.ConstraintsRemovedWithTables, func(i, j int) bool {
-		a, b := diff.ConstraintsRemovedWithTables[i], diff.ConstraintsRemovedWithTables[j]
+	c.Assert(sort.StringsAreSorted(diff.ConstraintsRemoved.Names()), qt.IsTrue)
+	c.Assert(sort.SliceIsSorted(diff.ConstraintsRemoved, func(i, j int) bool {
+		a, b := diff.ConstraintsRemoved[i], diff.ConstraintsRemoved[j]
 		if a.TableName != b.TableName {
 			return a.TableName < b.TableName
 		}

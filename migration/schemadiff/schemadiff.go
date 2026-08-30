@@ -340,7 +340,7 @@ func CompareReportingUndecidedAdditions(
 	// other carries because it reads the constraint lists, which the call above
 	// is what fills (stokaro/ptah#2315).
 	diff.DeclaredConstraintHosts = difftypes.ConstraintHostDeclarationsOf(
-		desired, diff.ConstraintsAddedWithTables, diff.ConstraintsRemovedWithTables, identifierSemantics)
+		desired, diff.ConstraintsAdded, diff.ConstraintsRemoved, identifierSemantics)
 
 	// Every comparator sorts its own lists after filtering them, but the
 	// undecided additions arrive from several comparators, and the order inside

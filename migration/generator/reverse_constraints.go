@@ -97,13 +97,13 @@ func introspectedUniqueConstraintsByHost(
 
 // reverseConstraintAdditions builds the table-qualified additions for the down
 // migration. In the down direction the constraints to add back are the ones the
-// up migration REMOVED (diff.ConstraintsRemovedWithTables) — restoring their
+// up migration REMOVED (diff.ConstraintsRemoved) — restoring their
 // prior definition. The prior body is read from the introspected (pre-change)
 // database schema, which is the authoritative source for what the down must
 // restore.
 //
 // Carrying the full per-host body here lets both dialect planners' add-paths
-// (which already prefer ConstraintsAddedWithTables) emit one correct ALTER TABLE
+// (which already prefer ConstraintsAdded) emit one correct ALTER TABLE
 // per real host table. This is what makes the down of a multi-host mixin FK
 // modify apply cleanly: a name-only down re-adds only one host (and drops only
 // one host), so the others collide on re-add (issue #197 DOWN path). When
@@ -113,8 +113,8 @@ func reverseConstraintAdditions(
 	diff *difftypes.SchemaDiff,
 	dbSchema *catalog.Database,
 	semantics identifier.Semantics,
-) []difftypes.ConstraintAdditionInfo {
-	if dbSchema == nil || len(diff.ConstraintsRemovedWithTables) == 0 {
+) difftypes.ConstraintAdditions {
+	if dbSchema == nil || len(diff.ConstraintsRemoved) == 0 {
 		return nil
 	}
 
@@ -130,8 +130,8 @@ func reverseConstraintAdditions(
 		dbConstraintByTableName[tableMemberKey{table: c.QualifiedTableName(), member: c.Name}] = c
 	}
 
-	var infos []difftypes.ConstraintAdditionInfo
-	for _, removed := range diff.ConstraintsRemovedWithTables {
+	var infos difftypes.ConstraintAdditions
+	for _, removed := range diff.ConstraintsRemoved {
 		if removed.TableName == "" {
 			continue
 		}
@@ -226,7 +226,7 @@ func reverseConstraintRemovals(
 	diff *difftypes.SchemaDiff,
 	schema *schemamodel.Database,
 	semantics identifier.Semantics,
-) []difftypes.ConstraintRemovalInfo {
+) difftypes.ConstraintRemovals {
 	if schema == nil {
 		return nil
 	}
@@ -242,14 +242,14 @@ func reverseConstraintRemovals(
 	// name across every host table, so resolving the table from a field's Go
 	// struct name collapses every host onto the same (often non-table) name —
 	// the down migration would then drop the constraint from the wrong table or
-	// from a struct name that does not exist (issue #197). ConstraintsAddedWithTables
+	// from a struct name that does not exist (issue #197). ConstraintsAdded
 	// carries the concrete table for each addition, so the down side drops the
 	// FK from exactly the table the up side added it to. Names present here are
 	// recorded so the field-scan fallback below does not double-emit them.
-	var infos []difftypes.ConstraintRemovalInfo
+	var infos difftypes.ConstraintRemovals
 	seen := make(map[tableMemberKey]struct{})
 	handled := make(map[string]struct{})
-	for _, add := range diff.ConstraintsAddedWithTables {
+	for _, add := range diff.ConstraintsAdded {
 		if add.TableName == "" {
 			continue
 		}
@@ -296,7 +296,7 @@ func reverseConstraintRemovals(
 		}
 	}
 
-	for _, name := range diff.ConstraintsAdded {
+	for _, name := range diff.ConstraintsAdded.Names() {
 		if _, done := handled[name]; done {
 			continue
 		}
@@ -324,7 +324,7 @@ func reverseForeignKeyRemovals(
 		return nil
 	}
 	collector := newReverseForeignKeyRemovalCollector(diff, dialect)
-	collector.addQualifiedAdditions(diff.ConstraintsAddedWithTables)
+	collector.addQualifiedAdditions(diff.ConstraintsAdded)
 	collector.addFieldForeignKeys(schema)
 	collector.addTableForeignKeys(schema)
 	return collector.result()
@@ -349,17 +349,17 @@ func newReverseForeignKeyRemovalCollector(
 		semantics:   semantics,
 		removals:    make(map[tableMemberKey]difftypes.ForeignKeyRemovalInfo),
 		addedNames:  make(map[string]struct{}, len(diff.ConstraintsAdded)),
-		addedHosts:  make(map[tableMemberKey]struct{}, len(diff.ConstraintsAddedWithTables)),
+		addedHosts:  make(map[tableMemberKey]struct{}, len(diff.ConstraintsAdded)),
 		addedTables: stringSet(diff.TablesAdded.Names()),
 	}
-	for _, name := range diff.ConstraintsAdded {
+	for _, name := range diff.ConstraintsAdded.Names() {
 		collector.addedNames[semantics.IndexIdentityKey(name)] = struct{}{}
 	}
 	return collector
 }
 
 func (c *reverseForeignKeyRemovalCollector) addQualifiedAdditions(
-	constraints []difftypes.ConstraintAdditionInfo,
+	constraints difftypes.ConstraintAdditions,
 ) {
 	for _, constraint := range constraints {
 		if !strings.EqualFold(constraint.Type, "FOREIGN KEY") {
@@ -488,11 +488,11 @@ func completeForeignKeyRemovalInfo(info difftypes.ForeignKeyRemovalInfo) bool {
 }
 
 func appendAddedColumnForeignKeyRemovals(
-	infos []difftypes.ConstraintRemovalInfo,
+	infos difftypes.ConstraintRemovals,
 	seen map[tableMemberKey]struct{},
 	tableDiffs []difftypes.TableDiff,
 	schema *schemamodel.Database,
-) []difftypes.ConstraintRemovalInfo {
+) difftypes.ConstraintRemovals {
 	for _, tableDiff := range tableDiffs {
 		if len(tableDiff.ColumnsAdded) == 0 {
 			continue
@@ -521,11 +521,11 @@ func appendAddedColumnForeignKeyRemovals(
 }
 
 func appendAddedTableForeignKeyRemovals(
-	infos []difftypes.ConstraintRemovalInfo,
+	infos difftypes.ConstraintRemovals,
 	seen map[tableMemberKey]struct{},
 	tableNames []string,
 	schema *schemamodel.Database,
-) []difftypes.ConstraintRemovalInfo {
+) difftypes.ConstraintRemovals {
 	addedTables := make(map[string]struct{}, len(tableNames))
 	for _, tableName := range tableNames {
 		addedTables[tableName] = struct{}{}
@@ -576,10 +576,10 @@ func appendAddedTableForeignKeyRemovals(
 }
 
 func appendConstraintRemovalInfo(
-	infos []difftypes.ConstraintRemovalInfo,
+	infos difftypes.ConstraintRemovals,
 	seen map[tableMemberKey]struct{},
 	info difftypes.ConstraintRemovalInfo,
-) []difftypes.ConstraintRemovalInfo {
+) difftypes.ConstraintRemovals {
 	if info.Name == "" || info.TableName == "" {
 		return infos
 	}

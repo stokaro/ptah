@@ -116,7 +116,7 @@ func TestCompareWithDialect_ImplicitDatabaseSchemaMatchesTheDesiredSchema(t *tes
 				test.dialect,
 			)
 
-			c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, test.wantRemoved,
+			c.Assert(diff.ConstraintsRemoved.Names(), qt.DeepEquals, test.wantRemoved,
 				qt.Commentf("diff: %#v", diff))
 		})
 	}

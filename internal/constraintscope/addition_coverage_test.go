@@ -10,191 +10,74 @@ import (
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
-// TestNormalize_EveryBareAdditionGetsARecord pins the property that lets a
-// consumer read constraint additions from the records alone.
+// TestNormalize_FillsAnIdentityNoProducerResolved is what Normalize is for.
 //
-// A [difftypes.SchemaDiff] carries two answers to one question: a list of names
-// and a list of records. The comparator fills both, but the type is a surface an
-// embedder constructs by hand, and the generator's reverse path fills the names
-// for constraints whose body the pre-change schema does not carry. A planner
-// that read only records would lose exactly those (stokaro/ptah#1663).
+// A diff the comparator built arrives with identities resolved. One an embedder
+// built by hand does not, and a planner keying on the zero identity reads every
+// such constraint as one key: it would pair a drop on one table with an add on
+// another and emit neither correctly.
 //
-// Normalize is the single place that answers it, at the door every planner
-// already calls. The record it adds carries no table, which is the state a
-// name-only path is for, and the one the planners already read.
-//
-// Multiplicity is asserted, not membership: one name on two tables is two
-// constraints, and a record list holding it once when the name list holds it
-// twice is one record short.
-func TestNormalize_EveryBareAdditionGetsARecord(t *testing.T) {
-	rows := []struct {
-		name         string
-		diff         *difftypes.SchemaDiff
-		wantHostless []string
-		wantTotal    int
-	}{
-		{
-			name:         "a name with no record at all",
-			diff:         &difftypes.SchemaDiff{ConstraintsAdded: []string{"c"}},
-			wantHostless: []string{"c"},
-			wantTotal:    1,
+// It asked a second question until stokaro/ptah#2315: the diff carried a bare
+// name list beside the records, and Normalize synthesized a record for a name
+// that had none. There are no bare names now -- a constraint change IS its
+// record -- so that half is gone and this is what is left.
+func TestNormalize_FillsAnIdentityNoProducerResolved(t *testing.T) {
+	c := qt.New(t)
+	diff := &difftypes.SchemaDiff{
+		ConstraintsAdded: difftypes.ConstraintAdditions{
+			{Name: "chk_total", TableName: "app.orders", Type: "CHECK"},
 		},
-		{
-			name: "a name whose record carries a table",
-			diff: &difftypes.SchemaDiff{
-				ConstraintsAdded: []string{"c"},
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
-					{Name: "c", TableName: "orders", Type: "CHECK"},
-				},
-			},
-			wantHostless: nil,
-			wantTotal:    1,
-		},
-		{
-			name: "one name on two tables, one of them recorded",
-			diff: &difftypes.SchemaDiff{
-				ConstraintsAdded: []string{"c", "c"},
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
-					{Name: "c", TableName: "orders", Type: "CHECK"},
-				},
-			},
-			wantHostless: []string{"c"},
-			wantTotal:    2,
-		},
-		{
-			name:         "no additions at all",
-			diff:         &difftypes.SchemaDiff{},
-			wantHostless: nil,
-			wantTotal:    0,
+		ConstraintsRemoved: difftypes.ConstraintRemovals{
+			{Name: "chk_legacy", TableName: "app.orders", Type: "CHECK"},
 		},
 	}
 
-	for _, row := range rows {
-		t.Run(row.name, func(t *testing.T) {
-			c := qt.New(t)
+	constraintscope.Normalize(diff, identifier.ForDialect("postgres"))
 
-			constraintscope.Normalize(row.diff, identifier.ForDialect("postgres"))
-
-			c.Assert(hostless(row.diff), qt.DeepEquals, row.wantHostless)
-			c.Assert(row.diff.ConstraintsAddedWithTables, qt.HasLen, row.wantTotal)
-			c.Assert(constraintscope.AdditionNames(row.diff), qt.HasLen, len(row.diff.ConstraintsAdded),
-				qt.Commentf("the records do not cover the names"))
-		})
-	}
+	c.Assert(diff.ConstraintsAdded[0].Identity, qt.Not(qt.Equals), difftypes.ConstraintIdentity{})
+	c.Assert(diff.ConstraintsAdded[0].Identity.Table, qt.Equals, "orders")
+	c.Assert(diff.ConstraintsAdded[0].Identity.Name, qt.Equals, "chk_total")
+	c.Assert(diff.ConstraintsRemoved[0].Identity, qt.Not(qt.Equals), difftypes.ConstraintIdentity{})
+	c.Assert(diff.ConstraintsRemoved[0].Identity.Name, qt.Equals, "chk_legacy")
 }
 
-// TestNormalize_RunningTwiceChangesNothing is the control.
+// TestNormalize_LeavesAResolvedIdentityAlone is the control: the fill is for
+// records that carry none, and a producer's answer is never replaced.
+func TestNormalize_LeavesAResolvedIdentityAlone(t *testing.T) {
+	c := qt.New(t)
+	resolved := difftypes.ConstraintIdentity{Schema: "elsewhere", Table: "other", Name: "resolved"}
+	diff := &difftypes.SchemaDiff{
+		ConstraintsAdded: difftypes.ConstraintAdditions{
+			{Name: "chk_total", TableName: "app.orders", Type: "CHECK", Identity: resolved},
+		},
+	}
+
+	constraintscope.Normalize(diff, identifier.ForDialect("postgres"))
+
+	c.Assert(diff.ConstraintsAdded[0].Identity, qt.Equals, resolved)
+}
+
+// TestNormalize_RunningTwiceChangesNothing pins that the fill is idempotent.
 //
-// Normalize is called at every planner's door and a diff can pass through more
-// than one. A pass that appended a second record for a name it already covered
-// would make a planner emit the constraint twice, and the assertions above
-// would not see it.
+// Normalize runs at the door of two planners, and a diff can reach both. A pass
+// that rewrote what the previous one filled would make a planner emit the
+// constraint twice, and the assertions above would not see it.
 func TestNormalize_RunningTwiceChangesNothing(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		ConstraintsAdded: []string{"c", "d"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+		ConstraintsAdded: difftypes.ConstraintAdditions{
 			{Name: "c", TableName: "orders", Type: "CHECK"},
 		},
-		ConstraintsRemoved: []string{"e", "f"},
-		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+		ConstraintsRemoved: difftypes.ConstraintRemovals{
 			{Name: "e", TableName: "orders", Type: "CHECK"},
 		},
 	}
 
 	constraintscope.Normalize(diff, identifier.ForDialect("postgres"))
-	onceAdded := append([]difftypes.ConstraintAdditionInfo(nil), diff.ConstraintsAddedWithTables...)
-	onceRemoved := append([]difftypes.ConstraintRemovalInfo(nil), diff.ConstraintsRemovedWithTables...)
+	onceAdded := append(difftypes.ConstraintAdditions(nil), diff.ConstraintsAdded...)
+	onceRemoved := append(difftypes.ConstraintRemovals(nil), diff.ConstraintsRemoved...)
 	constraintscope.Normalize(diff, identifier.ForDialect("postgres"))
 
-	c.Assert(diff.ConstraintsAddedWithTables, qt.DeepEquals, onceAdded)
-	c.Assert(diff.ConstraintsRemovedWithTables, qt.DeepEquals, onceRemoved)
-}
-
-// hostless lists the additions that name no table, nil when none.
-func hostless(diff *difftypes.SchemaDiff) []string {
-	var names []string
-	for _, info := range diff.ConstraintsAddedWithTables {
-		if info.TableName != "" {
-			continue
-		}
-		names = append(names, info.Name)
-	}
-	return names
-}
-
-// TestNormalize_EveryBareRemovalGetsARecord is [TestNormalize_EveryBareAdditionGetsARecord]
-// for the other direction.
-//
-// Both lists have the same shape and the same two producers, so both need the
-// same guarantee before a consumer can read records alone. Asserted separately
-// rather than folded into one table, because a Normalize that covered one list
-// and not the other would pass a combined test that only counted records.
-func TestNormalize_EveryBareRemovalGetsARecord(t *testing.T) {
-	rows := []struct {
-		name         string
-		diff         *difftypes.SchemaDiff
-		wantHostless []string
-		wantTotal    int
-	}{
-		{
-			name:         "a name with no record at all",
-			diff:         &difftypes.SchemaDiff{ConstraintsRemoved: []string{"c"}},
-			wantHostless: []string{"c"},
-			wantTotal:    1,
-		},
-		{
-			name: "a name whose record carries a table",
-			diff: &difftypes.SchemaDiff{
-				ConstraintsRemoved: []string{"c"},
-				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
-					{Name: "c", TableName: "orders", Type: "CHECK"},
-				},
-			},
-			wantHostless: nil,
-			wantTotal:    1,
-		},
-		{
-			name: "one name on two tables, one of them recorded",
-			diff: &difftypes.SchemaDiff{
-				ConstraintsRemoved: []string{"c", "c"},
-				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
-					{Name: "c", TableName: "orders", Type: "CHECK"},
-				},
-			},
-			wantHostless: []string{"c"},
-			wantTotal:    2,
-		},
-		{
-			name:         "no removals at all",
-			diff:         &difftypes.SchemaDiff{},
-			wantHostless: nil,
-			wantTotal:    0,
-		},
-	}
-
-	for _, row := range rows {
-		t.Run(row.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			constraintscope.Normalize(row.diff, identifier.ForDialect("postgres"))
-
-			c.Assert(hostlessRemovals(row.diff), qt.DeepEquals, row.wantHostless)
-			c.Assert(row.diff.ConstraintsRemovedWithTables, qt.HasLen, row.wantTotal)
-			c.Assert(constraintscope.RemovalNames(row.diff), qt.HasLen, len(row.diff.ConstraintsRemoved),
-				qt.Commentf("the records do not cover the names"))
-		})
-	}
-}
-
-// hostlessRemovals lists the removals that name no table, nil when none.
-func hostlessRemovals(diff *difftypes.SchemaDiff) []string {
-	var names []string
-	for _, info := range diff.ConstraintsRemovedWithTables {
-		if info.TableName != "" {
-			continue
-		}
-		names = append(names, info.Name)
-	}
-	return names
+	c.Assert(diff.ConstraintsAdded, qt.DeepEquals, onceAdded)
+	c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, onceRemoved)
 }

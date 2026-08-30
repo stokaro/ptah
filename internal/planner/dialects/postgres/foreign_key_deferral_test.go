@@ -15,8 +15,7 @@ import (
 func tableQualifiedAdditionSQL(c *qt.C, deferrable bool, initially string) string {
 	c.Helper()
 	diff := &difftypes.SchemaDiff{
-		ConstraintsAdded: []string{"fk_child_pid"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name:           "fk_child_pid",
 			TableName:      "child",
 			Type:           "FOREIGN KEY",

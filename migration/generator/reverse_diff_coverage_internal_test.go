@@ -66,7 +66,7 @@ func assertReverseCoverageField(
 	c.Helper()
 	if field.Name == "ForeignKeysRemovedWithTables" {
 		// This collection is supplemental metadata for ordering the forward
-		// removals already present in ConstraintsRemovedWithTables. It must not
+		// removals already present in ConstraintsRemoved. It must not
 		// independently create a reverse operation; the reverse collection is
 		// derived from the forward constraint additions and desired schema.
 		return
@@ -384,14 +384,14 @@ func reverseCoverageDiff() *difftypes.SchemaDiff {
 	// reverseConstraintAdditions restores the prior body of each removed
 	// constraint from the introspected schema, so the entry has to name a
 	// constraint type it reconstructs and a host reverseCoverageContext has.
-	diff.ConstraintsRemovedWithTables = []difftypes.ConstraintRemovalInfo{{
+	diff.ConstraintsRemoved = []difftypes.ConstraintRemovalInfo{{
 		Name:      revCoverageCheckName,
 		TableName: revCoverageTable,
 		Type:      "CHECK",
 	}}
 	// reverseConstraintRemovals resolves each added constraint's owning table,
 	// and skips any addition that does not name one.
-	diff.ConstraintsAddedWithTables = []difftypes.ConstraintAdditionInfo{{
+	diff.ConstraintsAdded = []difftypes.ConstraintAdditionInfo{{
 		Name:      revCoverageCheckName,
 		TableName: revCoverageTable,
 		Type:      "CHECK",
@@ -833,8 +833,7 @@ func TestReverseSchemaDiff_ARolledBackRebuildUsesThePriorTableBody(t *testing.T)
 		Name: constraintName, TableName: table, Type: "CHECK",
 	}}
 	forward := &difftypes.SchemaDiff{
-		ConstraintsRemoved:           []string{constraintName},
-		ConstraintsRemovedWithTables: removal,
+		ConstraintsRemoved: removal,
 		// The declaration's own hosts, carrying the added column. A rollback
 		// rebuilding from these would write a table the database never had.
 		DeclaredConstraintHosts: difftypes.ConstraintHostDeclarationsOf(

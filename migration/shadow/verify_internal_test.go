@@ -129,13 +129,11 @@ func TestCollectMismatchesCoversEverySchemaDiffCategory(t *testing.T) {
 		GrantsRemoved:             []difftypes.GrantRef{{Role: "app", Privilege: "INSERT", ObjectType: "TABLE", ObjectName: "users"}},
 		GrantOptionsAdded:         []difftypes.GrantRef{{Role: "app", Privilege: "UPDATE", ObjectType: "TABLE", ObjectName: "users"}},
 		GrantOptionsRevoked:       []difftypes.GrantRef{{Role: "app", Privilege: "DELETE", ObjectType: "TABLE", ObjectName: "users"}},
-		ConstraintsAdded:          []string{"missing_global_constraint"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name:      "missing_global_constraint",
 			TableName: "accounts",
 		}},
-		ConstraintsRemoved: []string{"extra_global_constraint"},
-		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
+		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{{
 			Name:      "extra_global_constraint",
 			TableName: "accounts",
 		}},

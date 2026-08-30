@@ -89,9 +89,8 @@ func TestPlannerCreatesAddedTablesWithQualifiedConstraintDiffs(t *testing.T) {
 		}},
 	}
 	diff := &difftypes.SchemaDiff{
-		TablesAdded:      difftypes.TableCreationsFor(desired, "posts", "users"),
-		ConstraintsAdded: []string{"fk_posts_user"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+		TablesAdded: difftypes.TableCreationsFor(desired, "posts", "users"),
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name:          "fk_posts_user",
 			TableName:     "posts",
 			Type:          "FOREIGN KEY",
@@ -112,9 +111,8 @@ func TestPlannerCreatesAddedTablesWithQualifiedConstraintDiffs(t *testing.T) {
 func TestPlannerDropsTablesWithQualifiedConstraintDiffs(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		TablesRemoved:      []string{"posts"},
-		ConstraintsRemoved: []string{"fk_posts_user"},
-		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
+		TablesRemoved: []string{"posts"},
+		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{{
 			Name:      "fk_posts_user",
 			TableName: "posts",
 			Type:      "FOREIGN KEY",
@@ -622,8 +620,7 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 				}},
 			),
 			diff: &difftypes.SchemaDiff{
-				ConstraintsAdded: []string{"users_name_check"},
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 					Name:            "users_name_check",
 					TableName:       "users",
 					Type:            "CHECK",
@@ -645,16 +642,14 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 				nil,
 			),
 			diff: &difftypes.SchemaDiff{
-				EnumsModified:      []difftypes.EnumDiff{{EnumName: "enum_users_status", ValuesRemoved: []string{"archived"}}},
-				ConstraintsAdded:   []string{"users_status_check"},
-				ConstraintsRemoved: []string{"users_status_check"},
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+				EnumsModified: []difftypes.EnumDiff{{EnumName: "enum_users_status", ValuesRemoved: []string{"archived"}}},
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 					Name:            "users_status_check",
 					TableName:       "users",
 					Type:            "CHECK",
 					CheckExpression: "status IN ('draft', 'published')",
 				}},
-				ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
+				ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{{
 					Name:      "users_status_check",
 					TableName: "users",
 					Type:      "CHECK",
@@ -831,7 +826,7 @@ func TestPlannerEmitsTriggerChangesWithoutRebuild(t *testing.T) {
 
 func TestPlannerRejectsUnqualifiedExistingTableConstraintChanges(t *testing.T) {
 	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{"users_name_key"}}
+	diff := &difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "users_name_key"}}}
 
 	nodes, err := planner.GenerateSchemaDiffAST(diff, &schemamodel.Database{}, platform.SQLite)
 
@@ -919,8 +914,7 @@ func TestPlannerRebuildExcludesColumnsAddedBesideAConstraintChange(t *testing.T)
 			TableName:    "users",
 			ColumnsAdded: difftypes.ColumnChanges{{Name: "note", Type: "TEXT", StructName: "User", Nullable: true}},
 		}},
-		ConstraintsAdded: []string{"uq_users_name"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name:      "uq_users_name",
 			TableName: "users",
 			Type:      "UNIQUE",
@@ -997,7 +991,7 @@ func withDeclaredTable(diff *difftypes.SchemaDiff, desired *schemamodel.Database
 	}
 	if len(completed.DeclaredConstraintHosts) == 0 {
 		completed.DeclaredConstraintHosts = difftypes.ConstraintHostDeclarationsOf(
-			desired, diff.ConstraintsAddedWithTables, diff.ConstraintsRemovedWithTables,
+			desired, diff.ConstraintsAdded, diff.ConstraintsRemoved,
 			diff.EffectiveIdentifierSemantics(platform.SQLite))
 	}
 	return &completed

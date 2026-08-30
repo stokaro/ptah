@@ -39,7 +39,7 @@ func TestConstraints(t *testing.T) {
 				// Empty database - no existing constraints
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded: []string{"no_overlapping_bookings"},
+				ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "no_overlapping_bookings"}},
 			},
 		},
 		{
@@ -74,7 +74,7 @@ func TestConstraints(t *testing.T) {
 				// Empty database - no existing constraints
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded: []string{"no_overlapping_bookings", "positive_price", "unique_user_email"},
+				ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "no_overlapping_bookings"}, {Name: "positive_price"}, {Name: "unique_user_email"}},
 			},
 		},
 		{
@@ -86,8 +86,8 @@ func TestConstraints(t *testing.T) {
 				// Empty database - no existing constraints
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded:   make([]string, 0),
-				ConstraintsRemoved: make([]string, 0),
+				ConstraintsAdded:   difftypes.ConstraintAdditions{},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{},
 			},
 		},
 		{
@@ -107,7 +107,7 @@ func TestConstraints(t *testing.T) {
 				// Empty database - no existing constraints
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded: []string{"positive_price"},
+				ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "positive_price"}},
 			},
 		},
 		{
@@ -134,8 +134,8 @@ func TestConstraints(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded:   []string{"positive_price"},
-				ConstraintsRemoved: []string{"positive_price"},
+				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "positive_price"}},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "positive_price"}},
 			},
 		},
 		{
@@ -162,8 +162,8 @@ func TestConstraints(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded:   []string{"positive_balance"},
-				ConstraintsRemoved: []string{"positive_balance"},
+				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "positive_balance"}},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "positive_balance"}},
 			},
 		},
 		{
@@ -190,8 +190,8 @@ func TestConstraints(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded:   []string{"positive_amount"},
-				ConstraintsRemoved: []string{"positive_amount"},
+				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "positive_amount"}},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "positive_amount"}},
 			},
 		},
 		{
@@ -236,7 +236,7 @@ func TestConstraints(t *testing.T) {
 				// Empty database - no existing constraints
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded: []string{"unique_user_email"},
+				ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "unique_user_email"}},
 			},
 		},
 		{
@@ -263,8 +263,8 @@ func TestConstraints(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded:   []string{"unique_user_email"},
-				ConstraintsRemoved: []string{"unique_user_email"},
+				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "unique_user_email"}},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "unique_user_email"}},
 			},
 		},
 		{
@@ -320,8 +320,8 @@ func TestConstraints(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded:   []string{"users_c_key"},
-				ConstraintsRemoved: []string{"users_c_key"},
+				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "users_c_key"}},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "users_c_key"}},
 			},
 		},
 		{
@@ -344,7 +344,7 @@ func TestConstraints(t *testing.T) {
 				// Empty database - no existing constraints
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded: []string{"fk_user"},
+				ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "fk_user"}},
 			},
 		},
 	}
@@ -356,18 +356,16 @@ func TestConstraints(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 			compare.Constraints(tt.desired, tt.database, diff, nil)
 
-			// Check constraints added
+			// The rows state the constraints by name; the records they resolve
+			// to are asserted by the tests that are about the body.
 			c.Assert(diff.ConstraintsAdded, qt.HasLen, len(tt.expected.ConstraintsAdded))
-			// Check that all expected constraints are present (order doesn't matter)
 			for _, expected := range tt.expected.ConstraintsAdded {
-				c.Assert(diff.ConstraintsAdded, qt.Contains, expected)
+				c.Assert(diff.ConstraintsAdded.Names(), qt.Contains, expected.Name)
 			}
 
-			// Check constraints removed
 			c.Assert(diff.ConstraintsRemoved, qt.HasLen, len(tt.expected.ConstraintsRemoved))
-			// Check that all expected constraints are present (order doesn't matter)
 			for _, expected := range tt.expected.ConstraintsRemoved {
-				c.Assert(diff.ConstraintsRemoved, qt.Contains, expected)
+				c.Assert(diff.ConstraintsRemoved.Names(), qt.Contains, expected.Name)
 			}
 		})
 	}
@@ -378,7 +376,7 @@ func TestConstraints_SameNameTypeDriftCarriesAdditionBody(t *testing.T) {
 		name     string
 		desired  *schemamodel.Database
 		database *catalog.Database
-		expected []difftypes.ConstraintAdditionInfo
+		expected difftypes.ConstraintAdditions
 	}{
 		{
 			name: "CHECK to UNIQUE",
@@ -443,12 +441,12 @@ func TestConstraints_SameNameTypeDriftCarriesAdditionBody(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 			compare.Constraints(tt.desired, tt.database, diff, nil)
 
-			c.Assert(diff.ConstraintsAdded, qt.DeepEquals, []string{tt.expected[0].Name})
-			c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, []string{tt.expected[0].Name})
-			c.Assert(diff.ConstraintsAddedWithTables, qt.DeepEquals, tt.expected)
-			c.Assert(diff.ConstraintsRemovedWithTables, qt.HasLen, 1)
-			c.Assert(diff.ConstraintsRemovedWithTables[0].Name, qt.Equals, tt.expected[0].Name)
-			c.Assert(diff.ConstraintsRemovedWithTables[0].TableName, qt.Equals, tt.expected[0].TableName)
+			c.Assert(diff.ConstraintsAdded.Names(), qt.DeepEquals, []string{tt.expected[0].Name})
+			c.Assert(diff.ConstraintsRemoved.Names(), qt.DeepEquals, []string{tt.expected[0].Name})
+			c.Assert(diff.ConstraintsAdded, qt.DeepEquals, tt.expected)
+			c.Assert(diff.ConstraintsRemoved, qt.HasLen, 1)
+			c.Assert(diff.ConstraintsRemoved[0].Name, qt.Equals, tt.expected[0].Name)
+			c.Assert(diff.ConstraintsRemoved[0].TableName, qt.Equals, tt.expected[0].TableName)
 		})
 	}
 }
@@ -522,13 +520,13 @@ func TestConstraints_UniqueIncludeDrift(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 			compare.Constraints(desired, database, diff, nil)
 
-			c.Assert(diff.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{{
+			c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, difftypes.ConstraintRemovals{{
 				Name:      tt.desired.Name,
 				TableName: tt.desired.Table,
 				Identity:  difftypes.ConstraintIdentity{Table: tt.desired.Table, Name: tt.desired.Name},
 				Type:      "UNIQUE",
 			}})
-			c.Assert(diff.ConstraintsAddedWithTables, qt.DeepEquals, []difftypes.ConstraintAdditionInfo{{
+			c.Assert(diff.ConstraintsAdded, qt.DeepEquals, difftypes.ConstraintAdditions{{
 				Name:           tt.desired.Name,
 				TableName:      tt.desired.Table,
 				Identity:       difftypes.ConstraintIdentity{Table: tt.desired.Table, Name: tt.desired.Name},
@@ -549,30 +547,30 @@ func TestConstraints_HasChanges(t *testing.T) {
 		{
 			name: "has constraint additions",
 			diff: &difftypes.SchemaDiff{
-				ConstraintsAdded: []string{"no_overlapping_bookings"},
+				ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "no_overlapping_bookings"}},
 			},
 			expected: true,
 		},
 		{
 			name: "has constraint removals",
 			diff: &difftypes.SchemaDiff{
-				ConstraintsRemoved: []string{"old_constraint"},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "old_constraint"}},
 			},
 			expected: true,
 		},
 		{
 			name: "has both constraint additions and removals",
 			diff: &difftypes.SchemaDiff{
-				ConstraintsAdded:   []string{"new_constraint"},
-				ConstraintsRemoved: []string{"old_constraint"},
+				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "new_constraint"}},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "old_constraint"}},
 			},
 			expected: true,
 		},
 		{
 			name: "no constraint changes",
 			diff: &difftypes.SchemaDiff{
-				ConstraintsAdded:   make([]string, 0),
-				ConstraintsRemoved: make([]string, 0),
+				ConstraintsAdded:   difftypes.ConstraintAdditions{},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{},
 			},
 			expected: false,
 		},
@@ -615,8 +613,8 @@ func TestConstraints_CompositeForeignKeyAdditionCarriesReferencedColumns(t *test
 	diff := &difftypes.SchemaDiff{}
 	compare.Constraints(desired, &catalog.Database{}, diff, nil)
 
-	c.Assert(diff.ConstraintsAdded, qt.DeepEquals, []string{"fk_orders_accounts"})
-	c.Assert(diff.ConstraintsAddedWithTables, qt.DeepEquals, []difftypes.ConstraintAdditionInfo{
+	c.Assert(diff.ConstraintsAdded.Names(), qt.DeepEquals, []string{"fk_orders_accounts"})
+	c.Assert(diff.ConstraintsAdded, qt.DeepEquals, difftypes.ConstraintAdditions{
 		{
 			Name:           "fk_orders_accounts",
 			TableName:      "orders",
@@ -668,7 +666,7 @@ func TestConstraints_CompositeForeignKeyReferencedColumnDrift(t *testing.T) {
 	diff := &difftypes.SchemaDiff{}
 	compare.Constraints(desired, database, diff, nil)
 
-	c.Assert(diff.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{
+	c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, difftypes.ConstraintRemovals{
 		{Name: "fk_orders_accounts", TableName: "orders", Type: "FOREIGN KEY", Identity: difftypes.ConstraintIdentity{Table: "orders", Name: "fk_orders_accounts"}},
 	})
 	c.Assert(diff.ForeignKeysRemovedWithTables, qt.DeepEquals, []difftypes.ForeignKeyRemovalInfo{
@@ -679,7 +677,7 @@ func TestConstraints_CompositeForeignKeyReferencedColumnDrift(t *testing.T) {
 			ForeignColumns: []string{"tenant_id", "account_id"},
 		},
 	})
-	c.Assert(diff.ConstraintsAddedWithTables, qt.DeepEquals, []difftypes.ConstraintAdditionInfo{
+	c.Assert(diff.ConstraintsAdded, qt.DeepEquals, difftypes.ConstraintAdditions{
 		{
 			Name:           "fk_orders_accounts",
 			TableName:      "orders",
@@ -730,7 +728,7 @@ func TestConstraints_CompositeForeignKeyLocalColumnDrift(t *testing.T) {
 	diff := &difftypes.SchemaDiff{}
 	compare.Constraints(desired, database, diff, nil)
 
-	c.Assert(diff.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{
+	c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, difftypes.ConstraintRemovals{
 		{Name: "fk_orders_accounts", TableName: "orders", Type: "FOREIGN KEY", Identity: difftypes.ConstraintIdentity{Table: "orders", Name: "fk_orders_accounts"}},
 	})
 	c.Assert(diff.ForeignKeysRemovedWithTables, qt.DeepEquals, []difftypes.ForeignKeyRemovalInfo{
@@ -741,7 +739,7 @@ func TestConstraints_CompositeForeignKeyLocalColumnDrift(t *testing.T) {
 			ForeignColumns: []string{"tenant_id", "id"},
 		},
 	})
-	c.Assert(diff.ConstraintsAddedWithTables, qt.DeepEquals, []difftypes.ConstraintAdditionInfo{
+	c.Assert(diff.ConstraintsAdded, qt.DeepEquals, difftypes.ConstraintAdditions{
 		{
 			Name:           "fk_orders_accounts",
 			TableName:      "orders",
@@ -796,7 +794,7 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 				Constraints: make([]catalog.Constraint, 0),
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded: []string{"no_overlapping_bookings"},
+				ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "no_overlapping_bookings"}},
 			},
 		},
 		{
@@ -817,7 +815,7 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsRemoved: []string{"no_overlapping_bookings"},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "no_overlapping_bookings"}},
 			},
 		},
 		{
@@ -847,8 +845,8 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsRemoved: []string{"no_overlapping_bookings"},
-				ConstraintsAdded:   []string{"no_overlapping_bookings"},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "no_overlapping_bookings"}},
+				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "no_overlapping_bookings"}},
 			},
 		},
 		{
@@ -878,8 +876,8 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsRemoved: []string{"no_overlapping_bookings"},
-				ConstraintsAdded:   []string{"no_overlapping_bookings"},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "no_overlapping_bookings"}},
+				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "no_overlapping_bookings"}},
 			},
 		},
 		{
@@ -909,8 +907,8 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsRemoved: []string{"no_overlapping_bookings"},
-				ConstraintsAdded:   []string{"no_overlapping_bookings"},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "no_overlapping_bookings"}},
+				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "no_overlapping_bookings"}},
 			},
 		},
 		{
@@ -940,8 +938,8 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded:   make([]string, 0),
-				ConstraintsRemoved: make([]string, 0),
+				ConstraintsAdded:   difftypes.ConstraintAdditions{},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{},
 			},
 		},
 	}
@@ -956,13 +954,13 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 			// Check constraints added
 			c.Assert(diff.ConstraintsAdded, qt.HasLen, len(tt.expected.ConstraintsAdded))
 			for _, expected := range tt.expected.ConstraintsAdded {
-				c.Assert(diff.ConstraintsAdded, qt.Contains, expected)
+				c.Assert(diff.ConstraintsAdded.Names(), qt.Contains, expected.Name)
 			}
 
 			// Check constraints removed
 			c.Assert(diff.ConstraintsRemoved, qt.HasLen, len(tt.expected.ConstraintsRemoved))
 			for _, expected := range tt.expected.ConstraintsRemoved {
-				c.Assert(diff.ConstraintsRemoved, qt.Contains, expected)
+				c.Assert(diff.ConstraintsRemoved.Names(), qt.Contains, expected.Name)
 			}
 		})
 	}
@@ -1003,7 +1001,7 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 				Tables: []catalog.Table{filesTable},
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded: []string{"files_category_check"},
+				ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "files_category_check"}},
 			},
 		},
 		{
@@ -1064,8 +1062,8 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded:   []string{"files_category_check"},
-				ConstraintsRemoved: []string{"files_category_check"},
+				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "files_category_check"}},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "files_category_check"}},
 			},
 		},
 		{
@@ -1098,8 +1096,8 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded:   []string{"files_category_v2"},
-				ConstraintsRemoved: []string{"files_category_check"},
+				ConstraintsAdded:   difftypes.ConstraintAdditions{{Name: "files_category_v2"}},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "files_category_check"}},
 			},
 		},
 		{
@@ -1122,7 +1120,7 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsRemoved: []string{"files_category_check"},
+				ConstraintsRemoved: difftypes.ConstraintRemovals{{Name: "files_category_check"}},
 			},
 		},
 		{
@@ -1143,7 +1141,7 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 				Tables: []catalog.Table{filesTable},
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded: []string{"files_category_valid"},
+				ConstraintsAdded: difftypes.ConstraintAdditions{{Name: "files_category_valid"}},
 			},
 		},
 		{
@@ -1196,13 +1194,13 @@ func TestConstraints_FieldLevelCheck(t *testing.T) {
 			c.Assert(diff.ConstraintsAdded, qt.HasLen, len(tt.expected.ConstraintsAdded),
 				qt.Commentf("ConstraintsAdded=%v", diff.ConstraintsAdded))
 			for _, expected := range tt.expected.ConstraintsAdded {
-				c.Assert(diff.ConstraintsAdded, qt.Contains, expected)
+				c.Assert(diff.ConstraintsAdded.Names(), qt.Contains, expected.Name)
 			}
 
 			c.Assert(diff.ConstraintsRemoved, qt.HasLen, len(tt.expected.ConstraintsRemoved),
 				qt.Commentf("ConstraintsRemoved=%v", diff.ConstraintsRemoved))
 			for _, expected := range tt.expected.ConstraintsRemoved {
-				c.Assert(diff.ConstraintsRemoved, qt.Contains, expected)
+				c.Assert(diff.ConstraintsRemoved.Names(), qt.Contains, expected.Name)
 			}
 		})
 	}

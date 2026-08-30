@@ -153,7 +153,7 @@ func TestFieldLevelCheckConstraint_Removal_Integration(t *testing.T) {
 
 	diff := schemadiff.Compare(withoutCheck, filteredSchema)
 	c.Assert(diff.HasChanges(), qt.IsTrue)
-	c.Assert(diff.ConstraintsRemoved, qt.Contains, "ptah_test_check_drop_score_check")
+	c.Assert(diff.ConstraintsRemoved.Names(), qt.Contains, "ptah_test_check_drop_score_check")
 
 	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, withoutCheck, "postgres")
 	c.Assert(err, qt.IsNil)

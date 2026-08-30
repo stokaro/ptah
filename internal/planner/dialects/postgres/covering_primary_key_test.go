@@ -15,8 +15,7 @@ import (
 func primaryKeyAdditionSQL(c *qt.C, include []string) string {
 	c.Helper()
 	diff := &difftypes.SchemaDiff{
-		ConstraintsAdded: []string{"covering_pkey"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name:           "covering_pkey",
 			TableName:      "covering",
 			Type:           "PRIMARY KEY",
@@ -71,7 +70,6 @@ func TestPlanner_LeavesAPlainPrimaryKeyWithoutAnIncludeClause(t *testing.T) {
 // half the fix unguarded.
 func declaredPrimaryKeyAdditionSQL(c *qt.C, include []string) string {
 	c.Helper()
-	diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{"covering_pkey"}}
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "Covering", Name: "covering"}},
 		Constraints: []schemamodel.Constraint{{
@@ -83,6 +81,7 @@ func declaredPrimaryKeyAdditionSQL(c *qt.C, include []string) string {
 			IncludeColumns: include,
 		}},
 	}
+	diff := &difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditionsFor(desired, "covering_pkey")}
 	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)

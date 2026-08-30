@@ -275,8 +275,8 @@ func TestExcludeConstraints_SchemaComparison(t *testing.T) {
 
 	// Verify that both constraints are detected as additions
 	c.Assert(diff.ConstraintsAdded, qt.HasLen, 2)
-	c.Assert(diff.ConstraintsAdded, qt.Contains, "no_overlapping_bookings")
-	c.Assert(diff.ConstraintsAdded, qt.Contains, "positive_price")
+	c.Assert(diff.ConstraintsAdded.Names(), qt.Contains, "no_overlapping_bookings")
+	c.Assert(diff.ConstraintsAdded.Names(), qt.Contains, "positive_price")
 
 	// Verify that HasChanges returns true
 	c.Assert(diff.HasChanges(), qt.IsTrue)

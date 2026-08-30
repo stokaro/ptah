@@ -101,9 +101,8 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyAddsReferencedUniqueConstraintB
 			c := qt.New(t)
 			desired := referencedUniqueKeySchema()
 			diff := &difftypes.SchemaDiff{
-				TablesAdded:      difftypes.TableCreationsFor(desired, "ptah_fk_order_children", "ptah_fk_order_parents"),
-				ConstraintsAdded: []string{"uq_ptah_fk_order_parents_code"},
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+				TablesAdded: difftypes.TableCreationsFor(desired, "ptah_fk_order_children", "ptah_fk_order_parents"),
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 					Name:      "uq_ptah_fk_order_parents_code",
 					TableName: "ptah_fk_order_parents",
 					Type:      "UNIQUE",

@@ -24,13 +24,13 @@ func TestCompare_FieldLevelForeignKeyActionDrift_MySQL(t *testing.T) {
 	gen := exportsSchema("SET NULL")
 	diff := schemadiff.CompareWithDialect(gen, exportsDBSchema("NO ACTION"), "mysql")
 	c.Assert(diff.HasChanges(), qt.IsTrue)
-	c.Assert(diff.ConstraintsAdded, qt.Contains, "fk_export_file")
-	c.Assert(diff.ConstraintsRemoved, qt.Contains, "fk_export_file")
+	c.Assert(diff.ConstraintsAdded.Names(), qt.Contains, "fk_export_file")
+	c.Assert(diff.ConstraintsRemoved.Names(), qt.Contains, "fk_export_file")
 	// The removal info must carry the owning table and the FK type so the
 	// planner can pick the DROP FOREIGN KEY syntax.
-	c.Assert(diff.ConstraintsRemovedWithTables, qt.HasLen, 1)
-	c.Assert(diff.ConstraintsRemovedWithTables[0].TableName, qt.Equals, "exports")
-	c.Assert(diff.ConstraintsRemovedWithTables[0].Type, qt.Equals, "FOREIGN KEY")
+	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 1)
+	c.Assert(diff.ConstraintsRemoved[0].TableName, qt.Equals, "exports")
+	c.Assert(diff.ConstraintsRemoved[0].Type, qt.Equals, "FOREIGN KEY")
 
 	nodes, err := mysql.New().GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)

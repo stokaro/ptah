@@ -26,13 +26,11 @@ func TestPreserveUnmanagedObjects_UsesIdentifierSemantics(t *testing.T) {
 			Name:      "IDX_USERS_NAME",
 			TableName: "USERS",
 		}},
-		ConstraintsAdded: []string{"uq_users_name"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name:      "uq_users_name",
 			TableName: "users",
 		}},
-		ConstraintsRemoved: []string{"UQ_USERS_NAME"},
-		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
+		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{{
 			Name:      "UQ_USERS_NAME",
 			TableName: "USERS",
 		}},
@@ -48,8 +46,8 @@ func TestPreserveUnmanagedObjects_UsesIdentifierSemantics(t *testing.T) {
 		Name:      "idx_users_name",
 		TableName: "users",
 	}})
-	c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, []string{"uq_users_name"})
-	c.Assert(diff.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{{
+	c.Assert(diff.ConstraintsRemoved.Names(), qt.DeepEquals, []string{"uq_users_name"})
+	c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, difftypes.ConstraintRemovals{{
 		Name:      "uq_users_name",
 		TableName: "users",
 	}})
@@ -64,15 +62,13 @@ func TestPreserveUnmanagedObjects_NormalizesReplacementForPlanner(t *testing.T) 
 	semantics := identifier.ForDialect("sqlite")
 	diff := &difftypes.SchemaDiff{
 		IdentifierSemantics: &semantics,
-		ConstraintsAdded:    []string{"check_users_name"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name:            "check_users_name",
 			TableName:       "users",
 			Type:            "CHECK",
 			CheckExpression: "name <> ''",
 		}},
-		ConstraintsRemoved: []string{"CHECK_USERS_NAME"},
-		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
+		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{{
 			Name:      "CHECK_USERS_NAME",
 			TableName: "USERS",
 			Type:      "CHECK",

@@ -33,15 +33,13 @@ func TestPlanner_AModifiedConstraintIsPairedByIdentityNotSpelling(t *testing.T) 
 	c := qt.New(t)
 	semantics := identifier.ForDialect("postgres")
 	diff := &difftypes.SchemaDiff{
-		ConstraintsAdded:   []string{"uq_widget_scope"},
-		ConstraintsRemoved: []string{"uq_widget_scope"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name: "uq_widget_scope", TableName: "widget",
 			Type: "UNIQUE", Columns: []string{"tenant"},
 		}},
 		// The catalog's spelling of the same table, which is the whole point of
 		// the row: only a folded host makes these two one object.
-		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
+		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{{
 			Name: "uq_widget_scope", TableName: "public.widget", Type: "UNIQUE",
 		}},
 		IdentifierSemantics: &semantics,

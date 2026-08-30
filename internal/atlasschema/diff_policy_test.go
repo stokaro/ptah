@@ -17,8 +17,7 @@ func TestApplyDiffPolicy_SkipDropTableFiltersOnlyDroppedTableRemovals(t *testing
 			{Name: "old_users_email_idx", TableName: "old_users"},
 			{Name: "posts_title_idx", TableName: "posts"},
 		},
-		ConstraintsRemoved: []string{"old_users_account_fk", "posts_author_fk"},
-		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 			{Name: "old_users_account_fk", TableName: "old_users", Type: "FOREIGN KEY"},
 			{Name: "posts_author_fk", TableName: "posts", Type: "FOREIGN KEY"},
 		},
@@ -44,8 +43,8 @@ func TestApplyDiffPolicy_SkipDropTableFiltersOnlyDroppedTableRemovals(t *testing
 	c.Assert(got.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "posts_title_idx", TableName: "posts"},
 	})
-	c.Assert(got.ConstraintsRemoved, qt.DeepEquals, []string{"posts_author_fk"})
-	c.Assert(got.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{
+	c.Assert(got.ConstraintsRemoved.Names(), qt.DeepEquals, []string{"posts_author_fk"})
+	c.Assert(got.ConstraintsRemoved, qt.DeepEquals, difftypes.ConstraintRemovals{
 		{Name: "posts_author_fk", TableName: "posts", Type: "FOREIGN KEY"},
 	})
 	c.Assert(got.TriggersRemoved, qt.DeepEquals, []difftypes.TriggerRef{
@@ -64,7 +63,7 @@ func TestApplyDiffPolicy_SkipDropTableFiltersOnlyDroppedTableRemovals(t *testing
 		{Name: "old_users_email_idx", TableName: "old_users"},
 		{Name: "posts_title_idx", TableName: "posts"},
 	})
-	c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, []string{"old_users_account_fk", "posts_author_fk"})
+	c.Assert(diff.ConstraintsRemoved.Names(), qt.DeepEquals, []string{"old_users_account_fk", "posts_author_fk"})
 	c.Assert(diff.TriggersRemoved, qt.DeepEquals, []difftypes.TriggerRef{
 		{TriggerName: "old_users_audit", TableName: "old_users"},
 		{TriggerName: "posts_audit", TableName: "posts"},

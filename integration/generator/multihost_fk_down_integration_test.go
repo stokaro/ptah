@@ -24,7 +24,7 @@ import (
 // The UP changes it to ON DELETE CASCADE on every host (a multi-host modify, the
 // shape an embedded inline-relation mixin produces). The generated DOWN must,
 // for EACH host, drop the CASCADE constraint and re-add it with the prior action.
-// Before the fix the reversed diff carried no ConstraintsAddedWithTables, so the
+// Before the fix the reversed diff carried no ConstraintsAdded, so the
 // DOWN add-path fell back to the name-only field scan: it re-added a single host
 // and (on Postgres) dropped a single host via the information_schema LIMIT 1 DO
 // block, so the 2nd host's re-add collided ("constraint already exists",

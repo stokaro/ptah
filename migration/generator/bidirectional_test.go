@@ -54,8 +54,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLForeignKeyBackingIndexes(t *testing.T)
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{
-				ConstraintsAdded: []string{"fk_tenant", "fk_tenant"},
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 					{
 						Name: "fk_tenant", TableName: "orders", Type: "FOREIGN KEY",
 						Columns: []string{"tenant_id"}, ForeignTable: "tenants", ForeignColumns: []string{"id"},
@@ -90,8 +89,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLForeignKeyBackingIndexes(t *testing.T)
 func TestPlanBidirectionalSchemaDiff_MySQLSameRunCoveringIndexPreventsBackingIndex(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		ConstraintsAdded: []string{"fk_parent"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name: "fk_parent", TableName: "children", Type: "FOREIGN KEY",
 			Columns: []string{"parent_id"}, ForeignTable: "parents", ForeignColumns: []string{"id"},
 		}},
@@ -152,8 +150,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLRefusesSameNamedNonCoveringIndex(t *te
 func TestPlanBidirectionalSchemaDiff_MySQLRefusesRemovalOfOnlyCoveringIndex(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		ConstraintsAdded: []string{"fk_parent"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name: "fk_parent", TableName: "children", Type: "FOREIGN KEY",
 			Columns: []string{"parent_id"}, ForeignTable: "parents", ForeignColumns: []string{"id"},
 		}},
@@ -193,11 +190,11 @@ func TestPlanBidirectionalSchemaDiff_MySQLConstraintAdditionCoversForeignKey(t *
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			diff := singleMySQLForeignKeyDiff("children")
-			diff.ConstraintsAdded = append([]string{test.constraintName}, diff.ConstraintsAdded...)
-			diff.ConstraintsAddedWithTables = append([]difftypes.ConstraintAdditionInfo{{
+			diff.ConstraintsAdded = append(difftypes.ConstraintAdditions{{Name: test.constraintName}}, diff.ConstraintsAdded...)
+			diff.ConstraintsAdded = append([]difftypes.ConstraintAdditionInfo{{
 				Name: test.constraintName, TableName: "children", Type: test.constraintType,
 				Columns: []string{"parent_id"},
-			}}, diff.ConstraintsAddedWithTables...)
+			}}, diff.ConstraintsAdded...)
 
 			plan, err := planMySQLBidirectional(diff, &schemamodel.Database{}, &catalog.Database{})
 
@@ -215,8 +212,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLCompositeAddedColumnBackingCleanupOrde
 		TablesModified: []difftypes.TableDiff{{
 			TableName: "children", ColumnsAdded: difftypes.ColumnChanges{{StructName: "Child", Name: "tenant_id", Type: "BIGINT"}},
 		}},
-		ConstraintsAdded: []string{"fk_parent"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name: "fk_parent", TableName: "children", Type: "FOREIGN KEY",
 			Columns:        []string{"parent_id", "tenant_id"},
 			ForeignTable:   "parents",
@@ -256,8 +252,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLReferencedAddedColumnDropsForeignKeyFi
 		TablesModified: []difftypes.TableDiff{{
 			TableName: "parents", ColumnsAdded: difftypes.ColumnChanges{{StructName: "Parent", Name: "code", Type: "VARCHAR(36)", Unique: true}},
 		}},
-		ConstraintsAdded: []string{"fk_parent_code"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name: "fk_parent_code", TableName: "children", Type: "FOREIGN KEY",
 			Columns:        []string{"parent_code"},
 			ForeignTable:   "parents",
@@ -307,8 +302,8 @@ func TestPlanBidirectionalSchemaDiff_MySQLConstraintRemovalCannotStrandForeignKe
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			diff := singleMySQLForeignKeyDiff("children")
-			diff.ConstraintsRemoved = []string{test.constraintName}
-			diff.ConstraintsRemovedWithTables = []difftypes.ConstraintRemovalInfo{{
+			diff.ConstraintsRemoved = difftypes.ConstraintRemovals{{Name: test.constraintName}}
+			diff.ConstraintsRemoved = []difftypes.ConstraintRemovalInfo{{
 				Name: test.constraintName, TableName: "children", Type: test.constraintType,
 			}}
 			current := &catalog.Database{Constraints: []catalog.Constraint{{
@@ -328,12 +323,12 @@ func TestPlanBidirectionalSchemaDiff_MySQLConstraintRemovalCannotStrandForeignKe
 func TestPlanBidirectionalSchemaDiff_MySQLUniqueReplacementStopsCoveringForeignKey(t *testing.T) {
 	c := qt.New(t)
 	diff := singleMySQLForeignKeyDiff("children")
-	diff.ConstraintsAdded = append([]string{"uq_parent"}, diff.ConstraintsAdded...)
-	diff.ConstraintsRemoved = []string{"uq_parent"}
-	diff.ConstraintsAddedWithTables = append([]difftypes.ConstraintAdditionInfo{{
+	diff.ConstraintsAdded = append(difftypes.ConstraintAdditions{{Name: "uq_parent"}}, diff.ConstraintsAdded...)
+	diff.ConstraintsRemoved = difftypes.ConstraintRemovals{{Name: "uq_parent"}}
+	diff.ConstraintsAdded = append([]difftypes.ConstraintAdditionInfo{{
 		Name: "uq_parent", TableName: "children", Type: "UNIQUE", Columns: []string{"other_id"},
-	}}, diff.ConstraintsAddedWithTables...)
-	diff.ConstraintsRemovedWithTables = []difftypes.ConstraintRemovalInfo{{
+	}}, diff.ConstraintsAdded...)
+	diff.ConstraintsRemoved = []difftypes.ConstraintRemovalInfo{{
 		Name: "uq_parent", TableName: "children", Type: "UNIQUE",
 	}}
 	current := &catalog.Database{Constraints: []catalog.Constraint{{
@@ -1072,8 +1067,7 @@ func mysqlReverseForeignKeyAndColumnPositions(
 
 func singleMySQLForeignKeyDiff(table string) *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{
-		ConstraintsAdded: []string{"fk_parent"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name: "fk_parent", TableName: table, Type: "FOREIGN KEY",
 			Columns: []string{"parent_id"}, ForeignTable: "parents", ForeignColumns: []string{"id"},
 		}},

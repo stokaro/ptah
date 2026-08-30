@@ -81,10 +81,13 @@ func applyDiffPolicy(diff *difftypes.SchemaDiff, policy DiffPolicy) *difftypes.S
 		return hasTable(removedTables, ref.TableName)
 	})
 	filtered.SetIndexRemovals(indexRemovals)
-	filtered.ConstraintsRemovedWithTables, filtered.ConstraintsRemoved = filterConstraintRemovalsByTable(
-		filtered.ConstraintsRemovedWithTables,
-		filtered.ConstraintsRemoved,
-		diff.TablesRemoved,
+	// One list, so one filter: the parallel name list this also pruned is gone
+	// (stokaro/ptah#2315).
+	filtered.ConstraintsRemoved = slices.DeleteFunc(
+		slices.Clone(filtered.ConstraintsRemoved),
+		func(value difftypes.ConstraintRemovalInfo) bool {
+			return slices.Contains(diff.TablesRemoved, value.TableName)
+		},
 	)
 	filtered.TriggersRemoved = slices.DeleteFunc(slices.Clone(filtered.TriggersRemoved), func(ref difftypes.TriggerRef) bool {
 		return hasTable(removedTables, ref.TableName)
@@ -100,29 +103,6 @@ func applyDiffPolicy(diff *difftypes.SchemaDiff, policy DiffPolicy) *difftypes.S
 		return strings.EqualFold(ref.ObjectType, "TABLE") && hasTable(removedTables, ref.ObjectName)
 	})
 	return &filtered
-}
-
-func filterConstraintRemovalsByTable(
-	values []difftypes.ConstraintRemovalInfo,
-	names,
-	removedTables []string,
-) ([]difftypes.ConstraintRemovalInfo, []string) {
-	removedNames := make(map[string]struct{})
-	filtered := slices.DeleteFunc(slices.Clone(values), func(value difftypes.ConstraintRemovalInfo) bool {
-		matched := slices.Contains(removedTables, value.TableName)
-		if matched {
-			removedNames[value.Name] = struct{}{}
-		}
-		return matched
-	})
-	return filtered, filterRemovedNames(names, removedNames)
-}
-
-func filterRemovedNames(names []string, removedNames map[string]struct{}) []string {
-	return slices.DeleteFunc(slices.Clone(names), func(name string) bool {
-		_, matched := removedNames[name]
-		return matched
-	})
 }
 
 func tableSet(names []string) map[string]struct{} {

@@ -19,15 +19,13 @@ import (
 // it.
 func mixedSharedFKDiff() *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{
-		ConstraintsAdded:   []string{"shared_fk"},
-		ConstraintsRemoved: []string{"shared_fk"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{
 			{
 				Name: "shared_fk", TableName: "articles", Type: "FOREIGN KEY",
 				Columns: []string{"author_id"}, ForeignTable: "users", ForeignColumn: "id", OnDelete: "CASCADE",
 			},
 		},
-		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 			{Name: "shared_fk", TableName: "articles", Type: "FOREIGN KEY"},
 			{Name: "shared_fk", TableName: "pages", Type: "FOREIGN KEY"},
 		},
@@ -111,8 +109,7 @@ func TestPlanner_CapabilityGating_DropCheckSpellingWithoutGenericClause(t *testi
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		ConstraintsRemoved: []string{"chk_qty"},
-		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 			{Name: "chk_qty", TableName: "things", Type: "CHECK"},
 		},
 	}
@@ -149,8 +146,7 @@ func TestPlanner_CapabilityGating_NoGenericClauseFallbacks(t *testing.T) {
 		c := qt.New(t)
 
 		diff := &difftypes.SchemaDiff{
-			ConstraintsRemoved: []string{"uq_email"},
-			ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+			ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 				{Name: "uq_email", TableName: "users", Type: "UNIQUE"},
 			},
 		}
@@ -174,8 +170,7 @@ func TestPlanner_CapabilityGating_NoGenericClauseFallbacks(t *testing.T) {
 		c := qt.New(t)
 
 		diff := &difftypes.SchemaDiff{
-			ConstraintsRemoved: []string{"chk_qty"},
-			ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+			ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 				{Name: "chk_qty", TableName: "things", Type: "CHECK"},
 			},
 		}
@@ -203,12 +198,12 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 	t.Run("table-level constraint", func(t *testing.T) {
 		c := qt.New(t)
 
-		diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{"positive_price"}}
 		desired := &schemamodel.Database{
 			Constraints: []schemamodel.Constraint{
 				{StructName: "Product", Name: "positive_price", Type: "CHECK", Table: "products", CheckExpression: "price > 0"},
 			},
 		}
+		diff := &difftypes.SchemaDiff{ConstraintsAdded: difftypes.ConstraintAdditionsFor(desired, "positive_price")}
 
 		nodes, err := mysql.NewWithCapabilities(capability.MySQLLegacy()).GenerateMigrationAST(withDeclaredObjects(diff, desired))
 		c.Assert(err, qt.IsNil)
@@ -234,15 +229,15 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 	t.Run("field-level synthesized constraint", func(t *testing.T) {
 		c := qt.New(t)
 
-		diff := &difftypes.SchemaDiff{
-			ConstraintsAdded:   []string{"things_qty_check"},
-			ConstraintsRemoved: make([]string, 0),
-		}
 		desired := &schemamodel.Database{
 			Tables: []schemamodel.Table{{StructName: "Thing", Name: "things"}},
 			Fields: []schemamodel.Field{
 				{StructName: "Thing", Name: "qty", Type: "INT", Check: "qty >= 0"},
 			},
+		}
+		diff := &difftypes.SchemaDiff{
+			ConstraintsAdded:   difftypes.ConstraintAdditionsFor(desired, "things_qty_check"),
+			ConstraintsRemoved: difftypes.ConstraintRemovals{},
 		}
 
 		nodes, err := mysql.NewWithCapabilities(capability.MySQLLegacy()).GenerateMigrationAST(withDeclaredObjects(diff, desired))
@@ -278,16 +273,15 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 func TestPlanner_CapabilityGating_ZeroValuePlannerBehavesLikeNew(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &difftypes.SchemaDiff{
-		ConstraintsAdded:   []string{"positive_price"},
-		ConstraintsRemoved: []string{"chk_old"},
-		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
-			{Name: "chk_old", TableName: "things", Type: "CHECK"},
-		},
-	}
 	desired := &schemamodel.Database{
 		Constraints: []schemamodel.Constraint{
 			{StructName: "Product", Name: "positive_price", Type: "CHECK", Table: "products", CheckExpression: "price > 0"},
+		},
+	}
+	diff := &difftypes.SchemaDiff{
+		ConstraintsAdded: difftypes.ConstraintAdditionsFor(desired, "positive_price"),
+		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
+			{Name: "chk_old", TableName: "things", Type: "CHECK"},
 		},
 	}
 
@@ -320,8 +314,7 @@ func TestPlanner_CapabilityGating_DropCheckDegradesOnMariaDBRenderer(t *testing.
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		ConstraintsRemoved: []string{"chk_qty"},
-		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 			{Name: "chk_qty", TableName: "things", Type: "CHECK"},
 		},
 	}
@@ -393,8 +386,7 @@ func TestPlanner_CapabilityGating_DropIndexGuard(t *testing.T) {
 // (verified live: MariaDB 10.11 accepts it, MySQL 9.7 rejects it).
 func TestPlanner_UniqueConstraintRemoval_UsesDropIndex(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
-		ConstraintsRemoved: []string{"uq_email", "fk_posts_user", "pk_legacy"},
-		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 			{Name: "uq_email", TableName: "users", Type: "UNIQUE"},
 			{Name: "fk_posts_user", TableName: "posts", Type: "FOREIGN KEY"},
 			{Name: "pk_legacy", TableName: "legacy", Type: "PRIMARY KEY"},
@@ -454,8 +446,7 @@ func TestPlanner_UniqueDropGuard_FollowsIndexCapability(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		ConstraintsRemoved: []string{"uq_email", "fk_posts_user"},
-		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{
+		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{
 			{Name: "uq_email", TableName: "users", Type: "UNIQUE"},
 			{Name: "fk_posts_user", TableName: "posts", Type: "FOREIGN KEY"},
 		},

@@ -84,7 +84,7 @@ func TestSQLServerCheckExpressionConvergesE2E(t *testing.T) {
 		ctx, conn, sqlServerCheckDeclaration("price >= 1"), read, config.DefaultCompareOptions())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(changed.ConstraintsAdded, qt.DeepEquals, []string{"ck_price"})
+	c.Assert(changed.ConstraintsAdded.Names(), qt.DeepEquals, []string{"ck_price"})
 }
 
 // replaceSQLServerDatabase points a SQL Server URL at another database.

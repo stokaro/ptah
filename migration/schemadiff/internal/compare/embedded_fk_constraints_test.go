@@ -143,7 +143,7 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 		// slice is the structure the planner reads to build ALTER statements.
 		diff := &difftypes.SchemaDiff{}
 		compare.Constraints(desired, database, diff, nil)
-		for _, info := range diff.ConstraintsRemovedWithTables {
+		for _, info := range diff.ConstraintsRemoved {
 			c.Assert(info.TableName, qt.Not(qt.Equals), "Ownable",
 				qt.Commentf("removal must target a real table, got %q", info.TableName))
 		}
@@ -169,16 +169,16 @@ func TestConstraints_EmbeddedInlineMixinForeignKey(t *testing.T) {
 		diff := &difftypes.SchemaDiff{}
 		compare.Constraints(desired, database, diff, nil)
 
-		c.Assert(diff.ConstraintsAdded, qt.DeepEquals, []string{"fk_entity_tenant"},
+		c.Assert(diff.ConstraintsAdded.Names(), qt.DeepEquals, []string{"fk_entity_tenant"},
 			qt.Commentf("added=%v", diff.ConstraintsAdded))
-		c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, []string{"fk_entity_tenant"},
+		c.Assert(diff.ConstraintsRemoved.Names(), qt.DeepEquals, []string{"fk_entity_tenant"},
 			qt.Commentf("removed=%v", diff.ConstraintsRemoved))
 
 		// The drop must target the locations table (where the drift is), never
 		// areas (unchanged) and never the mixin struct.
-		c.Assert(diff.ConstraintsRemovedWithTables, qt.HasLen, 1)
-		c.Assert(diff.ConstraintsRemovedWithTables[0].TableName, qt.Equals, "locations")
-		c.Assert(diff.ConstraintsRemovedWithTables[0].Name, qt.Equals, "fk_entity_tenant")
+		c.Assert(diff.ConstraintsRemoved, qt.HasLen, 1)
+		c.Assert(diff.ConstraintsRemoved[0].TableName, qt.Equals, "locations")
+		c.Assert(diff.ConstraintsRemoved[0].Name, qt.Equals, "fk_entity_tenant")
 	})
 
 	t.Run("no diff and no host-collapse when the whole mixin is unchanged on three hosts", func(t *testing.T) {

@@ -36,9 +36,9 @@ func TestConstraints_AModificationCarriesOneIdentityUnderTwoSpellings(t *testing
 		diff, nil, semantics,
 	)
 
-	c.Assert(diff.ConstraintsAddedWithTables, qt.HasLen, 1)
-	c.Assert(diff.ConstraintsRemovedWithTables, qt.HasLen, 1)
-	added, removed := diff.ConstraintsAddedWithTables[0], diff.ConstraintsRemovedWithTables[0]
+	c.Assert(diff.ConstraintsAdded, qt.HasLen, 1)
+	c.Assert(diff.ConstraintsRemoved, qt.HasLen, 1)
+	added, removed := diff.ConstraintsAdded[0], diff.ConstraintsRemoved[0]
 
 	// The premise: the two records really do spell the table differently.
 	c.Assert(added.TableName, qt.Equals, "widget")

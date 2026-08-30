@@ -32,14 +32,12 @@ func TestReverseSchemaDiff_EveryConstraintRecordCarriesAnIdentity(t *testing.T) 
 	semantics := identifier.ForDialect("postgres")
 	forward := &difftypes.SchemaDiff{
 		IdentifierSemantics: &semantics,
-		ConstraintsAdded:    []string{"uq_widget_scope"},
-		ConstraintsRemoved:  []string{"uq_widget_scope"},
-		ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+		ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 			Name: "uq_widget_scope", TableName: "widget", Type: "UNIQUE",
 			Columns:  []string{"tenant"},
 			Identity: difftypes.ConstraintIdentity{Schema: "public", Table: "widget", Name: "uq_widget_scope"},
 		}},
-		ConstraintsRemovedWithTables: []difftypes.ConstraintRemovalInfo{{
+		ConstraintsRemoved: []difftypes.ConstraintRemovalInfo{{
 			Name: "uq_widget_scope", TableName: "public.widget", Type: "UNIQUE",
 			Identity: difftypes.ConstraintIdentity{Schema: "public", Table: "widget", Name: "uq_widget_scope"},
 		}},
@@ -48,13 +46,13 @@ func TestReverseSchemaDiff_EveryConstraintRecordCarriesAnIdentity(t *testing.T) 
 	reversed := reverseSchemaDiffWithSchemaForDialect(
 		forward, widgetSchemaForReversal(), widgetCatalogForReversal(), "postgres")
 
-	c.Assert(reversed.ConstraintsAddedWithTables, qt.Not(qt.HasLen), 0)
-	c.Assert(reversed.ConstraintsRemovedWithTables, qt.Not(qt.HasLen), 0)
-	for _, info := range reversed.ConstraintsAddedWithTables {
+	c.Assert(reversed.ConstraintsAdded, qt.Not(qt.HasLen), 0)
+	c.Assert(reversed.ConstraintsRemoved, qt.Not(qt.HasLen), 0)
+	for _, info := range reversed.ConstraintsAdded {
 		c.Assert(info.Identity, qt.Not(qt.Equals), difftypes.ConstraintIdentity{},
 			qt.Commentf("addition %q on %q carries no identity", info.Name, info.TableName))
 	}
-	for _, info := range reversed.ConstraintsRemovedWithTables {
+	for _, info := range reversed.ConstraintsRemoved {
 		c.Assert(info.Identity, qt.Not(qt.Equals), difftypes.ConstraintIdentity{},
 			qt.Commentf("removal %q on %q carries no identity", info.Name, info.TableName))
 	}

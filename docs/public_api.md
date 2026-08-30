@@ -411,8 +411,8 @@ incomplete-index shape or a plan that later removes every covering index.
 `SchemaDiff.ForeignKeysRemovedWithTables` carries the local and referenced
 columns needed for that ordering as supplemental metadata keyed by table and
 constraint name. It does not independently represent a removal and is ignored
-without a matching `ConstraintsRemovedWithTables` entry, leaving the existing
-comparable `ConstraintRemovalInfo` value unchanged.
+without a matching `ConstraintsRemoved` entry, leaving the existing comparable
+`ConstraintRemovalInfo` value unchanged.
 
 `ConcurrentIndexAutomatic` uses the native populated-table heuristic,
 `ConcurrentIndexDisabled` selects ordinary index statements, and
@@ -713,6 +713,23 @@ An addition that describes no index is refused rather than rendered, because a
 `CREATE INDEX` with neither columns nor an expression is not SQL.
 `IndexesRemoved` stays `[]IndexRef`, because `DROP INDEX` is written from the
 name.
+
+`SchemaDiff.ConstraintsAdded` and `ConstraintsRemoved` are `ConstraintAdditions`
+and `ConstraintRemovals` rather than `[]string`. Each direction carried two
+lists — a list of names beside a list of records under
+`ConstraintsAddedWithTables` — explicitly not index-aligned, so every consumer
+correlated them by name, and a name with no record was a shape a planner had to
+resolve against the declaration it was handed. One list per direction carries
+the records; `Names()` answers the question the name list answered, including
+its multiplicity: a name repeats once per host, which is what an embedded
+inline-relation mixin produces and what `migration/safety` counts.
+
+The JSON keys `constraints_added` and `constraints_removed` carry the records
+now, and the `_with_tables` keys are gone. An embedder building a diff by hand
+fills the additions with `difftypes.ConstraintAdditionsFor(desired, names...)`,
+the constraint counterpart of `TableCreationsFor` and `IndexAdditionsFor`, and
+runs `constraintscope.Normalize` if the diff reaches anything but a planner —
+a planner normalizes at its own door.
 
 `SchemaDiff.RLSEnabledTablesAdded` and `RLSEnabledTablesRemoved` are
 `RLSEnabledTableChanges` rather than `[]string`. An ADDED entry is the

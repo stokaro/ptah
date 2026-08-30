@@ -294,9 +294,9 @@ func TestCompareWithDialect_ConstraintMembersPreserveStructuralIdentity(t *testi
 
 	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
 
-	c.Assert(diff.ConstraintsAdded, qt.DeepEquals, []string{"guard"})
-	c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, []string{"payload.guard"})
-	c.Assert(diff.ConstraintsAddedWithTables, qt.DeepEquals, []difftypes.ConstraintAdditionInfo{{
+	c.Assert(diff.ConstraintsAdded.Names(), qt.DeepEquals, []string{"guard"})
+	c.Assert(diff.ConstraintsRemoved.Names(), qt.DeepEquals, []string{"payload.guard"})
+	c.Assert(diff.ConstraintsAdded, qt.DeepEquals, difftypes.ConstraintAdditions{{
 		Name:            "guard",
 		TableName:       `"tenant.data".payload`,
 		Type:            "CHECK",
@@ -309,7 +309,7 @@ func TestCompareWithDialect_ConstraintMembersPreserveStructuralIdentity(t *testi
 			Schema: "tenant.data", Table: "payload", Name: "guard",
 		},
 	}})
-	c.Assert(diff.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{{
+	c.Assert(diff.ConstraintsRemoved, qt.DeepEquals, difftypes.ConstraintRemovals{{
 		Name:      "payload.guard",
 		TableName: `"tenant.data"`,
 		Type:      "CHECK",

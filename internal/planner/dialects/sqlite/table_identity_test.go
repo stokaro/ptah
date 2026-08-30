@@ -28,7 +28,7 @@ func identityRebuildSchema(tableSchema string) *schemamodel.Database {
 // same defect, and it is the stokaro/ptah#930 corruption shape.
 //
 // A table whose constraint change is recorded at schema level reaches the
-// rebuild through ConstraintsAddedWithTables, which carries the table name the
+// rebuild through ConstraintsAdded, which carries the table name the
 // DECLARATION spells. The columns it gains are on TablesModified, which carries
 // the name the comparator spells. Matching the two as raw text answered "no
 // added columns" whenever the two spelled the schema differently, and the
@@ -83,8 +83,7 @@ func TestRebuildCarriesAddedColumnsAcrossSchemaSpellings(t *testing.T) {
 					TableName:    test.diffTableName,
 					ColumnsAdded: difftypes.ColumnChanges{{StructName: "Note", Name: "author", Type: "TEXT", Nullable: true}},
 				}},
-				ConstraintsAdded: []string{"ck_notes_body"},
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 					Name:            "ck_notes_body",
 					TableName:       test.constraintTable,
 					Type:            "CHECK",
@@ -143,9 +142,8 @@ func TestConstraintOnACreatedTableIsNotAlsoRebuilt(t *testing.T) {
 			creations := difftypes.TableCreationsFor(declared, "notes")
 			creations[0].Name = test.addedTableName
 			diff := &difftypes.SchemaDiff{
-				TablesAdded:      creations,
-				ConstraintsAdded: []string{"ck_notes_body"},
-				ConstraintsAddedWithTables: []difftypes.ConstraintAdditionInfo{{
+				TablesAdded: creations,
+				ConstraintsAdded: []difftypes.ConstraintAdditionInfo{{
 					Name:            "ck_notes_body",
 					TableName:       test.constraintTable,
 					Type:            "CHECK",

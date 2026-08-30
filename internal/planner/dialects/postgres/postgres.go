@@ -2999,10 +2999,10 @@ func (p *Planner) removeRLSPolicies(result []ast.Node, diff *difftypes.SchemaDif
 func (p *Planner) addNewConstraints(result []ast.Node, diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	state := newConstraintPlanState(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))
 
-	result = p.addPrimaryKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state)
+	result = p.addPrimaryKeyConstraintsWithTables(result, diff.ConstraintsAdded, state)
 	result = p.addCheckAndUniqueConstraintsWithTables(
 		result,
-		diff.ConstraintsAddedWithTables,
+		diff.ConstraintsAdded,
 		state,
 		diff.IndexRemovalsRebuiltAsUniqueConstraints(),
 	)
@@ -3010,7 +3010,7 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *difftypes.SchemaDif
 	if err != nil {
 		return nil, err
 	}
-	result = p.addForeignKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state)
+	result = p.addForeignKeyConstraintsWithTables(result, diff.ConstraintsAdded, state)
 	result, err = p.addNamedConstraintsByKind(result, diff, state, foreignKeyConstraints)
 	if err != nil {
 		return nil, err
@@ -3061,7 +3061,7 @@ func newConstraintPlanState(diff *difftypes.SchemaDiff, semantics identifier.Sem
 	// constraint of the same name. removeConstraints runs later in the pipeline
 	// and deliberately skips these names, so the drop+add is owned here and
 	// ordered correctly.
-	removedNames := make(map[string]struct{}, len(diff.ConstraintsRemovedWithTables))
+	removedNames := make(map[string]struct{}, len(diff.ConstraintsRemoved))
 	for _, name := range constraintscope.RemovalNames(diff) {
 		removedNames[name] = struct{}{}
 	}
@@ -3071,7 +3071,7 @@ func newConstraintPlanState(diff *difftypes.SchemaDiff, semantics identifier.Sem
 	// one constraint name across every host table, so the bare ConstraintsAdded
 	// name list (and a field scan keyed on the Go struct name) cannot target the
 	// right table — it would emit ALTER TABLE <MixinStruct> once per host
-	// (issue #197). ConstraintsAddedWithTables carries the concrete table and
+	// (issue #197). ConstraintsAdded carries the concrete table and
 	// the full FK definition, so each host gets its own correct ALTER. Names
 	// handled here are recorded so the legacy name loop below skips them.
 	//
@@ -3084,19 +3084,19 @@ func newConstraintPlanState(diff *difftypes.SchemaDiff, semantics identifier.Sem
 	// `ALTER TABLE B DROP CONSTRAINT IF EXISTS <name>` for the pure-add host.
 	// Keying the drop decision on (table, name) — mirroring MySQL's
 	// removalByTableName — gives the pure-add host no drop.
-	removalByTableName := make(map[constraintHostKey]difftypes.ConstraintRemovalInfo, len(diff.ConstraintsRemovedWithTables))
-	for _, info := range diff.ConstraintsRemovedWithTables {
+	removalByTableName := make(map[constraintHostKey]difftypes.ConstraintRemovalInfo, len(diff.ConstraintsRemoved))
+	for _, info := range diff.ConstraintsRemoved {
 		removalByTableName[info.Identity] = info
 	}
 
 	// Index removals by bare name as well, so the legacy ConstraintsAdded loop
 	// below can scope a modified non-FK constraint's DROP to its concrete host
 	// table(s). The comparator records every removal in
-	// ConstraintsRemovedWithTables in lockstep with the bare ConstraintsRemoved
+	// ConstraintsRemoved in lockstep with the bare ConstraintsRemoved
 	// list, so a modified constraint's host is normally known here even though
 	// the bare loop iterates names alone.
-	removalsByName := make(map[string][]difftypes.ConstraintRemovalInfo, len(diff.ConstraintsRemovedWithTables))
-	for _, info := range diff.ConstraintsRemovedWithTables {
+	removalsByName := make(map[string][]difftypes.ConstraintRemovalInfo, len(diff.ConstraintsRemoved))
+	for _, info := range diff.ConstraintsRemoved {
 		removalsByName[info.Name] = append(removalsByName[info.Name], info)
 	}
 
@@ -3110,8 +3110,8 @@ func newConstraintPlanState(diff *difftypes.SchemaDiff, semantics identifier.Sem
 	// Keyed by the WHOLE identity, not by its table half: the outer map already
 	// scopes by the constraint's name, so inside one bucket the name is a
 	// constant and carrying it costs nothing.
-	addedHostsByName := make(map[string]map[constraintHostKey]struct{}, len(diff.ConstraintsAddedWithTables))
-	for _, add := range diff.ConstraintsAddedWithTables {
+	addedHostsByName := make(map[string]map[constraintHostKey]struct{}, len(diff.ConstraintsAdded))
+	for _, add := range diff.ConstraintsAdded {
 		if add.TableName == "" {
 			// An addition entry with no recorded host is hostless: a "" host
 			// would match no removal entry, so keeping it here would make
@@ -3168,7 +3168,7 @@ func (p *Planner) addNamedConstraintsByKind(
 		if _, done := state.handled[constraintName]; done {
 			continue
 		}
-		if constraintRecordIsForeignKey(diff.ConstraintsAddedWithTables, constraintName) != wantForeignKey {
+		if constraintRecordIsForeignKey(diff.ConstraintsAdded, constraintName) != wantForeignKey {
 			continue
 		}
 		return nil, fmt.Errorf(
@@ -3185,7 +3185,7 @@ func (p *Planner) addNamedConstraintsByKind(
 //
 // A record carrying no kind answers false, so such a name is refused once, by
 // the non-foreign-key pass, rather than by both.
-func constraintRecordIsForeignKey(additions []difftypes.ConstraintAdditionInfo, name string) bool {
+func constraintRecordIsForeignKey(additions difftypes.ConstraintAdditions, name string) bool {
 	for _, add := range additions {
 		if add.Name == name {
 			return strings.EqualFold(add.Type, "FOREIGN KEY")
@@ -3196,7 +3196,7 @@ func constraintRecordIsForeignKey(additions []difftypes.ConstraintAdditionInfo, 
 
 func (p *Planner) addForeignKeyConstraintsWithTables(
 	result []ast.Node,
-	additions []difftypes.ConstraintAdditionInfo,
+	additions difftypes.ConstraintAdditions,
 	state constraintPlanState,
 ) []ast.Node {
 	for _, add := range additions {
@@ -3218,7 +3218,7 @@ func (p *Planner) addForeignKeyConstraintsWithTables(
 
 func (p *Planner) addCheckAndUniqueConstraintsWithTables(
 	result []ast.Node,
-	additions []difftypes.ConstraintAdditionInfo,
+	additions difftypes.ConstraintAdditions,
 	state constraintPlanState,
 	rebuiltIndexes map[difftypes.IndexRef]struct{},
 ) []ast.Node {
@@ -3309,7 +3309,7 @@ func constraintAdditionNode(add difftypes.ConstraintAdditionInfo) *ast.Constrain
 
 func (p *Planner) addPrimaryKeyConstraintsWithTables(
 	result []ast.Node,
-	additions []difftypes.ConstraintAdditionInfo,
+	additions difftypes.ConstraintAdditions,
 	state constraintPlanState,
 ) []ast.Node {
 	for _, add := range additions {
@@ -3358,7 +3358,7 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 // whose host the comparator recorded: the legacy ConstraintsAdded modify path
 // scopes its DROP via emitModifyDropForName too, and removeConstraints scopes
 // pure removals table-qualified as well. It remains in use only as a defensive
-// fallback for a synthetic diff that carries no ConstraintsRemovedWithTables
+// fallback for a synthetic diff that carries no ConstraintsRemoved
 // entry.
 func (p *Planner) emitModifyDrop(
 	result []ast.Node,
@@ -3392,7 +3392,7 @@ func (p *Planner) appendScopedDrop(
 }
 
 // foreignKeyAdditionNode builds the ALTER TABLE ADD CONSTRAINT node for a
-// table-qualified field-level FK addition (ConstraintsAddedWithTables). The
+// table-qualified field-level FK addition (ConstraintsAdded). The
 // table comes straight from the comparator's synthesized constraint, so this
 // path is correct for FK names that repeat across the many tables embedding an
 // inline-relation mixin (issue #197), unlike the legacy field-scan fallback
@@ -3439,13 +3439,13 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *difftypes.SchemaDif
 
 	// A removed constraint is dropped from its exact owning table with a direct,
 	// table-qualified ALTER TABLE <host> DROP CONSTRAINT IF EXISTS <name>. The
-	// comparator records that host in ConstraintsRemovedWithTables in lockstep
+	// comparator records that host in ConstraintsRemoved in lockstep
 	// with the bare ConstraintsRemoved name list, so real diff output always
 	// carries it.
 	//
 	// The name-only information_schema DO block (dropConstraintNode) is used ONLY
 	// as a defensive fallback for a synthetic, hand-built diff that lists a
-	// removed constraint by name with no ConstraintsRemovedWithTables host — it
+	// removed constraint by name with no ConstraintsRemoved host — it
 	// resolves the owning table at execution time via information_schema LIMIT 1.
 	// That LIMIT 1 lookup is unsafe for real removals because PostgreSQL
 	// constraint names are unique per table, not per schema, so a same-named
@@ -3466,11 +3466,11 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *difftypes.SchemaDif
 	// the skip on the name alone would treat B's removal as a modify owned by
 	// addNewConstraints and skip it, leaving the stale constraint on B forever
 	// (issue #206). The comparator records every addition's host in
-	// ConstraintsAddedWithTables in lockstep with the bare list, so the modify
+	// ConstraintsAdded in lockstep with the bare list, so the modify
 	// owner is always known per host.
-	modifySet := make(map[constraintHostKey]struct{}, len(diff.ConstraintsAddedWithTables))
-	addedHostCounts := make(map[string]int, len(diff.ConstraintsAddedWithTables))
-	for _, add := range diff.ConstraintsAddedWithTables {
+	modifySet := make(map[constraintHostKey]struct{}, len(diff.ConstraintsAdded))
+	addedHostCounts := make(map[string]int, len(diff.ConstraintsAdded))
+	for _, add := range diff.ConstraintsAdded {
 		if add.TableName == "" {
 			// Hostless addition entries do not count as recorded hosts —
 			// mirroring addedHostsByName in addNewConstraints — so the
@@ -3482,7 +3482,7 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *difftypes.SchemaDif
 	}
 
 	// Bare added names, for re-adds whose hosts were NOT recorded
-	// (ConstraintsAdded carries the name but ConstraintsAddedWithTables has no
+	// (ConstraintsAdded carries the name but ConstraintsAdded has no
 	// entry for it — reverse/down diffs of non-FK modifies, legacy callers
 	// without an introspected schema, and hand-built diffs). For those,
 	// emitModifyDropForName cannot restrict its pre-drop to the re-added
@@ -3491,12 +3491,12 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *difftypes.SchemaDif
 	// the freshly restored constraint — IF EXISTS is no protection against
 	// dropping a constraint that now exists again. This silently destroyed
 	// the constraint on every non-FK down migration (issue #229).
-	addedBareNamesHosted := make(map[string]struct{}, len(diff.ConstraintsAddedWithTables))
+	addedBareNamesHosted := make(map[string]struct{}, len(diff.ConstraintsAdded))
 	for _, name := range constraintscope.AdditionNames(diff) {
 		addedBareNamesHosted[name] = struct{}{}
 	}
 
-	// When the comparator supplied the owning table (ConstraintsRemovedWithTables),
+	// When the comparator supplied the owning table (ConstraintsRemoved),
 	// drop the constraint from that exact table with a direct ALTER TABLE … DROP
 	// CONSTRAINT IF EXISTS, deduped per (table, name) via appendScopedDrop. This
 	// is required for a field-level FK whose name repeats across the many tables
@@ -3507,7 +3507,7 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *difftypes.SchemaDif
 	// fallback below — which exists only for synthetic diffs — does not re-emit
 	// the name-only DO block for them.
 	namesWithHost := make(map[string]struct{})
-	for _, info := range diff.ConstraintsRemovedWithTables {
+	for _, info := range diff.ConstraintsRemoved {
 		if info.TableName == "" {
 			// No host recorded for this entry; defer to the bare fallback.
 			continue
@@ -3530,13 +3530,13 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *difftypes.SchemaDif
 	}
 
 	// Bare fallback for synthetic diffs only: a hand-built diff may list a
-	// removed constraint by name with no ConstraintsRemovedWithTables host. Such
+	// removed constraint by name with no ConstraintsRemoved host. Such
 	// names have genuinely no table to scope by, so the runtime information_schema
 	// DO block (dropConstraintNode) remains the only option. Real comparator
 	// output always carries the host, so it is fully handled above and skipped
 	// here. A bare modify (name in ConstraintsAdded with no recorded host) is
 	// owned by addNewConstraints and skipped.
-	addedBareNames := make(map[string]struct{}, len(diff.ConstraintsAddedWithTables))
+	addedBareNames := make(map[string]struct{}, len(diff.ConstraintsAdded))
 	for _, name := range constraintscope.AdditionNames(diff) {
 		addedBareNames[name] = struct{}{}
 	}

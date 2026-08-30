@@ -227,14 +227,14 @@ func collectTopLevelConstraintMismatches(diff *difftypes.SchemaDiff) []Mismatch 
 }
 
 func constraintAdditionMismatches(diff *difftypes.SchemaDiff) []Mismatch {
-	represented := make(map[string]struct{}, len(diff.ConstraintsAddedWithTables))
+	represented := make(map[string]struct{}, len(diff.ConstraintsAdded))
 	var mismatches []Mismatch
-	for _, info := range sortedConstraintAdditions(diff.ConstraintsAddedWithTables) {
+	for _, info := range sortedConstraintAdditions(diff.ConstraintsAdded) {
 		object := qualifiedObject(info.TableName, info.Name)
 		mismatches = append(mismatches, Mismatch{Kind: "missing_constraint", Table: info.TableName, Constraint: info.Name, Object: object, Message: "missing constraint " + object})
 		represented[info.Name] = struct{}{}
 	}
-	for _, name := range sortedStrings(diff.ConstraintsAdded) {
+	for _, name := range sortedStrings(diff.ConstraintsAdded.Names()) {
 		if _, ok := represented[name]; !ok {
 			mismatches = append(mismatches, Mismatch{Kind: "missing_constraint", Constraint: name, Object: name, Message: "missing constraint " + name})
 		}
@@ -243,14 +243,14 @@ func constraintAdditionMismatches(diff *difftypes.SchemaDiff) []Mismatch {
 }
 
 func constraintRemovalMismatches(diff *difftypes.SchemaDiff) []Mismatch {
-	represented := make(map[string]struct{}, len(diff.ConstraintsRemovedWithTables))
+	represented := make(map[string]struct{}, len(diff.ConstraintsRemoved))
 	var mismatches []Mismatch
-	for _, info := range sortedConstraintRemovals(diff.ConstraintsRemovedWithTables) {
+	for _, info := range sortedConstraintRemovals(diff.ConstraintsRemoved) {
 		object := qualifiedObject(info.TableName, info.Name)
 		mismatches = append(mismatches, Mismatch{Kind: "extra_constraint", Table: info.TableName, Constraint: info.Name, Object: object, Message: "extra constraint " + object})
 		represented[info.Name] = struct{}{}
 	}
-	for _, name := range sortedStrings(diff.ConstraintsRemoved) {
+	for _, name := range sortedStrings(diff.ConstraintsRemoved.Names()) {
 		if _, ok := represented[name]; !ok {
 			mismatches = append(mismatches, Mismatch{Kind: "extra_constraint", Constraint: name, Object: name, Message: "extra constraint " + name})
 		}
@@ -414,7 +414,7 @@ func compareGrantRefs(left, right difftypes.GrantRef) int {
 	return 0
 }
 
-func sortedConstraintAdditions(values []difftypes.ConstraintAdditionInfo) []difftypes.ConstraintAdditionInfo {
+func sortedConstraintAdditions(values []difftypes.ConstraintAdditionInfo) difftypes.ConstraintAdditions {
 	sorted := append([]difftypes.ConstraintAdditionInfo(nil), values...)
 	sort.Slice(sorted, func(i, j int) bool {
 		return compareQualified(sorted[i].TableName, sorted[i].Name, sorted[j].TableName, sorted[j].Name) < 0
@@ -422,7 +422,7 @@ func sortedConstraintAdditions(values []difftypes.ConstraintAdditionInfo) []diff
 	return sorted
 }
 
-func sortedConstraintRemovals(values []difftypes.ConstraintRemovalInfo) []difftypes.ConstraintRemovalInfo {
+func sortedConstraintRemovals(values []difftypes.ConstraintRemovalInfo) difftypes.ConstraintRemovals {
 	sorted := append([]difftypes.ConstraintRemovalInfo(nil), values...)
 	sort.Slice(sorted, func(i, j int) bool {
 		return compareQualified(sorted[i].TableName, sorted[i].Name, sorted[j].TableName, sorted[j].Name) < 0

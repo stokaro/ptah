@@ -113,8 +113,8 @@ func TestConstraints_AForeignTableIsTheSameTableHoweverEachSideSpellsIt(t *testi
 				compositeDeclaringForeignTable(tt.declared),
 				catalogReportingForeignTable(tt.catalogSchema))
 
-			c.Assert(diff.ConstraintsAddedWithTables, qt.HasLen, 0)
-			c.Assert(diff.ConstraintsRemovedWithTables, qt.HasLen, 0)
+			c.Assert(diff.ConstraintsAdded, qt.HasLen, 0)
+			c.Assert(diff.ConstraintsRemoved, qt.HasLen, 0)
 		})
 	}
 }
@@ -144,7 +144,7 @@ func TestConstraints_AForeignTableInAnotherSchemaIsAnotherTable(t *testing.T) {
 				compositeDeclaringForeignTable(tt.declared),
 				catalogReportingForeignTable(tt.catalogSchema))
 
-			c.Assert(diff.ConstraintsAddedWithTables, qt.HasLen, 1)
+			c.Assert(diff.ConstraintsAdded, qt.HasLen, 1)
 		})
 	}
 }

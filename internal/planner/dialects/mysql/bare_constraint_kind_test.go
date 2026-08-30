@@ -25,7 +25,7 @@ func TestPlannerOrdersABareNameForeignKeyAfterTheOtherKinds(t *testing.T) {
 
 	desired := bareConstraintKindSchema()
 	diff := &difftypes.SchemaDiff{
-		ConstraintsAdded: []string{"aaa_fk_child_parent", "zzz_ck_child_amount"},
+		ConstraintsAdded: difftypes.ConstraintAdditionsFor(desired, "aaa_fk_child_parent", "zzz_ck_child_amount"),
 	}
 
 	nodes, err := mysql.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))

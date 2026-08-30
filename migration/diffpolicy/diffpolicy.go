@@ -197,7 +197,7 @@ func apply(
 // kept tables, so skipping a table drop does not leave the plan revoking grants
 // or dropping triggers/policies on a table that still exists. The
 // table-qualified removal lists (IndexesRemoved,
-// ConstraintsRemovedWithTables) carry the object-to-table correlation needed
+// ConstraintsRemoved) carry the object-to-table correlation needed
 // to filter dependent changes.
 //
 // Only table-level grants are suppressed here; a revoke on an object owned by a
@@ -211,13 +211,11 @@ func dropTableDependents(diff difftypes.SchemaDiff, removedTables []string) diff
 	})
 	diff.SetIndexRemovals(indexRemovals)
 
-	removedConstraintNames := namesForRemovedTables(diff.ConstraintsRemovedWithTables, tables, func(info difftypes.ConstraintRemovalInfo) (string, string) {
-		return info.Name, info.TableName
-	})
-	diff.ConstraintsRemovedWithTables = slices.DeleteFunc(slices.Clone(diff.ConstraintsRemovedWithTables), func(info difftypes.ConstraintRemovalInfo) bool {
+	// One list, so one filter: the parallel name list this also had to prune
+	// is gone, and the records already carry the host (stokaro/ptah#2315).
+	diff.ConstraintsRemoved = slices.DeleteFunc(slices.Clone(diff.ConstraintsRemoved), func(info difftypes.ConstraintRemovalInfo) bool {
 		return hasKey(tables, info.TableName)
 	})
-	diff.ConstraintsRemoved = deleteNames(diff.ConstraintsRemoved, removedConstraintNames)
 
 	diff.TriggersRemoved = slices.DeleteFunc(slices.Clone(diff.TriggersRemoved), func(ref difftypes.TriggerRef) bool {
 		return hasKey(tables, ref.TableName)
@@ -240,28 +238,6 @@ func indexRefObject(ref difftypes.IndexRef) string {
 		return ref.Name
 	}
 	return ref.TableName + "." + ref.Name
-}
-
-// namesForRemovedTables collects the object names in withTables whose owning
-// table is being removed, using nameOf to extract (name, table) from each entry.
-func namesForRemovedTables[T any](withTables []T, tables map[string]struct{}, nameOf func(T) (name, table string)) map[string]struct{} {
-	names := make(map[string]struct{})
-	for _, entry := range withTables {
-		name, table := nameOf(entry)
-		if hasKey(tables, table) {
-			names[name] = struct{}{}
-		}
-	}
-	return names
-}
-
-func deleteNames(names []string, remove map[string]struct{}) []string {
-	if len(remove) == 0 {
-		return names
-	}
-	return slices.DeleteFunc(slices.Clone(names), func(name string) bool {
-		return hasKey(remove, name)
-	})
 }
 
 func skipColumnRemovals(tables []difftypes.TableDiff, skipped []SkippedChange) ([]difftypes.TableDiff, []SkippedChange) {
