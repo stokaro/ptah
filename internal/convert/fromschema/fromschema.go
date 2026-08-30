@@ -604,6 +604,7 @@ func FromField(field schemamodel.Field, enums []schemamodel.Enum, targetPlatform
 	// The default behavior should be nullable=true (which ast.NewColumn already sets)
 	if !field.Nullable {
 		column.SetNotNull()
+		column.NotNullConstraintName = keptNotNullConstraintName(field)
 	}
 
 	// Set constraints
@@ -701,6 +702,7 @@ func FromFieldWithoutForeignKeys(field schemamodel.Field, enums []schemamodel.En
 	// Set nullable (default is true, so only set if false)
 	if !field.Nullable {
 		column.SetNotNull()
+		column.NotNullConstraintName = keptNotNullConstraintName(field)
 	}
 
 	// Set primary key
@@ -3258,4 +3260,25 @@ func QualifyRLSPolicyForTarget(
 	policy.Table = tableSchema + "." + policy.Table
 	policy.Name = tableSchema + "." + policy.Name
 	return policy
+}
+
+// keptNotNullConstraintName is the NOT NULL constraint name this column carries
+// into the AST, which is the declared one unless the column is a primary key.
+//
+// The renderer refuses a named NOT NULL on a primary-key column, and it is right
+// to: the NOT NULL there is synthesized for comparison rather than declared, the
+// key is the constraint the column actually has, and its name is the addressable
+// one. A reader supplies such a name on every PostgreSQL 18 primary key, because
+// that server names every NOT NULL, so carrying it through would turn reading a
+// database back into a refusal.
+//
+// Dropping it here is therefore the deliberate half of the same rule, and it is
+// the only place where dropping a name is correct: on any other column the name
+// travels, and a target that cannot keep it refuses rather than losing it
+// silently (stokaro/ptah#2590, stokaro/ptah#2161).
+func keptNotNullConstraintName(field schemamodel.Field) string {
+	if field.Primary {
+		return ""
+	}
+	return field.NotNullConstraintName
 }
