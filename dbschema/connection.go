@@ -124,7 +124,12 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 	switch dialectProtocol {
 	case "pgx":
 		newReader = func(runner sqlrunner.Runner) catalog.SchemaReader {
-			return postgres.NewPostgreSQLReaderWithCapabilities(runner, info.Schema, info.Capabilities)
+			return postgres.NewPostgreSQLWireReaderWithCapabilities(
+				runner,
+				info.Schema,
+				info.Dialect,
+				info.Capabilities,
+			)
 		}
 		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) catalog.SchemaWriter {
 			// The set decides whether cleanup may take a transaction: Spanner

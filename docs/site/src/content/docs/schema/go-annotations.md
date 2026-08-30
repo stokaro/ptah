@@ -110,14 +110,22 @@ type AccountIndexes struct {
 }
 ```
 
-For PostgreSQL, YugabyteDB, and the Spanner PostgreSQL dialect, the annotation
-renders `INCLUDE ("display_name", "created_at")`. PostgreSQL accepts the
-default, `BTREE`, and `GIST` access methods, plus `SPGIST` on PostgreSQL 14 and
-newer. YugabyteDB accepts the default and `LSM`; `BTREE` is its documented
-alias for the default LSM and renders identically to the default. The Spanner
-PostgreSQL dialect accepts only the default. CockroachDB and every other
-dialect reject `include` before emitting SQL. Omit `include` when there are no
-payload columns; a present list with an empty element is a parse error.
+For PostgreSQL, YugabyteDB, CockroachDB, and the Spanner PostgreSQL dialect, the
+annotation renders `INCLUDE ("display_name", "created_at")`. PostgreSQL accepts
+the default, `BTREE`, and `GIST` access methods, plus `SPGIST` on PostgreSQL 14
+and newer. YugabyteDB accepts the default and `LSM`; `BTREE` is its documented
+alias for the default LSM and renders identically to the default. CockroachDB
+accepts the default and `BTREE`, which is also its default, and refuses `GIN`
+and `GIST` because both name an inverted index there and an inverted index
+stores no payload. The Spanner PostgreSQL dialect accepts only the default.
+Every other dialect rejects `include` before emitting SQL. Omit `include` when
+there are no payload columns; a present list with an empty element is a parse
+error.
+
+CockroachDB spells the payload `STORING` in its own output, so an index written
+with `include` on a table named `accounts` is reported by `SHOW CREATE TABLE` as
+`INDEX idx_accounts_email (email ASC) STORING (display_name)`. It is the same
+index, and `ptah db read` describes it with `INCLUDE` again.
 
 ### Add an INCLUDE covering constraint
 
@@ -151,9 +159,9 @@ error: error rendering mysql schema: mysql does not support INCLUDE columns on U
 ```
 
 The targets for a constraint are not the targets for an index. The Spanner
-PostgreSQL dialect takes `include` on an index and refuses it on a constraint;
-CockroachDB is the reverse for a UNIQUE constraint. Pick the object first, then
-read its list.
+PostgreSQL dialect takes `include` on an index and refuses it on a constraint,
+and CockroachDB takes it on an index and on a UNIQUE constraint but not on a
+primary key. Pick the object first, then read its list.
 
 ### Install a PostgreSQL extension in a schema
 

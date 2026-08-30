@@ -3611,8 +3611,8 @@
         "/schema/overview/",
         "/start/install-options/"
       ],
-      "visibleWords": 4049,
-      "sourceBytes": 32475
+      "visibleWords": 4131,
+      "sourceBytes": 32934
     },
     {
       "path": "docs/site/src/content/docs/reference/hcl-schema.md",
@@ -4190,8 +4190,8 @@
         "/schema/visualize/",
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 1345,
-      "sourceBytes": 11419
+      "visibleWords": 1436,
+      "sourceBytes": 11940
     },
     {
       "path": "docs/site/src/content/docs/schema/hcl.md",
