@@ -123,6 +123,46 @@ bytes are identical, so what you keep locally is what you would have fetched —
 which is the destination for a first migration, for a CI job that runs before
 anything is published, and for a team with no registry at all.
 
+## Promote one release through environments
+
+`plan --publish-evidence` writes the release, and the release carries the
+specification it was built from. Every verb takes `--release` in place of
+`--spec`, so development, staging and production run one document rather than
+three copies of it:
+
+```bash
+# Once, from the machine that holds the file.
+ptah inference plan --spec spec-v2.yaml --db-url "$DEV" \
+  --publish-evidence oci://registry.example.com/search-embeddings:release
+
+# In each environment afterwards. No file, and no ConfigMap to keep in step.
+ptah inference plan     --release "$RELEASE" --db-url "$STAGING"
+ptah inference prepare  --release "$RELEASE" --db-url "$STAGING" --run-id "$RUN"
+```
+
+Address it by digest where it matters. A tag works, and what it resolved to is
+printed on standard error — a promotion whose record kept only the tag says two
+environments agreed without establishing that they did.
+
+Each environment produces its own run, verification and cutover records against
+the same release identity, and `ptah inference describe --release "$RELEASE"`
+reads the whole specification back without a database.
+
+An air-gapped environment takes the same flag over a directory:
+`ptah oci copy oci://... oci-layout://./release` on one side of the gap, carry
+the directory across, and `--release oci-layout://./release` on the other.
+
+## Gate a deployment on the state
+
+`ptah inference status --require-ready` exits 1 until the generation is verified
+and ready to cut over, and 0 when it is. That is the whole of a rollout gate: a
+CI step or an init container that keeps failing until the corpus is there.
+
+It does not wait for the approval, which is reported separately with the digest
+to approve — a gate that waited for a signature given in the same breath as the
+cutover would never open. See
+[Run in Kubernetes](../../guides/run-in-kubernetes/).
+
 ## What to watch after the cutover
 
 - **Search latency.** A new index with different parameters behaves differently

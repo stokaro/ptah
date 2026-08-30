@@ -1,0 +1,60 @@
+# Hold a deployment until the state it reads is there.
+#
+# The gate is an init container on the application's own Deployment. It exits 1
+# until the generation is verified and ready to cut over, and Kubernetes
+# restarts an init container that fails -- so the pod does not start, and the
+# rollout does not progress, until the corpus is built and measured.
+#
+# `--require-ready` is what makes this two lines rather than a shell parsing
+# JSON. The report is still printed, so `kubectl logs -c wait-for-embeddings`
+# says what is missing rather than only that something is.
+#
+# What the gate does NOT wait for is the approval. A generation waiting for a
+# person to sign is finished; folding the signature in would hold the deployment
+# for something given in the same breath as the cutover, and the rollout would
+# never proceed. `ptah inference status` reports the approval separately, with
+# the digest to approve.
+#
+# Ptah does not touch application traffic here. It answers a question; the
+# Deployment, the Service and whatever rollout controller you run own where
+# requests go.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: search-api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: search-api
+  template:
+    metadata:
+      labels:
+        app: search-api
+    spec:
+      initContainers:
+        - name: wait-for-embeddings
+          image: ghcr.io/stokaro/ptah:latest
+          args: ["inference", "status", "--require-ready"]
+          env:
+            - name: PTAH_RELEASE
+              value: oci://ghcr.io/example/search-embeddings@sha256:0000000000000000000000000000000000000000000000000000000000000000
+            - name: PTAH_RUN_ID
+              value: articles-v2
+            - name: PTAH_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: ptah-inference-database
+                  key: url
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            capabilities:
+              drop: ["ALL"]
+      containers:
+        - name: search-api
+          image: ghcr.io/example/search-api:latest
+          ports:
+            - containerPort: 8080

@@ -112,6 +112,7 @@ export const sidebar = [
           { slug: 'inference/guides/migrate-a-paused-source' },
           { slug: 'inference/guides/resume-and-recover' },
           { slug: 'inference/guides/rollback-and-retire' },
+          { slug: 'inference/guides/run-in-kubernetes' },
         ],
       },
       {

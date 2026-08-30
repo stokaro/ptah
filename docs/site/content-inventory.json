@@ -6,12 +6,12 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 126,
-    "authored": 124,
+    "pages": 127,
+    "authored": 125,
     "generated": 2,
     "byType": {
       "concept": 16,
-      "how-to": 52,
+      "how-to": 53,
       "landing": 12,
       "reference": 31,
       "status": 8,
@@ -2284,6 +2284,44 @@
       "sourceBytes": 4257
     },
     {
+      "path": "docs/site/src/content/docs/inference/guides/run-in-kubernetes.md",
+      "route": "/inference/guides/run-in-kubernetes/",
+      "title": "Run in Kubernetes",
+      "description": "Building a generation as Jobs, holding a rollout until it is ready, and what deleting the resources does not delete.",
+      "sidebarPath": "Inference migrations > Guides",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "How do I run an embedding-generation change in Kubernetes and gate a rollout on it?",
+      "goal": "Run an embedding-generation change as Kubernetes Jobs and gate a rollout on its readiness.",
+      "sourceOfTruth": [
+        "cmd/inference",
+        "examples/kubernetes",
+        "integration/inference_rollout_gate_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/inference/reference/support-and-limitations/"
+      ],
+      "inboundLinks": [
+        "/inference/reference/support-and-limitations/",
+        "/inference/strategies/production-rollout/"
+      ],
+      "visibleWords": 968,
+      "sourceBytes": 7580
+    },
+    {
       "path": "docs/site/src/content/docs/inference/overview.md",
       "route": "/inference/overview/",
       "title": "Inference migrations",
@@ -2529,12 +2567,15 @@
       "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
-      "outboundLinks": [],
+      "outboundLinks": [
+        "/inference/guides/run-in-kubernetes/"
+      ],
       "inboundLinks": [
+        "/inference/guides/run-in-kubernetes/",
         "/inference/overview/"
       ],
-      "visibleWords": 675,
-      "sourceBytes": 5094
+      "visibleWords": 692,
+      "sourceBytes": 5223
     },
     {
       "path": "docs/site/src/content/docs/inference/strategies/choose-a-consistency-mode.md",
@@ -2706,11 +2747,12 @@
       "disposition": "keep",
       "outboundLinks": [
         "/inference/guides/migrate-to-another-model/",
-        "/inference/guides/rollback-and-retire/"
+        "/inference/guides/rollback-and-retire/",
+        "/inference/guides/run-in-kubernetes/"
       ],
       "inboundLinks": [],
-      "visibleWords": 617,
-      "sourceBytes": 5928
+      "visibleWords": 847,
+      "sourceBytes": 7805
     },
     {
       "path": "docs/site/src/content/docs/inference/troubleshooting.md",
@@ -3569,8 +3611,8 @@
         "/testing/ci/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 3003,
-      "sourceBytes": 21880
+      "visibleWords": 3410,
+      "sourceBytes": 24742
     },
     {
       "path": "docs/site/src/content/docs/reference/extension-variables.md",

@@ -1,0 +1,61 @@
+# Measure the generation, and keep what was measured.
+#
+# Separate from the build because it is a separate decision. A backfill
+# finishing does not mean the corpus is right, and the report is the thing
+# somebody reads six months later when they ask why a corpus was replaced --
+# so it goes to a registry, attached to the release it is about, and to a file
+# for whoever has no registry.
+#
+# The verb exits 1 on a blocking finding, so the Job fails and the report is in
+# the pod's logs. That is the intended outcome of a verification that found
+# something: nothing downstream should proceed, and the evidence is published
+# either way.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ptah-inference-verify
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      name: ptah-inference-verify
+    spec:
+      restartPolicy: Never
+      volumes:
+        - name: evidence
+          emptyDir: {}
+      containers:
+        - name: verify
+          image: ghcr.io/stokaro/ptah:latest
+          args:
+            - inference
+            - verify
+            - --attach-to
+            - oci://ghcr.io/example/search-embeddings:release
+            - --evidence-file
+            - /evidence/verification.json
+          env:
+            - name: PTAH_RELEASE
+              value: oci://ghcr.io/example/search-embeddings@sha256:0000000000000000000000000000000000000000000000000000000000000000
+            - name: PTAH_RUN_ID
+              value: articles-v2
+            - name: PTAH_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: ptah-inference-database
+                  key: url
+            - name: PTAH_EMBED_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: ptah-inference-provider
+                  key: token
+          volumeMounts:
+            - name: evidence
+              mountPath: /evidence
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            capabilities:
+              drop: ["ALL"]

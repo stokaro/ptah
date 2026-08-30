@@ -1,0 +1,108 @@
+# Build one embedding generation, from a release nobody has to copy into the
+# cluster.
+#
+# Four verbs in order, as init containers, with the last as the pod's own
+# container. Init containers because the order is not optional: the outbox has
+# to exist before the boundary is recorded, the backfill before the catch-up,
+# and the index after both -- an IVFFlat index trains its lists on the data
+# present when it is built, so one built over an empty column is valid and
+# useless.
+#
+# The specification is not in this file, and not in a ConfigMap either. It
+# travels inside the release the OCI reference names, so the digest below is the
+# whole of what this Job runs: the same digest in staging and in production is
+# the same corpus definition, established rather than assumed.
+#
+# Restarting is safe, and the manifest depends on it. `restartPolicy: OnFailure`
+# re-runs every container from the first, and each one is either idempotent or
+# resumable: prepare finds its own run and leaves it alone, backfill resumes
+# from its last committed checkpoint, catch-up from its watermark, and the index
+# build reports the index it finds. Nothing here restarts from row one.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ptah-inference-build
+spec:
+  # A generation is built once. Two coordinators cannot corrupt one run -- the
+  # store fences on a token rather than trusting a lease -- but a second pod
+  # would spend the provider budget twice.
+  parallelism: 1
+  completions: 1
+  backoffLimit: 6
+  template:
+    metadata:
+      name: ptah-inference-build
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: index
+          image: &image ghcr.io/stokaro/ptah:latest
+          args: ["inference", "index"]
+          env: &environment
+            - name: PTAH_RELEASE
+              value: &release oci://ghcr.io/example/search-embeddings@sha256:0000000000000000000000000000000000000000000000000000000000000000
+            - name: PTAH_RUN_ID
+              value: &run articles-v2
+            - name: PTAH_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: ptah-inference-database
+                  key: url
+            - name: PTAH_EMBED_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: ptah-inference-provider
+                  key: token
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          securityContext: &security
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            capabilities:
+              drop: ["ALL"]
+      initContainers:
+        - name: prepare
+          image: *image
+          args: ["inference", "prepare", "--worker", "$(POD_NAME)"]
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: PTAH_RELEASE
+              value: *release
+            - name: PTAH_RUN_ID
+              value: *run
+            - name: PTAH_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: ptah-inference-database
+                  key: url
+            - name: PTAH_EMBED_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: ptah-inference-provider
+                  key: token
+          securityContext: *security
+        - name: backfill
+          image: *image
+          args: ["inference", "backfill", "--batch-rows", "500", "--batch-inputs", "64"]
+          env: *environment
+          resources:
+            requests:
+              cpu: 500m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          securityContext: *security
+        - name: catchup
+          image: *image
+          args: ["inference", "catchup", "--batch-rows", "500", "--batch-inputs", "64"]
+          env: *environment
+          securityContext: *security
