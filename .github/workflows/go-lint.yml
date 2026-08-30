@@ -252,6 +252,13 @@ jobs:
           version: v2.13.2
           working-directory: examples/orm-loaders/gorm
 
+      - name: Golint (documentation source fixture)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m
+          version: v2.13.2
+          working-directory: docs/site/fixtures/source-equivalence
+
   go-lint-windows:
     # The Ubuntu job's two contours differ by build tag, and a build tag cannot
     # reach a file the target operating system excludes: `go help
@@ -316,6 +323,13 @@ jobs:
           args: --timeout=30m
           version: v2.13.2
           working-directory: examples/orm-loaders/gorm
+
+      - name: Golint (documentation source fixture)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m
+          version: v2.13.2
+          working-directory: docs/site/fixtures/source-equivalence
 
       # Windows-only source is not only unanalyzed without this job, it is
       # unrun: a _windows_test.go file exercises code no other runner compiles.

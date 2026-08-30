@@ -24,6 +24,7 @@ contributor or implementation detail beyond the site.
 | `docs/architecture_boundaries.md` | The measured boundary inventory and the executable invariant set, with the baseline the gate ratchets against. |
 | `docs/canonical_pipeline_prototype.md` | What the ADR 0001 prototype measured, and what it changed about the record. |
 | `docs/feature-inventory.json` | The derived feature register: every native verb, ledger package, released program and dialect, with the page that claims it. Generated. |
+| `docs/source-support.json` | The generated command-by-source audit: exact invocation, implementation owner, evidence, composability, opt-in, limitation, and verification status for every audited cell. |
 | `examples/*` | Runnable local examples and generated artifacts. |
 | `ptah-atlas-conformance` | External Atlas compatibility evidence and gap reports. |
 
@@ -94,6 +95,27 @@ The file states those limits in its own `notice` field, with the rest of what it
 does not claim. The count is not repeated here: `notice` is generated from
 `featureinventory.Notice`, so a number written beside it is one more thing to
 keep in step.
+
+### The source-support manifest
+
+`docs/source-support.json` is generated from the audited declarations in
+`docs/site/scripts/build-source-support.mjs`. It distinguishes verified cells,
+supported cells that still lack a command-level test, conditional uses,
+deliberate exclusions, and product gaps. Do not infer one command's source
+support from another command merely because they share a loader.
+
+Regenerate and check the manifest against the built command tree:
+
+```bash
+node docs/site/scripts/build-source-support.mjs --write --binary ./bin/ptah
+node docs/site/scripts/build-source-support.mjs --binary ./bin/ptah
+scripts/check-source-equivalence.sh
+```
+
+The equivalence gate renders every canonical source through the built CLI,
+materializes the result on a fresh SQLite database, and compares the resulting
+inspection JSON. Its fixture lives under
+`docs/site/fixtures/source-equivalence/`.
 
 ## Contributing to the documentation
 

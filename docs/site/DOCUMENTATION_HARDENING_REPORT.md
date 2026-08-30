@@ -124,9 +124,39 @@ Public smoke-test result: the six required routes returned HTTP 200. The
 provenance route returned HTTP 404. The automated post-deployment smoke test is
 implemented in Phase 0 and must pass after merge.
 
+## Source-support audit
+
+The command-by-source audit was executed on August 30, 2026 and is generated
+as [`docs/source-support.json`](../source-support.json). It covers every cell
+across the required commands, every schema-export target, and all eleven source
+categories. Each cell names an exact invocation, implementation owner,
+evidence, composability, external-execution opt-in, limitation, and one of the
+six required statuses.
+
+The verified common fixture describes the same four-table library schema as
+SQL, YAML, HCL, DBML, Go annotations, explicit external SQL, and configured
+external SQL. `scripts/check-source-equivalence.sh` renders every spelling with
+the built CLI, materializes it on a fresh SQLite database, and compares the
+inspection JSON byte for byte. Its mutation self-test changes one YAML column
+name and requires the gate to fail.
+
+The audit records these product gaps instead of inferring support from a shared
+loader:
+
+- `schema diff` does not accept an OCI source;
+- direct `schema plan` and `schema apply` do not accept explicit or configured
+  external programs;
+- `schema test` cannot compose desired-schema sources;
+- `schema lineage` and `schema push` do not accept explicit or configured
+  external programs;
+- `stokaro/ptah-action` remains explicitly scoped to Go annotations.
+
+Supported cells without a command-level test remain visibly distinct from
+verified cells. Later phases may close those test gaps, but this audit does not
+launder shared-loader evidence into command-level proof.
+
 ## Remaining report sections
 
-The source-support matrix, documentation rewrite, visual proof, tutorials,
-waivers, and remaining product issues are recorded here as their phases land.
-The final pull request description uses the complete report template from the
-authoritative task.
+The documentation rewrite, visual proof, tutorials, waivers, and remaining
+product issues are recorded here as their phases land. The final pull request
+description uses the complete report template from the authoritative task.

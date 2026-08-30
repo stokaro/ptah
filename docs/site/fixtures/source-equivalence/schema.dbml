@@ -1,0 +1,34 @@
+Table authors {
+  id integer [pk, not null]
+  name varchar(120) [not null]
+
+  indexes {
+    name [name: 'idx_authors_name', unique]
+  }
+}
+
+Table books {
+  id integer [pk, not null]
+  author_id integer [not null]
+  title varchar(240) [not null]
+  summary text
+}
+
+Table tags {
+  id integer [pk, not null]
+  name varchar(80) [not null]
+}
+
+Table book_tags {
+  id integer [pk, not null]
+  book_id integer [not null]
+  tag_id integer [not null]
+
+  indexes {
+    (book_id, tag_id) [name: 'idx_book_tags_pair', unique]
+  }
+}
+
+Ref fk_books_author_id: books.author_id > authors.id
+Ref fk_book_tags_book_id: book_tags.book_id > books.id
+Ref fk_book_tags_tag_id: book_tags.tag_id > tags.id
