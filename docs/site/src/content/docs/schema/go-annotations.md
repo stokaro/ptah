@@ -119,6 +119,42 @@ PostgreSQL dialect accepts only the default. CockroachDB and every other
 dialect reject `include` before emitting SQL. Omit `include` when there are no
 payload columns; a present list with an empty element is a parse error.
 
+### Add an INCLUDE covering constraint
+
+A UNIQUE or PRIMARY KEY constraint takes the same `include` payload, on a
+constraint annotation rather than an index one:
+
+```go
+type Account struct {
+	//ptah:schema:field name="email" type="VARCHAR(255)" not_null="true"
+	Email string
+
+	//ptah:schema:field name="display_name" type="VARCHAR(255)"
+	//ptah:schema:constraint name="uq_accounts_email" type="UNIQUE" table="accounts" columns="email" include="display_name"
+	DisplayName string
+}
+```
+
+PostgreSQL, YugabyteDB, and CockroachDB render
+`CONSTRAINT "uq_accounts_email" UNIQUE ("email") INCLUDE ("display_name")`.
+CockroachDB stores it as a unique index with a `STORING` clause, which is its
+spelling of the same payload.
+
+A covering `PRIMARY KEY` is narrower: PostgreSQL and YugabyteDB take it, and
+CockroachDB does not.
+
+Every other target refuses the render, naming the constraint and the targets
+that accept it:
+
+```text
+error: error rendering mysql schema: mysql does not support INCLUDE columns on UNIQUE constraint "uq_accounts_email"; target postgres, yugabytedb, or cockroachdb
+```
+
+The targets for a constraint are not the targets for an index. The Spanner
+PostgreSQL dialect takes `include` on an index and refuses it on a constraint;
+CockroachDB is the reverse for a UNIQUE constraint. Pick the object first, then
+read its list.
+
 ### Install a PostgreSQL extension in a schema
 
 An extension annotation belongs on a type declaration. Set `schema` when the

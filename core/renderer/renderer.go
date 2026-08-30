@@ -758,6 +758,17 @@ func prepareConstraintNode(
 	if node == nil {
 		return nil, invalidASTForeignKeyError(dialect, "constraint node is nil")
 	}
+	// Before the foreign-key early return, not after it: a UNIQUE or PRIMARY KEY
+	// constraint takes that return, and its INCLUDE payload is exactly what was
+	// being dropped in silence (stokaro/ptah#2538).
+	if err := validateConstraintInclude(
+		dialect,
+		node.Type.String(),
+		node.Name,
+		node.IncludeColumns,
+	); err != nil {
+		return nil, err
+	}
 	if node.Type != ast.ForeignKeyConstraint {
 		return node, nil
 	}
@@ -1127,6 +1138,9 @@ func validateDatabaseDeclarations(
 	if err := validateRoutineIdentityCollisions(dialect, database.Functions); err != nil {
 		return err
 	}
+	if err := validateDeclaredConstraintIncludes(dialect, database); err != nil {
+		return err
+	}
 	return validateDeclaredIndexIncludes(dialect, caps, database.Indexes)
 }
 
@@ -1331,6 +1345,189 @@ func validateIndexInclude(
 			method,
 		),
 	}
+}
+
+// constraintIncludeTargets names the dialects that attach an INCLUDE payload to
+// the constraint kind carrying it, and returns nil for a kind that carries none.
+//
+// This is deliberately NOT validateIndexInclude's set. The two questions have
+// different answers on three dialects, and each cell below is one CREATE TABLE
+// against a live server, measured 2026-08-30, paired with a control that drops
+// only the INCLUDE clause so a refusal cannot be the rest of the statement:
+//
+//	dialect                  UNIQUE ... INCLUDE            PRIMARY KEY ... INCLUDE
+//	postgres 18              kept                          kept
+//	yugabytedb 2026.1.0.0    kept                          kept
+//	cockroachdb v26.3.1      kept, as UNIQUE INDEX          ERROR: at or near
+//	                         ... STORING (name)             "include": syntax error
+//	spanner (pgadapter        ERROR: <UNIQUE> constraint    ERROR: <INCLUDE> clause is
+//	  emulator v0.55.2)      is not supported               not supported in constraints.
+//	mysql 26.7               ERROR 1064 syntax             ERROR 1064 syntax
+//	mariadb 12.3             ERROR 1064 syntax             ERROR 1064 syntax
+//	sqlserver 2025           Msg 102 syntax                Msg 102 syntax
+//	oracle 23.9              ORA-03075 unexpected item     ORA-03075
+//	                         INCLUDE in an out-of-line
+//	                         constraint
+//	sqlite 3.51              near "INCLUDE": syntax error  near "INCLUDE": syntax error
+//	clickhouse 26.7          no UNIQUE constraint at all (Expected one of: CHECK, ASSUME)
+//
+// Two rows are worth reading twice, because copying the index set would get
+// both wrong:
+//
+//   - Spanner is allowed for an INDEX and refused here. A Spanner unique index
+//     takes INCLUDE -- `CREATE UNIQUE INDEX ... INCLUDE (name)` is accepted --
+//     while a Spanner constraint does not, and the server draws that exact line
+//     in its own words. Spanner refuses the UNIQUE constraint spelling outright
+//     as well, which is stokaro/ptah#2585.
+//   - CockroachDB is the mirror image: allowed on a UNIQUE constraint, where it
+//     is a synonym for STORING, and refused on a primary key. It is also refused
+//     for an INDEX by validateIndexInclude, which the same measurement shows to
+//     be an over-refusal; widening that needs the reader and comparator to
+//     follow, so it is recorded in stokaro/ptah#2584 rather than done here.
+//
+// ClickHouse reaches the default arm and is refused, which is narrower than the
+// truth: it drops the whole UNIQUE constraint with no diagnostic, INCLUDE or not
+// (stokaro/ptah#2586). Refusing the payload reports less than that defect, and
+// strictly more than the silence it replaces.
+func constraintIncludeTargets(constraintKind string) []string {
+	switch constraintKind {
+	case ast.UniqueConstraint.String():
+		return []string{platform.Postgres, platform.YugabyteDB, platform.CockroachDB}
+	case ast.PrimaryKeyConstraint.String():
+		return []string{platform.Postgres, platform.YugabyteDB}
+	default:
+		return nil
+	}
+}
+
+// validateConstraintInclude refuses an INCLUDE payload the target cannot attach
+// to the constraint carrying it.
+//
+// Without it the clause was dropped in silence on five dialects and the render
+// exited 0, so an author who asked for a covering constraint was handed one that
+// covers nothing and told nothing (stokaro/ptah#2538). The MySQL-family planner
+// already refused the same shape when it reached a migration; this is the check
+// at the point a declaration meets a target, which is every producer rather than
+// that one path.
+func validateConstraintInclude(
+	dialect, constraintKind, constraintName string,
+	includeColumns []string,
+) error {
+	if len(includeColumns) == 0 {
+		return nil
+	}
+	for i, column := range includeColumns {
+		if strings.TrimSpace(column) != "" {
+			continue
+		}
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: fmt.Sprintf(
+				"%s constraint %q has an empty INCLUDE column at position %d",
+				constraintKind,
+				constraintName,
+				i+1,
+			),
+		}
+	}
+
+	targets := constraintIncludeTargets(constraintKind)
+	if len(targets) == 0 {
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: fmt.Sprintf(
+				"%s constraint %q carries INCLUDE columns; only a PRIMARY KEY or UNIQUE constraint can",
+				constraintKind,
+				constraintName,
+			),
+		}
+	}
+
+	normalizedDialect := platform.NormalizeDialect(dialect)
+	if slices.Contains(targets, normalizedDialect) {
+		return nil
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: dialect,
+		Feature: "constraint INCLUDE columns",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf(
+			"%s does not support INCLUDE columns on %s constraint %q; target %s",
+			normalizedDialect,
+			constraintKind,
+			constraintName,
+			englishAlternatives(targets),
+		),
+	}
+}
+
+// englishAlternatives renders a target list the way the refusal messages read
+// them out, deriving the sentence from the allowed set so the two cannot drift.
+func englishAlternatives(names []string) string {
+	switch len(names) {
+	case 0:
+		return ""
+	case 1:
+		return names[0]
+	case 2:
+		return names[0] + " or " + names[1]
+	default:
+		return strings.Join(names[:len(names)-1], ", ") + ", or " + names[len(names)-1]
+	}
+}
+
+// validateDeclaredConstraintIncludes runs the same refusal over a whole
+// declaration, before any statement is emitted.
+//
+// It is not redundant with the AST check in prepareConstraintNode, and the two
+// things it alone catches were established by deleting this call and seeing
+// which tests reddened rather than by reasoning about the call graph:
+//
+//   - a payload on a kind that cannot carry one. FromConstraint builds a CHECK,
+//     FOREIGN KEY or EXCLUDE node without copying IncludeColumns, so the payload
+//     is already gone by the time a node exists and the AST gate has nothing to
+//     refuse.
+//   - a table-carried primary key with no declared name, which reaches the AST
+//     gate as "" and produces a sentence naming nothing. Here the table is still
+//     in hand, so the refusal can say which one.
+//
+// Everything else is caught by both, which is the same overlap
+// validateDeclaredIndexIncludes has with validateIndexInclude.
+func validateDeclaredConstraintIncludes(dialect string, database *schemamodel.Database) error {
+	for _, table := range database.Tables {
+		if err := validateConstraintInclude(
+			dialect,
+			ast.PrimaryKeyConstraint.String(),
+			declaredPrimaryKeyName(table),
+			table.PrimaryKeyInclude,
+		); err != nil {
+			return err
+		}
+	}
+	for _, constraint := range database.Constraints {
+		if err := validateConstraintInclude(
+			dialect,
+			strings.ToUpper(strings.TrimSpace(constraint.Type)),
+			constraint.Name,
+			constraint.IncludeColumns,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// declaredPrimaryKeyName answers what a refusal should call a table's primary
+// key. A declaration that named the constraint is reported by that name; one
+// that did not is reported by the table it belongs to, because "" in the middle
+// of a sentence names nothing.
+func declaredPrimaryKeyName(table schemamodel.Table) string {
+	if name := strings.TrimSpace(table.PrimaryKeyName); name != "" {
+		return name
+	}
+	return table.QualifiedName()
 }
 
 func makeMySQLForeignKeyTableEnginesExplicit(database *schemamodel.Database, dialect string) {

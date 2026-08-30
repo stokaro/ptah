@@ -297,7 +297,7 @@ Declares a table constraint.
 | `foreign_column` | No | Single referenced column for FOREIGN KEY constraints. |
 | `foreign_columns` | No | Comma-separated referenced columns for composite FOREIGN KEY constraints. |
 | `foreign_table` | No | Referenced table for FOREIGN KEY constraints. |
-| `include` | No | Comma-separated PostgreSQL INCLUDE columns for covering UNIQUE constraints. |
+| `include` | No | Comma-separated INCLUDE columns for a covering UNIQUE or PRIMARY KEY constraint. Order is preserved. |
 | `name` | No | Constraint name. |
 | `nulls_distinct` | No | Controls NULLS DISTINCT behavior where supported. `true`/`false`. |
 | `on_delete` | No | Foreign key ON DELETE action. |
@@ -305,6 +305,30 @@ Declares a table constraint.
 | `table` | No | Explicit target table. |
 | `type` | No | Constraint type: CHECK, UNIQUE, PRIMARY KEY, FOREIGN KEY, or EXCLUDE. |
 | `using` | No | EXCLUDE index method. |
+
+`include` belongs to a UNIQUE or a PRIMARY KEY constraint, and the two accept it
+on different targets:
+
+| `type` | Targets that accept `include` |
+| --- | --- |
+| `UNIQUE` | PostgreSQL, YugabyteDB, CockroachDB |
+| `PRIMARY KEY` | PostgreSQL, YugabyteDB |
+
+Every other target refuses the constraint before emitting SQL, naming the
+constraint and the targets that accept it. CockroachDB stores a covering UNIQUE
+constraint as a unique index with a `STORING` clause, which is its spelling of
+the same payload; it has no covering primary key, and the Spanner PostgreSQL
+dialect answers `<INCLUDE> clause is not supported in constraints` for either
+kind, so both are refused there.
+
+`include` on a CHECK, FOREIGN KEY, or EXCLUDE constraint is refused on every
+target: those constraints carry no payload to render. Omit `include` when there
+are none; a present list with an empty element is refused rather than trimmed.
+
+The targets for a constraint are not the targets for an index. The Spanner
+PostgreSQL dialect takes `include` on an index and refuses it on a constraint,
+and CockroachDB is the reverse. See
+[`//ptah:schema:index`](#ptahschemaindex) for the index list.
 
 ## Reusable types
 
