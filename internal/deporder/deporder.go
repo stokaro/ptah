@@ -421,21 +421,19 @@ func GeneratedSelfReferencingForeignKeys(
 			})
 	}
 
-	for _, constraint := range schema.Constraints {
-		if constraint.ForeignTable == "" || !strings.EqualFold(constraint.Type, "FOREIGN KEY") {
-			continue
-		}
-		table := generatedTableReference(schema.Tables, constraint.StructName, constraint.Table)
-		if table == nil {
-			continue
-		}
-		addGeneratedSelfReference(selfReferences, schema.Tables, *table,
-			constraint.ForeignTable, schemamodel.SelfReferencingFK{
-				FieldName:      strings.Join(constraint.Columns, ", "),
-				Foreign:        constraint.ForeignTable + "(" + strings.Join(constraint.ForeignColumns, ", ") + ")",
-				ForeignKeyName: constraint.Name,
-			})
-	}
+	// A table-level FOREIGN KEY constraint is deliberately absent from this
+	// derivation, and [schemamodel.BuildDependencyGraph] says why at its own
+	// constraint branch: such a constraint keeps its structured local and
+	// referenced column lists, and [schemamodel.SelfReferencingFK] is
+	// intentionally single-column and lossy, so there is nothing to project it
+	// into. It is also already emitted -- the constraint pool renders it, as an
+	// ALTER on the targets that have one and inline on SQLite, which is why
+	// deriving it here produced the object twice.
+	//
+	// Measured before it was removed: a single-column self-reference declared
+	// this way emitted two identical ALTERs under one constraint name, and a
+	// composite one emitted a second statement naming the column
+	// `"owner_a, owner_b"`, which no table has (stokaro/ptah#2583).
 
 	return selfReferences
 }

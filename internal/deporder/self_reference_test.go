@@ -42,21 +42,6 @@ func TestGeneratedSelfReferencingForeignKeys_DerivesWhatFinalizeWouldHave(t *tes
 			},
 		},
 		{
-			name: "a table-level FOREIGN KEY constraint",
-			schema: &schemamodel.Database{
-				Tables: []schemamodel.Table{{StructName: "Node", Name: "nodes"}},
-				Constraints: []schemamodel.Constraint{{
-					StructName: "Node", Table: "nodes", Name: "fk_nodes_parent",
-					Type: "FOREIGN KEY", Columns: []string{"parent_id"},
-					ForeignTable: "nodes", ForeignColumns: []string{"id"},
-				}},
-			},
-			want: schemamodel.SelfReferencingFK{
-				FieldName: "parent_id", Foreign: "nodes(id)",
-				ForeignKeyName: "fk_nodes_parent",
-			},
-		},
-		{
 			name: "a relation-mode embedded field",
 			schema: &schemamodel.Database{
 				Tables: []schemamodel.Table{{StructName: "Node", Name: "nodes"}},
@@ -153,4 +138,67 @@ func TestGeneratedSelfReferencingForeignKeys_DoesNotRecordOneTwice(t *testing.T)
 	derived := deporder.GeneratedSelfReferencingForeignKeys(schema)
 
 	c.Assert(derived["nodes"], qt.HasLen, 1)
+}
+
+// TestGeneratedSelfReferencingForeignKeys_LeavesATableLevelConstraintAlone is
+// the boundary of the derivation above, and it is a boundary rather than a gap.
+//
+// [schemamodel.BuildDependencyGraph] refuses the same projection at its own
+// constraint branch, in its own words: a table-level constraint keeps its
+// structured local and referenced column lists, and SelfReferencingFK is
+// intentionally single-column and lossy. The derivation claimed it anyway, so
+// the object reached the plan through both pools.
+//
+// Measured before the fix: the single-column form emitted two identical ALTERs
+// under one constraint name, and the composite form emitted a second statement
+// naming the column `"owner_a, owner_b"`, which no table has
+// (stokaro/ptah#2583).
+func TestGeneratedSelfReferencingForeignKeys_LeavesATableLevelConstraintAlone(t *testing.T) {
+	tests := []struct {
+		name        string
+		columns     []string
+		foreignCols []string
+	}{
+		{name: "single column", columns: []string{"parent_id"}, foreignCols: []string{"id"}},
+		{name: "composite", columns: []string{"owner_a", "owner_b"}, foreignCols: []string{"a", "b"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			schema := &schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Node", Name: "nodes"}},
+				Constraints: []schemamodel.Constraint{{
+					StructName: "Node", Table: "nodes", Name: "fk_nodes_parent",
+					Type: "FOREIGN KEY", Columns: test.columns,
+					ForeignTable: "nodes", ForeignColumns: test.foreignCols,
+				}},
+			}
+
+			c.Assert(deporder.GeneratedSelfReferencingForeignKeys(schema)["nodes"], qt.HasLen, 0)
+		})
+	}
+}
+
+// TestGeneratedSelfReferencingForeignKeys_StillDerivesAFieldReference is the
+// control that keeps the removal above from reading as "the derivation was
+// dropped".
+//
+// A field's `foreign=` is carried by no other pool, so it is the shape
+// stokaro/ptah#2471 was about and the one that still has to be derived.
+func TestGeneratedSelfReferencingForeignKeys_StillDerivesAFieldReference(t *testing.T) {
+	c := qt.New(t)
+	schema := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Node", Name: "nodes"}},
+		Fields: []schemamodel.Field{{
+			StructName: "Node", Name: "parent_id", Type: "INTEGER",
+			Foreign: "nodes(id)", ForeignKeyName: "fk_nodes_parent",
+		}},
+	}
+
+	derived := deporder.GeneratedSelfReferencingForeignKeys(schema)["nodes"]
+
+	c.Assert(derived, qt.HasLen, 1)
+	c.Assert(derived[0].FieldName, qt.Equals, "parent_id")
+	c.Assert(derived[0].ForeignKeyName, qt.Equals, "fk_nodes_parent")
 }
