@@ -22,10 +22,12 @@ import (
 //
 // Every value in every row is emitted as a placeholder and returned in args,
 // never interpolated; placeholders are numbered row by row, left to right, in the
-// dialect's style ($1, $2, … for the PostgreSQL family; ? for MySQL, MariaDB, and
-// SQLite). The table and column names are quoted for the dialect. An optional
-// RETURNING clause is emitted only where the dialect supports it (see
-// renderReturning); on MySQL and MariaDB a non-empty RETURNING is an error.
+// dialect's style ($1, $2, … for the PostgreSQL family; ? for MySQL, MariaDB,
+// SQLite, and ClickHouse; @p1, @p2, … for SQL Server; :1, :2, … for Oracle).
+// The table and column names are quoted for the dialect. An optional RETURNING
+// clause is emitted only on the PostgreSQL family and SQLite (see
+// renderReturning); on every other supported dialect a non-empty RETURNING is
+// an error.
 //
 // It returns an error for a nil statement, an unsupported dialect, a missing
 // table, an empty column list, an empty row list, or a row whose length does not

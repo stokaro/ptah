@@ -88,6 +88,64 @@ func ExampleNewIndex() {
 	// CREATE UNIQUE INDEX IF NOT EXISTS "uq_users_email" ON "users" ("email");
 }
 
+// ExampleNewTable_mixedWithAst appends a hand-built core/ast constraint to a
+// table the builder produced. Build returns a plain *ast.CreateTableNode, so a
+// construct the builders do not model — here a PostgreSQL EXCLUDE constraint —
+// stays reachable through core/ast directly, and the mixed result renders like
+// any other node.
+func ExampleNewTable_mixedWithAst() {
+	table := astbuilder.NewTable("bookings").
+		Column("room_id", "INTEGER").NotNull().End().
+		Column("during", "TSRANGE").NotNull().End().
+		Build()
+
+	table.AddConstraint(ast.NewExcludeConstraint(
+		"no_overlapping_bookings", "gist", "room_id WITH =, during WITH &&"))
+
+	r := must.Must(renderer.NewRenderer("postgresql"))
+	fmt.Print(must.Must(r.Render(table)))
+
+	// Output:
+	// -- POSTGRES TABLE: bookings --
+	// CREATE TABLE "bookings" (
+	//   "room_id" INTEGER NOT NULL,
+	//   "during" TSRANGE NOT NULL,
+	//   CONSTRAINT "no_overlapping_bookings" EXCLUDE USING gist (room_id WITH =, during WITH &&)
+	// );
+}
+
+// ExampleNewTable_generatedColumn declares a computed column with
+// Generated(expression, kind). The expression is raw SQL rendered inside
+// GENERATED ALWAYS AS (...); kind selects the storage form, and each dialect
+// renderer decides what it accepts — PostgreSQL takes only STORED.
+func ExampleNewTable_generatedColumn() {
+	table := astbuilder.NewTable("order_lines").
+		Column("price", "NUMERIC(10,2)").NotNull().Check("price >= 0").End().
+		Column("quantity", "INTEGER").NotNull().Default("1").End().
+		Column("total", "NUMERIC(10,2)").Generated("price * quantity", "STORED").End().
+		Build()
+
+	for _, dialect := range []string{"postgresql", "mysql"} {
+		r := must.Must(renderer.NewRenderer(dialect))
+		fmt.Print(must.Must(r.Render(table)))
+	}
+
+	// Output:
+	// -- POSTGRES TABLE: order_lines --
+	// CREATE TABLE "order_lines" (
+	//   "price" NUMERIC(10,2) NOT NULL CHECK (price >= 0),
+	//   "quantity" INTEGER NOT NULL DEFAULT 1,
+	//   "total" NUMERIC(10,2) GENERATED ALWAYS AS (price * quantity) STORED
+	// );
+	//
+	// -- MYSQL TABLE: order_lines --
+	// CREATE TABLE `order_lines` (
+	//   `price` NUMERIC(10,2) NOT NULL CHECK (price >= 0),
+	//   `quantity` INTEGER NOT NULL DEFAULT 1,
+	//   `total` NUMERIC(10,2) GENERATED ALWAYS AS (price * quantity) STORED
+	// );
+}
+
 // ExampleNewSchema builds a whole schema in one chain. Build returns an
 // *ast.StatementList holding the nodes in the order they were added, so an enum
 // a column depends on is declared before the table that uses it.

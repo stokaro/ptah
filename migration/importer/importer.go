@@ -137,8 +137,12 @@ type Options struct {
 }
 
 // Import parses sourceFS, normalizes the result, and emits Ptah migration files
-// into outDir. When parser is nil the source tool is auto-detected. It is the
-// single entry point the CLI uses.
+// into outDir. When parser is nil the source tool is auto-detected. An import
+// that would decline SQL-carrying source files fails with a
+// *[PartialImportError] unless opts.AllowPartial is set (a dry run reports the
+// declines instead of failing); a successful result still lists every
+// unconverted file in [EmitResult.Declined], and a caller owes the user that
+// list. It is the single entry point the CLI uses.
 func Import(sourceFS fs.FS, parser Parser, outDir string, opts Options) (*EmitResult, error) {
 	if parser == nil {
 		detected, err := DetectParser(sourceFS)

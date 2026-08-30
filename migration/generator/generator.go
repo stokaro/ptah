@@ -170,7 +170,10 @@ type MigrationPlan struct {
 }
 
 // GenerateMigration generates both up and down migration files by comparing
-// the desired schema (from Go entities) with the current database state.
+// the desired schema (from Go entities) with the current database state. It is
+// the convenience composition of [PlanMigration] and
+// [MigrationPlan.WriteFilesContext]; when the schemas already match it returns
+// nil files with a nil error rather than publishing anything.
 //
 // The context bounds connection, planning, lock acquisition, and publication.
 func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationFiles, error) {
@@ -185,6 +188,19 @@ func GenerateMigration(ctx context.Context, opts GenerateMigrationOptions) (*Mig
 // safety checks, and optional shadow verification without writing migration
 // artifacts. Call WriteFiles only after any surrounding database cleanup or
 // other pre-publication work succeeds.
+//
+// A nil plan with a nil error means the comparison found no changes: there is
+// nothing to publish and nothing to release. Otherwise the returned plan holds
+// the migration directory open until it is published or closed, so a caller
+// that may abandon it should defer plan.Close next to this call --
+// [MigrationPlan.Close] is a no-op on a published plan.
+//
+// A shadow-verification failure is returned as a *shadow.VerificationError,
+// inspectable with errors.As, carrying the stage and the deterministically
+// ordered mismatch list. When the URL or connection selects SQLite, a
+// malformed PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP value is refused before
+// OutputDir is resolved, so it fails before any filesystem work; non-SQLite
+// plans do not consult the variable.
 func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationPlan, error) {
 	opts, err := normalizeGenerateMigrationOptions(opts)
 	if err != nil {

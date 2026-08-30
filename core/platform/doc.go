@@ -1,81 +1,20 @@
-// Package platform provides database platform constants and identifiers for the Ptah schema management system.
+// Package platform declares the canonical dialect names the rest of Ptah
+// compares against, and answers the two questions asked about them:
+// NormalizeDialect folds every accepted spelling onto one canonical constant,
+// and IsPostgresFamily reports whether a dialect speaks the PostgreSQL wire
+// protocol and catalog.
 //
-// This package defines standardized constants for identifying different database platforms
-// throughout the Ptah ecosystem. It ensures consistent platform identification across
-// all components including parsers, renderers, migrators, and schema generators.
-//
-// # Supported Platforms
-//
-// The package defines constants for all supported database platforms:
-//
-//   - Postgres: PostgreSQL database platform identifier
-//   - MySQL: MySQL database platform identifier
-//   - MariaDB: MariaDB database platform identifier
-//   - ClickHouse: ClickHouse database platform identifier
-//   - SQLServer: SQL Server parser dialect identifier
-//   - CockroachDB: CockroachDB PostgreSQL-family platform identifier
-//   - YugabyteDB: YugabyteDB YSQL PostgreSQL-family platform identifier
-//   - Spanner: Cloud Spanner PostgreSQL-interface platform identifier
-//
-// # Usage
-//
-// Platform constants are used throughout the Ptah system for:
-//
-//   - Dialect-specific SQL generation
-//   - Dialect-aware SQL parsing
-//   - Database connection management
-//   - Migration planning and execution
-//   - Schema comparison and validation
-//
-// Example usage:
-//
-//	import "go.5x5.cz/ptah/core/platform"
-//
-//	func generateSQL(platformType string) string {
-//		switch platformType {
-//		case platform.Postgres:
-//			return generatePostgreSQLSchema()
-//		case platform.MySQL:
-//			return generateMySQLSchema()
-//		case platform.MariaDB:
-//			return generateMariaDBSchema()
-//		case platform.CockroachDB:
-//			return generateCockroachDBSchema()
-//		default:
-//			return generateGenericSchema()
-//		}
-//	}
-//
-// # Integration with Ptah
-//
-// This package integrates with other Ptah components:
-//
-//   - ptah/core/renderer: Uses platform constants for dialect selection
-//   - ptah/migration/planner: Uses platform constants for migration planning
-//   - ptah/dbschema: Uses platform constants for connection management
-//   - ptah/core/goschema: Uses platform constants for schema generation
-//
-// # Design Principles
-//
-// The platform constants follow these design principles:
-//
-//   - Simple string constants for easy comparison and debugging
-//   - Lowercase naming for consistency with database driver conventions
-//   - Clear, unambiguous names that match common database identifiers
-//   - Stable values that won't change across versions
-//
-// # Extensibility
-//
-// New database platforms can be added by:
-//
-//  1. Adding a new constant to this package
-//  2. Implementing dialect-specific renderers
-//  3. Adding platform support to migration planners
-//  4. Updating connection management code
+// The ten canonical dialects are Postgres, MySQL, MariaDB, ClickHouse,
+// SQLite, SQLServer, CockroachDB, YugabyteDB, Spanner, and Oracle.
+// NormalizeDialect is the one place an alias such as "pgx", "crdb", or
+// "libsql" becomes a dialect, and it returns "" for a name it does not know;
+// callers check that answer rather than pass it on. What a dialect being
+// accepted means for a concrete construct is a capability question, answered
+// by core/platform/capability rather than here.
 //
 // # Stability
 //
-// Platform constant names are the public identifiers callers should use. Ptah is
-// pre-GA, so constant values can still change before a stable release if the
-// platform model needs a cleaner shape.
+// Platform constant names are the public identifiers callers should use. Ptah
+// is pre-GA, so constant values can still change before a stable release if
+// the platform model needs a cleaner shape.
 package platform

@@ -25,9 +25,17 @@ func LooksAtlasTemplateSQL(sql string) bool {
 // RenderAtlasTemplateSQL renders an Atlas SQL template migration file.
 //
 // The root file is executed after parsing every *.sql file in the same
-// filesystem, so shared templates such as {{ template "shared/users" . }} can be
-// defined in subdirectories. Non-template files are returned unchanged with
-// rendered=false.
+// filesystem that itself contains template actions, so shared templates can be
+// defined in subdirectories. A shared template is referenced by its path with
+// the .sql extension stripped: {{ template "shared/users" . }} names
+// shared/users.sql. A root file with no template actions is returned unchanged
+// with rendered=false.
+//
+// A nil data argument renders with a zero [AtlasTemplateData], and templates
+// execute with the missingkey=zero option, so a key that map-typed data does
+// not carry renders as the map's zero element value rather than failing the
+// render. A field the data's struct type does not declare —
+// [AtlasTemplateData] included — still fails the render.
 func RenderAtlasTemplateSQL(fsys fs.FS, filename string, data any) (sql string, rendered bool, err error) {
 	raw, err := fs.ReadFile(fsys, filename)
 	if err != nil {

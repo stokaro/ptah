@@ -21,23 +21,59 @@ import (
 // Errors preserve the text form through [VerificationError.Error] while
 // exposing mismatches to callers that need machine-readable diagnostics.
 type VerificationResult struct {
+	// Stage names the verification step that stopped. Candidate and baseline
+	// verification share stage names at their common boundaries: connect,
+	// dialect-check, realm-check, capability-check,
+	// identifier-semantics-check, drop-all, load-prior, replay, re-introspect,
+	// and schema-match. The round-trip-down and round-trip-up stages occur
+	// only during candidate verification ([VerifyMigration]); configuration,
+	// target-introspect, reset-schemas, and drop-metadata occur only during
+	// baseline verification ([VerifyBaseline]).
 	Stage string `json:"stage"`
 	// Mismatches contains every structural mismatch in deterministic category and object order.
 	Mismatches []Mismatch `json:"mismatches,omitempty"`
 }
 
-// Mismatch describes one schema mismatch found during shadow verification.
+// Mismatch describes one schema mismatch found during shadow verification. It
+// is serialized into the shadow verification report, so its fields are the
+// vocabulary a machine-reading caller branches on.
+//
+// Kind is a snake_case discriminator. Schema-comparison mismatches follow the
+// missing_<category>, extra_<category>, and <category>_mismatch patterns per
+// object category -- missing_column, extra_index, trigger_mismatch, and so on
+// -- with the bare kind "schema" reserved for a difference the comparison
+// could not itemize. A missing_* kind names something the desired or replayed
+// side declares that the introspected database lacks; extra_* is the reverse.
+// An operational failure -- a refused URL, a replay error -- carries a single
+// mismatch whose Kind names the failure, such as connect_error or
+// target_shadow_same_realm.
 type Mismatch struct {
-	Kind       string            `json:"kind"`
-	Object     string            `json:"object,omitempty"`
-	Table      string            `json:"table,omitempty"`
-	Column     string            `json:"column,omitempty"`
-	Constraint string            `json:"constraint,omitempty"`
-	Changes    map[string]string `json:"changes,omitempty"`
-	Message    string            `json:"message"`
+	Kind string `json:"kind"`
+	// Object is the qualified identity of what differed: table.column for a
+	// column, table.trigger for a trigger, the bare name for a top-level
+	// object.
+	Object string `json:"object,omitempty"`
+	// Table, Column, and Constraint carry the components of Object separately
+	// when the mismatch concerns one.
+	Table      string `json:"table,omitempty"`
+	Column     string `json:"column,omitempty"`
+	Constraint string `json:"constraint,omitempty"`
+	// Changes holds per-property old -> new details for *_mismatch kinds,
+	// keyed by property name; it is nil for missing_* and extra_* kinds.
+	Changes map[string]string `json:"changes,omitempty"`
+	// Message is the human-readable sentence. The first mismatch's Message is
+	// what [VerificationError.Error] surfaces.
+	Message string `json:"message"`
 }
 
 // VerificationError wraps a structured shadow verification result.
+//
+// Error renders "shadow check failed: " followed by the first mismatch's
+// Message. [VerifyBaseline] wraps its failures so the displayed text reads
+// "baseline shadow check failed: " instead, while errors.As still recovers
+// the *VerificationError. Unwrap exposes the underlying operational error;
+// it is nil for a pure schema mismatch, where the mismatch list is the
+// complete answer and no execution error sits behind it.
 type VerificationError struct {
 	Result VerificationResult `json:"result"`
 	Err    error              `json:"-"`
@@ -143,17 +179,51 @@ func validateConnection(
 
 // MigrationVerifyOptions configures [VerifyMigration].
 type MigrationVerifyOptions struct {
-	ShadowDatabaseURL   string
-	TargetConnection    *dbschema.DatabaseConnection
-	MigrationsDir       string
-	MigrationsFS        fs.FS
-	Dialect             string
-	Capabilities        capability.Capabilities
+	// ShadowDatabaseURL is an ephemeral database the verification drops clean
+	// and replays into. Its contents are discarded, and its live realm must
+	// be distinct from TargetConnection's. When empty, an ephemeral SQLite
+	// database is provisioned in a temporary directory and removed when
+	// verification finishes; a non-SQLite Dialect then fails the dialect
+	// check.
+	ShadowDatabaseURL string
+	// TargetConnection is the already-open database the verified migration
+	// would eventually be applied to. It is read to prove the shadow database
+	// is a different realm, never written, and it is required.
+	TargetConnection *dbschema.DatabaseConnection
+	// MigrationsDir names the migration directory in messages and is opened
+	// as the prior history when MigrationsFS is nil. A directory that does
+	// not exist yields no prior migrations: the first generated migration has
+	// no history to replay in front of it.
+	MigrationsDir string
+	// MigrationsFS is the immutable prior migration history to replay. When
+	// nil, MigrationsDir is opened instead.
+	MigrationsFS fs.FS
+	// Dialect is the target dialect the shadow database must match. The two
+	// spellings are compared normalized, so an alias matches its canonical
+	// name.
+	Dialect string
+	// Capabilities, when non-nil, must equal the shadow connection's resolved
+	// capabilities exactly; a difference fails at the capability-check stage.
+	// Nil skips the check.
+	Capabilities capability.Capabilities
+	// IdentifierSemantics, when non-zero, must agree with what the shadow
+	// database's catalog resolves; a disagreement fails at the
+	// identifier-semantics-check stage. The zero value skips the check.
 	IdentifierSemantics identifier.Semantics
-	Candidates          []Candidate
-	Generated           *schemamodel.Database
-	CompareOpts         *config.CompareOptions
-	Schemas             []string
+	// Candidates are the planned migrations under verification. They are
+	// replayed on top of the prior history, then rolled back to the latest
+	// prior version and reapplied.
+	Candidates []Candidate
+	// Generated is the desired schema the replayed shadow database is
+	// compared with, once after the candidates apply and again after the
+	// round trip.
+	Generated *schemamodel.Database
+	// CompareOpts tunes the schema comparison; nil selects
+	// config.DefaultCompareOptions.
+	CompareOpts *config.CompareOptions
+	// Schemas scopes the shadow read-back to the named schemas; empty reads
+	// the connection's default scope.
+	Schemas []string
 }
 
 // Candidate is one migration under verification: a version, a name, and the

@@ -100,7 +100,12 @@ func LoadAtlasFileCollectionWithOptions(
 	return configs, errors.Join(parseErr, root.Close())
 }
 
-// ParseAtlas parses the supported subset of an Atlas project config file.
+// ParseAtlas parses the supported subset of an Atlas project config file,
+// selecting envName. It is [ParseAtlasWithOptions] with default options, and
+// the same confinement contract applies: file() and fileset() resolve through
+// a rooted handle on the directory that holds filename. envName must select
+// exactly one instance; an env whose for_each expands to several is refused --
+// use [ParseAtlasCollectionWithOptions] for those.
 func ParseAtlas(data []byte, filename, envName string) (Config, error) {
 	return ParseAtlasWithOptions(data, filename, AtlasLoadOptions{EnvName: envName})
 }

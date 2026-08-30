@@ -33,9 +33,15 @@
 //
 // # Failures are structured
 //
-// Every failure carries a [VerificationError]: a stage naming where the
-// verification stopped and a deterministic list of [Mismatch] values naming what
-// differed, object by object. Callers that render text use the error message;
-// callers that report machine-readable diagnostics inspect the result with
-// errors.As. The list is ordered, so the same drift reports the same way twice.
+// A [VerifyMigration] or [VerifyBaseline] failure carries a
+// [VerificationError]: a stage naming where the verification stopped and a
+// deterministic list of [Mismatch] values naming what differed, object by
+// object. Callers that render text use the error message; callers that report
+// machine-readable diagnostics inspect the result with errors.As. The list is
+// ordered, so the same drift reports the same way twice.
+//
+// [VerifyRollback] and [PlanDynamicRollback] report ordinary wrapped errors
+// prefixed with the operation name instead; their failures are operational,
+// so there is no mismatch list to carry. For the planner, a schema difference
+// is the successful output rather than a failure.
 package shadow

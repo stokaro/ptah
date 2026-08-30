@@ -11,16 +11,22 @@ import (
 	"go.5x5.cz/ptah/internal/sqlcompound"
 )
 
-// StripComments removes all SQL comments from the input string using lexer-based parsing.
-// This properly handles comments within string literals and preserves the structure of the SQL.
-// Both line comments (-- comment) and block comments (/* comment */) are removed.
+// StripComments removes all SQL comments from the input string using
+// lexer-based scanning, so a comment marker inside a string literal is not
+// mistaken for a comment and everything that is not a comment is preserved as
+// written, whitespace included. Both line comments (-- comment) and block
+// comments (/* comment */) are removed. Whitespace-only input is returned
+// unchanged.
 func StripComments(sql string) string {
 	return stripComments(sql, "")
 }
 
 // StripCommentsForDialect removes SQL comments while preserving constructs
 // whose lexical meaning depends on dialect, including SQL Server bracketed
-// identifiers containing comment markers.
+// identifiers containing comment markers. The dialect is folded through
+// [platform.NormalizeDialect]; a blank or unrecognized dialect strips with the
+// generic dialect-blind lexer, identical to [StripComments]. Whitespace-only
+// input is returned unchanged.
 func StripCommentsForDialect(sql, dialect string) string {
 	return stripComments(sql, platform.NormalizeDialect(dialect))
 }
@@ -53,14 +59,39 @@ func stripComments(sql, dialect string) string {
 	return result.String()
 }
 
-// SplitSQLStatements splits a SQL string into individual statements using AST-based parsing.
-// This properly handles semicolons within string literals and comments, unlike simple string splitting.
+// SplitSQLStatements splits a SQL string into individual statements using
+// lexer-based scanning, so a semicolon inside a string literal, a comment, or
+// a compound routine body does not start a new statement. MySQL DELIMITER and
+// `-- atlas:delimiter` directives are honored first (see
+// [NormalizeClientDelimiters]), so a script that declares its own terminator
+// splits at that terminator. Each returned statement is whitespace-trimmed
+// with its terminating semicolon dropped — anything that needs the statements
+// as they were written, byte for byte, uses [SplitSourceStatements] instead —
+// and statements with no content are not returned. Comments stay in the
+// statements that carry them; [SplitStatements] is the composition that also
+// strips them. The result is never nil: whitespace-only input yields an
+// empty, non-nil slice.
 func SplitSQLStatements(sql string) []string {
 	return splitSQLStatements(sql, "")
 }
 
 // SplitSQLStatementsForDialect splits SQL using dialect-specific client
-// statement boundaries where the generic splitter would be too aggressive.
+// statement boundaries where the generic splitter would be too aggressive, or
+// not aggressive enough. The dialect is folded through
+// [platform.NormalizeDialect]; a blank or unrecognized dialect degrades to the
+// generic scanning of [SplitSQLStatements] without error.
+//
+// Three of the dialect's decisions are worth naming. SQL Server scripts are additionally split
+// on the GO batch separator: a GO alone on its line ends the batch, an
+// optional trailing count repeats the batch that many times, and GO 0
+// discards the pending batch, matching SQL Server client tooling. MySQL,
+// MariaDB and ClickHouse string literals are scanned with C-style backslash
+// escapes, so a semicolon behind a backslash-escaped quote cannot leak out as
+// a statement boundary. And compound routine bodies are recognized per
+// dialect: an Oracle PL/SQL routine keeps its internal semicolons AND its
+// closing one — the terminator after the final END belongs to the block, so
+// it stays part of the returned statement instead of being dropped like an
+// ordinary terminator.
 func SplitSQLStatementsForDialect(sql, dialect string) []string {
 	return splitSQLStatements(sql, platform.NormalizeDialect(dialect))
 }

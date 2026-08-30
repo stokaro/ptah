@@ -1,152 +1,78 @@
-// Package generator provides dynamic migration file generation for the Ptah schema management system.
+// Package generator plans migrations from schema differences and publishes
+// them as migration files: reversible timestamped up/down pairs, cumulative
+// checkpoints in either directory layout, and empty skeletons for manual SQL.
 //
-// This package implements the core functionality for generating database migration files
-// by comparing desired schema (from Go entity definitions) with the current database state.
-// It produces both up and down migration files with proper SQL statements to synchronize
-// schemas in both directions.
+// The desired schema comes from annotated Go entities or a pre-merged
+// schemamodel.Database, the current schema from a live database connection,
+// and the difference from go.5x5.cz/ptah/migration/schemadiff. Rendering is
+// deterministic and dependency-ordered, and the down file restores the
+// introspected current schema rather than merely inverting the up file's
+// statement list.
 //
-// # Overview
+// # Plan, then publish
 //
-// The generator package bridges the gap between schema differences and executable migration
-// files. It takes schema differences identified by the schemadiff package and converts them
-// into timestamped migration files that can be applied by the migrator package.
+// [PlanMigration] performs schema loading, live introspection, diff planning,
+// safety checks, and optional shadow verification without writing migration
+// artifacts. [MigrationPlan.WriteFilesContext] publishes the validated
+// artifacts once. [GenerateMigration] is the convenience composition of the
+// two phases and propagates its context through both; a caller with work to
+// do between them -- database cleanup, review, its own locking -- calls the
+// phases itself.
 //
-// # Key Features
+// A plan is a claim on the migration directory, not on a pathname: it binds a
+// directory handle while it is built and records the directory snapshot used
+// during planning. Publication refuses with [ErrMigrationDirectoryChanged]
+// when the directory no longer matches that snapshot, and with
+// [ErrMigrationPlanInUse] when a second goroutine publishes through the same
+// plan; both are sentinels for errors.Is. A plan that will not be published
+// is released with [MigrationPlan.Close] -- deferring Close next to
+// PlanMigration is always correct, because closing a published plan and
+// closing twice are both no-ops.
 //
-//   - Dynamic migration generation from schema differences
-//   - Automatic up and down migration file creation
-//   - Empty migration skeleton creation for manual SQL
-//   - Timestamped migration versioning
-//   - Dialect-specific SQL generation
-//   - Proper dependency ordering and safety checks
-//   - Comprehensive error handling and validation
+// When the comparison finds no changes, PlanMigration returns a nil plan with
+// a nil error and GenerateMigration returns nil files: nothing to do is a
+// successful outcome rather than an error.
 //
-// # Migration Generation Process
+// The returned [MigrationFiles].Files slice is the authoritative ordered list
+// of generated pairs and published paths, named
+// {version}_{name}.up.sql and {version}_{name}.down.sql with a Unix-seconds
+// version. One generation can publish several pairs: statements that cannot
+// share a transaction with the rest -- enum value additions, concurrent index
+// operations -- are split into files of their own, in the order they must run.
 //
-// The migration generation follows this workflow:
+// # Other writers
 //
-//  1. Parse Go entities to extract desired schema
-//  2. Connect to database and read current schema
-//  3. Calculate differences between desired and current schemas
-//  4. Generate up migration SQL from schema differences
-//  5. Generate down migration SQL by reversing the differences
-//  6. Create timestamped migration files with proper naming
+// [GenerateEmptyMigration] creates a skeleton pair (or a single Atlas-layout
+// file) for manual SQL, with no database involved. [WriteDataMigrationFiles]
+// publishes an ordinary pair whose SQL bodies the caller rendered.
+// [WriteCheckpointFilesWithOptions] and [WriteAtlasCheckpointFileWithOptions]
+// publish a cumulative checkpoint in the reversible Ptah pair and the up-only
+// Atlas single-file convention respectively, and
+// [GenerateCheckpointFromShadow] renders the checkpoint bodies by replaying a
+// migration directory into a disposable shadow database.
 //
-// # Core Types
+// # Lower-level planning
 //
-// The package provides these main types:
+// [PlanBidirectionalSchemaDiff] is the planning boundary for a caller that
+// already holds a schema diff: it binds the diff, the desired and current
+// schemas, dialect capabilities, and concurrent-index policy into one
+// validated forward and reverse plan, with AST nodes and an independent
+// RequiresNoTransaction classification for each direction.
 //
-//   - GenerateMigrationOptions: Configuration for migration generation
-//   - EmptyMigrationOptions: Configuration for empty migration skeleton creation
-//   - MigrationFiles: Ordered information about every generated migration pair
-//
-// # Usage Example
-//
-// Basic migration generation:
-//
-//	opts := generator.GenerateMigrationOptions{
-//		GoEntitiesDir: "./entities",
-//		DatabaseURL:   "postgres://user:pass@localhost:5432/db",
-//		MigrationName: "add_user_table",
-//		OutputDir:     "./migrations",
-//	}
-//
-//	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-//	defer cancel()
-//
-//	files, err := generator.GenerateMigration(ctx, opts)
-//	if err != nil {
-//		log.Fatal(err)
-//	}
-//
-//	fmt.Printf("Generated migration files:\n")
-//	for _, pair := range files.Files {
-//		fmt.Printf("Up:   %s\n", pair.UpFile)
-//		fmt.Printf("Down: %s\n", pair.DownFile)
-//	}
-//
-// # Migration File Structure
-//
-// Generated migration files follow this naming convention:
-//
-//   - Up migration: {timestamp}_{name}.up.sql
-//   - Down migration: {timestamp}_{name}.down.sql
-//
-// Each file includes:
-//
-//   - Header comment with generation timestamp and direction
-//   - Properly ordered SQL statements
-//   - Semicolon-terminated statements for execution
-//
-// # Schema Difference Handling
-//
-// The generator handles various types of schema changes:
-//
-//   - Table creation and removal
-//   - Column addition, modification, and removal
-//   - Index creation and removal
-//   - Enum type creation, modification, and removal
-//   - Constraint addition and removal
-//
-// # Reverse Migration Logic
-//
-// Down migrations are generated by reversing the schema differences:
-//
-//   - Tables added become tables removed
-//   - Columns added become columns removed
-//   - Modifications are reversed (new -> old becomes old -> new)
-//   - Proper dependency ordering is maintained
-//
-// # Safety Features
-//
-// The generator includes several safety mechanisms:
-//
-//   - Validation of schema differences before generation
-//   - Proper SQL statement ordering to avoid constraint violations
-//   - Error handling for invalid or dangerous operations
-//   - Dry-run capabilities through the underlying planner
-//
-// # Shadow Verification
+// # Shadow verification
 //
 // Setting GenerateMigrationOptions.ShadowDatabaseURL measures the candidate
 // against a live disposable database before any file is written. That
-// measurement is not this package's work. It belongs to ptah/migration/shadow,
-// which this package calls and whose structured verification error it returns
-// unchanged. What stays here is the offline half: a diff, a directory, and the
-// files published into it.
+// measurement is not this package's work. It belongs to
+// go.5x5.cz/ptah/migration/shadow, which this package calls and whose
+// structured *shadow.VerificationError it returns unchanged through
+// PlanMigration and GenerateMigration, inspectable with errors.As. What stays
+// here is the offline half: a diff, a directory, and the files published into
+// it.
 //
-// # Integration with Ptah
+// # Concurrency
 //
-// This package integrates with other Ptah components:
-//
-//   - ptah/core/goschema: Parses Go entities for desired schema
-//   - ptah/dbschema: Connects to database and reads current schema
-//   - ptah/migration/schemadiff: Calculates schema differences
-//   - ptah/migration/planner: Generates SQL statements from differences
-//   - ptah/migration/shadow: Verifies a candidate on a disposable database
-//   - ptah/migration/migrator: Applies generated migration files
-//
-// # Error Handling
-//
-// The generator provides comprehensive error handling:
-//
-//   - Database connection errors
-//   - Schema parsing errors
-//   - File system errors during migration file creation
-//   - SQL generation errors from invalid schema differences
-//
-// # Performance Considerations
-//
-// The generator is optimized for:
-//
-//   - Efficient schema parsing and comparison
-//   - Minimal database queries for schema reading
-//   - Fast SQL generation through AST-based rendering
-//   - Atomic file operations for migration creation
-//
-// # Thread Safety
-//
-// The generator functions are thread-safe and can be called concurrently
-// from multiple goroutines. However, care should be taken when generating
-// migrations for the same database simultaneously to avoid version conflicts.
+// The package's functions are safe for concurrent use. A [MigrationPlan] is
+// not a shared resource: it is single-use, and concurrent publication through
+// one plan returns [ErrMigrationPlanInUse] rather than blocking.
 package generator

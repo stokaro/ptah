@@ -99,10 +99,22 @@ func ExampleParseFile() {
 	// accounts 1
 }
 
-// ExampleParse_strictness shows what the parser refuses rather than accepts
-// halfway. A schema split across a document separator is one of the two
-// refusals; the other is an unknown key, reported with the line that carries it
-// instead of being dropped as an unrecognized setting.
+// ExampleParse_unknownKey shows the first of the two strict refusals: a
+// misspelled attribute is an error carrying the line it sits on, not a setting
+// that silently fails to apply. A permissive reader would drop the key and
+// render this table without the comment its author wrote.
+func ExampleParse_unknownKey() {
+	_, err := yamlschema.Parse([]byte("tables:\n  accounts:\n    commnet: Customer accounts\n"))
+	fmt.Println(err)
+
+	// Output:
+	// parse YAML schema: yaml: unmarshal errors:
+	//   line 3: field commnet not found in type yamlschema.tableSpec
+}
+
+// ExampleParse_strictness shows the second strict refusal: a schema split
+// across a `---` document separator is rejected whole rather than half-applied.
+// ExampleParse_unknownKey shows the first.
 func ExampleParse_strictness() {
 	_, err := yamlschema.Parse([]byte("tables:\n  accounts: {}\n---\ntables:\n  orders: {}\n"))
 	fmt.Println(err)

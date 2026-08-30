@@ -841,8 +841,21 @@ func ParseFile(filename string) (schemamodel.Database, error) {
 	return parseFileAST(filename, fset, f)
 }
 
-// ParseSource parses a Go source string and returns the database schema.
-// source can be a string, []byte, or io.Reader.
+// ParseSource parses Go source a caller already holds and returns the schema
+// it declares. It is [ParseFile] for in-memory source: source can be a
+// string, []byte, or io.Reader, and filename is not opened -- it names the
+// source in diagnostics and in the File field of a returned
+// [ptaherr.ParseError], and its directory becomes the relative
+// [schemamodel.ManagedData.SourceDir] of any managed-data annotation the
+// source declares.
+//
+// The result is un-finalized exactly as ParseFile's is -- table-scoped names
+// resolved and the dependency graph built, embedded fields not expanded,
+// nothing deduplicated: one file is not a schema. Source that does not parse
+// as Go, and an annotation the parser refuses -- an unknown, retired, or
+// missing required attribute, or an invalid value -- both return a
+// [ptaherr.ParseError]; errors.Is against the ptaherr sentinels tells the
+// refusals apart.
 func ParseSource(filename string, source any) (schemamodel.Database, error) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, filename, source, parser.ParseComments)

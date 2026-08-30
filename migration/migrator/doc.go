@@ -48,31 +48,23 @@
 //	// Create database connection (supply a context to bound the initial Ping)
 //	conn, err := dbschema.ConnectToDatabase(ctx, "postgres://user:pass@localhost/db")
 //	if err != nil {
-//		log.Fatal(err)
+//		return err
 //	}
 //	defer dbschema.CloseAndWarn(conn)
 //
-//	// Option 1: Create migrator from filesystem
 //	m, err := migrator.NewFSMigrator(conn, os.DirFS("/path/to/migrations"))
 //	if err != nil {
-//		log.Fatal(err)
+//		return err
 //	}
-//
-//	// Option 2: Create migrator with a registered SQL migration
-//	migration := migrator.CreateMigrationFromSQL(
-//		20240101120000,
-//		"Create users table",
-//		"CREATE TABLE users (id SERIAL PRIMARY KEY)",
-//		"DROP TABLE users",
-//	)
-//	provider := migrator.NewRegisteredMigrationProvider()
-//	provider.Register(migration)
-//	m := migrator.NewMigrator(conn, provider)
 //
 //	// Apply all pending migrations
-//	if err := m.MigrateUp(context.Background()); err != nil {
-//		log.Fatal(err)
+//	if err := m.MigrateUp(ctx); err != nil {
+//		return err
 //	}
+//
+// Migrations built in memory take the same path through
+// CreateMigrationFromSQL, NewRegisteredMigrationProvider, and NewMigrator; the
+// package examples show each source executing against a real database.
 //
 // # Migration History Table
 //
@@ -226,18 +218,10 @@
 //   - ptah/core/sqlutil: Uses SQL parsing utilities for statement splitting
 //   - ptah/cmd/migrate*: Provides CLI interfaces for migration operations
 //
-// # Performance Considerations
-//
-// The migrator is optimized for:
-//
-//   - Efficient migration execution with minimal overhead
-//   - Fast version checking and status queries
-//   - Atomic migration operations with proper transaction handling
-//   - Memory-efficient SQL file processing
-//
 // # Thread Safety
 //
 // Migrator instances are not thread-safe and should not be used concurrently
-// from multiple goroutines. However, the migration history table includes
-// proper constraints to prevent concurrent migration execution conflicts.
+// from multiple goroutines. Concurrent migration runs from separate processes
+// are serialized by the session advisory lock described above on the dialects
+// that support one.
 package migrator

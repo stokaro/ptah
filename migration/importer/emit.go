@@ -65,8 +65,16 @@ type plannedFile struct {
 // The whole plan is validated (every generated file name round-trips through
 // Ptah's reader) BEFORE any file is written, and a mid-write failure removes the
 // files already written, so a failed import never leaves an unreadable,
-// retry-blocking half-result. With dryRun it returns the planned file names and
-// writes nothing. It refuses to overwrite an existing target file.
+// retry-blocking half-result. With opts.DryRun it returns the planned file names
+// and writes nothing. It refuses to overwrite an existing target file.
+//
+// A non-dry-run Emit also refuses a partial import: when declined holds files
+// that carry SQL ([BlockingDeclines]) and opts.AllowPartial is false, it returns
+// a *[PartialImportError] before creating or writing anything, so ptah.sum is
+// never written over a subset of the source; errors.As is how a caller picks it
+// out. A dry run does not refuse: the declines come back in
+// [EmitResult.Declined], so a caller can preview a partial import before
+// deciding.
 func Emit(outDir string, migrations []SourceMigration, declined []DeclinedFile, opts Options) (*EmitResult, error) {
 	remap := needsVersionRemap(migrations)
 	result := &EmitResult{Remapped: remap, Declined: declined}

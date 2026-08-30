@@ -207,10 +207,10 @@ func insertSortedTableComponent(queue []int, componentIndex int, components [][]
 
 // BuildDependencyGraph analyzes foreign key relationships to build a dependency graph.
 //
-// This method examines all fields and embedded fields to identify foreign key relationships
-// and builds a dependency graph that maps each table to the tables it depends on. This
-// information is crucial for determining the correct order of table creation to satisfy
-// foreign key constraints.
+// It examines all fields and embedded fields to identify foreign key
+// relationships and builds a dependency graph that maps each table to the
+// tables it depends on — the information that decides the table creation order
+// foreign key constraints require.
 //
 // The analysis process:
 //  1. Initializes empty dependency lists for all tables
@@ -224,8 +224,12 @@ func insertSortedTableComponent(queue []int, componentIndex int, components [][]
 //   - "users(id)" -> depends on "users" table
 //   - "categories(uuid)" -> depends on "categories" table
 //
-// The resulting dependency graph is stored in the Dependencies field and used by
-// sortTablesByDependencies() to perform topological sorting.
+// The derived maps are rebuilt from scratch, replacing whatever they held:
+// Dependencies and FunctionDependencies (keyed by qualified table name and
+// function name), plus SelfReferencingForeignKeys, because a table's reference
+// to itself is not a creation-order dependency and is planned separately.
+// [Finalize] and [Merge] call this and then order tables and functions from
+// the graphs, so most callers never invoke it directly.
 func BuildDependencyGraph(r *Database) {
 	resetDependencyMaps(r)
 	analyzeFieldForeignKeys(r)
@@ -239,6 +243,20 @@ func BuildDependencyGraph(r *Database) {
 // Parsers that do not go through ParseDir still need the same derived metadata
 // as Go annotations: deduplicated declarations, dependency maps, self-referencing
 // foreign keys, and dependency-ordered tables/functions.
+//
+// Finalize mutates r in place and may be called again after mutating the
+// declarations. The materialized embedded columns (the fields carrying
+// [Field.GeneratedFromEmbedded]) are discarded and rebuilt from the source
+// declarations on every call, so editing a field or an embedding and
+// finalizing again leaves no stale or duplicate columns. That rebuild reads
+// [Database.EmbeddedSources]: a caller that copies a finalized Database and
+// expects to finalize the copy again must preserve that bookkeeping, because
+// dropping it can discard the source declarations behind the materialized
+// columns — see the field's own doc.
+//
+// Unlike [Merge], Finalize returns no error and validates nothing: two
+// declarations with the same identity are collapsed to the first rather than
+// reported as a conflict.
 func Finalize(r *Database) {
 	restoreCompositeHelperDefinitions(r)
 	r.Fields = ProcessEmbeddedFields(r.EmbeddedFields, r.Fields)

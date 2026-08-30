@@ -4,6 +4,11 @@ import (
 	"strings"
 )
 
+// The canonical dialect names. Every other accepted spelling folds onto one
+// of these through NormalizeDialect, and the layers that vary by target --
+// renderers, readers, planners, capability presets -- switch on exactly these
+// lowercase values. Compare against the constants, never against a string a
+// user typed.
 const (
 	Postgres    = "postgres"
 	MySQL       = "mysql"

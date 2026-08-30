@@ -27,7 +27,27 @@ import (
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
-// Database represents the complete schema read from a database
+// Database is the complete description one schema read produced: the CURRENT
+// side of a schema comparison, where the desired side is core/goschema. The
+// dbschema readers fill it from a live server; any other [SchemaReader]
+// implementation, stokaro/ptah-testkit's fakes included, constructs it
+// directly.
+//
+// The Schema field the object types here carry follows one convention:
+// readers blank it for an object in the read's default schema and fill it for
+// an object outside that schema. The PostgreSQL family follows it exactly;
+// the SQL Server reader blanks only an unscoped read's dbo and fills every
+// schema on a scoped read, so consumers tolerate a filled default schema
+// rather than relying on the blank. Empty therefore does not mean
+// "no schema" -- the qualified spelling is reconstructed from the
+// connection's default (ServerInfo.IdentifierSemantics.DefaultSchema), and
+// both sides of a comparison build their keys through the QualifiedName
+// methods, which delegate to [QualifyTableName]. Keying the two sides
+// differently is how a synced table turns into a phantom CREATE and DROP
+// pair (stokaro/ptah#1244, stokaro/ptah#1991).
+//
+// NotDescribed records what the read deliberately did not look at, which is a
+// different fact from an object being absent; see that field.
 type Database struct {
 	Schemas     []Schema           `json:"schemas"`
 	Tables      []Table            `json:"tables"`
@@ -355,7 +375,17 @@ func (t Table) QualifiedName() string {
 	return QualifyTableName(t.Schema, t.Name)
 }
 
-// QualifyTableName returns an unambiguous schema-qualified table reference.
+// QualifyTableName returns an unambiguous schema-qualified table reference:
+// the string the QualifiedName methods in this package delegate to, and the
+// key both sides of a schema comparison must build object names through.
+//
+// The format is deterministic. Leading and trailing whitespace is trimmed
+// from each part; an empty schema yields the table part alone; otherwise the
+// two parts are joined with a dot. A part that itself contains a dot or a
+// quoting character (double quote, backtick, or square bracket) is wrapped in
+// double quotes with internal double quotes doubled, so a table named
+// "tenant.data" with no schema and a table named "data" in schema "tenant"
+// produce different keys.
 func QualifyTableName(schema, table string) string {
 	return tableref.Canonical(schema, table)
 }
@@ -790,7 +820,17 @@ func (i Index) QualifiedTableName() string {
 	return QualifyTableName(i.Schema, i.TableName)
 }
 
-// Constraint represents a database constraint
+// Constraint represents one database constraint -- a PRIMARY KEY, FOREIGN
+// KEY, UNIQUE, CHECK, or EXCLUDE row, as Type spells it.
+//
+// The column lists exist in two spellings. ColumnName and ForeignColumn are
+// the legacy single-column fields; ColumnNames and ForeignColumns are the
+// multi-column slices, and a reader may have populated either. Consumers must
+// read through [Constraint.ColumnNamesOrDefault] and
+// [Constraint.ForeignColumnsOrDefault], which merge the two; a fake reader
+// should fill the slices. Code reading one spelling directly works against
+// every fixture that happens to use that spelling and silently misses the
+// other.
 type Constraint struct {
 	Name           string   `json:"name"`
 	TableName      string   `json:"table_name"`
@@ -943,11 +983,27 @@ func (s Sequence) QualifiedName() string {
 	return QualifyTableName(s.Schema, s.Name)
 }
 
-// ServerInfo contains connection and metadata information
+// ServerInfo is the identity of one connected server as
+// dbschema.ConnectToDatabase resolved it: which product answered, which
+// version, which schema unqualified names mean there, and the capability set
+// and identifier semantics that follow from those answers.
 type ServerInfo struct {
-	Dialect string `json:"dialect"` // postgres, mysql, mariadb
+	// Dialect is a canonical dialect name from core/platform, the set
+	// platform.NormalizeDialect resolves to. For a wire-compatible server it
+	// names the detected product rather than the URL's scheme: a postgres://
+	// connection whose version banner announces CockroachDB, YugabyteDB, or
+	// Spanner reports that product here, and a mysql:// connection to MariaDB
+	// reports mariadb.
+	Dialect string `json:"dialect"`
 	Version string `json:"version"`
-	Schema  string `json:"schema"` // public, database name, etc.
+	// Schema is the schema this connection resolves unqualified names
+	// against, and the value a blank Schema field means throughout a
+	// [Database] this connection read. Its spelling is per-dialect: the
+	// resolved search_path schema on the PostgreSQL family, the database name
+	// on the MySQL family and ClickHouse, main on SQLite, dbo on SQL Server,
+	// and the connected user's schema on Oracle -- either of the last two
+	// replaced by an explicit ?schema= on the URL.
+	Schema string `json:"schema"`
 
 	// URL is the database connection URL the connection was opened from, with
 	// whatever credentials it carried. Callers that reconnect to the same
@@ -1023,6 +1079,13 @@ type SchemaReader interface {
 // prevents the SQL injection class of bugs that the no-args signature used
 // to invite (see issue #130). Identifiers (table/column names) cannot be
 // parameterized — route them through a validated escape helper instead.
+//
+// IsDryRun reports whether the executor is in dry-run mode. In that mode
+// nothing reaches the server: ExecuteSQL logs or records the statement it
+// would have run and returns nil. The mode is selected on a writer with
+// [SchemaWriter.SetDryRun]; IsDryRun is what lets a layer that rebinds an
+// executor carry the mode onto the replacement, which is how
+// dbschema's session pinning preserves it.
 type SchemaExecutor interface {
 	ExecuteSQL(ctx context.Context, sql string, args ...any) error
 	IsDryRun() bool
@@ -1037,8 +1100,21 @@ type SchemaWriter interface {
 	// effect to that scope. The context governs object discovery and DDL.
 	// Implementations may use a short, bounded cleanup context after
 	// cancellation to restore connection-local settings before returning.
+	// Under dry-run mode it drops nothing and performs no destructive work.
 	DropAllTables(ctx context.Context) error
+	// BeginTransaction starts a database transaction and returns a
+	// transaction-scoped executor for it. Under dry-run mode no server
+	// transaction is begun: the returned SchemaTransaction is itself a
+	// dry-run executor whose Commit and Rollback succeed without touching
+	// the server.
 	BeginTransaction(ctx context.Context) (SchemaTransaction, error)
+	// SetDryRun turns dry-run mode on or off for this writer and for every
+	// transaction it begins afterward. A transaction begun by a
+	// transaction-capable dialect keeps the mode it was created under; the
+	// transactionless dialects (ClickHouse, Oracle) return transactions that
+	// delegate to the writer and follow its current mode. In dry-run mode
+	// every mutating call reports success without sending anything to the
+	// server -- see the contract on [SchemaExecutor].
 	SetDryRun(dryRun bool)
 }
 

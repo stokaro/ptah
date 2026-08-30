@@ -1,5 +1,18 @@
 // Package projectconfig loads Ptah project-level configuration from Ptah and
-// Atlas project config files.
+// Atlas project config files into one typed IR, [Config].
+//
+// [Load] and [LoadCollection] are the entry points for the common case: each
+// reads the ptah.yaml and atlas.hcl named by its options (or the conventional
+// files when a path is empty) and merges them with the documented precedence
+// -- atlas.hcl beats ptah.yaml. The Parse functions read a single format from
+// bytes, and [Merge] combines two parsed configs under the same precedence.
+//
+// An atlas.hcl env whose for_each expands over several values selects several
+// independent config instances. The collection functions -- [LoadCollection],
+// [ParseAtlasCollectionWithOptions], [ParseAtlasFSCollectionWithOptions],
+// [LoadAtlasFileCollectionWithOptions] -- return all of them; the singular
+// functions require exactly one selected instance and return an error rather
+// than discarding the others.
 package projectconfig
 
 import (
@@ -538,7 +551,18 @@ func (c OnlineDDLConfig) Enabled() bool {
 	return c.Tool != "" && c.ThresholdRows > 0
 }
 
-// Validate checks the online-DDL configuration values.
+// Validate checks the online-DDL configuration values against the canonical
+// vocabulary: Tool must be empty, [OnlineDDLToolGhost], or
+// [OnlineDDLToolPTOSC]; Fallback must be empty, [OnlineDDLFallbackError], or
+// [OnlineDDLFallbackPlain]; ThresholdRows must not be negative and, when
+// positive, requires a Tool.
+//
+// [ParsePtah] calls Validate during parse, so a policy read from ptah.yaml
+// arrives validated. An embedder constructing or mutating a Config
+// programmatically should call it before handing the config to migration
+// execution, which performs no second configuration-file read: an unknown
+// Tool is never re-checked there, and an unknown Fallback is refused only
+// late, when a routed ALTER first needs the policy.
 func (c OnlineDDLConfig) Validate() error {
 	switch c.Tool {
 	case "", OnlineDDLToolGhost, OnlineDDLToolPTOSC:
@@ -814,7 +838,15 @@ func appendDisabledMode(patterns []string, option ConfigBool, pattern string) []
 }
 
 // Merge returns base overridden by explicitly present loader values and
-// non-zero programmatic values from override.
+// non-zero programmatic values from override. A value the override's loader
+// marked present wins even when it is empty; a programmatic value with no
+// loader metadata wins only when it is non-zero.
+//
+// Diagnostic metadata survives the merge: the result's IgnoredConstructs is
+// the concatenation of both inputs', base first. The exporter and
+// migration-directory maps are copied into fresh maps rather than shared, so
+// one merged env instance cannot write into a map the base and its sibling
+// instances read (stokaro/ptah#1620).
 func Merge(base, override Config) Config {
 	result := base
 	// Exporters are copied rather than shared, so an env instance cannot write

@@ -109,14 +109,16 @@ type Visitor interface {
 // DefaultValue represents different types of default values for table columns.
 //
 // A default value can be either a literal value (like 'active', 42, true) or
-// a function call (like NOW(), CURRENT_TIMESTAMP, UUID()). Only one of Value
-// or Function should be set.
+// an expression (like NOW(), CURRENT_TIMESTAMP, UUID()). Only one of Value
+// or Expression should be set; HasLiteral reports whether the literal half is
+// in use.
 type DefaultValue struct {
 	// Value contains literal default values like 'default_value', '42', 'true'
 	Value string
 	// ValueSet distinguishes an explicitly empty literal from no literal.
 	ValueSet bool
-	// Function contains function calls like NOW(), UUID()
+	// Expression contains function calls and other SQL expressions like NOW(),
+	// UUID(); renderers emit it verbatim, without quoting.
 	Expression string
 }
 

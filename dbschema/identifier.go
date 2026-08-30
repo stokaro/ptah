@@ -12,9 +12,22 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 )
 
-// ResolveIdentifierSemantics resolves the finite identifier set against the
-// connected catalog. SQL Server evaluates equivalence under CATALOG_DEFAULT;
-// other dialects return their deterministic local semantics unchanged.
+// ResolveIdentifierSemantics resolves how the connected catalog compares the
+// given identifiers. names is the finite set the caller is about to compare --
+// schema and table names, typically -- and the connection's default schema
+// always joins it, so a nil slice resolves the default schema alone.
+//
+// On every dialect but SQL Server names is not consulted at all: the dialect's
+// static semantics are returned, normalized for that dialect. On SQL Server
+// the server itself evaluates equivalence under CATALOG_DEFAULT, and the
+// result's ResolvedName entries answer which of the names the catalog treats
+// as the same identifier -- names sharing a Key are one name to the catalog.
+//
+// Errors: a nil connection; a SQL Server connection whose catalog collation
+// was not recorded at connect time; a name longer than SQL Server can hold;
+// and any failure of the catalog query itself. The names slice may gain the
+// default schema in place when its backing array has spare capacity, so pass a
+// clone when that array must stay untouched.
 func (dc *DatabaseConnection) ResolveIdentifierSemantics(
 	ctx context.Context,
 	names []string,

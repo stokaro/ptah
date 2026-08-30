@@ -43,7 +43,10 @@ type Finding struct {
 	Severity Severity `json:"severity"`
 }
 
-// StatementAssessment classifies one generated migration statement.
+// StatementAssessment classifies one generated migration statement. Index is
+// 1-based in the slices [Assess], [AssessRendered], and
+// [AssessRenderedWithCapabilities] return; [AssessSQL] classifies one
+// statement and leaves Index zero.
 type StatementAssessment struct {
 	Index     int      `json:"index"`
 	NodeType  string   `json:"node_type"`
@@ -61,7 +64,15 @@ type Report struct {
 }
 
 // ClassifySchemaDiff returns severity findings for every non-empty diff
-// category.
+// category. A nil diff returns nil.
+//
+// Each category appears at most once, with counts summed across all modified
+// tables and enums, and findings are sorted by severity (most severe first),
+// then by category name, so the output is deterministic and diffable. Two
+// categories are counted in addition to the generic ones that also cover
+// them: unique_protections_removed for removals that take a UNIQUE
+// constraint's enforcement with them, and vector_dimension_changed for
+// column modifications the server refuses to cast while rows hold values.
 func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	if diff == nil {
 		return nil
@@ -124,7 +135,10 @@ func ClassifySchemaDiff(diff *difftypes.SchemaDiff) []Finding {
 	return findings
 }
 
-// Highest returns the highest severity from findings.
+// Highest returns the highest severity from findings. Empty or nil findings
+// answer Safe. Severities compare by [risk.Rank], and Destructive is
+// preferred over Error when both are present at the same rank, so a gate
+// switching on the result sees the data-loss verdict.
 func Highest(findings []Finding) Severity {
 	highest := Safe
 	for _, finding := range findings {
@@ -150,7 +164,10 @@ func Classify(node ast.Node) Severity {
 	return assessNode(node).Severity
 }
 
-// Assess returns per-statement risk classifications for generated AST nodes.
+// Assess returns per-statement risk classifications for generated AST nodes,
+// in input order with 1-based Index. A node type the classifier does not
+// recognize is reported Safe with the default reason, so an unknown construct
+// never blocks a migration by accident.
 func Assess(nodes []ast.Node) []StatementAssessment {
 	assessments := make([]StatementAssessment, 0, len(nodes))
 	for i, node := range nodes {
@@ -162,14 +179,26 @@ func Assess(nodes []ast.Node) []StatementAssessment {
 }
 
 // AssessRendered returns per-rendered-SQL-statement risk classifications for
-// generated AST nodes.
+// generated AST nodes, using the dialect's default capability preset
+// ([capability.ForDialect], the current supported version line). See
+// [AssessRenderedWithCapabilities] for the assessment and error contract.
 func AssessRendered(nodes []ast.Node, dialect string) ([]StatementAssessment, error) {
 	return AssessRenderedWithCapabilities(nodes, dialect, capability.ForDialect(dialect))
 }
 
 // AssessRenderedWithCapabilities returns per-rendered-SQL-statement risk
 // classifications using the same server-version capability set as planning and
-// rendering on live database paths.
+// rendering on live database paths. The dialect accepts any spelling
+// platform.NormalizeDialect resolves.
+//
+// Rendering is the only error source: a construct the dialect or capability
+// set cannot render fails here with the typed error documented on
+// [renderer.RenderSQLWithCapabilities] rather than being classified. A node
+// whose rendering splits into several statements — PostgreSQL's column
+// modification, for one — produces one assessment per statement; the
+// AST-level severity is raised onto a single-statement render and onto
+// type-change statements, and never lowers a statement's own classification.
+// Index is 1-based over the flattened statement list.
 func AssessRenderedWithCapabilities(
 	nodes []ast.Node,
 	dialect string,
@@ -203,7 +232,10 @@ func AssessRenderedWithCapabilities(
 }
 
 // AssessSQL returns a best-effort classification for one rendered SQL
-// statement.
+// statement. Matching is keyword-based over the uppercased,
+// punctuation-split statement text, so casing and parenthesization do not
+// change the answer; a statement matching no known destructive or warning
+// shape is reported Safe with the default reason.
 func AssessSQL(statement string) StatementAssessment {
 	assessment := StatementAssessment{
 		NodeType:  "sql",
@@ -215,6 +247,8 @@ func AssessSQL(statement string) StatementAssessment {
 }
 
 // HighestAssessment returns the highest severity from statement assessments.
+// Empty or nil assessments answer Safe; severities compare the way [Highest]
+// documents.
 func HighestAssessment(assessments []StatementAssessment) Severity {
 	highest := Safe
 	for _, assessment := range assessments {

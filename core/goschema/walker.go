@@ -12,42 +12,26 @@ import (
 	"go.5x5.cz/ptah/internal/goannotationsource"
 )
 
-// ParseDir parses all Go files in the given root directory and its subdirectories
-// to find all entity definitions and build a complete database schema.
+// ParseDir walks one Go entity root on the host filesystem and returns the
+// finalized [go.5x5.cz/ptah/core/schemamodel.Database] its annotations declare.
 //
-// This function performs a comprehensive analysis of the Go codebase to extract database
-// schema information. It walks through the directory tree recursively, parsing each Go file
-// to discover entity definitions, and then processes the results to build a coherent
-// database schema with proper dependency ordering.
+// The walk is recursive from rootDir and reads every .go file except _test.go
+// files, skipping hidden directories and directories named exactly "vendor".
+// A symlinked or otherwise non-regular Go source file is refused rather than
+// followed. A file that fails to parse does not stop the walk: per-file errors
+// are collected and returned joined with errors.Join, so one error names every
+// failing file.
 //
-// The parsing process includes:
-//   - Recursive directory traversal starting from rootDir
-//   - Filtering to include only .go files (excluding tests, hidden directories,
-//     and directories named exactly vendor)
-//   - Extraction of tables, fields, indexes, enums, and embedded fields
-//   - Deduplication of entities found in multiple files
-//   - Dependency analysis based on foreign key relationships
-//   - Topological sorting to determine proper table creation order
+// The result has been through the finalize pipeline — embedded fields
+// expanded, identical repeated declarations folded, conflicting ones reported
+// as an error, tables and functions ordered by their dependencies — so it can
+// go straight to the renderer or the diff and migration layers. For an
+// un-finalized schema to compose with other authoring sources, use
+// [ParseDirRaw]; to finalize several roots together, use [ParseDirs].
 //
-// Parameters:
-//   - rootDir: The root directory to start parsing from (e.g., "./entities", "./models")
-//
-// Returns:
-//   - *PackageParseResult: Complete schema information with dependency ordering
-//   - error: Any error encountered during parsing or file system operations
-//
-// Example:
-//
-//	result, err := ParseDir("./internal/entities")
-//	if err != nil {
-//		return fmt.Errorf("failed to parse entities: %w", err)
-//	}
-//
-//	// Generate migration statements in proper order
-//	statements, err := renderer.GetOrderedCreateStatements(result, "postgresql")
-//	if err != nil {
-//		return fmt.Errorf("failed to render schema: %w", err)
-//	}
+// Managed-data annotations record an absolute SourceDir anchored at rootDir,
+// so [go.5x5.cz/ptah/core/schemamodel.LoadManagedRows] resolves them from any
+// working directory.
 func ParseDir(rootDir string) (*schemamodel.Database, error) {
 	result, err := ParseDirRaw(rootDir)
 	if err != nil {
@@ -56,34 +40,17 @@ func ParseDir(rootDir string) (*schemamodel.Database, error) {
 	return schemamodel.MergeAccumulated(result)
 }
 
-// ParseFS parses all Go files in the given root directory and its subdirectories within the provided filesystem.
+// ParseFS walks one Go entity root inside fsys and returns the finalized
+// [go.5x5.cz/ptah/core/schemamodel.Database] its annotations declare. It is
+// [ParseDir] for a caller holding a filesystem — an embed.FS, a
+// testing/fstest.MapFS, a source snapshot — rather than a host directory:
+// file selection, the refusal of symlinked and non-regular sources, joined
+// per-file parse errors, and the finalize pipeline are all the same.
 //
-// This function is similar to ParseDir, but it operates on a provided filesystem rather than the host filesystem.
-// It's useful for parsing entities within an embedded filesystem, such as a Go module or a virtual filesystem.
-//
-// Parameters:
-//   - fsys: The filesystem to search for Go files
-//   - rootDir: The root directory within the filesystem to start parsing from
-//
-// Returns:
-//   - *PackageParseResult: Complete schema information with dependency ordering
-//   - error: Any error encountered during parsing or file system operations
-//
-// Example:
-//
-//	//go:embed entities
-//	var entities embed.FS
-//
-//	result, err := ParseFS(entities, ".")
-//	if err != nil {
-//		return fmt.Errorf("failed to parse entities: %w", err)
-//	}
-//
-//	// Generate migration statements in proper order
-//	statements, err := renderer.GetOrderedCreateStatements(result, "postgresql")
-//	if err != nil {
-//		return fmt.Errorf("failed to render schema: %w", err)
-//	}
+// One thing differs by necessity: with no host root to anchor to,
+// managed-data annotations keep the filesystem-relative SourceDir they were
+// parsed with. Resolve them by passing the host location of fsys as the
+// rootDir argument of [go.5x5.cz/ptah/core/schemamodel.LoadManagedRows].
 func ParseFS(fsys fs.FS, rootDir string) (*schemamodel.Database, error) {
 	result := schemamodel.NewDatabase()
 	if err := accumulateGoFiles(result, fsys, rootDir); err != nil {

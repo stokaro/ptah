@@ -174,7 +174,22 @@ func (cb *ColumnBuilder) Check(expression string) *ColumnBuilder {
 	return cb
 }
 
-// Generated marks the column as generated from the supplied raw SQL expression.
+// Generated marks the column as generated from the supplied raw SQL expression
+// and returns the ColumnBuilder for chaining.
+//
+// The expression is stored as written; renderers that spell the clause
+// GENERATED ALWAYS AS (...) — and SQL Server's AS (...) — supply the wrapping
+// parentheses, so it does not need its own, while ClickHouse emits it bare
+// after MATERIALIZED or ALIAS. kind selects the storage form, "VIRTUAL" or
+// "STORED", and is stored verbatim in ast.ColumnNode.GeneratedKind; each
+// dialect renderer interprets it when the SQL is generated: PostgreSQL refuses
+// any kind other than STORED at render time; MySQL and MariaDB emit the kind
+// uppercased; SQL Server honors only PERSISTED and emits nothing for other
+// kinds; ClickHouse maps VIRTUAL to ALIAS and everything else to MATERIALIZED.
+//
+// Example:
+//
+//	column := table.Column("total", "NUMERIC(10,2)").Generated("price * quantity", "STORED")
 func (cb *ColumnBuilder) Generated(expression, kind string) *ColumnBuilder {
 	cb.column.SetGenerated(expression, kind)
 	return cb
@@ -424,7 +439,22 @@ func (scb *SchemaColumnBuilder) Check(expression string) *SchemaColumnBuilder {
 	return scb
 }
 
-// Generated marks the column as generated from the supplied raw SQL expression.
+// Generated marks the column as generated from the supplied raw SQL expression
+// and returns the SchemaColumnBuilder for chaining.
+//
+// The expression is stored as written; renderers that spell the clause
+// GENERATED ALWAYS AS (...) — and SQL Server's AS (...) — supply the wrapping
+// parentheses, so it does not need its own, while ClickHouse emits it bare
+// after MATERIALIZED or ALIAS. kind selects the storage form, "VIRTUAL" or
+// "STORED", and is stored verbatim in ast.ColumnNode.GeneratedKind; each
+// dialect renderer interprets it when the SQL is generated: PostgreSQL refuses
+// any kind other than STORED at render time; MySQL and MariaDB emit the kind
+// uppercased; SQL Server honors only PERSISTED and emits nothing for other
+// kinds; ClickHouse maps VIRTUAL to ALIAS and everything else to MATERIALIZED.
+//
+// Example:
+//
+//	column := schema.Table("orders").Column("total", "NUMERIC(10,2)").Generated("price * quantity", "STORED")
 func (scb *SchemaColumnBuilder) Generated(expression, kind string) *SchemaColumnBuilder {
 	scb.column.SetGenerated(expression, kind)
 	return scb

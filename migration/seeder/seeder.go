@@ -1,5 +1,18 @@
 // Package seeder applies environment-scoped SQL seed files and records which
 // files have already run.
+//
+// A seed file is named NNN_description.env.sql. The env segment names the
+// environment the file belongs to, and env "all" runs in every environment.
+// Applied seeds are recorded by path together with a SHA-256 checksum in a
+// schema_seeds table the seeder creates in the target database, so a re-run
+// skips every recorded file and refuses one whose bytes changed with a
+// [ChecksumMismatchError] rather than reporting it skipped. Protected
+// environments ("prod" and "production" unless [Options.ProtectedEnvs] says
+// otherwise) and protected tables refuse a run unless [Options.AllowProd] is
+// set.
+//
+// [Discover], [Select] and [Apply] form the pipeline; [Apply] runs all three
+// against a live [dbschema.DatabaseConnection].
 package seeder
 
 import (
@@ -34,25 +47,46 @@ var seedFilenameRE = regexp.MustCompile(`^([0-9]+)_(.+)\.([A-Za-z0-9_-]+)\.sql$`
 
 // SeedFile is one discovered seed SQL file.
 type SeedFile struct {
-	Path        string
-	Filename    string
-	Version     int
+	// Path is the file's path relative to the discovered filesystem's root,
+	// which is the identity the tracker records.
+	Path string
+	// Filename is the base name, NNN_description.env.sql.
+	Filename string
+	// Version is the leading NNN parsed as a number, so 005 sorts before 010.
+	Version int
+	// Description is the middle segment of the filename.
 	Description string
-	Env         string
-	Checksum    string
+	// Env is the filename's env segment, lowercased.
+	Env string
+	// Checksum is the hex SHA-256 of the file's bytes.
+	Checksum string
 }
 
 // Options controls seed execution.
 type Options struct {
-	Env             string
-	ProtectedEnvs   []string
+	// Env is the environment to seed and is required. It is lowercased and
+	// trimmed, then matched against each seed file's env segment.
+	Env string
+	// ProtectedEnvs lists environments that refuse a run unless AllowProd is
+	// set. Empty means [DefaultProtectedEnvs].
+	ProtectedEnvs []string
+	// ProtectedTables marks the target database as off limits by content: when
+	// any listed table exists there (matched case-insensitively), [Apply]
+	// refuses the run unless AllowProd is set.
 	ProtectedTables []string
 	// Force re-applies a seed the tracker already records, and is also the
 	// answer to a [ChecksumMismatchError]: it re-runs the edited file and
 	// records the new checksum.
-	Force      bool
+	Force bool
+	// Idempotent tolerates duplicate-key conflicts: each file's statements run
+	// under a savepoint, and a conflict (see [IsConflictError]) rolls the file
+	// back to it while the seed is still recorded as applied. Any other
+	// failure still fails the run. [Apply] refuses the option on ClickHouse,
+	// where transactions and savepoints do not exist.
 	Idempotent bool
-	AllowProd  bool
+	// AllowProd disables both protections: the protected-environment refusal
+	// and the protected-tables probe.
+	AllowProd bool
 }
 
 // ChecksumMismatchError reports that a seed file changed after it was applied.
@@ -86,13 +120,25 @@ func (e *ChecksumMismatchError) Error() string {
 
 // Result summarizes one seed command run.
 type Result struct {
-	Env     string
-	Total   int
+	// Env is the normalized environment the run targeted.
+	Env string
+	// Total counts the seeds selected for Env, applied and skipped alike.
+	Total int
+	// Applied holds the seeds this run executed and recorded, in run order.
 	Applied []SeedFile
+	// Skipped holds the seeds the tracker already recorded unchanged.
 	Skipped []SeedFile
 }
 
-// Discover scans fsys for seed files matching NNN_description.env.sql.
+// Discover scans fsys recursively for seed files matching
+// NNN_description.env.sql.
+//
+// Files without a .sql suffix are ignored, but a .sql file that does not match
+// the pattern fails discovery with an error naming it, so a typo cannot
+// silently drop a seed. The result is sorted by Version and then by Path, and
+// two runs over the same tree produce the same slice. Each [SeedFile] carries
+// its fsys-relative Path, its Env lowercased, and the hex SHA-256 Checksum of
+// the file's bytes.
 func Discover(fsys fs.FS) ([]SeedFile, error) {
 	var seeds []SeedFile
 	err := fs.WalkDir(fsys, ".", func(path string, entry fs.DirEntry, err error) error {
@@ -129,7 +175,11 @@ func Discover(fsys fs.FS) ([]SeedFile, error) {
 	return seeds, nil
 }
 
-// Select filters seed files for the requested environment.
+// Select filters seed files for the requested environment, preserving input
+// order. A seed whose Env is "all" is selected for every environment. The env
+// argument is lowercased and trimmed before the comparison; the seeds'
+// own Env values are compared as they are, which is the lowercased form
+// [Discover] produces.
 func Select(seeds []SeedFile, env string) []SeedFile {
 	env = normalizeEnv(env)
 	selected := make([]SeedFile, 0, len(seeds))
@@ -168,7 +218,10 @@ func parseSeedPath(fsys fs.FS, path string) (SeedFile, bool, error) {
 	}, true, nil
 }
 
-// ValidateOptions returns an error if the command options would be unsafe.
+// ValidateOptions returns an error if the command options would be unsafe: an
+// empty Env, or a protected environment named without AllowProd. An empty
+// ProtectedEnvs list is read as [DefaultProtectedEnvs] for the check; the
+// caller's opts value is not modified.
 func ValidateOptions(opts Options) error {
 	if normalizeEnv(opts.Env) == "" {
 		return fmt.Errorf("environment is required")
@@ -183,6 +236,20 @@ func ValidateOptions(opts Options) error {
 }
 
 // Apply applies all matching seed files and records successful runs.
+//
+// Apply validates opts (see [ValidateOptions]), refuses a target holding any
+// of the [Options.ProtectedTables], creates the schema_seeds tracker table if
+// it is absent, then applies each seed selected for opts.Env (see [Select]) in
+// [Discover] order, each file in its own transaction -- except on ClickHouse,
+// where seeds run without one. A seed already recorded with a matching
+// checksum is skipped; a recorded seed whose file changed stops the run with a
+// *[ChecksumMismatchError], retrieved with [errors.As]; [Options.Force]
+// re-applies both. When no seed matches the environment, Apply returns an
+// empty Result without creating the tracker.
+//
+// An error before the first seed is examined comes with a nil Result; from
+// there on the returned Result is non-nil alongside the error and reports what
+// was applied and skipped before it.
 func Apply(ctx context.Context, conn *dbschema.DatabaseConnection, fsys fs.FS, opts Options) (*Result, error) {
 	opts.Env = normalizeEnv(opts.Env)
 	if len(opts.ProtectedEnvs) == 0 {
@@ -457,7 +524,9 @@ func existingTables(ctx context.Context, conn *dbschema.DatabaseConnection) ([]s
 	return tables, nil
 }
 
-// DefaultProtectedEnvs returns environment names that require --allow-prod.
+// DefaultProtectedEnvs returns the environment names protected when
+// [Options.ProtectedEnvs] is empty: "prod" and "production". Each call returns
+// a fresh slice the caller may modify.
 func DefaultProtectedEnvs() []string {
 	return []string{"prod", "production"}
 }
@@ -476,7 +545,11 @@ func normalizeEnv(env string) string {
 	return strings.ToLower(strings.TrimSpace(env))
 }
 
-// IsConflictError reports whether err looks like a duplicate-key conflict.
+// IsConflictError reports whether err looks like a duplicate-key conflict —
+// the failure [Options.Idempotent] tolerates. PostgreSQL (SQLSTATE 23505) and
+// MySQL/MariaDB (error 1062) are recognized through their driver error types
+// with [errors.As]; any other error falls back to a case-insensitive match on
+// the usual duplicate-key message wordings.
 func IsConflictError(err error) bool {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {

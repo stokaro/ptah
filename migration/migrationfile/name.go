@@ -24,13 +24,30 @@ const (
 	atlasParseAuto
 )
 
-// File represents the parsed components of a migration file name
+// File is the parsed identity of one migration file: what its name — and, for
+// files found by [Discover], its path — says about it before any content is
+// read.
 type File struct {
-	Path                 string
-	Version              int64
-	Name                 string
-	Direction            string
-	Extension            string
+	// Path is the slash-separated path of the file relative to the walked
+	// filesystem root. [Discover] fills it; the name parsers, which see only
+	// a file name, leave it empty.
+	Path string
+	// Version is the numeric version the name carries. An Atlas repeatable
+	// file with no numeric prefix (R__name.sql) leaves it 0 and carries its
+	// identity in [File.RevisionVersion].
+	Version int64
+	// Name is the humanized description: underscore (and, in Atlas names,
+	// dot) separators become spaces and words are Title-Cased, so
+	// "create_users_table" reads back as "Create Users Table". The raw
+	// file-name token lives in RevisionDescription for Atlas files.
+	Name string
+	// Direction is "up" or "down". An Atlas name without a direction suffix
+	// is "up".
+	Direction string
+	// Extension is the ".sql" suffix the name carried, dot included.
+	Extension string
+	// Format records which naming family parsed the name: [DirFormatPtah] or
+	// [DirFormatAtlas], never [DirFormatAuto].
 	Format               DirFormat
 	atlasRevisionVersion string
 	// RevisionDescription is the raw, unnormalized description token an Atlas
@@ -281,7 +298,15 @@ func splitAtlasStem(stem string) (versionDigits, rawName string, ok bool) {
 	return stem[:i], strings.TrimLeft(stem[i:], "_."), true
 }
 
-// FileName generates a migration filename from components
+// FileName produces a Ptah migration file name in the shape
+// %010d_description.direction.sql. The description is normalized to the stem
+// the name grammar accepts — lowercased, spaces become underscores, and every
+// remaining character outside [a-z0-9_] is stripped — so the result
+// round-trips through [ParseFileName], which title-cases it back into
+// [File.Name], provided the normalized description is non-empty (a
+// description with no [a-z0-9_] characters produces a name ParseFileName
+// refuses). Direction is used verbatim and must be "up" or "down" for the
+// result to parse as a migration file.
 func FileName(version int64, description, direction string) string {
 	return fmt.Sprintf("%010d_%s.%s.sql", version, normalizeDescription(description), direction)
 }
@@ -303,8 +328,10 @@ func normalizeDescription(description string) string {
 	return regexp.MustCompile(`[^a-z0-9_]`).ReplaceAllString(desc, "")
 }
 
-// NextVersion generates the next migration version number
-// This is a simple implementation that uses the current timestamp
+// NextVersion returns a version number for a new migration: the current time
+// in Unix seconds. Two calls within the same second return the same value, so
+// a writer creating several migrations in one run must ensure distinct
+// versions itself.
 func NextVersion() int64 {
 	return time.Now().Unix()
 }

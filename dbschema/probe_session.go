@@ -30,6 +30,15 @@ import (
 // rollback would discard their work rather than the caller's. The false is the
 // whole answer -- a caller that must not proceed without the transaction has
 // to check ran, not just err. label names the caller in every error.
+//
+// Do not call this on an in-memory SQLite connection. Unlike
+// [DatabaseConnection.WithSession] and
+// [DatabaseConnection.WithIsolatedQuerySession], which return an in-memory
+// database's sole connection to the pool, this method always discards the
+// physical session -- and discarding the only connection of an in-memory
+// database takes the database with it: the next statement on the connection
+// runs against a fresh, empty one. Measured: a table created before the call
+// is gone after it.
 func (dc *DatabaseConnection) WithRolledBackTransaction(
 	ctx context.Context,
 	label string,

@@ -40,8 +40,17 @@
 // The package provides a Planner interface for extensible dialect support:
 //
 //	type Planner interface {
-//		GenerateMigrationAST(diff *types.SchemaDiff, generated *schemamodel.Database) ([]ast.Node, error)
+//		GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error)
 //	}
+//
+// The diff is the whole input: each change entry carries its own operands
+// (the difftypes Changes elements and Desired fields), and schema-wide
+// vocabulary travels on the diff's Declared* carries, so a planner reads
+// everything it plans from the diff. The desired schema is taken by the
+// package-level helpers, which
+// prepare it (default foreign-key names assigned, declared user types
+// schema-qualified) and validate it against identifier semantics and the
+// dialect's capability set before any planner runs.
 //
 // Each implementation handles dialect-specific features, constraints, and SQL generation patterns.
 //
@@ -176,8 +185,12 @@
 //
 // Public helpers return errors for user-controlled and configuration-dependent
 // failures, including unsupported dialects, renderer failures, and unsupported
-// dialect features. CLI callers should surface these errors directly instead of
-// relying on panic recovery. The errors carry context:
+// dialect features. Planning failures are *ptaherr.PlanError and rendering
+// failures are *ptaherr.RenderError, both answering errors.As; an unsupported
+// dialect satisfies errors.Is against ptaherr.ErrUnsupportedDialect and a
+// refused diff satisfies errors.Is against ptaherr.ErrInvalidSchemaDiff. CLI
+// callers should surface these errors directly instead of relying on panic
+// recovery. The errors carry context:
 //
 //   - Validation of schema differences before SQL generation
 //   - Detailed error messages with context information

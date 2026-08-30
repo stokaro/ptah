@@ -1712,11 +1712,24 @@ func (n *DropTypeNode) Accept(visitor Visitor) error {
 
 // CreateViewNode represents a CREATE VIEW statement.
 type CreateViewNode struct {
-	Name      string
-	Body      string
-	Replace   bool
+	// Name is the view name, written as an identifier and quoted by the
+	// renderer.
+	Name string
+	// Body is the view's SELECT statement, emitted verbatim after `AS` with
+	// only surrounding whitespace trimmed.
+	Body string
+	// Replace asks for replace-if-exists semantics. Each renderer picks its
+	// target's spelling: CREATE OR REPLACE VIEW where the target has it,
+	// CREATE OR ALTER VIEW on SQL Server, a preceding DROP VIEW IF EXISTS on
+	// SQLite.
+	Replace bool
+	// WithCheck renders the WITH CHECK OPTION clause after the body. Targets
+	// without the clause (SQLite, ClickHouse) refuse the node rather than
+	// dropping it.
 	WithCheck bool
-	Comment   string
+	// Comment is an optional comment emitted as a SQL comment above the
+	// statement.
+	Comment string
 	// Attributes carries the view's own WITH clause on the targets that have
 	// one -- SQL Server's SCHEMABINDING and VIEW_METADATA. It is separate from
 	// WithCheck, which is a clause that follows the body rather than one that
@@ -1733,26 +1746,33 @@ func NewCreateView(name string) *CreateViewNode {
 	return &CreateViewNode{Name: name}
 }
 
+// SetBody sets the view's SELECT statement and returns the node for chaining.
 func (n *CreateViewNode) SetBody(body string) *CreateViewNode {
 	n.Body = body
 	return n
 }
 
+// SetReplace asks for replace-if-exists semantics and returns the node for
+// chaining.
 func (n *CreateViewNode) SetReplace() *CreateViewNode {
 	n.Replace = true
 	return n
 }
 
+// SetWithCheck sets whether the WITH CHECK OPTION clause is rendered and
+// returns the node for chaining.
 func (n *CreateViewNode) SetWithCheck(withCheck bool) *CreateViewNode {
 	n.WithCheck = withCheck
 	return n
 }
 
+// SetComment sets an optional comment and returns the node for chaining.
 func (n *CreateViewNode) SetComment(comment string) *CreateViewNode {
 	n.Comment = comment
 	return n
 }
 
+// Accept implements the Node interface for CreateViewNode.
 func (n *CreateViewNode) Accept(visitor Visitor) error {
 	return visitor.VisitCreateView(n)
 }
@@ -2270,12 +2290,33 @@ func (n *RefreshMaterializedViewNode) Accept(visitor Visitor) error {
 
 // CreateTriggerNode represents a CREATE TRIGGER statement.
 type CreateTriggerNode struct {
-	Name         string
-	Table        string
-	Timing       string
-	Event        string
-	ForEach      string
-	Body         string
+	// Name is the trigger name.
+	Name string
+	// Table is the table the trigger fires on.
+	Table string
+	// Timing is the firing clause -- BEFORE or AFTER (INSTEAD OF where the
+	// target has it) -- passed through to the renderer as written on most
+	// targets; SQL Server uppercases it, defaults an empty value to AFTER,
+	// and refuses BEFORE.
+	Timing string
+	// Event names the triggering statement or statements, such as INSERT or
+	// UPDATE, passed through as written on most targets; SQL Server
+	// uppercases it and defaults an empty value to INSERT.
+	Event string
+	// ForEach is the trigger level: ROW or STATEMENT. Renderers with a FOR
+	// EACH clause treat empty as ROW, the value [NewCreateTrigger] starts
+	// from; MySQL, MariaDB, SQLite, and Oracle refuse STATEMENT rather than
+	// silently downgrading it. SQL Server has no trigger-level clause and
+	// ignores the field.
+	ForEach string
+	// Body is the trigger code. The MySQL family emits it inline as the
+	// trigger body; PostgreSQL keeps trigger code in a function, so its
+	// renderer wraps Body into a generated trigger function -- unless
+	// ExternalFunction says the function already exists.
+	Body string
+	// FunctionName is the function the trigger executes. On PostgreSQL an
+	// empty name derives a deterministic one from Table and Name; see
+	// ExternalFunction for referencing a function that already exists.
 	FunctionName string
 	// ExternalFunction reports that FunctionName refers to a function that
 	// already exists rather than one rendered from Body. PostgreSQL keeps
@@ -2284,8 +2325,15 @@ type CreateTriggerNode struct {
 	// redefining a function they were only asked to reference would discard
 	// its body.
 	ExternalFunction bool
-	Replace          bool
-	Comment          string
+	// Replace asks for replace-if-exists semantics. Renderers with CREATE OR
+	// REPLACE TRIGGER in their capabilities emit it; SQL Server spells it
+	// CREATE OR ALTER TRIGGER; PostgreSQL- and MySQL-family targets without
+	// the capability emit a preceding DROP TRIGGER IF EXISTS; Oracle without
+	// it refuses, having no DROP TRIGGER IF EXISTS to fall back on.
+	Replace bool
+	// Comment is an optional comment emitted as a SQL comment above the
+	// statement.
+	Comment string
 }
 
 // NewCreateTrigger starts a CREATE TRIGGER on a named table.
@@ -2299,26 +2347,35 @@ func NewCreateTrigger(name, table string) *CreateTriggerNode {
 	return &CreateTriggerNode{Name: name, Table: table, ForEach: "ROW"}
 }
 
+// SetTiming sets the firing clause (BEFORE, AFTER, INSTEAD OF) and returns the
+// node for chaining.
 func (n *CreateTriggerNode) SetTiming(timing string) *CreateTriggerNode {
 	n.Timing = timing
 	return n
 }
 
+// SetEvent sets the triggering statement, such as INSERT or UPDATE, and
+// returns the node for chaining.
 func (n *CreateTriggerNode) SetEvent(event string) *CreateTriggerNode {
 	n.Event = event
 	return n
 }
 
+// SetForEach sets the trigger level, ROW or STATEMENT, and returns the node
+// for chaining.
 func (n *CreateTriggerNode) SetForEach(forEach string) *CreateTriggerNode {
 	n.ForEach = forEach
 	return n
 }
 
+// SetBody sets the trigger code and returns the node for chaining.
 func (n *CreateTriggerNode) SetBody(body string) *CreateTriggerNode {
 	n.Body = body
 	return n
 }
 
+// SetFunctionName names the function the trigger executes and returns the node
+// for chaining.
 func (n *CreateTriggerNode) SetFunctionName(functionName string) *CreateTriggerNode {
 	n.FunctionName = functionName
 	return n
@@ -2331,16 +2388,20 @@ func (n *CreateTriggerNode) SetExternalFunction() *CreateTriggerNode {
 	return n
 }
 
+// SetReplace asks for replace-if-exists semantics and returns the node for
+// chaining.
 func (n *CreateTriggerNode) SetReplace() *CreateTriggerNode {
 	n.Replace = true
 	return n
 }
 
+// SetComment sets an optional comment and returns the node for chaining.
 func (n *CreateTriggerNode) SetComment(comment string) *CreateTriggerNode {
 	n.Comment = comment
 	return n
 }
 
+// Accept implements the Node interface for CreateTriggerNode.
 func (n *CreateTriggerNode) Accept(visitor Visitor) error {
 	return visitor.VisitCreateTrigger(n)
 }
@@ -3413,7 +3474,11 @@ func (n *RawSQLNode) Accept(visitor Visitor) error {
 type RoutineKind string
 
 const (
-	RoutineKindFunction  RoutineKind = "function"
+	// RoutineKindFunction marks an opaque routine wrapping a CREATE FUNCTION
+	// statement.
+	RoutineKindFunction RoutineKind = "function"
+	// RoutineKindProcedure marks an opaque routine wrapping a CREATE PROCEDURE
+	// statement.
 	RoutineKindProcedure RoutineKind = "procedure"
 )
 

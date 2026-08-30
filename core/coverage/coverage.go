@@ -60,6 +60,10 @@ import (
 // rather than ignored, because ignoring it is the exact failure this package
 // exists to prevent: a directive nothing understands reads as no directive at
 // all, and the absence it was protecting becomes a removal.
+//
+// Two declared kinds sit outside that serialized grammar: [Hypertable] and
+// [ContinuousAggregate] are built and consulted in process only, and their
+// comments carry the consequence for a [Set] that holds one.
 type Kind string
 
 // The kinds a description can decline to describe. Each one names a comparator
@@ -114,6 +118,13 @@ const (
 	// create_hypertable -- while a replay of the same description creates an
 	// ordinary table and a diff between the two reports no difference
 	// (stokaro/ptah#1026).
+	//
+	// Hypertable is outside the serialized directive grammar: [ParseKind]
+	// refuses its token, [Object.Validate] refuses a record carrying it, and
+	// [DecodeHeader] refuses a directive naming it. A record with this kind
+	// therefore serves in-process consultation only -- [Set.Directives] still
+	// writes the line, and the result is a document this package refuses to
+	// read back.
 	Hypertable Kind = "hypertable"
 
 	// ContinuousAggregate is a TimescaleDB continuous aggregate: a
@@ -126,6 +137,10 @@ const (
 	// but a DROP. Measured on 2.29.2, that drop cannot even apply: the server
 	// refuses DROP VIEW on a continuous aggregate and the run reports the same
 	// pending change forever (stokaro/ptah#1026).
+	//
+	// ContinuousAggregate is outside the serialized directive grammar exactly
+	// as [Hypertable] is; see that constant for what this means for a [Set]
+	// carrying it.
 	ContinuousAggregate Kind = "continuous_aggregate"
 
 	// ChangeStream is a Spanner change stream (CREATE CHANGE STREAM): a
@@ -160,7 +175,10 @@ const (
 	VirtualTable Kind = "virtual_table"
 )
 
-// kinds is every valid [Kind], in the order directives are written.
+// kinds is every [Kind] the serialized directive grammar accepts, in the order
+// [ParseKind]'s refusal message lists them. [Hypertable] and
+// [ContinuousAggregate] are not in it; both constants say what that costs a
+// serialized [Set].
 var kinds = []Kind{
 	ChangeStream, Composite, Domain, Extension, ExtendedProperty, Policy, Range, Role, Schema,
 	Sequence, Synonym, VirtualTable,
@@ -420,6 +438,10 @@ func compareObjects(a, b Object) int {
 // DirectiveMarker introduces a serialized coverage record. It carries the
 // `ptah:` prefix Ptah's other in-comment directives use, so a reader meeting one
 // in a document knows whose it is.
+//
+// A directive is honored only in a document's leading comment header: see
+// [DecodeHeader] for the placement rule and [Set.Directives] for the line
+// grammar.
 const DirectiveMarker = "ptah:not-described"
 
 // The attribute keys a directive can carry between its kind and its name.

@@ -51,9 +51,6 @@ func (b *InsertBuilder) Values(values ...any) *InsertBuilder {
 	return b
 }
 
-// Returning adds columns to the RETURNING clause, projecting them from the
-// inserted rows. RETURNING renders only on the PostgreSQL family and SQLite;
-// RenderInsert rejects it on MySQL and MariaDB.
 // FromSelect supplies the inserted rows from a query instead of from literal
 // values.
 //
@@ -102,6 +99,14 @@ func (b *InsertBuilder) OnConflictDoUpdate(columns []string, update ...string) *
 	return b
 }
 
+// Returning adds columns to the RETURNING clause, projecting them from the
+// inserted rows. RETURNING renders only on the PostgreSQL family and SQLite;
+// RenderInsert rejects a non-empty RETURNING on every other supported dialect
+// rather than emit a clause the engine cannot run: MySQL and MariaDB have no
+// portable RETURNING across the three write statements, ClickHouse has none at
+// all, SQL Server spells the idea as OUTPUT (a different clause, not silently
+// mapped), and Oracle accepts RETURNING only with an INTO clause binding
+// out-parameters.
 func (b *InsertBuilder) Returning(columns ...string) *InsertBuilder {
 	b.returning = appendReturning(b.returning, columns)
 	return b
