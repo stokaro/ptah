@@ -1889,16 +1889,12 @@ matches by prefix so every testify subpackage is covered by the one entry.
 ### Checkers Belong To The Test They Report Against
 
 An assertion reports against whichever test its checker was built from, so the
-checker a test uses has to be the one for that test. Three rules follow. Only
-the first is enforced today — `QTLINT_RULES` in the Makefile carries
-`-require-qt-c-receiver` and `-require-data-rows`, and the tree is clean against
-both. `-require-testing-run` is a review rule for now, and the counts are
-written
-here rather than left to be rediscovered: `-require-testing-run` reports 27
-sites in the untagged contour and 148 in the tagged one. Adding a rule to the
-gate before the tree is clean against it turns every unrelated change red, so
-each moves into `QTLINT_RULES` when its own backlog reaches zero, and the
-number above is what says whether that has happened.
+checker a test uses has to be the one for that test. Three rules follow, and
+all three are enforced: `QTLINT_RULES` in the Makefile carries
+`-require-qt-c-receiver`, `-require-data-rows` and `-require-testing-run`, and
+the tree is clean against every one of them in both contours. A rule joins that
+set when its own backlog reaches zero, because adding one before then turns
+every unrelated change red; the Makefile records what each cost to clear.
 
 - Assert through a receiver: `c := qt.New(t)` then `c.Assert(...)`, never
   `qt.Assert(t, ...)`.

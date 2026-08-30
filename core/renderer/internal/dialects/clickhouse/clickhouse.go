@@ -586,6 +586,7 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 		}
 		r.w.Writef("CREATE TABLE%s %s", guard, node.Name)
 		r.writeEngineSpec(spec)
+		r.writeCustomSQL(node)
 		r.w.WriteLine(" AS")
 		r.w.WriteLine(strings.TrimSpace(node.SelectBody))
 		r.w.WriteLine(";")
@@ -617,6 +618,9 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 	if node.Comment != "" {
 		r.w.Writef(" COMMENT %s", escapeStringLiteral(node.Comment))
 	}
+	// The author's own raw tail follows the engine clause and the comment, and
+	// precedes any SELECT the table is populated from (stokaro/ptah#2590).
+	r.writeCustomSQL(node)
 	if node.SelectBody != "" {
 		r.w.Write(" AS ")
 		r.w.Write(strings.TrimSpace(node.SelectBody))
@@ -624,6 +628,18 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 	r.w.WriteLine(";")
 	r.w.WriteLine("")
 	return nil
+}
+
+// writeCustomSQL writes the raw SQL tail the author attached to CREATE TABLE,
+// preceded by one space, and writes nothing for a table declaring none.
+//
+// The text is emitted verbatim. Ptah does not parse it, so there is nothing to
+// validate it against and nothing to normalize -- see
+// [go.5x5.cz/ptah/core/ast.CreateTableNode.CustomSQL].
+func (r *Renderer) writeCustomSQL(node *ast.CreateTableNode) {
+	if custom := strings.TrimSpace(node.CustomSQL); custom != "" {
+		r.w.Write(" " + custom)
+	}
 }
 
 // sortKeyColumnSet returns the set of plain column names that appear in the

@@ -143,7 +143,7 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 		// FromTable applies platform.clickhouse.* overrides into the AST
 		// node's Options map (uppercased), which the renderer then reads
 		// to build the ENGINE clause.
-		tableNode := fromschema.FromTable(creation.Table, creation.Fields, creation.Enums, platform.ClickHouse)
+		tableNode := fromschema.FromTableWithConstraints(creation.Table, creation.Fields, creation.Enums, platform.ClickHouse, creation.Constraints)
 		result = append(result, tableNode)
 	}
 

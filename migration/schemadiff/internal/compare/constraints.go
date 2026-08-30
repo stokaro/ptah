@@ -110,23 +110,15 @@ func ConstraintsWithSemantics(
 	// their CHECK inline via CREATE TABLE / ALTER TABLE ADD COLUMN, and
 	// double-emitting an ALTER TABLE ADD CONSTRAINT would fail because the
 	// constraint is created in the same migration step.
-	for _, synthesized := range synthesizeFieldLevelCheckConstraints(desired, database, semantics) {
-		key := newConstraintKey(synthesized.Table, synthesized.Name, semantics)
-		// Don't clobber an explicit table-level constraint that happens to
-		// share the same name.
-		if _, exists := genConstraints[key]; !exists {
-			genConstraints[key] = synthesized
-		}
-	}
+	recordSynthesized(genConstraints, synthesizeFieldLevelCheckConstraints(desired, database, semantics), semantics)
 
-	for _, synthesized := range synthesizeTablePrimaryKeyConstraints(desired, database, dialect, semantics) {
-		key := newConstraintKey(synthesized.Table, synthesized.Name, semantics)
-		// Don't clobber an explicit table-level constraint that happens to
-		// share the same name.
-		if _, exists := genConstraints[key]; !exists {
-			genConstraints[key] = synthesized
-		}
-	}
+	// Synthesize table-level Constraint entries from the table's own `checks`
+	// list, which renders as a named CHECK. Without this the constraint the
+	// render created is reported as one to drop on every run after the first
+	// (stokaro/ptah#2590).
+	recordSynthesized(genConstraints, synthesizeTableLevelCheckConstraints(desired, database, semantics), semantics)
+
+	recordSynthesized(genConstraints, synthesizeTablePrimaryKeyConstraints(desired, database, dialect, semantics), semantics)
 
 	// Synthesize table-level Constraint entries from field-level `foreign=`
 	// annotations so on_delete / on_update drift on an existing field-level
@@ -139,17 +131,15 @@ func ConstraintsWithSemantics(
 	// synthesizedFKKeys records the table.constraint_name of every synthesized
 	// field-level FK so isFieldLevelConstraint can let the matching DB-side FK
 	// through to the comparison instead of filtering it out — otherwise
-	// foreignKeyConstraintChanged would never run for field-level FKs.
-	synthesizedFKKeys := make(map[tableMemberKey]struct{})
-	for _, synthesized := range synthesizeFieldLevelForeignKeyConstraints(desired, database, semantics) {
-		key := newConstraintKey(synthesized.Table, synthesized.Name, semantics)
-		synthesizedFKKeys[key] = struct{}{}
-		// Don't clobber an explicit table-level constraint that happens to
-		// share the same name.
-		if _, exists := genConstraints[key]; !exists {
-			genConstraints[key] = synthesized
-		}
+	// foreignKeyConstraintChanged would never run for field-level FKs. Every
+	// synthesized key is recorded, including one an explicit declaration
+	// already holds: the DB-side row has to reach the comparison either way.
+	fieldLevelForeignKeys := synthesizeFieldLevelForeignKeyConstraints(desired, database, semantics)
+	synthesizedFKKeys := make(map[tableMemberKey]struct{}, len(fieldLevelForeignKeys))
+	for _, synthesized := range fieldLevelForeignKeys {
+		synthesizedFKKeys[newConstraintKey(synthesized.Table, synthesized.Name, semantics)] = struct{}{}
 	}
+	recordSynthesized(genConstraints, fieldLevelForeignKeys, semantics)
 
 	dbConstraints := collectDatabaseConstraints(
 		desired,

@@ -644,6 +644,11 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 	}
 	r.w.Write(rowDeletionPolicy)
 
+	// The author's own raw tail closes the statement. It goes last because it
+	// is unparsed text: nothing here knows which clause it is, so there is no
+	// position to interleave it with (stokaro/ptah#2590).
+	r.writeCustomSQL(node)
+
 	r.w.WriteLine(";")
 	r.w.WriteLine("")
 	r.renderTableComments(node)
@@ -686,12 +691,29 @@ func columnHasComment(column *ast.ColumnNode) bool {
 	return column.Comment != ""
 }
 
+// writeCustomSQL writes the raw SQL tail the author attached to CREATE TABLE,
+// preceded by one space, and writes nothing for a table declaring none.
+//
+// The text is emitted verbatim. Ptah does not parse it, so there is nothing to
+// validate it against and nothing to normalize -- see
+// [go.5x5.cz/ptah/core/ast.CreateTableNode.CustomSQL].
+func (r *Renderer) writeCustomSQL(node *ast.CreateTableNode) {
+	if custom := strings.TrimSpace(node.CustomSQL); custom != "" {
+		r.w.Write(" " + custom)
+	}
+}
+
 func (r *Renderer) visitCreateTableAsSelect(node *ast.CreateTableNode, guard string) error {
 	if len(node.Columns) > 0 || len(node.Constraints) > 0 {
 		return fmt.Errorf("postgres: create table as select with explicit column definitions is not supported")
 	}
 
-	r.w.WriteLinef("CREATE TABLE%s %s AS", guard, r.escapeQualifiedIdentifier(node.Name))
+	r.w.Writef("CREATE TABLE%s %s", guard, r.escapeQualifiedIdentifier(node.Name))
+	// A raw tail belongs to the table, so it precedes the AS the query hangs
+	// off. No producer builds a node carrying both today, and writing it here
+	// is what keeps that from becoming a silent drop if one does.
+	r.writeCustomSQL(node)
+	r.w.WriteLine(" AS")
 	r.w.WriteLine(strings.TrimSpace(node.SelectBody))
 	r.w.WriteLine(";")
 	r.w.WriteLine("")

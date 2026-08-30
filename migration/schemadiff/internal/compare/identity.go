@@ -2,6 +2,7 @@ package compare
 
 import (
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/constraintscope"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -70,6 +71,28 @@ func newConstraintKey(table, constraint string, semantics identifier.Semantics) 
 	return tableMemberKey{
 		table:  newQualifiedTableIdentity(table, semantics),
 		member: semantics.IndexIdentityKey(constraint),
+	}
+}
+
+// recordSynthesized adds constraints the comparison derives — a field-level
+// `check=`, a table's `checks` list, a table primary key, a field-level
+// `foreign=` — to the desired-side map under the same identity key an explicit
+// declaration would take.
+//
+// A declaration the author wrote wins over a derived one of the same name.
+// Both spell one object, only one of them is what the author asked for, and
+// the derived form carries no attribute the explicit one lacks.
+func recordSynthesized(
+	into map[tableMemberKey]schemamodel.Constraint,
+	synthesized []schemamodel.Constraint,
+	semantics identifier.Semantics,
+) {
+	for _, constraint := range synthesized {
+		key := newConstraintKey(constraint.Table, constraint.Name, semantics)
+		if _, declared := into[key]; declared {
+			continue
+		}
+		into[key] = constraint
 	}
 }
 
