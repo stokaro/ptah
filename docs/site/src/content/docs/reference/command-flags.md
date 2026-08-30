@@ -256,15 +256,19 @@ Read the columns as follows.
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
+| `--allowed-signers` | `string` | — | `PTAH_ALLOWED_SIGNERS` | — |
+| `--approval` | `string` | — | `PTAH_APPROVAL` | — |
 | `--approve` | `string` | — | `PTAH_APPROVE` | — |
 | `--approver` | `string` | — | `PTAH_APPROVER` | — |
 | `--attach-to` | `string` | — | `PTAH_ATTACH_TO` | — |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--evidence-file` | `string` | — | `PTAH_EVIDENCE_FILE` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--plan-file` | `string` | — | `PTAH_PLAN_FILE` | — |
 | `--publish-evidence` | `string` | — | `PTAH_PUBLISH_EVIDENCE` | — |
 | `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
+| `--signer` | `string` | — | `PTAH_SIGNER` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 | `--stabilize-for` | `duration` | `0s` | `PTAH_STABILIZE_FOR` | — |
 
@@ -365,13 +369,17 @@ Read the columns as follows.
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
+| `--allowed-signers` | `string` | — | `PTAH_ALLOWED_SIGNERS` | — |
+| `--approval` | `string` | — | `PTAH_APPROVAL` | — |
 | `--approve` | `string` | — | `PTAH_APPROVE` | — |
 | `--approver` | `string` | — | `PTAH_APPROVER` | — |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--drop-column` | `bool` | `true` | `PTAH_DROP_COLUMN` | — |
 | `--generation` | `string` | — | `PTAH_GENERATION` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--plan-file` | `string` | — | `PTAH_PLAN_FILE` | — |
 | `--release` | `string` | — | `PTAH_RELEASE` | — |
+| `--signer` | `string` | — | `PTAH_SIGNER` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
 **`ptah inference rollback`**

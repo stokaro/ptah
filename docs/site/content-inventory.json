@@ -2509,8 +2509,8 @@
       "inboundLinks": [
         "/inference/concepts/embeddings-and-inference-state/"
       ],
-      "visibleWords": 2031,
-      "sourceBytes": 15058
+      "visibleWords": 2258,
+      "sourceBytes": 16970
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/run-status-and-findings.md",
@@ -2577,8 +2577,8 @@
         "/inference/concepts/consistency/"
       ],
       "inboundLinks": [],
-      "visibleWords": 821,
-      "sourceBytes": 7044
+      "visibleWords": 840,
+      "sourceBytes": 7165
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/support-and-limitations.md",
@@ -3549,8 +3549,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8572,
-      "sourceBytes": 79497
+      "visibleWords": 8624,
+      "sourceBytes": 79985
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",

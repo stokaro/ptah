@@ -160,6 +160,10 @@ func decideAuthority(decision *Decision, policy Policy, observed Observed, appro
 	if !policy.RequireExactApproval {
 		return
 	}
+	if policy.RequireSignedApproval && approval != nil && !approval.Signed {
+		decision.refusef("this policy requires a signed approval and the one given names %q "+
+			"without a signature over the plan", approval.Approver)
+	}
 	switch {
 	case approval == nil:
 		decision.refusef("this policy requires an approval and none was given")

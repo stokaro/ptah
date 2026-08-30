@@ -56,6 +56,7 @@ func (d Document) Resolve(path string) (Loaded, error) {
 		},
 		Policy: embedcutover.Policy{
 			RequireExactApproval:   d.Policy.RequireExactApproval,
+			RequireSignedApproval:  d.Policy.RequireSignedApproval,
 			RequireConsistencyMode: d.Policy.RequireConsistencyMode,
 			AllowAcceptedFindings:  d.Policy.AllowAcceptedFindings,
 			MaxPlanAge:             maxPlanAge,

@@ -135,8 +135,7 @@ func joinKeys(keys []string) string {
 func newCutoverCommand() *cobra.Command {
 	var options commonOptions
 	var runID string
-	var approvalDigest string
-	var approver string
+	var approval approvalOptions
 	var stabilizeFor time.Duration
 	var evidence evidenceOptions
 
@@ -152,18 +151,22 @@ cutting over in the meantime is refused rather than overwritten.
 
 Where the specification requires an approval, it binds to the plan's exact
 digest. Any change to the evidence produces a different plan and the approval
-stops applying -- which is the point of it.`,
+stops applying -- which is the point of it.
+
+--approve takes that digest and --approver the name to record beside it. Where
+who approved something has to be evidence rather than a claim, --plan-file
+writes the refused plan, "ptah schema approve" signs it with an SSH key, and
+--approval verifies the signature and records the principal it belongs to. A
+specification setting policy.require_signed_approval refuses the typed form.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runCutover(cmd.Context(), cmd.OutOrStdout(), options,
-				runID, approvalDigest, approver, stabilizeFor, evidence)
+				runID, approval, stabilizeFor, evidence)
 		},
 	}
 	addCommonFlags(cmd, &options)
 	cmd.Flags().StringVar(&runID, "run-id", "", "Identifier of the run (required)")
-	cmd.Flags().StringVar(&approvalDigest, "approve", "",
-		"Plan digest this cutover is approved for; run without it to see the digest")
-	cmd.Flags().StringVar(&approver, "approver", "", "Who approved it")
+	addApprovalFlags(cmd, &approval)
 	cmd.Flags().DurationVar(&stabilizeFor, "stabilize-for", 0,
 		"How long the previous generation stays a way back; zero leaves no rollback")
 	addEvidenceFlags(cmd.Flags(), &evidence)
@@ -174,7 +177,8 @@ stops applying -- which is the point of it.`,
 // runCutover builds a plan, decides, and moves the pointer.
 func runCutover(
 	ctx context.Context, out io.Writer, options commonOptions,
-	runID, approvalDigest, approver string, stabilizeFor time.Duration, evidence evidenceOptions,
+	runID string, authorization approvalOptions,
+	stabilizeFor time.Duration, evidence evidenceOptions,
 ) error {
 	report, run, err := verify(ctx, options, runID)
 	if err != nil {
@@ -191,10 +195,15 @@ func runCutover(
 	if err != nil {
 		return err
 	}
-	approval := approvalFrom(plan, approvalDigest, approver)
+	identity := cutoverPlanIdentity(plan)
+	approval, err := approvalFor(ctx, authorization, identity)
+	if err != nil {
+		return err
+	}
 	decision := embedcutover.Decide(plan, opened.loaded.Policy, observed, approval)
 	if !decision.Allowed {
 		_ = writeLines(out, fmt.Sprintf("plan %s", plan.Short()))
+		_ = writePlanFile(out, authorization.planFile, identity)
 		return refusal(out, "cutover refused", decision.Blockers)
 	}
 
@@ -202,7 +211,7 @@ func runCutover(
 	if err := opened.store.MovePointer(ctx, embedstore.Pointer{
 		TargetTable: opened.loaded.Spec.Target.Table, Active: plan.Generation,
 		Previous: plan.Previous, CutOverAt: now,
-		CutOverBy: approver, PlanDigest: plan.Digest(),
+		CutOverBy: approval.Approver, PlanDigest: plan.Digest(),
 	}, plan.Previous); err != nil {
 		return err
 	}
@@ -213,7 +222,7 @@ func runCutover(
 		return err
 	}
 	return publishCutover(ctx, out, options.spec.plainHTTP, opened, plan, report,
-		approver, now, stabilizeFor, evidence)
+		approval.Approver, now, stabilizeFor, evidence)
 }
 
 // publishCutover records what was done, where a registry was named.
@@ -283,35 +292,28 @@ func openStabilization(
 		plan.Previous, until.Format(time.RFC3339))))...)
 }
 
-// approvalFrom builds the approval a caller supplied, or none.
-func approvalFrom(plan embedcutover.Plan, digest, approver string) *embedcutover.Approval {
-	if digest == "" {
-		return nil
-	}
-	return &embedcutover.Approval{
-		PlanDigest: expandDigest(plan, digest), Approver: approver, GrantedAt: time.Now().UTC(),
-	}
-}
-
-// expandDigest accepts the short digest a person reads off the terminal.
+// cutoverPlanIdentity is what an approver reads and signs.
 //
-// A full digest is sixty-four characters and nobody retypes one correctly.
-// Matching the short form against THIS plan is safe because it is only ever
-// compared to this plan: a short form that does not match leaves the caller's
-// own string, which then fails the comparison and names both.
-func expandDigest(plan embedcutover.Plan, digest string) string {
-	if digest == plan.Short() {
-		return plan.Digest()
+// The facts, and not only the digest: a signature over sixty-four hex
+// characters attests to a number nobody could have checked.
+func cutoverPlanIdentity(plan embedcutover.Plan) planIdentity {
+	return planIdentity{
+		operation: "cutover",
+		digest:    plan.Digest(),
+		lines: []string{
+			"generation: " + plan.Generation,
+			"replaces: " + plan.Previous,
+			"target: " + plan.Schema + "." + plan.Table + "." + plan.Column,
+			"verification: " + plan.Evidence.VerificationDigest,
+		},
 	}
-	return digest
 }
 
 // newRetireCommand returns "ptah inference retire".
 func newRetireCommand() *cobra.Command {
 	var options commonOptions
 	var generation string
-	var approvalDigest string
-	var approver string
+	var approval approvalOptions
 	var dropColumn bool
 
 	cmd := &cobra.Command{
@@ -326,20 +328,23 @@ again from nothing.
 It is refused while queries read the generation, and while a live generation can
 still be rolled back to it. Where the specification requires an approval, the
 approval binds to what is DESTROYED rather than to what is named: approving the
-removal of an index does not authorize the removal of the column.`,
+removal of an index does not authorize the removal of the column.
+
+--plan-file writes the refused plan, "ptah schema approve" signs it, and
+--approval verifies the signature and records whose it is. For an operation
+nothing can undo, who approved it is worth being evidence rather than a name in
+a shell history.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runRetire(cmd.Context(), cmd.OutOrStdout(), retireOptions{
 				commonOptions: options, generation: generation,
-				approvalDigest: approvalDigest, approver: approver, dropColumn: dropColumn,
+				approval: approval, dropColumn: dropColumn,
 			})
 		},
 	}
 	addCommonFlags(cmd, &options)
 	cmd.Flags().StringVar(&generation, "generation", "", "Identity of the generation to destroy (required)")
-	cmd.Flags().StringVar(&approvalDigest, "approve", "",
-		"Plan digest this retirement is approved for; run without it to see the digest")
-	cmd.Flags().StringVar(&approver, "approver", "", "Who approved it")
+	addApprovalFlags(cmd, &approval)
 	cmd.Flags().BoolVar(&dropColumn, "drop-column", true,
 		"Drop the vector column as well as the index")
 	return cmd
@@ -348,10 +353,9 @@ removal of an index does not authorize the removal of the column.`,
 // retireOptions are what the retire verb takes.
 type retireOptions struct {
 	commonOptions
-	generation     string
-	approvalDigest string
-	approver       string
-	dropColumn     bool
+	generation string
+	approval   approvalOptions
+	dropColumn bool
 }
 
 // reachPhase records how far a verb got, on its own connection.
@@ -399,10 +403,15 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 	if err != nil {
 		return err
 	}
-	decision := embedcutover.DecideRetirement(plan, state, observed,
-		retirementApproval(plan, options), opened.loaded.Policy)
+	identity := retirementPlanIdentity(plan)
+	approval, err := approvalFor(ctx, options.approval, identity)
+	if err != nil {
+		return err
+	}
+	decision := embedcutover.DecideRetirement(plan, state, observed, approval, opened.loaded.Policy)
 	if !decision.Allowed {
 		_ = writeLines(out, retirementContext(plan, state, rows)...)
+		_ = writePlanFile(out, options.approval.planFile, identity)
 		return refusal(out, "retirement refused", decision.Blockers)
 	}
 
@@ -498,19 +507,22 @@ func rollbackEligibility(
 		embedcutover.Observed{Now: time.Now().UTC()}), nil
 }
 
-// retirementApproval builds the approval a caller supplied, or none.
-func retirementApproval(
-	plan embedcutover.RetirementPlan, options retireOptions,
-) *embedcutover.Approval {
-	if options.approvalDigest == "" {
-		return nil
-	}
-	digest := options.approvalDigest
-	if digest == plan.Short() {
-		digest = plan.Digest()
-	}
-	return &embedcutover.Approval{
-		PlanDigest: digest, Approver: options.approver, GrantedAt: time.Now().UTC(),
+// retirementPlanIdentity is what an approver reads and signs.
+//
+// It names what is DESTROYED rather than only the generation, because that is
+// the difference the retirement digest binds: approving the removal of an index
+// does not authorize the removal of the column.
+func retirementPlanIdentity(plan embedcutover.RetirementPlan) planIdentity {
+	return planIdentity{
+		operation: "retire",
+		digest:    plan.Digest(),
+		lines: []string{
+			"generation: " + plan.Generation,
+			"target: " + plan.Schema + "." + plan.Table + "." + plan.Column,
+			fmt.Sprintf("drops index: %t", plan.DropsIndex),
+			fmt.Sprintf("drops column: %t", plan.DropsColumn),
+			fmt.Sprintf("rows destroyed: %d", plan.RowCount),
+		},
 	}
 }
 

@@ -332,6 +332,10 @@ Makes the new generation the one queries read.
 | --- | --- |
 | `--approve` | Plan digest this cutover is approved for; run without it to see the digest |
 | `--approver` | Who approved it |
+| `--plan-file` | Path to write the refused plan to, so it can be signed |
+| `--approval` | Path to a plan file signed with `ptah schema approve` |
+| `--allowed-signers` | OpenSSH allowed_signers file listing approvers |
+| `--signer` | Require the approval to belong to this principal |
 | `--stabilize-for` | How long the previous generation stays a way back; zero leaves no rollback |
 | `--publish-evidence` | OCI reference to publish this run's record to |
 | `--attach-to` | OCI reference of the release this record is about |
@@ -340,6 +344,30 @@ Makes the new generation the one queries read.
 
 The approval binds to the plan digest. What is true now — the pointer, the
 freshness, the findings — is checked again at the moment of the cutover.
+
+`--approve` records the digest and `--approver` the name to put beside it. Where
+who approved something has to be evidence rather than a claim:
+
+```bash
+# Refused, and the plan is written where somebody can read it.
+ptah inference cutover --spec spec.yaml --db-url "$DB" --run-id "$RUN" \
+  --plan-file cutover.plan
+
+# Signed with the mechanism the rest of Ptah already uses.
+ptah schema approve --plan cutover.plan --key ~/.ssh/id_ed25519
+
+# The approver is the principal the signature verifies as.
+ptah inference cutover --spec spec.yaml --db-url "$DB" --run-id "$RUN" \
+  --approval cutover.plan
+```
+
+The file names the operation, the generation, what it replaces and the target,
+so the signature covers something an approver could read — a signature over
+sixty-four hex characters attests to a number nobody could have checked. Both
+halves are required: the signature says an allowed key covered these bytes, and
+the digest inside them says the bytes are about this plan.
+
+`policy.require_signed_approval: true` refuses the typed form.
 
 ## `rollback`
 
@@ -363,8 +391,17 @@ Destroys a generation. This cannot be undone.
 | `--drop-column` | Drop the vector column as well as the index |
 | `--approve` | Plan digest this retirement is approved for |
 | `--approver` | Who approved it |
+| `--plan-file` | Path to write the refused plan to, so it can be signed |
+| `--approval` | Path to a plan file signed with `ptah schema approve` |
+| `--allowed-signers` | OpenSSH allowed_signers file listing approvers |
+| `--signer` | Require the approval to belong to this principal |
 
 Refused while queries still read the generation.
+
+The approval binds to what is **destroyed** rather than to what is named:
+approving the removal of an index does not authorize the removal of the column,
+and the plan file says which, along with how many rows go with it. For an
+operation nothing can undo, `--approval` is worth the extra step.
 
 ## Environment variables
 

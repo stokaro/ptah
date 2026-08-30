@@ -122,6 +122,14 @@ type Approval struct {
 	PlanDigest string
 	// Approver identifies who gave it.
 	Approver string
+	// Signed reports whether the approver was established by a signature over
+	// the plan rather than typed alongside it.
+	//
+	// The two are different claims and only one of them is evidence. A name
+	// given on a command line says who the operator wrote down; a verified
+	// signature says whose key covered these exact bytes, and that is the
+	// question an audit six months later is asking.
+	Signed bool
 	// GrantedAt is when.
 	GrantedAt time.Time
 }
@@ -142,6 +150,14 @@ const (
 type Policy struct {
 	// RequireExactApproval requires an approval bound to this plan's digest.
 	RequireExactApproval bool
+	// RequireSignedApproval requires that approval to be a verified signature
+	// rather than a digest and a name somebody typed.
+	//
+	// Separate from RequireExactApproval because they refuse different things.
+	// An exact approval establishes WHAT was approved; a signed one establishes
+	// WHO approved it, and an environment can reasonably want the first without
+	// the machinery for the second.
+	RequireSignedApproval bool
 	// MaxPlanAge is how long a plan stays current, zero for no limit.
 	MaxPlanAge time.Duration
 	// RequireConsistencyMode refuses a run that declared no mode over a

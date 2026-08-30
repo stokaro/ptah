@@ -424,3 +424,54 @@ func TestPlanDigest_IsIndependentOfTheZoneItWasPreparedIn(t *testing.T) {
 	c.Assert(second.PreparedAt.Format(time.RFC3339), qt.Not(qt.Equals), first.PreparedAt.Format(time.RFC3339))
 	c.Assert(second.Digest(), qt.Equals, first.Digest())
 }
+
+// TestDecide_ASignedApprovalPolicyRefusesAName is the difference between who
+// somebody wrote down and who approved.
+//
+// `--approve <digest> --approver "a name"` records an assertion. An environment
+// that needs the approver to be evidence sets require_signed_approval, and a
+// name typed beside a digest stops being enough.
+func TestDecide_ASignedApprovalPolicyRefusesAName(t *testing.T) {
+	c := qt.New(t)
+	plan, policy, observed, approval := ready()
+	policy.RequireSignedApproval = true
+
+	decision := embedcutover.Decide(plan, policy, observed, approval)
+
+	c.Assert(decision.Allowed, qt.IsFalse)
+	c.Assert(decision.Blockers, qt.Contains,
+		`this policy requires a signed approval and the one given names "an operator" `+
+			`without a signature over the plan`)
+}
+
+// TestDecide_ASignedApprovalSatisfiesThatPolicy is the control.
+//
+// Without it a policy that refused every approval would satisfy the test above
+// and make a signed cutover impossible.
+func TestDecide_ASignedApprovalSatisfiesThatPolicy(t *testing.T) {
+	c := qt.New(t)
+	plan, policy, observed, approval := ready()
+	policy.RequireSignedApproval = true
+	approval.Signed = true
+
+	decision := embedcutover.Decide(plan, policy, observed, approval)
+
+	c.Assert(decision.Blockers, qt.HasLen, 0, qt.Commentf("%v", decision.Blockers))
+	c.Assert(decision.Allowed, qt.IsTrue)
+}
+
+// TestDecide_AnUnsignedApprovalIsEnoughWithoutThatPolicy is the other control.
+//
+// The two requirements are separate: an exact approval establishes WHAT was
+// approved, and a signed one WHO approved it. An environment can reasonably
+// want the first without the machinery for the second, and a check that folded
+// them together would take that choice away.
+func TestDecide_AnUnsignedApprovalIsEnoughWithoutThatPolicy(t *testing.T) {
+	c := qt.New(t)
+	plan, policy, observed, approval := ready()
+
+	decision := embedcutover.Decide(plan, policy, observed, approval)
+
+	c.Assert(decision.Allowed, qt.IsTrue)
+	c.Assert(approval.Signed, qt.IsFalse)
+}

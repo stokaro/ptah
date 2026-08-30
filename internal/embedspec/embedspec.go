@@ -117,6 +117,7 @@ type ConsistencyDocument struct {
 // PolicyDocument is what the environment requires.
 type PolicyDocument struct {
 	RequireExactApproval   bool   `yaml:"require_exact_approval"`
+	RequireSignedApproval  bool   `yaml:"require_signed_approval"`
 	RequireConsistencyMode bool   `yaml:"require_consistency_mode"`
 	AllowAcceptedFindings  bool   `yaml:"allow_accepted_findings"`
 	MaxPlanAge             string `yaml:"max_plan_age"`
