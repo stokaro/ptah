@@ -376,3 +376,134 @@ func notIn(first, second []string) []string {
 	}
 	return missing
 }
+
+// TestSurfaces_AgreeExceptWhereRecorded is stokaro/ptah#2606's acceptance
+// scenario 11, at the field level.
+//
+// The same desired schema goes to `ptah schema render` and to
+// compare-against-empty → plan → render, and every field one surface reads and
+// the other does not is a disagreement. The recorded set is a ratchet: a NEW
+// divergence fails, and a repaired one fails until its entry is removed.
+//
+// The object-kind half of this comparison lives in
+// internal/convert/fromschema.TestRenderAndPlanAgreeOnEveryPostgresFamilyTarget
+// and catches an object a surface loses. This half catches a FIELD one loses
+// while both still emit the object.
+func TestSurfaces_AgreeExceptWhereRecorded(t *testing.T) {
+	c := qt.New(t)
+
+	unexpected := unrecordedSurfaceDifferences()
+
+	c.Assert(unexpected, qt.HasLen, 0,
+		qt.Commentf("fields the two surfaces disagree about, with no entry saying why:\n%s",
+			strings.Join(unexpected, "\n")))
+}
+
+// TestSurfaces_EveryRecordedDifferenceIsStillMeasured is the inverse control,
+// and it is what stops the recorded set from becoming a description of the past.
+//
+// A difference that has been repaired fails here until its entry goes, in the
+// same change — the same direction the census gate runs for a gap.
+func TestSurfaces_EveryRecordedDifferenceIsStillMeasured(t *testing.T) {
+	c := qt.New(t)
+
+	stale := recordedDifferencesTheSurfacesNoLongerHave()
+
+	c.Assert(stale, qt.HasLen, 0,
+		qt.Commentf("recorded differences the two surfaces no longer have:\n%s",
+			strings.Join(stale, "\n")))
+}
+
+// TestSurfaces_EveryRecordedDifferenceSaysWhy refuses a blank entry, for the
+// reason [schemacensus.SurfaceDifference] gives: a difference with no reason is
+// two surfaces answering differently with nobody having decided which is right.
+func TestSurfaces_EveryRecordedDifferenceSaysWhy(t *testing.T) {
+	c := qt.New(t)
+
+	blank := recordedDifferencesWithNoReason()
+
+	c.Assert(blank, qt.HasLen, 0,
+		qt.Commentf("recorded differences with no reason:\n%s", strings.Join(blank, "\n")))
+}
+
+// TestMeasurePlan_ReadsMostOfTheModel is the non-vacuity control for the plan
+// surface.
+//
+// A MeasurePlan that returned nothing would make every field a
+// render-only difference, and the recorded set would then describe a broken
+// probe rather than the product.
+func TestMeasurePlan_ReadsMostOfTheModel(t *testing.T) {
+	c := qt.New(t)
+
+	observed := observedCount(measuredPlan())
+
+	c.Assert(observed > 250, qt.IsTrue,
+		qt.Commentf("the plan surface observed %d fields", observed))
+}
+
+// recordedDifferencesWithNoReason is every entry excused in silence.
+func recordedDifferencesWithNoReason() []string {
+	var blank []string
+	for _, difference := range schemacensus.SurfaceDifferences() {
+		if strings.TrimSpace(difference.Reason) == "" {
+			blank = append(blank, difference.Field)
+		}
+	}
+	return blank
+}
+
+// measuredPlan runs the plan-side census once for the whole file.
+var measuredPlan = sync.OnceValue(schemacensus.MeasurePlan)
+
+// surfaceDisagreements is every field exactly one surface reads, as
+// "field render-only" pairs keyed by field.
+func surfaceDisagreements() map[string]bool {
+	plan := make(map[string]bool)
+	for _, observation := range measuredPlan() {
+		plan[observation.Field] = observation.Observed()
+	}
+	disagreements := make(map[string]bool)
+	for _, observation := range measured() {
+		if observation.Observed() != plan[observation.Field] {
+			disagreements[observation.Field] = observation.Observed()
+		}
+	}
+	return disagreements
+}
+
+// unrecordedSurfaceDifferences is every disagreement no entry names, and every
+// entry that names the wrong direction.
+func unrecordedSurfaceDifferences() []string {
+	recorded := make(map[string]bool)
+	for _, difference := range schemacensus.SurfaceDifferences() {
+		recorded[difference.Field] = difference.RenderOnly
+	}
+	var unexpected []string
+	for field, renderOnly := range surfaceDisagreements() {
+		expected, known := recorded[field]
+		if !known {
+			unexpected = append(unexpected, fmt.Sprintf("%s (render-only: %t)", field, renderOnly))
+			continue
+		}
+		if expected != renderOnly {
+			unexpected = append(unexpected, fmt.Sprintf(
+				"%s is recorded render-only:%t and measured render-only:%t", field, expected, renderOnly))
+		}
+	}
+	slices.Sort(unexpected)
+	return unexpected
+}
+
+// recordedDifferencesTheSurfacesNoLongerHave is every entry whose disagreement
+// has gone.
+func recordedDifferencesTheSurfacesNoLongerHave() []string {
+	disagreements := surfaceDisagreements()
+	var stale []string
+	for _, difference := range schemacensus.SurfaceDifferences() {
+		if _, still := disagreements[difference.Field]; !still {
+			stale = append(stale, difference.Field)
+		}
+	}
+	slices.Sort(stale)
+	return stale
+}

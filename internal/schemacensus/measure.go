@@ -38,12 +38,21 @@ func (o Observation) Observed() bool { return len(o.Cells) > 0 }
 // rendering-or-refusing rather than dropping; what it must not do is answer the
 // same way with the field and without it.
 func Measure() []Observation {
+	return measure(renderOne)
+}
+
+// measure is the shared body of [Measure] and [MeasurePlan].
+//
+// The two surfaces are measured by one function on purpose: an agreement test
+// comparing two loops that had drifted apart would report the drift as a
+// disagreement between the surfaces.
+func measure(surface func(schemamodel.Database, capabilityprobe.Cell) string) []Observation {
 	fixtures := Fixtures()
 	cells := capabilityprobe.Cells
 
 	baselines := make([]map[string]string, len(fixtures))
 	for index, fixture := range fixtures {
-		baselines[index] = renderEveryCell(fixture.Schema, cells)
+		baselines[index] = everyCell(surface, fixture.Schema, cells)
 	}
 
 	fields := Fields()
@@ -55,7 +64,7 @@ func Measure() []Observation {
 				continue
 			}
 			observation.Covered = append(observation.Covered, fixture.Name)
-			ablated := renderEveryCell(Ablate(fixture.Schema, field), cells)
+			ablated := everyCell(surface, Ablate(fixture.Schema, field), cells)
 			for name, rendered := range ablated {
 				if rendered != baselines[index][name] {
 					observation.Cells = append(observation.Cells, name)
@@ -69,15 +78,19 @@ func Measure() []Observation {
 	return observations
 }
 
-// renderEveryCell renders one schema against every declared release line, keyed
-// by cell name. A refusal is kept as its own text so an ablation that changes
-// WHICH refusal answers still counts as a change.
-func renderEveryCell(schema schemamodel.Database, cells []capabilityprobe.Cell) map[string]string {
-	rendered := make(map[string]string, len(cells))
+// everyCell applies one surface to one schema against every declared release
+// line, keyed by cell name. A refusal is kept as its own text so an ablation
+// that changes WHICH refusal answers still counts as a change.
+func everyCell(
+	surface func(schemamodel.Database, capabilityprobe.Cell) string,
+	schema schemamodel.Database,
+	cells []capabilityprobe.Cell,
+) map[string]string {
+	answers := make(map[string]string, len(cells))
 	for _, cell := range cells {
-		rendered[CellName(cell)] = renderOne(schema, cell)
+		answers[CellName(cell)] = surface(schema, cell)
 	}
-	return rendered
+	return answers
 }
 
 // renderOne is the shipping render path for one cell.
