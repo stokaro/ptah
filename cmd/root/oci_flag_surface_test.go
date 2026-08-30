@@ -153,6 +153,18 @@ func ociSchemaSourceVerbs() []ociSourceVerb {
 			},
 		},
 		{
+			// `schema test` loads its cases before it resolves the schema, so
+			// the probe needs a real case directory: without one the run fails
+			// on the cases and measures that instead of the registry dial.
+			verb: "schema test",
+			args: func(reference string) []string {
+				return []string{
+					"schema", "test", "--schema-file", reference,
+					"--dir", filepath.Join("testdata", "schema-test-cases"), "--plain-http",
+				}
+			},
+		},
+		{
 			verb: "migrations plan",
 			args: func(reference string) []string {
 				return []string{"migrations", "plan", "--schema-file", reference, "--db-url", "sqlite://:memory:", "--plain-http"}

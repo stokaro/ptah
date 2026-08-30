@@ -2304,10 +2304,11 @@
       "command": "ptah schema test",
       "source": "sql-file",
       "status": "verified",
-      "invocation": "ptah schema test --root-dir schema.sql --dir ./tests",
+      "invocation": "ptah schema test --schema-file schema.sql --dir ./tests",
       "implementationOwner": "cmd/schema/test.go",
       "evidence": [
-        "cmd/schema/test_test.go"
+        "cmd/schema/test_test.go",
+        "cmd/schema/test_source_test.go"
       ],
       "limitations": "",
       "composable": false,
@@ -2317,10 +2318,11 @@
       "command": "ptah schema test",
       "source": "yaml-file",
       "status": "verified",
-      "invocation": "ptah schema test --root-dir schema.yaml --dir ./tests",
+      "invocation": "ptah schema test --schema-file schema.yaml --dir ./tests",
       "implementationOwner": "cmd/schema/test.go",
       "evidence": [
-        "cmd/schema/test_test.go"
+        "cmd/schema/test_test.go",
+        "cmd/schema/test_source_test.go"
       ],
       "limitations": "",
       "composable": false,
@@ -2330,10 +2332,11 @@
       "command": "ptah schema test",
       "source": "hcl-file",
       "status": "verified",
-      "invocation": "ptah schema test --root-dir schema.hcl --dir ./tests",
+      "invocation": "ptah schema test --schema-file schema.hcl --dir ./tests",
       "implementationOwner": "cmd/schema/test.go",
       "evidence": [
-        "cmd/schema/test_test.go"
+        "cmd/schema/test_test.go",
+        "cmd/schema/test_source_test.go"
       ],
       "limitations": "",
       "composable": false,
@@ -2343,10 +2346,11 @@
       "command": "ptah schema test",
       "source": "dbml-file",
       "status": "verified",
-      "invocation": "ptah schema test --root-dir schema.dbml --dir ./tests",
+      "invocation": "ptah schema test --schema-file schema.dbml --dir ./tests",
       "implementationOwner": "cmd/schema/test.go",
       "evidence": [
-        "cmd/schema/test_test.go"
+        "cmd/schema/test_test.go",
+        "cmd/schema/test_source_test.go"
       ],
       "limitations": "",
       "composable": false,
@@ -2359,7 +2363,8 @@
       "invocation": "ptah schema test --root-dir ./models --dir ./tests",
       "implementationOwner": "cmd/schema/test.go",
       "evidence": [
-        "cmd/schema/test_test.go"
+        "cmd/schema/test_test.go",
+        "cmd/schema/test_source_test.go"
       ],
       "limitations": "",
       "composable": false,
@@ -2372,7 +2377,8 @@
       "invocation": null,
       "implementationOwner": "cmd/schema/test.go",
       "evidence": [
-        "cmd/schema/test_test.go"
+        "cmd/schema/test_test.go",
+        "cmd/schema/test_source_test.go"
       ],
       "limitations": "",
       "composable": false,
@@ -2385,7 +2391,8 @@
       "invocation": null,
       "implementationOwner": "cmd/schema/test.go",
       "evidence": [
-        "cmd/schema/test_test.go"
+        "cmd/schema/test_test.go",
+        "cmd/schema/test_source_test.go"
       ],
       "limitations": "",
       "composable": false,
@@ -2394,11 +2401,12 @@
     {
       "command": "ptah schema test",
       "source": "oci-artifact",
-      "status": "unsupported-design",
-      "invocation": null,
+      "status": "verified",
+      "invocation": "ptah schema test --schema-file oci://registry.example/app:v1 --dir ./tests",
       "implementationOwner": "cmd/schema/test.go",
       "evidence": [
-        "cmd/schema/test_test.go"
+        "cmd/schema/test_test.go",
+        "cmd/schema/test_source_test.go"
       ],
       "limitations": "",
       "composable": false,
@@ -2408,10 +2416,11 @@
       "command": "ptah schema test",
       "source": "live-database",
       "status": "verified",
-      "invocation": "ptah schema test --root-dir sqlite://source.db --db-url sqlite://throwaway.db --dir ./tests",
+      "invocation": "ptah schema test --source-db-url sqlite://source.db --db-url sqlite://throwaway.db --dir ./tests",
       "implementationOwner": "cmd/schema/test.go",
       "evidence": [
-        "cmd/schema/test_test.go"
+        "cmd/schema/test_test.go",
+        "cmd/schema/test_source_test.go"
       ],
       "limitations": "The destination must be throwaway; a non-SQLite source requires an explicit matching --db-url.",
       "composable": false,
@@ -2424,7 +2433,8 @@
       "invocation": null,
       "implementationOwner": "cmd/schema/test.go",
       "evidence": [
-        "cmd/schema/test_test.go"
+        "cmd/schema/test_test.go",
+        "cmd/schema/test_source_test.go"
       ],
       "limitations": "",
       "composable": false,
@@ -2437,7 +2447,8 @@
       "invocation": null,
       "implementationOwner": "cmd/schema/test.go",
       "evidence": [
-        "cmd/schema/test_test.go"
+        "cmd/schema/test_test.go",
+        "cmd/schema/test_source_test.go"
       ],
       "limitations": "",
       "composable": false,

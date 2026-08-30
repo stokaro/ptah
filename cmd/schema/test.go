@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
@@ -25,14 +26,16 @@ import (
 )
 
 const (
-	testDirFlag     = "dir"
-	testRootDirFlag = "root-dir"
-	testSeedDirFlag = "seed-dir"
-	testDBURLFlag   = "db-url"
-	testReportFlag  = "report"
-	testRunFlag     = "run"
-	testSchemaFlag  = "schema"
-	testVarFlag     = "var"
+	testDirFlag         = "dir"
+	testRootDirFlag     = "root-dir"
+	testSchemaFileFlag  = "schema-file"
+	testSourceDBURLFlag = "source-db-url"
+	testSeedDirFlag     = "seed-dir"
+	testDBURLFlag       = "db-url"
+	testReportFlag      = "report"
+	testRunFlag         = "run"
+	testSchemaFlag      = "schema"
+	testVarFlag         = "var"
 
 	testReportFormatText = "text"
 )
@@ -41,14 +44,69 @@ const (
 var testReportFormats = []string{"text", "json", "html"}
 
 type testOptions struct {
-	dir     string
-	rootDir string
-	seedDir string
-	dbURL   string
-	report  string
-	run     string
-	schemas []string
-	vars    []string
+	dir         string
+	rootDir     string
+	rootDirSet  bool
+	schemaFiles []string
+	sourceDBURL string
+	seedDir     string
+	dbURL       string
+	plainHTTP   bool
+	report      string
+	run         string
+	schemas     []string
+	vars        []string
+}
+
+// sourceFlag reports which desired-schema selector this run used, for a
+// diagnostic that has to name the flag the operator actually typed.
+//
+// --root-dir has a default, so it is "used" only when it was set: a run naming
+// --schema-file has a root directory too, and reporting that one would send the
+// reader to a flag they never wrote.
+func (o testOptions) sourceFlag() string {
+	switch {
+	case len(o.schemaFiles) > 0:
+		return "--" + testSchemaFileFlag
+	case strings.TrimSpace(o.sourceDBURL) != "":
+		return "--" + testSourceDBURLFlag
+	default:
+		return "--" + testRootDirFlag
+	}
+}
+
+// validateTestSources refuses more than one desired-schema selector.
+//
+// It runs before anything is loaded and long before a container is started,
+// because the alternative to refusing is picking one, and a run that silently
+// ignored the source the operator named would report a green result for a
+// schema they did not ask for (stokaro/ptah#2571).
+func validateTestSources(opts testOptions) error {
+	var named []string
+	if opts.rootDirSet {
+		named = append(named, "--"+testRootDirFlag)
+	}
+	if len(opts.schemaFiles) > 0 {
+		named = append(named, "--"+testSchemaFileFlag)
+	}
+	if strings.TrimSpace(opts.sourceDBURL) != "" {
+		named = append(named, "--"+testSourceDBURLFlag)
+	}
+	if len(named) < 2 {
+		return nil
+	}
+	return fmt.Errorf(
+		"%s name the desired schema together; pass exactly one",
+		joinWithAnd(named))
+}
+
+// joinWithAnd renders a list the way a sentence does, so a three-flag conflict
+// does not read as "a and b and c".
+func joinWithAnd(items []string) string {
+	if len(items) < 3 {
+		return strings.Join(items, " and ")
+	}
+	return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
 }
 
 // NewSchemaTestCommand returns the "test" command for the schema namespace. It
@@ -62,11 +120,17 @@ func NewSchemaTestCommand() *cobra.Command {
 		SilenceUsage: true,
 		Long: `Run declarative YAML schema test cases against a throwaway database.
 
-The desired schema source is selected by --root-dir and converged through live
-introspection and planning before test steps run. Despite the legacy flag name,
-it accepts a schema file (.hcl, .yaml, .yml, .sql, or .dbml), a directory of Go
-annotations, or a database URL whose live schema is introspected. Each test
-file is a YAML document with a top-level cases: list. A case is a named, ordered
+The desired schema is converged through live introspection and planning before
+test steps run. One selector names it, and each says what it takes:
+
+  --root-dir      a directory of Go schema annotations.
+  --schema-file   a .sql, .yaml, .yml, .hcl, or .dbml file (repeatable).
+  --source-db-url a database URL whose live schema is introspected.
+
+Naming two of them is refused before the throwaway database is provisioned.
+--root-dir still accepts a file or a database URL, which is what it did before
+the other two existed; such a run says so on stderr and names the exact
+selector. Each test file is a YAML document with a top-level cases: list. A case is a named, ordered
 list of steps; each step performs exactly one action:
 
   - exec:   run raw SQL.
@@ -89,14 +153,18 @@ When --db-url is omitted, an ephemeral SQLite database is provisioned in a
 temporary directory and removed afterwards. When --db-url is set it must point
 at a throwaway database, because tests mutate schema and data.
 
-A database --root-dir must share the dialect of the throwaway database the cases
-run against, so a non-SQLite source requires an explicit --db-url. Roles and
+A database source must share the dialect of the throwaway database the cases run
+against, so a non-SQLite source requires an explicit --db-url. Roles and
 grants introspected from a database source are dropped before the schema is
 applied, because a schema test must not mutate cluster-scoped security state;
 the omission is reported on stderr, so stdout carries only the report.
 
 The command exits non-zero if any case fails.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			// Read here rather than compared against the default: a root
+			// directory that happens to equal "./models" was still typed, and a
+			// conflict the operator wrote has to be reported as one.
+			opts.rootDirSet = cmd.Flags().Changed(testRootDirFlag)
 			return runSchemaTest(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), opts)
 		},
 	}
@@ -104,7 +172,11 @@ The command exits non-zero if any case fails.`,
 	flags := cmd.Flags()
 	flags.StringVar(&opts.dir, testDirFlag, "./tests", "Directory containing declarative test-case YAML files")
 	flags.StringVar(&opts.rootDir, testRootDirFlag, "./models",
-		"Desired schema source: a directory of Go schema annotations, a schema file (.hcl, .yaml, .yml, .sql, or .dbml), or a database URL")
+		"Root directory to scan for Go schema annotations")
+	flags.StringArrayVar(&opts.schemaFiles, testSchemaFileFlag, nil,
+		"SQL, YAML, HCL, or DBML desired-schema file (repeatable)")
+	flags.StringVar(&opts.sourceDBURL, testSourceDBURLFlag, "",
+		"Database URL whose live schema is the desired schema; must share the dialect of the throwaway database")
 	flags.StringVar(&opts.seedDir, testSeedDirFlag, "", "Default directory for seed steps that omit dir")
 	flags.StringVar(&opts.dbURL, testDBURLFlag, "", "Throwaway database URL (optional). An ephemeral SQLite database is used when empty.")
 	flags.StringVar(&opts.report, testReportFlag, testReportFormatText, "Report format: text, json, or html")
@@ -112,6 +184,11 @@ The command exits non-zero if any case fails.`,
 	flags.StringArrayVar(&opts.schemas, testSchemaFlag, nil, "Restrict the desired schema to these schema names")
 	flags.StringArrayVar(&opts.vars, testVarFlag, nil,
 		"Supply a value for a variable block of an HCL schema file, as name=value (repeatable)")
+	// --schema-file reaches the shared loader, which pulls an oci:// reference
+	// the way it does for every other verb taking that flag. Registering the
+	// opt-out here is what makes a local registry reachable; without it the
+	// pull is HTTPS-only and the capability exists in name alone.
+	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 
 	cmdutil.ConfigureCommand(cmd)
 	return cmd
@@ -122,6 +199,9 @@ The command exits non-zero if any case fails.`,
 // machines, and a note interleaved with them makes a passing run unparseable
 // while still exiting 0.
 func runSchemaTest(ctx context.Context, out, diag io.Writer, opts testOptions) error {
+	if err := validateTestSources(opts); err != nil {
+		return err
+	}
 	if opts.report != "" && !slices.Contains(testReportFormats, opts.report) {
 		return fmt.Errorf("unsupported report format %q: want text, json, or html", opts.report)
 	}
@@ -206,8 +286,33 @@ func runSchemaTest(ctx context.Context, out, diag io.Writer, opts testOptions) e
 // silently ignored on others.
 func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOptions) (*schemamodel.Database, error) {
 	selection := schemascope.SplitNames(opts.schemas)
+	if len(opts.schemaFiles) > 0 {
+		database, err := schemaload.LoadContext(ctx, schemaload.Options{
+			SchemaFiles: opts.schemaFiles,
+			Vars:        opts.vars,
+			PlainHTTP:   opts.plainHTTP,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("load desired schema from %s: %w",
+				strings.Join(opts.schemaFiles, ", "), err)
+		}
+		return scopeTestDesiredSchema(database, selection, "")
+	}
+	if source := strings.TrimSpace(opts.sourceDBURL); source != "" {
+		set, err := atlassource.ClassifySet("--"+testSourceDBURLFlag, []string{source}, atlassource.ProjectEnv{})
+		if err != nil {
+			return nil, err
+		}
+		if set.Kind != atlassource.KindDatabase {
+			return nil, fmt.Errorf("--%s %s is not a database URL", testSourceDBURLFlag, source)
+		}
+		return resolveTestDesiredDatabase(ctx, diag, opts, set, selection)
+	}
 	set, err := atlassource.ClassifySet("--"+testRootDirFlag, []string{opts.rootDir}, atlassource.ProjectEnv{})
 	if err == nil && set.Kind == atlassource.KindDatabase {
+		if err := noteRootDirShape(diag, testSourceDBURLFlag, opts.rootDir); err != nil {
+			return nil, err
+		}
 		return resolveTestDesiredDatabase(ctx, diag, opts, set, selection)
 	}
 	info, statErr := os.Stat(opts.rootDir)
@@ -222,14 +327,36 @@ func resolveTestDesiredSchema(ctx context.Context, diag io.Writer, opts testOpti
 		}
 		return scopeTestDesiredSchema(parsed, selection, "")
 	}
+	if err := noteRootDirShape(diag, testSchemaFileFlag, opts.rootDir); err != nil {
+		return nil, err
+	}
 	database, err := schemaload.LoadContext(ctx, schemaload.Options{
 		SchemaFiles: []string{opts.rootDir},
 		Vars:        opts.vars,
+		PlainHTTP:   opts.plainHTTP,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("load desired schema from %s: %w", opts.rootDir, err)
 	}
 	return scopeTestDesiredSchema(database, selection, "")
+}
+
+// noteRootDirShape reports that --root-dir named something that is not a
+// directory of Go annotations, and names the flag that says so.
+//
+// The source stays accepted: this is the pre-GA transition the neutral
+// selectors were added for, and refusing it would break an invocation this
+// repository documented as supported. Saying nothing is the other wrong answer,
+// because the flag name is what made the run surprising in the first place
+// (stokaro/ptah#2571).
+func noteRootDirShape(diag io.Writer, flag, source string) error {
+	if _, err := fmt.Fprintf(diag,
+		"note: --%s named %s, which is not a directory of Go annotations; --%s selects it exactly\n",
+		testRootDirFlag, source, flag,
+	); err != nil {
+		return fmt.Errorf("write desired-state note: %w", err)
+	}
+	return nil
 }
 
 // scopeTestDesiredSchema restricts database to the selected schemas through the
@@ -279,7 +406,7 @@ func resolveTestDesiredDatabase(
 	set atlassource.Set,
 	selection []string,
 ) (*schemamodel.Database, error) {
-	devDialect, err := ensureTestDevDialect(set, opts.dbURL)
+	devDialect, err := ensureTestDevDialect(set, opts.dbURL, opts.sourceFlag())
 	if err != nil {
 		return nil, err
 	}
@@ -304,16 +431,20 @@ func resolveTestDesiredDatabase(
 // source with no --db-url is applied to the ephemeral SQLite default, every
 // object SQLite cannot express is dropped on the way, and the run reports a
 // green "1 cases, 1 passed, 0 failed" for semantics it never exercised.
-func ensureTestDevDialect(set atlassource.Set, dbURL string) (string, error) {
+//
+// sourceFlag is the selector the operator actually typed, so the refusal names
+// the flag they would edit rather than whichever one the resolver happened to
+// take the source from.
+func ensureTestDevDialect(set atlassource.Set, dbURL, sourceFlag string) (string, error) {
 	implied := set.ImpliedDialect()
 	if strings.TrimSpace(dbURL) == "" {
 		if implied == platform.SQLite || implied == "" {
 			return implied, nil
 		}
 		return "", fmt.Errorf(
-			"--%s database dialect %q requires an explicit --%s throwaway database of the same dialect,"+
+			"%s database dialect %q requires an explicit --%s throwaway database of the same dialect,"+
 				" because the default ephemeral test database is SQLite",
-			testRootDirFlag, implied, testDBURLFlag)
+			sourceFlag, implied, testDBURLFlag)
 	}
 	devDialect, err := atlasurl.DialectFromURL(dbURL)
 	if err != nil {
@@ -322,8 +453,8 @@ func ensureTestDevDialect(set atlassource.Set, dbURL string) (string, error) {
 	if implied == "" || devDialect == "" || implied == devDialect {
 		return devDialect, nil
 	}
-	return "", fmt.Errorf("--%s dialect %q does not match --%s database dialect %q",
-		testDBURLFlag, devDialect, testRootDirFlag, implied)
+	return "", fmt.Errorf("--%s dialect %q does not match %s database dialect %q",
+		testDBURLFlag, devDialect, sourceFlag, implied)
 }
 
 // dropClusterScopedTestState removes roles and grants from a database-sourced

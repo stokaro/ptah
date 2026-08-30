@@ -70,11 +70,14 @@ concurrent runners are not serialized and arbitrary SQL is not rolled back.
 identifier semantics, and can repair supported drift. Roles and grants are
 rejected because their effects can escape the database-local test lifecycle.
 
-For `schema test`, `--root-dir` is the current compatibility spelling for all
-three source kinds; it does not imply that a file or database URL is a
-directory. [Issue #2571](https://github.com/stokaro/ptah/issues/2571) tracks a
-neutral source flag. HCL files also accept repeatable `--var name=value`
-overrides.
+`schema test` names its desired schema with one selector: `--root-dir` for a
+directory of Go annotations, `--schema-file` for a `.sql`, `.yaml`, `.yml`,
+`.hcl`, or `.dbml` file, and `--source-db-url` for a database whose live schema
+is introspected. Naming two is refused before the throwaway database is
+provisioned. `--root-dir` also accepts a file or a database URL, which is what
+it did before the other two selectors existed; such a run reports on standard
+error which selector names that source exactly. HCL files also accept repeatable
+`--var name=value` overrides.
 
 ## Exit contract
 

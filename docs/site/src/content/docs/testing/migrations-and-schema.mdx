@@ -87,20 +87,35 @@ cases:
 ptah migrations test --dir ./tests --migrations-dir ./migrations --seed-dir ./seeds
 
 # Schema tests: apply a static desired schema, then assert.
-ptah schema test --dir ./tests --root-dir ./schema.sql --seed-dir ./seeds
+ptah schema test --dir ./tests --schema-file ./schema.sql --seed-dir ./seeds
 
 # HCL variables reach an HCL desired schema through repeatable --var values.
-ptah schema test --dir ./tests --root-dir ./schema.hcl --var tenant=test
+ptah schema test --dir ./tests --schema-file ./schema.hcl --var tenant=test
 
-# Go annotations use the same historical selector.
+# Go annotations.
 ptah schema test --dir ./tests --root-dir ./models --seed-dir ./seeds
+
+# A live database, introspected. --db-url stays the throwaway target.
+ptah schema test --dir ./tests --source-db-url sqlite://source.db \
+  --db-url sqlite://throwaway.db
 ```
 
-For `schema test`, `--root-dir` is a legacy name for the desired-schema source.
-It accepts a local `.sql`, `.yaml`, `.yml`, `.hcl`, or `.dbml` file, a Go
-annotation directory, or a live database URL. It does not mean every value is
-a directory. A neutral replacement is tracked in
-[issue #2571](https://github.com/stokaro/ptah/issues/2571).
+One selector names the desired schema, and each says what it takes:
+
+| Selector | Source |
+| --- | --- |
+| `--root-dir` | a directory of Go schema annotations |
+| `--schema-file` | a `.sql`, `.yaml`, `.yml`, `.hcl`, or `.dbml` file (repeatable) |
+| `--source-db-url` | a database URL whose live schema is introspected |
+
+Naming two of them is refused before the throwaway database is provisioned.
+`--source-db-url` is separate from `--db-url` because that one names the
+throwaway database the cases run against; a database source must share its
+dialect.
+
+`--root-dir` also accepts a file or a database URL, which is what it did before
+the other two selectors existed. Such a run works and reports on standard error
+which selector names that source exactly.
 
 Both commands load every `*.yaml`/`*.yml` file under `--dir`, run the cases, print
 a report, and exit non-zero if any case fails — so they slot straight into a CI
@@ -157,7 +172,7 @@ the case instead of applying a migration directory.
   fullSizeHref={`${reportSamples}schema-test-pass.html`}
   downloadHref={`${reportSamples}schema-test-pass.html`}
   sourceHref={`${reportSamples}schema-test-pass.html`}
-  reproduce="ptah schema test --dir docs/site/fixtures/product-output/schema-tests --root-dir docs/site/fixtures/product-output/schema.sql --run '^product schema accepts a row$' --report html > schema-test-pass.html"
+  reproduce="ptah schema test --dir docs/site/fixtures/product-output/schema-tests --schema-file docs/site/fixtures/product-output/schema.sql --run '^product schema accepts a row$' --report html > schema-test-pass.html"
   variants={[
     {
       id: 'failing',
