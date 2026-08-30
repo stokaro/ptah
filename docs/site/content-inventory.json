@@ -2808,8 +2808,8 @@
         "/operate/ai-assist/",
         "/reference/mcp-tools/"
       ],
-      "visibleWords": 400,
-      "sourceBytes": 4376
+      "visibleWords": 409,
+      "sourceBytes": 4863
     },
     {
       "path": "docs/site/src/content/docs/operate/ai-agent-troubleshooting.md",
@@ -3734,8 +3734,8 @@
       "inboundLinks": [
         "/operate/ai-agents/"
       ],
-      "visibleWords": 575,
-      "sourceBytes": 4824
+      "visibleWords": 572,
+      "sourceBytes": 4833
     },
     {
       "path": "docs/site/src/content/docs/reference/native-commands.md",
