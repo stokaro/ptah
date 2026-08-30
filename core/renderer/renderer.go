@@ -923,6 +923,13 @@ func foreignKeysUnsupportedError(dialect string) error {
 // The function validates foreign key shape, actions, and target capabilities
 // before rendering. Unsupported or malformed constraints return an error and
 // no partial statement list.
+//
+// A table-owned declaration that names no host is refused with an error
+// satisfying errors.Is(err, [ptaherr.ErrInvalidSchemaDiff]). A constraint, an
+// index, a row-level security enablement or policy, a trigger and a hypertable
+// each reach a target through the table they name, in StructName or in the
+// table field; a declaration carrying neither used to be dropped or rendered
+// against an empty identifier (stokaro/ptah#2612).
 func GetOrderedCreateStatements(r *schemamodel.Database, dialect string) ([]string, error) {
 	return GetOrderedCreateStatementsWithCapabilities(r, dialect, capability.ForDialect(dialect))
 }
@@ -945,7 +952,8 @@ func declaredExtensionNames(r *schemamodel.Database) []string {
 // refuses the same schemas.
 //
 // A nil schema is refused with a [ptaherr.RenderError] satisfying
-// errors.Is(err, [ptaherr.ErrInvalidSchemaDiff]). A declaration the target
+// errors.Is(err, [ptaherr.ErrInvalidSchemaDiff]), and so is a table-owned
+// declaration that names no host. A declaration the target
 // cannot carry — a foreign key, a referential action, an extension
 // installation schema, an index INCLUDE list — is refused with an error
 // satisfying errors.Is(err, [ptaherr.ErrUnsupportedFeature]). Other
@@ -1119,6 +1127,9 @@ func validateDatabaseDeclarations(
 	database *schemamodel.Database,
 ) error {
 	if err := systemschema.ValidateDeclaredPostgresSystemSchemas(dialect, database.Schemas); err != nil {
+		return err
+	}
+	if err := validateDeclaredHosts(dialect, database); err != nil {
 		return err
 	}
 	if err := validateExtensionInstallationSchemas(dialect, database.Extensions); err != nil {
