@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/internal/generatedschema"
@@ -244,12 +245,19 @@ func priorTableCreation(prior *schemamodel.Database, name string) difftypes.Tabl
 	// ADD CONSTRAINT renders them inside the CREATE, so a rollback that
 	// omitted them would put the table back without them and report success
 	// (stokaro/ptah#2315).
-	//
-	// DependsOn and SelfReferencingForeignKeys are still unfilled here, and
-	// the second one must not simply be filled: the down path already emits
-	// those keys as ALTERs, so a copy on the creation emits each twice and
-	// flattens a composite self-reference into one quoted column list.
-	// stokaro/ptah#2541 carries the measurement.
 	creation.Constraints = difftypes.TableCreationFor(prior, *table, name).Constraints
+	// The edges between the tables being put back. Without them
+	// TablesAdded.InDependencyOrder() has nothing to order by, so a rollback
+	// recreates them in whatever order TablesRemoved held and can put a child
+	// before the parent it references (stokaro/ptah#2541).
+	//
+	// Derived rather than read out of prior.Dependencies for the reason
+	// TableCreationFor gives: that map is filled by [schemamodel.Finalize],
+	// and this schema has not necessarily been through it.
+	creation.DependsOn = deporder.GeneratedTableDependencies(prior)[table.QualifiedName()]
+	// SelfReferencingForeignKeys stays unfilled: such a key is already emitted
+	// twice on the FORWARD path when it is declared as a table-level
+	// constraint, so a copy here is a third (stokaro/ptah#2583).
+	// nestedCoverageExempt records that, so it is a decision and not a gap.
 	return creation
 }
