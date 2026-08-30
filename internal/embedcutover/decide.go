@@ -43,15 +43,59 @@ func (d *Decision) settle() Decision {
 // was given for something else" are different refusals, and an operator told
 // the wrong one looks in the wrong place.
 func Decide(plan Plan, policy Policy, observed Observed, approval *Approval) Decision {
-	digest := plan.Digest()
-	decision := Decision{PlanDigest: digest}
+	decision := decideState(plan, policy, observed)
+	decideAuthority(&decision, policy, observed, approval, decision.PlanDigest)
+	return decision.settle()
+}
 
+// Readiness is what a caller that is not cutting over can establish.
+//
+// It is the same answer [Decide] gives, minus the half about the caller: what
+// the state proves, without asking whether whoever is looking may act on it.
+type Readiness struct {
+	// Ready reports whether the state satisfies everything except authority.
+	Ready bool
+	// Blockers are what it does not satisfy, empty when it does.
+	Blockers []string
+	// PlanDigest is what an approval would have to bind to.
+	PlanDigest string
+	// ApprovalRequired says whether a person still has to give one.
+	//
+	// Reported separately rather than folded into Ready, because an approval
+	// nobody has given yet is not a defect in the state. A rollout gate that
+	// waited for Ready to include it would wait forever under the policy most
+	// production environments run.
+	ApprovalRequired bool
+}
+
+// AssessReadiness answers whether the state is ready for a cutover, without
+// performing or authorizing one.
+//
+// It exists because "may I cut over" and "is this ready to cut over" are asked
+// by different callers -- an operator with an approval, and a rollout gate with
+// none -- and answering the second by running the first would report every
+// generation under an approval policy as not ready.
+//
+// The two share [decideState] rather than restating it. A gate that agreed with
+// the cutover verb only by coincidence is a gate that will one day let a
+// deployment proceed against a generation the cutover then refuses.
+func AssessReadiness(plan Plan, policy Policy, observed Observed) Readiness {
+	state := decideState(plan, policy, observed)
+	decision := state.settle()
+	return Readiness{
+		Ready: decision.Allowed, Blockers: decision.Blockers,
+		PlanDigest: decision.PlanDigest, ApprovalRequired: policy.RequireExactApproval,
+	}
+}
+
+// decideState is everything a decision says about the world rather than about
+// the caller. It is deliberately unsettled, so [Decide] can add to it.
+func decideState(plan Plan, policy Policy, observed Observed) Decision {
+	decision := Decision{PlanDigest: plan.Digest()}
 	decideEvidence(&decision, plan, policy)
 	decideDrift(&decision, plan, observed)
 	decideStaleness(&decision, plan, policy, observed)
-	decideAuthority(&decision, policy, observed, approval, digest)
-
-	return decision.settle()
+	return decision
 }
 
 // decideEvidence answers whether the plan was justified when it was built.

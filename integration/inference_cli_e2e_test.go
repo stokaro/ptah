@@ -67,6 +67,7 @@ func TestInferenceCLIE2E(t *testing.T) {
 	assertCatchUpProcessesWhatChanged(c, ctx, db, specPath, dbName)
 	assertVerifyPasses(c, ctx, specPath, dbName)
 	assertStatusReportsTheRun(c, ctx, specPath, dbName)
+	assertStatusAnswersARolloutGate(c, ctx, specPath, dbName)
 	assertPauseStopsTheRunAndSaysWhy(c, ctx, specPath, dbName)
 	assertResumeReturnsItToRunning(c, ctx, specPath, dbName)
 	assertCutoverBindsToItsPlan(c, ctx, specPath, dbName)
@@ -843,6 +844,23 @@ func assertCutoverIsRefusedBeforeCatchUp(c *qt.C, ctx context.Context, specPath,
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(output, qt.Contains, "cutover refused")
 	c.Assert(output, qt.Contains, "the source is mutable and the run declared no consistency mode")
+
+	// The gate says the same thing, at the same moment, in the form a rollout
+	// system reads. This is the half that makes the later "ready" assertion
+	// mean something: a readiness that answered true unconditionally would
+	// satisfy that one and this is where it reddens.
+	body := runInference(c, ctx, "status",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID, "--format", "json")
+	var document struct {
+		Readiness struct {
+			CutoverReady bool     `json:"cutover_ready"`
+			Blockers     []string `json:"blockers"`
+		} `json:"readiness"`
+	}
+	c.Assert(json.Unmarshal([]byte(body), &document), qt.IsNil, qt.Commentf("%s", body))
+	c.Assert(document.Readiness.CutoverReady, qt.IsFalse)
+	c.Assert(document.Readiness.Blockers, qt.Contains,
+		"the source is mutable and the run declared no consistency mode")
 }
 
 // assertCatchUpProcessesWhatChanged changes the source and catches up.
@@ -894,6 +912,63 @@ func assertStatusReportsTheRun(c *qt.C, ctx context.Context, specPath, dbURL str
 	c.Assert(output, qt.Contains, "scanned 6, embedded 5, skipped 0, deleted 1")
 	c.Assert(output, qt.Contains, "snapshot boundary: ")
 	c.Assert(output, qt.Contains, "catch-up watermark: ")
+}
+
+// assertStatusAnswersARolloutGate is what a deployment waits on.
+//
+// A new model's deployment must not start until the persistent state it will
+// read has been built and measured, and the two conditions it waits for are
+// these. This asserts them at the point in the lifecycle where they first
+// become true: the corpus is embedded, caught up and verified, and the only
+// thing left is somebody signing for it.
+//
+// The approval is reported separately from readiness on purpose. Under
+// `require_exact_approval`, which this specification sets, folding it into
+// `cutover_ready` would leave a gate waiting forever on a state that is
+// finished.
+func assertStatusAnswersARolloutGate(c *qt.C, ctx context.Context, specPath, dbURL string) {
+	c.Helper()
+
+	body := runInference(c, ctx, "status",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID, "--format", "json")
+
+	var document struct {
+		Run struct {
+			RunID string `json:"run_id"`
+			Phase string `json:"phase"`
+		} `json:"run"`
+		Readiness struct {
+			Verified         bool     `json:"verified"`
+			CutoverReady     bool     `json:"cutover_ready"`
+			ApprovalRequired bool     `json:"approval_required"`
+			PlanDigest       string   `json:"plan_digest"`
+			Blockers         []string `json:"blockers"`
+			SourceRows       int      `json:"source_rows"`
+			TargetRows       int      `json:"target_rows"`
+			MeasuredAt       string   `json:"measured_at"`
+		} `json:"readiness"`
+	}
+	c.Assert(json.Unmarshal([]byte(body), &document), qt.IsNil, qt.Commentf("%s", body))
+
+	c.Assert(document.Run.RunID, qt.Equals, cliRunID)
+	c.Assert(document.Readiness.Verified, qt.IsTrue)
+	c.Assert(document.Readiness.CutoverReady, qt.IsTrue,
+		qt.Commentf("blocked by %v", document.Readiness.Blockers))
+	c.Assert(document.Readiness.Blockers, qt.HasLen, 0)
+	// Owed, and named, so the gate can tell "not finished" from "waiting for a
+	// person" -- and so whoever that person is knows what to approve.
+	c.Assert(document.Readiness.ApprovalRequired, qt.IsTrue)
+	c.Assert(document.Readiness.PlanDigest, qt.HasLen, 64)
+	// Measured rather than remembered: the counts are this run's, taken now.
+	c.Assert(document.Readiness.SourceRows, qt.Equals, 3)
+	c.Assert(document.Readiness.TargetRows, qt.Equals, 3)
+	c.Assert(document.Readiness.MeasuredAt, qt.Not(qt.Equals), "")
+
+	// And the digest the gate reports is the one the cutover verb accepts,
+	// which is the whole point of the two sharing a decision. A gate agreeing
+	// with the verb by coincidence is one that will eventually let a deployment
+	// proceed against a generation the cutover then refuses.
+	c.Assert(document.Readiness.PlanDigest, qt.Contains, planDigestOf(c, ctx, specPath, dbURL))
 }
 
 // assertPauseStopsTheRunAndSaysWhy is stokaro/ptah#2474: the run status had a

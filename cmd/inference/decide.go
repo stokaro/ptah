@@ -4,17 +4,15 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/internal/embedcatchup"
 	"go.5x5.cz/ptah/internal/embedcutover"
-	"go.5x5.cz/ptah/internal/embedgen"
 	"go.5x5.cz/ptah/internal/embedpg"
 	"go.5x5.cz/ptah/internal/embedrelease"
+	"go.5x5.cz/ptah/internal/embedreport"
 	"go.5x5.cz/ptah/internal/embedrun"
 	"go.5x5.cz/ptah/internal/embedstore"
 	"go.5x5.cz/ptah/internal/embedverify"
@@ -111,122 +109,6 @@ func recordVerification(ctx context.Context, options commonOptions, generation s
 	return opened.store.RecordVerification(ctx, generation, time.Now().UTC())
 }
 
-// verify runs every deterministic layer against the live generation.
-func verify(
-	ctx context.Context, options commonOptions, runID string,
-) (embedverify.Report, embedrun.Run, error) {
-	if runID == "" {
-		return embedverify.Report{}, embedrun.Run{}, fmt.Errorf("--run-id is required")
-	}
-	opened, err := open(ctx, options)
-	if err != nil {
-		return embedverify.Report{}, embedrun.Run{}, err
-	}
-	defer opened.close()
-
-	run, err := opened.store.Run(ctx, runID)
-	if err != nil {
-		return embedverify.Report{}, embedrun.Run{}, err
-	}
-	spec := opened.loaded.Spec
-	active := activePointer(ctx, opened, spec.Target.Table)
-	structure, err := embedpg.ReadStructure(ctx, opened.db, spec, active)
-	if err != nil {
-		return embedverify.Report{}, run, err
-	}
-	source, target, err := embedpg.ReadVerificationRows(ctx, opened.db, spec)
-	if err != nil {
-		return embedverify.Report{}, run, err
-	}
-	guarantee, err := assessConsistency(ctx, opened, run)
-	if err != nil {
-		return embedverify.Report{}, run, err
-	}
-
-	objects, err := spec.TargetObjects()
-	if err != nil {
-		return embedverify.Report{}, run, err
-	}
-	report := embedverify.Verify(
-		embedverify.Expectation{
-			Generation:    spec.Identity().Digest,
-			ColumnType:    objects.Column.Type,
-			Dimension:     spec.Model.ReportedDimension,
-			IndexMethod:   objects.Index.Type,
-			OperatorClass: objects.Index.Operator,
-			RequireIndex:  objects.HasIndex && run.Phase != embedrun.PhaseBackfilling,
-		},
-		structure, source, target,
-		embedverify.RunState{
-			SnapshotComplete:    run.Phase != embedrun.PhaseBackfilling,
-			CatchUpReached:      guarantee.Complete,
-			ConsistencyMode:     string(opened.loaded.Mode),
-			SourceMutable:       opened.loaded.Source.Mutable,
-			UnreconciledBatches: 0,
-		})
-	return report, run, nil
-}
-
-// assessConsistency asks the selected mode whether it proved its condition.
-func assessConsistency(
-	ctx context.Context, opened *session, run embedrun.Run,
-) (embedcatchup.Guarantee, error) {
-	barrier, err := readBarrier(ctx, opened, run)
-	if err != nil {
-		return embedcatchup.Guarantee{}, err
-	}
-	return embedcatchup.Assess(opened.loaded.Mode, opened.loaded.Source, barrier,
-		embedcatchup.DualWriteEvidence{}, time.Now().UTC()), nil
-}
-
-// readBarrier measures the outbox's completion condition.
-func readBarrier(
-	ctx context.Context, opened *session, run embedrun.Run,
-) (embedcatchup.Barrier, error) {
-	if opened.loaded.Mode != embedcatchup.ModeOutbox {
-		return embedcatchup.Barrier{}, nil
-	}
-	outbox, err := embedpg.NewOutbox(opened.db, opened.loaded.Spec)
-	if err != nil {
-		return embedcatchup.Barrier{}, err
-	}
-	installed, err := outbox.Installed(ctx)
-	if err != nil {
-		return embedcatchup.Barrier{}, err
-	}
-	processed := parseWatermark(run.CatchUpWatermark)
-	unprocessed, err := outbox.Unprocessed(ctx, processed)
-	if err != nil {
-		return embedcatchup.Barrier{}, err
-	}
-	horizon, err := outbox.Horizon(ctx)
-	if err != nil {
-		return embedcatchup.Barrier{}, err
-	}
-	return embedcatchup.Barrier{
-		Installed: installed, Snapshot: parseWatermark(run.SnapshotWatermark),
-		Processed: processed, Horizon: horizon, Unprocessed: unprocessed,
-	}, nil
-}
-
-// parseWatermark reads a recorded transaction identity, or zero.
-func parseWatermark(raw string) uint64 {
-	value, err := strconv.ParseUint(raw, 10, 64)
-	if err != nil {
-		return 0
-	}
-	return value
-}
-
-// activePointer reads which generation queries currently read, or nothing.
-func activePointer(ctx context.Context, opened *session, table string) string {
-	pointer, err := opened.store.Pointer(ctx, table)
-	if err != nil {
-		return ""
-	}
-	return pointer.Active
-}
-
 // printReport renders a verification report.
 func printReport(out io.Writer, report embedverify.Report) error {
 	lines := []string{fmt.Sprintf("generation %s: %d source rows, %d target rows",
@@ -304,7 +186,8 @@ func runCutover(
 	}
 	defer opened.close()
 
-	plan, observed, err := buildCutoverPlan(ctx, opened, run, report)
+	plan, observed, err := embedreport.BuildCutoverPlan(
+		ctx, opened.db, opened.store, opened.loaded, run, report)
 	if err != nil {
 		return err
 	}
@@ -398,90 +281,6 @@ func openStabilization(
 	return writeLines(out, append(lines, bullet(fmt.Sprintf(
 		"generation %s stays a way back until %s, for as long as catch-up keeps feeding it",
 		plan.Previous, until.Format(time.RFC3339))))...)
-}
-
-// buildCutoverPlan assembles the plan and what is true now.
-func buildCutoverPlan(
-	ctx context.Context, opened *session, run embedrun.Run, report embedverify.Report,
-) (embedcutover.Plan, embedcutover.Observed, error) {
-	spec := opened.loaded.Spec
-	active := activePointer(ctx, opened, spec.Target.Table)
-	structure, err := embedpg.ReadStructure(ctx, opened.db, spec, active)
-	if err != nil {
-		return embedcutover.Plan{}, embedcutover.Observed{}, err
-	}
-	guarantee, err := assessConsistency(ctx, opened, run)
-	if err != nil {
-		return embedcutover.Plan{}, embedcutover.Observed{}, err
-	}
-
-	objects, err := spec.TargetObjects()
-	if err != nil {
-		return embedcutover.Plan{}, embedcutover.Observed{}, err
-	}
-	ready := indexReady(objects, structure)
-	plan := embedcutover.Plan{
-		Generation: spec.Identity().Digest, Previous: active,
-		Schema: spec.Target.Schema, Table: spec.Target.Table, Column: spec.Target.Column,
-		Evidence: embedcutover.Evidence{
-			VerificationDigest:   report.Generation,
-			VerificationPassed:   report.Passed(),
-			ConsistencyMode:      string(opened.loaded.Mode),
-			ConsistencyWatermark: run.CatchUpWatermark,
-			IndexReady:           ready,
-			SourceMutable:        opened.loaded.Source.Mutable,
-		},
-		// When the EVIDENCE was last established, not when this process
-		// started. Two things follow, and both are the point.
-		//
-		// The digest is stable across invocations, so the operator who runs
-		// this to see the plan and runs it again with an approval is approving
-		// the plan they read. A wall-clock timestamp made every run a
-		// different plan and the approval impossible to give -- which the
-		// end-to-end test found the moment it tried.
-		//
-		// And the age a policy bounds becomes the age of the evidence rather
-		// than of the printout. A plan built on a run that last moved two days
-		// ago is stale however recently it was rendered.
-		PreparedAt: run.UpdatedAt.UTC(),
-	}
-	if !guarantee.Complete {
-		plan.Evidence.ConsistencyMode = ""
-	}
-	// The plan's expected previous generation and the observed pointer come
-	// from ONE read, because this caller builds and executes in the same
-	// process: there is no interval between them for the pointer to move in.
-	// What protects a cutover from somebody else's here is the approval, which
-	// is bound to a plan built from the pointer as it was.
-	//
-	// The domain's drift check is for a caller that persists a plan and
-	// executes it later. Supplying two separate reads here would be a second
-	// answer to a question with one.
-	return plan, embedcutover.Observed{
-		ActivePointer: active, ConsistencyWatermark: run.CatchUpWatermark,
-		IndexReady:  ready,
-		Permissions: []embedcutover.Permission{embedcutover.PermissionCutover},
-		Now:         time.Now().UTC(),
-	}, nil
-}
-
-// indexReady reports whether the index this generation needs is there.
-//
-// It takes the objects the specification derives rather than a flag, because
-// "does this generation want an index" and "is that index there" are one
-// question about one generation and splitting them into a boolean and a struct
-// invites a caller to answer half of it.
-//
-// A generation that declares no index method needs none, and is ready by
-// definition. Reporting the absent index as "not ready" made every such
-// generation permanently uncutoverable -- and the refusal named an index the
-// specification never asked for, which is the worst kind of diagnostic: it
-// sends the operator to configure something they deliberately left out.
-func indexReady(objects embedgen.TargetObjects, structure embedverify.Structure) bool {
-	if !objects.HasIndex {
-		return true
-	}
-	return structure.IndexExists && structure.IndexValid
 }
 
 // approvalFrom builds the approval a caller supplied, or none.
@@ -713,4 +512,30 @@ func retirementApproval(
 	return &embedcutover.Approval{
 		PlanDigest: digest, Approver: options.approver, GrantedAt: time.Now().UTC(),
 	}
+}
+
+// verify opens a session and measures the generation.
+//
+// The measurement itself is internal/embedreport, which the verify verb, the
+// cutover it gates and the readiness a rollout waits on all consume. What is
+// here is opening the connection and answering with the run beside the report,
+// which is what the two callers in this file go on to use.
+func verify(
+	ctx context.Context, options commonOptions, runID string,
+) (embedverify.Report, embedrun.Run, error) {
+	if runID == "" {
+		return embedverify.Report{}, embedrun.Run{}, fmt.Errorf("--run-id is required")
+	}
+	opened, err := open(ctx, options)
+	if err != nil {
+		return embedverify.Report{}, embedrun.Run{}, err
+	}
+	defer opened.close()
+
+	run, err := opened.store.Run(ctx, runID)
+	if err != nil {
+		return embedverify.Report{}, embedrun.Run{}, err
+	}
+	report, err := embedreport.VerifyGeneration(ctx, opened.db, opened.store, opened.loaded, run)
+	return report, run, err
 }

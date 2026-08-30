@@ -2,6 +2,7 @@ package inference
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strconv"
@@ -11,6 +12,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/embedcatchup"
 	"go.5x5.cz/ptah/internal/embedcutover"
+	"go.5x5.cz/ptah/internal/embeddigest"
 	"go.5x5.cz/ptah/internal/embedgen"
 	"go.5x5.cz/ptah/internal/embedpg"
 	"go.5x5.cz/ptah/internal/embedreport"
@@ -246,29 +248,60 @@ func indexOutcomeText(outcome embedpg.IndexOutcome, spec embedgen.Spec) string {
 func newStatusCommand() *cobra.Command {
 	var options commonOptions
 	var runID string
+	var format string
 
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show what a run has done, how far it got, and what it is waiting for",
-		Long: `Print a run's phase, progress and the evidence it has gathered.
+		Long: `Print a run's phase, progress, and whether it is ready to cut over.
 
 It reads and changes nothing, and it is the verb to reach for when a cutover has
 been refused: the refusal names what is missing, and this says how far the run
-got.`,
+got.
+
+Two of the answers are measured rather than read off the run. "verified" runs
+the deterministic layers now, and "cutover ready" decides with the same code the
+cutover verb decides with -- a gate that agreed with that verb only by
+coincidence is one that will eventually let a deployment proceed against a
+generation the cutover then refuses. Both cost what verify costs, which is a
+read of the target.
+
+Cutover readiness excludes the approval. An approval nobody has given yet is not
+a defect in the state, and a rollout gate waiting for one would wait forever
+under the policy most production environments run; the answer says separately
+whether one is owed, and names the plan digest it would bind to.
+
+--format json is what a rollout system consumes.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runStatus(cmd.Context(), cmd.OutOrStdout(), options, runID)
+			return runStatus(cmd.Context(), cmd.OutOrStdout(), options, runID, format)
 		},
 	}
 	addCommonFlags(cmd, &options)
 	cmd.Flags().StringVar(&runID, "run-id", "", "Identifier of the run (required)")
+	cmd.Flags().StringVar(&format, "format", "text", "Output format: text or json")
 	return cmd
 }
 
+// statusDocument is what --format json emits.
+//
+// The stored run and what is true now are separate objects, because they are
+// answers of different kinds: one is a record and the other is a measurement,
+// and a reader deciding whether to deploy needs to know which is which.
+type statusDocument struct {
+	Run       embedreport.Status    `json:"run"`
+	Readiness embedreport.Readiness `json:"readiness"`
+}
+
 // runStatus prints one run.
-func runStatus(ctx context.Context, out io.Writer, options commonOptions, runID string) error {
+func runStatus(
+	ctx context.Context, out io.Writer, options commonOptions, runID, format string,
+) error {
 	if runID == "" {
 		return fmt.Errorf("--run-id is required")
+	}
+	if format != "text" && format != "json" {
+		return fmt.Errorf("invalid --format value %q: text or json", format)
 	}
 	opened, err := open(ctx, options)
 	if err != nil {
@@ -280,7 +313,62 @@ func runStatus(ctx context.Context, out io.Writer, options commonOptions, runID 
 	if err != nil {
 		return err
 	}
-	return printStatus(out, status)
+	readiness, err := embedreport.ReadReadiness(
+		ctx, opened.db, opened.store, opened.loaded, runID, time.Now())
+	if err != nil {
+		return err
+	}
+	if format == "json" {
+		return writeStatusJSON(out, statusDocument{Run: status, Readiness: readiness})
+	}
+	if err := printStatus(out, status); err != nil {
+		return err
+	}
+	return printReadiness(out, readiness)
+}
+
+// writeStatusJSON is the form a rollout system consumes.
+//
+// Indented, because the reader of a failed gate is a person looking at a log.
+func writeStatusJSON(out io.Writer, document statusDocument) error {
+	body, err := json.MarshalIndent(document, "", "  ")
+	if err != nil {
+		return fmt.Errorf("render the status: %w", err)
+	}
+	_, err = fmt.Fprintf(out, "%s\n", body)
+	return err
+}
+
+// printReadiness renders the two conditions a rollout waits on.
+func printReadiness(out io.Writer, readiness embedreport.Readiness) error {
+	lines := []string{
+		section(fmt.Sprintf("verified: %t, cutover ready: %t",
+			readiness.Verified, readiness.CutoverReady)),
+	}
+	if readiness.ApprovalRequired {
+		lines = append(lines, bullet("an approval is required, for plan "+
+			shortDigest(readiness.PlanDigest)))
+	}
+	for _, finding := range readiness.Findings {
+		lines = append(lines, bullet(finding))
+	}
+	for _, blocker := range readiness.Blockers {
+		lines = append(lines, bullet("blocked: "+blocker))
+	}
+	// What was not measured, always. A report saying only what it found reads
+	// as though it looked at everything.
+	for _, unmeasured := range readiness.Unmeasured {
+		lines = append(lines, bullet("not measured: "+unmeasured))
+	}
+	return writeLines(out, lines...)
+}
+
+// shortDigest renders a plan digest for a person, or says there is none.
+func shortDigest(digest string) string {
+	if digest == "" {
+		return "(none)"
+	}
+	return embeddigest.Short(digest)
 }
 
 // printStatus renders a run for a person.
