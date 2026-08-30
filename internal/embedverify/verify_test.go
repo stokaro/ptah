@@ -721,3 +721,50 @@ func boolToCount(stale bool) int {
 	counts := map[bool]int{true: 1, false: 0}
 	return counts[stale]
 }
+
+// TestVerify_ARowNothingWroteIsMissingRatherThanAnotherGenerations is the
+// sentence a reader meets first.
+//
+// Before a backfill, every target row carries an empty generation marker.
+// Reporting those as belonging to another generation named a generation that
+// does not exist, on every row, and sent an operator looking for it. What is
+// true of such a row is that this generation has no vector for it.
+//
+// Measured against a live PostgreSQL: two rows, prepared and not backfilled,
+// reported "2 target rows belong to another generation".
+func TestVerify_ARowNothingWroteIsMissingRatherThanAnotherGenerations(t *testing.T) {
+	c := qt.New(t)
+	expectation, structure, source, target, state := healthy()
+	for index := range target {
+		target[index].Generation = ""
+		target[index].InputHash = ""
+		target[index].Dimension = 0
+		target[index].Vector = nil
+	}
+
+	report := embedverify.Verify(expectation, structure, source, target, state)
+
+	c.Assert(summaries(report), qt.Contains,
+		"2 in-scope source rows have no vector in this generation")
+	c.Assert(summaries(report), qt.Not(qt.Contains),
+		"2 target rows belong to another generation")
+}
+
+// TestVerify_ARowAnotherGenerationWroteStillSaysSo is the control.
+//
+// Without it, treating every unmatched generation as missing would lose the
+// finding that matters most in a side-by-side migration: a vector written for
+// the corpus next door.
+func TestVerify_ARowAnotherGenerationWroteStillSaysSo(t *testing.T) {
+	c := qt.New(t)
+	expectation, structure, source, target, state := healthy()
+	for index := range target {
+		target[index].Generation = "some-other-generation"
+	}
+
+	report := embedverify.Verify(expectation, structure, source, target, state)
+
+	c.Assert(summaries(report), qt.Contains, "2 target rows belong to another generation")
+	c.Assert(summaries(report), qt.Not(qt.Contains),
+		"2 in-scope source rows have no vector in this generation")
+}

@@ -215,7 +215,21 @@ func verifyIndex(report *Report, expectation Expectation, structure Structure) {
 //
 // They share a walk because they share a question -- which source key does this
 // target row belong to -- and answering it twice would let the two disagree.
-func verifyCoverageAndFreshness(report *Report, expectation Expectation, source []SourceRow, target []TargetRow) {
+func verifyCoverageAndFreshness(
+	report *Report, expectation Expectation, source []SourceRow, target []TargetRow,
+) {
+	byKey := indexTargetByKey(report, target)
+	inScope := classifySourceRows(report, expectation, source, byKey)
+	reportOutOfScope(report, target, inScope)
+}
+
+// indexTargetByKey builds the lookup the walk above needs, and reports a key
+// the target holds twice.
+//
+// A duplicate is reported rather than resolved: which of two rows for one key
+// is the answer is not a question this layer can settle, and picking one would
+// verify a corpus against a row somebody's query may not read.
+func indexTargetByKey(report *Report, target []TargetRow) map[string]TargetRow {
 	byKey := make(map[string]TargetRow, len(target))
 	var duplicates []string
 	for _, row := range target {
@@ -229,7 +243,14 @@ func verifyCoverageAndFreshness(report *Report, expectation Expectation, source 
 		report.addf(LayerCoverage, Blocking, len(duplicates), duplicates,
 			"%d target keys appear more than once", len(duplicates))
 	}
+	return byKey
+}
 
+// classifySourceRows decides what each in-scope source row's target says, and
+// answers with the key set the caller needs to find rows outside it.
+func classifySourceRows(
+	report *Report, expectation Expectation, source []SourceRow, byKey map[string]TargetRow,
+) map[string]bool {
 	var missing, stale, wrongGeneration []string
 	skipped := 0
 	inScope := make(map[string]bool, len(source))
@@ -245,29 +266,16 @@ func verifyCoverageAndFreshness(report *Report, expectation Expectation, source 
 			}
 			continue
 		}
-		switch {
-		case found.Generation != expectation.Generation:
-			wrongGeneration = append(wrongGeneration, row.Key)
-		case found.Tombstone, found.Skipped:
-			// A tombstone or a skip against a live source row is a coverage
-			// gap: the source has it and this generation does not.
+		switch classifyRow(expectation, row, found) {
+		case rowMissing:
 			if !row.Skipped {
 				missing = append(missing, row.Key)
 			}
-		case found.InputHash != row.InputHash,
-			row.Version != "" && found.Version != "" && found.Version != row.Version:
-			// Both sides have to carry a version for the comparison to mean
-			// anything. A target row written with none -- under the input_hash
-			// strategy, or before a strategy that records one -- has no earlier
-			// version to have moved FROM, so a source that has one now is a
-			// strategy change rather than evidence the source moved.
-			//
-			// Without the second guard, switching to a versioned strategy
-			// reports every existing row stale and recomputes a corpus whose
-			// text has not changed. The input hash above is what answers
-			// freshness in that case, and it answers it correctly
-			// (stokaro/ptah#2474).
+		case rowWrongGeneration:
+			wrongGeneration = append(wrongGeneration, row.Key)
+		case rowStale:
 			stale = append(stale, row.Key)
+		case rowCovered:
 		}
 	}
 	reportCoverage(report, missing, stale, wrongGeneration)
@@ -279,7 +287,59 @@ func verifyCoverageAndFreshness(report *Report, expectation Expectation, source 
 		report.addf(LayerCoverage, Advisory, skipped, nil,
 			"%d in-scope source rows were skipped by the specification and carry no vector", skipped)
 	}
+	return inScope
+}
 
+// rowVerdict is what one source row's target row turned out to be.
+type rowVerdict int
+
+const (
+	// rowCovered is a target row this generation wrote from the source as it is
+	// now.
+	rowCovered rowVerdict = iota
+	// rowMissing is a source row this generation has no vector for.
+	rowMissing
+	// rowWrongGeneration is a target row another generation wrote.
+	rowWrongGeneration
+	// rowStale is a vector computed from a source state that has since moved.
+	rowStale
+)
+
+// classifyRow is the decision itself, with no reporting in it.
+func classifyRow(expectation Expectation, row SourceRow, found TargetRow) rowVerdict {
+	switch {
+	case found.Generation == "":
+		// Nothing ever wrote this row. Reporting it as belonging to another
+		// generation named a generation that does not exist and sent an
+		// operator looking for one -- which is what a corpus before its first
+		// backfill produced, on every row, in the sentence a reader meets
+		// first (stokaro/ptah#2068).
+		return rowMissing
+	case found.Generation != expectation.Generation:
+		return rowWrongGeneration
+	case found.Tombstone, found.Skipped:
+		// A tombstone or a skip against a live source row is a coverage gap:
+		// the source has it and this generation does not.
+		return rowMissing
+	case found.InputHash != row.InputHash,
+		row.Version != "" && found.Version != "" && found.Version != row.Version:
+		// Both sides have to carry a version for the comparison to mean
+		// anything. A target row written with none -- under the input_hash
+		// strategy, or before a strategy that records one -- has no earlier
+		// version to have moved FROM, so a source that has one now is a
+		// strategy change rather than evidence the source moved.
+		//
+		// Without the second guard, switching to a versioned strategy reports
+		// every existing row stale and recomputes a corpus whose text has not
+		// changed. The input hash above is what answers freshness in that case,
+		// and it answers it correctly (stokaro/ptah#2474).
+		return rowStale
+	}
+	return rowCovered
+}
+
+// reportOutOfScope names target rows the source no longer accounts for.
+func reportOutOfScope(report *Report, target []TargetRow, inScope map[string]bool) {
 	var unexpected []string
 	for _, row := range target {
 		if !inScope[row.Key] && !row.Tombstone {
