@@ -169,6 +169,23 @@ func TestFromTable_AGeneratedCheckNameIsUnchangedWithoutACollision(t *testing.T)
 	c.Assert(sql, qt.Not(qt.Contains), "products_check1")
 }
 
+// checkConstraintNames is the names of the table-level CHECK constraints a node
+// carries, in the order it carries them.
+//
+// The filtering lives here rather than in a test body because the style rule
+// forbids a conditional in a test function, and this is data extraction rather
+// than a choice about how to assert.
+func checkConstraintNames(node *ast.CreateTableNode) []string {
+	names := make([]string, 0, len(node.Constraints))
+	for _, constraint := range node.Constraints {
+		if constraint.Type != ast.CheckConstraint {
+			continue
+		}
+		names = append(names, constraint.Name)
+	}
+	return names
+}
+
 // TestFromTable_NodeCarriesOneConstraintPerDeclaredCheck counts on the node
 // itself, which is the only place the count is visible.
 //
@@ -201,13 +218,7 @@ func TestFromTable_NodeCarriesOneConstraintPerDeclaredCheck(t *testing.T) {
 			node := fromschema.FromTable(
 				database.Tables[0], database.Fields, database.Enums, platform.Postgres)
 
-			checks := 0
-			for _, constraint := range node.Constraints {
-				if constraint.Type == ast.CheckConstraint {
-					checks++
-				}
-			}
-			c.Assert(checks, qt.Equals, test.want)
+			c.Assert(checkConstraintNames(node), qt.HasLen, test.want)
 		})
 	}
 }
@@ -227,11 +238,5 @@ func TestFromTableWithConstraints_NodeSkipsADeclaredName(t *testing.T) {
 	node := fromschema.FromTableWithConstraints(
 		database.Tables[0], database.Fields, database.Enums, platform.Postgres, database.Constraints)
 
-	names := make([]string, 0)
-	for _, constraint := range node.Constraints {
-		if constraint.Type == ast.CheckConstraint {
-			names = append(names, constraint.Name)
-		}
-	}
-	c.Assert(names, qt.DeepEquals, []string{"products_check1"})
+	c.Assert(checkConstraintNames(node), qt.DeepEquals, []string{"products_check1"})
 }
