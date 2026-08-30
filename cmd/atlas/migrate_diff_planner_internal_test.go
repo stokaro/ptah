@@ -32,7 +32,9 @@ func TestCompatBidirectionalPlannerForFormat_ForeignLayoutKeepsYugabyteBlockingR
 	planFn := compatBidirectionalPlannerForFormat(atlasmigrateimport.FormatGolangMigrate)
 	c.Assert(planFn, qt.IsNotNil)
 	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_users_email", TableName: "users"}})
+	diff.SetIndexAdditions(difftypes.IndexChanges{{Index: schemamodel.Index{
+		StructName: "User", Name: "idx_users_email", Fields: []string{"email"},
+	}, TableName: "users"}})
 
 	plan, err := planFn(atlasmigrate.BidirectionalPlanInput{
 		Diff: diff,
@@ -65,7 +67,9 @@ func TestCompatBidirectionalPlannerForFormat_ExplicitUnavailableForwardStillRefu
 	planFn := compatBidirectionalPlannerForFormat(atlasmigrateimport.FormatGolangMigrate)
 	c.Assert(planFn, qt.IsNotNil)
 	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_users_email", TableName: "users"}})
+	diff.SetIndexAdditions(difftypes.IndexChanges{{Index: schemamodel.Index{
+		StructName: "User", Name: "idx_users_email", Fields: []string{"email"},
+	}, TableName: "users"}})
 
 	plan, err := planFn(atlasmigrate.BidirectionalPlanInput{
 		Diff:                  diff,

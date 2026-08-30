@@ -12,6 +12,7 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/migration/diffpolicy"
 	"go.5x5.cz/ptah/migration/safety"
@@ -25,8 +26,8 @@ func TestPlanGeneratedMigrationSpecs_SkipDropTable(t *testing.T) {
 	// migration is non-empty and we can assert the drop was omitted in place.
 	diff := &difftypes.SchemaDiff{
 		TablesRemoved: []string{"legacy"},
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_users_email", TableName: "users"},
+		IndexesAdded: difftypes.IndexChanges{
+			{Index: schemamodel.Index{Name: "idx_users_email", Fields: []string{"email"}}, TableName: "users"},
 		},
 	}
 
@@ -71,8 +72,8 @@ func TestPlanGeneratedMigrationSpecs_SkipDropTableAlsoFiltersDown(t *testing.T) 
 	}
 	diff := &difftypes.SchemaDiff{
 		TablesRemoved: []string{"legacy"},
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_users_email", TableName: "users"},
+		IndexesAdded: difftypes.IndexChanges{
+			{Index: schemamodel.Index{Name: "idx_users_email", Fields: []string{"email"}}, TableName: "users"},
 		},
 	}
 
@@ -106,8 +107,8 @@ func TestPlanGeneratedMigrationSpecs_SkipDropIndexKeepsRedefinition(t *testing.T
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_users_email", TableName: "users"},
+		IndexesAdded: difftypes.IndexChanges{
+			{Index: schemamodel.Index{Name: "idx_users_email", Fields: []string{"email"}}, TableName: "users"},
 		},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_users_email", TableName: "users"},

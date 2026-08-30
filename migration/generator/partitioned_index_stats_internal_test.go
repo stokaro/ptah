@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -86,8 +87,8 @@ func TestConcurrentIndexRefsForPopulatedTables_PartitionedAndUnknownStats(t *tes
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{}
-			diff.SetIndexAdditions([]difftypes.IndexRef{
-				{Name: "idx_events_tenant", TableName: "events"},
+			diff.SetIndexAdditions(difftypes.IndexChanges{
+				{Index: schemamodel.Index{Name: "idx_events_tenant", Fields: []string{"tenant"}}, TableName: "events"},
 			})
 
 			got := concurrentIndexRefsForPopulatedTables(
@@ -109,8 +110,8 @@ func TestConcurrentIndexRefsForPopulatedTables_PartitionedAndUnknownStats(t *tes
 func TestConcurrentIndexPolicy_RefusesPartitionedParent(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions([]difftypes.IndexRef{
-		{Name: "idx_events_tenant", TableName: "events"},
+	diff.SetIndexAdditions(difftypes.IndexChanges{
+		{Index: schemamodel.Index{Name: "idx_events_tenant", Fields: []string{"tenant"}}, TableName: "events"},
 	})
 
 	refs, err := concurrentIndexRefsForPolicy(
@@ -158,8 +159,8 @@ func TestConcurrentIndexPolicy_HonorsATableTheBuildIsLegalOn(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{}
-			diff.SetIndexAdditions([]difftypes.IndexRef{
-				{Name: "idx_events_tenant", TableName: "events"},
+			diff.SetIndexAdditions(difftypes.IndexChanges{
+				{Index: schemamodel.Index{Name: "idx_events_tenant", Fields: []string{"tenant"}}, TableName: "events"},
 			})
 
 			refs, err := concurrentIndexRefsForPolicy(

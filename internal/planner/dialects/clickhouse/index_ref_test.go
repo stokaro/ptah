@@ -17,9 +17,9 @@ import (
 func TestPlanner_IndexRefs_RendersDuplicateNamesOnExactTables(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_shared", TableName: "events"},
-			{Name: "idx_shared", TableName: "metrics"},
+		IndexesAdded: difftypes.IndexChanges{
+			{Index: schemamodel.Index{Name: "idx_shared", TableName: "events", Fields: []string{"event_id"}, Type: "minmax"}, TableName: "events"},
+			{Index: schemamodel.Index{Name: "idx_shared", TableName: "metrics", Fields: []string{"metric_id"}, Type: "minmax"}, TableName: "metrics"},
 		},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_shared", TableName: "events"},
@@ -31,7 +31,7 @@ func TestPlanner_IndexRefs_RendersDuplicateNamesOnExactTables(t *testing.T) {
 		{Name: "idx_shared", TableName: "events", Fields: []string{"event_id"}, Type: "minmax"},
 	}}
 
-	nodes, err := clickhouse.New().GenerateMigrationAST(withDeclaredTables(diff, desired), desired)
+	nodes, err := clickhouse.New().GenerateMigrationAST(withDeclaredTables(diff, desired))
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 4)

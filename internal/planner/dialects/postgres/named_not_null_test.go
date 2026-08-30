@@ -8,7 +8,6 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -31,13 +30,6 @@ func notNullNameDiff(current, desired string) *difftypes.SchemaDiff {
 	}
 }
 
-func widgetSchema() *schemamodel.Database {
-	return &schemamodel.Database{
-		Tables: []schemamodel.Table{{Name: "widget", StructName: "Widget"}},
-		Fields: []schemamodel.Field{{StructName: "Widget", Name: "a", Type: "TEXT"}},
-	}
-}
-
 // planNotNullName renders the plan for one name transition against a target
 // whose named-NOT-NULL answer is the caller's.
 func planNotNullName(c *qt.C, current, desired string, named bool) string {
@@ -45,7 +37,7 @@ func planNotNullName(c *qt.C, current, desired string, named bool) string {
 
 	caps := capability.Postgres17().With(capability.NamedNotNullConstraints, named)
 	nodes, err := postgres.NewForDialect(platform.Postgres, caps).
-		GenerateMigrationAST(notNullNameDiff(current, desired), widgetSchema())
+		GenerateMigrationAST(notNullNameDiff(current, desired))
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQLWithCapabilities(platform.Postgres, caps, nodes...)
 	c.Assert(err, qt.IsNil)

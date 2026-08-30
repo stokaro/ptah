@@ -6,7 +6,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -29,7 +28,7 @@ func tableQualifiedAdditionSQL(c *qt.C, deferrable bool, initially string) strin
 			Initially:      initially,
 		}},
 	}
-	nodes, err := postgres.New().GenerateMigrationAST(diff, &schemamodel.Database{})
+	nodes, err := postgres.New().GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

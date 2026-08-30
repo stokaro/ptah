@@ -30,7 +30,6 @@ var supplementalDiffCategories = map[string]string{
 	"DeclaredTables":                  "every table the declaration holds, carried so a foreign key can be resolved to the table it references -- usually one this diff does not touch. It is an INPUT to rendering rather than a change: on its own it creates no operation, and a fixture would assert that a list of tables plans nothing (stokaro/ptah#2315)",
 	"DeclaredForeignKeys":             "every foreign key the schema the plan runs against holds, carried so the MySQL family can drop a column's keys before MODIFY and put them back. PostgreSQL changes a column type in place and touches no key doing it, so this planner reads the field nowhere; a fixture here would assert that a list of foreign keys plans nothing (stokaro/ptah#2315)",
 	"DeclaredFunctions":               "the declaration order and call graph of the declared functions, carried so the additions can be ordered caller-after-callee. The bodies travel with the additions and it renders nothing of its own; TestPlanner_GenerateMigrationAST_OrdersFunctionsByDependencies drives it through FunctionsAdded, which is the only way it can be exercised (stokaro/ptah#2315)",
-	"DeclaredIndexes":                 "every declared index with its owner resolved, which an index ADDITION is looked up in: the addition carries a name and a table, and the definition it names is here. It renders nothing of its own, and the IndexesAdded fixture below is what drives it (stokaro/ptah#2315)",
 	"DeclaredTableDependencies":       "the table dependency graph, carried so the removals can be ordered child-before-parent. A creation carries its own edges and a removal is only a name, which is why this one is schema-wide; it renders nothing on its own, and a fixture would assert that a graph plans nothing (stokaro/ptah#2315)",
 	"DeclaredUserTypes":               "the declaration's type vocabulary, which a created column's type is resolved THROUGH rather than rendered FROM. It creates no operation by itself: TestPlanner_CreatesAColumnTypedByADeclaredDomain drives it as part of a table creation, which is the only way it can be exercised (stokaro/ptah#2315)",
 	"DeclaredViewLikes":               "every declared view and materialized view, which a cascading DROP is resolved AGAINST rather than rendered from. The recreate it feeds belongs to the drop that cascaded, and several fixtures below carry it for exactly that reason; on its own it plans nothing (stokaro/ptah#2315)",
@@ -80,7 +79,7 @@ func TestEveryRefusedDiffCategoryIsRefused(t *testing.T) {
 		t.Run(field, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := postgres.New().GenerateMigrationAST(fixture.diff, &schemamodel.Database{})
+			nodes, err := postgres.New().GenerateMigrationAST(fixture.diff)
 
 			c.Assert(err, qt.IsNotNil, qt.Commentf("%s: %s", field, fixture.why))
 			c.Assert(nodes, qt.IsNil)
@@ -108,8 +107,7 @@ func TestEveryDiffCategoryRendersSQL(t *testing.T) {
 			// Each fixture states a diff and the declaration it came from,
 			// so the carries a comparison would have filled are filled here
 			// rather than in every literal (stokaro/ptah#2315).
-			nodes, err := postgres.New().GenerateMigrationAST(
-				withDeclaredObjects(fixture.diff, fixture.desired), fixture.desired)
+			nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(fixture.diff, fixture.desired))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(len(nodes) > 0, qt.IsTrue, qt.Commentf("the planner rendered nothing for %s", fixture.field))
@@ -198,7 +196,10 @@ func diffCategoryFixtures() []categoryFixture {
 		},
 		{
 			"IndexesAdded",
-			&difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{{Name: "ix", TableName: "t"}}},
+			&difftypes.SchemaDiff{IndexesAdded: difftypes.IndexChanges{{
+				Index:     schemamodel.Index{Name: "ix", StructName: "T", Fields: []string{"c"}},
+				TableName: "t",
+			}}},
 			&schemamodel.Database{
 				Tables:  []schemamodel.Table{{Name: "t", StructName: "T"}},
 				Indexes: []schemamodel.Index{{Name: "ix", StructName: "T", Fields: []string{"c"}}},

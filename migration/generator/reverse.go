@@ -8,9 +8,11 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/deporder"
+	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -128,11 +130,8 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// And the same for the functions this direction creates: they are the
 		// ones that database held, and what they call is what it recorded.
 		DeclaredFunctions: difftypes.FunctionOrderingOf(prior),
-		// And the same for the indexes this direction restores: they are the
-		// ones that database had, on the relations it had them on.
-		DeclaredIndexes: difftypes.IndexDeclarationsOf(prior),
-		TablesRemoved:   deporder.TableDropOrder(diff.TablesAdded.Names(), schema), // Tables to add become tables to remove
-		TablesModified:  reverseTableDiffs(diff.TablesModified, prior),
+		TablesRemoved:     deporder.TableDropOrder(diff.TablesAdded.Names(), schema), // Tables to add become tables to remove
+		TablesModified:    reverseTableDiffs(diff.TablesModified, prior),
 
 		// Reverse enum operations
 		EnumsAdded:    diff.EnumsRemoved, // Enums to remove become enums to add
@@ -300,7 +299,10 @@ func reverseSchemaDiffWithSchemaForDialect(
 	// UNIQUE constraints, which the rule deliberately never drops.
 	dropReverseConstraintsRestoredByTableCreation(reversed, diff.ConstraintsRemovedWithTables, dbSchema)
 	indexAdditions, constraintRestorations := reverseIndexRemovals(diff, dbSchema)
-	reversed.SetIndexAdditions(indexAdditions)
+	// The definitions come from the PRE-CHANGE database: this direction
+	// re-creates the indexes the change dropped, and an index the declaration
+	// holds may not be one of them (stokaro/ptah#2315).
+	reversed.SetIndexAdditions(priorIndexChanges(prior, indexAdditions, semantics))
 	reversed.SetIndexRemovals(diff.IndexAdditions())
 	for _, restored := range constraintRestorations {
 		reversed.ConstraintsAdded = append(reversed.ConstraintsAdded, restored.Name)
@@ -422,4 +424,41 @@ func priorTableDependencies(prior *schemamodel.Database) map[string][]string {
 		return nil
 	}
 	return deporder.GeneratedTableDependencies(prior)
+}
+
+// priorIndexChanges pairs each reference with the declaration the pre-change
+// database had for it.
+//
+// A reference the prior schema does not hold keeps its identity and carries an
+// index with that name and nothing else. The plan then renders what a bare
+// reference always rendered, which is the same answer as before rather than a
+// silently dropped statement (stokaro/ptah#2315).
+func priorIndexChanges(
+	prior *schemamodel.Database,
+	refs []difftypes.IndexRef,
+	semantics identifier.Semantics,
+) difftypes.IndexChanges {
+	if len(refs) == 0 {
+		return nil
+	}
+	declared := make(map[difftypes.IndexRef]difftypes.IndexChange, len(refs))
+	for _, declaration := range difftypes.IndexDeclarationsOf(prior) {
+		key := indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{
+			Name:      declaration.Index.Name,
+			TableName: declaration.TableName,
+		})
+		declared[key] = declaration
+	}
+	changes := make(difftypes.IndexChanges, 0, len(refs))
+	for _, ref := range refs {
+		if declaration, ok := declared[indexscope.IdentityKeyWithSemantics(semantics, ref)]; ok {
+			changes = append(changes, declaration)
+			continue
+		}
+		changes = append(changes, difftypes.IndexChange{
+			Index:     schemamodel.Index{Name: ref.Name},
+			TableName: ref.TableName,
+		})
+	}
+	return changes
 }

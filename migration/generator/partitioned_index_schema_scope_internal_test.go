@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -211,7 +212,7 @@ func runConcurrentIndexSelectors(
 	}
 	additions := func() *difftypes.SchemaDiff {
 		diff := &difftypes.SchemaDiff{}
-		diff.SetIndexAdditions([]difftypes.IndexRef{ref})
+		diff.SetIndexAdditions(difftypes.IndexChanges{{Index: schemamodel.Index{Name: ref.Name, Fields: []string{"email"}}, TableName: ref.TableName}})
 		return diff
 	}
 	removals := &difftypes.SchemaDiff{}

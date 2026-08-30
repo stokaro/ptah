@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -19,9 +20,9 @@ func TestSchemaDiff_SetIndexAdditionsPreservesDuplicateMultiset(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	diff.SetIndexAdditions(refs)
+	diff.SetIndexAdditions(difftypes.IndexChangesFromRefs(refs...))
 
-	c.Assert(diff.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef{
+	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{TableName: "alpha.orders", Name: "idx_shared"},
 		{TableName: "alpha.users", Name: "idx_a"},
 		{TableName: "alpha.users", Name: "idx_z"},
@@ -49,7 +50,7 @@ func TestSchemaDiff_SetIndexRefsAreSymmetricAndCloneInputs(t *testing.T) {
 	additions := &difftypes.SchemaDiff{}
 	removals := &difftypes.SchemaDiff{}
 
-	additions.SetIndexAdditions(additionRefs)
+	additions.SetIndexAdditions(difftypes.IndexChangesFromRefs(additionRefs...))
 	removals.SetIndexRemovals(removalRefs)
 	c.Assert(additionRefs, qt.DeepEquals, []difftypes.IndexRef{
 		{TableName: "zeta.accounts", Name: "idx_shared"},
@@ -62,9 +63,8 @@ func TestSchemaDiff_SetIndexRefsAreSymmetricAndCloneInputs(t *testing.T) {
 	additionRefs[0] = difftypes.IndexRef{TableName: "mutated", Name: "mutated"}
 	removalRefs[0] = difftypes.IndexRef{TableName: "mutated", Name: "mutated"}
 
-	c.Assert(additions.IndexesAdded, qt.DeepEquals, removals.IndexesRemoved)
 	c.Assert(additions.IndexAdditions(), qt.DeepEquals, removals.IndexRemovals())
-	c.Assert(additions.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef{
+	c.Assert(additions.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{TableName: "alpha.orders", Name: "idx_shared"},
 		{TableName: "zeta.accounts", Name: "idx_shared"},
 	})
@@ -75,8 +75,8 @@ func TestSchemaDiff_SetIndexRefsAreSymmetricAndCloneInputs(t *testing.T) {
 func TestSchemaDiff_IndexAccessorsReturnClones(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{TableName: "public.users", Name: "idx_users_email"},
+		IndexesAdded: difftypes.IndexChanges{
+			{Index: schemamodel.Index{Name: "idx_users_email", Fields: []string{"email"}}, TableName: "public.users"},
 		},
 		IndexesRemoved: []difftypes.IndexRef{
 			{TableName: "public.orders", Name: "idx_orders_reference"},
@@ -88,7 +88,7 @@ func TestSchemaDiff_IndexAccessorsReturnClones(t *testing.T) {
 	additions[0].TableName = "mutated"
 	removals[0].TableName = "mutated"
 
-	c.Assert(diff.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef{
+	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{TableName: "public.users", Name: "idx_users_email"},
 	})
 	c.Assert(diff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{
@@ -99,8 +99,8 @@ func TestSchemaDiff_IndexAccessorsReturnClones(t *testing.T) {
 func TestSchemaDiff_IndexRefsJSONShape(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions([]difftypes.IndexRef{
-		{TableName: "public.users", Name: "idx_email"},
+	diff.SetIndexAdditions(difftypes.IndexChanges{
+		{Index: schemamodel.Index{Name: "idx_email", Fields: []string{"email"}}, TableName: "public.users"},
 	})
 	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{TableName: "audit.users", Name: "idx_email"},

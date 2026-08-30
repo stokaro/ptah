@@ -91,7 +91,7 @@ func TestPlanBidirectionalSchemaDiff_DeclaredConcurrentIndex(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{}
-			diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
+			diff.SetIndexAdditions(difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_reference", Fields: []string{"reference"}}, TableName: "users"}})
 
 			plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 				Diff:          diff,
@@ -129,7 +129,7 @@ func TestPlanBidirectionalSchemaDiff_DeclaredConcurrentIndex(t *testing.T) {
 func TestPlanBidirectionalSchemaDiff_DeclaredConcurrentIndexIsPostgresOnly(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
+	diff.SetIndexAdditions(difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_reference", Fields: []string{"reference"}}, TableName: "users"}})
 
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 		Diff:          diff,

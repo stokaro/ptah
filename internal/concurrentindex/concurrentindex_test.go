@@ -24,7 +24,7 @@ func desiredWithConcurrentIndex(concurrently bool) *schemamodel.Database {
 // diffAddingIndex is the comparison that adds the index above.
 func diffAddingIndex() *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{{Name: "idx_widget_a", TableName: "widget"}},
+		IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{StructName: "Widget", Name: "idx_widget_a", Fields: []string{"a"}}, TableName: "widget"}},
 	}
 }
 

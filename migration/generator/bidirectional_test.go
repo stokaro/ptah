@@ -96,7 +96,9 @@ func TestPlanBidirectionalSchemaDiff_MySQLSameRunCoveringIndexPreventsBackingInd
 			Columns: []string{"parent_id"}, ForeignTable: "parents", ForeignColumns: []string{"id"},
 		}},
 	}
-	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_parent", TableName: "children"}})
+	diff.SetIndexAdditions(difftypes.IndexChanges{{Index: schemamodel.Index{
+		StructName: "Child", Name: "idx_parent", Fields: []string{"parent_id", "created_at"},
+	}, TableName: "children"}})
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "Child", Name: "children"}},
 		Indexes: []schemamodel.Index{{
@@ -467,7 +469,7 @@ func TestPlanBidirectionalSchemaDiff_MySQLModifyColumnUniqueCoversForeignKey(t *
 func TestPlanBidirectionalSchemaDiff_MySQLReplacementCoverSurvivesCaseEquivalentRemoval(t *testing.T) {
 	c := qt.New(t)
 	diff := singleMySQLForeignKeyDiff("children")
-	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "IDX_PARENT", TableName: "children"}})
+	diff.SetIndexAdditions(difftypes.IndexChanges{{Index: schemamodel.Index{Name: "IDX_PARENT", Fields: []string{"parent_id"}}, TableName: "children"}})
 	diff.SetIndexRemovals([]difftypes.IndexRef{{Name: "idx_parent", TableName: "children"}})
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "Child", Name: "children"}},
@@ -499,7 +501,9 @@ func TestPlanBidirectionalSchemaDiff_MySQLReplacementCoverSurvivesCaseEquivalent
 func TestPlanBidirectionalSchemaDiff_MySQLReplacementDropsOldCoverBeforeForeignKey(t *testing.T) {
 	c := qt.New(t)
 	diff := singleMySQLForeignKeyDiff("children")
-	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_parent", TableName: "children"}})
+	diff.SetIndexAdditions(difftypes.IndexChanges{{Index: schemamodel.Index{
+		StructName: "Child", Name: "idx_parent", Fields: []string{"other_id"},
+	}, TableName: "children"}})
 	diff.SetIndexRemovals([]difftypes.IndexRef{{Name: "idx_parent", TableName: "children"}})
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "Child", Name: "children"}},
@@ -630,9 +634,9 @@ func TestPlanBidirectionalSchemaDiff_SwapsExactConcurrentIndexRefs(t *testing.T)
 		{Name: "idx_shared", TableName: "app.orders"},
 		{Name: "idx_shared", TableName: "audit.users"},
 	}
-	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions(refs)
 	desired := concurrentIndexSchema()
+	diff := &difftypes.SchemaDiff{}
+	diff.SetIndexAdditions(difftypes.IndexAdditionsFor(desired, refs...))
 	current := &catalog.Database{Tables: []catalog.Table{
 		{Name: "orders", Schema: "app", Type: "BASE TABLE"},
 		{Name: "users", Schema: "audit", Type: "BASE TABLE"},
@@ -702,7 +706,9 @@ func TestPlanBidirectionalSchemaDiff_SwapsExactConcurrentIndexDropRefs(t *testin
 func TestPlanBidirectionalSchemaDiff_ConcurrentCreateUsesBlockingRollbackWithoutDropCapability(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
+	diff.SetIndexAdditions(difftypes.IndexChanges{{Index: schemamodel.Index{
+		StructName: "User", Name: "idx_users_reference", Fields: []string{"reference"},
+	}, TableName: "users"}})
 	caps := capability.Postgres17().With(capability.DropIndexConcurrently, false)
 
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
@@ -769,7 +775,7 @@ func TestPlanBidirectionalSchemaDiff_ExplicitConcurrentModeRequiresCapability(t 
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{}
-			diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_shared", TableName: "users"}})
+			diff.SetIndexAdditions(difftypes.IndexChanges{{Index: schemamodel.Index{StructName: "Order", Name: "idx_shared", Fields: []string{"reference"}}, TableName: "users"}})
 			diff.SetIndexRemovals([]difftypes.IndexRef{{Name: "idx_old", TableName: "users"}})
 			plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 				Diff:          diff,
@@ -792,7 +798,9 @@ func TestPlanBidirectionalSchemaDiff_ExplicitConcurrentModeRequiresCapability(t 
 func TestPlanBidirectionalSchemaDiff_YugabyteExplicitConcurrentCreateKeepsBlockingRollback(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
+	diff.SetIndexAdditions(difftypes.IndexChanges{{Index: schemamodel.Index{
+		StructName: "User", Name: "idx_users_reference", Fields: []string{"reference"},
+	}, TableName: "users"}})
 
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 		Diff:          diff,
@@ -844,7 +852,9 @@ func TestPlanBidirectionalSchemaDiff_AutomaticModeIsBidirectionallyCapabilitySaf
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{}
-			diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
+			diff.SetIndexAdditions(difftypes.IndexChanges{{Index: schemamodel.Index{
+				StructName: "User", Name: "idx_users_reference", Fields: []string{"reference"},
+			}, TableName: "users"}})
 			plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 				Diff:          diff,
 				DesiredSchema: singleConcurrentIndexSchema(),
@@ -871,7 +881,9 @@ func TestPlanBidirectionalSchemaDiff_AutomaticModeIsBidirectionallyCapabilitySaf
 func TestPlanBidirectionalSchemaDiff_AutomaticYugabyteCreateKeepsBlockingRollback(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
+	diff.SetIndexAdditions(difftypes.IndexChanges{{Index: schemamodel.Index{
+		StructName: "User", Name: "idx_users_reference", Fields: []string{"reference"},
+	}, TableName: "users"}})
 
 	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
 		Diff:          diff,
@@ -939,7 +951,9 @@ func TestPlanBidirectionalSchemaDiff_ConcurrentDropUsesBlockingReverseCreateWith
 func TestPlanBidirectionalSchemaDiff_PartitionedParentRefusesExplicitPolicy(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions([]difftypes.IndexRef{{Name: "idx_events_tenant", TableName: "events"}})
+	diff.SetIndexAdditions(difftypes.IndexChanges{{Index: schemamodel.Index{
+		StructName: "Event", Name: "idx_events_tenant", Fields: []string{"tenant"},
+	}, TableName: "events"}})
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "Event", Name: "events"}},
 		Indexes: []schemamodel.Index{{

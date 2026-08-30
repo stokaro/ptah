@@ -24,13 +24,18 @@ func TestPlanner_LiteralDotAndQualifiedTablesRemainDistinct(t *testing.T) {
 			difftypes.TableCreationFor(desired, desired.Tables[0], `"tenant.data"`),
 			difftypes.TableCreationFor(desired, desired.Tables[1], "tenant.data"),
 		},
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "literal_lookup", TableName: `"tenant.data"`},
-			{Name: "qualified_lookup", TableName: "tenant.data"},
+		IndexesAdded: difftypes.IndexChanges{
+			{Index: schemamodel.Index{Name: "literal_lookup", Fields: []string{"id"}}, TableName: `"tenant.data"`},
+			{Index: schemamodel.Index{
+				StructName: "Qualified",
+				Name:       "qualified_lookup",
+				TableName:  "tenant.data",
+				Fields:     []string{"id"},
+			}, TableName: "tenant.data"},
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -48,7 +53,7 @@ func TestPlanner_LiteralDotAndQualifiedTableRemovalsRemainDistinct(t *testing.T)
 		TablesRemoved: []string{`"tenant.data"`, "tenant.data"},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, literalDotAndQualifiedSchema())
+	nodes, err := postgres.New().GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

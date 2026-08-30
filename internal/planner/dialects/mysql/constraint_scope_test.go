@@ -38,7 +38,7 @@ var mysqlFamilyDialects = []string{"mysql", "mariadb"}
 // right.
 func renderMySQLFamily(c *qt.C, dialect string, diff *difftypes.SchemaDiff, desired *schemamodel.Database) string {
 	diff = withDeclaredObjects(diff, desired)
-	nodes, err := mysql.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+	nodes, err := mysql.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL(dialect, nodes...)
 	c.Assert(err, qt.IsNil)
@@ -833,9 +833,6 @@ func withDeclaredObjects(
 	if len(completed.DeclaredTables) == 0 {
 		completed.DeclaredTables = desired.Tables
 	}
-	if len(completed.DeclaredIndexes) == 0 {
-		completed.DeclaredIndexes = difftypes.IndexDeclarationsOf(desired)
-	}
 	if len(completed.DeclaredTableDependencies) == 0 {
 		completed.DeclaredTableDependencies = deporder.GeneratedTableDependencies(desired)
 	}
@@ -1002,15 +999,8 @@ func TestPlanner_ModifiedPrimaryKeyIsDroppedThenReadded(t *testing.T) {
 			Name: "pk_users", TableName: "users", Type: "PRIMARY KEY",
 		}},
 	}
-	desired := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
-		Constraints: []schemamodel.Constraint{{
-			StructName: "User", Name: "pk_users", Type: "PRIMARY KEY",
-			Table: "users", Columns: []string{"id", "tenant"},
-		}},
-	}
 
-	nodes, err := mysql.New().GenerateMigrationAST(diff, desired)
+	nodes, err := mysql.New().GenerateMigrationAST(diff)
 
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("mysql", nodes...)

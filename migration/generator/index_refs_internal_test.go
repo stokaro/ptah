@@ -24,9 +24,9 @@ import (
 func TestSplitConcurrentIndexDiff_PreservesTableQualifiedIdentity(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions([]difftypes.IndexRef{
-		{Name: "idx_shared", TableName: "users"},
-		{Name: "idx_shared", TableName: "orders"},
+	diff.SetIndexAdditions(difftypes.IndexChanges{
+		{Index: schemamodel.Index{StructName: "Order", Name: "idx_shared", Fields: []string{"reference"}}, TableName: "users"},
+		{Index: schemamodel.Index{StructName: "Order", Name: "idx_shared", Fields: []string{"reference"}}, TableName: "orders"},
 	})
 	got := splitConcurrentIndexDiff(diff, []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "users"},
@@ -47,9 +47,9 @@ func TestSplitConcurrentIndexDiff_PreservesTableQualifiedIdentity(t *testing.T) 
 func TestConcurrentIndexRefsForPopulatedTables_SelectsExactIndex(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions([]difftypes.IndexRef{
-		{Name: "idx_shared", TableName: "users"},
-		{Name: "idx_shared", TableName: "orders"},
+	diff.SetIndexAdditions(difftypes.IndexChanges{
+		{Index: schemamodel.Index{StructName: "Order", Name: "idx_shared", Fields: []string{"reference"}}, TableName: "users"},
+		{Index: schemamodel.Index{StructName: "Order", Name: "idx_shared", Fields: []string{"reference"}}, TableName: "orders"},
 	})
 
 	got := concurrentIndexRefsForPopulatedTables(
@@ -72,8 +72,8 @@ func TestConcurrentIndexRefsForPopulatedTables_SelectsExactIndex(t *testing.T) {
 func TestPlanGeneratedMigrationSpecs_SkipDropIndexPreservesPostgresSchemaMove(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions([]difftypes.IndexRef{
-		{Name: "idx_shared", TableName: "app.orders"},
+	diff.SetIndexAdditions(difftypes.IndexChanges{
+		{Index: schemamodel.Index{StructName: "Order", Name: "idx_shared", Fields: []string{"reference"}}, TableName: "app.orders"},
 	})
 	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "app.users"},
@@ -126,9 +126,9 @@ func TestPlanGeneratedMigrationSpecs_SkipDropIndexPreservesPostgresSchemaMove(t 
 func TestReverseSchemaDiff_PreservesTableQualifiedIndexIdentity(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions([]difftypes.IndexRef{
-		{Name: "idx_shared", TableName: "users"},
-		{Name: "idx_shared", TableName: "orders"},
+	diff.SetIndexAdditions(difftypes.IndexChanges{
+		{Index: schemamodel.Index{StructName: "Order", Name: "idx_shared", Fields: []string{"reference"}}, TableName: "users"},
+		{Index: schemamodel.Index{StructName: "Order", Name: "idx_shared", Fields: []string{"reference"}}, TableName: "orders"},
 	})
 	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_legacy", TableName: "audit.events"},
@@ -148,14 +148,14 @@ func TestReverseSchemaDiff_PreservesTableQualifiedIndexIdentity(t *testing.T) {
 func TestCloneSchemaDiff_ClonesTableQualifiedIndexRepresentations(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions([]difftypes.IndexRef{
-		{Name: "idx_shared", TableName: "users"},
+	diff.SetIndexAdditions(difftypes.IndexChanges{
+		{Index: schemamodel.Index{StructName: "Order", Name: "idx_shared", Fields: []string{"reference"}}, TableName: "users"},
 	})
 
 	got := cloneSchemaDiff(diff)
-	got.IndexesAdded[0] = difftypes.IndexRef{Name: "idx_changed", TableName: "orders"}
+	got.IndexesAdded[0] = difftypes.IndexChange{Index: schemamodel.Index{Name: "idx_changed", Fields: []string{"email"}}, TableName: "orders"}
 
-	c.Assert(diff.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef{
+	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "users"},
 	})
 }
@@ -171,9 +171,7 @@ func TestIndexTransforms_PreserveIdentifierSemantics(t *testing.T) {
 		})
 	diff := &difftypes.SchemaDiff{
 		IdentifierSemantics: &semantics,
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "IDX_Email", TableName: "dbo.users"},
-		},
+		IndexesAdded:        difftypes.IndexChanges{{Index: schemamodel.Index{Name: "IDX_Email", Fields: []string{"email"}}, TableName: "dbo.users"}},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_email", TableName: "dbo.users"},
 		},
@@ -207,9 +205,7 @@ func TestIndexTransforms_PreserveIdentifierSemantics(t *testing.T) {
 func TestGenerateDownMigrationSQL_SQLServerPreservesFilteredIndexPredicate(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_active_users", TableName: "dbo.users"},
-		},
+		IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_active_users", Fields: []string{"email"}}, TableName: "dbo.users"}},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_active_users", TableName: "dbo.users"},
 		},

@@ -749,9 +749,7 @@ func TestIndexes_HappyPath(t *testing.T) {
 				Indexes: make([]catalog.Index, 0),
 			},
 			expected: &difftypes.SchemaDiff{
-				IndexesAdded: []difftypes.IndexRef{
-					{Name: "idx_user_email", TableName: "users"},
-				},
+				IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_user_email", Fields: []string{"email"}}, TableName: "users"}},
 			},
 		},
 		{
@@ -810,9 +808,7 @@ func TestIndexes_HappyPath(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				IndexesAdded: []difftypes.IndexRef{
-					{Name: "idx_user_name", TableName: "users"},
-				},
+				IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_user_name", Fields: []string{"name"}}, TableName: "users"}},
 				IndexesRemoved: []difftypes.IndexRef{
 					{Name: "old_index", TableName: "users"},
 				},
@@ -834,9 +830,7 @@ func TestIndexes_HappyPath(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				IndexesAdded: []difftypes.IndexRef{
-					{Name: "idx_users_c", TableName: "users"},
-				},
+				IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_c", TableName: "users"}, TableName: "users"}},
 				IndexesRemoved: []difftypes.IndexRef{
 					{Name: "idx_users_c", TableName: "users"},
 				},
@@ -860,9 +854,7 @@ func TestIndexes_HappyPath(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				IndexesAdded: []difftypes.IndexRef{
-					{Name: "idx_users_email_active", TableName: "users"},
-				},
+				IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_email_active", TableName: "users"}, TableName: "users"}},
 				IndexesRemoved: []difftypes.IndexRef{
 					{Name: "idx_users_email_active", TableName: "users"},
 				},
@@ -924,9 +916,7 @@ func TestIndexes_HappyPath(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				IndexesAdded: []difftypes.IndexRef{
-					{Name: "idx_users_email_active", TableName: "users"},
-				},
+				IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_email_active", TableName: "users"}, TableName: "users"}},
 				IndexesRemoved: []difftypes.IndexRef{
 					{Name: "idx_users_email_active", TableName: "users"},
 				},
@@ -960,7 +950,7 @@ func TestIndexes_HappyPath(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 			compare.Indexes(tt.desired, tt.database, diff)
 
-			c.Assert(diff.IndexesAdded, qt.DeepEquals, tt.expected.IndexesAdded)
+			c.Assert(diff.IndexAdditions(), qt.DeepEquals, tt.expected.IndexAdditions())
 			c.Assert(diff.IndexesRemoved, qt.DeepEquals, tt.expected.IndexesRemoved)
 		})
 	}
@@ -1038,9 +1028,9 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				IndexesAdded: []difftypes.IndexRef{
-					{Name: "tenants_slug_idx", TableName: "tenants"},
-					{Name: "users_tenant_email_idx", TableName: "users"},
+				IndexesAdded: difftypes.IndexChanges{
+					{Index: schemamodel.Index{Name: "tenants_slug_idx", Fields: []string{"email"}}, TableName: "tenants"},
+					{Index: schemamodel.Index{Name: "users_tenant_email_idx", Fields: []string{"email"}}, TableName: "users"},
 				},
 			},
 		},
@@ -1097,9 +1087,7 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				IndexesAdded: []difftypes.IndexRef{
-					{Name: "tenants_slug_idx", TableName: "tenants"},
-				},
+				IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "tenants_slug_idx", Fields: []string{"email"}}, TableName: "tenants"}},
 			},
 		},
 	}
@@ -1111,7 +1099,7 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 			diff := &difftypes.SchemaDiff{}
 			compare.Indexes(tt.desired, tt.database, diff)
 
-			c.Assert(diff.IndexesAdded, qt.DeepEquals, tt.expected.IndexesAdded)
+			c.Assert(diff.IndexAdditions(), qt.DeepEquals, tt.expected.IndexAdditions())
 			c.Assert(diff.IndexesRemoved, qt.DeepEquals, tt.expected.IndexesRemoved)
 		})
 	}

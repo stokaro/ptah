@@ -63,7 +63,7 @@ type User struct {
 
 		// Generate migration AST
 		planner := postgres.New()
-		astNodes, err := planner.GenerateMigrationAST(diff, database)
+		astNodes, err := planner.GenerateMigrationAST(diff)
 		c.Assert(err, qt.IsNil)
 		c.Assert(astNodes, qt.HasLen, 1)
 
@@ -172,7 +172,7 @@ type Post struct {
 
 		// Generate migration AST
 		planner := postgres.New()
-		astNodes, err := planner.GenerateMigrationAST(diff, database)
+		astNodes, err := planner.GenerateMigrationAST(diff)
 		c.Assert(err, qt.IsNil)
 		c.Assert(astNodes, qt.HasLen, 1)
 
@@ -267,7 +267,7 @@ type Post struct {
 
 		// Generate migration AST
 		planner := postgres.New()
-		astNodes, err := planner.GenerateMigrationAST(diff, database)
+		astNodes, err := planner.GenerateMigrationAST(diff)
 		c.Assert(err, qt.IsNil)
 		// 2 CREATE TABLE statements plus 1 ALTER TABLE ADD CONSTRAINT for the
 		// posts.user_id field-level foreign key. The FK has no explicit

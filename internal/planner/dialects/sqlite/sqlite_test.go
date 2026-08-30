@@ -149,9 +149,7 @@ func TestPlannerAddsColumnsAndIndexes(t *testing.T) {
 		TablesModified: []difftypes.TableDiff{
 			{TableName: "users", ColumnsAdded: difftypes.ColumnChanges{{Name: "display_name", Type: "TEXT", StructName: "User", Nullable: true}}},
 		},
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_users_display_name", TableName: "users"},
-		},
+		IndexesAdded: difftypes.IndexAdditionsFor(desired, difftypes.IndexRef{Name: "idx_users_display_name", TableName: "users"}),
 	}
 
 	sql, err := planner.GenerateSchemaDiffSQL(withDeclaredTable(diff, desired), desired, platform.SQLite)
@@ -766,7 +764,7 @@ func TestPlannerRebuildEmitsIndexesAndTriggersOnce(t *testing.T) {
 			TableName:       "users",
 			ColumnsModified: []difftypes.ColumnDiff{{ColumnName: "name", Changes: map[string]string{"type": "text -> integer"}}},
 		}},
-		IndexesAdded: []difftypes.IndexRef{{Name: "idx_users_name", TableName: "users"}},
+		IndexesAdded: difftypes.IndexAdditionsFor(desired, difftypes.IndexRef{Name: "idx_users_name", TableName: "users"}),
 		TriggersAdded: []difftypes.TriggerRef{{
 			TriggerName: "trg_users_name", TableName: "users",
 			Desired: schemamodel.Trigger{
@@ -997,9 +995,6 @@ func withDeclaredTable(diff *difftypes.SchemaDiff, desired *schemamodel.Database
 	if len(completed.DeclaredTables) == 0 {
 		completed.DeclaredTables = desired.Tables
 	}
-	if len(completed.DeclaredIndexes) == 0 {
-		completed.DeclaredIndexes = difftypes.IndexDeclarationsOf(desired)
-	}
 	if len(completed.DeclaredConstraintHosts) == 0 {
 		completed.DeclaredConstraintHosts = difftypes.ConstraintHostDeclarationsOf(
 			desired, diff.ConstraintsAddedWithTables, diff.ConstraintsRemovedWithTables,
@@ -1049,9 +1044,6 @@ func declaringTheOnlyTable(diff *difftypes.SchemaDiff, desired *schemamodel.Data
 	// the diff and the constraint spell the table differently on purpose.
 	completed.DeclaredConstraintHosts = []difftypes.TableDeclaration{
 		difftypes.TableDeclarationFor(desired, desired.Tables[0]),
-	}
-	if len(completed.DeclaredIndexes) == 0 {
-		completed.DeclaredIndexes = difftypes.IndexDeclarationsOf(desired)
 	}
 	return &completed
 }

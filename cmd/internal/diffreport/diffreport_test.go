@@ -7,6 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/diffreport"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -26,7 +27,7 @@ func TestCategoriesNamesEveryChangedObject(t *testing.T) {
 		{
 			name: "object references carry their qualifying context",
 			diff: &difftypes.SchemaDiff{
-				IndexesAdded:  []difftypes.IndexRef{{Name: "idx_users_email", TableName: "public.users"}},
+				IndexesAdded:  difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_email", Fields: []string{"email"}}, TableName: "public.users"}},
 				TriggersAdded: []difftypes.TriggerRef{{TriggerName: "trg_audit", TableName: "public.users"}},
 				GrantsAdded: []difftypes.GrantRef{
 					{Role: "app", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "other.granted"},

@@ -182,7 +182,7 @@ func TestIndexes_TableQualifiedRefsHaveDeterministicOrdering(t *testing.T) {
 
 	compare.Indexes(desired, database, diff)
 
-	c.Assert(diff.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef{
+	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "a_idx", TableName: "alpha"},
 		{Name: "z_idx", TableName: "alpha"},
 		{Name: "idx_shared_lookup", TableName: "zeta"},

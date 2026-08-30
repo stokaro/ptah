@@ -16,7 +16,7 @@ import (
 // the index it replaces, with the removal marked as a UNIQUE constraint's.
 func uniqueKeyRebuildDiff() *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{
-		IndexesAdded:   []difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}},
+		IndexesAdded:   difftypes.IndexAdditionsFor(uniqueKeyRebuildSchema(), difftypes.IndexRef{Name: "uq_users_email", TableName: "users"}),
 		IndexesRemoved: []difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}},
 		ConstraintBackedIndexRemovals: []difftypes.IndexRef{
 			{Name: "uq_users_email", TableName: "users"},
@@ -46,10 +46,7 @@ func TestPlanner_MySQLFamilyDropsAConstraintBackedKeyAsAnIndex(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := test.planner.GenerateMigrationAST(
-				withDeclaredTables(uniqueKeyRebuildDiff(), uniqueKeyRebuildSchema()),
-				uniqueKeyRebuildSchema(),
-			)
+			nodes, err := test.planner.GenerateMigrationAST(withDeclaredTables(uniqueKeyRebuildDiff(), uniqueKeyRebuildSchema()))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 2)
@@ -73,10 +70,7 @@ func TestPlanner_MySQLFamilyMarksTheUniquenessLossOnTheDrop(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			nodes, err := test.planner.GenerateMigrationAST(
-				withDeclaredTables(uniqueKeyRebuildDiff(), uniqueKeyRebuildSchema()),
-				uniqueKeyRebuildSchema(),
-			)
+			nodes, err := test.planner.GenerateMigrationAST(withDeclaredTables(uniqueKeyRebuildDiff(), uniqueKeyRebuildSchema()))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 2)
@@ -98,7 +92,7 @@ func TestPlanner_MySQLFamilyLeavesAPlainIndexDropUnmarked(t *testing.T) {
 				IndexesRemoved: []difftypes.IndexRef{{Name: "idx_users_email", TableName: "users"}},
 			}
 
-			nodes, err := test.planner.GenerateMigrationAST(diff, &schemamodel.Database{})
+			nodes, err := test.planner.GenerateMigrationAST(diff)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)

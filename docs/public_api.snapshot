@@ -12414,7 +12414,7 @@ func (o Options) CapabilitiesFor(dialect string) capability.Capabilities
 package planner // import "go.5x5.cz/ptah/migration/planner"
 
 type Planner interface {
-    GenerateMigrationAST(diff *difftypes.SchemaDiff, desired *schemamodel.Database) ([]ast.Node, error)
+    GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error)
 }
     Planner defines the interface for database-specific migration planning.
 
@@ -12622,8 +12622,11 @@ type FunctionOrdering struct{ ... }
 type GrantRef struct{ ... }
 type HypertableChanges []schemamodel.Hypertable
 type HypertableDiff struct{ ... }
-type IndexDeclaration struct{ ... }
-    func IndexDeclarationsOf(db *schemamodel.Database) []IndexDeclaration
+type IndexChange struct{ ... }
+type IndexChanges []IndexChange
+    func IndexAdditionsFor(desired *schemamodel.Database, refs ...IndexRef) IndexChanges
+    func IndexChangesFromRefs(refs ...IndexRef) IndexChanges
+    func IndexDeclarationsOf(db *schemamodel.Database) IndexChanges
 type IndexRef struct{ ... }
 type MatViewRefreshChange struct{ ... }
 type MaterializedViewChanges []schemamodel.MaterializedView
@@ -13530,17 +13533,17 @@ type HypertableDiff struct {
     from the one the catalog reports.
 
 
-### go.5x5.cz/ptah/migration/schemadiff/difftypes.IndexDeclaration
+### go.5x5.cz/ptah/migration/schemadiff/difftypes.IndexChange
 
 package difftypes // import "go.5x5.cz/ptah/migration/schemadiff/difftypes"
 
-type IndexDeclaration struct {
+type IndexChange struct {
     // Index is the declaration.
     Index schemamodel.Index
     // TableName is the relation it belongs to, resolved.
     TableName string
 }
-    IndexDeclaration is one declared index and the relation it belongs to.
+    IndexChange is one index and the relation it belongs to.
 
     The pair is the point. An index carries its own definition, and the owner is
     derived: schemamodel.ResolveIndexOwners reads it from the index's `table=`,
@@ -13548,7 +13551,30 @@ type IndexDeclaration struct {
     -- PostgreSQL indexes those, and a UNIQUE index on one is what REFRESH
     MATERIALIZED VIEW CONCURRENTLY requires.
 
-func IndexDeclarationsOf(db *schemamodel.Database) []IndexDeclaration
+func (c IndexChange) String() string
+
+### go.5x5.cz/ptah/migration/schemadiff/difftypes.IndexChanges
+
+package difftypes // import "go.5x5.cz/ptah/migration/schemadiff/difftypes"
+
+type IndexChanges []IndexChange
+    IndexChanges is a set of index additions, carrying each one's declaration
+    and not only its name.
+
+    An index addition used to be an IndexRef: a name and a table, with the
+    definition left in the declaration for a planner to look up. That made
+    the planner need the whole document to render one CREATE INDEX, which is
+    the shape stokaro/ptah#2315 exists to retire -- and it is the reason the
+    resolver wanted a schema-wide vocabulary at all.
+
+    The JSON is unchanged: `indexes_added` has always been an array of
+    references, and IndexChanges.Refs is what it marshals as.
+
+func IndexAdditionsFor(desired *schemamodel.Database, refs ...IndexRef) IndexChanges
+func IndexChangesFromRefs(refs ...IndexRef) IndexChanges
+func IndexDeclarationsOf(db *schemamodel.Database) IndexChanges
+func (c IndexChanges) MarshalJSON() ([]byte, error)
+func (c IndexChanges) Refs() []IndexRef
 
 ### go.5x5.cz/ptah/migration/schemadiff/difftypes.IndexRef
 
@@ -14073,7 +14099,7 @@ type SchemaDiff struct {
 
     // IndexesAdded contains table-qualified indexes that exist in the target
     // schema but not in the current database schema.
-    IndexesAdded []IndexRef `json:"indexes_added"`
+    IndexesAdded IndexChanges `json:"indexes_added"`
 
     // IndexesRemoved contains table-qualified indexes that exist in the current
     // database but not in the target schema. Removing them may affect query
@@ -14411,21 +14437,6 @@ type SchemaDiff struct {
     // pre-change database's.
     DeclaredFunctions FunctionOrdering `json:"-"`
 
-    // DeclaredIndexes is every declared index paired with the relation it
-    // belongs to, carried once for the whole diff and off the wire.
-    //
-    // An index addition is a REFERENCE -- a name and a table -- and the
-    // definition it resolves to is in the declaration. So is the answer to
-    // which relation owns it, which is not written on the index: a declaration
-    // may name the table, or name none and belong to the struct it was written
-    // on, and a materialized view is an owner too (stokaro/ptah#2315).
-    //
-    // The owner is resolved once, where the declaration is, so a planner reads
-    // a pair rather than repeating [schemamodel.ResolveIndexOwners]. It is the
-    // schema the plan runs against, so a reversal carries the pre-change
-    // database's.
-    DeclaredIndexes []IndexDeclaration `json:"-"`
-
     // RLSEnabledTablesAdded contains names of tables that need RLS enabled
     RLSEnabledTablesAdded RLSEnabledTableChanges `json:"rls_enabled_tables_added"`
 
@@ -14538,7 +14549,7 @@ func (d *SchemaDiff) IndexAdditions() []IndexRef
 func (d *SchemaDiff) IndexRemovals() []IndexRef
 func (d *SchemaDiff) IndexRemovalsRebuiltAsUniqueConstraints() map[IndexRef]struct{}
 func (d *SchemaDiff) SetConstraintBackedIndexRemovals(refs []IndexRef)
-func (d *SchemaDiff) SetIndexAdditions(refs []IndexRef)
+func (d *SchemaDiff) SetIndexAdditions(changes IndexChanges)
 func (d *SchemaDiff) SetIndexRemovals(refs []IndexRef)
 
 ### go.5x5.cz/ptah/migration/schemadiff/difftypes.SequenceChanges

@@ -5,7 +5,6 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -24,14 +23,8 @@ func TestNewWithCapabilitiesUsesSQLServerDialect(t *testing.T) {
 			}},
 		}},
 	}
-	desired := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
-		Fields: []schemamodel.Field{
-			{StructName: "User", Name: "status", Type: "NVARCHAR(255)", Default: "active"},
-		},
-	}
 
-	_, err := plan.GenerateMigrationAST(diff, desired)
+	_, err := plan.GenerateMigrationAST(diff)
 
 	c.Assert(err, qt.ErrorMatches, `.*SQL Server planner only supports ALTER COLUMN for type/nullability changes on users\.status; unsupported changes: default.*`)
 }
@@ -46,11 +39,8 @@ func TestNewWithCapabilitiesRejectsSQLServerColumnRemoval(t *testing.T) {
 			ColumnsRemoved: difftypes.ColumnChanges{{Name: "legacy_id"}},
 		}},
 	}
-	desired := &schemamodel.Database{
-		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
-	}
 
-	_, err := plan.GenerateMigrationAST(diff, desired)
+	_, err := plan.GenerateMigrationAST(diff)
 
 	c.Assert(err, qt.ErrorMatches, `.*SQL Server planner does not support automatic DROP COLUMN for users; write an explicit migration that drops dependent constraints and indexes first.*`)
 }

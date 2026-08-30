@@ -85,7 +85,7 @@ func TestPostgresIndexAndPolicyExpressionsConvergeE2E(t *testing.T) {
 		read, config.DefaultCompareOptions())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(diff.IndexesAdded, qt.HasLen, 0)
+	c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(diff.IndexesRemoved, qt.HasLen, 0)
 	c.Assert(diff.RLSPoliciesModified, qt.HasLen, 0)
 

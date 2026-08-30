@@ -18,9 +18,9 @@ import (
 func TestPlanner_IndexRefs_AttributesAdditionsToExactTables(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_orders_reference", TableName: "orders"},
-			{Name: "idx_users_email", TableName: "users"},
+		IndexesAdded: difftypes.IndexChanges{
+			{Index: schemamodel.Index{Name: "idx_orders_reference", StructName: "Order", Fields: []string{"reference"}}, TableName: "orders"},
+			{Index: schemamodel.Index{Name: "idx_users_email", StructName: "User", Fields: []string{"email"}}, TableName: "users"},
 		},
 	}
 	desired := &schemamodel.Database{
@@ -34,7 +34,7 @@ func TestPlanner_IndexRefs_AttributesAdditionsToExactTables(t *testing.T) {
 		},
 	}
 
-	nodes, err := sqlite.New().GenerateMigrationAST(withDeclaredTable(diff, desired), desired)
+	nodes, err := sqlite.New().GenerateMigrationAST(withDeclaredTable(diff, desired))
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -50,11 +50,6 @@ func TestPlanner_IndexRefs_AttributesAdditionsToExactTables(t *testing.T) {
 
 func TestPlanner_IndexRefs_PreservesAttachedSchema(t *testing.T) {
 	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_users_email", TableName: "tenant.users"},
-		},
-	}
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{
 			{Name: "users", Schema: "tenant", StructName: "TenantUser"},
@@ -63,8 +58,11 @@ func TestPlanner_IndexRefs_PreservesAttachedSchema(t *testing.T) {
 			{Name: "idx_users_email", StructName: "TenantUser", Fields: []string{"email"}},
 		},
 	}
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: difftypes.IndexAdditionsFor(desired, difftypes.IndexRef{Name: "idx_users_email", TableName: "tenant.users"}),
+	}
 
-	nodes, err := sqlite.New().GenerateMigrationAST(withDeclaredTable(diff, desired), desired)
+	nodes, err := sqlite.New().GenerateMigrationAST(withDeclaredTable(diff, desired))
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 1)
@@ -77,14 +75,6 @@ func TestPlanner_IndexRefs_PreservesAttachedSchema(t *testing.T) {
 
 func TestPlanner_IndexRefs_DropsSameSchemaNameBeforeMovingIndex(t *testing.T) {
 	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_shared", TableName: "tenant.orders"},
-		},
-		IndexesRemoved: []difftypes.IndexRef{
-			{Name: "idx_shared", TableName: "tenant.users"},
-		},
-	}
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{
 			{Name: "orders", Schema: "tenant", StructName: "Order"},
@@ -93,8 +83,14 @@ func TestPlanner_IndexRefs_DropsSameSchemaNameBeforeMovingIndex(t *testing.T) {
 			{Name: "idx_shared", StructName: "Order", Fields: []string{"reference"}},
 		},
 	}
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: difftypes.IndexAdditionsFor(desired, difftypes.IndexRef{Name: "idx_shared", TableName: "tenant.orders"}),
+		IndexesRemoved: []difftypes.IndexRef{
+			{Name: "idx_shared", TableName: "tenant.users"},
+		},
+	}
 
-	nodes, err := sqlite.New().GenerateMigrationAST(withDeclaredTable(diff, desired), desired)
+	nodes, err := sqlite.New().GenerateMigrationAST(withDeclaredTable(diff, desired))
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -109,10 +105,6 @@ func TestPlanner_IndexRefs_DropsSameSchemaNameBeforeMovingIndex(t *testing.T) {
 
 func TestPlanner_IndexRefs_ReplacesExactGlobalIndexBeforeCreate(t *testing.T) {
 	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{
-		IndexesAdded:   []difftypes.IndexRef{{Name: "idx_users_email", TableName: "users"}},
-		IndexesRemoved: []difftypes.IndexRef{{Name: "idx_users_email", TableName: "users"}},
-	}
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{{Name: "users", StructName: "User"}},
 		Indexes: []schemamodel.Index{{
@@ -122,8 +114,12 @@ func TestPlanner_IndexRefs_ReplacesExactGlobalIndexBeforeCreate(t *testing.T) {
 			Unique:     true,
 		}},
 	}
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded:   difftypes.IndexAdditionsFor(desired, difftypes.IndexRef{Name: "idx_users_email", TableName: "users"}),
+		IndexesRemoved: []difftypes.IndexRef{{Name: "idx_users_email", TableName: "users"}},
+	}
 
-	nodes, err := sqlite.New().GenerateMigrationAST(withDeclaredTable(diff, desired), desired)
+	nodes, err := sqlite.New().GenerateMigrationAST(withDeclaredTable(diff, desired))
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -141,11 +137,6 @@ func TestPlanner_IndexRefs_ReplacesExactGlobalIndexBeforeCreate(t *testing.T) {
 
 func TestPlanner_IndexRefs_UsesCanonicalOwnerWithDuplicateStructNames(t *testing.T) {
 	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_users_email", TableName: "tenant.users"},
-		},
-	}
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{
 			{StructName: "Shared", Schema: "tenant", Name: "users"},
@@ -160,8 +151,11 @@ func TestPlanner_IndexRefs_UsesCanonicalOwnerWithDuplicateStructNames(t *testing
 			},
 		},
 	}
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: difftypes.IndexAdditionsFor(desired, difftypes.IndexRef{Name: "idx_users_email", TableName: "tenant.users"}),
+	}
 
-	nodes, err := sqlite.New().GenerateMigrationAST(withDeclaredTable(diff, desired), desired)
+	nodes, err := sqlite.New().GenerateMigrationAST(withDeclaredTable(diff, desired))
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
 
@@ -183,14 +177,6 @@ func TestPlanner_IndexRefs_CaseInsensitiveReplacementExecutesOnSQLite(t *testing
 	_, err = db.Exec(`CREATE INDEX "IDX_Users_Email" ON users (email)`)
 	c.Assert(err, qt.IsNil)
 
-	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_users_email", TableName: "users"},
-		},
-		IndexesRemoved: []difftypes.IndexRef{
-			{Name: "IDX_Users_Email", TableName: "users"},
-		},
-	}
 	desired := &schemamodel.Database{
 		Indexes: []schemamodel.Index{
 			{
@@ -201,8 +187,14 @@ func TestPlanner_IndexRefs_CaseInsensitiveReplacementExecutesOnSQLite(t *testing
 			},
 		},
 	}
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: difftypes.IndexAdditionsFor(desired, difftypes.IndexRef{Name: "idx_users_email", TableName: "users"}),
+		IndexesRemoved: []difftypes.IndexRef{
+			{Name: "IDX_Users_Email", TableName: "users"},
+		},
+	}
 
-	nodes, err := sqlite.New().GenerateMigrationAST(withDeclaredTable(diff, desired), desired)
+	nodes, err := sqlite.New().GenerateMigrationAST(withDeclaredTable(diff, desired))
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 

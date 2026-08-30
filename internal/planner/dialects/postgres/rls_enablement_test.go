@@ -202,7 +202,7 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 			c := qt.New(t)
 			test.diff.TablesAdded = difftypes.TableCreationsFor(test.desired, test.tablesAdded...)
 
-			nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(test.diff, test.desired), test.desired)
+			nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(test.diff, test.desired))
 			c.Assert(err, qt.IsNil)
 
 			sql, err := renderer.RenderSQL("postgres", nodes...)
@@ -236,7 +236,7 @@ func TestPlannerNamesRLSItCannotCarry(t *testing.T) {
 	}
 
 	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).
-		GenerateMigrationAST(diff, &schemamodel.Database{})
+		GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
 
 	sql, err := renderer.RenderSQL(platform.Spanner, nodes...)

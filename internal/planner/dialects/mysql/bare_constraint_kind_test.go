@@ -28,7 +28,7 @@ func TestPlannerOrdersABareNameForeignKeyAfterTheOtherKinds(t *testing.T) {
 		ConstraintsAdded: []string{"aaa_fk_child_parent", "zzz_ck_child_amount"},
 	}
 
-	nodes, err := mysql.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+	nodes, err := mysql.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("mysql", nodes...)
 	c.Assert(err, qt.IsNil)

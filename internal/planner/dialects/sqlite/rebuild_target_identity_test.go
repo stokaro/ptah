@@ -149,10 +149,7 @@ func TestRebuiltTableDoesNotAlsoGetItsIndexAndTriggerRecreated(t *testing.T) {
 						Changes:    map[string]string{"type": "TEXT -> BLOB"},
 					}},
 				}},
-				IndexesAdded: []difftypes.IndexRef{{
-					Name:      "idx_notes_body",
-					TableName: test.refTableName,
-				}},
+				IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_notes_body", Fields: []string{"body"}}, TableName: test.refTableName}},
 				TriggersAdded: []difftypes.TriggerRef{{
 					TriggerName: "trg_notes_touch",
 					TableName:   test.refTableName,

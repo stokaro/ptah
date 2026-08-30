@@ -24,7 +24,7 @@ func concurrentDesired() *schemamodel.Database {
 
 func concurrentDiff() *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{{Name: "idx_widget_a", TableName: "widget"}},
+		IndexesAdded: difftypes.IndexAdditionsFor(concurrentDesired(), difftypes.IndexRef{Name: "idx_widget_a", TableName: "widget"}),
 	}
 }
 

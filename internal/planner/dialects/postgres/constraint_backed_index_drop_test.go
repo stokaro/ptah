@@ -17,7 +17,7 @@ import (
 // removal of the index it replaces.
 func uniqueKeyRebuildDiff(constraintBacked []difftypes.IndexRef) *difftypes.SchemaDiff {
 	return &difftypes.SchemaDiff{
-		IndexesAdded:                  []difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}},
+		IndexesAdded:                  difftypes.IndexAdditionsFor(uniqueKeyRebuildSchema(), difftypes.IndexRef{Name: "uq_users_email", TableName: "users"}),
 		IndexesRemoved:                []difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}},
 		ConstraintBackedIndexRemovals: constraintBacked,
 	}
@@ -42,10 +42,7 @@ func uniqueKeyRebuildSchema() *schemamodel.Database {
 func TestPlanner_ConstraintBackedIndexRebuildDropsTheConstraint(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := postgres.New().GenerateMigrationAST(
-		withDeclaredObjects(uniqueKeyRebuildDiff([]difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}}), uniqueKeyRebuildSchema()),
-		uniqueKeyRebuildSchema(),
-	)
+	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(uniqueKeyRebuildDiff([]difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}}), uniqueKeyRebuildSchema()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
@@ -71,10 +68,7 @@ func TestPlanner_ConstraintBackedIndexRebuildDropsTheConstraint(t *testing.T) {
 func TestPlanner_UnmarkedIndexRebuildStillDropsTheIndex(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := postgres.New().GenerateMigrationAST(
-		withDeclaredObjects(uniqueKeyRebuildDiff(nil), uniqueKeyRebuildSchema()),
-		uniqueKeyRebuildSchema(),
-	)
+	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(uniqueKeyRebuildDiff(nil), uniqueKeyRebuildSchema()))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
@@ -94,7 +88,7 @@ func TestPlanner_ConstraintBackedStandaloneRemovalDropsTheConstraint(t *testing.
 		ConstraintBackedIndexRemovals: []difftypes.IndexRef{{Name: "uq_users_email", TableName: "users"}},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, &schemamodel.Database{})
+	nodes, err := postgres.New().GenerateMigrationAST(diff)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)

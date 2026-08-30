@@ -33,7 +33,7 @@ func TestPlanner_ReplacesAContinuousAggregateInThatOrder(t *testing.T) {
 				Name: "hourly", Schema: "public", Body: "SELECT 2",
 			},
 		}},
-	}, &schemamodel.Database{})
+	})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(continuousAggregateVerbs(nodes), qt.DeepEquals, []string{"drop:hourly", "create:hourly"})
@@ -44,9 +44,7 @@ func TestPlanner_ReplacesAContinuousAggregateInThatOrder(t *testing.T) {
 func TestPlanner_DropsAnUndeclaredContinuousAggregate(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := postgres.New().GenerateMigrationAST(
-		&difftypes.SchemaDiff{ContinuousAggregatesRemoved: difftypes.ContinuousAggregateChanges{{Name: "public.hourly"}}},
-		&schemamodel.Database{})
+	nodes, err := postgres.New().GenerateMigrationAST(&difftypes.SchemaDiff{ContinuousAggregatesRemoved: difftypes.ContinuousAggregateChanges{{Name: "public.hourly"}}})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(continuousAggregateVerbs(nodes), qt.DeepEquals, []string{"drop:public.hourly"})
@@ -61,17 +59,11 @@ func TestPlanner_DropsAnUndeclaredContinuousAggregate(t *testing.T) {
 // migration it belongs to.
 func TestPlanner_CreatesAnAggregateAfterTheHypertableItReads(t *testing.T) {
 	c := qt.New(t)
-	declared := &schemamodel.Database{
-		Hypertables: []schemamodel.Hypertable{{Table: "readings", Column: "time"}},
-		ContinuousAggregates: []schemamodel.ContinuousAggregate{
-			{Name: "hourly", Body: "SELECT 1"},
-		},
-	}
 
 	nodes, err := postgres.New().GenerateMigrationAST(&difftypes.SchemaDiff{
 		HypertablesAdded:          difftypes.HypertableChanges{{Table: "readings"}},
 		ContinuousAggregatesAdded: difftypes.ContinuousAggregateChanges{{Name: "hourly"}},
-	}, declared)
+	})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(timescaleObjectOrder(nodes), qt.DeepEquals, []string{"hypertable:readings", "aggregate:hourly"})

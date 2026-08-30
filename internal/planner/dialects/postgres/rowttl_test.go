@@ -119,8 +119,7 @@ func TestPlanner_RowTTLIsNotPlannedWithoutTheCapability(t *testing.T) {
 			c := qt.New(t)
 
 			planner := postgres.NewForDialect(test.dialect, test.caps)
-			nodes, err := planner.GenerateMigrationAST(
-				ttlDiff(&ast.RowTTLSpec{ExpirationExpression: "expires_at"}, nil), nil)
+			nodes, err := planner.GenerateMigrationAST(ttlDiff(&ast.RowTTLSpec{ExpirationExpression: "expires_at"}, nil))
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(renderedStatements(c, nodes, test.caps, test.dialect), qt.HasLen, 0)
@@ -138,7 +137,7 @@ func TestPlanner_UnchangedTTLPlansNothing(t *testing.T) {
 	}
 
 	planner := postgres.NewForDialect(platform.CockroachDB, capability.CockroachDB26())
-	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, nil), nil)
+	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, nil))
 
 	c.Assert(err, qt.IsNil)
 	for _, statement := range renderedStatements(c, nodes, capability.CockroachDB26(), platform.CockroachDB) {
@@ -152,7 +151,7 @@ func planRowTTL(c *qt.C, diff *difftypes.SchemaDiff) []string {
 	c.Helper()
 
 	planner := postgres.NewForDialect(platform.CockroachDB, capability.CockroachDB26())
-	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, nil), nil)
+	nodes, err := planner.GenerateMigrationAST(withDeclaredObjects(diff, nil))
 	c.Assert(err, qt.IsNil)
 
 	return renderedStatements(c, nodes, capability.CockroachDB26(), platform.CockroachDB)

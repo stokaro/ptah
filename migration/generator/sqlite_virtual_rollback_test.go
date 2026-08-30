@@ -84,9 +84,11 @@ func TestPlanBidirectionalSchemaDiffGatesTheRollbackItGenerates(t *testing.T) {
 			// The second control: the forward plan is untouched by this seam.
 			// A diff whose reverse removes nothing plans both directions as
 			// before.
-			name:    "a migration that changes nothing destructive keeps planning",
-			env:     envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
-			diff:    &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{{Name: "users_name_idx", TableName: "users"}}},
+			name: "a migration that changes nothing destructive keeps planning",
+			env:  envbooltest.Unset(sqlitevirtual.AllowUnregisteredModuleEnvVar),
+			diff: &difftypes.SchemaDiff{IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{
+				StructName: "User", Name: "users_name_idx", Fields: []string{"name"},
+			}, TableName: "users"}}},
 			desired: declaredLiveTablesWithUserIndex(),
 			wantErr: false,
 		},

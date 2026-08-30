@@ -76,7 +76,7 @@ func TestPlanner_TableLevelConstraintWithoutAnExplicitTable(t *testing.T) {
 			// declaration resolved to (stokaro/ptah#2315).
 			diff := schemadiff.CompareWithDialect(desired, bookingsDatabase(), platform.Postgres)
 
-			nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
+			nodes, err := postgres.New().GenerateMigrationAST(diff)
 
 			c.Assert(err, qt.IsNil)
 			sql, err := renderer.RenderSQL("postgres", nodes...)
@@ -107,7 +107,7 @@ func TestPlanner_TableLevelConstraintNamesItsOwnTable(t *testing.T) {
 	}
 	diff := schemadiff.CompareWithDialect(desired, bookingsDatabase(), platform.Postgres)
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, desired)
+	nodes, err := postgres.New().GenerateMigrationAST(diff)
 
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
@@ -130,7 +130,7 @@ func TestPlanner_RefusesAConstraintTheDiffDoesNotDescribe(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{ConstraintsAdded: []string{"positive_price"}}
 
-	nodes, err := postgres.New().GenerateMigrationAST(diff, &schemamodel.Database{})
+	nodes, err := postgres.New().GenerateMigrationAST(diff)
 
 	c.Assert(nodes, qt.IsNil)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)

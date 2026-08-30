@@ -17,9 +17,9 @@ import (
 func TestPlanner_IndexRefs_QualifiesDropsAndReplacesOnlyExactRef(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_shared", TableName: "app.records"},
-			{Name: "idx_shared", TableName: "logs.records"},
+		IndexesAdded: difftypes.IndexChanges{
+			{Index: schemamodel.Index{Name: "idx_shared", StructName: "AppRecord", Fields: []string{"external_id"}}, TableName: "app.records"},
+			{Index: schemamodel.Index{Name: "idx_shared", StructName: "LogRecord", Fields: []string{"recorded_at"}}, TableName: "logs.records"},
 		},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_shared", TableName: "app.records"},
@@ -37,7 +37,7 @@ func TestPlanner_IndexRefs_QualifiesDropsAndReplacesOnlyExactRef(t *testing.T) {
 		},
 	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 4)
@@ -63,14 +63,6 @@ func TestPlanner_IndexRefs_QualifiesDropsAndReplacesOnlyExactRef(t *testing.T) {
 
 func TestPlanner_IndexRefs_DropsSameSchemaNameBeforeMovingIndex(t *testing.T) {
 	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_shared", TableName: "app.orders"},
-		},
-		IndexesRemoved: []difftypes.IndexRef{
-			{Name: "idx_shared", TableName: "app.users"},
-		},
-	}
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{
 			{Name: "orders", Schema: "app", StructName: "Order"},
@@ -79,8 +71,14 @@ func TestPlanner_IndexRefs_DropsSameSchemaNameBeforeMovingIndex(t *testing.T) {
 			{Name: "idx_shared", StructName: "Order", Fields: []string{"reference"}},
 		},
 	}
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: difftypes.IndexAdditionsFor(desired, difftypes.IndexRef{Name: "idx_shared", TableName: "app.orders"}),
+		IndexesRemoved: []difftypes.IndexRef{
+			{Name: "idx_shared", TableName: "app.users"},
+		},
+	}
 
-	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+	nodes, err := postgres.New().GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -95,8 +93,8 @@ func TestPlanner_IndexRefs_DropsSameSchemaNameBeforeMovingIndex(t *testing.T) {
 func TestPlanner_IndexRefs_CockroachDBPreservesReplacementTable(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions([]difftypes.IndexRef{
-		{Name: "idx_shared", TableName: "public.users"},
+	diff.SetIndexAdditions(difftypes.IndexChanges{
+		{Index: schemamodel.Index{Name: "idx_shared", StructName: "LogRecord", Fields: []string{"recorded_at"}}, TableName: "public.users"},
 	})
 	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "public.users"},
@@ -108,7 +106,7 @@ func TestPlanner_IndexRefs_CockroachDBPreservesReplacementTable(t *testing.T) {
 	}
 
 	nodes, err := postgres.NewForDialect(platform.CockroachDB, capability.CockroachDB23()).
-		GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+		GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -124,8 +122,8 @@ func TestPlanner_IndexRefs_CockroachDBPreservesReplacementTable(t *testing.T) {
 func TestPlanner_IndexRefs_SpannerDropsSameSchemaNameBeforeMovingIndex(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions([]difftypes.IndexRef{
-		{Name: "idx_shared", TableName: "app.orders"},
+	diff.SetIndexAdditions(difftypes.IndexChanges{
+		{Index: schemamodel.Index{Name: "idx_shared", StructName: "LogRecord", Fields: []string{"recorded_at"}}, TableName: "app.orders"},
 	})
 	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "app.users"},
@@ -137,7 +135,7 @@ func TestPlanner_IndexRefs_SpannerDropsSameSchemaNameBeforeMovingIndex(t *testin
 	}
 
 	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).
-		GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+		GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -152,8 +150,8 @@ func TestPlanner_IndexRefs_SpannerDropsSameSchemaNameBeforeMovingIndex(t *testin
 func TestPlanner_IndexRefs_SpannerKeepsDifferentSchemaIndexesIndependent(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
-	diff.SetIndexAdditions([]difftypes.IndexRef{
-		{Name: "idx_shared", TableName: "app.orders"},
+	diff.SetIndexAdditions(difftypes.IndexChanges{
+		{Index: schemamodel.Index{Name: "idx_shared", StructName: "LogRecord", Fields: []string{"recorded_at"}}, TableName: "app.orders"},
 	})
 	diff.SetIndexRemovals([]difftypes.IndexRef{
 		{Name: "idx_shared", TableName: "logs.users"},
@@ -165,7 +163,7 @@ func TestPlanner_IndexRefs_SpannerKeepsDifferentSchemaIndexesIndependent(t *test
 	}
 
 	nodes, err := postgres.NewForDialect(platform.Spanner, capability.SpannerPostgres()).
-		GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+		GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -189,11 +187,6 @@ func TestPlanner_IndexRefs_UsesCanonicalOwnerAcrossPostgresFamily(t *testing.T) 
 		{name: "yugabytedb", dialect: platform.YugabyteDB, caps: capability.YugabyteDB25()},
 		{name: "spanner", dialect: platform.Spanner, caps: capability.SpannerPostgres()},
 	}
-	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_users_email", TableName: "app.users"},
-		},
-	}
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{
 			{StructName: "Shared", Schema: "app", Name: "users"},
@@ -208,12 +201,15 @@ func TestPlanner_IndexRefs_UsesCanonicalOwnerAcrossPostgresFamily(t *testing.T) 
 			},
 		},
 	}
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: difftypes.IndexAdditionsFor(desired, difftypes.IndexRef{Name: "idx_users_email", TableName: "app.users"}),
+	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			nodes, err := postgres.NewForDialect(test.dialect, test.caps).
-				GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+				GenerateMigrationAST(withDeclaredObjects(diff, desired))
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
 
@@ -260,7 +256,7 @@ func BenchmarkPlanner_LargeIndexReplacementPlan(b *testing.B) {
 		})
 	}
 	desired := &schemamodel.Database{Tables: tables, Indexes: indexes}
-	diff := &difftypes.SchemaDiff{IndexesAdded: additions, IndexesRemoved: removals}
+	diff := &difftypes.SchemaDiff{IndexesAdded: difftypes.IndexAdditionsFor(desired, additions...), IndexesRemoved: removals}
 	planner := postgres.New()
 
 	b.ReportAllocs()
@@ -268,7 +264,7 @@ func BenchmarkPlanner_LargeIndexReplacementPlan(b *testing.B) {
 	var nodes []ast.Node
 	var err error
 	for range b.N {
-		nodes, err = planner.GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+		nodes, err = planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	}
 	b.StopTimer()
 	c.Assert(err, qt.IsNil)

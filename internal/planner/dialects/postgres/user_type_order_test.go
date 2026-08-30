@@ -68,7 +68,7 @@ func TestPlanner_GenerateMigrationAST_CreatesUserTypesBeforeTheTypesThatNameThem
 		},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
+	nodes, err := planner.GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -133,7 +133,7 @@ func TestPlanner_GenerateMigrationAST_RecreatesUserTypesInDependencyOrder(t *tes
 		},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
+	nodes, err := planner.GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)
@@ -168,7 +168,7 @@ func TestPlanner_GenerateMigrationAST_CreatesRecreatedUserTypesBeforeNewDependen
 		}},
 	}
 
-	nodes, err := planner.GenerateMigrationAST(diff, &schemamodel.Database{})
+	nodes, err := planner.GenerateMigrationAST(diff)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.IsNil)

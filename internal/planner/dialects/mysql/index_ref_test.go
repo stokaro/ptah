@@ -29,9 +29,9 @@ func mysqlFamilyPlannerCases() []mysqlFamilyPlannerCase {
 
 func TestPlanner_IndexRefs_MySQLFamilyRoutesDuplicateAdditions(t *testing.T) {
 	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_shared", TableName: "orders"},
-			{Name: "idx_shared", TableName: "users"},
+		IndexesAdded: difftypes.IndexChanges{
+			{Index: schemamodel.Index{Name: "idx_shared", TableName: "orders", Fields: []string{"reference"}}, TableName: "orders"},
+			{Index: schemamodel.Index{Name: "idx_shared", TableName: "users", Fields: []string{"email"}}, TableName: "users"},
 		},
 	}
 	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
@@ -42,7 +42,7 @@ func TestPlanner_IndexRefs_MySQLFamilyRoutesDuplicateAdditions(t *testing.T) {
 	for _, test := range mysqlFamilyPlannerCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := test.planner.GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+			nodes, err := test.planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(nodes, qt.HasLen, 2)
@@ -71,7 +71,7 @@ func TestPlanner_IndexRefs_MySQLFamilyRoutesDuplicateRemovals(t *testing.T) {
 	for _, test := range mysqlFamilyPlannerCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := test.planner.GenerateMigrationAST(diff, &schemamodel.Database{})
+			nodes, err := test.planner.GenerateMigrationAST(diff)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(nodes, qt.HasLen, 2)
@@ -88,21 +88,21 @@ func TestPlanner_IndexRefs_MySQLFamilyRoutesDuplicateRemovals(t *testing.T) {
 }
 
 func TestPlanner_IndexRefs_MySQLFamilyReplacesOnlyExactRef(t *testing.T) {
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
+		{Name: "idx_shared", TableName: "users", Fields: []string{"email"}},
+	}}
 	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{{Name: "idx_shared", TableName: "users"}},
+		IndexesAdded: difftypes.IndexAdditionsFor(desired, difftypes.IndexRef{Name: "idx_shared", TableName: "users"}),
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_shared", TableName: "users"},
 			{Name: "idx_shared", TableName: "orders"},
 		},
 	}
-	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
-		{Name: "idx_shared", TableName: "users", Fields: []string{"email"}},
-	}}
 
 	for _, test := range mysqlFamilyPlannerCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := test.planner.GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+			nodes, err := test.planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(nodes, qt.HasLen, 3)
@@ -120,24 +120,22 @@ func TestPlanner_IndexRefs_MySQLFamilyReplacesOnlyExactRef(t *testing.T) {
 }
 
 func TestPlanner_IndexRefs_MySQLFamilyPreservesReplacementAddition(t *testing.T) {
-	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_email", TableName: "users"},
-		},
-		IndexesRemoved: []difftypes.IndexRef{
-			{Name: "idx_email", TableName: "users"},
-		},
-	}
 	desired := &schemamodel.Database{
 		Indexes: []schemamodel.Index{
 			{Name: "idx_email", TableName: "users", Fields: []string{"email"}},
+		},
+	}
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: difftypes.IndexAdditionsFor(desired, difftypes.IndexRef{Name: "idx_email", TableName: "users"}),
+		IndexesRemoved: []difftypes.IndexRef{
+			{Name: "idx_email", TableName: "users"},
 		},
 	}
 
 	for _, test := range mysqlFamilyPlannerCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := test.planner.GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+			nodes, err := test.planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(nodes, qt.HasLen, 2)
@@ -154,24 +152,22 @@ func TestPlanner_IndexRefs_MySQLFamilyPreservesReplacementAddition(t *testing.T)
 }
 
 func TestPlanner_IndexRefs_MySQLFamilyCaseInsensitiveReplacementDropsFirst(t *testing.T) {
-	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "IDX_Email", TableName: "users"},
-		},
-		IndexesRemoved: []difftypes.IndexRef{
-			{Name: "idx_email", TableName: "users"},
-		},
-	}
 	desired := &schemamodel.Database{
 		Indexes: []schemamodel.Index{
 			{Name: "IDX_Email", TableName: "users", Fields: []string{"email"}},
+		},
+	}
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: difftypes.IndexAdditionsFor(desired, difftypes.IndexRef{Name: "IDX_Email", TableName: "users"}),
+		IndexesRemoved: []difftypes.IndexRef{
+			{Name: "idx_email", TableName: "users"},
 		},
 	}
 
 	for _, test := range mysqlFamilyPlannerCases() {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := test.planner.GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+			nodes, err := test.planner.GenerateMigrationAST(withDeclaredObjects(diff, desired))
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 2)
 
@@ -198,9 +194,9 @@ func TestPlanner_IndexRefs_SQLServerSharedPlannerRoutesDuplicateAdditions(t *tes
 	)
 	diff := &difftypes.SchemaDiff{
 		IdentifierSemantics: &semantics,
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_shared", TableName: "audit.records"},
-			{Name: "idx_shared", TableName: "dbo.records"},
+		IndexesAdded: difftypes.IndexChanges{
+			{Index: schemamodel.Index{Name: "idx_shared", TableName: "audit.records", Fields: []string{"recorded_at"}}, TableName: "audit.records"},
+			{Index: schemamodel.Index{Name: "idx_shared", TableName: "dbo.records", Fields: []string{"external_id"}}, TableName: "dbo.records"},
 		},
 	}
 	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
@@ -209,7 +205,7 @@ func TestPlanner_IndexRefs_SQLServerSharedPlannerRoutesDuplicateAdditions(t *tes
 	}}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+		GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(nodes, qt.HasLen, 2)
@@ -225,11 +221,6 @@ func TestPlanner_IndexRefs_SQLServerSharedPlannerRoutesDuplicateAdditions(t *tes
 
 func TestPlanner_IndexRefs_SQLServerPreservesIndexPartDirection(t *testing.T) {
 	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_users_lookup", TableName: "dbo.users"},
-		},
-	}
 	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{
 			Name:      "idx_users_lookup",
@@ -241,9 +232,12 @@ func TestPlanner_IndexRefs_SQLServerPreservesIndexPartDirection(t *testing.T) {
 			},
 		},
 	}}
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: difftypes.IndexAdditionsFor(desired, difftypes.IndexRef{Name: "idx_users_lookup", TableName: "dbo.users"}),
+	}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+		GenerateMigrationAST(withDeclaredObjects(diff, desired))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 1)
@@ -257,14 +251,6 @@ func TestPlanner_IndexRefs_SQLServerPreservesIndexPartDirection(t *testing.T) {
 
 func TestPlanner_IndexRefs_SQLServerPreservesFilteredIndexPredicate(t *testing.T) {
 	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_active_users", TableName: "dbo.users"},
-		},
-		IndexesRemoved: []difftypes.IndexRef{
-			{Name: "idx_active_users", TableName: "dbo.users"},
-		},
-	}
 	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
 		{
 			Name:      "idx_active_users",
@@ -273,9 +259,15 @@ func TestPlanner_IndexRefs_SQLServerPreservesFilteredIndexPredicate(t *testing.T
 			Condition: "[status] = 2",
 		},
 	}}
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: difftypes.IndexAdditionsFor(desired, difftypes.IndexRef{Name: "idx_active_users", TableName: "dbo.users"}),
+		IndexesRemoved: []difftypes.IndexRef{
+			{Name: "idx_active_users", TableName: "dbo.users"},
+		},
+	}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+		GenerateMigrationAST(withDeclaredObjects(diff, desired))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
@@ -289,22 +281,20 @@ func TestPlanner_IndexRefs_SQLServerPreservesFilteredIndexPredicate(t *testing.T
 
 func TestPlanner_IndexRefs_SQLServerUnknownCollationOrdersPotentialReplacementSafely(t *testing.T) {
 	c := qt.New(t)
-	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "IDX_Email", TableName: "dbo.users"},
-		},
-		IndexesRemoved: []difftypes.IndexRef{
-			{Name: "idx_email", TableName: "dbo.users"},
-		},
-	}
 	desired := &schemamodel.Database{
 		Indexes: []schemamodel.Index{
 			{Name: "IDX_Email", TableName: "dbo.users", Fields: []string{"email"}},
 		},
 	}
+	diff := &difftypes.SchemaDiff{
+		IndexesAdded: difftypes.IndexAdditionsFor(desired, difftypes.IndexRef{Name: "IDX_Email", TableName: "dbo.users"}),
+		IndexesRemoved: []difftypes.IndexRef{
+			{Name: "idx_email", TableName: "dbo.users"},
+		},
+	}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+		GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 
@@ -324,21 +314,19 @@ func TestPlanner_IndexRefs_SQLServerCaseInsensitiveReplacementDropsFirst(t *test
 		[]string{"users"},
 		[]string{"idx_email", "IDX_Email"},
 	)
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
+		{Name: "IDX_Email", TableName: "dbo.users", Fields: []string{"email"}},
+	}}
 	diff := &difftypes.SchemaDiff{
 		IdentifierSemantics: &semantics,
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "IDX_Email", TableName: "dbo.users"},
-		},
+		IndexesAdded:        difftypes.IndexAdditionsFor(desired, difftypes.IndexRef{Name: "IDX_Email", TableName: "dbo.users"}),
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_email", TableName: "dbo.users"},
 		},
 	}
-	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
-		{Name: "IDX_Email", TableName: "dbo.users", Fields: []string{"email"}},
-	}}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+		GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 
@@ -359,21 +347,19 @@ func TestPlanner_IndexRefs_SQLServerCaseSensitiveVariantsRemainIndependent(t *te
 		[]string{"idx_email"},
 		[]string{"IDX_Email"},
 	)
+	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
+		{Name: "IDX_Email", TableName: "dbo.users", Fields: []string{"email"}},
+	}}
 	diff := &difftypes.SchemaDiff{
 		IdentifierSemantics: &semantics,
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "IDX_Email", TableName: "dbo.users"},
-		},
+		IndexesAdded:        difftypes.IndexAdditionsFor(desired, difftypes.IndexRef{Name: "IDX_Email", TableName: "dbo.users"}),
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_email", TableName: "dbo.users"},
 		},
 	}
-	desired := &schemamodel.Database{Indexes: []schemamodel.Index{
-		{Name: "IDX_Email", TableName: "dbo.users", Fields: []string{"email"}},
-	}}
 
 	nodes, err := mysql.NewForDialect(platform.SQLServer, capability.SQLServer2022()).
-		GenerateMigrationAST(withDeclaredObjects(diff, desired), desired)
+		GenerateMigrationAST(withDeclaredObjects(diff, desired))
 	c.Assert(err, qt.IsNil)
 	c.Assert(nodes, qt.HasLen, 2)
 

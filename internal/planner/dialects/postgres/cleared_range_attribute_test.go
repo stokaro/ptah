@@ -63,7 +63,7 @@ func clearedRangeMigrationSQL(c *qt.C, declared schemamodel.Range) string {
 		SubtypeDiff: "int8_subdiff",
 	}}}
 
-	nodes, err := postgres.New().GenerateMigrationAST(schemadiff.Compare(target, current), target)
+	nodes, err := postgres.New().GenerateMigrationAST(schemadiff.Compare(target, current))
 	c.Assert(err, qt.IsNil)
 
 	var statements []string

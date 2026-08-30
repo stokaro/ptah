@@ -795,7 +795,7 @@ type SchemaDiff struct {
 
 	// IndexesAdded contains table-qualified indexes that exist in the target
 	// schema but not in the current database schema.
-	IndexesAdded []IndexRef `json:"indexes_added"`
+	IndexesAdded IndexChanges `json:"indexes_added"`
 
 	// IndexesRemoved contains table-qualified indexes that exist in the current
 	// database but not in the target schema. Removing them may affect query
@@ -1133,21 +1133,6 @@ type SchemaDiff struct {
 	// pre-change database's.
 	DeclaredFunctions FunctionOrdering `json:"-"`
 
-	// DeclaredIndexes is every declared index paired with the relation it
-	// belongs to, carried once for the whole diff and off the wire.
-	//
-	// An index addition is a REFERENCE -- a name and a table -- and the
-	// definition it resolves to is in the declaration. So is the answer to
-	// which relation owns it, which is not written on the index: a declaration
-	// may name the table, or name none and belong to the struct it was written
-	// on, and a materialized view is an owner too (stokaro/ptah#2315).
-	//
-	// The owner is resolved once, where the declaration is, so a planner reads
-	// a pair rather than repeating [schemamodel.ResolveIndexOwners]. It is the
-	// schema the plan runs against, so a reversal carries the pre-change
-	// database's.
-	DeclaredIndexes []IndexDeclaration `json:"-"`
-
 	// RLSEnabledTablesAdded contains names of tables that need RLS enabled
 	RLSEnabledTablesAdded RLSEnabledTableChanges `json:"rls_enabled_tables_added"`
 
@@ -1313,7 +1298,7 @@ func (d *SchemaDiff) hasIndexChanges() bool {
 
 // IndexAdditions returns a copy of the added index references.
 func (d *SchemaDiff) IndexAdditions() []IndexRef {
-	return slices.Clone(d.IndexesAdded)
+	return d.IndexesAdded.Refs()
 }
 
 // IndexRemovals returns a copy of the removed index references.
@@ -1321,9 +1306,28 @@ func (d *SchemaDiff) IndexRemovals() []IndexRef {
 	return slices.Clone(d.IndexesRemoved)
 }
 
-// SetIndexAdditions replaces the added index references with a sorted copy.
-func (d *SchemaDiff) SetIndexAdditions(refs []IndexRef) {
-	d.IndexesAdded = sortedIndexRefs(refs)
+// SetIndexAdditions replaces the added indexes with a sorted copy.
+//
+// It takes the changes rather than their references: an addition renders a
+// CREATE INDEX, and a reference is not enough to write one (stokaro/ptah#2315).
+func (d *SchemaDiff) SetIndexAdditions(changes IndexChanges) {
+	d.IndexesAdded = sortedIndexChanges(changes)
+}
+
+// sortedIndexChanges orders additions by the same key their references sort by,
+// so a plan lists them in one order whatever built them.
+func sortedIndexChanges(changes IndexChanges) IndexChanges {
+	if len(changes) == 0 {
+		return nil
+	}
+	sorted := slices.Clone(changes)
+	slices.SortFunc(sorted, func(a, b IndexChange) int {
+		if c := strings.Compare(a.TableName, b.TableName); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Index.Name, b.Index.Name)
+	})
+	return sorted
 }
 
 // SetIndexRemovals replaces the removed index references with a sorted copy.
@@ -2761,14 +2765,109 @@ func FunctionOrderingOf(db *schemamodel.Database) FunctionOrdering {
 	return ordering
 }
 
-// IndexDeclaration is one declared index and the relation it belongs to.
+// String names the index and the relation it belongs to, in that order.
+//
+// A report describes an element by its string fields, and this one keeps its
+// object inside a nested declaration -- so without this it would be reported by
+// its table alone, with no index name (stokaro/ptah#2315).
+func (c IndexChange) String() string {
+	if c.TableName == "" {
+		return c.Index.Name
+	}
+	return c.Index.Name + " " + c.TableName
+}
+
+// IndexChanges is a set of index additions, carrying each one's declaration
+// and not only its name.
+//
+// An index addition used to be an [IndexRef]: a name and a table, with the
+// definition left in the declaration for a planner to look up. That made the
+// planner need the whole document to render one CREATE INDEX, which is the
+// shape stokaro/ptah#2315 exists to retire -- and it is the reason the resolver
+// wanted a schema-wide vocabulary at all.
+//
+// The JSON is unchanged: `indexes_added` has always been an array of
+// references, and [IndexChanges.Refs] is what it marshals as.
+type IndexChanges []IndexChange
+
+// MarshalJSON renders the references, which is what this key has always been.
+func (c IndexChanges) MarshalJSON() ([]byte, error) {
+	if c == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(c.Refs())
+}
+
+// IndexAdditionsFor builds the additions for the named indexes, reading each
+// one's declaration out of desired.
+//
+// It is the index counterpart of [TableCreationsFor]: what a caller assembling
+// a diff by hand needs, so that stating which indexes are added does not also
+// mean restating what they are. A reference the declaration does not hold is
+// skipped, because there is nothing to create.
+func IndexAdditionsFor(desired *schemamodel.Database, refs ...IndexRef) IndexChanges {
+	if desired == nil || len(refs) == 0 {
+		return nil
+	}
+	declared := IndexDeclarationsOf(desired)
+	changes := make(IndexChanges, 0, len(refs))
+	for _, ref := range refs {
+		for _, declaration := range declared {
+			if declaration.Index.Name != ref.Name {
+				continue
+			}
+			if ref.TableName != "" && declaration.TableName != ref.TableName {
+				continue
+			}
+			changes = append(changes, declaration)
+			break
+		}
+	}
+	return changes
+}
+
+// IndexChangesFromRefs builds additions that carry identity and nothing else.
+//
+// It is for a caller that ADDRESSES an index rather than renders one: a
+// reference is all an identity check, an ordering or a pairing needs, and a
+// rollback restoring an index the pre-change schema no longer describes has
+// nothing better to carry. A plan built from these renders what a bare
+// reference always rendered (stokaro/ptah#2315).
+func IndexChangesFromRefs(refs ...IndexRef) IndexChanges {
+	if len(refs) == 0 {
+		return nil
+	}
+	changes := make(IndexChanges, 0, len(refs))
+	for _, ref := range refs {
+		changes = append(changes, IndexChange{
+			Index:     schemamodel.Index{Name: ref.Name},
+			TableName: ref.TableName,
+		})
+	}
+	return changes
+}
+
+// Refs is the identity of each change: what a lookup key, an ordering and a
+// removal are written from.
+func (c IndexChanges) Refs() []IndexRef {
+	if c == nil {
+		return nil
+	}
+	refs := make([]IndexRef, 0, len(c))
+	for _, change := range c {
+		refs = append(refs, IndexRef{Name: change.Index.Name, TableName: change.TableName})
+	}
+	return refs
+}
+
+// IndexChange is one index and the relation it belongs to.
 //
 // The pair is the point. An index carries its own definition, and the owner is
 // derived: [schemamodel.ResolveIndexOwners] reads it from the index's `table=`,
 // from the struct the index was declared on, or from a materialized view --
 // PostgreSQL indexes those, and a UNIQUE index on one is what
 // REFRESH MATERIALIZED VIEW CONCURRENTLY requires.
-type IndexDeclaration struct {
+type IndexChange struct {
 	// Index is the declaration.
 	Index schemamodel.Index
 	// TableName is the relation it belongs to, resolved.
@@ -2780,14 +2879,14 @@ type IndexDeclaration struct {
 // The order is the declaration's, because a refusal about a conflicting or
 // unresolvable index names its POSITION, and a position that moved between two
 // runs over one document is one nobody can act on.
-func IndexDeclarationsOf(db *schemamodel.Database) []IndexDeclaration {
+func IndexDeclarationsOf(db *schemamodel.Database) IndexChanges {
 	if db == nil || len(db.Indexes) == 0 {
 		return nil
 	}
 	owners := schemamodel.ResolveIndexOwners(db.Indexes, db.Tables, db.MaterializedViews)
-	declarations := make([]IndexDeclaration, 0, len(db.Indexes))
+	declarations := make(IndexChanges, 0, len(db.Indexes))
 	for position, index := range db.Indexes {
-		declarations = append(declarations, IndexDeclaration{Index: index, TableName: owners[position]})
+		declarations = append(declarations, IndexChange{Index: index, TableName: owners[position]})
 	}
 	return declarations
 }

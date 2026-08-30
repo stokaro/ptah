@@ -21,10 +21,7 @@ func TestPreserveUnmanagedObjects_UsesIdentifierSemantics(t *testing.T) {
 	semantics := identifier.ForDialect("sqlite")
 	diff := &difftypes.SchemaDiff{
 		IdentifierSemantics: &semantics,
-		IndexesAdded: []difftypes.IndexRef{{
-			Name:      "idx_users_name",
-			TableName: "users",
-		}},
+		IndexesAdded:        difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_name", Fields: []string{"name"}}, TableName: "users"}},
 		IndexesRemoved: []difftypes.IndexRef{{
 			Name:      "IDX_USERS_NAME",
 			TableName: "USERS",

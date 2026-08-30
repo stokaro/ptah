@@ -77,8 +77,13 @@ func TestPlanner_GenerateMigrationAST_MySQLFamilyAddsReferencedUniqueIndexBefore
 			desired := referencedUniqueKeySchema()
 			diff := &difftypes.SchemaDiff{
 				TablesAdded: difftypes.TableCreationsFor(desired, "ptah_fk_order_children", "ptah_fk_order_parents"),
-				IndexesAdded: []difftypes.IndexRef{
-					{Name: "uq_ptah_fk_order_parents_code_idx", TableName: "ptah_fk_order_parents"},
+				IndexesAdded: difftypes.IndexChanges{
+					{Index: schemamodel.Index{
+						StructName: "PtahFKOrderParent",
+						Name:       "uq_ptah_fk_order_parents_code_idx",
+						Fields:     []string{"code"},
+						Unique:     true,
+					}, TableName: "ptah_fk_order_parents"},
 				},
 			}
 

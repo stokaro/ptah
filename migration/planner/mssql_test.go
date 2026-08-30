@@ -16,9 +16,7 @@ func TestGenerateSchemaDiffSQL_SQLServerCreatesTSQL(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_users_email", TableName: "dbo.users"},
-		},
+		IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_email", Fields: []string{"email"}}, TableName: "dbo.users"}},
 	}
 	semantics := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").
 		WithResolvedNames([]identifier.ResolvedName{
@@ -186,9 +184,12 @@ func TestGenerateSchemaDiffSQL_SQLServerFilteredIndexPredicateChange(t *testing.
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_active_users", TableName: "dbo.users"},
-		},
+		IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{
+			StructName: "User",
+			Name:       "idx_active_users",
+			Fields:     []string{"status"},
+			Condition:  "[status] = (2)",
+		}, TableName: "dbo.users"}},
 		IndexesRemoved: []difftypes.IndexRef{
 			{Name: "idx_active_users", TableName: "dbo.users"},
 		},
@@ -230,9 +231,11 @@ func TestGenerateSchemaDiffSQL_SQLServerUnfilteredIndexStaysWithoutWhere(t *test
 	c := qt.New(t)
 
 	diff := &difftypes.SchemaDiff{
-		IndexesAdded: []difftypes.IndexRef{
-			{Name: "idx_users_status", TableName: "dbo.users"},
-		},
+		IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{
+			StructName: "User",
+			Name:       "idx_users_status",
+			Fields:     []string{"status"},
+		}, TableName: "dbo.users"}},
 	}
 	semantics := identifier.ForSQLServerCatalog("SQL_Latin1_General_CP1_CI_AS").
 		WithResolvedNames([]identifier.ResolvedName{

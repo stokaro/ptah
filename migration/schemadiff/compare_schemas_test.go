@@ -56,7 +56,7 @@ func TestCompareSchemas_PlansAddedColumnAndIndex(t *testing.T) {
 	c.Assert(modified.ColumnsModified, qt.HasLen, 0)
 	c.Assert(modified.ConstraintsAdded, qt.HasLen, 0)
 	c.Assert(modified.ConstraintsRemoved, qt.HasLen, 0)
-	c.Assert(diff.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef{
+	c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_users_created_at", TableName: "users"},
 	})
 	c.Assert(diff.IndexesRemoved, qt.HasLen, 0)
@@ -138,8 +138,8 @@ func TestCompareSchemas_DialectReachesTheConversion(t *testing.T) {
 	dialectless := schemadiff.CompareWithDialect(
 		db, goschematodb.ToDBSchema(db, ""), platform.Postgres,
 	)
-	c.Assert(dialectless.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef{
+	c.Assert(dialectless.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: "idx_users_email_hash", TableName: "users"},
 	})
-	c.Assert(dialectless.IndexesRemoved, qt.DeepEquals, dialectless.IndexesAdded)
+	c.Assert(dialectless.IndexesRemoved, qt.DeepEquals, dialectless.IndexAdditions())
 }

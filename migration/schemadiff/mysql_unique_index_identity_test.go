@@ -674,7 +674,7 @@ func addedIndexesAlsoRemovedAsConstraints(diff *difftypes.SchemaDiff) []string {
 		}] = struct{}{}
 	}
 	collisions := make([]string, 0, len(diff.IndexesAdded))
-	for _, index := range diff.IndexesAdded {
+	for _, index := range diff.IndexAdditions() {
 		if _, isRemoved := removed[index]; isRemoved {
 			collisions = append(collisions, index.TableName+"."+index.Name)
 		}

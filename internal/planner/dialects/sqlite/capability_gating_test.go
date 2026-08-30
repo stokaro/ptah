@@ -100,7 +100,7 @@ func TestSQLitePlanner_RefusesObjectKindsTheTargetDeclines(t *testing.T) {
 
 			p := sqliteplanner.NewWithCapabilities(test.caps)
 
-			nodes, err := p.GenerateMigrationAST(withDeclaredTable(test.diff, test.desired), test.desired)
+			nodes, err := p.GenerateMigrationAST(withDeclaredTable(test.diff, test.desired))
 
 			c.Assert(errorText916(err), qt.Contains, test.wantError)
 			// The arithmetic half of the assertion, which the empty wantError

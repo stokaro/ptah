@@ -77,7 +77,7 @@ func testMySQLFamilyTableQualifiedIndexIdentityRoundTrip(t *testing.T, dsn, dial
 	c.Assert(additionDiff.IndexRemovals(), qt.HasLen, 0)
 
 	indexOnlyAddition := &difftypes.SchemaDiff{}
-	indexOnlyAddition.SetIndexAdditions(additionDiff.IndexAdditions())
+	indexOnlyAddition.SetIndexAdditions(additionDiff.IndexesAdded)
 	addStatements, err := planner.GenerateSchemaDiffSQLStatements(indexOnlyAddition, target, dialect)
 	c.Assert(err, qt.IsNil)
 	c.Assert(addStatements, qt.HasLen, 1)

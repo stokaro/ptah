@@ -37,7 +37,7 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		compare.Indexes(desired, database, diff)
 
 		// Both indexes should be added
-		c.Assert(diff.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef{
+		c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 			{Name: "tenants_slug_idx", TableName: "tenants"},
 			{Name: "users_tenant_email_idx", TableName: "users"},
 		})
@@ -68,7 +68,7 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		compare.Indexes(desired, database, diff)
 
 		// No indexes should be added or removed - they already exist and are detected
-		c.Assert(diff.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef(nil))
+		c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef(nil))
 		c.Assert(diff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef(nil))
 	})
 
@@ -101,7 +101,7 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		compare.Indexes(desired, database, diff)
 
 		// No indexes should be added or removed - explicitly defined ones exist, constraint-based ones are ignored
-		c.Assert(diff.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef(nil))
+		c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef(nil))
 		c.Assert(diff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef(nil))
 	})
 
@@ -132,7 +132,7 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 		compare.Indexes(desired, database, diff)
 
 		// Only the missing explicitly defined index should be added
-		c.Assert(diff.IndexesAdded, qt.DeepEquals, []difftypes.IndexRef{
+		c.Assert(diff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 			{Name: "users_tenant_email_idx", TableName: "users"},
 		})
 		c.Assert(diff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef(nil))

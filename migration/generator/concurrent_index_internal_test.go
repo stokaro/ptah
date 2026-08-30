@@ -200,9 +200,9 @@ func TestPlanGeneratedMigrationSpecs_SplitsTransactionalAndConcurrentIndex(t *te
 func TestPlanGeneratedMigrationSpecs_SplitsPopulatedAndEmptyTableIndexes(t *testing.T) {
 	c := qt.New(t)
 
-	diff := &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
-		{Name: "idx_users_email", TableName: "users"},
-		{Name: "idx_posts_title", TableName: "posts"},
+	diff := &difftypes.SchemaDiff{IndexesAdded: difftypes.IndexChanges{
+		{Index: schemamodel.Index{Name: "idx_users_email", StructName: "User", Fields: []string{"email"}}, TableName: "users"},
+		{Index: schemamodel.Index{Name: "idx_posts_title", StructName: "Post", Fields: []string{"title"}}, TableName: "posts"},
 	}}
 	desired := &schemamodel.Database{
 		Tables: []schemamodel.Table{
@@ -462,9 +462,7 @@ func indexRemovalOnlyDiff() *difftypes.SchemaDiff {
 }
 
 func indexOnlyDiff() *difftypes.SchemaDiff {
-	return &difftypes.SchemaDiff{IndexesAdded: []difftypes.IndexRef{
-		{Name: "idx_users_email", TableName: "users"},
-	}}
+	return &difftypes.SchemaDiff{IndexesAdded: difftypes.IndexChanges{{Index: schemamodel.Index{Name: "idx_users_email", Fields: []string{"email"}}, TableName: "users"}}}
 }
 
 func indexOnlyGeneratedSchema() *schemamodel.Database {

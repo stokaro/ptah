@@ -1004,7 +1004,6 @@ func foreignKeyRemovalDetailsByHost(
 func (p *Planner) addNewIndexes(
 	result []ast.Node,
 	diff *difftypes.SchemaDiff,
-	indexes *indexscope.Resolver,
 ) ([]ast.Node, error) {
 	replacements := indexscope.NewConflictSetWithSemantics(
 		diff.EffectiveIdentifierSemantics(p.targetDialect()),
@@ -1012,11 +1011,10 @@ func (p *Planner) addNewIndexes(
 	)
 	guardedDrops := p.capabilities().Has(capability.DropIndexIfExists)
 	constraintBacked := diff.ConstraintBackedIndexRemovalSet()
-	for _, ref := range diff.IndexAdditions() {
-		index, err := indexes.Resolve(ref)
-		if err != nil {
-			return nil, err
-		}
+	// The declaration travels WITH the addition (stokaro/ptah#2315).
+	for _, change := range diff.IndexesAdded {
+		ref := difftypes.IndexRef{Name: change.Index.Name, TableName: change.TableName}
+		index := change.Index
 		for removal := range replacements.Matches(ref) {
 			dropIndexNode := ast.NewDropIndex(removal.Name).SetTable(removal.TableName)
 			if guardedDrops {
@@ -1168,10 +1166,7 @@ func (p *Planner) handleEnumRemovals(result []ast.Node, diff *difftypes.SchemaDi
 // Returns a slice of AST nodes representing SQL statements or an error when
 // the diff cannot be planned safely. Each node can be rendered to SQL using a
 // MySQL-specific visitor.
-// The declaration is no longer read: every fact this planner needs travels
-// on the diff. The parameter stays until it leaves the Planner interface,
-// which is one mechanical sweep over 257 call sites (stokaro/ptah#2315).
-func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, _ *schemamodel.Database) ([]ast.Node, error) {
+func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff) ([]ast.Node, error) {
 	var result []ast.Node
 	// One fold, at the door, beside the index resolver that has always been
 	// here. A diff the comparator produced arrives with its identities
@@ -1179,14 +1174,16 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, _ *schemamode
 	// is a single key -- every such constraint would pair with every other
 	// (stokaro/ptah#1663).
 	constraintscope.Normalize(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))
-	indexes, err := indexscope.NewResolverWithSemantics(
+	// The identity check the resolver used to carry. Nothing is resolved: an
+	// addition carries its own declaration (stokaro/ptah#2315).
+	if err := indexscope.ValidateDiffWithSemantics(
 		p.targetDialect(),
 		diff.EffectiveIdentifierSemantics(p.targetDialect()),
 		diff,
-	)
-	if err != nil {
+	); err != nil {
 		return nil, err
 	}
+	var err error
 
 	if err := p.rejectUniqueIncludeConstraints(diff); err != nil {
 		return nil, err
@@ -1269,7 +1266,7 @@ func (p *Planner) GenerateMigrationAST(diff *difftypes.SchemaDiff, _ *schemamode
 	result = p.modifyExistingTriggers(result, diff)
 
 	// 5. Add new indexes
-	result, err = p.addNewIndexes(result, diff, indexes)
+	result, err = p.addNewIndexes(result, diff)
 	if err != nil {
 		return nil, err
 	}

@@ -73,7 +73,7 @@ func TestPlanner_OracleUserTypesPlanWhateverSchemaTheyName(t *testing.T) {
 			c := qt.New(t)
 
 			nodes, err := mysql.NewForDialect(platform.Oracle, capability.ForDialect(platform.Oracle)).
-				GenerateMigrationAST(test.diff, &schemamodel.Database{})
+				GenerateMigrationAST(test.diff)
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.Not(qt.HasLen), 0,
 				qt.Commentf("the declaration travels with the change; nothing is left to look up"))
