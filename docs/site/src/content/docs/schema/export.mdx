@@ -130,9 +130,11 @@ default, which a schema-file export never picks up.
 Two combinations are refused rather than approximated:
 
 - `--to hcl` with `--schema-file`. That target rewrites the Go files it reads —
-  `--cleanup-go-annotations` removes their annotations after a lossless export —
-  so its source is `--root-dir`. Converting a schema file to HCL is a different
-  operation from migrating annotations out of Go code.
+  `--cleanup-go-annotations` removes their annotations after writing HCL — so
+  its source is `--root-dir`. Do not use cleanup when the annotations contain
+  [export-only naming metadata](#names-in-the-contract), because HCL cannot
+  preserve it. Converting a schema file to HCL is a different operation from
+  migrating annotations out of Go code.
 - `--from db`. An export reads a schema definition, not a live database. Run
   [`ptah schema inspect`](../../direct/inspect/) to write HCL, SQL, or DBML
   from a database URL, review the file, then export it.
