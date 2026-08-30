@@ -1899,7 +1899,7 @@ func appendContinuousAggregateStatements(
 	}
 }
 
-// FromExtendedProperty converts a schemamodel.ExtendedProperty into the node that
+// fromExtendedProperty converts a schemamodel.ExtendedProperty into the node that
 // writes it.
 //
 // The operation is always an add. An update is what a COMPARISON produces, from
@@ -1910,7 +1910,7 @@ func appendContinuousAggregateStatements(
 // renderer as string literals rather than identifiers, because that is what
 // sp_addextendedproperty takes -- see VisitExtendedProperty for what quoting
 // them would write.
-func FromExtendedProperty(property schemamodel.ExtendedProperty) *ast.ExtendedPropertyNode {
+func fromExtendedProperty(property schemamodel.ExtendedProperty) *ast.ExtendedPropertyNode {
 	return ast.NewExtendedProperty(ast.ExtendedPropertyAdd, property.Name).
 		SetOwner(property.Schema, property.Table, property.Column).
 		SetValue(property.Value).
@@ -1923,7 +1923,7 @@ func appendExtendedPropertyStatements(
 	properties []schemamodel.ExtendedProperty,
 ) {
 	for _, property := range properties {
-		statements.Statements = append(statements.Statements, FromExtendedProperty(property))
+		statements.Statements = append(statements.Statements, fromExtendedProperty(property))
 	}
 }
 
