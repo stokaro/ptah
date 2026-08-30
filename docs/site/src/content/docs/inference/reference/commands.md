@@ -15,6 +15,7 @@ overlaps: []
 disposition: keep
 owns:
   - cli-ptah-inference-describe
+  - cli-ptah-inference-probe
   - cli-ptah-inference-plan
   - cli-ptah-inference-prepare
   - cli-ptah-inference-backfill
@@ -30,11 +31,18 @@ owns:
   - cli-ptah-inference-retire
 ---
 
-Fourteen verbs. Each is a decision taken separately: none of them is implied by
+Fifteen verbs. Each is a decision taken separately: none of them is implied by
 another.
 
-Every verb takes `--spec` and `--db-url`. Most take `--run-id`, which is an
-identifier you choose and which is how a resumed run finds its checkpoint.
+Every verb takes `--spec` or `--release`, and most take `--db-url` and
+`--run-id` — an identifier you choose, and how a resumed run finds its
+checkpoint.
+
+`--release` names a published release instead of a file. The release carries the
+specification it was built from, so an environment that has never seen the file
+runs the same document; what a mutable reference resolved to is printed on
+standard error. An `oci-layout://` directory is accepted on the same flag, which
+is what an air-gapped environment has instead of a registry.
 
 ## `describe`
 
@@ -74,6 +82,50 @@ ptah inference describe --spec spec.yaml --format json |
 
 Two digests that differ mean the edit changed the corpus, and every vector will
 have to be computed again.
+
+## `probe`
+
+Asks the embedding provider what it answers, and sends nothing from your
+database. **The second verb that opens no connection**, so it runs in CI beside
+`describe`.
+
+| Flag | Meaning |
+| --- | --- |
+| `--format` | `text` or `json` |
+| `--provider-timeout` | How long one provider request may take |
+
+Every fact a plan states about a provider is configured rather than measured:
+the model identifier and the output dimension are what somebody typed. Until
+this verb, the first thing that checked them was the backfill — which had
+already sent source rows to the endpoint by the time it found the width was
+wrong.
+
+What it establishes: the endpoint answers, it accepts the credential the
+specification points at, the model answers an embedding request, one input comes
+back as one usable vector of finite values, the width is the one the
+specification declares, a batch is answered for every input, a canceled request
+stops, and a refusal arrives as an error the engine can act on.
+
+```console
+$ ptah inference probe --spec spec.yaml
+text-embedding-3-small at api.openai.com, declared hosted
+  - ok   reachable: the endpoint at api.openai.com answered
+  - ok   authorized: the credential from env:OPENAI_API_KEY was accepted
+  - ok   embeds: model text-embedding-3-small answered an embedding request
+  - ok   shape: one vector of 1536 finite values for one input
+  - ok   dimension: 1536 dimensions, as declared
+  - ok   batch: 2 inputs answered with 2 vectors
+  - ok   cancellation: a canceled request stopped rather than answering
+  - ok   error shape: a refused request arrived as a classified error the engine can act on
+```
+
+It returns 1 when a check fails, so a pipeline can gate on it. Two fixed strings
+go out and no vector comes back into the report, which is what lets it be run —
+and its output pasted into an issue — before anybody has decided to send a
+corpus anywhere.
+
+What it cannot establish is whether the provider retains what you send it. That
+is outside Ptah's knowledge and nothing here claims otherwise.
 
 ## `plan`
 
@@ -254,6 +306,24 @@ Reports what a run has done, how far it got, and what it is waiting for: the
 phase, the progress counts, the watermarks, the lease and its fencing token, and
 why it stopped if it did — the reason for a pause, the class and detail for a
 failure.
+
+| Flag | Meaning |
+| --- | --- |
+| `--format` | `text` or `json` |
+| `--require-ready` | Return 1 unless the generation is verified and ready to cut over |
+
+Two of its answers are measured rather than read off the run. `verified` runs
+the deterministic layers now, and `cutover ready` decides with the same code the
+cutover verb decides with. Both cost what `verify` costs, which is a read of the
+target.
+
+Cutover readiness excludes the approval, which is reported separately with the
+plan digest to approve. An approval nobody has given yet is not a defect in the
+state, and a rollout gate waiting for one would wait forever under the policy
+most production environments run.
+
+`--require-ready` is the gate: exit 1 until both conditions hold, exit 0 when
+they do. See [Run in Kubernetes](../../guides/run-in-kubernetes/).
 
 ## `cutover`
 

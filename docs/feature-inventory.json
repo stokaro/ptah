@@ -13,7 +13,7 @@
   ],
   "generator": "scripts/check-feature-inventory.sh --write",
   "claimed_floor": 79,
-  "claimed": 82,
+  "claimed": 83,
   "rows": [
     {
       "id": "cli-ptah-assist-context",
@@ -163,6 +163,12 @@
       "id": "cli-ptah-inference-prepare",
       "kind": "native-verb",
       "surface": "ptah inference prepare",
+      "claimed_by": "docs/site/src/content/docs/inference/reference/commands.md"
+    },
+    {
+      "id": "cli-ptah-inference-probe",
+      "kind": "native-verb",
+      "surface": "ptah inference probe",
       "claimed_by": "docs/site/src/content/docs/inference/reference/commands.md"
     },
     {

@@ -103,6 +103,9 @@ var verbs = map[string]Verb{
 	"inference plan": {TargetReads, ScratchNone,
 		"resolves a specification against the database and prints what would happen; nothing is " +
 			"created and nothing is written"},
+	"inference probe": {TargetNone, ScratchNone,
+		"sends two fixed strings to the embedding endpoint the specification names and reports " +
+			"what came back; it opens no database, and nothing from one is sent"},
 	"inference prepare": {TargetWrites, ScratchNone,
 		"creates the run's own tables and, under the outbox mode, a companion table and two " +
 			"triggers on the source"},

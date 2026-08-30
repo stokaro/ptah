@@ -86,6 +86,7 @@ rather than a person.
 | `ptah inference pause` | Stops a run at the boundary its last checkpoint reached, which writes the run's own row: it takes the run for this process, so a worker that was running is refused at its next commit | — |
 | `ptah inference plan` | Resolves a specification against the database and prints what would happen; nothing is created and nothing is written | — |
 | `ptah inference prepare` | Creates the run's own tables and, under the outbox mode, a companion table and two triggers on the source | — |
+| `ptah inference probe` | Sends two fixed strings to the embedding endpoint the specification names and reports what came back; it opens no database, and nothing from one is sent | — |
 | `ptah inference resume` | Returns a paused run to running, which writes the run's own row and takes the run for this process; nothing starts working here | — |
 | `ptah inference retire` | Drops a generation's index and column; it is the one verb here that cannot be undone | — |
 | `ptah inference rollback` | Moves the pointer queries read back to a previous generation, when that generation is still measurably one you can go back to | — |

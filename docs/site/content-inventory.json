@@ -2309,12 +2309,14 @@
       "lastVerified": null,
       "evidence": [],
       "searchAliases": [],
+      "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
         "/inference/reference/support-and-limitations/"
       ],
       "inboundLinks": [
+        "/inference/reference/commands/",
         "/inference/reference/support-and-limitations/",
         "/inference/strategies/production-rollout/"
       ],
@@ -2438,6 +2440,7 @@
       ],
       "owns": [
         "cli-ptah-inference-describe",
+        "cli-ptah-inference-probe",
         "cli-ptah-inference-plan",
         "cli-ptah-inference-prepare",
         "cli-ptah-inference-backfill",
@@ -2461,12 +2464,14 @@
       "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
-      "outboundLinks": [],
+      "outboundLinks": [
+        "/inference/guides/run-in-kubernetes/"
+      ],
       "inboundLinks": [
         "/inference/concepts/embeddings-and-inference-state/"
       ],
-      "visibleWords": 1604,
-      "sourceBytes": 11806
+      "visibleWords": 2031,
+      "sourceBytes": 15087
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/run-status-and-findings.md",
@@ -3504,8 +3509,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8352,
-      "sourceBytes": 77459
+      "visibleWords": 8572,
+      "sourceBytes": 79497
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",
@@ -3611,8 +3616,8 @@
         "/testing/ci/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 3410,
-      "sourceBytes": 24742
+      "visibleWords": 3447,
+      "sourceBytes": 24996
     },
     {
       "path": "docs/site/src/content/docs/reference/extension-variables.md",
@@ -3941,8 +3946,8 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 7108,
-      "sourceBytes": 48242
+      "visibleWords": 7138,
+      "sourceBytes": 48430
     },
     {
       "path": "docs/site/src/content/docs/reference/overview.mdx",

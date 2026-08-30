@@ -107,6 +107,7 @@ to rule out — so they are named here, where a claim nothing measures belongs.
 | `inference pause` | **writes** | none | `--db-url` | stops a run at the boundary its last checkpoint reached, which writes the run's own row: it takes the run for this process, so a worker that was running is refused at its next commit |
 | `inference plan` | reads | none | `--db-url` | resolves a specification against the database and prints what would happen; nothing is created and nothing is written |
 | `inference prepare` | **writes** | none | `--db-url` | creates the run's own tables and, under the outbox mode, a companion table and two triggers on the source |
+| `inference probe` | none | none | — | sends two fixed strings to the embedding endpoint the specification names and reports what came back; it opens no database, and nothing from one is sent |
 | `inference resume` | **writes** | none | `--db-url` | returns a paused run to running, which writes the run's own row and takes the run for this process; nothing starts working here |
 | `inference retire` | **writes** | none | `--db-url` | drops a generation's index and column; it is the one verb here that cannot be undone |
 | `inference rollback` | **writes** | none | `--db-url` | moves the pointer queries read back to a previous generation, when that generation is still measurably one you can go back to |
@@ -206,6 +207,7 @@ permission.
 | `inference describe` | reads a specification file and reports what it says; it opens no connection, which is what makes it usable where every other verb here cannot be |
 | `inference evaluate` | searches the generation with queries from a corpus, which sends those queries to the embedding endpoint; the database is only read |
 | `inference plan` | resolves a specification against the database and prints what would happen; nothing is created and nothing is written |
+| `inference probe` | sends two fixed strings to the embedding endpoint the specification names and reports what came back; it opens no database, and nothing from one is sent |
 | `inference status` | prints a run's phase, progress and watermarks from the run-state tables |
 | `inference verify` | reads the source and the generation and reports what a cutover would rest on; it writes nothing |
 | `introspect` | reads a live database and writes annotated Go models to disk; the database is only read |

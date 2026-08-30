@@ -27,6 +27,7 @@ The verbs follow the lifecycle. Each one is a decision an operator takes
 separately:
 
   describe   what a specification says, without a database
+  probe      what the embedding provider answers, without sending a source row
   plan       what would happen, and where each of its answers came from
   prepare    create the target column, its metadata and the outbox
   backfill   embed the source into the new generation, resumably
@@ -48,6 +49,7 @@ cutting over does not make the old generation disposable.`,
 	}
 
 	cmd.AddCommand(newDescribeCommand())
+	cmd.AddCommand(newProbeCommand())
 	cmd.AddCommand(newPlanCommand())
 	cmd.AddCommand(newPrepareCommand())
 	cmd.AddCommand(newBackfillCommand())

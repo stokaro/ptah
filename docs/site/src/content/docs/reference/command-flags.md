@@ -232,7 +232,9 @@ Read the columns as follows.
 | `--batch-rows` | `int` | `200` | `PTAH_BATCH_ROWS` | — |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--maintain-for` | `duration` | `0s` | `PTAH_MAINTAIN_FOR` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-timeout` | `duration` | `1m0s` | `PTAH_PROVIDER_TIMEOUT` | — |
+| `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
@@ -244,7 +246,9 @@ Read the columns as follows.
 | `--batch-rows` | `int` | `200` | `PTAH_BATCH_ROWS` | — |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--maintain-for` | `duration` | `0s` | `PTAH_MAINTAIN_FOR` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-timeout` | `duration` | `1m0s` | `PTAH_PROVIDER_TIMEOUT` | — |
+| `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
@@ -259,6 +263,7 @@ Read the columns as follows.
 | `--evidence-file` | `string` | — | `PTAH_EVIDENCE_FILE` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--publish-evidence` | `string` | — | `PTAH_PUBLISH_EVIDENCE` | — |
+| `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 | `--stabilize-for` | `duration` | `0s` | `PTAH_STABILIZE_FOR` | — |
@@ -268,6 +273,8 @@ Read the columns as follows.
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
 **`ptah inference evaluate`**
@@ -282,7 +289,9 @@ Read the columns as follows.
 | `--max-ndcg-regression` | `float64` | `0` | `PTAH_MAX_NDCG_REGRESSION` | — |
 | `--min-exact-agreement` | `float64` | `0` | `PTAH_MIN_EXACT_AGREEMENT` | — |
 | `--min-recall` | `float64` | `0` | `PTAH_MIN_RECALL` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-timeout` | `duration` | `1m0s` | `PTAH_PROVIDER_TIMEOUT` | — |
+| `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--require-every-case` | `bool` | `true` | `PTAH_REQUIRE_EVERY_CASE` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
@@ -291,6 +300,8 @@ Read the columns as follows.
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
@@ -299,7 +310,9 @@ Read the columns as follows.
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--reason` | `string` | — | `PTAH_REASON` | — |
+| `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 | `--worker` | `string` | `ptah-cli` | `PTAH_WORKER` | — |
@@ -313,6 +326,7 @@ Read the columns as follows.
 | `--evidence-file` | `string` | — | `PTAH_EVIDENCE_FILE` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--publish-evidence` | `string` | — | `PTAH_PUBLISH_EVIDENCE` | — |
+| `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
 **`ptah inference prepare`**
@@ -320,15 +334,29 @@ Read the columns as follows.
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 | `--worker` | `string` | `ptah-cli` | `PTAH_WORKER` | — |
+
+**`ptah inference probe`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--provider-timeout` | `duration` | `30s` | `PTAH_PROVIDER_TIMEOUT` | — |
+| `--release` | `string` | — | `PTAH_RELEASE` | — |
+| `--spec` | `string` | — | `PTAH_SPEC` | — |
 
 **`ptah inference resume`**
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 | `--worker` | `string` | `ptah-cli` | `PTAH_WORKER` | — |
@@ -342,6 +370,8 @@ Read the columns as follows.
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--drop-column` | `bool` | `true` | `PTAH_DROP_COLUMN` | — |
 | `--generation` | `string` | — | `PTAH_GENERATION` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
 **`ptah inference rollback`**
@@ -349,6 +379,8 @@ Read the columns as follows.
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 | `--to` | `string` | — | `PTAH_TO` | — |
 | `--window` | `duration` | `0s` | `PTAH_WINDOW` | — |
@@ -358,6 +390,10 @@ Read the columns as follows.
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--format` | `string` | `text` | `PTAH_FORMAT` | — |
+| `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+| `--release` | `string` | — | `PTAH_RELEASE` | — |
+| `--require-ready` | `bool` | `false` | `PTAH_REQUIRE_READY` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
@@ -370,6 +406,7 @@ Read the columns as follows.
 | `--evidence-file` | `string` | — | `PTAH_EVIDENCE_FILE` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--publish-evidence` | `string` | — | `PTAH_PUBLISH_EVIDENCE` | — |
+| `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
