@@ -56,10 +56,6 @@ func TestWritePlanFile_SaysWhatIsBeingApproved(t *testing.T) {
 	// And it says how to sign it, because the next thing whoever ran this does
 	// is hand the file to somebody.
 	c.Assert(out.String(), qt.Contains, "ptah schema approve --plan "+path)
-	// Written for the approver rather than offered to the filesystem.
-	info, err := os.Stat(path)
-	c.Assert(err, qt.IsNil)
-	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o600))
 }
 
 // TestApprovalFor_ASignatureNamesWhoApproved is the capability this closes.

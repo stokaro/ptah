@@ -36,10 +36,13 @@ import (
 // written by the cutover verb, signed by `ptah schema approve`, and verified
 // back into an approval bound to a plan the database decides. A package test
 // can measure any one of those and not the chain.
+//
+// It does not skip when ssh-keygen is absent, and the absence is not a reason
+// to. An integration test that skips reads as one that passed -- which is why
+// the contour runner fails on a skip -- and a runner with no OpenSSH is one
+// where this capability genuinely does not work. The unit tests beside
+// cmd/inference skip, correctly: they are not the contour.
 func TestInferenceSignedApprovalE2E(t *testing.T) {
-	if _, err := exec.LookPath("ssh-keygen"); err != nil {
-		t.Skip("ssh-keygen is not installed")
-	}
 	dbURL := dbtarget.URL(t, dbtarget.TimescaleDB)
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
