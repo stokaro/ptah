@@ -17,15 +17,28 @@ disposition: rewrite
 
 import GlossaryTerm from '../../../components/GlossaryTerm.astro';
 
-A dense table shows a glyph or a number; what it means lives in a paragraph
-somewhere else on the page. These terms carry their definition where they are
-used: focus the ⓘ with <kbd>Tab</kbd> or tap it, and press <kbd>Esc</kbd> to
+Use this page for Ptah product, workflow, database-support, and compatibility
+terms. Where a dense table cannot carry a definition, the same entry appears as
+an inline ⓘ: focus it with <kbd>Tab</kbd> or tap it, and press <kbd>Esc</kbd> to
 dismiss.
 
 Definitions come from one source, `docs/site/src/glossary.ts`, so the same term
 cannot come to mean two things on two pages.
 
-## The terms
+## Schema and migration terms
+
+| Term | Meaning in Ptah |
+| --- | --- |
+| <GlossaryTerm term="desired-schema" /> | the state a workflow is trying to reach |
+| <GlossaryTerm term="schema-source" /> | one input contributing to that state |
+| <GlossaryTerm term="migration-directory" /> | ordered migration history and its integrity metadata |
+| <GlossaryTerm term="revision" /> | applied migration state recorded in the database |
+| <GlossaryTerm term="drift" /> | a difference between desired and live state |
+| <GlossaryTerm term="dev-database" /> | a disposable database used to materialize or plan state |
+| <GlossaryTerm term="shadow-database" /> | a disposable database used to verify migrations and rollback |
+| <GlossaryTerm term="throwaway-database" /> | a database created for destructive tests or examples |
+
+## Database support terms
 
 | Term | Where a reader meets it | Why the table cannot show it |
 | --- | --- | --- |
@@ -34,6 +47,27 @@ cannot come to mean two things on two pages.
 | <GlossaryTerm term="certified" /> | the release-line table | the level is a word; what earns it is a probe run |
 | <GlossaryTerm term="best-effort" /> | the release-line table | reads as a hedge, and is a statement about who re-measures it |
 | <GlossaryTerm term="legacy-tested" /> | the release-line table | end of life lowers the level, not the behavior |
+| <GlossaryTerm term="known-incompatible" /> | the release-line policy | the incompatibility has to be named rather than inferred from age |
+| <GlossaryTerm term="dialect" /> | commands, schema sources, and engine guides | a family name does not state every target capability |
+| <GlossaryTerm term="capability" /> | plans and server profiles | each key answers one behavior independently |
+| <GlossaryTerm term="release-line" /> | the support matrix | one line is both a support and measurement cell |
+
+## Inference migration terms
+
+| Term | Meaning in Ptah |
+| --- | --- |
+| <GlossaryTerm term="generation" /> | one embedding contract and the vectors produced under it |
+| <GlossaryTerm term="candidate-generation" /> | the generation being built while queries use another |
+| <GlossaryTerm term="cutover" /> | the approved transition of the active query pointer |
+
+## Compatibility evidence terms
+
+| Term | Meaning in Ptah |
+| --- | --- |
+| <GlossaryTerm term="conformance" /> | measurement against a pinned external surface |
+| <GlossaryTerm term="contour" /> | one independently reported conformance corpus |
+| <GlossaryTerm term="regression-budget" /> | the merge gate for one contour's known findings |
+| <GlossaryTerm term="full-conformance" /> | the zero-finding yardstick rather than the merge budget |
 
 ## Inside a table that scrolls
 

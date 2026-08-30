@@ -181,6 +181,8 @@ export const sidebar = [
     items: [
       { slug: 'databases/overview', label: 'Overview' },
       { slug: 'databases/support-matrix' },
+      { slug: 'databases/support-policy' },
+      { slug: 'databases/support-evidence' },
       { slug: 'databases/postgresql' },
       { slug: 'databases/mysql' },
       { slug: 'databases/sqlite' },
@@ -217,8 +219,14 @@ export const sidebar = [
       {
         label: 'AI and agents',
         items: [
-          { slug: 'operate/ai-agents' },
+          { slug: 'operate/ai-agents', label: 'Overview' },
           { slug: 'operate/ai-assist' },
+          { slug: 'operate/ai-assist-providers' },
+          { slug: 'operate/ai-assist-sessions' },
+          { slug: 'operate/ai-agent-connect' },
+          { slug: 'operate/ai-agent-permissions' },
+          { slug: 'operate/ai-agent-changes' },
+          { slug: 'operate/ai-agent-troubleshooting' },
         ],
       },
     ],
@@ -265,6 +273,7 @@ export const sidebar = [
           { slug: 'reference/capabilities' },
           { slug: 'reference/lint-rules' },
           { slug: 'reference/exit-codes' },
+          { slug: 'reference/mcp-tools' },
           { slug: 'reference/glossary' },
         ],
       },
@@ -275,6 +284,7 @@ export const sidebar = [
     items: [
       { slug: 'atlas/overview', label: 'Overview' },
       { slug: 'atlas/adoption' },
+      { slug: 'atlas/strict-ce-mode' },
       {
         label: 'Commands and configuration',
         collapsed: true,
@@ -282,6 +292,7 @@ export const sidebar = [
           { slug: 'atlas/migrate-commands' },
           { slug: 'atlas/schema-commands' },
           { slug: 'atlas/project-config' },
+          { slug: 'atlas/output-and-redaction' },
         ],
       },
       {

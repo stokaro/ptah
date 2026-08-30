@@ -1850,8 +1850,8 @@ Ptah-native migrations instead; see
 - `.Env`, `.Planned`, `.Reverted`, `.Current`, `.Target`, `.Total`, `.Start`,
   `.End`, and `.Error`.
 
-The shared report shape and URL redaction rules are described on the
-[Atlas compatibility overview](../overview/#format-reports-and-redaction).
+The shared report shape and URL redaction rules are in
+[Atlas-compatible output and redaction](../output-and-redaction/).
 
 ## Next steps
 

@@ -43,6 +43,11 @@ them, because cobra registers them from an unexported function that removes them
 again unless the invocation being parsed is one of the two. They answer a shell
 rather than a person.
 
+<div class="ptah-reference-filter" data-mode="next-table">
+  <label for="native-command-filter">Filter commands <input id="native-command-filter" type="search" placeholder="schema apply, inference, OCI…" /></label>
+  <p data-ptah-filter-status role="status" aria-live="polite"></p>
+</div>
+
 <!-- BEGIN GENERATED NATIVE COMMANDS -->
 | Command | What it does | Notes |
 | --- | --- | --- |
@@ -373,7 +378,8 @@ and `apply_patch` -- confined to the directories `--migrations-dir`,
 Writing stays refused until `--allow-write` names an artifact class, and a named
 class asks for approval per patch unless `--auto-approve` says otherwise.
 Applying anything to a database is unavailable on this surface at any setting.
-[AI agents over MCP](../../operate/ai-agents/) is the guide.
+[AI and agents](../../operate/ai-agents/) routes to MCP setup, permissions,
+patch workflow, troubleshooting, and tool reference.
 
 Credentials are the client's to supply. The server holds none, stores none, and
 sends nothing anywhere: it runs locally and talks to whatever the caller names.
@@ -412,7 +418,7 @@ your project.
 
 A profile carries a credential REFERENCE such as `env:OPENAI_API_KEY`; a key
 written into configuration is refused, and Ptah stores none.
-[Ptah Assist and your own model](../../operate/ai-assist/) is the guide.
+[Use Ptah Assist](../../operate/ai-assist/) is the task guide.
 
 ## A live view
 

@@ -80,7 +80,9 @@ expected output → verification → failure modes (or a link to troubleshooting
 three links, each phrased as the next decision).
 
 **Reference**: one-sentence scope → tables or lists → exact behavior notes →
-links to the owning workflow pages.
+links to the owning workflow pages. A reference whose generated index is too
+large to scan must provide the shared client-side filter without changing the
+generated rows.
 
 **Troubleshooting entry**: symptom as the heading, in the reader's words
 (error text or observed behavior) → likely cause → diagnosis command → fix →
@@ -88,6 +90,11 @@ verify.
 
 **Status**: claim scope → evidence date and source → matrix →
 how to re-verify.
+
+Do not combine lookup, policy, and evidence merely because all three concern one
+feature. A support lookup lists current generated facts; a policy defines what
+their labels promise; an evidence page records how those claims were measured
+and when.
 
 ### 3.1 Frontmatter and the generated inventory
 
@@ -588,6 +595,12 @@ a reader recognizes on sight and cannot reconstruct from a paragraph.
   `check-exit-codes.mjs` holds it in lockstep with the codes the binaries
   return. Document an exit code there and link to it, rather than restating the
   number.
+- Product terms belong in `src/glossary.ts`. The glossary page renders those
+  definitions and dense tables may reuse them through `GlossaryTerm`; do not
+  write a second local definition that can drift.
+- Generated command and flag rows remain generator-owned. The
+  `.ptah-reference-filter` affordance filters rendered rows only; it must never
+  replace, truncate, or hand-copy the exhaustive inventory.
 
 ## 13. Accessibility, readability, and mechanics
 
@@ -736,6 +749,7 @@ in this guide is a review responsibility.
 | No bare `--flag` outside a code span on site pages | 4, 8 | `check:style` |
 | Paragraphs under 900 rendered characters | 4 | `check:style` |
 | In-page and cross-page anchors resolve | 12 | `check:links` |
+| Command and flag reference filters work with the keyboard | 3, 13 | `check:accessibility` |
 | No page scrolls sideways at 390px or 1280px | 13 | `check:responsive` |
 | Allowed raster assets, editable visual source, and useful alt text | 11 | `check:visual-assets` |
 | Selected visual pages render at desktop and mobile widths | 11, 13 | `check:visual-snapshots` |

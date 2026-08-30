@@ -218,6 +218,53 @@
 	overflow-x: auto;
 }
 
+.ptah-reference-filter {
+	display: grid;
+	grid-template-columns: minmax(12rem, 28rem) auto;
+	align-items: end;
+	gap: 0.5rem 1rem;
+	margin-block: 1.25rem;
+}
+
+.ptah-reference-filter label {
+	display: grid;
+	gap: 0.35rem;
+	color: var(--sl-color-gray-2);
+	font-weight: 600;
+}
+
+.ptah-reference-filter input {
+	width: 100%;
+	min-height: 2.5rem;
+	padding-inline: 0.75rem;
+	border: 1px solid var(--sl-color-gray-4);
+	border-radius: 0.5rem;
+	background: var(--sl-color-bg-nav);
+	color: var(--sl-color-text);
+	font: inherit;
+}
+
+.ptah-reference-filter input:focus-visible {
+	outline: 3px solid var(--sl-color-accent-high);
+	outline-offset: 2px;
+}
+
+.ptah-reference-filter [data-ptah-filter-status] {
+	margin: 0 0 0.55rem;
+	color: var(--sl-color-gray-2);
+	white-space: nowrap;
+}
+
+@media (max-width: 30rem) {
+	.ptah-reference-filter {
+		grid-template-columns: 1fr;
+	}
+
+	.ptah-reference-filter [data-ptah-filter-status] {
+		margin: 0;
+	}
+}
+
 .sl-markdown-content .ptah-wide-table > table {
 	display: table;
 	width: 100%;

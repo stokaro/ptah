@@ -109,8 +109,10 @@ Use these routes to avoid missing a class of docs:
 - **Atlas-compatible CLI and parity claims**: `README.md`, `docs/conformance.md`,
   `docs/site/src/content/docs/index.mdx`,
   `docs/site/src/content/docs/atlas/overview.md`,
+  `docs/site/src/content/docs/atlas/strict-ce-mode.md`,
   `docs/site/src/content/docs/atlas/migrate-commands.md`,
   `docs/site/src/content/docs/atlas/schema-commands.md`,
+  `docs/site/src/content/docs/atlas/output-and-redaction.md`,
   `docs/site/src/content/docs/reference/atlas-commands.md`,
   `docs/site/src/content/docs/atlas/feature-matrix.md` (generated from
   `docs/site/scripts/data/feature-matrix-rows.json`),
@@ -147,8 +149,14 @@ Use these routes to avoid missing a class of docs:
 - **Capabilities**: `docs/capabilities.md`,
   `docs/site/src/content/docs/reference/capabilities.md`,
   `docs/site/src/content/docs/concepts/dialects-and-capabilities.md`,
-  `docs/site/src/content/docs/databases/support-matrix.md`, and any dialect or
+  `docs/site/src/content/docs/databases/support-matrix.md`,
+  `docs/site/src/content/docs/databases/support-policy.md`,
+  `docs/site/src/content/docs/databases/support-evidence.md`, and any dialect or
   conformance pages that mention the changed capability.
+- **Assist and MCP agent behavior**: the `operate/ai-*` workflow pages,
+  `docs/site/src/content/docs/reference/mcp-tools.md`, the native command and
+  flag references, `cmd/assist`, `cmd/mcp`, and the `internal/assist*`,
+  `internal/aiprovider`, `internal/agent*`, and `internal/mcpserver` packages.
 - **Public Go API**: `docs/public_api.md`,
   `docs/site/src/content/docs/extend/*.md`, and package comments for exported
   identifiers. A change an embedder sees may also need one in

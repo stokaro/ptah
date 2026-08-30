@@ -481,14 +481,15 @@ type dirQueryDocPage struct {
 	path []string
 }
 
-// dirQueryGovernedDocPages lists every published page carrying the rule. The
-// feature matrix is generated from docs/site/scripts/data/feature-matrix-rows.json,
-// so governing the page covers the row data behind it too.
+// dirQueryGovernedDocPages lists every published reference page carrying the
+// rule. The feature matrix is generated from
+// docs/site/scripts/data/feature-matrix-rows.json, so governing the page covers
+// the row data behind it too. The Atlas landing page deliberately routes to
+// these owners instead of repeating this command-level behavior.
 func dirQueryGovernedDocPages() []dirQueryDocPage {
 	return []dirQueryDocPage{
 		{name: "reference_atlas-commands", path: []string{"reference", "atlas-commands.md"}},
 		{name: "atlas_migrate-commands", path: []string{"atlas", "migrate-commands.md"}},
-		{name: "atlas_overview", path: []string{"atlas", "overview.md"}},
 		{name: "atlas_feature-matrix", path: []string{"atlas", "feature-matrix.md"}},
 	}
 }

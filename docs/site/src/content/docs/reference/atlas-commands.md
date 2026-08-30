@@ -47,6 +47,11 @@ shipped binary answers to them; `__complete` and `__completeNoDesc` ship too,
 and no walk of the tree reaches them, so they are named here rather than
 listed.
 
+<div class="ptah-reference-filter" data-mode="next-table">
+  <label for="atlas-command-filter">Filter commands <input id="atlas-command-filter" type="search" placeholder="migrate apply, schema diff…" /></label>
+  <p data-ptah-filter-status role="status" aria-live="polite"></p>
+</div>
+
 <!-- BEGIN GENERATED COMPAT COMMANDS -->
 | Command | What it does | Notes |
 | --- | --- | --- |
