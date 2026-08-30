@@ -13,7 +13,7 @@
   ],
   "generator": "scripts/check-feature-inventory.sh --write",
   "claimed_floor": 79,
-  "claimed": 83,
+  "claimed": 82,
   "rows": [
     {
       "id": "cli-ptah-assist-context",
@@ -31,37 +31,37 @@
       "id": "cli-ptah-assist-provider-list",
       "kind": "native-verb",
       "surface": "ptah assist provider list",
-      "claimed_by": "docs/site/src/content/docs/operate/ai-assist.md"
+      "claimed_by": "docs/site/src/content/docs/operate/ai-assist-providers.md"
     },
     {
       "id": "cli-ptah-assist-provider-test",
       "kind": "native-verb",
       "surface": "ptah assist provider test",
-      "claimed_by": "docs/site/src/content/docs/operate/ai-assist.md"
+      "claimed_by": "docs/site/src/content/docs/operate/ai-assist-providers.md"
     },
     {
       "id": "cli-ptah-assist-sessions-delete",
       "kind": "native-verb",
       "surface": "ptah assist sessions delete",
-      "claimed_by": "docs/site/src/content/docs/operate/ai-assist.md"
+      "claimed_by": "docs/site/src/content/docs/operate/ai-assist-sessions.md"
     },
     {
       "id": "cli-ptah-assist-sessions-list",
       "kind": "native-verb",
       "surface": "ptah assist sessions list",
-      "claimed_by": "docs/site/src/content/docs/operate/ai-assist.md"
+      "claimed_by": "docs/site/src/content/docs/operate/ai-assist-sessions.md"
     },
     {
       "id": "cli-ptah-assist-sessions-prune",
       "kind": "native-verb",
       "surface": "ptah assist sessions prune",
-      "claimed_by": "docs/site/src/content/docs/operate/ai-assist.md"
+      "claimed_by": "docs/site/src/content/docs/operate/ai-assist-sessions.md"
     },
     {
       "id": "cli-ptah-assist-sessions-show",
       "kind": "native-verb",
       "surface": "ptah assist sessions show",
-      "claimed_by": "docs/site/src/content/docs/operate/ai-assist.md"
+      "claimed_by": "docs/site/src/content/docs/operate/ai-assist-sessions.md"
     },
     {
       "id": "cli-ptah-completion-bash",
@@ -211,7 +211,7 @@
       "id": "cli-ptah-mcp",
       "kind": "native-verb",
       "surface": "ptah mcp",
-      "claimed_by": "docs/site/src/content/docs/operate/ai-agents.md"
+      "claimed_by": null
     },
     {
       "id": "cli-ptah-migrations-baseline",

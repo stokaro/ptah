@@ -15,10 +15,12 @@ import (
 	"go.5x5.cz/ptah/internal/mcpserver"
 )
 
-// The two pages that tell a reader which tools this server offers.
+// The two reference pages that tell a reader which tools this server offers,
+// plus the policy guide that owns the non-interactive refusal.
 const (
-	agentGuidePage       = "../../docs/site/src/content/docs/operate/ai-agents.md"
+	mcpToolReferencePage = "../../docs/site/src/content/docs/reference/mcp-tools.md"
 	commandReferencePage = "../../docs/site/src/content/docs/reference/native-commands.md"
+	agentPolicyPage      = "../../docs/site/src/content/docs/operate/ai-agent-permissions.md"
 )
 
 // The headings whose first table is the one read here. The command reference
@@ -29,28 +31,28 @@ const (
 	mcpSectionHeading    = "## An AI client, over MCP"
 )
 
-// TestToolDocs_TheGuideListsExactlyTheReadingTools holds the guide's reading
-// table and the served surface to each other.
+// TestToolDocs_TheReferenceListsExactlyTheReadingTools holds the MCP reference's
+// reading table and the served surface to each other.
 //
 // Both pages said four reading tools and listed four, while the server had
 // served five since describe_session landed. Nothing caught it: a page is read
 // by people, and the person who adds a tool is not the person rereading the
 // prose around it. So a tool added without a row written for it reddens here,
 // and so does a row for a tool nobody serves.
-func TestToolDocs_TheGuideListsExactlyTheReadingTools(t *testing.T) {
+func TestToolDocs_TheReferenceListsExactlyTheReadingTools(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(documentedTools(c, agentGuidePage, readingToolsHeading), qt.DeepEquals, readingTools(c),
-		qt.Commentf("the reading table and the served tools disagree; update %s", agentGuidePage))
+	c.Assert(documentedTools(c, mcpToolReferencePage, readingToolsHeading), qt.DeepEquals, readingTools(c),
+		qt.Commentf("the reading table and the served tools disagree; update %s", mcpToolReferencePage))
 }
 
-// TestToolDocs_TheGuideListsExactlyTheArtifactTools is the same check for the
-// half a workspace adds.
-func TestToolDocs_TheGuideListsExactlyTheArtifactTools(t *testing.T) {
+// TestToolDocs_TheReferenceListsExactlyTheArtifactTools is the same check for
+// the half a workspace adds.
+func TestToolDocs_TheReferenceListsExactlyTheArtifactTools(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(documentedTools(c, agentGuidePage, artifactToolsHeading), qt.DeepEquals, artifactTools(c),
-		qt.Commentf("the artifact table and the served tools disagree; update %s", agentGuidePage))
+	c.Assert(documentedTools(c, mcpToolReferencePage, artifactToolsHeading), qt.DeepEquals, artifactTools(c),
+		qt.Commentf("the artifact table and the served tools disagree; update %s", mcpToolReferencePage))
 }
 
 // TestToolDocs_TheCommandReferenceListsExactlyTheReadingTools holds the second
@@ -75,9 +77,9 @@ func TestToolDocs_TablesAreFound(t *testing.T) {
 	c := qt.New(t)
 
 	tables := map[string][]string{
-		"guide reading":     documentedTools(c, agentGuidePage, readingToolsHeading),
-		"guide artifact":    documentedTools(c, agentGuidePage, artifactToolsHeading),
-		"reference reading": documentedTools(c, commandReferencePage, mcpSectionHeading),
+		"MCP reference reading":     documentedTools(c, mcpToolReferencePage, readingToolsHeading),
+		"MCP reference artifact":    documentedTools(c, mcpToolReferencePage, artifactToolsHeading),
+		"command reference reading": documentedTools(c, commandReferencePage, mcpSectionHeading),
 	}
 	for name, documented := range tables {
 		t.Run(name, func(t *testing.T) {
@@ -85,9 +87,9 @@ func TestToolDocs_TablesAreFound(t *testing.T) {
 			c.Assert(len(documented) > 1, qt.IsTrue)
 		})
 	}
-	c.Assert(tables["guide reading"], qt.Contains, "schema_lineage")
-	c.Assert(tables["guide artifact"], qt.Contains, "preview_patch")
-	c.Assert(tables["reference reading"], qt.Contains, "schema_lineage")
+	c.Assert(tables["MCP reference reading"], qt.Contains, "schema_lineage")
+	c.Assert(tables["MCP reference artifact"], qt.Contains, "preview_patch")
+	c.Assert(tables["command reference reading"], qt.Contains, "schema_lineage")
 }
 
 // TestToolDocs_TheDocsDoNotNameAToolTheServerDoesNotServe pins one name in
@@ -101,7 +103,7 @@ func TestToolDocs_TablesAreFound(t *testing.T) {
 func TestToolDocs_TheDocsDoNotNameAToolTheServerDoesNotServe(t *testing.T) {
 	c := qt.New(t)
 
-	for _, page := range []string{agentGuidePage, commandReferencePage} {
+	for _, page := range []string{mcpToolReferencePage, commandReferencePage} {
 		t.Run(page, func(t *testing.T) {
 			c := qt.New(t)
 			body, err := os.ReadFile(page)
@@ -210,10 +212,10 @@ func TestToolDocs_TheCIGuidanceQuotesTheRefusalItDescribes(t *testing.T) {
 		"patch_id":      preview["patch_id"],
 	})
 
-	body, err := os.ReadFile(agentGuidePage)
+	body, err := os.ReadFile(agentPolicyPage)
 	c.Assert(err, qt.IsNil)
 	c.Assert(collapse(string(body)), qt.Contains, collapse(refusal),
-		qt.Commentf("the refusal the server produces is not the one %s quotes:\n%s", agentGuidePage, refusal))
+		qt.Commentf("the refusal the server produces is not the one %s quotes:\n%s", agentPolicyPage, refusal))
 }
 
 // collapse folds every run of whitespace to one space, so a message the page

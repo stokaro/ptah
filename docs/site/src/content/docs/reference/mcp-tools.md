@@ -26,21 +26,28 @@ tool, then use that response for machine-generated JSON Schema.
 
 The server exposes tools only. It declares no MCP resources or prompts.
 
-## Tool index
+## The reading tools
 
-| Tool | Purpose | Needs workspace | May write |
-| --- | --- | --- | --- |
-| `describe_session` | Report policy, configured scopes, targets, and version. | no | no |
-| `validate_schema` | Validate a declared schema for one dialect. | no | no |
-| `render_schema` | Render declared schema DDL in dependency order. | no | no |
-| `schema_lineage` | Trace base columns feeding view columns. | no | no |
-| `search_docs` | Search Ptah documentation and return document and heading evidence. | no | no |
-| `read_database` | Introspect an operator-configured database target. | no | no |
-| `inference_plan` | Plan an embedding-generation change and report outbound text. | no | no |
-| `inference_status` | Report generation progress and cutover blockers. | no | no |
-| `read_artifact` | List an artifact directory or read one file with digests. | yes | no |
-| `preview_patch` | Validate and diff a proposed artifact patch. | yes | no |
-| `apply_patch` | Apply one preview, verify, and undo introduced failures. | yes | yes, when policy permits |
+| Tool | Purpose |
+| --- | --- |
+| `describe_session` | Report policy, configured scopes, targets, and version. |
+| `validate_schema` | Validate a declared schema for one dialect. |
+| `render_schema` | Render declared schema DDL in dependency order. |
+| `schema_lineage` | Trace base columns feeding view columns. |
+| `search_docs` | Search Ptah documentation and return document and heading evidence. |
+| `read_database` | Introspect an operator-configured database target. |
+| `inference_plan` | Plan an embedding-generation change and report outbound text. |
+| `inference_status` | Report generation progress and cutover blockers. |
+
+## The artifact tools
+
+These tools appear only when the server has a workspace.
+
+| Tool | Purpose | May write |
+| --- | --- | --- |
+| `read_artifact` | List an artifact directory or read one file with digests. | no |
+| `preview_patch` | Validate and diff a proposed artifact patch. | no |
+| `apply_patch` | Apply one preview, verify, and undo introduced failures. | yes, when policy permits |
 
 Nothing on this surface applies a migration to a database.
 
@@ -77,7 +84,7 @@ the process.
 the running server. Their responses distinguish measured state, inferred state,
 unsupported behavior, and text that would leave the database.
 
-## Artifact tools
+## Artifact tool arguments
 
 `read_artifact` accepts:
 

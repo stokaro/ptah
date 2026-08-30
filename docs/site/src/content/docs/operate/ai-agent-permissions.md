@@ -111,6 +111,16 @@ ptah mcp --workspace . --migrations-dir ./migrations --dialect postgres \
   --allow-write migrations --auto-approve
 ```
 
+Without `--auto-approve`, a non-interactive client receives this refusal:
+
+```text
+approval_unavailable: "artifact.write:migrations": operation requires approval
+and this session cannot ask. This client cannot present an approval prompt. The
+operator grants the capability outright when starting the server, for example:
+ptah mcp --workspace . --allow-write=migrations --auto-approve. Naming a class
+without --auto-approve asks for each patch, which is what could not be done here.
+```
+
 Auto-approval removes the prompt. Path containment, capability policy, digest
 checks, and verification gates still run.
 
