@@ -24,7 +24,7 @@ handoff and the branch was rebased onto
 those rebases was the derived content inventory, which was regenerated from
 the combined source tree.
 
-- Ending implementation commit: `303eadaf1fbab1ab998ad60a0218388a83e7ee87`
+- Ending implementation commit: `741fa58a44a6d65434b8237344cc143bbed2c2af`
 - Current implementation PR:
   [#2593](https://github.com/stokaro/ptah/pull/2593)
 
