@@ -35,8 +35,8 @@ The work is split into reviewable branches and pull requests:
    [#2557](https://github.com/stokaro/ptah/pull/2557).
 5. Reference and compatibility separation: commit `2fe3c57fb`, PR
    [#2558](https://github.com/stokaro/ptah/pull/2558).
-6. Editorial, layout, and final validation: the final stacked branch based on
-   Phase 5.
+6. Editorial, layout, and final validation: commit `21e725e85`, PR
+   [#2559](https://github.com/stokaro/ptah/pull/2559).
 
 ## Pages and routes
 
@@ -129,9 +129,10 @@ provider fixtures pass mechanical verification.
 ## Layout and accessibility
 
 The page shell remains `70rem` wide for code, diagrams, generated matrices, and
-wide tables. Ordinary prose stops at `40rem`. The responsive gate measures all
-126 routes at 390px, 1280px, and 1920px, refuses document-level overflow, keeps
-prose within 642px, and checks table density and local scrolling.
+wide tables. Ordinary prose uses a centered `60rem` measure when the viewport
+has room. The responsive gate measures all 126 routes at 390px, 1280px, and
+1920px, refuses document-level overflow, verifies the full centered measure on
+a wide representative page, and checks table density and local scrolling.
 
 Axe WCAG A/AA checks pass on six representative routes at mobile and desktop
 widths. Keyboard tests cover sidebar disclosure, breadcrumbs, tabs, glossary
