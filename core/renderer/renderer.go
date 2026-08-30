@@ -1264,6 +1264,40 @@ func validateDeclaredIndexIncludes(
 	return nil
 }
 
+// indexIncludeTargets names the dialects that attach an INCLUDE payload to an
+// index. It is the index twin of constraintIncludeTargets, and the two lists
+// disagree on two dialects rather than being one list read twice.
+//
+// CockroachDB spells the payload STORING and takes INCLUDE as a synonym for it,
+// which the refusal that used to stand here denied. Measured on v26.3.1, one
+// CREATE INDEX per row:
+//
+//	CREATE INDEX i1 ON a (email) INCLUDE (name)               CREATE INDEX
+//	CREATE UNIQUE INDEX i2 ON a (email) INCLUDE (name)        CREATE INDEX
+//	CREATE INDEX i3 ON a USING BTREE (email) INCLUDE (name)   CREATE INDEX
+//	CREATE INDEX i7 ON a (email) INCLUDE (name) WHERE ...     CREATE INDEX
+//	CREATE INDEX i8 ON a (email) INCLUDE (name, doc)          CREATE INDEX
+//	CREATE INDEX i4 ON a USING GIN (doc) INCLUDE (name)
+//	                   ERROR: inverted indexes don't support stored columns
+//	CREATE INDEX i5 ON a USING GIST (geo) INCLUDE (name)
+//	                   ERROR: inverted indexes don't support stored columns
+//
+// The payload is stored rather than swallowed -- SHOW CREATE TABLE reports
+// `INDEX i1 (email ASC) STORING (name)` -- and it reads back through
+// pg_index.indnkeyatts and pg_get_indexdef exactly as PostgreSQL's does, so no
+// reader arm is needed for it.
+//
+// Spanner is the reverse pair: allowed here and refused for a constraint, in
+// the server's own words. See constraintIncludeTargets for that half.
+func indexIncludeTargets() []string {
+	return []string{
+		platform.Postgres,
+		platform.YugabyteDB,
+		platform.CockroachDB,
+		platform.Spanner,
+	}
+}
+
 func validateIndexInclude(
 	dialect string,
 	caps capability.Capabilities,
@@ -1297,17 +1331,16 @@ func validateIndexInclude(
 	}
 
 	normalizedDialect := platform.NormalizeDialect(dialect)
-	switch normalizedDialect {
-	case platform.Postgres, platform.YugabyteDB, platform.Spanner:
-	default:
+	if !slices.Contains(indexIncludeTargets(), normalizedDialect) {
 		return &ptaherr.CapabilityError{
 			Dialect: dialect,
 			Feature: "index INCLUDE columns",
 			Err:     ptaherr.ErrUnsupportedFeature,
 			Message: fmt.Sprintf(
-				"%s does not support INCLUDE columns on index %q; target postgres, yugabytedb, or spanner",
+				"%s does not support INCLUDE columns on index %q; target %s",
 				normalizedDialect,
 				indexName,
+				englishAlternatives(indexIncludeTargets()),
 			),
 		}
 	}
@@ -1326,6 +1359,14 @@ func validateIndexInclude(
 	case platform.YugabyteDB:
 		allowed = method == "" || method == "LSM" || method == "BTREE"
 		supportedMethods = "the default, LSM, or BTREE access method"
+	case platform.CockroachDB:
+		// GIST is not a spatial arm waiting to be added: CockroachDB answers
+		// `inverted indexes don't support stored columns` for GIN and GIST
+		// alike, because GIST is how it spells an inverted index. HASH is not
+		// an access method there at all -- `unimplemented: this syntax` -- so
+		// refusing it here gives the same answer the server would.
+		allowed = method == "" || method == "BTREE"
+		supportedMethods = "the default or BTREE access method"
 	case platform.Spanner:
 		allowed = method == ""
 		supportedMethods = "the default access method"

@@ -29,6 +29,14 @@ func TestIndexIncludeSupportedDialects(t *testing.T) {
 		{name: "yugabytedb default", dialect: platform.YugabyteDB},
 		{name: "yugabytedb lsm", dialect: platform.YugabyteDB, method: "LSM", usingSQL: " USING LSM"},
 		{name: "yugabytedb btree", dialect: platform.YugabyteDB, method: "BTREE"},
+		// CockroachDB spells the payload STORING and takes INCLUDE as a synonym.
+		// Measured on v26.3.1: both rows answer CREATE INDEX, and SHOW CREATE
+		// TABLE reports `INDEX i (email ASC) STORING (name)` for each.
+		{name: "cockroachdb default", dialect: platform.CockroachDB},
+		// BTREE renders with no USING clause, as it does for YugabyteDB: it names
+		// the default rather than a second access method, and CockroachDB's
+		// pg_am has no btree row to render back to.
+		{name: "cockroachdb btree", dialect: platform.CockroachDB, method: "BTREE"},
 		{name: "spanner default", dialect: platform.Spanner},
 	}
 
@@ -55,12 +63,12 @@ func TestIndexIncludeSupportedDialects(t *testing.T) {
 
 func TestIndexIncludeUnsupportedDialectsFailClosed(t *testing.T) {
 	dialects := []string{
-		platform.CockroachDB,
 		platform.MySQL,
 		platform.MariaDB,
 		platform.SQLite,
 		platform.ClickHouse,
 		platform.SQLServer,
+		platform.Oracle,
 	}
 
 	for _, dialect := range dialects {
@@ -75,7 +83,8 @@ func TestIndexIncludeUnsupportedDialectsFailClosed(t *testing.T) {
 				err,
 				qt.ErrorMatches,
 				fmt.Sprintf(
-					`%s does not support INCLUDE columns on index "idx_accounts_email"; target postgres, yugabytedb, or spanner`,
+					`%s does not support INCLUDE columns on index "idx_accounts_email"; `+
+						`target postgres, yugabytedb, cockroachdb, or spanner`,
 					dialect,
 				),
 			)
@@ -168,6 +177,11 @@ func TestIndexIncludeUnsupportedAccessMethodsFailClosed(t *testing.T) {
 		{name: "yugabytedb gist", dialect: platform.YugabyteDB, method: "GIST", supported: "the default, LSM, or BTREE access method"},
 		{name: "yugabytedb spgist", dialect: platform.YugabyteDB, method: "SPGIST", supported: "the default, LSM, or BTREE access method"},
 		{name: "yugabytedb gin", dialect: platform.YugabyteDB, method: "GIN", supported: "the default, LSM, or BTREE access method"},
+		// CockroachDB answers `inverted indexes don't support stored columns` for
+		// GIN and GIST alike, because GIST is how it spells an inverted index.
+		{name: "cockroachdb gin", dialect: platform.CockroachDB, method: "GIN", supported: "the default or BTREE access method"},
+		{name: "cockroachdb gist", dialect: platform.CockroachDB, method: "GIST", supported: "the default or BTREE access method"},
+		{name: "cockroachdb spgist", dialect: platform.CockroachDB, method: "SPGIST", supported: "the default or BTREE access method"},
 		{name: "spanner btree", dialect: platform.Spanner, method: "BTREE", supported: "the default access method"},
 		{name: "spanner lsm", dialect: platform.Spanner, method: "LSM", supported: "the default access method"},
 		{name: "spanner gist", dialect: platform.Spanner, method: "GIST", supported: "the default access method"},

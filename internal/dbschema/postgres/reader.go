@@ -13,6 +13,7 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/coverage"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/internal/pgindexstorage"
 	"go.5x5.cz/ptah/internal/reservedrole"
@@ -28,6 +29,14 @@ type Reader struct {
 	schemas []string
 	scoped  bool
 	caps    capability.Capabilities
+
+	// dialect is the normalized name of the product on the other end of db.
+	// This reader serves four of them over one wire protocol, and capabilities
+	// cannot stand in: capability.Capabilities carries no dialect, and reaching
+	// for a CockroachDB-only feature key as a proxy would gate a naming
+	// question on an unrelated capability. See accessMethodSpelling for the one
+	// answer that needs it.
+	dialect string
 
 	// relationSize records whether pg_catalog.pg_relation_size exists on the
 	// connected server, and relationSizeProbed whether that has been asked yet.
@@ -50,9 +59,29 @@ func NewPostgreSQLReader(db sqlrunner.Runner, schema string) *Reader {
 
 // NewPostgreSQLReaderWithCapabilities creates a PostgreSQL-family schema reader
 // whose PostgreSQL-specific currentCatalog reads are gated by target capabilities.
+//
+// The dialect defaults to PostgreSQL itself. A caller reading one of the other
+// three products on this wire protocol must say so with
+// NewPostgreSQLWireReaderWithCapabilities.
 func NewPostgreSQLReaderWithCapabilities(
 	db sqlrunner.Runner,
 	schema string,
+	caps capability.Capabilities,
+) *Reader {
+	return NewPostgreSQLWireReaderWithCapabilities(db, schema, platform.Postgres, caps)
+}
+
+// NewPostgreSQLWireReaderWithCapabilities creates a reader that knows which of
+// the PostgreSQL-wire products it is reading.
+//
+// The dialect is a constructor argument rather than a setter so that a live
+// caller cannot leave it unset: the answer it changes is one where a wrong
+// default is silent, producing a plausible index description that the server it
+// came from refuses (stokaro/ptah#2584).
+func NewPostgreSQLWireReaderWithCapabilities(
+	db sqlrunner.Runner,
+	schema string,
+	dialect string,
 	caps capability.Capabilities,
 ) *Reader {
 	if schema == "" {
@@ -62,6 +91,7 @@ func NewPostgreSQLReaderWithCapabilities(
 		db:      db,
 		schema:  schema,
 		schemas: []string{schema},
+		dialect: platform.NormalizeDialect(dialect),
 		caps:    caps,
 	}
 }
@@ -1484,7 +1514,7 @@ func (r *Reader) readIndexesForSchema(ctx context.Context, schemaName string) ([
 			return nil, fmt.Errorf("failed to scan index: %w", err)
 		}
 
-		index, err := buildPostgresIndex(row)
+		index, err := buildPostgresIndex(r.dialect, row)
 		if err != nil {
 			return nil, err
 		}
@@ -1533,9 +1563,60 @@ type postgresIndexRow struct {
 	partitionAttached bool
 }
 
+// catalogOnlyAccessMethods maps the access-method names a PostgreSQL-wire server
+// reports in pg_am but refuses as input, onto the names it does accept.
+//
+// CockroachDB's pg_am holds exactly two rows, `prefix` and `inverted`, and
+// neither is a name it will take back:
+//
+//	CREATE INDEX p1 ON a USING PREFIX (email)
+//	  ERROR: at or near "prefix": syntax error: unrecognized access method: prefix
+//	CREATE INDEX p3 ON a USING INVERTED (doc)
+//	  ERROR: at or near "inverted": syntax error: unrecognized access method: inverted
+//
+// The replacements are not chosen, they are read off the same server. Asked for
+// the definition of the very indexes whose pg_am row says `prefix` or
+// `inverted`, CockroachDB v26.3.1 prints:
+//
+//	i1 (amname prefix)    CREATE INDEX i1 ON public.a USING btree (email ASC) INCLUDE (name)
+//	g1 (amname inverted)  CREATE INDEX g1 ON public.a USING gin (doc)
+//	g2 (amname inverted)  CREATE INDEX g2 ON public.a USING gin (geo)
+//
+// g2 is a GEOMETRY index created with USING GIST, and the server itself prints
+// it as `gin`, so collapsing GIST onto GIN here loses nothing that pg_am kept:
+// the distinction is already gone one layer down, before this map is consulted.
+// A replay of `USING gin (geo)` reproduces g2 byte for byte, so the narrowing is
+// CockroachDB's rather than one introduced here.
+//
+// Left unmapped, `prefix` reached the renderer and came back out as
+// `CREATE INDEX ... USING prefix (...)`, which is DDL CockroachDB refuses --
+// so every index it described replayed as a syntax error, covering or not.
+var catalogOnlyAccessMethods = map[string]string{
+	"prefix":   "btree",
+	"inverted": "gin",
+}
+
+// accessMethodSpelling answers what a reader should carry for an index's access
+// method: the catalog's own name, unless the server is one that reports a name
+// it will not accept.
+//
+// It is gated on the dialect rather than applied to every PostgreSQL-wire
+// server, because PostgreSQL permits CREATE ACCESS METHOD and an extension is
+// free to install one called `prefix`. On PostgreSQL that name would be real and
+// this rewrite would corrupt it.
+func accessMethodSpelling(dialect, amname string) string {
+	if dialect != platform.CockroachDB {
+		return amname
+	}
+	if replacement, ok := catalogOnlyAccessMethods[strings.ToLower(strings.TrimSpace(amname))]; ok {
+		return replacement
+	}
+	return amname
+}
+
 // buildPostgresIndex maps one introspection row onto the dialect-neutral index
 // model. It does not set Schema, which needs the reader's output-schema policy.
-func buildPostgresIndex(row postgresIndexRow) (catalog.Index, error) {
+func buildPostgresIndex(dialect string, row postgresIndexRow) (catalog.Index, error) {
 	index := catalog.Index{
 		Name:              row.indexName,
 		TableName:         row.tableName,
@@ -1544,7 +1625,7 @@ func buildPostgresIndex(row postgresIndexRow) (catalog.Index, error) {
 		Comment:           row.comment,
 		IsUnique:          row.isUnique,
 		IsPrimary:         row.isPrimary,
-		Method:            row.method,
+		Method:            accessMethodSpelling(dialect, row.method),
 		NullsDistinct:     postgresNullsDistinctFromDefinition(row.indexDef),
 		PartitionAttached: row.partitionAttached,
 	}
