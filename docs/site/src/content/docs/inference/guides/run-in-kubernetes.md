@@ -115,6 +115,12 @@ condition you asked about is not met" from "this command did not run" would trea
 a typo in a database URL as a corpus that is not ready yet, and would wait for it
 forever.
 
+The two answers are measured rather than read off the run, so each attempt costs
+what `verify` costs: a read of the source and the target. An init container is
+naturally rate-limited — Kubernetes backs its restarts off exponentially — but a
+loop you write yourself against a corpus of millions of rows should not poll
+every few seconds against the database the backfill is still writing to.
+
 For a rollout system that reads structured output rather than a status,
 `--format json` carries the same answer:
 

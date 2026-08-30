@@ -2360,8 +2360,8 @@
         "/inference/reference/support-and-limitations/",
         "/inference/strategies/production-rollout/"
       ],
-      "visibleWords": 968,
-      "sourceBytes": 7580
+      "visibleWords": 1036,
+      "sourceBytes": 7976
     },
     {
       "path": "docs/site/src/content/docs/inference/overview.md",
