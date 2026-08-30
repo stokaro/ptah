@@ -41,6 +41,19 @@ var nestedCoverageExempt = map[string]string{
 	// names would need the reversal to be handed the catalog rather than a
 	// schema converted from it.
 	"DomainDiff.CurrentCheckConstraints": "the constraint names are server-chosen and no schema carries them",
+
+	// Filling it would ADD a copy rather than restore a missing one. A
+	// self-reference declared as a table-level constraint is already emitted
+	// twice on the FORWARD path -- once from the table's constraints and once
+	// from this list -- and a composite one's second copy quotes the whole
+	// column list as a single identifier, naming a column that does not exist.
+	// Measured on postgres against master, and identical at cf84d08d7^, so it
+	// predates the constraint carry (stokaro/ptah#2583).
+	//
+	// The reverse path fills DependsOn, which emits nothing of its own and
+	// only feeds InDependencyOrder(). This one waits for #2583 to decide who
+	// owns the emission and how a composite key is represented.
+	"TableCreation.SelfReferencingForeignKeys": "already emitted twice on the forward path; stokaro/ptah#2583",
 }
 
 // TestReverseSchemaDiff_NamesEveryFieldOfEveryDiffElement is the half of the
@@ -155,41 +168,117 @@ func fieldsNamedByReversalBuilders(c *qt.C) map[string]bool {
 	return named
 }
 
-// isReversalBuilder matches the reverse<Something>Diffs naming this package
-// uses for the per-collection builders.
+// isReversalBuilder matches the two namings this package uses for code that
+// assembles a diff element for the down direction.
+//
+// reverse<Something>Diffs is the per-collection builder. prior<Something> is
+// the per-element one, which reads the pre-change schema for a single object,
+// and it is here because leaving it out is what let TableCreation sit outside
+// the census entirely while priorTableCreation filled four of its six fields
+// (stokaro/ptah#2541).
+//
+// Both are conventions rather than a list, which is the property this gate
+// exists to keep: a builder added under either name is covered by existing.
+// Most prior* functions return a schemamodel type rather than a diff element,
+// and reversedDiffElementTypes drops those on its own -- it only considers
+// element types of SchemaDiff's own slices.
 func isReversalBuilder(name string) bool {
-	return strings.HasPrefix(name, "reverse") && strings.HasSuffix(name, "Diffs")
+	if strings.HasPrefix(name, "reverse") && strings.HasSuffix(name, "Diffs") {
+		return true
+	}
+	return strings.HasPrefix(name, "prior")
 }
 
-// collectNamedFields records, PER ELEMENT TYPE, the fields a builder names in a
-// literal of that type, and marks the types it constructs.
+// collectNamedFields records, PER ELEMENT TYPE, the fields a builder names,
+// and marks the types it assembles field by field.
 //
 // Per type rather than a flat set of identifiers: `Name` appears in half the
 // diff element types, and a flat set would let a builder that names one type's
 // field vouch for every other type's field of the same name.
+//
+// Two shapes count, because this package writes both. A keyed composite
+// literal names its fields directly. A literal bound to a variable that is
+// then filled by assignment -- which is how priorTableCreation writes four of
+// TableCreation's six fields -- names them one statement at a time, and
+// reading only the literal credits it with `Name` alone.
+//
+// An EMPTY literal marks nothing. `return schemamodel.Sequence{}` is a
+// zero-value return on a lookup miss, not an assembly, and the found path
+// beside it copies the whole struct; counting it made every one of Sequence's
+// fourteen fields report as dropped while nothing was dropped at all.
 func collectNamedFields(function *ast.FuncDecl, named map[string]bool) {
+	assembled := assembledLocals(function)
 	ast.Inspect(function, func(node ast.Node) bool {
-		literal, ok := node.(*ast.CompositeLit)
-		if !ok {
-			return true
-		}
-		selector, ok := literal.Type.(*ast.SelectorExpr)
-		if !ok {
-			return true
-		}
-		element := selector.Sel.Name
-		named["type:"+element] = true
-		for _, item := range literal.Elts {
-			pair, ok := item.(*ast.KeyValueExpr)
-			if !ok {
-				continue
+		switch node := node.(type) {
+		case *ast.CompositeLit:
+			element, ok := literalElementName(node)
+			if !ok || len(node.Elts) == 0 {
+				return true
 			}
-			if key, ok := pair.Key.(*ast.Ident); ok {
-				named[element+"."+key.Name] = true
+			named["type:"+element] = true
+			for _, item := range node.Elts {
+				pair, ok := item.(*ast.KeyValueExpr)
+				if !ok {
+					continue
+				}
+				if key, ok := pair.Key.(*ast.Ident); ok {
+					named[element+"."+key.Name] = true
+				}
+			}
+		case *ast.AssignStmt:
+			for _, target := range node.Lhs {
+				selector, ok := target.(*ast.SelectorExpr)
+				if !ok {
+					continue
+				}
+				receiver, ok := selector.X.(*ast.Ident)
+				if !ok {
+					continue
+				}
+				if element, ok := assembled[receiver.Name]; ok {
+					named[element+"."+selector.Sel.Name] = true
+				}
 			}
 		}
 		return true
 	})
+}
+
+// assembledLocals maps each local variable this function binds to a composite
+// literal of a package-qualified type onto that type's name, so a later
+// `local.Field = ...` can be credited to it.
+func assembledLocals(function *ast.FuncDecl) map[string]string {
+	locals := make(map[string]string)
+	ast.Inspect(function, func(node ast.Node) bool {
+		assign, ok := node.(*ast.AssignStmt)
+		if !ok {
+			return true
+		}
+		for i, right := range assign.Rhs {
+			literal, ok := right.(*ast.CompositeLit)
+			if !ok || i >= len(assign.Lhs) {
+				continue
+			}
+			element, ok := literalElementName(literal)
+			if !ok {
+				continue
+			}
+			if name, ok := assign.Lhs[i].(*ast.Ident); ok {
+				locals[name.Name] = element
+			}
+		}
+		return true
+	})
+	return locals
+}
+
+// literalElementName is the type name of a package-qualified composite literal.
+func literalElementName(literal *ast.CompositeLit) (string, bool) {
+	selector, ok := literal.Type.(*ast.SelectorExpr)
+	if !ok {
+		return "", false
+	}
+	return selector.Sel.Name, true
 }
 
 // namedOrExempt reports whether a reversal builder names this field, or whether
