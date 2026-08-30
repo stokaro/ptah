@@ -19,10 +19,11 @@ commit was:
 That commit was both the current `master` tip and the independently reviewed
 historical baseline. Immediately before publication, the branch fetched
 `master` again and rebased cleanly except for regenerating the derived content
-inventory. The resulting base is
-`0ef7afb42ed9f26934f3bb3d318e0d14389fb6e3`.
+inventory. A later default-branch change was fetched before final handoff and
+rebased without conflicts. The resulting base is
+`be2981e25668de794afa12e456f71843ad368fe7`.
 
-- Ending implementation commit: `65092cf680821e278fd8eae02f2ba021d5557aba`
+- Ending implementation commit: `01bdc0ddf7272d1ba740805108b71d71db6f77e4`
 - Current implementation PR:
   [#2593](https://github.com/stokaro/ptah/pull/2593)
 
@@ -217,9 +218,9 @@ source_commit: 0ef7afb42ed9f26934f3bb3d318e0d14389fb6e3
 built_at: 2026-08-30T14:16:51.348Z
 ```
 
-That commit is the current default-branch base of PR #2593 and predates the two
-commits in this unmerged hardening change. It is evidence for the public site's
-current state, not evidence that this implementation has deployed.
+That commit predates the current default-branch base of PR #2593 and the
+unmerged hardening change. It is evidence for the public site's current state,
+not evidence that this implementation has deployed.
 
 - Expected implementation commit: the merge commit of PR #2593, not yet
   created.
