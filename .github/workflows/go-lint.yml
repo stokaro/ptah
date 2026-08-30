@@ -75,6 +75,9 @@ jobs:
           scripts/check-readme-example.sh
           scripts/check-readme-example-selftest.sh
 
+      - name: Check runnable examples
+        run: scripts/check-examples.sh
+
       - name: Check the ADR index
         run: |
           set -euo pipefail

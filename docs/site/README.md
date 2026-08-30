@@ -16,9 +16,17 @@ ASTRO_TELEMETRY_DISABLED=1 npm run check:content-inventory
 ASTRO_TELEMETRY_DISABLED=1 npm run check:support-matrix:selftest
 ASTRO_TELEMETRY_DISABLED=1 npm run check:support-matrix
 ASTRO_TELEMETRY_DISABLED=1 npm run check:exit-codes
+ASTRO_TELEMETRY_DISABLED=1 npm run check:examples:selftest
+ASTRO_TELEMETRY_DISABLED=1 npm run check:examples
+ASTRO_TELEMETRY_DISABLED=1 npm run check:visual-assets:selftest
+ASTRO_TELEMETRY_DISABLED=1 npm run check:visual-assets
 ASTRO_TELEMETRY_DISABLED=1 npm run check:navigation:selftest
 ASTRO_TELEMETRY_DISABLED=1 npm run check:search-ranking:selftest
+ASTRO_TELEMETRY_DISABLED=1 npm run check:accessibility:selftest
+ASTRO_TELEMETRY_DISABLED=1 npm run check:visual-snapshots:selftest
 ASTRO_TELEMETRY_DISABLED=1 npm run build
+ASTRO_TELEMETRY_DISABLED=1 npm run check:accessibility
+ASTRO_TELEMETRY_DISABLED=1 npm run check:visual-snapshots -- --output /tmp/ptah-docs-snapshots
 ASTRO_TELEMETRY_DISABLED=1 npm run check:navigation
 ASTRO_TELEMETRY_DISABLED=1 npm run check:search-ranking
 npm run versions:selftest
@@ -26,6 +34,14 @@ npm run root-assets:selftest
 npm run check:pages-root:selftest
 npm run check:pages-root
 npm audit --audit-level=low
+```
+
+From the repository root, execute the non-site examples and the service-backed
+inference tutorial:
+
+```bash
+scripts/check-examples.sh
+PTAH_DOCKER_CONTEXT=default docs/site/scripts/check-inference-quick-start.sh
 ```
 
 For local development:
@@ -167,6 +183,20 @@ each recorded canonical page in the first three results.
 The source endpoints are build artifacts, not reader pages. They are omitted
 from the sitemap and from the published-route ledger, and no sidebar entry
 points at them.
+
+## Visuals, screenshots, and accessibility
+
+Authored diagrams live under `src/assets/` as semantic SVG. Real schema UI
+screenshots come from `fixtures/schema-ui/` through
+`scripts/generate-schema-ui-assets.mjs`; the source record beside the PNGs
+states the fixed viewport and sanitization. `check-visual-assets.mjs` rejects a
+new text-bearing raster diagram, an unnamed SVG, or an unrecorded screenshot.
+
+`check-accessibility.mjs` runs axe at mobile and desktop widths and exercises
+sidebar disclosures, tabs, glossary popovers, breadcrumbs, and page actions by
+keyboard. `check-visual-snapshots.mjs` captures selected full pages and uploads
+them from CI for human review; it checks rendering and geometry rather than
+comparing platform-dependent pixels.
 
 ## The Pages root
 

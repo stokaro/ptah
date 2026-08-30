@@ -29,9 +29,14 @@ type Meta struct {
 	Source string
 }
 
-//ptah:schema:table name="users"
+type SkippedMeta struct {
+	Author string
+	Source string
+}
+
+//ptah:schema:table name="embedded_users"
 type EmbeddedUser struct {
-	//ptah:schema:field name="id" type="VARCHAR(36)" primary="true" not_null="true"
+	//ptah:schema:field name="id" type="INTEGER" primary="true" not_null="true"
 	ID int `db:"id"`
 
 	//ptah:schema:field name="email" type="VARCHAR(255)" unique="true" not_null="true"
@@ -61,12 +66,12 @@ type Article struct {
 	Meta // Results in: meta_data JSONB column
 
 	// Mode 4: relation - Adds foreign key field + constraint
-	//ptah:embedded mode="relation" field="author_id" ref="users(id)" on_delete="CASCADE"
+	//ptah:embedded mode="relation" field="author_id" ref="embedded_users(id)" on_delete="CASCADE"
 	Author EmbeddedUser // Results in: author_id INTEGER + FK constraint
 
 	// Mode 5: skip - Ignores this embedded field completely
 	//ptah:embedded mode="skip"
-	SkippedField Meta // Results in: nothing (ignored)
+	SkippedField SkippedMeta // Results in: nothing (ignored)
 }
 
 // ExampleUsage demonstrates how to use embedded fields

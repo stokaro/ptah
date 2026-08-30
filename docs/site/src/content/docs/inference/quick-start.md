@@ -1,161 +1,190 @@
 ---
 title: Quick start
-description: Run one complete generation change against a throwaway PostgreSQL database, from an empty table to a cutover.
+description: Build, verify, and activate an embedding generation with a disposable PostgreSQL and local provider fixture.
 type: tutorial
 audience:
   - "application-developer"
   - "database-engineer"
 readerQuestion: "How do I run and verify one complete inference migration?"
-goal: "Run and verify one complete inference migration."
+goal: "Build, verify, and activate one embedding generation without an external model service."
 sourceOfTruth:
   - "cmd/inference"
   - "integration/inference_cli_e2e_test.go"
+  - "docs/site/fixtures/inference-quick-start"
 generated: false
+lastVerified: "2026-08-30"
 searchAliases:
   - pgvector
   - inference migration tutorial
+  - local embedding model
 overlaps:
   - "/inference/guides/create-first-generation/"
   - "/inference/concepts/lifecycle/"
 disposition: rewrite
 ---
 
-This runs a full migration end to end. Use a throwaway database — the last step
-moves a pointer and the one before it writes to your table.
+Build and activate one embedding generation without sending data to an external
+model service. The fixture supplies a disposable PostgreSQL 17 database with
+pgvector 0.8.1, three source rows, and a deterministic local embeddings API.
 
-You need a PostgreSQL database with pgvector, a built `ptah` binary, and an
-embedding endpoint that speaks the OpenAI-compatible `/v1/embeddings` API.
+The lifecycle keeps two roles separate: the **candidate generation** receives
+new vectors while the application continues to use the **active generation**.
+Only cutover changes the active pointer. On this empty fixture there is no old
+active generation, so the first candidate becomes the first active one.
 
-## 1. A table with something in it
+## What you need
 
-```sql
-CREATE EXTENSION IF NOT EXISTS vector;
+- Ptah [installed](../../start/install/) or built as `bin/ptah`;
+- Docker Compose;
+- Bash, `sed`, and `tee` for the approval step;
+- ports `55432` and `58080` available on the Docker host.
 
-CREATE TABLE docs (
-  id         BIGINT PRIMARY KEY,
-  title      TEXT NOT NULL,
-  body       TEXT NOT NULL,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+Run all commands from the repository root. If you installed Ptah elsewhere,
+replace `bin/ptah` below with `ptah`.
 
-INSERT INTO docs (id, title, body) VALUES
-  (1, 'Pricing',  'We bill monthly.'),
-  (2, 'Support',  'Email support@example.com.'),
-  (3, 'Billing',  'Invoices are issued on the first.');
-```
-
-Ptah does not install pgvector for you. `CREATE EXTENSION` is a database-wide,
-privileged act, and Ptah refuses rather than taking it on your behalf.
-
-## 2. A specification
-
-Save this as `spec.yaml`, with your endpoint and your model's dimension:
-
-```yaml
-version: 1
-name: docs
-source:
-  schema: public
-  table: docs
-  key_fields: [id]
-  input_fields: [title, body]
-  version_strategy: updated_at
-  version_field: updated_at
-  mutable: true
-preprocessing:
-  separator: "\n"
-  null_policy: empty
-  empty_policy: skip
-  unicode_normalization: none
-  truncate: refuse
-model:
-  provider: openai-compatible
-  endpoint_class: local
-  endpoint: http://127.0.0.1:8080/v1
-  identifier: bge-small-en
-  revision: "1"
-  reported_dimension: 384
-  normalization: none
-target:
-  schema: public
-  table: docs
-  column: embedding
-  representation: vector
-  metric: cosine
-  index_method: hnsw
-consistency:
-  mode: outbox
-policy:
-  require_exact_approval: true
-  require_consistency_mode: true
-```
-
-Every field is explained in [Specification](../reference/specification/).
-
-## 3. See what would happen
+## 1. Start the disposable services
 
 ```bash
-export DB="postgres://user:password@localhost:5432/mydb?sslmode=disable"
-ptah inference plan --spec spec.yaml --db-url "$DB"
+docker compose -f docs/site/fixtures/inference-quick-start/compose.yaml up -d --build --wait
 ```
 
-The plan labels every answer with where it came from, lists the steps, and ends
-with what would leave your database. Read the row count before going further —
-it is what tells you the scope is what you meant.
+Compose reports both `postgres` and `embeddings` as healthy. The database init
+script installs pgvector and inserts the source rows; the provider maps each
+input deterministically to four numbers based on its UTF-8 length.
 
-## 4. Run the lifecycle
+Set names used by the remaining commands:
 
 ```bash
-export RUN=quickstart
-
-ptah inference prepare  --spec spec.yaml --db-url "$DB" --run-id "$RUN"
-ptah inference backfill --spec spec.yaml --db-url "$DB" --run-id "$RUN"
-ptah inference catchup  --spec spec.yaml --db-url "$DB" --run-id "$RUN"
-ptah inference index    --spec spec.yaml --db-url "$DB" --run-id "$RUN"
-ptah inference verify   --spec spec.yaml --db-url "$DB" --run-id "$RUN"
+export PTAH_INFERENCE_DB='postgres://ptah:ptah@127.0.0.1:55432/ptah?sslmode=disable'
+export PTAH_INFERENCE_SPEC='docs/site/fixtures/inference-quick-start/spec.yaml'
+export PTAH_INFERENCE_RUN='quick-start'
 ```
 
-Each prints what it did:
+## 2. Review the plan
+
+```bash
+bin/ptah inference plan \
+  --spec "$PTAH_INFERENCE_SPEC" \
+  --db-url "$PTAH_INFERENCE_DB"
+```
+
+Check these stable facts in the output before continuing:
 
 ```text
-prepared run quickstart for generation 31122cc8322d
-backfill finished: 3 scanned, 3 embedded, 0 skipped
-caught up to transaction 901: 3 changed rows, 0 tombstoned
-generation 31122cc8322d has a valid index
-generation 31122cc8...: 3 source rows, 3 target rows
-  - every deterministic layer passed
+source.estimated_rows = 3 (measured)
+target.capability.vector_type = true (measured)
+[backfill] embed 3 in-scope source rows
+Consistency mode: outbox
 ```
 
-## 5. Look at the table
+The plan is read-only. It tells you how many rows are in scope and whether the
+target database actually provides the required vector type.
 
-```sql
-SELECT id, embedding_generation, embedding_state FROM docs ORDER BY id;
-```
-
-Every row carries the generation its vector belongs to and the state it is in.
-`ptah inference status --spec spec.yaml --db-url "$DB" --run-id "$RUN"` reports
-the same run from Ptah's side, including the phase it reached.
-
-## 6. Cut over
-
-Run it once to see the plan digest, then approve that exact plan:
+## 3. Prepare and backfill the candidate
 
 ```bash
-ptah inference cutover --spec spec.yaml --db-url "$DB" --run-id "$RUN"
-# refuses, and prints: plan 1df24fc375d7
+bin/ptah inference prepare \
+  --spec "$PTAH_INFERENCE_SPEC" --db-url "$PTAH_INFERENCE_DB" \
+  --run-id "$PTAH_INFERENCE_RUN"
 
-ptah inference cutover --spec spec.yaml --db-url "$DB" --run-id "$RUN" \
-  --approve 1df24fc375d7 --approver "your name"
+bin/ptah inference backfill \
+  --spec "$PTAH_INFERENCE_SPEC" --db-url "$PTAH_INFERENCE_DB" \
+  --run-id "$PTAH_INFERENCE_RUN" --batch-rows 10
 ```
 
-Without `--stabilize-for` this leaves no rollback, and the command says so. That
-is the right default for a throwaway database and the wrong one for production —
-see [Rollback and retire](../guides/rollback-and-retire/).
+The second command ends with this stable summary:
 
-## What you have now
+```text
+backfill finished: 3 scanned, 3 embedded, 0 skipped
+```
 
-One generation, verified, indexed, and active. Your application still reads
-whatever column its SQL names; moving the pointer did not change that. The next
-real task is
-[Migrate to another model](../guides/migrate-to-another-model/), which is where
-the second generation and its own column come in.
+Ptah has now written the candidate vectors, their generation identity, source
+version, input hash, and state. Nothing has cut over.
+
+## 4. Catch up, index, and verify
+
+```bash
+bin/ptah inference catchup \
+  --spec "$PTAH_INFERENCE_SPEC" --db-url "$PTAH_INFERENCE_DB" \
+  --run-id "$PTAH_INFERENCE_RUN" --batch-rows 10
+
+bin/ptah inference index \
+  --spec "$PTAH_INFERENCE_SPEC" --db-url "$PTAH_INFERENCE_DB" \
+  --run-id "$PTAH_INFERENCE_RUN"
+
+bin/ptah inference verify \
+  --spec "$PTAH_INFERENCE_SPEC" --db-url "$PTAH_INFERENCE_DB" \
+  --run-id "$PTAH_INFERENCE_RUN"
+```
+
+Verification reports three source rows and three target rows, followed by
+`every deterministic layer passed`. A passing report makes the generation
+eligible for cutover; it does not activate it.
+
+## 5. Inspect what Ptah wrote
+
+```bash
+bin/ptah inference status \
+  --spec "$PTAH_INFERENCE_SPEC" --db-url "$PTAH_INFERENCE_DB" \
+  --run-id "$PTAH_INFERENCE_RUN"
+
+docker compose -f docs/site/fixtures/inference-quick-start/compose.yaml \
+  exec -T postgres psql -U ptah -d ptah -c \
+  'SELECT id, embedding_generation, embedding_state FROM docs ORDER BY id;'
+```
+
+`status` names the run and its completed phase. The query returns three rows;
+each has the same nonempty generation identity and the state `upsert`.
+
+## 6. Approve the exact cutover plan
+
+First run cutover without approval. Refusal is deliberate: it prints the digest
+of the plan you are being asked to approve.
+
+```bash
+bin/ptah inference cutover \
+  --spec "$PTAH_INFERENCE_SPEC" --db-url "$PTAH_INFERENCE_DB" \
+  --run-id "$PTAH_INFERENCE_RUN" 2>&1 | tee /tmp/ptah-inference-cutover.txt
+
+export PTAH_INFERENCE_PLAN="$(sed -n 's/^plan //p' /tmp/ptah-inference-cutover.txt | head -1)"
+```
+
+Confirm that `PTAH_INFERENCE_PLAN` is not empty, then bind the approval to it:
+
+```bash
+test -n "$PTAH_INFERENCE_PLAN"
+
+bin/ptah inference cutover \
+  --spec "$PTAH_INFERENCE_SPEC" --db-url "$PTAH_INFERENCE_DB" \
+  --run-id "$PTAH_INFERENCE_RUN" \
+  --approve "$PTAH_INFERENCE_PLAN" --approver 'quick-start operator'
+```
+
+The successful command prints `queries now read generation …` with the same
+plan digest. Because no previous generation exists, there is nothing to keep as
+a rollback target in this first run.
+
+## 7. Verify the active pointer and clean up
+
+```bash
+docker compose -f docs/site/fixtures/inference-quick-start/compose.yaml \
+  exec -T postgres psql -U ptah -d ptah -c \
+  "SELECT target_table, active_generation FROM ptah_embedding_pointer;"
+```
+
+The row for `docs` names the generation you inspected in step 5. That pointer,
+not the completion of backfill or verification, is what makes a generation
+active.
+
+Remove the containers, network, and disposable database volume with one
+command:
+
+```bash
+rm -f /tmp/ptah-inference-cutover.txt && \
+  docker compose -f docs/site/fixtures/inference-quick-start/compose.yaml down -v --rmi local
+```
+
+Next, use [Migrate to another model](../guides/migrate-to-another-model/) to
+create a second generation and preserve the first through a stabilization
+window, or read [Generations](../concepts/generations/) for the complete active,
+candidate, previous, and retired state model.

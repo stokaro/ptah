@@ -24,6 +24,11 @@ Render an entity-relationship diagram of the desired schema. `ptah viz` scans
 Go annotations and writes Mermaid `erDiagram`, Graphviz DOT, or SVG output to
 stdout, so diagrams live next to the models that define them.
 
+![A Ptah-generated entity-relationship diagram showing organizations, users, projects, tasks, comments, and tags with their columns and foreign-key relationships.](../../../../../../examples/viz/schema.svg)
+
+This is the checked-in SVG produced by the example below, not a reconstruction
+of the output. The wide diagram scrolls horizontally on a narrow screen.
+
 Prerequisites: a built `ptah` binary, and the Graphviz `dot` binary only for
 `--format svg`. Mermaid and DOT output need no extra tools.
 

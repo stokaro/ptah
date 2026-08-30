@@ -24,6 +24,7 @@ type Post struct {
 	ID int
 
 	//ptah:schema:field name=user_id type="INT" not_null=true foreign="users(id)" foreign_key_name="fk_posts_user"
+	//ptah:schema:index name="idx_posts_user" fields="user_id"
 	UserID int
 
 	//ptah:schema:field name=title type="TEXT" not_null=true
@@ -35,6 +36,3 @@ type Post struct {
 	//ptah:schema:field name=created_at type="TIMESTAMP" default_expr="NOW()" not_null=true
 	CreatedAt string
 }
-
-//ptah:schema:index name=idx_posts_user fields="user_id"
-var _ = Post{}

@@ -1,0 +1,35 @@
+name: ptah-docs-inference
+
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
+    environment:
+      POSTGRES_DB: ptah
+      POSTGRES_PASSWORD: ptah
+      POSTGRES_USER: ptah
+    ports:
+      - "${PTAH_INFERENCE_POSTGRES_PORT:-55432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ptah -d ptah"]
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
+  embeddings:
+    build:
+      context: .
+      dockerfile: Dockerfile.embeddings
+    command: ["python", "/fixture/embed.py"]
+    ports:
+      - "${PTAH_INFERENCE_EMBED_PORT:-58080}:8080"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz')"
+      interval: 1s
+      timeout: 3s
+      retries: 30

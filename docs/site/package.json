@@ -10,8 +10,13 @@
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
+    "check:accessibility": "node scripts/check-accessibility.mjs",
+    "check:accessibility:selftest": "node scripts/check-accessibility.mjs --selftest",
     "check:exit-codes": "node scripts/check-exit-codes.mjs",
     "check:exit-codes:selftest": "node scripts/check-exit-codes.mjs --selftest",
+    "check:examples": "node scripts/check-examples.mjs",
+    "check:examples:selftest": "node scripts/check-examples.mjs --selftest",
+    "examples:write": "node scripts/check-examples.mjs --write",
     "check:core-doc-links": "node scripts/check-core-doc-links.mjs",
     "check:core-doc-links:selftest": "node scripts/check-core-doc-links.mjs --selftest",
     "check:docroutes:selftest": "node scripts/lib/docroutes.mjs --selftest",
@@ -36,6 +41,10 @@
     "check:navigation:selftest": "node scripts/check-navigation.mjs --selftest",
     "check:search-ranking": "node scripts/check-search-ranking.mjs",
     "check:search-ranking:selftest": "node scripts/check-search-ranking.mjs --selftest",
+    "check:visual-assets": "node scripts/check-visual-assets.mjs",
+    "check:visual-assets:selftest": "node scripts/check-visual-assets.mjs --selftest",
+    "check:visual-snapshots": "node scripts/check-visual-snapshots.mjs",
+    "check:visual-snapshots:selftest": "node scripts/check-visual-snapshots.mjs --selftest",
     "check:content-inventory": "node scripts/build-content-inventory.mjs",
     "check:content-inventory:selftest": "node scripts/build-content-inventory.mjs --selftest",
     "inventory:write": "node scripts/build-content-inventory.mjs --write",
@@ -57,6 +66,7 @@
     "tailwindcss": "4.3.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "playwright": "^1.62.1"
   }
 }
