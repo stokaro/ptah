@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -183,4 +184,77 @@ func anAllowedSignersFile(c *qt.C, dir, principal string) string {
 	// #nosec G703 -- allowedSigners is built from c.TempDir(); no external input reaches the path
 	c.Assert(os.WriteFile(allowedSigners, []byte(principal+" "+string(pub)), 0o600), qt.IsNil)
 	return allowedSigners
+}
+
+// TestInferenceUnapprovedCutoverE2E is the policy every other test here does
+// not run.
+//
+// `require_exact_approval: false` is a real configuration -- a development
+// environment, a pipeline whose review happens elsewhere -- and it is the one
+// path where a cutover proceeds with no approval object at all. Every
+// specification in this suite requires an approval, so nothing exercised it,
+// and reading the approver off an approval that was never given panicked the
+// process at the moment the pointer moved (stokaro/ptah#2068).
+func TestInferenceUnapprovedCutoverE2E(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.TimescaleDB)
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	adminDB, err := sql.Open("pgx", dbURL)
+	c.Assert(err, qt.IsNil)
+	defer adminDB.Close()
+
+	name := fmt.Sprintf("ptah_unapproved_%d", time.Now().UnixNano())
+	createE2EDatabase(c, ctx, adminDB, name)
+	defer dropE2EDatabase(c, context.Background(), adminDB, name)
+
+	dbName := replaceDatabaseName(c, dbURL, name)
+	db, err := sql.Open("pgx", dbName)
+	c.Assert(err, qt.IsNil)
+	defer db.Close()
+	seedCLIArticles(c, ctx, db)
+
+	endpoint := httptest.NewServer(http.HandlerFunc(embeddingsHandler(c)))
+	defer endpoint.Close()
+	specPath := writeUnapprovedCLISpec(c, endpoint.URL)
+
+	runInference(c, ctx, "prepare", "--spec", specPath, "--db-url", dbName, "--run-id", cliRunID)
+	runInference(c, ctx, "backfill",
+		"--spec", specPath, "--db-url", dbName, "--run-id", cliRunID, "--batch-rows", "10")
+	runInference(c, ctx, "catchup",
+		"--spec", specPath, "--db-url", dbName, "--run-id", cliRunID, "--batch-rows", "10")
+	runInference(c, ctx, "verify", "--spec", specPath, "--db-url", dbName, "--run-id", cliRunID)
+
+	// No --approve and no --approver: the policy asks for neither.
+	output := runInference(c, ctx, "cutover",
+		"--spec", specPath, "--db-url", dbName, "--run-id", cliRunID)
+	c.Assert(output, qt.Contains, "queries now read generation ")
+
+	// And the pointer records that nobody signed for it, rather than a name
+	// nobody supplied.
+	var approver sql.NullString
+	err = db.QueryRowContext(ctx,
+		`SELECT cut_over_by FROM ptah_embedding_pointer WHERE target_table = 'articles'`).
+		Scan(&approver)
+	c.Assert(err, qt.IsNil)
+	c.Assert(approver.String, qt.Equals, "")
+}
+
+// writeUnapprovedCLISpec writes the shared specification with its approval
+// requirement turned off.
+//
+// A substitution into the one document every other test here uses, so the only
+// difference between this run and theirs is the policy line this test is about.
+func writeUnapprovedCLISpec(c *qt.C, endpoint string) string {
+	c.Helper()
+	source, err := os.ReadFile(writeCLISpec(c, endpoint))
+	c.Assert(err, qt.IsNil)
+	document := strings.Replace(string(source),
+		"require_exact_approval: true", "require_exact_approval: false", 1)
+	c.Assert(document, qt.Not(qt.Equals), string(source))
+
+	path := filepath.Join(c.TempDir(), "unapproved-spec.yaml")
+	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)
+	return path
 }

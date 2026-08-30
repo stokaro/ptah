@@ -211,7 +211,7 @@ func runCutover(
 	if err := opened.store.MovePointer(ctx, embedstore.Pointer{
 		TargetTable: opened.loaded.Spec.Target.Table, Active: plan.Generation,
 		Previous: plan.Previous, CutOverAt: now,
-		CutOverBy: approval.Approver, PlanDigest: plan.Digest(),
+		CutOverBy: approverName(approval), PlanDigest: plan.Digest(),
 	}, plan.Previous); err != nil {
 		return err
 	}
@@ -222,7 +222,7 @@ func runCutover(
 		return err
 	}
 	return publishCutover(ctx, out, options.spec.plainHTTP, opened, plan, report,
-		approval.Approver, now, stabilizeFor, evidence)
+		approverName(approval), now, stabilizeFor, evidence)
 }
 
 // publishCutover records what was done, where a registry was named.
@@ -483,6 +483,12 @@ func retiredObjects(plan embedcutover.RetirementPlan) []string {
 }
 
 // approverName is who authorized it, or nobody.
+//
+// Nobody is a real answer rather than an impossible one: a policy that requires
+// no exact approval allows a cutover with none, and reading the approver off a
+// nil approval panicked the process on exactly that path -- the one every test
+// here misses, because every specification in the suite requires an approval
+// (stokaro/ptah#2068).
 func approverName(approval *embedcutover.Approval) string {
 	if approval == nil {
 		return ""
