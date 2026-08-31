@@ -25,6 +25,7 @@ import (
 	"go.5x5.cz/ptah/internal/cmdrefviews"
 	"go.5x5.cz/ptah/internal/docsync"
 	"go.5x5.cz/ptah/internal/lintcatalog"
+	"go.5x5.cz/ptah/internal/schemacensus"
 )
 
 const usage = `usage: docsync [--write]
@@ -69,6 +70,12 @@ func targets() []docsync.Target {
 			Begin: "<!-- BEGIN GENERATED LINT RULES -->", End: "<!-- END GENERATED LINT RULES -->",
 			Source: "internal/lintcatalog",
 			Render: lintcatalog.WriteMarkdown,
+		},
+		{
+			Name: "the field dispositions", Path: "docs/schema_field_dispositions.md",
+			Begin: "<!-- BEGIN GENERATED FIELD DISPOSITIONS -->", End: "<!-- END GENERATED FIELD DISPOSITIONS -->",
+			Source: "internal/schemacensus",
+			Render: schemacensus.WriteMarkdown,
 		},
 		{
 			Name: "the agent surface", Path: "docs/agent-surface.md",

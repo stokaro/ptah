@@ -333,7 +333,7 @@ var directives = []Directive{
 			attr("identity_increment", "SQL identity increment value.", valueString, false, false),
 			attr("identity_options", "Raw SQL identity options.", valueSQL, false, false),
 			attr("unique", "Adds a single-column unique constraint.", valueBoolean, false, true),
-			attr("unique_expr", "Unique expression for dialects that support expression indexes.", valueSQL, false, false),
+			attr("unique_expr", "Uniqueness over an expression. Not implemented: rendering refuses a column that declares it.", valueSQL, false, false),
 			attr("generated", "Generated column expression.", valueSQL, false, false),
 			attr("generated_kind", "Generated column kind, such as STORED or VIRTUAL.", valueString, false, false),
 			attr("stored", "Shortcut controlling generated column storage.", valueBoolean, false, false),

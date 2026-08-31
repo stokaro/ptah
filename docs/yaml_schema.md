@@ -200,7 +200,7 @@ Columns support the same information as field annotations:
 | `identity_increment` | Optional PostgreSQL identity `INCREMENT BY` value. |
 | `identity_options` | Raw PostgreSQL identity option clause. When set, it is rendered inside `AS IDENTITY (...)` instead of rebuilding options from `identity_start` and `identity_increment`. |
 | `unique` | Marks the column unique. |
-| `unique_expr` | Unique expression. |
+| `unique_expr` | Uniqueness over an expression. Not implemented; rendering refuses it rather than enforcing uniqueness on the column instead. |
 | `index` | Requests an index for the column. |
 | `generated` | Generated-column SQL expression. |
 | `generated_kind` | Generated-column kind such as `STORED` or `VIRTUAL`. |

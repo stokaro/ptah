@@ -3781,8 +3781,8 @@
         "/schema/overview/",
         "/start/install-options/"
       ],
-      "visibleWords": 4135,
-      "sourceBytes": 32967
+      "visibleWords": 4154,
+      "sourceBytes": 33098
     },
     {
       "path": "docs/site/src/content/docs/reference/hcl-schema.md",
@@ -4115,8 +4115,8 @@
         "/schema/overview/",
         "/schema/yaml/"
       ],
-      "visibleWords": 953,
-      "sourceBytes": 7970
+      "visibleWords": 968,
+      "sourceBytes": 8076
     },
     {
       "path": "docs/site/src/content/docs/schema/composite.md",
