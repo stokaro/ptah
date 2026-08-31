@@ -90,7 +90,7 @@ func TestBackfill_EmbedsEveryRowAndCheckpointsWhatItWrote(t *testing.T) {
 	c := qt.New(t)
 	h := newHarness(c, defaultBounds())
 
-	run, err := h.engine.Backfill(context.Background(), "run-1")
+	run, _, err := h.engine.Backfill(context.Background(), "run-1")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(run.Progress.RowsScanned, qt.Equals, int64(4))
@@ -117,7 +117,7 @@ func TestBackfill_TheVectorsAndTheCheckpointAreOneTransaction(t *testing.T) {
 	c := qt.New(t)
 	h := newHarness(c, defaultBounds())
 
-	_, err := h.engine.Backfill(context.Background(), "run-1")
+	_, _, err := h.engine.Backfill(context.Background(), "run-1")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(h.target.commits, qt.HasLen, 2)
@@ -138,7 +138,7 @@ func TestBackfill_NothingIsCheckpointedThatWasNotCommitted(t *testing.T) {
 	h := newHarness(c, defaultBounds())
 	h.target.failOn = 2
 
-	run, err := h.engine.Backfill(context.Background(), "run-1")
+	run, _, err := h.engine.Backfill(context.Background(), "run-1")
 
 	c.Assert(err, qt.ErrorMatches, `target: the target rejected the write`)
 	c.Assert(run.Cursor, qt.DeepEquals, []string{"2"})
@@ -159,7 +159,7 @@ func TestBackfill_ResumesFromTheCheckpointRatherThanTheBeginning(t *testing.T) {
 	c := qt.New(t)
 	h := newHarness(c, defaultBounds())
 	h.target.failOn = 2
-	_, err := h.engine.Backfill(context.Background(), "run-1")
+	_, _, err := h.engine.Backfill(context.Background(), "run-1")
 	c.Assert(err, qt.IsNotNil)
 
 	resumed := newHarness(c, defaultBounds())
@@ -169,7 +169,7 @@ func TestBackfill_ResumesFromTheCheckpointRatherThanTheBeginning(t *testing.T) {
 	c.Assert(resumed.store.CreateRun(context.Background(), stored), qt.ErrorIs, embedstore.ErrConflict)
 	c.Assert(resumed.store.SaveRun(context.Background(), stored), qt.IsNil)
 
-	run, err := resumed.engine.Backfill(context.Background(), "run-1")
+	run, _, err := resumed.engine.Backfill(context.Background(), "run-1")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(run.Cursor, qt.DeepEquals, []string{"4"})
@@ -190,7 +190,7 @@ func TestBackfill_ASkippedRowIsNotSentToTheProviderAndIsStillWritten(t *testing.
 	c := qt.New(t)
 	h := newHarness(c, embedrun.BatchBounds{MaxRows: 4, MaxInputs: 4})
 
-	_, err := h.engine.Backfill(context.Background(), "run-1")
+	_, _, err := h.engine.Backfill(context.Background(), "run-1")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(h.provider.calls, qt.HasLen, 1)
@@ -215,7 +215,7 @@ func TestBackfill_TheVectorsLandOnTheRowsTheyWereComputedFrom(t *testing.T) {
 	c := qt.New(t)
 	h := newHarness(c, embedrun.BatchBounds{MaxRows: 4, MaxInputs: 4})
 
-	_, err := h.engine.Backfill(context.Background(), "run-1")
+	_, _, err := h.engine.Backfill(context.Background(), "run-1")
 
 	c.Assert(err, qt.IsNil)
 	writes := h.target.commits[0].writes
@@ -232,7 +232,7 @@ func TestBackfill_EachWriteCarriesWhatItWasComputedFrom(t *testing.T) {
 	c := qt.New(t)
 	h := newHarness(c, embedrun.BatchBounds{MaxRows: 4, MaxInputs: 4})
 
-	_, err := h.engine.Backfill(context.Background(), "run-1")
+	_, _, err := h.engine.Backfill(context.Background(), "run-1")
 
 	c.Assert(err, qt.IsNil)
 	write := h.target.commits[0].writes[0]
@@ -254,7 +254,7 @@ func TestBackfill_AProviderThatAnsweredShortIsRefused(t *testing.T) {
 	h := newHarness(c, embedrun.BatchBounds{MaxRows: 4, MaxInputs: 4})
 	h.provider.shortBy = 1
 
-	run, err := h.engine.Backfill(context.Background(), "run-1")
+	run, _, err := h.engine.Backfill(context.Background(), "run-1")
 
 	c.Assert(err, qt.ErrorMatches, `provider: .*`)
 	c.Assert(h.target.commits, qt.HasLen, 0)
@@ -292,7 +292,7 @@ func TestBackfill_FailuresAreClassifiedByWhatFailed(t *testing.T) {
 			h := newHarness(c, defaultBounds())
 			test.breaks(h)
 
-			run, err := h.engine.Backfill(context.Background(), "run-1")
+			run, _, err := h.engine.Backfill(context.Background(), "run-1")
 
 			c.Assert(err, qt.ErrorMatches, test.want+`: .*`)
 			c.Assert(run.FailureClass, qt.Equals, test.want)
@@ -307,7 +307,7 @@ func TestBackfill_AFailureIsRecordedInTheTrail(t *testing.T) {
 	h := newHarness(c, defaultBounds())
 	h.provider.failOn = 2
 
-	_, err := h.engine.Backfill(context.Background(), "run-1")
+	_, _, err := h.engine.Backfill(context.Background(), "run-1")
 	c.Assert(err, qt.IsNotNil)
 
 	events, err := h.store.Events(context.Background(), "run-1")
@@ -329,7 +329,7 @@ func TestBackfill_ACancelledRunStopsWithoutFailing(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	run, err := h.engine.Backfill(ctx, "run-1")
+	run, _, err := h.engine.Backfill(ctx, "run-1")
 
 	c.Assert(err, qt.ErrorIs, embedengine.ErrAborted)
 	c.Assert(run.Status, qt.Not(qt.Equals), embedrun.StatusFailed)
@@ -350,7 +350,7 @@ func TestBackfill_ATakenOverRunStopsRatherThanFightingForIt(t *testing.T) {
 	// it checked, and it was true then.
 	h.target.beforeCommit = stealAfter(c, h, 1)
 
-	run, err := h.engine.Backfill(context.Background(), "run-1")
+	run, _, err := h.engine.Backfill(context.Background(), "run-1")
 
 	c.Assert(err, qt.ErrorIs, embedengine.ErrFenced)
 	c.Assert(run.LeaseOwner, qt.Equals, "worker-b")
@@ -366,7 +366,7 @@ func TestBackfill_AnEmptySourceCompletesWithoutAskingTheProvider(t *testing.T) {
 	h.source.rows = nil
 	h.source.versions = nil
 
-	run, err := h.engine.Backfill(context.Background(), "run-1")
+	run, _, err := h.engine.Backfill(context.Background(), "run-1")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(run.Progress.RowsScanned, qt.Equals, int64(0))
@@ -380,7 +380,7 @@ func TestBackfill_ProviderUsageIsAccumulated(t *testing.T) {
 	c := qt.New(t)
 	h := newHarness(c, defaultBounds())
 
-	run, err := h.engine.Backfill(context.Background(), "run-1")
+	run, _, err := h.engine.Backfill(context.Background(), "run-1")
 
 	c.Assert(err, qt.IsNil)
 	// Three inputs across two calls, and the fake reports one prompt token per
@@ -430,7 +430,7 @@ func TestBackfill_ABatchOfOnlySkippedRowsAsksTheProviderNothing(t *testing.T) {
 	}
 	h.source.versions = []string{"7", "7"}
 
-	run, err := h.engine.Backfill(context.Background(), "run-1")
+	run, _, err := h.engine.Backfill(context.Background(), "run-1")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(h.provider.calls, qt.HasLen, 0)
@@ -450,7 +450,7 @@ func TestBackfill_ASourceThatDoesNotAdvanceIsRefused(t *testing.T) {
 	h := newHarness(c, defaultBounds())
 	h.source.stalled = true
 
-	run, err := h.engine.Backfill(context.Background(), "run-1")
+	run, _, err := h.engine.Backfill(context.Background(), "run-1")
 
 	c.Assert(err, qt.ErrorIs, embedengine.ErrStalled)
 	c.Assert(run.Status, qt.Equals, embedrun.StatusFailed)
@@ -474,7 +474,7 @@ func TestBackfill_AnEmptyPageStillMakesItsPositionDurable(t *testing.T) {
 	h := newHarness(c, defaultBounds())
 	h.source.emptyPagesBefore = 1
 
-	run, err := h.engine.Backfill(context.Background(), "run-1")
+	run, _, err := h.engine.Backfill(context.Background(), "run-1")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(run.Cursor, qt.DeepEquals, []string{"4"})
@@ -510,7 +510,7 @@ func TestBackfill_AnEmptyPageThatSaysNothingIsRefused(t *testing.T) {
 			h.source.emptyPageOnScan = 2
 			h.source.emptyPageMode = test.mode
 
-			run, err := h.engine.Backfill(context.Background(), "run-1")
+			run, _, err := h.engine.Backfill(context.Background(), "run-1")
 
 			c.Assert(err, qt.ErrorIs, embedengine.ErrStalled)
 			c.Assert(run.FailureClass, qt.Equals, "source")
@@ -527,7 +527,7 @@ func TestBackfill_AnEmptyFinalPageIsTheEndAndNotAStall(t *testing.T) {
 	h := newHarness(c, embedrun.BatchBounds{MaxRows: 4, MaxInputs: 4})
 	h.source.rows = sourceRows()[:4]
 
-	run, err := h.engine.Backfill(context.Background(), "run-1")
+	run, _, err := h.engine.Backfill(context.Background(), "run-1")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(run.Progress.RowsScanned, qt.Equals, int64(4))

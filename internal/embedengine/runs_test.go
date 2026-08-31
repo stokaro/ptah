@@ -24,7 +24,7 @@ func TestPause_StopsARunningBackfillAtItsNextCommit(t *testing.T) {
 	h := newHarness(c, defaultBounds())
 	h.target.beforeCommit = pauseAfter(c, h, 1)
 
-	run, err := h.engine.Backfill(context.Background(), "run-1")
+	run, _, err := h.engine.Backfill(context.Background(), "run-1")
 
 	c.Assert(err, qt.ErrorIs, embedengine.ErrFenced)
 	// The transaction that was already in flight landed; nothing after it did.
@@ -41,7 +41,7 @@ func TestPause_RecordsWhyAndKeepsWhereItGotTo(t *testing.T) {
 	c := qt.New(t)
 	h := newHarness(c, defaultBounds())
 	ctx := context.Background()
-	_, err := h.engine.Backfill(ctx, "run-1")
+	_, _, err := h.engine.Backfill(ctx, "run-1")
 	c.Assert(err, qt.IsNil)
 
 	paused, err := runsOf(h).Pause(ctx, "run-1", "waiting on a budget approval")
