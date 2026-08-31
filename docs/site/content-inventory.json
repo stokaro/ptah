@@ -2094,8 +2094,8 @@
         "/inference/strategies/plan-provider-capacity/"
       ],
       "inboundLinks": [],
-      "visibleWords": 675,
-      "sourceBytes": 5745
+      "visibleWords": 759,
+      "sourceBytes": 6604
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/create-first-generation.md",

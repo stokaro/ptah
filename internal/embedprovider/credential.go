@@ -30,6 +30,12 @@ var (
 	ErrCredentialUnset = errors.New("credential reference resolves to nothing")
 	// ErrCredentialScheme is a scheme this build does not support.
 	ErrCredentialScheme = errors.New("unsupported credential reference scheme")
+	// ErrCredentialUnusable is any credential that could not be resolved, and
+	// it is what a caller asks about when the question is "did anything leave
+	// this process". Every resolution failure satisfies it -- an unset
+	// variable, an unreadable or world-readable file, a scheme this build does
+	// not know -- so a caller does not have to enumerate them.
+	ErrCredentialUnusable = errors.New("the credential could not be resolved")
 )
 
 // ParseCredentialRef reads a reference in `scheme:locator` form.
@@ -79,6 +85,20 @@ func (r CredentialRef) String() string {
 // and a caller that keeps it beyond the request it authorizes has undone the
 // reason references exist.
 func (r CredentialRef) Resolve() (string, error) {
+	value, err := r.resolve()
+	if err != nil {
+		// Marked at the one funnel every resolution passes through, so a
+		// caller can ask "was anything sent?" without enumerating the ways a
+		// credential can fail -- an enumeration that would go stale the moment
+		// a fourth way is added. The message is unchanged: the marker is a
+		// wrapper that renders as what it wraps (stokaro/ptah#2641).
+		return "", unusableCredential{err: err}
+	}
+	return value, nil
+}
+
+// resolve is the resolution itself, without the marking.
+func (r CredentialRef) resolve() (string, error) {
 	if !r.Set() {
 		return "", nil
 	}
@@ -95,6 +115,23 @@ func (r CredentialRef) Resolve() (string, error) {
 		return "", fmt.Errorf("%w: %q", ErrCredentialScheme, r.Scheme)
 	}
 }
+
+// unusableCredential marks an error as a credential that could not be used,
+// which is the same as saying nothing was sent.
+//
+// A wrapper type rather than a wrapping verb because the message must not
+// change: these strings tell an operator which file to chmod and which variable
+// to export, and prefixing them with a category would say the same thing twice.
+type unusableCredential struct{ err error }
+
+// Error renders exactly what it wraps.
+func (e unusableCredential) Error() string { return e.err.Error() }
+
+// Unwrap keeps the specific sentinels reachable.
+func (e unusableCredential) Unwrap() error { return e.err }
+
+// Is answers for the marker itself.
+func (e unusableCredential) Is(target error) bool { return target == ErrCredentialUnusable }
 
 // resolveFile reads a credential file, refusing one the filesystem lets others
 // read where the filesystem can be asked.

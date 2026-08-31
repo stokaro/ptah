@@ -228,7 +228,7 @@ func TestProbe_AnUnreachableEndpointStopsAndSaysWhatIsUnmeasured(t *testing.T) {
 	c.Assert(report.Checks, qt.HasLen, 1)
 	c.Assert(report.Checks[0].Name, qt.Equals, embedprovider.CheckReachable)
 	c.Assert(report.Unmeasured, qt.Contains,
-		"everything after reachability, because nothing answered")
+		"everything after reachability, including the error shape, because nothing answered")
 }
 
 // TestProbe_ARefusedCredentialIsNotAnUnreachableEndpoint is the distinction an

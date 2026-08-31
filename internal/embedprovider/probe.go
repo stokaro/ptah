@@ -156,7 +156,31 @@ func Probe(ctx context.Context, subject ProbeSubject) ProbeReport {
 // The refusal itself is the measurement: the sentinel says which of the first
 // three checks failed, and everything after it is unmeasured because nothing
 // answered to measure.
+//
+// The credential case comes first because it is the one where NOTHING WAS
+// SENT. Embed resolves the credential before it builds the request, so an unset
+// variable, a missing file or a world-readable one returns before a byte
+// leaves the process -- and this function used to fall through to two
+// unconditional passes, reporting "the endpoint at HOST answered" for a port
+// with nothing listening on it and "the credential was accepted" for a
+// credential Ptah itself refused. Both statements were false, and the second
+// was contradicted by the line printed directly beneath it
+// (stokaro/ptah#2641).
+//
+// A check that could not be made is not a check that passed, so reachability
+// is unmeasured here rather than failed: the endpoint was not asked.
 func probeRefusal(report ProbeReport, err error) ProbeReport {
+	if errors.Is(err, ErrCredentialUnusable) {
+		report.Checks = append(report.Checks, Check{
+			Name: CheckAuthorized, Passed: false,
+			Detail: fmt.Sprintf("%s could not be used: %v",
+				credentialSource(report.Profile), err),
+		})
+		report.Unmeasured = append(report.Unmeasured,
+			"whether the endpoint at "+report.Profile.EndpointHost+
+				" is reachable, and everything after it, because no request was sent")
+		return report
+	}
 	if errors.Is(err, ErrUnreachable) {
 		report.Checks = append(report.Checks, Check{
 			Name: CheckReachable, Passed: false,
@@ -164,7 +188,7 @@ func probeRefusal(report ProbeReport, err error) ProbeReport {
 				report.Profile.EndpointHost, err),
 		})
 		report.Unmeasured = append(report.Unmeasured,
-			"everything after reachability, because nothing answered")
+			"everything after reachability, including the error shape, because nothing answered")
 		return report
 	}
 	report.Checks = append(report.Checks, Check{
@@ -178,7 +202,8 @@ func probeRefusal(report ProbeReport, err error) ProbeReport {
 			Detail: fmt.Sprintf("%s was refused: %v", credentialSource(report.Profile), err),
 		})
 		report.Unmeasured = append(report.Unmeasured,
-			"everything after authentication, because the credential was refused")
+			"everything after authentication, including the error shape, "+
+				"because the credential was refused")
 		return report
 	}
 	report.Checks = append(report.Checks, Check{
@@ -190,7 +215,13 @@ func probeRefusal(report ProbeReport, err error) ProbeReport {
 			report.Profile.Model, err),
 	})
 	report.Unmeasured = append(report.Unmeasured,
-		"the shape, dimension, batch and cancellation checks, because there is no answer to measure")
+		"the shape, dimension, batch and cancellation checks, because there is no answer to measure",
+		// The error-shape check used to appear in neither list on a refused
+		// probe: not in Checks, because it never ran, and not here, because
+		// nobody said so. A check that is absent from both reads as a check
+		// that does not exist (stokaro/ptah#2641).
+		"the error shape, because a provider that did not answer a good request "+
+			"cannot be asked how it answers a bad one")
 	return report
 }
 
