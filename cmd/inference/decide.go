@@ -209,6 +209,25 @@ func runCutover(
 		return refusal(out, "cutover refused", decision.Blockers)
 	}
 
+	// The internal verification establishes what the `verify` verb does -- the
+	// same layers over the same rows -- so it records the same phase, and the
+	// run is at `verified` before anything moves.
+	//
+	// Without this, `cut_over` was reachable only after a SEPARATE `verify`
+	// run, and nothing said so until after the pointer had already moved: the
+	// lifecycle prepare/backfill/catchup/cutover moved the pointer, opened the
+	// window, printed "queries now read generation ...", then exited 2 on
+	// `caught_up cannot move to cut_over` and published no evidence at all, for
+	// a cutover that had happened (stokaro/ptah#2631).
+	//
+	// After the decision rather than before it, because a REFUSED cutover must
+	// leave the run where it found it. Advancing there changes the plan the
+	// next invocation builds, so the digest the refusal published stops
+	// matching the plan the approval is offered against -- and the two-step
+	// approve flow the whole policy rests on cannot complete.
+	if err := recordVerified(ctx, options, runID, report); err != nil {
+		return err
+	}
 	if err := opened.store.MovePointer(ctx, embedstore.Pointer{
 		TargetSchema: opened.loaded.Spec.Target.Schema,
 		TargetTable:  opened.loaded.Spec.Target.Table, Active: plan.Generation,
@@ -221,12 +240,32 @@ func runCutover(
 		return err
 	}
 	if err := reachPhase(ctx, options, runID, embedrun.PhaseCutOver); err != nil {
-		return err
+		// The pointer has moved; saying only that a phase could not be
+		// recorded sends the reader looking for a cutover that did not happen.
+		return fmt.Errorf(
+			"queries now read generation %s and the run could not record it: %w", plan.Generation, err)
 	}
 	// The report is not passed: the record cites the value the plan already
 	// carries, so there is nothing left here to recompute it from.
 	return publishCutover(ctx, out, options, opened, plan,
 		approverName(approval), approvalSigned(approval), now, stabilizeFor, evidence)
+}
+
+// recordVerified marks a run verified when the verification passed.
+//
+// A report that found something is left alone: the cutover decision refuses on
+// it moments later, and a run recorded as verified because something looked at
+// it is the state this whole phase machine exists to prevent.
+func recordVerified(
+	ctx context.Context, options commonOptions, runID string, report embedverify.Report,
+) error {
+	if !report.Passed() {
+		return nil
+	}
+	if err := reachPhase(ctx, options, runID, embedrun.PhaseVerified); err != nil {
+		return err
+	}
+	return recordVerification(ctx, options, report.Generation)
 }
 
 // publishCutover records what was done, where a registry was named.

@@ -64,6 +64,16 @@ replica, a table behind a feature flag you turned off.
 
 ## `dual_write`
 
+**This build does not accept `dual_write`.** A specification selecting it is
+refused, naming the modes there are. What is missing is the reporting surface:
+the assessment that would hold a writer's evidence to a policy is written and
+tested, and nothing exists for a writer to report *through*, so a run selecting
+the mode could only ever be told that its writer had never reported anything.
+Refusing it is what this build can honestly say.
+
+The design below is what the mode means, and it is recorded here because the
+mode is coming back rather than going away.
+
 Your application tells Ptah what it changed. Ptah observes those reports; it does
 not observe your writes.
 
@@ -73,8 +83,8 @@ know. Nothing detects the gap — the row keeps its old vector, and
 verification's freshness layer reports it only if the source version moved in a
 way Ptah can see.
 
-Choose it when the outbox triggers are genuinely unacceptable and your writer is
-a single, well-understood code path.
+It is for the case where the outbox triggers are genuinely unacceptable and your
+writer is a single, well-understood code path.
 
 ## No mode
 
@@ -93,5 +103,5 @@ dead end otherwise.
 
 [Choose a consistency mode](../../strategies/choose-a-consistency-mode/) is the
 decision page. The short version: `outbox` unless you have a specific reason,
-`immutable` when writes are genuinely stopped, `dual_write` only when you own the
+`immutable` when writes are genuinely stopped; `dual_write` is not selectable in this build, and when it returns it is only for a source you own the
 writer and the trigger cost is unacceptable.
