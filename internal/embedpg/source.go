@@ -239,6 +239,19 @@ func (s *Source) Current(ctx context.Context, keys [][]string) ([]embedgen.Row, 
 // may have several parts and `id IN (...) AND tenant IN (...)` is a different
 // query: it matches every combination of the two lists, which for two tenants
 // and two ids is four rows where two were asked for.
+//
+// It applies spec.Source.Filter, and the scan is not the only reason. Without
+// it a row the specification excludes was re-read on the strength of its outbox
+// event, its text was sent to the provider, and the generation's vector was
+// written onto it -- so the corpus the index covers held rows the operator had
+// excluded and `plan`'s disclosure ("the text of title, body / for 5 rows") was
+// a count of a different set than the one that left (stokaro/ptah#2638).
+//
+// The filter also decides what a changed row that no longer qualifies BECOMES.
+// [tombstonesFor] derives tombstones from what the reread found rather than
+// from the event, so a key that stops matching returns no row and is tombstoned
+// -- which is the same answer this query already gave for a key that was
+// deleted, and the right one: in both cases the generation should not carry it.
 func (s *Source) currentQuery(keys [][]string) (string, []any, error) {
 	keyColumns := quoteAll(s.spec.Source.KeyFields)
 	columns := append([]string(nil), keyColumns...)
@@ -259,13 +272,19 @@ func (s *Source) currentQuery(keys [][]string) (string, []any, error) {
 		}
 		tuples = append(tuples, "("+strings.Join(placeholders, ", ")+")")
 	}
+	conditions := []string{fmt.Sprintf("(%s) IN (%s)",
+		strings.Join(castToText(keyColumns), ", "), strings.Join(tuples, ", "))}
+	if filter := strings.TrimSpace(s.spec.Source.Filter); filter != "" {
+		conditions = append(conditions, "("+filter+")")
+	}
 	// #nosec G201 -- PostgreSQL takes no bind parameter for a relation or column
 	// name. The identifiers come from the specification and go through
-	// quoteIdentifier; the key VALUES are all placeholders.
-	query := fmt.Sprintf("SELECT %s FROM %s WHERE (%s) IN (%s) ORDER BY %s",
+	// quoteIdentifier; the key VALUES are all placeholders. The filter is a SQL
+	// fragment the specification carries, interpolated here exactly as the scan
+	// interpolates it.
+	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s ORDER BY %s",
 		strings.Join(columns, ", "), s.qualifiedTable(),
-		strings.Join(castToText(keyColumns), ", "), strings.Join(tuples, ", "),
-		strings.Join(keyColumns, ", "))
+		strings.Join(conditions, " AND "), strings.Join(keyColumns, ", "))
 	return query, arguments, nil
 }
 
