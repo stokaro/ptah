@@ -114,6 +114,12 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// direction restores what the pre-change database held, and a reference
 		// of theirs names a table as that database had it.
 		DeclaredTables: priorTables(prior),
+		// And the same for the schemas this direction recreates: a rollback
+		// that puts a table back puts its schema back too, and the comment,
+		// character set and collation that schema carries are the ones the
+		// pre-change database had rather than the ones the change was moving
+		// to (stokaro/ptah#2618).
+		DeclaredSchemas: priorSchemas(prior),
 		// And the same for the views a cascade may reach: a rollback recreates
 		// what the pre-change database held, so the collateral set is that
 		// database's views rather than the ones the change was moving to.
@@ -367,6 +373,15 @@ func priorTableSchema(prior *schemamodel.Database, tableName string) string {
 }
 
 // priorTables is every table the pre-change database declared.
+// priorSchemas is the schema declarations of the pre-change database, for the
+// reason [priorTables] gives about tables.
+func priorSchemas(prior *schemamodel.Database) []schemamodel.Schema {
+	if prior == nil {
+		return nil
+	}
+	return prior.Schemas
+}
+
 func priorTables(prior *schemamodel.Database) []schemamodel.Table {
 	if prior == nil {
 		return nil

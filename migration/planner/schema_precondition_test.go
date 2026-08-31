@@ -70,6 +70,75 @@ func TestGenerateSchemaDiffSQLStatements_ASchemaIsCreatedWhereItIsAnObject(t *te
 	}
 }
 
+// TestGenerateSchemaDiffSQLStatements_ACreatedSchemaCarriesItsComment is
+// stokaro/ptah#2618: the plan reaches a schema through the qualified name of an
+// object inside it, so the name arrived and the declaration's comment did not.
+//
+// `ptah schema render` emitted COMMENT ON SCHEMA for the same document all
+// along, so a `schema apply` against a database without the schema created it
+// unnamed, and every comparison afterwards saw a schema whose comment the
+// declaration has and the database does not -- with nothing able to fix it.
+//
+// The two rows are the two spellings, not two dialects chosen for coverage:
+// PostgreSQL writes the comment as DDL a later inspection reads back, and SQL
+// Server has no schema comment at all and writes the author's sentence as the
+// leading `--` line its renderer already wrote for a direct render.
+func TestGenerateSchemaDiffSQLStatements_ACreatedSchemaCarriesItsComment(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		home    string
+		want    string
+	}{
+		{
+			name:    "postgres writes COMMENT ON SCHEMA",
+			dialect: "postgres",
+			home:    "public",
+			want:    `COMMENT ON SCHEMA "extra" IS 'the extra schema'`,
+		},
+		{
+			name:    "sqlserver writes the comment line",
+			dialect: "sqlserver",
+			home:    "dbo",
+			want:    "-- the extra schema",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements := planCommentedSchema(c, test.dialect, test.home)
+
+			c.Assert(strings.Join(statements, "\n"), qt.Contains, test.want,
+				qt.Commentf("%v", statements))
+		})
+	}
+}
+
+// TestGenerateSchemaDiffSQLStatements_AnUndeclaredSchemaIsStillCreated is the
+// control that keeps the lookup from becoming a gate.
+//
+// A schema reached only through an object's qualifier -- one the document never
+// declares -- has been created since stokaro/ptah#1276, and it has to keep
+// being created: the statement exists because the object needs the schema to
+// be there, and withholding it over a missing comment would fail the migration
+// on `schema "extra" does not exist`.
+func TestGenerateSchemaDiffSQLStatements_AnUndeclaredSchemaIsStillCreated(t *testing.T) {
+	c := qt.New(t)
+	declared := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "W", Name: "widget", Schema: "extra"}},
+		Fields: []schemamodel.Field{{StructName: "W", Name: "id", Type: "INT", Primary: true}},
+	}
+	live := &catalog.Database{Schemas: []catalog.Schema{{Name: "public"}}}
+
+	statements := planForDialect(c, declared, live, "postgres", "public")
+
+	c.Assert(schemaStatements(statements), qt.DeepEquals,
+		[]string{`CREATE SCHEMA IF NOT EXISTS "extra"`}, qt.Commentf("%v", statements))
+	c.Assert(strings.Join(statements, "\n"), qt.Not(qt.Contains), "COMMENT ON SCHEMA")
+}
+
 // TestGenerateSchemaDiffSQLStatements_TheSchemaComesBeforeTheObject pins the
 // order, which is the whole point of a precondition.
 //
@@ -177,6 +246,23 @@ func planSchemaPrecondition(c *qt.C, dialect, home string) []string {
 		Schemas: []schemamodel.Schema{{Name: home}, {Name: "extra"}},
 		Tables:  []schemamodel.Table{{StructName: "W", Name: "widget", Schema: "extra"}},
 		Fields:  []schemamodel.Field{{StructName: "W", Name: "id", Type: "INT", Primary: true}},
+	}
+	live := &catalog.Database{Schemas: []catalog.Schema{{Name: home}}}
+	return planForDialect(c, declared, live, dialect, home)
+}
+
+// planCommentedSchema plans one commented schema holding one table, which is
+// the smallest document that reaches the precondition at all: the schema is
+// needed because the table names it, and the comment has no other route.
+func planCommentedSchema(c *qt.C, dialect, home string) []string {
+	c.Helper()
+	declared := &schemamodel.Database{
+		Schemas: []schemamodel.Schema{
+			{Name: home},
+			{Name: "extra", Comment: "the extra schema"},
+		},
+		Tables: []schemamodel.Table{{StructName: "W", Name: "widget", Schema: "extra"}},
+		Fields: []schemamodel.Field{{StructName: "W", Name: "id", Type: "INT", Primary: true}},
 	}
 	live := &catalog.Database{Schemas: []catalog.Schema{{Name: home}}}
 	return planForDialect(c, declared, live, dialect, home)

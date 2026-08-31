@@ -148,6 +148,17 @@ func assertReverseCoverageField(
 		// what holds that, since this gate structurally cannot.
 		return
 	}
+	if field.Name == "DeclaredSchemas" {
+		// An OUTPUT of the reverse, for the reason the four above are. A
+		// rollback that puts a table back puts its schema back too, so the
+		// comment, character set and collation that CREATE SCHEMA carries are
+		// the PRE-CHANGE database's -- the forward value describes the schemas
+		// the change was moving to and cannot reach it (stokaro/ptah#2618).
+		//
+		// TestReverseSchemaDiff_ARolledBackSchemaCarriesThePriorDeclaration is
+		// what holds that, since this gate structurally cannot.
+		return
+	}
 	if field.Name == "DeclaredUserTypes" {
 		// An OUTPUT of the reverse rather than an input, for the reason the
 		// signatures above are. The vocabulary the down direction needs is the
@@ -929,4 +940,53 @@ func TestReverseSchemaDiff_ARolledBackFunctionOrderComesFromThePrior(t *testing.
 		qt.Commentf("the ordering inputs come from the database being rolled back to"))
 	c.Assert(reversed.DeclaredFunctions.Order, qt.Not(qt.Contains), "desired_only",
 		qt.Commentf("the declaration's own functions are not in that database"))
+}
+
+// TestReverseSchemaDiff_ARolledBackSchemaCarriesThePriorDeclaration is the half
+// of stokaro/ptah#2618 the reflection gate structurally cannot hold: the
+// reverse derives the schema declarations from the introspected database, so
+// zeroing the forward field leaves the down plan identical and the gate exempts
+// it.
+//
+// Carrying the forward value across would be wrong rather than merely
+// unnecessary. It describes the schemas the change was moving TO, and a
+// rollback recreating a schema that database held would stamp it with a comment
+// the author wrote for a different state.
+func TestReverseSchemaDiff_ARolledBackSchemaCarriesThePriorDeclaration(t *testing.T) {
+	c := qt.New(t)
+
+	schema := &schemamodel.Database{
+		// The desired schema's declaration, which the rollback must not use.
+		Schemas: []schemamodel.Schema{{Name: revCoverageDomainOwner, Comment: "the new comment"}},
+	}
+	dbSchema := &catalog.Database{
+		Schemas: []catalog.Schema{{
+			Name:    revCoverageDomainOwner,
+			Comment: "the prior comment",
+			Charset: "utf8mb4",
+			Collate: "utf8mb4_general_ci",
+		}},
+		Tables: []catalog.Table{{
+			Schema:  revCoverageDomainOwner,
+			Name:    "rev_coverage_typed",
+			Type:    "TABLE",
+			Columns: []catalog.Column{{Name: "c", DataType: "integer", IsNullable: "YES", OrdinalPosition: 1}},
+		}},
+	}
+	forward := &difftypes.SchemaDiff{
+		TablesRemoved: []string{revCoverageTypedTable},
+		DeclaredSchemas: []schemamodel.Schema{
+			{Name: revCoverageDomainOwner, Comment: "the new comment"},
+		},
+	}
+
+	reversed := reverseSchemaDiffWithSchema(forward, schema, dbSchema)
+
+	c.Assert(reversed.TablesAdded, qt.HasLen, 1)
+	c.Assert(reversed.DeclaredSchemas, qt.HasLen, 1)
+	c.Assert(reversed.DeclaredSchemas[0].Name, qt.Equals, revCoverageDomainOwner)
+	c.Assert(reversed.DeclaredSchemas[0].Comment, qt.Equals, "the prior comment",
+		qt.Commentf("the declaration comes from the database that held the table"))
+	c.Assert(reversed.DeclaredSchemas[0].Charset, qt.Equals, "utf8mb4")
+	c.Assert(reversed.DeclaredSchemas[0].Collate, qt.Equals, "utf8mb4_general_ci")
 }

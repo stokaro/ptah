@@ -154,6 +154,10 @@ func TablesAndColumnsWithGeneratedExpressions(
 	// Every declared table, for resolving the table a foreign key references --
 	// usually one this diff does not touch.
 	diff.DeclaredTables = desired.Tables
+	// Every declared schema, for the comment, character set and collation a
+	// plan's CREATE SCHEMA carries: the plan reaches the schema through an
+	// object's qualifier, which is a name and nothing else.
+	diff.DeclaredSchemas = desired.Schemas
 	// Every declared view and materialized view, for resolving what a DROP
 	// cascades to -- usually a view this diff does not touch.
 	diff.DeclaredViewLikes = difftypes.ViewLikeVocabularyOf(desired)

@@ -1220,6 +1220,19 @@ type SchemaDiff struct {
 	// is the name and the schema.
 	DeclaredTables []schemamodel.Table `json:"-"`
 
+	// DeclaredSchemas is every schema the declaration holds, carried once for
+	// the whole diff and off the wire.
+	//
+	// A plan derives the schemas it creates from the qualified names of the
+	// objects it is creating, so the name arrives through a table's qualifier
+	// and everything else the schema declaration carries -- its comment, its
+	// character set, its collation -- has no other route to the planner
+	// (stokaro/ptah#2618).
+	//
+	// It is read by [go.5x5.cz/ptah/internal/planner/schemaprecondition.Node],
+	// which is the one place that turns a needed schema name into a creation.
+	DeclaredSchemas []schemamodel.Schema `json:"-"`
+
 	// DeclaredViewLikes is every view and materialized view the declaration
 	// holds, carried once for the whole diff and off the wire.
 	//
