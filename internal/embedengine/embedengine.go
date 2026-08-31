@@ -131,7 +131,19 @@ const defaultLease = 15 * time.Minute
 // The claim is saved before the loop starts, because a claim this process holds
 // and the store does not is a claim that fences nobody.
 func (e *Engine) claim(ctx context.Context, runID string) (embedrun.Run, int64, error) {
-	return e.runs().Claim(ctx, runID)
+	run, token, err := e.runs().Claim(ctx, runID)
+	if err != nil {
+		return embedrun.Run{}, 0, err
+	}
+	// The one place both facts are in hand, and every loop this engine runs
+	// passes through it. A backfill handed a specification for a generation the
+	// run was not prepared for either resumed a finished run and embedded
+	// nothing, or wrote a foreign generation's identity into this run's column
+	// (stokaro/ptah#2637).
+	if err := run.DescribesGeneration(e.Spec.Identity().Digest); err != nil {
+		return embedrun.Run{}, 0, err
+	}
+	return run, token, nil
 }
 
 // runs is the store-only half of this engine, which is also what the pause and

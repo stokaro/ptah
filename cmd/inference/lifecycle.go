@@ -38,7 +38,12 @@ recorded, because a change made between the two would be captured by nothing at
 all: the backfill has not started, so it will not see it, and the outbox does not
 exist yet, so it leaves no event.
 
-Running this twice is safe. It is what happens when a run is restarted.`,
+Running this twice with the SAME specification is safe. It is what happens when a
+run is restarted, and it leaves the run as it is.
+
+Running it with a different specification under the same run id is refused, and
+refused before anything is written. A run records the generation it was prepared
+for; a second generation needs a run of its own.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runPrepare(cmd.Context(), cmd.OutOrStdout(), options, runID, worker)
@@ -67,6 +72,16 @@ func runPrepare(
 		return err
 	}
 	spec := opened.loaded.Spec
+	// Asked BEFORE any of the work below, because all of it is durable and
+	// none of it is undone by the conflict branch that used to notice. A second
+	// prepare under one run id -- which is the documented second-generation
+	// workflow, the guide deriving the id from a date and the quick start
+	// exporting PTAH_RUN_ID -- added five columns to the user's table and
+	// registered a second generation, then said "leaving it as it is" and
+	// exited 0 (stokaro/ptah#2637).
+	if err := prepareAgreesWithTheRun(ctx, opened, runID, spec.Identity().Digest); err != nil {
+		return err
+	}
 	// The target columns, which is the step the plan names and nothing
 	// performed. Before the generation is registered, because a registry row
 	// for a generation with nowhere to write is a row every later verb trusts
@@ -90,6 +105,24 @@ func runPrepare(
 		return err
 	}
 	return createRun(ctx, out, opened, runID, worker, boundary)
+}
+
+// prepareAgreesWithTheRun refuses a prepare whose run is for another generation.
+//
+// A run that does not exist yet is the ordinary case and agrees with anything;
+// a run that exists for this same generation is a restart, which prepare is
+// documented to be safe for and remains so.
+func prepareAgreesWithTheRun(
+	ctx context.Context, opened *session, runID, identity string,
+) error {
+	run, err := opened.store.Run(ctx, runID)
+	if errorsIs(err, embedstore.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return run.DescribesGeneration(identity)
 }
 
 // prepareConsistency installs what the selected mode needs and records the
@@ -217,6 +250,17 @@ func runIndex(ctx context.Context, out io.Writer, options commonOptions, runID s
 		return err
 	}
 	defer opened.close()
+
+	run, err := opened.store.Run(ctx, runID)
+	if err != nil {
+		return err
+	}
+	// The index is built for the SPECIFICATION's generation and the phase is
+	// marked on the RUN, so a disagreement advances one run's lifecycle on the
+	// strength of another generation's index (stokaro/ptah#2637).
+	if err := run.DescribesGeneration(opened.loaded.Spec.Identity().Digest); err != nil {
+		return err
+	}
 
 	outcome, err := embedpg.EnsureIndex(ctx, opened.db, opened.loaded.Spec)
 	if err != nil {

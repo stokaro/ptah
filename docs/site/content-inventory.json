@@ -2243,8 +2243,8 @@
         "/inference/quick-start/",
         "/inference/strategies/production-rollout/"
       ],
-      "visibleWords": 401,
-      "sourceBytes": 4391
+      "visibleWords": 495,
+      "sourceBytes": 5043
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/resume-and-recover.md",

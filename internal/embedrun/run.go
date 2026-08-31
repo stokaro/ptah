@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"slices"
 	"time"
+
+	"go.5x5.cz/ptah/internal/embeddigest"
 )
 
 // Phase is where a run has got to in the lifecycle.
@@ -66,6 +68,8 @@ var (
 	ErrPhase = errors.New("phase transition is not on the lifecycle path")
 	// ErrCheckpoint is a checkpoint whose preconditions are not met.
 	ErrCheckpoint = errors.New("checkpoint refused")
+	// ErrGeneration is a run asked to work on a generation it is not for.
+	ErrGeneration = errors.New("the run was prepared for a different generation")
 )
 
 // Run is one embedding migration's durable state.
@@ -291,4 +295,35 @@ func (r *Run) Claim(owner string, lease time.Duration) int64 {
 	r.LeaseExpires = time.Now().UTC().Add(lease)
 	r.UpdatedAt = time.Now().UTC()
 	return r.FencingToken
+}
+
+// DescribesGeneration reports whether this run is the one a caller holding that
+// generation identity should be driving, and says what differs when it is not.
+//
+// A run records the generation it was prepared for, and every verb takes both a
+// specification and a run id. Nothing compared them, which is stokaro/ptah#2637:
+// the documented second-generation workflow leaves the run id alone -- the guide
+// derives it from a date and the quick start exports PTAH_RUN_ID -- so a second
+// `prepare` registered the new generation, created its columns, and left the run
+// naming the first with its finished cursor. The `backfill` after it reported
+// "3 scanned, 3 embedded" at exit 0, having made no provider request and written
+// no vector: it resumed a completed run.
+//
+// The other direction was accepted too. A backfill handed a specification for a
+// different generation than the run was prepared for wrote that generation's
+// identity into a column prepared and registered for the run's own -- and the
+// cross-generation refusal further down could not fire, because the column was
+// still empty. The error surfaced three verbs later at `verify`, about a
+// generation with no run and no registry row.
+//
+// The message names both identities. "The run is for a different generation" is
+// a diagnostic an operator cannot act on without going and looking up which.
+func (r Run) DescribesGeneration(identity string) error {
+	if r.GenerationIdentity == identity {
+		return nil
+	}
+	return fmt.Errorf(
+		"%w: run %s is for generation %s and this specification produces %s",
+		ErrGeneration, r.ID,
+		embeddigest.Short(r.GenerationIdentity), embeddigest.Short(identity))
 }
