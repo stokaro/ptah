@@ -140,7 +140,29 @@ type Cutover struct {
 	// the approval it claims.
 	PlanDigest string `json:"plan_digest"`
 	Approver   string `json:"approver,omitempty"`
-	// VerificationDigest is the report the plan rested on.
+	// ApprovalSigned reports whether Approver was established by a verified
+	// signature over the plan bytes rather than typed beside them.
+	//
+	// Without it the record cannot tell the two apart, and they are different
+	// claims: a name on a command line says who the operator wrote down, and a
+	// verified signature says whose key covered these exact bytes. Two cutovers
+	// of one target -- one signed by an auditor's key, one authorized by
+	// anybody holding the database URL and that auditor's name -- were
+	// identical in every field a reader could use (stokaro/ptah#2643).
+	//
+	// It is omitted when false so an unsigned record says nothing rather than
+	// saying "not signed" about a policy that never asked for a signature.
+	ApprovalSigned bool `json:"approval_signed,omitempty"`
+	// VerificationDigest is the measurement the plan rested on: the value
+	// [Verification.MeasurementDigest] answers for that report, which is the
+	// same value the plan cited and the approval covered.
+	//
+	// A measurement rather than an artifact, deliberately. The digest here used
+	// to be that of the report restamped at the cutover's own instant, so it
+	// named a record no verb ever writes -- and on a cutover that re-verifies
+	// after the source moved, the measurement it rested on was recorded nowhere
+	// at all (stokaro/ptah#2643). A measurement digest is reproducible by
+	// anybody holding the report.
 	VerificationDigest string `json:"verification_digest"`
 	// Watermark is how far the source had been accounted for when the pointer
 	// moved, empty under a consistency mode that records no boundary.
@@ -211,6 +233,19 @@ type Retirement struct {
 	// authorized it.
 	PlanDigest string `json:"plan_digest"`
 	Approver   string `json:"approver,omitempty"`
+	// ApprovalSigned reports whether Approver was established by a verified
+	// signature over the plan bytes rather than typed beside them.
+	//
+	// Without it the record cannot tell the two apart, and they are different
+	// claims: a name on a command line says who the operator wrote down, and a
+	// verified signature says whose key covered these exact bytes. Two cutovers
+	// of one target -- one signed by an auditor's key, one authorized by
+	// anybody holding the database URL and that auditor's name -- were
+	// identical in every field a reader could use (stokaro/ptah#2643).
+	//
+	// It is omitted when false so an unsigned record says nothing rather than
+	// saying "not signed" about a policy that never asked for a signature.
+	ApprovalSigned bool `json:"approval_signed,omitempty"`
 	// RetiredAt is when.
 	RetiredAt time.Time `json:"retired_at"`
 }
@@ -244,6 +279,7 @@ func (r Retirement) Digest() string {
 	return embeddigest.Of(append(components,
 		"rows", strconv.FormatInt(r.Rows, 10),
 		"plan", r.PlanDigest, "approver", r.Approver,
+		"approval_signed", strconv.FormatBool(r.ApprovalSigned),
 		"retired_at", r.RetiredAt.UTC().Format(time.RFC3339Nano))...)
 }
 
@@ -262,13 +298,49 @@ func (r Release) Digest() string {
 // It covers what was found and what was not asked, and not the counts alone: a
 // report saying "three source rows, three target rows" is the same two numbers
 // whether every layer passed or three of them were never run.
+//
+// It addresses one ARTIFACT: two runs of the same checks over the same state
+// digest differently, because the instant is part of it. That is right for
+// naming a record in a registry and wrong for citing a measurement, which is
+// what [Verification.MeasurementDigest] is for.
 func (v Verification) Digest() string {
+	return embeddigest.Of(v.components(
+		[]string{"measured_at", v.MeasuredAt.UTC().Format(time.RFC3339Nano)})...)
+}
+
+// MeasurementDigest addresses what was measured, without when.
+//
+// A cutover plan cites it, and the approval an operator signs covers the
+// citation, so the approval stops applying the moment the measurement changes
+// -- a finding appearing, a count moving, a layer going unmeasured. That is the
+// property [Evidence.VerificationDigest] promised and did not have: it held the
+// GENERATION identity, so the plan showed the approver the same sixty-four
+// characters twice under two labels, it did not move when the report changed,
+// and `decideEvidence`'s refusal "the plan cites no verification report" could
+// never fire because a generation identity is never empty (stokaro/ptah#2643).
+//
+// It is deliberately not the artifact digest. A plan is built before the record
+// that would carry the artifact exists -- and on a cutover that re-verifies,
+// the record may never be written at all -- so citing an artifact means citing
+// one that cannot be fetched. A measurement can be recomputed by anyone holding
+// the report, which is what a citation in an evidence record is for.
+func (v Verification) MeasurementDigest() string {
+	return embeddigest.Of(v.components(nil)...)
+}
+
+// components is the one encoding both digests use.
+//
+// timeComponents is what separates them, and it is a parameter rather than a
+// second function because the two must not be able to disagree about anything
+// else. Passing nil yields the measurement; passing the instant yields the
+// artifact.
+func (v Verification) components(timeComponents []string) []string {
 	components := []string{
 		"verification", strconv.Itoa(RecordVersion),
 		"generation", v.Generation, "passed", strconv.FormatBool(v.Passed),
 		"source_rows", strconv.Itoa(v.SourceRows), "target_rows", strconv.Itoa(v.TargetRows),
-		"measured_at", v.MeasuredAt.UTC().Format(time.RFC3339Nano),
 	}
+	components = append(components, timeComponents...)
 	// The retrieval block comes before the two lists because it is the last
 	// fixed-length part: an absent one renders two components and a present one
 	// eleven, and both begin with a literal that says which, so nothing after
@@ -288,7 +360,7 @@ func (v Verification) Digest() string {
 		components = append(components,
 			finding.Layer, finding.Severity, finding.Summary, strconv.Itoa(finding.Count))
 	}
-	return embeddigest.Of(append(components, sortedCopy(v.Unmeasured)...)...)
+	return append(components, sortedCopy(v.Unmeasured)...)
 }
 
 // components renders the retrieval half of a verification digest.
@@ -314,6 +386,10 @@ func (c Cutover) Digest() string {
 		"cutover", strconv.Itoa(RecordVersion),
 		"generation", c.Generation, "replaced", c.Replaced, "target", c.Target,
 		"plan", c.PlanDigest, "approver", c.Approver,
+		// The signed flag is covered, or two records differing only in whether
+		// the approver was a key or a keystroke would share one content
+		// address -- which is the very thing the field was added to tell apart.
+		"approval_signed", strconv.FormatBool(c.ApprovalSigned),
 		"verification", c.VerificationDigest, "watermark", c.Watermark,
 		"stabilize_until", formatTime(c.StabilizeUntil),
 		"cut_over_at", c.CutOverAt.UTC().Format(time.RFC3339Nano))

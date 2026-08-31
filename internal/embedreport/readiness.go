@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/internal/embedcutover"
 	"go.5x5.cz/ptah/internal/embedgen"
 	"go.5x5.cz/ptah/internal/embedpg"
+	"go.5x5.cz/ptah/internal/embedrelease"
 	"go.5x5.cz/ptah/internal/embedrun"
 	"go.5x5.cz/ptah/internal/embedspec"
 	"go.5x5.cz/ptah/internal/embedverify"
@@ -188,7 +189,17 @@ func BuildCutoverPlan(
 		Generation: spec.Identity().Digest, Previous: active,
 		Schema: spec.Target.Schema, Table: spec.Target.Table, Column: spec.Target.Column,
 		Evidence: embedcutover.Evidence{
-			VerificationDigest:   report.Generation,
+			// The MEASUREMENT, not the generation identity. This field held
+			// report.Generation, which is spec.Identity().Digest -- the same
+			// value plan.Generation already carries -- so the plan file an
+			// approver signs showed the same sixty-four characters twice under
+			// two labels, the plan digest did not move when the report changed,
+			// and the refusal "the plan cites no verification report" could
+			// never fire (stokaro/ptah#2643). The measurement digest moves with
+			// the findings, the counts and the unmeasured layers, so an
+			// approval given for this plan stops applying when any of them do.
+			VerificationDigest: embedrelease.VerificationOf(
+				spec.Identity().Digest, report, nil, time.Time{}).MeasurementDigest(),
 			VerificationPassed:   report.Passed(),
 			ConsistencyMode:      string(loaded.Mode),
 			ConsistencyWatermark: run.CatchUpWatermark,
