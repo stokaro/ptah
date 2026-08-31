@@ -112,9 +112,5 @@ func SurfaceDifferences() []SurfaceDifference {
 			Field: "schemamodel.Field.IdentityIncrement", RenderOnly: true,
 			Reason: "the INCREMENT BY half of the same pair",
 		},
-		{
-			Field: "schemamodel.Field.Enum", RenderOnly: false,
-			Reason: "the compare surface reads the values: core/renderer's MySQL foreign-key check compares the two columns' value lists, and that check runs inside the validation the comparison performs and the direct render performs separately",
-		},
 	}
 }
