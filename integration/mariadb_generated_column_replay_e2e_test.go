@@ -13,7 +13,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
-	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/go-sql-driver/mysql" // registers the MySQL driver for database/sql
 
 	"go.5x5.cz/ptah/internal/dbtarget"
 )
