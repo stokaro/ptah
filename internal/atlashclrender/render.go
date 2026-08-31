@@ -473,8 +473,43 @@ func (r *renderer) reportDialectScopes() {
 	}
 }
 
+// reportExportMetadata names every export-only attribute this document carries
+// and HCL cannot.
+//
+// `api_name`, `api_type`, `api_expose` and the per-target names steer the
+// OpenAPI, GraphQL and Protobuf projections and reach no DDL, so a render that
+// carries the storage perfectly still loses all of them. Atlas HCL has no
+// spelling for any of it, and inventing a Ptah-only attribute would produce a
+// file the pinned Atlas community binary refuses -- the same reasoning
+// [renderer.reportDialectScopes] records for dialect scope.
+//
+// Reporting it is what protects the declaration, for the same reason: any
+// diagnostic turns `ptah schema export --cleanup-go-annotations` into
+// [go.5x5.cz/ptah/internal/goannotationexport.ErrLossyCleanup], refused BEFORE
+// the annotations are deleted, and makes
+// [go.5x5.cz/ptah/internal/schemaartifact] refuse to build an artifact rather
+// than publish one that lost the contract. Without this the cleanup ran, exited
+// 0, and changed the published contract -- measured, an OpenAPI schema named
+// `AccountDoc` with a read-only `emailDoc` came back as `users` with a writable
+// `email_addr`, and the only copy of the intent had just been deleted from the
+// Go sources.
+func (r *renderer) reportExportMetadata() {
+	for _, carried := range schemamodel.ExportMetadataIn(r.db) {
+		r.diagnostics = append(r.diagnostics, Diagnostic{
+			Severity: SeverityWarning,
+			Path:     fmt.Sprintf("%s.%s", carried.Kind, carried.Name),
+			Message: fmt.Sprintf(
+				"export metadata %s=%q is not represented in HCL",
+				carried.Attribute,
+				carried.Value,
+			),
+		})
+	}
+}
+
 func (r *renderer) renderBody() {
 	r.reportDialectScopes()
+	r.reportExportMetadata()
 	r.renderExtensions()
 	r.renderSequences()
 	r.renderUserTypes()
