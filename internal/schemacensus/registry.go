@@ -151,7 +151,7 @@ var registry = []Entry{
 	{Field: "schemamodel.Field.DefaultExpr", Disposition: DDL},
 	{Field: "schemamodel.Field.DefaultSet", Disposition: DDL},
 	{Field: "schemamodel.Field.Deferrable", Disposition: DDL},
-	{Field: "schemamodel.Field.Enum", Disposition: DDL, Gap: "https://github.com/stokaro/ptah/issues/2611"},
+	{Field: "schemamodel.Field.Enum", Disposition: DDL},
 	{Field: "schemamodel.Field.FieldName", Disposition: DDL},
 	{Field: "schemamodel.Field.Foreign", Disposition: DDL},
 	{Field: "schemamodel.Field.ForeignKeyName", Disposition: DDL},

@@ -47,6 +47,7 @@ func Fixtures() []Fixture {
 		{Name: "column-autoinc", Schema: columnAutoIncFixture()},
 		{Name: "column-generated", Schema: columnGeneratedFixture()},
 		{Name: "column-enum", Schema: columnEnumFixture()},
+		{Name: "column-enum-foreign-key", Schema: columnEnumForeignKeyFixture()},
 		{Name: "column-mysql", Schema: columnMySQLFixture()},
 		{Name: "column-declared-text", Schema: columnDeclaredTextFixture()},
 		{Name: "column-raw-type", Schema: columnRawTypeFixture()},
@@ -459,6 +460,35 @@ func columnEnumFixture() schemamodel.Database {
 			Enum: []string{"draft", "live"},
 		},
 	)
+}
+
+// columnEnumForeignKeyFixture is what makes [schemamodel.Field.Enum] visible to
+// the ablation.
+//
+// The values themselves reach DDL through [schemamodel.Database.Enums] -- every
+// reader fills both, and the renderer emits the type from the enum -- so
+// removing the field from the fixture above changes nothing and the field read
+// as a gap against stokaro/ptah#2611.
+//
+// It has a production reader all the same, and this is it: MySQL refuses a
+// foreign key between two ENUM columns whose value lists differ, and the refusal
+// is the only place the FIELD decides anything. Ablating it makes the two lists
+// equal, the refusal stops, and the render answers SQL where it answered an
+// error -- which [everyCell] sees, because it keeps a refusal as its own text.
+func columnEnumForeignKeyFixture() schemamodel.Database {
+	db := twoTables()
+	db.Fields = append(db.Fields,
+		schemamodel.Field{
+			StructName: "Parent", FieldName: "State", Name: "state", Type: "ENUM",
+			Nullable: true, Enum: []string{"draft", "live"},
+		},
+		schemamodel.Field{
+			StructName: "Child", FieldName: "State", Name: "state", Type: "ENUM",
+			Nullable: true, Enum: []string{"draft", "live", "archived"},
+			Foreign: "parents(state)",
+		},
+	)
+	return db
 }
 
 func columnMySQLFixture() schemamodel.Database {
