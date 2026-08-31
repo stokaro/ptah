@@ -322,7 +322,16 @@ func openStabilization(
 ) error {
 	lines := []string{fmt.Sprintf("queries now read generation %s (plan %s)",
 		plan.Generation, plan.Short())}
-	if plan.Previous == "" || window <= 0 {
+	// The two cases are separate sentences, because they are different facts
+	// and one of them accused the operator of not asking for what they asked
+	// for. A first cutover with `--stabilize-for 24h` was told "no
+	// stabilization window was asked for" (stokaro/ptah#2647).
+	if plan.Previous == "" {
+		return writeLines(out, append(lines, bullet(
+			"this is the first generation over this target, so there is no previous "+
+				"one to keep current and nothing to roll back to"))...)
+	}
+	if window <= 0 {
 		return writeLines(out, append(lines, bullet(
 			"no stabilization window was asked for, so nothing is keeping the previous "+
 				"generation current and there is no rollback to it"))...)

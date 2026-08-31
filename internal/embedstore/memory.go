@@ -87,7 +87,12 @@ func (m *Memory) RecordVerification(_ context.Context, identity string, at time.
 // Maintain records how long something will keep a generation current.
 func (m *Memory) Maintain(_ context.Context, identity string, until time.Time) error {
 	return m.updateGeneration(identity, func(generation *Generation) {
-		generation.MaintainedUntil = until
+		// Never earlier, mirroring the SQL store's GREATEST. A zero clears,
+		// which is what stops a generation being reported as a way back
+		// (stokaro/ptah#2647).
+		if until.IsZero() || until.After(generation.MaintainedUntil) {
+			generation.MaintainedUntil = until
+		}
 	})
 }
 

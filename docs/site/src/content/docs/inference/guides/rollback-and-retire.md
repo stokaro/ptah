@@ -60,6 +60,13 @@ extends the promise that it is current. Put it on a schedule for the length of
 the window. A window extended without a catch-up behind it is a promise nobody
 kept; a catch-up whose window expired left a generation current and unusable.
 
+It **extends** and never shortens. The recipe above renews for an hour every
+hour against a window `cutover --stabilize-for 24h` opened, and a renewal that
+wrote the deadline it was given would have taken twenty-three hours of rollback
+eligibility away on the first run. A shorter `--maintain-for` than the window
+standing is therefore safe, and it is the ordinary shape: the renewal interval
+is not the window length.
+
 ### The freshness
 
 `rollback` measures before it moves anything:

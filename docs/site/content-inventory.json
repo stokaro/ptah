@@ -2321,8 +2321,8 @@
         "/inference/strategies/production-rollout/",
         "/inference/troubleshooting/"
       ],
-      "visibleWords": 501,
-      "sourceBytes": 4257
+      "visibleWords": 569,
+      "sourceBytes": 4677
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/run-in-kubernetes.md",

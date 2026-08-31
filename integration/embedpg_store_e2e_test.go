@@ -330,3 +330,70 @@ func detailsOfEvents(events []embedrun.Event) []string {
 	}
 	return details
 }
+
+// TestEmbedPGStoreMaintainNeverShortensAWindowE2E is stokaro/ptah#2647.
+//
+// `Maintain` wrote the deadline it was given, so a shorter renewal moved it
+// earlier — and `catchup --maintain-for 1h` after a `cutover --stabilize-for
+// 24h`, which is the rollback guide's own recipe, took twenty-three hours of
+// rollback eligibility away from a flag documented as extending the window.
+//
+// It runs live because the rule is a GREATEST inside an UPDATE. A test against
+// the in-memory store would agree with a SQL statement PostgreSQL rejects, and
+// the NULL case — a generation nothing has ever kept current — is exactly where
+// GREATEST answers differently from what the fix needs.
+func TestEmbedPGStoreMaintainNeverShortensAWindowE2E(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	adminDB, err := sql.Open("pgx", dbURL)
+	c.Assert(err, qt.IsNil)
+	defer adminDB.Close()
+
+	name := fmt.Sprintf("ptah_maintain_%d", time.Now().UnixNano())
+	createE2EDatabase(c, ctx, adminDB, name)
+	defer dropE2EDatabase(c, context.Background(), adminDB, name)
+
+	db, err := sql.Open("pgx", replaceDatabaseName(c, dbURL, name))
+	c.Assert(err, qt.IsNil)
+	defer db.Close()
+	store := embedpg.NewStore(db)
+	c.Assert(store.EnsureSchema(ctx), qt.IsNil)
+
+	_, err = store.RegisterGeneration(ctx, embedstore.Generation{
+		Identity: "maintain-1", SpecDigest: "spec-1", Dimension: 4,
+		TargetTable: "articles", TargetColumn: "embedding", CreatedAt: liveAt,
+	})
+	c.Assert(err, qt.IsNil)
+
+	far := liveAt.Add(24 * time.Hour)
+	near := liveAt.Add(time.Hour)
+
+	// From nothing, any deadline wins: a NULL is "nobody is keeping it", not a
+	// deadline in the past.
+	c.Assert(store.Maintain(ctx, "maintain-1", near), qt.IsNil)
+	c.Assert(storedWindow(c, ctx, store), qt.Equals, near)
+
+	// A longer renewal extends.
+	c.Assert(store.Maintain(ctx, "maintain-1", far), qt.IsNil)
+	c.Assert(storedWindow(c, ctx, store), qt.Equals, far)
+
+	// A shorter one does not shorten. This is the defect.
+	c.Assert(store.Maintain(ctx, "maintain-1", near), qt.IsNil)
+	c.Assert(storedWindow(c, ctx, store), qt.Equals, far)
+
+	// And clearing still clears, which is what stops a generation being
+	// reported as a way back the moment nobody is feeding it.
+	c.Assert(store.Maintain(ctx, "maintain-1", time.Time{}), qt.IsNil)
+	c.Assert(storedWindow(c, ctx, store).IsZero(), qt.IsTrue)
+}
+
+// storedWindow reads the window back through the store.
+func storedWindow(c *qt.C, ctx context.Context, store *embedpg.Store) time.Time {
+	c.Helper()
+	generation, err := store.Generation(ctx, "maintain-1")
+	c.Assert(err, qt.IsNil)
+	return generation.MaintainedUntil.UTC()
+}
