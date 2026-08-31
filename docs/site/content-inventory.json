@@ -2510,8 +2510,8 @@
       "inboundLinks": [
         "/inference/concepts/embeddings-and-inference-state/"
       ],
-      "visibleWords": 2328,
-      "sourceBytes": 17514
+      "visibleWords": 2370,
+      "sourceBytes": 17776
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/run-status-and-findings.md",
@@ -3552,8 +3552,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8673,
-      "sourceBytes": 80457
+      "visibleWords": 8666,
+      "sourceBytes": 80388
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",

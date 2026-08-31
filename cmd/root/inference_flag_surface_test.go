@@ -87,6 +87,31 @@ func TestInferenceSpecAndReleaseTogetherAreStillRefused(t *testing.T) {
 			`\[release spec\] were all set`)
 }
 
+// TestInferenceEveryGroupOnAMultiGroupCommandIsChecked is the test the first
+// version of this file did not have, and its absence was a real hole.
+//
+// `cutover` declares three exclusive groups. They compose onto one PreRunE
+// chain, and a chain that dropped what came before it would leave only the
+// last-registered group checked -- measured: `cutover --spec X --release Y`
+// stopped being refused and went on to load the specification. Every other
+// assertion here drives `describe`, which has one group, so none of them can
+// see it.
+func TestInferenceEveryGroupOnAMultiGroupCommandIsChecked(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := runNativeRoot(c,
+		"inference", "cutover",
+		"--spec", writeInferenceSpecFile(c),
+		"--release", "oci://127.0.0.1:9/x:y",
+		"--db-url", "postgres://user@127.0.0.1:1/db",
+		"--run-id", "a-run",
+	)
+
+	c.Assert(err, qt.ErrorMatches,
+		`if any flags in the group \[spec release\] are set none of the others can be; `+
+			`\[release spec\] were all set`)
+}
+
 // TestInferenceApprovalIsNotRefusedByAnExportedApprove covers the second group
 // finding 11 names. It is a separate command from the one in the report, which
 // is the point: the defect belonged to every group whose members are
