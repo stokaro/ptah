@@ -79,12 +79,45 @@ ptah inference cutover --spec spec.yaml --db-url "$DB" --run-id my-run \
   --approve 1df24fc375d7 --approver "your name"
 ```
 
+A name given this way is a name the operator wrote down. A signature over the
+plan file is a different claim — whose key covered these exact bytes — and the
+published record says which it was, in `approval_signed`. A cutover and a
+retirement both carry it, and a record with the field absent was authorized by a
+name rather than by a key.
+
 The approval binds to the digest. If anything the plan rests on changed between
 you reading it and approving it, the digest changes and the approval is refused
 rather than applied to a different plan.
 
 The digest covers the plan, not the clock. What is true *now* — the pointer, the
 freshness, the findings — is checked again at the moment of the cutover.
+
+### What the plan cites
+
+The plan file an approver signs names the verification it was built on:
+
+```text
+ptah inference cutover plan, format 1
+generation: 8ddaf10bf421…
+replaces:
+target: public.articles.embedding_v1
+verification: 4c17a2e9b330…
+plan: 2f7f81ece160…
+```
+
+`verification` is a digest of what the report *measured* — the verdict, the row
+counts, the findings, the layers that did not run — and not of when it ran. Two
+consequences follow, and both are why the line is there:
+
+- A finding appearing, a count moving, or a layer going unmeasured changes the
+  line, so it changes the plan digest, so an approval already given stops
+  applying. The approval binds to the measurement rather than to a verdict.
+- The value is reproducible. Anybody holding the verification record can
+  recompute it, which is what makes it a citation rather than a number.
+
+The cutover record written afterwards carries the same value under
+`verification_digest`, so the plan and the record cannot disagree about which
+report authorized the move.
 
 ## What your application has to do
 

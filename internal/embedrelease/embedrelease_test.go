@@ -191,6 +191,13 @@ func TestCutover_TheDigestCoversWhatWasDone(t *testing.T) {
 		{name: "the plan", change: func(c *embedrelease.Cutover) { c.PlanDigest = "other" }},
 		{name: "the approver", change: func(c *embedrelease.Cutover) { c.Approver = "somebody else" }},
 		{
+			// Two cutovers naming one approver, one authorized by that
+			// person's key and one by anybody who could type their name, are
+			// two different things done (stokaro/ptah#2643).
+			name:   "whether the approval was signed",
+			change: func(c *embedrelease.Cutover) { c.ApprovalSigned = true },
+		},
+		{
 			name:   "the verification it rested on",
 			change: func(c *embedrelease.Cutover) { c.VerificationDigest = "other" },
 		},
@@ -422,6 +429,12 @@ func TestRetirement_TheDigestCoversWhatWasDestroyed(t *testing.T) {
 		{name: "how many rows", change: func(r *embedrelease.Retirement) { r.Rows = 4 }},
 		{name: "the plan", change: func(r *embedrelease.Retirement) { r.PlanDigest = "other" }},
 		{name: "the approver", change: func(r *embedrelease.Retirement) { r.Approver = "somebody else" }},
+		{
+			// The same reason as on a cutover, over a record whose subject
+			// cannot be inspected afterwards at all (stokaro/ptah#2643).
+			name:   "whether the approval was signed",
+			change: func(r *embedrelease.Retirement) { r.ApprovalSigned = true },
+		},
 		{name: "when", change: func(r *embedrelease.Retirement) { r.RetiredAt = at.Add(time.Nanosecond) }},
 	}
 	base := embedrelease.Retirement{

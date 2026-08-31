@@ -11,10 +11,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"go.5x5.cz/ptah/internal/embedeval"
-	"go.5x5.cz/ptah/internal/embedgen"
 	"go.5x5.cz/ptah/internal/embedrelease"
-	"go.5x5.cz/ptah/internal/embedverify"
 	"go.5x5.cz/ptah/internal/ociartifact"
 )
 
@@ -64,43 +61,6 @@ func addSubjectFlag(cmd *cobra.Command, options *evidenceOptions) {
 // guarding on the registry alone made --evidence-file do nothing without one.
 func (e evidenceOptions) destinationNamed() bool {
 	return e.publishTo != "" || e.writeTo != "" || e.attachTo != ""
-}
-
-// verificationRecord turns a report into the record a registry holds.
-//
-// The findings are carried whole rather than summarized to a verdict. Six
-// months later the question is not whether it passed -- the pointer already
-// answers that -- but what it said, and a record holding one boolean cannot be
-// re-read into an answer.
-func verificationRecord(
-	spec embedgen.Spec, report embedverify.Report, retrieval *embedeval.Report, at time.Time,
-) embedrelease.Verification {
-	record := embedrelease.Verification{
-		Generation: spec.Identity().Digest,
-		Passed:     report.Passed(),
-		SourceRows: report.SourceRows, TargetRows: report.TargetRows,
-		Unmeasured: report.Unmeasured,
-		MeasuredAt: at,
-	}
-	for _, finding := range report.Findings {
-		record.Findings = append(record.Findings, embedrelease.Finding{
-			Layer: string(finding.Layer), Severity: string(finding.Severity),
-			Summary: finding.Summary, Count: finding.Count,
-		})
-	}
-	if retrieval != nil {
-		record.Retrieval = &embedrelease.Retrieval{
-			QueryParameters: retrieval.Scores.QueryParameters,
-			RecallAtK:       retrieval.Scores.RecallAtK,
-			MRR:             retrieval.Scores.MRR,
-			NDCG:            retrieval.Scores.NDCG,
-			ExactAgreement:  retrieval.Scores.ExactAgreement,
-			Cases:           retrieval.Scores.Cases,
-			ExactCases:      retrieval.Scores.ExactCases,
-			Blockers:        retrieval.Blockers,
-		}
-	}
-	return record
 }
 
 // publishRecord pushes a record and says where it went.

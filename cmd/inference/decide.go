@@ -102,7 +102,8 @@ func publishVerification(
 	}
 	defer opened.close()
 	record, buildErr := embedrelease.NewVerificationRecord(
-		verificationRecord(opened.loaded.Spec, report, nil, time.Now().UTC()))
+		embedrelease.VerificationOf(
+			opened.loaded.Spec.Identity().Digest, report, nil, time.Now().UTC()))
 	return publishRecord(ctx, out, options, evidence, record, buildErr)
 }
 
@@ -251,8 +252,10 @@ func runCutover(
 		return fmt.Errorf(
 			"queries now read generation %s and the run could not record it: %w", plan.Generation, err)
 	}
-	return publishCutover(ctx, out, options, opened, plan, report,
-		approverName(approval), now, stabilizeFor, evidence)
+	// The report is not passed: the record cites the value the plan already
+	// carries, so there is nothing left here to recompute it from.
+	return publishCutover(ctx, out, options, opened, plan,
+		approverName(approval), approvalSigned(approval), now, stabilizeFor, evidence)
 }
 
 // recordVerified marks a run verified when the verification passed.
@@ -279,7 +282,7 @@ func recordVerified(
 // is not a fact about it.
 func publishCutover(
 	ctx context.Context, out io.Writer, options commonOptions, opened *session, plan embedcutover.Plan,
-	report embedverify.Report, approver string, at time.Time,
+	approver string, signed bool, at time.Time,
 	stabilizeFor time.Duration, evidence evidenceOptions,
 ) error {
 	if !evidence.destinationNamed() {
@@ -289,10 +292,13 @@ func publishCutover(
 		Generation: plan.Generation, Replaced: plan.Previous,
 		Target:     opened.loaded.Spec.Target.Table,
 		PlanDigest: plan.Digest(), Approver: approver,
-		VerificationDigest: verificationRecord(
-			opened.loaded.Spec, report, nil, at).Digest(),
-		Watermark: plan.Evidence.ConsistencyWatermark,
-		CutOverAt: at,
+		ApprovalSigned: signed,
+		// The value the PLAN cites, not a second computation of it. The two
+		// records disagreeing about what "verification digest" means is
+		// stokaro/ptah#2643 finding 3, and one value cannot.
+		VerificationDigest: plan.Evidence.VerificationDigest,
+		Watermark:          plan.Evidence.ConsistencyWatermark,
+		CutOverAt:          at,
 	}
 	if plan.Previous != "" && stabilizeFor > 0 {
 		cutover.StabilizeUntil = at.Add(stabilizeFor)
@@ -508,7 +514,8 @@ func publishRetirement(
 		Objects:    retiredObjects(plan),
 		Rows:       int64(rows),
 		PlanDigest: identity.digest, Approver: approverName(approval),
-		RetiredAt: at,
+		ApprovalSigned: approvalSigned(approval),
+		RetiredAt:      at,
 	})
 	return publishRecord(ctx, out, options.commonOptions, options.evidence, record, buildErr)
 }
@@ -541,6 +548,17 @@ func approverName(approval *embedcutover.Approval) string {
 		return ""
 	}
 	return approval.Approver
+}
+
+// approvalSigned reports whether the approval was established by a verified
+// signature over the plan bytes.
+//
+// It travels beside approverName rather than inside it because the name and the
+// basis for believing it are two facts, and the record needs both: dropping the
+// second is what made a signed cutover and a typed one indistinguishable in
+// every published field (stokaro/ptah#2643).
+func approvalSigned(approval *embedcutover.Approval) bool {
+	return approval != nil && approval.Signed
 }
 
 // retirementContext says what was measured, beside what was decided.

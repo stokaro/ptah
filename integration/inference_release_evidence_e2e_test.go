@@ -439,6 +439,18 @@ func assertCutoverPublishesWhatAuthorizedIt(
 	c.Assert(record.Approver, qt.Equals, "an operator")
 	c.Assert(record.Generation, qt.Equals, generation)
 	c.Assert(record.CutOverAt.IsZero(), qt.IsFalse)
+	// This run typed a name beside a digest, so the record says the approval
+	// was not signed. It is the negative half of stokaro/ptah#2643 finding 4,
+	// and it is the half that matters: a record that always said "signed"
+	// would satisfy the positive assertion in the signed-approval suite while
+	// making a typed name indistinguishable from a key -- which is the defect,
+	// not the fix. The positive is
+	// TestInferenceSignedApprovalE2E's assertASignedPlanCutsOverAndRecordsThePrincipal.
+	c.Assert(record.ApprovalSigned, qt.IsFalse)
+	// The measurement the plan cited, not the generation identity and not a
+	// report restamped at this instant (stokaro/ptah#2643 findings 1 to 3).
+	c.Assert(record.VerificationDigest, qt.Not(qt.Equals), record.Generation)
+	c.Assert(record.VerificationDigest, qt.HasLen, 64)
 }
 
 // assertAnUnreachableRegistryDoesNotUndoTheRun is the other half of the
