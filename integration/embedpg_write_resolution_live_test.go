@@ -41,7 +41,7 @@ func TestCommit_AWriteNeverCrossesGenerationsLive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	db, table := targetColumnsDatabase(c, ctx, withVector)
-	spec := loadTargetSpec(c, table)
+	spec := counterVersionedSpec(c, table)
 	c.Assert(embedpg.EnsureTarget(ctx, db, spec), qt.IsNil)
 
 	commit(c, ctx, db, spec, embedrun.TargetWrite{
@@ -74,7 +74,7 @@ func TestCommit_AStaleAnswerDoesNotWinLive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	db, table := targetColumnsDatabase(c, ctx, withVector)
-	spec := loadTargetSpec(c, table)
+	spec := counterVersionedSpec(c, table)
 	c.Assert(embedpg.EnsureTarget(ctx, db, spec), qt.IsNil)
 
 	commit(c, ctx, db, spec, embedrun.TargetWrite{
@@ -100,7 +100,7 @@ func TestCommit_ANewerAnswerStillWinsLive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	db, table := targetColumnsDatabase(c, ctx, withVector)
-	spec := loadTargetSpec(c, table)
+	spec := counterVersionedSpec(c, table)
 	c.Assert(embedpg.EnsureTarget(ctx, db, spec), qt.IsNil)
 
 	commit(c, ctx, db, spec, embedrun.TargetWrite{
@@ -125,7 +125,7 @@ func TestCommit_ATombstoneSurvivesALateUpdateLive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	db, table := targetColumnsDatabase(c, ctx, withVector)
-	spec := loadTargetSpec(c, table)
+	spec := counterVersionedSpec(c, table)
 	c.Assert(embedpg.EnsureTarget(ctx, db, spec), qt.IsNil)
 
 	commit(c, ctx, db, spec, embedrun.TargetWrite{
@@ -154,7 +154,7 @@ func TestCommit_ANewerSourceVersionRevivesATombstonedRowLive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	db, table := targetColumnsDatabase(c, ctx, withVector)
-	spec := loadTargetSpec(c, table)
+	spec := counterVersionedSpec(c, table)
 	c.Assert(embedpg.EnsureTarget(ctx, db, spec), qt.IsNil)
 
 	commit(c, ctx, db, spec, embedrun.TargetWrite{
@@ -181,7 +181,7 @@ func TestEnsureTarget_RefusesAColumnAnotherGenerationHoldsLive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	db, table := targetColumnsDatabase(c, ctx, withVector)
-	spec := loadTargetSpec(c, table)
+	spec := counterVersionedSpec(c, table)
 	c.Assert(embedpg.EnsureTarget(ctx, db, spec), qt.IsNil)
 	commit(c, ctx, db, spec, embedrun.TargetWrite{
 		Key: []string{"1"}, Generation: "somebody-elses-generation",
@@ -294,7 +294,7 @@ func TestCommit_ATombstoneSurvivesAnUnorderedUpdateLive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	db, table := targetColumnsDatabase(c, ctx, withVector)
-	spec := loadTargetSpec(c, table)
+	spec := counterVersionedSpec(c, table)
 	c.Assert(embedpg.EnsureTarget(ctx, db, spec), qt.IsNil)
 
 	commit(c, ctx, db, spec, embedrun.TargetWrite{
@@ -328,7 +328,7 @@ func TestCommit_ConcurrentWritesForOneKeyAreOrderedLive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	db, table := targetColumnsDatabase(c, ctx, withVector)
-	spec := loadTargetSpec(c, table)
+	spec := counterVersionedSpec(c, table)
 	c.Assert(embedpg.EnsureTarget(ctx, db, spec), qt.IsNil)
 
 	for attempt := range 12 {
@@ -376,4 +376,25 @@ func resetRow(c *qt.C, ctx context.Context, db *sql.DB, table string) {
 			embedding_input_hash = NULL, embedding_source_version = NULL,
 			embedding_state = NULL`, table))
 	c.Assert(err, qt.IsNil)
+}
+
+// counterVersionedSpec declares the ordering these tests' versions actually
+// have.
+//
+// Every write below carries a counter -- "7", "9", "10" -- and the shared
+// fixture declares `version_strategy: updated_at`. That went unnoticed while
+// one comparison served every strategy: ordering opaque strings by length then
+// lexicographically happens to order small integers correctly, so a fixture
+// whose values did not match its own declaration still passed.
+//
+// It stopped passing when the strategy started deciding the order
+// (stokaro/ptah#2635), and the fixture was the thing that was wrong: a
+// timestamp strategy cannot read "9", so nothing was comparable and the stale
+// answer won. Declaring `monotonic` is what these values are.
+func counterVersionedSpec(c *qt.C, table string) embedgen.Spec {
+	c.Helper()
+	spec := loadTargetSpec(c, table)
+	spec.Source.VersionStrategy = embedgen.VersionMonotonic
+	spec.Source.VersionField = "updated_at"
+	return spec
 }
