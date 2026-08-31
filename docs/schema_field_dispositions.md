@@ -58,13 +58,12 @@ exactly one disposition.
 
 ### Fields that should render and do not
 
-3, each recorded against the issue that tracks the repair. The gate
+2, each recorded against the issue that tracks the repair. The gate
 refuses a gap that has started rendering, so a repair fails the build until
 its entry is reclassified.
 
 | Field | Issue |
 | --- | --- |
-| `schemamodel.Constraint.Comment` | https://github.com/stokaro/ptah/issues/2611 |
 | `schemamodel.Field.Enum` | https://github.com/stokaro/ptah/issues/2611 |
 | `schemamodel.Grant.GrantedBy` | https://github.com/stokaro/ptah/issues/2611 |
 

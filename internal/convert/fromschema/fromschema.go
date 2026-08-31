@@ -1289,7 +1289,22 @@ func newPrimaryKeyConstraint(table schemamodel.Table) *ast.ConstraintNode {
 }
 
 // FromConstraint converts a schemamodel.Constraint to an AST table constraint.
+//
+// The comment is attached after the type switch rather than inside each arm.
+// Every arm builds its own node, so a fact carried per arm is one a new
+// constraint type silently loses -- which is how this converter lost the
+// primary key's name and INCLUDE payload (stokaro/ptah#2538).
 func FromConstraint(constraint schemamodel.Constraint) *ast.ConstraintNode {
+	node := fromConstraintByType(constraint)
+	if node == nil {
+		return nil
+	}
+	node.Comment = constraint.Comment
+	return node
+}
+
+// fromConstraintByType builds the node one constraint type needs.
+func fromConstraintByType(constraint schemamodel.Constraint) *ast.ConstraintNode {
 	switch strings.ToUpper(constraint.Type) {
 	case "PRIMARY KEY":
 		// Name and IncludeColumns are carried here for the same reason every

@@ -303,6 +303,7 @@ func appendConstraintAddition(
 		Columns:         append([]string(nil), genConstraint.Columns...),
 		IncludeColumns:  append([]string(nil), genConstraint.IncludeColumns...),
 		NullsDistinct:   cloneBoolPtr(genConstraint.NullsDistinct),
+		Comment:         genConstraint.Comment,
 		CheckExpression: genConstraint.CheckExpression,
 		UsingMethod:     genConstraint.UsingMethod,
 		ExcludeElements: genConstraint.ExcludeElements,
