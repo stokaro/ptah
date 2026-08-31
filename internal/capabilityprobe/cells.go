@@ -412,8 +412,24 @@ var Cells = []Cell{
 	// table in the ClickHouse repository's SECURITY.md. Read 2026-08-16 it
 	// marks 26.7, 26.3 and 25.8 supported and every 24.* release unsupported,
 	// which is the whole of the certified/legacy-tested split below. Because
-	// the rule is a rolling window, 26.7 leaves support when three newer
+	// the rule is a rolling window, a line leaves support when three newer
 	// stable lines exist rather than on any date this comment could name.
+	//
+	// 26.8 is newer than that reading and is the line the integration workflow
+	// now starts. 26.7 keeps its cell: the probe fan-out still runs it, and it
+	// is the line the ClickHouse dialect's behavior is recorded against --
+	// core/renderer/internal/dialects/clickhouse pins statement-level findings
+	// to a live 26.7.3.19 throughout.
+	{
+		Dialect: platform.ClickHouse, Line: "26.8",
+		Preset: capability.ClickHouse2411, PresetName: "ClickHouse2411",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "clickhouse/clickhouse-server:26.8",
+		Note: "certified because .github/workflows/go-integration-tests.yml starts this server, which " +
+			"is what the level asserts; the preset is the arm clickHouseForVersion already returns for " +
+			"every line above 24.11 rather than a probe result, because no capability-matrix run has " +
+			"measured 26.8 yet. capabilityline still names 26.7 as the newest measured line, so a live " +
+			"26.8 reports saturation until a probe measures it and that constant moves with the evidence",
+	},
 	{
 		Dialect: platform.ClickHouse, Line: "26.7",
 		Preset: capability.ClickHouse2411, PresetName: "ClickHouse2411",
