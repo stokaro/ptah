@@ -218,10 +218,7 @@ func distanceOperator(metric embedgen.DistanceMetric) (string, error) {
 
 // qualifiedTable renders the target table with its schema when it has one.
 func (s *Searcher) qualifiedTable() string {
-	if schema := strings.TrimSpace(s.spec.Target.Schema); schema != "" {
-		return quoteIdentifier(schema) + "." + quoteIdentifier(s.spec.Target.Table)
-	}
-	return quoteIdentifier(s.spec.Target.Table)
+	return qualify(s.spec.Target.Schema, s.spec.Target.Table)
 }
 
 // scanKeys reads the result keys, joined the way verification names them.
