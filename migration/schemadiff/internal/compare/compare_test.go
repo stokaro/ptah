@@ -786,6 +786,9 @@ func TestIndexes_HappyPath(t *testing.T) {
 				Indexes: make([]schemamodel.Index, 0),
 			},
 			database: &catalog.Database{
+				Constraints: []catalog.Constraint{
+					{Name: "users_email_key", TableName: "users", Type: "UNIQUE", ColumnNames: []string{"email"}},
+				},
 				Indexes: []catalog.Index{
 					{Name: "users_email_key", TableName: "users", Columns: []string{"email"}, IsPrimary: false, IsUnique: true},
 				},
@@ -989,6 +992,12 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 				Indexes: make([]schemamodel.Index, 0),
 			},
 			database: &catalog.Database{
+				// The catalog reports the constraint beside its backing index,
+				// which is what makes the index the constraint's object rather
+				// than a name that resembles one (stokaro/ptah#2615).
+				Constraints: []catalog.Constraint{
+					{Name: "users_email_key", TableName: "users", Type: "UNIQUE", ColumnNames: []string{"email"}},
+				},
 				Indexes: []catalog.Index{
 					{Name: "users_pkey", TableName: "users", Columns: []string{"id"}, IsPrimary: true, IsUnique: false},
 					{Name: "users_email_key", TableName: "users", Columns: []string{"email"}, IsPrimary: false, IsUnique: true},
@@ -1021,6 +1030,9 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 				},
 			},
 			database: &catalog.Database{
+				Constraints: []catalog.Constraint{
+					{Name: "users_email_key", TableName: "users", Type: "UNIQUE", ColumnNames: []string{"email"}},
+				},
 				Indexes: []catalog.Index{
 					// Only constraint-based indexes exist, explicitly defined ones are missing
 					{Name: "tenants_pkey", TableName: "tenants", Columns: []string{"id"}, IsPrimary: true, IsUnique: false},
@@ -1040,6 +1052,11 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 				Indexes: make([]schemamodel.Index, 0),
 			},
 			database: &catalog.Database{
+				Constraints: []catalog.Constraint{
+					{Name: "users_email_key", TableName: "users", Type: "UNIQUE", ColumnNames: []string{"email"}},
+					{Name: "tenants_name_key", TableName: "tenants", Type: "UNIQUE", ColumnNames: []string{"name"}},
+					{Name: "products_sku_code_key", TableName: "products", Type: "UNIQUE", ColumnNames: []string{"sku", "code"}},
+				},
 				Indexes: []catalog.Index{
 					{Name: "users_email_key", TableName: "users", Columns: []string{"email"}, IsPrimary: false, IsUnique: true},
 					{Name: "tenants_name_key", TableName: "tenants", Columns: []string{"name"}, IsPrimary: false, IsUnique: true},
@@ -1077,6 +1094,10 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 				},
 			},
 			database: &catalog.Database{
+				Constraints: []catalog.Constraint{
+					{Name: "users_email_key", TableName: "users", Type: "UNIQUE", ColumnNames: []string{"email"}},
+					{Name: "tenants_name_key", TableName: "tenants", Type: "UNIQUE", ColumnNames: []string{"name"}},
+				},
 				Indexes: []catalog.Index{
 					// Constraint-based (should be ignored)
 					{Name: "users_email_key", TableName: "users", Columns: []string{"email"}, IsPrimary: false, IsUnique: true},
@@ -1104,10 +1125,6 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 		})
 	}
 }
-
-// Note: The isConstraintBasedUniqueIndex function is tested indirectly through
-// the integration tests and the main Indexes function tests, which provide
-// comprehensive coverage of the constraint detection logic.
 
 func TestColumns_EdgeCases(t *testing.T) {
 	tests := []struct {

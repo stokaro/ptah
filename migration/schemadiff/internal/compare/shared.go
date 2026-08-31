@@ -7,19 +7,7 @@ import (
 	"strings"
 )
 
-// Regular expressions for constraint-based index detection
 var (
-	// PostgreSQL constraint-based unique index pattern: tablename_columnname_key
-	postgresConstraintPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*_[a-zA-Z_][a-zA-Z0-9_]*_key$`)
-
-	// MySQL/MariaDB constraint-based unique index patterns
-	mysqlUKPattern           = regexp.MustCompile(`^uk_[a-zA-Z_][a-zA-Z0-9_]*`)
-	mysqlTableColumnsPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*_[a-zA-Z_][a-zA-Z0-9_]*$`)
-
-	// Custom index patterns (these should NOT be considered constraint-based)
-	// Match indexes that start with "idx_" or "index_", or end with "_idx" or "_index"
-	customIndexPattern = regexp.MustCompile(`(?i)(^(idx|index)_|_(idx|index)$)`)
-
 	defaultAggregateAliasPattern       = regexp.MustCompile(`\b(count|sum|avg|min|max)\(([^)]*)\)\s+as\s+([a-z_][a-z0-9_]*)\b`)
 	defaultColumnAliasPattern          = regexp.MustCompile(`\b([a-z_][a-z0-9_]*)\s+as\s+([a-z_][a-z0-9_]*)\b`)
 	simpleComparisonParenthesesPattern = regexp.MustCompile(

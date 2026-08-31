@@ -376,6 +376,14 @@ func TestCompareWithDialect_FilteredDatabaseIndexCannotHideUniqueRemoval(t *test
 	desired.Indexes = nil
 	database := uniqueIndexDatabaseSchema()
 	database.Indexes[0].Name = "users_email_key"
+	// The constraint is what makes the index the constraint's object. It used
+	// to be the index's NAME, which hid a user's own index from comparison and
+	// never planned the removal they asked for (stokaro/ptah#2615); a catalog
+	// reporting a backing index without its constraint is a shape a fixture can
+	// have and a reader does not produce.
+	database.Constraints = []catalog.Constraint{{
+		Name: "users_email_key", TableName: "users", Type: "UNIQUE", ColumnNames: []string{"email"},
+	}}
 
 	diff := schemadiff.CompareWithDialect(desired, database, "postgres")
 
@@ -452,5 +460,89 @@ func uniqueIndexDatabaseSchema() *catalog.Database {
 			IsUnique:   true,
 			Definition: `CREATE UNIQUE INDEX "idx_users_email" ON "users" ("email")`,
 		}},
+	}
+}
+
+// TestCompareWithDialect_AUniqueIndexIsNotTheConstraintsBecauseOfItsName is
+// stokaro/ptah#2615.
+//
+// A user's own unique index was hidden from comparison when its name resembled
+// one the engine would have generated, so the removal the author asked for was
+// never planned and `--dry-run` reported the database in sync. Measured on
+// PostgreSQL 18 over one table, one column and a desired schema declaring no
+// index, changing only the index's name:
+//
+//	slug               No schema differences detected
+//	tenants_slug_key   No schema differences detected
+//	tenants_slug       DROP INDEX IF EXISTS "tenants_slug"
+//	uk_tenants_slug    DROP INDEX IF EXISTS "uk_tenants_slug"
+//	idx_tenants_slug   DROP INDEX IF EXISTS "idx_tenants_slug"
+//
+// The rows here are the two names the scan recognized. Both are ordinary names
+// for an index somebody wrote, and neither is evidence about the object.
+func TestCompareWithDialect_AUniqueIndexIsNotTheConstraintsBecauseOfItsName(t *testing.T) {
+	tests := []struct {
+		name  string
+		index string
+	}{
+		{name: "the engine's own convention for a backing index", index: "users_email_key"},
+		{name: "an index named after the column it covers", index: "email"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			desired := uniqueIndexGeneratedSchema()
+			desired.Indexes = nil
+			desired.Fields[0].Unique = false
+			database := uniqueIndexDatabaseSchema()
+			database.Indexes[0].Name = test.index
+			database.Tables[0].Columns[0].IsUnique = false
+
+			diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+
+			c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{{
+				Name:      test.index,
+				TableName: "users",
+			}})
+		})
+	}
+}
+
+// TestCompareWithDialect_AConstraintsBackingIndexIsStillTheConstraints is the
+// control for the test above, and the reason the scan existed at all.
+//
+// The same two names, with the constraint the catalog reports beside the index.
+// The object is the constraint's, the removal is spelled through it, and the
+// index pool stays out — which is the answer the name was approximating and the
+// catalog gives directly.
+func TestCompareWithDialect_AConstraintsBackingIndexIsStillTheConstraints(t *testing.T) {
+	tests := []struct {
+		name  string
+		index string
+	}{
+		{name: "the engine's own convention for a backing index", index: "users_email_key"},
+		{name: "an index named after the column it covers", index: "email"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			desired := uniqueIndexGeneratedSchema()
+			desired.Indexes = nil
+			desired.Fields[0].Unique = false
+			database := uniqueIndexDatabaseSchema()
+			database.Indexes[0].Name = test.index
+			database.Tables[0].Columns[0].IsUnique = false
+			database.Constraints = []catalog.Constraint{{
+				Name: test.index, TableName: "users", Type: "UNIQUE", ColumnNames: []string{"email"},
+			}}
+
+			diff := schemadiff.CompareWithDialect(desired, database, "postgres")
+
+			c.Assert(diff.IndexRemovals(), qt.HasLen, 0)
+		})
 	}
 }
