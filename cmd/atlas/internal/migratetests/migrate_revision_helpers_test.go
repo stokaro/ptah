@@ -8,7 +8,7 @@ import (
 	"database/sql"
 
 	qt "github.com/frankban/quicktest"
-	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite" // registers the SQLite driver for database/sql
 )
 
 func revisionType(c *qt.C, dbPath, version string) int {

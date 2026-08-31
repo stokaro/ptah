@@ -22,17 +22,17 @@ import (
 	// variables would look unclassified rather than boolean -- which is the
 	// direction that fails loudly instead of passing quietly.
 	_ "go.5x5.cz/ptah/cmd/atlas"
-	_ "go.5x5.cz/ptah/cmd/internal/editor"
+	_ "go.5x5.cz/ptah/cmd/internal/editor" // links its PTAH_* declarations into the registry
 	"go.5x5.cz/ptah/internal/atlascompatpolicy"
-	_ "go.5x5.cz/ptah/internal/atlasfilter"
-	_ "go.5x5.cz/ptah/internal/atlashclrender"
-	_ "go.5x5.cz/ptah/internal/atlassource"
+	_ "go.5x5.cz/ptah/internal/atlasfilter"    // links its PTAH_* declarations into the registry
+	_ "go.5x5.cz/ptah/internal/atlashclrender" // links its PTAH_* declarations into the registry
+	_ "go.5x5.cz/ptah/internal/atlassource"    // links its PTAH_* declarations into the registry
 	"go.5x5.cz/ptah/internal/envbool"
-	_ "go.5x5.cz/ptah/internal/migrationintegrity"
-	_ "go.5x5.cz/ptah/internal/reservedrole"
-	_ "go.5x5.cz/ptah/internal/rolescope"
-	_ "go.5x5.cz/ptah/internal/sqlitevirtual"
-	_ "go.5x5.cz/ptah/migration/migrator"
+	_ "go.5x5.cz/ptah/internal/migrationintegrity" // links its PTAH_* declarations into the registry
+	_ "go.5x5.cz/ptah/internal/reservedrole"       // links its PTAH_* declarations into the registry
+	_ "go.5x5.cz/ptah/internal/rolescope"          // links its PTAH_* declarations into the registry
+	_ "go.5x5.cz/ptah/internal/sqlitevirtual"      // links its PTAH_* declarations into the registry
+	_ "go.5x5.cz/ptah/migration/migrator"          // links its PTAH_* declarations into the registry
 )
 
 // nonBooleanPtahVars is the ONLY hand-written list in this file: the `PTAH_*`

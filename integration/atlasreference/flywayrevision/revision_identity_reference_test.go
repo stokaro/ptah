@@ -18,8 +18,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	_ "github.com/jackc/pgx/v5/stdlib"
-	_ "modernc.org/sqlite"
+	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
+	_ "modernc.org/sqlite"             // registers the SQLite driver for database/sql
 )
 
 const (
