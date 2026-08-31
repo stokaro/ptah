@@ -661,6 +661,12 @@ func verify(
 	if err != nil {
 		return embedverify.Report{}, embedrun.Run{}, err
 	}
+	// Verification reads the run's watermark and the specification's rows, so a
+	// run for another generation measures one generation against another's
+	// boundary and reports about neither (stokaro/ptah#2637).
+	if err := run.DescribesGeneration(opened.loaded.Spec.Identity().Digest); err != nil {
+		return embedverify.Report{}, embedrun.Run{}, err
+	}
 	report, err := embedreport.VerifyGeneration(ctx, opened.db, opened.store, opened.loaded, run)
 	return report, run, err
 }

@@ -59,7 +59,21 @@ prints the generation identity to pass.
 
 ## Build it
 
-Same sequence as a first generation, with a new run identifier:
+Same sequence as a first generation, with a new run identifier. **New** is the
+part that matters: a run records the generation it was prepared for, and every
+verb refuses a run prepared for a different one.
+
+```text
+run 2026-08-31-v2 is for generation 547ab65200da and this specification
+produces b115a08fbd46
+```
+
+Reuse the previous generation's run id and you meet that refusal at `prepare`,
+before anything is written. It is a refusal rather than a warning because the
+alternative was silent: the second `prepare` used to add its columns and
+register its generation, then say "leaving it as it is", and the `backfill`
+after it resumed the first generation's finished cursor and reported rows it had
+not embedded.
 
 ```bash
 export RUN=$(date +%Y-%m-%d)-v2
