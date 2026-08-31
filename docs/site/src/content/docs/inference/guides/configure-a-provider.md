@@ -101,6 +101,23 @@ against a specification somebody is still writing.
 
 It returns 1 when a check fails.
 
+A check the probe could not make is reported as unmeasured rather than as a
+pass. That distinction is the whole value of the verb: a credential that does
+not resolve — an unset variable, a missing file, one the filesystem lets other
+users read — is refused before a single byte leaves the process, so the probe
+says the credential could not be used and that reachability was **not measured**:
+
+```text
+bge-small-en at api.example.com, declared hosted
+  - fail authorized: the credential from env:PTAH_EMBED_TOKEN could not be used:
+         credential reference resolves to nothing: environment variable
+         PTAH_EMBED_TOKEN is unset or empty
+  - not measured: whether the endpoint at api.example.com is reachable, and
+         everything after it, because no request was sent
+```
+
+Nothing was asked of the endpoint, so nothing is claimed about it.
+
 ### What each answer is for
 
 **`dimension`** is the one that used to be found late. Every fact a plan states
