@@ -374,28 +374,74 @@ func CountGenerationRows(
 	return count, nil
 }
 
+// GenerationIndexName is the name of the index the registry row's generation
+// built, if it built one.
+//
+// Derived from the REGISTRY rather than from a specification, because a
+// retirement holds no specification for the generation it is destroying. The
+// caller's `--spec` describes a different generation -- usually the one
+// replacing this one -- and its identity is in the index name.
+func GenerationIndexName(generation embedstore.Generation) string {
+	return embedgen.IndexName(
+		generation.TargetTable, generation.TargetColumn, generation.Identity)
+}
+
+// GenerationIndexExists reports whether that index is in the catalog.
+//
+// A retirement asks before it acts, so the plan an operator approves says what
+// is actually there. `DropsIndex` was a literal `true`, so a plan promised to
+// drop an index whether or not one existed and the record afterwards claimed
+// one had been dropped (stokaro/ptah#2642).
+func GenerationIndexExists(
+	ctx context.Context, db *sql.DB, generation embedstore.Generation,
+) (bool, error) {
+	name := GenerationIndexName(generation)
+	// The schema is part of the question for the same reason it is part of the
+	// DROP: two schemas can hold a like-named index, and answering about the
+	// wrong one would put a claim in the plan about somebody else's object
+	// (stokaro/ptah#2629). An empty schema means the connection's own
+	// search_path, which is what a single-schema installation has.
+	const query = `SELECT EXISTS (
+		SELECT 1 FROM pg_class ic
+		JOIN pg_index i ON i.indexrelid = ic.oid
+		JOIN pg_namespace n ON n.oid = ic.relnamespace
+		WHERE ic.relname = $1
+		  AND n.nspname = COALESCE(NULLIF($2, ''), current_schema()))`
+	var exists bool
+	err := db.QueryRowContext(ctx, query, name, generation.TargetSchema).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("read index %s: %w", name, err)
+	}
+	return exists, nil
+}
+
 // RetireIndex drops a generation's index and leaves its vectors.
 //
 // The index goes first and the columns second, because dropping a column takes
 // its index with it and a failure between the two would otherwise leave the
 // index gone and the column there -- a generation that is neither retired nor
 // usable.
+//
+// It takes the registry row and no specification. It used to take the caller's
+// spec with only Target.Column swapped in, and Target.Column is an identity
+// field, so the digest baked into the generated name belonged to a hybrid that
+// was no generation at all: the DROP matched nothing, the index survived, and
+// with --drop-column=false -- the only mode in which dropping the index IS the
+// operation -- the verb reported the generation gone at exit 0
+// (stokaro/ptah#2642).
+//
+// There is no HasIndex gate any more, and its absence is deliberate. Whether
+// the retired generation built an index is a fact about THAT generation, and
+// the registry does not record it; the gate consulted the current
+// specification's index method, which answers about a different generation.
+// `IF EXISTS` is the honest form of the same question, asked of the server.
 func RetireIndex(
-	ctx context.Context, db *sql.DB, spec embedgen.Spec, generation embedstore.Generation,
+	ctx context.Context, db *sql.DB, generation embedstore.Generation,
 ) error {
-	retired := spec
-	retired.Target.Column = generation.TargetColumn
-	objects, err := retired.TargetObjects()
-	if err != nil {
-		return err
-	}
-	if !objects.HasIndex {
-		return nil
-	}
 	// An index lives in its table's schema, so the DROP names it there. Left
 	// bare it resolved through search_path, which dropped a like-named index
 	// belonging to another schema's generation (stokaro/ptah#2629).
-	name := qualify(generation.TargetSchema, objects.Index.Name)
+	name := qualify(generation.TargetSchema, GenerationIndexName(generation))
 	// #nosec G201 -- a generated index name, through qualify and quoteIdentifier.
 	drop := fmt.Sprintf("DROP INDEX IF EXISTS %s", name)
 	if _, err := db.ExecContext(ctx, drop); err != nil {

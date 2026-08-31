@@ -170,7 +170,7 @@ func assertRetirementRecordsWhatItDestroyed(
 	output := runInference(c, ctx, "retire",
 		"--spec", specPath, "--db-url", dbURL, "--generation", "a-retirable-one",
 		"--approve", digest, "--approver", "an operator",
-		"--drop-column=false", "--evidence-file", path)
+		"--evidence-file", path)
 	c.Assert(output, qt.Contains, "is gone")
 
 	body, err := os.ReadFile(path)
@@ -179,10 +179,14 @@ func assertRetirementRecordsWhatItDestroyed(
 	c.Assert(json.Unmarshal(body, &record), qt.IsNil)
 	c.Assert(record.Generation, qt.Equals, "a-retirable-one")
 	c.Assert(record.Approver, qt.Equals, "an operator")
-	// Named rather than counted. The column survived this run, and "one object"
-	// would not say which.
+	// Named rather than counted, and named for what was ACTUALLY there. This
+	// generation was registered and never built, so it has no index, and the
+	// record says so: `DropsIndex` used to be a literal `true` and the record
+	// claimed an index had been dropped whether or not one existed
+	// (stokaro/ptah#2642).
 	c.Assert(record.Objects, qt.HasLen, 1)
-	c.Assert(record.Objects[0], qt.Contains, "index over")
+	c.Assert(record.Objects[0], qt.Contains, "column ")
+	c.Assert(strings.Join(record.Objects, " "), qt.Not(qt.Contains), "index over")
 	c.Assert(record.PlanDigest, qt.HasLen, 64)
 	c.Assert(record.RetiredAt.IsZero(), qt.IsFalse)
 }
@@ -193,8 +197,7 @@ func retirementDigestOf(
 ) string {
 	c.Helper()
 	refused, err := runInferenceExpectingFailure(c, ctx, "retire",
-		"--spec", specPath, "--db-url", dbURL, "--generation", generation,
-		"--drop-column=false")
+		"--spec", specPath, "--db-url", dbURL, "--generation", generation)
 	c.Assert(err, qt.IsNotNil)
 	return planDigestFrom(c, refused)
 }
