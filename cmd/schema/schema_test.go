@@ -342,6 +342,86 @@ type SecurityMarker struct{}
 	c.Assert(outAfter, qt.DeepEquals, outData)
 }
 
+// TestSchemaExportCommand_FailurePath_ExportMetadataCleanupPreservesSources is
+// the path the defect actually took (stokaro/ptah#2607).
+//
+// The diagnostic tests in internal/atlashclrender prove the loss is reported;
+// only this proves the report reaches the refusal, before the annotations are
+// gone. On master the same invocation printed
+// `Cleaned 1 file(s), removed 3 annotation line(s)`, exited 0, and left the API
+// contract nowhere: the HCL could not carry it and the Go sources no longer did.
+func TestSchemaExportCommand_FailurePath_ExportMetadataCleanupPreservesSources(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	modelPath := filepath.Join(dir, "model.go")
+	outPath := filepath.Join(dir, "schema.hcl")
+	modelData := []byte(`package models
+
+//ptah:schema:table name="users" api_name="Account"
+type User struct {
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
+	ID int64
+
+	//ptah:schema:field name="email_addr" type="TEXT" api_name="email" api_expose="read"
+	Email string
+}
+`)
+	c.Assert(os.WriteFile(modelPath, modelData, 0o600), qt.IsNil)
+
+	cmd := schema.NewSchemaCommand()
+	var stderr bytes.Buffer
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{
+		"export",
+		"--root-dir", dir,
+		"--out", outPath,
+		"--cleanup-go-annotations",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorIs, goannotationexport.ErrLossyCleanup)
+	c.Assert(stderr.String(), qt.Contains, `export metadata api_name="Account" is not represented in HCL`)
+	c.Assert(stderr.String(), qt.Contains, `export metadata api_expose="read" is not represented in HCL`)
+	modelAfter, err := os.ReadFile(modelPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(modelAfter, qt.DeepEquals, modelData)
+}
+
+// TestSchemaExportCommand_HappyPath_CleanupWithoutExportMetadata is the control
+// for it. The refusal is only useful while a schema that loses nothing still
+// cleans; without this, a report that fired on every table would satisfy the
+// test above and break the feature for everyone.
+func TestSchemaExportCommand_HappyPath_CleanupWithoutExportMetadata(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	modelPath := filepath.Join(dir, "model.go")
+	outPath := filepath.Join(dir, "schema.hcl")
+	c.Assert(os.WriteFile(modelPath, []byte(`package models
+
+//ptah:schema:table name="users"
+type User struct {
+	//ptah:schema:field name="id" type="INTEGER" primary="true"
+	ID int64
+}
+`), 0o600), qt.IsNil)
+
+	cmd := schema.NewSchemaCommand()
+	cmd.SetArgs([]string{
+		"export",
+		"--root-dir", dir,
+		"--out", outPath,
+		"--cleanup-go-annotations",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil)
+	modelAfter, err := os.ReadFile(modelPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(modelAfter), qt.Not(qt.Contains), "ptah:schema")
+}
+
 func TestSchemaExportCommand_FailurePath_RepeatCleanupPreservesExistingOutput(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

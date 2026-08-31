@@ -4324,8 +4324,8 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 3884,
-      "sourceBytes": 29984
+      "visibleWords": 3931,
+      "sourceBytes": 30384
     },
     {
       "path": "docs/site/src/content/docs/schema/go-annotations.md",
