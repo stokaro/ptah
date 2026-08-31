@@ -234,6 +234,32 @@ func ReadVerificationRows(
 	return sourceRows, targetRows, nil
 }
 
+// storedWidthExpression asks the server how wide the vector in a row is.
+//
+// It depends on the representation because pgvector does. `vector_dims` is
+// defined for `vector` and `halfvec` and NOT for `sparsevec` -- measured
+// against 0.8.1's pg_proc, where the only sparsevec conversions are the casts
+// to the two dense types. Appending it unconditionally is stokaro/ptah#2633: a
+// sparsevec generation prepared, backfilled, caught up and indexed, and then
+// `verify`, `status` and `cutover` all died with
+// `function vector_dims(sparsevec) does not exist`, which stranded the
+// generation permanently -- the plan digest an approval binds to is only
+// published by a refused cutover, and the cutover could not get that far.
+//
+// A sparsevec's width is the suffix of its own text form, `{i:v,...}/N`. That
+// is read rather than cast, because `col::vector` densifies a sparse value --
+// the representation exists not to do that -- and because the two answer
+// differently for an UNCONSTRAINED column, where each row carries its own
+// width and there is no typmod to read instead. NULL survives the expression as
+// NULL, which is what says the row holds no vector.
+func storedWidthExpression(representation, column string) string {
+	quoted := quoteIdentifier(column)
+	if strings.EqualFold(strings.TrimSpace(representation), "sparsevec") {
+		return "NULLIF(split_part(" + quoted + "::text, '/', 2), '')::int"
+	}
+	return "vector_dims(" + quoted + ")"
+}
+
 // verificationQuery renders the one walk over both sides.
 func verificationQuery(spec embedgen.Spec, source *Source) (string, error) {
 	keys := quoteAll(spec.Source.KeyFields)
@@ -246,7 +272,7 @@ func verificationQuery(spec embedgen.Spec, source *Source) (string, error) {
 		quoteIdentifier(column+InputHashSuffix),
 		quoteIdentifier(column+VersionSuffix),
 		quoteIdentifier(column+StateSuffix),
-		"vector_dims("+quoteIdentifier(column)+")")
+		storedWidthExpression(spec.Target.Representation, column))
 
 	// #nosec G201 -- PostgreSQL takes no bind parameter for a relation or
 	// column name; the identifiers come from the specification and go through
