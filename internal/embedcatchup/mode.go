@@ -35,6 +35,9 @@ const (
 	// Ptah cannot prove this from a configuration statement. What it can do is
 	// require the writer to produce evidence, and report the result as partial
 	// when the evidence is not there.
+	//
+	// NOT in Modes: nothing in this build can produce that evidence. See the
+	// comment there.
 	ModeDualWrite Mode = "dual_write"
 	// ModeOutbox is a transactional outbox in the source database.
 	//
@@ -51,7 +54,17 @@ const (
 // The epic puts it outside the first vertical, and a mode that could be
 // selected and then silently did nothing is worse than one that cannot be
 // selected at all.
-var Modes = []Mode{ModeImmutable, ModeDualWrite, ModeOutbox}
+//
+// ModeDualWrite is absent for that same reason, measured rather than assumed:
+// DualWriteEvidence has no producer anywhere in this build -- no verb, no
+// table, no endpoint through which a writer could report a heartbeat -- and
+// only tests construct one. So assessDualWrite always reached "the dual-write
+// mode was selected and the writer has never reported anything", every run
+// under it was permanently unverifiable, and the mode was listed as supported
+// while being unusable (stokaro/ptah#2632). The constant stays, because the
+// assessment it names is written and tested and wants only a reporting
+// surface; what it does not have is a way to be selected and then stall.
+var Modes = []Mode{ModeImmutable, ModeOutbox}
 
 // ParseMode reads a mode name.
 func ParseMode(raw string) (Mode, error) {

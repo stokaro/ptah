@@ -41,12 +41,14 @@ makes a rollback possible.
 
 ## `catch-up needs a consistency mode that records changes`
 
-**Cause.** The specification selects `immutable`, `dual_write`, or nothing, and
-you ran `catchup`.
+**Cause.** The specification selects `immutable` or nothing, and you ran
+`catchup`.
 
-**Fix.** There is nothing to catch up on under those modes. If the source is
-changing after all, switch to `outbox` and run `prepare` again to install the
-triggers and record a fresh boundary.
+**Fix.** There is nothing to catch up on under those modes, and the run does not
+need one: a completed `backfill` is what carries it to `caught_up`, so `index`,
+`verify` and `cutover` follow directly. If the source is changing after all,
+switch to `outbox` and run `prepare` again to install the triggers and record a
+fresh boundary.
 
 ## `provider: embedding endpoint unreachable`
 

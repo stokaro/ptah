@@ -28,7 +28,7 @@ disposition: keep
 | Vector types | `vector`, `halfvec`, `sparsevec` |
 | Metrics | `cosine`, `l2`, `inner_product` |
 | Index methods | `hnsw`, `ivfflat` |
-| Consistency modes | `outbox`, `immutable`, `dual_write` |
+| Consistency modes | `outbox`, `immutable` |
 
 ## What is not
 
@@ -86,8 +86,6 @@ schedule a GPU, store model weights, or answer a search query.
 
 - **That the source is what you said it is.** `mutable: false` is a declaration
   Ptah takes and measures afterwards; it cannot stop a write.
-- **That your writer reports its changes**, under `dual_write`. A change nobody
-  reported is invisible.
 - **That the model is stable.** If the provider exposes no immutable revision,
   `plan` reports the reproducibility as partial and names the reason. It cannot
   detect a model that changed under a stable name.
