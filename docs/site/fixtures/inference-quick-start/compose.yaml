@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: ptah
       POSTGRES_USER: ptah
     ports:
-      - "${PTAH_INFERENCE_POSTGRES_PORT:-55432}:5432"
+      - "${PTAH_INFERENCE_POSTGRES_PORT:-}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ptah -d ptah"]
       interval: 1s
@@ -21,7 +21,7 @@ services:
       dockerfile: Dockerfile.embeddings
     command: ["python", "/fixture/embed.py"]
     ports:
-      - "${PTAH_INFERENCE_EMBED_PORT:-58080}:8080"
+      - "${PTAH_INFERENCE_EMBED_PORT:-}:8080"
     healthcheck:
       test:
         - CMD

@@ -12,8 +12,11 @@ results_dir="$work_dir/results"
 project=${PTAH_INFERENCE_PROJECT:-ptah-docs-inference-$$}
 docker_context=${PTAH_DOCKER_CONTEXT:-default}
 fixture_host=${PTAH_FIXTURE_HOST:-127.0.0.1}
-postgres_port=${PTAH_INFERENCE_POSTGRES_PORT:-55432}
-embed_port=${PTAH_INFERENCE_EMBED_PORT:-58080}
+# Empty by default: the fixture publishes to a host port Docker chooses and
+# reports back which. The two variables stay for a remote Docker context, where
+# a caller does need a fixed address (stokaro/ptah#2673).
+postgres_port=${PTAH_INFERENCE_POSTGRES_PORT:-}
+embed_port=${PTAH_INFERENCE_EMBED_PORT:-}
 fixture_dir=
 cleanup_verified=0
 
@@ -111,13 +114,26 @@ export PTAH_FIXTURE_HOST="$fixture_host"
 export PTAH_INFERENCE_POSTGRES_PORT="$postgres_port"
 export PTAH_INFERENCE_EMBED_PORT="$embed_port"
 export PTAH_INFERENCE_PROJECT="$project"
-export PTAH_DB_URL="postgres://ptah:ptah@$fixture_host:$postgres_port/ptah?sslmode=disable"
 export PTAH_RUN_ID=quick-start
 
 cd "$fixture_dir"
 ./run.sh up >"$results_dir/up.txt"
+
+# The addresses come back from the run rather than being decided here, because
+# the fixture no longer binds a port this script chose (stokaro/ptah#2673).
+db_url=$(sed -n 's/^database URL: //p' "$results_dir/up.txt")
+endpoint=$(sed -n 's/^embeddings endpoint: //p' "$results_dir/up.txt")
+if [ -z "$db_url" ] || [ -z "$endpoint" ]; then
+	echo 'check-inference-quick-start: run.sh did not report its addresses' >&2
+	exit 1
+fi
+export PTAH_DB_URL="$db_url"
+
 export PTAH_SPEC="$fixture_dir/.ptah-inference/spec.yaml"
-grep -qF "endpoint: http://$fixture_host:$embed_port/v1" "$PTAH_SPEC"
+# The specification names the endpoint the run reported, which is what proves
+# the two agree: a fixture that published one port and wrote another into the
+# spec would fail here rather than at the first provider request.
+grep -qF "endpoint: $endpoint" "$PTAH_SPEC"
 
 ptah inference plan >"$results_dir/plan.txt"
 for expected in \

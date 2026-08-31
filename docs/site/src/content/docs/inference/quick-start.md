@@ -39,9 +39,13 @@ empty fixture has no older generation, so its first candidate becomes active.
 - Bash, or Windows PowerShell 5.1 or later;
 - a ZIP extractor.
 
-The fixture defaults to host ports `55432` and `58080`. You can override both
-before startup. The cleanup step removes the containers, project network,
-database volume, locally built images, and extracted fixture.
+Left alone, the fixture publishes PostgreSQL and the embeddings provider on host
+ports Docker chooses, and `run.sh up` prints the addresses it got. The steps
+below pin them instead, with `PTAH_INFERENCE_POSTGRES_PORT` and
+`PTAH_INFERENCE_EMBED_PORT`, so that every command on this page can quote one
+fixed URL — if either port is taken on your machine, change the value and start
+again. The cleanup step removes the containers, project network, database
+volume, locally built images, and extracted fixture.
 
 ## 1. Download the fixture
 
@@ -79,8 +83,9 @@ has no repository-relative path.
 
 ## 2. Start PostgreSQL and pgvector
 
-Set optional port or project overrides before startup. A distinct project name
-lets two extracted fixtures run without sharing Compose resources.
+Pin the ports and name the project before startup. A distinct project name lets
+two extracted fixtures run without sharing Compose resources; the ports are
+pinned here so the URLs below are the same for every reader.
 
 **Bash:**
 

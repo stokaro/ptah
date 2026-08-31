@@ -49,8 +49,8 @@ with another local service:
 | --- | --- | --- |
 | `PTAH_DOCKER_CONTEXT` | `default` | Docker context used by every Compose command |
 | `PTAH_FIXTURE_HOST` | `127.0.0.1` | Host that `ptah` uses for both services |
-| `PTAH_INFERENCE_POSTGRES_PORT` | `55432` | PostgreSQL host port |
-| `PTAH_INFERENCE_EMBED_PORT` | `58080` | Embeddings provider host port |
+| `PTAH_INFERENCE_POSTGRES_PORT` | Docker chooses | PostgreSQL host port |
+| `PTAH_INFERENCE_EMBED_PORT` | Docker chooses | Embeddings provider host port |
 | `PTAH_INFERENCE_PROJECT` | `ptah-inference-quick-start` | Compose project and resource prefix |
 | `PTAH_BIN` | `ptah` | Installed Ptah executable |
 

@@ -7,11 +7,19 @@ runtime_dir="$script_dir/.ptah-inference"
 runtime_spec="$runtime_dir/spec.yaml"
 docker_context=${PTAH_DOCKER_CONTEXT:-default}
 fixture_host=${PTAH_FIXTURE_HOST:-127.0.0.1}
-postgres_port=${PTAH_INFERENCE_POSTGRES_PORT:-55432}
-embed_port=${PTAH_INFERENCE_EMBED_PORT:-58080}
+# Empty by default, which publishes to a host port Docker chooses. The two
+# variables stay for a caller that needs a fixed address -- a remote Docker
+# context, where the ports have to be known to reach the host at all.
+#
+# They defaulted to 55432 and 58080, and both sit inside Linux's default
+# ephemeral range (32768-60999): a run could lose the port to one of its own
+# outbound connections and fail with `address already in use` on a machine
+# where nothing else was listening (stokaro/ptah#2673).
+postgres_port=${PTAH_INFERENCE_POSTGRES_PORT:-}
+embed_port=${PTAH_INFERENCE_EMBED_PORT:-}
 project=${PTAH_INFERENCE_PROJECT:-ptah-inference-quick-start}
 ptah_bin=${PTAH_BIN:-ptah}
-db_url=${PTAH_DB_URL:-postgres://ptah:ptah@$fixture_host:$postgres_port/ptah?sslmode=disable}
+db_url=${PTAH_DB_URL:-}
 run_id=${PTAH_RUN_ID:-quick-start}
 
 compose() {
@@ -49,13 +57,42 @@ require_runtime() {
 		echo 'run.sh: run "./run.sh up" before this command' >&2
 		exit 1
 	fi
+	resolve_runtime
+}
+
+# published_port is the host port a service's container port ended up on.
+#
+# Asked of Docker rather than assumed, which is the whole point: a port this
+# script picked could be taken between the picking and the binding, and one
+# Docker assigned cannot be.
+published_port() {
+	compose port "$1" "$2" | sed 's/.*://'
 }
 
 start_services() {
-	write_runtime_spec
+	# Up FIRST, then the specification. It was the other way round, which is
+	# why the ports had to be known in advance and therefore fixed
+	# (stokaro/ptah#2673).
 	compose up -d --build --wait
+	postgres_port=$(published_port postgres 5432)
+	embed_port=$(published_port embeddings 8080)
+	if [ -z "$postgres_port" ] || [ -z "$embed_port" ]; then
+		echo 'run.sh: docker did not report the published ports' >&2
+		exit 1
+	fi
+	db_url="postgres://ptah:ptah@$fixture_host:$postgres_port/ptah?sslmode=disable"
+	write_runtime_spec
 	printf 'runtime specification: %s\n' "$runtime_spec"
 	printf 'database URL: %s\n' "$db_url"
+	printf 'embeddings endpoint: http://%s:%s/v1\n' "$fixture_host" "$embed_port"
+}
+
+# resolve_runtime recovers the addresses for a command that did not bring the
+# stack up itself, since the ports are no longer knowable from the environment.
+resolve_runtime() {
+	[ -n "$postgres_port" ] || postgres_port=$(published_port postgres 5432)
+	[ -n "$embed_port" ] || embed_port=$(published_port embeddings 8080)
+	[ -n "$db_url" ] || db_url="postgres://ptah:ptah@$fixture_host:$postgres_port/ptah?sslmode=disable"
 }
 
 approval_digest() {
