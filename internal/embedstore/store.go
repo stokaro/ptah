@@ -137,6 +137,13 @@ type Store interface {
 	//
 	// A zero time clears it, which is what stops a generation being reported as
 	// a way back the moment nobody is feeding it.
+	//
+	// A non-zero time never moves the deadline EARLIER. Maintenance is a
+	// renewal, and the flag that drives it is documented as extending the
+	// window; written as a plain assignment it made `--maintain-for 1h` after a
+	// `--stabilize-for 24h` take twenty-three hours of rollback eligibility
+	// away without saying so (stokaro/ptah#2647). Shortening a window is not a
+	// thing any caller asks for: clearing it is what zero is for.
 	Maintain(ctx context.Context, identity string, until time.Time) error
 
 	// CreateRun records a new run.

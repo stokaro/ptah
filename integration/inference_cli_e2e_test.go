@@ -392,7 +392,10 @@ func assertNoWindowIsAskedForMeansNoWindow(
 		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID,
 		"--approve", digest, "--approver", "an operator")
 
+	// A previous generation exists here, so this is the window's own sentence
+	// and not the first-generation one. It is the control for the split above.
 	c.Assert(output, qt.Contains, "no stabilization window was asked for")
+	c.Assert(output, qt.Not(qt.Contains), "this is the first generation")
 	c.Assert(maintainedUntil(c, ctx, db, "the-replaced-one").Valid, qt.IsFalse)
 }
 
@@ -411,8 +414,14 @@ func assertACutoverWithoutAWindowLeavesNoWayBack(
 		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID,
 		"--approve", digest, "--approver", "an operator")
 
-	c.Assert(output, qt.Contains, "no stabilization window was asked for")
-	c.Assert(output, qt.Contains, "there is no rollback to it")
+	// This is the FIRST cutover over this target, so the sentence is about
+	// there being no previous generation rather than about the window. The two
+	// were one branch, and this assertion read the wrong one of them
+	// (stokaro/ptah#2647): `assertNoWindowIsAskedForMeansNoWindow` below is
+	// where a previous generation exists and no window was asked for.
+	c.Assert(output, qt.Contains, "this is the first generation over this target")
+	c.Assert(output, qt.Contains, "nothing to roll back to")
+	c.Assert(output, qt.Not(qt.Contains), "no stabilization window was asked for")
 	c.Assert(maintainedUntil(c, ctx, db, generation).Valid, qt.IsFalse)
 }
 
@@ -1265,4 +1274,54 @@ func runInferenceCommand(ctx context.Context, args ...string) (string, error) {
 	cmd.SetArgs(append([]string{"inference"}, args...))
 	err := cmd.ExecuteContext(ctx)
 	return output.String(), err
+}
+
+// TestInferenceAFirstCutoverIsNotToldItAskedForNothingE2E is stokaro/ptah#2647
+// findings 2 to 4.
+//
+// `openStabilization` folded "there is no previous generation" and "you asked
+// for no window" into one branch and printed the second sentence for both, so
+// an operator who typed `--stabilize-for 24h` on a first cutover was told they
+// had not asked for a window.
+func TestInferenceAFirstCutoverIsNotToldItAskedForNothingE2E(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.TimescaleDB)
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	adminDB, err := sql.Open("pgx", dbURL)
+	c.Assert(err, qt.IsNil)
+	defer adminDB.Close()
+
+	name := fmt.Sprintf("ptah_first_cutover_%d", time.Now().UnixNano())
+	createE2EDatabase(c, ctx, adminDB, name)
+	defer dropE2EDatabase(c, context.Background(), adminDB, name)
+
+	dbName := replaceDatabaseName(c, dbURL, name)
+	db, err := sql.Open("pgx", dbName)
+	c.Assert(err, qt.IsNil)
+	defer db.Close()
+	seedCLIArticles(c, ctx, db)
+
+	endpoint := httptest.NewServer(http.HandlerFunc(embeddingsHandler(c)))
+	defer endpoint.Close()
+	specPath := writeCLISpec(c, endpoint.URL)
+
+	runInference(c, ctx, "prepare", "--spec", specPath, "--db-url", dbName, "--run-id", cliRunID)
+	runInference(c, ctx, "backfill",
+		"--spec", specPath, "--db-url", dbName, "--run-id", cliRunID, "--batch-rows", "10")
+	runInference(c, ctx, "catchup",
+		"--spec", specPath, "--db-url", dbName, "--run-id", cliRunID, "--batch-rows", "10")
+	runInference(c, ctx, "verify", "--spec", specPath, "--db-url", dbName, "--run-id", cliRunID)
+
+	digest := planDigestOf(c, ctx, specPath, dbName)
+	output := runInference(c, ctx, "cutover",
+		"--spec", specPath, "--db-url", dbName, "--run-id", cliRunID,
+		"--approve", digest, "--approver", "an operator", "--stabilize-for", "24h")
+
+	c.Assert(output, qt.Contains, "queries now read generation ")
+	// What is true: there is no previous generation. What is not: that nobody
+	// asked for a window.
+	c.Assert(output, qt.Contains, "this is the first generation over this target")
+	c.Assert(output, qt.Not(qt.Contains), "no stabilization window was asked for")
 }

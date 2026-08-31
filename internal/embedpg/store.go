@@ -142,7 +142,31 @@ func (s *Store) RecordVerification(ctx context.Context, identity string, at time
 
 // Maintain records how long something will keep a generation current.
 func (s *Store) Maintain(ctx context.Context, identity string, until time.Time) error {
-	return s.updateGeneration(ctx, identity, "maintained_until", nullableTime(until))
+	if until.IsZero() {
+		return s.updateGeneration(ctx, identity, "maintained_until", nullableTime(until))
+	}
+	// GREATEST, so maintenance never moves the deadline earlier. Written as a
+	// plain assignment it made `--maintain-for 1h` after a
+	// `--stabilize-for 24h` take twenty-three hours of rollback eligibility
+	// away, from a flag documented as extending the window
+	// (stokaro/ptah#2647). The comparison is in the UPDATE rather than in a
+	// read before it, for the reason the retired clause is: between a read and
+	// a write is where the thing being read changes.
+	//
+	// No COALESCE around the stored value, and its absence is measured rather
+	// than assumed: PostgreSQL's GREATEST ignores NULL operands and answers
+	// NULL only when every one of them is NULL, so a generation nothing has
+	// ever kept current takes the new deadline outright. A COALESCE here was
+	// written first and no fixture could tell it from this, which is the sign
+	// it was doing nothing.
+	const query = `UPDATE ` + embedstore.GenerationTable + `
+		SET maintained_until = GREATEST(maintained_until, $2)
+		WHERE identity = $1 AND retired_at IS NULL`
+	result, err := s.db.ExecContext(ctx, query, identity, until.UTC())
+	if err != nil {
+		return fmt.Errorf("record maintained_until for generation %s: %w", identity, err)
+	}
+	return s.oneGenerationChanged(ctx, result, identity, "maintained_until")
 }
 
 // updateGeneration writes one column of a generation that is there and not
@@ -160,6 +184,17 @@ func (s *Store) updateGeneration(ctx context.Context, identity, column string, v
 	if err != nil {
 		return fmt.Errorf("record %s for generation %s: %w", column, identity, err)
 	}
+	return s.oneGenerationChanged(ctx, result, identity, column)
+}
+
+// oneGenerationChanged turns "no row" into the reason there was none.
+//
+// Shared by the column writers and by [Store.Maintain], which writes its own
+// statement: a generation that is absent and one that is retired are different
+// answers, and both look like zero rows affected from here.
+func (s *Store) oneGenerationChanged(
+	ctx context.Context, result sql.Result, identity, column string,
+) error {
 	changed, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("record %s for generation %s: %w", column, identity, err)

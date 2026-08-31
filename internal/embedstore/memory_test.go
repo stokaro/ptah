@@ -487,3 +487,46 @@ func TestMemory_RecordingAgainstAGenerationThatIsNotThereIsItsOwnAnswer(t *testi
 	c.Assert(store.RecordVerification(ctx, "nothing", at), qt.ErrorIs, embedstore.ErrNotFound)
 	c.Assert(store.Maintain(ctx, "nothing", at), qt.ErrorIs, embedstore.ErrNotFound)
 }
+
+// TestMemory_MaintainNeverShortensAWindow mirrors the SQL store's rule.
+//
+// Two implementations of one interface must answer the same question the same
+// way, or a unit test passing against the fake says nothing about the product.
+// The rule itself is stokaro/ptah#2647: a renewal that moved the deadline
+// earlier took rollback eligibility away from a flag documented as extending
+// the window.
+func TestMemory_MaintainNeverShortensAWindow(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	store := embedstore.NewMemory()
+	_, err := store.RegisterGeneration(ctx, embedstore.Generation{
+		Identity: "gen-1", SpecDigest: "spec-1", Dimension: 4,
+		TargetTable: "articles", TargetColumn: "embedding",
+	})
+	c.Assert(err, qt.IsNil)
+
+	far := time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)
+	near := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+
+	c.Assert(store.Maintain(ctx, "gen-1", far), qt.IsNil)
+	c.Assert(windowOf(c, ctx, store), qt.Equals, far)
+
+	c.Assert(store.Maintain(ctx, "gen-1", near), qt.IsNil)
+	c.Assert(windowOf(c, ctx, store), qt.Equals, far)
+
+	// Clearing still clears.
+	c.Assert(store.Maintain(ctx, "gen-1", time.Time{}), qt.IsNil)
+	c.Assert(windowOf(c, ctx, store).IsZero(), qt.IsTrue)
+
+	// And from nothing, any deadline wins.
+	c.Assert(store.Maintain(ctx, "gen-1", near), qt.IsNil)
+	c.Assert(windowOf(c, ctx, store), qt.Equals, near)
+}
+
+// windowOf reads a generation's maintenance window back.
+func windowOf(c *qt.C, ctx context.Context, store *embedstore.Memory) time.Time {
+	c.Helper()
+	generation, err := store.Generation(ctx, "gen-1")
+	c.Assert(err, qt.IsNil)
+	return generation.MaintainedUntil.UTC()
+}
