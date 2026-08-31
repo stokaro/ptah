@@ -3,6 +3,7 @@ package embedstore
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"go.5x5.cz/ptah/internal/embedrun"
@@ -35,7 +36,15 @@ type Generation struct {
 	ResolvedModel string
 	// Dimension is the vector dimension.
 	Dimension int
-	// TargetTable and TargetColumn are where its vectors live.
+	// TargetSchema, TargetTable and TargetColumn are where its vectors live.
+	//
+	// The schema is recorded because retirement reads the location from HERE
+	// rather than from a specification, and a bare relation name resolves
+	// through the server's search_path: without it, retiring a generation in
+	// one schema dropped the columns of a live generation in another
+	// (stokaro/ptah#2629). Empty means the specification named no schema, so
+	// search_path is what its author asked for.
+	TargetSchema string
 	TargetTable  string
 	TargetColumn string
 	// CreatedAt is when Ptah first recorded it.
@@ -71,8 +80,13 @@ func (g Generation) Retired() bool {
 
 // Pointer is which generation a target's queries read.
 type Pointer struct {
-	// TargetTable is what the pointer is about.
-	TargetTable string
+	// TargetSchema and TargetTable are what the pointer is about.
+	//
+	// Two generations over same-named tables in different schemas are two
+	// pointers, not one: the table name alone made them share a row, so a
+	// cutover in one schema moved the other's readers.
+	TargetSchema string
+	TargetTable  string
 	// Active is the generation queries read.
 	Active string
 	// Previous is what they read before.
@@ -84,6 +98,20 @@ type Pointer struct {
 	// PlanDigest is the plan that authorized the move, which is what makes a
 	// pointer's history auditable against the approval that permitted it.
 	PlanDigest string
+}
+
+// QualifiedName names a target the way a diagnostic should say it.
+//
+// One function, used by both stores, because a message is a thing an operator
+// compares between them: the SQL store rendered a pointer refusal through its
+// own SQL quoting and the in-memory store printed the bare table, so the two
+// disagreed about which target had refused. The SQL renderer stays separate --
+// that one has to quote, and this one has to read.
+func QualifiedName(schema, table string) string {
+	if trimmed := strings.TrimSpace(schema); trimmed != "" {
+		return trimmed + "." + table
+	}
+	return table
 }
 
 // Store is where run state lives.
@@ -128,7 +156,7 @@ type Store interface {
 	Events(ctx context.Context, runID string) ([]embedrun.Event, error)
 
 	// Pointer reads which generation a target's queries currently read.
-	Pointer(ctx context.Context, targetTable string) (Pointer, error)
+	Pointer(ctx context.Context, targetSchema, targetTable string) (Pointer, error)
 	// MovePointer moves it, refusing when it is not where the caller thinks.
 	//
 	// Compare-and-set rather than a write, because a cutover decided against

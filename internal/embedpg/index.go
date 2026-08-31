@@ -127,7 +127,7 @@ func createIndexStatement(spec embedgen.Spec, name, operatorClass string) (strin
 	// validated enumeration, or an option pair refused unless it matches
 	// indexOptionName and indexOptionValue.
 	return fmt.Sprintf("CREATE INDEX CONCURRENTLY %s ON %s USING %s (%s %s)%s",
-		quoteIdentifier(name), qualifiedTargetTable(spec),
+		quoteIdentifier(name), qualify(spec.Target.Schema, spec.Target.Table),
 		spec.Target.IndexMethod,
 		quoteIdentifier(spec.Target.Column), operatorClass, options), nil
 }

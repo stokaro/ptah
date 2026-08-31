@@ -123,7 +123,7 @@ func VerifyGeneration(
 	loaded embedspec.Loaded, run embedrun.Run,
 ) (embedverify.Report, error) {
 	spec := loaded.Spec
-	structure, err := embedpg.ReadStructure(ctx, db, spec, ActivePointer(ctx, store, spec.Target.Table))
+	structure, err := embedpg.ReadStructure(ctx, db, spec, ActivePointer(ctx, store, spec.Target.Schema, spec.Target.Table))
 	if err != nil {
 		return embedverify.Report{}, err
 	}
@@ -169,7 +169,7 @@ func BuildCutoverPlan(
 	loaded embedspec.Loaded, run embedrun.Run, report embedverify.Report, now time.Time,
 ) (embedcutover.Plan, embedcutover.Observed, error) {
 	spec := loaded.Spec
-	active := ActivePointer(ctx, store, spec.Target.Table)
+	active := ActivePointer(ctx, store, spec.Target.Schema, spec.Target.Table)
 	structure, err := embedpg.ReadStructure(ctx, db, spec, active)
 	if err != nil {
 		return embedcutover.Plan{}, embedcutover.Observed{}, err
@@ -321,8 +321,8 @@ func parseWatermark(raw string) uint64 {
 }
 
 // ActivePointer reads which generation queries currently read, or nothing.
-func ActivePointer(ctx context.Context, store *embedpg.Store, table string) string {
-	pointer, err := store.Pointer(ctx, table)
+func ActivePointer(ctx context.Context, store *embedpg.Store, schema, table string) string {
+	pointer, err := store.Pointer(ctx, schema, table)
 	if err != nil {
 		return ""
 	}

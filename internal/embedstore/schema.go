@@ -81,6 +81,7 @@ func GenerationFields() []schemamodel.Field {
 		text(GenerationTable, "reproducibility_reason", true, "what is unpinned when it is partial"),
 		text(GenerationTable, "resolved_model", true, "the model identity the provider reported"),
 		integer(GenerationTable, "dimension", false, "the vector dimension"),
+		text(GenerationTable, "target_schema", false, "the schema that table is in, empty for search_path"),
 		text(GenerationTable, "target_table", false, "where its vectors live"),
 		text(GenerationTable, "target_column", false, "and in which column"),
 		timestamp(GenerationTable, "created_at", false, "when Ptah first recorded it"),
@@ -191,6 +192,7 @@ func pointerTable() schemamodel.Table {
 // PointerFields are the pointer's columns.
 func PointerFields() []schemamodel.Field {
 	return []schemamodel.Field{
+		text(PointerTable, "target_schema", false, "the schema that table is in, empty for search_path"),
 		text(PointerTable, "target_table", false, "the table the pointer is about"),
 		text(PointerTable, "active_generation", false, "what queries read now"),
 		text(PointerTable, "previous_generation", true, "what they read before"),

@@ -29,18 +29,29 @@ func ReadStructure(
 	}
 	structure.ExtensionPresent = extension
 
+	// to_regclass resolves the name the way every other query in this session
+	// would: a qualified name names its schema, and an unqualified one takes
+	// search_path, which is what a specification naming no schema asked for. It
+	// answers NULL for a relation that is not there, so the row simply does not
+	// match and the caller's ErrNoRows branch runs.
+	//
+	// Matching pg_class.relname alone is stokaro/ptah#2629: a same-named table
+	// in ANOTHER schema answered for this generation, so verification measured
+	// a structure belonging to somebody else's table.
 	const columnQuery = `SELECT format_type(a.atttypid, a.atttypmod)
-		FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid
-		WHERE c.relname = $1 AND a.attname = $2 AND a.attnum > 0 AND NOT a.attisdropped`
+		FROM pg_attribute a
+		WHERE a.attrelid = to_regclass($1) AND a.attname = $2
+			AND a.attnum > 0 AND NOT a.attisdropped`
 	var columnType string
-	err = db.QueryRowContext(ctx, columnQuery, spec.Target.Table, spec.Target.Column).Scan(&columnType)
+	target := qualify(spec.Target.Schema, spec.Target.Table)
+	err = db.QueryRowContext(ctx, columnQuery, target, spec.Target.Column).Scan(&columnType)
 	if err == nil {
 		structure.ColumnExists = true
 		structure.ColumnType = columnType
 		structure.Dimension = dimensionOf(columnType)
 	} else if err != sql.ErrNoRows {
 		return embedverify.Structure{}, fmt.Errorf("read %s.%s: %w",
-			spec.Target.Table, spec.Target.Column, err)
+			target, spec.Target.Column, err)
 	}
 
 	return readIndexInto(ctx, db, spec, structure)
@@ -61,15 +72,19 @@ func readIndexInto(
 	// that exists and is not valid is one PostgreSQL will not use, and a
 	// generation whose index is invalid answers queries by sequential scan --
 	// correctly, and far too slowly to cut over to.
+	// Resolved through to_regclass for the same reason the column read is: an
+	// index lives in its table's schema, and matching relname alone let another
+	// schema's like-named index answer for this generation's.
 	const query = `SELECT am.amname, i.indisvalid,
 			COALESCE((SELECT opc.opcname FROM pg_opclass opc WHERE opc.oid = i.indclass[0]), '')
 		FROM pg_index i
 		JOIN pg_class ic ON ic.oid = i.indexrelid
 		JOIN pg_am am ON am.oid = ic.relam
-		WHERE ic.relname = $1`
+		WHERE i.indexrelid = to_regclass($1)`
 	var method, operatorClass string
 	var valid bool
-	err = db.QueryRowContext(ctx, query, objects.Index.Name).Scan(&method, &valid, &operatorClass)
+	err = db.QueryRowContext(ctx, query,
+		qualify(spec.Target.Schema, objects.Index.Name)).Scan(&method, &valid, &operatorClass)
 	if err == sql.ErrNoRows {
 		return structure, nil
 	}
@@ -348,9 +363,9 @@ func CountGenerationRows(
 	ctx context.Context, db *sql.DB, generation embedstore.Generation,
 ) (int, error) {
 	// #nosec G201 -- relation and column names from the registry, through
-	// quoteIdentifier.
+	// qualify and quoteIdentifier.
 	query := fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE %s = $1",
-		quoteIdentifier(generation.TargetTable),
+		qualify(generation.TargetSchema, generation.TargetTable),
 		quoteIdentifier(generation.TargetColumn+GenerationSuffix))
 	var count int
 	if err := db.QueryRowContext(ctx, query, generation.Identity).Scan(&count); err != nil {
@@ -377,10 +392,14 @@ func RetireIndex(
 	if !objects.HasIndex {
 		return nil
 	}
-	// #nosec G201 -- a generated index name, through quoteIdentifier.
-	drop := fmt.Sprintf("DROP INDEX IF EXISTS %s", quoteIdentifier(objects.Index.Name))
+	// An index lives in its table's schema, so the DROP names it there. Left
+	// bare it resolved through search_path, which dropped a like-named index
+	// belonging to another schema's generation (stokaro/ptah#2629).
+	name := qualify(generation.TargetSchema, objects.Index.Name)
+	// #nosec G201 -- a generated index name, through qualify and quoteIdentifier.
+	drop := fmt.Sprintf("DROP INDEX IF EXISTS %s", name)
 	if _, err := db.ExecContext(ctx, drop); err != nil {
-		return fmt.Errorf("drop index %s: %w", objects.Index.Name, err)
+		return fmt.Errorf("drop index %s: %w", name, err)
 	}
 	return nil
 }
@@ -391,9 +410,9 @@ func RetireColumns(
 ) error {
 	for _, suffix := range append([]string{""}, MetadataSuffixes()...) {
 		// #nosec G201 -- relation and column names from the registry, through
-		// quoteIdentifier.
+		// qualify and quoteIdentifier.
 		drop := fmt.Sprintf("ALTER TABLE %s DROP COLUMN IF EXISTS %s",
-			quoteIdentifier(generation.TargetTable),
+			qualify(generation.TargetSchema, generation.TargetTable),
 			quoteIdentifier(generation.TargetColumn+suffix))
 		if _, err := db.ExecContext(ctx, drop); err != nil {
 			return fmt.Errorf("drop column %s%s: %w", generation.TargetColumn, suffix, err)

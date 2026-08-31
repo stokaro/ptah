@@ -176,30 +176,44 @@ func (m *Memory) Events(_ context.Context, runID string) ([]embedrun.Event, erro
 }
 
 // Pointer reads which generation a target's queries currently read.
-func (m *Memory) Pointer(_ context.Context, targetTable string) (Pointer, error) {
+func (m *Memory) Pointer(_ context.Context, targetSchema, targetTable string) (Pointer, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	pointer, found := m.pointers[targetTable]
+	key := pointerKey(targetSchema, targetTable)
+	pointer, found := m.pointers[key]
 	if !found {
-		return Pointer{}, fmt.Errorf("%w: no pointer for %s", ErrNotFound, targetTable)
+		return Pointer{}, fmt.Errorf("%w: no pointer for %s", ErrNotFound,
+			QualifiedName(targetSchema, targetTable))
 	}
 	return pointer, nil
+}
+
+// pointerKey addresses a pointer by both parts of its target.
+//
+// The schema is part of the key because two same-named tables in two schemas
+// are two targets: keyed on the table alone they shared one pointer, so a
+// cutover in one schema moved the other schema's readers (stokaro/ptah#2629).
+// The separator is a character no unquoted PostgreSQL identifier holds, so two
+// distinct targets cannot fold onto one key.
+func pointerKey(targetSchema, targetTable string) string {
+	return targetSchema + "\x00" + targetTable
 }
 
 // MovePointer moves it, refusing when it is not where the caller thinks.
 func (m *Memory) MovePointer(_ context.Context, pointer Pointer, expectedActive string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	current, found := m.pointers[pointer.TargetTable]
+	current, found := m.pointers[pointerKey(pointer.TargetSchema, pointer.TargetTable)]
 	switch {
 	case !found && expectedActive != "":
 		return fmt.Errorf("%w: %s has no pointer and this move expected %s",
-			ErrConflict, pointer.TargetTable, expectedActive)
+			ErrConflict, QualifiedName(pointer.TargetSchema, pointer.TargetTable), expectedActive)
 	case found && current.Active != expectedActive:
 		return fmt.Errorf("%w: %s reads %s and this move expected %s",
-			ErrConflict, pointer.TargetTable, current.Active, expectedActive)
+			ErrConflict, QualifiedName(pointer.TargetSchema, pointer.TargetTable),
+			current.Active, expectedActive)
 	}
-	m.pointers[pointer.TargetTable] = pointer
+	m.pointers[pointerKey(pointer.TargetSchema, pointer.TargetTable)] = pointer
 	return nil
 }
 

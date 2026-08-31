@@ -38,7 +38,7 @@ func aGeneration() embedstore.Generation {
 	return embedstore.Generation{
 		Identity: "gen-1", SpecDigest: "spec-1", Name: "articles v2",
 		Reproducibility: "full", Dimension: 1024,
-		TargetTable: "public.articles", TargetColumn: "embedding_v2",
+		TargetSchema: "public", TargetTable: "articles", TargetColumn: "embedding_v2",
 		CreatedAt: at,
 	}
 }
@@ -192,16 +192,16 @@ func TestMemory_MovingAPointerIsCompareAndSet(t *testing.T) {
 	ctx := context.Background()
 	store := embedstore.NewMemory()
 	c.Assert(store.MovePointer(ctx, embedstore.Pointer{
-		TargetTable: "public.articles", Active: "gen-1", CutOverAt: at,
+		TargetSchema: "public", TargetTable: "articles", Active: "gen-1", CutOverAt: at,
 	}, ""), qt.IsNil)
 
 	err := store.MovePointer(ctx, embedstore.Pointer{
-		TargetTable: "public.articles", Active: "gen-3", Previous: "gen-2", CutOverAt: at,
+		TargetSchema: "public", TargetTable: "articles", Active: "gen-3", Previous: "gen-2", CutOverAt: at,
 	}, "gen-2")
 
 	c.Assert(err, qt.ErrorIs, embedstore.ErrConflict)
 	c.Assert(err, qt.ErrorMatches, `.*public.articles reads gen-1 and this move expected gen-2.*`)
-	current, _ := store.Pointer(ctx, "public.articles")
+	current, _ := store.Pointer(ctx, "public", "articles")
 	c.Assert(current.Active, qt.Equals, "gen-1")
 }
 
@@ -222,7 +222,7 @@ func TestMemory_AFirstCutoverExpectsNoPointer(t *testing.T) {
 			store := embedstore.NewMemory()
 
 			err := store.MovePointer(ctx, embedstore.Pointer{
-				TargetTable: "public.articles", Active: "gen-1", CutOverAt: at,
+				TargetSchema: "public", TargetTable: "articles", Active: "gen-1", CutOverAt: at,
 			}, test.expected)
 
 			c.Assert(err != nil, qt.Equals, test.wantErr, qt.Commentf("%v", err))
@@ -274,7 +274,7 @@ func TestMemory_AbsenceIsItsOwnAnswer(t *testing.T) {
 		},
 		{
 			name: "a pointer", call: func(ctx context.Context, s *embedstore.Memory) error {
-				_, err := s.Pointer(ctx, "nothing")
+				_, err := s.Pointer(ctx, "public", "nothing")
 				return err
 			},
 		},
@@ -340,7 +340,7 @@ func TestMemory_SatisfiesTheStoreContract(t *testing.T) {
 	c.Assert(store.SaveRun(ctx, aRun()), qt.IsNil)
 	c.Assert(store.AppendEvent(ctx, embedrun.Event{RunID: "run-1", Kind: "started", At: at}), qt.IsNil)
 	c.Assert(store.MovePointer(ctx, embedstore.Pointer{
-		TargetTable: "public.articles", Active: "gen-1", CutOverAt: at,
+		TargetSchema: "public", TargetTable: "articles", Active: "gen-1", CutOverAt: at,
 	}, ""), qt.IsNil)
 
 	generation, err := store.Generation(ctx, "gen-1")
@@ -352,7 +352,7 @@ func TestMemory_SatisfiesTheStoreContract(t *testing.T) {
 	events, err := store.Events(ctx, "run-1")
 	c.Assert(err, qt.IsNil)
 	c.Assert(events, qt.HasLen, 1)
-	pointer, err := store.Pointer(ctx, "public.articles")
+	pointer, err := store.Pointer(ctx, "public", "articles")
 	c.Assert(err, qt.IsNil)
 	c.Assert(pointer.Active, qt.Equals, "gen-1")
 	c.Assert(store.RetireGeneration(ctx, "gen-1", at), qt.IsNil)

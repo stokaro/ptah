@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/internal/embedcatchup"
+	"go.5x5.cz/ptah/internal/embeddigest"
 	"go.5x5.cz/ptah/internal/embedgen"
 	"go.5x5.cz/ptah/internal/embedstore"
 )
@@ -39,8 +40,26 @@ func NewOutbox(db *sql.DB, spec embedgen.Spec) (*Outbox, error) {
 // Named for the source table it watches rather than for the generation,
 // because two generations over one table share the changes: the events say
 // what happened to a row, and what a row MEANS is the generation's business.
+//
+// The name carries the sanitized table for a reader and a digest of the
+// QUALIFIED name for correctness. Both halves are needed. Without the digest,
+// `public.docs` and `archive.docs` produced one outbox table, one capture
+// function and one pair of trigger names -- and since Install issues CREATE OR
+// REPLACE FUNCTION, preparing the second rewrote the first's capture function
+// to read the second specification's columns, after which every insert and
+// delete on the first source table failed with `record "new" has no field ...`
+// (stokaro/ptah#2629). Without the sanitized table nobody can tell at a glance
+// which outbox they are looking at.
+//
+// The digest covers the schema and the table separately rather than a joined
+// string, so a schema called `a_b` with table `c` and a schema `a` with table
+// `b_c` cannot fold onto one name -- the same reason a key's components are
+// length-prefixed everywhere else in the lifecycle.
 func (o *Outbox) TableName() string {
-	return embedstore.TablePrefix + "outbox_" + sanitizeIdentifier(o.spec.Source.Table)
+	identity := embeddigest.Short(
+		embeddigest.Of(o.spec.Source.Schema, o.spec.Source.Table))
+	return embedstore.TablePrefix + "outbox_" +
+		sanitizeIdentifier(o.spec.Source.Table) + "_" + identity
 }
 
 // FunctionName is what this outbox's trigger function is called.
@@ -230,14 +249,19 @@ func (o *Outbox) Installed(ctx context.Context) (bool, error) {
 	// Both triggers, and counted rather than existence-checked: half an
 	// installation captures half the changes, and the half it misses is
 	// whichever one somebody dropped.
+	// Scoped to the relation rather than to a bare relname: a same-named table
+	// in another schema, carrying its own outbox, answered this question for a
+	// source that had no trigger at all -- so a run reported itself as
+	// capturing changes while every write went unrecorded (stokaro/ptah#2629).
 	const query = `SELECT COUNT(*) FROM pg_trigger
-		JOIN pg_class ON pg_class.oid = pg_trigger.tgrelid
-		WHERE pg_trigger.tgname = ANY($1) AND pg_class.relname = $2 AND NOT pg_trigger.tgisinternal`
+		WHERE pg_trigger.tgname = ANY($1) AND pg_trigger.tgrelid = to_regclass($2)
+			AND NOT pg_trigger.tgisinternal`
 	names := o.TriggerNames()
+	source := o.qualifiedSourceTable()
 	var found int
 	if err := o.db.QueryRowContext(ctx, query,
-		triggerNameArray(names), o.spec.Source.Table).Scan(&found); err != nil {
-		return false, fmt.Errorf("read trigger state for %s: %w", o.spec.Source.Table, err)
+		triggerNameArray(names), source).Scan(&found); err != nil {
+		return false, fmt.Errorf("read trigger state for %s: %w", source, err)
 	}
 	return found == len(names), nil
 }
@@ -384,10 +408,7 @@ func (o *Outbox) Prune(ctx context.Context, before uint64) (int64, error) {
 
 // qualifiedSourceTable renders the source table with its schema when it has one.
 func (o *Outbox) qualifiedSourceTable() string {
-	if schema := strings.TrimSpace(o.spec.Source.Schema); schema != "" {
-		return quoteIdentifier(schema) + "." + quoteIdentifier(o.spec.Source.Table)
-	}
-	return quoteIdentifier(o.spec.Source.Table)
+	return qualify(o.spec.Source.Schema, o.spec.Source.Table)
 }
 
 // scanEvents reads the result set.
@@ -413,10 +434,10 @@ func scanEvents(rows *sql.Rows) ([]embedcatchup.Event, error) {
 // sanitizeIdentifier folds a source table name into something a generated
 // object name can hold.
 //
-// The outbox table is named after the table it watches, and a source table may
-// be called anything -- including things that would make the generated name
-// collide with another one. Non-alphanumerics become underscores, which can
-// collide, so the name also carries a short digest of the original.
+// Non-alphanumerics become underscores, which can collide -- two different
+// table names can fold onto one. What separates them is the digest TableName
+// appends, which is taken over the ORIGINAL schema and table rather than over
+// this folded form.
 func sanitizeIdentifier(name string) string {
 	var b strings.Builder
 	for _, symbol := range strings.ToLower(name) {
