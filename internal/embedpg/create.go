@@ -33,7 +33,7 @@ func EnsureTarget(ctx context.Context, db *sql.DB, spec embedgen.Spec) error {
 		return err
 	}
 
-	table := qualifiedTargetTable(spec)
+	table := qualify(spec.Target.Schema, spec.Target.Table)
 	additions := []string{fmt.Sprintf("ADD COLUMN IF NOT EXISTS %s %s",
 		quoteIdentifier(spec.Target.Column), objects.Column.Type)}
 	for _, suffix := range MetadataSuffixes() {
@@ -73,7 +73,7 @@ func refuseAnotherGenerationsColumn(
 	// #nosec G201 -- identifiers from the specification, through quoteIdentifier.
 	query := fmt.Sprintf(
 		"SELECT DISTINCT %s FROM %s WHERE %s IS NOT NULL AND %s <> $1 LIMIT 1",
-		quoteIdentifier(spec.Target.Column+GenerationSuffix), qualifiedTargetTable(spec),
+		quoteIdentifier(spec.Target.Column+GenerationSuffix), qualify(spec.Target.Schema, spec.Target.Table),
 		quoteIdentifier(spec.Target.Column+GenerationSuffix),
 		quoteIdentifier(spec.Target.Column+GenerationSuffix))
 
@@ -111,14 +111,6 @@ func requireVectorExtension(ctx context.Context, db *sql.DB) error {
 		"the target database has no pgvector: a generation stores vectors and there is " +
 			"nowhere to put them. Install it with `CREATE EXTENSION vector`, which needs " +
 			"a privilege Ptah does not assume")
-}
-
-// qualifiedTargetTable renders the target table with its schema when it has one.
-func qualifiedTargetTable(spec embedgen.Spec) string {
-	if schema := strings.TrimSpace(spec.Target.Schema); schema != "" {
-		return quoteIdentifier(schema) + "." + quoteIdentifier(spec.Target.Table)
-	}
-	return quoteIdentifier(spec.Target.Table)
 }
 
 // quoteLiteral renders a string the way PostgreSQL reads one.

@@ -45,6 +45,25 @@ const updateRunSQL = `UPDATE ` + embedstore.RunTable + ` SET
 	rollback_eligible=$31, failure_class=$32, failure_detail=$33, created_at=$34, updated_at=$35
 	WHERE id=$1 AND fencing_token <= $15`
 
+// claimRunSQL takes the lease and nothing else.
+//
+// Three properties, and each of them is a defect this replaces
+// (stokaro/ptah#2636):
+//
+//   - It names the lease columns only. A claim that wrote the whole row wrote
+//     back the cursor and the counters it had read, erasing a checkpoint the
+//     working worker committed in between.
+//   - It computes the token from the stored value rather than from one the
+//     caller read. Two claimers reading one token compute one successor, and
+//     the second write passes a `fencing_token <= $n` guard.
+//   - It RETURNS the row it wrote, so the caller's copy of the run is the
+//     store's, including whatever the fenced worker committed before it was
+//     fenced.
+const claimRunSQL = `UPDATE ` + embedstore.RunTable + ` SET
+	lease_owner=$2, lease_expires=$3, fencing_token=fencing_token+1, updated_at=$4
+	WHERE id=$1
+	RETURNING ` + runColumns
+
 // selectRunSQL reads one back.
 const selectRunSQL = `SELECT ` + runColumns + ` FROM ` + embedstore.RunTable + ` WHERE id = $1`
 

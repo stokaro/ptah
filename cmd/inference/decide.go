@@ -210,7 +210,8 @@ func runCutover(
 	}
 
 	if err := opened.store.MovePointer(ctx, embedstore.Pointer{
-		TargetTable: opened.loaded.Spec.Target.Table, Active: plan.Generation,
+		TargetSchema: opened.loaded.Spec.Target.Schema,
+		TargetTable:  opened.loaded.Spec.Target.Table, Active: plan.Generation,
 		Previous: plan.Previous, CutOverAt: now,
 		CutOverBy: approverName(approval), PlanDigest: plan.Digest(),
 	}, plan.Previous); err != nil {
@@ -553,7 +554,7 @@ func retirementContext(
 func retirementFacts(
 	ctx context.Context, opened *session, registered embedstore.Generation, generation string,
 ) (embedcutover.RetirementState, embedcutover.Observed, error) {
-	pointer, err := opened.store.Pointer(ctx, registered.TargetTable)
+	pointer, err := opened.store.Pointer(ctx, registered.TargetSchema, registered.TargetTable)
 	if err != nil && !errorsIs(err, embedstore.ErrNotFound) {
 		return embedcutover.RetirementState{}, embedcutover.Observed{}, err
 	}

@@ -49,15 +49,15 @@ func (s *Store) RegisterGeneration(
 ) (embedstore.Generation, error) {
 	const query = `INSERT INTO ` + embedstore.GenerationTable + ` (
 		identity, spec_digest, name, reproducibility, reproducibility_reason,
-		resolved_model, dimension, target_table, target_column, created_at, retired_at,
-		verified_at, maintained_until)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+		resolved_model, dimension, target_schema, target_table, target_column,
+		created_at, retired_at, verified_at, maintained_until)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 		ON CONFLICT (identity) DO NOTHING`
 	if _, err := s.db.ExecContext(ctx, query,
 		generation.Identity, generation.SpecDigest, generation.Name,
 		generation.Reproducibility, nullable(generation.ReproducibilityReason),
 		nullable(generation.ResolvedModel), generation.Dimension,
-		generation.TargetTable, generation.TargetColumn,
+		generation.TargetSchema, generation.TargetTable, generation.TargetColumn,
 		generation.CreatedAt.UTC(), nullableTime(generation.RetiredAt),
 		nullableTime(generation.VerifiedAt), nullableTime(generation.MaintainedUntil),
 	); err != nil {
@@ -70,14 +70,16 @@ func (s *Store) RegisterGeneration(
 func (s *Store) Generation(ctx context.Context, identity string) (embedstore.Generation, error) {
 	const query = `SELECT identity, spec_digest, COALESCE(name,''), reproducibility,
 		COALESCE(reproducibility_reason,''), COALESCE(resolved_model,''), dimension,
-		target_table, target_column, created_at, retired_at, verified_at, maintained_until
+		target_schema, target_table, target_column, created_at, retired_at,
+		verified_at, maintained_until
 		FROM ` + embedstore.GenerationTable + ` WHERE identity = $1`
 	var generation embedstore.Generation
 	var retired, verified, maintained sql.NullTime
 	err := s.db.QueryRowContext(ctx, query, identity).Scan(
 		&generation.Identity, &generation.SpecDigest, &generation.Name,
 		&generation.Reproducibility, &generation.ReproducibilityReason, &generation.ResolvedModel,
-		&generation.Dimension, &generation.TargetTable, &generation.TargetColumn,
+		&generation.Dimension, &generation.TargetSchema, &generation.TargetTable,
+		&generation.TargetColumn,
 		&generation.CreatedAt, &retired, &verified, &maintained)
 	if errors.Is(err, sql.ErrNoRows) {
 		return embedstore.Generation{}, fmt.Errorf("%w: generation %s", embedstore.ErrNotFound, identity)
@@ -279,19 +281,25 @@ func (s *Store) Events(ctx context.Context, runID string) ([]embedrun.Event, err
 }
 
 // Pointer reads which generation a target's queries currently read.
-func (s *Store) Pointer(ctx context.Context, targetTable string) (embedstore.Pointer, error) {
-	const query = `SELECT target_table, active_generation, COALESCE(previous_generation,''),
+func (s *Store) Pointer(
+	ctx context.Context, targetSchema, targetTable string,
+) (embedstore.Pointer, error) {
+	const query = `SELECT target_schema, target_table, active_generation,
+		COALESCE(previous_generation,''),
 		cut_over_at, COALESCE(cut_over_by,''), COALESCE(plan_digest,'')
-		FROM ` + embedstore.PointerTable + ` WHERE target_table = $1`
+		FROM ` + embedstore.PointerTable + `
+		WHERE target_schema = $1 AND target_table = $2`
 	var pointer embedstore.Pointer
-	err := s.db.QueryRowContext(ctx, query, targetTable).Scan(
-		&pointer.TargetTable, &pointer.Active, &pointer.Previous,
+	err := s.db.QueryRowContext(ctx, query, targetSchema, targetTable).Scan(
+		&pointer.TargetSchema, &pointer.TargetTable, &pointer.Active, &pointer.Previous,
 		&pointer.CutOverAt, &pointer.CutOverBy, &pointer.PlanDigest)
 	if errors.Is(err, sql.ErrNoRows) {
-		return embedstore.Pointer{}, fmt.Errorf("%w: no pointer for %s", embedstore.ErrNotFound, targetTable)
+		return embedstore.Pointer{}, fmt.Errorf("%w: no pointer for %s",
+			embedstore.ErrNotFound, embedstore.QualifiedName(targetSchema, targetTable))
 	}
 	if err != nil {
-		return embedstore.Pointer{}, fmt.Errorf("read pointer for %s: %w", targetTable, err)
+		return embedstore.Pointer{}, fmt.Errorf("read pointer for %s: %w",
+			embedstore.QualifiedName(targetSchema, targetTable), err)
 	}
 	pointer.CutOverAt = pointer.CutOverAt.UTC()
 	return pointer, nil
@@ -310,46 +318,52 @@ func (s *Store) MovePointer(ctx context.Context, pointer embedstore.Pointer, exp
 	// conflict. Measured against PostgreSQL 18, not reasoned about -- the
 	// in-memory store agreed with the wrong SQL.
 	const query = `INSERT INTO ` + embedstore.PointerTable + ` (
-		target_table, active_generation, previous_generation, cut_over_at, cut_over_by, plan_digest)
-		SELECT $1, $2, $3, $4, $5, $6
-		WHERE $7 = '' OR EXISTS (
+		target_schema, target_table, active_generation, previous_generation,
+		cut_over_at, cut_over_by, plan_digest)
+		SELECT $1, $2, $3, $4, $5, $6, $7
+		WHERE $8 = '' OR EXISTS (
 			SELECT 1 FROM ` + embedstore.PointerTable + `
-			WHERE target_table = $1 AND active_generation = $7)
-		ON CONFLICT (target_table) DO UPDATE SET
+			WHERE target_schema = $1 AND target_table = $2 AND active_generation = $8)
+		ON CONFLICT (target_schema, target_table) DO UPDATE SET
 			active_generation = EXCLUDED.active_generation,
 			previous_generation = EXCLUDED.previous_generation,
 			cut_over_at = EXCLUDED.cut_over_at,
 			cut_over_by = EXCLUDED.cut_over_by,
 			plan_digest = EXCLUDED.plan_digest
-		WHERE ` + embedstore.PointerTable + `.active_generation = $7`
+		WHERE ` + embedstore.PointerTable + `.active_generation = $8`
 	result, err := s.db.ExecContext(ctx, query,
-		pointer.TargetTable, pointer.Active, nullable(pointer.Previous), pointer.CutOverAt.UTC(),
-		nullable(pointer.CutOverBy), nullable(pointer.PlanDigest), expectedActive)
+		pointer.TargetSchema, pointer.TargetTable, pointer.Active, nullable(pointer.Previous),
+		pointer.CutOverAt.UTC(), nullable(pointer.CutOverBy), nullable(pointer.PlanDigest),
+		expectedActive)
+	target := embedstore.QualifiedName(pointer.TargetSchema, pointer.TargetTable)
 	if err != nil {
-		return fmt.Errorf("move pointer for %s: %w", pointer.TargetTable, err)
+		return fmt.Errorf("move pointer for %s: %w", target, err)
 	}
 	changed, err := result.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("move pointer for %s: %w", pointer.TargetTable, err)
+		return fmt.Errorf("move pointer for %s: %w", target, err)
 	}
 	if changed == 1 {
 		return nil
 	}
-	return s.explainPointerRefusal(ctx, pointer.TargetTable, expectedActive)
+	return s.explainPointerRefusal(ctx, pointer.TargetSchema, pointer.TargetTable, expectedActive)
 }
 
 // explainPointerRefusal says what the pointer actually reads.
-func (s *Store) explainPointerRefusal(ctx context.Context, targetTable, expectedActive string) error {
-	current, err := s.Pointer(ctx, targetTable)
+func (s *Store) explainPointerRefusal(
+	ctx context.Context, targetSchema, targetTable, expectedActive string,
+) error {
+	target := embedstore.QualifiedName(targetSchema, targetTable)
+	current, err := s.Pointer(ctx, targetSchema, targetTable)
 	if errors.Is(err, embedstore.ErrNotFound) {
 		return fmt.Errorf("%w: %s has no pointer and this move expected %s",
-			embedstore.ErrConflict, targetTable, expectedActive)
+			embedstore.ErrConflict, target, expectedActive)
 	}
 	if err != nil {
 		return err
 	}
 	return fmt.Errorf("%w: %s reads %s and this move expected %s",
-		embedstore.ErrConflict, targetTable, current.Active, expectedActive)
+		embedstore.ErrConflict, target, current.Active, expectedActive)
 }
 
 // nullable turns an empty string into a SQL NULL.
@@ -427,4 +441,20 @@ func (s *Store) ReachPhase(ctx context.Context, runID string, to embedrun.Phase)
 		return nil
 	}
 	return s.SaveRun(ctx, run)
+}
+
+// ClaimRun takes a run for a worker, writing the lease and nothing else.
+//
+// See [embedstore.Store.ClaimRun] for why the row is not rewritten and why the
+// token comes from the store. The whole claim is one statement, so there is no
+// window between deciding the token and writing it.
+func (s *Store) ClaimRun(
+	ctx context.Context, id, worker string, leaseExpires time.Time,
+) (embedrun.Run, int64, error) {
+	row := s.db.QueryRowContext(ctx, claimRunSQL, id, worker, leaseExpires.UTC(), time.Now().UTC())
+	run, err := scanRun(row, id)
+	if err != nil {
+		return embedrun.Run{}, 0, fmt.Errorf("claim run %s: %w", id, err)
+	}
+	return run, run.FencingToken, nil
 }

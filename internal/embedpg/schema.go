@@ -29,7 +29,13 @@ var keyColumns = map[string][]string{
 	embedstore.GenerationTable: {"identity"},
 	embedstore.RunTable:        {"id"},
 	embedstore.EventTable:      {"run_id", "sequence"},
-	embedstore.PointerTable:    {"target_table"},
+	// The pointer's key is both parts. Keyed on the table alone, two
+	// generations over same-named tables in different schemas shared one row,
+	// so a cutover in one schema moved the other schema's readers
+	// (stokaro/ptah#2629). Both columns are NOT NULL for the same reason a
+	// composite key always is: a NULL never equals a NULL, so a nullable half
+	// would let ON CONFLICT miss and insert a second row for one target.
+	embedstore.PointerTable: {"target_schema", "target_table"},
 }
 
 // SchemaSQL renders the statements that create the store's tables and indexes.
