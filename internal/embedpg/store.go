@@ -230,6 +230,32 @@ func (s *Store) Run(ctx context.Context, id string) (embedrun.Run, error) {
 	return scanRun(s.db.QueryRowContext(ctx, selectRunSQL, id), id)
 }
 
+// RunsForGeneration reads every run that built one generation, newest first.
+//
+// See [embedstore.Store.RunsForGeneration]. An empty slice is the answer for a
+// generation nothing built, and it is not an error: `retire` is reachable for a
+// generation registered by a run this store never saw.
+func (s *Store) RunsForGeneration(ctx context.Context, identity string) ([]embedrun.Run, error) {
+	rows, err := s.db.QueryContext(ctx, selectRunsForGenerationSQL, identity)
+	if err != nil {
+		return nil, fmt.Errorf("read the runs for generation %s: %w", identity, err)
+	}
+	defer rows.Close()
+
+	runs := make([]embedrun.Run, 0)
+	for rows.Next() {
+		run, scanErr := scanRun(rows, identity)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		runs = append(runs, run)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read the runs for generation %s: %w", identity, err)
+	}
+	return runs, nil
+}
+
 // SaveRun writes a run's state, refusing a stale fencing token.
 //
 // The refusal is a WHERE clause rather than a read followed by a write, because

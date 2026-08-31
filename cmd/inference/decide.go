@@ -501,6 +501,10 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 	if err := opened.store.RetireGeneration(ctx, options.generation, retiredAt); err != nil {
 		return err
 	}
+	if err := reachTerminalPhase(
+		ctx, opened, options.generation, embedrun.PhaseRetired); err != nil {
+		return err
+	}
 	if err := writeLines(out, fmt.Sprintf("generation %s is gone, with %d vectors",
 		options.generation, rows)); err != nil {
 		return err
