@@ -159,8 +159,35 @@ func (c CaseDocument) resolve(path string, index int) (embedeval.Case, error) {
 	}
 	return embedeval.Case{
 		ID: c.ID, Query: c.Query, K: c.K,
-		Required: c.Required, Relevant: c.Relevant,
+		Required: c.Required, Relevant: gradesFor(c),
 	}, nil
+}
+
+// gradesFor is the case's graded relevance, derived from its hard expectation
+// when it states none.
+//
+// A case saying `required: ["42"]` and nothing else is saying that 42 is a
+// right answer, which is what a grade means. Read as "no key is relevant" it
+// contributed to no ranked measure at all -- `scoreCase` skips a case with no
+// grades, deliberately, so that empty cases cannot carry a failing evaluation
+// over the line. A corpus where EVERY case is required-only therefore scored
+// nothing, and the mean of nothing is zero: `recall 0.000, MRR 0.000, NDCG
+// 0.000`, at exit 0, for a generation that answers every query perfectly
+// (stokaro/ptah#2634). It is indistinguishable from a generation that found
+// nothing, and it is what `--max-recall-drop` and `--max-ndcg-drop` compare
+// against.
+//
+// An explicit `relevant` map wins, because grading is how an author says one
+// right answer is better than another, and a derived grade would flatten that.
+func gradesFor(c CaseDocument) map[string]float64 {
+	if len(c.Relevant) > 0 {
+		return c.Relevant
+	}
+	grades := make(map[string]float64, len(c.Required))
+	for _, key := range c.Required {
+		grades[key] = 1
+	}
+	return grades
 }
 
 // digest is the corpus's content address.

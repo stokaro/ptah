@@ -133,6 +133,7 @@ export const sidebar = [
         items: [
           { slug: 'inference/reference/specification' },
           { slug: 'inference/reference/commands' },
+          { slug: 'inference/reference/evaluation-corpus' },
           { slug: 'inference/reference/run-status-and-findings' },
           { slug: 'inference/reference/support-and-limitations' },
         ],

@@ -6,14 +6,14 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 128,
-    "authored": 126,
+    "pages": 129,
+    "authored": 127,
     "generated": 2,
     "byType": {
       "concept": 16,
       "how-to": 54,
       "landing": 12,
-      "reference": 31,
+      "reference": 32,
       "status": 8,
       "troubleshooting": 4,
       "tutorial": 3
@@ -2129,12 +2129,13 @@
       "outboundLinks": [
         "/inference/guides/migrate-to-another-model/",
         "/inference/quick-start/",
+        "/inference/reference/evaluation-corpus/",
         "/inference/strategies/choose-a-target-layout/",
         "/inference/strategies/plan-provider-capacity/"
       ],
       "inboundLinks": [],
-      "visibleWords": 560,
-      "sourceBytes": 4967
+      "visibleWords": 580,
+      "sourceBytes": 5263
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/migrate-a-live-table.md",
@@ -2237,15 +2238,16 @@
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
-        "/inference/guides/rollback-and-retire/"
+        "/inference/guides/rollback-and-retire/",
+        "/inference/reference/evaluation-corpus/"
       ],
       "inboundLinks": [
         "/inference/guides/create-first-generation/",
         "/inference/quick-start/",
         "/inference/strategies/production-rollout/"
       ],
-      "visibleWords": 557,
-      "sourceBytes": 5473
+      "visibleWords": 566,
+      "sourceBytes": 5573
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/resume-and-recover.md",
@@ -2514,6 +2516,45 @@
       "sourceBytes": 17514
     },
     {
+      "path": "docs/site/src/content/docs/inference/reference/evaluation-corpus.md",
+      "route": "/inference/reference/evaluation-corpus/",
+      "title": "Evaluation corpus reference",
+      "description": "Every field of an evaluation corpus file, what each one measures, and which numbers it decides.",
+      "sidebarPath": "Inference migrations > Reference",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "application-developer",
+        "database-engineer"
+      ],
+      "readerQuestion": "What goes in the file `ptah inference evaluate --corpus` reads?",
+      "goal": "Look up the accepted evaluation corpus fields and what each one measures.",
+      "sourceOfTruth": [
+        "internal/embedcorpus",
+        "internal/embedeval",
+        "integration/inference_evaluate_e2e_test.go"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [],
+      "sourceMode": null,
+      "overlaps": [],
+      "disposition": "keep",
+      "outboundLinks": [],
+      "inboundLinks": [
+        "/inference/guides/create-first-generation/",
+        "/inference/guides/migrate-to-another-model/",
+        "/inference/strategies/plan-vector-indexes/",
+        "/inference/strategies/production-rollout/"
+      ],
+      "visibleWords": 684,
+      "sourceBytes": 5005
+    },
+    {
       "path": "docs/site/src/content/docs/inference/reference/run-status-and-findings.md",
       "route": "/inference/reference/run-status-and-findings/",
       "title": "Run status and findings",
@@ -2760,10 +2801,12 @@
       "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
-      "outboundLinks": [],
+      "outboundLinks": [
+        "/inference/reference/evaluation-corpus/"
+      ],
       "inboundLinks": [],
-      "visibleWords": 499,
-      "sourceBytes": 3985
+      "visibleWords": 508,
+      "sourceBytes": 4084
     },
     {
       "path": "docs/site/src/content/docs/inference/strategies/production-rollout.md",
@@ -2796,11 +2839,12 @@
       "outboundLinks": [
         "/inference/guides/migrate-to-another-model/",
         "/inference/guides/rollback-and-retire/",
-        "/inference/guides/run-in-kubernetes/"
+        "/inference/guides/run-in-kubernetes/",
+        "/inference/reference/evaluation-corpus/"
       ],
       "inboundLinks": [],
-      "visibleWords": 963,
-      "sourceBytes": 8576
+      "visibleWords": 972,
+      "sourceBytes": 8675
     },
     {
       "path": "docs/site/src/content/docs/inference/troubleshooting.md",
