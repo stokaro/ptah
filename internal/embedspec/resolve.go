@@ -3,6 +3,7 @@ package embedspec
 import (
 	"fmt"
 	"maps"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -38,6 +39,9 @@ func (d Document) Resolve(path string) (Loaded, error) {
 	}
 	if _, err := embedprovider.ParseCredentialRef(d.Model.Credential); err != nil {
 		return Loaded{}, fmt.Errorf("%s: %w", path, err)
+	}
+	if err := checkEndpointCarriesNoCredential(d.Model.Endpoint, path); err != nil {
+		return Loaded{}, err
 	}
 	maxPlanAge, err := parseDuration(d.Policy.MaxPlanAge, path)
 	if err != nil {
@@ -232,4 +236,52 @@ func (d Document) checkApprovalPolicy(path string) error {
 				"because a signature is given over one exact plan; set both or neither", path)
 	}
 	return nil
+}
+
+// checkEndpointCarriesNoCredential refuses a model.endpoint with userinfo in it.
+//
+// The rule `model.credential` enforces is that a key must not appear in project
+// configuration at all, and `model.endpoint` is project configuration. Go's
+// http client turns `http://user:secret@host/v1` into `Authorization: Basic …`
+// on every provider request, so a URL written that way is a credential that
+// took a different field to get to the same wire -- and the reference form the
+// credential field insists on exists precisely so that a value never enters the
+// document.
+//
+// The refusal belongs here rather than at the request, because a specification
+// is copied faster than it is executed. Measured on the shipped binary before
+// this check (stokaro/ptah#2644): `probe` reported "no credential was sent" on
+// the request that carried it, `plan` printed the whole URL under "What leaves
+// the database", `backfill` sent the corpus under the same header, and
+// `plan --publish-evidence` wrote the document into the release artifact's
+// specification.yaml layer -- so promotion carried the token into the registry
+// and into every environment that ran the release. One refusal at the document
+// closes all four, and it closes them for a published artifact too, because
+// ParsePublished resolves through here as well.
+//
+// The message names the field and the host and never the userinfo. An error
+// that quoted the URL back would print the credential to the terminal and into
+// whatever collects the log, which is the exposure rather than a report of it.
+func checkEndpointCarriesNoCredential(raw, path string) error {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		// Fail closed, and say why an unparseable value is refused HERE: this
+		// check cannot establish that an endpoint it cannot read carries no
+		// credential, and an endpoint no URL parser accepts has no request to
+		// reach anyway.
+		return fmt.Errorf(
+			"%s: model.endpoint is not a URL, so it cannot be checked for an embedded credential", path)
+	}
+	if parsed.User == nil {
+		return nil
+	}
+	return fmt.Errorf(
+		"%s: model.endpoint carries a credential in its userinfo, before the %q host; "+
+			"a key must not appear in project configuration, so put it in model.credential "+
+			"as env:NAME or file:/path",
+		path, parsed.Host)
 }

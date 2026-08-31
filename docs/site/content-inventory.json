@@ -2021,8 +2021,8 @@
       "inboundLinks": [
         "/inference/guides/configure-a-provider/"
       ],
-      "visibleWords": 425,
-      "sourceBytes": 3258
+      "visibleWords": 533,
+      "sourceBytes": 4115
     },
     {
       "path": "docs/site/src/content/docs/inference/concepts/verification-and-cutover.md",
@@ -2577,8 +2577,8 @@
         "/inference/concepts/consistency/"
       ],
       "inboundLinks": [],
-      "visibleWords": 854,
-      "sourceBytes": 7247
+      "visibleWords": 947,
+      "sourceBytes": 8003
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/support-and-limitations.md",

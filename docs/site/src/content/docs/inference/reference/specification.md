@@ -83,7 +83,7 @@ coverage verification counts as accounted for.
 | --- | --- | --- |
 | `provider` | yes | The API shape. `openai-compatible` is what is implemented. |
 | `endpoint_class` | yes | `local`, `hosted`, or `gateway`. Your declaration, not a measurement. |
-| `endpoint` | no | The base URL. |
+| `endpoint` | no | The base URL. A credential in its userinfo is refused. |
 | `identifier` | yes | The model name sent to the provider. |
 | `revision` | yes | The provider's immutable revision, where it has one. |
 | `requested_dimension` | yes | The dimension asked for, where the provider supports asking. |
@@ -99,6 +99,22 @@ because a change of trust boundary is a change worth being a different corpus.
 `credential` is a reference: `env:PTAH_EMBED_TOKEN` reads that environment
 variable at run time. The value is never written to the run state or to published
 evidence.
+
+`endpoint` is held to the same rule, and it is refused rather than accepted with
+a warning:
+
+```text
+spec.yaml: model.endpoint carries a credential in its userinfo, before the
+"api.example.com" host; a key must not appear in project configuration, so put
+it in model.credential as env:NAME or file:/path
+```
+
+A URL written `https://user:secret@api.example.com/v1` becomes an
+`Authorization: Basic` header on every provider request, so it is a credential
+that reached the wire through the field with no check on it. It is refused at
+the document, which is before any verb reads a row or opens a connection, and
+the message names the host rather than the URL so that reporting the problem is
+not another copy of it.
 
 ## `target`
 
