@@ -2,6 +2,7 @@ package blankimportguard_test
 
 import (
 	"bytes"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -105,13 +106,8 @@ func bareBlankImports(c *qt.C, root, rel string) []string {
 		if commentText(imported.Doc) != "" || commentText(imported.Comment) != "" {
 			continue
 		}
-		bare = append(bare, strings.Join([]string{
-			rel,
-			":",
-			fset.Position(imported.Pos()).String()[strings.LastIndex(fset.Position(imported.Pos()).String(), ":")+1:],
-			": ",
-			imported.Path.Value,
-		}, ""))
+		bare = append(bare, fmt.Sprintf("%s:%d: %s",
+			rel, fset.Position(imported.Pos()).Line, imported.Path.Value))
 	}
 	return bare
 }
