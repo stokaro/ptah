@@ -75,7 +75,7 @@ func TestEmbedPGCompositeKeyE2E(t *testing.T) {
 		Bounds: embedrun.BatchBounds{MaxRows: 2, MaxInputs: 2}, Worker: "worker-a",
 	}
 
-	finished, err := engine.Backfill(ctx, "composite-run")
+	finished, _, err := engine.Backfill(ctx, "composite-run")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(finished.Progress.RowsScanned, qt.Equals, int64(6))
