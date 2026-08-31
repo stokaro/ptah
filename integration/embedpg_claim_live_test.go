@@ -43,7 +43,7 @@ func TestClaim_AWorkerStartingMovesTheTokenLive(t *testing.T) {
 	before, err := store.Run(ctx, "claim-run")
 	c.Assert(err, qt.IsNil)
 
-	_, err = claimEngine(c, db, spec, store, "worker-b").Backfill(ctx, "claim-run")
+	_, _, err = claimEngine(c, db, spec, store, "worker-b").Backfill(ctx, "claim-run")
 	c.Assert(err, qt.IsNil)
 
 	after, err := store.Run(ctx, "claim-run")
@@ -68,13 +68,13 @@ func TestClaim_TheEarlierWorkerCannotCommitAfterwardsLive(t *testing.T) {
 	db, spec, store := claimFixture(c, ctx)
 
 	// A takes the run and the token it holds.
-	_, err := claimEngine(c, db, spec, store, "worker-a").Backfill(ctx, "claim-run")
+	_, _, err := claimEngine(c, db, spec, store, "worker-a").Backfill(ctx, "claim-run")
 	c.Assert(err, qt.IsNil)
 	held, err := store.Run(ctx, "claim-run")
 	c.Assert(err, qt.IsNil)
 
 	// B starts, which moves the token past A.
-	_, err = claimEngine(c, db, spec, store, "worker-b").Backfill(ctx, "claim-run")
+	_, _, err = claimEngine(c, db, spec, store, "worker-b").Backfill(ctx, "claim-run")
 	c.Assert(err, qt.IsNil)
 
 	// A commits with what it still believes it holds.
@@ -100,9 +100,9 @@ func TestClaim_TheSecondWorkerIsNotFencedByTheFirstLive(t *testing.T) {
 	defer cancel()
 	db, spec, store := claimFixture(c, ctx)
 
-	_, err := claimEngine(c, db, spec, store, "worker-a").Backfill(ctx, "claim-run")
+	_, _, err := claimEngine(c, db, spec, store, "worker-a").Backfill(ctx, "claim-run")
 	c.Assert(err, qt.IsNil)
-	_, err = claimEngine(c, db, spec, store, "worker-b").Backfill(ctx, "claim-run")
+	_, _, err = claimEngine(c, db, spec, store, "worker-b").Backfill(ctx, "claim-run")
 	c.Assert(err, qt.IsNil)
 	taken, err := store.Run(ctx, "claim-run")
 	c.Assert(err, qt.IsNil)

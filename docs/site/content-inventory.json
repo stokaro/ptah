@@ -2168,8 +2168,8 @@
       "inboundLinks": [
         "/inference/overview/"
       ],
-      "visibleWords": 531,
-      "sourceBytes": 4335
+      "visibleWords": 561,
+      "sourceBytes": 4502
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/migrate-a-paused-source.md",
@@ -2578,8 +2578,8 @@
         "/inference/concepts/consistency/"
       ],
       "inboundLinks": [],
-      "visibleWords": 944,
-      "sourceBytes": 7989
+      "visibleWords": 1104,
+      "sourceBytes": 8869
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/support-and-limitations.md",

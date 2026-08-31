@@ -87,13 +87,13 @@ func TestEmbedPGCatchUpE2E(t *testing.T) {
 		Bounds: embedrun.BatchBounds{MaxRows: 2, MaxInputs: 2}, Worker: "worker-a",
 	}
 
-	backfilled, err := engine.Backfill(ctx, "catchup-run")
+	backfilled, _, err := engine.Backfill(ctx, "catchup-run")
 	c.Assert(err, qt.IsNil)
 	c.Assert(backfilled.Progress.RowsEmbedded, qt.Equals, int64(4))
 
 	changeTheSourceUnderneath(c, ctx, db)
 
-	caught, err := engine.CatchUp(ctx, "catchup-run", outbox, source)
+	caught, _, err := engine.CatchUp(ctx, "catchup-run", outbox, source)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(caught.CatchUpWatermark, qt.Not(qt.Equals), "")

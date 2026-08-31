@@ -38,11 +38,25 @@ type Rereader interface {
 // It runs after the backfill and before verification, and its completion is
 // what a cutover over a live source rests on: the backfill covers the source as
 // of the boundary, and this covers everything since (stokaro/ptah#2068).
-func (e *Engine) CatchUp(ctx context.Context, runID string, changes Changes, source Rereader) (embedrun.Run, error) {
+func (e *Engine) CatchUp(
+	ctx context.Context, runID string, changes Changes, source Rereader,
+) (embedrun.Run, embedrun.Progress, error) {
 	run, token, err := e.claim(ctx, runID)
 	if err != nil {
-		return embedrun.Run{}, err
+		return embedrun.Run{}, embedrun.Progress{}, err
 	}
+	// This pass's work, for the reason [Engine.Backfill] gives.
+	started := run.Progress
+	final, err := e.catchUpLoop(ctx, runID, run, token, changes, source)
+	return final, progressSince(started, final.Progress), err
+}
+
+// catchUpLoop is the read-reread-commit loop itself, separated for the reason
+// [Engine.backfillLoop] is.
+func (e *Engine) catchUpLoop(
+	ctx context.Context, runID string, run embedrun.Run, token int64,
+	changes Changes, source Rereader,
+) (embedrun.Run, error) {
 	cursor, err := parseWatermark(run.CatchUpWatermark, run.SnapshotWatermark)
 	if err != nil {
 		return run, err

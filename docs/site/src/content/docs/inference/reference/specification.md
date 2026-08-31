@@ -49,6 +49,20 @@ addresses a different corpus.
 | `version_field` | yes | The column the strategy reads, where it needs one. |
 | `mutable` | no | Whether the source changes during the run. |
 
+`filter` narrows both halves of the run, and the second half is worth stating.
+The backfill scans only rows the condition matches, and catch-up rereads a
+changed row through the same condition — so a row that stops matching is
+tombstoned on the next catch-up rather than kept, and a row that never matched
+is never sent to the provider even when a write to it produced an outbox event.
+
+There is a case the condition does not reach. A row leaves scope through a
+column the outbox does not watch — `UPDATE articles SET published = false`, where
+`published` is neither a key, an input field, nor the version — and that write
+produces no event at all, so the vector the backfill gave it stays until
+something else about the row changes. Put the filter's columns among the input
+fields, or expect to re-run the backfill, if a row leaving scope has to lose its
+vector promptly.
+
 `version_strategy` accepts:
 
 | Value | Means |
