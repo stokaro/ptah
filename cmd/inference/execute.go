@@ -118,6 +118,22 @@ func runBackfill(ctx context.Context, out io.Writer, options executeOptions) err
 	if err := opened.store.ReachPhase(ctx, options.runID, embedrun.PhaseBackfilling); err != nil {
 		return err
 	}
+	// A mode that records no changes has nothing for catch-up to process, so
+	// the completed backfill IS the run reaching the barrier: the snapshot
+	// covers the source, and nothing happened after it that anyone is claiming
+	// otherwise about.
+	//
+	// Without this the run could never leave `backfilling`. `catchup` is the
+	// only verb that reaches `caught_up` and it is refused for exactly these
+	// modes, so `index`, `verify` and `cutover` were all unreachable and
+	// verification blocked with "the backfill has not reached the end of its
+	// snapshot" -- a statement about a backfill that had finished
+	// (stokaro/ptah#2632).
+	if !recordsChanges(opened.loaded.Mode) {
+		if err := opened.store.ReachPhase(ctx, options.runID, embedrun.PhaseCaughtUp); err != nil {
+			return err
+		}
+	}
 	return writeLines(out,
 		fmt.Sprintf("backfill finished: %d scanned, %d embedded, %d skipped",
 			run.Progress.RowsScanned, run.Progress.RowsEmbedded, run.Progress.RowsSkipped))

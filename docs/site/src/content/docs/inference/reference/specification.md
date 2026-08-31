@@ -139,7 +139,7 @@ name rather than escaped.
 
 | Field | Meaning |
 | --- | --- |
-| `mode` | `outbox`, `immutable`, `dual_write`, or omitted. |
+| `mode` | `outbox`, `immutable`, or omitted. |
 | `paused` | Whether writes are declared stopped. |
 
 Not part of the identity: how changes were captured does not change what the
