@@ -24,7 +24,9 @@ Four answers, and the right one depends on whether you control the writes.
 - Yes → `immutable`. Nothing to capture, nothing to catch up, no triggers.
 - No → **Do you own every code path that writes to the table?**
   - No → `outbox`.
-  - Yes, and trigger overhead is unacceptable → `dual_write`.
+  - Yes, and trigger overhead is unacceptable → nothing this build offers.
+    `dual_write` is the answer that mode is for, and it is not selectable yet;
+    see [Consistency](../../concepts/consistency/).
   - Otherwise → `outbox`.
 
 `outbox` is the answer unless you have a specific reason against it.
@@ -35,7 +37,7 @@ Four answers, and the right one depends on whether you control the writes.
 | --- | --- | --- | --- |
 | `outbox` | Two triggers and one insert per changed row | `prepare` installs them | `retire` removes them |
 | `immutable` | None | None | None |
-| `dual_write` | Your writer's reporting call | Your application code | Your application code |
+| `dual_write` (not selectable) | Your writer's reporting call | Your application code | Your application code |
 | *(none)* | None | None | None — and no cutover |
 
 The outbox cost is a row written into a companion table inside the same

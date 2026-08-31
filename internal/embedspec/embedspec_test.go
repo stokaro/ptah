@@ -149,7 +149,7 @@ func TestParse_RefusesAnEnumeratedValueThisBuildDoesNotAct(t *testing.T) {
 		{
 			name: "a consistency mode", document: withField("mode: debezium"),
 			want: `spec.yaml: unknown consistency mode "debezium"; this build has ` +
-				`\[immutable dual_write outbox\]`,
+				`\[immutable outbox\]`,
 		},
 		{
 			name:     "a credential that is a value rather than a reference",
