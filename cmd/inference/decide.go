@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/internal/embedcatchup"
 	"go.5x5.cz/ptah/internal/embedcutover"
 	"go.5x5.cz/ptah/internal/embedpg"
 	"go.5x5.cz/ptah/internal/embedrelease"
@@ -505,11 +506,58 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 		ctx, opened, options.generation, embedrun.PhaseRetired); err != nil {
 		return err
 	}
-	if err := writeLines(out, fmt.Sprintf("generation %s is gone, with %d vectors",
-		options.generation, rows)); err != nil {
+	lines := []string{fmt.Sprintf("generation %s is gone, with %d vectors",
+		options.generation, rows)}
+	// After the registry says so, because the answer is "is this the last one"
+	// and this one has to be retired before it can be counted out.
+	outboxLine, err := removeOutboxIfLast(ctx, opened, registered)
+	if err != nil {
+		return err
+	}
+	if err := writeLines(out, append(lines, outboxLine...)...); err != nil {
 		return err
 	}
 	return publishRetirement(ctx, out, options, plan, identity, approval, rows, retiredAt)
+}
+
+// removeOutboxIfLast takes the change capture off the source when the retired
+// generation was the last one reading it.
+//
+// An outbox belongs to a SOURCE TABLE rather than to a generation -- two
+// generations over one table share its changes -- so retirement can only remove
+// it once nothing is left to feed. Until stokaro/ptah#2649 nothing removed it at
+// all: both triggers went on firing on the operator's table for every write,
+// and the event table grew with nothing that would ever read or trim it.
+//
+// It says what it did either way. "Retire removes the generation and its
+// bookkeeping" is what the guide promises, and an operator who is told nothing
+// cannot tell a removal from the silence that preceded this.
+func removeOutboxIfLast(
+	ctx context.Context, opened *session, registered embedstore.Generation,
+) ([]string, error) {
+	if opened.loaded.Mode != embedcatchup.ModeOutbox {
+		return nil, nil
+	}
+	remaining, err := opened.store.LiveGenerationsOver(
+		ctx, registered.TargetTable, registered.Identity)
+	if err != nil {
+		return nil, err
+	}
+	if remaining > 0 {
+		return []string{bullet(fmt.Sprintf(
+			"the outbox stays: %d other generation(s) still read %s",
+			remaining, registered.TargetTable))}, nil
+	}
+	outbox, err := embedpg.NewOutbox(opened.db, opened.loaded.Spec)
+	if err != nil {
+		return nil, err
+	}
+	if err := outbox.Uninstall(ctx); err != nil {
+		return nil, err
+	}
+	return []string{bullet(fmt.Sprintf(
+		"the outbox is gone: its triggers, capture function and event table were "+
+			"the last thing Ptah had on %s", registered.TargetTable))}, nil
 }
 
 // publishRetirement records what was destroyed, where a destination was named.

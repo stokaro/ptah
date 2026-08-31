@@ -127,3 +127,19 @@ elapses over a generation that drifted, and `rollback` refuses it.
 `retire` removes the generation and its bookkeeping. Until then the outbox table
 and its triggers stay on your source table — that is the cost of the guarantee,
 and it is worth knowing it is not free.
+
+The outbox belongs to the source **table**, not to one generation, so retiring a
+generation while another still reads that table leaves it in place. `retire`
+says which it did:
+
+```text
+generation 3e0df4e18980 is gone, with 3 vectors
+  - the outbox is gone: its triggers, capture function and event table were the
+    last thing Ptah had on articles
+```
+
+or, where something still needs it:
+
+```text
+  - the outbox stays: 1 other generation(s) still read articles
+```
