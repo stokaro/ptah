@@ -63,7 +63,6 @@ func (e evidenceOptions) destinationNamed() bool {
 	return e.publishTo != "" || e.writeTo != "" || e.attachTo != ""
 }
 
-
 // publishRecord pushes a record and says where it went.
 //
 // A failure to publish is reported and does not fail the verb. The measurement

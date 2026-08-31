@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -21,6 +22,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/root"
 	"go.5x5.cz/ptah/internal/dbtarget"
+	"go.5x5.cz/ptah/internal/embedrelease"
 )
 
 // TestInferenceSignedApprovalE2E is a cutover authorized by a signature rather
@@ -106,6 +108,16 @@ func assertARefusedCutoverWritesAPlanToSign(
 	// The digest in the file is the one the verb printed, which is what makes
 	// the signature bind to the plan the operator read.
 	c.Assert(string(body), qt.Contains, planDigestFrom(c, output))
+	// And the verification line names a MEASUREMENT rather than the generation.
+	//
+	// It held spec.Identity().Digest, so the approver was shown the same
+	// sixty-four characters twice under two labels and the plan digest did not
+	// move when the report changed -- an approval that bound to no measurement
+	// at all (stokaro/ptah#2643). Asserting the two lines differ is the whole
+	// defect: they were byte-identical in every plan the audit produced.
+	c.Assert(planFieldFrom(c, string(body), "verification"), qt.Not(qt.Equals),
+		planFieldFrom(c, string(body), "generation"))
+	c.Assert(planFieldFrom(c, string(body), "verification"), qt.Not(qt.Equals), "")
 
 	return planPath, anAllowedSignersFile(c, dir, "alice@example.com")
 }
@@ -140,18 +152,63 @@ func assertASignedPlanCutsOverAndRecordsThePrincipal(
 	signed := runNative(c, ctx, "schema", "approve", "--plan", planPath, "--key", keyPath)
 	c.Assert(signed, qt.Contains, "Approved "+planPath)
 
+	evidencePath := filepath.Join(filepath.Dir(planPath), "cutover.json")
 	output := runInference(c, ctx, "cutover",
 		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID,
-		"--approval", planPath, "--allowed-signers", allowedSigners)
+		"--approval", planPath, "--allowed-signers", allowedSigners,
+		"--evidence-file", evidencePath)
 
 	c.Assert(output, qt.Contains, "queries now read generation ")
 
-	var approver string
-	err := db.QueryRowContext(ctx,
-		`SELECT cut_over_by FROM ptah_embedding_pointer WHERE target_table = 'articles'`).
-		Scan(&approver)
+	// The record says the approval was a signature rather than a name.
+	//
+	// Two cutovers of one target -- this one, authorized by alice's key, and
+	// the one in the release-evidence suite, authorized by anybody who could
+	// type "an operator" -- were identical in every published field
+	// (stokaro/ptah#2643 finding 4). That suite asserts the false half.
+	body, err := os.ReadFile(evidencePath)
 	c.Assert(err, qt.IsNil)
+	var record embedrelease.Cutover
+	c.Assert(json.Unmarshal(body, &record), qt.IsNil)
+	c.Assert(record.ApprovalSigned, qt.IsTrue)
+	c.Assert(record.Approver, qt.Equals, "alice@example.com")
+	// The record cites what the plan cited, so the two cannot disagree about
+	// what "verification digest" means.
+	c.Assert(record.VerificationDigest, qt.Equals,
+		planFieldFrom(c, planText(c, planPath), "verification"))
+
+	var approver string
+	c.Assert(db.QueryRowContext(ctx,
+		`SELECT cut_over_by FROM ptah_embedding_pointer WHERE target_table = 'articles'`).
+		Scan(&approver), qt.IsNil)
 	c.Assert(approver, qt.Equals, "alice@example.com")
+}
+
+// planText reads a rendered plan file.
+func planText(c *qt.C, planPath string) string {
+	c.Helper()
+	body, err := os.ReadFile(planPath)
+	c.Assert(err, qt.IsNil)
+	return string(body)
+}
+
+// planFieldFrom reads one `name: value` line out of a rendered cutover plan.
+func planFieldFrom(c *qt.C, plan, name string) string {
+	c.Helper()
+	for _, line := range strings.Split(plan, "\n") {
+		value, found := strings.CutPrefix(line, name+": ")
+		for range onlyWhenFound(found) {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+// onlyWhenFound yields once when found, so planFieldFrom returns without an
+// `if`. It is a helper rather than a conditional in a test function, which the
+// repository's test style forbids.
+func onlyWhenFound(found bool) []struct{} {
+	return map[bool][]struct{}{true: {{}}, false: nil}[found]
 }
 
 // runNative drives a verb outside the inference namespace.
