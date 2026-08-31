@@ -36,6 +36,12 @@ run 2026-08-articles: caught_up, running
 | `batches committed` | How many provider round trips landed |
 | `snapshot boundary` | The point the backfill embeds the source as of |
 | `catch-up watermark` | How far catch-up has read past it |
+
+A catch-up watermark is usually a transaction identity, as above: every
+transaction below it is processed in full. A run stopped partway through a
+transaction — a page that filled before that transaction ended — records the
+sequence it reached as well, and reads `9017:412`. Both are ordinary; the second
+says the next `catchup` resumes inside transaction 9017 rather than after it.
 | `lease` | Who holds the run, and which token may still commit |
 
 ### The phase

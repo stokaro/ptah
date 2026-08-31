@@ -80,7 +80,71 @@ func TestEmbedPGOutboxE2E(t *testing.T) {
 	assertAWriteToTheGenerationsOwnColumnsIsNotAChange(c, ctx, db, outbox)
 	assertTheSequenceOrdersAndTheTransactionOnlyBounds(c, ctx, db, url, outbox)
 	assertPruningRemovesOnlyWhatIsBehindTheCursor(c, ctx, outbox)
+	assertAPageCutInsideATransactionResumesInsideIt(c, ctx, db, outbox)
 	assertHalfAnInstallationIsNotInstalled(c, ctx, db, outbox)
+}
+
+// assertAPageCutInsideATransactionResumesInsideIt is stokaro/ptah#2628 measured
+// against the server that produces it.
+//
+// One transaction writes more rows than the page holds. The read is bounded by
+// the transaction and ORDERED by the sequence, so a cursor carrying only a
+// transaction identity has to advance to the highest one the page held -- and
+// every event of that transaction the page did not reach is then behind the
+// cursor. Nothing reads it again: `Unprocessed` counts zero, the run reports
+// caught up, and the rows keep whatever vector they had.
+//
+// The count that proves it is the UNION of two pages against the size of the
+// transaction. Asserting only that the second page is non-empty passes with a
+// cursor that went backwards, and asserting only its length passes with one
+// that re-read the first page.
+func assertAPageCutInsideATransactionResumesInsideIt(
+	c *qt.C, ctx context.Context, db *sql.DB, outbox *embedpg.Outbox,
+) {
+	c.Helper()
+	start, err := outbox.Horizon(ctx)
+	c.Assert(err, qt.IsNil)
+
+	transaction, err := db.BeginTx(ctx, nil)
+	c.Assert(err, qt.IsNil)
+	for id := 900; id < 906; id++ {
+		_, err = transaction.ExecContext(ctx,
+			`INSERT INTO articles (id, title, body, updated_at) VALUES ($1, 'Bulk', 'b', '1')`, id)
+		c.Assert(err, qt.IsNil)
+	}
+	c.Assert(transaction.Commit(), qt.IsNil)
+
+	from := embedcatchup.AtTransaction(start)
+	first, _, err := outbox.Since(ctx, from, 4)
+	c.Assert(err, qt.IsNil)
+	c.Assert(first, qt.HasLen, 4)
+	// One transaction wrote them all, so the page ends inside it: the highest
+	// transaction identity the page holds is also the lowest.
+	c.Assert(first[0].Transaction, qt.Equals, first[3].Transaction)
+
+	next := embedcatchup.After(first[3])
+	second, _, err := outbox.Since(ctx, next, 4)
+	c.Assert(err, qt.IsNil)
+	c.Assert(second, qt.HasLen, 2)
+	c.Assert(second[0].Transaction, qt.Equals, first[0].Transaction)
+
+	c.Assert(eventKeysOf(append(first, second...)), qt.DeepEquals,
+		[]string{"900", "901", "902", "903", "904", "905"})
+
+	// And the barrier agrees: after the second page nothing is owed, which is
+	// the count a cutover reads.
+	unprocessed, err := outbox.Unprocessed(ctx, embedcatchup.After(second[1]))
+	c.Assert(err, qt.IsNil)
+	c.Assert(unprocessed, qt.Equals, 0)
+}
+
+// eventKeysOf is the single-column key of each event, in order.
+func eventKeysOf(events []embedcatchup.Event) []string {
+	keys := make([]string, 0, len(events))
+	for _, event := range events {
+		keys = append(keys, event.Key[0])
+	}
+	return keys
 }
 
 // assertHalfAnInstallationIsNotInstalled is what makes the completion condition
@@ -155,7 +219,7 @@ func assertTheSequenceOrdersAndTheTransactionOnlyBounds(
 	c.Assert(err, qt.IsNil)
 	c.Assert(first.Commit(), qt.IsNil)
 
-	events, _, err := outbox.Since(ctx, 0, 200)
+	events, _, err := outbox.Since(ctx, embedcatchup.Cursor{}, 200)
 	c.Assert(err, qt.IsNil)
 	aboutSeven := eventsForKey(events, "7")
 	c.Assert(aboutSeven, qt.HasLen, 2)
@@ -238,7 +302,7 @@ func assertEveryOperationIsCaptured(
 		c.Assert(err, qt.IsNil, qt.Commentf("%s", statement))
 	}
 
-	events, horizon, err := outbox.Since(ctx, 0, 100)
+	events, horizon, err := outbox.Since(ctx, embedcatchup.Cursor{}, 100)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(horizon > 0, qt.IsTrue)
@@ -282,7 +346,7 @@ func assertAWriteToTheGenerationsOwnColumnsIsNotAChange(
 		_, err := db.ExecContext(ctx, statement)
 		c.Assert(err, qt.IsNil, qt.Commentf("%s", statement))
 	}
-	before, _, err := outbox.Since(ctx, 0, 200)
+	before, _, err := outbox.Since(ctx, embedcatchup.Cursor{}, 200)
 	c.Assert(err, qt.IsNil)
 
 	_, err = db.ExecContext(ctx, `UPDATE articles SET embedding_state = 'upsert' WHERE id = 4`)
@@ -290,14 +354,14 @@ func assertAWriteToTheGenerationsOwnColumnsIsNotAChange(
 	_, err = db.ExecContext(ctx, `UPDATE articles SET unrelated_note = 'a note' WHERE id = 4`)
 	c.Assert(err, qt.IsNil)
 
-	quiet, _, err := outbox.Since(ctx, 0, 200)
+	quiet, _, err := outbox.Since(ctx, embedcatchup.Cursor{}, 200)
 	c.Assert(err, qt.IsNil)
 	c.Assert(quiet, qt.HasLen, len(before))
 
 	// The control: a column the generation reads.
 	_, err = db.ExecContext(ctx, `UPDATE articles SET body = 'text again' WHERE id = 4`)
 	c.Assert(err, qt.IsNil)
-	loud, _, err := outbox.Since(ctx, 0, 200)
+	loud, _, err := outbox.Since(ctx, embedcatchup.Cursor{}, 200)
 	c.Assert(err, qt.IsNil)
 	c.Assert(loud, qt.HasLen, len(before)+1)
 	// And so is the version, even when the input is untouched: freshness
@@ -305,7 +369,7 @@ func assertAWriteToTheGenerationsOwnColumnsIsNotAChange(
 	// record is out of date.
 	_, err = db.ExecContext(ctx, `UPDATE articles SET updated_at = '99' WHERE id = 4`)
 	c.Assert(err, qt.IsNil)
-	versioned, _, err := outbox.Since(ctx, 0, 200)
+	versioned, _, err := outbox.Since(ctx, embedcatchup.Cursor{}, 200)
 	c.Assert(err, qt.IsNil)
 	c.Assert(versioned, qt.HasLen, len(before)+2)
 
@@ -319,7 +383,7 @@ func assertARolledBackChangeLeavesNoEvent(
 	c *qt.C, ctx context.Context, db *sql.DB, outbox *embedpg.Outbox,
 ) {
 	c.Helper()
-	before, _, err := outbox.Since(ctx, 0, 100)
+	before, _, err := outbox.Since(ctx, embedcatchup.Cursor{}, 100)
 	c.Assert(err, qt.IsNil)
 
 	transaction, err := db.BeginTx(ctx, nil)
@@ -329,7 +393,7 @@ func assertARolledBackChangeLeavesNoEvent(
 	c.Assert(err, qt.IsNil)
 	c.Assert(transaction.Rollback(), qt.IsNil)
 
-	after, _, err := outbox.Since(ctx, 0, 100)
+	after, _, err := outbox.Since(ctx, embedcatchup.Cursor{}, 100)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(after, qt.HasLen, len(before))
@@ -337,7 +401,7 @@ func assertARolledBackChangeLeavesNoEvent(
 	_, err = db.ExecContext(ctx,
 		`INSERT INTO articles (id, title, body, updated_at) VALUES (2, 'Committed', 'yes', '9')`)
 	c.Assert(err, qt.IsNil)
-	committed, _, err := outbox.Since(ctx, 0, 100)
+	committed, _, err := outbox.Since(ctx, embedcatchup.Cursor{}, 100)
 	c.Assert(err, qt.IsNil)
 	c.Assert(committed, qt.HasLen, len(before)+1)
 }
@@ -355,7 +419,7 @@ func assertTheHorizonExcludesAnInFlightTransaction(
 	c *qt.C, ctx context.Context, db *sql.DB, url string, outbox *embedpg.Outbox,
 ) {
 	c.Helper()
-	settled, horizonBefore, err := outbox.Since(ctx, 0, 100)
+	settled, horizonBefore, err := outbox.Since(ctx, embedcatchup.Cursor{}, 100)
 	c.Assert(err, qt.IsNil)
 
 	// A separate pool, because a transaction held open on the shared one would
@@ -369,20 +433,20 @@ func assertTheHorizonExcludesAnInFlightTransaction(
 		`INSERT INTO articles (id, title, body, updated_at) VALUES (3, 'In', 'flight', '10')`)
 	c.Assert(err, qt.IsNil)
 
-	during, horizonDuring, err := outbox.Since(ctx, 0, 100)
+	during, horizonDuring, err := outbox.Since(ctx, embedcatchup.Cursor{}, 100)
 	c.Assert(err, qt.IsNil)
 	c.Assert(during, qt.HasLen, len(settled))
 	// The horizon is held back by the open transaction rather than racing past
 	// it. That is what makes advancing a cursor to it safe.
 	c.Assert(horizonDuring <= horizonBefore+1, qt.IsTrue,
 		qt.Commentf("horizon moved from %d to %d with a transaction open", horizonBefore, horizonDuring))
-	unprocessed, err := outbox.Unprocessed(ctx, 0)
+	unprocessed, err := outbox.Unprocessed(ctx, embedcatchup.Cursor{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(unprocessed, qt.Equals, len(settled))
 
 	c.Assert(inFlight.Commit(), qt.IsNil)
 
-	after, horizonAfter, err := outbox.Since(ctx, 0, 100)
+	after, horizonAfter, err := outbox.Since(ctx, embedcatchup.Cursor{}, 100)
 	c.Assert(err, qt.IsNil)
 	c.Assert(after, qt.HasLen, len(settled)+1)
 	c.Assert(horizonAfter > horizonDuring, qt.IsTrue,
@@ -403,7 +467,7 @@ func assertPruningRemovesOnlyWhatIsBehindTheCursor(
 	c *qt.C, ctx context.Context, outbox *embedpg.Outbox,
 ) {
 	c.Helper()
-	events, _, err := outbox.Since(ctx, 0, 100)
+	events, _, err := outbox.Since(ctx, embedcatchup.Cursor{}, 100)
 	c.Assert(err, qt.IsNil)
 	c.Assert(len(events) >= 3, qt.IsTrue)
 	cursor := events[1].Transaction
@@ -412,7 +476,7 @@ func assertPruningRemovesOnlyWhatIsBehindTheCursor(
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(removed, qt.Equals, int64(1))
-	remaining, _, err := outbox.Since(ctx, 0, 100)
+	remaining, _, err := outbox.Since(ctx, embedcatchup.Cursor{}, 100)
 	c.Assert(err, qt.IsNil)
 	c.Assert(remaining, qt.HasLen, len(events)-1)
 	c.Assert(remaining[0].Transaction, qt.Equals, cursor)

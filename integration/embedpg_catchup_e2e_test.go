@@ -128,7 +128,7 @@ func assertTheBarrierIsReached(
 	c *qt.C, ctx context.Context, outbox *embedpg.Outbox, run embedrun.Run,
 ) {
 	c.Helper()
-	processed, err := strconv.ParseUint(run.CatchUpWatermark, 10, 64)
+	processed, err := embedcatchup.ParseCursor(run.CatchUpWatermark, "catch-up watermark")
 	c.Assert(err, qt.IsNil)
 	installed, err := outbox.Installed(ctx)
 	c.Assert(err, qt.IsNil)
@@ -140,7 +140,7 @@ func assertTheBarrierIsReached(
 	c.Assert(err, qt.IsNil)
 
 	barrier := embedcatchup.Barrier{
-		Installed: installed, Snapshot: snapshot, Processed: processed,
+		Installed: installed, Snapshot: snapshot, Processed: processed.Transaction,
 		Horizon: horizon, Unprocessed: unprocessed,
 	}
 	reached, blockers := barrier.Reached()

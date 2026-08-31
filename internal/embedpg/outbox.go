@@ -1,10 +1,12 @@
 package embedpg
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"go.5x5.cz/ptah/internal/embedcatchup"
@@ -265,27 +267,44 @@ func (o *Outbox) Horizon(ctx context.Context) (uint64, error) {
 	return horizon, nil
 }
 
-// Since reads the events from a transaction identity up to the current horizon.
+// pendingPredicate selects the events a cursor still owes, below the horizon.
 //
 // The upper bound is not optional and is not the caller's to choose. An event
 // written by a transaction that has not concluded is an event whose fate is
-// unknown, and reading it would either process a change that never happened or
-// -- worse -- let the cursor advance past a neighbour that is still coming.
+// unknown, and reading it would process a change that never happened.
 //
-// The bound is on the transaction and the ORDER is on the sequence, and the two
-// answer different questions. A transaction identity says whether an event is
-// settled; it does NOT say when the row was written. A transaction can acquire
-// its identity from an earlier write to some other table and only afterwards
-// touch this source, by which time a transaction with a LATER identity has
-// already written and committed here. Ordering by identity would then put the
-// two events the wrong way round.
+// The lower bound is the pair rather than the transaction alone. Both halves of
+// the pair are needed and neither is enough:
 //
-// The sequence is allocated at the write, and writes to one row are serialized
-// by that row's lock -- so for the events that can contradict each other, which
-// are the events about one key, sequence order is the order they actually
-// happened in. Measured, not reasoned about: ordering by transaction identity
-// reddens TestEmbedPGOutboxE2E.
-func (o *Outbox) Since(ctx context.Context, from uint64, limit int) ([]embedcatchup.Event, uint64, error) {
+//   - the transaction, because a transaction still in flight has a sequence
+//     already allocated. Resuming by sequence alone would step over an event
+//     whose neighbours committed first, and it would never come back for it.
+//   - the sequence, because a page is a LIMIT. Resuming by transaction alone
+//     has to skip to the highest transaction the page held, and the events of
+//     that transaction the page did not reach are then below the cursor.
+//
+// The second is stokaro/ptah#2628, measured at the default page size against an
+// ordinary bulk update.
+const pendingPredicate = `xact < $3 AND (xact > $1 OR (xact = $1 AND sequence >= $2))`
+
+// Since reads the events a cursor still owes, up to the current horizon.
+//
+// Two orders appear here and they are not interchangeable. The SELECT orders by
+// (xact, sequence) so that the page is a PREFIX of a total order, which is what
+// lets the caller resume after the last event read without skipping one. The
+// slice is then returned in SEQUENCE order, because that is the order the
+// events actually happened in and the order this package's consumers document:
+// a transaction can take its identity from an earlier write to some other table
+// and reach this source afterwards, by which time a transaction with a later
+// identity has already written and committed here, so transaction order would
+// put those two the wrong way round.
+//
+// Sorting the page rather than the query is what keeps both properties. The
+// sort is over one page, and Collapse sorts by sequence again on its own, so no
+// consumer depends on this one having happened.
+func (o *Outbox) Since(
+	ctx context.Context, from embedcatchup.Cursor, limit int,
+) ([]embedcatchup.Event, uint64, error) {
 	if limit <= 0 {
 		return nil, 0, fmt.Errorf("a catch-up limit of %d would read the whole outbox into memory", limit)
 	}
@@ -299,9 +318,9 @@ func (o *Outbox) Since(ctx context.Context, from uint64, limit int) ([]embedcatc
 	// a live server by a fixture whose column name holds one.
 	query := fmt.Sprintf(
 		`SELECT sequence, xact, row_key, operation, COALESCE(source_version, ''), at
-		 FROM %s WHERE xact >= $1 AND xact < $2 ORDER BY sequence LIMIT $3`,
-		quoteIdentifier(o.TableName()))
-	rows, err := o.db.QueryContext(ctx, query, from, horizon, limit)
+		 FROM %s WHERE %s ORDER BY xact, sequence LIMIT $4`,
+		quoteIdentifier(o.TableName()), pendingPredicate)
+	rows, err := o.db.QueryContext(ctx, query, from.Transaction, from.Sequence, horizon, limit)
 	if err != nil {
 		return nil, 0, fmt.Errorf("read outbox for %s: %w", o.spec.Source.Table, err)
 	}
@@ -314,11 +333,14 @@ func (o *Outbox) Since(ctx context.Context, from uint64, limit int) ([]embedcatc
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("read outbox for %s: %w", o.spec.Source.Table, err)
 	}
+	slices.SortStableFunc(events, func(left, right embedcatchup.Event) int {
+		return cmp.Compare(left.Sequence, right.Sequence)
+	})
 	return events, horizon, nil
 }
 
 // Unprocessed counts the events between a cursor and the horizon.
-func (o *Outbox) Unprocessed(ctx context.Context, from uint64) (int, error) {
+func (o *Outbox) Unprocessed(ctx context.Context, from embedcatchup.Cursor) (int, error) {
 	horizon, err := o.Horizon(ctx)
 	if err != nil {
 		return 0, err
@@ -327,10 +349,11 @@ func (o *Outbox) Unprocessed(ctx context.Context, from uint64) (int, error) {
 	// the table has to be interpolated. What stops that being an injection is
 	// quoteIdentifier, which doubles an embedded quote and is measured against
 	// a live server by a fixture whose column name holds one.
-	query := fmt.Sprintf(
-		`SELECT COUNT(*) FROM %s WHERE xact >= $1 AND xact < $2`, quoteIdentifier(o.TableName()))
+	query := fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE %s`,
+		quoteIdentifier(o.TableName()), pendingPredicate)
 	var count int
-	if err := o.db.QueryRowContext(ctx, query, from, horizon).Scan(&count); err != nil {
+	if err := o.db.QueryRowContext(ctx, query,
+		from.Transaction, from.Sequence, horizon).Scan(&count); err != nil {
 		return 0, fmt.Errorf("count outbox for %s: %w", o.spec.Source.Table, err)
 	}
 	return count, nil
