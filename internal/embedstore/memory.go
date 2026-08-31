@@ -226,3 +226,27 @@ func copyRun(run embedrun.Run) embedrun.Run {
 	run.Cursor = slices.Clone(run.Cursor)
 	return run
 }
+
+// ClaimRun takes a run for a worker, writing the lease and nothing else.
+//
+// It mirrors the SQL store's claim rather than reusing [embedrun.Run.Claim] on
+// a copy the caller holds: the point of the contract is that a claim reads and
+// writes under one lock and returns what the store then holds, so a fake that
+// claimed a caller's stale copy would agree with the defect
+// (stokaro/ptah#2636).
+func (m *Memory) ClaimRun(
+	_ context.Context, id, worker string, leaseExpires time.Time,
+) (embedrun.Run, int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	stored, found := m.runs[id]
+	if !found {
+		return embedrun.Run{}, 0, fmt.Errorf("%w: run %s", ErrNotFound, id)
+	}
+	stored.FencingToken++
+	stored.LeaseOwner = worker
+	stored.LeaseExpires = leaseExpires.UTC()
+	stored.UpdatedAt = time.Now().UTC()
+	m.runs[id] = copyRun(stored)
+	return copyRun(stored), stored.FencingToken, nil
+}

@@ -33,16 +33,16 @@ type Runs struct {
 // claim this process holds and the store does not is a claim that fences
 // nobody.
 func (r Runs) Claim(ctx context.Context, runID string) (embedrun.Run, int64, error) {
-	run, err := r.Store.Run(ctx, runID)
-	if err != nil {
-		return embedrun.Run{}, 0, fmt.Errorf("load run %s: %w", runID, err)
-	}
 	lease := r.LeaseFor
 	if lease <= 0 {
 		lease = defaultLease
 	}
-	token := run.Claim(r.Worker, lease)
-	if err := r.Store.SaveRun(ctx, run); err != nil {
+	// One statement in the store rather than a read here, a change in memory
+	// and a write back. The read-modify-write wrote the whole row, so a
+	// checkpoint the working worker committed between the read and the write
+	// landed and was then erased by the claim (stokaro/ptah#2636).
+	run, token, err := r.Store.ClaimRun(ctx, runID, r.Worker, time.Now().UTC().Add(lease))
+	if err != nil {
 		return embedrun.Run{}, 0, fmt.Errorf("claim run %s: %w", runID, err)
 	}
 	return run, token, nil
