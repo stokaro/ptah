@@ -364,23 +364,26 @@ func readVerificationRows(
 		targets = append(targets, embedverify.TargetRow{
 			Key: key, Generation: generation.String, Version: storedVersion.String,
 			InputHash: inputHash.String, Skipped: state.String == "skip",
-			Vector: placeholderVector(spec, state.String),
+			Dimension: storedWidth(spec, state.String),
 		})
 	}
 	c.Assert(rows.Err(), qt.IsNil)
 	return sources, targets
 }
 
-// placeholderVector stands in for the stored vector's shape.
+// storedWidth is how wide the stored vector is, or zero where there is none.
 //
-// Verification's vector layer asks about length and finiteness, and the values
-// themselves were already read back from the server above. Parsing pgvector's
-// text form here would be a second parser to get wrong.
-func placeholderVector(spec embedgen.Spec, state string) []float32 {
+// Verification's vector layer asks about the width, and about finiteness only
+// where a caller actually read the values back. Parsing pgvector's text form
+// here would be a second parser to get wrong, and a zero-filled slice of the
+// right length would be the allocation the production reader stopped making --
+// six gigabytes over a million rows at 1536 dimensions, carrying nothing this
+// integer does not (stokaro/ptah#2068).
+func storedWidth(spec embedgen.Spec, state string) int {
 	if state != "upsert" {
-		return nil
+		return 0
 	}
-	return make([]float32, spec.Model.ReportedDimension)
+	return spec.Model.ReportedDimension
 }
 
 // nullableOf turns a SQL string into a field value, keeping NULL as nil.

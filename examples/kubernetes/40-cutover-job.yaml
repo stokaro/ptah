@@ -1,0 +1,108 @@
+# Move the pointer, on an approval bound to one exact plan.
+#
+# A separate Job because a cutover is a separate decision, and one nothing here
+# takes on its behalf. The approval digest below is not a placeholder to fill in
+# from a template: it is the digest `ptah inference status` reported, approved by
+# the person named in `--approver`, and any change to the evidence produces a
+# different plan and stops the approval applying.
+#
+# So the shape is: read the digest, have somebody approve it, put it here, apply
+# this. A pipeline that computed the digest and passed it to the same run has
+# approved nothing.
+#
+# `--stabilize-for` is a promise, not a mechanism. The previous generation stops
+# receiving changes the moment queries stop reading it, so what keeps it a way
+# back is the maintenance CronJob beside this file. Without that, the window
+# elapses over a generation that drifted, and `rollback` refuses it -- correctly.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ptah-inference-cutover
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      name: ptah-inference-cutover
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: cutover
+          image: ghcr.io/stokaro/ptah:latest
+          args:
+            - inference
+            - cutover
+            - --approve
+            - "0000000000000000000000000000000000000000000000000000000000000000"
+            - --approver
+            - "replace with who approved it"
+            - --stabilize-for
+            - 24h
+            - --attach-to
+            - oci://ghcr.io/example/search-embeddings:release
+          env:
+            - name: PTAH_RELEASE
+              value: oci://ghcr.io/example/search-embeddings@sha256:0000000000000000000000000000000000000000000000000000000000000000
+            - name: PTAH_RUN_ID
+              value: articles-v2
+            - name: PTAH_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: ptah-inference-database
+                  key: url
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            capabilities:
+              drop: ["ALL"]
+---
+# Keep the previous generation a way back, for as long as the window promised.
+#
+# One catch-up per hour against the OLD generation's specification and run. Stop
+# this and the rollback stops being possible, and nothing will tell you until
+# you try -- which is why `rollback` measures freshness rather than checking
+# that the old table still exists.
+#
+# Delete this CronJob when the window has elapsed and you have decided not to go
+# back. Deleting it retires nothing: the old generation and its vectors are
+# still there, and `ptah inference retire` is the only thing that removes them.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ptah-inference-maintain-previous
+spec:
+  schedule: "0 * * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: catchup
+              image: ghcr.io/stokaro/ptah:latest
+              args: ["inference", "catchup", "--maintain-for", "1h"]
+              env:
+                - name: PTAH_RELEASE
+                  value: oci://ghcr.io/example/search-embeddings@sha256:1111111111111111111111111111111111111111111111111111111111111111
+                - name: PTAH_RUN_ID
+                  value: articles-v1
+                - name: PTAH_DB_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: ptah-inference-database
+                      key: url
+                - name: PTAH_EMBED_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: ptah-inference-provider
+                      key: token
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 65532
+                capabilities:
+                  drop: ["ALL"]

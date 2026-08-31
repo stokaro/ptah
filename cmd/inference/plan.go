@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/internal/embedrelease"
 	"go.5x5.cz/ptah/internal/embedreport"
 	"go.5x5.cz/ptah/internal/embedspec"
@@ -34,10 +35,15 @@ the backfill is free.
 
 This is also where a generation change is put on the record. Naming
 --publish-evidence or --evidence-file leaves a release: what this change
-proposes, addressed by its own digest. A verification published later attaches
-to it as an OCI referrer, which is how several verifications of one generation
-are found without remembering a tag for each. Naming neither leaves nothing
-behind, and a verification with no release to attach to is still publishable.`,
+proposes, addressed by its own digest, carrying the specification it was built
+from. A verification published later attaches to it as an OCI referrer, which is
+how several verifications of one generation are found without remembering a tag
+for each. Naming neither leaves nothing behind, and a verification with no
+release to attach to is still publishable.
+
+A release is what the next environment runs. --release on any verb reads the
+specification out of it instead of a file, so development, staging and
+production run one document rather than three copies of it.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runPlan(cmd.Context(), cmd.OutOrStdout(), options, currentGeneration, evidence)
@@ -52,10 +58,33 @@ behind, and a verification with no release to attach to is still publishable.`,
 
 // addCommonFlags registers the flags every verb takes.
 func addCommonFlags(cmd *cobra.Command, options *commonOptions) {
-	cmd.Flags().StringVar(&options.specPath, "spec", "",
-		"Path to the embedding-migration specification (required)")
+	addSpecFlags(cmd, options)
 	cmd.Flags().StringVar(&options.dbURL, "db-url", "",
 		"Database URL (required). Example: postgres://localhost:5432/dbname")
+}
+
+// addSpecFlags registers the two ways to name a specification.
+//
+// Mutually exclusive rather than one falling back to the other. A run given
+// both would have been told twice which corpus to rebuild, and silently
+// preferring either is how an environment promotes a digest and embeds the file
+// that happened to be in its working directory.
+//
+// The source is shared by every copy of the options rather than read at each
+// use, so one invocation runs against one specification whatever a mutable
+// reference does in the meantime. [specSource] carries the rest of that
+// reasoning.
+func addSpecFlags(cmd *cobra.Command, options *commonOptions) {
+	// ErrOrStderr as a method value rather than a writer, because a test
+	// installs its own streams on the root command after this runs.
+	options.spec = &specSource{notices: cmd.ErrOrStderr}
+	cmd.Flags().StringVar(&options.spec.path, "spec", "",
+		"Path to the embedding-migration specification; --spec or --release is required")
+	cmd.Flags().StringVar(&options.spec.reference, "release", "",
+		"OCI reference of a published release to run, which carries the specification; "+
+			"an oci-layout:// directory is accepted for an air-gapped promotion")
+	dbcli.RegisterPlainHTTPFlag(cmd.Flags(), &options.spec.plainHTTP)
+	cmd.MarkFlagsMutuallyExclusive("spec", "release")
 }
 
 // runPlan resolves, prints, and records.
@@ -76,7 +105,7 @@ func runPlan(
 	if err := printPlan(out, plan); err != nil {
 		return err
 	}
-	return publishRelease(ctx, out, opened.loaded, plan, evidence)
+	return publishRelease(ctx, out, options, opened.loaded, plan, evidence)
 }
 
 // publishRelease leaves the record of what this change proposes.
@@ -88,7 +117,7 @@ func runPlan(
 // Refusing here would lose the proposal an operator most wants to circulate,
 // the one that is waiting on something.
 func publishRelease(
-	ctx context.Context, out io.Writer, loaded embedspec.Loaded,
+	ctx context.Context, out io.Writer, options commonOptions, loaded embedspec.Loaded,
 	plan embedreport.Plan, evidence evidenceOptions,
 ) error {
 	// Any destination is a reason to build the record, and none of them is a
@@ -98,8 +127,8 @@ func publishRelease(
 		return nil
 	}
 	record, buildErr := embedrelease.NewReleaseRecord(
-		embedreport.BuildRelease(loaded, plan, time.Now().UTC()))
-	return publishRecord(ctx, out, evidence, record, buildErr)
+		embedreport.BuildRelease(loaded, plan, time.Now().UTC()), loaded.Document)
+	return publishRecord(ctx, out, options, evidence, record, buildErr)
 }
 
 // printPlan renders the plan for a person.

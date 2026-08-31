@@ -28,6 +28,13 @@ const (
 	// CutoverArtifactType identifies what was done: a pointer moved, and on
 	// whose approval.
 	CutoverArtifactType = "application/vnd.stokaro.ptah.inference.cutover.v1"
+	// RollbackArtifactType identifies a pointer moved back, and what made the
+	// generation it moved to still a place to go.
+	RollbackArtifactType = "application/vnd.stokaro.ptah.inference.rollback.v1"
+	// RetirementArtifactType identifies what was destroyed. It is the record
+	// that cannot be reconstructed from the database afterwards, because the
+	// thing it describes is gone.
+	RetirementArtifactType = "application/vnd.stokaro.ptah.inference.retirement.v1"
 )
 
 // RecordVersion is the schema version of the records below.
@@ -135,11 +142,109 @@ type Cutover struct {
 	Approver   string `json:"approver,omitempty"`
 	// VerificationDigest is the report the plan rested on.
 	VerificationDigest string `json:"verification_digest"`
+	// Watermark is how far the source had been accounted for when the pointer
+	// moved, empty under a consistency mode that records no boundary.
+	//
+	// It is the answer to "what does this generation cover", which the
+	// generation identity does not carry: the identity says how a vector was
+	// computed and this says which source state was. A record without it can be
+	// read six months later for what was replaced and not for what was in it.
+	Watermark string `json:"watermark,omitempty"`
 	// StabilizeUntil is how long the replaced generation stays a way back, zero
 	// when nothing keeps it.
 	StabilizeUntil time.Time `json:"stabilize_until,omitzero"`
 	// CutOverAt is when.
 	CutOverAt time.Time `json:"cut_over_at"`
+}
+
+// Rollback is what was undone.
+//
+// A separate record from a cutover rather than a cutover with a flag. They are
+// answers to different questions -- "why did the corpus change" and "why did we
+// go back" -- and a reader looking for the second in a list of the first finds
+// a pointer move with no explanation attached to it.
+type Rollback struct {
+	// Version is the record schema version.
+	Version int `json:"version"`
+	// Generation is what queries read after, and Replaced what they read
+	// before. Both are the reverse of a cutover's, which is the point.
+	Generation string `json:"generation"`
+	Replaced   string `json:"replaced,omitempty"`
+	// Target names the table whose pointer moved.
+	Target string `json:"target"`
+	// Maintained reports whether the generation returned to was still being
+	// kept current when the pointer moved, and VerifiedAt when its freshness
+	// was last measured.
+	//
+	// This is what made going back possible: a previous generation stops
+	// receiving changes the moment queries stop reading it, so a record without
+	// it says a pointer moved and not whether it moved to something current.
+	Maintained bool      `json:"maintained"`
+	VerifiedAt time.Time `json:"verified_at,omitzero"`
+	// StaleRows and MissingRows are what that measurement found.
+	StaleRows   int `json:"stale_rows"`
+	MissingRows int `json:"missing_rows"`
+	// Expires is when the window over the generation left behind closes, zero
+	// when the policy set none.
+	Expires time.Time `json:"expires,omitzero"`
+	// RolledBackAt is when.
+	RolledBackAt time.Time `json:"rolled_back_at"`
+}
+
+// Retirement is what was destroyed.
+type Retirement struct {
+	// Version is the record schema version.
+	Version int `json:"version"`
+	// Generation is what was destroyed.
+	Generation string `json:"generation"`
+	// Target names the table it lived in.
+	Target string `json:"target"`
+	// Objects are what was removed, by name, and Rows how many vectors went
+	// with them.
+	//
+	// Named rather than counted, because this is the one record whose subject
+	// cannot be inspected afterwards: everything else here describes something
+	// still in the database, and this describes an absence.
+	Objects []string `json:"objects"`
+	Rows    int64    `json:"rows"`
+	// PlanDigest is the retirement plan that was executed, and Approver who
+	// authorized it.
+	PlanDigest string `json:"plan_digest"`
+	Approver   string `json:"approver,omitempty"`
+	// RetiredAt is when.
+	RetiredAt time.Time `json:"retired_at"`
+}
+
+// Digest is the rollback's content address.
+func (r Rollback) Digest() string {
+	return embeddigest.Of(
+		"rollback", strconv.Itoa(RecordVersion),
+		"generation", r.Generation, "replaced", r.Replaced, "target", r.Target,
+		"maintained", strconv.FormatBool(r.Maintained),
+		"verified_at", formatTime(r.VerifiedAt),
+		"stale_rows", strconv.Itoa(r.StaleRows),
+		"missing_rows", strconv.Itoa(r.MissingRows),
+		"expires", formatTime(r.Expires),
+		"rolled_back_at", r.RolledBackAt.UTC().Format(time.RFC3339Nano))
+}
+
+// Digest is the retirement's content address.
+//
+// The objects are length-prefixed by embeddigest and preceded by their count,
+// because the list is variable-length and followed by more components: without
+// the count, one object named "a" and "b" would address the same record as one
+// named "a b".
+func (r Retirement) Digest() string {
+	components := []string{
+		"retirement", strconv.Itoa(RecordVersion),
+		"generation", r.Generation, "target", r.Target,
+		"objects", strconv.Itoa(len(r.Objects)),
+	}
+	components = append(components, sortedCopy(r.Objects)...)
+	return embeddigest.Of(append(components,
+		"rows", strconv.FormatInt(r.Rows, 10),
+		"plan", r.PlanDigest, "approver", r.Approver,
+		"retired_at", r.RetiredAt.UTC().Format(time.RFC3339Nano))...)
 }
 
 // Digest is the release's content address.
@@ -209,7 +314,7 @@ func (c Cutover) Digest() string {
 		"cutover", strconv.Itoa(RecordVersion),
 		"generation", c.Generation, "replaced", c.Replaced, "target", c.Target,
 		"plan", c.PlanDigest, "approver", c.Approver,
-		"verification", c.VerificationDigest,
+		"verification", c.VerificationDigest, "watermark", c.Watermark,
 		"stabilize_until", formatTime(c.StabilizeUntil),
 		"cut_over_at", c.CutOverAt.UTC().Format(time.RFC3339Nano))
 }

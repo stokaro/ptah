@@ -1,6 +1,7 @@
 package embedcutover_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -423,4 +424,91 @@ func TestPlanDigest_IsIndependentOfTheZoneItWasPreparedIn(t *testing.T) {
 
 	c.Assert(second.PreparedAt.Format(time.RFC3339), qt.Not(qt.Equals), first.PreparedAt.Format(time.RFC3339))
 	c.Assert(second.Digest(), qt.Equals, first.Digest())
+}
+
+// TestDecide_ASignedApprovalPolicyRefusesAName is the difference between who
+// somebody wrote down and who approved.
+//
+// `--approve <digest> --approver "a name"` records an assertion. An environment
+// that needs the approver to be evidence sets require_signed_approval, and a
+// name typed beside a digest stops being enough.
+func TestDecide_ASignedApprovalPolicyRefusesAName(t *testing.T) {
+	c := qt.New(t)
+	plan, policy, observed, approval := ready()
+	policy.RequireSignedApproval = true
+
+	decision := embedcutover.Decide(plan, policy, observed, approval)
+
+	c.Assert(decision.Allowed, qt.IsFalse)
+	c.Assert(decision.Blockers, qt.Contains,
+		`this policy requires a signed approval and the one given names "an operator" `+
+			`without a signature over the plan`)
+}
+
+// TestDecide_ASignedApprovalSatisfiesThatPolicy is the control.
+//
+// Without it a policy that refused every approval would satisfy the test above
+// and make a signed cutover impossible.
+func TestDecide_ASignedApprovalSatisfiesThatPolicy(t *testing.T) {
+	c := qt.New(t)
+	plan, policy, observed, approval := ready()
+	policy.RequireSignedApproval = true
+	approval.Signed = true
+
+	decision := embedcutover.Decide(plan, policy, observed, approval)
+
+	c.Assert(decision.Blockers, qt.HasLen, 0, qt.Commentf("%v", decision.Blockers))
+	c.Assert(decision.Allowed, qt.IsTrue)
+}
+
+// TestDecide_AnUnsignedApprovalIsEnoughWithoutThatPolicy is the other control.
+//
+// The two requirements are separate: an exact approval establishes WHAT was
+// approved, and a signed one WHO approved it. An environment can reasonably
+// want the first without the machinery for the second, and a check that folded
+// them together would take that choice away.
+func TestDecide_AnUnsignedApprovalIsEnoughWithoutThatPolicy(t *testing.T) {
+	c := qt.New(t)
+	plan, policy, observed, approval := ready()
+
+	decision := embedcutover.Decide(plan, policy, observed, approval)
+
+	c.Assert(decision.Allowed, qt.IsTrue)
+	c.Assert(approval.Signed, qt.IsFalse)
+}
+
+// TestDecide_TwoPlansThatShareAShortDigestAreStillToldApart is a diagnostic
+// that read as a contradiction.
+//
+// A short digest is a prefix, so an operator who types the short form of a plan
+// that is no longer current supplies exactly the twelve characters this plan
+// also begins with. The refusal then said the approval is bound to plan X and
+// this plan is X, which sends somebody looking for a bug in the comparison.
+func TestDecide_TwoPlansThatShareAShortDigestAreStillToldApart(t *testing.T) {
+	c := qt.New(t)
+	plan, policy, observed, approval := ready()
+	// What an operator types: the short form, which no longer expands because
+	// the evidence moved and this is a different plan.
+	approval.PlanDigest = plan.Short()
+
+	decision := embedcutover.Decide(plan, policy, observed, approval)
+
+	c.Assert(decision.Allowed, qt.IsFalse)
+	c.Assert(decision.Blockers, qt.Contains, fmt.Sprintf(
+		"the approval is bound to plan %s and this plan is %s", plan.Short(), plan.Digest()))
+}
+
+// TestDecide_TwoPlansThatDoNotShareOneAreStillShort is the control.
+//
+// Sixty-four characters twice is worse to read, and it is only worth it where
+// twelve cannot answer the question.
+func TestDecide_TwoPlansThatDoNotShareOneAreStillShort(t *testing.T) {
+	c := qt.New(t)
+	plan, policy, observed, approval := ready()
+	approval.PlanDigest = "0000000000000000000000000000000000000000000000000000000000000000"
+
+	decision := embedcutover.Decide(plan, policy, observed, approval)
+
+	c.Assert(decision.Blockers, qt.Contains, fmt.Sprintf(
+		"the approval is bound to plan %s and this plan is %s", "000000000000", plan.Short()))
 }

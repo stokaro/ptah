@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"strconv"
 	"testing/fstest"
 	"time"
 
@@ -21,6 +22,17 @@ const (
 	ReleaseFileName      = "release.json"
 	VerificationFileName = "verification.json"
 	CutoverFileName      = "cutover.json"
+	RollbackFileName     = "rollback.json"
+	RetirementFileName   = "retirement.json"
+	// SpecificationFileName is the document a release was built from, carried
+	// beside the record rather than described by it.
+	//
+	// A release exists to be promoted, and an environment promoting one has
+	// never seen the operator's file. Carrying only its digest would name a
+	// document that environment cannot produce, so the file would have to
+	// travel by some other path -- and a specification that arrives beside its
+	// release is one nothing checked against it.
+	SpecificationFileName = "specification.yaml"
 )
 
 // Record is one piece of evidence, ready to publish.
@@ -39,11 +51,27 @@ type Record struct {
 	Digest string
 	// Annotations are what a registry lists without pulling the layer.
 	Annotations map[string]string
+	// Files are what travels beside the record, by name.
+	//
+	// Only a release has any: the document it was built from. A verification
+	// and a cutover describe something that already exists and carry nothing an
+	// environment would need to reproduce.
+	Files map[string][]byte
 }
 
 // NewReleaseRecord prepares a release for publication.
-func NewReleaseRecord(release Release) (Record, error) {
+//
+// The specification is a parameter rather than a field a caller may leave
+// empty, because a release without it is one that cannot be promoted -- and a
+// promotion that fails on arrival, in another environment, is a long way from
+// the run that published it.
+func NewReleaseRecord(release Release, specification []byte) (Record, error) {
 	release.Version = RecordVersion
+	if len(specification) == 0 {
+		return Record{}, fmt.Errorf(
+			"a release carries the specification it was built from, and generation %s was given none",
+			release.Generation)
+	}
 	body, err := Encode(release)
 	if err != nil {
 		return Record{}, err
@@ -55,7 +83,12 @@ func NewReleaseRecord(release Release) (Record, error) {
 			"cz.5x5.ptah.inference.generation":      release.Generation,
 			"cz.5x5.ptah.inference.record":          release.Digest(),
 			"cz.5x5.ptah.inference.reproducibility": release.Reproducibility,
+			// The specification's own address, listed so that a reader
+			// comparing two releases can see whether the document changed
+			// without pulling either layer.
+			"cz.5x5.ptah.inference.specification": release.SpecDigest,
 		},
+		Files: map[string][]byte{SpecificationFileName: specification},
 	}, nil
 }
 
@@ -97,6 +130,45 @@ func NewCutoverRecord(cutover Cutover) (Record, error) {
 			"cz.5x5.ptah.inference.generation": cutover.Generation,
 			"cz.5x5.ptah.inference.record":     cutover.Digest(),
 			"cz.5x5.ptah.inference.plan":       cutover.PlanDigest,
+		},
+	}, nil
+}
+
+// NewRollbackRecord prepares a rollback record for publication.
+func NewRollbackRecord(rollback Rollback) (Record, error) {
+	rollback.Version = RecordVersion
+	body, err := Encode(rollback)
+	if err != nil {
+		return Record{}, err
+	}
+	return Record{
+		ArtifactType: RollbackArtifactType, FileName: RollbackFileName,
+		Body: body, Digest: rollback.Digest(),
+		Annotations: map[string]string{
+			"cz.5x5.ptah.inference.generation": rollback.Generation,
+			"cz.5x5.ptah.inference.record":     rollback.Digest(),
+			"cz.5x5.ptah.inference.replaced":   rollback.Replaced,
+		},
+	}, nil
+}
+
+// NewRetirementRecord prepares a retirement record for publication.
+//
+// The annotations name the generation and how much went with it, because this
+// is the one record whose subject a reader cannot go and look at.
+func NewRetirementRecord(retirement Retirement) (Record, error) {
+	retirement.Version = RecordVersion
+	body, err := Encode(retirement)
+	if err != nil {
+		return Record{}, err
+	}
+	return Record{
+		ArtifactType: RetirementArtifactType, FileName: RetirementFileName,
+		Body: body, Digest: retirement.Digest(),
+		Annotations: map[string]string{
+			"cz.5x5.ptah.inference.generation": retirement.Generation,
+			"cz.5x5.ptah.inference.record":     retirement.Digest(),
+			"cz.5x5.ptah.inference.rows":       strconv.FormatInt(retirement.Rows, 10),
 		},
 	}, nil
 }
@@ -154,9 +226,14 @@ func Attach(
 	return result, nil
 }
 
-// recordFS is the one-file archive a record travels as.
+// recordFS is the archive a record travels as: the record itself, and whatever
+// it carries beside it.
 func recordFS(record Record) fstest.MapFS {
-	return fstest.MapFS{record.FileName: &fstest.MapFile{Data: record.Body, Mode: 0o600}}
+	archive := fstest.MapFS{record.FileName: &fstest.MapFile{Data: record.Body, Mode: 0o600}}
+	for name, body := range record.Files {
+		archive[name] = &fstest.MapFile{Data: body, Mode: 0o600}
+	}
+	return archive
 }
 
 // recordAnnotations merges the record's own annotations with the caller's and

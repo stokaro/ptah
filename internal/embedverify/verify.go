@@ -32,7 +32,19 @@ type TargetRow struct {
 	// Version and InputHash are what the vector was computed from.
 	Version   string
 	InputHash string
-	// Vector is the stored embedding, empty for a skip or a tombstone.
+	// Dimension is the width of the stored vector, zero when there is none --
+	// a skip, a tombstone, or a row nothing ever wrote.
+	//
+	// The width rather than the vector, because a corpus is millions of rows
+	// and the width is the whole of what the layer below asks about. A caller
+	// that answered it with a zero-filled slice of the right length allocated
+	// the corpus twice over -- 1536 float32s per row, carrying no information
+	// the integer does not -- and a verification over a few million rows ran
+	// the process out of memory (stokaro/ptah#2068).
+	Dimension int
+	// Vector is the stored embedding, present only where a caller actually read
+	// the values back. It is never the answer to how wide the vector is; see
+	// [RunState.VectorValuesRead], which is how a caller says which it did.
 	Vector []float32
 	// Tombstone marks a row whose source is gone.
 	Tombstone bool
@@ -203,7 +215,21 @@ func verifyIndex(report *Report, expectation Expectation, structure Structure) {
 //
 // They share a walk because they share a question -- which source key does this
 // target row belong to -- and answering it twice would let the two disagree.
-func verifyCoverageAndFreshness(report *Report, expectation Expectation, source []SourceRow, target []TargetRow) {
+func verifyCoverageAndFreshness(
+	report *Report, expectation Expectation, source []SourceRow, target []TargetRow,
+) {
+	byKey := indexTargetByKey(report, target)
+	inScope := classifySourceRows(report, expectation, source, byKey)
+	reportOutOfScope(report, target, inScope)
+}
+
+// indexTargetByKey builds the lookup the walk above needs, and reports a key
+// the target holds twice.
+//
+// A duplicate is reported rather than resolved: which of two rows for one key
+// is the answer is not a question this layer can settle, and picking one would
+// verify a corpus against a row somebody's query may not read.
+func indexTargetByKey(report *Report, target []TargetRow) map[string]TargetRow {
 	byKey := make(map[string]TargetRow, len(target))
 	var duplicates []string
 	for _, row := range target {
@@ -217,7 +243,14 @@ func verifyCoverageAndFreshness(report *Report, expectation Expectation, source 
 		report.addf(LayerCoverage, Blocking, len(duplicates), duplicates,
 			"%d target keys appear more than once", len(duplicates))
 	}
+	return byKey
+}
 
+// classifySourceRows decides what each in-scope source row's target says, and
+// answers with the key set the caller needs to find rows outside it.
+func classifySourceRows(
+	report *Report, expectation Expectation, source []SourceRow, byKey map[string]TargetRow,
+) map[string]bool {
 	var missing, stale, wrongGeneration []string
 	skipped := 0
 	inScope := make(map[string]bool, len(source))
@@ -233,29 +266,16 @@ func verifyCoverageAndFreshness(report *Report, expectation Expectation, source 
 			}
 			continue
 		}
-		switch {
-		case found.Generation != expectation.Generation:
-			wrongGeneration = append(wrongGeneration, row.Key)
-		case found.Tombstone, found.Skipped:
-			// A tombstone or a skip against a live source row is a coverage
-			// gap: the source has it and this generation does not.
+		switch classifyRow(expectation, row, found) {
+		case rowMissing:
 			if !row.Skipped {
 				missing = append(missing, row.Key)
 			}
-		case found.InputHash != row.InputHash,
-			row.Version != "" && found.Version != "" && found.Version != row.Version:
-			// Both sides have to carry a version for the comparison to mean
-			// anything. A target row written with none -- under the input_hash
-			// strategy, or before a strategy that records one -- has no earlier
-			// version to have moved FROM, so a source that has one now is a
-			// strategy change rather than evidence the source moved.
-			//
-			// Without the second guard, switching to a versioned strategy
-			// reports every existing row stale and recomputes a corpus whose
-			// text has not changed. The input hash above is what answers
-			// freshness in that case, and it answers it correctly
-			// (stokaro/ptah#2474).
+		case rowWrongGeneration:
+			wrongGeneration = append(wrongGeneration, row.Key)
+		case rowStale:
 			stale = append(stale, row.Key)
+		case rowCovered:
 		}
 	}
 	reportCoverage(report, missing, stale, wrongGeneration)
@@ -267,7 +287,59 @@ func verifyCoverageAndFreshness(report *Report, expectation Expectation, source 
 		report.addf(LayerCoverage, Advisory, skipped, nil,
 			"%d in-scope source rows were skipped by the specification and carry no vector", skipped)
 	}
+	return inScope
+}
 
+// rowVerdict is what one source row's target row turned out to be.
+type rowVerdict int
+
+const (
+	// rowCovered is a target row this generation wrote from the source as it is
+	// now.
+	rowCovered rowVerdict = iota
+	// rowMissing is a source row this generation has no vector for.
+	rowMissing
+	// rowWrongGeneration is a target row another generation wrote.
+	rowWrongGeneration
+	// rowStale is a vector computed from a source state that has since moved.
+	rowStale
+)
+
+// classifyRow is the decision itself, with no reporting in it.
+func classifyRow(expectation Expectation, row SourceRow, found TargetRow) rowVerdict {
+	switch {
+	case found.Generation == "":
+		// Nothing ever wrote this row. Reporting it as belonging to another
+		// generation named a generation that does not exist and sent an
+		// operator looking for one -- which is what a corpus before its first
+		// backfill produced, on every row, in the sentence a reader meets
+		// first (stokaro/ptah#2068).
+		return rowMissing
+	case found.Generation != expectation.Generation:
+		return rowWrongGeneration
+	case found.Tombstone, found.Skipped:
+		// A tombstone or a skip against a live source row is a coverage gap:
+		// the source has it and this generation does not.
+		return rowMissing
+	case found.InputHash != row.InputHash,
+		row.Version != "" && found.Version != "" && found.Version != row.Version:
+		// Both sides have to carry a version for the comparison to mean
+		// anything. A target row written with none -- under the input_hash
+		// strategy, or before a strategy that records one -- has no earlier
+		// version to have moved FROM, so a source that has one now is a
+		// strategy change rather than evidence the source moved.
+		//
+		// Without the second guard, switching to a versioned strategy reports
+		// every existing row stale and recomputes a corpus whose text has not
+		// changed. The input hash above is what answers freshness in that case,
+		// and it answers it correctly (stokaro/ptah#2474).
+		return rowStale
+	}
+	return rowCovered
+}
+
+// reportOutOfScope names target rows the source no longer accounts for.
+func reportOutOfScope(report *Report, target []TargetRow, inScope map[string]bool) {
 	var unexpected []string
 	for _, row := range target {
 		if !inScope[row.Key] && !row.Tombstone {
@@ -307,11 +379,23 @@ func verifyVectors(report *Report, expectation Expectation, target []TargetRow) 
 			continue
 		}
 		switch {
-		case len(row.Vector) == 0:
+		case row.Dimension == 0:
 			missingPayload = append(missingPayload, row.Key)
-		case expectation.Dimension > 0 && len(row.Vector) != expectation.Dimension:
+		case expectation.Dimension > 0 && row.Dimension != expectation.Dimension:
 			wrongDimension = append(wrongDimension, row.Key)
-		case !finite(row.Vector):
+		case len(row.Vector) > 0 && !finite(row.Vector):
+			// Only where the values were read. A caller that reported the width
+			// alone has said so, and asking about numbers it did not fetch
+			// would answer "finite" about a vector nobody looked at.
+			//
+			// No caller reads them today, and the report says so on every run.
+			// Measured on pgvector 0.8.1: `vector`, `halfvec` and `sparsevec`
+			// each refuse a NaN and an infinity on write -- `NaN not allowed in
+			// vector` and so on -- so against every target this build supports,
+			// reading the values back would measure the write path a second
+			// time. It stays because the layer is the general one and a target
+			// that permits such a value is what RunState.VectorValuesRead
+			// exists to describe.
 			notFinite = append(notFinite, row.Key)
 		}
 	}

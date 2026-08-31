@@ -56,7 +56,8 @@ with one row per chunk — and point Ptah at that table.
 There is no logical-replication or CDC-tool integration.
 
 **No Kubernetes operator.** Nothing reconciles a generation change from a custom
-resource.
+resource. The verbs run as Jobs and a rollout gates on
+`status --require-ready`; see [Run in Kubernetes](../../guides/run-in-kubernetes/).
 
 **Ptah is not an inference server.** It does not run a model, hold one in memory,
 schedule a GPU, store model weights, or answer a search query.

@@ -310,21 +310,25 @@ func splitVerificationRow(
 			Key: identity, Generation: values[offset].String,
 			InputHash: values[offset+1].String, Version: values[offset+2].String,
 			Tombstone: state == "tombstone", Skipped: state == "skip",
-			Vector: vectorPlaceholder(dimension),
+			Dimension: storedDimension(dimension),
 		}, nil
 }
 
-// vectorPlaceholder stands in for the stored vector's shape.
+// storedDimension is the width the server reported, or zero for no vector.
 //
-// The verification layer that reads it asks about length and finiteness.
-// `vector_dims` is the server's own answer to the first, and a NaN cannot be
-// stored in a pgvector column at all -- it is refused on write, which is why
-// reading every vector back to check would be measuring the write path twice.
-func vectorPlaceholder(dimension sql.NullInt64) []float32 {
+// The width and not the vector. The verification layer asks about length and
+// finiteness; `vector_dims` is the server's own answer to the first, and a NaN
+// cannot be stored in a pgvector column at all -- it is refused on write, so
+// reading every vector back to check would measure the write path twice.
+//
+// This used to answer with `make([]float32, dimension)`: a zero-filled slice
+// per row, carrying nothing the integer does not, and 6 GB of it over a
+// million-row corpus at 1536 dimensions.
+func storedDimension(dimension sql.NullInt64) int {
 	if !dimension.Valid || dimension.Int64 <= 0 {
-		return nil
+		return 0
 	}
-	return make([]float32, dimension.Int64)
+	return int(dimension.Int64)
 }
 
 // versionColumnsOf names the source version column, and is empty under a

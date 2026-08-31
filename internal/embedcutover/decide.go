@@ -43,15 +43,59 @@ func (d *Decision) settle() Decision {
 // was given for something else" are different refusals, and an operator told
 // the wrong one looks in the wrong place.
 func Decide(plan Plan, policy Policy, observed Observed, approval *Approval) Decision {
-	digest := plan.Digest()
-	decision := Decision{PlanDigest: digest}
+	decision := decideState(plan, policy, observed)
+	decideAuthority(&decision, policy, observed, approval, decision.PlanDigest)
+	return decision.settle()
+}
 
+// Readiness is what a caller that is not cutting over can establish.
+//
+// It is the same answer [Decide] gives, minus the half about the caller: what
+// the state proves, without asking whether whoever is looking may act on it.
+type Readiness struct {
+	// Ready reports whether the state satisfies everything except authority.
+	Ready bool
+	// Blockers are what it does not satisfy, empty when it does.
+	Blockers []string
+	// PlanDigest is what an approval would have to bind to.
+	PlanDigest string
+	// ApprovalRequired says whether a person still has to give one.
+	//
+	// Reported separately rather than folded into Ready, because an approval
+	// nobody has given yet is not a defect in the state. A rollout gate that
+	// waited for Ready to include it would wait forever under the policy most
+	// production environments run.
+	ApprovalRequired bool
+}
+
+// AssessReadiness answers whether the state is ready for a cutover, without
+// performing or authorizing one.
+//
+// It exists because "may I cut over" and "is this ready to cut over" are asked
+// by different callers -- an operator with an approval, and a rollout gate with
+// none -- and answering the second by running the first would report every
+// generation under an approval policy as not ready.
+//
+// The two share [decideState] rather than restating it. A gate that agreed with
+// the cutover verb only by coincidence is a gate that will one day let a
+// deployment proceed against a generation the cutover then refuses.
+func AssessReadiness(plan Plan, policy Policy, observed Observed) Readiness {
+	state := decideState(plan, policy, observed)
+	decision := state.settle()
+	return Readiness{
+		Ready: decision.Allowed, Blockers: decision.Blockers,
+		PlanDigest: decision.PlanDigest, ApprovalRequired: policy.RequireExactApproval,
+	}
+}
+
+// decideState is everything a decision says about the world rather than about
+// the caller. It is deliberately unsettled, so [Decide] can add to it.
+func decideState(plan Plan, policy Policy, observed Observed) Decision {
+	decision := Decision{PlanDigest: plan.Digest()}
 	decideEvidence(&decision, plan, policy)
 	decideDrift(&decision, plan, observed)
 	decideStaleness(&decision, plan, policy, observed)
-	decideAuthority(&decision, policy, observed, approval, digest)
-
-	return decision.settle()
+	return decision
 }
 
 // decideEvidence answers whether the plan was justified when it was built.
@@ -113,8 +157,25 @@ func decideAuthority(decision *Decision, policy Policy, observed Observed, appro
 	if !observed.holds(PermissionCutover) {
 		decision.refusef("the caller does not hold %s", PermissionCutover)
 	}
+	DecideApproval(decision, policy, approval, digest)
+}
+
+// DecideApproval answers whether one approval authorizes one exact plan.
+//
+// It is shared by the cutover and the retirement rather than written twice,
+// and the duplication it replaces is the reason to have it: the signed-approval
+// requirement was added to the cutover's copy alone, so
+// `retire --approve <digest> --approver <name>` satisfied a policy demanding a
+// cryptographically verified approval and authorized an irreversible deletion.
+// The colliding-short-digest diagnostic had reached only one copy for the same
+// reason.
+func DecideApproval(decision *Decision, policy Policy, approval *Approval, digest string) {
 	if !policy.RequireExactApproval {
 		return
+	}
+	if policy.RequireSignedApproval && approval != nil && !approval.Signed {
+		decision.refusef("this policy requires a signed approval and the one given names %q "+
+			"without a signature over the plan", approval.Approver)
 	}
 	switch {
 	case approval == nil:
@@ -123,8 +184,8 @@ func decideAuthority(decision *Decision, policy Policy, observed Observed, appro
 		// The approval is real and it is for a different plan. Saying so is
 		// the difference between an operator re-approving and an operator
 		// hunting for a missing record.
-		decision.refusef("the approval is bound to plan %s and this plan is %s",
-			shortOrNone(approval.PlanDigest), shortOrNone(digest))
+		given, want := distinguish(approval.PlanDigest, digest)
+		decision.refusef("the approval is bound to plan %s and this plan is %s", given, want)
 	case strings.TrimSpace(approval.Approver) == "":
 		decision.refusef("the approval names no approver")
 	}
@@ -136,4 +197,31 @@ func shortOrNone(digest string) string {
 		return "(none)"
 	}
 	return embeddigest.Short(digest)
+}
+
+// distinguish renders two digests so that a reader can tell them apart.
+//
+// Short forms are a prefix, so two different digests can render identically --
+// and one of them does, routinely: an operator who typed the short form of a
+// plan that is no longer current supplies exactly the twelve characters this
+// plan also begins with. The refusal then read "the approval is bound to plan
+// 274097930339 and this plan is 274097930339", which is a sentence that sends
+// somebody looking for a bug in the comparison.
+//
+// Where the short forms collide the full values are printed. Sixty-four
+// characters twice is worse to read than twelve, and it is the only rendering
+// that answers the question the sentence is asking.
+func distinguish(given, want string) (givenText, wantText string) {
+	if shortOrNone(given) != shortOrNone(want) {
+		return shortOrNone(given), shortOrNone(want)
+	}
+	return quotedOrNone(given), quotedOrNone(want)
+}
+
+// quotedOrNone renders a digest in full, or says there is none.
+func quotedOrNone(digest string) string {
+	if digest == "" {
+		return "(none)"
+	}
+	return digest
 }

@@ -1,6 +1,7 @@
 package inference
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,12 +10,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/internal/embedreport"
-	"go.5x5.cz/ptah/internal/embedspec"
 )
 
 // newDescribeCommand returns "ptah inference describe".
 func newDescribeCommand() *cobra.Command {
-	var specPath string
+	var options commonOptions
 	var format string
 
 	cmd := &cobra.Command{
@@ -33,25 +33,26 @@ consistency mode can establish, and the objects a generation would write.
 
 Nothing here is measured. The row count is absent rather than zero, because
 counting needs the database and an uncounted source rendered as zero says the
-disclosure is empty.`,
+disclosure is empty.
+
+--release reads a published release instead of a file, which is how a promotion
+is checked by the environment receiving it before anything there is touched.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runDescribe(cmd.OutOrStdout(), specPath, format)
+			return runDescribe(cmd.Context(), cmd.OutOrStdout(), options, format)
 		},
 	}
-	cmd.Flags().StringVar(&specPath, "spec", "",
-		"Path to the embedding-migration specification (required)")
+	addSpecFlags(cmd, &options)
 	cmd.Flags().StringVar(&format, "format", "text",
 		"Output format: text or json")
 	return cmd
 }
 
-// runDescribe reads the file and prints what it says.
-func runDescribe(out io.Writer, specPath, format string) error {
-	if strings.TrimSpace(specPath) == "" {
-		return fmt.Errorf("--spec is required")
-	}
-	loaded, err := embedspec.Load(specPath)
+// runDescribe prints what the specification says.
+func runDescribe(
+	ctx context.Context, out io.Writer, options commonOptions, format string,
+) error {
+	loaded, err := options.spec.resolve(ctx)
 	if err != nil {
 		return err
 	}

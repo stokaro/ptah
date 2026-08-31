@@ -195,6 +195,14 @@ func TestCutover_TheDigestCoversWhatWasDone(t *testing.T) {
 			change: func(c *embedrelease.Cutover) { c.VerificationDigest = "other" },
 		},
 		{
+			// What the generation covers, which its identity does not carry:
+			// the identity says how a vector was computed and this says which
+			// source state was. Two cutovers of one generation at different
+			// watermarks are two different things done.
+			name:   "the watermark it was current to",
+			change: func(c *embedrelease.Cutover) { c.Watermark = "4288" },
+		},
+		{
 			name:   "the window it opened",
 			change: func(c *embedrelease.Cutover) { c.StabilizeUntil = at.Add(time.Hour) },
 		},
@@ -203,7 +211,7 @@ func TestCutover_TheDigestCoversWhatWasDone(t *testing.T) {
 	base := embedrelease.Cutover{
 		Generation: "gen-2", Replaced: "gen-1", Target: "public.articles",
 		PlanDigest: "plan-1", Approver: "an operator",
-		VerificationDigest: "report-1", CutOverAt: at,
+		VerificationDigest: "report-1", Watermark: "4210", CutOverAt: at,
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -345,4 +353,123 @@ func TestVerification_TheBoundaryBetweenTheTwoListsCannotMove(t *testing.T) {
 	}
 
 	c.Assert(found.Digest(), qt.Not(qt.Equals), notAsked.Digest())
+}
+
+// TestRollback_TheDigestCoversWhatMadeItPossible walks the record that says why
+// going back was allowed.
+//
+// A rollback record that carried only the pointer move would say a generation
+// changed and not whether it changed to something current -- which is the whole
+// question a rollback rests on, and the one an auditor asks first.
+func TestRollback_TheDigestCoversWhatMadeItPossible(t *testing.T) {
+	tests := []struct {
+		name   string
+		change func(*embedrelease.Rollback)
+	}{
+		{name: "generation", change: func(r *embedrelease.Rollback) { r.Generation = "other" }},
+		{name: "what it replaced", change: func(r *embedrelease.Rollback) { r.Replaced = "other" }},
+		{name: "target", change: func(r *embedrelease.Rollback) { r.Target = "other" }},
+		{
+			name:   "whether it was still maintained",
+			change: func(r *embedrelease.Rollback) { r.Maintained = false },
+		},
+		{
+			name:   "when its freshness was measured",
+			change: func(r *embedrelease.Rollback) { r.VerifiedAt = at.Add(time.Hour) },
+		},
+		{name: "stale rows", change: func(r *embedrelease.Rollback) { r.StaleRows = 1 }},
+		{name: "missing rows", change: func(r *embedrelease.Rollback) { r.MissingRows = 1 }},
+		{
+			name:   "when the window closes",
+			change: func(r *embedrelease.Rollback) { r.Expires = at.Add(2 * time.Hour) },
+		},
+		{name: "when", change: func(r *embedrelease.Rollback) { r.RolledBackAt = at.Add(time.Nanosecond) }},
+	}
+	base := embedrelease.Rollback{
+		Generation: "gen-1", Replaced: "gen-2", Target: "public.articles",
+		Maintained: true, VerifiedAt: at, Expires: at.Add(time.Hour), RolledBackAt: at,
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			changed := base
+			test.change(&changed)
+
+			c.Assert(changed.Digest(), qt.Not(qt.Equals), base.Digest())
+		})
+	}
+}
+
+// TestRetirement_TheDigestCoversWhatWasDestroyed walks the one record whose
+// subject cannot be inspected afterwards.
+func TestRetirement_TheDigestCoversWhatWasDestroyed(t *testing.T) {
+	tests := []struct {
+		name   string
+		change func(*embedrelease.Retirement)
+	}{
+		{name: "generation", change: func(r *embedrelease.Retirement) { r.Generation = "other" }},
+		{name: "target", change: func(r *embedrelease.Retirement) { r.Target = "other" }},
+		{
+			name: "one object more",
+			change: func(r *embedrelease.Retirement) {
+				r.Objects = append(r.Objects, "column public.articles.embedding")
+			},
+		},
+		{
+			name:   "a different object",
+			change: func(r *embedrelease.Retirement) { r.Objects = []string{"something else"} },
+		},
+		{name: "how many rows", change: func(r *embedrelease.Retirement) { r.Rows = 4 }},
+		{name: "the plan", change: func(r *embedrelease.Retirement) { r.PlanDigest = "other" }},
+		{name: "the approver", change: func(r *embedrelease.Retirement) { r.Approver = "somebody else" }},
+		{name: "when", change: func(r *embedrelease.Retirement) { r.RetiredAt = at.Add(time.Nanosecond) }},
+	}
+	base := embedrelease.Retirement{
+		Generation: "gen-1", Target: "public.articles.embedding",
+		Objects: []string{"index over public.articles.embedding"},
+		Rows:    3, PlanDigest: "plan-1", Approver: "an operator", RetiredAt: at,
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			changed := base
+			test.change(&changed)
+
+			c.Assert(changed.Digest(), qt.Not(qt.Equals), base.Digest())
+		})
+	}
+}
+
+// TestRetirement_TwoObjectsAreNotOneWithASpaceInIt is why the object list is
+// counted before it is hashed.
+//
+// The list is variable-length and more components follow it, so without the
+// count a retirement that removed "a" and "b" would address the same record as
+// one that removed a single object called "a b".
+func TestRetirement_TwoObjectsAreNotOneWithASpaceInIt(t *testing.T) {
+	c := qt.New(t)
+	two := embedrelease.Retirement{Generation: "gen-1", Objects: []string{"a", "b"}, RetiredAt: at}
+	one := embedrelease.Retirement{Generation: "gen-1", Objects: []string{"a b"}, RetiredAt: at}
+
+	c.Assert(two.Digest(), qt.Not(qt.Equals), one.Digest())
+}
+
+// TestNewRetirementRecord_AnnotatesWhatWentWithIt is what a registry lists
+// without pulling the layer.
+//
+// "How much was destroyed" is the question somebody scanning a list of these is
+// asking, and it is the one that cannot be answered by going to look.
+func TestNewRetirementRecord_AnnotatesWhatWentWithIt(t *testing.T) {
+	c := qt.New(t)
+
+	record, err := embedrelease.NewRetirementRecord(embedrelease.Retirement{
+		Generation: "gen-1", Objects: []string{"column public.articles.embedding"},
+		Rows: 481_204, RetiredAt: at,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(record.ArtifactType, qt.Equals, embedrelease.RetirementArtifactType)
+	c.Assert(record.FileName, qt.Equals, embedrelease.RetirementFileName)
+	c.Assert(record.Annotations["cz.5x5.ptah.inference.rows"], qt.Equals, "481204")
+	c.Assert(record.Annotations["cz.5x5.ptah.inference.generation"], qt.Equals, "gen-1")
 }

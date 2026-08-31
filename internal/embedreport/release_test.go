@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/internal/embedgen"
+	"go.5x5.cz/ptah/internal/embedrelease"
 	"go.5x5.cz/ptah/internal/embedreport"
 	"go.5x5.cz/ptah/internal/embedspec"
 )
@@ -101,4 +102,78 @@ func loadedFixture() embedspec.Loaded {
 			},
 		},
 	}
+}
+
+// publishedSpecification is a document with a credential reference in it,
+// parsed rather than hand-built.
+//
+// Parsed, because what the test is about is what a real specification carries
+// into a registry, and a hand-built Loaded would carry whatever the fixture's
+// author remembered to put in it.
+const publishedSpecification = `
+version: 1
+name: articles
+source:
+  schema: public
+  table: articles
+  key_fields: [id]
+  input_fields: [title, body]
+  version_strategy: updated_at
+  version_field: updated_at
+  mutable: true
+preprocessing:
+  separator: "\n"
+  null_policy: empty
+  empty_policy: skip
+  unicode_normalization: none
+  truncate: refuse
+model:
+  provider: openai-compatible
+  endpoint_class: hosted
+  endpoint: https://api.example.com/v1
+  identifier: text-embedding-3-small
+  revision: "2024-02"
+  credential: env:PTAH_EMBED_TOKEN
+  reported_dimension: 4
+  normalization: none
+target:
+  schema: public
+  table: articles
+  column: embedding
+  representation: vector
+  metric: cosine
+consistency:
+  mode: outbox
+policy:
+  require_exact_approval: true
+  require_consistency_mode: true
+`
+
+// TestNewReleaseRecord_PublishesTheReferenceAndNeverTheCredential is the
+// redaction guarantee, at the point where it can be broken.
+//
+// A release travels to a registry carrying the document it was built from, so
+// the rule that a specification names WHERE a credential lives and never what
+// it is stopped being a local property the moment that document started
+// leaving the machine. This reads the bytes that would be pushed.
+func TestNewReleaseRecord_PublishesTheReferenceAndNeverTheCredential(t *testing.T) {
+	c := qt.New(t)
+	c.Setenv("PTAH_EMBED_TOKEN", "sk-a-real-looking-secret-value")
+	loaded, err := embedspec.Parse([]byte(publishedSpecification), "articles.yaml")
+	c.Assert(err, qt.IsNil)
+
+	release := embedreport.BuildRelease(
+		loaded, embedreport.Plan{Desired: "gen-2"}, time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC))
+	record, err := embedrelease.NewReleaseRecord(release, loaded.Document)
+	c.Assert(err, qt.IsNil)
+
+	published := string(record.Body) + string(record.Files[embedrelease.SpecificationFileName])
+	for _, annotation := range record.Annotations {
+		published += annotation
+	}
+	c.Assert(published, qt.Not(qt.Contains), "sk-a-real-looking-secret-value")
+	// The control. Without it, a record that carried nothing at all would pass
+	// the assertion above and take the specification with it.
+	c.Assert(published, qt.Contains, "credential: env:PTAH_EMBED_TOKEN")
+	c.Assert(published, qt.Contains, "identifier: text-embedding-3-small")
 }

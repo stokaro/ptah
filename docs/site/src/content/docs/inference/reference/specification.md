@@ -134,6 +134,7 @@ vectors are. See [Consistency modes](../../concepts/consistency/).
 | Field | Meaning |
 | --- | --- |
 | `require_exact_approval` | A cutover needs an approval bound to the plan digest. |
+| `require_signed_approval` | That approval has to be a verified signature rather than a name typed beside the digest. Needs `require_exact_approval`, because a signature is given over one exact plan. |
 | `require_consistency_mode` | A cutover is refused when no mode is selected. |
 | `allow_accepted_findings` | Findings that may be present and not block. |
 | `max_plan_age` | How old a plan may be when it is approved. |

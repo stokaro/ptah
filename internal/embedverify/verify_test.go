@@ -34,8 +34,10 @@ func healthy() (
 		{Key: "2", Version: "7", InputHash: "hash-2"},
 	}
 	target := []embedverify.TargetRow{
-		{Key: "1", Generation: generation, Version: "7", InputHash: "hash-1", Vector: []float32{1, 2, 3}},
-		{Key: "2", Generation: generation, Version: "7", InputHash: "hash-2", Vector: []float32{4, 5, 6}},
+		{Key: "1", Generation: generation, Version: "7", InputHash: "hash-1",
+			Dimension: 3, Vector: []float32{1, 2, 3}},
+		{Key: "2", Generation: generation, Version: "7", InputHash: "hash-2",
+			Dimension: 3, Vector: []float32{4, 5, 6}},
 	}
 	state := embedverify.RunState{SnapshotComplete: true, CatchUpReached: true}
 	return expectation, structure, source, target, state
@@ -197,13 +199,29 @@ func TestVerify_VectorValidityBlocks(t *testing.T) {
 		want   string
 	}{
 		{
-			name: "no payload", change: func(rows []embedverify.TargetRow) { rows[0].Vector = nil },
+			name: "no payload",
+			change: func(rows []embedverify.TargetRow) {
+				rows[0].Dimension, rows[0].Vector = 0, nil
+			},
 			want: "1 rows carry no vector and are not marked skipped or deleted",
 		},
 		{
-			name:   "the wrong dimension",
-			change: func(rows []embedverify.TargetRow) { rows[0].Vector = []float32{1, 2} },
-			want:   "1 stored vectors do not have the generation's dimension",
+			name: "the wrong dimension",
+			change: func(rows []embedverify.TargetRow) {
+				rows[0].Dimension, rows[0].Vector = 2, []float32{1, 2}
+			},
+			want: "1 stored vectors do not have the generation's dimension",
+		},
+		{
+			// The width comes from what the server reported, not from a slice
+			// somebody built. A caller that read no values reports the
+			// dimension alone, and this is the case that catches a check
+			// reading the wrong one.
+			name: "the wrong dimension, with no values read",
+			change: func(rows []embedverify.TargetRow) {
+				rows[0].Dimension, rows[0].Vector = 2, nil
+			},
+			want: "1 stored vectors do not have the generation's dimension",
 		},
 		{
 			name:   "NaN",
@@ -702,4 +720,51 @@ func freshnessFindings(report embedverify.Report) []embedverify.Finding {
 func boolToCount(stale bool) int {
 	counts := map[bool]int{true: 1, false: 0}
 	return counts[stale]
+}
+
+// TestVerify_ARowNothingWroteIsMissingRatherThanAnotherGenerations is the
+// sentence a reader meets first.
+//
+// Before a backfill, every target row carries an empty generation marker.
+// Reporting those as belonging to another generation named a generation that
+// does not exist, on every row, and sent an operator looking for it. What is
+// true of such a row is that this generation has no vector for it.
+//
+// Measured against a live PostgreSQL: two rows, prepared and not backfilled,
+// reported "2 target rows belong to another generation".
+func TestVerify_ARowNothingWroteIsMissingRatherThanAnotherGenerations(t *testing.T) {
+	c := qt.New(t)
+	expectation, structure, source, target, state := healthy()
+	for index := range target {
+		target[index].Generation = ""
+		target[index].InputHash = ""
+		target[index].Dimension = 0
+		target[index].Vector = nil
+	}
+
+	report := embedverify.Verify(expectation, structure, source, target, state)
+
+	c.Assert(summaries(report), qt.Contains,
+		"2 in-scope source rows have no vector in this generation")
+	c.Assert(summaries(report), qt.Not(qt.Contains),
+		"2 target rows belong to another generation")
+}
+
+// TestVerify_ARowAnotherGenerationWroteStillSaysSo is the control.
+//
+// Without it, treating every unmatched generation as missing would lose the
+// finding that matters most in a side-by-side migration: a vector written for
+// the corpus next door.
+func TestVerify_ARowAnotherGenerationWroteStillSaysSo(t *testing.T) {
+	c := qt.New(t)
+	expectation, structure, source, target, state := healthy()
+	for index := range target {
+		target[index].Generation = "some-other-generation"
+	}
+
+	report := embedverify.Verify(expectation, structure, source, target, state)
+
+	c.Assert(summaries(report), qt.Contains, "2 target rows belong to another generation")
+	c.Assert(summaries(report), qt.Not(qt.Contains),
+		"2 in-scope source rows have no vector in this generation")
 }

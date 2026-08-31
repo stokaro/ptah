@@ -4,17 +4,15 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/internal/embedcatchup"
 	"go.5x5.cz/ptah/internal/embedcutover"
-	"go.5x5.cz/ptah/internal/embedgen"
 	"go.5x5.cz/ptah/internal/embedpg"
 	"go.5x5.cz/ptah/internal/embedrelease"
+	"go.5x5.cz/ptah/internal/embedreport"
 	"go.5x5.cz/ptah/internal/embedrun"
 	"go.5x5.cz/ptah/internal/embedstore"
 	"go.5x5.cz/ptah/internal/embedverify"
@@ -98,7 +96,7 @@ func publishVerification(
 	defer opened.close()
 	record, buildErr := embedrelease.NewVerificationRecord(
 		verificationRecord(opened.loaded.Spec, report, nil, time.Now().UTC()))
-	return publishRecord(ctx, out, evidence, record, buildErr)
+	return publishRecord(ctx, out, options, evidence, record, buildErr)
 }
 
 // recordVerification writes the pass onto the generation.
@@ -109,122 +107,6 @@ func recordVerification(ctx context.Context, options commonOptions, generation s
 	}
 	defer opened.close()
 	return opened.store.RecordVerification(ctx, generation, time.Now().UTC())
-}
-
-// verify runs every deterministic layer against the live generation.
-func verify(
-	ctx context.Context, options commonOptions, runID string,
-) (embedverify.Report, embedrun.Run, error) {
-	if runID == "" {
-		return embedverify.Report{}, embedrun.Run{}, fmt.Errorf("--run-id is required")
-	}
-	opened, err := open(ctx, options)
-	if err != nil {
-		return embedverify.Report{}, embedrun.Run{}, err
-	}
-	defer opened.close()
-
-	run, err := opened.store.Run(ctx, runID)
-	if err != nil {
-		return embedverify.Report{}, embedrun.Run{}, err
-	}
-	spec := opened.loaded.Spec
-	active := activePointer(ctx, opened, spec.Target.Table)
-	structure, err := embedpg.ReadStructure(ctx, opened.db, spec, active)
-	if err != nil {
-		return embedverify.Report{}, run, err
-	}
-	source, target, err := embedpg.ReadVerificationRows(ctx, opened.db, spec)
-	if err != nil {
-		return embedverify.Report{}, run, err
-	}
-	guarantee, err := assessConsistency(ctx, opened, run)
-	if err != nil {
-		return embedverify.Report{}, run, err
-	}
-
-	objects, err := spec.TargetObjects()
-	if err != nil {
-		return embedverify.Report{}, run, err
-	}
-	report := embedverify.Verify(
-		embedverify.Expectation{
-			Generation:    spec.Identity().Digest,
-			ColumnType:    objects.Column.Type,
-			Dimension:     spec.Model.ReportedDimension,
-			IndexMethod:   objects.Index.Type,
-			OperatorClass: objects.Index.Operator,
-			RequireIndex:  objects.HasIndex && run.Phase != embedrun.PhaseBackfilling,
-		},
-		structure, source, target,
-		embedverify.RunState{
-			SnapshotComplete:    run.Phase != embedrun.PhaseBackfilling,
-			CatchUpReached:      guarantee.Complete,
-			ConsistencyMode:     string(opened.loaded.Mode),
-			SourceMutable:       opened.loaded.Source.Mutable,
-			UnreconciledBatches: 0,
-		})
-	return report, run, nil
-}
-
-// assessConsistency asks the selected mode whether it proved its condition.
-func assessConsistency(
-	ctx context.Context, opened *session, run embedrun.Run,
-) (embedcatchup.Guarantee, error) {
-	barrier, err := readBarrier(ctx, opened, run)
-	if err != nil {
-		return embedcatchup.Guarantee{}, err
-	}
-	return embedcatchup.Assess(opened.loaded.Mode, opened.loaded.Source, barrier,
-		embedcatchup.DualWriteEvidence{}, time.Now().UTC()), nil
-}
-
-// readBarrier measures the outbox's completion condition.
-func readBarrier(
-	ctx context.Context, opened *session, run embedrun.Run,
-) (embedcatchup.Barrier, error) {
-	if opened.loaded.Mode != embedcatchup.ModeOutbox {
-		return embedcatchup.Barrier{}, nil
-	}
-	outbox, err := embedpg.NewOutbox(opened.db, opened.loaded.Spec)
-	if err != nil {
-		return embedcatchup.Barrier{}, err
-	}
-	installed, err := outbox.Installed(ctx)
-	if err != nil {
-		return embedcatchup.Barrier{}, err
-	}
-	processed := parseWatermark(run.CatchUpWatermark)
-	unprocessed, err := outbox.Unprocessed(ctx, processed)
-	if err != nil {
-		return embedcatchup.Barrier{}, err
-	}
-	horizon, err := outbox.Horizon(ctx)
-	if err != nil {
-		return embedcatchup.Barrier{}, err
-	}
-	return embedcatchup.Barrier{
-		Installed: installed, Snapshot: parseWatermark(run.SnapshotWatermark),
-		Processed: processed, Horizon: horizon, Unprocessed: unprocessed,
-	}, nil
-}
-
-// parseWatermark reads a recorded transaction identity, or zero.
-func parseWatermark(raw string) uint64 {
-	value, err := strconv.ParseUint(raw, 10, 64)
-	if err != nil {
-		return 0
-	}
-	return value
-}
-
-// activePointer reads which generation queries currently read, or nothing.
-func activePointer(ctx context.Context, opened *session, table string) string {
-	pointer, err := opened.store.Pointer(ctx, table)
-	if err != nil {
-		return ""
-	}
-	return pointer.Active
 }
 
 // printReport renders a verification report.
@@ -253,8 +135,7 @@ func joinKeys(keys []string) string {
 func newCutoverCommand() *cobra.Command {
 	var options commonOptions
 	var runID string
-	var approvalDigest string
-	var approver string
+	var approval approvalOptions
 	var stabilizeFor time.Duration
 	var evidence evidenceOptions
 
@@ -270,18 +151,22 @@ cutting over in the meantime is refused rather than overwritten.
 
 Where the specification requires an approval, it binds to the plan's exact
 digest. Any change to the evidence produces a different plan and the approval
-stops applying -- which is the point of it.`,
+stops applying -- which is the point of it.
+
+--approve takes that digest and --approver the name to record beside it. Where
+who approved something has to be evidence rather than a claim, --plan-file
+writes the refused plan, "ptah schema approve" signs it with an SSH key, and
+--approval verifies the signature and records the principal it belongs to. A
+specification setting policy.require_signed_approval refuses the typed form.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runCutover(cmd.Context(), cmd.OutOrStdout(), options,
-				runID, approvalDigest, approver, stabilizeFor, evidence)
+				runID, approval, stabilizeFor, evidence)
 		},
 	}
 	addCommonFlags(cmd, &options)
 	cmd.Flags().StringVar(&runID, "run-id", "", "Identifier of the run (required)")
-	cmd.Flags().StringVar(&approvalDigest, "approve", "",
-		"Plan digest this cutover is approved for; run without it to see the digest")
-	cmd.Flags().StringVar(&approver, "approver", "", "Who approved it")
+	addApprovalFlags(cmd, &approval)
 	cmd.Flags().DurationVar(&stabilizeFor, "stabilize-for", 0,
 		"How long the previous generation stays a way back; zero leaves no rollback")
 	addEvidenceFlags(cmd.Flags(), &evidence)
@@ -292,7 +177,8 @@ stops applying -- which is the point of it.`,
 // runCutover builds a plan, decides, and moves the pointer.
 func runCutover(
 	ctx context.Context, out io.Writer, options commonOptions,
-	runID, approvalDigest, approver string, stabilizeFor time.Duration, evidence evidenceOptions,
+	runID string, authorization approvalOptions,
+	stabilizeFor time.Duration, evidence evidenceOptions,
 ) error {
 	report, run, err := verify(ctx, options, runID)
 	if err != nil {
@@ -304,22 +190,28 @@ func runCutover(
 	}
 	defer opened.close()
 
-	plan, observed, err := buildCutoverPlan(ctx, opened, run, report)
+	now := time.Now().UTC()
+	plan, observed, err := embedreport.BuildCutoverPlan(
+		ctx, opened.db, opened.store, opened.loaded, run, report, now)
 	if err != nil {
 		return err
 	}
-	approval := approvalFrom(plan, approvalDigest, approver)
+	identity := cutoverPlanIdentity(plan)
+	approval, err := approvalFor(ctx, authorization, identity)
+	if err != nil {
+		return err
+	}
 	decision := embedcutover.Decide(plan, opened.loaded.Policy, observed, approval)
 	if !decision.Allowed {
 		_ = writeLines(out, fmt.Sprintf("plan %s", plan.Short()))
+		_ = writePlanFile(out, authorization.planFile, identity)
 		return refusal(out, "cutover refused", decision.Blockers)
 	}
 
-	now := time.Now().UTC()
 	if err := opened.store.MovePointer(ctx, embedstore.Pointer{
 		TargetTable: opened.loaded.Spec.Target.Table, Active: plan.Generation,
 		Previous: plan.Previous, CutOverAt: now,
-		CutOverBy: approver, PlanDigest: plan.Digest(),
+		CutOverBy: approverName(approval), PlanDigest: plan.Digest(),
 	}, plan.Previous); err != nil {
 		return err
 	}
@@ -329,7 +221,8 @@ func runCutover(
 	if err := reachPhase(ctx, options, runID, embedrun.PhaseCutOver); err != nil {
 		return err
 	}
-	return publishCutover(ctx, out, opened, plan, report, approver, now, stabilizeFor, evidence)
+	return publishCutover(ctx, out, options, opened, plan, report,
+		approverName(approval), now, stabilizeFor, evidence)
 }
 
 // publishCutover records what was done, where a registry was named.
@@ -338,7 +231,7 @@ func runCutover(
 // reason the window is: the cutover happened, and a registry being unreachable
 // is not a fact about it.
 func publishCutover(
-	ctx context.Context, out io.Writer, opened *session, plan embedcutover.Plan,
+	ctx context.Context, out io.Writer, options commonOptions, opened *session, plan embedcutover.Plan,
 	report embedverify.Report, approver string, at time.Time,
 	stabilizeFor time.Duration, evidence evidenceOptions,
 ) error {
@@ -351,13 +244,14 @@ func publishCutover(
 		PlanDigest: plan.Digest(), Approver: approver,
 		VerificationDigest: verificationRecord(
 			opened.loaded.Spec, report, nil, at).Digest(),
+		Watermark: plan.Evidence.ConsistencyWatermark,
 		CutOverAt: at,
 	}
 	if plan.Previous != "" && stabilizeFor > 0 {
 		cutover.StabilizeUntil = at.Add(stabilizeFor)
 	}
 	record, buildErr := embedrelease.NewCutoverRecord(cutover)
-	return publishRecord(ctx, out, evidence, record, buildErr)
+	return publishRecord(ctx, out, options, evidence, record, buildErr)
 }
 
 // openStabilization starts the window in which the previous generation is still
@@ -399,120 +293,30 @@ func openStabilization(
 		plan.Previous, until.Format(time.RFC3339))))...)
 }
 
-// buildCutoverPlan assembles the plan and what is true now.
-func buildCutoverPlan(
-	ctx context.Context, opened *session, run embedrun.Run, report embedverify.Report,
-) (embedcutover.Plan, embedcutover.Observed, error) {
-	spec := opened.loaded.Spec
-	active := activePointer(ctx, opened, spec.Target.Table)
-	structure, err := embedpg.ReadStructure(ctx, opened.db, spec, active)
-	if err != nil {
-		return embedcutover.Plan{}, embedcutover.Observed{}, err
-	}
-	guarantee, err := assessConsistency(ctx, opened, run)
-	if err != nil {
-		return embedcutover.Plan{}, embedcutover.Observed{}, err
-	}
-
-	objects, err := spec.TargetObjects()
-	if err != nil {
-		return embedcutover.Plan{}, embedcutover.Observed{}, err
-	}
-	ready := indexReady(objects, structure)
-	plan := embedcutover.Plan{
-		Generation: spec.Identity().Digest, Previous: active,
-		Schema: spec.Target.Schema, Table: spec.Target.Table, Column: spec.Target.Column,
-		Evidence: embedcutover.Evidence{
-			VerificationDigest:   report.Generation,
-			VerificationPassed:   report.Passed(),
-			ConsistencyMode:      string(opened.loaded.Mode),
-			ConsistencyWatermark: run.CatchUpWatermark,
-			IndexReady:           ready,
-			SourceMutable:        opened.loaded.Source.Mutable,
+// cutoverPlanIdentity is what an approver reads and signs.
+//
+// The facts, and not only the digest: a signature over sixty-four hex
+// characters attests to a number nobody could have checked.
+func cutoverPlanIdentity(plan embedcutover.Plan) planIdentity {
+	return planIdentity{
+		operation: "cutover",
+		digest:    plan.Digest(),
+		lines: []string{
+			"generation: " + plan.Generation,
+			"replaces: " + plan.Previous,
+			"target: " + plan.Schema + "." + plan.Table + "." + plan.Column,
+			"verification: " + plan.Evidence.VerificationDigest,
 		},
-		// When the EVIDENCE was last established, not when this process
-		// started. Two things follow, and both are the point.
-		//
-		// The digest is stable across invocations, so the operator who runs
-		// this to see the plan and runs it again with an approval is approving
-		// the plan they read. A wall-clock timestamp made every run a
-		// different plan and the approval impossible to give -- which the
-		// end-to-end test found the moment it tried.
-		//
-		// And the age a policy bounds becomes the age of the evidence rather
-		// than of the printout. A plan built on a run that last moved two days
-		// ago is stale however recently it was rendered.
-		PreparedAt: run.UpdatedAt.UTC(),
 	}
-	if !guarantee.Complete {
-		plan.Evidence.ConsistencyMode = ""
-	}
-	// The plan's expected previous generation and the observed pointer come
-	// from ONE read, because this caller builds and executes in the same
-	// process: there is no interval between them for the pointer to move in.
-	// What protects a cutover from somebody else's here is the approval, which
-	// is bound to a plan built from the pointer as it was.
-	//
-	// The domain's drift check is for a caller that persists a plan and
-	// executes it later. Supplying two separate reads here would be a second
-	// answer to a question with one.
-	return plan, embedcutover.Observed{
-		ActivePointer: active, ConsistencyWatermark: run.CatchUpWatermark,
-		IndexReady:  ready,
-		Permissions: []embedcutover.Permission{embedcutover.PermissionCutover},
-		Now:         time.Now().UTC(),
-	}, nil
-}
-
-// indexReady reports whether the index this generation needs is there.
-//
-// It takes the objects the specification derives rather than a flag, because
-// "does this generation want an index" and "is that index there" are one
-// question about one generation and splitting them into a boolean and a struct
-// invites a caller to answer half of it.
-//
-// A generation that declares no index method needs none, and is ready by
-// definition. Reporting the absent index as "not ready" made every such
-// generation permanently uncutoverable -- and the refusal named an index the
-// specification never asked for, which is the worst kind of diagnostic: it
-// sends the operator to configure something they deliberately left out.
-func indexReady(objects embedgen.TargetObjects, structure embedverify.Structure) bool {
-	if !objects.HasIndex {
-		return true
-	}
-	return structure.IndexExists && structure.IndexValid
-}
-
-// approvalFrom builds the approval a caller supplied, or none.
-func approvalFrom(plan embedcutover.Plan, digest, approver string) *embedcutover.Approval {
-	if digest == "" {
-		return nil
-	}
-	return &embedcutover.Approval{
-		PlanDigest: expandDigest(plan, digest), Approver: approver, GrantedAt: time.Now().UTC(),
-	}
-}
-
-// expandDigest accepts the short digest a person reads off the terminal.
-//
-// A full digest is sixty-four characters and nobody retypes one correctly.
-// Matching the short form against THIS plan is safe because it is only ever
-// compared to this plan: a short form that does not match leaves the caller's
-// own string, which then fails the comparison and names both.
-func expandDigest(plan embedcutover.Plan, digest string) string {
-	if digest == plan.Short() {
-		return plan.Digest()
-	}
-	return digest
 }
 
 // newRetireCommand returns "ptah inference retire".
 func newRetireCommand() *cobra.Command {
 	var options commonOptions
 	var generation string
-	var approvalDigest string
-	var approver string
+	var approval approvalOptions
 	var dropColumn bool
+	var evidence evidenceOptions
 
 	cmd := &cobra.Command{
 		Use:   "retire",
@@ -526,32 +330,37 @@ again from nothing.
 It is refused while queries read the generation, and while a live generation can
 still be rolled back to it. Where the specification requires an approval, the
 approval binds to what is DESTROYED rather than to what is named: approving the
-removal of an index does not authorize the removal of the column.`,
+removal of an index does not authorize the removal of the column.
+
+--plan-file writes the refused plan, "ptah schema approve" signs it, and
+--approval verifies the signature and records whose it is. For an operation
+nothing can undo, who approved it is worth being evidence rather than a name in
+a shell history.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runRetire(cmd.Context(), cmd.OutOrStdout(), retireOptions{
 				commonOptions: options, generation: generation,
-				approvalDigest: approvalDigest, approver: approver, dropColumn: dropColumn,
+				approval: approval, dropColumn: dropColumn, evidence: evidence,
 			})
 		},
 	}
 	addCommonFlags(cmd, &options)
 	cmd.Flags().StringVar(&generation, "generation", "", "Identity of the generation to destroy (required)")
-	cmd.Flags().StringVar(&approvalDigest, "approve", "",
-		"Plan digest this retirement is approved for; run without it to see the digest")
-	cmd.Flags().StringVar(&approver, "approver", "", "Who approved it")
+	addApprovalFlags(cmd, &approval)
 	cmd.Flags().BoolVar(&dropColumn, "drop-column", true,
 		"Drop the vector column as well as the index")
+	addEvidenceFlags(cmd.Flags(), &evidence)
+	addSubjectFlag(cmd, &evidence)
 	return cmd
 }
 
 // retireOptions are what the retire verb takes.
 type retireOptions struct {
 	commonOptions
-	generation     string
-	approvalDigest string
-	approver       string
-	dropColumn     bool
+	generation string
+	approval   approvalOptions
+	dropColumn bool
+	evidence   evidenceOptions
 }
 
 // reachPhase records how far a verb got, on its own connection.
@@ -599,10 +408,15 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 	if err != nil {
 		return err
 	}
-	decision := embedcutover.DecideRetirement(plan, state, observed,
-		retirementApproval(plan, options), opened.loaded.Policy)
+	identity := retirementPlanIdentity(plan)
+	approval, err := approvalFor(ctx, options.approval, identity)
+	if err != nil {
+		return err
+	}
+	decision := embedcutover.DecideRetirement(plan, state, observed, approval, opened.loaded.Policy)
 	if !decision.Allowed {
 		_ = writeLines(out, retirementContext(plan, state, rows)...)
+		_ = writePlanFile(out, options.approval.planFile, identity)
 		return refusal(out, "retirement refused", decision.Blockers)
 	}
 
@@ -614,11 +428,72 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 			return err
 		}
 	}
-	if err := opened.store.RetireGeneration(ctx, options.generation, time.Now().UTC()); err != nil {
+	retiredAt := time.Now().UTC()
+	if err := opened.store.RetireGeneration(ctx, options.generation, retiredAt); err != nil {
 		return err
 	}
-	return writeLines(out, fmt.Sprintf("generation %s is gone, with %d vectors",
-		options.generation, rows))
+	if err := writeLines(out, fmt.Sprintf("generation %s is gone, with %d vectors",
+		options.generation, rows)); err != nil {
+		return err
+	}
+	return publishRetirement(ctx, out, options, plan, identity, approval, rows, retiredAt)
+}
+
+// publishRetirement records what was destroyed, where a destination was named.
+//
+// This is the one record whose subject cannot be inspected afterwards. Every
+// other one here describes something still in the database; this describes an
+// absence, so it names the objects rather than counting them.
+//
+// Reported rather than fatal, for the reason the others are, and more so: the
+// vectors are already gone and a failed publication cannot bring them back.
+func publishRetirement(
+	ctx context.Context, out io.Writer, options retireOptions,
+	plan embedcutover.RetirementPlan, identity planIdentity,
+	approval *embedcutover.Approval, rows int, at time.Time,
+) error {
+	if !options.evidence.destinationNamed() {
+		return nil
+	}
+	record, buildErr := embedrelease.NewRetirementRecord(embedrelease.Retirement{
+		Generation: plan.Generation,
+		Target:     plan.Schema + "." + plan.Table + "." + plan.Column,
+		Objects:    retiredObjects(plan),
+		Rows:       int64(rows),
+		PlanDigest: identity.digest, Approver: approverName(approval),
+		RetiredAt: at,
+	})
+	return publishRecord(ctx, out, options.commonOptions, options.evidence, record, buildErr)
+}
+
+// retiredObjects names what the retirement removed.
+//
+// Named rather than described as a count, because a reader of this record
+// cannot go and look: the column either is in the list or it survived, and
+// "two objects" answers neither.
+func retiredObjects(plan embedcutover.RetirementPlan) []string {
+	objects := make([]string, 0, 2)
+	if plan.DropsIndex {
+		objects = append(objects, "index over "+plan.Schema+"."+plan.Table+"."+plan.Column)
+	}
+	if plan.DropsColumn {
+		objects = append(objects, "column "+plan.Schema+"."+plan.Table+"."+plan.Column)
+	}
+	return objects
+}
+
+// approverName is who authorized it, or nobody.
+//
+// Nobody is a real answer rather than an impossible one: a policy that requires
+// no exact approval allows a cutover with none, and reading the approver off a
+// nil approval panicked the process on exactly that path -- the one every test
+// here misses, because every specification in the suite requires an approval
+// (stokaro/ptah#2068).
+func approverName(approval *embedcutover.Approval) string {
+	if approval == nil {
+		return ""
+	}
+	return approval.Approver
 }
 
 // retirementContext says what was measured, beside what was decided.
@@ -698,18 +573,47 @@ func rollbackEligibility(
 		embedcutover.Observed{Now: time.Now().UTC()}), nil
 }
 
-// retirementApproval builds the approval a caller supplied, or none.
-func retirementApproval(
-	plan embedcutover.RetirementPlan, options retireOptions,
-) *embedcutover.Approval {
-	if options.approvalDigest == "" {
-		return nil
+// retirementPlanIdentity is what an approver reads and signs.
+//
+// It names what is DESTROYED rather than only the generation, because that is
+// the difference the retirement digest binds: approving the removal of an index
+// does not authorize the removal of the column.
+func retirementPlanIdentity(plan embedcutover.RetirementPlan) planIdentity {
+	return planIdentity{
+		operation: "retire",
+		digest:    plan.Digest(),
+		lines: []string{
+			"generation: " + plan.Generation,
+			"target: " + plan.Schema + "." + plan.Table + "." + plan.Column,
+			fmt.Sprintf("drops index: %t", plan.DropsIndex),
+			fmt.Sprintf("drops column: %t", plan.DropsColumn),
+			fmt.Sprintf("rows destroyed: %d", plan.RowCount),
+		},
 	}
-	digest := options.approvalDigest
-	if digest == plan.Short() {
-		digest = plan.Digest()
+}
+
+// verify opens a session and measures the generation.
+//
+// The measurement itself is internal/embedreport, which the verify verb, the
+// cutover it gates and the readiness a rollout waits on all consume. What is
+// here is opening the connection and answering with the run beside the report,
+// which is what the two callers in this file go on to use.
+func verify(
+	ctx context.Context, options commonOptions, runID string,
+) (embedverify.Report, embedrun.Run, error) {
+	if runID == "" {
+		return embedverify.Report{}, embedrun.Run{}, fmt.Errorf("--run-id is required")
 	}
-	return &embedcutover.Approval{
-		PlanDigest: digest, Approver: options.approver, GrantedAt: time.Now().UTC(),
+	opened, err := open(ctx, options)
+	if err != nil {
+		return embedverify.Report{}, embedrun.Run{}, err
 	}
+	defer opened.close()
+
+	run, err := opened.store.Run(ctx, runID)
+	if err != nil {
+		return embedverify.Report{}, embedrun.Run{}, err
+	}
+	report, err := embedreport.VerifyGeneration(ctx, opened.db, opened.store, opened.loaded, run)
+	return report, run, err
 }

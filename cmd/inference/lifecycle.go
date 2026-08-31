@@ -2,6 +2,7 @@ package inference
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strconv"
@@ -9,10 +10,13 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/internal/embedcatchup"
 	"go.5x5.cz/ptah/internal/embedcutover"
+	"go.5x5.cz/ptah/internal/embeddigest"
 	"go.5x5.cz/ptah/internal/embedgen"
 	"go.5x5.cz/ptah/internal/embedpg"
+	"go.5x5.cz/ptah/internal/embedrelease"
 	"go.5x5.cz/ptah/internal/embedreport"
 	"go.5x5.cz/ptah/internal/embedrun"
 	"go.5x5.cz/ptah/internal/embedstore"
@@ -244,43 +248,175 @@ func indexOutcomeText(outcome embedpg.IndexOutcome, spec embedgen.Spec) string {
 
 // newStatusCommand returns "ptah inference status".
 func newStatusCommand() *cobra.Command {
-	var options commonOptions
-	var runID string
+	var options statusOptions
 
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show what a run has done, how far it got, and what it is waiting for",
-		Long: `Print a run's phase, progress and the evidence it has gathered.
+		Long: `Print a run's phase, progress, and whether it is ready to cut over.
 
 It reads and changes nothing, and it is the verb to reach for when a cutover has
 been refused: the refusal names what is missing, and this says how far the run
-got.`,
+got.
+
+Two of the answers are measured rather than read off the run. "verified" runs
+the deterministic layers now, and "cutover ready" decides with the same code the
+cutover verb decides with -- a gate that agreed with that verb only by
+coincidence is one that will eventually let a deployment proceed against a
+generation the cutover then refuses. Both cost what verify costs, which is a
+read of the target.
+
+Cutover readiness excludes the approval. An approval nobody has given yet is not
+a defect in the state, and a rollout gate waiting for one would wait forever
+under the policy most production environments run; the answer says separately
+whether one is owed, and names the plan digest it would bind to.
+
+--format json is what a rollout system consumes, and --require-ready is what one
+gates on: exit 1 until both conditions hold, so an init container that keeps
+failing is the whole of the gate.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runStatus(cmd.Context(), cmd.OutOrStdout(), options, runID)
+			return runStatus(cmd.Context(), cmd.OutOrStdout(), options)
 		},
 	}
-	addCommonFlags(cmd, &options)
-	cmd.Flags().StringVar(&runID, "run-id", "", "Identifier of the run (required)")
+	addCommonFlags(cmd, &options.commonOptions)
+	cmd.Flags().StringVar(&options.runID, "run-id", "", "Identifier of the run (required)")
+	cmd.Flags().StringVar(&options.format, "format", "text", "Output format: text or json")
+	cmd.Flags().BoolVar(&options.requireReady, "require-ready", false,
+		"Return 1 unless the generation is verified and ready to cut over; errors still return 2")
 	return cmd
 }
 
+// statusOptions are what the verb was asked for.
+//
+// A struct rather than four parameters, because two of them are booleans and a
+// signature carrying one is a signature a caller reads backwards.
+type statusOptions struct {
+	commonOptions
+	runID  string
+	format string
+	// requireReady turns the two conditions into the process's exit status.
+	requireReady bool
+}
+
+// statusDocument is what --format json emits.
+//
+// The stored run and what is true now are separate objects, because they are
+// answers of different kinds: one is a record and the other is a measurement,
+// and a reader deciding whether to deploy needs to know which is which.
+type statusDocument struct {
+	Run       embedreport.Status    `json:"run"`
+	Readiness embedreport.Readiness `json:"readiness"`
+}
+
 // runStatus prints one run.
-func runStatus(ctx context.Context, out io.Writer, options commonOptions, runID string) error {
-	if runID == "" {
+func runStatus(ctx context.Context, out io.Writer, options statusOptions) error {
+	if options.runID == "" {
 		return fmt.Errorf("--run-id is required")
 	}
-	opened, err := open(ctx, options)
+	if options.format != "text" && options.format != "json" {
+		return fmt.Errorf("invalid --format value %q: text or json", options.format)
+	}
+	opened, err := open(ctx, options.commonOptions)
 	if err != nil {
 		return err
 	}
 	defer opened.close()
 
-	status, err := embedreport.ReadStatus(ctx, opened.store, runID)
+	status, err := embedreport.ReadStatus(ctx, opened.store, options.runID)
 	if err != nil {
 		return err
 	}
-	return printStatus(out, status)
+	readiness, err := embedreport.ReadReadiness(
+		ctx, opened.db, opened.store, opened.loaded, options.runID, time.Now())
+	if err != nil {
+		return err
+	}
+	if err := reportStatus(out, options.format, status, readiness); err != nil {
+		return err
+	}
+	if !options.requireReady {
+		return nil
+	}
+	return gateOnReadiness(readiness)
+}
+
+// reportStatus writes the answer in whichever form was asked for.
+func reportStatus(
+	out io.Writer, format string, status embedreport.Status, readiness embedreport.Readiness,
+) error {
+	if format == "json" {
+		return writeStatusJSON(out, statusDocument{Run: status, Readiness: readiness})
+	}
+	if err := printStatus(out, status); err != nil {
+		return err
+	}
+	return printReadiness(out, readiness)
+}
+
+// gateOnReadiness turns the two conditions into the exit code a rollout waits
+// on.
+//
+// Exit 1 rather than a message a caller has to parse, because the caller is a
+// container that has to keep failing until the state is there. It is the
+// documented code for an expected negative result, and the report is on stdout
+// either way: a gate that failed silently would leave whoever reads the pod's
+// logs with nothing but a number.
+//
+// The approval is deliberately not part of it. A generation waiting for a
+// person to sign is finished, and a gate holding a deployment for a signature
+// somebody gives in the same breath as the cutover would never open.
+func gateOnReadiness(readiness embedreport.Readiness) error {
+	if readiness.Verified && readiness.CutoverReady {
+		return nil
+	}
+	return exitcode.New(1, fmt.Errorf(
+		"the generation is not ready: verified=%t, cutover ready=%t",
+		readiness.Verified, readiness.CutoverReady))
+}
+
+// writeStatusJSON is the form a rollout system consumes.
+//
+// Indented, because the reader of a failed gate is a person looking at a log.
+func writeStatusJSON(out io.Writer, document statusDocument) error {
+	body, err := json.MarshalIndent(document, "", "  ")
+	if err != nil {
+		return fmt.Errorf("render the status: %w", err)
+	}
+	_, err = fmt.Fprintf(out, "%s\n", body)
+	return err
+}
+
+// printReadiness renders the two conditions a rollout waits on.
+func printReadiness(out io.Writer, readiness embedreport.Readiness) error {
+	lines := []string{
+		section(fmt.Sprintf("verified: %t, cutover ready: %t",
+			readiness.Verified, readiness.CutoverReady)),
+	}
+	if readiness.ApprovalRequired {
+		lines = append(lines, bullet("an approval is required, for plan "+
+			shortDigest(readiness.PlanDigest)))
+	}
+	for _, finding := range readiness.Findings {
+		lines = append(lines, bullet(finding))
+	}
+	for _, blocker := range readiness.Blockers {
+		lines = append(lines, bullet("blocked: "+blocker))
+	}
+	// What was not measured, always. A report saying only what it found reads
+	// as though it looked at everything.
+	for _, unmeasured := range readiness.Unmeasured {
+		lines = append(lines, bullet("not measured: "+unmeasured))
+	}
+	return writeLines(out, lines...)
+}
+
+// shortDigest renders a plan digest for a person, or says there is none.
+func shortDigest(digest string) string {
+	if digest == "" {
+		return "(none)"
+	}
+	return embeddigest.Short(digest)
 }
 
 // printStatus renders a run for a person.
@@ -334,6 +470,7 @@ func newRollbackCommand() *cobra.Command {
 	var options commonOptions
 	var toGeneration string
 	var window time.Duration
+	var evidence evidenceOptions
 
 	cmd := &cobra.Command{
 		Use:   "rollback",
@@ -344,22 +481,32 @@ Whether that is possible is measured rather than assumed. A generation whose
 tables still exist is not necessarily one you can return to: it may never have
 been verified, it may have stopped being maintained and drifted from the source,
 or its index may have been dropped -- which makes going back the same queries
-against a sequential scan.`,
+against a sequential scan.
+
+Naming --publish-evidence, --attach-to or --evidence-file leaves a record of
+what was undone: a separate record from a cutover, because "why did the corpus
+change" and "why did we go back" are different questions and a reader looking
+for the second in a list of the first finds a pointer move with nothing attached
+to it.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runRollback(cmd.Context(), cmd.OutOrStdout(), options, toGeneration, window)
+			return runRollback(cmd.Context(), cmd.OutOrStdout(), options,
+				toGeneration, window, evidence)
 		},
 	}
 	addCommonFlags(cmd, &options)
 	cmd.Flags().StringVar(&toGeneration, "to", "", "Identity of the generation to return to (required)")
 	cmd.Flags().DurationVar(&window, "window", 0,
 		"How long after a cutover the previous generation stays eligible; zero for no limit")
+	addEvidenceFlags(cmd.Flags(), &evidence)
+	addSubjectFlag(cmd, &evidence)
 	return cmd
 }
 
 // runRollback evaluates eligibility and moves the pointer.
 func runRollback(
-	ctx context.Context, out io.Writer, options commonOptions, toGeneration string, window time.Duration,
+	ctx context.Context, out io.Writer, options commonOptions,
+	toGeneration string, window time.Duration, evidence evidenceOptions,
 ) error {
 	if toGeneration == "" {
 		return fmt.Errorf("--to is required")
@@ -389,14 +536,40 @@ func runRollback(
 		return refusal(out, "rollback refused", eligibility.Blockers)
 	}
 
+	now := time.Now().UTC()
 	if err := opened.store.MovePointer(ctx, embedstore.Pointer{
 		TargetTable: table, Active: toGeneration, Previous: pointer.Active,
-		CutOverAt: time.Now().UTC(), CutOverBy: "ptah-cli",
+		CutOverAt: now, CutOverBy: "ptah-cli",
 	}, pointer.Active); err != nil {
 		return err
 	}
-	return writeLines(out, fmt.Sprintf("queries now read %s, which replaced %s",
-		toGeneration, pointer.Active))
+	if err := writeLines(out, fmt.Sprintf("queries now read %s, which replaced %s",
+		toGeneration, pointer.Active)); err != nil {
+		return err
+	}
+	return publishRollback(ctx, out, options, embedrelease.Rollback{
+		Generation: toGeneration, Replaced: pointer.Active,
+		Target:     opened.loaded.Spec.Target.Table,
+		Maintained: state.Maintained, VerifiedAt: state.VerifiedAt,
+		StaleRows: state.StaleRows, MissingRows: state.MissingRows,
+		Expires: eligibility.Expires, RolledBackAt: now,
+	}, evidence)
+}
+
+// publishRollback records what was undone, where a destination was named.
+//
+// After the pointer has moved, and reported rather than fatal for the reason
+// every other record here is: the rollback happened, and a registry being
+// unreachable is not a fact about it.
+func publishRollback(
+	ctx context.Context, out io.Writer, options commonOptions,
+	rollback embedrelease.Rollback, evidence evidenceOptions,
+) error {
+	if !evidence.destinationNamed() {
+		return nil
+	}
+	record, buildErr := embedrelease.NewRollbackRecord(rollback)
+	return publishRecord(ctx, out, options, evidence, record, buildErr)
 }
 
 // rollbackPolicy is what a previous generation has to satisfy to be one you can

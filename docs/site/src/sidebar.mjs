@@ -107,11 +107,13 @@ export const sidebar = [
         label: 'Guides',
         items: [
           { slug: 'inference/guides/create-first-generation' },
+          { slug: 'inference/guides/configure-a-provider' },
           { slug: 'inference/guides/migrate-to-another-model' },
           { slug: 'inference/guides/migrate-a-live-table' },
           { slug: 'inference/guides/migrate-a-paused-source' },
           { slug: 'inference/guides/resume-and-recover' },
           { slug: 'inference/guides/rollback-and-retire' },
+          { slug: 'inference/guides/run-in-kubernetes' },
         ],
       },
       {

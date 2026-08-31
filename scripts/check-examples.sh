@@ -60,4 +60,10 @@ grep -qF 'SQLAlchemy==2.0.50' examples/orm-loaders/sqlalchemy/requirements.txt
 	env GOCACHE="$example_gocache" GOWORK=off go test -mod=readonly ./...
 )
 
-echo 'check-examples: OK (4 executed examples, viz artifacts, and 2 provider fixtures)'
+# The Kubernetes manifests need a cluster, so what is checked here is that every
+# `ptah` argv in them names a verb this build registers and flags that verb
+# accepts. That is the drift that actually happens: a flag renamed in the code
+# and an example still naming the old spelling.
+run_go test ./cmd/inference -run TestKubernetesExample -count=1
+
+echo 'check-examples: OK (4 executed examples, viz artifacts, Kubernetes manifests, and 2 provider fixtures)'

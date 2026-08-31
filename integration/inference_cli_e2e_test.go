@@ -22,6 +22,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/root"
 	"go.5x5.cz/ptah/internal/dbtarget"
+	"go.5x5.cz/ptah/internal/embedrelease"
 )
 
 // TestInferenceCLIE2E drives the whole lifecycle through the command line.
@@ -67,6 +68,7 @@ func TestInferenceCLIE2E(t *testing.T) {
 	assertCatchUpProcessesWhatChanged(c, ctx, db, specPath, dbName)
 	assertVerifyPasses(c, ctx, specPath, dbName)
 	assertStatusReportsTheRun(c, ctx, specPath, dbName)
+	assertStatusAnswersARolloutGate(c, ctx, specPath, dbName)
 	assertPauseStopsTheRunAndSaysWhy(c, ctx, specPath, dbName)
 	assertResumeReturnsItToRunning(c, ctx, specPath, dbName)
 	assertCutoverBindsToItsPlan(c, ctx, specPath, dbName)
@@ -146,6 +148,55 @@ func TestInferenceCLIRollbackE2E(t *testing.T) {
 	assertADriftedGenerationIsNotAWayBack(c, ctx, db, specPath, dbName, generation)
 	assertASkipIsNotAGapAndAGapIsNotASkip(c, ctx, db, specPath, dbName, generation)
 	assertMaintainingAGenerationKeepsItAWayBack(c, ctx, db, specPath, dbName, generation)
+	assertRetirementRecordsWhatItDestroyed(c, ctx, db, specPath, dbName)
+}
+
+// assertRetirementRecordsWhatItDestroyed is the one record whose subject cannot
+// be inspected afterwards.
+//
+// Every other record here describes something still in the database. This
+// describes an absence, so it names the objects that went rather than counting
+// them -- and it is asserted last, because what it does cannot be undone.
+func assertRetirementRecordsWhatItDestroyed(
+	c *qt.C, ctx context.Context, db *sql.DB, specPath, dbURL string,
+) {
+	c.Helper()
+	// A generation nothing points at: registered, never built, and safe to
+	// destroy because there is nothing behind it to lose.
+	registerBareGeneration(c, ctx, db, "a-retirable-one")
+	path := filepath.Join(c.TempDir(), "retirement.json")
+
+	digest := retirementDigestOf(c, ctx, specPath, dbURL, "a-retirable-one")
+	output := runInference(c, ctx, "retire",
+		"--spec", specPath, "--db-url", dbURL, "--generation", "a-retirable-one",
+		"--approve", digest, "--approver", "an operator",
+		"--drop-column=false", "--evidence-file", path)
+	c.Assert(output, qt.Contains, "is gone")
+
+	body, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
+	var record embedrelease.Retirement
+	c.Assert(json.Unmarshal(body, &record), qt.IsNil)
+	c.Assert(record.Generation, qt.Equals, "a-retirable-one")
+	c.Assert(record.Approver, qt.Equals, "an operator")
+	// Named rather than counted. The column survived this run, and "one object"
+	// would not say which.
+	c.Assert(record.Objects, qt.HasLen, 1)
+	c.Assert(record.Objects[0], qt.Contains, "index over")
+	c.Assert(record.PlanDigest, qt.HasLen, 64)
+	c.Assert(record.RetiredAt.IsZero(), qt.IsFalse)
+}
+
+// retirementDigestOf runs a refused retirement to read its plan digest.
+func retirementDigestOf(
+	c *qt.C, ctx context.Context, specPath, dbURL, generation string,
+) string {
+	c.Helper()
+	refused, err := runInferenceExpectingFailure(c, ctx, "retire",
+		"--spec", specPath, "--db-url", dbURL, "--generation", generation,
+		"--drop-column=false")
+	c.Assert(err, qt.IsNotNil)
+	return planDigestFrom(c, refused)
 }
 
 // assertMaintainingAGenerationKeepsItAWayBack is what makes a stabilization
@@ -416,12 +467,28 @@ func assertRollbackMovesThePointerBack(
 ) {
 	c.Helper()
 
+	path := filepath.Join(c.TempDir(), "rollback.json")
 	output := runInference(c, ctx, "rollback",
-		"--spec", specPath, "--db-url", dbURL, "--to", generation, "--window", "24h")
+		"--spec", specPath, "--db-url", dbURL, "--to", generation, "--window", "24h",
+		"--evidence-file", path)
 
 	c.Assert(output, qt.Contains, "queries now read "+generation)
 	c.Assert(output, qt.Contains, "which replaced the-newer-one")
 	c.Assert(activeGenerationFrom(c, ctx, specPath, dbURL), qt.Equals, generation)
+
+	// And a record of what was undone, which is a different question from why
+	// the corpus changed: a reader looking for it in a list of cutovers finds a
+	// pointer move with nothing attached to it.
+	body, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
+	var record embedrelease.Rollback
+	c.Assert(json.Unmarshal(body, &record), qt.IsNil)
+	c.Assert(record.Generation, qt.Equals, generation)
+	c.Assert(record.Replaced, qt.Equals, "the-newer-one")
+	// What made going back possible, rather than only that it happened.
+	c.Assert(record.Maintained, qt.IsTrue)
+	c.Assert(record.Expires.IsZero(), qt.IsFalse)
+	c.Assert(record.RolledBackAt.IsZero(), qt.IsFalse)
 }
 
 // planDigestOf runs a cutover without an approval to read the plan's digest.
@@ -843,6 +910,35 @@ func assertCutoverIsRefusedBeforeCatchUp(c *qt.C, ctx context.Context, specPath,
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(output, qt.Contains, "cutover refused")
 	c.Assert(output, qt.Contains, "the source is mutable and the run declared no consistency mode")
+
+	// The gate says the same thing, at the same moment, in the form a rollout
+	// system reads. This is the half that makes the later "ready" assertion
+	// mean something: a readiness that answered true unconditionally would
+	// satisfy that one and this is where it reddens.
+	body := runInference(c, ctx, "status",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID, "--format", "json")
+	var document struct {
+		Readiness struct {
+			CutoverReady bool     `json:"cutover_ready"`
+			Blockers     []string `json:"blockers"`
+		} `json:"readiness"`
+	}
+	c.Assert(json.Unmarshal([]byte(body), &document), qt.IsNil, qt.Commentf("%s", body))
+	c.Assert(document.Readiness.CutoverReady, qt.IsFalse)
+	c.Assert(document.Readiness.Blockers, qt.Contains,
+		"the source is mutable and the run declared no consistency mode")
+
+	// And as the refusal a gate waits on. An init container that keeps failing
+	// is the whole of a rollout gate, so this is the interface rather than the
+	// JSON for anyone who is not parsing it. The exit CODE is asserted from a
+	// process, in TestInferenceRolloutGateE2E: a command run in this process
+	// returns an error and never a status.
+	gate, gateErr := runInferenceExpectingFailure(c, ctx, "status",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID, "--require-ready")
+	c.Assert(gateErr, qt.ErrorMatches, `the generation is not ready: verified=.*, cutover ready=false`)
+	// The report is still on stdout. A gate that failed silently leaves whoever
+	// reads the pod's logs with a number and nothing else.
+	c.Assert(gate, qt.Contains, "cutover ready: false")
 }
 
 // assertCatchUpProcessesWhatChanged changes the source and catches up.
@@ -894,6 +990,70 @@ func assertStatusReportsTheRun(c *qt.C, ctx context.Context, specPath, dbURL str
 	c.Assert(output, qt.Contains, "scanned 6, embedded 5, skipped 0, deleted 1")
 	c.Assert(output, qt.Contains, "snapshot boundary: ")
 	c.Assert(output, qt.Contains, "catch-up watermark: ")
+}
+
+// assertStatusAnswersARolloutGate is what a deployment waits on.
+//
+// A new model's deployment must not start until the persistent state it will
+// read has been built and measured, and the two conditions it waits for are
+// these. This asserts them at the point in the lifecycle where they first
+// become true: the corpus is embedded, caught up and verified, and the only
+// thing left is somebody signing for it.
+//
+// The approval is reported separately from readiness on purpose. Under
+// `require_exact_approval`, which this specification sets, folding it into
+// `cutover_ready` would leave a gate waiting forever on a state that is
+// finished.
+func assertStatusAnswersARolloutGate(c *qt.C, ctx context.Context, specPath, dbURL string) {
+	c.Helper()
+
+	body := runInference(c, ctx, "status",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID, "--format", "json")
+
+	var document struct {
+		Run struct {
+			RunID string `json:"run_id"`
+			Phase string `json:"phase"`
+		} `json:"run"`
+		Readiness struct {
+			Verified         bool     `json:"verified"`
+			CutoverReady     bool     `json:"cutover_ready"`
+			ApprovalRequired bool     `json:"approval_required"`
+			PlanDigest       string   `json:"plan_digest"`
+			Blockers         []string `json:"blockers"`
+			SourceRows       int      `json:"source_rows"`
+			TargetRows       int      `json:"target_rows"`
+			MeasuredAt       string   `json:"measured_at"`
+		} `json:"readiness"`
+	}
+	c.Assert(json.Unmarshal([]byte(body), &document), qt.IsNil, qt.Commentf("%s", body))
+
+	c.Assert(document.Run.RunID, qt.Equals, cliRunID)
+	c.Assert(document.Readiness.Verified, qt.IsTrue)
+	c.Assert(document.Readiness.CutoverReady, qt.IsTrue,
+		qt.Commentf("blocked by %v", document.Readiness.Blockers))
+	c.Assert(document.Readiness.Blockers, qt.HasLen, 0)
+	// Owed, and named, so the gate can tell "not finished" from "waiting for a
+	// person" -- and so whoever that person is knows what to approve.
+	c.Assert(document.Readiness.ApprovalRequired, qt.IsTrue)
+	c.Assert(document.Readiness.PlanDigest, qt.HasLen, 64)
+	// Measured rather than remembered: the counts are this run's, taken now.
+	c.Assert(document.Readiness.SourceRows, qt.Equals, 3)
+	c.Assert(document.Readiness.TargetRows, qt.Equals, 3)
+	c.Assert(document.Readiness.MeasuredAt, qt.Not(qt.Equals), "")
+
+	// And the digest the gate reports is the one the cutover verb accepts,
+	// which is the whole point of the two sharing a decision. A gate agreeing
+	// with the verb by coincidence is one that will eventually let a deployment
+	// proceed against a generation the cutover then refuses.
+	c.Assert(document.Readiness.PlanDigest, qt.Contains, planDigestOf(c, ctx, specPath, dbURL))
+
+	// And the gate opens, which is the assertion the refused one before
+	// catch-up exists to give meaning to: a --require-ready that always
+	// succeeded would pass here and redden there.
+	gate := runInference(c, ctx, "status",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID, "--require-ready")
+	c.Assert(gate, qt.Contains, "verified: true, cutover ready: true")
 }
 
 // assertPauseStopsTheRunAndSaysWhy is stokaro/ptah#2474: the run status had a
@@ -1002,11 +1162,17 @@ func assertCutoverBindsToItsPlan(c *qt.C, ctx context.Context, specPath, dbURL s
 }
 
 // planDigestFrom reads the short plan digest a refusal printed.
+//
+// The first field after the word rather than the rest of the line: a cutover
+// prints the digest alone and a retirement prints it with the row count beside
+// it, and a helper that took the whole remainder handed the second one a string
+// no approval could ever match -- while the refusal rendered both to the same
+// twelve characters and read as though they agreed.
 func planDigestFrom(c *qt.C, output string) string {
 	c.Helper()
 	for line := range strings.SplitSeq(output, "\n") {
 		if after, found := strings.CutPrefix(line, "plan "); found {
-			return strings.TrimSpace(after)
+			return strings.Fields(after)[0]
 		}
 	}
 	c.Fatalf("no plan digest in:\n%s", output)

@@ -30,11 +30,18 @@ owns:
   - cli-ptah-inference-retire
 ---
 
-Fourteen verbs. Each is a decision taken separately: none of them is implied by
+Fifteen verbs. Each is a decision taken separately: none of them is implied by
 another.
 
-Every verb takes `--spec` and `--db-url`. Most take `--run-id`, which is an
-identifier you choose and which is how a resumed run finds its checkpoint.
+Every verb takes `--spec` or `--release`, and most take `--db-url` and
+`--run-id` — an identifier you choose, and how a resumed run finds its
+checkpoint.
+
+`--release` names a published release instead of a file. The release carries the
+specification it was built from, so an environment that has never seen the file
+runs the same document; what a mutable reference resolved to is printed on
+standard error. An `oci-layout://` directory is accepted on the same flag, which
+is what an air-gapped environment has instead of a registry.
 
 ## `describe`
 
@@ -74,6 +81,50 @@ ptah inference describe --spec spec.yaml --format json |
 
 Two digests that differ mean the edit changed the corpus, and every vector will
 have to be computed again.
+
+## `probe`
+
+Asks the embedding provider what it answers, and sends nothing from your
+database. **The second verb that opens no connection**, so it runs in CI beside
+`describe`.
+
+| Flag | Meaning |
+| --- | --- |
+| `--format` | `text` or `json` |
+| `--provider-timeout` | How long one provider request may take |
+
+Every fact a plan states about a provider is configured rather than measured:
+the model identifier and the output dimension are what somebody typed. Until
+this verb, the first thing that checked them was the backfill — which had
+already sent source rows to the endpoint by the time it found the width was
+wrong.
+
+What it establishes: the endpoint answers, it accepts the credential the
+specification points at, the model answers an embedding request, one input comes
+back as one usable vector of finite values, the width is the one the
+specification declares, a batch is answered for every input, a canceled request
+stops, and a refusal arrives as an error the engine can act on.
+
+```console
+$ ptah inference probe --spec spec.yaml
+text-embedding-3-small at api.openai.com, declared hosted
+  - ok   reachable: the endpoint at api.openai.com answered
+  - ok   authorized: the credential from env:OPENAI_API_KEY was accepted
+  - ok   embeds: model text-embedding-3-small answered an embedding request
+  - ok   shape: one vector of 1536 finite values for one input
+  - ok   dimension: 1536 dimensions, as declared
+  - ok   batch: 2 inputs answered with 2 vectors
+  - ok   cancellation: a canceled request stopped rather than answering
+  - ok   error shape: a refused request arrived as a classified error the engine can act on
+```
+
+It returns 1 when a check fails, so a pipeline can gate on it. Two fixed strings
+go out and no vector comes back into the report, which is what lets it be run —
+and its output pasted into an issue — before anybody has decided to send a
+corpus anywhere.
+
+What it cannot establish is whether the provider retains what you send it. That
+is outside Ptah's knowledge and nothing here claims otherwise.
 
 ## `plan`
 
@@ -255,6 +306,24 @@ phase, the progress counts, the watermarks, the lease and its fencing token, and
 why it stopped if it did — the reason for a pause, the class and detail for a
 failure.
 
+| Flag | Meaning |
+| --- | --- |
+| `--format` | `text` or `json` |
+| `--require-ready` | Return 1 unless the generation is verified and ready to cut over |
+
+Two of its answers are measured rather than read off the run. `verified` runs
+the deterministic layers now, and `cutover ready` decides with the same code the
+cutover verb decides with. Both cost what `verify` costs, which is a read of the
+target.
+
+Cutover readiness excludes the approval, which is reported separately with the
+plan digest to approve. An approval nobody has given yet is not a defect in the
+state, and a rollout gate waiting for one would wait forever under the policy
+most production environments run.
+
+`--require-ready` is the gate: exit 1 until both conditions hold, exit 0 when
+they do. See [Run in Kubernetes](../../guides/run-in-kubernetes/).
+
 ## `cutover`
 
 Makes the new generation the one queries read.
@@ -263,6 +332,10 @@ Makes the new generation the one queries read.
 | --- | --- |
 | `--approve` | Plan digest this cutover is approved for; run without it to see the digest |
 | `--approver` | Who approved it |
+| `--plan-file` | Path to write the refused plan to, so it can be signed |
+| `--approval` | Path to a plan file signed with `ptah schema approve` |
+| `--allowed-signers` | OpenSSH allowed_signers file listing approvers |
+| `--signer` | Require the approval to belong to this principal |
 | `--stabilize-for` | How long the previous generation stays a way back; zero leaves no rollback |
 | `--publish-evidence` | OCI reference to publish this run's record to |
 | `--attach-to` | OCI reference of the release this record is about |
@@ -272,6 +345,30 @@ Makes the new generation the one queries read.
 The approval binds to the plan digest. What is true now — the pointer, the
 freshness, the findings — is checked again at the moment of the cutover.
 
+`--approve` records the digest and `--approver` the name to put beside it. Where
+who approved something has to be evidence rather than a claim:
+
+```bash
+# Refused, and the plan is written where somebody can read it.
+ptah inference cutover --spec spec.yaml --db-url "$DB" --run-id "$RUN" \
+  --plan-file cutover.plan
+
+# Signed with the mechanism the rest of Ptah already uses.
+ptah schema approve --plan cutover.plan --key ~/.ssh/id_ed25519
+
+# The approver is the principal the signature verifies as.
+ptah inference cutover --spec spec.yaml --db-url "$DB" --run-id "$RUN" \
+  --approval cutover.plan
+```
+
+The file names the operation, the generation, what it replaces and the target,
+so the signature covers something an approver could read — a signature over
+sixty-four hex characters attests to a number nobody could have checked. Both
+halves are required: the signature says an allowed key covered these bytes, and
+the digest inside them says the bytes are about this plan.
+
+`policy.require_signed_approval: true` refuses the typed form.
+
 ## `rollback`
 
 Puts the previous generation back, while it is still a place to go back to.
@@ -279,6 +376,9 @@ Puts the previous generation back, while it is still a place to go back to.
 | Flag | Meaning |
 | --- | --- |
 | `--to` | Identity of the generation to return to (required) |
+| `--publish-evidence` | OCI reference to publish the rollback record to |
+| `--attach-to` | OCI reference of the release this record is about |
+| `--evidence-file` | Path to write the rollback record to as JSON |
 | `--window` | How long after a cutover the previous generation stays eligible; zero for no limit |
 
 Measures the generation before moving anything: present, maintained, complete,
@@ -294,8 +394,20 @@ Destroys a generation. This cannot be undone.
 | `--drop-column` | Drop the vector column as well as the index |
 | `--approve` | Plan digest this retirement is approved for |
 | `--approver` | Who approved it |
+| `--plan-file` | Path to write the refused plan to, so it can be signed |
+| `--approval` | Path to a plan file signed with `ptah schema approve` |
+| `--allowed-signers` | OpenSSH allowed_signers file listing approvers |
+| `--signer` | Require the approval to belong to this principal |
+| `--publish-evidence` | OCI reference to publish the retirement record to |
+| `--attach-to` | OCI reference of the release this record is about |
+| `--evidence-file` | Path to write the retirement record to as JSON |
 
 Refused while queries still read the generation.
+
+The approval binds to what is **destroyed** rather than to what is named:
+approving the removal of an index does not authorize the removal of the column,
+and the plan file says which, along with how many rows go with it. For an
+operation nothing can undo, `--approval` is worth the extra step.
 
 ## Environment variables
 
