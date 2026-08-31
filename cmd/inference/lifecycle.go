@@ -549,6 +549,42 @@ to it.`,
 }
 
 // runRollback evaluates eligibility and moves the pointer.
+// reachTerminalPhase advances the runs that built one generation into the
+// terminal phase the lifecycle ends them in.
+//
+// The two terminal phases had no producer at all: the transition table declares
+// `cut_over -> {retired, rolled_back}` and neither verb reached either, so a
+// generation rolled off the pointer or destroyed kept reporting `cut_over`
+// forever (stokaro/ptah#2649 finding 6). The phase was not a high-water mark
+// that stopped; it was a state the lifecycle could never enter.
+//
+// The lookup is by generation because that is what these verbs name -- neither
+// takes a --run-id -- and the run table's generation index exists for exactly
+// it, its comment saying "a run is almost always looked up by the generation it
+// builds". That index had no reader either.
+//
+// Only runs standing at `cut_over` are advanced, which is the whole set the
+// transition table permits. Nothing is skipped in silence: a run at any other
+// phase never reached the state these two follow, so there is no transition for
+// it to have missed.
+func reachTerminalPhase(
+	ctx context.Context, opened *session, generation string, to embedrun.Phase,
+) error {
+	runs, err := opened.store.RunsForGeneration(ctx, generation)
+	if err != nil {
+		return err
+	}
+	for _, run := range runs {
+		if run.Phase != embedrun.PhaseCutOver {
+			continue
+		}
+		if err := opened.store.ReachPhase(ctx, run.ID, to); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func runRollback(
 	ctx context.Context, out io.Writer, options commonOptions,
 	toGeneration string, window time.Duration, evidence evidenceOptions,
@@ -587,6 +623,11 @@ func runRollback(
 		TargetSchema: schema, TargetTable: table, Active: toGeneration, Previous: pointer.Active,
 		CutOverAt: now, CutOverBy: "ptah-cli",
 	}, pointer.Active); err != nil {
+		return err
+	}
+	// The generation left behind, not the one returned to: rolling back ends
+	// the run that put the pointer where it was.
+	if err := reachTerminalPhase(ctx, opened, pointer.Active, embedrun.PhaseRolledBack); err != nil {
 		return err
 	}
 	if err := writeLines(out, fmt.Sprintf("queries now read %s, which replaced %s",

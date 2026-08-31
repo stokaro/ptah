@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -138,6 +139,30 @@ func (m *Memory) Run(_ context.Context, id string) (embedrun.Run, error) {
 		return embedrun.Run{}, fmt.Errorf("%w: run %s", ErrNotFound, id)
 	}
 	return copyRun(run), nil
+}
+
+// RunsForGeneration reads every run that built one generation, newest first.
+//
+// The map has no order, so the sort is what makes this answer the same twice.
+// It sorts by CreatedAt descending and by ID after it, matching the SQL store:
+// a fake whose order differs from the real one lets a test pass against a
+// caller that depends on an order the product does not give it.
+func (m *Memory) RunsForGeneration(_ context.Context, identity string) ([]embedrun.Run, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	runs := make([]embedrun.Run, 0)
+	for _, run := range m.runs {
+		if run.GenerationIdentity == identity {
+			runs = append(runs, copyRun(run))
+		}
+	}
+	slices.SortFunc(runs, func(a, b embedrun.Run) int {
+		if order := b.CreatedAt.Compare(a.CreatedAt); order != 0 {
+			return order
+		}
+		return strings.Compare(a.ID, b.ID)
+	})
+	return runs, nil
 }
 
 // SaveRun writes a run's state, refusing a stale fencing token.

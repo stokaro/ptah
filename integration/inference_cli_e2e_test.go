@@ -507,8 +507,21 @@ func assertRollbackMovesThePointerBack(
 // planDigestOf runs a cutover without an approval to read the plan's digest.
 func planDigestOf(c *qt.C, ctx context.Context, specPath, dbURL string) string {
 	c.Helper()
+	return planDigestOfRun(c, ctx, specPath, dbURL, cliRunID)
+}
+
+// planDigestOfRun is the same for a run this file did not name.
+//
+// The run id was a constant here, so a caller with its own run drove a cutover
+// for a run that does not exist and got an error carrying no digest at all --
+// which reads as "the plan has no digest" rather than as "you asked about the
+// wrong run".
+func planDigestOfRun(
+	c *qt.C, ctx context.Context, specPath, dbURL, runID string,
+) string {
+	c.Helper()
 	refused, err := runInferenceExpectingFailure(c, ctx, "cutover",
-		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID)
+		"--spec", specPath, "--db-url", dbURL, "--run-id", runID)
 	c.Assert(err, qt.IsNotNil)
 	return planDigestFrom(c, refused)
 }
@@ -1213,8 +1226,17 @@ func assertRetireIsRefusedWhileQueriesReadIt(c *qt.C, ctx context.Context, specP
 // activeGenerationFrom reads which generation the cutover made active.
 func activeGenerationFrom(c *qt.C, ctx context.Context, specPath, dbURL string) string {
 	c.Helper()
+	return activeGenerationOfRun(c, ctx, specPath, dbURL, cliRunID)
+}
+
+// activeGenerationOfRun is the same for a run this file did not name. See
+// [planDigestOfRun] for why the constant had to become a parameter.
+func activeGenerationOfRun(
+	c *qt.C, ctx context.Context, specPath, dbURL, runID string,
+) string {
+	c.Helper()
 	status := runInference(c, ctx, "status",
-		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID)
+		"--spec", specPath, "--db-url", dbURL, "--run-id", runID)
 	for line := range strings.SplitSeq(status, "\n") {
 		if after, found := strings.CutPrefix(strings.TrimSpace(line), "- generation: "); found {
 			return strings.TrimSpace(after)
