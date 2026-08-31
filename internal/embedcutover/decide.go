@@ -121,6 +121,20 @@ func decideEvidence(decision *Decision, plan Plan, policy Policy) {
 	if policy.RequireConsistencyMode && evidence.SourceMutable && normalizeMode(evidence.ConsistencyMode) == "" {
 		decision.refusef("the source is mutable and the run declared no consistency mode")
 	}
+	// A mode that IS declared and has not reached its condition is a different
+	// fact, and it used to arrive here as the one above: the plan blanked the
+	// mode when the guarantee was incomplete, so a run with
+	// `consistency.mode: outbox` and one uncaught-up change was told to
+	// configure a mode it had configured. `verify` got the same state right on
+	// the same run, so the two surfaces disagreed (stokaro/ptah#2646).
+	//
+	// The reasons are the guarantee's own, carried rather than restated: the
+	// barrier knows whether the backfill is short of its snapshot or the
+	// catch-up is short of the barrier, and a sentence written here could only
+	// guess between them.
+	for _, blocker := range evidence.ConsistencyBlockers {
+		decision.refusef("%s", blocker)
+	}
 }
 
 // decideDrift answers whether the world still matches the evidence.

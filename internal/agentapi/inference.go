@@ -109,7 +109,10 @@ func (s *Session) InferenceStatus(
 	}
 	defer func() { _ = db.Close() }()
 
-	status, err := embedreport.ReadStatus(ctx, embedpg.NewStore(db), req.RunID)
+	// No mode: this request takes a run id and a target, not a specification,
+	// so the watermark renders without a reason for its absence rather than
+	// with an invented one (stokaro/ptah#2646).
+	status, err := embedreport.ReadStatus(ctx, embedpg.NewStore(db), req.RunID, "")
 	if err != nil {
 		return nil, agentdiag.Errorf(agentdiag.CodeDatabaseReadFailed, "read the run: %w", err)
 	}

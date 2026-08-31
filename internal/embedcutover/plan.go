@@ -34,9 +34,23 @@ type Evidence struct {
 	// by summary. An acceptance names what was accepted; "verification was
 	// overridden" is not a record of anything.
 	AcceptedFindings []string
-	// ConsistencyMode is the mode the run proved its completion condition
-	// under, empty when the run declared none.
+	// ConsistencyMode is the mode the specification declares, empty when it
+	// declares none.
+	//
+	// It says what was ASKED FOR and not whether it was reached. Those were one
+	// field: a plan blanked the mode when the guarantee was incomplete, and the
+	// refusal that reads it then told an operator with `consistency.mode:
+	// outbox` that their run "declared no consistency mode"
+	// (stokaro/ptah#2646).
 	ConsistencyMode string
+	// ConsistencyBlockers are the reasons that mode has not reached its
+	// completion condition, empty when it has.
+	//
+	// Carried from the barrier rather than derived here. Whether a backfill is
+	// short of its snapshot or a catch-up is short of the barrier is a
+	// measurement, and a decision layer restating it would be guessing between
+	// two answers it does not have.
+	ConsistencyBlockers []string
 	// ConsistencyWatermark is how far that proof reached.
 	ConsistencyWatermark string
 	// IndexReady reports whether the required index exists, is valid and is
@@ -94,12 +108,25 @@ func (p Plan) digestComponents() []string {
 		"evidence.source_mutable", strconv.FormatBool(p.Evidence.SourceMutable),
 		"prepared_at", p.PreparedAt.UTC().Format(time.RFC3339Nano),
 	}
-	// No count precedes the list, because it is the last group: with
-	// length-prefixed components and nothing following it, the sequence is
-	// already unambiguous and a count would be a second rule saying what the
-	// first one says. Where two variable-length lists sit next to each other
-	// -- as they do in a generation identity -- the count is load-bearing and
-	// is written.
+	// Two variable-length lists now sit next to each other, and neither carries
+	// a count -- because the LABEL between them is the boundary. Components are
+	// length-prefixed, so a blocker reading "evidence.accepted_findings" cannot
+	// be mistaken for the label that follows it.
+	//
+	// A count was written here first and no fixture could tell it from this,
+	// which is the sign it was doing nothing.
+	// TestPlanDigest_TheTwoVariableListsCannotBeConfused is what establishes
+	// the property the count appeared to provide: a plan blocked by a sentence
+	// and one accepting that same sentence digest differently.
+	//
+	// Where two such lists sit next to each other with NO label between them --
+	// as they do in a generation identity -- a count is load-bearing and is
+	// written.
+	blockers := append([]string(nil), p.Evidence.ConsistencyBlockers...)
+	sort.Strings(blockers)
+	components = append(components, "evidence.consistency_blockers")
+	components = append(components, blockers...)
+
 	components = append(components, "evidence.accepted_findings")
 	components = append(components, accepted...)
 	return components
@@ -109,7 +136,14 @@ func (p Plan) digestComponents() []string {
 //
 // It is in the digest so that a future change to what a plan binds cannot make
 // a new plan collide with an old approval.
-const PlanVersion = 1
+//
+// It moved to 2 when the plan started binding the consistency blockers
+// (stokaro/ptah#2646). Every approval given under version 1 stops matching,
+// which is the intended outcome: those plans were built by a layer that blanked
+// the consistency mode when the guarantee was incomplete, so an approval given
+// for one cannot be honored by a build that now distinguishes "no mode
+// declared" from "the declared mode has not caught up".
+const PlanVersion = 2
 
 // Short is the plan digest a person quotes in an approval.
 func (p Plan) Short() string {

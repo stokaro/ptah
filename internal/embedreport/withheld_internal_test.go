@@ -11,6 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/internal/embedcatchup"
 	"go.5x5.cz/ptah/internal/embedrun"
 )
 
@@ -110,7 +111,7 @@ func TestStatusOf_EveryReportedFieldIsActuallyFilled(t *testing.T) {
 		CreatedAt: time.Unix(1600000000, 0).UTC(), UpdatedAt: time.Unix(1700000001, 0).UTC(),
 	}
 
-	status := reflect.ValueOf(StatusOf(run))
+	status := reflect.ValueOf(StatusOf(run, embedcatchup.ModeOutbox))
 	for index := range status.NumField() {
 		field := status.Type().Field(index)
 		c.Assert(status.Field(index).IsZero(), qt.IsFalse,

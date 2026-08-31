@@ -180,7 +180,8 @@ func runCatchUp(ctx context.Context, out io.Writer, options executeOptions) erro
 	// "0 changed rows", could never appear on any run whose backfill scanned
 	// anything (stokaro/ptah#2645).
 	lines := []string{fmt.Sprintf("caught up to transaction %s: %d changed rows, %d tombstoned",
-		boundaryText(run.CatchUpWatermark), pass.RowsScanned, pass.RowsDeleted)}
+		boundaryText(run.CatchUpWatermark, opened.loaded.Mode),
+		pass.RowsScanned, pass.RowsDeleted)}
 	return extendMaintenance(ctx, out, opened, run.GenerationIdentity, options.maintainFor, lines)
 }
 

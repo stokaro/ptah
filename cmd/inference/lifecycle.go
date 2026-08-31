@@ -188,7 +188,7 @@ func createRun(
 		}
 		return writeLines(out,
 			fmt.Sprintf("prepared run %s for generation %s", runID, spec.Identity().Short()),
-			bullet("snapshot boundary: "+boundaryText(boundary)))
+			bullet("snapshot boundary: "+boundaryText(boundary, opened.loaded.Mode)))
 	case isConflict(err):
 		// A restarted prepare finds its own run. Saying so beats failing, and
 		// beats overwriting a run that may be halfway through a backfill.
@@ -199,9 +199,13 @@ func createRun(
 	}
 }
 
-// boundaryText renders the recorded boundary, or says there is none.
-func boundaryText(boundary string) string {
-	return embedreport.BoundaryText(boundary)
+// boundaryText renders the recorded boundary, or says why there is none.
+//
+// The mode travels with it: an absent watermark is "catch-up has not run yet"
+// under an outbox and "this mode records none" under the other two
+// (stokaro/ptah#2646).
+func boundaryText(boundary string, mode embedcatchup.Mode) string {
+	return embedreport.BoundaryText(boundary, mode)
 }
 
 // isConflict reports whether an error is the store refusing a duplicate.
@@ -368,7 +372,7 @@ func runStatus(ctx context.Context, out io.Writer, options statusOptions) error 
 	}
 	defer opened.close()
 
-	status, err := embedreport.ReadStatus(ctx, opened.store, options.runID)
+	status, err := embedreport.ReadStatus(ctx, opened.store, options.runID, opened.loaded.Mode)
 	if err != nil {
 		return err
 	}
