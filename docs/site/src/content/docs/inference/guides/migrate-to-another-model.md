@@ -94,11 +94,18 @@ for your data.
 
 ```bash
 ptah inference evaluate --spec spec-v2.yaml --db-url "$DB" \
-  --corpus corpus.yaml --baseline <previous-generation> \
+  --corpus corpus.yaml \
+  --baseline <previous-generation> --baseline-spec spec-v1.yaml \
   --max-ndcg-regression 0.02
 ```
 
-With `--baseline`, the evaluation compares the two generations over the same
+`--baseline-spec` is the previous generation's own specification file, and it is
+required with `--baseline`. Scoring a generation embeds every query with **its**
+model and searches **its** column; a generation identity carries neither, so the
+identity alone names the comparison and the file is what makes it. Ptah refuses
+`--baseline` without it, and refuses a file whose identity is not the one named.
+
+With both, the evaluation compares the two generations over the same
 questions and refuses when the new one is worse by more than you allowed. The
 numbers it reports carry the query parameters they were taken under, because
 recall measured at one `ivfflat.probes` setting is not comparable to recall

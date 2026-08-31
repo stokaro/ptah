@@ -33,7 +33,8 @@ the command rather than in a judgment call at 2am:
 
 ```bash
 ptah inference evaluate --spec spec-v2.yaml --db-url "$DB" \
-  --corpus corpus.yaml --baseline <previous-generation> \
+  --corpus corpus.yaml \
+  --baseline <previous-generation> --baseline-spec spec-v1.yaml \
   --max-ndcg-regression 0.02 --min-recall 0.9 --require-every-case
 ```
 
@@ -59,7 +60,8 @@ ptah inference index    --spec spec-v2.yaml --db-url "$DB" --run-id "$RUN"
 ptah inference verify   --spec spec-v2.yaml --db-url "$DB" --run-id "$RUN" \
   --attach-to oci://registry.example.com/search-evidence:release
 ptah inference evaluate --spec spec-v2.yaml --db-url "$DB" \
-  --corpus corpus.yaml --baseline <previous> --max-ndcg-regression 0.02
+  --corpus corpus.yaml --baseline <previous> --baseline-spec spec-v1.yaml \
+  --max-ndcg-regression 0.02
 
 # 3. Drain the last changes immediately before cutting over.
 ptah inference catchup  --spec spec-v2.yaml --db-url "$DB" --run-id "$RUN"

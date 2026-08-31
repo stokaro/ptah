@@ -64,6 +64,99 @@ func TestInferenceEvaluateE2E(t *testing.T) {
 	assertAnotherGenerationsRowsAreNotAnswers(c, ctx, db, specPath, dbName)
 	assertTheMetricDecidesTheOrder(c, ctx, adminDB, dbURL, endpoint.URL)
 	assertAnApproximateIndexIsComparedAgainstExactSearch(c, ctx, adminDB, dbURL, endpoint.URL)
+	assertABaselineIsMeasuredAndGates(c, ctx, db, specPath, dbName, endpoint.URL)
+}
+
+// assertABaselineIsMeasuredAndGates is stokaro/ptah#2640.
+//
+// `--baseline` was bound to a field nothing read: `evaluateCorpus` handed
+// `Evaluate` a literal empty baseline, the report short-circuited on
+// `Baseline.Cases == 0`, and both regression gates were unreachable. Measured on
+// the shipped binary, `--max-ndcg-regression 0` — the strictest allowance there
+// is — refused nothing, and the string `not-a-generation-at-all` was accepted at
+// exit 0.
+//
+// The comparison is now a second measurement of the same corpus against the
+// previous generation, driven by that generation's OWN specification: scoring a
+// generation embeds each query with its model and searches its column, and a
+// generation identity carries neither.
+func assertABaselineIsMeasuredAndGates(
+	c *qt.C, ctx context.Context, db *sql.DB, specPath, dbURL, endpoint string,
+) {
+	c.Helper()
+	// A second generation over the same rows, differing in its column so the
+	// two can coexist, and backfilled through the same fake provider — so the
+	// two generations answer the corpus identically and the regression is zero.
+	previous := writeCLISpecWithMetric(c, endpoint, "cosine", "embedding_prev")
+	runInference(c, ctx, "prepare",
+		"--spec", previous, "--db-url", dbURL, "--run-id", "eval-baseline")
+	runInference(c, ctx, "backfill",
+		"--spec", previous, "--db-url", dbURL, "--run-id", "eval-baseline", "--batch-rows", "10")
+
+	corpus := writeCorpus(c, `
+version: 1
+name: baseline
+default_k: 3
+cases:
+  - id: pricing
+    query: pricing
+    required: ["1"]
+    relevant: {"1": 3}
+`)
+	identity := generationIdentityOf(c, ctx, previous, dbURL)
+
+	output := runInference(c, ctx, "evaluate",
+		"--spec", specPath, "--db-url", dbURL, "--corpus", corpus,
+		"--baseline", identity, "--baseline-spec", previous,
+		"--max-ndcg-regression", "0", "--max-mrr-regression", "0")
+
+	// The report no longer says the comparison was not measured, which is the
+	// sentence the defect printed for every run.
+	c.Assert(output, qt.Not(qt.Contains), "no baseline was measured for it")
+	// The generations are equivalent here, so the strictest allowance passes.
+	c.Assert(output, qt.Not(qt.Contains), "regression")
+
+	assertABaselineThatIsNotTheGenerationNamedIsRefused(c, ctx, specPath, dbURL, corpus, previous)
+	assertHalfAComparisonIsRefused(c, ctx, specPath, dbURL, corpus, identity)
+}
+
+// assertABaselineThatIsNotTheGenerationNamedIsRefused is the validation the
+// flag never had: a nonsense identity was accepted at exit 0.
+func assertABaselineThatIsNotTheGenerationNamedIsRefused(
+	c *qt.C, ctx context.Context, specPath, dbURL, corpus, previous string,
+) {
+	c.Helper()
+	_, err := runInferenceExpectingFailure(c, ctx, "evaluate",
+		"--spec", specPath, "--db-url", dbURL, "--corpus", corpus,
+		"--baseline", "not-a-generation-at-all", "--baseline-spec", previous)
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*--baseline names generation .*`)
+}
+
+// assertHalfAComparisonIsRefused keeps a request nobody can answer from being
+// answered with silence.
+func assertHalfAComparisonIsRefused(
+	c *qt.C, ctx context.Context, specPath, dbURL, corpus, identity string,
+) {
+	c.Helper()
+	_, err := runInferenceExpectingFailure(c, ctx, "evaluate",
+		"--spec", specPath, "--db-url", dbURL, "--corpus", corpus,
+		"--baseline", identity, "--max-ndcg-regression", "0")
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*--baseline-spec is how it gets measured.*`)
+}
+
+// generationIdentityOf reads a specification's generation identity through the
+// verb that prints it, rather than recomputing it here.
+func generationIdentityOf(c *qt.C, ctx context.Context, specPath, dbURL string) string {
+	c.Helper()
+	output := runInference(c, ctx, "describe", "--spec", specPath, "--format", "json")
+	var described struct {
+		Generation string `json:"generation"`
+	}
+	c.Assert(json.Unmarshal([]byte(output), &described), qt.IsNil, qt.Commentf("%s", output))
+	c.Assert(described.Generation, qt.HasLen, 64)
+	return described.Generation
 }
 
 // seedEvaluationArticles writes documents whose topics a search can separate.

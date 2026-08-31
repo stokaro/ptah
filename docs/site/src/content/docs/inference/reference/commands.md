@@ -241,7 +241,8 @@ and expected answers that you write.
 | Flag | Meaning |
 | --- | --- |
 | `--corpus` | Path to the evaluation corpus (required) |
-| `--baseline` | Identity of the generation to compare against |
+| `--baseline` | Identity of the generation to compare against; needs `--baseline-spec` |
+| `--baseline-spec` | That generation's own specification, which is what measures it |
 | `--k` | How deep to look when neither the case nor the corpus says |
 | `--min-recall` | Refuse below this recall; zero gates nothing and reports the number |
 | `--max-mrr-regression` | Refuse when MRR falls further than this below the baseline |

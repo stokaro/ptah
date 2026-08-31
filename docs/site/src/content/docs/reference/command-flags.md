@@ -286,6 +286,7 @@ Read the columns as follows.
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--baseline` | `string` | — | `PTAH_BASELINE` | — |
+| `--baseline-spec` | `string` | — | `PTAH_BASELINE_SPEC` | — |
 | `--corpus` | `string` | — | `PTAH_CORPUS` | — |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--k` | `int` | `10` | `PTAH_K` | — |
