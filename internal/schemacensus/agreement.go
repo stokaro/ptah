@@ -80,24 +80,17 @@ type SurfaceDifference struct {
 func SurfaceDifferences() []SurfaceDifference {
 	return []SurfaceDifference{
 		{
-			Field: "schemamodel.Database.Schemas", RenderOnly: true,
-			Reason: "the plan derives the schemas it creates from the tables that name one, so a schema declaration carries nothing of its own into a plan",
-		},
-		{
-			Field: "schemamodel.Schema.Name", RenderOnly: true,
-			Reason: "the same derivation: the plan reads the name off the table's qualifier",
-		},
-		{
-			Field: "schemamodel.Schema.Comment", RenderOnly: true,
-			Reason: "measured on PostgreSQL: `ptah schema render` emits COMMENT ON SCHEMA and the plan does not, while both emit COMMENT ON TABLE and COMMENT ON COLUMN (stokaro/ptah#2618)",
-		},
-		{
 			Field: "schemamodel.Schema.Charset", RenderOnly: true,
-			Reason: "the MySQL half of the same loss: a plan creates the schema without the character set it was declared with (stokaro/ptah#2618)",
+			Reason: "only the MySQL-family renderer writes DEFAULT CHARACTER SET, " +
+				"and a plan creates no schema on those dialects at all: a schema there IS " +
+				"a database, so `internal/planner/dialects/mysql.planSchemaPreconditions` " +
+				"runs on SQL Server alone and creating one is an administrative act " +
+				"outside what a schema migration owns. The field reaches every " +
+				"CREATE SCHEMA a plan does emit (stokaro/ptah#2618)",
 		},
 		{
 			Field: "schemamodel.Schema.Collate", RenderOnly: true,
-			Reason: "the collation half of the same loss (stokaro/ptah#2618)",
+			Reason: "the collation half of the same decision, unreachable on a plan for the same reason",
 		},
 		{
 			Field: "schemamodel.ExtendedProperty.Comment", RenderOnly: true,

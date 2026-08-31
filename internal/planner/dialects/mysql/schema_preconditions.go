@@ -6,6 +6,7 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/planner/schemaprecondition"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -51,8 +52,9 @@ func (p *Planner) planSchemaPreconditions(result []ast.Node, diff *difftypes.Sch
 	if p.targetDialect() != platform.SQLServer {
 		return result
 	}
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, schema := range schemasAddedObjectsNeed(diff) {
-		result = append(result, &ast.CreateSchemaNode{Name: schema, IfNotExists: true})
+		result = append(result, schemaprecondition.Node(schema, diff.DeclaredSchemas, semantics))
 	}
 	return result
 }

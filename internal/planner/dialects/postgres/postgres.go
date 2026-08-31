@@ -17,6 +17,7 @@ import (
 	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
+	"go.5x5.cz/ptah/internal/planner/schemaprecondition"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/rlsscope"
 	"go.5x5.cz/ptah/internal/systemschema"
@@ -510,8 +511,9 @@ func (p *Planner) addSchemaPreconditions(
 		}
 	}
 	slices.Sort(schemas)
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
 	for _, schema := range schemas {
-		result = append(result, &ast.CreateSchemaNode{Name: schema, IfNotExists: true})
+		result = append(result, schemaprecondition.Node(schema, diff.DeclaredSchemas, semantics))
 	}
 	return result
 }
