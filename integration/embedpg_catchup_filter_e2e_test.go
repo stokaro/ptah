@@ -54,15 +54,16 @@ func TestEmbedPGCatchUpHonorsTheSourceFilterE2E(t *testing.T) {
 	seedFilteredArticles(c, ctx, db, spec)
 	engine, outbox, source := aFilteredCatchUpEngine(c, ctx, db, spec)
 
-	backfilled, err := engine.Backfill(ctx, filterRunID)
+	// The pass's own progress, which is what Backfill returns beside the run
+	// since stokaro/ptah#2645. Two of the four rows are published, and a
+	// backfill that embedded more would make every assertion below meaningless.
+	_, backfilled, err := engine.Backfill(ctx, filterRunID)
 	c.Assert(err, qt.IsNil)
-	// Two of the four rows are published. A backfill that embedded more would
-	// make every assertion below meaningless.
-	c.Assert(backfilled.Progress.RowsEmbedded, qt.Equals, int64(2))
+	c.Assert(backfilled.RowsEmbedded, qt.Equals, int64(2))
 
 	changeTheSourceOutsideTheFilter(c, ctx, db)
 
-	_, err = engine.CatchUp(ctx, filterRunID, outbox, source)
+	_, _, err = engine.CatchUp(ctx, filterRunID, outbox, source)
 	c.Assert(err, qt.IsNil)
 
 	assertOnlyPublishedRowsCarryVectors(c, ctx, db, spec)
