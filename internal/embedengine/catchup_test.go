@@ -142,7 +142,9 @@ func livingRows(keys ...string) *fakeRereader {
 }
 
 // caughtUp runs a catch-up over a harness whose run already has a boundary.
-func caughtUp(c *qt.C, h *harness, changes *fakeChanges, source *fakeRereader) (embedrun.Run, error) {
+func caughtUp(
+	c *qt.C, h *harness, changes *fakeChanges, source *fakeRereader,
+) (embedrun.Run, embedrun.Progress, error) {
 	c.Helper()
 	stored, err := h.store.Run(context.Background(), "run-1")
 	c.Assert(err, qt.IsNil)
@@ -160,7 +162,7 @@ func TestCatchUp_RereadsAndEmbedsEveryChangedRow(t *testing.T) {
 		horizons: []uint64{102},
 	}
 
-	run, err := caughtUp(c, h, changes, livingRows("1"))
+	run, _, err := caughtUp(c, h, changes, livingRows("1"))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(h.provider.calls, qt.HasLen, 1)
@@ -192,7 +194,7 @@ func TestCatchUp_ResumesFromTheSnapshotBoundaryAndThenFromItself(t *testing.T) {
 		horizons: []uint64{151, 200},
 	}
 
-	run, err := caughtUp(c, h, changes, livingRows("1", "2"))
+	run, _, err := caughtUp(c, h, changes, livingRows("1", "2"))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(changes.asked, qt.DeepEquals, []embedcatchup.Cursor{
@@ -226,7 +228,7 @@ func TestCatchUp_APageCutInsideATransactionStillProcessesTheRest(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	stored.SnapshotWatermark = "100"
 	c.Assert(h.store.SaveRun(context.Background(), stored), qt.IsNil)
-	run, err := h.engine.CatchUp(context.Background(), "run-1", changes, livingRows("1", "2", "3"))
+	run, _, err := h.engine.CatchUp(context.Background(), "run-1", changes, livingRows("1", "2", "3"))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(embeddedKeys(h.target.commits), qt.DeepEquals, []string{"1", "2", "3"})
@@ -255,7 +257,7 @@ func TestCatchUp_ATransactionSpanningManyPagesLosesNothing(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	stored.SnapshotWatermark = "100"
 	c.Assert(h.store.SaveRun(context.Background(), stored), qt.IsNil)
-	run, err := h.engine.CatchUp(context.Background(), "run-1", log, livingRows(want...))
+	run, _, err := h.engine.CatchUp(context.Background(), "run-1", log, livingRows(want...))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(embeddedKeys(h.target.commits), qt.DeepEquals, want)
@@ -284,7 +286,7 @@ func TestCatchUp_APageEndingOnATransactionEdgeResumesAtTheNextOne(t *testing.T) 
 	c.Assert(err, qt.IsNil)
 	stored.SnapshotWatermark = "100"
 	c.Assert(h.store.SaveRun(context.Background(), stored), qt.IsNil)
-	run, err := h.engine.CatchUp(context.Background(), "run-1", changes, livingRows("1", "2", "3"))
+	run, _, err := h.engine.CatchUp(context.Background(), "run-1", changes, livingRows("1", "2", "3"))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(embeddedKeys(h.target.commits), qt.DeepEquals, []string{"1", "2", "3"})
@@ -312,7 +314,7 @@ func TestCatchUp_RefusesToStartWithoutABoundary(t *testing.T) {
 	c := qt.New(t)
 	h := newHarness(c, defaultBounds())
 
-	_, err := h.engine.CatchUp(context.Background(), "run-1",
+	_, _, err := h.engine.CatchUp(context.Background(), "run-1",
 		&fakeChanges{}, livingRows())
 
 	c.Assert(err, qt.ErrorMatches,
@@ -336,7 +338,7 @@ func TestCatchUp_CollapsesRepeatedChangesIntoOneRequest(t *testing.T) {
 		horizons: []uint64{104},
 	}
 
-	run, err := caughtUp(c, h, changes, livingRows("1"))
+	run, _, err := caughtUp(c, h, changes, livingRows("1"))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(h.provider.calls, qt.HasLen, 1)
@@ -353,7 +355,7 @@ func TestCatchUp_ADeletedRowIsTombstonedRatherThanEmbedded(t *testing.T) {
 		horizons: []uint64{102},
 	}
 
-	run, err := caughtUp(c, h, changes, livingRows())
+	run, _, err := caughtUp(c, h, changes, livingRows())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(h.provider.calls, qt.HasLen, 0)
@@ -379,7 +381,7 @@ func TestCatchUp_TheRereadDecidesAndNotTheEvent(t *testing.T) {
 		horizons: []uint64{102},
 	}
 
-	_, err := caughtUp(c, h, changes, livingRows("1"))
+	_, _, err := caughtUp(c, h, changes, livingRows("1"))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(h.target.commits, qt.HasLen, 1)
@@ -396,7 +398,7 @@ func TestCatchUp_AnEmptyPageStillMovesTheWatermark(t *testing.T) {
 	h := newHarness(c, defaultBounds())
 	changes := &fakeChanges{pages: [][]embedcatchup.Event{{}}, horizons: []uint64{500}}
 
-	run, err := caughtUp(c, h, changes, livingRows())
+	run, _, err := caughtUp(c, h, changes, livingRows())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(run.CatchUpWatermark, qt.Equals, "500")
@@ -416,7 +418,7 @@ func TestCatchUp_AWatermarkAlreadyAtTheHorizonWritesNothing(t *testing.T) {
 	c.Assert(h.store.SaveRun(context.Background(), stored), qt.IsNil)
 	changes := &fakeChanges{pages: [][]embedcatchup.Event{{}}, horizons: []uint64{500}}
 
-	run, err := h.engine.CatchUp(context.Background(), "run-1", changes, livingRows())
+	run, _, err := h.engine.CatchUp(context.Background(), "run-1", changes, livingRows())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(run.CatchUpWatermark, qt.Equals, "500")
@@ -429,7 +431,7 @@ func TestCatchUp_AnUnreadableOutboxFailsWithItsOwnClass(t *testing.T) {
 	c := qt.New(t)
 	h := newHarness(c, defaultBounds())
 
-	run, err := caughtUp(c, h, &fakeChanges{failOn: 1}, livingRows())
+	run, _, err := caughtUp(c, h, &fakeChanges{failOn: 1}, livingRows())
 
 	c.Assert(err, qt.ErrorMatches, `changes: the outbox was unreadable`)
 	c.Assert(run.FailureClass, qt.Equals, "changes")
@@ -455,7 +457,7 @@ func TestCatchUp_TheWatermarkIsATransactionAndNotAKey(t *testing.T) {
 		horizons: []uint64{102},
 	}
 
-	run, err := h.engine.CatchUp(context.Background(), "run-1", changes, livingRows("1"))
+	run, _, err := h.engine.CatchUp(context.Background(), "run-1", changes, livingRows("1"))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(run.Cursor, qt.DeepEquals, []string{"4"})
@@ -481,7 +483,7 @@ func TestCatchUp_ARereadRowIsEmbeddedAtItsCurrentVersion(t *testing.T) {
 		horizons: []uint64{102},
 	}
 
-	_, err := caughtUp(c, h, changes, source)
+	_, _, err := caughtUp(c, h, changes, source)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(h.target.commits[0].writes[0].Version, qt.Equals, "12")
@@ -502,7 +504,7 @@ func TestCatchUp_TheRereadIsAskedAboutEveryCollapsedKeyOnce(t *testing.T) {
 		horizons: []uint64{104},
 	}
 
-	_, err := caughtUp(c, h, changes, source)
+	_, _, err := caughtUp(c, h, changes, source)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(source.asked, qt.DeepEquals, [][]string{{"1"}, {"2"}})
@@ -527,7 +529,7 @@ func TestCatchUp_AResumedRunStartsFromItsOwnWatermark(t *testing.T) {
 		horizons: []uint64{400},
 	}
 
-	run, err := h.engine.CatchUp(context.Background(), "run-1", changes, livingRows("1"))
+	run, _, err := h.engine.CatchUp(context.Background(), "run-1", changes, livingRows("1"))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(changes.asked[0], qt.Equals, embedcatchup.Cursor{Transaction: 300})

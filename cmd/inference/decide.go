@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/internal/embedcutover"
 	"go.5x5.cz/ptah/internal/embedpg"
 	"go.5x5.cz/ptah/internal/embedrelease"
@@ -73,7 +74,13 @@ func runVerify(
 		// Published either way, and that is the point: a verification that
 		// found something is the evidence somebody will want, and a registry
 		// holding only the passes is a record of nothing.
-		return fmt.Errorf("verification found %d blocking findings", len(report.Blocking()))
+		// Exit 1 rather than 2, for the same reason `evaluate` does: blocking
+		// findings are the verb's ANSWER, and the exit-code reference says so.
+		// Two means it could not run, and a rollout gate reading 2 for both
+		// cannot tell a generation that failed verification from a database it
+		// could not reach (stokaro/ptah#2639).
+		return exitcode.New(1, fmt.Errorf(
+			"verification found %d blocking findings", len(report.Blocking())))
 	}
 	if err := reachPhase(ctx, options, runID, embedrun.PhaseVerified); err != nil {
 		return err
@@ -652,6 +659,12 @@ func verify(
 
 	run, err := opened.store.Run(ctx, runID)
 	if err != nil {
+		return embedverify.Report{}, embedrun.Run{}, err
+	}
+	// Verification reads the run's watermark and the specification's rows, so a
+	// run for another generation measures one generation against another's
+	// boundary and reports about neither (stokaro/ptah#2637).
+	if err := run.DescribesGeneration(opened.loaded.Spec.Identity().Digest); err != nil {
 		return embedverify.Report{}, embedrun.Run{}, err
 	}
 	report, err := embedreport.VerifyGeneration(ctx, opened.db, opened.store, opened.loaded, run)

@@ -131,7 +131,19 @@ const defaultLease = 15 * time.Minute
 // The claim is saved before the loop starts, because a claim this process holds
 // and the store does not is a claim that fences nobody.
 func (e *Engine) claim(ctx context.Context, runID string) (embedrun.Run, int64, error) {
-	return e.runs().Claim(ctx, runID)
+	run, token, err := e.runs().Claim(ctx, runID)
+	if err != nil {
+		return embedrun.Run{}, 0, err
+	}
+	// The one place both facts are in hand, and every loop this engine runs
+	// passes through it. A backfill handed a specification for a generation the
+	// run was not prepared for either resumed a finished run and embedded
+	// nothing, or wrote a foreign generation's identity into this run's column
+	// (stokaro/ptah#2637).
+	if err := run.DescribesGeneration(e.Spec.Identity().Digest); err != nil {
+		return embedrun.Run{}, 0, err
+	}
+	return run, token, nil
 }
 
 // runs is the store-only half of this engine, which is also what the pause and
@@ -153,12 +165,31 @@ func (e *Engine) now() time.Time {
 // It returns the run as the store last accepted it, so a caller that stopped
 // early can see exactly how far the work got rather than how far this process
 // believed it got.
-func (e *Engine) Backfill(ctx context.Context, runID string) (embedrun.Run, error) {
+func (e *Engine) Backfill(ctx context.Context, runID string) (embedrun.Run, embedrun.Progress, error) {
 	run, token, err := e.claim(ctx, runID)
 	if err != nil {
-		return embedrun.Run{}, err
+		return embedrun.Run{}, embedrun.Progress{}, err
 	}
+	// What THIS invocation did, which is not what the run has done. The run's
+	// counters are cumulative and a verb printing them as its own work told an
+	// operator that a catch-up which processed nothing had processed the
+	// backfill's rows -- so the documented completion signal, "0 changed
+	// rows", was unreachable on any run whose backfill scanned anything
+	// (stokaro/ptah#2645).
+	started := run.Progress
+	final, err := e.backfillLoop(ctx, runID, run, token)
+	return final, progressSince(started, final.Progress), err
+}
 
+// backfillLoop is the scan-embed-commit loop itself.
+//
+// Separated from [Engine.Backfill] so that every way out of it -- an abort, a
+// failure, a stall, exhaustion -- passes through one place that can subtract
+// what the run had done before from what it has done now. Seven returns, and a
+// per-return subtraction would be seven chances to forget one.
+func (e *Engine) backfillLoop(
+	ctx context.Context, runID string, run embedrun.Run, token int64,
+) (embedrun.Run, error) {
 	for {
 		if err := ctx.Err(); err != nil {
 			// Stopping is not failing. The run is durable at its last
@@ -422,4 +453,26 @@ func (e *Engine) reload(ctx context.Context, runID string, cause error) (embedru
 		return embedrun.Run{}, errors.Join(cause, err)
 	}
 	return stored, cause
+}
+
+// progressSince is what happened between two readings of a run's counters.
+//
+// Subtraction rather than accumulation, and it is exact: the reading it starts
+// from is the row the claim returned, and no other worker can commit against a
+// run this one holds the token for. A worker that took the run over fences this
+// one, and the loop stops.
+//
+// RetryCount is deliberately absent. It is per-batch rather than cumulative --
+// a batch that finally committed says nothing about the next one -- so a
+// difference between two readings of it is not a count of anything.
+func progressSince(started, now embedrun.Progress) embedrun.Progress {
+	return embedrun.Progress{
+		RowsScanned:          now.RowsScanned - started.RowsScanned,
+		RowsEmbedded:         now.RowsEmbedded - started.RowsEmbedded,
+		RowsSkipped:          now.RowsSkipped - started.RowsSkipped,
+		RowsDeleted:          now.RowsDeleted - started.RowsDeleted,
+		BatchesCommitted:     now.BatchesCommitted - started.BatchesCommitted,
+		ProviderPromptTokens: now.ProviderPromptTokens - started.ProviderPromptTokens,
+		ProviderTotalTokens:  now.ProviderTotalTokens - started.ProviderTotalTokens,
+	}
 }
