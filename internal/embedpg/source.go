@@ -181,10 +181,7 @@ func (s *Source) versionColumns() []string {
 
 // qualifiedTable renders the table with its schema when it has one.
 func (s *Source) qualifiedTable() string {
-	if schema := strings.TrimSpace(s.spec.Source.Schema); schema != "" {
-		return quoteIdentifier(schema) + "." + quoteIdentifier(s.spec.Source.Table)
-	}
-	return quoteIdentifier(s.spec.Source.Table)
+	return qualify(s.spec.Source.Schema, s.spec.Source.Table)
 }
 
 // quoteAll quotes every identifier.

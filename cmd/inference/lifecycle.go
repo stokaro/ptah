@@ -94,6 +94,7 @@ func runPrepare(
 		Name: spec.Name, Reproducibility: string(spec.Identity().Reproducibility),
 		ReproducibilityReason: spec.Identity().ReproducibilityReason,
 		Dimension:             spec.Model.ReportedDimension,
+		TargetSchema:          spec.Target.Schema,
 		TargetTable:           spec.Target.Table, TargetColumn: spec.Target.Column,
 		CreatedAt: time.Now().UTC(),
 	}); err != nil {
@@ -561,8 +562,9 @@ func runRollback(
 	}
 	defer opened.close()
 
+	schema := opened.loaded.Spec.Target.Schema
 	table := opened.loaded.Spec.Target.Table
-	pointer, err := opened.store.Pointer(ctx, table)
+	pointer, err := opened.store.Pointer(ctx, schema, table)
 	if err != nil {
 		return err
 	}
@@ -582,7 +584,7 @@ func runRollback(
 
 	now := time.Now().UTC()
 	if err := opened.store.MovePointer(ctx, embedstore.Pointer{
-		TargetTable: table, Active: toGeneration, Previous: pointer.Active,
+		TargetSchema: schema, TargetTable: table, Active: toGeneration, Previous: pointer.Active,
 		CutOverAt: now, CutOverBy: "ptah-cli",
 	}, pointer.Active); err != nil {
 		return err

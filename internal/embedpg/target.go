@@ -240,10 +240,7 @@ func (t *Target) upsertStatement(write embedrun.TargetWrite) (string, []any) {
 
 // qualifiedTable renders the target table with its schema when it has one.
 func (t *Target) qualifiedTable() string {
-	if schema := strings.TrimSpace(t.spec.Target.Schema); schema != "" {
-		return quoteIdentifier(schema) + "." + quoteIdentifier(t.spec.Target.Table)
-	}
-	return quoteIdentifier(t.spec.Target.Table)
+	return qualify(t.spec.Target.Schema, t.spec.Target.Table)
 }
 
 // vectorLiteral renders a vector the way pgvector reads one, or NULL.

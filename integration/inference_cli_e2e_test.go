@@ -380,7 +380,8 @@ func assertNoWindowIsAskedForMeansNoWindow(
 	registerBareGeneration(c, ctx, db, "the-replaced-one")
 	_, err := db.ExecContext(ctx,
 		`UPDATE ptah_embedding_pointer SET active_generation = 'the-replaced-one',
-			previous_generation = NULL WHERE target_table = 'articles'`)
+			previous_generation = NULL
+		 WHERE target_schema = 'public' AND target_table = 'articles'`)
 	c.Assert(err, qt.IsNil)
 
 	digest := planDigestOf(c, ctx, specPath, dbURL)
@@ -510,8 +511,8 @@ func registerBareGeneration(c *qt.C, ctx context.Context, db *sql.DB, identity s
 	_, err := db.ExecContext(ctx,
 		`INSERT INTO ptah_embedding_generation (
 			identity, spec_digest, reproducibility, dimension,
-			target_table, target_column, created_at)
-		 VALUES ($1, $1, 'full', 4, 'articles', 'embedding', now())
+			target_schema, target_table, target_column, created_at)
+		 VALUES ($1, $1, 'full', 4, 'public', 'articles', 'embedding', now())
 		 ON CONFLICT (identity) DO NOTHING`, identity)
 	c.Assert(err, qt.IsNil)
 }
