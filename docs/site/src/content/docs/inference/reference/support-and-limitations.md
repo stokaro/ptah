@@ -65,7 +65,10 @@ schedule a GPU, store model weights, or answer a search query.
 ## Guarantees that are Ptah's
 
 - A change that committed to the source has an outbox event, under `outbox`,
-  because the event and the change are one transaction.
+  because the event and the change are one transaction — and catch-up reads
+  every one of those events. Its cursor is a transaction identity and a
+  sequence together, so a page that fills partway through a transaction resumes
+  inside that transaction rather than past it.
 - A vector and its checkpoint are written in one transaction, so there is no
   state in which the work landed and the record of it did not.
 - A write never crosses generations: a row belonging to another generation is

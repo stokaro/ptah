@@ -2542,8 +2542,8 @@
       "disposition": "keep",
       "outboundLinks": [],
       "inboundLinks": [],
-      "visibleWords": 756,
-      "sourceBytes": 6353
+      "visibleWords": 819,
+      "sourceBytes": 6741
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/specification.md",
@@ -2618,8 +2618,8 @@
         "/inference/guides/run-in-kubernetes/",
         "/inference/overview/"
       ],
-      "visibleWords": 692,
-      "sourceBytes": 5223
+      "visibleWords": 728,
+      "sourceBytes": 5444
     },
     {
       "path": "docs/site/src/content/docs/inference/strategies/choose-a-consistency-mode.md",

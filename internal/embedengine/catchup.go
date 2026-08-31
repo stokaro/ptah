@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 
 	"go.5x5.cz/ptah/internal/embedcatchup"
 	"go.5x5.cz/ptah/internal/embedgen"
@@ -14,13 +13,13 @@ import (
 
 // Changes is where source changes come from.
 type Changes interface {
-	// Since reads settled events from a transaction identity, and returns the
+	// Since reads the settled events a cursor still owes, and returns the
 	// boundary it read up to.
 	//
 	// The boundary is returned rather than chosen by the caller because only
 	// the implementation knows which transactions have concluded, and a caller
 	// that picked one would eventually pick one too high.
-	Since(ctx context.Context, from uint64, limit int) ([]embedcatchup.Event, uint64, error)
+	Since(ctx context.Context, from embedcatchup.Cursor, limit int) ([]embedcatchup.Event, uint64, error)
 }
 
 // Rereader reads the current state of the rows a change refers to.
@@ -64,7 +63,8 @@ func (e *Engine) CatchUp(ctx context.Context, runID string, changes Changes, sou
 			// a busy source that range only grows.
 			return e.recordBarrier(ctx, run, token, horizon)
 		}
-		run, cursor, err = e.applyChanges(ctx, run, token, source, events)
+		cursor = resumeAfterPage(events, horizon, e.Bounds.MaxRows)
+		run, err = e.applyChanges(ctx, run, token, source, events, cursor)
 		if err != nil {
 			return run, err
 		}
@@ -72,21 +72,20 @@ func (e *Engine) CatchUp(ctx context.Context, runID string, changes Changes, sou
 }
 
 // applyChanges collapses one page of events and writes what they mean.
+//
+// The writes and the cursor they carry the run to are one commit, so a run that
+// dies here resumes at a position whose work is on disk.
 func (e *Engine) applyChanges(
-	ctx context.Context, run embedrun.Run, token int64, source Rereader, events []embedcatchup.Event,
-) (embedrun.Run, uint64, error) {
+	ctx context.Context, run embedrun.Run, token int64, source Rereader,
+	events []embedcatchup.Event, next embedcatchup.Cursor,
+) (embedrun.Run, error) {
 	collapsed := embedcatchup.Collapse(events)
 	writes, outcome, err := e.resolveChanges(ctx, source, collapsed)
 	if err != nil {
-		return run, 0, err
+		return run, err
 	}
-	outcome.CatchUpWatermark = strconv.FormatUint(lastTransaction(events)+1, 10)
-
-	updated, err := e.commitProgress(ctx, run, token, writes, outcome)
-	if err != nil {
-		return updated, 0, err
-	}
-	return updated, lastTransaction(events) + 1, nil
+	outcome.CatchUpWatermark = next.String()
+	return e.commitProgress(ctx, run, token, writes, outcome)
 }
 
 // resolveChanges turns collapsed events into target writes.
@@ -171,14 +170,18 @@ func tombstonesFor(
 }
 
 // recordBarrier moves the catch-up watermark when there was nothing to process.
+//
+// Nothing settled between the cursor and the horizon, so every transaction
+// below the horizon is accounted for and the cursor owes the horizon in full.
 func (e *Engine) recordBarrier(
 	ctx context.Context, run embedrun.Run, token int64, horizon uint64,
 ) (embedrun.Run, error) {
-	if run.CatchUpWatermark == strconv.FormatUint(horizon, 10) {
+	reached := embedcatchup.AtTransaction(horizon).String()
+	if run.CatchUpWatermark == reached {
 		return run, nil
 	}
 	return e.commitProgress(ctx, run, token, nil, embedrun.BatchOutcome{
-		CatchUpWatermark: strconv.FormatUint(horizon, 10),
+		CatchUpWatermark: reached,
 		TargetCommitted:  true, DeletesCommitted: true,
 	})
 }
@@ -190,36 +193,46 @@ func (e *Engine) recordBarrier(
 // boundary is refused rather than defaulted to zero, because zero means "every
 // change ever recorded" and on a long-lived outbox that is a different
 // migration.
-func parseWatermark(catchUp, snapshot string) (uint64, error) {
+func parseWatermark(catchUp, snapshot string) (embedcatchup.Cursor, error) {
 	if catchUp != "" {
-		return parseTransaction(catchUp, "catch-up watermark")
+		return embedcatchup.ParseCursor(catchUp, "catch-up watermark")
 	}
 	if snapshot == "" {
-		return 0, fmt.Errorf(
+		return embedcatchup.Cursor{}, fmt.Errorf(
 			"%w: the run records no snapshot boundary, so nothing says which changes catch-up owes",
 			embedstore.ErrNotFound)
 	}
-	return parseTransaction(snapshot, "snapshot watermark")
+	return embedcatchup.ParseCursor(snapshot, "snapshot watermark")
 }
 
-// parseTransaction reads a watermark as a transaction identity.
-func parseTransaction(raw, what string) (uint64, error) {
-	value, err := strconv.ParseUint(raw, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("the %s %q is not a transaction identity: %w", what, raw, err)
+// resumeAfterPage is where catch-up resumes once a page is written.
+//
+// A page SHORTER than the limit was not truncated, so it held every settled
+// event the cursor owed and the horizon itself is now owed in full. That is the
+// last page of every catch-up, which is why an operator reading a finished run
+// sees a plain transaction identity rather than a pair.
+//
+// A FULL page may have been cut anywhere, including inside a transaction, so
+// the cursor resumes immediately after the furthest event the page held. The
+// page is a prefix of the (transaction, sequence) order, so its furthest
+// element leaves every unread event ahead of the cursor; the maximum is
+// computed rather than read off the end of the slice because Since hands its
+// page back in sequence order, which is a different order and deliberately so.
+//
+// Advancing a full page to the greatest TRANSACTION instead is
+// stokaro/ptah#2628: the events of that transaction the page did not reach are
+// then below the cursor, unread, and unreachable by any later run.
+func resumeAfterPage(events []embedcatchup.Event, horizon uint64, limit int) embedcatchup.Cursor {
+	if len(events) < limit {
+		return embedcatchup.AtTransaction(horizon)
 	}
-	return value, nil
-}
-
-// lastTransaction is the highest transaction identity in a page.
-func lastTransaction(events []embedcatchup.Event) uint64 {
-	var highest uint64
+	var furthest embedcatchup.Cursor
 	for _, event := range events {
-		if event.Transaction > highest {
-			highest = event.Transaction
+		if next := embedcatchup.After(event); furthest.Before(next) {
+			furthest = next
 		}
 	}
-	return highest
+	return furthest
 }
 
 // keyIdentity renders a key so two of them can be compared.

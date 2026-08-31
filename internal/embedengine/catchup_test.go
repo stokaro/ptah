@@ -1,8 +1,10 @@
 package embedengine_test
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"slices"
 	"strconv"
 	"testing"
 
@@ -21,14 +23,16 @@ type fakeChanges struct {
 	horizons []uint64
 	// asked records the cursor each call was given, which is what makes "it
 	// resumed rather than starting over" assertable.
-	asked []uint64
+	asked []embedcatchup.Cursor
 	// failOn makes the call fail on that number, zero for never.
 	failOn int
 	calls  int
 }
 
 // Since answers the next page.
-func (f *fakeChanges) Since(_ context.Context, from uint64, _ int) ([]embedcatchup.Event, uint64, error) {
+func (f *fakeChanges) Since(
+	_ context.Context, from embedcatchup.Cursor, _ int,
+) ([]embedcatchup.Event, uint64, error) {
 	f.calls++
 	f.asked = append(f.asked, from)
 	if f.failOn == f.calls {
@@ -73,6 +77,44 @@ func (f *fakeRereader) Current(_ context.Context, keys [][]string) ([]embedgen.R
 		versions = append(versions, f.versions[identity])
 	}
 	return rows, versions, nil
+}
+
+// pagedLog is a Changes that pages the way a real outbox does.
+//
+// fakeChanges hands back pages a test wrote out, which cannot express a page
+// the LIMIT cut: the cursor it is given is recorded and then ignored. This one
+// holds an event log and answers from it, so what a page contains follows from
+// the cursor and the limit rather than from the test -- which is what makes a
+// cursor that steps over an unread event observable at this level at all.
+type pagedLog struct {
+	// events is the whole log, in no particular order.
+	events []embedcatchup.Event
+	// horizon is the boundary below which every transaction has concluded.
+	horizon uint64
+}
+
+// Since answers the events the cursor still owes, in sequence order.
+func (l *pagedLog) Since(
+	_ context.Context, from embedcatchup.Cursor, limit int,
+) ([]embedcatchup.Event, uint64, error) {
+	pending := make([]embedcatchup.Event, 0, len(l.events))
+	for _, event := range l.events {
+		owed := event.Transaction >= from.Transaction &&
+			(event.Transaction > from.Transaction || event.Sequence >= from.Sequence)
+		if event.Transaction < l.horizon && owed {
+			pending = append(pending, event)
+		}
+	}
+	slices.SortFunc(pending, func(left, right embedcatchup.Event) int {
+		return cmp.Or(
+			cmp.Compare(left.Transaction, right.Transaction),
+			cmp.Compare(left.Sequence, right.Sequence))
+	})
+	page := pending[:min(limit, len(pending))]
+	slices.SortFunc(page, func(left, right embedcatchup.Event) int {
+		return cmp.Compare(left.Sequence, right.Sequence)
+	})
+	return page, l.horizon, nil
 }
 
 // changed is one settled event.
@@ -134,6 +176,11 @@ func TestCatchUp_RereadsAndEmbedsEveryChangedRow(t *testing.T) {
 // every page after that from where the last one got to. A catch-up that started
 // from the boundary each time would re-embed the same rows for as long as the
 // source keeps changing.
+//
+// Each page here holds one event against a limit of two, so none of them was
+// truncated and each carries the cursor to its own horizon rather than to the
+// event it happened to end on: everything below that horizon was returned, so
+// re-reading the range between the two would find nothing.
 func TestCatchUp_ResumesFromTheSnapshotBoundaryAndThenFromItself(t *testing.T) {
 	c := qt.New(t)
 	h := newHarness(c, defaultBounds())
@@ -148,8 +195,112 @@ func TestCatchUp_ResumesFromTheSnapshotBoundaryAndThenFromItself(t *testing.T) {
 	run, err := caughtUp(c, h, changes, livingRows("1", "2"))
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(changes.asked, qt.DeepEquals, []uint64{100, 102, 151})
+	c.Assert(changes.asked, qt.DeepEquals, []embedcatchup.Cursor{
+		{Transaction: 100}, {Transaction: 151}, {Transaction: 200},
+	})
 	c.Assert(run.CatchUpWatermark, qt.Equals, "200")
+}
+
+// TestCatchUp_APageCutInsideATransactionStillProcessesTheRest is
+// stokaro/ptah#2628.
+//
+// One transaction writes three rows and the page holds two. A cursor that
+// advances to the highest transaction the page held puts the third event below
+// itself, where no later page can reach it and no later run can either: the
+// outbox reports nothing unprocessed, the run reads caught up, and the row
+// keeps whatever vector it had. Every key the transaction touched has to be
+// embedded, and the run has to end at the horizon rather than short of it.
+func TestCatchUp_APageCutInsideATransactionStillProcessesTheRest(t *testing.T) {
+	c := qt.New(t)
+	h := newHarness(c, defaultBounds())
+	changes := &pagedLog{
+		events: []embedcatchup.Event{
+			changed(500, 1, "1", embedcatchup.OperationInsert),
+			changed(500, 2, "2", embedcatchup.OperationInsert),
+			changed(500, 3, "3", embedcatchup.OperationInsert),
+		},
+		horizon: 501,
+	}
+
+	stored, err := h.store.Run(context.Background(), "run-1")
+	c.Assert(err, qt.IsNil)
+	stored.SnapshotWatermark = "100"
+	c.Assert(h.store.SaveRun(context.Background(), stored), qt.IsNil)
+	run, err := h.engine.CatchUp(context.Background(), "run-1", changes, livingRows("1", "2", "3"))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(embeddedKeys(h.target.commits), qt.DeepEquals, []string{"1", "2", "3"})
+	c.Assert(run.CatchUpWatermark, qt.Equals, "501")
+}
+
+// TestCatchUp_ATransactionSpanningManyPagesLosesNothing is the same defect at
+// the size that hides it.
+//
+// The transaction is five pages deep, so a cursor that cannot address a
+// position inside a transaction drops four pages' worth rather than one row.
+func TestCatchUp_ATransactionSpanningManyPagesLosesNothing(t *testing.T) {
+	c := qt.New(t)
+	h := newHarness(c, defaultBounds())
+	log := &pagedLog{horizon: 900}
+	var want []string
+	for row := 1; row <= 10; row++ {
+		key := strconv.Itoa(row)
+		log.events = append(log.events,
+			changed(800, int64(row), key, embedcatchup.OperationUpdate))
+		want = append(want, key)
+	}
+	slices.Sort(want)
+
+	stored, err := h.store.Run(context.Background(), "run-1")
+	c.Assert(err, qt.IsNil)
+	stored.SnapshotWatermark = "100"
+	c.Assert(h.store.SaveRun(context.Background(), stored), qt.IsNil)
+	run, err := h.engine.CatchUp(context.Background(), "run-1", log, livingRows(want...))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(embeddedKeys(h.target.commits), qt.DeepEquals, want)
+	c.Assert(run.CatchUpWatermark, qt.Equals, "900")
+}
+
+// TestCatchUp_APageEndingOnATransactionEdgeResumesAtTheNextOne is the control
+// for the two above.
+//
+// Every event sits in a transaction of its own, so no page can be cut inside
+// one and the pair cursor has nothing to do that the transaction alone did not.
+// Without it, a conversion that lost the boundary case would look like a fix.
+func TestCatchUp_APageEndingOnATransactionEdgeResumesAtTheNextOne(t *testing.T) {
+	c := qt.New(t)
+	h := newHarness(c, defaultBounds())
+	changes := &pagedLog{
+		events: []embedcatchup.Event{
+			changed(600, 1, "1", embedcatchup.OperationUpdate),
+			changed(601, 2, "2", embedcatchup.OperationUpdate),
+			changed(602, 3, "3", embedcatchup.OperationUpdate),
+		},
+		horizon: 700,
+	}
+
+	stored, err := h.store.Run(context.Background(), "run-1")
+	c.Assert(err, qt.IsNil)
+	stored.SnapshotWatermark = "100"
+	c.Assert(h.store.SaveRun(context.Background(), stored), qt.IsNil)
+	run, err := h.engine.CatchUp(context.Background(), "run-1", changes, livingRows("1", "2", "3"))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(embeddedKeys(h.target.commits), qt.DeepEquals, []string{"1", "2", "3"})
+	c.Assert(run.CatchUpWatermark, qt.Equals, "700")
+}
+
+// embeddedKeys is every key a run wrote a vector for, in order and deduplicated.
+func embeddedKeys(commits []commit) []string {
+	var keys []string
+	for _, written := range commits {
+		for _, write := range written.writes {
+			keys = append(keys, write.Key...)
+		}
+	}
+	slices.Sort(keys)
+	return slices.Compact(keys)
 }
 
 // TestCatchUp_RefusesToStartWithoutABoundary keeps "every change ever recorded"
@@ -379,6 +530,6 @@ func TestCatchUp_AResumedRunStartsFromItsOwnWatermark(t *testing.T) {
 	run, err := h.engine.CatchUp(context.Background(), "run-1", changes, livingRows("1"))
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(changes.asked[0], qt.Equals, uint64(300))
+	c.Assert(changes.asked[0], qt.Equals, embedcatchup.Cursor{Transaction: 300})
 	c.Assert(run.CatchUpWatermark, qt.Equals, "400")
 }

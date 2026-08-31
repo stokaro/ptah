@@ -275,7 +275,10 @@ func readBarrier(
 	if err != nil {
 		return embedcatchup.Barrier{}, err
 	}
-	processed := parseWatermark(run.CatchUpWatermark)
+	processed, err := processedCursor(run.CatchUpWatermark)
+	if err != nil {
+		return embedcatchup.Barrier{}, err
+	}
 	unprocessed, err := outbox.Unprocessed(ctx, processed)
 	if err != nil {
 		return embedcatchup.Barrier{}, err
@@ -286,11 +289,29 @@ func readBarrier(
 	}
 	return embedcatchup.Barrier{
 		Installed: installed, Snapshot: parseWatermark(run.SnapshotWatermark),
-		Processed: processed, Horizon: horizon, Unprocessed: unprocessed,
+		Processed: processed.Transaction, Horizon: horizon, Unprocessed: unprocessed,
 	}, nil
 }
 
+// processedCursor reads how far catch-up has got.
+//
+// An absent watermark is a run whose catch-up has not started, and its cursor
+// owes everything. A PRESENT but unreadable one is refused rather than folded
+// into the same answer: those are different states, and reporting the second as
+// the first counts the whole outbox as unprocessed -- a finished catch-up
+// reported as owing every change ever recorded.
+func processedCursor(raw string) (embedcatchup.Cursor, error) {
+	if raw == "" {
+		return embedcatchup.Cursor{}, nil
+	}
+	return embedcatchup.ParseCursor(raw, "catch-up watermark")
+}
+
 // parseWatermark reads a recorded transaction identity, or zero.
+//
+// Zero for the snapshot boundary is a value Barrier.Reached already reports on
+// -- "no snapshot boundary was recorded" -- so an unreadable one arrives there
+// as a blocker rather than as a silent default.
 func parseWatermark(raw string) uint64 {
 	value, err := strconv.ParseUint(raw, 10, 64)
 	if err != nil {
