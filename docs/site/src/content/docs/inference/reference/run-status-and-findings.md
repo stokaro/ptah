@@ -95,7 +95,7 @@ Each finding names its **layer** and its **severity**.
 | Layer | Asks | Typical finding |
 | --- | --- | --- |
 | `structural` | Does the column exist with the right type and dimension? Is the index there and valid? | `the generation's vector column does not exist` |
-| `coverage` | Does every in-scope row have a vector, a skip, or a tombstone? | rows with no vector and not marked skipped or deleted |
+| `coverage` | Does every in-scope row have a vector, a skip, or a tombstone, and does anything else carry one? | rows with no vector and not marked skipped or deleted; `N target rows are outside the generation's source scope` |
 | `freshness` | Was each vector computed from the source as it is now? | rows computed from a source state that has since changed |
 | `vector_validity` | Are the stored vectors the shape the generation declares? | `the column holds N dimensions and the generation expects M` |
 | `consistency` | Has the backfill finished, has catch-up reached the barrier, is a lease still held? | `catch-up has not reached the barrier, so changes after the snapshot are unprocessed` |
