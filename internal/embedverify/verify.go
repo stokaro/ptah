@@ -1,7 +1,6 @@
 package embedverify
 
 import (
-	"math"
 	"strings"
 )
 
@@ -42,10 +41,6 @@ type TargetRow struct {
 	// the integer does not -- and a verification over a few million rows ran
 	// the process out of memory (stokaro/ptah#2068).
 	Dimension int
-	// Vector is the stored embedding, present only where a caller actually read
-	// the values back. It is never the answer to how wide the vector is; see
-	// [RunState.VectorValuesRead], which is how a caller says which it did.
-	Vector []float32
 	// Tombstone marks a row whose source is gone.
 	Tombstone bool
 	// Skipped marks a row deliberately without a vector.
@@ -106,16 +101,6 @@ type RunState struct {
 	ConsistencyMode string
 	// SourceMutable reports whether the source can change during the run.
 	SourceMutable bool
-	// VectorValuesRead reports whether the target rows carry the vectors
-	// themselves or only their shape.
-	//
-	// Stated rather than inferred, because a caller that passed a zero-filled
-	// placeholder of the right length gets a vector layer that checks the
-	// length and silently answers "finite" about numbers it never saw. Where a
-	// target refuses a non-finite vector on write -- pgvector does -- reading
-	// every vector back to prove it proves nothing, and saying so once beats a
-	// check that cannot fail.
-	VectorValuesRead bool
 }
 
 // Verify runs every layer and returns one report.
@@ -138,11 +123,19 @@ func Verify(
 	verifyStructure(&report, expectation, structure)
 	verifyCoverageAndFreshness(&report, expectation, source, target)
 	verifyVectors(&report, expectation, target)
-	if !state.VectorValuesRead {
-		report.Unmeasured = append(report.Unmeasured,
-			"the stored vectors were not read back, so their dimension was checked and their "+
-				"values were not")
-	}
+	// Said on every run rather than conditionally, because it is true on every
+	// run: the read reports each stored vector's width and never its values.
+	//
+	// It is not a gap. Measured on pgvector 0.8.1, every representation this
+	// build targets refuses a non-finite component on write -- `NaN not allowed
+	// in vector`, and the same for `halfvec` and `sparsevec` -- so a value that
+	// could fail such a check cannot be in the corpus to begin with. What keeps
+	// it out is `embedprovider.validateVector`, which refuses the provider's
+	// answer before anything is written (stokaro/ptah#2622).
+	report.Unmeasured = append(report.Unmeasured,
+		"the stored vectors were not read back, so their dimension was checked and their "+
+			"values were not; the target refuses a non-finite component on write, so nothing "+
+			"here could have carried one")
 	verifyConsistency(&report, state)
 	report.sortFindings()
 	return report
@@ -373,7 +366,7 @@ func reportCoverage(report *Report, missing, stale, wrongGeneration []string) {
 
 // verifyVectors answers layer 4.
 func verifyVectors(report *Report, expectation Expectation, target []TargetRow) {
-	var wrongDimension, notFinite, missingPayload []string
+	var wrongDimension, missingPayload []string
 	for _, row := range target {
 		if row.Tombstone || row.Skipped {
 			continue
@@ -383,20 +376,6 @@ func verifyVectors(report *Report, expectation Expectation, target []TargetRow) 
 			missingPayload = append(missingPayload, row.Key)
 		case expectation.Dimension > 0 && row.Dimension != expectation.Dimension:
 			wrongDimension = append(wrongDimension, row.Key)
-		case len(row.Vector) > 0 && !finite(row.Vector):
-			// Only where the values were read. A caller that reported the width
-			// alone has said so, and asking about numbers it did not fetch
-			// would answer "finite" about a vector nobody looked at.
-			//
-			// No caller reads them today, and the report says so on every run.
-			// Measured on pgvector 0.8.1: `vector`, `halfvec` and `sparsevec`
-			// each refuse a NaN and an infinity on write -- `NaN not allowed in
-			// vector` and so on -- so against every target this build supports,
-			// reading the values back would measure the write path a second
-			// time. It stays because the layer is the general one and a target
-			// that permits such a value is what RunState.VectorValuesRead
-			// exists to describe.
-			notFinite = append(notFinite, row.Key)
 		}
 	}
 	if len(missingPayload) > 0 {
@@ -407,21 +386,6 @@ func verifyVectors(report *Report, expectation Expectation, target []TargetRow) 
 		report.addf(LayerVectorValidity, Blocking, len(wrongDimension), wrongDimension,
 			"%d stored vectors do not have the generation's dimension", len(wrongDimension))
 	}
-	if len(notFinite) > 0 {
-		report.addf(LayerVectorValidity, Blocking, len(notFinite), notFinite,
-			"%d stored vectors carry NaN or an infinity, which makes every distance over them meaningless",
-			len(notFinite))
-	}
-}
-
-// finite reports whether every component is a usable number.
-func finite(vector []float32) bool {
-	for _, value := range vector {
-		if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
-			return false
-		}
-	}
-	return true
 }
 
 // verifyConsistency answers layer 5: whether the run finished what it started.

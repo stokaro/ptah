@@ -1,7 +1,6 @@
 package embedverify_test
 
 import (
-	"math"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -34,10 +33,8 @@ func healthy() (
 		{Key: "2", Version: "7", InputHash: "hash-2"},
 	}
 	target := []embedverify.TargetRow{
-		{Key: "1", Generation: generation, Version: "7", InputHash: "hash-1",
-			Dimension: 3, Vector: []float32{1, 2, 3}},
-		{Key: "2", Generation: generation, Version: "7", InputHash: "hash-2",
-			Dimension: 3, Vector: []float32{4, 5, 6}},
+		{Key: "1", Generation: generation, Version: "7", InputHash: "hash-1", Dimension: 3},
+		{Key: "2", Generation: generation, Version: "7", InputHash: "hash-2", Dimension: 3},
 	}
 	state := embedverify.RunState{SnapshotComplete: true, CatchUpReached: true}
 	return expectation, structure, source, target, state
@@ -201,37 +198,16 @@ func TestVerify_VectorValidityBlocks(t *testing.T) {
 		{
 			name: "no payload",
 			change: func(rows []embedverify.TargetRow) {
-				rows[0].Dimension, rows[0].Vector = 0, nil
+				rows[0].Dimension = 0
 			},
 			want: "1 rows carry no vector and are not marked skipped or deleted",
 		},
 		{
 			name: "the wrong dimension",
 			change: func(rows []embedverify.TargetRow) {
-				rows[0].Dimension, rows[0].Vector = 2, []float32{1, 2}
+				rows[0].Dimension = 2
 			},
 			want: "1 stored vectors do not have the generation's dimension",
-		},
-		{
-			// The width comes from what the server reported, not from a slice
-			// somebody built. A caller that read no values reports the
-			// dimension alone, and this is the case that catches a check
-			// reading the wrong one.
-			name: "the wrong dimension, with no values read",
-			change: func(rows []embedverify.TargetRow) {
-				rows[0].Dimension, rows[0].Vector = 2, nil
-			},
-			want: "1 stored vectors do not have the generation's dimension",
-		},
-		{
-			name:   "NaN",
-			change: func(rows []embedverify.TargetRow) { rows[0].Vector = []float32{1, float32(math.NaN()), 3} },
-			want:   "1 stored vectors carry NaN or an infinity, which makes every distance over them meaningless",
-		},
-		{
-			name:   "an infinity",
-			change: func(rows []embedverify.TargetRow) { rows[0].Vector = []float32{1, float32(math.Inf(1)), 3} },
-			want:   "1 stored vectors carry NaN or an infinity, which makes every distance over them meaningless",
 		},
 	}
 	for _, test := range tests {
@@ -587,35 +563,31 @@ func TestVerify_AMissingIndexReportsOnceRatherThanCascading(t *testing.T) {
 	c.Assert(summaries(report), qt.DeepEquals, []string{"the generation's index does not exist"})
 }
 
-// TestVerify_TheVectorValuesAreOnlyCheckedWhenTheyWereRead is Decision 13 in
-// this layer.
+// TestVerify_TheStoredValuesAreAlwaysReportedAsUnread is stokaro/ptah#2622.
 //
-// A caller that hands over a zero-filled placeholder of the right length gets a
-// dimension check and a silent "finite" about numbers nobody looked at. Where a
-// target refuses a non-finite vector on write -- pgvector does -- reading every
-// vector back proves nothing, so the honest answer is to say the check did not
-// run rather than to report it as passed.
-func TestVerify_TheVectorValuesAreOnlyCheckedWhenTheyWereRead(t *testing.T) {
-	tests := []struct {
-		name       string
-		read       bool
-		unmeasured int
-	}{
-		{name: "only their shape was read", read: false, unmeasured: 1},
-		{name: "the values were read", read: true, unmeasured: 0},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			expectation, structure, source, target, state := healthy()
-			state.VectorValuesRead = test.read
+// The report used to say this only when a caller declared it had not read the
+// values, and no caller ever declared otherwise: `VectorValuesRead` was set in
+// this file and nowhere else, and `embedpg.ReadVerificationRows` reports each
+// stored vector's width and never its values. The finiteness branch it gated
+// could not fire.
+//
+// It could not have fired even if the values were read. Measured live on
+// pgvector 0.8.1: `vector`, `halfvec` and `sparsevec` each refuse a NaN and an
+// infinity on write, so no such value can be in the corpus. What keeps it out
+// is `embedprovider.validateVector`, which has a caller and a test that reddens
+// without it.
+//
+// So the sentence is unconditional, and it says why the gap is not one.
+func TestVerify_TheStoredValuesAreAlwaysReportedAsUnread(t *testing.T) {
+	c := qt.New(t)
+	expectation, structure, source, target, state := healthy()
 
-			report := embedverify.Verify(expectation, structure, source, target, state)
+	report := embedverify.Verify(expectation, structure, source, target, state)
 
-			c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", summaries(report)))
-			c.Assert(report.Unmeasured, qt.HasLen, test.unmeasured)
-		})
-	}
+	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", summaries(report)))
+	c.Assert(report.Unmeasured, qt.HasLen, 1)
+	c.Assert(report.Unmeasured[0], qt.Contains, "the stored vectors were not read back")
+	c.Assert(report.Unmeasured[0], qt.Contains, "refuses a non-finite component on write")
 }
 
 // TestVerify_AnUnmeasuredVectorCheckIsNotABlocker keeps the note from stopping
@@ -631,7 +603,8 @@ func TestVerify_AnUnmeasuredVectorCheckIsNotABlocker(t *testing.T) {
 	c.Assert(report.Blocking(), qt.HasLen, 0)
 	c.Assert(report.Unmeasured, qt.DeepEquals, []string{
 		"the stored vectors were not read back, so their dimension was checked and their " +
-			"values were not",
+			"values were not; the target refuses a non-finite component on write, so nothing " +
+			"here could have carried one",
 	})
 }
 
@@ -739,7 +712,6 @@ func TestVerify_ARowNothingWroteIsMissingRatherThanAnotherGenerations(t *testing
 		target[index].Generation = ""
 		target[index].InputHash = ""
 		target[index].Dimension = 0
-		target[index].Vector = nil
 	}
 
 	report := embedverify.Verify(expectation, structure, source, target, state)

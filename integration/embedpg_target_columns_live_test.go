@@ -272,8 +272,8 @@ func TestReadVerificationRows_ReportsTheWidthAndNotTheVectorLive(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(target, qt.HasLen, 1)
-	// The server's own answer to how wide the stored vector is.
+	// The server's own answer to how wide the stored vector is, which is all
+	// the read reports: the values themselves are not fetched, and the field
+	// that used to carry them is gone (stokaro/ptah#2622).
 	c.Assert(target[0].Dimension, qt.Equals, 4)
-	// And nothing was allocated to carry values nobody read.
-	c.Assert(target[0].Vector, qt.HasLen, 0)
 }
