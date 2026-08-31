@@ -131,10 +131,10 @@ Two combinations are refused rather than approximated:
 
 - `--to hcl` with `--schema-file`. That target rewrites the Go files it reads —
   `--cleanup-go-annotations` removes their annotations after writing HCL — so
-  its source is `--root-dir`. Do not use cleanup when the annotations contain
-  [export-only naming metadata](#names-in-the-contract), because HCL cannot
-  preserve it. Converting a schema file to HCL is a different operation from
-  migrating annotations out of Go code.
+  its source is `--root-dir`. Cleanup refuses outright when the annotations
+  carry [export-only naming metadata](#names-in-the-contract), because HCL
+  cannot preserve it. Converting a schema file to HCL is a different operation
+  from migrating annotations out of Go code.
 - `--from db`. An export reads a schema definition, not a live database. Run
   [`ptah schema inspect`](../../direct/inspect/) to write HCL, SQL, or DBML
   from a database URL, review the file, then export it.
@@ -289,17 +289,28 @@ support is tracked in
 | --- | --- |
 | SQL, YAML, HCL, or DBML file | Uses derived names; these formats have no `api_name` or target-specific name syntax. |
 | Go annotations | Can declare `api_name`, `openapi_name`, `graphql_name`, and `proto_name`. |
-| OCI artifact | Uses the names in its canonical HCL payload, which cannot carry export-only names. |
+| OCI artifact | Uses the names in its canonical HCL payload, which cannot carry export-only names; publishing a schema that declares them is refused. |
 | Composite source | Preserves overrides on objects loaded from Go; a static source cannot add or overlay them. |
 | External or configured loader | Is not an input to `schema export`; materialize its SQL, HCL, or YAML output first, which then uses derived names. |
 
-:::danger[Do not clean or publish these declarations through HCL]
-`ptah schema export --to hcl --cleanup-go-annotations` writes HCL without
-export-only metadata and then removes the Go annotations that held it. OCI
-capture uses the same canonical HCL representation, so an OCI artifact also
-loses these declarations. Keep the annotated Go source and export contracts
-directly from it until [`stokaro/ptah#2607`](https://github.com/stokaro/ptah/issues/2607)
-is resolved.
+:::caution[HCL cannot carry these declarations, and refuses rather than drop them]
+HCL has no spelling for `api_name`, `api_type`, `api_expose` or the
+target-specific names, so `ptah schema export --to hcl` reports each one it
+would lose:
+
+```text
+export metadata api_name="Account" is not represented in HCL
+export metadata api_expose="read" is not represented in HCL
+```
+
+`--cleanup-go-annotations` refuses on that report, exits 2, and leaves the Go
+sources untouched, so the annotations holding the contract are never the only
+casualty of a conversion. Publishing an OCI artifact refuses for the same
+reason, before anything is pushed.
+
+Keep the annotated Go source and export contracts directly from it. A static
+spelling for this metadata is
+[`stokaro/ptah#2607`](https://github.com/stokaro/ptah/issues/2607).
 :::
 
 The examples in this section therefore use Go annotations. There is no

@@ -19,13 +19,13 @@ import (
 // the struct has an authored spelling, so adding one without teaching
 // TargetNameAttribute about it fails here rather than in somebody's contract.
 func TestTargetNamesAreAllReported(t *testing.T) {
-	fields := reflect.TypeOf(schemamodel.TargetNames{})
+	fields := reflect.TypeFor[schemamodel.TargetNames]()
 
-	for i := range fields.NumField() {
-		t.Run(fields.Field(i).Name, func(t *testing.T) {
+	for field := range fields.Fields() {
+		t.Run(field.Name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(schemamodel.TargetNameAttribute(fields.Field(i).Name), qt.Not(qt.Equals), "")
+			c.Assert(schemamodel.TargetNameAttribute(field.Name), qt.Not(qt.Equals), "")
 		})
 	}
 }
@@ -33,7 +33,7 @@ func TestTargetNamesAreAllReported(t *testing.T) {
 // TestExportMetadataIn_ReportsEveryTargetName drives the same struct through the
 // census, so a field with a spelling that is never read is caught as well.
 func TestExportMetadataIn_ReportsEveryTargetName(t *testing.T) {
-	fields := reflect.TypeOf(schemamodel.TargetNames{})
+	fields := reflect.TypeFor[schemamodel.TargetNames]()
 
 	for i := range fields.NumField() {
 		t.Run(fields.Field(i).Name, func(t *testing.T) {
