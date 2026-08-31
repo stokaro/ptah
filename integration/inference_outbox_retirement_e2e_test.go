@@ -12,7 +12,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
-	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"go.5x5.cz/ptah/internal/dbtarget"
 )
@@ -80,12 +80,16 @@ func assertAModeWithNoOutboxClaimsNothing(
 ) {
 	c.Helper()
 	frozen := writeCLISpecWithMode(c, endpoint, "immutable")
-	registerBareGeneration(c, ctx, db, "an-immutable-generation")
+	// A column of its own, so the default retirement destroys something and
+	// destroys nothing the live generation is using. A retirement whose plan
+	// destroys nothing is refused, correctly, as a record of something that did
+	// not happen.
+	registerBareGenerationInColumn(c, ctx, db, "an-immutable-generation", "embedding_immutable")
 	digest := retirementDigestOf(c, ctx, frozen, dbURL, "an-immutable-generation")
 
 	output := runInference(c, ctx, "retire",
 		"--spec", frozen, "--db-url", dbURL, "--generation", "an-immutable-generation",
-		"--approve", digest, "--approver", "an operator", "--drop-column=false")
+		"--approve", digest, "--approver", "an operator")
 
 	c.Assert(output, qt.Contains, "is gone, with")
 	c.Assert(output, qt.Not(qt.Contains), "the outbox is gone")
@@ -102,17 +106,20 @@ func assertASharedOutboxSurvivesOneRetirement(
 	c *qt.C, ctx context.Context, db *sql.DB, specPath, dbURL string,
 ) {
 	c.Helper()
-	registerBareGeneration(c, ctx, db, "a-second-generation")
-	registerBareGeneration(c, ctx, db, "the-one-being-retired")
+	registerBareGenerationInColumn(c, ctx, db, "a-second-generation", "embedding_second")
+	// Its own column, for the reason registerBareGenerationInColumn states: a
+	// retirement sharing the live generation's column can only run with
+	// --drop-column=false, and then it destroys nothing and is refused.
+	registerBareGenerationInColumn(c, ctx, db, "the-one-being-retired", "embedding_retired")
 
+	// Read under the flags the run uses -- the default here. The plan digest
+	// binds DropsColumn, so a digest read one way and approved the other is
+	// refused, correctly, and reads as a test failure rather than as the
+	// mismatch it is.
 	digest := retirementDigestOf(c, ctx, specPath, dbURL, "the-one-being-retired")
 	output := runInference(c, ctx, "retire",
 		"--spec", specPath, "--db-url", dbURL, "--generation", "the-one-being-retired",
-		"--approve", digest, "--approver", "an operator",
-		// The same flag the digest was read under. The plan digest binds
-		// DropsColumn, so a retirement approved for one and run with the other
-		// is refused -- correctly.
-		"--drop-column=false")
+		"--approve", digest, "--approver", "an operator")
 
 	c.Assert(output, qt.Contains, "the outbox stays")
 	c.Assert(outboxTriggerCount(c, ctx, db), qt.Equals, 2)
@@ -128,12 +135,15 @@ func assertTheLastRetirementTakesTheOutbox(
 	second := retirementDigestOf(c, ctx, specPath, dbURL, "a-second-generation")
 	runInference(c, ctx, "retire",
 		"--spec", specPath, "--db-url", dbURL, "--generation", "a-second-generation",
-		"--approve", second, "--approver", "an operator", "--drop-column=false")
+		"--approve", second, "--approver", "an operator")
 
+	// The live generation, and the last one, so its column goes with it. Read
+	// and run under the same flags: the plan digest binds DropsColumn, and a
+	// digest read one way and approved the other is refused.
 	digest := retirementDigestOf(c, ctx, specPath, dbURL, generation)
 	output := runInference(c, ctx, "retire",
 		"--spec", specPath, "--db-url", dbURL, "--generation", generation,
-		"--approve", digest, "--approver", "an operator", "--drop-column=false")
+		"--approve", digest, "--approver", "an operator")
 
 	c.Assert(output, qt.Contains, "the outbox is gone")
 	c.Assert(outboxTriggerCount(c, ctx, db), qt.Equals, 0)
