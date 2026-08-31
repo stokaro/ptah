@@ -2285,7 +2285,7 @@
         "/inference/troubleshooting/"
       ],
       "visibleWords": 491,
-      "sourceBytes": 4580
+      "sourceBytes": 4568
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/rollback-and-retire.md",
@@ -2322,7 +2322,7 @@
         "/inference/troubleshooting/"
       ],
       "visibleWords": 569,
-      "sourceBytes": 4677
+      "sourceBytes": 4667
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/run-in-kubernetes.md",
@@ -2839,8 +2839,8 @@
         "/inference/overview/",
         "/operate/troubleshooting/"
       ],
-      "visibleWords": 812,
-      "sourceBytes": 5731
+      "visibleWords": 827,
+      "sourceBytes": 5815
     },
     {
       "path": "docs/site/src/content/docs/operate/ai-agent-changes.md",

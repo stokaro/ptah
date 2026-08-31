@@ -128,3 +128,23 @@ type staleReadStore struct {
 func (s *staleReadStore) Run(_ context.Context, _ string) (embedrun.Run, error) {
 	return s.snapshot, nil
 }
+
+// TestClaim_NamesTheOperationOnce covers stokaro/ptah#2648 finding 3.
+//
+// Both the store and this layer wrapped the failure with `claim run <id>:`, so
+// an operator saw the clause twice: `claim run r: claim run r: not found: run
+// r`. The doubling is why the troubleshooting page could not be keyed on the
+// message -- nobody searches for a sentence that stutters.
+//
+// The memory store names no operation, so what this pins is that the engine
+// adds none of its own: whatever the store said arrives unchanged.
+func TestClaim_NamesTheOperationOnce(t *testing.T) {
+	c := qt.New(t)
+	ctx := context.Background()
+	runs := embedengine.Runs{Store: embedstore.NewMemory(), Worker: "operator"}
+
+	_, _, err := runs.Claim(ctx, "a-run-nobody-prepared")
+
+	c.Assert(err, qt.ErrorIs, embedstore.ErrNotFound)
+	c.Assert(err.Error(), qt.Equals, "not found: run a-run-nobody-prepared")
+}

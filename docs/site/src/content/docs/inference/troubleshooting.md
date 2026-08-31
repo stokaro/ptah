@@ -99,7 +99,7 @@ approving it — the pointer moved, the findings changed, the source moved.
 **Fix.** Read the new plan and approve that. The refusal is the mechanism
 working: it stopped an approval being applied to a different plan.
 
-## `rollback refused: N rows of the previous generation are stale`
+## `N rows are stale and this policy allows 0`
 
 **Cause.** The previous generation stopped being caught up. It drifted from the
 source, and going back to it would answer queries from a corpus that no longer
@@ -131,10 +131,13 @@ erroring. Then measure with `evaluate --baseline` rather than by impression.
 **Prevention.** Run the evaluation with a regression gate before the cutover, not
 after.
 
-## `run ...: no rows in result set`
+## `not found: run <id>`
 
 **Cause.** The run identifier is wrong, or you are pointed at a different
 database. Run identifiers are yours to choose and are not derived from anything.
+
+The running verbs say the same thing behind the operation they were doing:
+`claim run <id>: not found: run <id>`.
 
 **Fix.** Check both. A typo looks exactly like a run that was never prepared.
 
