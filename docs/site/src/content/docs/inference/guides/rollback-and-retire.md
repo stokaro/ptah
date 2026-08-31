@@ -95,6 +95,13 @@ ptah inference rollback --spec spec.yaml --db-url "$DB" \
   --to <previous-generation> --window 24h
 ```
 
+`--spec` is the **current** specification here, as it is everywhere else. Ptah
+does not measure the generation you are going back to against the file you
+passed: it measures it against the specification that generation was built
+from, which the registry records. The previous specification file is still
+needed for `catchup`, which maintains that generation rather than asking about
+it.
+
 The pointer moves back. Your application still reads whatever column its SQL
 names, so if you deployed the change that reads the new column, **redeploy the
 old one** — the rollback did not do that for you.

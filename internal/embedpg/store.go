@@ -48,13 +48,13 @@ func (s *Store) RegisterGeneration(
 	ctx context.Context, generation embedstore.Generation,
 ) (embedstore.Generation, error) {
 	const query = `INSERT INTO ` + embedstore.GenerationTable + ` (
-		identity, spec_digest, name, reproducibility, reproducibility_reason,
+		identity, spec_digest, spec_document, name, reproducibility, reproducibility_reason,
 		resolved_model, dimension, target_schema, target_table, target_column,
 		created_at, retired_at, verified_at, maintained_until)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 		ON CONFLICT (identity) DO NOTHING`
 	if _, err := s.db.ExecContext(ctx, query,
-		generation.Identity, generation.SpecDigest, generation.Name,
+		generation.Identity, generation.SpecDigest, generation.SpecDocument, generation.Name,
 		generation.Reproducibility, nullable(generation.ReproducibilityReason),
 		nullable(generation.ResolvedModel), generation.Dimension,
 		generation.TargetSchema, generation.TargetTable, generation.TargetColumn,
@@ -68,7 +68,7 @@ func (s *Store) RegisterGeneration(
 
 // Generation reads one back.
 func (s *Store) Generation(ctx context.Context, identity string) (embedstore.Generation, error) {
-	const query = `SELECT identity, spec_digest, COALESCE(name,''), reproducibility,
+	const query = `SELECT identity, spec_digest, spec_document, COALESCE(name,''), reproducibility,
 		COALESCE(reproducibility_reason,''), COALESCE(resolved_model,''), dimension,
 		target_schema, target_table, target_column, created_at, retired_at,
 		verified_at, maintained_until
@@ -76,7 +76,7 @@ func (s *Store) Generation(ctx context.Context, identity string) (embedstore.Gen
 	var generation embedstore.Generation
 	var retired, verified, maintained sql.NullTime
 	err := s.db.QueryRowContext(ctx, query, identity).Scan(
-		&generation.Identity, &generation.SpecDigest, &generation.Name,
+		&generation.Identity, &generation.SpecDigest, &generation.SpecDocument, &generation.Name,
 		&generation.Reproducibility, &generation.ReproducibilityReason, &generation.ResolvedModel,
 		&generation.Dimension, &generation.TargetSchema, &generation.TargetTable,
 		&generation.TargetColumn,

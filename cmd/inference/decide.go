@@ -703,7 +703,7 @@ func retirementFacts(
 func rollbackEligibility(
 	ctx context.Context, opened *session, generation string, pointer embedstore.Pointer,
 ) (embedcutover.RollbackEligibility, error) {
-	state, err := embedpg.RollbackState(ctx, opened.db, opened.loaded.Spec, generation, pointer)
+	state, err := embedpg.RollbackState(ctx, opened.db, generation, pointer)
 	if err != nil {
 		return embedcutover.RollbackEligibility{}, err
 	}

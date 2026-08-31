@@ -76,6 +76,8 @@ func GenerationFields() []schemamodel.Field {
 	return []schemamodel.Field{
 		text(GenerationTable, "identity", false, "the generation's content address"),
 		text(GenerationTable, "spec_digest", false, "the specification it was derived from"),
+		text(GenerationTable, "spec_document", false,
+			"that specification's bytes, so a previous generation stays measurable"),
 		text(GenerationTable, "name", true, "a display name, which is outside the identity"),
 		text(GenerationTable, "reproducibility", false, "full or partial"),
 		text(GenerationTable, "reproducibility_reason", true, "what is unpinned when it is partial"),

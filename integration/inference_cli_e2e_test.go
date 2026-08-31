@@ -24,6 +24,7 @@ import (
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/embedpg"
 	"go.5x5.cz/ptah/internal/embedrelease"
+	"go.5x5.cz/ptah/internal/embedspec"
 )
 
 // TestInferenceCLIE2E drives the whole lifecycle through the command line.
@@ -164,7 +165,7 @@ func assertRetirementRecordsWhatItDestroyed(
 	c.Helper()
 	// A generation nothing points at: registered, never built, and safe to
 	// destroy because there is nothing behind it to lose.
-	registerBareGeneration(c, ctx, db, "a-retirable-one")
+	registerBareGeneration(c, ctx, db, specPath, "a-retirable-one")
 	path := filepath.Join(c.TempDir(), "retirement.json")
 
 	digest := retirementDigestOf(c, ctx, specPath, dbURL, "a-retirable-one")
@@ -381,7 +382,7 @@ func assertNoWindowIsAskedForMeansNoWindow(
 	c *qt.C, ctx context.Context, db *sql.DB, specPath, dbURL string,
 ) {
 	c.Helper()
-	registerBareGeneration(c, ctx, db, "the-replaced-one")
+	registerBareGeneration(c, ctx, db, specPath, "the-replaced-one")
 	_, err := db.ExecContext(ctx,
 		`UPDATE ptah_embedding_pointer SET active_generation = 'the-replaced-one',
 			previous_generation = NULL
@@ -440,7 +441,7 @@ func assertAWindowMakesTheGenerationAWayBack(
 	// Rewind: the previous cutover left this generation active, and a second
 	// migration would leave it as the previous one. This is that state, minus
 	// the window -- which is what the cutover below has to add.
-	registerBareGeneration(c, ctx, db, "the-older-one")
+	registerBareGeneration(c, ctx, db, specPath, "the-older-one")
 	_, err := db.ExecContext(ctx,
 		`UPDATE ptah_embedding_pointer SET active_generation = 'the-older-one', previous_generation = NULL
 		 WHERE target_table = 'articles'`)
@@ -532,9 +533,11 @@ func planDigestOfRun(
 //
 // It stands in for the one a previous migration left: the pointer names it, the
 // registry knows it, and this test is not about how it was built.
-func registerBareGeneration(c *qt.C, ctx context.Context, db *sql.DB, identity string) {
+func registerBareGeneration(
+	c *qt.C, ctx context.Context, db *sql.DB, specPath, identity string,
+) {
 	c.Helper()
-	registerBareGenerationInColumn(c, ctx, db, identity, "embedding")
+	registerBareGenerationInColumn(c, ctx, db, specPath, identity, "embedding")
 }
 
 // registerBareGenerationInColumn is the same with a column of its own.
@@ -545,7 +548,7 @@ func registerBareGeneration(c *qt.C, ctx context.Context, db *sql.DB, identity s
 // record of something that did not happen. Giving it a column nobody else uses
 // is what lets the default retirement run against it.
 func registerBareGenerationInColumn(
-	c *qt.C, ctx context.Context, db *sql.DB, identity, column string,
+	c *qt.C, ctx context.Context, db *sql.DB, specPath, identity, column string,
 ) {
 	c.Helper()
 	// The columns as well as the row. A registry entry naming a column that is
@@ -566,12 +569,22 @@ func registerBareGenerationInColumn(
 			`ALTER TABLE articles ADD COLUMN IF NOT EXISTS %q %s`, column+suffix, kind))
 		c.Assert(err, qt.IsNil)
 	}
-	_, err := db.ExecContext(ctx,
+	// The document and its digest, because a real generation records the
+	// specification it was built from and rollback measures the previous
+	// generation through it (stokaro/ptah#2630). A row without one is not a
+	// legacy generation this test stands in for -- it is a state prepare
+	// cannot produce.
+	body, err := os.ReadFile(specPath)
+	c.Assert(err, qt.IsNil)
+	loaded, err := embedspec.Parse(body, specPath)
+	c.Assert(err, qt.IsNil)
+
+	_, err = db.ExecContext(ctx,
 		`INSERT INTO ptah_embedding_generation (
-			identity, spec_digest, reproducibility, dimension,
+			identity, spec_digest, spec_document, reproducibility, dimension,
 			target_schema, target_table, target_column, created_at)
-		 VALUES ($1, $1, 'full', 4, 'public', 'articles', $2, now())
-		 ON CONFLICT (identity) DO NOTHING`, identity, column)
+		 VALUES ($1, $2, $3, 'full', 4, 'public', 'articles', $4, now())
+		 ON CONFLICT (identity) DO NOTHING`, identity, loaded.Digest, string(body), column)
 	c.Assert(err, qt.IsNil)
 }
 

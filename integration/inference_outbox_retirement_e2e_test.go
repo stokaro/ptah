@@ -84,7 +84,7 @@ func assertAModeWithNoOutboxClaimsNothing(
 	// destroys nothing the live generation is using. A retirement whose plan
 	// destroys nothing is refused, correctly, as a record of something that did
 	// not happen.
-	registerBareGenerationInColumn(c, ctx, db, "an-immutable-generation", "embedding_immutable")
+	registerBareGenerationInColumn(c, ctx, db, frozen, "an-immutable-generation", "embedding_immutable")
 	digest := retirementDigestOf(c, ctx, frozen, dbURL, "an-immutable-generation")
 
 	output := runInference(c, ctx, "retire",
@@ -106,11 +106,11 @@ func assertASharedOutboxSurvivesOneRetirement(
 	c *qt.C, ctx context.Context, db *sql.DB, specPath, dbURL string,
 ) {
 	c.Helper()
-	registerBareGenerationInColumn(c, ctx, db, "a-second-generation", "embedding_second")
+	registerBareGenerationInColumn(c, ctx, db, specPath, "a-second-generation", "embedding_second")
 	// Its own column, for the reason registerBareGenerationInColumn states: a
 	// retirement sharing the live generation's column can only run with
 	// --drop-column=false, and then it destroys nothing and is refused.
-	registerBareGenerationInColumn(c, ctx, db, "the-one-being-retired", "embedding_retired")
+	registerBareGenerationInColumn(c, ctx, db, specPath, "the-one-being-retired", "embedding_retired")
 
 	// Read under the flags the run uses -- the default here. The plan digest
 	// binds DropsColumn, so a digest read one way and approved the other is

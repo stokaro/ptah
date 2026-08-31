@@ -9,6 +9,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/embedcutover"
 	"go.5x5.cz/ptah/internal/embedgen"
+	"go.5x5.cz/ptah/internal/embedspec"
 	"go.5x5.cz/ptah/internal/embedstore"
 	"go.5x5.cz/ptah/internal/embedverify"
 )
@@ -121,8 +122,15 @@ func dimensionOf(columnType string) int {
 // reported as available merely because the old tables still exist, and the only
 // way to honour that is for none of this to come from a status column somebody
 // set.
+//
+// It takes no specification, deliberately. The question is about ONE generation
+// -- the one the pointer names as its way back -- and the only specification
+// that can answer it is that generation's own, which the registry records.
+// Taking the caller's is what produced stokaro/ptah#2630: the parameter looked
+// like context and was in fact the measurement's identity, so the answer
+// changed with whichever file the operator happened to pass.
 func RollbackState(
-	ctx context.Context, db *sql.DB, spec embedgen.Spec, generation string, pointer embedstore.Pointer,
+	ctx context.Context, db *sql.DB, generation string, pointer embedstore.Pointer,
 ) (embedcutover.RollbackState, error) {
 	store := NewStore(db)
 	registered, err := store.Generation(ctx, generation)
@@ -130,8 +138,10 @@ func RollbackState(
 		return embedcutover.RollbackState{}, err
 	}
 
-	previous := spec
-	previous.Target.Column = registered.TargetColumn
+	previous, err := recordedSpec(registered)
+	if err != nil {
+		return embedcutover.RollbackState{}, err
+	}
 	structure, err := ReadStructure(ctx, db, previous, pointer.Active)
 	if err != nil {
 		return embedcutover.RollbackState{}, err
@@ -155,6 +165,32 @@ func RollbackState(
 		StaleRows:   stale,
 		MissingRows: missing,
 	}, nil
+}
+
+// recordedSpec is the specification the generation was actually built from.
+//
+// Not the caller's specification with the old column swapped in. That hybrid
+// belongs to no generation -- measured, its identity digest matched neither the
+// retired generation's nor the current one's -- and every expected input hash
+// computed under it mismatched, so the documented rollback was refused with
+// "N rows are stale" while `verify` on the same generation passed at the same
+// instant (stokaro/ptah#2630).
+//
+// A generation with no recorded document is refused rather than measured
+// against a substitute. There is no substitute: the answer this feeds is
+// whether a way back is safe to take, and a wrong yes destroys a corpus.
+func recordedSpec(registered embedstore.Generation) (embedgen.Spec, error) {
+	if strings.TrimSpace(registered.SpecDocument) == "" {
+		return embedgen.Spec{}, fmt.Errorf(
+			"generation %s records no specification, so nothing can measure whether it is "+
+				"still fresh enough to roll back to", registered.Identity)
+	}
+	loaded, err := embedspec.ParsePublished(
+		[]byte(registered.SpecDocument), "the recorded specification", registered.SpecDigest)
+	if err != nil {
+		return embedgen.Spec{}, err
+	}
+	return loaded.Spec, nil
 }
 
 // generationFreshness counts what is wrong with a generation right now.
