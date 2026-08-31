@@ -121,6 +121,26 @@ type Store interface {
 	// lease expired mid-request still holds the token it was given, and the
 	// store is the only place that can tell it has been superseded.
 	SaveRun(ctx context.Context, run embedrun.Run) error
+	// ClaimRun takes a run for a worker and returns it as the store now holds
+	// it, with the fencing token the store assigned.
+	//
+	// It writes the LEASE ALONE -- owner, expiry, token -- and not the run.
+	// Claiming used to be a read-modify-write of the whole row, so a worker
+	// that committed a checkpoint between the claimer's read and its write was
+	// still unfenced, its transaction landed, and the claim then overwrote the
+	// cursor and every progress counter with the snapshot it had read. A live
+	// backfill reproduced it: twenty vectors committed, four checkpoints in the
+	// event trail, and a run row saying three batches and fifteen rows. On
+	// resume the rows behind the rewound cursor were read and paid for again,
+	// and nothing reported the rewind (stokaro/ptah#2636).
+	//
+	// The token is assigned by the STORE rather than computed by the caller,
+	// for the second half of the same race: two claimers reading one token both
+	// compute the same successor, and the second write passes the `<=` guard.
+	//
+	// The returned run is what the row holds after the claim, so a caller that
+	// goes on to write it back carries whatever landed while it was reading.
+	ClaimRun(ctx context.Context, id, worker string, leaseExpires time.Time) (embedrun.Run, int64, error)
 
 	// AppendEvent records what happened.
 	AppendEvent(ctx context.Context, event embedrun.Event) error

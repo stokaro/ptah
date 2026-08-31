@@ -59,11 +59,64 @@ func TestEmbedPGStoreE2E(t *testing.T) {
 	// rule below addresses its own rows.
 	assertRunRoundTrips(c, ctx, store)
 	assertFencingRefusesStaleWrites(c, ctx, store)
+	assertAClaimWritesTheLeaseAndNothingElse(c, ctx, store)
 	assertRegistrationIsIdempotent(c, ctx, store)
 	assertRetirementIsTerminal(c, ctx, store)
 	assertPointerIsCompareAndSet(c, ctx, store)
 	assertEventTrailIsOrdered(c, ctx, store)
 	assertAbsenceIsNotEmptiness(c, ctx, store)
+}
+
+// assertAClaimWritesTheLeaseAndNothingElse is stokaro/ptah#2636 at the
+// statement.
+//
+// A claim used to write every column of the run, so a checkpoint committed
+// between the claimer's read and its write was erased. The statement now names
+// the lease columns alone and derives the token from the stored value, so there
+// is no snapshot for it to write back and no window in which to hold one.
+//
+// The run is created mid-backfill, with a cursor and non-zero counters, because
+// a claim that zeroed them would pass against a run that had none.
+func assertAClaimWritesTheLeaseAndNothingElse(
+	c *qt.C, ctx context.Context, store *embedpg.Store,
+) {
+	c.Helper()
+	run := liveRun("claim-lease")
+	c.Assert(store.CreateRun(ctx, run), qt.IsNil)
+	before, err := store.Run(ctx, run.ID)
+	c.Assert(err, qt.IsNil)
+	c.Assert(before.Progress.RowsEmbedded > 0, qt.IsTrue,
+		qt.Commentf("the fixture must carry progress, or this asserts nothing"))
+	c.Assert(before.Cursor, qt.Not(qt.HasLen), 0)
+
+	expires := liveAt.Add(time.Hour)
+	claimed, token, err := store.ClaimRun(ctx, run.ID, "operator", expires)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(token, qt.Equals, before.FencingToken+1)
+	c.Assert(claimed.FencingToken, qt.Equals, token)
+	c.Assert(claimed.LeaseOwner, qt.Equals, "operator")
+	c.Assert(claimed.LeaseExpires.UTC(), qt.Equals, expires.UTC())
+	// Everything the run was doing is untouched, in the returned copy and in
+	// the row a resume would read.
+	c.Assert(claimed.Cursor, qt.DeepEquals, before.Cursor)
+	c.Assert(claimed.Progress, qt.DeepEquals, before.Progress)
+	c.Assert(claimed.Phase, qt.Equals, before.Phase)
+	c.Assert(claimed.Status, qt.Equals, before.Status)
+	c.Assert(claimed.SnapshotWatermark, qt.Equals, before.SnapshotWatermark)
+	c.Assert(claimed.CatchUpWatermark, qt.Equals, before.CatchUpWatermark)
+
+	stored, err := store.Run(ctx, run.ID)
+	c.Assert(err, qt.IsNil)
+	c.Assert(stored.Cursor, qt.DeepEquals, before.Cursor)
+	c.Assert(stored.Progress, qt.DeepEquals, before.Progress)
+	c.Assert(stored.FencingToken, qt.Equals, token)
+
+	// A second claim moves the token again, which is what makes two operators
+	// racing for a run resolve rather than tie.
+	_, second, err := store.ClaimRun(ctx, run.ID, "another operator", expires)
+	c.Assert(err, qt.IsNil)
+	c.Assert(second, qt.Equals, token+1)
 }
 
 // liveAt is a fixed instant, rounded to microseconds because that is what

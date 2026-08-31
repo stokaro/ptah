@@ -428,3 +428,19 @@ func (s *Store) ReachPhase(ctx context.Context, runID string, to embedrun.Phase)
 	}
 	return s.SaveRun(ctx, run)
 }
+
+// ClaimRun takes a run for a worker, writing the lease and nothing else.
+//
+// See [embedstore.Store.ClaimRun] for why the row is not rewritten and why the
+// token comes from the store. The whole claim is one statement, so there is no
+// window between deciding the token and writing it.
+func (s *Store) ClaimRun(
+	ctx context.Context, id, worker string, leaseExpires time.Time,
+) (embedrun.Run, int64, error) {
+	row := s.db.QueryRowContext(ctx, claimRunSQL, id, worker, leaseExpires.UTC(), time.Now().UTC())
+	run, err := scanRun(row, id)
+	if err != nil {
+		return embedrun.Run{}, 0, fmt.Errorf("claim run %s: %w", id, err)
+	}
+	return run, run.FencingToken, nil
+}
