@@ -41,7 +41,7 @@ var registry = []Entry{
 	{Field: "schemamodel.CompositeType.StructName", Disposition: SourceOrigin, Reason: "the Go struct the declaration was read from; the object's own name is its identity"},
 	{Field: "schemamodel.Constraint.CheckExpression", Disposition: DDL},
 	{Field: "schemamodel.Constraint.Columns", Disposition: DDL},
-	{Field: "schemamodel.Constraint.Comment", Disposition: DDL, Gap: "https://github.com/stokaro/ptah/issues/2611"},
+	{Field: "schemamodel.Constraint.Comment", Disposition: DDL},
 	{Field: "schemamodel.Constraint.Deferrable", Disposition: DDL},
 	{Field: "schemamodel.Constraint.ExcludeElements", Disposition: DDL},
 	{Field: "schemamodel.Constraint.ForeignColumn", Disposition: DDL},

@@ -680,7 +680,12 @@ func (r *Renderer) renderTableComments(node *ast.CreateTableNode) {
 		r.w.WriteLinef("COMMENT ON COLUMN %s.%s IS %s;",
 			table, r.escapeIdentifier(column.Name), r.escapeValue(column.Comment))
 	}
-	if node.Comment != "" || slices.ContainsFunc(node.Columns, columnHasComment) {
+	for _, constraint := range node.Constraints {
+		r.writeConstraintComment(node.Name, constraint)
+	}
+	if node.Comment != "" ||
+		slices.ContainsFunc(node.Columns, columnHasComment) ||
+		slices.ContainsFunc(node.Constraints, constraintHasComment) {
 		r.w.WriteLine("")
 	}
 }
@@ -689,6 +694,29 @@ func (r *Renderer) renderTableComments(node *ast.CreateTableNode) {
 // block above ends with.
 func columnHasComment(column *ast.ColumnNode) bool {
 	return column.Comment != ""
+}
+
+// writeConstraintComment writes COMMENT ON CONSTRAINT for a constraint that
+// carries one, and nothing for a constraint that does not.
+func (r *Renderer) writeConstraintComment(table string, constraint *ast.ConstraintNode) {
+	if constraint == nil || !constraintHasComment(constraint) {
+		return
+	}
+	r.w.WriteLinef("COMMENT ON CONSTRAINT %s ON %s IS %s;",
+		r.escapeIdentifier(constraint.Name),
+		r.escapeQualifiedIdentifier(table),
+		r.escapeValue(constraint.Comment))
+}
+
+// constraintHasComment reports whether a constraint carries one that can be
+// addressed.
+//
+// COMMENT ON CONSTRAINT names the constraint, so an unnamed one has nothing to
+// address and is skipped rather than guessed at: the server's generated name is
+// not knowable from here, and a comment written onto the wrong constraint is
+// worse than one not written at all.
+func constraintHasComment(constraint *ast.ConstraintNode) bool {
+	return constraint.Comment != "" && constraint.Name != ""
 }
 
 // writeCustomSQL writes the raw SQL tail the author attached to CREATE TABLE,
@@ -848,6 +876,13 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 			// Remove the leading spaces from constraint rendering for ALTER
 			constraintLine = strings.TrimPrefix(constraintLine, "  ")
 			r.w.WriteLinef("ALTER TABLE %s ADD %s;", r.escapeQualifiedIdentifier(node.Name), constraintLine)
+			// The comment is a separate statement here for the same reason it
+			// is after CREATE TABLE, and it has to be written on BOTH paths.
+			// Measured on PostgreSQL 18: `schema apply` reaches an existing
+			// table through ALTER rather than CREATE, so a fix that taught only
+			// the CREATE path left the comment out of every applied database
+			// while `schema render` printed it.
+			r.writeConstraintComment(node.Name, op.Constraint)
 		case *ast.DropConstraintOperation:
 			dropSQL := fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT", r.escapeQualifiedIdentifier(node.Name))
 			if op.IfExists {
