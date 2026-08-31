@@ -319,8 +319,11 @@ func TestParseMode_RefusesAModeThisBuildCannotAct(t *testing.T) {
 	}{
 		{name: "nothing", raw: "", want: embedcatchup.ModeNone, ok: true},
 		{name: "immutable", raw: "immutable", want: embedcatchup.ModeImmutable, ok: true},
-		{name: "dual write", raw: "dual_write", want: embedcatchup.ModeDualWrite, ok: true},
 		{name: "outbox", raw: "outbox", want: embedcatchup.ModeOutbox, ok: true},
+		// Refused rather than accepted: nothing in this build can produce the
+		// evidence its assessment requires, so a run selecting it could never
+		// leave the backfill (stokaro/ptah#2632).
+		{name: "dual write", raw: "dual_write", want: embedcatchup.ModeNone, ok: false},
 		{name: "debezium", raw: "debezium", want: embedcatchup.ModeNone, ok: false},
 		{name: "logical replication", raw: "logical_replication", want: embedcatchup.ModeNone, ok: false},
 	}

@@ -1872,10 +1872,11 @@
       ],
       "inboundLinks": [
         "/inference/concepts/lifecycle/",
-        "/inference/reference/specification/"
+        "/inference/reference/specification/",
+        "/inference/strategies/choose-a-consistency-mode/"
       ],
-      "visibleWords": 497,
-      "sourceBytes": 3684
+      "visibleWords": 615,
+      "sourceBytes": 4325
     },
     {
       "path": "docs/site/src/content/docs/inference/concepts/embeddings-and-inference-state.md",
@@ -2577,8 +2578,8 @@
         "/inference/concepts/consistency/"
       ],
       "inboundLinks": [],
-      "visibleWords": 947,
-      "sourceBytes": 8003
+      "visibleWords": 944,
+      "sourceBytes": 7989
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/support-and-limitations.md",
@@ -2618,8 +2619,8 @@
         "/inference/guides/run-in-kubernetes/",
         "/inference/overview/"
       ],
-      "visibleWords": 728,
-      "sourceBytes": 5444
+      "visibleWords": 707,
+      "sourceBytes": 5325
     },
     {
       "path": "docs/site/src/content/docs/inference/strategies/choose-a-consistency-mode.md",
@@ -2649,12 +2650,14 @@
       "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
-      "outboundLinks": [],
+      "outboundLinks": [
+        "/inference/concepts/consistency/"
+      ],
       "inboundLinks": [
         "/inference/concepts/consistency/"
       ],
-      "visibleWords": 488,
-      "sourceBytes": 3453
+      "visibleWords": 508,
+      "sourceBytes": 3614
     },
     {
       "path": "docs/site/src/content/docs/inference/strategies/choose-a-target-layout.md",
@@ -2836,8 +2839,8 @@
         "/inference/overview/",
         "/operate/troubleshooting/"
       ],
-      "visibleWords": 790,
-      "sourceBytes": 5605
+      "visibleWords": 812,
+      "sourceBytes": 5731
     },
     {
       "path": "docs/site/src/content/docs/operate/ai-agent-changes.md",
