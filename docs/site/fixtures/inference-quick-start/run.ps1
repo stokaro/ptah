@@ -15,8 +15,12 @@ $RuntimeDir = Join-Path $FixtureDir '.ptah-inference'
 $RuntimeSpec = Join-Path $RuntimeDir 'spec.yaml'
 $DockerContext = if ($env:PTAH_DOCKER_CONTEXT) { $env:PTAH_DOCKER_CONTEXT } else { 'default' }
 $FixtureHost = if ($env:PTAH_FIXTURE_HOST) { $env:PTAH_FIXTURE_HOST } else { '127.0.0.1' }
-$PostgresPort = if ($env:PTAH_INFERENCE_POSTGRES_PORT) { $env:PTAH_INFERENCE_POSTGRES_PORT } else { '55432' }
-$EmbedPort = if ($env:PTAH_INFERENCE_EMBED_PORT) { $env:PTAH_INFERENCE_EMBED_PORT } else { '58080' }
+# Empty unless pinned, which publishes to a host port Docker chooses. The two
+# variables stay for a caller that needs a fixed address. They defaulted to
+# 55432 and 58080, both inside Linux's default ephemeral range, so a run could
+# lose the port to one of its own outbound connections (stokaro/ptah#2673).
+$PostgresPort = if ($env:PTAH_INFERENCE_POSTGRES_PORT) { $env:PTAH_INFERENCE_POSTGRES_PORT } else { '' }
+$EmbedPort = if ($env:PTAH_INFERENCE_EMBED_PORT) { $env:PTAH_INFERENCE_EMBED_PORT } else { '' }
 $Project = if ($env:PTAH_INFERENCE_PROJECT) { $env:PTAH_INFERENCE_PROJECT } else { 'ptah-inference-quick-start' }
 $PtahBin = if ($env:PTAH_BIN) { $env:PTAH_BIN } else { 'ptah' }
 $DatabaseUrl = if ($env:PTAH_DB_URL) {
@@ -60,11 +64,28 @@ function Assert-Runtime {
     }
 }
 
+# Get-PublishedPort asks Docker which host port a container port ended up on.
+function Get-PublishedPort {
+    param([string]$Service, [string]$ContainerPort)
+    $mapping = Invoke-Compose @('port', $Service, $ContainerPort)
+    return ($mapping -split ':')[-1].Trim()
+}
+
 function Start-Services {
-    Write-RuntimeSpec
+    # Up first, then the specification: the ports are Docker's to choose, so
+    # they are not knowable until the containers exist (stokaro/ptah#2673).
     Invoke-Compose @('up', '-d', '--build', '--wait')
+    $script:PostgresPort = Get-PublishedPort 'postgres' '5432'
+    $script:EmbedPort = Get-PublishedPort 'embeddings' '8080'
+    if (-not $script:PostgresPort -or -not $script:EmbedPort) {
+        Write-Error 'run.ps1: docker did not report the published ports'
+        exit 1
+    }
+    $script:DatabaseUrl = "postgres://ptah:ptah@$FixtureHost`:$script:PostgresPort/ptah?sslmode=disable"
+    Write-RuntimeSpec
     Write-Output "runtime specification: $RuntimeSpec"
-    Write-Output "database URL: $DatabaseUrl"
+    Write-Output "database URL: $script:DatabaseUrl"
+    Write-Output "embeddings endpoint: http://$FixtureHost`:$script:EmbedPort/v1"
 }
 
 function Get-ApprovalDigest {

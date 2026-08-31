@@ -2458,8 +2458,8 @@
         "/inference/guides/create-first-generation/",
         "/inference/overview/"
       ],
-      "visibleWords": 566,
-      "sourceBytes": 7245
+      "visibleWords": 633,
+      "sourceBytes": 7611
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/commands.md",
