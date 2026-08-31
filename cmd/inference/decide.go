@@ -452,10 +452,17 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 	if err != nil {
 		return err
 	}
+	// Measured rather than asserted. `DropsIndex: true` promised the operator
+	// an index would go whether or not one was there, and the record afterwards
+	// said one had (stokaro/ptah#2642).
+	hasIndex, err := embedpg.GenerationIndexExists(ctx, opened.db, registered)
+	if err != nil {
+		return err
+	}
 	plan := embedcutover.RetirementPlan{
 		Generation: options.generation, Schema: opened.loaded.Spec.Target.Schema,
 		Table: registered.TargetTable, Column: registered.TargetColumn,
-		DropsIndex: true, DropsColumn: options.dropColumn, RowCount: rows,
+		DropsIndex: hasIndex, DropsColumn: options.dropColumn, RowCount: rows,
 	}
 	state, observed, err := retirementFacts(ctx, opened, registered, options.generation)
 	if err != nil {
@@ -473,7 +480,7 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 		return refusal(out, "retirement refused", decision.Blockers)
 	}
 
-	if err := embedpg.RetireIndex(ctx, opened.db, opened.loaded.Spec, registered); err != nil {
+	if err := embedpg.RetireIndex(ctx, opened.db, registered); err != nil {
 		return err
 	}
 	if plan.DropsColumn {

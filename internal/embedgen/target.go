@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/internal/embeddigest"
 )
 
 // TargetObjects is the schema a generation needs in order to exist: the column
@@ -103,7 +104,26 @@ func (s Spec) validateTarget() error {
 // would collide the moment a second generation appeared -- which is the whole
 // shape this design is for.
 func (s Spec) indexName() string {
-	return fmt.Sprintf("%s_%s_%s_idx", s.Target.Table, s.Target.Column, s.Identity().Short())
+	return IndexName(s.Target.Table, s.Target.Column, s.Identity().Digest)
+}
+
+// IndexName is the name a generation's index has, from the three facts that
+// decide it.
+//
+// It takes the facts rather than a specification because retirement has no
+// specification for the generation it is destroying -- it has a registry row,
+// which records the table, the column and the identity and nothing else. The
+// retirement used to build the name from the CURRENT specification with the
+// column swapped in, and Target.Column is an identity field, so the digest in
+// the name belonged to a hybrid that was no generation at all. The
+// `DROP INDEX IF EXISTS` then matched nothing, the index survived, and the verb
+// reported the generation gone at exit 0 (stokaro/ptah#2642).
+//
+// One function, so a name that is created and a name that is dropped cannot
+// come from two derivations. That is the failure this replaces rather than a
+// risk of repeating it.
+func IndexName(table, column, identity string) string {
+	return fmt.Sprintf("%s_%s_%s_idx", table, column, embeddigest.Short(identity))
 }
 
 // operatorClass is the pgvector operator class for this representation and

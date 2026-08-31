@@ -22,6 +22,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/embedgen"
 	"go.5x5.cz/ptah/internal/embedpg"
+	"go.5x5.cz/ptah/internal/embedstore"
 )
 
 // TestEnsureIndex_BuildsAValidIndexLive is the happy path.
@@ -230,4 +231,102 @@ func indexNames(c *qt.C, ctx context.Context, db *sql.DB, table string) []string
 	}
 	c.Assert(rows.Err(), qt.IsNil)
 	return names
+}
+
+// TestRetireIndex_DropsTheIndexTheGenerationBuiltLive is stokaro/ptah#2642.
+//
+// The retirement built the index name from the CURRENT specification with only
+// `Target.Column` swapped in. `Target.Column` is an identity field, so the
+// digest in the generated name belonged to a hybrid that was no generation at
+// all, and the `DROP INDEX IF EXISTS` matched nothing. With
+// `--drop-column=false` -- the only mode in which dropping the index IS the
+// operation -- the index survived while the verb reported the generation gone.
+//
+// Retiring an old generation while holding the new specification is the
+// documented workflow. The signature is now what closes it -- a retirement takes
+// the registry row and no specification, so there is no wrong one to pass -- and
+// the test asserts the name the old code WOULD have built is a different name,
+// so a change that reintroduced the hybrid would have to redden here.
+func TestRetireIndex_DropsTheIndexTheGenerationBuiltLive(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	db, table := targetColumnsDatabase(c, ctx, withVector)
+
+	retiring := indexedSpec(c, table)
+	c.Assert(embedpg.EnsureTarget(ctx, db, retiring), qt.IsNil)
+	_, err := embedpg.EnsureIndex(ctx, db, retiring)
+	c.Assert(err, qt.IsNil)
+	_, valid, _ := indexInCatalog(c, ctx, db, retiring)
+	c.Assert(valid, qt.IsTrue, qt.Commentf("the index must exist, or the drop asserts nothing"))
+
+	registered := registryRowFor(retiring)
+	c.Assert(embedpg.GenerationIndexName(registered), qt.Equals, indexNameOf(c, retiring))
+
+	// The name the retirement used to build: the operator's CURRENT
+	// specification -- a different generation -- with the retired column
+	// swapped in. Target.Column is an identity field, so the digest belongs to
+	// a hybrid that is no generation, and the DROP matched nothing.
+	holding := indexedSpec(c, table)
+	holding.Model.Revision = "2"
+	holding.Target.Column = retiring.Target.Column + "_v2"
+	hybrid := holding
+	hybrid.Target.Column = retiring.Target.Column
+	c.Assert(indexNameOf(c, hybrid), qt.Not(qt.Equals), indexNameOf(c, retiring),
+		qt.Commentf("the hybrid must name a different index, or this test cannot fail"))
+
+	exists, err := embedpg.GenerationIndexExists(ctx, db, registered)
+	c.Assert(err, qt.IsNil)
+	c.Assert(exists, qt.IsTrue)
+
+	c.Assert(embedpg.RetireIndex(ctx, db, registered), qt.IsNil)
+
+	gone, err := embedpg.GenerationIndexExists(ctx, db, registered)
+	c.Assert(err, qt.IsNil)
+	c.Assert(gone, qt.IsFalse)
+}
+
+// TestRetireIndex_ReportsAGenerationThatBuiltNoIndexLive is the control.
+//
+// `DropsIndex` was a literal `true`, so a plan promised to drop an index
+// whether or not one existed and the record afterwards claimed one had been
+// dropped. A generation with no index method builds none, and the question has
+// to be answered by the catalog rather than by the caller's specification --
+// which describes a different generation.
+func TestRetireIndex_ReportsAGenerationThatBuiltNoIndexLive(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	db, table := targetColumnsDatabase(c, ctx, withVector)
+
+	unindexed := loadTargetSpec(c, table)
+	c.Assert(unindexed.Target.IndexMethod, qt.Equals, "")
+	c.Assert(embedpg.EnsureTarget(ctx, db, unindexed), qt.IsNil)
+
+	registered := registryRowFor(unindexed)
+	exists, err := embedpg.GenerationIndexExists(ctx, db, registered)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(exists, qt.IsFalse)
+	// And retiring it is still a clean no-op rather than an error.
+	c.Assert(embedpg.RetireIndex(ctx, db, registered), qt.IsNil)
+}
+
+// registryRowFor is the row the registry holds for a generation, which is all a
+// retirement has to work from.
+func registryRowFor(spec embedgen.Spec) embedstore.Generation {
+	return embedstore.Generation{
+		Identity:     spec.Identity().Digest,
+		TargetSchema: spec.Target.Schema,
+		TargetTable:  spec.Target.Table,
+		TargetColumn: spec.Target.Column,
+	}
+}
+
+// indexNameOf is the name the specification itself builds.
+func indexNameOf(c *qt.C, spec embedgen.Spec) string {
+	c.Helper()
+	objects, err := spec.TargetObjects()
+	c.Assert(err, qt.IsNil)
+	return objects.Index.Name
 }
