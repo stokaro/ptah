@@ -72,6 +72,20 @@ vector promptly.
 | `outbox_sequence` | The outbox's own ordering is the version. |
 | `input_hash` | A vector is stale when the text that produced it changed. |
 
+The strategy also decides how two versions of one row are put in order, which is
+what stops a late answer overwriting a newer one. `updated_at` compares
+instants, `monotonic` and `outbox_sequence` compare numbers, and `input_hash`
+records no version and orders nothing — under it a repeated answer is
+recognized by its input hash rather than by its age.
+
+**`version_field` has to hold a value the strategy can read.** A `monotonic`
+column holding a timestamp, or an `updated_at` column holding a counter, gives
+versions that order nothing: a late retry then replaces a newer vector, because
+nothing establishes which is newer. Ptah does not guess an order for a value it
+cannot read — guessing is what made a shorter rendering of a later instant look
+stale — so this is a configuration error with a silent cost, and the pairing is
+worth checking when you write the specification.
+
 ## `preprocessing`
 
 Every field here is **identity**: each one changes the text that is sent.

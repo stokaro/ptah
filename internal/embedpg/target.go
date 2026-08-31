@@ -97,7 +97,10 @@ func (t *Target) Commit(ctx context.Context, writes []embedrun.TargetWrite, run 
 		return err
 	}
 	for _, write := range writes {
-		resolved, changed, err := embedrun.ResolveWrite(existing[writeKey(write.Key)], write)
+		// The strategy's own ordering. Reading a rendered timestamp as an
+		// opaque string discarded fresh answers as stale (stokaro/ptah#2635).
+		resolved, changed, err := embedrun.ResolveWrite(
+			existing[writeKey(write.Key)], write, t.spec.Source.VersionStrategy.VersionOrder())
 		if err != nil {
 			return fmt.Errorf("write %v: %w", write.Key, err)
 		}

@@ -29,7 +29,7 @@ func TestResolveWrite_RepeatedWorkIsHarmless(t *testing.T) {
 	c := qt.New(t)
 	existing := write(embedrun.WriteUpsert, "7", "hash-7")
 
-	resolved, changed, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, "7", "hash-7"))
+	resolved, changed, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, "7", "hash-7"), embedrun.OrderNumeric)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(changed, qt.IsFalse)
@@ -41,7 +41,7 @@ func TestResolveWrite_ANewerVersionWins(t *testing.T) {
 	c := qt.New(t)
 	existing := write(embedrun.WriteUpsert, "7", "hash-7")
 
-	resolved, changed, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, "8", "hash-8"))
+	resolved, changed, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, "8", "hash-8"), embedrun.OrderNumeric)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(changed, qt.IsTrue)
@@ -59,7 +59,7 @@ func TestResolveWrite_ALateAnswerDoesNotWin(t *testing.T) {
 	c := qt.New(t)
 	existing := write(embedrun.WriteUpsert, "9", "hash-9")
 
-	resolved, changed, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, "7", "hash-7"))
+	resolved, changed, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, "7", "hash-7"), embedrun.OrderNumeric)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(changed, qt.IsFalse)
@@ -76,7 +76,7 @@ func TestResolveWrite_ATombstoneSurvivesALateUpdate(t *testing.T) {
 	c := qt.New(t)
 	existing := write(embedrun.WriteTombstone, "9", "")
 
-	resolved, changed, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, "7", "hash-7"))
+	resolved, changed, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, "7", "hash-7"), embedrun.OrderNumeric)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(changed, qt.IsFalse)
@@ -91,7 +91,7 @@ func TestResolveWrite_ANewerSourceVersionRevivesATombstonedRow(t *testing.T) {
 	c := qt.New(t)
 	existing := write(embedrun.WriteTombstone, "9", "")
 
-	resolved, changed, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, "10", "hash-10"))
+	resolved, changed, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, "10", "hash-10"), embedrun.OrderNumeric)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(changed, qt.IsTrue)
@@ -111,7 +111,7 @@ func TestResolveWrite_ATombstoneSurvivesAnUnorderedUpdate(t *testing.T) {
 	c := qt.New(t)
 	existing := write(embedrun.WriteTombstone, "9", "")
 
-	resolved, changed, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, "9", "hash-9"))
+	resolved, changed, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, "9", "hash-9"), embedrun.OrderNumeric)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(changed, qt.IsFalse)
@@ -130,7 +130,7 @@ func TestResolveWrite_AnUnversionedWriteDoesNotLoseToAVersionedRow(t *testing.T)
 	c := qt.New(t)
 	existing := write(embedrun.WriteUpsert, "5", "hash-old")
 
-	resolved, changed, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, "", "hash-new"))
+	resolved, changed, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, "", "hash-new"), embedrun.OrderNumeric)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(changed, qt.IsTrue)
@@ -149,7 +149,7 @@ func TestResolveWrite_AWriteNeverCrossesGenerations(t *testing.T) {
 		Key: []string{"1"}, Generation: "gen-0", Kind: embedrun.WriteUpsert, Version: "7",
 	}
 
-	_, changed, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, "8", "hash-8"))
+	_, changed, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, "8", "hash-8"), embedrun.OrderNumeric)
 
 	c.Assert(err, qt.ErrorMatches, `.*belongs to generation gen-0 and the write is for gen-1.*`)
 	c.Assert(changed, qt.IsFalse)
@@ -165,9 +165,9 @@ func TestResolveWrite_AnUnversionedGenerationStillStoresTheNewestAnswer(t *testi
 	c := qt.New(t)
 	existing := write(embedrun.WriteUpsert, "", "hash-a")
 
-	same, changedSame, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, "", "hash-a"))
+	same, changedSame, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, "", "hash-a"), embedrun.OrderNumeric)
 	c.Assert(err, qt.IsNil)
-	different, changedDifferent, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, "", "hash-b"))
+	different, changedDifferent, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, "", "hash-b"), embedrun.OrderNumeric)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(changedSame, qt.IsFalse)
@@ -181,7 +181,7 @@ func TestResolveWrite_AnUnversionedGenerationStillStoresTheNewestAnswer(t *testi
 func TestResolveWrite_TheFirstWriteForAKeyIsStored(t *testing.T) {
 	c := qt.New(t)
 
-	resolved, changed, err := embedrun.ResolveWrite(nil, write(embedrun.WriteUpsert, "1", "hash-1"))
+	resolved, changed, err := embedrun.ResolveWrite(nil, write(embedrun.WriteUpsert, "1", "hash-1"), embedrun.OrderNumeric)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(changed, qt.IsTrue)
@@ -195,43 +195,233 @@ func TestResolveWrite_RefusesAWriteWithNoGeneration(t *testing.T) {
 	orphan := write(embedrun.WriteUpsert, "1", "hash-1")
 	orphan.Generation = ""
 
-	_, _, err := embedrun.ResolveWrite(nil, orphan)
+	_, _, err := embedrun.ResolveWrite(nil, orphan, embedrun.OrderNumeric)
 
 	c.Assert(err, qt.ErrorMatches, `.*names no generation.*`)
 }
 
-// TestResolveWrite_VersionOrderSurvivesADigitBoundary is where a lexical
-// comparison alone is wrong.
+// TestResolveWrite_TheStrategyDecidesTheOrder is where one comparison for both
+// shapes is wrong.
 //
-// "10" is newer than "9" and sorts before it as a string, so a counter passing
-// ten would start losing to its own past. Comparing length first is what orders
-// a monotonic counter correctly, and it leaves an equal-length comparison to do
-// the rest -- which is what an RFC 3339 timestamp needs.
-func TestResolveWrite_VersionOrderSurvivesADigitBoundary(t *testing.T) {
+// A counter needs "10" to beat "9", which no lexical comparison gives; a
+// rendered timestamp needs 11:00:00.1 to beat 10:00:00.123456, which no
+// length-first comparison gives. Ordering by length then lexicographically gets
+// the first right and the second exactly backwards, and the second is the
+// shape stokaro/ptah#2635 measured: a driver trims trailing zeros from the
+// fractional seconds, so 9.85% of `clock_timestamp()` values render short and
+// the fresh answer was discarded as stale.
+//
+// The order is a column of the table because it is data the case carries, and
+// the two halves are rows of one table because the property is one: the
+// strategy that produced a version decides how two of them compare.
+func TestResolveWrite_TheStrategyDecidesTheOrder(t *testing.T) {
 	tests := []struct {
 		name        string
+		order       embedrun.VersionOrder
 		existing    string
 		incoming    string
 		wantChanged bool
 	}{
-		{name: "ten beats nine", existing: "9", incoming: "10", wantChanged: true},
-		{name: "nine loses to ten", existing: "10", incoming: "9"},
-		{name: "one hundred beats ninety-nine", existing: "99", incoming: "100", wantChanged: true},
 		{
-			name:     "a later timestamp wins",
+			name: "ten beats nine", order: embedrun.OrderNumeric,
+			existing: "9", incoming: "10", wantChanged: true,
+		},
+		{name: "nine loses to ten", order: embedrun.OrderNumeric, existing: "10", incoming: "9"},
+		{
+			name: "one hundred beats ninety-nine", order: embedrun.OrderNumeric,
+			existing: "99", incoming: "100", wantChanged: true,
+		},
+		{
+			name: "a later timestamp wins", order: embedrun.OrderTimestamp,
 			existing: "2026-08-27T10:00:00Z", incoming: "2026-08-27T11:00:00Z", wantChanged: true,
 		},
-		{name: "an earlier timestamp loses", existing: "2026-08-27T11:00:00Z", incoming: "2026-08-27T10:00:00Z"},
+		{
+			name: "an earlier timestamp loses", order: embedrun.OrderTimestamp,
+			existing: "2026-08-27T11:00:00Z", incoming: "2026-08-27T10:00:00Z",
+		},
+		{
+			// The measured case. The incoming version is an hour later and
+			// three characters shorter, because the driver trimmed the zeros.
+			name: "a shorter rendering of a later instant wins", order: embedrun.OrderTimestamp,
+			existing: "2026-01-01T11:00:00.123456+01:00", incoming: "2026-01-01T12:00:00.1+01:00",
+			wantChanged: true,
+		},
+		{
+			// And the other direction: longer is not newer either.
+			name: "a longer rendering of an earlier instant loses", order: embedrun.OrderTimestamp,
+			existing: "2026-01-01T12:00:00.1+01:00", incoming: "2026-01-01T11:00:00.123456+01:00",
+		},
+		{
+			// Zones are read, not compared as text. These are the same
+			// instant, so the incoming is not newer and the hashes differ, so
+			// it wins as a change rather than as a later version.
+			name: "one instant in two zones is one instant", order: embedrun.OrderTimestamp,
+			existing: "2026-01-01T12:00:00+01:00", incoming: "2026-01-01T11:00:00Z",
+			wantChanged: true,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			existing := write(embedrun.WriteUpsert, test.existing, "hash-old")
 
-			_, changed, err := embedrun.ResolveWrite(&existing, write(embedrun.WriteUpsert, test.incoming, "hash-new"))
+			_, changed, err := embedrun.ResolveWrite(
+				&existing, write(embedrun.WriteUpsert, test.incoming, "hash-new"), test.order)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(changed, qt.Equals, test.wantChanged)
 		})
 	}
+}
+
+// TestResolveWrite_AnUnorderableVersionDoesNotLoseFreshWork states the fallback.
+//
+// A strategy that records no version, or a value the order cannot read, puts
+// nothing in order — so neither the no-op check nor the late-answer check
+// fires and the incoming write lands. That is the direction that does not throw
+// away a provider answer already paid for, which is the harm stokaro/ptah#2635
+// measured.
+func TestResolveWrite_AnUnorderableVersionDoesNotLoseFreshWork(t *testing.T) {
+	tests := []struct {
+		name     string
+		order    embedrun.VersionOrder
+		existing string
+		incoming string
+	}{
+		{
+			name: "a strategy that records no version", order: embedrun.OrderUnknown,
+			existing: "anything", incoming: "anything else",
+		},
+		{
+			name: "a timestamp neither layout parses", order: embedrun.OrderTimestamp,
+			existing: "last tuesday", incoming: "the tuesday before",
+		},
+		{
+			name: "a counter that is not a number", order: embedrun.OrderNumeric,
+			existing: "v2", incoming: "v1",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			existing := write(embedrun.WriteUpsert, test.existing, "hash-old")
+
+			_, changed, err := embedrun.ResolveWrite(
+				&existing, write(embedrun.WriteUpsert, test.incoming, "hash-new"), test.order)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(changed, qt.IsTrue)
+		})
+	}
+}
+
+// TestResolveWrite_TheRenderingsAVersionArrivesIn pins each layout to something
+// that produces it.
+//
+// The first version of this fix parsed RFC 3339 only, and a live test reading
+// the column through `::text` got PostgreSQL's space-separated form — which
+// parsed as nothing, so both directions were "not comparable" and the test
+// passed for the wrong reason. Its control is what caught that
+// (stokaro/ptah#2635).
+func TestResolveWrite_TheRenderingsAVersionArrivesIn(t *testing.T) {
+	tests := []struct {
+		name     string
+		earlier  string
+		later    string
+		producer string
+	}{
+		{
+			name:     "RFC 3339 with a zone",
+			earlier:  "2026-01-01T10:00:00.123456+00:00",
+			later:    "2026-01-01T11:00:00.1+00:00",
+			producer: "the pgx driver, scanning a timestamptz into a string",
+		},
+		{
+			name:     "RFC 3339 with no zone",
+			earlier:  "2026-01-01T10:00:00.123456",
+			later:    "2026-01-01T11:00:00.1",
+			producer: "the same driver, scanning a plain timestamp",
+		},
+		{
+			name:     "PostgreSQL's text cast with a zone",
+			earlier:  "2026-01-01 10:00:00.123456+00",
+			later:    "2026-01-01 11:00:00.1+00",
+			producer: "a ::text cast in a view or a generated column",
+		},
+		{
+			name:     "PostgreSQL's text cast with no zone",
+			earlier:  "2026-01-01 10:00:00.123456",
+			later:    "2026-01-01 11:00:00.1",
+			producer: "the same cast over a plain timestamp",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			// Every row is the defect's shape: the later instant renders
+			// SHORTER, so a length-first order calls it stale.
+			c.Assert(len(test.later) < len(test.earlier), qt.IsTrue,
+				qt.Commentf("%s", test.producer))
+			existing := write(embedrun.WriteUpsert, test.earlier, "hash-old")
+
+			_, changed, err := embedrun.ResolveWrite(
+				&existing, write(embedrun.WriteUpsert, test.later, "hash-new"),
+				embedrun.OrderTimestamp)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(changed, qt.IsTrue)
+
+			// And the control that catches "neither parsed, so neither is
+			// older": the pair the other way round must lose.
+			newer := write(embedrun.WriteUpsert, test.later, "hash-new")
+			_, backwards, err := embedrun.ResolveWrite(
+				&newer, write(embedrun.WriteUpsert, test.earlier, "hash-old"),
+				embedrun.OrderTimestamp)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(backwards, qt.IsFalse,
+				qt.Commentf("a layout nothing parses makes both directions win"))
+		})
+	}
+}
+
+// TestResolveWrite_AVersionTheStrategyCannotReadOrdersNothing states a decision
+// rather than leaving it to be discovered.
+//
+// A specification declaring `updated_at` over a column holding "9" produces a
+// version no timestamp layout parses. Nothing is comparable, so neither the
+// no-op check nor the late-answer check fires and the incoming write lands —
+// which means a late retry can replace a newer vector.
+//
+// That is deliberate and it is the lesser evil. The alternative is to fall back
+// to ordering opaque strings by length, and that fallback IS the defect
+// stokaro/ptah#2635 is about: it reads a shorter rendering of a later instant
+// as older and throws away work already paid for. Guessing an order for a value
+// the strategy cannot read is how the bug got in.
+//
+// What closes the hole is configuration, not a fallback: the version column has
+// to be readable under the strategy that names it, and the specification
+// reference says so.
+func TestResolveWrite_AVersionTheStrategyCannotReadOrdersNothing(t *testing.T) {
+	c := qt.New(t)
+	// A counter under a timestamp strategy: the shape a misconfigured
+	// specification produces.
+	newer := write(embedrun.WriteUpsert, "9", "hash-new")
+
+	_, changed, err := embedrun.ResolveWrite(
+		&newer, write(embedrun.WriteUpsert, "7", "hash-old"), embedrun.OrderTimestamp)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(changed, qt.IsTrue,
+		qt.Commentf("nothing orders these, so the incoming write lands"))
+
+	// And the control: under the order these values actually have, the older
+	// one loses. The pair is what makes the sentence above a decision about
+	// unreadable values rather than a claim that ordering is broken.
+	_, ordered, err := embedrun.ResolveWrite(
+		&newer, write(embedrun.WriteUpsert, "7", "hash-old"), embedrun.OrderNumeric)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(ordered, qt.IsFalse)
 }

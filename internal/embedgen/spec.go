@@ -1,5 +1,7 @@
 package embedgen
 
+import "go.5x5.cz/ptah/internal/embedrun"
+
 // SpecVersion is the version of this specification's own shape.
 //
 // It is part of the identity: a change to what the fields below MEAN, without a
@@ -272,3 +274,24 @@ const (
 	// MetricInnerProduct compares by inner product.
 	MetricInnerProduct DistanceMetric = "inner_product"
 )
+
+// VersionOrder is how two versions this strategy produces are put in order.
+//
+// It lives on the strategy because the strategy is what decides the shape of
+// the value: `updated_at` yields a rendered instant and `monotonic` yields a
+// counter, and a comparison holding the string cannot tell them apart. Reading
+// both as opaque strings ordered by length then lexicographically is right for
+// the counter and wrong for the instant, which is how a fresh answer came to be
+// discarded as stale (stokaro/ptah#2635).
+//
+// A strategy that records no version orders nothing, and says so.
+func (s VersionStrategy) VersionOrder() embedrun.VersionOrder {
+	switch s {
+	case VersionMonotonic, VersionOutboxSequence:
+		return embedrun.OrderNumeric
+	case VersionUpdatedAt:
+		return embedrun.OrderTimestamp
+	default:
+		return embedrun.OrderUnknown
+	}
+}

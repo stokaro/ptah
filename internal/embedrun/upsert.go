@@ -1,6 +1,11 @@
 package embedrun
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+)
 
 // TargetWrite is one row's effect on the target generation.
 //
@@ -48,7 +53,9 @@ const (
 // deliver the same batch twice, and a request whose answer arrived late may
 // carry a version the source has already moved past -- so the decision is made
 // against what the target holds, not against what the worker believes.
-func ResolveWrite(existing *TargetWrite, incoming TargetWrite) (TargetWrite, bool, error) {
+func ResolveWrite(
+	existing *TargetWrite, incoming TargetWrite, order VersionOrder,
+) (TargetWrite, bool, error) {
 	if incoming.Generation == "" {
 		return TargetWrite{}, false, fmt.Errorf("target write: the write names no generation")
 	}
@@ -66,15 +73,15 @@ func ResolveWrite(existing *TargetWrite, incoming TargetWrite) (TargetWrite, boo
 	// A tombstone is terminal within a generation until the source says
 	// otherwise with a NEWER version. Without that rule, a retry of an update
 	// issued before the delete recreates a row the source no longer has.
-	if existing.Kind == WriteTombstone && !newerVersion(incoming.Version, existing.Version) {
+	if existing.Kind == WriteTombstone && !newerVersion(incoming.Version, existing.Version, order) {
 		return *existing, false, nil
 	}
-	if olderOrEqual(incoming.Version, existing.Version) && incoming.InputHash == existing.InputHash {
+	if olderOrEqual(incoming.Version, existing.Version, order) && incoming.InputHash == existing.InputHash {
 		// The same work arriving again. Harmless, and doing nothing is what
 		// makes it harmless.
 		return *existing, false, nil
 	}
-	if olderVersion(incoming.Version, existing.Version) {
+	if olderVersion(incoming.Version, existing.Version, order) {
 		// A late answer computed from a version the row has moved past. It is
 		// not an error -- at-least-once delivery produces these -- and it must
 		// not win.
@@ -83,28 +90,119 @@ func ResolveWrite(existing *TargetWrite, incoming TargetWrite) (TargetWrite, boo
 	return incoming, true, nil
 }
 
-// newerVersion reports whether left is strictly newer than right.
+// VersionOrder is how two versions of one row are put in order.
 //
-// Versions are compared as opaque strings by length then lexicographically,
-// which orders a monotonic counter and an RFC 3339 timestamp correctly and
-// refuses to invent an order for anything else: an empty version on either side
-// is not comparable, and this says so by answering false.
-func newerVersion(left, right string) bool {
+// It exists because "compare as opaque strings, by length then
+// lexicographically" is right for a counter and WRONG for a timestamp, and the
+// comparison cannot tell which it is holding. A driver renders a timestamptz as
+// RFC 3339 with trailing zeros trimmed, so an update at 11:00:00.1 renders
+// shorter than its predecessor at 10:00:00.123456 and was classified as older:
+// the fresh provider answer was discarded, catch-up exited 0 reporting success,
+// and the row kept the vector of text it no longer contained. Measured, 9.85%
+// of `clock_timestamp()` values render with fewer than six fractional digits
+// (stokaro/ptah#2635).
+//
+// The strategy that produced the version is what decides, so the caller states
+// it. The zero value is "not comparable", which is the honest answer for a
+// strategy that records no version at all.
+type VersionOrder string
+
+// The orders a version can be read under.
+const (
+	// OrderUnknown is a version nothing can put in order. Neither the
+	// no-op check nor the late-answer check fires, so an incoming write wins
+	// -- which is the direction that does not lose fresh work.
+	OrderUnknown VersionOrder = ""
+	// OrderNumeric is a counter or a sequence: a decimal integer.
+	OrderNumeric VersionOrder = "numeric"
+	// OrderTimestamp is an instant, rendered by whatever the driver chose.
+	OrderTimestamp VersionOrder = "timestamp"
+)
+
+// newerVersion reports whether left is strictly newer than right, under order.
+//
+// An empty version on either side is not comparable, and neither is a pair this
+// order cannot read: both answer false, which is what keeps this from inventing
+// an order for something it does not understand.
+func newerVersion(left, right string, order VersionOrder) bool {
 	if left == "" || right == "" {
 		return false
 	}
-	if len(left) != len(right) {
-		return len(left) > len(right)
+	switch order {
+	case OrderNumeric:
+		return numericallyNewer(left, right)
+	case OrderTimestamp:
+		return instantAfter(left, right)
+	default:
+		return false
 	}
-	return left > right
+}
+
+// numericallyNewer compares two decimal integers as numbers.
+//
+// As numbers rather than by length then lexicographically, because the two
+// agree only for non-negative integers with no leading zeros -- which is what a
+// sequence usually is and not what the comparison can assume it is holding.
+func numericallyNewer(left, right string) bool {
+	leftValue, leftErr := strconv.ParseInt(strings.TrimSpace(left), 10, 64)
+	rightValue, rightErr := strconv.ParseInt(strings.TrimSpace(right), 10, 64)
+	if leftErr != nil || rightErr != nil {
+		return false
+	}
+	return leftValue > rightValue
+}
+
+// instantAfter compares two rendered timestamps as instants.
+//
+// Two layouts are read: RFC 3339 with a zone, which is what a driver renders a
+// timestamptz as, and the same without one, which is what it renders a plain
+// timestamp as. A value neither layout parses is not comparable.
+func instantAfter(left, right string) bool {
+	leftTime, leftOK := parseInstant(left)
+	rightTime, rightOK := parseInstant(right)
+	if !leftOK || !rightOK {
+		return false
+	}
+	return leftTime.After(rightTime)
+}
+
+// parseInstant reads a rendered timestamp, or reports that it could not.
+//
+// The layouts are the renderings a version is observed to arrive in, and each
+// is here because something produces it:
+//
+//   - RFC 3339 with a zone, which is what the pgx driver renders a timestamptz
+//     as, and the rendering stokaro/ptah#2635 measured;
+//   - the same with no zone, for a plain `timestamp` column;
+//   - PostgreSQL's own `::text` forms, space-separated, with and without a
+//     zone -- a version can reach here through a cast in a view or a
+//     generated column rather than off the column itself.
+//
+// A value none of them parses is not comparable, and the caller treats that as
+// "no order", not as "older".
+func parseInstant(value string) (time.Time, bool) {
+	trimmed := strings.TrimSpace(value)
+	layouts := []string{
+		time.RFC3339Nano,
+		"2006-01-02T15:04:05.999999999",
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05.999999999-07",
+		"2006-01-02 15:04:05.999999999",
+	}
+	for _, layout := range layouts {
+		if parsed, err := time.Parse(layout, trimmed); err == nil {
+			return parsed, true
+		}
+	}
+	return time.Time{}, false
 }
 
 // olderVersion is newerVersion the other way round.
-func olderVersion(left, right string) bool {
-	return newerVersion(right, left)
+func olderVersion(left, right string, order VersionOrder) bool {
+	return newerVersion(right, left, order)
 }
 
 // olderOrEqual reports that left does not come after right.
-func olderOrEqual(left, right string) bool {
-	return left == right || olderVersion(left, right)
+func olderOrEqual(left, right string, order VersionOrder) bool {
+	return left == right || olderVersion(left, right, order)
 }
