@@ -61,6 +61,23 @@ The value is read at run time. What Ptah records — in the plan, in the run sta
 in published evidence — is the reference. A specification is a file you can
 commit.
 
+`endpoint` is held to the same rule, because it reaches the same wire. A URL
+written with userinfo — `https://user:secret@api.example.com/v1` — becomes an
+`Authorization: Basic` header on every provider request, so it is a credential
+that arrived through the other field. Ptah refuses such a specification:
+
+```text
+spec.yaml: model.endpoint carries a credential in its userinfo, before the
+"api.example.com" host; a key must not appear in project configuration, so put
+it in model.credential as env:NAME or file:/path
+```
+
+The refusal is at the document rather than at the request, so it holds for every
+verb, and for a release fetched with `--release` as well as a file read with
+`--spec`. The message names the host and not the URL: an error that quoted the
+value back would write the credential to your terminal and into whatever
+collects the log.
+
 ## What the agent surface will not return
 
 Ptah exposes two read-only tools to AI clients over MCP and to Ptah Assist:
