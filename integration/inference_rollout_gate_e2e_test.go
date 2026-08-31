@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -68,6 +69,7 @@ func TestInferenceRolloutGateE2E(t *testing.T) {
 		"--spec", specPath, "--db-url", dbName, "--run-id", cliRunID, "--batch-rows", "10")
 
 	assertTheGateHoldsBeforeCatchUp(c, ctx, binary, specPath, dbName)
+	assertAFindingExitsOneAndABrokenRunExitsTwo(c, ctx, binary, specPath, dbName)
 
 	runInference(c, ctx, "catchup",
 		"--spec", specPath, "--db-url", dbName, "--run-id", cliRunID, "--batch-rows", "10")
@@ -75,6 +77,68 @@ func TestInferenceRolloutGateE2E(t *testing.T) {
 
 	assertTheGateOpensWhenTheStateIsThere(c, ctx, binary, specPath, dbName)
 	assertTheSecretIsNotInTheProcessArguments(c, ctx, binary, specPath, dbName)
+	assertAToleranceExitsOneAndAMissingCorpusExitsTwo(c, ctx, binary, specPath, dbName)
+}
+
+// assertAFindingExitsOneAndABrokenRunExitsTwo holds `verify` to the documented
+// exit-code contract.
+//
+// The reference separates "the command found the condition you asked about"
+// from "the command did not complete", and gives the first 1 and the second 2.
+// A blocking finding returned a plain error, so it exited 2, and a pipeline
+// gating on the verb could not tell a generation that failed verification from
+// a database it could not reach (stokaro/ptah#2639).
+//
+// Measured on the real process, because that is where an exit code exists at
+// all: an in-process cobra call returns an error, and what a harness decides to
+// do with it is not the number a shell sees.
+//
+// Called before the catch-up, where verification genuinely blocks. Asserting
+// after it would assert on a run that passes, and 0 is neither answer.
+//
+// The control is the second half. Reporting 1 for everything satisfies the
+// first assertion and is the same defect facing the other way: an operator told
+// a misconfiguration is a finding, and a retry loop that never stops.
+func assertAFindingExitsOneAndABrokenRunExitsTwo(
+	c *qt.C, ctx context.Context, binary, specPath, dbURL string,
+) {
+	c.Helper()
+	_, code := runPtahForStatus(ctx, binary, "inference", "verify",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID)
+	c.Assert(code, qt.Equals, 1)
+
+	_, code = runPtahForStatus(ctx, binary, "inference", "verify",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", "a-run-that-does-not-exist")
+	c.Assert(code, qt.Equals, 2)
+}
+
+// assertAToleranceExitsOneAndAMissingCorpusExitsTwo is the same contract for
+// `evaluate`.
+//
+// A required case the generation cannot answer is the verb answering; a corpus
+// file that is not there is the verb unable to run.
+func assertAToleranceExitsOneAndAMissingCorpusExitsTwo(
+	c *qt.C, ctx context.Context, binary, specPath, dbURL string,
+) {
+	c.Helper()
+	corpus := filepath.Join(c.TempDir(), "gate-corpus.yaml")
+	c.Assert(os.WriteFile(corpus, []byte(`
+version: 1
+name: unanswerable
+default_k: 1
+cases:
+  - id: nothing
+    query: "a question about nothing this corpus holds"
+    required: ["999999"]
+`), 0o600), qt.IsNil)
+
+	_, code := runPtahForStatus(ctx, binary, "inference", "evaluate",
+		"--spec", specPath, "--db-url", dbURL, "--corpus", corpus)
+	c.Assert(code, qt.Equals, 1)
+
+	_, code = runPtahForStatus(ctx, binary, "inference", "evaluate",
+		"--spec", specPath, "--db-url", dbURL, "--corpus", corpus+".missing")
+	c.Assert(code, qt.Equals, 2)
 }
 
 // assertTheGateHoldsBeforeCatchUp is the closed half.
