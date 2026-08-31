@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // the driver the PostgreSQL vertical uses
+	"github.com/spf13/cobra"
 
+	"go.5x5.cz/ptah/cmd/internal/cmdflags"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/internal/embeddigest"
 	"go.5x5.cz/ptah/internal/embedpg"
@@ -262,4 +264,25 @@ func bullet(text string) string {
 // section renders a heading.
 func section(title string) string {
 	return "\n" + title
+}
+
+// requireExclusiveOnCommandLine declares a mutually exclusive flag group whose
+// members carry PTAH_* values, composing onto whatever PreRunE cmd already has.
+//
+// It is not cmd.MarkFlagsMutuallyExclusive, for the reason
+// [cmdflags.ExclusiveOnCommandLine] states: cobra's group validation reads
+// pflag's Changed bit, which an applied environment value sets exactly as an
+// argv occurrence does. Nor is it an assignment to cmd.PreRunE, because
+// "cutover" declares three of these groups and the last assignment would be
+// the only one that ran.
+func requireExclusiveOnCommandLine(cmd *cobra.Command, names ...string) {
+	previous := cmd.PreRunE
+	cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+		if previous != nil {
+			if err := previous(cmd, args); err != nil {
+				return err
+			}
+		}
+		return cmdflags.ExclusiveOnCommandLine(cmd.Flags(), names...)
+	}
 }

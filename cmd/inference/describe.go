@@ -52,6 +52,13 @@ is checked by the environment receiving it before anything there is touched.`,
 func runDescribe(
 	ctx context.Context, out io.Writer, options commonOptions, format string,
 ) error {
+	// Before the resolution, which for a --release is a registry round trip:
+	// the [specSource] contract asks argument checks to come first, and a run
+	// refused for a value the operator typed should not first fetch a mutable
+	// reference and print its resolution notice (stokaro/ptah#2648 finding 12).
+	if format != "text" && format != "json" {
+		return fmt.Errorf("invalid --format value %q: text or json", format)
+	}
 	loaded, err := options.spec.resolve(ctx)
 	if err != nil {
 		return err
@@ -62,9 +69,6 @@ func runDescribe(
 	}
 	if format == "json" {
 		return writeDescribedJSON(out, described)
-	}
-	if format != "text" {
-		return fmt.Errorf("invalid --format value %q: text or json", format)
 	}
 	return writeDescribedText(out, described)
 }

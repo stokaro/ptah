@@ -180,19 +180,24 @@ interruption and it continues from its checkpoint.
 | `--batch-rows` | Source rows read in one query, which bounds how long a cancellation waits |
 | `--batch-inputs` | Inputs sent to the provider in one request |
 | `--provider-timeout` | How long one provider request may take |
-| `--maintain-for` | Extend this generation's stabilization window by this much |
 
 ## `catchup`
 
 Processes the source changes made since the boundary. Run it until it reports
 nothing left.
 
-Takes the same flags as `backfill`. Refused against a consistency mode that
-records nothing, rather than reported as success.
+Takes the flags `backfill` takes, and `--maintain-for` besides. Refused against
+a consistency mode that records nothing, rather than reported as success.
+
+| Flag | Meaning |
+| --- | --- |
+| `--maintain-for` | After catching up, extend this generation's stabilization window by this much |
 
 `--maintain-for` is what keeps a previous generation a way back during its
 stabilization window: it catches the generation up and extends the promise that
-it is current, in one command.
+it is current, in one command. That pairing is why `backfill` does not take it:
+a window is kept true by the catch-up that moves it, so a backfill carrying the
+flag would extend a promise with nothing behind it.
 
 ## `index`
 

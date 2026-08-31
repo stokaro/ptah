@@ -49,8 +49,8 @@ func addApprovalFlags(cmd *cobra.Command, options *approvalOptions) {
 		"OpenSSH allowed_signers file listing approvers (default: ./.ptah/allowed_signers)")
 	flags.StringVar(&options.signer, "signer", "",
 		"Require the approval to belong to this principal")
-	cmd.MarkFlagsMutuallyExclusive("approve", "approval")
-	cmd.MarkFlagsMutuallyExclusive("approver", "approval")
+	requireExclusiveOnCommandLine(cmd, "approve", "approval")
+	requireExclusiveOnCommandLine(cmd, "approver", "approval")
 }
 
 // planFileVersion is the format of the file an approver signs.

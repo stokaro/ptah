@@ -86,6 +86,7 @@ once.`,
 		},
 	}
 	addExecuteFlags(cmd, &options)
+	addMaintainForFlag(cmd, &options.maintainFor)
 	return cmd
 }
 
@@ -99,7 +100,22 @@ func addExecuteFlags(cmd *cobra.Command, options *executeOptions) {
 		"Inputs sent to the provider in one request")
 	cmd.Flags().DurationVar(&options.timeout, "provider-timeout", 60*time.Second,
 		"How long one provider request may take")
-	cmd.Flags().DurationVar(&options.maintainFor, "maintain-for", 0,
+}
+
+// addMaintainForFlag registers --maintain-for, which "catchup" alone has.
+//
+// It sits here rather than in addExecuteFlags because a backfill cannot keep
+// the promise the flag makes. [extendMaintenance] says why: a window is kept
+// true by the catch-up that moves it, so a window extended without one behind
+// it is a promise nobody kept. Registered on "backfill" it was accepted,
+// advertised in --help and in the flag reference, and read by nothing --
+// maintained_until stayed NULL, the run exited 0, and the operator learned
+// their way back did not exist when "rollback" refused
+// (stokaro/ptah#2648 finding 10). Not registering it is what makes
+// `backfill --maintain-for 2h` an unknown flag, and PTAH_MAINTAIN_FOR reach
+// the verb that acts on it and no other.
+func addMaintainForFlag(cmd *cobra.Command, maintainFor *time.Duration) {
+	cmd.Flags().DurationVar(maintainFor, "maintain-for", 0,
 		"After catching up, extend this generation's stabilization window by this much")
 }
 
