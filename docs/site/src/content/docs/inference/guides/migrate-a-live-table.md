@@ -59,6 +59,10 @@ Run it until it reports nothing left:
 caught up to transaction 8842: 0 changed rows, 0 tombstoned
 ```
 
+The numbers are **this pass's** work, not the run's, which is what makes the
+line a stop condition at all: a count that included the backfill could never
+reach zero.
+
 On a busy table this takes several passes, because rows keep changing while
 catch-up is running. That is expected. Each pass has less to do than the last as
 long as your write rate is below the rate Ptah can embed.

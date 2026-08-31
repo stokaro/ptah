@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/internal/embedcorpus"
 	"go.5x5.cz/ptah/internal/embedeval"
 	"go.5x5.cz/ptah/internal/embedpg"
@@ -96,7 +97,14 @@ func runEvaluate(ctx context.Context, out io.Writer, options evaluateOptions) er
 		return err
 	}
 	if !report.Passed() {
-		return fmt.Errorf("retrieval evaluation found %d blocking findings", len(report.Blockers))
+		// Exit 1 rather than 2: a tolerance exceeded or a required case
+		// unanswered is the verb ANSWERING, and the exit-code reference says
+		// so. Two means the verb could not run -- a usage error, an unreadable
+		// corpus, a provider failure -- and a pipeline that gates on this
+		// cannot tell a regression from a broken invocation when both are 2
+		// (stokaro/ptah#2639).
+		return exitcode.New(1, fmt.Errorf(
+			"retrieval evaluation found %d blocking findings", len(report.Blockers)))
 	}
 	return nil
 }

@@ -111,7 +111,7 @@ func runBackfill(ctx context.Context, out io.Writer, options executeOptions) err
 	}
 	defer opened.close()
 
-	run, err := engine.Backfill(ctx, options.runID)
+	run, pass, err := engine.Backfill(ctx, options.runID)
 	if err != nil {
 		return reportRun(out, run, err)
 	}
@@ -134,9 +134,12 @@ func runBackfill(ctx context.Context, out io.Writer, options executeOptions) err
 			return err
 		}
 	}
+	// This invocation's work, not the run's. A resumed backfill that scanned
+	// nothing reported the same numbers as the one that did everything
+	// (stokaro/ptah#2645).
 	return writeLines(out,
 		fmt.Sprintf("backfill finished: %d scanned, %d embedded, %d skipped",
-			run.Progress.RowsScanned, run.Progress.RowsEmbedded, run.Progress.RowsSkipped))
+			pass.RowsScanned, pass.RowsEmbedded, pass.RowsSkipped))
 }
 
 // runCatchUp processes the changes made since the boundary.
@@ -164,15 +167,20 @@ func runCatchUp(ctx context.Context, out io.Writer, options executeOptions) erro
 		return err
 	}
 
-	run, err := engine.CatchUp(ctx, options.runID, outbox, source)
+	run, pass, err := engine.CatchUp(ctx, options.runID, outbox, source)
 	if err != nil {
 		return reportRun(out, run, err)
 	}
 	if err := opened.store.ReachPhase(ctx, options.runID, embedrun.PhaseCaughtUp); err != nil {
 		return err
 	}
+	// This pass's changed rows. The run's counters already include the
+	// backfill, so a catch-up with nothing to do printed the backfill's row
+	// count as "changed rows" -- and the documented stop condition,
+	// "0 changed rows", could never appear on any run whose backfill scanned
+	// anything (stokaro/ptah#2645).
 	lines := []string{fmt.Sprintf("caught up to transaction %s: %d changed rows, %d tombstoned",
-		boundaryText(run.CatchUpWatermark), run.Progress.RowsScanned, run.Progress.RowsDeleted)}
+		boundaryText(run.CatchUpWatermark), pass.RowsScanned, pass.RowsDeleted)}
 	return extendMaintenance(ctx, out, opened, run.GenerationIdentity, options.maintainFor, lines)
 }
 

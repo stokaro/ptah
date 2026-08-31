@@ -83,7 +83,7 @@ func TestEmbedPGBackfillE2E(t *testing.T) {
 		Worker: "worker-a",
 	}
 
-	finished, err := engine.Backfill(ctx, "live-run")
+	finished, _, err := engine.Backfill(ctx, "live-run")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(finished.Progress.RowsScanned, qt.Equals, int64(5))
@@ -169,7 +169,7 @@ func assertARefusedWriteTakesItsCheckpointWithIt(
 		Bounds: embedrun.BatchBounds{MaxRows: 2, MaxInputs: 2}, Worker: "worker-a",
 	}
 
-	_, err = engine.Backfill(ctx, "refused-run")
+	_, _, err = engine.Backfill(ctx, "refused-run")
 
 	c.Assert(err, qt.ErrorMatches, `target: .*`)
 	stored, readErr := store.Run(ctx, "refused-run")
