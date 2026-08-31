@@ -935,7 +935,16 @@ func assertCutoverIsRefusedBeforeCatchUp(c *qt.C, ctx context.Context, specPath,
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(output, qt.Contains, "cutover refused")
-	c.Assert(output, qt.Contains, "the source is mutable and the run declared no consistency mode")
+	// The mode's STATE, not its absence. This specification declares
+	// `consistency.mode: outbox`, and the refusal used to tell the operator
+	// they had declared none -- the plan blanked the mode whenever the
+	// guarantee was incomplete, so "yours has not caught up yet" arrived as
+	// "you configured nothing" (stokaro/ptah#2646). Both halves are asserted,
+	// because a refusal that merely stopped saying the wrong thing would be a
+	// run refused for no stated reason.
+	c.Assert(output, qt.Contains, "the backfill's boundary is")
+	c.Assert(output, qt.Not(qt.Contains),
+		"the source is mutable and the run declared no consistency mode")
 
 	// The gate says the same thing, at the same moment, in the form a rollout
 	// system reads. This is the half that makes the later "ready" assertion
@@ -951,8 +960,14 @@ func assertCutoverIsRefusedBeforeCatchUp(c *qt.C, ctx context.Context, specPath,
 	}
 	c.Assert(json.Unmarshal([]byte(body), &document), qt.IsNil, qt.Commentf("%s", body))
 	c.Assert(document.Readiness.CutoverReady, qt.IsFalse)
-	c.Assert(document.Readiness.Blockers, qt.Contains,
-		"the source is mutable and the run declared no consistency mode")
+	// The same correction as above, on the surface a rollout system parses.
+	// `verify` already got this state right, so the two disagreeing was the
+	// visible half of stokaro/ptah#2646. The transaction number in the sentence
+	// is the server's, so the assertion is over the part that is ours.
+	c.Assert(strings.Join(document.Readiness.Blockers, "\n"), qt.Contains,
+		"the backfill's boundary is")
+	c.Assert(strings.Join(document.Readiness.Blockers, "\n"), qt.Not(qt.Contains),
+		"declared no consistency mode")
 
 	// And as the refusal a gate waits on. An init container that keeps failing
 	// is the whole of a rollout gate, so this is the interface rather than the

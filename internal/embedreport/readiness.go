@@ -220,9 +220,10 @@ func BuildCutoverPlan(
 		// ago is stale however recently it was rendered.
 		PreparedAt: run.UpdatedAt.UTC(),
 	}
-	if !guarantee.Complete {
-		plan.Evidence.ConsistencyMode = ""
-	}
+	// The mode stays, and the reasons it has not been reached travel beside it.
+	// Blanking the mode made "you declared none" the diagnostic for "yours has
+	// not caught up yet" (stokaro/ptah#2646).
+	plan.Evidence.ConsistencyBlockers = guarantee.Blockers
 	// The plan's expected previous generation and the observed pointer come
 	// from ONE read, because the caller that executes builds and executes in
 	// the same process: there is no interval between them for the pointer to
