@@ -139,7 +139,14 @@ func buildProviderFor(
 		// report "the model did not answer an embedding request" for an
 		// endpoint that answered perfectly well, at a width the operator needs
 		// to be told.
-		Dimension:          0,
+		Dimension: 0,
+		// And for the same reason one step further: the adapter hands back a
+		// malformed answer instead of refusing it, so the probe can say which
+		// way it is malformed. Refusing turned every shape violation into
+		// "the model did not answer an embedding request" and abandoned the
+		// batch and cancellation checks, which have nothing to do with a
+		// vector's contents (stokaro/ptah#2641).
+		RawAnswers:         true,
 		RequestedDimension: loaded.Spec.Model.RequestedDimension,
 		EndpointClass:      string(loaded.Spec.Model.EndpointClass),
 		Credential:         reference,
