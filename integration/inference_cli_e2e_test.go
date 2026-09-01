@@ -75,7 +75,7 @@ func TestInferenceCLIE2E(t *testing.T) {
 	assertResumeReturnsItToRunning(c, ctx, specPath, dbName)
 	assertCutoverBindsToItsPlan(c, ctx, specPath, dbName)
 	assertRetireIsRefusedWhileQueriesReadIt(c, ctx, specPath, dbName)
-	assertRollbackIsRefusedWithoutEvidence(c, ctx, specPath, dbName)
+	assertRollbackIsRefusedWithoutEvidence(c, ctx, db, specPath, dbName)
 	assertACutoverIsRefusedWhenTheSourceHasMovedOn(c, ctx, db, specPath, dbName)
 	assertACutoverIsRefusedWhenSomebodyElseMovedThePointer(c, ctx, db, specPath, dbName)
 	assertAnUnmaintainedPreviousGenerationBlocksNothing(c, ctx, db, specPath, dbName)
@@ -1382,21 +1382,27 @@ func activeGenerationOfRun(
 // assertRollbackIsRefusedWithoutEvidence is the epic's rule that rollback is
 // measured rather than assumed.
 //
-// There is a previous generation in the pointer's history and it has never been
-// verified, so going back to it is not something Ptah will report as available.
-func assertRollbackIsRefusedWithoutEvidence(c *qt.C, ctx context.Context, specPath, dbURL string) {
+// A generation nobody is keeping current drifts from the source with every
+// write, so going back to it is not something Ptah reports as available.
+//
+// The target is a generation of its own rather than the ACTIVE one. Naming the
+// active generation reaches a different refusal entirely -- "queries already
+// read that generation" (stokaro/ptah#2647) -- and this assertion passed on it
+// for as long as that refusal did not exist, measuring the maintenance rule
+// through a fixture the maintenance rule was never asked about.
+func assertRollbackIsRefusedWithoutEvidence(
+	c *qt.C, ctx context.Context, db *sql.DB, specPath, dbURL string,
+) {
 	c.Helper()
-	active := activeGenerationFrom(c, ctx, specPath, dbURL)
+	registerBareGenerationInColumn(c, ctx, db, specPath, "an-unmaintained-one", "embedding_unmaintained")
 
 	output, err := runInferenceExpectingFailure(c, ctx, "rollback",
-		"--spec", specPath, "--db-url", dbURL, "--to", active)
+		"--spec", specPath, "--db-url", dbURL, "--to", "an-unmaintained-one")
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(output, qt.Contains, "rollback refused")
-	// Verified, because `verify` ran above and recorded it. Not maintained,
-	// because nothing asked for a stabilization window -- and a generation
-	// nobody is keeping current drifts from the source with every write.
 	c.Assert(output, qt.Contains, "no longer maintained")
+	c.Assert(output, qt.Not(qt.Contains), "queries already read")
 }
 
 // runInference runs one verb and requires it to succeed.

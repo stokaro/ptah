@@ -147,15 +147,31 @@ func RollbackState(
 		return embedcutover.RollbackState{}, err
 	}
 
-	stale, missing, err := generationFreshness(ctx, db, previous, registered)
-	if err != nil {
-		return embedcutover.RollbackState{}, err
+	// Freshness only where the decision can still use it, and each of the three
+	// exclusions is a different reason.
+	//
+	// A retired generation has no columns left and an absent one never had any,
+	// so the walk that reads `<column>_generation` fails with a raw `column
+	// does not exist` before the decision layer -- which HAS a designed refusal
+	// for both, and never got to give it (stokaro/ptah#2647).
+	//
+	// The generation queries already read is excluded for cost rather than
+	// correctness: the refusal for it is unconditional, so measuring every row
+	// of the corpus first is work whose answer nothing reads.
+	alreadyActive := pointer.Active == generation
+	var stale, missing int
+	if structure.ColumnExists && !registered.Retired() && !alreadyActive {
+		stale, missing, err = generationFreshness(ctx, db, previous, registered)
+		if err != nil {
+			return embedcutover.RollbackState{}, err
+		}
 	}
 	return embedcutover.RollbackState{
-		Present:    structure.ColumnExists,
-		IndexReady: structure.IndexExists && structure.IndexValid,
-		Retired:    registered.Retired(),
-		CutOverAt:  pointer.CutOverAt,
+		Present:       structure.ColumnExists,
+		AlreadyActive: alreadyActive,
+		IndexReady:    structure.IndexExists && structure.IndexValid,
+		Retired:       registered.Retired(),
+		CutOverAt:     pointer.CutOverAt,
 		// Both of these are recorded rather than inferred. A generation nobody
 		// verified has a zero VerifiedAt and is reported as unmeasured; one
 		// nobody is feeding is not maintained, and from the moment the feeding
