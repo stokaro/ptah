@@ -831,6 +831,18 @@ type ConstraintAdditionInfo struct {
 	// (stokaro/ptah#2216).
 	Deferrable bool   `json:"deferrable,omitempty"`
 	Initially  string `json:"initially,omitempty"`
+	// Comment is the constraint's description, carried for the same reason
+	// Deferrable is: a fact the comparator saw on the desired constraint has to
+	// reach the statement that creates it, or the ALTER builds a constraint the
+	// author described and the database holds one nobody did
+	// (stokaro/ptah#2611, the shape of #2216).
+	//
+	// It rides along with a constraint that is being ADDED. A comment changed
+	// on a constraint that already exists is a different change, and one this
+	// comparator cannot see: no catalog reader fills
+	// [go.5x5.cz/ptah/core/schemamodel.Constraint.Comment], so the observed
+	// side carries none and there is nothing to compare against.
+	Comment string `json:"comment,omitempty"`
 	// CheckExpression is the CHECK predicate body (CHECK only).
 	CheckExpression string `json:"check_expression,omitempty"`
 

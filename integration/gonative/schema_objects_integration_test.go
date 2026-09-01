@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/schemamodel"

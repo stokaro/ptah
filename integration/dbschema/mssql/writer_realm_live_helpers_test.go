@@ -12,7 +12,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
-	_ "github.com/microsoft/go-mssqldb"
+	_ "github.com/microsoft/go-mssqldb" // registers the SQL Server driver for database/sql
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/internal/sqlident"

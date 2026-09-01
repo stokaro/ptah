@@ -150,6 +150,19 @@ type Store interface {
 	CreateRun(ctx context.Context, run embedrun.Run) error
 	// Run reads one back.
 	Run(ctx context.Context, id string) (embedrun.Run, error)
+	// RunsForGeneration reads every run that built one generation, newest
+	// first, and an empty slice when none did.
+	//
+	// The lookup the run table's generation index was created for -- its own
+	// comment says "a run is almost always looked up by the generation it
+	// builds" -- and which nothing implemented, so the two terminal phases had
+	// no producer: `rollback` and `retire` name a generation and had no run to
+	// advance (stokaro/ptah#2649 finding 6).
+	//
+	// It returns a slice rather than one run because the index is not unique: a
+	// generation identity is a digest of the specification, so a second run of
+	// the same specification builds the same generation.
+	RunsForGeneration(ctx context.Context, identity string) ([]embedrun.Run, error)
 	// SaveRun writes a run's state, refusing a stale fencing token.
 	//
 	// The token is what makes this safe rather than the lease: a worker whose

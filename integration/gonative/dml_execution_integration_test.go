@@ -6,9 +6,9 @@ import (
 	"database/sql"
 	"testing"
 
-	_ "github.com/ClickHouse/clickhouse-go/v2"
+	_ "github.com/ClickHouse/clickhouse-go/v2" // registers the ClickHouse driver for database/sql
 	qt "github.com/frankban/quicktest"
-	_ "github.com/microsoft/go-mssqldb"
+	_ "github.com/microsoft/go-mssqldb" // registers the SQL Server driver for database/sql
 
 	"go.5x5.cz/ptah/core/query"
 	"go.5x5.cz/ptah/internal/dbtarget"

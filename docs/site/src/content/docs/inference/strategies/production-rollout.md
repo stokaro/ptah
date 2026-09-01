@@ -38,6 +38,8 @@ ptah inference evaluate --spec spec-v2.yaml --db-url "$DB" \
   --max-ndcg-regression 0.02 --min-recall 0.9 --require-every-case
 ```
 
+The corpus file is described in
+[Evaluation corpus reference](../../reference/evaluation-corpus/).
 **When the application changes.** Cutover and deploy are two steps and you order
 them. See
 [Migrate to another model](../../guides/migrate-to-another-model/#then-change-your-application).

@@ -303,16 +303,23 @@ func modeName(mode embedcatchup.Mode) string {
 }
 
 // ReadStatus reports what a run has done.
-func ReadStatus(ctx context.Context, store *embedpg.Store, runID string) (Status, error) {
+//
+// The mode is the specification's, and it is a parameter because a run record
+// does not carry one: an absent watermark means "catch-up has not run yet"
+// under an outbox and "this mode records none" under the other two, and only
+// the specification can tell them apart (stokaro/ptah#2646).
+func ReadStatus(
+	ctx context.Context, store *embedpg.Store, runID string, mode embedcatchup.Mode,
+) (Status, error) {
 	run, err := store.Run(ctx, runID)
 	if err != nil {
 		return Status{}, err
 	}
-	return StatusOf(run), nil
+	return StatusOf(run, mode), nil
 }
 
-// StatusOf renders a stored run.
-func StatusOf(run embedrun.Run) Status {
+// StatusOf renders a stored run under the mode its specification declares.
+func StatusOf(run embedrun.Run, mode embedcatchup.Mode) Status {
 	status := Status{
 		RunID:      run.ID,
 		Generation: run.GenerationIdentity,
@@ -326,8 +333,8 @@ func StatusOf(run embedrun.Run) Status {
 			ProviderPromptTokens: run.Progress.ProviderPromptTokens,
 			ProviderTotalTokens:  run.Progress.ProviderTotalTokens,
 		},
-		SnapshotWatermark: BoundaryText(run.SnapshotWatermark),
-		CatchUpWatermark:  BoundaryText(run.CatchUpWatermark),
+		SnapshotWatermark: BoundaryText(run.SnapshotWatermark, mode),
+		CatchUpWatermark:  BoundaryText(run.CatchUpWatermark, mode),
 		FencingToken:      run.FencingToken,
 		FailureClass:      run.FailureClass,
 		FailureDetail:     run.FailureDetail,
@@ -354,14 +361,43 @@ const timeLayout = "2006-01-02T15:04:05Z07:00"
 
 // BoundaryText renders a watermark, including its absence.
 //
-// An absent watermark is a fact worth a sentence rather than an empty string,
-// and the sentence says why it is absent: a consistency mode that records no
-// boundary is a choice the operator made, not a phase that failed to run.
-func BoundaryText(watermark string) string {
-	if watermark == "" {
+// An absent watermark is a fact worth a sentence rather than an empty string.
+// What the sentence must not do is invent a reason: it said "the selected
+// consistency mode records no boundary" for every empty watermark, which is
+// true of `immutable` and `dual_write` and false of an outbox run between
+// `prepare` and its first `catchup` -- the state every outbox run passes
+// through, including the one the quick start walks a reader through. The
+// operator was told something untrue about their own specification, and pointed
+// away from the reason the same output stated a few lines further down
+// (stokaro/ptah#2646).
+//
+// The mode is a parameter because it is the only thing that can tell the two
+// apart, and a renderer that does not have it cannot answer.
+func BoundaryText(watermark string, mode embedcatchup.Mode) string {
+	if watermark != "" {
+		return watermark
+	}
+	switch {
+	case mode == "":
+		// The caller does not have the specification, so it does not know which
+		// of the two answers below is true and says neither. `inference_status`
+		// on the agent surface is the case: it takes a run id and a target, and
+		// a reason invented there would be the defect this replaces.
+		return "none recorded"
+	case recordsABoundary(mode):
+		return "none yet, because catch-up has not run"
+	default:
 		return "none, because the selected consistency mode records no boundary"
 	}
-	return watermark
+}
+
+// recordsABoundary reports whether a mode establishes a watermark at all.
+//
+// Only the outbox does. The immutable mode has nothing to catch up on by
+// definition, and dual write is the application's own business -- Ptah reads
+// the writer's reports rather than a change log.
+func recordsABoundary(mode embedcatchup.Mode) bool {
+	return mode == embedcatchup.ModeOutbox
 }
 
 // Specification is what a specification file says on its own.

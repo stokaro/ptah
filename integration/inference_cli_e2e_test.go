@@ -18,10 +18,11 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
-	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"go.5x5.cz/ptah/cmd/root"
 	"go.5x5.cz/ptah/internal/dbtarget"
+	"go.5x5.cz/ptah/internal/embedpg"
 	"go.5x5.cz/ptah/internal/embedrelease"
 )
 
@@ -507,8 +508,21 @@ func assertRollbackMovesThePointerBack(
 // planDigestOf runs a cutover without an approval to read the plan's digest.
 func planDigestOf(c *qt.C, ctx context.Context, specPath, dbURL string) string {
 	c.Helper()
+	return planDigestOfRun(c, ctx, specPath, dbURL, cliRunID)
+}
+
+// planDigestOfRun is the same for a run this file did not name.
+//
+// The run id was a constant here, so a caller with its own run drove a cutover
+// for a run that does not exist and got an error carrying no digest at all --
+// which reads as "the plan has no digest" rather than as "you asked about the
+// wrong run".
+func planDigestOfRun(
+	c *qt.C, ctx context.Context, specPath, dbURL, runID string,
+) string {
+	c.Helper()
 	refused, err := runInferenceExpectingFailure(c, ctx, "cutover",
-		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID)
+		"--spec", specPath, "--db-url", dbURL, "--run-id", runID)
 	c.Assert(err, qt.IsNotNil)
 	return planDigestFrom(c, refused)
 }
@@ -520,12 +534,44 @@ func planDigestOf(c *qt.C, ctx context.Context, specPath, dbURL string) string {
 // registry knows it, and this test is not about how it was built.
 func registerBareGeneration(c *qt.C, ctx context.Context, db *sql.DB, identity string) {
 	c.Helper()
+	registerBareGenerationInColumn(c, ctx, db, identity, "embedding")
+}
+
+// registerBareGenerationInColumn is the same with a column of its own.
+//
+// A retirement destroys the generation's column, so a bare generation sharing
+// `embedding` with the live one can only be retired with `--drop-column=false`
+// -- and then its plan destroys nothing at all, which retirement refuses as a
+// record of something that did not happen. Giving it a column nobody else uses
+// is what lets the default retirement run against it.
+func registerBareGenerationInColumn(
+	c *qt.C, ctx context.Context, db *sql.DB, identity, column string,
+) {
+	c.Helper()
+	// The columns as well as the row. A registry entry naming a column that is
+	// not on the table is not a state the product can reach: `retire` counts
+	// the generation's rows through `<column>_generation` before it plans
+	// anything, so the run fails on a missing relation and prints no plan at
+	// all -- which reads as "the plan has no digest" rather than as a fixture
+	// that never existed.
+	for _, suffix := range []string{
+		"", embedpg.GenerationSuffix, embedpg.InputHashSuffix,
+		embedpg.VersionSuffix, embedpg.StateSuffix,
+	} {
+		kind := "TEXT"
+		if suffix == "" {
+			kind = "vector(4)"
+		}
+		_, err := db.ExecContext(ctx, fmt.Sprintf(
+			`ALTER TABLE articles ADD COLUMN IF NOT EXISTS %q %s`, column+suffix, kind))
+		c.Assert(err, qt.IsNil)
+	}
 	_, err := db.ExecContext(ctx,
 		`INSERT INTO ptah_embedding_generation (
 			identity, spec_digest, reproducibility, dimension,
 			target_schema, target_table, target_column, created_at)
-		 VALUES ($1, $1, 'full', 4, 'public', 'articles', 'embedding', now())
-		 ON CONFLICT (identity) DO NOTHING`, identity)
+		 VALUES ($1, $1, 'full', 4, 'public', 'articles', $2, now())
+		 ON CONFLICT (identity) DO NOTHING`, identity, column)
 	c.Assert(err, qt.IsNil)
 }
 
@@ -922,7 +968,16 @@ func assertCutoverIsRefusedBeforeCatchUp(c *qt.C, ctx context.Context, specPath,
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(output, qt.Contains, "cutover refused")
-	c.Assert(output, qt.Contains, "the source is mutable and the run declared no consistency mode")
+	// The mode's STATE, not its absence. This specification declares
+	// `consistency.mode: outbox`, and the refusal used to tell the operator
+	// they had declared none -- the plan blanked the mode whenever the
+	// guarantee was incomplete, so "yours has not caught up yet" arrived as
+	// "you configured nothing" (stokaro/ptah#2646). Both halves are asserted,
+	// because a refusal that merely stopped saying the wrong thing would be a
+	// run refused for no stated reason.
+	c.Assert(output, qt.Contains, "the backfill's boundary is")
+	c.Assert(output, qt.Not(qt.Contains),
+		"the source is mutable and the run declared no consistency mode")
 
 	// The gate says the same thing, at the same moment, in the form a rollout
 	// system reads. This is the half that makes the later "ready" assertion
@@ -938,8 +993,14 @@ func assertCutoverIsRefusedBeforeCatchUp(c *qt.C, ctx context.Context, specPath,
 	}
 	c.Assert(json.Unmarshal([]byte(body), &document), qt.IsNil, qt.Commentf("%s", body))
 	c.Assert(document.Readiness.CutoverReady, qt.IsFalse)
-	c.Assert(document.Readiness.Blockers, qt.Contains,
-		"the source is mutable and the run declared no consistency mode")
+	// The same correction as above, on the surface a rollout system parses.
+	// `verify` already got this state right, so the two disagreeing was the
+	// visible half of stokaro/ptah#2646. The transaction number in the sentence
+	// is the server's, so the assertion is over the part that is ours.
+	c.Assert(strings.Join(document.Readiness.Blockers, "\n"), qt.Contains,
+		"the backfill's boundary is")
+	c.Assert(strings.Join(document.Readiness.Blockers, "\n"), qt.Not(qt.Contains),
+		"declared no consistency mode")
 
 	// And as the refusal a gate waits on. An init container that keeps failing
 	// is the whole of a rollout gate, so this is the interface rather than the
@@ -1213,8 +1274,17 @@ func assertRetireIsRefusedWhileQueriesReadIt(c *qt.C, ctx context.Context, specP
 // activeGenerationFrom reads which generation the cutover made active.
 func activeGenerationFrom(c *qt.C, ctx context.Context, specPath, dbURL string) string {
 	c.Helper()
+	return activeGenerationOfRun(c, ctx, specPath, dbURL, cliRunID)
+}
+
+// activeGenerationOfRun is the same for a run this file did not name. See
+// [planDigestOfRun] for why the constant had to become a parameter.
+func activeGenerationOfRun(
+	c *qt.C, ctx context.Context, specPath, dbURL, runID string,
+) string {
+	c.Helper()
 	status := runInference(c, ctx, "status",
-		"--spec", specPath, "--db-url", dbURL, "--run-id", cliRunID)
+		"--spec", specPath, "--db-url", dbURL, "--run-id", runID)
 	for line := range strings.SplitSeq(status, "\n") {
 		if after, found := strings.CutPrefix(strings.TrimSpace(line), "- generation: "); found {
 			return strings.TrimSpace(after)

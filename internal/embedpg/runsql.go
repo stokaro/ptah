@@ -64,6 +64,15 @@ const claimRunSQL = `UPDATE ` + embedstore.RunTable + ` SET
 	WHERE id=$1
 	RETURNING ` + runColumns
 
+// selectRunsForGenerationSQL reads every run that built one generation.
+//
+// Ordered newest first, and by id after that, so a caller reading the answer
+// gets a stable order rather than whatever the plan happened to produce -- two
+// runs of one specification started in the same second are ordinary.
+const selectRunsForGenerationSQL = `SELECT ` + runColumns +
+	` FROM ` + embedstore.RunTable +
+	` WHERE generation_identity = $1 ORDER BY created_at DESC, id`
+
 // selectRunSQL reads one back.
 const selectRunSQL = `SELECT ` + runColumns + ` FROM ` + embedstore.RunTable + ` WHERE id = $1`
 

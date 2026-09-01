@@ -722,6 +722,13 @@ type ConstraintNode struct {
 	ExcludeElements string
 	// WhereCondition contains the optional WHERE clause for EXCLUDE constraints
 	WhereCondition string
+	// Comment is the constraint's description.
+	//
+	// PostgreSQL stores it through COMMENT ON CONSTRAINT, which is its own
+	// statement after the table rather than a clause inside it. A target with
+	// no spelling for it renders nothing, the way it already treats a table
+	// comment it cannot store.
+	Comment string
 }
 
 // Accept implements the Node interface for ConstraintNode.

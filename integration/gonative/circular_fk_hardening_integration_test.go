@@ -14,8 +14,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	mysqldriver "github.com/go-sql-driver/mysql"
-	_ "github.com/jackc/pgx/v5/stdlib"
-	_ "github.com/microsoft/go-mssqldb"
+	_ "github.com/jackc/pgx/v5/stdlib"  // registers the pgx driver for database/sql
+	_ "github.com/microsoft/go-mssqldb" // registers the SQL Server driver for database/sql
 
 	"go.5x5.cz/ptah/cmd/generate"
 	"go.5x5.cz/ptah/cmd/readdb"

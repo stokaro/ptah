@@ -1940,6 +1940,35 @@ must never do is take a handle and assert its way to the concrete type:
 `c.TB.(*testing.T)` inside a helper declared for `testing.TB` panics the moment
 it is called from a benchmark, and the signature promises otherwise.
 
+### A blank import says why
+
+`_ "github.com/jackc/pgx/v5/stdlib"` is the one import whose removal the
+compiler does not notice. It is there for a side effect -- a driver registering
+with `database/sql`, a package populating a registry from its `init` -- and the
+symbol that would break is never named, so deleting it leaves a green build and
+a different program.
+
+revive's `blank-imports` rule states this and `.golangci.yml` enables it, so
+non-test code is already held to it. It exempts main packages and `_test.go`
+files by design, and that exemption held every unjustified blank import in the
+tree: 135 of them, all in tests. Measured rather than read off the rule --
+a bare blank import planted in `internal/atlashclrender/render.go` is reported
+and the identical one in `dialect_scope_loss_test.go` is not.
+
+`internal/blankimportguard` applies the same rule to the files revive leaves
+out. **Each blank import carries its own comment**, on its line or directly
+above it; a comment heading a group does not count for the imports below it,
+because `gofmt` sorts a group alphabetically and interleaves non-blank imports
+through it, so the comment and the import it explains drift apart on the next
+`goimports` run with nothing to say they have. Both registry lists in the tree
+already show that shape.
+
+The exemption is worst exactly where the imports matter most.
+`cmd/internal/envboolguard` and `internal/atlascompatpolicy` blank-import Ptah
+packages to populate the registry they then read back, so a missing import does
+not break the test -- it shrinks what the test checks, and the assertion still
+passes. That is a gate reporting without running.
+
 ### A rule with no caller is a rule that is not in effect
 
 `unused` counts a test as a use. So a function that carries a rule, carries its

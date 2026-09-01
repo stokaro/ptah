@@ -3270,6 +3270,19 @@ func (p *Planner) dropIndexRebuiltAsConstraint(
 }
 
 func constraintAdditionNode(add difftypes.ConstraintAdditionInfo) *ast.ConstraintNode {
+	node := constraintAdditionNodeByType(add)
+	if node == nil {
+		return nil
+	}
+	node.Comment = add.Comment
+	return node
+}
+
+// constraintAdditionNodeByType builds the node one constraint type needs.
+//
+// The comment is attached by the caller rather than here, so a constraint type
+// added to this switch cannot lose it by omission.
+func constraintAdditionNodeByType(add difftypes.ConstraintAdditionInfo) *ast.ConstraintNode {
 	if add.TableName == "" {
 		return nil
 	}
