@@ -54,8 +54,13 @@ over one corpus.
 cannot:
 
 ```console
-  reproducibility = partial (inferred: the provider exposes no immutable revision)
+  generation.reproducibility = partial (inferred: provider "openai-compatible" exposes no immutable revision for model "text-embedding-3-small", so asking it again may answer with different vectors)
 ```
+
+It is reported either way. A specification pinning `model.revision` reads
+`full`, and the answer sits among the facts the plan inferred rather than the
+ones it measured, because Ptah reads the revision out of your specification
+without asking the provider whether it honors it.
 
 A provider that serves a model under a name and changes what it returns has
 changed your corpus without changing the identity, and Ptah cannot see that. If

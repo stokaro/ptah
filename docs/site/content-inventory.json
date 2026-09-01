@@ -1951,8 +1951,8 @@
         "/inference/concepts/embeddings-and-inference-state/",
         "/inference/quick-start/"
       ],
-      "visibleWords": 607,
-      "sourceBytes": 4457
+      "visibleWords": 652,
+      "sourceBytes": 4852
     },
     {
       "path": "docs/site/src/content/docs/inference/concepts/lifecycle.md",
