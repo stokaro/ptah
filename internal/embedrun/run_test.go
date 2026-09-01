@@ -190,6 +190,99 @@ func TestReach_RollbackIsReachableFromCutover(t *testing.T) {
 	c.Assert(run.Phase, qt.Equals, embedrun.PhaseRolledBack)
 }
 
+// TestReach_ARollbackIsReversible is what the guide promises and what the
+// first attempt at these phases took away.
+//
+// A rollback is documented as reversible: cutting the generation over again is
+// how it is reversed. Recorded as a forward-only move, the run went on saying
+// `rolled_back` while the pointer named its generation as the one queries read,
+// and nothing could ever bring the two back into agreement
+// (stokaro/ptah#2649 finding 6).
+func TestReach_ARollbackIsReversible(t *testing.T) {
+	c := qt.New(t)
+	run := running(embedrun.PhaseCutOver)
+
+	c.Assert(run.Reach(run.FencingToken, embedrun.PhaseRolledBack), qt.IsNil)
+	c.Assert(run.Reach(run.FencingToken, embedrun.PhaseCutOver), qt.IsNil)
+	c.Assert(run.Phase, qt.Equals, embedrun.PhaseCutOver)
+	// And still reversible after that, because an operator may go back and
+	// forth for as long as the window lasts.
+	c.Assert(run.Reach(run.FencingToken, embedrun.PhaseRolledBack), qt.IsNil)
+	c.Assert(run.Phase, qt.Equals, embedrun.PhaseRolledBack)
+}
+
+// TestReach_ARolledBackGenerationCanStillBeRetired is the other move the
+// forward-only table refused.
+//
+// Rolling a generation off the pointer and then retiring it is the ordinary end
+// of one nobody wants back. With `rolled_back` declared as leading nowhere, the
+// retirement destroyed the vectors and the phase change was refused, so the row
+// stood describing a corpus that no longer existed.
+func TestReach_ARolledBackGenerationCanStillBeRetired(t *testing.T) {
+	c := qt.New(t)
+	run := running(embedrun.PhaseRolledBack)
+
+	c.Assert(run.Reach(run.FencingToken, embedrun.PhaseRetired), qt.IsNil)
+	c.Assert(run.Phase, qt.Equals, embedrun.PhaseRetired)
+}
+
+// TestReach_RetirementCompletesTheRunAndReleasesItsLease gives
+// [embedrun.StatusComplete] the producer it never had.
+//
+// The constant and its doc comment were the only two lines in the tree naming
+// it, so every run ever built reported `running` for the rest of the registry's
+// life -- including runs whose generation had been destroyed, which still
+// carried a lease naming a worker that had exited.
+func TestReach_RetirementCompletesTheRunAndReleasesItsLease(t *testing.T) {
+	c := qt.New(t)
+	run := running(embedrun.PhaseCutOver)
+
+	c.Assert(run.Reach(run.FencingToken, embedrun.PhaseRetired), qt.IsNil)
+	c.Assert(run.Status, qt.Equals, embedrun.StatusComplete)
+	c.Assert(run.LeaseOwner, qt.Equals, "")
+	c.Assert(run.LeaseExpires.IsZero(), qt.IsTrue)
+}
+
+// TestReach_ARollbackDoesNotCompleteTheRun is the control for the test above.
+//
+// A rolled-back run can be cut over again, so calling it complete would be the
+// same false statement in the status column that the phase column was making.
+// Without this, a fix that completed every run leaving `cut_over` would pass.
+func TestReach_ARollbackDoesNotCompleteTheRun(t *testing.T) {
+	c := qt.New(t)
+	run := running(embedrun.PhaseCutOver)
+
+	c.Assert(run.Reach(run.FencingToken, embedrun.PhaseRolledBack), qt.IsNil)
+	c.Assert(run.Status, qt.Equals, embedrun.StatusRunning)
+	c.Assert(run.LeaseOwner, qt.Equals, "worker-a")
+}
+
+// TestLeadsTo_AnswersWhichRunsAVerbAdvances covers the predicate `retire` and
+// `rollback` ask instead of naming a phase themselves.
+func TestLeadsTo_AnswersWhichRunsAVerbAdvances(t *testing.T) {
+	tests := []struct {
+		name string
+		from embedrun.Phase
+		to   embedrun.Phase
+		want bool
+	}{
+		{name: "cutover to retired", from: embedrun.PhaseCutOver, to: embedrun.PhaseRetired, want: true},
+		{name: "cutover to rolled back", from: embedrun.PhaseCutOver, to: embedrun.PhaseRolledBack, want: true},
+		{name: "rolled back to retired", from: embedrun.PhaseRolledBack, to: embedrun.PhaseRetired, want: true},
+		{name: "rolled back to rolled back", from: embedrun.PhaseRolledBack, to: embedrun.PhaseRolledBack, want: false},
+		{name: "verified to retired", from: embedrun.PhaseVerified, to: embedrun.PhaseRetired, want: false},
+		{name: "retired to anything", from: embedrun.PhaseRetired, to: embedrun.PhaseRolledBack, want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(test.from.LeadsTo(test.to), qt.Equals, test.want)
+		})
+	}
+}
+
 // TestEvent_CarriesNoRowContent is the privacy rule made structural.
 //
 // The check is on the TYPE rather than on a value, because a rule about what

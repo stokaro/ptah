@@ -171,3 +171,133 @@ func runPhase(c *qt.C, ctx context.Context, db *sql.DB, runID string) string {
 	c.Assert(err, qt.IsNil)
 	return phase
 }
+
+// TestInferenceARollbackIsReversibleE2E is the regression the first fix for
+// these phases introduced.
+//
+// The guide calls a rollback reversible, and cutting the generation over again
+// is how it is reversed. `rolled_back` was recorded as a phase nothing follows,
+// so the reversal left the run saying it had been rolled back while the pointer
+// named its generation as the one queries read -- two rows about one fact,
+// disagreeing, with no way back into agreement (stokaro/ptah#2649 finding 6).
+func TestInferenceARollbackIsReversibleE2E(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.TimescaleDB)
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	db, dbName := freshTerminalPhaseDatabase(c, ctx, dbURL, "ptah_phase_reverse")
+	seedCLIArticles(c, ctx, db)
+	endpoint := httptest.NewServer(http.HandlerFunc(embeddingsHandler(c)))
+	defer endpoint.Close()
+
+	firstSpec := writeCLISpec(c, endpoint.URL)
+	secondSpec := writeCLISpecWithMetric(c, endpoint.URL, "cosine", "embedding_v2")
+	first := completeCutOverRun(c, ctx, firstSpec, dbName, "reverse-first")
+	second := completeCutOverRun(c, ctx, secondSpec, dbName, "reverse-second")
+
+	runInference(c, ctx, "rollback",
+		"--spec", secondSpec, "--db-url", dbName, "--to", first, "--window", "1h")
+	c.Assert(runPhase(c, ctx, db, "reverse-second"), qt.Equals, "rolled_back")
+
+	// Reverse it. The generation is caught up and verified again first, which
+	// is what an operator does before cutting over to anything.
+	runInference(c, ctx, "catchup",
+		"--spec", secondSpec, "--db-url", dbName, "--run-id", "reverse-second", "--batch-rows", "10")
+	runInference(c, ctx, "verify",
+		"--spec", secondSpec, "--db-url", dbName, "--run-id", "reverse-second")
+	runInference(c, ctx, "cutover",
+		"--spec", secondSpec, "--db-url", dbName, "--run-id", "reverse-second",
+		"--approve", planDigestOfRun(c, ctx, secondSpec, dbName, "reverse-second"),
+		"--approver", "an operator", "--stabilize-for", "1h")
+
+	// The pointer and the run agree again, which is the whole property.
+	c.Assert(activeGenerationOfRun(c, ctx, secondSpec, dbName, "reverse-second"), qt.Equals, second)
+	c.Assert(runPhase(c, ctx, db, "reverse-second"), qt.Equals, "cut_over")
+	// The generation this cutover displaced keeps `cut_over`, and that is the
+	// right answer rather than an omission: `rolled_back` means a rollback
+	// returned queries to an earlier generation, which is not what happened to
+	// this one. It was replaced, which every generation but the newest has been,
+	// and the phase is a high-water mark of what the run reached. Which
+	// generation queries read now is the pointer's to say.
+	c.Assert(runPhase(c, ctx, db, "reverse-first"), qt.Equals, "cut_over")
+}
+
+// TestInferenceARolledBackGenerationCanBeRetiredE2E is the other move the
+// forward-only table refused.
+//
+// Rolling a generation off the pointer and then retiring it is the ordinary end
+// of one nobody wants back. The retirement destroyed the vectors and the phase
+// change was refused, so the row stood at `rolled_back` describing a corpus that
+// no longer existed -- and the run never became complete.
+func TestInferenceARolledBackGenerationCanBeRetiredE2E(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.TimescaleDB)
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	db, dbName := freshTerminalPhaseDatabase(c, ctx, dbURL, "ptah_phase_retire")
+	seedCLIArticles(c, ctx, db)
+	endpoint := httptest.NewServer(http.HandlerFunc(embeddingsHandler(c)))
+	defer endpoint.Close()
+
+	firstSpec := writeCLISpec(c, endpoint.URL)
+	secondSpec := writeCLISpecWithMetric(c, endpoint.URL, "cosine", "embedding_v2")
+	first := completeCutOverRun(c, ctx, firstSpec, dbName, "retire-first")
+	second := completeCutOverRun(c, ctx, secondSpec, dbName, "retire-second")
+
+	runInference(c, ctx, "rollback",
+		"--spec", secondSpec, "--db-url", dbName, "--to", first, "--window", "1h")
+	c.Assert(runPhase(c, ctx, db, "retire-second"), qt.Equals, "rolled_back")
+
+	digest := retirementDigestOf(c, ctx, secondSpec, dbName, second)
+	runInference(c, ctx, "retire",
+		"--spec", secondSpec, "--db-url", dbName, "--generation", second,
+		"--approve", digest, "--approver", "an operator")
+
+	c.Assert(runPhase(c, ctx, db, "retire-second"), qt.Equals, "retired")
+	// And the run is complete, with no lease left on a generation that no
+	// longer exists. `complete` had no producer at all before this: every run
+	// ever built reported `running` for the life of the registry.
+	status, owner := runStatusAndLease(c, ctx, db, "retire-second")
+	c.Assert(status, qt.Equals, "complete")
+	c.Assert(owner, qt.Equals, "")
+	// The control, and the half a fix that completed every run would break: the
+	// generation queries actually read is still running.
+	activeStatus, activeOwner := runStatusAndLease(c, ctx, db, "retire-first")
+	c.Assert(activeStatus, qt.Equals, "running")
+	c.Assert(activeOwner, qt.Not(qt.Equals), "")
+}
+
+// freshTerminalPhaseDatabase makes a database of its own and hands back a
+// connection and the URL that reaches it.
+func freshTerminalPhaseDatabase(
+	c *qt.C, ctx context.Context, dbURL, prefix string,
+) (*sql.DB, string) {
+	c.Helper()
+	adminDB, err := sql.Open("pgx", dbURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { _ = adminDB.Close() })
+
+	name := fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
+	createE2EDatabase(c, ctx, adminDB, name)
+	c.Cleanup(func() { dropE2EDatabase(c, context.Background(), adminDB, name) })
+
+	dbName := replaceDatabaseName(c, dbURL, name)
+	db, err := sql.Open("pgx", dbName)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { _ = db.Close() })
+	return db, dbName
+}
+
+// runStatusAndLease reads a run's status and who holds it, from the row.
+func runStatusAndLease(
+	c *qt.C, ctx context.Context, db *sql.DB, runID string,
+) (status, leaseOwner string) {
+	c.Helper()
+	err := db.QueryRowContext(ctx,
+		`SELECT status, COALESCE(lease_owner, '') FROM ptah_embedding_run WHERE id = $1`, runID).
+		Scan(&status, &leaseOwner)
+	c.Assert(err, qt.IsNil)
+	return status, leaseOwner
+}
