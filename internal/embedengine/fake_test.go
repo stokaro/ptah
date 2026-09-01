@@ -120,6 +120,9 @@ type fakeProvider struct {
 	// shortBy drops that many vectors from the answer, which is the shape of a
 	// provider that silently returned fewer than it was asked for.
 	shortBy int
+	// beforeEmbed runs at the start of a call, so a test can interrupt the run
+	// while a provider request is the thing in flight.
+	beforeEmbed func()
 }
 
 // Profile describes the endpoint.
@@ -128,8 +131,14 @@ func (f *fakeProvider) Profile() embedprovider.Profile {
 }
 
 // Embed answers one vector per input.
-func (f *fakeProvider) Embed(_ context.Context, inputs []string) (embedprovider.Result, error) {
+func (f *fakeProvider) Embed(ctx context.Context, inputs []string) (embedprovider.Result, error) {
+	if f.beforeEmbed != nil {
+		f.beforeEmbed()
+	}
 	f.calls = append(f.calls, append([]string(nil), inputs...))
+	if err := ctx.Err(); err != nil {
+		return embedprovider.Result{}, err
+	}
 	if f.failOn == len(f.calls) {
 		return embedprovider.Result{}, errors.New("the provider returned 503")
 	}
