@@ -231,7 +231,6 @@ Read the columns as follows.
 | `--batch-inputs` | `int` | `32` | `PTAH_BATCH_INPUTS` | — |
 | `--batch-rows` | `int` | `200` | `PTAH_BATCH_ROWS` | — |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
-| `--maintain-for` | `duration` | `0s` | `PTAH_MAINTAIN_FOR` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--provider-timeout` | `duration` | `1m0s` | `PTAH_PROVIDER_TIMEOUT` | — |
 | `--release` | `string` | — | `PTAH_RELEASE` | — |

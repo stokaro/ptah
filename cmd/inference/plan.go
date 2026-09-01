@@ -84,7 +84,7 @@ func addSpecFlags(cmd *cobra.Command, options *commonOptions) {
 		"OCI reference of a published release to run, which carries the specification; "+
 			"an oci-layout:// directory is accepted for an air-gapped promotion")
 	dbcli.RegisterPlainHTTPFlag(cmd.Flags(), &options.spec.plainHTTP)
-	cmd.MarkFlagsMutuallyExclusive("spec", "release")
+	requireExclusiveOnCommandLine(cmd, "spec", "release")
 }
 
 // runPlan resolves, prints, and records.

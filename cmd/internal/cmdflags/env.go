@@ -266,3 +266,84 @@ func EnvBindingName(prefix string, flag *pflag.Flag) (string, bool) {
 func usageContainsEnv(usage string) bool {
 	return strings.Contains(usage, " [env: ")
 }
+
+// WithdrawEnvValue restores a flag to its declared default when the value it
+// carries arrived from the environment rather than from the command line.
+//
+// It is the second half of a precedence rule, and it has no use on its own: a
+// caller reaches for it having decided that something the operator typed
+// settles what a PTAH_* variable would otherwise have decided. After it
+// returns, SetOnCommandLine and pflag's Changed both answer false for the
+// flag, so a reader asking either question sees a flag nobody set.
+//
+// pflag keeps a flag's default only as the string it prints in --help, so the
+// value is restored by parsing that string back. Set appends for a slice flag
+// rather than replacing, which would add the default to what is already there,
+// so a slice flag is refused by name instead of being mangled. No group this
+// package guards has one.
+func WithdrawEnvValue(flags *pflag.FlagSet, name string) error {
+	flag := flags.Lookup(name)
+	if flag == nil || !envApplied(flag) {
+		return nil
+	}
+	if _, isSlice := flag.Value.(pflag.SliceValue); isSlice {
+		return fmt.Errorf("cannot withdraw the environment value of slice flag --%s", name)
+	}
+	if err := flag.Value.Set(flag.DefValue); err != nil {
+		return fmt.Errorf("restore --%s to its default %q: %w", name, flag.DefValue, err)
+	}
+	flag.Changed = false
+	clearEnvApplied(flag)
+	return nil
+}
+
+// ExclusiveOnCommandLine enforces a mutually exclusive flag group whose members
+// are environment-bound, where the reader behind the group prefers one member
+// over another.
+//
+// Two things happen, and doing only the first is how a loud refusal becomes a
+// silent wrong answer:
+//
+//   - more than one member typed on the command line is refused, in cobra's own
+//     wording, exactly as [MutuallyExclusiveOnCommandLine] does;
+//   - exactly one member typed withdraws every other member's environment
+//     value, so the flag the operator wrote is the one that decides the run.
+//
+// The second half is what [MutuallyExclusiveOnCommandLine] leaves out, and
+// leaving it out is not a smaller fix but a different outcome. cmd/inference's
+// specification source prefers --spec over --release, so with PTAH_SPEC
+// exported -- which the inference quick start instructs -- a run of
+// `describe --release <ref>` that stopped being refused would load the local
+// file, never contact the registry, and exit 0 against a specification nobody
+// named (stokaro/ptah#2648 finding 11). Refusing that run is wrong for a
+// different reason: the operator typed one flag and the diagnostic names two.
+//
+// [MutuallyExclusiveOnCommandLine] stays the right call where the environment
+// value winning is the safe direction. cmd/atlas's --dry-run and
+// --auto-approve are the worked example: with PTAH_DRY_RUN exported and
+// --auto-approve typed, the run prints the plan and applies nothing, so
+// withdrawing the variable there would turn a rehearsal into an apply.
+func ExclusiveOnCommandLine(flags *pflag.FlagSet, names ...string) error {
+	if err := MutuallyExclusiveOnCommandLine(flags, names...); err != nil {
+		return err
+	}
+	typed := ""
+	for _, name := range names {
+		if SetOnCommandLine(flags, name) {
+			typed = name
+			break
+		}
+	}
+	if typed == "" {
+		return nil
+	}
+	for _, name := range names {
+		if name == typed {
+			continue
+		}
+		if err := WithdrawEnvValue(flags, name); err != nil {
+			return err
+		}
+	}
+	return nil
+}

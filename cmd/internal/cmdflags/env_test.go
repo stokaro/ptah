@@ -420,3 +420,115 @@ func TestMutuallyExclusiveOnCommandLineIgnoresEnvironmentMembers(t *testing.T) {
 
 	c.Assert(cmdflags.MutuallyExclusiveOnCommandLine(cmd.Flags(), "dry-run", "auto-approve"), qt.IsNil)
 }
+
+// TestWithdrawEnvValueRestoresTheDeclaredDefault covers the half of the
+// precedence rule that MutuallyExclusiveOnCommandLine leaves out: after a
+// withdrawal the flag has to read as one nobody set, through both the value a
+// command consumes and the two questions a precedence rule asks.
+func TestWithdrawEnvValueRestoresTheDeclaredDefault(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_SPEC", "/from/the/environment.yaml")
+
+	cmd := &cobra.Command{Use: "describe"}
+	cmd.Flags().String("spec", "", "Path to the specification")
+	c.Assert(cmdflags.InitializeEnv("PTAH", cmd), qt.IsNil)
+	c.Assert(cmd.Flags().Lookup("spec").Value.String(), qt.Equals, "/from/the/environment.yaml")
+
+	c.Assert(cmdflags.WithdrawEnvValue(cmd.Flags(), "spec"), qt.IsNil)
+
+	c.Assert(cmd.Flags().Lookup("spec").Value.String(), qt.Equals, "")
+	c.Assert(cmd.Flags().Lookup("spec").Changed, qt.IsFalse)
+	c.Assert(cmdflags.SetOnCommandLine(cmd.Flags(), "spec"), qt.IsFalse)
+}
+
+// TestWithdrawEnvValueLeavesATypedFlagAlone is the control. A helper that
+// cleared the flag whatever its value came from would satisfy the test above
+// and quietly discard what the operator wrote.
+func TestWithdrawEnvValueLeavesATypedFlagAlone(t *testing.T) {
+	c := qt.New(t)
+
+	cmd := &cobra.Command{Use: "describe"}
+	cmd.Flags().String("spec", "", "Path to the specification")
+	c.Assert(cmd.Flags().Set("spec", "/typed.yaml"), qt.IsNil)
+	c.Assert(cmdflags.InitializeEnv("PTAH", cmd), qt.IsNil)
+
+	c.Assert(cmdflags.WithdrawEnvValue(cmd.Flags(), "spec"), qt.IsNil)
+
+	c.Assert(cmd.Flags().Lookup("spec").Value.String(), qt.Equals, "/typed.yaml")
+	c.Assert(cmdflags.SetOnCommandLine(cmd.Flags(), "spec"), qt.IsTrue)
+	c.Assert(cmdflags.WithdrawEnvValue(cmd.Flags(), "absent"), qt.IsNil)
+}
+
+// TestWithdrawEnvValueRefusesASliceFlag pins the limitation stated at the
+// declaration. Set appends for a slice, so restoring the default by re-parsing
+// it would leave the default appended to the environment value it was meant to
+// remove; the refusal is what keeps that from happening silently.
+func TestWithdrawEnvValueRefusesASliceFlag(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_VAR", "one")
+
+	cmd := &cobra.Command{Use: "apply"}
+	cmd.Flags().StringSlice("var", nil, "Variables")
+	c.Assert(cmdflags.InitializeEnv("PTAH", cmd), qt.IsNil)
+
+	err := cmdflags.WithdrawEnvValue(cmd.Flags(), "var")
+
+	c.Assert(err, qt.ErrorMatches, `cannot withdraw the environment value of slice flag --var`)
+}
+
+// TestExclusiveOnCommandLineLetsTheTypedFlagDecide is stokaro/ptah#2648
+// finding 11 measured at the package boundary: PTAH_SPEC exported and --release
+// typed must leave the run naming the release alone, rather than refusing it or
+// answering it from the file the variable happened to name.
+func TestExclusiveOnCommandLineLetsTheTypedFlagDecide(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_SPEC", "/from/the/environment.yaml")
+
+	cmd := &cobra.Command{Use: "describe"}
+	cmd.Flags().String("spec", "", "Path to the specification")
+	cmd.Flags().String("release", "", "OCI reference of a published release")
+	c.Assert(cmd.Flags().Set("release", "oci://registry/app:v1"), qt.IsNil)
+	c.Assert(cmdflags.InitializeEnv("PTAH", cmd), qt.IsNil)
+
+	c.Assert(cmdflags.ExclusiveOnCommandLine(cmd.Flags(), "spec", "release"), qt.IsNil)
+
+	c.Assert(cmd.Flags().Lookup("spec").Value.String(), qt.Equals, "")
+	c.Assert(cmd.Flags().Lookup("release").Value.String(), qt.Equals, "oci://registry/app:v1")
+}
+
+// TestExclusiveOnCommandLineStillRefusesATypedPair proves the withdrawal did
+// not buy the run above by giving up the refusal. The sentence is cobra's, and
+// it is asserted whole so a group that stopped refusing cannot pass by
+// returning some other error.
+func TestExclusiveOnCommandLineStillRefusesATypedPair(t *testing.T) {
+	c := qt.New(t)
+
+	cmd := &cobra.Command{Use: "describe"}
+	cmd.Flags().String("spec", "", "Path to the specification")
+	cmd.Flags().String("release", "", "OCI reference of a published release")
+	c.Assert(cmd.Flags().Set("spec", "/typed.yaml"), qt.IsNil)
+	c.Assert(cmd.Flags().Set("release", "oci://registry/app:v1"), qt.IsNil)
+
+	err := cmdflags.ExclusiveOnCommandLine(cmd.Flags(), "spec", "release")
+
+	c.Assert(err, qt.ErrorMatches,
+		`if any flags in the group \[spec release\] are set none of the others can be; `+
+			`\[release spec\] were all set`)
+}
+
+// TestExclusiveOnCommandLineWithdrawsNothingWhenNothingWasTyped is the control
+// for the environment's own run: with no member typed, PTAH_SPEC still decides,
+// which is the whole point of binding it.
+func TestExclusiveOnCommandLineWithdrawsNothingWhenNothingWasTyped(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv("PTAH_SPEC", "/from/the/environment.yaml")
+
+	cmd := &cobra.Command{Use: "describe"}
+	cmd.Flags().String("spec", "", "Path to the specification")
+	cmd.Flags().String("release", "", "OCI reference of a published release")
+	c.Assert(cmdflags.InitializeEnv("PTAH", cmd), qt.IsNil)
+
+	c.Assert(cmdflags.ExclusiveOnCommandLine(cmd.Flags(), "spec", "release"), qt.IsNil)
+
+	c.Assert(cmd.Flags().Lookup("spec").Value.String(), qt.Equals, "/from/the/environment.yaml")
+}

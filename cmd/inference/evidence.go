@@ -53,7 +53,7 @@ func addSubjectFlag(cmd *cobra.Command, options *evidenceOptions) {
 	// A referrer lands in its subject's repository, so a run naming both would
 	// have said where the record went twice and the registry would have obeyed
 	// one of them.
-	cmd.MarkFlagsMutuallyExclusive("publish-evidence", "attach-to")
+	requireExclusiveOnCommandLine(cmd, "publish-evidence", "attach-to")
 }
 
 // destinationNamed reports whether this run was asked to leave a record
