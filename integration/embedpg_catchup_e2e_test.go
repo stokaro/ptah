@@ -163,8 +163,8 @@ func assertTheCorpusMatchesTheSourceNow(
 	c *qt.C, ctx context.Context, db *sql.DB, spec embedgen.Spec,
 ) {
 	c.Helper()
-	source, target := readVerificationRows(c, ctx, db, spec)
-	report := embedverify.Verify(
+	corpus := readVerificationCorpus(c, ctx, db, spec)
+	report, err := embedverify.Verify(
 		embedverify.Expectation{
 			Generation: spec.Identity().Digest,
 			ColumnType: fmt.Sprintf("vector(%d)", spec.Model.ReportedDimension),
@@ -174,10 +174,11 @@ func assertTheCorpusMatchesTheSourceNow(
 			ColumnExists: true, ColumnType: fmt.Sprintf("vector(%d)", spec.Model.ReportedDimension),
 			Dimension: spec.Model.ReportedDimension, ExtensionPresent: true,
 		},
-		source, target,
+		corpus,
 		embedverify.RunState{SnapshotComplete: true, CatchUpReached: true, ConsistencyMode: "outbox",
 			SourceMutable: true},
 	)
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(report.Blocking(), qt.HasLen, 0, qt.Commentf("%v", report.Findings))
 	c.Assert(report.Passed(), qt.IsTrue)

@@ -1,6 +1,7 @@
 package embedverify_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -40,6 +41,72 @@ func healthy() (
 	return expectation, structure, source, target, state
 }
 
+// corpusOf turns a fixture's two lists into the walk the shipped reader would
+// have produced from the same rows.
+//
+// One position per STORED row, in the target list's order, carrying the source
+// row for that key where the fixture has one; then a position for each source
+// row nothing stored. That order is not arbitrary: `embedverify.Corpus`
+// requires equal keys to arrive adjacent, and pairing source-first would put a
+// key's second stored row in the tail, where nothing sits next to the first.
+//
+// A key stored twice takes its source row on the first position only, so a
+// fixture's source count is the count Verify reports -- the reader produces a
+// source row per in-scope result row, and a fixture written as one source row
+// is describing one.
+//
+// This is a fixture rather than a second implementation of the join. The join
+// is the SQL query, and integration/embedpg_out_of_scope_e2e_test.go drives
+// that one against a live server.
+func corpusOf(
+	source []embedverify.SourceRow, target []embedverify.TargetRow,
+) embedverify.Corpus {
+	byKey := make(map[string]embedverify.SourceRow, len(source))
+	for _, row := range source {
+		byKey[row.Key] = row
+	}
+	return func(yield func(embedverify.Pair, error) bool) {
+		taken := make(map[string]bool, len(source))
+		for _, stored := range target {
+			pair := embedverify.Pair{Target: &stored}
+			if row, ok := byKey[stored.Key]; ok {
+				taken[stored.Key] = true
+				pair.Source = &row
+			}
+			if !yield(pair, nil) {
+				return
+			}
+		}
+		for _, row := range source {
+			if taken[row.Key] {
+				continue
+			}
+			if !yield(embedverify.Pair{Source: &row}, nil) {
+				return
+			}
+		}
+	}
+}
+
+// verify runs the layers over a fixture's two lists.
+//
+// The error is the corpus walk's, and a fixture's walk cannot fail, so this
+// asserts it away rather than handing every caller an error to ignore. A test
+// about a failing walk builds its own sequence and calls Verify directly.
+func verify(
+	c *qt.C,
+	expectation embedverify.Expectation,
+	structure embedverify.Structure,
+	source []embedverify.SourceRow,
+	target []embedverify.TargetRow,
+	state embedverify.RunState,
+) embedverify.Report {
+	c.Helper()
+	report, err := embedverify.Verify(expectation, structure, corpusOf(source, target), state)
+	c.Assert(err, qt.IsNil)
+	return report
+}
+
 // summaries lists what a report said.
 func summaries(report embedverify.Report) []string {
 	lines := make([]string, 0, len(report.Findings))
@@ -57,7 +124,9 @@ func summaries(report embedverify.Report) []string {
 func TestVerify_AHealthyGenerationPasses(t *testing.T) {
 	c := qt.New(t)
 
-	report := embedverify.Verify(healthy())
+	expectation, structure, source, target, state := healthy()
+
+	report := verify(c, expectation, structure, source, target, state)
 
 	c.Assert(report.Findings, qt.HasLen, 0, qt.Commentf("%v", summaries(report)))
 	c.Assert(report.Passed(), qt.IsTrue)
@@ -77,7 +146,7 @@ func TestVerify_CountsMatchingIsNotCoverage(t *testing.T) {
 	expectation, structure, source, target, state := healthy()
 	target[1].Key = "999"
 
-	report := embedverify.Verify(expectation, structure, source, target, state)
+	report := verify(c, expectation, structure, source, target, state)
 
 	c.Assert(report.SourceRows, qt.Equals, report.TargetRows)
 	c.Assert(report.Passed(), qt.IsFalse)
@@ -104,7 +173,7 @@ func TestVerify_ARowCountMatchWithStaleVectorsFails(t *testing.T) {
 			expectation, structure, source, target, state := healthy()
 			test.change(target)
 
-			report := embedverify.Verify(expectation, structure, source, target, state)
+			report := verify(c, expectation, structure, source, target, state)
 
 			c.Assert(report.SourceRows, qt.Equals, report.TargetRows)
 			c.Assert(report.Passed(), qt.IsFalse)
@@ -161,7 +230,7 @@ func TestVerify_StructuralFailuresBlock(t *testing.T) {
 			expectation, structure, source, target, state := healthy()
 			test.change(&structure)
 
-			report := embedverify.Verify(expectation, structure, source, target, state)
+			report := verify(c, expectation, structure, source, target, state)
 
 			c.Assert(report.Passed(), qt.IsFalse)
 			c.Assert(summaries(report), qt.Contains, test.want)
@@ -180,7 +249,7 @@ func TestVerify_AMovedActivePointerBlocksTheCutover(t *testing.T) {
 	expectation.PreviousPointer = "gen-0"
 	structure.ActivePointer = "gen-other"
 
-	report := embedverify.Verify(expectation, structure, source, target, state)
+	report := verify(c, expectation, structure, source, target, state)
 
 	c.Assert(report.Passed(), qt.IsFalse)
 	c.Assert(summaries(report), qt.Contains,
@@ -216,7 +285,7 @@ func TestVerify_VectorValidityBlocks(t *testing.T) {
 			expectation, structure, source, target, state := healthy()
 			test.change(target)
 
-			report := embedverify.Verify(expectation, structure, source, target, state)
+			report := verify(c, expectation, structure, source, target, state)
 
 			c.Assert(report.Passed(), qt.IsFalse)
 			c.Assert(summaries(report), qt.Contains, test.want)
@@ -268,7 +337,7 @@ func TestVerify_ConsistencyFailuresBlock(t *testing.T) {
 			expectation, structure, source, target, state := healthy()
 			test.change(&state)
 
-			report := embedverify.Verify(expectation, structure, source, target, state)
+			report := verify(c, expectation, structure, source, target, state)
 
 			c.Assert(report.Passed(), qt.IsFalse)
 			c.Assert(summaries(report), qt.Contains, test.want)
@@ -284,7 +353,7 @@ func TestVerify_AMutableSourceWithAConsistencyModeIsAllowed(t *testing.T) {
 	state.SourceMutable = true
 	state.ConsistencyMode = "outbox"
 
-	report := embedverify.Verify(expectation, structure, source, target, state)
+	report := verify(c, expectation, structure, source, target, state)
 
 	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", summaries(report)))
 }
@@ -303,7 +372,7 @@ func TestVerify_ASkippedRowIsNotACoverageGap(t *testing.T) {
 	source[1].Skipped = true
 	target = target[:1]
 
-	report := embedverify.Verify(expectation, structure, source, target, state)
+	report := verify(c, expectation, structure, source, target, state)
 
 	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", summaries(report)))
 	c.Assert(report.Blocking(), qt.HasLen, 0)
@@ -319,9 +388,15 @@ func TestVerify_ASkippedRowIsNotACoverageGap(t *testing.T) {
 func TestVerify_ADuplicateTargetKeyBlocks(t *testing.T) {
 	c := qt.New(t)
 	expectation, structure, source, target, state := healthy()
-	target = append(target, target[0])
+	// Next to its twin rather than appended, because that is the only shape the
+	// reader can produce: `verificationQuery` orders by the key columns, so two
+	// rows for one key arrive adjacent. Verifying a corpus without holding it
+	// means the duplicate is found by that adjacency instead of by a map, and a
+	// fixture that scattered the pair would be asserting against a walk no
+	// server hands back (stokaro/ptah#2621).
+	target = slices.Insert(target, 1, target[0])
 
-	report := embedverify.Verify(expectation, structure, source, target, state)
+	report := verify(c, expectation, structure, source, target, state)
 
 	c.Assert(report.Passed(), qt.IsFalse)
 	c.Assert(summaries(report), qt.Contains, "1 target keys appear more than once")
@@ -335,7 +410,7 @@ func TestVerify_ARowFromAnotherGenerationBlocks(t *testing.T) {
 	expectation, structure, source, target, state := healthy()
 	target[0].Generation = "gen-0"
 
-	report := embedverify.Verify(expectation, structure, source, target, state)
+	report := verify(c, expectation, structure, source, target, state)
 
 	c.Assert(report.Passed(), qt.IsFalse)
 	c.Assert(summaries(report), qt.Contains, "1 target rows belong to another generation")
@@ -353,8 +428,8 @@ func TestVerify_TheReportIsBoundedAndStable(t *testing.T) {
 		})
 	}
 
-	first := embedverify.Verify(expectation, structure, source, nil, state)
-	second := embedverify.Verify(expectation, structure, source, nil, state)
+	first := verify(c, expectation, structure, source, nil, state)
+	second := verify(c, expectation, structure, source, nil, state)
 
 	c.Assert(first.Blocking(), qt.Not(qt.HasLen), 0)
 	c.Assert(first.Findings[0].Count, qt.Equals, 100)
@@ -375,7 +450,7 @@ func TestVerify_ASourceWithoutVersionsIsNotStale(t *testing.T) {
 	source[0].Version = ""
 	source[1].Version = ""
 
-	report := embedverify.Verify(expectation, structure, source, target, state)
+	report := verify(c, expectation, structure, source, target, state)
 
 	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", summaries(report)))
 }
@@ -391,7 +466,7 @@ func TestVerify_ATombstoneForADeletedSourceRowIsCorrect(t *testing.T) {
 	expectation, structure, source, target, state := healthy()
 	target = append(target, embedverify.TargetRow{Key: "gone", Generation: generation, Tombstone: true})
 
-	report := embedverify.Verify(expectation, structure, source, target, state)
+	report := verify(c, expectation, structure, source, target, state)
 
 	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", summaries(report)))
 }
@@ -417,7 +492,7 @@ func TestVerify_ATombstoneOverALiveSourceRowIsAGap(t *testing.T) {
 			target[1] = embedverify.TargetRow{Key: "2", Generation: generation}
 			test.mark(&target[1])
 
-			report := embedverify.Verify(expectation, structure, source, target, state)
+			report := verify(c, expectation, structure, source, target, state)
 
 			c.Assert(report.Passed(), qt.IsFalse)
 			c.Assert(summaries(report), qt.Contains,
@@ -444,7 +519,7 @@ func TestVerify_TheListedKeysAreTheSortedPrefix(t *testing.T) {
 		})
 	}
 
-	report := embedverify.Verify(expectation, structure, source, nil, state)
+	report := verify(c, expectation, structure, source, nil, state)
 
 	c.Assert(report.Findings[0].Keys, qt.DeepEquals, []string{
 		"aa", "ab", "ac", "ad", "ba", "bb", "bc", "bd", "ca", "cb",
@@ -463,7 +538,7 @@ func TestVerify_ASkippedRowWrittenAsSkippedPasses(t *testing.T) {
 	source[1].Skipped = true
 	target[1] = embedverify.TargetRow{Key: "2", Generation: generation, Skipped: true}
 
-	report := embedverify.Verify(expectation, structure, source, target, state)
+	report := verify(c, expectation, structure, source, target, state)
 
 	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", summaries(report)))
 }
@@ -482,7 +557,7 @@ func TestVerify_AGenerationNotYetIndexedIsNotJudgedOnItsIndex(t *testing.T) {
 	structure.OperatorClass = ""
 	structure.IndexValid = false
 
-	report := embedverify.Verify(expectation, structure, source, target, state)
+	report := verify(c, expectation, structure, source, target, state)
 
 	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", summaries(report)))
 }
@@ -499,7 +574,7 @@ func TestVerify_VerificationOutsideACutoverIgnoresThePointer(t *testing.T) {
 	expectation.PreviousPointer = ""
 	structure.ActivePointer = "gen-other"
 
-	report := embedverify.Verify(expectation, structure, source, target, state)
+	report := verify(c, expectation, structure, source, target, state)
 
 	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", summaries(report)))
 }
@@ -516,7 +591,7 @@ func TestVerify_AGenerationWithoutADimensionSaysSo(t *testing.T) {
 	expectation, structure, source, target, state := healthy()
 	expectation.Dimension = 0
 
-	report := embedverify.Verify(expectation, structure, source, target, state)
+	report := verify(c, expectation, structure, source, target, state)
 
 	c.Assert(report.Passed(), qt.IsFalse)
 	c.Assert(summaries(report), qt.Contains,
@@ -536,8 +611,7 @@ func TestVerify_AMissingColumnReportsOnceRatherThanCascading(t *testing.T) {
 	c := qt.New(t)
 	expectation, _, source, target, state := healthy()
 
-	report := embedverify.Verify(
-		expectation, embedverify.Structure{ExtensionPresent: true}, source, target, state)
+	report := verify(c, expectation, embedverify.Structure{ExtensionPresent: true}, source, target, state)
 
 	c.Assert(summaries(report), qt.DeepEquals,
 		[]string{"the generation's vector column does not exist"})
@@ -558,7 +632,7 @@ func TestVerify_AMissingIndexReportsOnceRatherThanCascading(t *testing.T) {
 	structure.IndexMethod = ""
 	structure.OperatorClass = ""
 
-	report := embedverify.Verify(expectation, structure, source, target, state)
+	report := verify(c, expectation, structure, source, target, state)
 
 	c.Assert(summaries(report), qt.DeepEquals, []string{"the generation's index does not exist"})
 }
@@ -567,7 +641,7 @@ func TestVerify_AMissingIndexReportsOnceRatherThanCascading(t *testing.T) {
 //
 // The report used to say this only when a caller declared it had not read the
 // values, and no caller ever declared otherwise: `VectorValuesRead` was set in
-// this file and nowhere else, and `embedpg.ReadVerificationRows` reports each
+// this file and nowhere else, and `embedpg.VerificationCorpus` reports each
 // stored vector's width and never its values. The finiteness branch it gated
 // could not fire.
 //
@@ -582,7 +656,7 @@ func TestVerify_TheStoredValuesAreAlwaysReportedAsUnread(t *testing.T) {
 	c := qt.New(t)
 	expectation, structure, source, target, state := healthy()
 
-	report := embedverify.Verify(expectation, structure, source, target, state)
+	report := verify(c, expectation, structure, source, target, state)
 
 	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", summaries(report)))
 	c.Assert(report.Unmeasured, qt.HasLen, 1)
@@ -598,7 +672,9 @@ func TestVerify_TheStoredValuesAreAlwaysReportedAsUnread(t *testing.T) {
 func TestVerify_AnUnmeasuredVectorCheckIsNotABlocker(t *testing.T) {
 	c := qt.New(t)
 
-	report := embedverify.Verify(healthy())
+	expectation, structure, source, target, state := healthy()
+
+	report := verify(c, expectation, structure, source, target, state)
 
 	c.Assert(report.Blocking(), qt.HasLen, 0)
 	c.Assert(report.Unmeasured, qt.DeepEquals, []string{
@@ -668,7 +744,7 @@ func TestVerify_FreshnessIsTheLayerThatHadNoTest(t *testing.T) {
 			source[1].Version, source[1].InputHash = test.sourceVersion, test.sourceHash
 			target[1].Version, target[1].InputHash = test.targetVersion, test.targetHash
 
-			report := embedverify.Verify(expectation, structure, source, target, state)
+			report := verify(c, expectation, structure, source, target, state)
 
 			c.Assert(freshnessFindings(report), qt.HasLen, boolToCount(test.wantStale))
 		})
@@ -714,7 +790,7 @@ func TestVerify_ARowNothingWroteIsMissingRatherThanAnotherGenerations(t *testing
 		target[index].Dimension = 0
 	}
 
-	report := embedverify.Verify(expectation, structure, source, target, state)
+	report := verify(c, expectation, structure, source, target, state)
 
 	c.Assert(summaries(report), qt.Contains,
 		"2 in-scope source rows have no vector in this generation")
@@ -734,7 +810,7 @@ func TestVerify_ARowAnotherGenerationWroteStillSaysSo(t *testing.T) {
 		target[index].Generation = "some-other-generation"
 	}
 
-	report := embedverify.Verify(expectation, structure, source, target, state)
+	report := verify(c, expectation, structure, source, target, state)
 
 	c.Assert(summaries(report), qt.Contains, "2 target rows belong to another generation")
 	c.Assert(summaries(report), qt.Not(qt.Contains),

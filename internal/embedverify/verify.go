@@ -1,6 +1,9 @@
 package embedverify
 
 import (
+	"iter"
+	"slices"
+	"sort"
 	"strings"
 )
 
@@ -46,6 +49,55 @@ type TargetRow struct {
 	// Skipped marks a row deliberately without a vector.
 	Skipped bool
 }
+
+// Pair is one position in the walk over the corpus: what the specification
+// asks for at a key, and what the column holds there.
+//
+// The two sides arrive together because they are read together. A reader that
+// produced them as two sequences would let a row written between the two reads
+// appear on one side and not the other, and the report would name it as a
+// coverage gap that nothing created.
+//
+// Either side may be absent, and each absence means something different:
+//
+//   - Source nil -- the key is outside the specification's scope. The column
+//     holds a vector for a row the generation was never asked to cover.
+//   - Target nil -- nothing in the column stands at this key at all.
+//
+// Both nil is not a position a walk can be at, and a corpus that yields one is
+// reporting nothing about nothing; it is ignored rather than counted.
+//
+// NEITHER POINTER IS RETAINED past the yield that produced it. Verify copies
+// what it needs -- a finding holds key strings, which are immutable -- so a
+// corpus may point both fields at storage it reuses for the next position, and
+// a reader that allocates a pair per row is paying for a guarantee nothing
+// here asks for.
+type Pair struct {
+	// Source is the in-scope source row, nil when the key is out of scope.
+	Source *SourceRow
+	// Target is the stored row, nil when nothing stands at the key.
+	Target *TargetRow
+}
+
+// Corpus is the walk Verify folds over.
+//
+// It is a sequence rather than two slices because verification is the one place
+// in the lifecycle where the work is proportional to the corpus rather than to
+// a batch: the backfill bounds every batch by keyset, and a verification that
+// materialized both sides held a million-row corpus, plus a map over it, in
+// memory at once (stokaro/ptah#2621).
+//
+// A yielded error ends the walk. Verify returns it rather than reporting on
+// what it managed to read, because a partial corpus produces coverage findings
+// that describe the read rather than the data.
+//
+// EQUAL KEYS MUST BE ADJACENT. That is what lets a duplicate be found without a
+// map, and it is a weaker requirement than sorted order: a reader ordering by
+// the key COLUMNS satisfies it even though the encoded key strings sort
+// differently -- `ORDER BY id` gives 1, 2, 10 where the strings give "1", "10",
+// "2". Nothing here requires the second order, and a reader must not be changed
+// to produce it on the belief that this does.
+type Corpus = iter.Seq2[Pair, error]
 
 // Structure is what the target's schema actually looks like, read back.
 type Structure struct {
@@ -108,21 +160,22 @@ type RunState struct {
 // The layers are independent on purpose: a structural failure does not stop
 // coverage from being measured, because an operator deciding what to do wants
 // the whole picture rather than the first thing that went wrong.
+//
+// The corpus is walked once and never held. An error the walk yields is
+// returned rather than reported, because a report built from a corpus that
+// stopped halfway carries coverage findings describing the read rather than
+// the data -- every unread row reads as an in-scope row with no vector.
 func Verify(
 	expectation Expectation,
 	structure Structure,
-	source []SourceRow,
-	target []TargetRow,
+	corpus Corpus,
 	state RunState,
-) Report {
-	report := Report{
-		Generation: expectation.Generation,
-		SourceRows: len(source),
-		TargetRows: len(target),
-	}
+) (Report, error) {
+	report := Report{Generation: expectation.Generation}
 	verifyStructure(&report, expectation, structure)
-	verifyCoverageAndFreshness(&report, expectation, source, target)
-	verifyVectors(&report, expectation, target)
+	if err := walkCorpus(&report, expectation, corpus); err != nil {
+		return Report{}, err
+	}
 	// Said on every run rather than conditionally, because it is true on every
 	// run: the read reports each stored vector's width and never its values.
 	//
@@ -138,7 +191,7 @@ func Verify(
 			"here could have carried one")
 	verifyConsistency(&report, state)
 	report.sortFindings()
-	return report
+	return report, nil
 }
 
 // verifyStructure answers layer 1.
@@ -204,83 +257,200 @@ func verifyIndex(report *Report, expectation Expectation, structure Structure) {
 	}
 }
 
-// verifyCoverageAndFreshness answers layers 2 and 3 in one walk.
+// keySample keeps the keys one finding will list, and counts the rest.
 //
-// They share a walk because they share a question -- which source key does this
-// target row belong to -- and answering it twice would let the two disagree.
-func verifyCoverageAndFreshness(
-	report *Report, expectation Expectation, source []SourceRow, target []TargetRow,
-) {
-	byKey := indexTargetByKey(report, target)
-	inScope := classifySourceRows(report, expectation, source, byKey)
-	reportOutOfScope(report, expectation, target, inScope)
+// A fold that appended every offending key and truncated at the end is bounded
+// in the REPORT and unbounded in memory, which is the same defect one layer
+// down from the one this walk exists to fix: measured, a million-row corpus
+// with a tenth of it stale held 8.9 MB of keys nobody would ever read. What a
+// finding lists is [MaxReportedKeys] of them, so that is what is kept.
+//
+// The kept keys are the smallest, which is what the report has always listed --
+// `Report.addf` sorts before it truncates. Keeping the first ones seen would
+// have been cheaper and would have quietly changed which twenty an operator is
+// shown, depending on the order a server happened to return rows in.
+type keySample struct {
+	// total is every key offered, which is what the finding's count reports.
+	total int
+	// kept is at most MaxReportedKeys of them, ascending.
+	kept []string
 }
 
-// indexTargetByKey builds the lookup the walk above needs, and reports a key
-// the target holds twice.
+// add offers a key.
+func (s *keySample) add(key string) {
+	s.total++
+	if len(s.kept) == MaxReportedKeys && key >= s.kept[len(s.kept)-1] {
+		return
+	}
+	position := sort.SearchStrings(s.kept, key)
+	s.kept = slices.Insert(s.kept, position, key)
+	if len(s.kept) > MaxReportedKeys {
+		s.kept = s.kept[:MaxReportedKeys]
+	}
+}
+
+// walkCorpus answers layers 2, 3 and 4 in one pass over the corpus.
+//
+// One pass because the layers share a question -- which source key does this
+// stored row belong to -- and answering it more than once would let the answers
+// disagree. It used to be three passes over two materialized slices plus a map
+// joining them, which is what made a verification's memory proportional to the
+// corpus (stokaro/ptah#2621).
+func walkCorpus(report *Report, expectation Expectation, corpus Corpus) error {
+	walk := corpusWalk{expectation: expectation}
+	for pair, err := range corpus {
+		if err != nil {
+			return err
+		}
+		walk.take(pair)
+	}
+	walk.report(report)
+	return nil
+}
+
+// corpusWalk is everything the fold has to remember.
+//
+// What it holds is the findings, which are bounded by `boundedKeys` where they
+// are reported, plus a handful of counters and the previous key. Nothing here
+// grows with the corpus except a finding list, and a corpus that produced an
+// unbounded one is a corpus where every row is wrong.
+type corpusWalk struct {
+	expectation Expectation
+	sourceRows  int
+	targetRows  int
+	skipped     int
+	// lastKey is the previous STORED row's key, and haveLast says whether there
+	// was one. A source-only position leaves both alone, so a key stored twice
+	// is still adjacent across one.
+	lastKey  string
+	haveLast bool
+
+	duplicates      keySample
+	missing         keySample
+	stale           keySample
+	wrongGeneration keySample
+	unexpected      keySample
+	missingPayload  keySample
+	wrongDimension  keySample
+}
+
+// take folds one position of the walk in.
+func (w *corpusWalk) take(pair Pair) {
+	if pair.Source == nil && pair.Target == nil {
+		return
+	}
+	if pair.Source != nil {
+		w.sourceRows++
+		if pair.Source.Skipped {
+			w.skipped++
+		}
+	}
+	if pair.Target != nil {
+		w.targetRows++
+		w.takeDuplicate(*pair.Target)
+		w.takeVector(*pair.Target)
+		if pair.Source == nil {
+			w.takeOutOfScope(*pair.Target)
+		}
+	}
+	if pair.Source != nil {
+		w.takeCoverage(*pair.Source, pair.Target)
+	}
+}
+
+// takeDuplicate reports a key the column holds twice.
 //
 // A duplicate is reported rather than resolved: which of two rows for one key
 // is the answer is not a question this layer can settle, and picking one would
-// verify a corpus against a row somebody's query may not read.
-func indexTargetByKey(report *Report, target []TargetRow) map[string]TargetRow {
-	byKey := make(map[string]TargetRow, len(target))
-	var duplicates []string
-	for _, row := range target {
-		if _, seen := byKey[row.Key]; seen {
-			duplicates = append(duplicates, row.Key)
-			continue
-		}
-		byKey[row.Key] = row
+// verify a corpus against a row somebody's query may not read. Each of the two
+// is then judged on its own merits, which is the one thing that changed when
+// this stopped being a map -- the second row used to be judged against the
+// first, silently.
+func (w *corpusWalk) takeDuplicate(row TargetRow) {
+	if w.haveLast && row.Key == w.lastKey {
+		w.duplicates.add(row.Key)
 	}
-	if len(duplicates) > 0 {
-		report.addf(LayerCoverage, Blocking, len(duplicates), duplicates,
-			"%d target keys appear more than once", len(duplicates))
-	}
-	return byKey
+	w.lastKey, w.haveLast = row.Key, true
 }
 
-// classifySourceRows decides what each in-scope source row's target says, and
-// answers with the key set the caller needs to find rows outside it.
-func classifySourceRows(
-	report *Report, expectation Expectation, source []SourceRow, byKey map[string]TargetRow,
-) map[string]bool {
-	var missing, stale, wrongGeneration []string
-	skipped := 0
-	inScope := make(map[string]bool, len(source))
-	for _, row := range source {
-		inScope[row.Key] = true
-		if row.Skipped {
-			skipped++
+// takeCoverage decides what one in-scope source row's stored row says.
+func (w *corpusWalk) takeCoverage(row SourceRow, found *TargetRow) {
+	if found == nil {
+		if !row.Skipped {
+			w.missing.add(row.Key)
 		}
-		found, ok := byKey[row.Key]
-		if !ok {
-			if !row.Skipped {
-				missing = append(missing, row.Key)
-			}
-			continue
-		}
-		switch classifyRow(expectation, row, found) {
-		case rowMissing:
-			if !row.Skipped {
-				missing = append(missing, row.Key)
-			}
-		case rowWrongGeneration:
-			wrongGeneration = append(wrongGeneration, row.Key)
-		case rowStale:
-			stale = append(stale, row.Key)
-		case rowCovered:
-		}
+		return
 	}
-	reportCoverage(report, missing, stale, wrongGeneration)
-	if skipped > 0 {
+	switch classifyRow(w.expectation, row, *found) {
+	case rowMissing:
+		if !row.Skipped {
+			w.missing.add(row.Key)
+		}
+	case rowWrongGeneration:
+		w.wrongGeneration.add(row.Key)
+	case rowStale:
+		w.stale.add(row.Key)
+	case rowCovered:
+	}
+}
+
+// takeOutOfScope records a stored row this generation wrote for a key the
+// specification does not ask for.
+//
+// The generation is compared as well as the scope. A row holding another
+// generation's vector is out of this one's scope by definition -- that is what
+// a previous generation looks like -- and reporting it would make every
+// migration's verification blame its predecessor.
+func (w *corpusWalk) takeOutOfScope(row TargetRow) {
+	if row.Generation != w.expectation.Generation || row.Tombstone {
+		return
+	}
+	w.unexpected.add(row.Key)
+}
+
+// takeVector answers layer 4 for one stored row.
+func (w *corpusWalk) takeVector(row TargetRow) {
+	if row.Tombstone || row.Skipped {
+		return
+	}
+	switch {
+	case row.Dimension == 0:
+		w.missingPayload.add(row.Key)
+	case w.expectation.Dimension > 0 && row.Dimension != w.expectation.Dimension:
+		w.wrongDimension.add(row.Key)
+	}
+}
+
+// report writes what the fold found, in the order the three separate passes
+// wrote it in, so the report a reader sees is unchanged by the rewrite.
+func (w *corpusWalk) report(report *Report) {
+	report.SourceRows = w.sourceRows
+	report.TargetRows = w.targetRows
+	if w.duplicates.total > 0 {
+		report.addf(LayerCoverage, Blocking, w.duplicates.total, w.duplicates.kept,
+			"%d target keys appear more than once", w.duplicates.total)
+	}
+	reportCoverage(report, w.missing, w.stale, w.wrongGeneration)
+	if w.skipped > 0 {
 		// Not a failure -- the specification asked for this. It is still worth
 		// saying, because a policy that skips nine rows in ten produces a
 		// generation that passes every layer here and answers a tenth of the
 		// queries it was built for.
-		report.addf(LayerCoverage, Advisory, skipped, nil,
-			"%d in-scope source rows were skipped by the specification and carry no vector", skipped)
+		report.addf(LayerCoverage, Advisory, w.skipped, nil,
+			"%d in-scope source rows were skipped by the specification and carry no vector", w.skipped)
 	}
-	return inScope
+	if w.unexpected.total > 0 {
+		report.addf(LayerCoverage, Blocking, w.unexpected.total, w.unexpected.kept,
+			"%d target rows are outside the generation's source scope", w.unexpected.total)
+	}
+	if w.missingPayload.total > 0 {
+		report.addf(LayerVectorValidity, Blocking, w.missingPayload.total, w.missingPayload.kept,
+			"%d rows carry no vector and are not marked skipped or deleted", w.missingPayload.total)
+	}
+	if w.wrongDimension.total > 0 {
+		report.addf(LayerVectorValidity, Blocking, w.wrongDimension.total, w.wrongDimension.kept,
+			"%d stored vectors do not have the generation's dimension", w.wrongDimension.total)
+	}
 }
 
 // rowVerdict is what one source row's target row turned out to be.
@@ -332,71 +502,22 @@ func classifyRow(expectation Expectation, row SourceRow, found TargetRow) rowVer
 }
 
 // reportOutOfScope names target rows the source no longer accounts for.
-// reportOutOfScope names the rows carrying THIS generation's vector that the
-// specification does not ask for.
-//
-// The generation is compared as well as the scope. A row holding another
-// generation's vector is out of this one's scope by definition -- that is what
-// a previous generation looks like -- and reporting it would make every
-// migration's verification blame its predecessor.
-func reportOutOfScope(
-	report *Report, expectation Expectation, target []TargetRow, inScope map[string]bool,
-) {
-	var unexpected []string
-	for _, row := range target {
-		if row.Generation != expectation.Generation {
-			continue
-		}
-		if !inScope[row.Key] && !row.Tombstone {
-			unexpected = append(unexpected, row.Key)
-		}
-	}
-	if len(unexpected) > 0 {
-		report.addf(LayerCoverage, Blocking, len(unexpected), unexpected,
-			"%d target rows are outside the generation's source scope", len(unexpected))
-	}
-}
-
 // reportCoverage records what the walk above found.
-func reportCoverage(report *Report, missing, stale, wrongGeneration []string) {
-	if len(missing) > 0 {
-		report.addf(LayerCoverage, Blocking, len(missing), missing,
-			"%d in-scope source rows have no vector in this generation", len(missing))
+func reportCoverage(report *Report, missing, stale, wrongGeneration keySample) {
+	if missing.total > 0 {
+		report.addf(LayerCoverage, Blocking, missing.total, missing.kept,
+			"%d in-scope source rows have no vector in this generation", missing.total)
 	}
-	if len(stale) > 0 {
+	if stale.total > 0 {
 		// This is the finding a count comparison cannot make: the row exists,
 		// the totals match, and the vector answers for text the source no
 		// longer has.
-		report.addf(LayerFreshness, Blocking, len(stale), stale,
-			"%d target rows were computed from a source state that has since changed", len(stale))
+		report.addf(LayerFreshness, Blocking, stale.total, stale.kept,
+			"%d target rows were computed from a source state that has since changed", stale.total)
 	}
-	if len(wrongGeneration) > 0 {
-		report.addf(LayerCoverage, Blocking, len(wrongGeneration), wrongGeneration,
-			"%d target rows belong to another generation", len(wrongGeneration))
-	}
-}
-
-// verifyVectors answers layer 4.
-func verifyVectors(report *Report, expectation Expectation, target []TargetRow) {
-	var wrongDimension, missingPayload []string
-	for _, row := range target {
-		if row.Tombstone || row.Skipped {
-			continue
-		}
-		switch {
-		case row.Dimension == 0:
-			missingPayload = append(missingPayload, row.Key)
-		case expectation.Dimension > 0 && row.Dimension != expectation.Dimension:
-			wrongDimension = append(wrongDimension, row.Key)
-		}
-	}
-	if len(missingPayload) > 0 {
-		report.addf(LayerVectorValidity, Blocking, len(missingPayload), missingPayload,
-			"%d rows carry no vector and are not marked skipped or deleted", len(missingPayload))
-	}
-	if len(wrongDimension) > 0 {
-		report.addf(LayerVectorValidity, Blocking, len(wrongDimension), wrongDimension,
-			"%d stored vectors do not have the generation's dimension", len(wrongDimension))
+	if wrongGeneration.total > 0 {
+		report.addf(LayerCoverage, Blocking, wrongGeneration.total, wrongGeneration.kept,
+			"%d target rows belong to another generation", wrongGeneration.total)
 	}
 }
 
