@@ -251,7 +251,18 @@ func (e *Engine) recordWalkEnd(
 	}
 	run.SnapshotDone = page.Done
 	run.UpdatedAt = e.now()
-	if err := e.Store.SaveRun(ctx, run); err != nil {
+	err := e.Store.SaveRun(ctx, run)
+	if errors.Is(err, embedstore.ErrConflict) {
+		// A worker took the run over between the last checkpoint and this
+		// write. That is a handoff rather than a fault, and it is reported the
+		// way every other write in this engine reports it -- reloading the
+		// store's copy and answering ErrFenced. Left as a generic error, a
+		// healthy takeover surfaced as a failed backfill naming a bookkeeping
+		// call, which is neither what happened nor something an operator can
+		// act on.
+		return e.reload(ctx, run.ID, ErrFenced)
+	}
+	if err != nil {
 		return run, fmt.Errorf("record the end of the walk: %w", err)
 	}
 	return run, nil
