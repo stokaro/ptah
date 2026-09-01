@@ -147,11 +147,18 @@ func publishVerificationFor(
 	record, buildErr := embedrelease.NewVerificationRecord(
 		embedrelease.VerificationOf(
 			opened.loaded.Spec.Identity().Digest, report, nil, measuredAt))
-	return publishRecord(ctx, out, options, beside(evidence), record, buildErr, swallowed)
+	return publishRecord(ctx, out, options, evidence, record, buildErr, swallowed)
 }
 
 // beside moves a record's FILE destination off the one the caller's other record
 // will use, and leaves the registry destinations alone.
+//
+// It is applied at the CUTOVER call site rather than inside
+// [publishVerificationFor], because only that verb writes two records. Putting
+// it in the shared helper moved `verify --evidence-file x.json` to
+// `x.verification.json` as well -- a verb that writes one record, to the path
+// the operator named. CI caught it; the cutover test alone did not, because it
+// never runs `verify`.
 //
 // `--evidence-file` overwrites, and until this change no verb wrote two records
 // in one run, so nothing had to answer the question. A cutover writing its
@@ -341,7 +348,7 @@ func runCutover(
 	// for the reason publishCutover swallows one -- the pointer has moved, and
 	// failing the verb now would report a cutover that did not happen.
 	if err := publishVerificationFor(
-		ctx, out, options, opened, report, evidence, now); err != nil {
+		ctx, out, options, opened, report, beside(evidence), now); err != nil {
 		return err
 	}
 	// The report is not passed: the record cites the value the plan already
