@@ -8,6 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/embedeval"
 	"go.5x5.cz/ptah/internal/embedgen"
+	"go.5x5.cz/ptah/internal/embedverify"
 )
 
 // Searcher runs an evaluation corpus against a live generation.
@@ -237,7 +238,7 @@ func scanKeys(rows *sql.Rows, keyCount int) ([]string, error) {
 		for index, value := range values {
 			components[index] = value.String
 		}
-		keys = append(keys, strings.Join(components, "\x1f"))
+		keys = append(keys, strings.Join(components, embedverify.KeyFieldSeparator))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("read the search results: %w", err)

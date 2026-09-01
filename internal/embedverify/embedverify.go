@@ -75,6 +75,35 @@ type Finding struct {
 // million keys; it is unreadable, and the count is what an operator acts on.
 const MaxReportedKeys = 20
 
+// KeyFieldSeparator joins a composite key's components into the one string
+// every layer compares rows by.
+//
+// U+001F, the ASCII unit separator, because the components are arbitrary column
+// values and any printable delimiter is a value some column can hold: joined on
+// a comma, tenant `a,b` with id `c` and tenant `a` with id `b,c` are one key.
+//
+// It is a comparison key, never a display one. Printed raw, a terminal swallows
+// it -- `(acme, 2)` and `(globex, 1)` came out as `acme2` and `globex1`, so the
+// only line telling an operator which rows to remove was neither
+// copy-pasteable nor unambiguous, since tenant `a` with id `11` and tenant `a1`
+// with id `1` both render as `a11` (stokaro/ptah#2649 finding 2). Anything
+// showing a key to a person calls [RenderKey].
+const KeyFieldSeparator = "\x1f"
+
+// RenderKey is how a key is shown to a person.
+//
+// A single-component key is its own value, because parentheses around one
+// column say nothing. A composite one is rendered as the tuple it is, in the
+// specification's key order, which is the shape it would be written in a
+// predicate.
+func RenderKey(key string) string {
+	components := strings.Split(key, KeyFieldSeparator)
+	if len(components) == 1 {
+		return key
+	}
+	return "(" + strings.Join(components, ", ") + ")"
+}
+
 // Report is everything verification found about one generation.
 type Report struct {
 	// Generation is the identity verified.

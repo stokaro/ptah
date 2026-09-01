@@ -401,8 +401,20 @@ func (w *corpusWalk) takeCoverage(row SourceRow, found *TargetRow) {
 // generation's vector is out of this one's scope by definition -- that is what
 // a previous generation looks like -- and reporting it would make every
 // migration's verification blame its predecessor.
+//
+// A TOMBSTONE is exempt because it is Ptah's own record that a row left scope:
+// catch-up writes one for exactly this, so reporting it would turn the normal
+// outcome into a blocking finding. What is not exempt is a tombstone that still
+// holds a vector. Ptah never writes that shape -- the state column and the
+// vector are assigned in one UPDATE -- so a tombstoned row with a vector was
+// written by something else, and it is searchable: measured, a similarity query
+// returned it first while verification reported every layer passing
+// (stokaro/ptah#2649 finding 2).
 func (w *corpusWalk) takeOutOfScope(row TargetRow) {
-	if row.Generation != w.expectation.Generation || row.Tombstone {
+	if row.Generation != w.expectation.Generation {
+		return
+	}
+	if row.Tombstone && row.Dimension == 0 {
 		return
 	}
 	w.unexpected.add(row.Key)

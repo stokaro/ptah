@@ -145,8 +145,19 @@ func printReport(out io.Writer, report embedverify.Report) error {
 }
 
 // joinKeys renders the bounded key list a finding carries.
+//
+// Each key goes through [embedverify.RenderKey] first. A key's components are
+// joined internally with a control character, so a composite key printed as it
+// is stored is one a terminal swallows: `(acme, 2)` and `(globex, 1)` came out
+// as `acme2` and `globex1`, which is neither copy-pasteable nor unambiguous,
+// on the only line telling an operator which rows to act on
+// (stokaro/ptah#2649 finding 2).
 func joinKeys(keys []string) string {
-	return strings.Join(keys, ", ")
+	rendered := make([]string, 0, len(keys))
+	for _, key := range keys {
+		rendered = append(rendered, embedverify.RenderKey(key))
+	}
+	return strings.Join(rendered, ", ")
 }
 
 // newCutoverCommand returns "ptah inference cutover".
