@@ -22,6 +22,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/root"
 	"go.5x5.cz/ptah/internal/dbtarget"
+	"go.5x5.cz/ptah/internal/embedpg"
 	"go.5x5.cz/ptah/internal/embedrelease"
 )
 
@@ -533,12 +534,44 @@ func planDigestOfRun(
 // registry knows it, and this test is not about how it was built.
 func registerBareGeneration(c *qt.C, ctx context.Context, db *sql.DB, identity string) {
 	c.Helper()
+	registerBareGenerationInColumn(c, ctx, db, identity, "embedding")
+}
+
+// registerBareGenerationInColumn is the same with a column of its own.
+//
+// A retirement destroys the generation's column, so a bare generation sharing
+// `embedding` with the live one can only be retired with `--drop-column=false`
+// -- and then its plan destroys nothing at all, which retirement refuses as a
+// record of something that did not happen. Giving it a column nobody else uses
+// is what lets the default retirement run against it.
+func registerBareGenerationInColumn(
+	c *qt.C, ctx context.Context, db *sql.DB, identity, column string,
+) {
+	c.Helper()
+	// The columns as well as the row. A registry entry naming a column that is
+	// not on the table is not a state the product can reach: `retire` counts
+	// the generation's rows through `<column>_generation` before it plans
+	// anything, so the run fails on a missing relation and prints no plan at
+	// all -- which reads as "the plan has no digest" rather than as a fixture
+	// that never existed.
+	for _, suffix := range []string{
+		"", embedpg.GenerationSuffix, embedpg.InputHashSuffix,
+		embedpg.VersionSuffix, embedpg.StateSuffix,
+	} {
+		kind := "TEXT"
+		if suffix == "" {
+			kind = "vector(4)"
+		}
+		_, err := db.ExecContext(ctx, fmt.Sprintf(
+			`ALTER TABLE articles ADD COLUMN IF NOT EXISTS %q %s`, column+suffix, kind))
+		c.Assert(err, qt.IsNil)
+	}
 	_, err := db.ExecContext(ctx,
 		`INSERT INTO ptah_embedding_generation (
 			identity, spec_digest, reproducibility, dimension,
 			target_schema, target_table, target_column, created_at)
-		 VALUES ($1, $1, 'full', 4, 'public', 'articles', 'embedding', now())
-		 ON CONFLICT (identity) DO NOTHING`, identity)
+		 VALUES ($1, $1, 'full', 4, 'public', 'articles', $2, now())
+		 ON CONFLICT (identity) DO NOTHING`, identity, column)
 	c.Assert(err, qt.IsNil)
 }
 

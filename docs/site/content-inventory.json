@@ -2168,8 +2168,8 @@
       "inboundLinks": [
         "/inference/overview/"
       ],
-      "visibleWords": 561,
-      "sourceBytes": 4502
+      "visibleWords": 598,
+      "sourceBytes": 4971
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/migrate-a-paused-source.md",

@@ -519,3 +519,25 @@ func (s *Store) ClaimRun(
 	}
 	return run, run.FencingToken, nil
 }
+
+// LiveGenerationsOver counts the generations still holding vectors in a target
+// table, other than the one named.
+//
+// It exists because an outbox belongs to a SOURCE TABLE rather than to a
+// generation -- two generations over one table share its changes -- so
+// retiring one may not remove it. Asking the registry is what tells a
+// retirement whether it is the last (stokaro/ptah#2649).
+//
+// Retired generations do not count: their vectors are gone, so nothing is left
+// for a catch-up to feed.
+func (s *Store) LiveGenerationsOver(
+	ctx context.Context, targetTable, excluding string,
+) (int, error) {
+	const query = `SELECT count(*) FROM ` + embedstore.GenerationTable + `
+		WHERE target_table = $1 AND identity <> $2 AND retired_at IS NULL`
+	var count int
+	if err := s.db.QueryRowContext(ctx, query, targetTable, excluding).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count live generations over %s: %w", targetTable, err)
+	}
+	return count, nil
+}

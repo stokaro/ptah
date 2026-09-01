@@ -450,3 +450,33 @@ func sanitizeIdentifier(name string) string {
 	}
 	return b.String()
 }
+
+// Uninstall removes the outbox: both triggers, the capture function, and the
+// event table.
+//
+// It is the other half of [Outbox.Install], and until stokaro/ptah#2649 there
+// was no other half. `retire` dropped a generation's index and columns and left
+// the outbox alone, so both triggers went on firing on the operator's table for
+// every write, the capture function stayed, and the event table grew with
+// nothing that would ever read or trim it. The page that says when the cost
+// ends -- "retire removes the generation and its bookkeeping" -- described a
+// verb that did not.
+//
+// The order is triggers, then function, then table: a trigger outlives neither
+// safely, and dropping the function while a trigger still names it leaves a
+// write erroring on the operator's table rather than on ours.
+//
+// Every statement is IF EXISTS, so uninstalling twice is a no-op and a partial
+// installation is removed rather than refused.
+func (o *Outbox) Uninstall(ctx context.Context) error {
+	statements := append([]string(nil), o.dropTriggers()...)
+	statements = append(statements,
+		fmt.Sprintf("DROP FUNCTION IF EXISTS %s()", quoteIdentifier(o.FunctionName())),
+		fmt.Sprintf("DROP TABLE IF EXISTS %s", quoteIdentifier(o.TableName())))
+	for _, statement := range statements {
+		if _, err := o.db.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("uninstall outbox for %s: %w", o.spec.Source.Table, err)
+		}
+	}
+	return nil
+}
