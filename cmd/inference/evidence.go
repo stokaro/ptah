@@ -71,7 +71,7 @@ func (e evidenceOptions) destinationNamed() bool {
 // generation.
 func publishRecord(
 	ctx context.Context, out io.Writer, options commonOptions, evidence evidenceOptions,
-	record embedrelease.Record, err error,
+	record embedrelease.Record, err error, swallow publicationFailure,
 ) error {
 	if err != nil {
 		return err
@@ -89,8 +89,11 @@ func publishRecord(
 	}
 	result, publishErr := sendRecord(ctx, options.spec.plainHTTP, evidence, record)
 	if publishErr != nil {
-		return writeLines(out, bullet(fmt.Sprintf(
-			"the record was not published: %v", publishErr)))
+		if reported := writeLines(out, bullet(fmt.Sprintf(
+			"the record was not published: %v", publishErr))); reported != nil {
+			return reported
+		}
+		return publicationOutcome(swallow, publishErr)
 	}
 	return writeLines(out, bullet(fmt.Sprintf(
 		"record %s published as %s", record.Digest[:12], result.Descriptor.Digest)))
@@ -193,4 +196,30 @@ func writeRecordFile(out io.Writer, path string, record embedrelease.Record) err
 	}
 	return writeLines(out, bullet(fmt.Sprintf(
 		"record %s written to %s", record.Digest[:12], path)))
+}
+
+// publicationFailure says what a failed publication means to the verb that
+// asked for it, and there are exactly two answers.
+type publicationFailure bool
+
+const (
+	// swallowed: the verb's own work is committed. A measurement was taken, a
+	// pointer was moved, a generation was retired -- and failing after that
+	// would report a run that did not do what it did. The failure is on
+	// standard output and the exit code says the run succeeded, because it did.
+	swallowed publicationFailure = true
+	// fatal: publishing IS the verb's effect. `plan` writes nothing anywhere,
+	// so a `plan --publish-evidence` that published nothing did nothing, and
+	// exiting 0 told a CI job it had released what the next environment
+	// promotes. The promotion downstream then kept running the previous release
+	// under the same tag (stokaro/ptah#2649 finding 7).
+	fatal publicationFailure = false
+)
+
+// publicationOutcome turns a reported failure into the caller's exit code.
+func publicationOutcome(swallow publicationFailure, publishErr error) error {
+	if swallow == swallowed {
+		return nil
+	}
+	return publishErr
 }

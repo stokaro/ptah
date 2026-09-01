@@ -128,7 +128,7 @@ func publishRelease(
 	}
 	record, buildErr := embedrelease.NewReleaseRecord(
 		embedreport.BuildRelease(loaded, plan, time.Now().UTC()), loaded.Document)
-	return publishRecord(ctx, out, options, evidence, record, buildErr)
+	return publishRecord(ctx, out, options, evidence, record, buildErr, fatal)
 }
 
 // printPlan renders the plan for a person.

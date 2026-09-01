@@ -512,3 +512,47 @@ func TestDecide_TwoPlansThatDoNotShareOneAreStillShort(t *testing.T) {
 	c.Assert(decision.Blockers, qt.Contains, fmt.Sprintf(
 		"the approval is bound to plan %s and this plan is %s", "000000000000", plan.Short()))
 }
+
+// TestDecide_AnIndexThatWasNeverBuiltIsNotDrift covers stokaro/ptah#2649
+// finding 8.
+//
+// decideDrift fired on the observed index alone, so a plan whose evidence
+// recorded no index printed two refusals at once: one saying the index is
+// absent, and one saying it was ready when the plan was built and something
+// removed it since. The second sent an operator looking for a DROP INDEX, a
+// failed concurrent build, or a retirement that never happened.
+//
+// Drift is a change since the plan. There is none from a state the plan never
+// recorded, and the evidence refusal below is what keeps the run from
+// proceeding.
+func TestDecide_AnIndexThatWasNeverBuiltIsNotDrift(t *testing.T) {
+	c := qt.New(t)
+	plan, policy, observed, approval := ready()
+	plan.Evidence.IndexReady = false
+	observed.IndexReady = false
+
+	decision := embedcutover.Decide(plan, policy, observed, approval)
+
+	c.Assert(decision.Allowed, qt.IsFalse)
+	c.Assert(decision.Blockers, qt.Contains,
+		"the required index is absent, invalid or still building")
+	c.Assert(decision.Blockers, qt.Not(qt.Contains),
+		"the index was ready when the plan was built and is not ready now")
+}
+
+// TestDecide_AnIndexRemovedSinceThePlanIsStillDrift is the control. Narrowing
+// the drift check to plans whose evidence recorded a ready index must not lose
+// the case the check exists for -- an index that WAS there and is not now.
+func TestDecide_AnIndexRemovedSinceThePlanIsStillDrift(t *testing.T) {
+	c := qt.New(t)
+	plan, policy, observed, approval := ready()
+	observed.IndexReady = false
+
+	decision := embedcutover.Decide(plan, policy, observed, approval)
+
+	c.Assert(decision.Allowed, qt.IsFalse)
+	c.Assert(decision.Blockers, qt.Contains,
+		"the index was ready when the plan was built and is not ready now")
+	c.Assert(decision.Blockers, qt.Not(qt.Contains),
+		"the required index is absent, invalid or still building")
+}

@@ -1046,6 +1046,17 @@ func assertVerifyPasses(c *qt.C, ctx context.Context, specPath, dbURL string) {
 
 	c.Assert(output, qt.Contains, "every deterministic layer passed")
 	c.Assert(output, qt.Contains, "3 source rows, 3 target rows")
+	// Beside the line above rather than in a test of its own, because the two
+	// are the halves of one claim: "every deterministic layer passed" reads as
+	// though everything was checked, and printReport dropped report.Unmeasured
+	// entirely (stokaro/ptah#2649 finding 4). Every run carries an entry,
+	// `status` prints them and the published record carries them, so the verb
+	// an operator runs was the only surface that hid them.
+	//
+	// The presence of the line is the contract, not its wording: what is left
+	// unmeasured is a product decision that moves, and pinning the sentence
+	// would fail for the wrong reason.
+	c.Assert(output, qt.Contains, "not measured:")
 }
 
 // assertStatusReportsTheRun is the read-only verb an operator reaches for after
