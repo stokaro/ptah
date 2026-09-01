@@ -403,9 +403,19 @@ jobs:
             # The five slowest that passed, for the budget the failure is
             # measured against.
             grep -E '^ok[[:space:]]+go\.5x5\.cz/ptah' unit-tests.log | sort -rn -k3 | head -5
-            # A timeout or a runtime abort, with the block that names what was
-            # running when it fired.
-            grep -A 6 -E '^(panic: test timed out|fatal error:)' unit-tests.log | head -40
+            # A timeout, with the block that names what was running when it
+            # fired. Six lines is the whole of it: the goroutine dump follows
+            # and the first frames are the useful ones.
+            grep -A 6 -E '^panic: test timed out' unit-tests.log | head -40
+            # A runtime abort needs far more than six lines, and every sighting
+            # of stokaro/ptah#2365 so far has lost the evidence that would
+            # settle it. `fatal error: found pointer to free object` is followed
+            # by the runtime stack AND then by the goroutine that allocated the
+            # object -- and it is the second one that says whether this is a Go
+            # runtime bug or a data race in this repository's own code. Six
+            # lines gets as far as `runtime.throw` and stops well before the
+            # goroutine, which is the frame that matters.
+            grep -A 80 -E '^fatal error:' unit-tests.log | head -120
             echo '```'
           } >>"$GITHUB_STEP_SUMMARY"
           exit "$status"
