@@ -65,6 +65,7 @@ func TestInferenceEvaluateE2E(t *testing.T) {
 	assertTheMetricDecidesTheOrder(c, ctx, adminDB, dbURL, endpoint.URL)
 	assertAnApproximateIndexIsComparedAgainstExactSearch(c, ctx, adminDB, dbURL, endpoint.URL)
 	assertABaselineIsMeasuredAndGates(c, ctx, db, specPath, dbName, endpoint.URL)
+	assertAHardExpectationAloneStillScores(c, ctx, specPath, dbName)
 }
 
 // assertABaselineIsMeasuredAndGates is stokaro/ptah#2640.
@@ -157,6 +158,45 @@ func generationIdentityOf(c *qt.C, ctx context.Context, specPath, dbURL string) 
 	c.Assert(json.Unmarshal([]byte(output), &described), qt.IsNil, qt.Commentf("%s", output))
 	c.Assert(described.Generation, qt.HasLen, 64)
 	return described.Generation
+}
+
+// assertAHardExpectationAloneStillScores is stokaro/ptah#2634.
+//
+// A reader's first corpus states the answer it wants and nothing else. Every
+// ranked measure divides by the number of GRADED keys, so a case with `required`
+// and no `relevant` divided by zero: recall, MRR and NDCG all came back NaN, at
+// exit 0. A comparison against NaN is always false, so `--max-recall-drop` and
+// `--max-ndcg-drop` could never fire on such a corpus -- the gate was present,
+// accepted, and unable to refuse anything.
+//
+// The numbers are asserted rather than the exit code. NaN exits 0, so a run
+// that only checked the command succeeded would have passed against the defect;
+// and a fix answering a constant zero would exit 0 too, while reporting a
+// generation that answers every query perfectly as answering none.
+func assertAHardExpectationAloneStillScores(
+	c *qt.C, ctx context.Context, specPath, dbURL string,
+) {
+	c.Helper()
+	corpus := writeCorpus(c, `
+version: 1
+name: required only
+default_k: 3
+cases:
+  - id: pricing
+    query: "pricing pricing pricing"
+    required: ["1"]
+  - id: shipping
+    query: "shipping shipping shipping"
+    required: ["2"]
+`)
+
+	output := runInference(c, ctx, "evaluate",
+		"--spec", specPath, "--db-url", dbURL, "--corpus", corpus)
+
+	// Every query is about a topic one document holds, so a corpus reading its
+	// hard expectations as grades scores perfectly.
+	c.Assert(output, qt.Contains, "recall 1.000")
+	c.Assert(output, qt.Not(qt.Contains), "NaN")
 }
 
 // seedEvaluationArticles writes documents whose topics a search can separate.

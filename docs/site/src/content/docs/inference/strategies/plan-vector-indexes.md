@@ -99,6 +99,8 @@ ptah inference evaluate --spec spec.yaml --db-url "$DB" \
   --corpus corpus.yaml --min-exact-agreement 0.9
 ```
 
+The corpus file is described in
+[Evaluation corpus reference](../../reference/evaluation-corpus/).
 That measures the index rather than the model: how often the approximate search
 returns what a full scan would have. A low number means the index or its query
 parameters need attention, not that the embeddings are wrong.

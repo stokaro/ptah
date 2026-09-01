@@ -135,7 +135,21 @@ comparable with the stored ones.
 
 `verify` says the vectors are the right shape and cover the source. It does not
 say the search is good. Write a handful of questions with their expected
-answers and measure:
+answers in a corpus file:
+
+```yaml
+version: 1
+name: docs questions
+default_k: 5
+cases:
+  - id: pricing
+    query: "How much does it cost per month?"
+    required: ["42"]
+```
+
+The key is the source row's key as a string.
+[Evaluation corpus reference](../../reference/evaluation-corpus/) has every
+field. Then measure:
 
 ```bash
 ptah inference evaluate --spec spec.yaml --db-url "$DB" --corpus corpus.yaml

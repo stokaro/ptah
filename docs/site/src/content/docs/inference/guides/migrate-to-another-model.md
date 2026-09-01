@@ -99,6 +99,9 @@ ptah inference evaluate --spec spec-v2.yaml --db-url "$DB" \
   --max-ndcg-regression 0.02
 ```
 
+The corpus file is described in
+[Evaluation corpus reference](../../reference/evaluation-corpus/).
+
 `--baseline-spec` is the previous generation's own specification file, and it is
 required with `--baseline`. Scoring a generation embeds every query with **its**
 model and searches **its** column; a generation identity carries neither, so the
