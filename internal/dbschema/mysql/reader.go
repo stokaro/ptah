@@ -1012,6 +1012,15 @@ func (r *Reader) readConstraints(ctx context.Context, dbName string) ([]catalog.
 
 	// Use a map to group constraints by their unique identifier
 	constraintMap := make(map[constraintKey]*catalog.Constraint)
+	// The order the rows arrive in, which the query's ORDER BY already fixed.
+	// Ranging constraintMap to build the result discarded it: Go randomizes map
+	// iteration, so two reads of one unchanged database returned the same
+	// constraints in different orders (stokaro/ptah#2709). That is observable
+	// rather than cosmetic -- catalog.Database.Constraints serializes as a JSON
+	// slice, and schema fingerprints and a plan artifact's
+	// current_schema_digest hash that serialization, so `schema apply` could
+	// re-read an untouched database and report its own saved fingerprint stale.
+	var constraintOrder []constraintKey
 
 	for rows.Next() {
 		var constraintName, tableName, constraintType, columnName string
@@ -1048,6 +1057,7 @@ func (r *Reader) readConstraints(ctx context.Context, dbName string) ([]catalog.
 				checkClauses,
 			)
 			constraintMap[key] = constraint
+			constraintOrder = append(constraintOrder, key)
 		}
 
 		// For multi-column constraints, we only store the first column name
@@ -1067,10 +1077,17 @@ func (r *Reader) readConstraints(ctx context.Context, dbName string) ([]catalog.
 		return nil, err
 	}
 
-	// Convert map to slice
+	// Convert map to slice, in the order the rows arrived.
+	//
+	// Declared nil rather than made with length zero on purpose:
+	// catalog.Database.Constraints carries no `omitempty`, so a nil slice
+	// serializes as `null` and an empty one as `[]`. Those are different bytes,
+	// and the fingerprints this fix exists to stabilize hash exactly those
+	// bytes -- building an empty slice here would change the digest of every
+	// schema that has no constraints at all.
 	var constraints []catalog.Constraint
-	for _, constraint := range constraintMap {
-		constraints = append(constraints, *constraint)
+	for _, key := range constraintOrder {
+		constraints = append(constraints, *constraintMap[key])
 	}
 
 	return constraints, nil
