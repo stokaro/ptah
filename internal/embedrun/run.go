@@ -206,12 +206,60 @@ var nextPhases = map[Phase][]Phase{
 	// It costs nothing that matters: a DECLARED index that is missing is
 	// refused by verification itself, which is where the check belongs, and
 	// cut_over is still reachable only from verified.
-	PhaseCaughtUp:   {PhaseIndexed, PhaseVerified},
-	PhaseIndexed:    {PhaseVerified},
-	PhaseVerified:   {PhaseCutOver},
-	PhaseCutOver:    {PhaseRetired, PhaseRolledBack},
+	PhaseCaughtUp: {PhaseIndexed, PhaseVerified},
+	PhaseIndexed:  {PhaseVerified},
+	PhaseVerified: {PhaseCutOver},
+	PhaseCutOver:  {PhaseRetired, PhaseRolledBack},
+	// A rolled-back generation is still a generation, and retiring it is the
+	// ordinary end of one that was rolled off and not wanted back. Declared
+	// nil, the run could never be retired: the retirement destroyed its
+	// vectors and the phase transition was refused, so the row stood at
+	// `rolled_back` describing a corpus that no longer existed.
+	PhaseRolledBack: {PhaseRetired},
 	PhaseRetired:    nil,
-	PhaseRolledBack: nil,
+}
+
+// resumable names the one move a run may make BACK to a phase it has held.
+//
+// Every other transition is forward-only, and that is what makes a phase
+// readable: nothing reaches cutover without passing through verification.
+// Rollback is the exception because it is not a state the lifecycle ends in --
+// the guide calls it reversible, and cutting the generation over again is the
+// documented way to reverse it. Recorded as forward-only, the run went on
+// saying `rolled_back` while the pointer named its generation as the one
+// queries read, and the two never agreed again (stokaro/ptah#2649 finding 6).
+//
+// It is a separate table rather than an edge in nextPhases because that one
+// answers "what may follow what", which [reaches] walks to decide whether a
+// phase is behind. A cycle there would make cut_over and rolled_back each
+// reachable from the other, so each would read as behind the other, and BOTH
+// moves would become the no-op a high-water mark performs on a phase already
+// passed -- taking the rollback producer away as well.
+var resumable = map[Phase][]Phase{
+	PhaseRolledBack: {PhaseCutOver},
+}
+
+// LeadsTo reports whether the lifecycle declares a move from this phase to
+// another.
+//
+// It exists so a caller advancing a set of runs can ask the table which of them
+// the move applies to, rather than naming the phases itself. `retire` did name
+// one -- it advanced runs standing at `cut_over` -- and a run rolled back
+// before it was retired stood at `rolled_back`, so the retirement destroyed its
+// vectors and left the row describing a corpus that was gone.
+func (p Phase) LeadsTo(to Phase) bool {
+	return slices.Contains(nextPhases[p], to)
+}
+
+// terminal names the phases nothing follows and nothing leaves.
+//
+// Retirement alone: the corpus is destroyed, so the run can never do anything
+// further, and that is what [StatusComplete] means. A rolled-back run is not
+// here on purpose -- it can be cut over again, so calling it complete would be
+// the same false statement in the status column that the phase column was
+// making.
+func (p Phase) terminal() bool {
+	return p == PhaseRetired
 }
 
 // Reach records that the run has got as far as a phase.
@@ -242,6 +290,14 @@ func (r *Run) Reach(token int64, to Phase) error {
 	if _, known := nextPhases[to]; !known {
 		return fmt.Errorf("%w: %s is not a phase of this lifecycle", ErrPhase, to)
 	}
+	// The one move backwards the lifecycle makes, and it is checked before the
+	// high-water mark rather than after: cut_over is reachable from
+	// rolled_back's predecessor, so the rule below would read it as a phase
+	// already passed and do nothing.
+	if slices.Contains(resumable[r.Phase], to) {
+		r.enter(to)
+		return nil
+	}
 	// Already there, or behind. A catch-up run after a verification is
 	// ordinary -- the source keeps moving -- and it asks to reach a phase the
 	// run has passed. Refusing that would make re-running an earlier verb an
@@ -257,9 +313,33 @@ func (r *Run) Reach(token int64, to Phase) error {
 	if !slices.Contains(nextPhases[r.Phase], to) {
 		return fmt.Errorf("%w: %s cannot move to %s", ErrPhase, r.Phase, to)
 	}
+	r.enter(to)
+	return nil
+}
+
+// enter records the phase and what reaching it means for the run.
+//
+// A run at a terminal phase is complete, and the lease goes with it. Nothing
+// wrote [StatusComplete] before this: the constant and its doc comment were the
+// only two lines in the tree that named it, so every run ever built reported
+// `running` for the rest of the registry's life -- including runs whose
+// generation no longer existed, which still carried a live lease naming a
+// worker that had exited (stokaro/ptah#2649 finding 6). It is the shape
+// AGENTS.md names as a rule with no caller, in the column beside the one that
+// finding was filed about.
+//
+// The lease is released rather than left to expire because a lease is a claim
+// on work, and there is none: a retired generation's vectors are gone, so no
+// worker can take the run and none should be shown holding it.
+func (r *Run) enter(to Phase) {
 	r.Phase = to
 	r.UpdatedAt = time.Now().UTC()
-	return nil
+	if !to.terminal() {
+		return
+	}
+	r.Status = StatusComplete
+	r.LeaseOwner = ""
+	r.LeaseExpires = time.Time{}
 }
 
 // Reached reports whether the run is at the given phase or past it.

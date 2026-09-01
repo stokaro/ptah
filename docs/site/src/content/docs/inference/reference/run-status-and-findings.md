@@ -31,7 +31,7 @@ run 2026-08-articles: caught_up, running
 
 | Line | Means |
 | --- | --- |
-| `caught_up, running` | The phase reached, and the run's state |
+| `caught_up, running` | The phase reached, and the run's state: `running`, `paused`, `failed`, or `complete` once the run reached `retired` |
 | `generation` | The identity this run is building |
 | `scanned / embedded / skipped / deleted` | Rows read, rows given a vector, rows deliberately skipped, rows tombstoned |
 | `batches committed` | How many provider round trips landed |
@@ -55,6 +55,15 @@ not where it is now. Running `catchup` again after a verification leaves it at
 
 The order is `boundary_captured`, `backfilling`, `backfilled`, `caught_up`,
 `indexed`, `verified`, `cut_over`, and then either `rolled_back` or `retired`.
+
+Those last two are not the same kind of end. `retired` is where a run stops:
+the corpus is destroyed, nothing further is possible, and the run's status
+becomes `complete` and its lease is released. `rolled_back` is reversible,
+because the rollback it records is — cutting the generation over again returns
+the run to `cut_over`, and a generation rolled off the pointer can still be
+retired later. A generation merely *replaced* by a newer cutover is neither: it
+keeps `cut_over`, because that is the furthest point its run reached, and which
+generation queries read now is what the pointer says.
 
 `backfilling` and `backfilled` are two facts, not one worded twice. A run is at
 `backfilling` while it walks the snapshot and at `backfilled` once the walk

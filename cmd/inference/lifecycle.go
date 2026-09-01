@@ -581,25 +581,32 @@ to it.`,
 }
 
 // runRollback evaluates eligibility and moves the pointer.
-// reachTerminalPhase advances the runs that built one generation into the
-// terminal phase the lifecycle ends them in.
+// reachPhaseOfGeneration advances every run that built one generation into a
+// phase the verb naming that generation has just made true of it.
 //
-// The two terminal phases had no producer at all: the transition table declares
-// `cut_over -> {retired, rolled_back}` and neither verb reached either, so a
-// generation rolled off the pointer or destroyed kept reporting `cut_over`
-// forever (stokaro/ptah#2649 finding 6). The phase was not a high-water mark
-// that stopped; it was a state the lifecycle could never enter.
+// `retired` and `rolled_back` had no producer at all: the transition table
+// declared `cut_over -> {retired, rolled_back}` and neither verb reached
+// either, so a generation rolled off the pointer or destroyed kept reporting
+// `cut_over` forever (stokaro/ptah#2649 finding 6). Neither was a high-water
+// mark that stopped; both were states the lifecycle could never enter.
 //
 // The lookup is by generation because that is what these verbs name -- neither
 // takes a --run-id -- and the run table's generation index exists for exactly
 // it, its comment saying "a run is almost always looked up by the generation it
 // builds". That index had no reader either.
 //
-// Only runs standing at `cut_over` are advanced, which is the whole set the
-// transition table permits. Nothing is skipped in silence: a run at any other
-// phase never reached the state these two follow, so there is no transition for
-// it to have missed.
-func reachTerminalPhase(
+// Which runs are advanced comes from the transition table rather than from a
+// phase named here. Naming one was wrong for retirement: it advanced runs
+// standing at `cut_over`, and a generation rolled back before it was retired
+// had its runs at `rolled_back`, so the retirement destroyed the vectors and
+// left the row describing a corpus that no longer existed. Asking
+// [embedrun.Phase.LeadsTo] means each verb reaches exactly the runs its own
+// transition applies to, and a phase added to the table needs no edit here.
+//
+// Nothing is skipped in silence: a run the table declares no move for never
+// reached the state this verb follows, so there is no transition for it to have
+// missed.
+func reachPhaseOfGeneration(
 	ctx context.Context, opened *session, generation string, to embedrun.Phase,
 ) error {
 	runs, err := opened.store.RunsForGeneration(ctx, generation)
@@ -607,7 +614,7 @@ func reachTerminalPhase(
 		return err
 	}
 	for _, run := range runs {
-		if run.Phase != embedrun.PhaseCutOver {
+		if !run.Phase.LeadsTo(to) {
 			continue
 		}
 		if err := opened.store.ReachPhase(ctx, run.ID, to); err != nil {
@@ -659,7 +666,7 @@ func runRollback(
 	}
 	// The generation left behind, not the one returned to: rolling back ends
 	// the run that put the pointer where it was.
-	if err := reachTerminalPhase(ctx, opened, pointer.Active, embedrun.PhaseRolledBack); err != nil {
+	if err := reachPhaseOfGeneration(ctx, opened, pointer.Active, embedrun.PhaseRolledBack); err != nil {
 		return err
 	}
 	if err := writeLines(out, fmt.Sprintf("queries now read %s, which replaced %s",
