@@ -19,6 +19,7 @@ import (
 	"database/sql"
 
 	"go.5x5.cz/ptah/internal/embedcatchup"
+	"go.5x5.cz/ptah/internal/embedgen"
 	"go.5x5.cz/ptah/internal/embedpg"
 	"go.5x5.cz/ptah/internal/embedplan"
 	"go.5x5.cz/ptah/internal/embedrun"
@@ -271,13 +272,53 @@ func planInputs(
 // (stokaro/ptah#2474).
 func configuredFacts(loaded embedspec.Loaded) embedplan.Facts {
 	spec := loaded.Spec
-	return embedplan.Facts{
+	identity := spec.Identity()
+	facts := embedplan.Facts{
 		embedplan.ConfiguredFact("source.table", spec.Source.Table, "the specification"),
 		embedplan.ConfiguredFact("model.identifier", spec.Model.Identifier, "the specification"),
 		embedplan.ConfiguredFact("model.revision", spec.Model.Revision, "the specification"),
 		embedplan.ConfiguredFact("provider.credential", loaded.Credential,
 			"the specification, as a reference rather than a value"),
 	}
+	// Derived rather than configured, so it carries what it was derived FROM.
+	//
+	// Three pages said `plan` reports this and it reported nothing -- and the
+	// sample one of them prints is in the plan's own fact vocabulary, so the
+	// promise was coherent and only the fact was missing (stokaro/ptah#2648
+	// finding 2). `DescribeSpecification` says the same thing and its comment
+	// already said why: "Rendered as the plan renders it, so the two agree on
+	// the words."
+	//
+	// It is reported on every run rather than only where it is partial, which
+	// is more than the pages promise, and more than `describe` says: that
+	// verb's `reproducibility_reason` is a complaint and stays absent for a
+	// `full` answer. The two agree wherever there is something to complain
+	// about, because both read the identity's own sentence. A fact that appears when the answer is
+	// bad and is absent when it is good is one a reader cannot tell from a fact
+	// nobody computed.
+	//
+	// So a `full` answer also appears under "What is not established", and that
+	// is right rather than a wart: an inference is not a measurement, and this
+	// one reads a revision string out of the specification without asking the
+	// provider whether it honors it. `run.consistency_mode` is inferred and
+	// listed the same way for the same reason.
+	facts.Add(embedplan.InferredFact(
+		"generation.reproducibility", string(identity.Reproducibility),
+		reproducibilityFrom(identity)))
+	return facts
+}
+
+// reproducibilityFrom is what the answer was derived from.
+//
+// A full reproducibility carries no reason of its own, and a fact with an empty
+// detail is the shape `Facts.Undetailed` reports: an inferred answer owes its
+// premise. So the premise is stated for both answers rather than only for the
+// one that has a complaint attached.
+func reproducibilityFrom(identity embedgen.Identity) string {
+	if identity.ReproducibilityReason != "" {
+		return identity.ReproducibilityReason
+	}
+	return "the specification pins an immutable model revision"
 }
 
 // disclosureOf says what would leave the database.
@@ -446,6 +487,11 @@ type Specification struct {
 	Short      string `json:"generation_short"`
 	// Reproducibility says whether the generation can be rebuilt, and Reason
 	// why not where it cannot. A file that says neither reads as "yes".
+	//
+	// Reason is a complaint, never a premise: it is absent for a `full` answer
+	// on purpose. `plan` states a premise for both answers because its fact
+	// vocabulary requires one, and the two are not in disagreement -- for
+	// `partial` they render the identity's same sentence.
 	Reproducibility string `json:"reproducibility"`
 	Reason          string `json:"reproducibility_reason,omitempty"`
 	// Disclosure is what running it would send out of the database. RowsInScope
@@ -476,7 +522,16 @@ func DescribeSpecification(loaded embedspec.Loaded) (Specification, error) {
 		Name:       loaded.Spec.Name,
 		Generation: identity.Digest,
 		Short:      identity.Short(),
-		// Rendered as the plan renders it, so the two agree on the words.
+		// The value, and the complaint where there is one, are the identity's
+		// own -- so `describe` and `plan` cannot word a `partial` answer
+		// differently: both read `ReproducibilityReason`.
+		//
+		// They differ on `full`, deliberately. The plan renders every fact as
+		// `name = value (provenance: detail)` and `Facts.Undetailed` refuses an
+		// inferred fact carrying no detail, so it states the premise it
+		// inferred from. This field means "why not", and a specification that
+		// pins a revision has no why not; `omitempty` keeps it out of the JSON
+		// rather than filling it with a sentence that is not a complaint.
 		Reproducibility: string(identity.Reproducibility),
 		Reason:          identity.ReproducibilityReason,
 		// Negative rather than zero: an uncounted source rendered as zero says

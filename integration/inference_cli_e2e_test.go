@@ -938,6 +938,14 @@ func assertPlanSaysWhatItKnows(c *qt.C, ctx context.Context, specPath, dbURL str
 	c.Assert(output, qt.Contains, "target.capability.vector_type = true (measured)")
 	c.Assert(output, qt.Contains, "[backfill] embed 3 in-scope source rows")
 	c.Assert(output, qt.Contains, "Consistency mode: outbox")
+	// Three documentation pages say the plan reports this, and for a while
+	// nothing did (stokaro/ptah#2648). This fixture pins a revision, so it is
+	// the `full` arm that reaches stdout here; the arm that names what is
+	// missing is asserted where both can be built cheaply, in
+	// internal/embedreport's own tests.
+	c.Assert(output, qt.Contains,
+		"generation.reproducibility = full "+
+			"(inferred: the specification pins an immutable model revision)")
 	// Nothing has run yet, so the column is not there and the plan says it
 	// would create one. The other half -- that a plan stops proposing work
 	// already done -- is asserted after prepare, where the state it reads is
