@@ -57,12 +57,6 @@ var Exempt = map[string]string{
 		"that owe an explanation and give none, and the only caller a self-check can have " +
 		"is a test. embedreport's facts_internal_test.go runs it over the real assembly",
 
-	"Prune": "the outbox's only deleting statement, and nothing calls it: an outbox grows " +
-		"for the whole life of a migration and is removed with the table at retirement. " +
-		"That is a product gap rather than a dead declaration -- when to prune and whether " +
-		"it is policy are decisions, and the consistency page describes a draining that does " +
-		"not happen -- so it is tracked in stokaro/ptah#2690 rather than wired up here",
-
 	// Surfaced the day the name check learned to ask whether a caller could
 	// reach the declaration (stokaro/ptah#2682). `Check` is a common enough
 	// method name that any `.Check(` in the module used to answer for it.

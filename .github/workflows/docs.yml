@@ -75,7 +75,11 @@ jobs:
               - '.github/workflows/docs.yml'
             inference:
               - 'cmd/inference/**'
-              - 'internal/inference*/**'
+              # internal/embed*, not internal/inference*: the packages have
+              # never been called that, so this filter matched nothing and an
+              # outbox-only or provider-only change skipped this job in silence
+              # -- an absent check reads exactly like a passing one.
+              - 'internal/embed*/**'
               - 'docs/site/fixtures/inference-quick-start/**'
               - 'docs/site/public/samples/inference-quick-start.zip'
               - 'docs/site/public/samples/inference-quick-start.zip.sha256'

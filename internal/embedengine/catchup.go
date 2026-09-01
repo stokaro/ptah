@@ -221,23 +221,26 @@ func (e *Engine) recordBarrier(
 	})
 }
 
-// parseWatermark reads where catch-up resumes from.
+// parseWatermark reads where catch-up resumes from, and refuses a run that
+// records nowhere to resume.
 //
-// Before catch-up has run, that is the snapshot boundary: everything from the
-// transaction the backfill started at is catch-up's to process. A missing
-// boundary is refused rather than defaulted to zero, because zero means "every
-// change ever recorded" and on a long-lived outbox that is a different
-// migration.
+// The recognition itself is embedcatchup.ResumeFrom, which the outbox pruner
+// asks as well: what a run still owes and what may be deleted behind it are the
+// same boundary, and a second copy of the rule here is how the two would come
+// to disagree. What stays local is the refusal -- the engine cannot proceed
+// without a position, while the pruner simply leaves such a run out of the
+// reader set.
 func parseWatermark(catchUp, snapshot string) (embedcatchup.Cursor, error) {
-	if catchUp != "" {
-		return embedcatchup.ParseCursor(catchUp, "catch-up watermark")
+	cursor, ok, err := embedcatchup.ResumeFrom(catchUp, snapshot)
+	if err != nil {
+		return embedcatchup.Cursor{}, err
 	}
-	if snapshot == "" {
+	if !ok {
 		return embedcatchup.Cursor{}, fmt.Errorf(
 			"%w: the run records no snapshot boundary, so nothing says which changes catch-up owes",
 			embedstore.ErrNotFound)
 	}
-	return embedcatchup.ParseCursor(snapshot, "snapshot watermark")
+	return cursor, nil
 }
 
 // resumeAfterPage is where catch-up resumes once a page is written.

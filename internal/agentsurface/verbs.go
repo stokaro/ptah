@@ -80,7 +80,8 @@ var verbs = map[string]Verb{
 			"writes vectors and checkpoints into the target database"},
 	"inference catchup": {TargetWrites, ScratchNone,
 		"rereads the source rows recorded as changed and writes their vectors, which sends that " +
-			"text to the embedding endpoint"},
+			"text to the embedding endpoint, and deletes the change records every generation " +
+			"reading that source has processed"},
 	"inference cutover": {TargetWrites, ScratchNone,
 		"moves the pointer queries read to a different generation, and refuses when the pointer " +
 			"is not where the plan it was built from expects"},

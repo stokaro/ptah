@@ -48,6 +48,36 @@ func (c Cursor) Before(other Cursor) bool {
 	return c.Sequence < other.Sequence
 }
 
+// ResumeFrom is where a run resumes, read from the two watermarks it records.
+//
+// One recognition, because two callers need it and they must not each grow
+// their own. The engine asks it to know which events catch-up still owes; the
+// pruner asks it to know which events are safe to delete. Those are the same
+// question read from opposite ends, and if the two answers ever drift apart the
+// prune deletes exactly what the resume still owes -- silently, because a
+// deleted event fails the pending predicate and so is never reported as
+// missing.
+//
+// Before catch-up has run, a run resumes at its snapshot boundary: everything
+// from the transaction the backfill started at is catch-up's to process.
+//
+// A run recording neither watermark reports ok false rather than a zero cursor.
+// Zero is not an early position, it is "every change ever recorded", which on a
+// long-lived outbox is a different migration -- and as a floor it would authorize
+// deleting the whole table. A caller decides what absence means: the engine
+// refuses the run, the pruner leaves the run out of the reader set.
+func ResumeFrom(catchUp, snapshot string) (Cursor, bool, error) {
+	if catchUp != "" {
+		cursor, err := ParseCursor(catchUp, "catch-up watermark")
+		return cursor, err == nil, err
+	}
+	if snapshot != "" {
+		cursor, err := ParseCursor(snapshot, "snapshot watermark")
+		return cursor, err == nil, err
+	}
+	return Cursor{}, false, nil
+}
+
 // String renders a cursor for the run record and for an operator to read.
 //
 // A cursor sitting on a transaction boundary renders as the transaction alone,

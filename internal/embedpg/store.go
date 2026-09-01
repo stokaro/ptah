@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"go.5x5.cz/ptah/internal/embedcatchup"
 	"go.5x5.cz/ptah/internal/embedrun"
 	"go.5x5.cz/ptah/internal/embedstore"
 )
@@ -530,6 +531,89 @@ func (s *Store) ClaimRun(
 //
 // Retired generations do not count: their vectors are gone, so nothing is left
 // for a catch-up to feed.
+// outboxFloorSQL reads the watermarks of every run still reading a source table.
+//
+// Membership is retired_at rather than a run phase. That column is the one
+// statement that a generation no longer reads anything, and it is already the
+// authority removeOutboxIfLast consults through LiveGenerationsOver -- one
+// authority, not two that can disagree. A run's own PhaseRetired means the run
+// whose PREVIOUS generation was removed, which is the live one.
+//
+// NOT EXISTS rather than a join, so a run whose generation row is missing still
+// counts as a reader. Every bound here leans the same way: a reader wrongly
+// included keeps events, and a reader wrongly excluded deletes events it still
+// owes.
+const outboxFloorSQL = `SELECT COALESCE(catch_up_watermark, ''), COALESCE(snapshot_watermark, '')
+	FROM ` + embedstore.RunTable + ` r
+	WHERE r.source = $1
+	  AND NOT EXISTS (
+	        SELECT 1 FROM ` + embedstore.GenerationTable + ` g
+	        WHERE g.identity = r.generation_identity
+	          AND g.retired_at IS NOT NULL)`
+
+// OutboxFloor is the earliest position any live run still reading a source
+// table has reached, and reports whether there is one at all.
+//
+// An outbox belongs to a source table rather than to a run -- Outbox.TableName
+// digests the source's schema and table -- so two generations over one table
+// share its events, which is why retirement has to ask whether it is the last
+// reader before removing the table. The same fact decides what may be deleted
+// from it: an event is dead only once EVERY live reader has passed it, and the
+// bound is therefore the minimum of their positions rather than the position of
+// whichever run happens to be catching up.
+//
+// sourceTable is matched against the runs' unqualified source, which is what
+// lifecycle.go records, while an outbox is keyed on the qualified pair. The
+// match therefore over-includes across schemas and can never under-include: two
+// runs share an outbox exactly when their schema and table are both equal, so
+// their source strings are equal too. Over-inclusion only lowers the floor,
+// which keeps more events than necessary.
+//
+// A run recording neither watermark is not a reader positioned at zero, it is a
+// run that reads no change log at all -- prepare writes both empty for a mode
+// that records nothing -- so it is skipped. A watermark that does not parse is
+// an error rather than a skip, because a floor built by ignoring the positions
+// it could not read is a floor that authorizes deleting what they owed.
+//
+// The false answer means no live reader was found, and a caller must delete
+// nothing: an empty reader set is not a licence to empty the table.
+func (s *Store) OutboxFloor(
+	ctx context.Context, sourceTable string,
+) (embedcatchup.Cursor, bool, error) {
+	rows, err := s.db.QueryContext(ctx, outboxFloorSQL, sourceTable)
+	if err != nil {
+		return embedcatchup.Cursor{}, false, fmt.Errorf(
+			"read the outbox floor for %s: %w", sourceTable, err)
+	}
+	defer rows.Close()
+
+	var floor embedcatchup.Cursor
+	var found bool
+	for rows.Next() {
+		var catchUp, snapshot string
+		if err := rows.Scan(&catchUp, &snapshot); err != nil {
+			return embedcatchup.Cursor{}, false, fmt.Errorf(
+				"read the outbox floor for %s: %w", sourceTable, err)
+		}
+		cursor, ok, err := embedcatchup.ResumeFrom(catchUp, snapshot)
+		if err != nil {
+			return embedcatchup.Cursor{}, false, fmt.Errorf(
+				"read the outbox floor for %s: %w", sourceTable, err)
+		}
+		if !ok {
+			continue
+		}
+		if !found || cursor.Before(floor) {
+			floor, found = cursor, true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return embedcatchup.Cursor{}, false, fmt.Errorf(
+			"read the outbox floor for %s: %w", sourceTable, err)
+	}
+	return floor, found, nil
+}
+
 func (s *Store) LiveGenerationsOver(
 	ctx context.Context, targetTable, excluding string,
 ) (int, error) {
