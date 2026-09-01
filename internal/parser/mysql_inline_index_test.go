@@ -148,3 +148,37 @@ func TestParse_MySQLUniqueIsStillAConstraint(t *testing.T) {
 	c.Assert(table.Constraints[0].Name, qt.Equals, "uq_u_email")
 	c.Assert(table.Indexes, qt.HasLen, 0)
 }
+
+// TestParse_MySQLInlineIndexKeepsPerColumnAttributes covers the half a
+// column-name list cannot carry.
+//
+// parseConstraintColumn already reads MySQL's prefix length and DESC ordering.
+// Building the index from Columns alone kept the index and silently flattened
+// `KEY k (name(7) DESC)` into `KEY k (name)` -- a different index that applies
+// cleanly, so nothing downstream would have reported it.
+func TestParse_MySQLInlineIndexKeepsPerColumnAttributes(t *testing.T) {
+	c := qt.New(t)
+
+	table := parsedTable(c, "CREATE TABLE t (id BIGINT PRIMARY KEY, name VARCHAR(255), "+
+		"KEY idx_t_name (name(7) DESC));")
+
+	c.Assert(table.Indexes, qt.HasLen, 1)
+	c.Assert(table.Indexes[0].Parts, qt.DeepEquals, []ast.IndexPart{
+		{Name: "name", Prefix: "7", Desc: true},
+	})
+}
+
+// TestParse_MySQLInlineIndexWithoutAttributesCarriesPlainParts is its control:
+// the parts travel for an ordinary column too, with the attribute fields empty
+// rather than invented.
+func TestParse_MySQLInlineIndexWithoutAttributesCarriesPlainParts(t *testing.T) {
+	c := qt.New(t)
+
+	table := parsedTable(c, "CREATE TABLE t (id BIGINT PRIMARY KEY, name VARCHAR(255), "+
+		"KEY idx_t_name (name));")
+
+	c.Assert(table.Indexes, qt.HasLen, 1)
+	c.Assert(table.Indexes[0].Parts, qt.DeepEquals, []ast.IndexPart{
+		{Name: "name"},
+	})
+}

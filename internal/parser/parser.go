@@ -3600,6 +3600,37 @@ func (p *Parser) parseExcludeWhereCondition() (string, error) {
 	return strings.TrimSpace(condition.String()), nil
 }
 
+// alterIndexKind names an index in the ALTER refusal. A plain index has no
+// access method, and joining the empty string onto " INDEX" spelled the refusal
+// "ADD  INDEX", with two spaces.
+func alterIndexKind(method string) string {
+	if method == "" {
+		return "INDEX"
+	}
+	return strings.ToUpper(method) + " INDEX"
+}
+
+// indexPartsFromConstraintColumns carries a table-level index's per-column
+// attributes across from the constraint shape the column-list parser fills.
+//
+// The two structs describe the same thing for an index declared in a column
+// list; ast.IndexPart simply carries more than a constraint can (an expression,
+// an operator class, a NULLS ordering), none of which this syntax produces.
+func indexPartsFromConstraintColumns(columns []ast.ConstraintColumn) []ast.IndexPart {
+	if len(columns) == 0 {
+		return nil
+	}
+	parts := make([]ast.IndexPart, 0, len(columns))
+	for _, column := range columns {
+		parts = append(parts, ast.IndexPart{
+			Name:   column.Name,
+			Prefix: column.Prefix,
+			Desc:   column.Desc,
+		})
+	}
+	return parts
+}
+
 // addTableConstraintOrIndex routes what parseTableConstraint read. Exactly one
 // of the two is non-nil.
 func addTableConstraintOrIndex(table *ast.CreateTableNode, constraint *ast.ConstraintNode, index *ast.IndexNode) {
@@ -3710,7 +3741,13 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 		return nil, &ast.IndexNode{
 			Name:    constraint.Name,
 			Columns: constraint.Columns,
-			Type:    indexMethod,
+			// The per-column attributes travel too. parseConstraintColumn
+			// already reads MySQL's prefix length and DESC into
+			// ast.ConstraintColumn, and dropping them here would keep the index
+			// but silently flatten `KEY k (name(7) DESC)` into `KEY k (name)` --
+			// a different index that applies cleanly.
+			Parts: indexPartsFromConstraintColumns(constraint.ColumnParts),
+			Type:  indexMethod,
 		}, nil
 	}
 
@@ -4647,7 +4684,8 @@ func (p *Parser) parseAddOperation() (ast.AlterOperation, error) {
 		if index != nil {
 			return nil, fmt.Errorf(
 				"ALTER TABLE ADD %s is not supported here; declare the index in its own statement",
-				strings.ToUpper(index.Type+" INDEX"))
+				alterIndexKind(index.Type),
+			)
 		}
 		return &ast.AddConstraintOperation{Constraint: constraint}, nil
 	}
