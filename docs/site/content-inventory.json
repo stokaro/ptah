@@ -2512,8 +2512,8 @@
       "inboundLinks": [
         "/inference/concepts/embeddings-and-inference-state/"
       ],
-      "visibleWords": 2370,
-      "sourceBytes": 17776
+      "visibleWords": 2414,
+      "sourceBytes": 18012
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/evaluation-corpus.md",
@@ -2618,9 +2618,12 @@
       "outboundLinks": [
         "/inference/concepts/consistency/"
       ],
-      "inboundLinks": [],
-      "visibleWords": 1257,
-      "sourceBytes": 9756
+      "inboundLinks": [
+        "/inference/strategies/plan-provider-capacity/",
+        "/inference/troubleshooting/"
+      ],
+      "visibleWords": 1378,
+      "sourceBytes": 10574
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/support-and-limitations.md",
@@ -2763,15 +2766,17 @@
       "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
-      "outboundLinks": [],
+      "outboundLinks": [
+        "/inference/reference/specification/"
+      ],
       "inboundLinks": [
         "/inference/guides/configure-a-provider/",
         "/inference/guides/create-first-generation/",
         "/inference/guides/resume-and-recover/",
         "/inference/troubleshooting/"
       ],
-      "visibleWords": 450,
-      "sourceBytes": 3847
+      "visibleWords": 548,
+      "sourceBytes": 4420
     },
     {
       "path": "docs/site/src/content/docs/inference/strategies/plan-vector-indexes.md",
@@ -2877,14 +2882,15 @@
       "outboundLinks": [
         "/inference/guides/resume-and-recover/",
         "/inference/guides/rollback-and-retire/",
+        "/inference/reference/specification/",
         "/inference/strategies/plan-provider-capacity/"
       ],
       "inboundLinks": [
         "/inference/overview/",
         "/operate/troubleshooting/"
       ],
-      "visibleWords": 827,
-      "sourceBytes": 5815
+      "visibleWords": 935,
+      "sourceBytes": 6521
     },
     {
       "path": "docs/site/src/content/docs/operate/ai-agent-changes.md",
@@ -4033,8 +4039,8 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 7138,
-      "sourceBytes": 48430
+      "visibleWords": 7153,
+      "sourceBytes": 48523
     },
     {
       "path": "docs/site/src/content/docs/reference/overview.mdx",

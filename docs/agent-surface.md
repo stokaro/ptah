@@ -101,7 +101,7 @@ to rule out — so they are named here, where a claim nothing measures belongs.
 | `inference backfill` | **writes** | none | `--db-url` | reads the source, sends it to the embedding endpoint the specification names, and writes vectors and checkpoints into the target database |
 | `inference catchup` | **writes** | none | `--db-url` | rereads the source rows recorded as changed and writes their vectors, which sends that text to the embedding endpoint |
 | `inference cutover` | **writes** | none | `--db-url` | moves the pointer queries read to a different generation, and refuses when the pointer is not where the plan it was built from expects |
-| `inference describe` | none | none | — | reads a specification file and reports what it says; it opens no connection, which is what makes it usable where every other verb here cannot be |
+| `inference describe` | none | none | — | reads a specification file and reports what it says; it opens no database, and with `--spec` no connection at all, which is what makes it usable where every other verb here cannot be; `--release` fetches the release from a registry first |
 | `inference evaluate` | reads | none | `--db-url` | searches the generation with queries from a corpus, which sends those queries to the embedding endpoint; the database is only read |
 | `inference index` | **writes** | none | `--db-url` | builds the generation's vector index concurrently, which writes an index into the target database and drops an invalid leftover before rebuilding it |
 | `inference pause` | **writes** | none | `--db-url` | stops a run at the boundary its last checkpoint reached, which writes the run's own row: it takes the run for this process, so a worker that was running is refused at its next commit |
@@ -204,7 +204,7 @@ permission.
 | `db capabilities` | reads the server's version and catalogs to report the capability profile Ptah resolves |
 | `db read` | introspects the database and prints what it found |
 | `help` | prints the help text of the verb it names, or of the root when it names none; the verb itself is not run and nothing is opened |
-| `inference describe` | reads a specification file and reports what it says; it opens no connection, which is what makes it usable where every other verb here cannot be |
+| `inference describe` | reads a specification file and reports what it says; it opens no database, and with `--spec` no connection at all, which is what makes it usable where every other verb here cannot be; `--release` fetches the release from a registry first |
 | `inference evaluate` | searches the generation with queries from a corpus, which sends those queries to the embedding endpoint; the database is only read |
 | `inference plan` | resolves a specification against the database and prints what would happen; nothing is created and nothing is written |
 | `inference probe` | sends two fixed strings to the embedding endpoint the specification names and reports what came back; it opens no database, and nothing from one is sent |

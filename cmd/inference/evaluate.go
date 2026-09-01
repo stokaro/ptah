@@ -53,10 +53,16 @@ index switched off. That is what separates a bad corpus from a bad index: if an
 exhaustive scan finds the right documents and the index does not, the vectors are
 fine and the recall setting is not.
 
-Nothing here gates by default. A threshold Ptah picked would be met or missed by
-a session setting Ptah does not own, so the floors are yours to set -- and the
-report records the query parameters every number was measured under, because two
-taken under different ones are not two numbers about the same thing.`,
+No SCORE threshold gates by default. A threshold Ptah picked would be met or
+missed by a session setting Ptah does not own, so the floors are yours to set --
+and the report records the query parameters every number was measured under,
+because two taken under different ones are not two numbers about the same thing.
+
+Two things refuse without one. A required key the corpus declared and the
+search did not return is a condition the corpus author stated, and no score
+expresses it. And unless --require-every-case=false, a case that produced no
+result at all refuses, because an evaluation that could not ask every question
+has not answered the one it was run for.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runEvaluate(cmd.Context(), cmd.OutOrStdout(), options)

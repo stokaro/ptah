@@ -121,8 +121,12 @@ query-parameter value is a coin flip with a number on it.
 The decision is **a gate whose thresholds the operator sets, defaulting to
 none**, with the query parameters bound to the numbers:
 
-- A policy with no thresholds gates nothing and the report is evidence. This is
-  the default, and it is ADR 0010's third option.
+- A policy with no thresholds applies no SCORE floor, and the report is
+  evidence. This is the default, and it is ADR 0010's third option. Two
+  refusals stand without a threshold and are not floors: a `required` key the
+  corpus declared and the search did not return, which no score expresses, and
+  a case that produced no result at all unless `--require-every-case=false`
+  says otherwise.
 - A policy with thresholds gates, and the operator who set them is the one who
   knows the query parameters their application uses.
 - The scores carry the parameters they were taken under, and a regression

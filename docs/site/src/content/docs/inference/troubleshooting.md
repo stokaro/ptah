@@ -24,6 +24,19 @@ vertical: the run state and the vectors have no dialect-agnostic form.
 
 **Fix.** Point it at a PostgreSQL database. There is no workaround.
 
+## `preprocessing.null_policy "" is not one this build acts on`
+
+**Cause.** The field is absent. Thirteen fields are required, and each one is
+refused by name with the values it accepts -- the same message appears for
+`empty_policy`, `unicode_normalization`, `truncate`, `model.endpoint_class`,
+`model.normalization` and `target.metric`. The refusal happens before any verb
+does work, `describe` included, so it is not about your database.
+
+**Fix.** Write the field. The [specification
+reference](../reference/specification/) marks which fields a specification is
+refused without; `truncate` is the one most often missed, because it is required
+even where `max_input_bytes` names no cap for it to act at.
+
 ## `the target database has no pgvector`
 
 **Cause.** The `vector` extension is not installed in that database.
