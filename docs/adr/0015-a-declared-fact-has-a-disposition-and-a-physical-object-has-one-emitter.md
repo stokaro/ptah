@@ -33,7 +33,7 @@ type graph rather than the file. 323 of them are declared in `schemamodel`; the
 rest are reached through it, and a CockroachDB row-TTL parameter that lives in
 `core/ast` is exactly as droppable as one that does not.
 
-### 1.2 One question, twelve answers
+### 1.2 Twelve answers, and more than one question
 
 The second half of #2606 is ownership, and it was measured the same way. Whether
 an index is the physical backing of a constraint — and which of the two a change
@@ -60,6 +60,38 @@ reads `users_email_key` as constraint-backed because it ends in `_key` and
 begins with the table's name, and `constraintOwnedDatabaseIndex` reaches that
 heuristic whenever the catalog-derived sets do not answer. A plain unique index
 a person named that way is not a different object because of its spelling.
+
+Reading the twelve against each other establishes what the count alone does not:
+they do not all answer the same question. Four questions are in that list.
+
+| | question | answered in |
+| --- | --- | --- |
+| A | is this catalog index the physical backing of that catalog constraint? | `constraintBackedIndexIdentities`, `constraintOwnedDatabaseIndex`, `spannerForeignKeyBackingIndexes`, `isSQLiteInternalAutoindex`, and `constraintBackedIndexesByTable` |
+| B | which representation did the desired schema choose, index or constraint? | `uniqueConstraintOwnedByDeclaredIndex` |
+| C | is this column-level change already spelled by a table-level constraint in the same diff? | `primaryKeyColumnChangeOwnedByTableConstraint` |
+| D | which indexes does the server create by itself, so a reverse diff matches? | `addMySQLFamilyForeignKeyBackingIndexRemovals` |
+
+B is decided by the desired state rather than by the dialect, and says so at its
+own declaration. C is a de-duplication inside one diff and consults no catalog.
+D is a simulation of what MySQL does unasked. Collapsing those three into A
+would give four questions one answer, which is a worse defect than the
+duplication it would be trying to remove.
+
+Cross-tree duplication is confined to A, and there to one pair.
+`migration/schemadiff` decides it per dialect; `internal/convert/dbschematogo`
+decides it with no dialect at all, because `ConvertDBSchemaToGoSchema` takes
+none. The two compensate today, and
+`migration/generator/reverse_constraints.go` depends on the compensation in
+writing: the down path builds its target from that converter, and a
+constraint-backed index it did not omit would resolve into a plain unique index
+in place of the constraint.
+
+Nothing held the two together until the round-trip control gained a FOREIGN KEY
+shape. Measured by mutation: teaching the converter to suppress a foreign key's
+backing index reddens that cell on eight dialects and leaves MySQL and MariaDB
+green -- exactly the two for which `migration/schemadiff` carries an arm. The
+agreement is now a test rather than a coincidence, which is what makes unifying
+the pair a change that can be measured rather than argued.
 
 ### 1.3 The host is named twice, and the second name is optional
 
