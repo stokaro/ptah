@@ -75,7 +75,7 @@ func TestParse_MySQLInlineIndexIsNotAUniqueConstraint(t *testing.T) {
 			c.Assert(table.Indexes[0].Columns, qt.DeepEquals, []string{"email"})
 			c.Assert(table.Indexes[0].Unique, qt.IsFalse)
 			// The primary key is the only constraint the declaration makes.
-			c.Assert(constraintTypes(table), qt.DeepEquals, []ast.ConstraintType{})
+			c.Assert(constraintTypes(table), qt.HasLen, 0)
 		})
 	}
 }
@@ -116,7 +116,7 @@ func TestParse_MySQLSpatialIndexKeepsItsMethodAndName(t *testing.T) {
 			c.Assert(table.Indexes[0].Type, qt.Equals, "SPATIAL")
 			c.Assert(table.Indexes[0].Columns, qt.DeepEquals, []string{"location"})
 			c.Assert(table.Indexes[0].Unique, qt.IsFalse)
-			c.Assert(constraintTypes(table), qt.DeepEquals, []ast.ConstraintType{})
+			c.Assert(constraintTypes(table), qt.HasLen, 0)
 		})
 	}
 }
