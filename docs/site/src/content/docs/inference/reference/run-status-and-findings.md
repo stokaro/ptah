@@ -131,12 +131,17 @@ generation b115a08fbd46e92857378a5eea6855091e76d428e522c6c180134541a1e1af4c agai
 That corpus holds three cases and every score is a 1.000, which is what a
 small corpus over a small table looks like. The shape is what to read.
 
-| Number | Means |
+| In the report | Means |
 | --- | --- |
-| `recall` | The share of expected answers found, at the depth `--k` names |
+| `recall` | The share of expected answers found, at the depth this case looked to |
 | `MRR` | Mean reciprocal rank: how high the first correct answer came |
 | `NDCG` | How well the whole ordering matches the expected one |
-| agreement with an exhaustive search | How often the index returned what a scan of every row would have |
+| `the index agrees with an exhaustive search` | How often the index returned what a scan of every row would have |
+
+The depth is the case's own `k` where it names one, otherwise the corpus's
+`default_k`, otherwise `--k`. The corpus wins over the flag on purpose: a run at
+a different depth is a different measurement, and the file is where that is
+written down.
 
 The agreement figure measures the **index**, not the model. A low number means
 the index or its query parameters need attention, not that the embeddings are
