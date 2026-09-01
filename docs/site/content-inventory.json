@@ -3709,8 +3709,8 @@
         "/testing/ci/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 3476,
-      "sourceBytes": 25176
+      "visibleWords": 3444,
+      "sourceBytes": 25006
     },
     {
       "path": "docs/site/src/content/docs/reference/extension-variables.md",
