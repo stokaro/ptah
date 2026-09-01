@@ -579,12 +579,18 @@ func registerBareGenerationInColumn(
 	loaded, err := embedspec.Parse(body, specPath)
 	c.Assert(err, qt.IsNil)
 
+	// The source as well as the target, read off the same document, because
+	// retirement asks the registry which source an outbox belongs to. A row
+	// carrying the target alone is not a generation prepare can produce, and it
+	// would make this fixture answer a question the product never asks.
 	_, err = db.ExecContext(ctx,
 		`INSERT INTO ptah_embedding_generation (
 			identity, spec_digest, spec_document, reproducibility, dimension,
-			target_schema, target_table, target_column, created_at)
-		 VALUES ($1, $2, $3, 'full', 4, 'public', 'articles', $4, now())
-		 ON CONFLICT (identity) DO NOTHING`, identity, loaded.Digest, string(body), column)
+			target_schema, target_table, target_column,
+			source_schema, source_table, created_at)
+		 VALUES ($1, $2, $3, 'full', 4, 'public', 'articles', $4, $5, $6, now())
+		 ON CONFLICT (identity) DO NOTHING`, identity, loaded.Digest, string(body), column,
+		loaded.Spec.Source.Schema, loaded.Spec.Source.Table)
 	c.Assert(err, qt.IsNil)
 }
 

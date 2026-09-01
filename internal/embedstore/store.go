@@ -63,6 +63,22 @@ type Generation struct {
 	TargetSchema string
 	TargetTable  string
 	TargetColumn string
+	// SourceSchema and SourceTable are the relation it reads.
+	//
+	// Recorded because an outbox belongs to a SOURCE table -- two generations
+	// over one source share one set of triggers -- so retirement has to ask
+	// whether the generation it is destroying was the last reader of that
+	// source. The target cannot answer it. A specification whose target table
+	// differs from its source is accepted, and asking the target counted zero
+	// readers for a source another live generation was still being fed from:
+	// retiring one generation took the shared outbox away, and the survivor's
+	// catch-up then failed on a relation that no longer existed
+	// (stokaro/ptah#2649).
+	//
+	// Empty schema means the specification named none, so search_path is what
+	// its author asked for -- the same convention TargetSchema carries.
+	SourceSchema string
+	SourceTable  string
 	// CreatedAt is when Ptah first recorded it.
 	CreatedAt time.Time
 	// RetiredAt is when it was destroyed, zero while it exists.

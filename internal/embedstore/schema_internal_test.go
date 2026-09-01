@@ -32,6 +32,29 @@ func TestRunFields_CoverEveryRunField(t *testing.T) {
 			"runFieldsNotPersisted with the reason a run resumed without it resumes correctly"))
 }
 
+// TestGenerationFields_CoverEveryGenerationField is the same ratchet over the
+// registry.
+//
+// The run's ratchet exists because a forgotten field resumes as a zero value.
+// The registry's exists because a forgotten field is one a LATER VERB CANNOT
+// ASK ABOUT. Retirement has to know which source an outbox belongs to, and the
+// registry recorded only the target: the question was asked about the target
+// instead, and retiring one generation destroyed the change capture a second
+// live generation over the same source was still fed by (stokaro/ptah#2649).
+//
+// Every field is expected to have a column. There is no exemption list here on
+// purpose -- unlike a run, which carries in-flight state a restart recomputes,
+// a generation is a durable record and everything on it is part of that record.
+// A field that genuinely should not be stored gets this test's counterpart, and
+// a written reason, at the point somebody has one.
+func TestGenerationFields_CoverEveryGenerationField(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(unrecordedGenerationFields(), qt.HasLen, 0, qt.Commentf(
+		"each of these embedstore.Generation fields must have a column in GenerationFields, "+
+			"or a later verb cannot ask the registry about it"))
+}
+
 // TestRunFields_TheOmissionsAreDeliberate keeps the other list honest.
 func TestRunFields_TheOmissionsAreDeliberate(t *testing.T) {
 	c := qt.New(t)
@@ -155,6 +178,22 @@ func unpersistedFields() []string {
 			continue
 		}
 		if columns[columnFor(field)] {
+			continue
+		}
+		missing = append(missing, field)
+	}
+	return missing
+}
+
+// unrecordedGenerationFields lists the Generation fields with no column.
+func unrecordedGenerationFields() []string {
+	columns := make(map[string]bool, len(GenerationFields()))
+	for _, field := range GenerationFields() {
+		columns[field.Name] = true
+	}
+	var missing []string
+	for _, field := range leafFieldPaths(reflect.TypeFor[Generation](), "") {
+		if columns[snakeCase(field)] {
 			continue
 		}
 		missing = append(missing, field)

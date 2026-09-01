@@ -97,6 +97,7 @@ func runPrepare(
 		Dimension:             spec.Model.ReportedDimension,
 		TargetSchema:          spec.Target.Schema,
 		TargetTable:           spec.Target.Table, TargetColumn: spec.Target.Column,
+		SourceSchema: spec.Source.Schema, SourceTable: spec.Source.Table,
 		CreatedAt: time.Now().UTC(),
 	}); err != nil {
 		return err

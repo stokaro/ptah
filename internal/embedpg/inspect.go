@@ -196,17 +196,36 @@ func RollbackState(
 // against a substitute. There is no substitute: the answer this feeds is
 // whether a way back is safe to take, and a wrong yes destroys a corpus.
 func recordedSpec(registered embedstore.Generation) (embedgen.Spec, error) {
-	if strings.TrimSpace(registered.SpecDocument) == "" {
-		return embedgen.Spec{}, fmt.Errorf(
-			"generation %s records no specification, so nothing can measure whether it is "+
-				"still fresh enough to roll back to", registered.Identity)
-	}
-	loaded, err := embedspec.ParsePublished(
-		[]byte(registered.SpecDocument), "the recorded specification", registered.SpecDigest)
+	loaded, err := RecordedSpec(registered,
+		"still fresh enough to roll back to")
 	if err != nil {
 		return embedgen.Spec{}, err
 	}
 	return loaded.Spec, nil
+}
+
+// RecordedSpec parses the document a generation was registered with.
+//
+// It returns the whole [embedspec.Loaded] rather than the specification alone
+// because the consistency mode is on it, and the mode a generation was built
+// with is a property of THAT generation. Read off the invocation's file
+// instead, retiring an outbox-built generation while passing an immutable
+// specification skipped the outbox removal entirely and said nothing
+// (stokaro/ptah#2649).
+//
+// The what argument completes the sentence "so nothing can measure whether it
+// is ...", so a refusal names the question its caller was answering rather than
+// a generic absence.
+func RecordedSpec(
+	registered embedstore.Generation, what string,
+) (embedspec.Loaded, error) {
+	if strings.TrimSpace(registered.SpecDocument) == "" {
+		return embedspec.Loaded{}, fmt.Errorf(
+			"generation %s records no specification, so nothing can measure whether it is %s",
+			registered.Identity, what)
+	}
+	return embedspec.ParsePublished(
+		[]byte(registered.SpecDocument), "the recorded specification", registered.SpecDigest)
 }
 
 // generationFreshness counts what is wrong with a generation right now.
