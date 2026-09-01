@@ -133,9 +133,16 @@ func (e *Engine) resolveChanges(
 			fmt.Errorf("reread %d changed rows: %w", len(keys), err)}
 	}
 
+	// The class comes out of embedRereadRows rather than being decided here.
+	// A reread fails for two different reasons and only one of them is the
+	// provider: canonicalizing a row the specification refuses never reaches an
+	// endpoint, and recording it as a provider outage sends an operator to look
+	// at a service that is working. The backfill already separates the two, and
+	// a catch-up that folded them together made the same run report a different
+	// cause depending on which loop was running (stokaro/ptah#2699 review).
 	writes, outcome, err := e.embedRereadRows(ctx, rows, versions)
 	if err != nil {
-		return nil, embedrun.BatchOutcome{}, classified{"provider", err}
+		return nil, embedrun.BatchOutcome{}, err
 	}
 	tombstones := tombstonesFor(collapsed, rows, e.Spec.Identity().Digest)
 	writes = append(writes, tombstones...)
@@ -156,12 +163,13 @@ func (e *Engine) embedRereadRows(
 	}
 	prepared, err := e.prepare(Page{Rows: rows, Versions: versions})
 	if err != nil {
-		return nil, embedrun.BatchOutcome{}, fmt.Errorf("canonicalize a changed row: %w", err)
+		return nil, embedrun.BatchOutcome{}, classified{"canonicalization",
+			fmt.Errorf("canonicalize a changed row: %w", err)}
 	}
 	batch := embedrun.Batch{Rows: prepared}
 	writes, outcome, err := e.embed(ctx, batch)
 	if err != nil {
-		return nil, embedrun.BatchOutcome{}, err
+		return nil, embedrun.BatchOutcome{}, classified{"provider", err}
 	}
 	// The cursor belongs to the backfill's keyset and means nothing here:
 	// catch-up resumes from a transaction identity, not from a key.

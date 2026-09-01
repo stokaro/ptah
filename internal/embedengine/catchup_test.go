@@ -610,3 +610,47 @@ func failedEvents(c *qt.C, h *harness, runID string) int {
 	}
 	return count
 }
+
+// TestCatchUp_ARowTheSpecificationRefusesIsNotAProviderOutage is the review
+// finding on stokaro/ptah#2699.
+//
+// A reread fails for two different reasons and only one of them is the
+// provider. Canonicalizing a row the specification refuses -- a NULL under
+// `null_policy: refuse` -- never reaches an endpoint, and the first version of
+// the failure recording called it a provider outage because it classified at
+// the caller rather than where the failure happened. The backfill has always
+// separated the two, so the same row produced a different cause depending on
+// which loop was running.
+//
+// The provider's call log is the control, and it is the assertion that makes
+// the class more than a renamed string: a run recorded as `canonicalization`
+// that had in fact asked the provider would be a class nobody could act on.
+func TestCatchUp_ARowTheSpecificationRefusesIsNotAProviderOutage(t *testing.T) {
+	c := qt.New(t)
+	h := newHarness(c, defaultBounds())
+	h.engine.Spec.Preprocessing.NullPolicy = embedgen.NullRefuseRow
+	// The policy is part of the generation identity, so the run has to be the
+	// one this specification produces. Without this the catch-up refuses for a
+	// different reason entirely and the test asserts nothing about classes.
+	stored, err := h.store.Run(context.Background(), "run-1")
+	c.Assert(err, qt.IsNil)
+	stored.GenerationIdentity = h.engine.Spec.Identity().Digest
+	c.Assert(h.store.SaveRun(context.Background(), stored), qt.IsNil)
+
+	source := livingRows("1")
+	source.rows[embedcatchup.KeyIdentity([]string{"1"})] = embedgen.Row{
+		Key: []string{"1"}, Fields: []*string{nil, new("body 1")},
+	}
+	changes := &fakeChanges{
+		pages:    [][]embedcatchup.Event{{changed(101, 1, "1", embedcatchup.OperationUpdate)}},
+		horizons: []uint64{102},
+	}
+
+	run, _, err := caughtUp(c, h, changes, source)
+
+	c.Assert(err, qt.ErrorMatches, `canonicalization: canonicalize a changed row: .*`)
+	c.Assert(run.FailureClass, qt.Equals, "canonicalization")
+	c.Assert(run.Status, qt.Equals, embedrun.StatusFailed)
+	c.Assert(failedEvents(c, h, "run-1"), qt.Equals, 1)
+	c.Assert(h.provider.calls, qt.HasLen, 0)
+}
