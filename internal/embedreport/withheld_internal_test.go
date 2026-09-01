@@ -98,7 +98,7 @@ func TestStatusOf_EveryReportedFieldIsActuallyFilled(t *testing.T) {
 		PolicyDigest: "policy-1",
 		Phase:        embedrun.PhaseCaughtUp, Status: embedrun.StatusRunning,
 		LeaseOwner: "worker-1", LeaseExpires: time.Unix(1700000000, 0).UTC(), FencingToken: 7,
-		SnapshotWatermark: "100", CatchUpWatermark: "200",
+		SnapshotWatermark: "100", CatchUpWatermark: "200", SnapshotDone: true,
 		Cursor: []string{"41"},
 		Progress: embedrun.Progress{
 			RowsScanned: 1, RowsEmbedded: 2, RowsSkipped: 3, RowsDeleted: 4,

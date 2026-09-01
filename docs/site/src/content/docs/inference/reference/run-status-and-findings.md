@@ -39,6 +39,7 @@ run 2026-08-articles: caught_up, running
 | `the provider reported no token usage` | Stands in place of the line above when no answer carried a usage object. A provider that charged zero and one that said nothing both leave the counts at zero, and this is which |
 | `snapshot boundary` | The point the backfill embeds the source as of |
 | `catch-up watermark` | How far catch-up has read past it |
+| `snapshot_done` | Whether the backfill's walk ran off the end of the source. In the JSON only; the text form says it through the consistency finding |
 | `lease` | Who holds the run, and which token may still commit |
 
 A catch-up watermark is usually a transaction identity, as above: every
@@ -67,9 +68,20 @@ generation queries read now is what the pointer says.
 
 `backfilling` and `backfilled` are two facts, not one worded twice. A run is at
 `backfilling` while it walks the snapshot and at `backfilled` once the walk
-reached the end, and verification needs the second: without it, "the backfill has
-not reached the end of its snapshot" was decided by a phase inequality that was
-true both before the backfill and after it.
+reached the end.
+
+Neither of them decides whether the snapshot is complete, and the phase cannot:
+a high-water mark records the furthest point reached, so a run whose backfill
+finished and was then given more to do — a resumed pass that failed partway —
+is still at `backfilled` with work left. `status` reports the answer separately,
+as `snapshot_done`, and the backfill is what writes it: the flag follows the
+last page its walk saw, and only the page that ran off the end of the source
+sets it.
+
+Rows written after a walk has finished do not reopen it. Under `outbox` those
+belong to catch-up, which is what the barrier finding is about; under
+`immutable` they are a source that changed when the specification said it would
+not, and coverage reports them as rows with no vector.
 
 ### `skipped` is not `missing`
 
@@ -135,7 +147,7 @@ and the cutover names which findings, by their exact summary:
 
 ```bash
 ptah inference cutover --spec spec.yaml --db-url "$DB" --run-id r1 \
-  --accept-finding "3 target rows are missing a vector"
+  --accept-finding "3 in-scope source rows have no vector in this generation"
 ```
 
 The specification is where the permission lives because it is reviewed; the

@@ -2584,8 +2584,8 @@
       "disposition": "keep",
       "outboundLinks": [],
       "inboundLinks": [],
-      "visibleWords": 1337,
-      "sourceBytes": 10222
+      "visibleWords": 1467,
+      "sourceBytes": 10977
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/specification.md",
