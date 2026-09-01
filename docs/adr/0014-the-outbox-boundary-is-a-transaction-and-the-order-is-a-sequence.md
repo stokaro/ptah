@@ -102,6 +102,27 @@ same reason — the vector it would recompute is the vector already there. An
 update to the version alone **does** produce an event even with the input
 untouched, because freshness compares versions.
 
+It also compares the columns `source.filter` reads, which decide whether the row
+is one of the generation's at all. A column that decides SCOPE decides as much
+as one that decides content: a row leaving the filter keeps a vector the
+specification excludes, and a row entering it has none — and neither produces an
+event unless the column that moved is watched (stokaro/ptah#2659).
+
+Those columns are asked of the server rather than parsed here. A filter is
+arbitrary SQL, and a second, worse SQL parser would fail silently in exactly the
+direction that matters: a column it did not find is a column the trigger does
+not watch. So the filter is offered to PostgreSQL as a `CHECK` constraint on a
+throwaway copy of the source table inside a transaction that is always rolled
+back, and its columns are read out of `pg_constraint.conkey`. A filter the
+server will not accept as a `CHECK` — a subquery, measured — is refused at
+install rather than installed with a trigger that cannot see it.
+
+One shape is watched as well as it can be and still is not enough: a predicate
+over `now()` is accepted, its column is found, and its scope still moves with
+the clock rather than with a write. No column trigger can observe that, and a
+row that leaves scope because time passed is found by the next verification
+rather than by an event.
+
 This costs a second trigger: a `WHEN` clause referring to `OLD` cannot sit on a
 trigger that also fires for `INSERT`, and inserts and deletes are always worth
 recording. The installation check counts both, because half an installation

@@ -85,7 +85,14 @@ func (o *Outbox) TriggerNames() []string {
 // and the order matters -- installing after recording a boundary leaves changes
 // in the gap between them captured by nothing.
 func (o *Outbox) Install(ctx context.Context) error {
-	for _, statement := range o.installStatements() {
+	// The filter's columns are asked of the server before anything is created,
+	// because the update trigger has to watch them and this package cannot
+	// parse SQL. See [Outbox.filterColumns].
+	filtered, err := o.filterColumns(ctx)
+	if err != nil {
+		return err
+	}
+	for _, statement := range o.installStatements(filtered) {
 		if _, err := o.db.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("install outbox for %s: %w", o.spec.Source.Table, err)
 		}
@@ -93,11 +100,108 @@ func (o *Outbox) Install(ctx context.Context) error {
 	return nil
 }
 
+// filterColumns asks PostgreSQL which columns `source.filter` reads.
+//
+// The update trigger fires only when a watched column changed, and the watched
+// set was the key, the input fields and the version. A row that leaves the
+// filter's scope through any other column -- `published` flipping to false --
+// therefore produced no event at all, so catch-up never learned, and the row
+// kept a vector for a generation whose specification excludes it
+// (stokaro/ptah#2659).
+//
+// The columns are read from the server rather than parsed here. A filter is
+// arbitrary SQL: `published`, `NOT archived`, `status = ANY('{a,b}')`,
+// `lower(kind) = 'x'`. Parsing it would be a second, worse SQL parser, and one
+// whose mistakes are silent -- a column it failed to find is a column the
+// trigger does not watch, which is the defect again.
+//
+// So the filter is offered to PostgreSQL as a CHECK constraint on a throwaway
+// copy of the source table, and its columns are read back out of
+// `pg_constraint.conkey`. The whole probe runs inside a transaction that is
+// always rolled back, so nothing it creates outlives the call.
+//
+// A filter PostgreSQL will not accept as a CHECK is refused rather than
+// silently unwatched. Measured on 17: it rejects a subquery -- `cannot use
+// subquery in check constraint` -- which is the honest answer, since a
+// row-level trigger could not evaluate one either.
+//
+// What it does NOT reject is a time-based predicate. `updated_at > now()::text`
+// is accepted and reports `updated_at`, so the trigger watches the right
+// column and the scope still moves with the clock, with no write to observe.
+// No column trigger can catch that, and this probe does not pretend to: such a
+// filter is watched as well as it can be, and a row that leaves scope because
+// time passed is found by the next full verification rather than by an event.
+func (o *Outbox) filterColumns(ctx context.Context) ([]string, error) {
+	filter := strings.TrimSpace(o.spec.Source.Filter)
+	if filter == "" {
+		return nil, nil
+	}
+
+	transaction, err := o.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("read the filter's columns for %s: %w", o.spec.Source.Table, err)
+	}
+	// Always. The probe's whole purpose is to ask a question, and a committed
+	// answer would leave a temporary table and a constraint behind.
+	defer func() { _ = transaction.Rollback() }()
+
+	const probe = "ptah_filter_probe"
+	const constraint = "ptah_filter_probe_check"
+	// #nosec G201 -- the relation name comes from the specification and goes
+	// through qualify/quoteIdentifier; the filter is the operator's own SQL,
+	// which is what the field is for and what this probe exists to inspect.
+	create := fmt.Sprintf("CREATE TEMP TABLE %s (LIKE %s) ON COMMIT DROP",
+		quoteIdentifier(probe), o.qualifiedSourceTable())
+	if _, err := transaction.ExecContext(ctx, create); err != nil {
+		return nil, fmt.Errorf("read the filter's columns for %s: %w", o.spec.Source.Table, err)
+	}
+	// #nosec G201 -- as above.
+	add := fmt.Sprintf("ALTER TABLE %s ADD CONSTRAINT %s CHECK (%s)",
+		quoteIdentifier(probe), quoteIdentifier(constraint), filter)
+	if _, err := transaction.ExecContext(ctx, add); err != nil {
+		return nil, fmt.Errorf(
+			"source.filter %q cannot be watched for changes: PostgreSQL refused it as a CHECK "+
+				"constraint (%w). A filter the outbox cannot watch is one a row can leave "+
+				"without producing an event, which would leave the vector behind",
+			filter, err)
+	}
+
+	rows, err := transaction.QueryContext(ctx, filterColumnsSQL, constraint)
+	if err != nil {
+		return nil, fmt.Errorf("read the filter's columns for %s: %w", o.spec.Source.Table, err)
+	}
+	defer rows.Close()
+
+	columns := make([]string, 0)
+	for rows.Next() {
+		var column string
+		if err := rows.Scan(&column); err != nil {
+			return nil, fmt.Errorf("read the filter's columns for %s: %w", o.spec.Source.Table, err)
+		}
+		columns = append(columns, column)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read the filter's columns for %s: %w", o.spec.Source.Table, err)
+	}
+	return columns, nil
+}
+
+// filterColumnsSQL names the columns one constraint reads, in column order.
+//
+// `conkey` is the attribute numbers the constraint depends on, which is exactly
+// the question: which columns, if changed, could change this predicate's answer.
+const filterColumnsSQL = `SELECT a.attname
+	FROM pg_constraint c
+	JOIN unnest(c.conkey) AS k(attnum) ON true
+	JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+	WHERE c.conname = $1
+	ORDER BY a.attnum`
+
 // installStatements renders what Install runs.
-func (o *Outbox) installStatements() []string {
+func (o *Outbox) installStatements(filtered []string) []string {
 	statements := []string{o.createTable(), o.createFunction()}
 	statements = append(statements, o.dropTriggers()...)
-	return append(statements, o.createWriteTrigger(), o.createUpdateTrigger())
+	return append(statements, o.createWriteTrigger(), o.createUpdateTrigger(filtered))
 }
 
 // createTable renders the outbox table.
@@ -209,22 +313,39 @@ func (o *Outbox) createWriteTrigger() string {
 // fields, and the version. An application update to an unrelated column
 // produces no event for the same reason -- the vector it would recompute is the
 // vector already there.
-func (o *Outbox) createUpdateTrigger() string {
+func (o *Outbox) createUpdateTrigger(filtered []string) string {
 	return fmt.Sprintf(
 		"CREATE TRIGGER %s AFTER UPDATE ON %s FOR EACH ROW WHEN ((%s) IS DISTINCT FROM (%s)) "+
 			"EXECUTE FUNCTION %s()",
 		quoteIdentifier(o.TriggerNames()[1]), o.qualifiedSourceTable(),
-		o.watchedColumns("OLD"), o.watchedColumns("NEW"),
+		o.watchedColumns("OLD", filtered), o.watchedColumns("NEW", filtered),
 		quoteIdentifier(o.FunctionName()))
 }
 
-// watchedColumns renders the columns whose change decides a vector.
-func (o *Outbox) watchedColumns(record string) string {
+// watchedColumns renders the columns whose change decides a vector, or whether
+// the row is one at all.
+//
+// The second half is the filter's, and it is why this takes a parameter. A
+// column that decides SCOPE decides as much as one that decides content: a row
+// leaving the filter keeps a vector the specification excludes, and a row
+// entering it has none. Neither produces an event unless the trigger watches
+// the column that moved (stokaro/ptah#2659).
+//
+// Duplicates are dropped rather than tolerated. A filter over an input field --
+// `body IS NOT NULL` is the ordinary case -- would otherwise name it twice, and
+// the comparison is a row constructor whose arity has to match on both sides.
+func (o *Outbox) watchedColumns(record string, filtered []string) string {
 	fields := append([]string(nil), o.spec.Source.KeyFields...)
 	fields = append(fields, o.spec.Source.InputFields...)
 	fields = append(fields, o.versionColumns()...)
+	fields = append(fields, filtered...)
 	rendered := make([]string, 0, len(fields))
+	seen := make(map[string]bool, len(fields))
 	for _, field := range fields {
+		if seen[field] {
+			continue
+		}
+		seen[field] = true
 		rendered = append(rendered, fmt.Sprintf("%s.%s", record, quoteIdentifier(field)))
 	}
 	return strings.Join(rendered, ", ")
