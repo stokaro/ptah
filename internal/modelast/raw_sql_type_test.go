@@ -1,4 +1,4 @@
-package fromschema_test
+package modelast_test
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 )
 
 // The AST has to carry the sql() marker, not just the reduced type.
@@ -75,11 +75,11 @@ func TestFromFieldCarriesTheSQLRawExpressionTypeMarker(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			column := fromschema.FromField(test.field, nil, test.platform)
+			column := modelast.FromField(test.field, nil, test.platform)
 			c.Assert(column.Type, qt.Equals, test.wantType)
 			c.Assert(column.TypeRawSQL, qt.Equals, test.wantRawSQL)
 
-			withoutFK := fromschema.FromFieldWithoutForeignKeys(test.field, nil, test.platform)
+			withoutFK := modelast.FromFieldWithoutForeignKeys(test.field, nil, test.platform)
 			c.Assert(withoutFK.Type, qt.Equals, test.wantType)
 			c.Assert(withoutFK.TypeRawSQL, qt.Equals, test.wantRawSQL)
 		})

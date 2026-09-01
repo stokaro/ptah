@@ -14,8 +14,8 @@ import (
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/internal/parser"
 	"go.5x5.cz/ptah/migration/migrationfile"
 )
@@ -99,7 +99,7 @@ func ParseSQL(sql string, opts ParseSQLOptions) (*ast.StatementList, error) {
 //
 // Canonical platform names are declared in core/platform.
 func SchemaToAST(database schemamodel.Database, targetPlatform string) *ast.StatementList {
-	return fromschema.FromDatabase(database, targetPlatform)
+	return modelast.CollectDatabase(database, targetPlatform)
 }
 
 // DBSchemaToGoSchema converts an introspected database schema into Ptah's Go

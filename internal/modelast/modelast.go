@@ -1,58 +1,16 @@
-// Package fromschema provides converters for transforming goschema types into AST nodes.
+// Package modelast lowers canonical desired-schema model fragments into SQL
+// AST nodes.
 //
-// This package serves as a bridge between the high-level schema definitions (schemamodel.Field,
-// schemamodel.Table, etc.) and the low-level AST nodes that represent SQL DDL statements.
-// The converters handle the translation of schema metadata into concrete SQL structures that
-// can be rendered by dialect-specific visitors.
-//
-// # Core Functionality
-//
-// The package provides converter functions for all major schema elements:
-//   - FromField: Converts field definitions to column AST nodes
-//   - FromTable: Converts table definitions to CREATE TABLE AST nodes
-//   - FromIndex: Converts index definitions to index AST nodes
-//   - FromEnum: Converts enum definitions to enum AST nodes
-//   - FromDatabase: Converts complete database schema to statement list
-//
-// # Example Usage
-//
-// Converting a simple field definition:
-//
-//	field := schemamodel.Field{
-//		Name:     "email",
-//		Type:     "VARCHAR(255)",
-//		Nullable: false,
-//		Unique:   true,
-//		Comment:  "User email address",
-//	}
-//	column := fromschema.FromField(field, nil)
-//
-// Converting a complete database schema:
-//
-//	database := schemamodel.Database{
-//		Tables: []schemamodel.Table{...},
-//		Fields: []schemamodel.Field{...},
-//		Indexes: []schemamodel.Index{...},
-//		Enums: []schemamodel.Enum{...},
-//	}
-//	statements := fromschema.FromDatabase(database, "postgres")
-//
-// Platform-specific usage:
-//
-//	// Convert for MySQL with platform-specific overrides
-//	mysqlStatements := fromschema.FromDatabase(database, "mysql")
-//
-//	// Convert for PostgreSQL with platform-specific overrides
-//	postgresStatements := fromschema.FromDatabase(database, "postgres")
-//
-//	// Convert without platform-specific overrides (uses defaults)
-//	defaultStatements := fromschema.FromDatabase(database, "")
-package fromschema
+// Model normalization and derived model facts belong to schemaprep and
+// schemamodel. This package owns only the representation boundary: node
+// construction, dialect-specific lowering, and executable statement order.
+// [WalkDatabase] streams that order to the shipping renderer. [CollectDatabase]
+// materializes it only for the public compatibility API that still returns an
+// AST statement list.
+package modelast
 
 import (
-	"crypto/sha256"
 	"fmt"
-	"log/slog"
 	"maps"
 	"slices"
 	"strconv"
@@ -60,12 +18,12 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/deporder"
-	"go.5x5.cz/ptah/internal/planner/tablelookup"
+	"go.5x5.cz/ptah/internal/schemaprep"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/internal/systemschema"
+	"go.5x5.cz/ptah/internal/tablelookup"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -80,19 +38,6 @@ func escapeSQLStringLiteral(value string) string {
 
 func sqlServerBracketIdentifier(value string) string {
 	return "[" + strings.ReplaceAll(value, "]", "]]") + "]"
-}
-
-// GenerateForeignKeyName generates a consistent foreign key constraint name
-// following the convention: fk_{table_name}_{field_name}.
-//
-// This is the single source of truth for the conventional FK name used when a
-// field-level foreign= annotation omits an explicit foreign_key_name. The
-// schemadiff comparator (when synthesizing a field-level FK for drift
-// comparison) and the dialect planners (when emitting the CREATE/ALTER) both
-// derive the name from here so the synthesized name always lines up with the
-// name actually written to the database.
-func GenerateForeignKeyName(tableName, fieldName string) string {
-	return "fk_" + strings.ToLower(tableName) + "_" + strings.ToLower(fieldName)
 }
 
 func defaultGeneratedKind(field schemamodel.Field, targetPlatform string) string {
@@ -113,28 +58,13 @@ func defaultGeneratedKind(field schemamodel.Field, targetPlatform string) string
 	}
 }
 
-// canonicalPlatform maps a dialect spelling onto the single name every platform
-// predicate in this file compares against, so that a documented alias converts
-// to exactly the same AST as its canonical name.
-//
-// A spelling platform.NormalizeDialect does not recognize is returned unchanged
-// rather than as the empty string NormalizeDialect yields for it. An unknown
-// name has no canonical form, and rewriting it to "" would switch off the
-// platform-override lookup for a schema that keys overrides by that exact name.
-func canonicalPlatform(targetPlatform string) string {
-	if canonical := platform.NormalizeDialect(targetPlatform); canonical != "" {
-		return canonical
-	}
-	return targetPlatform
-}
-
 // isPostgreSQLFamilyPlatform reports whether the target renders PostgreSQL
 // object DDL: PostgreSQL itself and the wire-compatible engines.
 //
 // It survives only where the answer changes how a COLUMN is modeled -- the
 // default persistence of a generated column, which PostgreSQL spells STORED and
 // SQL Server spells PERSISTED. It no longer decides whether any declared object
-// is converted at all: FromDatabase hands every object to the renderer and the
+// is converted at all: CollectDatabase hands every object to the renderer and the
 // capability set answers there, so that `schema render` and `schema apply`
 // cannot disagree about the same file (stokaro/ptah#929).
 func isPostgreSQLFamilyPlatform(targetPlatform string) bool {
@@ -162,214 +92,6 @@ func typeRawSQLSurvives(field schemamodel.Field, declaredType string) bool {
 	return field.TypeRawSQL && field.Type == declaredType
 }
 
-// platformOverrideGroup resolves the platform.<name>.<attribute> override group
-// that applies to targetPlatform.
-//
-// The lookup is by engine, not by spelling. The canonical name is tried first,
-// then — deterministically, lowest key first — any other spelling in the map
-// that names the same engine. Without that second step `--dialect postgres` and
-// `--dialect pgx` disagree whenever the schema keyed its overrides by the
-// spelling the caller did not happen to type.
-func platformOverrideGroup(overrides map[string]map[string]string, targetPlatform string) (map[string]string, bool) {
-	if len(overrides) == 0 {
-		return nil, false
-	}
-	canonical := canonicalPlatform(targetPlatform)
-	if group, ok := overrides[canonical]; ok {
-		return group, true
-	}
-	candidates := make([]string, 0, len(overrides))
-	for key := range overrides {
-		if canonicalPlatform(key) == canonical {
-			candidates = append(candidates, key)
-		}
-	}
-	if len(candidates) == 0 {
-		return nil, false
-	}
-	slices.Sort(candidates)
-	return overrides[candidates[0]], true
-}
-
-func applyPlatformOverrides(field schemamodel.Field, targetPlatform string) schemamodel.Field {
-	fieldType := platformFieldType(field, targetPlatform)
-	checkConstraint := field.Check
-	checkName := field.CheckName
-	comment := field.Comment
-	charset := field.Charset
-	collate := field.Collate
-	defaultValue := field.Default
-	defaultSet := field.DefaultSet
-	defaultExpr := field.DefaultExpr
-
-	// Apply platform-specific overrides if available
-	if targetPlatform == "" || field.Overrides == nil {
-		return fieldWithPlatformValues(
-			field,
-			fieldType,
-			checkConstraint,
-			checkName,
-			comment,
-			charset,
-			collate,
-			defaultValue,
-			defaultSet,
-			defaultExpr,
-		)
-	}
-
-	platformOverrides, exists := platformOverrideGroup(field.Overrides, targetPlatform)
-	if !exists {
-		return fieldWithPlatformValues(
-			field,
-			fieldType,
-			checkConstraint,
-			checkName,
-			comment,
-			charset,
-			collate,
-			defaultValue,
-			defaultSet,
-			defaultExpr,
-		)
-	}
-
-	// Override type if specified
-	if typeOverride, ok := platformOverrides["type"]; ok {
-		fieldType = typeOverride
-	}
-	// Override check constraint if specified
-	if checkOverride, ok := platformOverrides["check"]; ok {
-		checkConstraint = checkOverride
-	}
-	// Override check constraint name if specified
-	if checkNameOverride, ok := platformOverrides["check_name"]; ok {
-		checkName = checkNameOverride
-	}
-	// Override comment if specified
-	if commentOverride, ok := platformOverrides["comment"]; ok {
-		comment = commentOverride
-	}
-	// Override column charset/collation if specified.
-	if charsetOverride, ok := platformOverrides["charset"]; ok {
-		charset = charsetOverride
-	}
-	if collateOverride, ok := platformOverrides["collate"]; ok {
-		collate = collateOverride
-	}
-	// Override default value if specified
-	if defaultOverride, ok := platformOverrides["default"]; ok {
-		defaultValue = defaultOverride
-		defaultSet = true
-		defaultExpr = "" // Clear expression if literal default is overridden
-	}
-	// Override default expression if specified
-	if defaultExprOverride, ok := platformOverrides["default_expr"]; ok {
-		defaultExpr = defaultExprOverride
-		defaultValue = "" // Clear literal if expression default is overridden
-		defaultSet = false
-	}
-
-	return fieldWithPlatformValues(
-		field,
-		fieldType,
-		checkConstraint,
-		checkName,
-		comment,
-		charset,
-		collate,
-		defaultValue,
-		defaultSet,
-		defaultExpr,
-	)
-}
-
-// EffectiveFieldForPlatform returns the field definition after applying the
-// same platform overrides used by AST conversion.
-func EffectiveFieldForPlatform(field schemamodel.Field, targetPlatform string) schemamodel.Field {
-	return applyPlatformOverrides(field, targetPlatform)
-}
-
-// platformFieldType maps a PORTABLE type spelling onto the one this target
-// means by it, and leaves alone a type that is already the target's own.
-//
-// The second half is the part that had to be added. A type the author wrote
-// with Atlas HCL's sql() escape hatch, or one a catalog reported for this very
-// target, is not a portable spelling waiting to be interpreted -- it is the
-// answer. Mapping it produced a different column and, because the mapping
-// changed the string, [typeRawSQLSurvives] then correctly dropped the marker
-// that would have told the renderer to leave it alone, so nothing downstream
-// could recover the fact.
-//
-// Measured on SQL Server 2025: a `TEXT` column read from the target replayed as
-// `nvarchar(-1)` while `VARCHAR(50)` from the same table replayed as
-// `varchar/50`. The difference was only that `VARCHAR(50)` carries a length and
-// so misses the bare-name switch below (stokaro/ptah#2147).
-func platformFieldType(field schemamodel.Field, targetPlatform string) string {
-	fieldType := field.Type
-	if field.TypeRawSQL || field.TypeIsDeclaredText {
-		return fieldType
-	}
-	switch platform.NormalizeDialect(targetPlatform) {
-	case platform.MySQL, platform.MariaDB:
-		return mysqlFamilyFieldType(fieldType)
-	case platform.SQLServer:
-		return sqlServerFieldType(fieldType)
-	default:
-		return fieldType
-	}
-}
-
-func mysqlFamilyFieldType(fieldType string) string {
-	switch fieldType {
-	case "SERIAL":
-		return "INT"
-	case "BIGSERIAL":
-		return "BIGINT"
-	default:
-		return fieldType
-	}
-}
-
-func sqlServerFieldType(fieldType string) string {
-	switch fieldType {
-	case "SERIAL":
-		return "INT"
-	case "BIGSERIAL":
-		return "BIGINT"
-	case "TEXT", "VARCHAR":
-		return "NVARCHAR(MAX)"
-	default:
-		return fieldType
-	}
-}
-
-func fieldWithPlatformValues(
-	field schemamodel.Field,
-	fieldType,
-	checkConstraint,
-	checkName,
-	comment,
-	charset,
-	collate,
-	defaultValue string,
-	defaultSet bool,
-	defaultExpr string,
-) schemamodel.Field {
-	newField := field
-	newField.Type = fieldType
-	newField.Check = checkConstraint
-	newField.CheckName = checkName
-	newField.Comment = comment
-	newField.Charset = charset
-	newField.Collate = collate
-	newField.Default = defaultValue
-	newField.DefaultSet = defaultSet
-	newField.DefaultExpr = defaultExpr
-
-	return newField
-}
-
 // declaredEnum returns the enum the schema declares under the name fieldType,
 // or nil when fieldType names something else.
 //
@@ -389,28 +111,6 @@ func declaredEnum(fieldType string, enums []schemamodel.Enum) *schemamodel.Enum 
 	return nil
 }
 
-// EnumsFor returns the declared enums the given fields name as their type.
-//
-// It exists so that a caller assembling what one table renders from can carry
-// the enums that table actually needs, rather than the whole declaration's.
-// The matching is [declaredEnum]'s -- the same rule the renderer resolves a
-// column's type with -- because a second rule here would decide that a column
-// needs an enum this list does not carry, and the column would render as its Go
-// spelling with nothing to say so.
-func EnumsFor(fields []schemamodel.Field, enums []schemamodel.Enum) []schemamodel.Enum {
-	var needed []schemamodel.Enum
-	seen := make(map[string]bool, len(fields))
-	for _, field := range fields {
-		enum := declaredEnum(field.Type, enums)
-		if enum == nil || seen[enum.Name] {
-			continue
-		}
-		seen[enum.Name] = true
-		needed = append(needed, *enum)
-	}
-	return needed
-}
-
 func handleEnumTypes(field schemamodel.Field, enums []schemamodel.Enum, targetPlatform string) schemamodel.Field {
 	enum := declaredEnum(field.Type, enums)
 	if enum == nil {
@@ -426,7 +126,7 @@ func handleEnumTypes(field schemamodel.Field, enums []schemamodel.Enum, targetPl
 	// stops a spelling from suppressing the CREATE TYPE and the inline rewrite
 	// at the same time, which is how `--dialect sqlite3` used to drop the enum
 	// entirely and render the column as the bare type name `enum_status`.
-	if emitsStandaloneEnumDefinitions(targetPlatform) {
+	if schemaprep.EmitsStandaloneEnumDefinitions(targetPlatform) {
 		// A standalone enum type is created in a schema, and a column declared
 		// against it has to name the same one. The declared type is matched by
 		// bare name -- that is what makes an annotation `type="mood"` find the
@@ -486,15 +186,6 @@ func applyInlineEnumModel(field schemamodel.Field, enum schemamodel.Enum, target
 		newField.Check = enumCheck
 	}
 	return newField
-}
-
-func emitsStandaloneEnumDefinitions(targetPlatform string) bool {
-	switch platform.NormalizeDialect(targetPlatform) {
-	case platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer, platform.Oracle:
-		return false
-	default:
-		return true
-	}
 }
 
 // FromField converts a schemamodel.Field to an ast.ColumnNode with comprehensive attribute mapping.
@@ -592,7 +283,7 @@ func typeIsDeclaredTextSurvives(field schemamodel.Field, declaredType string) bo
 
 func FromField(field schemamodel.Field, enums []schemamodel.Enum, targetPlatform string) *ast.ColumnNode {
 	declaredType := field.Type
-	field = applyPlatformOverrides(field, targetPlatform)
+	field = schemaprep.EffectiveFieldForPlatform(field, targetPlatform)
 	field = handleEnumTypes(field, enums, targetPlatform)
 
 	column := ast.NewColumn(field.Name, field.Type)
@@ -672,7 +363,7 @@ func FromField(field schemamodel.Field, enums []schemamodel.Enum, targetPlatform
 	}
 
 	// Set foreign key reference
-	if fkRef := ParseForeignKeyReference(field.Foreign); fkRef != nil {
+	if fkRef := foreignKeyReference(field.Foreign); fkRef != nil {
 		column.SetForeignKey(fkRef.Table, fkRef.Column, field.ForeignKeyName)
 		column.ForeignKey.OnDelete = field.OnDelete
 		column.ForeignKey.OnUpdate = field.OnUpdate
@@ -699,7 +390,7 @@ func FromField(field schemamodel.Field, enums []schemamodel.Enum, targetPlatform
 func FromFieldWithoutForeignKeys(field schemamodel.Field, enums []schemamodel.Enum, targetPlatform string) *ast.ColumnNode {
 	// Apply platform-specific overrides if available
 	declaredType := field.Type
-	field = applyPlatformOverrides(field, targetPlatform)
+	field = schemaprep.EffectiveFieldForPlatform(field, targetPlatform)
 	field = handleEnumTypes(field, enums, targetPlatform)
 
 	// Create column with basic properties
@@ -795,7 +486,7 @@ func applyTablePlatformOverrides(createTable *ast.CreateTableNode, table schemam
 	tableStrict := table.Strict
 	tableWithoutRowID := table.WithoutRowID
 
-	platformOverrides, exists := platformOverrideGroup(table.Overrides, targetPlatform)
+	platformOverrides, exists := schemaprep.PlatformOverrideGroup(table.Overrides, targetPlatform)
 	if !exists {
 		return table
 	}
@@ -943,7 +634,7 @@ func FromTable(table schemamodel.Table, fields []schemamodel.Field, enums []sche
 // table-level constraints the declaration owns.
 //
 // The difference is the generated names of the table's `checks` entries. Without
-// the list, [TableCheckConstraints] names them blind and can hand a synthesized
+// the list, [schemaprep.TableCheckConstraints] names them blind and can hand a synthesized
 // CHECK the name an explicit constraint already answers to: a table declaring
 // `checks = ["price > 0"]` beside a check named `products_check` over
 // `stock >= 0` produced two constraints under one name, and PostgreSQL refuses
@@ -1033,7 +724,7 @@ func fromTableWithFieldConverter(
 			if tableLevelPK && slices.Contains(newTable.PrimaryKey, field.Name) {
 				field.Primary = false
 			}
-			field = withDefaultForeignKeyName(newTable.Name, field, targetPlatform)
+			field = schemaprep.WithDefaultFieldForeignKeyName(newTable.Name, field, targetPlatform)
 			createTable.AddColumn(convertField(field, enums, targetPlatform))
 		}
 	}
@@ -1052,7 +743,7 @@ func fromTableWithFieldConverter(
 	// `CHECK (price > 0)` and `CONSTRAINT "products_check" CHECK (price > 0)`
 	// in one CREATE TABLE. The unnamed copy is the shape this change replaced,
 	// because a server-invented name is what stopped the schema converging.
-	for _, check := range TableCheckConstraints(newTable, nil) {
+	for _, check := range schemaprep.TableCheckConstraints(newTable, nil) {
 		createTable.AddConstraint(FromConstraint(check))
 	}
 
@@ -1079,18 +770,6 @@ func fromTableWithoutForeignKeys(
 	targetPlatform string,
 ) *ast.CreateTableNode {
 	return fromTableWithFieldConverter(table, fields, enums, targetPlatform, FromFieldWithoutForeignKeys)
-}
-
-func withDefaultForeignKeyName(tableName string, field schemamodel.Field, targetPlatform string) schemamodel.Field {
-	if field.Foreign == "" || field.ForeignKeyName != "" {
-		return field
-	}
-	field.ForeignKeyName = generatedForeignKeyName(
-		GenerateForeignKeyName(tableName, field.Name),
-		fieldForeignKeyIdentity(field),
-		targetPlatform,
-	)
-	return field
 }
 
 func toASTPartition(partition *schemamodel.PartitionSpec) *ast.PartitionSpec {
@@ -1128,138 +807,6 @@ func primaryKeyPartsHaveAttributes(parts []schemamodel.PrimaryKeyPart) bool {
 		}
 	}
 	return false
-}
-
-// TableCheckConstraints is the constraint list a table's `checks` attribute
-// declares, given the constraints the schema declares for the same table.
-//
-// It is deliberately the ONE answer to "what does `checks` mean", read both by
-// the conversion that renders these inline in CREATE TABLE and by the
-// comparison that has to recognize them in a live catalog. Two answers diverge
-// into an apply loop, and this one was measured: rendering the list without
-// teaching the comparison about it made the next plan emit
-// `ALTER TABLE "products" DROP CONSTRAINT IF EXISTS "products_check"` --
-// deleting the check the apply before it had created.
-//
-// Nothing rendered these at all before stokaro/ptah#2590. The attribute has
-// been documented and parsed since the first commit, and a table declaring
-// `checks="price > 0"` reached the server with no CHECK on it.
-//
-// # Naming
-//
-// Each entry is named, following PostgreSQL's own convention for a table CHECK
-// nobody named: `<table>_check`, then `<table>_check1`. The declaration names
-// none, and an unnamed CHECK reads back under a name the server invented, which
-// is the name no comparison can predict. The name here is derived from the
-// entry's position in the list, so it is the same on every dialect and the same
-// across runs. It is the move [go.5x5.cz/ptah/core/schemamodel.Field.Check]
-// already makes, where an unnamed column check is compared as
-// `<table>_<column>_check`.
-//
-// # Overlap with an explicit constraint
-//
-// An entry an explicit CHECK constraint already spells is left out: the two are
-// one constraint the author wrote twice, and the explicit one carries the name
-// they chose. Matching is exact after trimming, because deciding that two
-// differently-spelled expressions are the same needs a parser, and guessing
-// wrong deletes a constraint the author wrote.
-func TableCheckConstraints(table schemamodel.Table, declared []schemamodel.Constraint) []schemamodel.Constraint {
-	if len(table.Checks) == 0 {
-		return nil
-	}
-	spelled := declaredCheckExpressions(table, declared)
-	taken := declaredConstraintNames(table, declared)
-
-	constraints := make([]schemamodel.Constraint, 0, len(table.Checks))
-	ordinal := 0
-	for _, check := range table.Checks {
-		expression := strings.TrimSpace(check)
-		if expression == "" {
-			continue
-		}
-		if _, superseded := spelled[expression]; superseded {
-			continue
-		}
-		name := tableCheckConstraintName(table.Name, ordinal)
-		// An explicit constraint may already answer to the name this ordinal
-		// would produce, and supersession cannot settle it because that is keyed
-		// by EXPRESSION: `checks = ["price > 0"]` beside a check named
-		// `products_check` over `stock >= 0` is two different constraints under
-		// one name, and PostgreSQL refuses the table with
-		// `check constraint "products_check" already exists`.
-		for {
-			if _, used := taken[name]; !used {
-				break
-			}
-			ordinal++
-			name = tableCheckConstraintName(table.Name, ordinal)
-		}
-		taken[name] = struct{}{}
-		ordinal++
-		constraints = append(constraints, schemamodel.Constraint{
-			StructName:      table.StructName,
-			Name:            name,
-			Type:            "CHECK",
-			Table:           table.QualifiedName(),
-			CheckExpression: expression,
-		})
-	}
-	return constraints
-}
-
-// declaredConstraintNames is the set of names explicit constraints occupy on
-// this table.
-//
-// Every kind counts, not only CHECK: the names share one namespace per table on
-// every engine here, so a UNIQUE called `products_check` takes the name just as
-// effectively as a CHECK does.
-func declaredConstraintNames(table schemamodel.Table, declared []schemamodel.Constraint) map[string]struct{} {
-	taken := make(map[string]struct{}, len(declared))
-	for _, constraint := range declared {
-		if !constraintBelongsToTable(constraint, table) {
-			continue
-		}
-		if name := strings.TrimSpace(constraint.Name); name != "" {
-			taken[name] = struct{}{}
-		}
-	}
-	return taken
-}
-
-// declaredCheckExpressions is the set of CHECK expressions the schema spells
-// for this table as explicit constraints.
-//
-// It is the one recognizer both halves of the overlap rule call:
-// [TableCheckConstraints] never produces a superseded entry, and
-// [dropSupersededTableChecks] removes one already rendered. Two lists of
-// "expressions already spelled" would agree when they were written and stop
-// agreeing the moment one was extended.
-func declaredCheckExpressions(table schemamodel.Table, declared []schemamodel.Constraint) map[string]struct{} {
-	spelled := make(map[string]struct{}, len(declared))
-	for _, constraint := range declared {
-		if !strings.EqualFold(constraint.Type, "CHECK") {
-			continue
-		}
-		if !constraintBelongsToTable(constraint, table) {
-			continue
-		}
-		spelled[strings.TrimSpace(constraint.CheckExpression)] = struct{}{}
-	}
-	return spelled
-}
-
-// tableCheckConstraintName spells the name [TableCheckConstraints] gives the
-// entry at this position. PostgreSQL's own convention for a table CHECK nobody
-// named is `<table>_check`, then `<table>_check1`.
-func tableCheckConstraintName(tableName string, ordinal int) string {
-	leaf := tableName
-	if ref, ok := tableref.Parse(tableName); ok {
-		leaf = ref.Name
-	}
-	if ordinal == 0 {
-		return leaf + "_check"
-	}
-	return fmt.Sprintf("%s_check%d", leaf, ordinal)
 }
 
 func newPrimaryKeyConstraint(table schemamodel.Table) *ast.ConstraintNode {
@@ -1374,13 +921,13 @@ func addTableConstraints(
 	replaceSynthesizedTableChecks(createTable, table, constraints)
 
 	for _, constraint := range constraints {
-		if !constraintBelongsToTable(constraint, table) {
+		if !schemaprep.ConstraintBelongsToTable(constraint, table) {
 			continue
 		}
-		if isForeignKeyConstraint(constraint) && mode != tableConstraintsWithForeignKeys {
+		if schemaprep.IsForeignKeyConstraint(constraint) && mode != tableConstraintsWithForeignKeys {
 			continue
 		}
-		constraint = withDefaultConstraintForeignKeyName(table.Name, constraint, targetPlatform)
+		constraint = schemaprep.WithDefaultConstraintForeignKeyName(table.Name, constraint, targetPlatform)
 
 		node := FromConstraint(constraint)
 		if node != nil {
@@ -1395,7 +942,7 @@ func addTableConstraints(
 // The table conversion produced them with a nil list, so both decisions it makes
 // were taken blind: whether an explicit CHECK already spells the expression, and
 // which generated name is still free. Deriving them again here, through the same
-// [TableCheckConstraints] the comparator calls, is what keeps the rendered name
+// [schemaprep.TableCheckConstraints] the comparator calls, is what keeps the rendered name
 // and the compared name equal. Two lists of "already spelled" or two namers
 // would agree when written and stop agreeing the moment one was extended.
 //
@@ -1417,306 +964,9 @@ func replaceSynthesizedTableChecks(
 	}
 	createTable.Constraints = kept
 
-	for _, check := range TableCheckConstraints(table, declared) {
+	for _, check := range schemaprep.TableCheckConstraints(table, declared) {
 		createTable.AddConstraint(FromConstraint(check))
 	}
-}
-
-func isForeignKeyConstraint(constraint schemamodel.Constraint) bool {
-	return strings.EqualFold(constraint.Type, "FOREIGN KEY")
-}
-
-func withDefaultConstraintForeignKeyName(tableName string, constraint schemamodel.Constraint, targetPlatform string) schemamodel.Constraint {
-	if !isForeignKeyConstraint(constraint) || constraint.Name != "" {
-		return constraint
-	}
-	constraint.Name = generatedForeignKeyName(
-		defaultConstraintForeignKeyName(tableName, constraint),
-		constraintForeignKeyIdentity(constraint),
-		targetPlatform,
-	)
-	return constraint
-}
-
-func defaultConstraintForeignKeyName(tableName string, constraint schemamodel.Constraint) string {
-	columnName := strings.Join(constraint.Columns, "_")
-	if columnName == "" {
-		columnName = "foreign_key"
-	}
-	return GenerateForeignKeyName(tableName, columnName)
-}
-
-func assignDefaultForeignKeyNames(
-	tables []schemamodel.Table,
-	fields []schemamodel.Field,
-	constraints []schemamodel.Constraint,
-	targetPlatform string,
-) ([]schemamodel.Field, []schemamodel.Constraint) {
-	assignedFields := slices.Clone(fields)
-	assignedConstraints := slices.Clone(constraints)
-	allocations := make(map[string]*foreignKeyNameAllocation)
-	for _, table := range tables {
-		reserved, counts := foreignKeyNameReservations(table, assignedFields, assignedConstraints, targetPlatform)
-		scope := foreignKeyNameAllocationScope(table, targetPlatform)
-		allocation := allocations[scope]
-		if allocation == nil {
-			allocation = &foreignKeyNameAllocation{
-				allocated: make(map[string]struct{}),
-				counts:    make(map[string]int),
-			}
-			allocations[scope] = allocation
-		}
-		maps.Copy(allocation.allocated, reserved)
-		for name, count := range counts {
-			allocation.counts[name] += count
-		}
-	}
-	for _, table := range tables {
-		allocation := allocations[foreignKeyNameAllocationScope(table, targetPlatform)]
-		assignFieldForeignKeyNames(table, assignedFields, allocation.counts, allocation.allocated, targetPlatform)
-		assignConstraintForeignKeyNames(table, assignedConstraints, allocation.counts, allocation.allocated, targetPlatform)
-	}
-	return assignedFields, assignedConstraints
-}
-
-type foreignKeyNameAllocation struct {
-	allocated map[string]struct{}
-	counts    map[string]int
-}
-
-func foreignKeyNameAllocationScope(table schemamodel.Table, targetPlatform string) string {
-	switch platform.NormalizeDialect(targetPlatform) {
-	case platform.MySQL, platform.MariaDB:
-		return "database"
-	case platform.SQLServer, platform.Spanner:
-		schema := strings.TrimSpace(table.Schema)
-		if schema == "" {
-			schema = identifier.ForDialect(targetPlatform).DefaultSchema
-		}
-		return "schema:" + strings.ToLower(schema)
-	default:
-		return "table:" + table.QualifiedName()
-	}
-}
-
-func foreignKeyNameReservations(
-	table schemamodel.Table,
-	fields []schemamodel.Field,
-	constraints []schemamodel.Constraint,
-	targetPlatform string,
-) (map[string]struct{}, map[string]int) {
-	reserved := make(map[string]struct{})
-	counts := make(map[string]int)
-	for _, field := range fields {
-		if field.StructName != table.StructName || field.Foreign == "" {
-			continue
-		}
-		if field.ForeignKeyName != "" && !field.GeneratedFromEmbedded {
-			reserved[foreignKeyNameReservationKey(field.ForeignKeyName, targetPlatform)] = struct{}{}
-			continue
-		}
-		base := defaultFieldForeignKeyName(table.Name, field)
-		candidate := generatedForeignKeyName(base, fieldForeignKeyIdentity(field), targetPlatform)
-		counts[foreignKeyNameReservationKey(candidate, targetPlatform)]++
-	}
-	for _, constraint := range constraints {
-		if !isForeignKeyConstraint(constraint) || !constraintBelongsToTable(constraint, table) {
-			continue
-		}
-		if constraint.Name != "" {
-			reserved[foreignKeyNameReservationKey(constraint.Name, targetPlatform)] = struct{}{}
-			continue
-		}
-		base := defaultConstraintForeignKeyName(table.Name, constraint)
-		candidate := generatedForeignKeyName(base, constraintForeignKeyIdentity(constraint), targetPlatform)
-		counts[foreignKeyNameReservationKey(candidate, targetPlatform)]++
-	}
-	return reserved, counts
-}
-
-func assignFieldForeignKeyNames(
-	table schemamodel.Table,
-	fields []schemamodel.Field,
-	counts map[string]int,
-	allocated map[string]struct{},
-	targetPlatform string,
-) {
-	for i := range fields {
-		field := &fields[i]
-		if field.StructName != table.StructName || field.Foreign == "" ||
-			(field.ForeignKeyName != "" && !field.GeneratedFromEmbedded) {
-			continue
-		}
-		base := defaultFieldForeignKeyName(table.Name, *field)
-		candidate := generatedForeignKeyName(base, fieldForeignKeyIdentity(*field), targetPlatform)
-		field.ForeignKeyName = allocateForeignKeyName(
-			base,
-			counts[foreignKeyNameReservationKey(candidate, targetPlatform)],
-			fieldForeignKeyIdentity(*field),
-			allocated,
-			targetPlatform,
-		)
-	}
-}
-
-func defaultFieldForeignKeyName(tableName string, field schemamodel.Field) string {
-	if field.GeneratedFromEmbedded && field.ForeignKeyName != "" {
-		return field.ForeignKeyName
-	}
-	return GenerateForeignKeyName(tableName, field.Name)
-}
-
-func assignConstraintForeignKeyNames(
-	table schemamodel.Table,
-	constraints []schemamodel.Constraint,
-	counts map[string]int,
-	allocated map[string]struct{},
-	targetPlatform string,
-) {
-	for i := range constraints {
-		constraint := &constraints[i]
-		if constraint.Name != "" || !isForeignKeyConstraint(*constraint) || !constraintBelongsToTable(*constraint, table) {
-			continue
-		}
-		base := defaultConstraintForeignKeyName(table.Name, *constraint)
-		candidate := generatedForeignKeyName(base, constraintForeignKeyIdentity(*constraint), targetPlatform)
-		constraint.Name = allocateForeignKeyName(
-			base,
-			counts[foreignKeyNameReservationKey(candidate, targetPlatform)],
-			constraintForeignKeyIdentity(*constraint),
-			allocated,
-			targetPlatform,
-		)
-	}
-}
-
-func fieldForeignKeyIdentity(field schemamodel.Field) string {
-	return strings.Join([]string{
-		"field",
-		field.StructName,
-		field.Name,
-		field.Foreign,
-		field.OnDelete,
-		field.OnUpdate,
-	}, "\x00")
-}
-
-func constraintForeignKeyIdentity(constraint schemamodel.Constraint) string {
-	return strings.Join([]string{
-		"constraint",
-		constraint.StructName,
-		constraint.Table,
-		strings.Join(constraint.Columns, ","),
-		constraint.ForeignTable,
-		strings.Join(constraint.ForeignColumnsOrDefault(), ","),
-		constraint.OnDelete,
-		constraint.OnUpdate,
-	}, "\x00")
-}
-
-func allocateForeignKeyName(
-	base string,
-	candidateCount int,
-	identity string,
-	allocated map[string]struct{},
-	targetPlatform string,
-) string {
-	candidate := generatedForeignKeyName(base, identity, targetPlatform)
-	reservationKey := foreignKeyNameReservationKey(candidate, targetPlatform)
-	if _, conflict := allocated[reservationKey]; candidateCount == 1 && !conflict {
-		allocated[reservationKey] = struct{}{}
-		return candidate
-	}
-
-	suffix := foreignKeyNameHashSuffix(base, identity)
-	candidate = foreignKeyNameWithSuffix(base, suffix, targetPlatform)
-	for ordinal := 2; ; ordinal++ {
-		reservationKey = foreignKeyNameReservationKey(candidate, targetPlatform)
-		if _, conflict := allocated[reservationKey]; !conflict {
-			allocated[reservationKey] = struct{}{}
-			return candidate
-		}
-		ordinalSuffix := fmt.Sprintf("_%d", ordinal)
-		candidate = foreignKeyNameWithSuffix(base, suffix+ordinalSuffix, targetPlatform)
-	}
-}
-
-func foreignKeyNameReservationKey(name, targetPlatform string) string {
-	switch platform.NormalizeDialect(targetPlatform) {
-	case platform.MySQL, platform.MariaDB, platform.SQLServer, platform.Spanner:
-		return strings.ToLower(name)
-	default:
-		return name
-	}
-}
-
-func generatedForeignKeyName(base, identity, targetPlatform string) string {
-	if foreignKeyNameFits(base, targetPlatform) {
-		return base
-	}
-	return foreignKeyNameWithSuffix(base, foreignKeyNameHashSuffix(base, identity), targetPlatform)
-}
-
-func foreignKeyNameHashSuffix(base, identity string) string {
-	digest := sha256.Sum256([]byte(base + "\x00" + identity))
-	return fmt.Sprintf("_%x", digest[:4])
-}
-
-func foreignKeyNameFits(name, targetPlatform string) bool {
-	switch {
-	case platform.NormalizeDialect(targetPlatform) == platform.SQLServer,
-		platform.NormalizeDialect(targetPlatform) == platform.Spanner:
-		return len([]rune(name)) <= 128
-	case platform.IsPostgresFamily(targetPlatform):
-		return len(name) <= 63
-	case isMySQLFamilyTarget(targetPlatform):
-		return len([]rune(name)) <= 64
-	default:
-		return true
-	}
-}
-
-func foreignKeyNameWithSuffix(base, suffix, targetPlatform string) string {
-	switch {
-	case platform.NormalizeDialect(targetPlatform) == platform.SQLServer,
-		platform.NormalizeDialect(targetPlatform) == platform.Spanner:
-		return truncateIdentifierCharacters(base, 128-len([]rune(suffix))) + suffix
-	case platform.IsPostgresFamily(targetPlatform):
-		return truncateIdentifierBytes(base, 63-len(suffix)) + suffix
-	case isMySQLFamilyTarget(targetPlatform):
-		return truncateIdentifierCharacters(base, 64-len([]rune(suffix))) + suffix
-	default:
-		return base + suffix
-	}
-}
-
-func truncateIdentifierBytes(value string, maxBytes int) string {
-	if len(value) <= maxBytes {
-		return value
-	}
-	end := 0
-	for index := range value {
-		if index > maxBytes {
-			break
-		}
-		end = index
-	}
-	return value[:end]
-}
-
-func truncateIdentifierCharacters(value string, maxCharacters int) string {
-	runes := []rune(value)
-	if len(runes) <= maxCharacters {
-		return value
-	}
-	return string(runes[:maxCharacters])
-}
-
-func constraintBelongsToTable(constraint schemamodel.Constraint, table schemamodel.Table) bool {
-	if constraint.Table != "" {
-		return constraint.Table == table.Name || constraint.Table == table.QualifiedName()
-	}
-	return constraint.StructName == table.StructName
 }
 
 // FromIndex converts a schemamodel.Index to an ast.IndexNode for database index creation.
@@ -2025,7 +1275,7 @@ func FromFunction(function schemamodel.Function) *ast.CreateFunctionNode {
 // FromSequence converts a schemamodel.Sequence into a CreateSequenceNode.
 //
 // The returned node faithfully carries every declared option, including OWNED
-// BY. Callers that generate a full schema (see FromDatabase) deliberately defer
+// BY. Callers that generate a full schema (see CollectDatabase) deliberately defer
 // the OWNED BY association to a separate post-table ALTER SEQUENCE, because a
 // sequence referenced by a column DEFAULT must be created before its table
 // while OWNED BY requires the table to already exist.
@@ -2230,12 +1480,12 @@ func appendFieldForeignKeyConstraintStatements(
 			if field.StructName != table.StructName {
 				continue
 			}
-			field = applyPlatformOverrides(field, targetPlatform)
+			field = schemaprep.EffectiveFieldForPlatform(field, targetPlatform)
 			if field.Foreign == "" {
 				continue
 			}
-			field = withDefaultForeignKeyName(table.Name, field, targetPlatform)
-			fkRef := ParseForeignKeyReference(field.Foreign)
+			field = schemaprep.WithDefaultFieldForeignKeyName(table.Name, field, targetPlatform)
+			fkRef := foreignKeyReference(field.Foreign)
 			if fkRef == nil {
 				continue
 			}
@@ -2268,10 +1518,10 @@ func appendTableForeignKeyConstraintStatements(
 ) error {
 	for _, table := range tables {
 		for _, constraint := range constraints {
-			if !constraintBelongsToTable(constraint, table) || !isForeignKeyConstraint(constraint) {
+			if !schemaprep.ConstraintBelongsToTable(constraint, table) || !schemaprep.IsForeignKeyConstraint(constraint) {
 				continue
 			}
-			constraint = withDefaultConstraintForeignKeyName(table.Name, constraint, targetPlatform)
+			constraint = schemaprep.WithDefaultConstraintForeignKeyName(table.Name, constraint, targetPlatform)
 			constraint.ForeignTable = tablelookup.ResolveReference(tables, table, constraint.ForeignTable)
 			node := FromConstraint(constraint)
 			if node == nil {
@@ -2402,80 +1652,6 @@ func FromGrant(grant schemamodel.Grant) *ast.GrantPrivilegeNode {
 		SetComment(grant.Comment)
 }
 
-// AssignDefaultForeignKeyNames returns a clone whose foreign keys have stable,
-// dialect-valid names. The input is never mutated. Dialect-specific comparison,
-// planning, and rendering paths use this normalization so generated and
-// explicit names share the same namespace and length rules.
-func AssignDefaultForeignKeyNames(database *schemamodel.Database, targetPlatform string) *schemamodel.Database {
-	if database == nil {
-		return nil
-	}
-
-	assigned := *database
-	assigned.Tables = slices.Clone(database.Tables)
-	assigned.EmbeddedFields = slices.Clone(database.EmbeddedFields)
-	assigned.Fields = ProcessEmbeddedFields(assigned.EmbeddedFields, database.Fields)
-	assigned.Fields, assigned.Constraints = assignDefaultForeignKeyNames(
-		assigned.Tables,
-		assigned.Fields,
-		database.Constraints,
-		targetPlatform,
-	)
-	assigned.SelfReferencingForeignKeys = assignedSelfReferencingForeignKeys(
-		database.SelfReferencingForeignKeys,
-		assigned.Tables,
-		assigned.Fields,
-	)
-	return &assigned
-}
-
-func assignedSelfReferencingForeignKeys(
-	foreignKeys map[string][]schemamodel.SelfReferencingFK,
-	tables []schemamodel.Table,
-	fields []schemamodel.Field,
-) map[string][]schemamodel.SelfReferencingFK {
-	if foreignKeys == nil {
-		return nil
-	}
-	assigned := make(map[string][]schemamodel.SelfReferencingFK, len(foreignKeys))
-	for tableName, tableForeignKeys := range foreignKeys {
-		cloned := slices.Clone(tableForeignKeys)
-		table := foreignKeyOwnerTable(tables, tableName)
-		for i := range cloned {
-			cloned[i].ForeignKeyName = assignedSelfReferencingForeignKeyName(table, cloned[i], fields)
-		}
-		assigned[tableName] = cloned
-	}
-	return assigned
-}
-
-func foreignKeyOwnerTable(tables []schemamodel.Table, tableName string) *schemamodel.Table {
-	for i := range tables {
-		if tables[i].QualifiedName() == tableName || tables[i].Name == tableName {
-			return &tables[i]
-		}
-	}
-	return nil
-}
-
-func assignedSelfReferencingForeignKeyName(
-	table *schemamodel.Table,
-	foreignKey schemamodel.SelfReferencingFK,
-	fields []schemamodel.Field,
-) string {
-	if table == nil {
-		return foreignKey.ForeignKeyName
-	}
-	for _, field := range fields {
-		if field.StructName == table.StructName &&
-			field.Name == foreignKey.FieldName &&
-			field.Foreign == foreignKey.Foreign {
-			return field.ForeignKeyName
-		}
-	}
-	return foreignKey.ForeignKeyName
-}
-
 // WalkDatabase converts a complete schemamodel.Database to AST nodes and visits
 // them in executable order without materializing a second whole-schema
 // representation.
@@ -2545,7 +1721,7 @@ func assignedSelfReferencingForeignKeyName(
 //			{Name: "idx_users_status", StructName: "users", Fields: []string{"status"}},
 //		},
 //	}
-//	statements := FromDatabase(database)
+//	statements := CollectDatabase(database, platform.Postgres)
 //
 // # Platform-Specific Processing
 //
@@ -2586,53 +1762,11 @@ func WalkDatabase(
 	}
 
 	// Normalize once so every conversion path consumes the same names.
-	assigned := AssignDefaultForeignKeyNames(&database, targetPlatform)
-	database = *QualifyDeclaredUserTypes(assigned, targetPlatform)
+	assigned := schemaprep.AssignDefaultForeignKeyNames(&database, targetPlatform)
+	database = *schemaprep.QualifyDeclaredUserTypes(assigned, targetPlatform)
 	allFields := database.Fields
 
-	// 1. Add schema definitions first (they may be referenced by tables or
-	// extension installation clauses).
-	if err := appendSchemaStatements(visit, schemasForRender(database, targetPlatform)); err != nil {
-		return err
-	}
-
-	// 2. Add extension definitions (PostgreSQL-specific)
-	for _, extension := range database.Extensions {
-		extensionNode := FromExtension(extension)
-		if err := visit(extensionNode); err != nil {
-			return err
-		}
-	}
-
-	// 2b. Add standalone sequence definitions before any tables, because a
-	// sequence may back a column DEFAULT. The OWNED BY association is emitted
-	// later (after tables) by appendPostTableObjectStatements, because it names
-	// a column that does not exist yet here.
-	for _, sequence := range database.Sequences {
-		sequenceNode := FromSequence(sequence)
-		sequenceNode.OwnedBy = ""
-		if err := visit(sequenceNode); err != nil {
-			return err
-		}
-	}
-
-	// 3. Add enum definitions when the dialect has standalone enum types.
-	// MySQL, MariaDB, SQLite, and SQL Server model enums on the column itself,
-	// so adding top-level enum nodes would render to no executable DDL and
-	// break live apply loops with empty statements.
-	if emitsStandaloneEnumDefinitions(targetPlatform) {
-		for _, enum := range database.Enums {
-			enumNode := FromEnum(enum)
-			if err := visit(enumNode); err != nil {
-				return err
-			}
-		}
-	}
-
-	// 3b. Add user-defined types before tables so columns can reference them,
-	// ordered by what each definition names rather than by kind. Enums are
-	// already out, above, and reference nothing.
-	if err := visitDatabaseNodes(visit, orderedUserTypeStatements(database)...); err != nil {
+	if err := appendPreTableStatements(visit, database, targetPlatform); err != nil {
 		return err
 	}
 
@@ -2727,10 +1861,52 @@ func WalkDatabase(
 	return nil
 }
 
-// FromDatabase collects the nodes [WalkDatabase] visits into an
+func appendPreTableStatements(
+	visit func(ast.Node) error,
+	database schemamodel.Database,
+	targetPlatform string,
+) error {
+	// Schemas come first because tables and extension installation clauses may
+	// reference them.
+	if err := appendSchemaStatements(visit, schemasForRender(database, targetPlatform)); err != nil {
+		return err
+	}
+
+	for _, extension := range database.Extensions {
+		if err := visit(FromExtension(extension)); err != nil {
+			return err
+		}
+	}
+
+	// A sequence may back a column DEFAULT. Its OWNED BY association is emitted
+	// later, after the referenced table and column exist.
+	for _, sequence := range database.Sequences {
+		sequenceNode := FromSequence(sequence)
+		sequenceNode.OwnedBy = ""
+		if err := visit(sequenceNode); err != nil {
+			return err
+		}
+	}
+
+	// MySQL, MariaDB, SQLite, and SQL Server model enums on the column itself,
+	// so a top-level enum node would render no executable DDL there.
+	if schemaprep.EmitsStandaloneEnumDefinitions(targetPlatform) {
+		for _, enum := range database.Enums {
+			if err := visit(FromEnum(enum)); err != nil {
+				return err
+			}
+		}
+	}
+
+	// User-defined types precede tables and are ordered by their references,
+	// rather than by kind. Enums are already out and reference nothing.
+	return visitDatabaseNodes(visit, orderedUserTypeStatements(database)...)
+}
+
+// CollectDatabase collects the nodes [WalkDatabase] visits into an
 // ast.StatementList. It remains the compatibility entry point for callers that
 // need a complete AST; renderers should consume WalkDatabase directly.
-func FromDatabase(database schemamodel.Database, targetPlatform string) *ast.StatementList {
+func CollectDatabase(database schemamodel.Database, targetPlatform string) *ast.StatementList {
 	statements := &ast.StatementList{
 		Statements: make([]ast.Node, 0),
 	}
@@ -2962,7 +2138,7 @@ func appendPostTableObjectStatements(
 		}
 	}
 	for _, rlsPolicy := range database.RLSPolicies {
-		if err := visit(FromRLSPolicy(QualifyRLSPolicyForTarget(
+		if err := visit(FromRLSPolicy(schemaprep.QualifyRLSPolicyForTarget(
 			rlsPolicy, declaredTableSchema(database, rlsPolicy.Table), targetPlatform))); err != nil {
 			return err
 		}
@@ -3188,49 +2364,15 @@ func indexFields(index schemamodel.Index) []string {
 	return fields
 }
 
-// ParseForeignKeyReference parses a foreign key reference string into an ast.ForeignKeyRef.
-//
-// The foreign key reference string should be in the format "table(column)" or just "table"
-// (which defaults to referencing the "id" column).
-//
-// Examples:
-//   - "users(id)" -> references users.id
-//   - "users" -> references users.id (default)
-//   - "categories(slug)" -> references categories.slug
-//
-// Returns nil if the reference string is malformed.
-func ParseForeignKeyReference(foreign string) *ast.ForeignKeyRef {
-	if foreign == "" {
+func foreignKeyReference(foreign string) *ast.ForeignKeyRef {
+	reference := schemaprep.ParseForeignKeyReference(foreign)
+	if reference == nil {
 		return nil
 	}
-
-	// Check if it contains parentheses for column specification
-	if strings.Contains(foreign, "(") && strings.Contains(foreign, ")") {
-		// Parse "table(column)" format
-		parts := strings.Split(foreign, "(")
-		if len(parts) != 2 {
-			return nil
-		}
-
-		table := strings.TrimSpace(parts[0])
-		columnPart := strings.TrimSpace(parts[1])
-
-		// Remove closing parenthesis
-		if !strings.HasSuffix(columnPart, ")") {
-			return nil
-		}
-		column := strings.TrimSuffix(columnPart, ")")
-
-		return &ast.ForeignKeyRef{
-			Table:  table,
-			Column: column,
-		}
-	}
-
-	// Default to "id" column if no column specified
 	return &ast.ForeignKeyRef{
-		Table:  strings.TrimSpace(foreign),
-		Column: "id",
+		Table:   reference.Table,
+		Column:  reference.Column,
+		Columns: slices.Clone(reference.Columns),
 	}
 }
 
@@ -3269,355 +2411,6 @@ func validateEnumField(field schemamodel.Field, enums []schemamodel.Enum) {
 			}
 		}
 	}
-}
-
-// ProcessEmbeddedFields processes embedded fields and generates corresponding schema fields based on embedding modes.
-//
-// This function is the core processor for handling embedded struct fields in Go structs, transforming them
-// into appropriate database schema fields according to the specified embedding mode. It supports four
-// distinct modes of embedding that provide different approaches to handling complex data structures
-// in relational databases.
-//
-// # Parameters
-//
-//   - embeddedFields: Collection of embedded field definitions to process
-//   - originalFields: Complete collection of schema fields from all parsed structs
-//
-// # Embedding Modes
-//
-// The function supports four embedding modes, each serving different architectural patterns:
-//
-// 1. **"inline"**: Expands embedded struct fields as individual table columns
-// 2. **"json"**: Serializes the entire embedded struct into a single JSON/JSONB column
-// 3. **"relation"**: Creates a foreign key relationship to another table
-// 4. **"skip"**: Completely ignores the embedded field during schema generation
-//
-// # Return Value
-//
-// Returns a combined slice of schemamodel.Field containing both the original fields and
-// the generated fields from embedded field processing. This combined list is ready
-// for use in table creation. When originalFields already contains an embedded
-// field's generated concrete column, that original field is kept and the duplicate
-// generated field is skipped so callers can safely pass parser-finalized schemas.
-func ProcessEmbeddedFields(embeddedFields []schemamodel.EmbeddedField, originalFields []schemamodel.Field) []schemamodel.Field {
-	// Start with the original fields
-	allFields := make([]schemamodel.Field, len(originalFields))
-	copy(allFields, originalFields)
-	seenFields := fieldKeySet(originalFields)
-
-	// Process embedded fields for each struct
-	structNames := schemamodel.UniqueStructNames(embeddedFields)
-	for _, structName := range structNames {
-		generatedFields := processEmbeddedFieldsForStruct(embeddedFields, originalFields, structName)
-		allFields = appendNewFields(allFields, generatedFields, seenFields)
-	}
-
-	return allFields
-}
-
-type fieldKey struct {
-	structName string
-	name       string
-}
-
-func fieldKeySet(fields []schemamodel.Field) map[fieldKey]struct{} {
-	seen := make(map[fieldKey]struct{}, len(fields))
-	for _, field := range fields {
-		seen[fieldKeyFor(field)] = struct{}{}
-	}
-	return seen
-}
-
-func appendNewFields(fields, newFields []schemamodel.Field, seen map[fieldKey]struct{}) []schemamodel.Field {
-	for _, field := range newFields {
-		key := fieldKeyFor(field)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		fields = append(fields, field)
-	}
-	return fields
-}
-
-func fieldKeyFor(field schemamodel.Field) fieldKey {
-	return fieldKey{
-		structName: field.StructName,
-		name:       field.Name,
-	}
-}
-
-func processEmbeddedInlineMode(generatedFields []schemamodel.Field, embedded schemamodel.EmbeddedField, allFields []schemamodel.Field, allEmbeddedFields []schemamodel.EmbeddedField, structName string) []schemamodel.Field {
-	// INLINE MODE: Expand embedded struct fields as individual table columns
-	generatedFields = processEmbeddedInlineModeRecursive(
-		generatedFields,
-		embedded,
-		allFields,
-		allEmbeddedFields,
-		structName,
-		make(map[string]bool),
-	)
-	return generatedFields
-}
-
-// processEmbeddedInlineModeRecursive recursively processes embedded fields in inline mode.
-// This handles nested embedded structs by recursively expanding embedded fields within embedded types.
-func processEmbeddedInlineModeRecursive(
-	generatedFields []schemamodel.Field,
-	embedded schemamodel.EmbeddedField,
-	allFields []schemamodel.Field,
-	allEmbeddedFields []schemamodel.EmbeddedField,
-	structName string,
-	activeTypes map[string]bool,
-) []schemamodel.Field {
-	if embedded.EmbeddedTypeName == "" || activeTypes[embedded.EmbeddedTypeName] {
-		return generatedFields
-	}
-	activeTypes[embedded.EmbeddedTypeName] = true
-	defer delete(activeTypes, embedded.EmbeddedTypeName)
-
-	// Step 1: Add direct fields from the embedded type
-	for _, field := range allFields {
-		if field.StructName != embedded.EmbeddedTypeName {
-			continue
-		}
-		// Clone the field and reassign to target struct
-		newField := field
-		newField.StructName = structName
-		newField.Overrides = mergePlatformOverrides(field.Overrides, embedded.Overrides)
-		newField.GeneratedFromEmbedded = true
-
-		// Apply prefix to column name if specified
-		if embedded.Prefix != "" {
-			newField.Name = embedded.Prefix + field.Name
-		}
-
-		generatedFields = append(generatedFields, newField)
-	}
-
-	// Step 2: Recursively process embedded fields within the embedded type
-	for _, nestedEmbedded := range allEmbeddedFields {
-		if nestedEmbedded.StructName != embedded.EmbeddedTypeName {
-			continue
-		}
-
-		recursiveEmbedded := nestedEmbedded
-		recursiveEmbedded.StructName = structName
-		recursiveEmbedded.Overrides = mergePlatformOverrides(
-			nestedEmbedded.Overrides,
-			embedded.Overrides,
-		)
-		recursiveEmbedded.Prefix = embedded.Prefix + nestedEmbedded.Prefix
-
-		switch nestedEmbedded.Mode {
-		case "json":
-			generatedFields = processEmbeddedJSONMode(generatedFields, recursiveEmbedded, structName)
-		case "relation":
-			generatedFields = processEmbeddedRelationMode(generatedFields, recursiveEmbedded, structName)
-		case "skip":
-			continue
-		default:
-			generatedFields = processEmbeddedInlineModeRecursive(
-				generatedFields,
-				recursiveEmbedded,
-				allFields,
-				allEmbeddedFields,
-				structName,
-				activeTypes,
-			)
-		}
-	}
-
-	return generatedFields
-}
-
-func processEmbeddedJSONMode(generatedFields []schemamodel.Field, embedded schemamodel.EmbeddedField, structName string) []schemamodel.Field {
-	// JSON MODE: Serialize embedded struct into a single JSON/JSONB column
-	columnName := embedded.Name
-	if columnName == "" {
-		// Auto-generate column name: "Meta" -> "meta_data"
-		columnName = strings.ToLower(embedded.EmbeddedTypeName) + "_data"
-	}
-	columnName = embedded.Prefix + columnName
-
-	columnType := embedded.Type
-	if columnType == "" {
-		columnType = "JSONB" // Default to PostgreSQL JSONB for best performance
-	}
-
-	// Create the JSON column field
-	generatedFields = append(generatedFields, schemamodel.Field{
-		StructName: structName,
-		FieldName:  embedded.EmbeddedTypeName,
-		Name:       columnName,
-		Type:       columnType,
-		Nullable:   embedded.Nullable,
-		Comment:    embedded.Comment,
-		Overrides:  mergePlatformOverrides(nil, embedded.Overrides),
-
-		GeneratedFromEmbedded: true,
-	})
-
-	return generatedFields
-}
-
-func processEmbeddedRelationMode(generatedFields []schemamodel.Field, embedded schemamodel.EmbeddedField, structName string) []schemamodel.Field {
-	// RELATION MODE: Create a foreign key field linking to another table
-	if embedded.Field == "" || embedded.Ref == "" {
-		// Skip incomplete relation definitions - both field name and reference are required
-		return generatedFields
-	}
-
-	// An explicit relation type is authoritative. When it is omitted, use the
-	// conservative numeric or string heuristic documented for relation fields.
-	refType := strings.TrimSpace(embedded.Type)
-	if refType == "" {
-		refType = "INTEGER"
-		if strings.Contains(embedded.Ref, "VARCHAR") || strings.Contains(embedded.Ref, "TEXT") ||
-			strings.Contains(strings.ToLower(embedded.Ref), "uuid") {
-			refType = "VARCHAR(36)"
-		}
-	}
-
-	fieldName := embedded.Prefix + embedded.Field
-	foreignKeyName := GenerateForeignKeyName(structName, fieldName)
-
-	// Create platform-specific overrides for MySQL/MariaDB compatibility
-	// MySQL/MariaDB use INT for SERIAL types, so foreign keys should also use INT
-	overrides := make(map[string]map[string]string)
-	if refType == "INTEGER" {
-		overrides["mysql"] = map[string]string{"type": "INT"}
-		overrides["mariadb"] = map[string]string{"type": "INT"}
-	}
-	overrides = mergePlatformOverrides(overrides, embedded.Overrides)
-
-	// Create the foreign key field
-	generatedFields = append(generatedFields, schemamodel.Field{
-		StructName:     structName,
-		FieldName:      embedded.EmbeddedTypeName,
-		Name:           fieldName,         // e.g., "user_id"
-		Type:           refType,           // INTEGER or VARCHAR(36)
-		Nullable:       embedded.Nullable, // Can the relationship be optional?
-		Foreign:        embedded.Ref,      // e.g., "users(id)"
-		ForeignKeyName: foreignKeyName,    // e.g., "fk_posts_user_id"
-		OnDelete:       embedded.OnDelete, // ON DELETE action (CASCADE, SET NULL, etc.)
-		OnUpdate:       embedded.OnUpdate, // ON UPDATE action (CASCADE, SET NULL, etc.)
-		Comment:        embedded.Comment,  // Documentation for the relationship
-		Overrides:      overrides,         // Platform-specific type overrides
-
-		GeneratedFromEmbedded: true,
-	})
-
-	return generatedFields
-}
-
-func mergePlatformOverrides(
-	base,
-	explicit map[string]map[string]string,
-) map[string]map[string]string {
-	if len(base) == 0 && len(explicit) == 0 {
-		return nil
-	}
-	result := make(map[string]map[string]string, len(base)+len(explicit))
-	for dialect, values := range base {
-		result[dialect] = maps.Clone(values)
-	}
-	for dialect, values := range explicit {
-		if result[dialect] == nil {
-			result[dialect] = make(map[string]string)
-		}
-		maps.Copy(result[dialect], values)
-	}
-	return result
-}
-
-// processEmbeddedFieldsForStruct processes embedded fields for a specific struct and generates corresponding schema fields.
-//
-// This function implements the core logic for transforming embedded fields into database schema fields
-// according to their specified embedding mode. It processes only embedded fields that belong to the
-// specified structName.
-//
-// # Parameters
-//
-//   - embeddedFields: Collection of embedded field definitions to process
-//   - allFields: Complete collection of schema fields from all parsed structs
-//   - structName: Name of the target struct to process embedded fields for
-//
-// # Return Value
-//
-// Returns a slice of schemamodel.Field representing the generated database fields for the specified struct.
-// Each field is fully configured with appropriate types, constraints, and metadata.
-func processEmbeddedFieldsForStruct(embeddedFields []schemamodel.EmbeddedField, allFields []schemamodel.Field, structName string) []schemamodel.Field {
-	var generatedFields []schemamodel.Field
-
-	// Process each embedded field definition
-	for _, embedded := range embeddedFields {
-		// Filter: only process embedded fields for the target struct
-		if embedded.StructName != structName {
-			continue
-		}
-
-		switch embedded.Mode {
-		case "inline":
-			// INLINE MODE: Expand embedded struct fields as individual table columns
-			generatedFields = processEmbeddedInlineMode(generatedFields, embedded, allFields, embeddedFields, structName)
-		case "json":
-			// JSON MODE: Serialize embedded struct into a single JSON/JSONB column
-			generatedFields = processEmbeddedJSONMode(generatedFields, embedded, structName)
-		case "relation":
-			// RELATION MODE: Create a foreign key field linking to another table
-			generatedFields = processEmbeddedRelationMode(generatedFields, embedded, structName)
-		case "skip":
-			// SKIP MODE: Completely ignore this embedded field
-			continue
-		default:
-			// DEFAULT MODE: Fall back to inline behavior for unrecognized modes
-			slog.Warn("Unrecognized embedding mode for struct - defaulting to inline mode", "mode", embedded.Mode, "struct", structName)
-			generatedFields = processEmbeddedInlineMode(generatedFields, embedded, allFields, embeddedFields, structName)
-		}
-	}
-
-	return generatedFields
-}
-
-// QualifyRLSPolicyForTarget puts a policy and its target table into the schema
-// the table was declared in, for a target that needs the qualification.
-//
-// Neither schemamodel.RLSPolicy nor ast.CreatePolicyNode carries a schema of its
-// own: the declaration names a table, and the table is what has one. On
-// PostgreSQL that costs nothing, because an unqualified name resolves through
-// search_path, and the rendering is left alone there rather than changed for
-// tidiness.
-//
-// On SQL Server it is the difference between a statement that runs and one that
-// does not. A security policy is schema-bound, and schema binding requires
-// two-part names on both sides of the ON: an unqualified target resolves to dbo
-// and a table anywhere else draws `Cannot find the object "dbo.<table>"`.
-//
-// The policy is put in the table's schema rather than left in dbo. Either is
-// accepted -- a policy may name a target in another schema -- but a policy in
-// dbo lies outside the scope a read of the table's schema covers, and an object
-// the reader cannot see is one the comparator plans forever.
-//
-// tableSchema is that schema, resolved by the caller. It used to be searched
-// for here, in the whole desired database, which is what kept a schema the
-// planner had no other use for on the planning path (stokaro/ptah#2315). The
-// comparison resolves it now and the change carries it, so an empty value means
-// the declaration named no schema for the table -- exactly what the search
-// answered when it found none.
-func QualifyRLSPolicyForTarget(
-	policy schemamodel.RLSPolicy,
-	tableSchema, targetPlatform string,
-) schemamodel.RLSPolicy {
-	if targetPlatform != platform.SQLServer {
-		return policy
-	}
-	if tableSchema == "" {
-		return policy
-	}
-	policy.Table = tableSchema + "." + policy.Table
-	policy.Name = tableSchema + "." + policy.Name
-	return policy
 }
 
 // keptNotNullConstraintName is the NOT NULL constraint name this column carries

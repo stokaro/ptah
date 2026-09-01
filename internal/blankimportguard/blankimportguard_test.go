@@ -2,10 +2,13 @@ package blankimportguard_test
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -138,6 +141,15 @@ func goFiles(c *qt.C, root string) []string {
 		if line == "" {
 			continue
 		}
+		// --cached includes index entries that have been removed from the
+		// working tree. A move therefore names both the deleted source and the
+		// untracked destination until it is staged. Judge the files that exist
+		// in this working tree; the destination is already present in this list.
+		_, err := os.Stat(filepath.Join(root, line))
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		c.Assert(err, qt.IsNil, qt.Commentf("stat %s", line))
 		paths = append(paths, line)
 	}
 	c.Assert(len(paths) > 100, qt.IsTrue, qt.Commentf(

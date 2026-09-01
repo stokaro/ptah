@@ -2,7 +2,7 @@
 // TestFromDatabase_EveryAcceptedSpellingConvertsLikeItsCanonicalName.
 //
 // Every declaration here exists to separate one dialect-name predicate in
-// fromschema from the spelling the caller typed. Deleting any of them makes the
+// modelast from the spelling the caller typed. Deleting any of them makes the
 // parity test pass for a reason it should not:
 //
 //   - platform.<name>.* on note pins applyPlatformOverrides' map lookup for all
@@ -13,7 +13,7 @@
 //     because the SQLite renderer maps every string width onto TEXT and would
 //     otherwise erase the difference.
 //   - enum_status plus ref_status pins handleEnumTypes / applyInlineEnumModel
-//     against emitsStandaloneEnumDefinitions: on the four engines that model an
+//     against schemaprep.EmitsStandaloneEnumDefinitions: on engines that model an
 //     enum on the column, a spelling that reaches only one of the two halves
 //     drops the enum entirely.
 //   - email_lower pins defaultGeneratedKind (STORED / VIRTUAL / PERSISTED),
@@ -23,7 +23,7 @@
 //
 // The object block below -- role, sequence, domain, composite, range, function,
 // view, matview, trigger, RLS and grant -- no longer separates one dialect from
-// another here: FromDatabase converts every one of them for every target now,
+// another here: CollectDatabase lowers every one of them for every target now,
 // and the renderer decides what each means (stokaro/ptah#929 item 5). It stays
 // because it is what makes this fixture discriminate engines by their rendered
 // answers, which TestFromDatabase_FixtureDiscriminatesEngines asserts.

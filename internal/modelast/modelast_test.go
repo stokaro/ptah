@@ -1,4 +1,4 @@
-package fromschema_test
+package modelast_test
 
 import (
 	"strings"
@@ -11,7 +11,8 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
+	"go.5x5.cz/ptah/internal/schemaprep"
 )
 
 func tableStatementByName(statements *ast.StatementList, name string) *ast.CreateTableNode {
@@ -373,7 +374,7 @@ func TestFromField_BasicProperties(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := fromschema.FromField(test.field, nil, test.targetPlatform)
+			result := modelast.FromField(test.field, nil, test.targetPlatform)
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
@@ -436,7 +437,7 @@ func TestFromField_DefaultValues(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := fromschema.FromField(test.field, nil, "")
+			result := modelast.FromField(test.field, nil, "")
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
@@ -534,7 +535,7 @@ func TestFromField_ForeignKeys(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := fromschema.FromField(test.field, nil, "")
+			result := modelast.FromField(test.field, nil, "")
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
@@ -640,7 +641,7 @@ func TestFromField_EnumConversion(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := fromschema.FromField(test.field, test.enums, test.targetPlatform)
+			result := modelast.FromField(test.field, test.enums, test.targetPlatform)
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(result.Type, qt.Equals, test.expectedType)
 			c.Assert(result.Check, qt.Equals, test.expectedCheck)
@@ -693,7 +694,7 @@ func TestFromField_CheckAndComment(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := fromschema.FromField(test.field, nil, "")
+			result := modelast.FromField(test.field, nil, "")
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
@@ -825,7 +826,7 @@ func TestFromTable_BasicTable(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := fromschema.FromTable(test.table, test.fields, nil, "")
+			result := modelast.FromTable(test.table, test.fields, nil, "")
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
@@ -856,7 +857,7 @@ func TestFromTable_CompositePrimaryKey(t *testing.T) {
 		},
 	}
 
-	result := fromschema.FromTable(table, fields, nil, "")
+	result := modelast.FromTable(table, fields, nil, "")
 
 	c.Assert(result, qt.IsNotNil)
 	c.Assert(result.Name, qt.Equals, "user_roles")
@@ -876,7 +877,7 @@ func TestFromTablePreservesSQLiteVirtualTableIdentifierWhitespace(t *testing.T) 
 		VirtualArguments: "body",
 	}
 
-	result := fromschema.FromTable(table, nil, nil, platform.SQLite)
+	result := modelast.FromTable(table, nil, nil, platform.SQLite)
 
 	c.Assert(result.Name, qt.Equals, `" aux "." docs "`)
 	c.Assert(result.Options[ast.SQLiteVirtualModuleOption], qt.Equals, "fts5")
@@ -901,7 +902,7 @@ func TestFromTable_FieldForeignKeyWithoutNameUsesTableColumnConvention(t *testin
 		},
 	}
 
-	result := fromschema.FromTable(table, fields, nil, "postgres")
+	result := modelast.FromTable(table, fields, nil, "postgres")
 	c.Assert(result, qt.IsNotNil)
 	c.Assert(result.Columns, qt.HasLen, 1)
 	c.Assert(result.Columns[0].ForeignKey, qt.IsNotNil)
@@ -928,7 +929,7 @@ func TestFromTable_PrimaryKeyParts(t *testing.T) {
 		Primary:    true,
 	}}
 
-	result := fromschema.FromTable(table, fields, nil, "")
+	result := modelast.FromTable(table, fields, nil, "")
 
 	c.Assert(result.Columns, qt.HasLen, 1)
 	c.Assert(result.Columns[0].Primary, qt.IsFalse)
@@ -965,7 +966,7 @@ func TestFromTable_PrimaryKeyInclude(t *testing.T) {
 		},
 	}
 
-	result := fromschema.FromTable(table, fields, nil, "")
+	result := modelast.FromTable(table, fields, nil, "")
 
 	c.Assert(result.Columns, qt.HasLen, 2)
 	c.Assert(result.Columns[0].Primary, qt.IsFalse)
@@ -975,7 +976,7 @@ func TestFromTable_PrimaryKeyInclude(t *testing.T) {
 	c.Assert(result.Constraints[0].IncludeColumns, qt.DeepEquals, []string{"covering"})
 }
 
-func TestFromDatabase_TableLevelConstraints(t *testing.T) {
+func TestCollectDatabase_TableLevelConstraints(t *testing.T) {
 	c := qt.New(t)
 
 	db := schemamodel.Database{
@@ -996,7 +997,7 @@ func TestFromDatabase_TableLevelConstraints(t *testing.T) {
 		}},
 	}
 
-	result := fromschema.FromDatabase(db, "postgres")
+	result := modelast.CollectDatabase(db, "postgres")
 
 	c.Assert(result.Statements, qt.HasLen, 1)
 	table, ok := result.Statements[0].(*ast.CreateTableNode)
@@ -1007,7 +1008,7 @@ func TestFromDatabase_TableLevelConstraints(t *testing.T) {
 	c.Assert(table.Constraints[0].Expression, qt.Equals, "position('@' in email) > 1")
 }
 
-func TestFromDatabase_TableLevelForeignKeysAreTwoPhase(t *testing.T) {
+func TestCollectDatabase_TableLevelForeignKeysAreTwoPhase(t *testing.T) {
 	c := qt.New(t)
 
 	db := schemamodel.Database{
@@ -1042,7 +1043,7 @@ func TestFromDatabase_TableLevelForeignKeysAreTwoPhase(t *testing.T) {
 		},
 	}
 
-	result := fromschema.FromDatabase(db, "postgres")
+	result := modelast.CollectDatabase(db, "postgres")
 
 	c.Assert(result.Statements, qt.HasLen, 4)
 	accounts := result.Statements[0].(*ast.CreateTableNode)
@@ -1067,7 +1068,7 @@ func TestFromDatabase_TableLevelForeignKeysAreTwoPhase(t *testing.T) {
 	c.Assert(addProfilesFK.Constraint.Reference.OnUpdate, qt.Equals, "RESTRICT")
 }
 
-func TestFromDatabase_ExtensionsPrecedeTablesAndIndexes(t *testing.T) {
+func TestCollectDatabase_ExtensionsPrecedeTablesAndIndexes(t *testing.T) {
 	c := qt.New(t)
 
 	db := schemamodel.Database{
@@ -1088,7 +1089,7 @@ func TestFromDatabase_ExtensionsPrecedeTablesAndIndexes(t *testing.T) {
 		}},
 	}
 
-	result := fromschema.FromDatabase(db, "postgres")
+	result := modelast.CollectDatabase(db, "postgres")
 
 	extension := extensionStatementIndexByName(result, "citext")
 	table := tableStatementIndexByName(result, "users")
@@ -1101,7 +1102,7 @@ func TestFromDatabase_ExtensionsPrecedeTablesAndIndexes(t *testing.T) {
 	c.Assert(extension < index, qt.IsTrue)
 }
 
-func TestFromDatabase_UniqueIndexesPrecedeForeignKeys(t *testing.T) {
+func TestCollectDatabase_UniqueIndexesPrecedeForeignKeys(t *testing.T) {
 	c := qt.New(t)
 
 	db := schemamodel.Database{
@@ -1128,7 +1129,7 @@ func TestFromDatabase_UniqueIndexesPrecedeForeignKeys(t *testing.T) {
 		},
 	}
 
-	result := fromschema.FromDatabase(db, "postgres")
+	result := modelast.CollectDatabase(db, "postgres")
 
 	function := functionStatementIndexByName(result, "normalize_code")
 	uniqueIndex := indexStatementIndexByName(result, "uq_parents_code")
@@ -1144,7 +1145,7 @@ func TestFromDatabase_UniqueIndexesPrecedeForeignKeys(t *testing.T) {
 	c.Assert(foreignKey < nonUniqueIndex, qt.IsTrue)
 }
 
-func TestFromDatabase_DefaultForeignKeyNamesDoNotCollideAcrossSources(t *testing.T) {
+func TestCollectDatabase_DefaultForeignKeyNamesDoNotCollideAcrossSources(t *testing.T) {
 	c := qt.New(t)
 
 	database := schemamodel.Database{
@@ -1166,7 +1167,7 @@ func TestFromDatabase_DefaultForeignKeyNamesDoNotCollideAcrossSources(t *testing
 		}},
 	}
 
-	statements := fromschema.FromDatabase(database, "postgres")
+	statements := modelast.CollectDatabase(database, "postgres")
 	fieldAlter := statements.Statements[2].(*ast.AlterTableNode)
 	fieldOperation := fieldAlter.Operations[0].(*ast.AddConstraintOperation)
 	tableAlter := statements.Statements[3].(*ast.AlterTableNode)
@@ -1177,7 +1178,7 @@ func TestFromDatabase_DefaultForeignKeyNamesDoNotCollideAcrossSources(t *testing
 	c.Assert(fieldOperation.Constraint.Name, qt.Not(qt.Equals), tableOperation.Constraint.Name)
 }
 
-func TestFromDatabase_ExplicitForeignKeyNameReservesAutomaticName(t *testing.T) {
+func TestCollectDatabase_ExplicitForeignKeyNameReservesAutomaticName(t *testing.T) {
 	c := qt.New(t)
 
 	database := schemamodel.Database{
@@ -1200,7 +1201,7 @@ func TestFromDatabase_ExplicitForeignKeyNameReservesAutomaticName(t *testing.T) 
 		}},
 	}
 
-	statements := fromschema.FromDatabase(database, "postgres")
+	statements := modelast.CollectDatabase(database, "postgres")
 	fieldAlter := statements.Statements[2].(*ast.AlterTableNode)
 	fieldOperation := fieldAlter.Operations[0].(*ast.AddConstraintOperation)
 	tableAlter := statements.Statements[3].(*ast.AlterTableNode)
@@ -1210,7 +1211,7 @@ func TestFromDatabase_ExplicitForeignKeyNameReservesAutomaticName(t *testing.T) 
 	c.Assert(tableOperation.Constraint.Name, qt.Equals, "fk_children_parent_id")
 }
 
-func TestFromDatabase_MySQLFamilyExplicitForeignKeyNameReservesCaseInsensitiveAutomaticName(t *testing.T) {
+func TestCollectDatabase_MySQLFamilyExplicitForeignKeyNameReservesCaseInsensitiveAutomaticName(t *testing.T) {
 	database := schemamodel.Database{
 		Tables: []schemamodel.Table{
 			{StructName: "Parent", Name: "parents"},
@@ -1245,7 +1246,7 @@ func TestFromDatabase_MySQLFamilyExplicitForeignKeyNameReservesCaseInsensitiveAu
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			names := foreignKeyConstraintNames(fromschema.FromDatabase(database, test.dialect))
+			names := foreignKeyConstraintNames(modelast.CollectDatabase(database, test.dialect))
 
 			c.Assert(names, qt.HasLen, 2)
 			c.Assert(names[0], qt.Matches, `fk_children_parent_id_[0-9a-f]{8}`)
@@ -1254,7 +1255,7 @@ func TestFromDatabase_MySQLFamilyExplicitForeignKeyNameReservesCaseInsensitiveAu
 	}
 }
 
-func TestFromDatabase_GeneratedForeignKeyNamesRespectPostgreSQLByteLimit(t *testing.T) {
+func TestCollectDatabase_GeneratedForeignKeyNamesRespectPostgreSQLByteLimit(t *testing.T) {
 	c := qt.New(t)
 	database := databaseWithGeneratedForeignKeys(
 		strings.Repeat("shared_table_prefix_", 4),
@@ -1262,7 +1263,7 @@ func TestFromDatabase_GeneratedForeignKeyNamesRespectPostgreSQLByteLimit(t *test
 		strings.Repeat("shared_column_prefix_", 4)+"beta",
 	)
 
-	names := foreignKeyConstraintNames(fromschema.FromDatabase(database, platform.Postgres))
+	names := foreignKeyConstraintNames(modelast.CollectDatabase(database, platform.Postgres))
 
 	c.Assert(names, qt.HasLen, 2)
 	c.Assert([]byte(names[0]), qt.HasLen, 63)
@@ -1272,14 +1273,14 @@ func TestFromDatabase_GeneratedForeignKeyNamesRespectPostgreSQLByteLimit(t *test
 	c.Assert(names[0], qt.Not(qt.Equals), names[1])
 }
 
-func TestFromDatabase_GeneratedForeignKeyNamesPreservePostgreSQLUTF8(t *testing.T) {
+func TestCollectDatabase_GeneratedForeignKeyNamesPreservePostgreSQLUTF8(t *testing.T) {
 	c := qt.New(t)
 	database := databaseWithGeneratedForeignKeys(
 		strings.Repeat("界", 30),
 		strings.Repeat("列", 20),
 	)
 
-	names := foreignKeyConstraintNames(fromschema.FromDatabase(database, platform.Postgres))
+	names := foreignKeyConstraintNames(modelast.CollectDatabase(database, platform.Postgres))
 
 	c.Assert(names, qt.HasLen, 1)
 	c.Assert(utf8.ValidString(names[0]), qt.IsTrue)
@@ -1287,7 +1288,7 @@ func TestFromDatabase_GeneratedForeignKeyNamesPreservePostgreSQLUTF8(t *testing.
 	c.Assert(names[0], qt.Matches, `.*_[0-9a-f]{8}`)
 }
 
-func TestFromDatabase_GeneratedForeignKeyNamesRespectMySQLFamilyCharacterLimit(t *testing.T) {
+func TestCollectDatabase_GeneratedForeignKeyNamesRespectMySQLFamilyCharacterLimit(t *testing.T) {
 	database := databaseWithGeneratedForeignKeys(
 		strings.Repeat("資料", 40),
 		strings.Repeat("欄位", 20),
@@ -1303,7 +1304,7 @@ func TestFromDatabase_GeneratedForeignKeyNamesRespectMySQLFamilyCharacterLimit(t
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			names := foreignKeyConstraintNames(fromschema.FromDatabase(database, test.dialect))
+			names := foreignKeyConstraintNames(modelast.CollectDatabase(database, test.dialect))
 
 			c.Assert(names, qt.HasLen, 1)
 			c.Assert(utf8.RuneCountInString(names[0]), qt.Equals, 64)
@@ -1313,7 +1314,7 @@ func TestFromDatabase_GeneratedForeignKeyNamesRespectMySQLFamilyCharacterLimit(t
 	}
 }
 
-func TestFromDatabase_GeneratedForeignKeyNamesRespectSQLServerAndSpannerCharacterLimit(t *testing.T) {
+func TestCollectDatabase_GeneratedForeignKeyNamesRespectSQLServerAndSpannerCharacterLimit(t *testing.T) {
 	database := databaseWithGeneratedForeignKeys(
 		strings.Repeat("資料", 70),
 		strings.Repeat("欄位", 40),
@@ -1329,7 +1330,7 @@ func TestFromDatabase_GeneratedForeignKeyNamesRespectSQLServerAndSpannerCharacte
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			names := foreignKeyConstraintNames(fromschema.FromDatabase(database, test.dialect))
+			names := foreignKeyConstraintNames(modelast.CollectDatabase(database, test.dialect))
 
 			c.Assert(names, qt.HasLen, 1)
 			c.Assert(utf8.RuneCountInString(names[0]), qt.Equals, 128)
@@ -1339,7 +1340,7 @@ func TestFromDatabase_GeneratedForeignKeyNamesRespectSQLServerAndSpannerCharacte
 	}
 }
 
-func TestFromDatabase_SchemaScopedForeignKeyNamesReserveExplicitNames(t *testing.T) {
+func TestCollectDatabase_SchemaScopedForeignKeyNamesReserveExplicitNames(t *testing.T) {
 	tests := []struct {
 		name           string
 		dialect        string
@@ -1371,7 +1372,7 @@ func TestFromDatabase_SchemaScopedForeignKeyNamesReserveExplicitNames(t *testing
 				},
 			}
 
-			names := foreignKeyConstraintNames(fromschema.FromDatabase(database, test.dialect))
+			names := foreignKeyConstraintNames(modelast.CollectDatabase(database, test.dialect))
 
 			c.Assert(names, qt.HasLen, 2)
 			c.Assert(names[0], qt.Matches, `fk_children_parent_id_[0-9a-f]{8}`)
@@ -1380,7 +1381,7 @@ func TestFromDatabase_SchemaScopedForeignKeyNamesReserveExplicitNames(t *testing
 	}
 }
 
-func TestFromDatabase_SchemaScopedForeignKeyNamesMayRepeatAcrossSchemas(t *testing.T) {
+func TestCollectDatabase_SchemaScopedForeignKeyNamesMayRepeatAcrossSchemas(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
@@ -1405,7 +1406,7 @@ func TestFromDatabase_SchemaScopedForeignKeyNamesMayRepeatAcrossSchemas(t *testi
 				},
 			}
 
-			names := foreignKeyConstraintNames(fromschema.FromDatabase(database, test.dialect))
+			names := foreignKeyConstraintNames(modelast.CollectDatabase(database, test.dialect))
 
 			c.Assert(names, qt.DeepEquals, []string{"fk_children_parent_id", "fk_children_parent_id"})
 		})
@@ -1432,8 +1433,8 @@ func TestAssignDefaultForeignKeyNames_IsIdempotentAndCloneOnly(t *testing.T) {
 		},
 	}
 
-	first := fromschema.AssignDefaultForeignKeyNames(database, platform.MySQL)
-	second := fromschema.AssignDefaultForeignKeyNames(first, platform.MySQL)
+	first := schemaprep.AssignDefaultForeignKeyNames(database, platform.MySQL)
+	second := schemaprep.AssignDefaultForeignKeyNames(first, platform.MySQL)
 
 	c.Assert(second, qt.DeepEquals, first)
 	c.Assert(database.Fields, qt.DeepEquals, []schemamodel.Field{{
@@ -1446,7 +1447,7 @@ func TestAssignDefaultForeignKeyNames_IsIdempotentAndCloneOnly(t *testing.T) {
 	c.Assert(database.EmbeddedFields, qt.HasLen, 2)
 }
 
-func TestFromDatabase_GeneratedForeignKeyNamesAreDeterministic(t *testing.T) {
+func TestCollectDatabase_GeneratedForeignKeyNamesAreDeterministic(t *testing.T) {
 	c := qt.New(t)
 	database := databaseWithGeneratedForeignKeys(
 		strings.Repeat("deterministic_table_", 4),
@@ -1454,8 +1455,8 @@ func TestFromDatabase_GeneratedForeignKeyNamesAreDeterministic(t *testing.T) {
 		strings.Repeat("deterministic_column_", 4)+"beta",
 	)
 
-	first := foreignKeyConstraintNames(fromschema.FromDatabase(database, platform.Postgres))
-	second := foreignKeyConstraintNames(fromschema.FromDatabase(database, platform.Postgres))
+	first := foreignKeyConstraintNames(modelast.CollectDatabase(database, platform.Postgres))
+	second := foreignKeyConstraintNames(modelast.CollectDatabase(database, platform.Postgres))
 
 	c.Assert(first, qt.HasLen, 2)
 	c.Assert(second, qt.DeepEquals, first)
@@ -1465,7 +1466,7 @@ func TestFromDatabase_GeneratedForeignKeyNamesAreDeterministic(t *testing.T) {
 	})
 }
 
-func TestFromDatabase_SQLiteForeignKeysAreInline(t *testing.T) {
+func TestCollectDatabase_SQLiteForeignKeysAreInline(t *testing.T) {
 	c := qt.New(t)
 
 	db := schemamodel.Database{
@@ -1489,7 +1490,7 @@ func TestFromDatabase_SQLiteForeignKeysAreInline(t *testing.T) {
 		}},
 	}
 
-	result := fromschema.FromDatabase(db, "sqlite")
+	result := modelast.CollectDatabase(db, "sqlite")
 
 	c.Assert(result.Statements, qt.HasLen, 2)
 	accounts := result.Statements[0].(*ast.CreateTableNode)
@@ -1504,7 +1505,7 @@ func TestFromDatabase_SQLiteForeignKeysAreInline(t *testing.T) {
 	c.Assert(foreignKeyAlterStatementByName(result, "profiles", "fk_profiles_account_id"), qt.IsNil)
 }
 
-func TestFromDatabase_Schemas(t *testing.T) {
+func TestCollectDatabase_Schemas(t *testing.T) {
 	c := qt.New(t)
 
 	db := schemamodel.Database{
@@ -1519,7 +1520,7 @@ func TestFromDatabase_Schemas(t *testing.T) {
 		}},
 	}
 
-	result := fromschema.FromDatabase(db, "postgres")
+	result := modelast.CollectDatabase(db, "postgres")
 
 	c.Assert(result.Statements, qt.HasLen, 2)
 	schema, ok := result.Statements[0].(*ast.CreateSchemaNode)
@@ -1555,7 +1556,7 @@ func TestFromTable_FiltersByStructName(t *testing.T) {
 		},
 	}
 
-	result := fromschema.FromTable(table, fields, nil, "")
+	result := modelast.FromTable(table, fields, nil, "")
 
 	c.Assert(result, qt.IsNotNil)
 	c.Assert(result.Name, qt.Equals, "users")
@@ -1719,14 +1720,14 @@ func TestFromIndex_BasicIndex(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := fromschema.FromIndex(test.index)
+			result := modelast.FromIndex(test.index)
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
 	}
 }
 
-func TestFromDatabase_IndexIncludeColumns(t *testing.T) {
+func TestCollectDatabase_IndexIncludeColumns(t *testing.T) {
 	c := qt.New(t)
 	db := schemamodel.Database{
 		Tables: []schemamodel.Table{
@@ -1748,7 +1749,7 @@ func TestFromDatabase_IndexIncludeColumns(t *testing.T) {
 		},
 	}
 
-	result := fromschema.FromDatabase(db, "postgres")
+	result := modelast.CollectDatabase(db, "postgres")
 	c.Assert(result.Statements, qt.HasLen, 2)
 	index, ok := result.Statements[1].(*ast.IndexNode)
 	c.Assert(ok, qt.IsTrue)
@@ -1764,7 +1765,7 @@ func TestFromConstraint_UniqueNullsNotDistinct(t *testing.T) {
 	c := qt.New(t)
 	nullsDistinct := false
 
-	node := fromschema.FromConstraint(schemamodel.Constraint{
+	node := modelast.FromConstraint(schemamodel.Constraint{
 		Name:           "users_c_key",
 		Type:           "UNIQUE",
 		Columns:        []string{"c"},
@@ -1827,14 +1828,14 @@ func TestFromEnum_BasicEnum(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := fromschema.FromEnum(test.enum)
+			result := modelast.FromEnum(test.enum)
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
 	}
 }
 
-func TestFromDatabase_CompleteSchema(t *testing.T) {
+func TestCollectDatabase_CompleteSchema(t *testing.T) {
 	c := qt.New(t)
 
 	database := schemamodel.Database{
@@ -1896,7 +1897,7 @@ func TestFromDatabase_CompleteSchema(t *testing.T) {
 		},
 	}
 
-	result := fromschema.FromDatabase(database, "")
+	result := modelast.CollectDatabase(database, "")
 
 	c.Assert(result, qt.IsNotNil)
 	c.Assert(result.Statements, qt.HasLen, 6) // 1 enum + 2 tables + 1 FK + 2 indexes
@@ -1927,7 +1928,7 @@ func TestFromDatabase_CompleteSchema(t *testing.T) {
 	c.Assert(index2Node.Name, qt.Equals, "idx_posts_user")
 }
 
-func TestFromDatabase_EmptySchema(t *testing.T) {
+func TestCollectDatabase_EmptySchema(t *testing.T) {
 	c := qt.New(t)
 
 	database := schemamodel.Database{
@@ -1937,13 +1938,13 @@ func TestFromDatabase_EmptySchema(t *testing.T) {
 		Indexes: make([]schemamodel.Index, 0),
 	}
 
-	result := fromschema.FromDatabase(database, "")
+	result := modelast.CollectDatabase(database, "")
 
 	c.Assert(result, qt.IsNotNil)
 	c.Assert(result.Statements, qt.HasLen, 0)
 }
 
-func TestFromDatabase_InlineEnumDialectsOmitStandaloneEnumStatements(t *testing.T) {
+func TestCollectDatabase_InlineEnumDialectsOmitStandaloneEnumStatements(t *testing.T) {
 	database := schemamodel.Database{
 		Enums: []schemamodel.Enum{{
 			Name:   "enum_account_status",
@@ -1992,7 +1993,7 @@ func TestFromDatabase_InlineEnumDialectsOmitStandaloneEnumStatements(t *testing.
 		t.Run(test.dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			result := fromschema.FromDatabase(database, test.dialect)
+			result := modelast.CollectDatabase(database, test.dialect)
 
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(countEnumStatements(result), qt.Equals, 0)
@@ -2006,7 +2007,7 @@ func TestFromDatabase_InlineEnumDialectsOmitStandaloneEnumStatements(t *testing.
 	}
 }
 
-func TestFromDatabase_PostgresKeepsStandaloneEnumStatements(t *testing.T) {
+func TestCollectDatabase_PostgresKeepsStandaloneEnumStatements(t *testing.T) {
 	c := qt.New(t)
 
 	database := schemamodel.Database{
@@ -2026,7 +2027,7 @@ func TestFromDatabase_PostgresKeepsStandaloneEnumStatements(t *testing.T) {
 		}},
 	}
 
-	result := fromschema.FromDatabase(database, platform.Postgres)
+	result := modelast.CollectDatabase(database, platform.Postgres)
 
 	c.Assert(result, qt.IsNotNil)
 	c.Assert(countEnumStatements(result), qt.Equals, 1)
@@ -2037,7 +2038,7 @@ func TestFromDatabase_PostgresKeepsStandaloneEnumStatements(t *testing.T) {
 	c.Assert(status.Type, qt.Equals, "enum_account_status")
 }
 
-func TestFromDatabase_MySQLIncludesViewsAndTriggers(t *testing.T) {
+func TestCollectDatabase_MySQLIncludesViewsAndTriggers(t *testing.T) {
 	c := qt.New(t)
 
 	database := schemamodel.Database{
@@ -2054,7 +2055,7 @@ func TestFromDatabase_MySQLIncludesViewsAndTriggers(t *testing.T) {
 		}},
 	}
 
-	result := fromschema.FromDatabase(database, "mysql")
+	result := modelast.CollectDatabase(database, "mysql")
 
 	c.Assert(result.Statements, qt.HasLen, 2)
 	viewNode, ok := result.Statements[0].(*ast.CreateViewNode)
@@ -2066,7 +2067,7 @@ func TestFromDatabase_MySQLIncludesViewsAndTriggers(t *testing.T) {
 	c.Assert(triggerNode.Table, qt.Equals, "users")
 }
 
-func TestFromDatabase_SQLiteIncludesViewsAndTriggers(t *testing.T) {
+func TestCollectDatabase_SQLiteIncludesViewsAndTriggers(t *testing.T) {
 	c := qt.New(t)
 
 	database := schemamodel.Database{
@@ -2083,7 +2084,7 @@ func TestFromDatabase_SQLiteIncludesViewsAndTriggers(t *testing.T) {
 		}},
 	}
 
-	result := fromschema.FromDatabase(database, "sqlite")
+	result := modelast.CollectDatabase(database, "sqlite")
 
 	c.Assert(result.Statements, qt.HasLen, 2)
 	viewNode, ok := result.Statements[0].(*ast.CreateViewNode)
@@ -2219,7 +2220,7 @@ func TestFromField_PlatformOverrides(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := fromschema.FromField(test.field, nil, test.targetPlatform)
+			result := modelast.FromField(test.field, nil, test.targetPlatform)
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
@@ -2383,14 +2384,14 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := fromschema.FromTable(test.table, test.fields, nil, test.targetPlatform)
+			result := modelast.FromTable(test.table, test.fields, nil, test.targetPlatform)
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
 	}
 }
 
-func TestFromDatabase_PlatformOverrides(t *testing.T) {
+func TestCollectDatabase_PlatformOverrides(t *testing.T) {
 	c := qt.New(t)
 
 	database := schemamodel.Database{
@@ -2418,7 +2419,7 @@ func TestFromDatabase_PlatformOverrides(t *testing.T) {
 	}
 
 	// Test MySQL platform
-	mysqlResult := fromschema.FromDatabase(database, "mysql")
+	mysqlResult := modelast.CollectDatabase(database, "mysql")
 	c.Assert(mysqlResult, qt.IsNotNil)
 	c.Assert(mysqlResult.Statements, qt.HasLen, 1)
 
@@ -2430,7 +2431,7 @@ func TestFromDatabase_PlatformOverrides(t *testing.T) {
 	c.Assert(tableNode.Columns[0].Type, qt.Equals, "JSON") // Overridden type
 
 	// Test PostgreSQL platform (no overrides)
-	postgresResult := fromschema.FromDatabase(database, "postgres")
+	postgresResult := modelast.CollectDatabase(database, "postgres")
 	c.Assert(postgresResult, qt.IsNotNil)
 	c.Assert(postgresResult.Statements, qt.HasLen, 1)
 
@@ -2442,7 +2443,7 @@ func TestFromDatabase_PlatformOverrides(t *testing.T) {
 	c.Assert(tableNode2.Columns[0].Type, qt.Equals, "JSONB") // Default type
 }
 
-func TestFromDatabase_EmbeddedFields_InlineMode(t *testing.T) {
+func TestCollectDatabase_EmbeddedFields_InlineMode(t *testing.T) {
 	tests := []struct {
 		name     string
 		database schemamodel.Database
@@ -2558,14 +2559,14 @@ func TestFromDatabase_EmbeddedFields_InlineMode(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := fromschema.FromDatabase(test.database, "")
+			result := modelast.CollectDatabase(test.database, "")
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
 	}
 }
 
-func TestFromDatabase_EmbeddedFields_JsonMode(t *testing.T) {
+func TestCollectDatabase_EmbeddedFields_JsonMode(t *testing.T) {
 	tests := []struct {
 		name     string
 		database schemamodel.Database
@@ -2709,14 +2710,14 @@ func TestFromDatabase_EmbeddedFields_JsonMode(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := fromschema.FromDatabase(test.database, "")
+			result := modelast.CollectDatabase(test.database, "")
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
 	}
 }
 
-func TestFromDatabase_EmbeddedFields_JsonModeDoesNotDuplicateAlreadyProcessedField(t *testing.T) {
+func TestCollectDatabase_EmbeddedFields_JsonModeDoesNotDuplicateAlreadyProcessedField(t *testing.T) {
 	c := qt.New(t)
 	database := schemamodel.Database{
 		Tables: []schemamodel.Table{{
@@ -2747,10 +2748,10 @@ func TestFromDatabase_EmbeddedFields_JsonModeDoesNotDuplicateAlreadyProcessedFie
 		}},
 	}
 
-	fields := fromschema.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
+	fields := schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
 	c.Assert(countFields(fields, "User", "metadata"), qt.Equals, 1)
 
-	statements := fromschema.FromDatabase(database, "postgres")
+	statements := modelast.CollectDatabase(database, "postgres")
 	table := tableStatementByName(statements, "users")
 	c.Assert(table, qt.IsNotNil)
 	c.Assert(countColumns(table, "metadata"), qt.Equals, 1)
@@ -2789,7 +2790,7 @@ func TestProcessEmbeddedFields_PropagatesNestedPlatformOverrides(t *testing.T) {
 		},
 	}
 
-	got := fromschema.ProcessEmbeddedFields(embeddedFields, fields)
+	got := schemamodel.ProcessEmbeddedFields(embeddedFields, fields)
 
 	c.Assert(got, qt.HasLen, 4)
 	c.Assert(got[1].Name, qt.Equals, "owner_label")
@@ -2807,7 +2808,7 @@ func TestProcessEmbeddedFields_PropagatesNestedPlatformOverrides(t *testing.T) {
 	})
 }
 
-func TestFromDatabase_EmbeddedFields_RelationMode(t *testing.T) {
+func TestCollectDatabase_EmbeddedFields_RelationMode(t *testing.T) {
 	tests := []struct {
 		name     string
 		database schemamodel.Database
@@ -2953,14 +2954,14 @@ func TestFromDatabase_EmbeddedFields_RelationMode(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := fromschema.FromDatabase(test.database, "")
+			result := modelast.CollectDatabase(test.database, "")
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
 	}
 }
 
-func TestFromDatabase_EmbeddedFields_SkipAndDefaultModes(t *testing.T) {
+func TestCollectDatabase_EmbeddedFields_SkipAndDefaultModes(t *testing.T) {
 	tests := []struct {
 		name     string
 		database schemamodel.Database
@@ -3106,14 +3107,14 @@ func TestFromDatabase_EmbeddedFields_SkipAndDefaultModes(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := fromschema.FromDatabase(test.database, "")
+			result := modelast.CollectDatabase(test.database, "")
 			c.Assert(result, qt.IsNotNil)
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
 	}
 }
 
-func TestFromDatabase_EmbeddedFields_ComplexScenario(t *testing.T) {
+func TestCollectDatabase_EmbeddedFields_ComplexScenario(t *testing.T) {
 	c := qt.New(t)
 
 	// Complex scenario with multiple embedded fields using different modes
@@ -3205,7 +3206,7 @@ func TestFromDatabase_EmbeddedFields_ComplexScenario(t *testing.T) {
 		},
 	}
 
-	result := fromschema.FromDatabase(database, "")
+	result := modelast.CollectDatabase(database, "")
 
 	c.Assert(result, qt.IsNotNil)
 	c.Assert(result.Statements, qt.HasLen, 2)
@@ -3327,7 +3328,7 @@ func TestFromField_EnumConversion_SQLInjectionPrevention(t *testing.T) {
 			}
 
 			// Convert field with enum conversion
-			result := fromschema.FromField(field, []schemamodel.Enum{enum}, tt.platform)
+			result := modelast.FromField(field, []schemamodel.Enum{enum}, tt.platform)
 
 			// Verify the type was properly escaped
 			c.Assert(result.Type, qt.Equals, tt.expectedType)
@@ -3336,7 +3337,7 @@ func TestFromField_EnumConversion_SQLInjectionPrevention(t *testing.T) {
 	}
 }
 
-// TestFromDatabase_EmbeddedRelationFKActions verifies that on_delete /
+// TestCollectDatabase_EmbeddedRelationFKActions verifies that on_delete /
 // on_update declared on a //ptah:embedded mode="relation" annotation
 // flow through to the generated foreign key constraint.
 //
@@ -3344,7 +3345,7 @@ func TestFromField_EnumConversion_SQLInjectionPrevention(t *testing.T) {
 // fix wired the regular Field path, and this test pins the parallel wiring
 // in processEmbeddedRelationMode so embedded-relation FKs don't silently
 // drop their actions on the generate path.
-func TestFromDatabase_EmbeddedRelationFKActions(t *testing.T) {
+func TestCollectDatabase_EmbeddedRelationFKActions(t *testing.T) {
 	c := qt.New(t)
 
 	db := schemamodel.Database{
@@ -3369,7 +3370,7 @@ func TestFromDatabase_EmbeddedRelationFKActions(t *testing.T) {
 		},
 	}
 
-	statements := fromschema.FromDatabase(db, "postgres")
+	statements := modelast.CollectDatabase(db, "postgres")
 	c.Assert(statements, qt.IsNotNil)
 
 	postsTable := tableStatementByName(statements, "posts")

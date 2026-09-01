@@ -1,4 +1,4 @@
-package fromschema_test
+package modelast_test
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 )
 
 // TestFromField_OracleEnumUsesVarchar2WithCheck pins the enum model for Oracle,
@@ -31,7 +31,7 @@ func TestFromField_OracleEnumUsesVarchar2WithCheck(t *testing.T) {
 	field := schemamodel.Field{Name: "status", Type: "enum_status"}
 	enums := []schemamodel.Enum{{Name: "enum_status", Values: []string{"active", "blocked"}}}
 
-	column := fromschema.FromField(field, enums, platform.Oracle)
+	column := modelast.FromField(field, enums, platform.Oracle)
 
 	c.Assert(column.Type, qt.Equals, "VARCHAR2(255)")
 	c.Assert(column.Check, qt.Equals, "status IN ('active', 'blocked')")
@@ -55,7 +55,7 @@ func TestFromField_OracleEnumCheckMatchesTheColumnSpelling(t *testing.T) {
 	field := schemamodel.Field{Name: "comment", Type: "enum_kind"}
 	enums := []schemamodel.Enum{{Name: "enum_kind", Values: []string{"note"}}}
 
-	column := fromschema.FromField(field, enums, platform.Oracle)
+	column := modelast.FromField(field, enums, platform.Oracle)
 
 	c.Assert(column.Check, qt.Equals, `"comment" IN ('note')`)
 }

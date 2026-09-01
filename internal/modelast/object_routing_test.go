@@ -1,4 +1,4 @@
-package fromschema_test
+package modelast_test
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 )
 
 // routedKind is one declared object kind, the AST node the converter must
@@ -109,7 +109,7 @@ func routingFixture() schemamodel.Database {
 	}
 }
 
-// TestFromDatabase_EveryDialectGetsEveryDeclaredObject is this converter's half
+// TestCollectDatabase_EveryDialectGetsEveryDeclaredObject is this converter's half
 // of stokaro/ptah#929 item 5: whether an object is converted is not a question
 // the dialect name answers.
 //
@@ -124,7 +124,7 @@ func routingFixture() schemamodel.Database {
 //
 // The assertion reports the missing (dialect, kind) pairs, so a regression names
 // what disappeared where.
-func TestFromDatabase_EveryDialectGetsEveryDeclaredObject(t *testing.T) {
+func TestCollectDatabase_EveryDialectGetsEveryDeclaredObject(t *testing.T) {
 	c := qt.New(t)
 
 	spellings := acceptedSpellings(c)
@@ -142,7 +142,7 @@ func TestFromDatabase_EveryDialectGetsEveryDeclaredObject(t *testing.T) {
 func missingRoutedObjects(spellings []string) []string {
 	var missing []string
 	for _, spelling := range spellings {
-		statements := fromschema.FromDatabase(routingFixture(), spelling).Statements
+		statements := modelast.CollectDatabase(routingFixture(), spelling).Statements
 		for _, kind := range routedKinds {
 			got := kind.count(statements)
 			if got == kind.want {
@@ -154,7 +154,7 @@ func missingRoutedObjects(spellings []string) []string {
 	return missing
 }
 
-// TestFromDatabase_TheRoutingFixtureCoversEveryDeclaredCollection is the control
+// TestCollectDatabase_TheRoutingFixtureCoversEveryDeclaredCollection is the control
 // for the test above.
 //
 // The grid is only as complete as the fixture. A kind the fixture does not
@@ -164,7 +164,7 @@ func missingRoutedObjects(spellings []string) []string {
 // requires every one of them to be either declared by the fixture or named here
 // with a reason, so a new object kind added to Database fails this test until
 // someone decides which it is.
-func TestFromDatabase_TheRoutingFixtureCoversEveryDeclaredCollection(t *testing.T) {
+func TestCollectDatabase_TheRoutingFixtureCoversEveryDeclaredCollection(t *testing.T) {
 	c := qt.New(t)
 
 	// Collections that are not standalone declared objects, each with the

@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/planner/tablelookup"
+	"go.5x5.cz/ptah/internal/tablelookup"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 

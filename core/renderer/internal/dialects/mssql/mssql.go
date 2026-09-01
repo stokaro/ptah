@@ -1061,7 +1061,7 @@ func renderGeneratedColumn(column *ast.ColumnNode) string {
 //
 // The platform.sqlserver.type override has the same symptom and is NOT fixed
 // here. It needs a fact of its own rather than this one: typeRawSQLSurvives in
-// internal/convert/fromschema deliberately drops the marker across an override,
+// internal/schemaprep deliberately drops the marker across an override,
 // because a writer emitting Atlas HCL would otherwise put sql() around text
 // that never went through it. #2147 records what that needs.
 //

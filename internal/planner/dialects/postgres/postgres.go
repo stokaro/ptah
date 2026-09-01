@@ -13,15 +13,15 @@ import (
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/constraintscope"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/indexscope"
+	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/planner/schemaprecondition"
-	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/rlsscope"
 	"go.5x5.cz/ptah/internal/schemaprep"
 	"go.5x5.cz/ptah/internal/systemschema"
+	"go.5x5.cz/ptah/internal/tablelookup"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/diffpolicy"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -253,11 +253,11 @@ func (p *Planner) usesConcurrentIndexDrop(ref difftypes.IndexRef) bool {
 
 func (p *Planner) addNewEnums(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	// No lookup: the change carries the enum (stokaro/ptah#2315). Building the
-	// node through fromschema.FromEnum still keeps the CREATE TYPE identifier
+	// node through modelast.FromEnum still keeps the CREATE TYPE identifier
 	// and the column type that references it derived from one place
 	// (stokaro/ptah#1276).
 	for _, enum := range diff.EnumsAdded {
-		result = append(result, fromschema.FromEnum(enum))
+		result = append(result, modelast.FromEnum(enum))
 	}
 	return result
 }
@@ -416,7 +416,7 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 	// which travels too (stokaro/ptah#2315).
 	creations := diff.TablesAdded.Qualified(diff.DeclaredUserTypes, DialectName).InDependencyOrder()
 	for _, creation := range creations {
-		astNode := fromschema.FromTableWithConstraints(creation.Table, creation.Fields, creation.Enums, DialectName, creation.Constraints)
+		astNode := modelast.FromTableWithConstraints(creation.Table, creation.Fields, creation.Enums, DialectName, creation.Constraints)
 		for _, column := range astNode.Columns {
 			column.ForeignKey = nil
 		}
@@ -676,7 +676,7 @@ func (p *Planner) addNewTableColumns(
 	// table's Go STRUCT name and a scan of every field in the schema, which is
 	// a parser artifact reaching into the planner (stokaro/ptah#2315).
 	for _, column := range tableDiff.ColumnsAdded {
-		columnNode := fromschema.FromFieldWithoutForeignKeys(column, vocabulary.Enums, "postgres")
+		columnNode := modelast.FromFieldWithoutForeignKeys(column, vocabulary.Enums, "postgres")
 
 		// Only add the column - foreign key constraints will be added separately
 		// to ensure proper dependency ordering (columns must exist before FK constraints)
@@ -829,7 +829,7 @@ func columnNodeFor(
 	if colDiff.Desired.Name == "" {
 		return nil, false
 	}
-	return fromschema.FromField(colDiff.Desired, vocabulary.Enums, "postgres"), true
+	return modelast.FromField(colDiff.Desired, vocabulary.Enums, "postgres"), true
 }
 
 // missingColumnDefinition reports a modification whose operand never arrived.
@@ -1137,7 +1137,7 @@ func (p *Planner) addNewIndexes(
 		// before conversion so source metadata cannot reintroduce an
 		// unqualified or ambiguous table association.
 		index.TableName = ref.TableName
-		indexNode := fromschema.FromIndex(index)
+		indexNode := modelast.FromIndex(index)
 		// CONCURRENTLY is opt-in policy AND capability-gated: the
 		// planner never emits it for a target that rejects it
 		// (issue #226; CockroachDB-style presets keep plain
@@ -1313,7 +1313,7 @@ func (p *Planner) plannedUserTypes(
 	for _, domain := range diff.DomainsAdded {
 		planned = append(planned, plannedUserType{
 			dep:  deporder.UserType{Name: domain.QualifiedName(), References: []string{domain.BaseType}},
-			node: fromschema.FromDomain(domain),
+			node: modelast.FromDomain(domain),
 		})
 	}
 	// No lookup, and no `if found` around it. The change carries the range
@@ -1322,7 +1322,7 @@ func (p *Planner) plannedUserTypes(
 	for _, rangeType := range diff.RangesAdded {
 		planned = append(planned, plannedUserType{
 			dep:  deporder.UserType{Name: rangeType.QualifiedName(), References: []string{rangeType.Subtype}},
-			node: fromschema.FromRange(rangeType),
+			node: modelast.FromRange(rangeType),
 		})
 	}
 	// No lookup: the change carries the composite type, so a name the desired
@@ -1330,7 +1330,7 @@ func (p *Planner) plannedUserTypes(
 	for _, composite := range diff.CompositeTypesAdded {
 		planned = append(planned, plannedUserType{
 			dep:  deporder.UserType{Name: composite.QualifiedName(), References: compositeFieldTypes(composite)},
-			node: fromschema.FromCompositeType(composite),
+			node: modelast.FromCompositeType(composite),
 		})
 	}
 	// A modification with no in-place ALTER is handled as drop + recreate. The
@@ -1349,7 +1349,7 @@ func (p *Planner) plannedUserTypes(
 		if domain := domainDiff.Desired; domain.Name != "" {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: domainDiff.DomainName, References: []string{domain.BaseType}},
-				node: fromschema.FromDomain(domain).SetComment(fmt.Sprintf("Recreate domain %s", domainDiff.DomainName)),
+				node: modelast.FromDomain(domain).SetComment(fmt.Sprintf("Recreate domain %s", domainDiff.DomainName)),
 			})
 		}
 	}
@@ -1362,7 +1362,7 @@ func (p *Planner) plannedUserTypes(
 		if composite := compositeDiff.Desired; composite.Name != "" {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: compositeDiff.TypeName, References: compositeFieldTypes(composite)},
-				node: fromschema.FromCompositeType(composite).SetComment(fmt.Sprintf("Recreate composite type %s", compositeDiff.TypeName)),
+				node: modelast.FromCompositeType(composite).SetComment(fmt.Sprintf("Recreate composite type %s", compositeDiff.TypeName)),
 			})
 		}
 	}
@@ -1373,7 +1373,7 @@ func (p *Planner) plannedUserTypes(
 		if rangeType := rangeDiff.Desired; rangeType.Name != "" {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: rangeDiff.RangeName, References: []string{rangeType.Subtype}},
-				node: fromschema.FromRange(rangeType).SetComment(fmt.Sprintf("Recreate range type %s", rangeDiff.RangeName)),
+				node: modelast.FromRange(rangeType).SetComment(fmt.Sprintf("Recreate range type %s", rangeDiff.RangeName)),
 			})
 		}
 	}
@@ -1875,7 +1875,7 @@ func (p *Planner) addNewRoles(result []ast.Node, diff *difftypes.SchemaDiff) []a
 	// handed rather than scanning the desired schema for a role of that name
 	// (stokaro/ptah#2315).
 	for _, role := range diff.RolesAdded {
-		result = append(result, fromschema.FromRole(role))
+		result = append(result, modelast.FromRole(role))
 	}
 	return result
 }
@@ -2041,7 +2041,7 @@ func (p *Planner) addNewExtensions(result []ast.Node, diff *difftypes.SchemaDiff
 	// No search: the change carries the extension (stokaro/ptah#2315), so one
 	// the desired schema does not declare no longer plans nothing.
 	for _, extension := range diff.ExtensionsAdded {
-		result = append(result, fromschema.FromExtension(extension))
+		result = append(result, modelast.FromExtension(extension))
 	}
 	return result
 }
@@ -2082,7 +2082,7 @@ func (p *Planner) addNewFunctions(result []ast.Node, diff *difftypes.SchemaDiff)
 		diff.DeclaredFunctions.Order,
 		diff.DeclaredFunctions.Dependencies,
 	) {
-		result = append(result, fromschema.FromFunction(fn))
+		result = append(result, modelast.FromFunction(fn))
 	}
 	return result
 }
@@ -2098,7 +2098,7 @@ func (p *Planner) modifyExistingFunctions(result []ast.Node, diff *difftypes.Sch
 			continue
 		}
 
-		functionNode := fromschema.FromFunction(target)
+		functionNode := modelast.FromFunction(target)
 		functionNode.SetComment(fmt.Sprintf("Modify function %s: %s", target.Name, summarizeFunctionChanges(fnDiff)))
 		result = append(result, functionNode)
 	}
@@ -2158,7 +2158,7 @@ func (p *Planner) removeFunctions(result []ast.Node, diff *difftypes.SchemaDiff)
 func (p *Planner) addNewSequences(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	// No lookup: the change carries the sequence (stokaro/ptah#2315).
 	for _, sequence := range diff.SequencesAdded {
-		sequenceNode := fromschema.FromSequence(sequence)
+		sequenceNode := modelast.FromSequence(sequence)
 		sequenceNode.OwnedBy = ""
 		result = append(result, sequenceNode)
 	}
@@ -2287,12 +2287,12 @@ func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *difftypes.Schem
 	for _, object := range deporder.ViewLikesForCreateForDialect(objects, p.targetDialect()) {
 		if object.Materialized {
 			if view := findMaterializedView(diff.DeclaredViewLikes.MaterializedViews, object.Name, semantics); view != nil {
-				result = append(result, fromschema.FromMaterializedView(*view))
+				result = append(result, modelast.FromMaterializedView(*view))
 			}
 			continue
 		}
 		if view := findView(diff.DeclaredViewLikes.Views, object.Name, semantics); view != nil {
-			result = append(result, fromschema.FromView(*view))
+			result = append(result, modelast.FromView(*view))
 		}
 	}
 	return result
@@ -2401,7 +2401,7 @@ func (p *Planner) appendViewLikeRecreate(
 			return result
 		}
 		result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists().SetCascade())
-		return append(result, fromschema.FromMaterializedView(*view))
+		return append(result, modelast.FromMaterializedView(*view))
 	}
 
 	view := objectlookup.View(declared.Views, object.Name, semantics)
@@ -2409,9 +2409,9 @@ func (p *Planner) appendViewLikeRecreate(
 		return result
 	}
 	if slices.Contains(dropped, object.Name) {
-		return append(result, fromschema.FromView(*view))
+		return append(result, modelast.FromView(*view))
 	}
-	return append(result, fromschema.FromView(*view).SetReplace())
+	return append(result, modelast.FromView(*view).SetReplace())
 }
 
 // viewReplaceKeepsDependents decides whether one modified view keeps the
@@ -2503,7 +2503,7 @@ func (p *Planner) modifyExistingMaterializedViews(result []ast.Node, diff *difft
 	for _, viewDiff := range diff.MaterializedViewsModified {
 		if view := viewDiff.Desired; view.Name != "" {
 			result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists().SetCascade())
-			result = append(result, fromschema.FromMaterializedView(view))
+			result = append(result, modelast.FromMaterializedView(view))
 		}
 	}
 	return result
@@ -2536,7 +2536,7 @@ func (p *Planner) addNewHypertables(result []ast.Node, diff *difftypes.SchemaDif
 	// The partitioning travels WITH the change, so this renders what it was
 	// handed rather than looking the table name back up in the desired schema.
 	for _, hypertable := range diff.HypertablesAdded {
-		result = append(result, fromschema.FromHypertable(hypertable))
+		result = append(result, modelast.FromHypertable(hypertable))
 	}
 	return result
 }
@@ -2553,7 +2553,7 @@ func (p *Planner) addNewContinuousAggregates(result []ast.Node, diff *difftypes.
 	// The body travels WITH the change, so this renders what it was handed
 	// rather than looking the name back up in the desired schema.
 	for _, aggregate := range diff.ContinuousAggregatesAdded {
-		result = append(result, fromschema.FromContinuousAggregate(aggregate))
+		result = append(result, modelast.FromContinuousAggregate(aggregate))
 	}
 	return result
 }
@@ -2581,7 +2581,7 @@ func (p *Planner) modifyExistingContinuousAggregates(
 		}
 		result = append(result,
 			dropContinuousAggregate(change.Desired),
-			fromschema.FromContinuousAggregate(change.Desired))
+			modelast.FromContinuousAggregate(change.Desired))
 	}
 	return result
 }
@@ -2646,7 +2646,7 @@ func (p *Planner) addNewSynonyms(result []ast.Node, diff *difftypes.SchemaDiff) 
 	// The target travels WITH the change, so this renders what it was handed
 	// rather than looking the name back up in the desired schema.
 	for _, synonym := range diff.SynonymsAdded {
-		result = append(result, fromschema.FromSynonym(synonym))
+		result = append(result, modelast.FromSynonym(synonym))
 	}
 	return result
 }
@@ -2662,7 +2662,7 @@ func (p *Planner) retargetSynonyms(result []ast.Node, diff *difftypes.SchemaDiff
 			continue
 		}
 		result = append(result, ast.NewDropSynonym(synonymDiff.SynonymName).SetIfExists())
-		result = append(result, fromschema.FromSynonym(synonym))
+		result = append(result, modelast.FromSynonym(synonym))
 	}
 	return result
 }
@@ -2724,7 +2724,7 @@ func (p *Planner) addNewTriggers(result []ast.Node, diff *difftypes.SchemaDiff) 
 	// carrying none names a trigger nothing can render, so it plans nothing.
 	for _, triggerRef := range diff.TriggersAdded {
 		if triggerRef.Desired.Name != "" {
-			result = append(result, fromschema.FromTrigger(triggerRef.Desired))
+			result = append(result, modelast.FromTrigger(triggerRef.Desired))
 		}
 	}
 	return result
@@ -2733,7 +2733,7 @@ func (p *Planner) addNewTriggers(result []ast.Node, diff *difftypes.SchemaDiff) 
 func (p *Planner) modifyExistingTriggers(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, triggerDiff := range diff.TriggersModified {
 		if triggerDiff.Desired.Name != "" {
-			result = append(result, fromschema.FromTrigger(triggerDiff.Desired).SetReplace())
+			result = append(result, modelast.FromTrigger(triggerDiff.Desired).SetReplace())
 		}
 	}
 	return result
@@ -2929,7 +2929,7 @@ func (p *Planner) addNewRLSPolicies(
 		if policy.Name == "" {
 			return nil, unrenderableRLSPolicy("added", policyRef.PolicyName, policyRef.TableName)
 		}
-		policyNode := fromschema.FromRLSPolicy(policy)
+		policyNode := modelast.FromRLSPolicy(policy)
 		// Set Replace flag to handle conflicts gracefully during migrations
 		policyNode.Replace = true
 		result = append(result, policyNode)
@@ -2958,7 +2958,7 @@ func (p *Planner) modifyExistingRLSPolicies(
 		if policy.Name == "" {
 			return nil, unrenderableRLSPolicy("modified", policyDiff.PolicyName, policyDiff.TableName)
 		}
-		policyNode := fromschema.FromRLSPolicy(policy).SetReplace()
+		policyNode := modelast.FromRLSPolicy(policy).SetReplace()
 		policyNode.SetComment(fmt.Sprintf("Modify RLS policy %s on table %s: %s",
 			policyDiff.PolicyName,
 			policyDiff.TableName,

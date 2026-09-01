@@ -189,11 +189,11 @@ instead of carrying its own copy of the switch.
 
 `Exceeds` is not yet the only place the rule is **applied**. Two copies existed
 when the model was introduced. `core/renderer` and
-`dbschema.validateSQLServerIdentifierNames` now both consume it, and one
-remains: `internal/convert/fromschema` (`foreignKeyNameFits`,
-`foreignKeyNameWithSuffix`) keeps a three-arm switch because it *truncates* a
-generated name to fit rather than refusing it, and the truncation needs a budget
-in the limit's unit — something `IdentifierLimit` does not expose today.
+`dbschema.validateSQLServerIdentifierNames` now both consume it. One copy
+remains in `internal/schemaprep`: `foreignKeyNameFits` and
+`foreignKeyNameWithSuffix` keep a three-arm switch because they *truncate* a
+generated name to fit rather than refusing it. The truncation needs a budget in
+the limit's unit, which `IdentifierLimit` does not expose today.
 
 Its predicate agrees with `capability.Identifiers`: compared against it over
 nine dialects and 16 name shapes chosen to straddle every boundary, 144

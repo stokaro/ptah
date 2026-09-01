@@ -13,7 +13,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 )
 
 // TestGenerateCreateTableFromStubs tests SQL generation from the sample entity files in stubs directory
@@ -48,7 +48,7 @@ func TestGenerateCreateTableFromStubs(t *testing.T) {
 					c := qt.New(t)
 
 					// Generate PostgreSQL SQL using the AST approach
-					createTableNode := fromschema.FromTable(table, database.Fields, database.Enums, "postgres")
+					createTableNode := modelast.FromTable(table, database.Fields, database.Enums, "postgres")
 					pgSQL, err := renderer.RenderSQL("postgres", createTableNode)
 					c.Assert(err, qt.IsNil)
 					pgSQL = legacyRenderedSQL(pgSQL)
@@ -59,7 +59,7 @@ func TestGenerateCreateTableFromStubs(t *testing.T) {
 
 					// For PostgreSQL, enums are created separately, so generate them if they exist
 					for _, enum := range database.Enums {
-						enumNode := fromschema.FromEnum(enum)
+						enumNode := modelast.FromEnum(enum)
 						enumSQL, err := renderer.RenderSQL("postgres", enumNode)
 						c.Assert(err, qt.IsNil)
 						enumSQL = legacyRenderedSQL(enumSQL)
@@ -67,7 +67,7 @@ func TestGenerateCreateTableFromStubs(t *testing.T) {
 					}
 
 					// Generate MySQL SQL
-					createTableNodeMySQL := fromschema.FromTable(table, database.Fields, database.Enums, "mysql")
+					createTableNodeMySQL := modelast.FromTable(table, database.Fields, database.Enums, "mysql")
 					mySQL, err := renderer.RenderSQL("mysql", createTableNodeMySQL)
 					c.Assert(err, qt.IsNil)
 					mySQL = legacyRenderedSQL(mySQL)
@@ -96,7 +96,7 @@ func TestGenerateCreateTableFromStubs(t *testing.T) {
 					c.Assert(mySQL, qt.Not(qt.Contains), "CREATE TYPE")
 
 					// Generate MariaDB SQL (may differ from MySQL due to platform-specific overrides)
-					createTableNodeMariaDB := fromschema.FromTable(table, database.Fields, database.Enums, "mariadb")
+					createTableNodeMariaDB := modelast.FromTable(table, database.Fields, database.Enums, "mariadb")
 					mariaSQL, err := renderer.RenderSQL("mariadb", createTableNodeMariaDB)
 					c.Assert(err, qt.IsNil)
 					mariaSQL = legacyRenderedSQL(mariaSQL)

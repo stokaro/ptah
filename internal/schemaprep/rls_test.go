@@ -11,12 +11,13 @@ import (
 )
 
 func TestQualifyRLSPolicyForTarget(t *testing.T) {
+	c := qt.New(t)
 	t.Parallel()
 	policy := schemamodel.RLSPolicy{Name: "tenant_policy", Table: "accounts"}
 
 	qualified := schemaprep.QualifyRLSPolicyForTarget(policy, "billing", platform.SQLServer)
-	qt.Assert(t, qualified.Name, qt.Equals, "billing.tenant_policy")
-	qt.Assert(t, qualified.Table, qt.Equals, "billing.accounts")
-	qt.Assert(t, schemaprep.QualifyRLSPolicyForTarget(policy, "billing", platform.Postgres), qt.DeepEquals, policy)
-	qt.Assert(t, schemaprep.QualifyRLSPolicyForTarget(policy, "", platform.SQLServer), qt.DeepEquals, policy)
+	c.Assert(qualified.Name, qt.Equals, "billing.tenant_policy")
+	c.Assert(qualified.Table, qt.Equals, "billing.accounts")
+	c.Assert(schemaprep.QualifyRLSPolicyForTarget(policy, "billing", platform.Postgres), qt.DeepEquals, policy)
+	c.Assert(schemaprep.QualifyRLSPolicyForTarget(policy, "", platform.SQLServer), qt.DeepEquals, policy)
 }

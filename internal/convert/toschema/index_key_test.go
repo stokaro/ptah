@@ -9,8 +9,8 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/convert/toschema"
+	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/internal/parser"
 )
 
@@ -209,7 +209,7 @@ func TestPostgresIndexDDLSurvivesItsOwnSQLSurface(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 			index := parseOneIndex(c, tt.ddl)
-			rendered, err := renderer.RenderSQL(platform.Postgres, fromschema.FromIndex(index))
+			rendered, err := renderer.RenderSQL(platform.Postgres, modelast.FromIndex(index))
 			c.Assert(err, qt.IsNil)
 			c.Assert(rendered, qt.Equals, tt.ddl+"\n")
 		})

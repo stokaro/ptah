@@ -19,6 +19,12 @@ type DeclaredUserTypes struct {
 
 // QualifyDeclaredUserTypes returns a shallow database clone whose fields name
 // unambiguous schema-scoped user types. The declaration is never mutated.
+//
+// The whole schema is required because a column carries only a type name while
+// the declaration carries its schema. Bare built-in names and names declared
+// more than once stay untouched: guessing there can silently retype a column.
+// This was measured on PostgreSQL 17.10 with a user domain named money beside
+// a pg_catalog money column (stokaro/ptah#1138).
 func QualifyDeclaredUserTypes(database *schemamodel.Database, targetPlatform string) *schemamodel.Database {
 	if database == nil {
 		return nil
@@ -90,7 +96,7 @@ func declaredUserTypeQualifiers(
 			scalars[name] = ""
 		}
 	}
-	if !emitsStandaloneEnumDefinitions(targetPlatform) {
+	if !EmitsStandaloneEnumDefinitions(targetPlatform) {
 		return scalars, scalars
 	}
 
@@ -147,7 +153,9 @@ func isArrayDimension(text string) bool {
 	return true
 }
 
-func emitsStandaloneEnumDefinitions(targetPlatform string) bool {
+// EmitsStandaloneEnumDefinitions reports whether the target represents enums
+// as schema objects instead of lowering their values into each column.
+func EmitsStandaloneEnumDefinitions(targetPlatform string) bool {
 	switch platform.NormalizeDialect(targetPlatform) {
 	case platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer, platform.Oracle:
 		return false
@@ -156,6 +164,10 @@ func emitsStandaloneEnumDefinitions(targetPlatform string) bool {
 	}
 }
 
+// namesABuiltInType guards the dangerous side of an ambiguous bare name. A
+// false negative can turn a built-in column into a same-named user type at
+// exit 0; a conservative false positive leaves the spelling unchanged and
+// fails loudly if the target cannot resolve it.
 func namesABuiltInType(dialect, typeName string) bool {
 	names := builtInTypeNamesFor(dialect)
 	if names == nil {

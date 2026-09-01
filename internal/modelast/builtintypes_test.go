@@ -1,4 +1,4 @@
-package fromschema_test
+package modelast_test
 
 import (
 	"slices"
@@ -9,7 +9,8 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
+	"go.5x5.cz/ptah/internal/schemaprep"
 )
 
 // shadowingDocument is the IR a PostgreSQL read produces for a schema whose
@@ -118,7 +119,7 @@ func TestQualifyDeclaredUserTypesLeavesABuiltInTypeAlone(t *testing.T) {
 		{
 			// The scalar spelling of an enum belongs to handleEnumTypes and
 			// stays with stokaro/ptah#1276; see
-			// TestFromDatabaseKeepsTheScalarEnumHalfWithIssue1276. This is the
+			// TestCollectDatabaseKeepsTheScalarEnumHalfWithIssue1276. This is the
 			// spelling stokaro/ptah#1138 added.
 			name:       "an enum shadowing money, array",
 			columnType: "money[]",
@@ -153,7 +154,7 @@ func TestQualifyDeclaredUserTypesLeavesABuiltInTypeAlone(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			qualified := fromschema.QualifyDeclaredUserTypes(
+			qualified := schemaprep.QualifyDeclaredUserTypes(
 				shadowingDocument(test.columnType, test.declare), platform.Postgres,
 			)
 
@@ -237,7 +238,7 @@ func TestQualifyDeclaredUserTypesStillNamesASchemaForANameOfItsOwn(t *testing.T)
 			t.Parallel()
 			c := qt.New(t)
 
-			qualified := fromschema.QualifyDeclaredUserTypes(
+			qualified := schemaprep.QualifyDeclaredUserTypes(
 				shadowingDocument(test.columnType, test.declare), platform.Postgres,
 			)
 
@@ -247,7 +248,7 @@ func TestQualifyDeclaredUserTypesStillNamesASchemaForANameOfItsOwn(t *testing.T)
 	}
 }
 
-// TestFromDatabaseKeepsTheScalarEnumHalfWithIssue1276 records the boundary of
+// TestCollectDatabaseKeepsTheScalarEnumHalfWithIssue1276 records the boundary of
 // this repair, so the split is a pinned decision rather than something the next
 // reader has to rediscover from behavior.
 //
@@ -265,7 +266,7 @@ func TestQualifyDeclaredUserTypesStillNamesASchemaForANameOfItsOwn(t *testing.T)
 // The array spelling is the half that IS fixed, and the difference is that a
 // catalog keeps the two apart: the same read wrote `sql("money[]")` for the
 // built-in array and `sql("adve.money[]")` for the enum array.
-func TestFromDatabaseKeepsTheScalarEnumHalfWithIssue1276(t *testing.T) {
+func TestCollectDatabaseKeepsTheScalarEnumHalfWithIssue1276(t *testing.T) {
 	tests := []struct {
 		name       string
 		columnType string
@@ -292,7 +293,7 @@ func TestFromDatabaseKeepsTheScalarEnumHalfWithIssue1276(t *testing.T) {
 
 			database := shadowingDocument(test.columnType, declareShadowingEnum)
 
-			statements := fromschema.FromDatabase(*database, platform.Postgres)
+			statements := modelast.CollectDatabase(*database, platform.Postgres)
 
 			c.Assert(statements, qt.IsNotNil)
 
@@ -308,7 +309,7 @@ func TestFromDatabaseKeepsTheScalarEnumHalfWithIssue1276(t *testing.T) {
 // axis, and it exists because an earlier revision of this file had no row on it.
 //
 // The guard was keyed on the literal platform.Postgres while
-// [fromschema.QualifyDeclaredUserTypes] runs for every dialect, so on the other
+// [schemaprep.QualifyDeclaredUserTypes] runs for every dialect, so on the other
 // three PostgreSQL-family targets the PASS was present and only the GUARD was
 // absent. Measured with the shipped CLI on the commit before the fix, one
 // document declaring `CREATE DOMAIN advm.money` beside a `money` column and a
@@ -346,7 +347,7 @@ func TestQualifyDeclaredUserTypesGuardsEveryPostgresFamilySpelling(t *testing.T)
 	}
 
 	retyped := slices.DeleteFunc(slices.Clone(family), func(spelling string) bool {
-		qualified := fromschema.QualifyDeclaredUserTypes(
+		qualified := schemaprep.QualifyDeclaredUserTypes(
 			shadowingDocument("money[]", declareShadowingDomain), spelling,
 		)
 		return qualified.Fields[0].Type == "money[]"
@@ -397,7 +398,7 @@ func TestQualifyDeclaredUserTypesLeavesNonPostgresTargetsToTheirOwnCatalog(t *te
 			t.Parallel()
 			c := qt.New(t)
 
-			qualified := fromschema.QualifyDeclaredUserTypes(
+			qualified := schemaprep.QualifyDeclaredUserTypes(
 				shadowingDocument("money[]", declareShadowingDomain), test.dialect,
 			)
 

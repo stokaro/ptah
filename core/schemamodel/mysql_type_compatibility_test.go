@@ -8,7 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -67,13 +67,13 @@ func TestMySQLTypeCompatibilityForEmbeddedRelations(t *testing.T) {
 
 	// Test that the field conversion works correctly by creating columns
 	// This tests the platform override functionality indirectly
-	mysqlColumn := fromschema.FromField(*authorField, nil, "mysql")
+	mysqlColumn := modelast.FromField(*authorField, nil, "mysql")
 	c.Assert(mysqlColumn.Type, qt.Equals, "INT")
 
-	mariadbColumn := fromschema.FromField(*authorField, nil, "mariadb")
+	mariadbColumn := modelast.FromField(*authorField, nil, "mariadb")
 	c.Assert(mariadbColumn.Type, qt.Equals, "INT")
 
-	postgresColumn := fromschema.FromField(*authorField, nil, "postgres")
+	postgresColumn := modelast.FromField(*authorField, nil, "postgres")
 	c.Assert(postgresColumn.Type, qt.Equals, "INTEGER")
 }
 

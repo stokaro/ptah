@@ -802,7 +802,7 @@ func TestAlterTable_ModifyTTL(t *testing.T) {
 
 // TestVisitIndex_AnnotationDrivenTypeAndGranularity exercises the end-to-end
 // path from a schemamodel.Index annotation (with type= and granularity=) through
-// fromschema.FromIndex into the ClickHouse renderer. Two type spellings are
+// modelast.FromIndex into the ClickHouse renderer. Two type spellings are
 // covered: bloom_filter(0.01) carries a parenthesised parameter (which would
 // confuse a naïve paren-aware splitter if one were ever added to VisitIndex),
 // and set(100) tests the most common alternative type spelling.

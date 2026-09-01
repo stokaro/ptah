@@ -1,4 +1,4 @@
-package fromschema_test
+package modelast_test
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 )
 
 // identityField is an auto-incrementing column carrying the given range and no
@@ -33,7 +33,7 @@ func identityField(start, increment string) schemamodel.Field {
 func TestFromField_CarriesTheIdentityRangeOfAnAutoIncrementColumn(t *testing.T) {
 	c := qt.New(t)
 
-	column := fromschema.FromField(identityField("1000", "5"), nil, "sqlserver")
+	column := modelast.FromField(identityField("1000", "5"), nil, "sqlserver")
 
 	c.Assert(column.AutoInc, qt.IsTrue)
 	c.Assert(column.IdentityStart, qt.Equals, "1000")
@@ -48,7 +48,7 @@ func TestFromField_CarriesTheIdentityRangeOfAnAutoIncrementColumn(t *testing.T) 
 func TestFromFieldWithoutForeignKeys_CarriesTheIdentityRange(t *testing.T) {
 	c := qt.New(t)
 
-	column := fromschema.FromFieldWithoutForeignKeys(identityField("1000", "5"), nil, "sqlserver")
+	column := modelast.FromFieldWithoutForeignKeys(identityField("1000", "5"), nil, "sqlserver")
 
 	c.Assert(column.AutoInc, qt.IsTrue)
 	c.Assert(column.IdentityStart, qt.Equals, "1000")
@@ -63,7 +63,7 @@ func TestFromFieldWithoutForeignKeys_CarriesTheIdentityRange(t *testing.T) {
 func TestFromField_LeavesAnAutoIncrementColumnWithoutARangeAlone(t *testing.T) {
 	c := qt.New(t)
 
-	column := fromschema.FromField(identityField("", ""), nil, "sqlserver")
+	column := modelast.FromField(identityField("", ""), nil, "sqlserver")
 
 	c.Assert(column.AutoInc, qt.IsTrue)
 	c.Assert(column.IdentityStart, qt.Equals, "")

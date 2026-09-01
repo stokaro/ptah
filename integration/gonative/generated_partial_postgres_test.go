@@ -15,8 +15,8 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/dbschema/postgres"
+	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -36,7 +36,7 @@ func TestGeneratedColumnAndPartialIndex_RoundTrip_Postgres(t *testing.T) {
 	defer func() { _, _ = db.Exec("DROP SCHEMA IF EXISTS " + schemaName + " CASCADE") }()
 
 	target := generatedPartialIndexSchema(schemaName, "lower(email)")
-	createAST := fromschema.FromDatabase(*target, platform.Postgres)
+	createAST := modelast.CollectDatabase(*target, platform.Postgres)
 	createSQL, err := renderer.RenderSQL(platform.Postgres, createAST.Statements...)
 	c.Assert(err, qt.IsNil)
 	c.Assert(createSQL, qt.Contains, "GENERATED ALWAYS AS (lower(email)) STORED")

@@ -1,4 +1,5 @@
-// Package tablelookup resolves structural table references for migration planners.
+// Package tablelookup resolves structural table references without depending
+// on a migration planner.
 package tablelookup
 
 import (

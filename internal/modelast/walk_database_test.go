@@ -1,4 +1,4 @@
-package fromschema_test
+package modelast_test
 
 import (
 	"errors"
@@ -10,7 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 )
 
 func TestWalkDatabase_VisitsNodesInExecutionOrder(t *testing.T) {
@@ -37,7 +37,7 @@ func TestWalkDatabase_VisitsNodesInExecutionOrder(t *testing.T) {
 	}
 
 	var visited []ast.Node
-	err := fromschema.WalkDatabase(database, platform.Postgres, func(node ast.Node) error {
+	err := modelast.WalkDatabase(database, platform.Postgres, func(node ast.Node) error {
 		visited = append(visited, node)
 		return nil
 	})
@@ -59,7 +59,7 @@ func TestWalkDatabase_VisitsNodesInExecutionOrder(t *testing.T) {
 		"*ast.CreateViewNode",
 		"*ast.IndexNode",
 	})
-	c.Assert(visited, qt.DeepEquals, fromschema.FromDatabase(database, platform.Postgres).Statements)
+	c.Assert(visited, qt.DeepEquals, modelast.CollectDatabase(database, platform.Postgres).Statements)
 }
 
 func TestWalkDatabase_StopsAtVisitorError(t *testing.T) {
@@ -70,19 +70,24 @@ func TestWalkDatabase_StopsAtVisitorError(t *testing.T) {
 	wantErr := errors.New("stop after two nodes")
 	visited := 0
 
-	err := fromschema.WalkDatabase(database, platform.Postgres, func(ast.Node) error {
-		visited++
-		if visited == 2 {
-			return wantErr
-		}
-		return nil
-	})
+	err := modelast.WalkDatabase(database, platform.Postgres, stopAfterVisits(&visited, 2, wantErr))
 
 	c.Assert(err, qt.ErrorIs, wantErr)
 	c.Assert(visited, qt.Equals, 2)
 }
 
+func stopAfterVisits(visited *int, stopAt int, stopErr error) func(ast.Node) error {
+	return func(ast.Node) error {
+		*visited++
+		if *visited == stopAt {
+			return stopErr
+		}
+		return nil
+	}
+}
+
 func TestWalkDatabase_RefusesNilVisitor(t *testing.T) {
-	err := fromschema.WalkDatabase(schemamodel.Database{}, platform.Postgres, nil)
-	qt.Assert(t, err, qt.ErrorMatches, "walk database schema: nil visitor")
+	c := qt.New(t)
+	err := modelast.WalkDatabase(schemamodel.Database{}, platform.Postgres, nil)
+	c.Assert(err, qt.ErrorMatches, "walk database schema: nil visitor")
 }

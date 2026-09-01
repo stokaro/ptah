@@ -1,4 +1,4 @@
-package fromschema_test
+package modelast_test
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 )
 
 // A type that is already the target's own is not put through the portable
@@ -68,7 +68,7 @@ func TestFromField_ATypeAlreadyTheTargetsOwnSkipsThePortableMapping(t *testing.T
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			column := fromschema.FromField(tt.field, nil, "sqlserver")
+			column := modelast.FromField(tt.field, nil, "sqlserver")
 
 			c.Assert(column.Type, qt.Equals, tt.want)
 		})
@@ -81,9 +81,9 @@ func TestFromField_ATypeAlreadyTheTargetsOwnSkipsThePortableMapping(t *testing.T
 func TestFromField_TheMarkerSurvivesWithTheType(t *testing.T) {
 	c := qt.New(t)
 
-	raw := fromschema.FromField(
+	raw := modelast.FromField(
 		schemamodel.Field{Name: "c", Type: "TEXT", TypeRawSQL: true}, nil, "sqlserver")
-	native := fromschema.FromField(
+	native := modelast.FromField(
 		schemamodel.Field{Name: "c", Type: "TEXT", TypeIsDeclaredText: true}, nil, "sqlserver")
 
 	c.Assert(raw.TypeRawSQL, qt.IsTrue)

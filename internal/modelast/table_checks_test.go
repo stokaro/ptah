@@ -1,4 +1,4 @@
-package fromschema_test
+package modelast_test
 
 import (
 	"strings"
@@ -10,7 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 )
 
 // tableWithChecks is one table carrying the `checks` attribute the parser fills
@@ -215,7 +215,7 @@ func TestFromTable_NodeCarriesOneConstraintPerDeclaredCheck(t *testing.T) {
 			c := qt.New(t)
 			database := tableWithChecks(test.checks...)
 
-			node := fromschema.FromTable(
+			node := modelast.FromTable(
 				database.Tables[0], database.Fields, database.Enums, platform.Postgres)
 
 			c.Assert(checkConstraintNames(node), qt.HasLen, test.want)
@@ -235,7 +235,7 @@ func TestFromTableWithConstraints_NodeSkipsADeclaredName(t *testing.T) {
 	c := qt.New(t)
 	database := tableWithChecksAndDeclaredConstraint("products_check")
 
-	node := fromschema.FromTableWithConstraints(
+	node := modelast.FromTableWithConstraints(
 		database.Tables[0], database.Fields, database.Enums, platform.Postgres, database.Constraints)
 
 	c.Assert(checkConstraintNames(node), qt.DeepEquals, []string{"products_check1"})

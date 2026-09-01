@@ -159,7 +159,7 @@ func TestPlanner_FieldLevelForeignKeyActions(t *testing.T) {
 		},
 	}
 	// Embedded-relation mode coverage lives in
-	// internal/convert/fromschema/fromschema_test.go (TestFromDatabase_EmbeddedRelationFKActions) —
+	// internal/modelast/modelast_test.go (TestCollectDatabase_EmbeddedRelationFKActions) —
 	// the planner doesn't expand EmbeddedFields itself; field expansion happens
 	// in schemamodel.ProcessEmbeddedFields and (for diffs) compare.processEmbeddedFieldsForStruct.
 

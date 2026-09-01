@@ -10,6 +10,7 @@ import (
 )
 
 func TestTableCheckConstraints(t *testing.T) {
+	c := qt.New(t)
 	t.Parallel()
 	table := schemamodel.Table{StructName: "Product", Schema: "store", Name: "products", Checks: []string{
 		"price > 0",
@@ -22,7 +23,7 @@ func TestTableCheckConstraints(t *testing.T) {
 	}
 
 	got := schemaprep.TableCheckConstraints(table, declared)
-	qt.Assert(t, got, qt.DeepEquals, []schemamodel.Constraint{
+	c.Assert(got, qt.DeepEquals, []schemamodel.Constraint{
 		{StructName: "Product", Name: "products_check1", Type: "CHECK", Table: "store.products", CheckExpression: "price > 0"},
 		{StructName: "Product", Name: "products_check2", Type: "CHECK", Table: "store.products", CheckExpression: "published_at IS NOT NULL"},
 	})

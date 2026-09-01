@@ -1,4 +1,4 @@
-package fromschema_test
+package modelast_test
 
 import (
 	"fmt"
@@ -14,14 +14,14 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 )
 
 // normalizeDialectSource is the file that decides which dialect spellings ptah
 // accepts. The spelling list below is read out of it rather than copied here, so
 // a spelling added to the switch is covered by this test without anyone editing
 // this file.
-const normalizeDialectSource = "../../../core/platform/constants.go"
+const normalizeDialectSource = "../../core/platform/constants.go"
 
 // quotedLiteral deliberately requires a non-empty literal: the switch's default
 // arm returns "", which is the one string in the body that is not a spelling.
@@ -52,12 +52,12 @@ func acceptedSpellings(c *qt.C) []string {
 }
 
 // convertedStatements is the conversion this test compares: the AST that
-// fromschema builds for a dialect spelling, rendered to SQL. A render error is
+// modelast lowers a schema for a dialect spelling, rendered to SQL. A render error is
 // folded into the compared string instead of failing the test, so a dialect that
 // refuses part of the fixture still contributes a value both spellings of that
 // engine must agree on.
 func convertedStatements(database schemamodel.Database, dialect string) []string {
-	nodes := fromschema.FromDatabase(database, dialect)
+	nodes := modelast.CollectDatabase(database, dialect)
 	rendered := make([]string, 0, len(nodes.Statements))
 	for _, node := range nodes.Statements {
 		sql, err := renderer.RenderSQL(dialect, node)
@@ -104,7 +104,7 @@ func TestAcceptedSpellings_ExtractionControls(t *testing.T) {
 	}
 }
 
-// TestFromDatabase_EveryAcceptedSpellingConvertsLikeItsCanonicalName is the
+// TestCollectDatabase_EveryAcceptedSpellingConvertsLikeItsCanonicalName is the
 // completion criterion for stokaro/ptah#929 workstream A: one dialect spelling,
 // one answer.
 //
@@ -114,7 +114,7 @@ func TestAcceptedSpellings_ExtractionControls(t *testing.T) {
 // spellings that disagree with their own canonical name, so the failure is a
 // count of engines-times-predicates rather than a single boolean. On the
 // measured baseline that list held all 15 non-canonical spellings.
-func TestFromDatabase_EveryAcceptedSpellingConvertsLikeItsCanonicalName(t *testing.T) {
+func TestCollectDatabase_EveryAcceptedSpellingConvertsLikeItsCanonicalName(t *testing.T) {
 	c := qt.New(t)
 
 	database := spellingFixture(c)
@@ -135,7 +135,7 @@ func TestFromDatabase_EveryAcceptedSpellingConvertsLikeItsCanonicalName(t *testi
 // were emitted, in which order. Rendering is deliberately not involved -- see
 // the test below for why.
 func nodeKinds(database schemamodel.Database, dialect string) []string {
-	nodes := fromschema.FromDatabase(database, dialect)
+	nodes := modelast.CollectDatabase(database, dialect)
 	kinds := make([]string, 0, len(nodes.Statements))
 	for _, node := range nodes.Statements {
 		kinds = append(kinds, fmt.Sprintf("%T", node))
@@ -143,7 +143,7 @@ func nodeKinds(database schemamodel.Database, dialect string) []string {
 	return kinds
 }
 
-// TestFromDatabase_PostgresFamilyEmitsTheSameObjectKinds is the completion
+// TestCollectDatabase_PostgresFamilyEmitsTheSameObjectKinds is the completion
 // criterion for stokaro/ptah#929 items 1 and 4: offline render and live plan
 // must answer the same question the same way.
 //
@@ -163,7 +163,7 @@ func nodeKinds(database schemamodel.Database, dialect string) []string {
 // management` instead of silently dropping the role AND everything near it.
 // Comparing SQL would fold those two separate answers into one string and make
 // this test fail for the renderer's reasons.
-func TestFromDatabase_PostgresFamilyEmitsTheSameObjectKinds(t *testing.T) {
+func TestCollectDatabase_PostgresFamilyEmitsTheSameObjectKinds(t *testing.T) {
 	c := qt.New(t)
 
 	database := spellingFixture(c)
@@ -183,12 +183,12 @@ func TestFromDatabase_PostgresFamilyEmitsTheSameObjectKinds(t *testing.T) {
 	}
 }
 
-// TestFromDatabase_FixtureDiscriminatesEngines is the negative control for the
+// TestCollectDatabase_FixtureDiscriminatesEngines is the negative control for the
 // parity test above.
 //
 // The parity comparison is only meaningful if the fixture can tell engines
 // apart at all. A fixture that rendered to the same statements everywhere would
-// make TestFromDatabase_EveryAcceptedSpellingConvertsLikeItsCanonicalName pass
+// make TestCollectDatabase_EveryAcceptedSpellingConvertsLikeItsCanonicalName pass
 // no matter what the predicates did.
 //
 // Emptying the fixture reddens this test. Measured: it then reports one
@@ -203,7 +203,7 @@ func TestFromDatabase_PostgresFamilyEmitsTheSameObjectKinds(t *testing.T) {
 // What the overrides are load-bearing for is the parity test itself: under a
 // raw-index mutant, dropping `platform.sqlite.default` removes sqlite3 from
 // its divergent list and swapping `platform.clickhouse.type` removes ch.
-func TestFromDatabase_FixtureDiscriminatesEngines(t *testing.T) {
+func TestCollectDatabase_FixtureDiscriminatesEngines(t *testing.T) {
 	c := qt.New(t)
 
 	database := spellingFixture(c)

@@ -10,7 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/oracleroutine"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -221,7 +221,7 @@ func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff) [
 	// The declaration travels WITH the change, so this renders what it was
 	// handed rather than looking the name back up (stokaro/ptah#2315).
 	for _, routine := range diff.FunctionsAdded {
-		result = append(result, fromschema.FromFunction(routine.Function))
+		result = append(result, modelast.FromFunction(routine.Function))
 	}
 	for _, fnDiff := range diff.FunctionsModified {
 		fn := fnDiff.Desired
@@ -229,7 +229,7 @@ func (p *Planner) planFunctions(result []ast.Node, diff *difftypes.SchemaDiff) [
 			continue
 		}
 		changes := strings.Join(slices.Sorted(maps.Keys(fnDiff.Changes)), ", ")
-		node := fromschema.FromFunction(fn)
+		node := modelast.FromFunction(fn)
 		// The two halves of a replacement travel together or not at all.
 		//
 		// The renderer answers a CREATE FUNCTION whose language this target

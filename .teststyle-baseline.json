@@ -313,36 +313,6 @@
       "count": 1
     },
     {
-      "path": "internal/convert/fromschema/fromschema_test.go",
-      "function": "TestFromDatabase_EmbeddedFields_InlineMode",
-      "kind": "if",
-      "count": 4
-    },
-    {
-      "path": "internal/convert/fromschema/fromschema_test.go",
-      "function": "TestFromDatabase_EmbeddedFields_JsonMode",
-      "kind": "if",
-      "count": 6
-    },
-    {
-      "path": "internal/convert/fromschema/fromschema_test.go",
-      "function": "TestFromDatabase_EmbeddedFields_RelationMode",
-      "kind": "if",
-      "count": 6
-    },
-    {
-      "path": "internal/convert/fromschema/fromschema_test.go",
-      "function": "TestFromDatabase_EmbeddedFields_SkipAndDefaultModes",
-      "kind": "if",
-      "count": 6
-    },
-    {
-      "path": "internal/convert/fromschema/fromschema_test.go",
-      "function": "TestFromDatabase_EmbeddedRelationFKActions",
-      "kind": "if",
-      "count": 1
-    },
-    {
       "path": "internal/dbschema/clickhouse/clickhouse_test.go",
       "function": "TestClickHouseWriterConcurrentTransactionNoops",
       "kind": "if",
@@ -429,6 +399,36 @@
     {
       "path": "internal/lexer/lexer_test.go",
       "function": "TestLexer_NextToken_HappyPath",
+      "kind": "if",
+      "count": 1
+    },
+    {
+      "path": "internal/modelast/modelast_test.go",
+      "function": "TestCollectDatabase_EmbeddedFields_InlineMode",
+      "kind": "if",
+      "count": 4
+    },
+    {
+      "path": "internal/modelast/modelast_test.go",
+      "function": "TestCollectDatabase_EmbeddedFields_JsonMode",
+      "kind": "if",
+      "count": 6
+    },
+    {
+      "path": "internal/modelast/modelast_test.go",
+      "function": "TestCollectDatabase_EmbeddedFields_RelationMode",
+      "kind": "if",
+      "count": 6
+    },
+    {
+      "path": "internal/modelast/modelast_test.go",
+      "function": "TestCollectDatabase_EmbeddedFields_SkipAndDefaultModes",
+      "kind": "if",
+      "count": 6
+    },
+    {
+      "path": "internal/modelast/modelast_test.go",
+      "function": "TestCollectDatabase_EmbeddedRelationFKActions",
       "kind": "if",
       "count": 1
     },

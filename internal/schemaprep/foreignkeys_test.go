@@ -12,6 +12,7 @@ import (
 )
 
 func TestAssignDefaultForeignKeyNamesDoesNotMutateInput(t *testing.T) {
+	c := qt.New(t)
 	t.Parallel()
 	database := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "Order", Name: "orders"}},
@@ -19,12 +20,13 @@ func TestAssignDefaultForeignKeyNamesDoesNotMutateInput(t *testing.T) {
 	}
 
 	assigned := schemaprep.AssignDefaultForeignKeyNames(database, platform.Postgres)
-	qt.Assert(t, assigned.Fields[0].ForeignKeyName, qt.Equals, "fk_orders_customer_id")
-	qt.Assert(t, database.Fields[0].ForeignKeyName, qt.Equals, "")
-	qt.Assert(t, schemaprep.AssignDefaultForeignKeyNames(assigned, platform.Postgres), qt.DeepEquals, assigned)
+	c.Assert(assigned.Fields[0].ForeignKeyName, qt.Equals, "fk_orders_customer_id")
+	c.Assert(database.Fields[0].ForeignKeyName, qt.Equals, "")
+	c.Assert(schemaprep.AssignDefaultForeignKeyNames(assigned, platform.Postgres), qt.DeepEquals, assigned)
 }
 
 func TestAssignDefaultForeignKeyNamesDisambiguatesCollisions(t *testing.T) {
+	c := qt.New(t)
 	t.Parallel()
 	database := &schemamodel.Database{
 		Tables: []schemamodel.Table{{StructName: "Order", Name: "orders"}},
@@ -35,7 +37,36 @@ func TestAssignDefaultForeignKeyNamesDisambiguatesCollisions(t *testing.T) {
 	}
 
 	assigned := schemaprep.AssignDefaultForeignKeyNames(database, platform.Postgres)
-	qt.Assert(t, assigned.Fields[0].ForeignKeyName != assigned.Fields[1].ForeignKeyName, qt.IsTrue)
-	qt.Assert(t, strings.HasPrefix(assigned.Fields[0].ForeignKeyName, "fk_orders_owner_id_"), qt.IsTrue)
-	qt.Assert(t, strings.HasPrefix(assigned.Fields[1].ForeignKeyName, "fk_orders_owner_id_"), qt.IsTrue)
+	c.Assert(assigned.Fields[0].ForeignKeyName, qt.Not(qt.Equals), assigned.Fields[1].ForeignKeyName)
+	c.Assert(strings.HasPrefix(assigned.Fields[0].ForeignKeyName, "fk_orders_owner_id_"), qt.IsTrue)
+	c.Assert(strings.HasPrefix(assigned.Fields[1].ForeignKeyName, "fk_orders_owner_id_"), qt.IsTrue)
+}
+
+func TestAssignDefaultForeignKeyNamesPreservesFinalizedInlineField(t *testing.T) {
+	c := qt.New(t)
+	t.Parallel()
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "users"}},
+		Fields: []schemamodel.Field{
+			{StructName: "User", Name: "id", Type: "BIGINT"},
+			{
+				StructName:            "User",
+				Name:                  "organization_id",
+				Type:                  "BIGINT",
+				Foreign:               "organizations(id)",
+				GeneratedFromEmbedded: true,
+			},
+		},
+		EmbeddedFields: []schemamodel.EmbeddedField{{
+			StructName:       "User",
+			EmbeddedTypeName: "composite-source-0\x00Metadata",
+			Mode:             "inline",
+		}},
+	}
+
+	got := schemaprep.AssignDefaultForeignKeyNames(database, platform.Postgres)
+
+	c.Assert(got.Fields, qt.HasLen, 2)
+	c.Assert(got.Fields[1].Name, qt.Equals, "organization_id")
+	c.Assert(got.Fields[1].ForeignKeyName, qt.Equals, "fk_users_organization_id")
 }

@@ -1,4 +1,4 @@
-package fromschema_test
+package modelast_test
 
 import (
 	"testing"
@@ -8,13 +8,13 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 )
 
 func TestFromSequence(t *testing.T) {
 	c := qt.New(t)
 
-	node := fromschema.FromSequence(schemamodel.Sequence{
+	node := modelast.FromSequence(schemamodel.Sequence{
 		Name:        "order_seq",
 		Schema:      "app",
 		AsType:      "bigint",
@@ -39,11 +39,11 @@ func TestFromSequence(t *testing.T) {
 	c.Assert(node.Comment, qt.Equals, "Order numbers")
 }
 
-// TestFromDatabase_SequenceOrdering asserts a standalone sequence is created
+// TestCollectDatabase_SequenceOrdering asserts a standalone sequence is created
 // before tables (so a column DEFAULT can reference it) while its OWNED BY
 // association is emitted after tables (which require the owning column to
 // exist).
-func TestFromDatabase_SequenceOrdering(t *testing.T) {
+func TestCollectDatabase_SequenceOrdering(t *testing.T) {
 	c := qt.New(t)
 
 	database := schemamodel.Database{
@@ -58,7 +58,7 @@ func TestFromDatabase_SequenceOrdering(t *testing.T) {
 		},
 	}
 
-	statements := fromschema.FromDatabase(database, platform.Postgres)
+	statements := modelast.CollectDatabase(database, platform.Postgres)
 
 	createNode := createSequenceStatementByName(statements, "order_seq")
 	createIdx := createSequenceStatementIndexByName(statements, "order_seq")
@@ -76,7 +76,7 @@ func TestFromDatabase_SequenceOrdering(t *testing.T) {
 func TestFromGrant_OnSequence(t *testing.T) {
 	c := qt.New(t)
 
-	node := fromschema.FromGrant(schemamodel.Grant{
+	node := modelast.FromGrant(schemamodel.Grant{
 		Role:       "app_user",
 		Privileges: []string{"USAGE", "SELECT"},
 		OnSequence: "order_seq",
@@ -86,7 +86,7 @@ func TestFromGrant_OnSequence(t *testing.T) {
 	c.Assert(node.ObjectName, qt.Equals, "order_seq")
 }
 
-// TestFromDatabase_SequenceReachesTheMySQLRendererToBeRefused pins that a
+// TestCollectDatabase_SequenceReachesTheMySQLRendererToBeRefused pins that a
 // declared sequence is handed to the MySQL-family renderer rather than dropped
 // here.
 //
@@ -94,14 +94,14 @@ func TestFromGrant_OnSequence(t *testing.T) {
 // declared sequence with no statement and no diagnostic while
 // capability.MariaDB1011 advertised Sequences: true (stokaro/ptah#931 item 8).
 // The renderer is what decides the target cannot host one, and it says so.
-func TestFromDatabase_SequenceReachesTheMySQLRendererToBeRefused(t *testing.T) {
+func TestCollectDatabase_SequenceReachesTheMySQLRendererToBeRefused(t *testing.T) {
 	c := qt.New(t)
 
 	database := schemamodel.Database{
 		Sequences: []schemamodel.Sequence{{Name: "order_seq"}},
 	}
 
-	statements := fromschema.FromDatabase(database, platform.MySQL)
+	statements := modelast.CollectDatabase(database, platform.MySQL)
 
 	c.Assert(countCreateSequenceNodes(statements.Statements), qt.Equals, 1,
 		qt.Commentf("the declared sequence must reach the renderer"))
@@ -117,7 +117,7 @@ func countCreateSequenceNodes(statements []ast.Node) int {
 	return created
 }
 
-// TestFromDatabase_SequenceReachesEveryDialectsRenderer states the rule this
+// TestCollectDatabase_SequenceReachesEveryDialectsRenderer states the rule this
 // converter now follows, over every dialect spelling `--dialect` accepts: a
 // declared sequence becomes exactly one CREATE SEQUENCE node whatever the
 // target is, and the renderer decides what that means.
@@ -129,7 +129,7 @@ func countCreateSequenceNodes(statements []ast.Node) int {
 // false statement about an engine that has had sequences since 2012. That
 // message now names Ptah's generator instead of the engine, so there is nothing
 // left to hold out (stokaro/ptah#929 item 5).
-func TestFromDatabase_SequenceReachesEveryDialectsRenderer(t *testing.T) {
+func TestCollectDatabase_SequenceReachesEveryDialectsRenderer(t *testing.T) {
 	c := qt.New(t)
 
 	for _, spelling := range acceptedSpellings(c) {
@@ -139,7 +139,7 @@ func TestFromDatabase_SequenceReachesEveryDialectsRenderer(t *testing.T) {
 				Sequences: []schemamodel.Sequence{{Name: "order_seq"}},
 			}
 
-			statements := fromschema.FromDatabase(database, spelling)
+			statements := modelast.CollectDatabase(database, spelling)
 
 			c.Assert(countCreateSequenceNodes(statements.Statements), qt.Equals, 1,
 				qt.Commentf("the declared sequence must reach the %s renderer", spelling))

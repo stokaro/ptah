@@ -21,7 +21,7 @@ func AssignDefaultForeignKeyNames(database *schemamodel.Database, targetPlatform
 	assigned := *database
 	assigned.Tables = slices.Clone(database.Tables)
 	assigned.EmbeddedFields = slices.Clone(database.EmbeddedFields)
-	assigned.Fields = schemamodel.ProcessEmbeddedFields(assigned.EmbeddedFields, database.Fields)
+	assigned.Fields = fieldsWithEmbeddedMaterializations(database)
 	assigned.Fields, assigned.Constraints = assignDefaultForeignKeyNames(
 		assigned.Tables,
 		assigned.Fields,
@@ -34,6 +34,67 @@ func AssignDefaultForeignKeyNames(database *schemamodel.Database, targetPlatform
 		assigned.Fields,
 	)
 	return &assigned
+}
+
+// fieldsWithEmbeddedMaterializations accepts both raw parser output and a
+// finalized schema. ProcessEmbeddedFields intentionally rebuilds generated
+// columns from source declarations, but a merged schema keeps source-only
+// helper declarations in Database.EmbeddedSources. Preserve the already
+// materialized columns in that case, then add only expansions that are absent.
+func fieldsWithEmbeddedMaterializations(database *schemamodel.Database) []schemamodel.Field {
+	fields := slices.Clone(database.Fields)
+	seen := make(map[fieldIdentity]struct{}, len(fields))
+	for _, field := range fields {
+		seen[fieldIdentity{structName: field.StructName, name: field.Name}] = struct{}{}
+	}
+	for _, field := range schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields) {
+		identity := fieldIdentity{structName: field.StructName, name: field.Name}
+		if _, exists := seen[identity]; exists {
+			continue
+		}
+		seen[identity] = struct{}{}
+		fields = append(fields, field)
+	}
+	return fields
+}
+
+type fieldIdentity struct {
+	structName string
+	name       string
+}
+
+// WithDefaultFieldForeignKeyName returns field with a stable, dialect-valid
+// name when it declares an unnamed foreign key. It leaves the input unchanged.
+// Whole-schema callers should prefer [AssignDefaultForeignKeyNames], which also
+// resolves collisions across the target's constraint-name scope.
+func WithDefaultFieldForeignKeyName(
+	tableName string,
+	field schemamodel.Field,
+	targetPlatform string,
+) schemamodel.Field {
+	if field.Foreign == "" || field.ForeignKeyName != "" {
+		return field
+	}
+	base := defaultFieldForeignKeyName(tableName, field)
+	field.ForeignKeyName = generatedForeignKeyName(base, fieldForeignKeyIdentity(field), targetPlatform)
+	return field
+}
+
+// WithDefaultConstraintForeignKeyName returns constraint with a stable,
+// dialect-valid name when it is an unnamed foreign-key constraint. It leaves
+// the input unchanged. Whole-schema callers should prefer
+// [AssignDefaultForeignKeyNames] so collisions are allocated together.
+func WithDefaultConstraintForeignKeyName(
+	tableName string,
+	constraint schemamodel.Constraint,
+	targetPlatform string,
+) schemamodel.Constraint {
+	if !IsForeignKeyConstraint(constraint) || constraint.Name != "" {
+		return constraint
+	}
+	base := defaultConstraintForeignKeyName(tableName, constraint)
+	constraint.Name = generatedForeignKeyName(base, constraintForeignKeyIdentity(constraint), targetPlatform)
+	return constraint
 }
 
 func assignedSelfReferencingForeignKeys(
@@ -152,7 +213,7 @@ func foreignKeyNameReservations(
 		counts[foreignKeyNameReservationKey(candidate, targetPlatform)]++
 	}
 	for _, constraint := range constraints {
-		if !isForeignKeyConstraint(constraint) || !constraintBelongsToTable(constraint, table) {
+		if !IsForeignKeyConstraint(constraint) || !ConstraintBelongsToTable(constraint, table) {
 			continue
 		}
 		if constraint.Name != "" {
@@ -207,7 +268,7 @@ func assignConstraintForeignKeyNames(
 ) {
 	for i := range constraints {
 		constraint := &constraints[i]
-		if constraint.Name != "" || !isForeignKeyConstraint(*constraint) || !constraintBelongsToTable(*constraint, table) {
+		if constraint.Name != "" || !IsForeignKeyConstraint(*constraint) || !ConstraintBelongsToTable(*constraint, table) {
 			continue
 		}
 		base := defaultConstraintForeignKeyName(table.Name, *constraint)

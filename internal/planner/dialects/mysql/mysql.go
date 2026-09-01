@@ -13,12 +13,12 @@ import (
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/constraintscope"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/indexscope"
+	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
-	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/schemaprep"
+	"go.5x5.cz/ptah/internal/tablelookup"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -73,7 +73,7 @@ type Planner struct {
 	// this type's own example — behaves exactly like New(). Pass an explicit
 	// preset (e.g. capability.MySQLLegacy()) to restrict emissions.
 	caps capability.Capabilities
-	// dialect is the target conversion platform passed to fromschema. It
+	// dialect is the target conversion platform passed to modelast. It
 	// defaults to mysql so the zero value and New stay backwards-identical for
 	// the MySQL-family planner.
 	dialect string
@@ -192,7 +192,7 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 	// which travels too (stokaro/ptah#2315).
 	creations := diff.TablesAdded.Qualified(diff.DeclaredUserTypes, p.targetDialect()).InDependencyOrder()
 	for _, creation := range creations {
-		astNode := fromschema.FromTableWithConstraints(creation.Table, creation.Fields, creation.Enums, p.targetDialect(), creation.Constraints)
+		astNode := modelast.FromTableWithConstraints(creation.Table, creation.Fields, creation.Enums, p.targetDialect(), creation.Constraints)
 		for _, column := range astNode.Columns {
 			column.ForeignKey = nil
 		}
@@ -355,7 +355,7 @@ func (p *Planner) addNewTableColumns(
 		targetField := &column
 
 		{
-			columnNode := fromschema.FromField(*targetField, vocabulary.Enums, p.targetDialect())
+			columnNode := modelast.FromField(*targetField, vocabulary.Enums, p.targetDialect())
 
 			// Create operations list starting with ADD COLUMN
 			operations := []ast.AlterOperation{&ast.AddColumnOperation{Column: columnNode}}
@@ -446,7 +446,7 @@ func (p *Planner) modifyExistingColumns(
 		if suppressColumnPrimary {
 			field.Primary = false
 		}
-		columnNode := fromschema.FromField(field, diff.DeclaredUserTypes.Enums, p.targetDialect())
+		columnNode := modelast.FromField(field, diff.DeclaredUserTypes.Enums, p.targetDialect())
 
 		// Generate ALTER COLUMN statements using AST
 		alterNode := &ast.AlterTableNode{
@@ -1037,7 +1037,7 @@ func (p *Planner) addNewIndexes(
 			}
 			result = append(result, dropIndexNode)
 		}
-		indexNode := fromschema.FromIndex(index)
+		indexNode := modelast.FromIndex(index)
 		indexNode.Table = ref.TableName
 		indexNode.IfNotExists = false
 		result = append(result, indexNode)
@@ -1428,7 +1428,7 @@ func (p *Planner) addNewViews(result []ast.Node, diff *difftypes.SchemaDiff) []a
 	// The view travels WITH the change, so this renders what it was handed
 	// rather than looking the name back up in the desired schema.
 	for _, view := range diff.ViewsAdded {
-		result = append(result, fromschema.FromView(view))
+		result = append(result, modelast.FromView(view))
 	}
 	return result
 }
@@ -1439,7 +1439,7 @@ func (p *Planner) modifyExistingViews(result []ast.Node, diff *difftypes.SchemaD
 		if viewDiff.Desired.Name == "" {
 			continue
 		}
-		result = append(result, fromschema.FromView(viewDiff.Desired).SetReplace())
+		result = append(result, modelast.FromView(viewDiff.Desired).SetReplace())
 	}
 	return result
 }
@@ -1455,7 +1455,7 @@ func (p *Planner) addNewSynonyms(result []ast.Node, diff *difftypes.SchemaDiff) 
 	// The target travels WITH the change, so this renders what it was handed
 	// rather than looking the name back up in the desired schema.
 	for _, synonym := range diff.SynonymsAdded {
-		result = append(result, fromschema.FromSynonym(synonym))
+		result = append(result, modelast.FromSynonym(synonym))
 	}
 	return result
 }
@@ -1475,7 +1475,7 @@ func (p *Planner) retargetSynonyms(result []ast.Node, diff *difftypes.SchemaDiff
 			continue
 		}
 		result = append(result, ast.NewDropSynonym(synonymDiff.SynonymName).SetIfExists())
-		result = append(result, fromschema.FromSynonym(synonym))
+		result = append(result, modelast.FromSynonym(synonym))
 	}
 	return result
 }
@@ -1536,7 +1536,7 @@ func (p *Planner) addNewTriggers(result []ast.Node, diff *difftypes.SchemaDiff) 
 	// The definition travels WITH the entry (stokaro/ptah#2315).
 	for _, triggerRef := range diff.TriggersAdded {
 		if triggerRef.Desired.Name != "" {
-			result = append(result, fromschema.FromTrigger(triggerRef.Desired))
+			result = append(result, modelast.FromTrigger(triggerRef.Desired))
 		}
 	}
 	return result
@@ -1545,7 +1545,7 @@ func (p *Planner) addNewTriggers(result []ast.Node, diff *difftypes.SchemaDiff) 
 func (p *Planner) modifyExistingTriggers(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 	for _, triggerDiff := range diff.TriggersModified {
 		if triggerDiff.Desired.Name != "" {
-			result = append(result, fromschema.FromTrigger(triggerDiff.Desired).SetReplace())
+			result = append(result, modelast.FromTrigger(triggerDiff.Desired).SetReplace())
 		}
 	}
 	return result
@@ -1570,7 +1570,7 @@ func (p *Planner) addNewMaterializedViews(
 	// The view travels WITH the change, so this renders what it was handed
 	// rather than looking the name back up in the desired schema.
 	for _, view := range diff.MaterializedViewsAdded {
-		result = append(result, fromschema.FromMaterializedView(view))
+		result = append(result, modelast.FromMaterializedView(view))
 	}
 	return result
 }
@@ -1588,7 +1588,7 @@ func (p *Planner) modifyExistingMaterializedViews(
 	for _, viewDiff := range diff.MaterializedViewsModified {
 		if view := viewDiff.Desired; view.Name != "" {
 			result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists())
-			result = append(result, fromschema.FromMaterializedView(view))
+			result = append(result, modelast.FromMaterializedView(view))
 		}
 	}
 	return result

@@ -712,13 +712,13 @@ func ProcessEmbeddedFields(embeddedFields []EmbeddedField, originalFields []Fiel
 		}
 	}
 	allFields := slices.Clone(sourceFields)
-	seenFields := fieldKeySet(sourceFields)
+	declaredFields := fieldKeySet(sourceFields)
 
 	// Process embedded fields for each struct
 	structNames := UniqueStructNames(embeddedFields)
 	for _, structName := range structNames {
 		generatedFields := processEmbeddedFieldsForStruct(embeddedFields, sourceFields, structName)
-		allFields = appendNewFields(allFields, generatedFields, seenFields)
+		allFields = appendFieldsNotDeclared(allFields, generatedFields, declaredFields)
 	}
 
 	return allFields
@@ -737,13 +737,17 @@ func fieldKeySet(fields []Field) map[fieldKey]struct{} {
 	return seen
 }
 
-func appendNewFields(fields, newFields []Field, seen map[fieldKey]struct{}) []Field {
+// appendFieldsNotDeclared leaves duplicate generated fields intact so Merge can
+// distinguish identical materializations from conflicting ones. A concrete
+// source field still wins over an embedded materialization with the same
+// identity; Finalize and Merge apply their respective deduplication policies
+// after expansion.
+func appendFieldsNotDeclared(fields, newFields []Field, declared map[fieldKey]struct{}) []Field {
 	for _, field := range newFields {
 		key := fieldKeyFor(field)
-		if _, ok := seen[key]; ok {
+		if _, ok := declared[key]; ok {
 			continue
 		}
-		seen[key] = struct{}{}
 		fields = append(fields, field)
 	}
 	return fields
@@ -972,7 +976,7 @@ func processEmbeddedRelationMode(generatedFields []Field, embedded EmbeddedField
 		Nullable:       embedded.Nullable, // Can the relationship be optional?
 		Foreign:        embedded.Ref,      // e.g., "users(id)"
 		ForeignKeyName: foreignKeyName,    // e.g., "fk_posts_user_id"
-		OnDelete:       embedded.OnDelete, // ON DELETE action (CASCADE, SET NULL, etc.) — keeps the walker/planner path in sync with fromschema (#117).
+		OnDelete:       embedded.OnDelete, // ON DELETE action (CASCADE, SET NULL, etc.) — keeps the model-preparation and planner paths in sync (#117).
 		OnUpdate:       embedded.OnUpdate,
 		Comment:        embedded.Comment, // Documentation for the relationship
 		Overrides:      overrides,        // Platform-specific type overrides

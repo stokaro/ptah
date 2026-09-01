@@ -4,7 +4,7 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/internal/mssqlpolicy"
 	"go.5x5.cz/ptah/internal/schemaprep"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -31,7 +31,7 @@ func (p *Planner) planRLS(result []ast.Node, diff *difftypes.SchemaDiff) []ast.N
 	// enablement no longer goes unplanned because the schema handed alongside
 	// spelled its table differently.
 	for _, table := range diff.RLSEnabledTablesAdded {
-		result = append(result, fromschema.FromRLSEnabledTable(table))
+		result = append(result, modelast.FromRLSEnabledTable(table))
 	}
 	// The policy travels WITH the entry, and so does the schema its table is
 	// declared under, which is what SQL Server addresses it by
@@ -42,7 +42,7 @@ func (p *Planner) planRLS(result []ast.Node, diff *difftypes.SchemaDiff) []ast.N
 		if policy.Desired.Name == "" {
 			continue
 		}
-		result = append(result, fromschema.FromRLSPolicy(
+		result = append(result, modelast.FromRLSPolicy(
 			schemaprep.QualifyRLSPolicyForTarget(policy.Desired, policy.TableSchema, p.targetDialect())))
 	}
 	// A modified policy is planned as a drop followed by a create. T-SQL has
@@ -64,12 +64,12 @@ func (p *Planner) planRLS(result []ast.Node, diff *difftypes.SchemaDiff) []ast.N
 		// silently going unchanged (stokaro/ptah#2211).
 		if p.targetDialect() == platform.SQLServer &&
 			mssqlpolicy.UnrenderableFor(qualified.PolicyFor, qualified.WithCheckExpression) != "" {
-			result = append(result, fromschema.FromRLSPolicy(qualified))
+			result = append(result, modelast.FromRLSPolicy(qualified))
 			continue
 		}
 		result = append(result,
 			ast.NewDropPolicy(qualified.Name, qualified.Table).SetIfExists(),
-			fromschema.FromRLSPolicy(qualified))
+			modelast.FromRLSPolicy(qualified))
 	}
 	return result
 }

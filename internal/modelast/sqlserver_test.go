@@ -1,4 +1,4 @@
-package fromschema_test
+package modelast_test
 
 import (
 	"testing"
@@ -8,7 +8,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 )
 
 func TestFromField_SQLServerTypeConversions(t *testing.T) {
@@ -38,7 +38,7 @@ func TestFromField_SQLServerTypeConversions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			column := fromschema.FromField(tt.field, nil, platform.SQLServer)
+			column := modelast.FromField(tt.field, nil, platform.SQLServer)
 
 			c.Assert(column.Type, qt.Equals, tt.expected)
 		})
@@ -51,13 +51,13 @@ func TestFromField_SQLServerEnumUsesTextWithCheck(t *testing.T) {
 	field := schemamodel.Field{Name: "status", Type: "enum_status"}
 	enums := []schemamodel.Enum{{Name: "enum_status", Values: []string{"active", "blocked"}}}
 
-	column := fromschema.FromField(field, enums, platform.SQLServer)
+	column := modelast.FromField(field, enums, platform.SQLServer)
 
 	c.Assert(column.Type, qt.Equals, "NVARCHAR(255)")
 	c.Assert(column.Check, qt.Equals, "[status] IN ('active', 'blocked')")
 }
 
-func TestFromDatabase_SQLServerIncludesViewsAndTriggers(t *testing.T) {
+func TestCollectDatabase_SQLServerIncludesViewsAndTriggers(t *testing.T) {
 	c := qt.New(t)
 
 	database := schemamodel.Database{
@@ -77,7 +77,7 @@ func TestFromDatabase_SQLServerIncludesViewsAndTriggers(t *testing.T) {
 		}},
 	}
 
-	statements := fromschema.FromDatabase(database, platform.SQLServer)
+	statements := modelast.CollectDatabase(database, platform.SQLServer)
 	sql, err := renderer.RenderSQL(platform.SQLServer, statements)
 
 	c.Assert(err, qt.IsNil)

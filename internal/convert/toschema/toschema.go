@@ -148,7 +148,7 @@ func ToField(column *ast.ColumnNode, structName, sourcePlatform string) schemamo
 		Comment:             column.Comment,
 	}
 
-	// Mirror the fromschema guarding: only surface CheckName when there's
+	// Mirror the model-to-AST guarding: only surface CheckName when there's
 	// actually a CHECK expression. Otherwise a stale name from a partly-
 	// populated AST node would leak back into a generated Go annotation
 	// suggestion as a phantom `check_name=` with no `check=` to back it.
@@ -278,7 +278,7 @@ func ToTable(table *ast.CreateTableNode, sourcePlatform string) schemamodel.Tabl
 	if withoutRowID, exists := table.Options["WITHOUT_ROWID"]; exists {
 		tableSchema.WithoutRowID, _ = strconv.ParseBool(withoutRowID)
 	}
-	// The inverse of what fromschema writes. Reading these back keeps a
+	// The inverse of what modelast writes. Reading these back keeps a
 	// goschema -> AST -> goschema trip from turning a virtual table into an
 	// ordinary one, which is the shape the whole defect took the first time.
 	// See stokaro/ptah#1028.
@@ -606,7 +606,7 @@ func ToEnum(enum *ast.EnumNode) schemamodel.Enum {
 //
 // This function processes all statements in the AST statement list and extracts
 // the complete database schema including tables, fields, indexes, and enums.
-// It handles the reverse process of FromDatabase, reconstructing the original
+// It handles the reverse of model-to-AST lowering, reconstructing the original
 // schema structure from the generated SQL DDL statements.
 //
 // # Parameters

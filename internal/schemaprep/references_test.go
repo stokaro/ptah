@@ -24,13 +24,15 @@ func TestParseForeignKeyReference(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			t.Parallel()
-			qt.Assert(t, schemaprep.ParseForeignKeyReference(test.in), qt.DeepEquals, test.want)
+			c.Assert(schemaprep.ParseForeignKeyReference(test.in), qt.DeepEquals, test.want)
 		})
 	}
 }
 
 func TestEnumsFor(t *testing.T) {
+	c := qt.New(t)
 	t.Parallel()
 	enums := []schemamodel.Enum{
 		{Name: "status"},
@@ -43,13 +45,14 @@ func TestEnumsFor(t *testing.T) {
 		{Type: "priority"},
 	}
 
-	qt.Assert(t, schemaprep.EnumsFor(fields, enums), qt.DeepEquals, []schemamodel.Enum{
+	c.Assert(schemaprep.EnumsFor(fields, enums), qt.DeepEquals, []schemamodel.Enum{
 		{Name: "priority"},
 		{Name: "status"},
 	})
 }
 
 func TestGenerateForeignKeyName(t *testing.T) {
+	c := qt.New(t)
 	t.Parallel()
-	qt.Assert(t, schemaprep.GenerateForeignKeyName("OrderItems", "ProductID"), qt.Equals, "fk_orderitems_productid")
+	c.Assert(schemaprep.GenerateForeignKeyName("OrderItems", "ProductID"), qt.Equals, "fk_orderitems_productid")
 }

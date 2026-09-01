@@ -51,7 +51,7 @@ func TableCheckConstraints(table schemamodel.Table, declared []schemamodel.Const
 func declaredConstraintNames(table schemamodel.Table, declared []schemamodel.Constraint) map[string]struct{} {
 	taken := make(map[string]struct{}, len(declared))
 	for _, constraint := range declared {
-		if !constraintBelongsToTable(constraint, table) {
+		if !ConstraintBelongsToTable(constraint, table) {
 			continue
 		}
 		if name := strings.TrimSpace(constraint.Name); name != "" {
@@ -64,7 +64,7 @@ func declaredConstraintNames(table schemamodel.Table, declared []schemamodel.Con
 func declaredCheckExpressions(table schemamodel.Table, declared []schemamodel.Constraint) map[string]struct{} {
 	spelled := make(map[string]struct{}, len(declared))
 	for _, constraint := range declared {
-		if strings.EqualFold(constraint.Type, "CHECK") && constraintBelongsToTable(constraint, table) {
+		if strings.EqualFold(constraint.Type, "CHECK") && ConstraintBelongsToTable(constraint, table) {
 			spelled[strings.TrimSpace(constraint.CheckExpression)] = struct{}{}
 		}
 	}
@@ -82,13 +82,16 @@ func tableCheckConstraintName(tableName string, ordinal int) string {
 	return fmt.Sprintf("%s_check%d", leaf, ordinal)
 }
 
-func constraintBelongsToTable(constraint schemamodel.Constraint, table schemamodel.Table) bool {
+// ConstraintBelongsToTable reports whether constraint is owned by table under
+// either the explicit table identity or the legacy struct identity.
+func ConstraintBelongsToTable(constraint schemamodel.Constraint, table schemamodel.Table) bool {
 	if constraint.Table != "" {
 		return constraint.Table == table.Name || constraint.Table == table.QualifiedName()
 	}
 	return constraint.StructName == table.StructName
 }
 
-func isForeignKeyConstraint(constraint schemamodel.Constraint) bool {
+// IsForeignKeyConstraint reports whether constraint declares a foreign key.
+func IsForeignKeyConstraint(constraint schemamodel.Constraint) bool {
 	return strings.EqualFold(constraint.Type, "FOREIGN KEY")
 }

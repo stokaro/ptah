@@ -147,7 +147,17 @@ Internal packages worth knowing, none of them importable from another module:
 
 - `internal/lexer`, `internal/parser` and `internal/dialectlexer` — SQL
   tokenizer and DDL parser.
-- `internal/convert/...` — conversions between schema representations.
+- `internal/convert/...` — the remaining conversions between schema
+  representations. SQL schema sources still pass through
+  `internal/convert/toschema`; stokaro/ptah#2725 owns removing that boundary.
+- `internal/schemaprep` — model-to-model preparation shared by renderers and
+  planners: embedded fields, platform overrides, user-type qualification,
+  table checks, row-level security targets, and generated foreign-key names.
+- `internal/modelast` — lowering from a prepared `schemamodel.Database` to AST
+  nodes. Renderers use `WalkDatabase`; only the stable
+  `atlascompat.SchemaToAST` API uses the complete-AST compatibility collector.
+- `internal/tablelookup` — table-local field, index, and constraint lookup
+  shared by rendering and planning.
 - `internal/dbschema/...` — the per-dialect readers and writers `dbschema`
   selects between.
 - `internal/envbool` — the one grammar for boolean `PTAH_*` variables.

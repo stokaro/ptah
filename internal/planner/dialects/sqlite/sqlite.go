@@ -14,8 +14,8 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/indexscope"
+	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/planner/sqliterebuild"
 	"go.5x5.cz/ptah/internal/schemaprep"
@@ -241,7 +241,7 @@ func planTableRebuilds(
 		for _, field := range table.ColumnsAdded {
 			// The column travels WITH the change, so its shape is read off the
 			// change rather than looked back up (stokaro/ptah#2315).
-			if !addedColumnNeedsRebuild(fromschema.FromField(field, diff.DeclaredUserTypes.Enums, DialectName)) {
+			if !addedColumnNeedsRebuild(modelast.FromField(field, diff.DeclaredUserTypes.Enums, DialectName)) {
 				continue
 			}
 			add(table.TableName, table.ColumnsAdded.Names())
@@ -467,7 +467,7 @@ func (p *Planner) addTables(
 ) ([]ast.Node, error) {
 	var result []ast.Node
 	for _, creation := range diff.TablesAdded.Qualified(diff.DeclaredUserTypes, DialectName).InDependencyOrder() {
-		node := fromschema.FromTableWithConstraints(creation.Table, creation.Fields, creation.Enums, DialectName, creation.Constraints)
+		node := modelast.FromTableWithConstraints(creation.Table, creation.Fields, creation.Enums, DialectName, creation.Constraints)
 		if err := addInlineConstraints(node, creation.Table, creation.Constraints); err != nil {
 			return nil, err
 		}
@@ -496,7 +496,7 @@ func addInlineConstraints(node *ast.CreateTableNode, table schemamodel.Table, co
 		if constraint.Name == "" && constraint.Type == "FOREIGN KEY" {
 			constraint = withDefaultForeignKeyName(table.Name, constraint)
 		}
-		constraintNode := fromschema.FromConstraint(constraint)
+		constraintNode := modelast.FromConstraint(constraint)
 		if constraintNode != nil {
 			node.AddConstraint(constraintNode)
 		}
@@ -540,7 +540,7 @@ func (p *Planner) modifyTables(
 			result = append(result, &ast.AlterTableNode{
 				Name: tableDiff.TableName,
 				Operations: []ast.AlterOperation{&ast.AddColumnOperation{
-					Column: fromschema.FromField(field, diff.DeclaredUserTypes.Enums, DialectName),
+					Column: modelast.FromField(field, diff.DeclaredUserTypes.Enums, DialectName),
 				}},
 			})
 		}
@@ -596,7 +596,7 @@ func (p *Planner) rebuildTable(
 		return nil, err
 	}
 
-	createNode := fromschema.FromTable(*table, declared.Fields, declared.Enums, DialectName)
+	createNode := modelast.FromTable(*table, declared.Fields, declared.Enums, DialectName)
 	if err := addInlineConstraints(createNode, *table, declared.Constraints); err != nil {
 		return nil, err
 	}
@@ -812,7 +812,7 @@ func (p *Planner) recreateTableIndexes(table schemamodel.Table, indexes []schema
 	tableMap := map[string]string{table.StructName: table.QualifiedName()}
 	nodes := make([]ast.Node, 0, len(indexes))
 	for _, index := range indexes {
-		nodes = append(nodes, fromschema.FromIndexWithTableMapping(index, tableMap))
+		nodes = append(nodes, modelast.FromIndexWithTableMapping(index, tableMap))
 	}
 	return nodes
 }
@@ -832,7 +832,7 @@ func (p *Planner) recreateTableTriggers(table schemamodel.Table, triggers []sche
 					trigger.Name,
 				)
 			}
-			nodes = append(nodes, fromschema.FromTrigger(trigger))
+			nodes = append(nodes, modelast.FromTrigger(trigger))
 		}
 	}
 	return nodes, nil
@@ -945,7 +945,7 @@ func (p *Planner) addIndexes(
 			result = append(result, ast.NewDropIndex(removal.Name).SetTable(removal.TableName).SetIfExists())
 		}
 		index.TableName = ref.TableName
-		result = append(result, fromschema.FromIndex(index))
+		result = append(result, modelast.FromIndex(index))
 	}
 	return result, nil
 }
@@ -985,7 +985,7 @@ func (p *Planner) addViews(
 	// The view travels WITH the change, so this renders what it was handed
 	// rather than looking the name back up in the desired schema.
 	for _, view := range diff.ViewsAdded {
-		result = append(result, fromschema.FromView(view))
+		result = append(result, modelast.FromView(view))
 	}
 	return result
 }
@@ -1003,7 +1003,7 @@ func (p *Planner) modifyViews(
 		if viewDiff.Desired.Name == "" {
 			continue
 		}
-		result = append(result, fromschema.FromView(viewDiff.Desired).SetReplace())
+		result = append(result, modelast.FromView(viewDiff.Desired).SetReplace())
 	}
 	return result
 }
@@ -1030,7 +1030,7 @@ func (p *Planner) addTriggers(
 		}
 		// The definition travels WITH the entry (stokaro/ptah#2315).
 		if ref.Desired.Name != "" {
-			result = append(result, fromschema.FromTrigger(ref.Desired))
+			result = append(result, modelast.FromTrigger(ref.Desired))
 		}
 	}
 	return result
@@ -1047,7 +1047,7 @@ func (p *Planner) modifyTriggers(
 			continue
 		}
 		if triggerDiff.Desired.Name != "" {
-			result = append(result, fromschema.FromTrigger(triggerDiff.Desired).SetReplace())
+			result = append(result, modelast.FromTrigger(triggerDiff.Desired).SetReplace())
 		}
 	}
 	return result

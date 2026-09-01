@@ -1,4 +1,4 @@
-package fromschema_test
+package modelast_test
 
 import (
 	"testing"
@@ -8,7 +8,8 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
+	"go.5x5.cz/ptah/internal/schemaprep"
 )
 
 // userTypeDocument is the IR a PostgreSQL read of one schema produces: one
@@ -113,7 +114,7 @@ func TestQualifyDeclaredUserTypesNamesTheDeclarationsSchema(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			qualified := fromschema.QualifyDeclaredUserTypes(
+			qualified := schemaprep.QualifyDeclaredUserTypes(
 				userTypeDocument(test.columnType), platform.Postgres,
 			)
 
@@ -218,7 +219,7 @@ func TestQualifyDeclaredUserTypesLeavesEverythingElseAlone(t *testing.T) {
 			db := userTypeDocument(test.columnType)
 			test.amend(db)
 
-			qualified := fromschema.QualifyDeclaredUserTypes(db, platform.Postgres)
+			qualified := schemaprep.QualifyDeclaredUserTypes(db, platform.Postgres)
 
 			c.Assert(qualified.Fields, qt.HasLen, 1)
 			c.Assert(qualified.Fields[0].Type, qt.Equals, test.want)
@@ -249,7 +250,7 @@ func TestQualifyDeclaredUserTypesLeavesInlineEnumDialectsAlone(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			qualified := fromschema.QualifyDeclaredUserTypes(
+			qualified := schemaprep.QualifyDeclaredUserTypes(
 				userTypeDocument("mood[]"), test.dialect,
 			)
 
@@ -266,23 +267,23 @@ func TestQualifyDeclaredUserTypesDoesNotMutateItsInput(t *testing.T) {
 
 	db := userTypeDocument("mood[]")
 
-	qualified := fromschema.QualifyDeclaredUserTypes(db, platform.Postgres)
+	qualified := schemaprep.QualifyDeclaredUserTypes(db, platform.Postgres)
 
 	c.Assert(qualified.Fields[0].Type, qt.Equals, "app.mood[]")
 	c.Assert(db.Fields[0].Type, qt.Equals, "mood[]")
 }
 
-// TestFromDatabaseQualifiesDeclaredUserTypes pins the first of the two entry
+// TestCollectDatabaseQualifiesDeclaredUserTypes pins the first of the two entry
 // points the pass is wired into.
 //
-// Wiring it into only one of them is the plausible half-fix: FromDatabase is
+// Wiring it into only one of them is the plausible half-fix: CollectDatabase is
 // the obvious whole-schema conversion, and the planner is where a diff-driven
 // CREATE TABLE is actually built. Each of the two tests fails when the pass is
 // wired only into the other, so neither call site can be dropped quietly.
-func TestFromDatabaseQualifiesDeclaredUserTypes(t *testing.T) {
+func TestCollectDatabaseQualifiesDeclaredUserTypes(t *testing.T) {
 	c := qt.New(t)
 
-	statements := fromschema.FromDatabase(*userTypeDocument("mood[]"), platform.Postgres)
+	statements := modelast.CollectDatabase(*userTypeDocument("mood[]"), platform.Postgres)
 
 	c.Assert(statements, qt.IsNotNil)
 

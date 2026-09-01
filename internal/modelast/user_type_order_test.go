@@ -1,4 +1,4 @@
-package fromschema_test
+package modelast_test
 
 import (
 	"strings"
@@ -8,7 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 )
 
 // userTypeOrderDatabase declares one type of each kind naming another kind, in
@@ -32,16 +32,16 @@ func userTypeOrderDatabase() schemamodel.Database {
 	}
 }
 
-// TestFromDatabase_CreatesUserTypesBeforeTheTypesThatNameThem is the ordering
+// TestCollectDatabase_CreatesUserTypesBeforeTheTypesThatNameThem is the ordering
 // property for the whole-schema render, the one `ptah generate` writes out.
 //
 // The migration planner has the same property with its own guard. Both are
 // needed: they are separate emitters over the same three kinds, and the planner
 // only ever sees the types a diff adds.
-func TestFromDatabase_CreatesUserTypesBeforeTheTypesThatNameThem(t *testing.T) {
+func TestCollectDatabase_CreatesUserTypesBeforeTheTypesThatNameThem(t *testing.T) {
 	c := qt.New(t)
 
-	statements := fromschema.FromDatabase(userTypeOrderDatabase(), "postgres")
+	statements := modelast.CollectDatabase(userTypeOrderDatabase(), "postgres")
 	sql, err := renderer.RenderSQL("postgres", statements.Statements...)
 	c.Assert(err, qt.IsNil)
 

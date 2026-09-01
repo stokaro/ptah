@@ -1,7 +1,7 @@
-package fromschema
+package schemaprep_test
 
-// White-box testing required: platformOverrideGroup is unexported and its
-// tie-break is not observable through any exported converter, because every
+// Direct testing is required because the override-group tie-break is not
+// observable through a normal schema: every
 // caller resolves an engine that has exactly one override group in the schemas
 // this repository ships. Reaching the discard needs two sibling spellings in
 // one map, which only this level can construct.
@@ -10,9 +10,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/internal/schemaprep"
 )
 
-// TestPlatformOverrideGroup_ResolvesBySpelling pins the lookup platformOverrideGroup
+// TestPlatformOverrideGroup_ResolvesBySpelling pins the lookup PlatformOverrideGroup
 // performs, including the tie-break, which nothing else in the suite reaches.
 //
 // The function has no test of its own, so before this file the tie-break could be
@@ -84,6 +86,13 @@ func TestPlatformOverrideGroup_ResolvesBySpelling(t *testing.T) {
 			target:    "postgres",
 			wantOK:    false,
 		},
+		{
+			name:      "an unknown target keeps its exact override key",
+			overrides: map[string]map[string]string{"custom": {"type": "CUSTOM"}},
+			target:    "custom",
+			wantOK:    true,
+			wantType:  "CUSTOM",
+		},
 	}
 
 	for _, test := range tests {
@@ -91,7 +100,7 @@ func TestPlatformOverrideGroup_ResolvesBySpelling(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			group, ok := platformOverrideGroup(test.overrides, test.target)
+			group, ok := schemaprep.PlatformOverrideGroup(test.overrides, test.target)
 
 			c.Assert(ok, qt.Equals, test.wantOK)
 			c.Assert(group["type"], qt.Equals, test.wantType)

@@ -3,7 +3,7 @@ package clickhouse
 import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -28,17 +28,17 @@ func planRowPolicies(
 	}
 	// The declaration travels WITH the entry (stokaro/ptah#2315).
 	for _, table := range diff.RLSEnabledTablesAdded {
-		result = append(result, fromschema.FromRLSEnabledTable(table))
+		result = append(result, modelast.FromRLSEnabledTable(table))
 	}
 	// The policy travels WITH the entry (stokaro/ptah#2315).
 	for _, policy := range diff.RLSPoliciesAdded {
 		if policy.Desired.Name != "" {
-			result = append(result, fromschema.FromRLSPolicy(policy.Desired))
+			result = append(result, modelast.FromRLSPolicy(policy.Desired))
 		}
 	}
 	for _, policy := range diff.RLSPoliciesModified {
 		if policy.Desired.Name != "" {
-			result = append(result, fromschema.FromRLSPolicy(policy.Desired).SetReplace())
+			result = append(result, modelast.FromRLSPolicy(policy.Desired).SetReplace())
 		}
 	}
 	return result

@@ -138,7 +138,7 @@ func rules() []rule {
 			Summary: "the canonical model (core/) must not import comparison, planning or conversion",
 			violations: func(pkg *packages.Package) []finding {
 				return importEdges(pkg, under("core/"), anyUnder(
-					"internal/planner/", "migration/schemadiff", "internal/convert/"))
+					"internal/planner/", "migration/schemadiff", "internal/convert/", "internal/modelast"))
 			},
 		},
 		{

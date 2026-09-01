@@ -1,4 +1,4 @@
-package fromschema_test
+package modelast_test
 
 import (
 	"fmt"
@@ -15,7 +15,7 @@ import (
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -60,12 +60,12 @@ const objectSkippedMarker = "is not supported by this target; skipped."
 //     Those are exactly the kinds #929's own item-5 measurement called the widest
 //     hole. This test needs no key, because it asks the two surfaces about each
 //     other rather than about a preset.
-//   - TestFromDatabase_EveryDialectGetsEveryDeclaredObject in this package pins
+//   - TestCollectDatabase_EveryDialectGetsEveryDeclaredObject in this package pins
 //     the render surface against the fixture, on every dialect. It says nothing
 //     about the plan surface, which is the other half of a disagreement.
 //
 // The fixture is shared with that second test on purpose:
-// TestFromDatabase_TheRoutingFixtureCoversEveryDeclaredCollection holds it
+// TestCollectDatabase_TheRoutingFixtureCoversEveryDeclaredCollection holds it
 // complete over schemamodel.Database by reflection, so an object kind added to the
 // schema model cannot quietly fall outside this comparison.
 //
@@ -115,7 +115,7 @@ func assertRenderAndPlanAgree(c *qt.C, dialect string) {
 	}
 
 	renderCensus := surfaceCensus(c, dialect,
-		fromschema.FromDatabase(desired, dialect).Statements)
+		modelast.CollectDatabase(desired, dialect).Statements)
 
 	planNodes, err := planner.GenerateSchemaDiffAST(
 		schemadiff.CompareWithDialect(&desired, &catalog.Database{}, dialect),

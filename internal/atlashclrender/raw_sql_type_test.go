@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlashclrender"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 )
 
 // This is the round trip issue #1138 reported: an Atlas HCL schema whose column
@@ -119,7 +119,7 @@ table "t" {
 `), "schema.hcl")
 	c.Assert(err, qt.IsNil)
 
-	sql, err := renderer.RenderSQL(platform.SQLite, fromschema.FromDatabase(*parsed, platform.SQLite))
+	sql, err := renderer.RenderSQL(platform.SQLite, modelast.CollectDatabase(*parsed, platform.SQLite))
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "USER_DEFINED")
 	c.Assert(sql, qt.Not(qt.Contains), "sql(")

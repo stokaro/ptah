@@ -24,13 +24,13 @@ case as a control: a doc comment naming the type must **not** be a finding.
 
 ## The four boundaries
 
-ADR 0001 section 3.2 forbids four dependency directions. Two hold today and two
-do not, which is why the gate is a ratchet rather than a wall.
+ADR 0001 section 3.2 forbids four dependency directions. Three hold today and
+one does not, which is why the remaining gate is a ratchet rather than a wall.
 
 | Rule | Property | Recorded |
 | --- | --- | --- |
-| `model-imports-pipeline` | The canonical model (`core/`) must not import comparison, planning or conversion. | 3 |
-| `pipeline-builds-source-description` | A planner or comparator must not construct a source schema description. | 4 |
+| `model-imports-pipeline` | The canonical model (`core/`) must not import comparison, planning or conversion. | 2 |
+| `pipeline-builds-source-description` | A planner or comparator must not construct a source schema description. | 0 |
 | `pipeline-imports-execution` | Planning must not import versioned execution. | 0 |
 | `renderer-imports-comparator` | A renderer must not import a comparator. | 0 |
 
@@ -44,18 +44,23 @@ number would let the debt return to it with the gate green the whole way.
 
 ### What the recorded debt is
 
-The three `model-imports-pipeline` edges:
+The two `model-imports-pipeline` edges:
 
-- `core/renderer` → `internal/convert/fromschema`
-- `core/renderer` → `internal/planner/tablelookup`
+- `core/renderer` → `internal/modelast`
 - `core/schemasource` → `internal/convert/toschema`
 
-The four `pipeline-builds-source-description` sites are one per dialect
-planner: `internal/planner/dialects/{clickhouse,mysql,postgres,sqlite}` each
-build a `schemamodel.Database`.
+The renderer edge is an abstract syntax tree (AST) lowering boundary, not a
+whole-schema conversion. Model-to-model preparation lives in
+`internal/schemaprep` and `core/schemamodel`. `internal/modelast.WalkDatabase`
+then visits one AST node at a time, and `core/renderer` renders each node before
+the next one is lowered. The stable `atlascompat.SchemaToAST` API is the one
+caller that uses `internal/modelast.CollectDatabase` to retain a complete AST.
 
-Both are cleared by the staged plan in ADR 0001 section 8, not by this issue.
-The gate exists so that work is measurable while it happens.
+The SQL schema-source path still parses into AST before
+`internal/convert/toschema` constructs the model. Issue
+[#2725](https://github.com/stokaro/ptah/issues/2725) owns removing that remaining
+edge. The `pipeline-builds-source-description` rule is enforced at zero: the
+four dialect planners no longer construct `schemamodel.Database` values.
 
 ## Information-loss boundaries
 
@@ -64,7 +69,7 @@ issue that owns each.
 
 | Boundary | What is lost | Owner |
 | --- | --- | --- |
-| `schemamodel.Database` ↔ `types.DBSchema` | Two families are spelled differently and several exist on only one side; five packages under `internal/convert` move between them. [#1662](https://github.com/stokaro/ptah/issues/1662) closed with the boundary still here: it put the COLUMN family on the canonical model, not the conversion. | [#2315](https://github.com/stokaro/ptah/issues/2315) |
+| `schemamodel.Database` ↔ `types.DBSchema` | Two families are spelled differently and several exist on only one side; four packages under `internal/convert` move between them. [#1662](https://github.com/stokaro/ptah/issues/1662) closed with the boundary still here: it put the COLUMN family on the canonical model, not the conversion. | [#2315](https://github.com/stokaro/ptah/issues/2315) |
 | `difftypes.SchemaDiff` per-family name lists | Closed: a change carries its own operands, so the planner takes the change set alone — `GenerateSchemaDiffAST(diff, dialect)`. One `[]string` remains, `TablesRemoved`, because `DROP TABLE` is written from the name. The whole-target validation the second parameter fed is `schemadiff.ValidateDesiredSchema`, made where the whole target is supplied. | closed |
 | Converted foreign migration layouts | The rebuilt directory carries no integrity file, so source checksums are dropped. Carried out of band since [#1209](https://github.com/stokaro/ptah/issues/1209). | closed |
 | Routine overload identity | Closed: comparison pairs overloads on a signature normalized to agree with the catalog, consulted only where a name is overloaded. | closed |

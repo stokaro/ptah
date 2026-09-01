@@ -14,6 +14,28 @@
 - Prototype: [#1350](https://github.com/stokaro/ptah/issues/1350), reported in
   [the canonical-pipeline prototype](../canonical_pipeline_prototype.md)
 
+## Implementation status
+
+Issue [#2575](https://github.com/stokaro/ptah/issues/2575) retired
+`internal/convert/fromschema` without changing the stable
+`atlascompat.SchemaToAST` API. Model-to-model preparation belongs to
+`internal/schemaprep` and `core/schemamodel`; `internal/modelast` only lowers a
+prepared model into abstract syntax tree (AST) nodes. The renderer consumes
+those nodes through `modelast.WalkDatabase`, while `SchemaToAST` uses the
+compatibility collector `modelast.CollectDatabase`.
+
+The same change moved shared table lookup from
+`internal/planner/tablelookup` to the leaf package `internal/tablelookup` and
+removed every planner construction of `schemamodel.Database`. The recorded
+boundary debt is therefore two `model-imports-pipeline` edges and zero
+`pipeline-builds-source-description` sites. Issue
+[#2725](https://github.com/stokaro/ptah/issues/2725) owns the remaining SQL
+schema-source conversion through `internal/convert/toschema`.
+
+Sections 1 through 3 retain the measurements taken when this ADR landed, and
+section 8 retains the superseded staged plan. They are historical evidence,
+not a description of the current package tree.
+
 ## 1. Context
 
 Ptah reads a schema from several sources, compares it against a live database,
@@ -126,7 +148,7 @@ give them one place to attach, not to reinvent them.
 
 ## 2. Data flow
 
-### 2.1 Today
+### 2.1 At the recorded baseline
 
 ```mermaid
 flowchart LR
@@ -196,7 +218,7 @@ and renderer need, so neither has to re-read the source description.
 
 ## 3. Package dependencies
 
-### 3.1 Today
+### 3.1 At the recorded baseline
 
 ```mermaid
 flowchart TD
@@ -233,8 +255,9 @@ flowchart TD
 Forbidden directions, in the order they matter:
 
 1. **L1 must not import L2.** The canonical model cannot depend on comparison,
-   planning or rendering. This is the rule `core/renderer` →
-   `internal/planner/tablelookup` breaks today.
+   planning or rendering. The current `core/renderer` → `internal/modelast`
+   edge remains recorded debt; the baseline edge into
+   `internal/planner/tablelookup` has been removed.
 2. **L2 must not construct source descriptions.** A planner that builds a
    `goschema.Database` is reading a source it was not handed.
 3. **L2 must not import L3.** Planning must not know about migration files,
@@ -242,8 +265,8 @@ Forbidden directions, in the order they matter:
 4. **A renderer must not import a comparator.** If rendering needs a fact, the
    change carries it.
 
-Two of the four already hold and two do not, which decides how each is
-enforced. Measured on the tree this record lands against:
+At the recorded baseline, two of the four held and two did not. Measured on the
+tree this record landed against:
 
 | Rule | Violations today |
 | --- | --- |
@@ -252,8 +275,9 @@ enforced. Measured on the tree this record lands against:
 | 3. L2 must not import L3 | 0 |
 | 4. A renderer must not import a comparator | 0 |
 
-Rules 3 and 4 can therefore be enforced outright. Rules 1 and 2 cannot, and
-section 8 stage 0 says what to do instead.
+Rules 3 and 4 could therefore be enforced outright. Rules 1 and 2 could not,
+and section 8 stage 0 recorded the original ratchet plan. The implementation
+status above records the later reduction.
 
 ## 4. Canonical state invariants
 

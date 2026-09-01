@@ -1,4 +1,4 @@
-package fromschema_test
+package modelast_test
 
 import (
 	"slices"
@@ -8,7 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 )
 
 // TestPrimaryKeyName_DecidesTheFormAndCarriesTheName pins both halves of
@@ -79,7 +79,7 @@ func TestPrimaryKeyName_DecidesTheFormAndCarriesTheName(t *testing.T) {
 				{StructName: "T", Name: "b", Type: "INTEGER", Primary: slices.Contains(test.table.PrimaryKey, "b")},
 			}
 
-			node := fromschema.FromTable(test.table, fields, nil, "")
+			node := modelast.FromTable(test.table, fields, nil, "")
 
 			c.Assert(primaryKeyPlacement(node), qt.Equals, test.want)
 			// A key rendered at the table level must not ALSO be marked on the

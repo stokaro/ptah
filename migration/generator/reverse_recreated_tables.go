@@ -7,8 +7,8 @@ import (
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/deporder"
-	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/schemaprep"
+	"go.5x5.cz/ptah/internal/tablelookup"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 

@@ -1,4 +1,4 @@
-package fromschema_test
+package modelast_test
 
 import (
 	"testing"
@@ -33,13 +33,13 @@ func namedNotNullSchema(primaryNotNullName string) *schemamodel.Database {
 	return database
 }
 
-// TestFromDatabase_NotNullConstraintNameReachesTheDDL covers stokaro/ptah#2590.
+// TestCollectDatabase_NotNullConstraintNameReachesTheDDL covers stokaro/ptah#2590.
 //
 // The renderer emits `CONSTRAINT <name> NOT NULL` from the AST node and refuses
 // rather than drops when a target cannot keep the name. None of that could fire,
 // because the model to AST conversion never copied the field: the name was lost
 // one step earlier, and the guard protecting it never saw one.
-func TestFromDatabase_NotNullConstraintNameReachesTheDDL(t *testing.T) {
+func TestCollectDatabase_NotNullConstraintNameReachesTheDDL(t *testing.T) {
 	c := qt.New(t)
 
 	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(
@@ -50,7 +50,7 @@ func TestFromDatabase_NotNullConstraintNameReachesTheDDL(t *testing.T) {
 	c.Assert(statements[0], qt.Contains, `CONSTRAINT "accounts_email_nn" NOT NULL`)
 }
 
-// TestFromDatabase_NotNullConstraintNameIsDroppedOnAKeyColumn is the half that
+// TestCollectDatabase_NotNullConstraintNameIsDroppedOnAKeyColumn is the half that
 // keeps the fix from turning a database read into a refusal.
 //
 // PostgreSQL 18 names the key column's NOT NULL as well, and the renderer
@@ -58,7 +58,7 @@ func TestFromDatabase_NotNullConstraintNameReachesTheDDL(t *testing.T) {
 // is the constraint the column has, and its name is the addressable one. So the
 // conversion drops it deliberately, and this is the one column where dropping is
 // right.
-func TestFromDatabase_NotNullConstraintNameIsDroppedOnAKeyColumn(t *testing.T) {
+func TestCollectDatabase_NotNullConstraintNameIsDroppedOnAKeyColumn(t *testing.T) {
 	c := qt.New(t)
 
 	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(
@@ -72,7 +72,7 @@ func TestFromDatabase_NotNullConstraintNameIsDroppedOnAKeyColumn(t *testing.T) {
 	c.Assert(statements[0], qt.Contains, `CONSTRAINT "accounts_email_nn" NOT NULL`)
 }
 
-// TestFromDatabase_NotNullConstraintNameIsRefusedWhereItCannotBeKept pins the
+// TestCollectDatabase_NotNullConstraintNameIsRefusedWhereItCannotBeKept pins the
 // consequence of carrying the name at all.
 //
 // A target that accepts the syntax and records nothing would leave the name lost
@@ -80,7 +80,7 @@ func TestFromDatabase_NotNullConstraintNameIsDroppedOnAKeyColumn(t *testing.T) {
 // settle. The renderer refuses instead, and that refusal is unreachable while
 // the conversion drops the name — which is what made this a silent loss rather
 // than an error (stokaro/ptah#2161).
-func TestFromDatabase_NotNullConstraintNameIsRefusedWhereItCannotBeKept(t *testing.T) {
+func TestCollectDatabase_NotNullConstraintNameIsRefusedWhereItCannotBeKept(t *testing.T) {
 	c := qt.New(t)
 
 	_, err := renderer.GetOrderedCreateStatementsWithCapabilities(

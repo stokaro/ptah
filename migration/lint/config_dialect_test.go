@@ -28,7 +28,7 @@ import (
 // normalizeDialectSource is read rather than copied so a spelling added to
 // platform.NormalizeDialect is covered here without anyone editing this file.
 // internal/lintdialect/dialect_test.go and
-// internal/convert/fromschema/dialect_spelling_test.go read the same switch for
+// internal/modelast/dialect_spelling_test.go reads the same switch for
 // the same reason.
 const normalizeDialectSource = "../../core/platform/constants.go"
 

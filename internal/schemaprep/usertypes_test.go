@@ -11,6 +11,7 @@ import (
 )
 
 func TestQualifyDeclaredUserTypes(t *testing.T) {
+	c := qt.New(t)
 	t.Parallel()
 	database := &schemamodel.Database{
 		Domains: []schemamodel.Domain{{Name: "amount", Schema: "billing"}},
@@ -25,15 +26,16 @@ func TestQualifyDeclaredUserTypes(t *testing.T) {
 	}
 
 	qualified := schemaprep.QualifyDeclaredUserTypes(database, platform.Postgres)
-	qt.Assert(t, qualified.Fields[0].Type, qt.Equals, "billing.amount")
-	qt.Assert(t, qualified.Fields[1].Type, qt.Equals, "billing.amount[3][]")
-	qt.Assert(t, qualified.Fields[2].Type, qt.Equals, "mood")
-	qt.Assert(t, qualified.Fields[3].Type, qt.Equals, "shared.mood[]")
-	qt.Assert(t, qualified.Fields[4].Type, qt.Equals, "money")
-	qt.Assert(t, database.Fields[0].Type, qt.Equals, "amount")
+	c.Assert(qualified.Fields[0].Type, qt.Equals, "billing.amount")
+	c.Assert(qualified.Fields[1].Type, qt.Equals, "billing.amount[3][]")
+	c.Assert(qualified.Fields[2].Type, qt.Equals, "mood")
+	c.Assert(qualified.Fields[3].Type, qt.Equals, "shared.mood[]")
+	c.Assert(qualified.Fields[4].Type, qt.Equals, "money")
+	c.Assert(database.Fields[0].Type, qt.Equals, "amount")
 }
 
 func TestQualifyFieldUserTypesLeavesAmbiguousAndQualifiedNamesAlone(t *testing.T) {
+	c := qt.New(t)
 	t.Parallel()
 	fields := []schemamodel.Field{{Type: "amount"}, {Type: "one.amount"}}
 	declared := schemaprep.DeclaredUserTypes{Domains: []schemamodel.Domain{
@@ -41,5 +43,5 @@ func TestQualifyFieldUserTypesLeavesAmbiguousAndQualifiedNamesAlone(t *testing.T
 		{Name: "amount", Schema: "two"},
 	}}
 
-	qt.Assert(t, schemaprep.QualifyFieldUserTypes(fields, declared, platform.Postgres), qt.DeepEquals, fields)
+	c.Assert(schemaprep.QualifyFieldUserTypes(fields, declared, platform.Postgres), qt.DeepEquals, fields)
 }

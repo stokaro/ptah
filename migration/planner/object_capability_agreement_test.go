@@ -15,7 +15,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -151,7 +151,7 @@ func objectKindFixture() schemamodel.Database {
 // renderedSchema is what `ptah schema render --dialect <d>` produces: the
 // offline converter's AST for the whole desired schema, rendered.
 func renderedSchema(c *qt.C, database schemamodel.Database, dialect string) string {
-	nodes := fromschema.FromDatabase(database, dialect)
+	nodes := modelast.CollectDatabase(database, dialect)
 	sql, err := renderer.RenderSQL(dialect, nodes.Statements...)
 	c.Assert(err, qt.IsNil, qt.Commentf("render path failed for %s", dialect))
 	return sql
@@ -173,7 +173,7 @@ func plannedSchema(c *qt.C, database schemamodel.Database, dialect string) strin
 // spelling-parity test below compares engines to themselves, never to each
 // other, so a refusal is a legitimate answer as long as it is the same answer.
 func renderedOrRefusal(database schemamodel.Database, dialect string) string {
-	nodes := fromschema.FromDatabase(database, dialect)
+	nodes := modelast.CollectDatabase(database, dialect)
 	sql, err := renderer.RenderSQL(dialect, nodes.Statements...)
 	return fmt.Sprintf("%s | err=%v", sql, err)
 }
@@ -293,7 +293,7 @@ func TestSpellingExtraction_Controls(t *testing.T) {
 // stokaro/ptah#929 items 2 and 3 are exactly this defect on the render path:
 // `--dialect mssql` and `--dialect pgx` produced different DDL from `sqlserver`
 // and `postgres`, silently, at exit 0. The offline converter's half of that is
-// already pinned in internal/convert/fromschema. This is the half the capability
+// already pinned in internal/modelast. This is the half the capability
 // gate added: a preset lookup that failed to normalize would hand an alias the
 // nil set, and the nil set refuses every object kind — so `pgx` would drop its
 // views, functions and triggers while `postgres` kept them, on both paths.

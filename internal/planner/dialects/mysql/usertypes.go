@@ -4,7 +4,7 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -35,7 +35,7 @@ func (p *Planner) planDomains(result []ast.Node, diff *difftypes.SchemaDiff) []a
 	// at all, and the plan reported success. Measured on the Oracle preset --
 	// `zip` planned one statement and `app.zip` planned none.
 	for _, domain := range diff.DomainsAdded {
-		result = append(result, fromschema.FromDomain(domain))
+		result = append(result, modelast.FromDomain(domain))
 	}
 	return result
 }
@@ -71,7 +71,7 @@ func (p *Planner) planCompositeTypes(result []ast.Node, diff *difftypes.SchemaDi
 		}
 	}
 	for _, composite := range declarations {
-		result = append(result, fromschema.FromCompositeType(composite))
+		result = append(result, modelast.FromCompositeType(composite))
 	}
 	return result
 }

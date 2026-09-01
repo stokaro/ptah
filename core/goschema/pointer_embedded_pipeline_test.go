@@ -10,7 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 )
 
 func TestPointerEmbeddedFields_EndToEnd(t *testing.T) {
@@ -161,7 +161,7 @@ type BlogPost struct {
 	c.Assert(blogPostEmbedded, qt.Equals, 6)
 
 	// Generate schema
-	statements := fromschema.FromDatabase(*database, "postgresql")
+	statements := modelast.CollectDatabase(*database, "postgresql")
 
 	// Find the BlogPost CREATE TABLE and FK ALTER TABLE statements
 	var blogPostSQL, blogPostFKSQL string

@@ -523,7 +523,7 @@ func sqlServerInlineEnumCheck(field schemamodel.Field) string {
 //
 // Oracle refuses a CHECK whose spelling disagrees with the column it constrains,
 // so the two have to be decided by one rule: sqlident.Ident is what the
-// renderer's escapeIdentifier calls, and it is what fromschema.applyInlineEnumModel
+// renderer's escapeIdentifier calls, and it is what modelast.applyInlineEnumModel
 // already uses for the same expression on the rendering side.
 func oracleInlineEnumCheck(field schemamodel.Field) string {
 	quoted := make([]string, 0, len(field.Enum))

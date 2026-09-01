@@ -16,8 +16,8 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/dbexprprobe"
+	"go.5x5.cz/ptah/internal/modelast"
 )
 
 // For returns one probe per declared table that carries a generated column, and
@@ -44,7 +44,7 @@ func For(dialect string, caps capability.Capabilities, declared *schemamodel.Dat
 			continue
 		}
 		probeTable := dbexprprobe.GeneratedExpressionProbeTable(len(probes))
-		node := fromschema.FromTable(table, fields, declared.Enums, dialect)
+		node := modelast.FromTable(table, fields, declared.Enums, dialect)
 		if node == nil {
 			continue
 		}
