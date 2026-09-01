@@ -2107,10 +2107,13 @@ func FromSynonym(synonym schemamodel.Synonym) *ast.CreateSynonymNode {
 }
 
 // appendSynonymStatements adds a CREATE SYNONYM node for each declared synonym.
-func appendSynonymStatements(statements *ast.StatementList, synonyms []schemamodel.Synonym) {
+func appendSynonymStatements(visit func(ast.Node) error, synonyms []schemamodel.Synonym) error {
 	for _, synonym := range synonyms {
-		statements.Statements = append(statements.Statements, FromSynonym(synonym))
+		if err := visit(FromSynonym(synonym)); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // FromHypertable converts a schemamodel.Hypertable into the call that makes one.
@@ -2122,10 +2125,13 @@ func FromHypertable(hypertable schemamodel.Hypertable) *ast.CreateHypertableNode
 }
 
 // appendHypertableStatements adds one create_hypertable call per declaration.
-func appendHypertableStatements(statements *ast.StatementList, hypertables []schemamodel.Hypertable) {
+func appendHypertableStatements(visit func(ast.Node) error, hypertables []schemamodel.Hypertable) error {
 	for _, hypertable := range hypertables {
-		statements.Statements = append(statements.Statements, FromHypertable(hypertable))
+		if err := visit(FromHypertable(hypertable)); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // FromContinuousAggregate converts a schemamodel.ContinuousAggregate into the
@@ -2146,12 +2152,15 @@ func FromContinuousAggregate(aggregate schemamodel.ContinuousAggregate) *ast.Cre
 // appendContinuousAggregateStatements adds one CREATE MATERIALIZED VIEW per
 // declared aggregate.
 func appendContinuousAggregateStatements(
-	statements *ast.StatementList,
+	visit func(ast.Node) error,
 	aggregates []schemamodel.ContinuousAggregate,
-) {
+) error {
 	for _, aggregate := range aggregates {
-		statements.Statements = append(statements.Statements, FromContinuousAggregate(aggregate))
+		if err := visit(FromContinuousAggregate(aggregate)); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // fromExtendedProperty converts a schemamodel.ExtendedProperty into the node that
@@ -2174,12 +2183,15 @@ func fromExtendedProperty(property schemamodel.ExtendedProperty) *ast.ExtendedPr
 
 // appendExtendedPropertyStatements adds one add-property node per declaration.
 func appendExtendedPropertyStatements(
-	statements *ast.StatementList,
+	visit func(ast.Node) error,
 	properties []schemamodel.ExtendedProperty,
-) {
+) error {
 	for _, property := range properties {
-		statements.Statements = append(statements.Statements, fromExtendedProperty(property))
+		if err := visit(fromExtendedProperty(property)); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // FromMaterializedView converts a schemamodel.MaterializedView to an
@@ -2195,22 +2207,24 @@ func FromMaterializedView(view schemamodel.MaterializedView) *ast.CreateMaterial
 }
 
 func appendForeignKeyConstraintStatements(
-	statements *ast.StatementList,
+	visit func(ast.Node) error,
 	tables []schemamodel.Table,
 	fields []schemamodel.Field,
 	constraints []schemamodel.Constraint,
 	targetPlatform string,
-) {
-	appendFieldForeignKeyConstraintStatements(statements, tables, fields, targetPlatform)
-	appendTableForeignKeyConstraintStatements(statements, tables, constraints, targetPlatform)
+) error {
+	if err := appendFieldForeignKeyConstraintStatements(visit, tables, fields, targetPlatform); err != nil {
+		return err
+	}
+	return appendTableForeignKeyConstraintStatements(visit, tables, constraints, targetPlatform)
 }
 
 func appendFieldForeignKeyConstraintStatements(
-	statements *ast.StatementList,
+	visit func(ast.Node) error,
 	tables []schemamodel.Table,
 	fields []schemamodel.Field,
 	targetPlatform string,
-) {
+) error {
 	for _, table := range tables {
 		for _, field := range fields {
 			if field.StructName != table.StructName {
@@ -2231,24 +2245,27 @@ func appendFieldForeignKeyConstraintStatements(
 			fkRef.Deferrable = field.Deferrable
 			fkRef.Initially = field.Initially
 			fkRef.Name = field.ForeignKeyName
-			statements.Statements = append(statements.Statements, &ast.AlterTableNode{
+			if err := visit(&ast.AlterTableNode{
 				Name: table.QualifiedName(),
 				Operations: []ast.AlterOperation{
 					&ast.AddConstraintOperation{
 						Constraint: ast.NewForeignKeyConstraint(field.ForeignKeyName, []string{field.Name}, fkRef),
 					},
 				},
-			})
+			}); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
 func appendTableForeignKeyConstraintStatements(
-	statements *ast.StatementList,
+	visit func(ast.Node) error,
 	tables []schemamodel.Table,
 	constraints []schemamodel.Constraint,
 	targetPlatform string,
-) {
+) error {
 	for _, table := range tables {
 		for _, constraint := range constraints {
 			if !constraintBelongsToTable(constraint, table) || !isForeignKeyConstraint(constraint) {
@@ -2260,14 +2277,17 @@ func appendTableForeignKeyConstraintStatements(
 			if node == nil {
 				continue
 			}
-			statements.Statements = append(statements.Statements, &ast.AlterTableNode{
+			if err := visit(&ast.AlterTableNode{
 				Name: table.QualifiedName(),
 				Operations: []ast.AlterOperation{
 					&ast.AddConstraintOperation{Constraint: node},
 				},
-			})
+			}); err != nil {
+				return err
+			}
 		}
 	}
+	return nil
 }
 
 // FromTrigger converts a schemamodel.Trigger to an ast.CreateTriggerNode.
@@ -2456,7 +2476,9 @@ func assignedSelfReferencingForeignKeyName(
 	return foreignKey.ForeignKeyName
 }
 
-// FromDatabase converts a complete schemamodel.Database to an ast.StatementList containing all DDL statements.
+// WalkDatabase converts a complete schemamodel.Database to AST nodes and visits
+// them in executable order without materializing a second whole-schema
+// representation.
 //
 // This function creates a comprehensive database schema by converting all schema elements
 // (schemas, enums, tables, indexes, embedded fields) into their corresponding AST nodes. The statements are ordered
@@ -2552,11 +2574,15 @@ func assignedSelfReferencingForeignKeyName(
 //
 // # Return Value
 //
-// Returns an *ast.StatementList containing all DDL statements in proper execution order.
-// The statement list can be processed by dialect-specific visitors to generate SQL.
-func FromDatabase(database schemamodel.Database, targetPlatform string) *ast.StatementList {
-	statements := &ast.StatementList{
-		Statements: make([]ast.Node, 0),
+// WalkDatabase stops at the first error returned by visit and returns that
+// error unchanged. A nil visitor is refused.
+func WalkDatabase(
+	database schemamodel.Database,
+	targetPlatform string,
+	visit func(ast.Node) error,
+) error {
+	if visit == nil {
+		return fmt.Errorf("walk database schema: nil visitor")
 	}
 
 	// Normalize once so every conversion path consumes the same names.
@@ -2566,12 +2592,16 @@ func FromDatabase(database schemamodel.Database, targetPlatform string) *ast.Sta
 
 	// 1. Add schema definitions first (they may be referenced by tables or
 	// extension installation clauses).
-	appendSchemaStatements(statements, schemasForRender(database, targetPlatform))
+	if err := appendSchemaStatements(visit, schemasForRender(database, targetPlatform)); err != nil {
+		return err
+	}
 
 	// 2. Add extension definitions (PostgreSQL-specific)
 	for _, extension := range database.Extensions {
 		extensionNode := FromExtension(extension)
-		statements.Statements = append(statements.Statements, extensionNode)
+		if err := visit(extensionNode); err != nil {
+			return err
+		}
 	}
 
 	// 2b. Add standalone sequence definitions before any tables, because a
@@ -2581,7 +2611,9 @@ func FromDatabase(database schemamodel.Database, targetPlatform string) *ast.Sta
 	for _, sequence := range database.Sequences {
 		sequenceNode := FromSequence(sequence)
 		sequenceNode.OwnedBy = ""
-		statements.Statements = append(statements.Statements, sequenceNode)
+		if err := visit(sequenceNode); err != nil {
+			return err
+		}
 	}
 
 	// 3. Add enum definitions when the dialect has standalone enum types.
@@ -2591,43 +2623,61 @@ func FromDatabase(database schemamodel.Database, targetPlatform string) *ast.Sta
 	if emitsStandaloneEnumDefinitions(targetPlatform) {
 		for _, enum := range database.Enums {
 			enumNode := FromEnum(enum)
-			statements.Statements = append(statements.Statements, enumNode)
+			if err := visit(enumNode); err != nil {
+				return err
+			}
 		}
 	}
 
 	// 3b. Add user-defined types before tables so columns can reference them,
 	// ordered by what each definition names rather than by kind. Enums are
 	// already out, above, and reference nothing.
-	statements.Statements = append(statements.Statements, orderedUserTypeStatements(database)...)
+	if err := visitDatabaseNodes(visit, orderedUserTypeStatements(database)...); err != nil {
+		return err
+	}
 
 	// 4. Add table definitions (they may be referenced by indexes)
 	// Use the combined field list that includes embedded field expansions
-	appendTableStatements(statements, database, allFields, targetPlatform)
+	if err := appendTableStatements(visit, database, allFields, targetPlatform); err != nil {
+		return err
+	}
 
 	// 5. Roles and functions precede the objects that name them: a grant names
 	// a role, and a trigger names a function.
-	appendRoleAndFunctionStatements(statements, database)
+	if err := appendRoleAndFunctionStatements(visit, database); err != nil {
+		return err
+	}
 
 	// 6. Add unique indexes before foreign keys. PostgreSQL accepts a unique
 	// index as the referenced key for a foreign key, so it must exist before
 	// the FK constraint is added.
 	tableIndexes, viewIndexes := splitMaterializedViewIndexes(database)
-	appendUniqueIndexStatements(statements, database.Tables, tableIndexes)
+	if err := appendUniqueIndexStatements(visit, database.Tables, tableIndexes); err != nil {
+		return err
+	}
 	mysqlFamily := isMySQLFamilyTarget(targetPlatform)
 	if mysqlFamily {
-		appendNonUniqueIndexStatements(statements, database.Tables, tableIndexes)
+		if err := appendNonUniqueIndexStatements(visit, database.Tables, tableIndexes); err != nil {
+			return err
+		}
 	}
 
 	// 7. Add foreign key constraints after all tables and unique indexes exist.
 	if !isSQLiteTarget(targetPlatform) {
-		appendForeignKeyConstraintStatements(statements, database.Tables, allFields, database.Constraints, targetPlatform)
+		if err := appendForeignKeyConstraintStatements(visit, database.Tables, allFields, database.Constraints, targetPlatform); err != nil {
+			return err
+		}
 	}
 
 	// 8. Everything that needs the tables to exist first.
-	appendPostTableObjectStatements(statements, database, targetPlatform)
+	if err := appendPostTableObjectStatements(visit, database, targetPlatform); err != nil {
+		return err
+	}
 
 	// 8a. A materialized view's indexes, once the view exists.
-	appendMaterializedViewIndexStatements(statements, database, viewIndexes)
+	if err := appendMaterializedViewIndexStatements(visit, database, viewIndexes); err != nil {
+		return err
+	}
 
 	// 8b. Synonyms come after the objects a local target may name. A synonym
 	// pointing outside this database has nothing here to wait for, and one
@@ -2635,7 +2685,9 @@ func FromDatabase(database schemamodel.Database, targetPlatform string) *ast.Sta
 	// require the target to exist when the synonym is created, but a script
 	// that creates the alias first and the table second reads as though the
 	// order did not matter, and the next person reorders it.
-	appendSynonymStatements(statements, database.Synonyms)
+	if err := appendSynonymStatements(visit, database.Synonyms); err != nil {
+		return err
+	}
 
 	// 8b2. A hypertable is a call against a table that must already exist:
 	// measured on TimescaleDB 2.29.2, create_hypertable against a missing
@@ -2643,28 +2695,61 @@ func FromDatabase(database schemamodel.Database, targetPlatform string) *ast.Sta
 	// come before the data statements below, because the call refuses a table
 	// that already holds rows -- `table "loaded" is not empty` -- and would
 	// then leave the table ordinary.
-	appendHypertableStatements(statements, database.Hypertables)
+	if err := appendHypertableStatements(visit, database.Hypertables); err != nil {
+		return err
+	}
 
 	// 8b3. A continuous aggregate selects from a hypertable, and TimescaleDB
 	// checks that: measured on 2.29.2, WITH (timescaledb.continuous) over an
 	// ordinary table answers `invalid continuous aggregate view`. It therefore
 	// comes after the create_hypertable calls above rather than with the views.
-	appendContinuousAggregateStatements(statements, database.ContinuousAggregates)
+	if err := appendContinuousAggregateStatements(visit, database.ContinuousAggregates); err != nil {
+		return err
+	}
 
 	// 8c. Extended properties come after every object one can hang off.
 	// sp_addextendedproperty resolves @level1name through the catalog and
 	// answers `Cannot find the object ... because it does not exist or you do
 	// not have permission` when the table is not there yet, so a property can
 	// never precede its owner.
-	appendExtendedPropertyStatements(statements, database.ExtendedProperties)
+	if err := appendExtendedPropertyStatements(visit, database.ExtendedProperties); err != nil {
+		return err
+	}
 
 	// 9. Add non-unique indexes last, except on MySQL-family targets where both
 	// sides of a foreign key need their declared indexes before ADD CONSTRAINT.
 	if !mysqlFamily {
-		appendNonUniqueIndexStatements(statements, database.Tables, tableIndexes)
+		if err := appendNonUniqueIndexStatements(visit, database.Tables, tableIndexes); err != nil {
+			return err
+		}
 	}
 
+	return nil
+}
+
+// FromDatabase collects the nodes [WalkDatabase] visits into an
+// ast.StatementList. It remains the compatibility entry point for callers that
+// need a complete AST; renderers should consume WalkDatabase directly.
+func FromDatabase(database schemamodel.Database, targetPlatform string) *ast.StatementList {
+	statements := &ast.StatementList{
+		Statements: make([]ast.Node, 0),
+	}
+	// The collector never returns an error, and WalkDatabase has no other error
+	// source. Keep this wrapper infallible for its existing callers.
+	_ = WalkDatabase(database, targetPlatform, func(node ast.Node) error {
+		statements.Statements = append(statements.Statements, node)
+		return nil
+	})
 	return statements
+}
+
+func visitDatabaseNodes(visit func(ast.Node) error, nodes ...ast.Node) error {
+	for _, node := range nodes {
+		if err := visit(node); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // orderedUserTypeStatements returns CREATE DOMAIN / CREATE TYPE for every
@@ -2711,11 +2796,11 @@ func orderedUserTypeStatements(database schemamodel.Database) []ast.Node {
 }
 
 func appendTableStatements(
-	statements *ast.StatementList,
+	visit func(ast.Node) error,
 	database schemamodel.Database,
 	allFields []schemamodel.Field,
 	targetPlatform string,
-) {
+) error {
 	sqliteTarget := isSQLiteTarget(targetPlatform)
 	mode := tableConstraintsWithoutForeignKeys
 	if sqliteTarget {
@@ -2727,36 +2812,42 @@ func appendTableStatements(
 			tableNode = FromTable(table, allFields, database.Enums, targetPlatform)
 		}
 		addTableConstraints(tableNode, table, database.Constraints, mode, targetPlatform)
-		statements.Statements = append(statements.Statements, tableNode)
+		if err := visit(tableNode); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-func appendUniqueIndexStatements(statements *ast.StatementList, tables []schemamodel.Table, indexes []schemamodel.Index) {
-	appendMatchingIndexStatements(statements, tables, indexes, func(index schemamodel.Index) bool {
+func appendUniqueIndexStatements(visit func(ast.Node) error, tables []schemamodel.Table, indexes []schemamodel.Index) error {
+	return appendMatchingIndexStatements(visit, tables, indexes, func(index schemamodel.Index) bool {
 		return index.Unique
 	})
 }
 
-func appendNonUniqueIndexStatements(statements *ast.StatementList, tables []schemamodel.Table, indexes []schemamodel.Index) {
-	appendMatchingIndexStatements(statements, tables, indexes, func(index schemamodel.Index) bool {
+func appendNonUniqueIndexStatements(visit func(ast.Node) error, tables []schemamodel.Table, indexes []schemamodel.Index) error {
+	return appendMatchingIndexStatements(visit, tables, indexes, func(index schemamodel.Index) bool {
 		return !index.Unique
 	})
 }
 
 func appendMatchingIndexStatements(
-	statements *ast.StatementList,
+	visit func(ast.Node) error,
 	tables []schemamodel.Table,
 	indexes []schemamodel.Index,
 	matches func(schemamodel.Index) bool,
-) {
+) error {
 	structToTableMap := createStructToTableMap(tables)
 	for _, index := range indexes {
 		if !matches(index) {
 			continue
 		}
 		indexNode := FromIndexWithTableMapping(index, structToTableMap)
-		statements.Statements = append(statements.Statements, indexNode)
+		if err := visit(indexNode); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // appendMaterializedViewIndexStatements appends the indexes a materialized view
@@ -2768,14 +2859,17 @@ func appendMatchingIndexStatements(
 // emitted before views, so that a unique index can back a foreign key, and no
 // foreign key references a materialized view.
 func appendMaterializedViewIndexStatements(
-	statements *ast.StatementList,
+	visit func(ast.Node) error,
 	database schemamodel.Database,
 	viewIndexes []schemamodel.Index,
-) {
+) error {
 	mapping := createStructToViewMap(database.MaterializedViews)
 	for _, index := range viewIndexes {
-		statements.Statements = append(statements.Statements, FromIndexWithTableMapping(index, mapping))
+		if err := visit(FromIndexWithTableMapping(index, mapping)); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // splitMaterializedViewIndexes separates the indexes a materialized view
@@ -2824,13 +2918,18 @@ func createStructToViewMap(views []schemamodel.MaterializedView) map[string]stri
 
 // appendRoleAndFunctionStatements appends every declared role and function, for
 // every target. A target that cannot host one says so through its renderer.
-func appendRoleAndFunctionStatements(statements *ast.StatementList, database schemamodel.Database) {
+func appendRoleAndFunctionStatements(visit func(ast.Node) error, database schemamodel.Database) error {
 	for _, role := range database.Roles {
-		statements.Statements = append(statements.Statements, FromRole(role))
+		if err := visit(FromRole(role)); err != nil {
+			return err
+		}
 	}
 	for _, function := range database.Functions {
-		statements.Statements = append(statements.Statements, FromFunction(function))
+		if err := visit(FromFunction(function)); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // appendPostTableObjectStatements appends every declared object whose statement
@@ -2841,32 +2940,44 @@ func appendRoleAndFunctionStatements(statements *ast.StatementList, database sch
 // select from another; emitting the two kinds one after the other gets that
 // wrong whichever kind goes first.
 func appendPostTableObjectStatements(
-	statements *ast.StatementList,
+	visit func(ast.Node) error,
 	database schemamodel.Database,
 	targetPlatform string,
-) {
+) error {
 	// Associate standalone sequences with their owning table.column now that the
 	// tables exist. CREATE SEQUENCE ran earlier (before tables) without OWNED BY.
 	for _, sequence := range database.Sequences {
 		if ownershipNode := sequenceOwnershipNode(sequence); ownershipNode != nil {
-			statements.Statements = append(statements.Statements, ownershipNode)
+			if err := visit(ownershipNode); err != nil {
+				return err
+			}
 		}
 	}
-	appendOrderedViewLikeStatements(statements, database, targetPlatform)
+	if err := appendOrderedViewLikeStatements(visit, database, targetPlatform); err != nil {
+		return err
+	}
 	for _, rlsEnabled := range database.RLSEnabledTables {
-		statements.Statements = append(statements.Statements, FromRLSEnabledTable(rlsEnabled))
+		if err := visit(FromRLSEnabledTable(rlsEnabled)); err != nil {
+			return err
+		}
 	}
 	for _, rlsPolicy := range database.RLSPolicies {
-		statements.Statements = append(statements.Statements,
-			FromRLSPolicy(QualifyRLSPolicyForTarget(
-				rlsPolicy, declaredTableSchema(database, rlsPolicy.Table), targetPlatform)))
+		if err := visit(FromRLSPolicy(QualifyRLSPolicyForTarget(
+			rlsPolicy, declaredTableSchema(database, rlsPolicy.Table), targetPlatform))); err != nil {
+			return err
+		}
 	}
 	for _, grant := range database.Grants {
-		statements.Statements = append(statements.Statements, FromGrant(grant))
+		if err := visit(FromGrant(grant)); err != nil {
+			return err
+		}
 	}
 	for _, trigger := range database.Triggers {
-		statements.Statements = append(statements.Statements, FromTrigger(trigger))
+		if err := visit(FromTrigger(trigger)); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 // declaredTableSchema is the schema a declared table is written under, or empty
@@ -2888,10 +2999,10 @@ func declaredTableSchema(database schemamodel.Database, tableName string) string
 }
 
 func appendOrderedViewLikeStatements(
-	statements *ast.StatementList,
+	visit func(ast.Node) error,
 	database schemamodel.Database,
 	targetPlatform string,
-) {
+) error {
 	objects := make([]deporder.ViewLike, 0, len(database.Views)+len(database.MaterializedViews))
 	viewsByName := make(map[string]schemamodel.View, len(database.Views))
 	materializedViewsByName := make(map[string]schemamodel.MaterializedView, len(database.MaterializedViews))
@@ -2906,14 +3017,16 @@ func appendOrderedViewLikeStatements(
 
 	for _, object := range deporder.ViewLikesForCreateForDialect(objects, targetPlatform) {
 		if object.Materialized {
-			statements.Statements = append(
-				statements.Statements,
-				FromMaterializedView(materializedViewsByName[object.Name]),
-			)
+			if err := visit(FromMaterializedView(materializedViewsByName[object.Name])); err != nil {
+				return err
+			}
 			continue
 		}
-		statements.Statements = append(statements.Statements, FromView(viewsByName[object.Name]))
+		if err := visit(FromView(viewsByName[object.Name])); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func isSQLiteTarget(targetPlatform string) bool {
@@ -2929,16 +3042,19 @@ func isMySQLFamilyTarget(targetPlatform string) bool {
 	}
 }
 
-func appendSchemaStatements(statements *ast.StatementList, schemas []schemamodel.Schema) {
+func appendSchemaStatements(visit func(ast.Node) error, schemas []schemamodel.Schema) error {
 	for _, schema := range schemas {
-		statements.Statements = append(statements.Statements, &ast.CreateSchemaNode{
+		if err := visit(&ast.CreateSchemaNode{
 			Name:        schema.Name,
 			IfNotExists: true,
 			Comment:     schema.Comment,
 			Charset:     schema.Charset,
 			Collate:     schema.Collate,
-		})
+		}); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func schemasForRender(database schemamodel.Database, targetPlatform string) []schemamodel.Schema {

@@ -711,24 +711,49 @@ func ProcessEmbeddedFields(embeddedFields []EmbeddedField, originalFields []Fiel
 			sourceFields = append(sourceFields, field)
 		}
 	}
-
-	// Estimate capacity: original fields + estimated embedded fields
-	// Each embedded field could potentially generate multiple fields
-	estimatedEmbeddedFields := len(embeddedFields) * 2 // Conservative estimate
-	estimatedCapacity := len(sourceFields) + estimatedEmbeddedFields
-
-	// Pre-allocate slice with estimated capacity for better performance
-	allFields := make([]Field, len(sourceFields), estimatedCapacity)
-	copy(allFields, sourceFields)
+	allFields := slices.Clone(sourceFields)
+	seenFields := fieldKeySet(sourceFields)
 
 	// Process embedded fields for each struct
 	structNames := UniqueStructNames(embeddedFields)
 	for _, structName := range structNames {
 		generatedFields := processEmbeddedFieldsForStruct(embeddedFields, sourceFields, structName)
-		allFields = append(allFields, generatedFields...)
+		allFields = appendNewFields(allFields, generatedFields, seenFields)
 	}
 
 	return allFields
+}
+
+type fieldKey struct {
+	structName string
+	name       string
+}
+
+func fieldKeySet(fields []Field) map[fieldKey]struct{} {
+	seen := make(map[fieldKey]struct{}, len(fields))
+	for _, field := range fields {
+		seen[fieldKeyFor(field)] = struct{}{}
+	}
+	return seen
+}
+
+func appendNewFields(fields, newFields []Field, seen map[fieldKey]struct{}) []Field {
+	for _, field := range newFields {
+		key := fieldKeyFor(field)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		fields = append(fields, field)
+	}
+	return fields
+}
+
+func fieldKeyFor(field Field) fieldKey {
+	return fieldKey{
+		structName: field.StructName,
+		name:       field.Name,
+	}
 }
 
 // UniqueStructNames extracts the distinct StructName values from the given

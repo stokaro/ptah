@@ -1014,20 +1014,23 @@ func GetOrderedCreateStatementsWithCapabilities(
 	if err != nil {
 		return nil, err
 	}
-	astNodes := fromschema.FromDatabase(database, dialect)
-	for _, node := range astNodes.Statements {
+	err = fromschema.WalkDatabase(database, dialect, func(node ast.Node) error {
 		sql, err := RenderSQLWithCapabilities(dialect, caps, node)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		// A node a dialect renders as nothing is not a statement. Keeping it
 		// put a bare `;` in front of the script — SQLite renders no statement
 		// for its `main` namespace, which an introspected database now
 		// describes as a schema (stokaro/ptah#1264).
 		if strings.TrimSpace(sql) == "" {
-			continue
+			return nil
 		}
 		statements = append(statements, sql)
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return statements, nil
