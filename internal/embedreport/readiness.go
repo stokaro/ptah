@@ -142,10 +142,6 @@ func VerifyGeneration(
 	if err != nil {
 		return embedverify.Report{}, err
 	}
-	walked, err := snapshotWalked(ctx, db, spec, run)
-	if err != nil {
-		return embedverify.Report{}, err
-	}
 	return embedverify.Verify(
 		embedverify.Expectation{
 			Generation:    spec.Identity().Digest,
@@ -157,47 +153,21 @@ func VerifyGeneration(
 		},
 		structure, corpus,
 		embedverify.RunState{
-			SnapshotComplete:    walked,
+			// The fact the backfill recorded when its walk ran off the end
+			// of the source, rather than a phase standing in for it. Two
+			// phase readings stood here and both were wrong in ways nothing
+			// noticed: `Phase != PhaseBackfilling` was true for every phase
+			// BEFORE the backfill as well as after it, and
+			// `Reached(PhaseBackfilled)` is a high-water mark, so a run whose
+			// backfill once finished and was then given more to do still read
+			// as complete -- and the whole consistency layer went quiet for a
+			// run whose status was `failed` (stokaro/ptah#2649 finding 3).
+			SnapshotComplete:    run.SnapshotDone,
 			CatchUpReached:      guarantee.Complete,
 			ConsistencyMode:     string(loaded.Mode),
 			SourceMutable:       loaded.Source.Mutable,
 			UnreconciledBatches: 0,
 		})
-}
-
-// snapshotWalked answers whether the backfill has anything left to read.
-//
-// It asks the SOURCE, through the same scan the backfill itself resumes with:
-// one page of one row after the run's cursor, and a page that comes back empty
-// is the walk having nothing left. That is the fact the finding claims, and it
-// is a fact about the database rather than about the run's bookkeeping.
-//
-// Two phase readings stood here before it, and both were wrong in ways nothing
-// noticed. `run.Phase != embedrun.PhaseBackfilling` was true for every phase
-// BEFORE the backfill as well as after it, so a run that had never backfilled
-// was told its snapshot was complete. `run.Reached(embedrun.PhaseBackfilled)`
-// fixed that direction and kept the other one: a phase is a high-water mark, so
-// a run whose backfill once finished and was then given more to do -- rows
-// inserted after it, or a resumed pass that failed partway -- still read as
-// complete, and the whole consistency layer went quiet for a run whose status
-// was `failed` (stokaro/ptah#2649 finding 3).
-//
-// Driving the production scan rather than writing a second query is deliberate.
-// What counts as an in-scope row is the specification's filter, its key order
-// and its NULL handling, and a query here that agreed with the backfill today
-// would stop agreeing the moment either moved.
-func snapshotWalked(
-	ctx context.Context, db *sql.DB, spec embedgen.Spec, run embedrun.Run,
-) (bool, error) {
-	source, err := embedpg.NewSource(db, spec)
-	if err != nil {
-		return false, err
-	}
-	page, err := source.Scan(ctx, run.Cursor, 1)
-	if err != nil {
-		return false, err
-	}
-	return len(page.Rows) == 0, nil
 }
 
 // splitBlocking sorts this report's blocking findings into the ones an operator

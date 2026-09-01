@@ -128,6 +128,8 @@ func RunFields() []schemamodel.Field {
 		text(RunTable, "lease_owner", true, "the worker that holds it"),
 		timestamp(RunTable, "lease_expires", true, "and until when"),
 		bigint(RunTable, "fencing_token", false, "what makes the lease enforceable"),
+		boolean(RunTable, "snapshot_done", false,
+			"whether the backfill's walk ran off the end of the source"),
 		text(RunTable, "snapshot_watermark", true, "the boundary the backfill covers up to"),
 		text(RunTable, "catch_up_watermark", true, "how far catch-up has processed past it"),
 		text(RunTable, "cursor", true, "the keyset position the backfill resumes from"),
