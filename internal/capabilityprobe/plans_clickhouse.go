@@ -267,6 +267,8 @@ func clickHousePlan() plan {
 		),
 	}
 	return plan{experiments: experiments, undecided: map[capability.Capability]string{
+		capability.SchemaComments: "ClickHouse comments a database in CREATE DATABASE and has no COMMENT ON SCHEMA to accept or refuse, so there is " +
+			"no statement to send. Its renderer emits none either (stokaro/ptah#2651)",
 		capability.RowDeletionPolicy: "the key names a table clause Ptah renders, reads and plans only " +
 			"for Spanner, whose PostgreSQL interface stores it; this server has no such clause, so its " +
 			"refusal would answer a different question",
