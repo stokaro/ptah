@@ -309,12 +309,36 @@ func batchCheck(ctx context.Context, provider Provider) Check {
 		return Check{Name: CheckBatch, Passed: false,
 			Detail: fmt.Sprintf("a request carrying %d inputs failed: %v", len(ProbeInputs), err)}
 	}
-	if err := ValidateResult(result, len(ProbeInputs), 0); err != nil {
-		return Check{Name: CheckBatch, Passed: false, Detail: err.Error()}
+	// The COUNT, and only the count. Whether the vectors are well formed is
+	// `shape`'s question and is already answered above; asserting it again here
+	// reported one malformed vector twice, the second time under a name that
+	// says the endpoint cannot carry a batch -- which it can, and an operator
+	// reducing their batch size over that would be chasing the wrong thing.
+	//
+	// This path was unreachable while the adapter refused a malformed answer
+	// before the probe saw one (stokaro/ptah#2641).
+	answered := fmt.Sprintf("%d inputs answered with %s",
+		len(ProbeInputs), vectorCount(len(result.Vectors)))
+	if len(result.Vectors) != len(ProbeInputs) {
+		// The measurement and the reason it matters, because the count alone
+		// leaves a reader to work out why one vector for two inputs is a
+		// failure rather than a smaller answer.
+		return Check{Name: CheckBatch, Passed: false,
+			Detail: answered + ": a partial batch is not a complete one"}
 	}
-	return Check{Name: CheckBatch, Passed: true,
-		Detail: fmt.Sprintf("%d inputs answered with %d vectors",
-			len(ProbeInputs), len(result.Vectors))}
+	return Check{Name: CheckBatch, Passed: true, Detail: answered}
+}
+
+// vectorCount is a count a person reads, so one of them is a vector.
+//
+// The singular became reachable only when the probe started seeing malformed
+// answers: before that the adapter refused a short one and this line never ran
+// with a count of one.
+func vectorCount(vectors int) string {
+	if vectors == 1 {
+		return "1 vector"
+	}
+	return fmt.Sprintf("%d vectors", vectors)
 }
 
 // cancellationCheck requires a canceled request to stop.

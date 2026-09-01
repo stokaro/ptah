@@ -377,3 +377,50 @@ func credentialledEndpoint(c *qt.C, handler http.HandlerFunc) embedprovider.Prov
 	c.Assert(err, qt.IsNil)
 	return provider
 }
+
+// TestOpenAICompatible_RawAnswersHandsBackWhatArrived is the option the probe
+// needs, and the pair with the control below is what makes it a decision rather
+// than a hole.
+//
+// The probe's job is to say WHICH way an endpoint is wrong. While the adapter
+// refused every malformed answer, one empty vector became
+// `the model did not answer an embedding request` -- for an endpoint that
+// answered over HTTP 200 -- and the shape, dimension, batch and cancellation
+// checks were all abandoned as unmeasurable (stokaro/ptah#2641).
+func TestOpenAICompatible_RawAnswersHandsBackWhatArrived(t *testing.T) {
+	c := qt.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		answer(w, []int{0}, [][]float32{{}})
+	}))
+	c.Cleanup(server.Close)
+	provider, err := embedprovider.NewOpenAICompatible(embedprovider.OpenAICompatibleOptions{
+		Name: "test", BaseURL: server.URL + "/v1", Model: "test-model",
+		EndpointClass: "local", RawAnswers: true,
+	})
+	c.Assert(err, qt.IsNil)
+
+	result, err := provider.Embed(context.Background(), []string{"one"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Vectors, qt.HasLen, 1)
+	c.Assert(result.Vectors[0], qt.HasLen, 0)
+}
+
+// TestOpenAICompatible_WithoutRawAnswersTheSameAnswerIsRefused is the control,
+// and it is the half that matters most.
+//
+// Every other caller depends on the refusal: a vector that fails validation
+// must not reach a target, and `embedverify` cites that guarantee in its own
+// report. An option that quietly turned validation off for everybody would
+// satisfy the test above and break that.
+func TestOpenAICompatible_WithoutRawAnswersTheSameAnswerIsRefused(t *testing.T) {
+	c := qt.New(t)
+	provider := endpoint(c, 0, func(w http.ResponseWriter, _ *http.Request) {
+		answer(w, []int{0}, [][]float32{{}})
+	})
+
+	_, err := provider.Embed(context.Background(), []string{"one"})
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "vector 0 is empty")
+}

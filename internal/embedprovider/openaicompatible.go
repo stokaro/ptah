@@ -37,6 +37,21 @@ type OpenAICompatibleOptions struct {
 	// Dimension is the output dimension expected of every answer. Zero accepts
 	// whatever the endpoint returns and records it on the first response.
 	Dimension int
+	// RawAnswers hands the decoded answer back without refusing a malformed
+	// one. It exists for `Probe` and nothing else should set it.
+	//
+	// A probe's job is to say WHICH way an endpoint is wrong, and it cannot if
+	// the adapter turns every malformed answer into one error. Measured on
+	// master before this: an endpoint answering a single empty vector reported
+	// `fail embeds: the model did not answer an embedding request` -- it
+	// answered, over HTTP 200 -- and abandoned the shape, dimension, batch and
+	// cancellation checks as unmeasurable. The same stub answering well-formed
+	// vectors measured all four, so one malformed field collapsed a report of
+	// seven checks to three (stokaro/ptah#2641).
+	//
+	// A caller that sets this takes on the validation itself. `Probe` does, in
+	// `shapeCheck`.
+	RawAnswers bool
 	// RequestedDimension asks the endpoint for a specific output size where it
 	// supports one. Zero omits the field.
 	RequestedDimension int
@@ -228,6 +243,13 @@ func (p *openAICompatible) decode(payload []byte, inputs int) (Result, error) {
 	}
 	result.Usage = Usage{PromptTokens: decoded.Usage.PromptTokens, TotalTokens: decoded.Usage.TotalTokens}
 
+	// The probe is the one caller that must see a malformed answer rather than
+	// an error about one. Everywhere else a refusal here is the point: a vector
+	// that failed this check must not reach a target, and `embedverify` cites
+	// that guarantee in its own report.
+	if p.options.RawAnswers {
+		return result, nil
+	}
 	if err := ValidateResult(result, inputs, p.options.Dimension); err != nil {
 		return Result{}, fmt.Errorf("%s: %w", p.host, err)
 	}
