@@ -91,3 +91,57 @@ func TestConfiguredFacts_AFactBuiltWithoutItsReasonIsReported(t *testing.T) {
 func unknownWithNoReason() embedplan.Fact {
 	return embedplan.Fact{Name: "provider.reachable", Value: "no", Provenance: embedplan.Unknown}
 }
+
+// TestConfiguredFacts_ReproducibilityIsReportedEitherWay pins what three
+// documentation pages promise: that `plan` says whether the generation can be
+// rebuilt, and names what is missing when it cannot (stokaro/ptah#2648).
+//
+// It is inferred rather than configured on both arms, because the answer is a
+// claim about the PROVIDER read out of the specification: a revision Ptah was
+// given is not a revision Ptah watched the provider honor. So a `full` answer
+// joins "What is not established" alongside the partial one, which is the
+// honest place for it.
+//
+// The reason each arm carries is asserted whole rather than by prefix. The
+// detail is the half a reader acts on, and a fact reporting `partial` with an
+// empty premise passes any check that only looks at the value.
+func TestConfiguredFacts_ReproducibilityIsReportedEitherWay(t *testing.T) {
+	tests := []struct {
+		name       string
+		revision   string
+		wantValue  string
+		wantDetail string
+	}{
+		{
+			name:       "a pinned revision",
+			revision:   "1",
+			wantValue:  "full",
+			wantDetail: "the specification pins an immutable model revision",
+		},
+		{
+			name:      "no revision",
+			revision:  "",
+			wantValue: "partial",
+			wantDetail: `provider "openai-compatible" exposes no immutable revision ` +
+				`for model "bge-small-en", so asking it again may answer with different vectors`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			facts := configuredFacts(embedspec.Loaded{Spec: embedgen.Spec{
+				Source: embedgen.Source{Table: "articles"},
+				Model: embedgen.Model{
+					Provider:   "openai-compatible",
+					Identifier: "bge-small-en",
+					Revision:   test.revision,
+				},
+			}})
+
+			c.Assert(facts, qt.Contains, embedplan.InferredFact(
+				"generation.reproducibility", test.wantValue, test.wantDetail))
+		})
+	}
+}

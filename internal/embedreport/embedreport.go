@@ -19,6 +19,7 @@ import (
 	"database/sql"
 
 	"go.5x5.cz/ptah/internal/embedcatchup"
+	"go.5x5.cz/ptah/internal/embedgen"
 	"go.5x5.cz/ptah/internal/embedpg"
 	"go.5x5.cz/ptah/internal/embedplan"
 	"go.5x5.cz/ptah/internal/embedrun"
@@ -271,13 +272,50 @@ func planInputs(
 // (stokaro/ptah#2474).
 func configuredFacts(loaded embedspec.Loaded) embedplan.Facts {
 	spec := loaded.Spec
-	return embedplan.Facts{
+	identity := spec.Identity()
+	facts := embedplan.Facts{
 		embedplan.ConfiguredFact("source.table", spec.Source.Table, "the specification"),
 		embedplan.ConfiguredFact("model.identifier", spec.Model.Identifier, "the specification"),
 		embedplan.ConfiguredFact("model.revision", spec.Model.Revision, "the specification"),
 		embedplan.ConfiguredFact("provider.credential", loaded.Credential,
 			"the specification, as a reference rather than a value"),
 	}
+	// Derived rather than configured, so it carries what it was derived FROM.
+	//
+	// Three pages said `plan` reports this and it reported nothing -- and the
+	// sample one of them prints is in the plan's own fact vocabulary, so the
+	// promise was coherent and only the fact was missing (stokaro/ptah#2648
+	// finding 2). `DescribeSpecification` says the same thing and its comment
+	// already said why: "Rendered as the plan renders it, so the two agree on
+	// the words."
+	//
+	// It is reported on every run rather than only where it is partial, which
+	// is more than the pages promise. A fact that appears when the answer is
+	// bad and is absent when it is good is one a reader cannot tell from a fact
+	// nobody computed.
+	//
+	// So a `full` answer also appears under "What is not established", and that
+	// is right rather than a wart: an inference is not a measurement, and this
+	// one reads a revision string out of the specification without asking the
+	// provider whether it honors it. `run.consistency_mode` is inferred and
+	// listed the same way for the same reason.
+	facts.Add(embedplan.InferredFact(
+		"generation.reproducibility", string(identity.Reproducibility),
+		reproducibilityFrom(identity)))
+	return facts
+}
+
+// reproducibilityFrom is what the answer was derived from.
+//
+// A full reproducibility carries no reason of its own, and a fact with an empty
+// detail is the shape `Facts.Undetailed` reports: an inferred answer owes its
+// premise. So the premise is stated for both answers rather than only for the
+// one that has a complaint attached.
+func reproducibilityFrom(identity embedgen.Identity) string {
+	if identity.ReproducibilityReason != "" {
+		return identity.ReproducibilityReason
+	}
+	return "the specification pins an immutable model revision"
 }
 
 // disclosureOf says what would leave the database.
