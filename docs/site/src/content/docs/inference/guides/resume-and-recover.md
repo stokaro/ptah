@@ -99,7 +99,7 @@ more to do.
 ## The run does not exist
 
 ```console
-error: run 2026-08-articles: no rows in result set
+error: not found: run 2026-08-articles
 ```
 
 The run identifier is wrong, or you are pointed at the wrong database. Run

@@ -80,8 +80,9 @@ is not the window length.
 A generation that drifted is refused:
 
 ```console
-error: rollback refused:
-  - 1841 rows of the previous generation are stale, and the policy allows 0
+rollback refused:
+  - 1841 rows are stale and this policy allows 0
+error: rollback refused
 ```
 
 That is the honest answer rather than a gap. Going back to it would be going

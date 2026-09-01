@@ -43,7 +43,12 @@ func (r Runs) Claim(ctx context.Context, runID string) (embedrun.Run, int64, err
 	// landed and was then erased by the claim (stokaro/ptah#2636).
 	run, token, err := r.Store.ClaimRun(ctx, runID, r.Worker, time.Now().UTC().Add(lease))
 	if err != nil {
-		return embedrun.Run{}, 0, fmt.Errorf("claim run %s: %w", runID, err)
+		// The store names the operation it failed at, so naming it again here
+		// printed the same clause twice: `claim run r: claim run r: not found:
+		// run r`. An operator searching the documentation for what they saw
+		// found nothing, because nobody writes a sentence that stutters
+		// (stokaro/ptah#2648 finding 3).
+		return embedrun.Run{}, 0, err
 	}
 	return run, token, nil
 }
