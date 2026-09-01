@@ -255,6 +255,7 @@ Read the columns as follows.
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
+| `--accept-finding` | `stringArray` | `[]` | `PTAH_ACCEPT_FINDING` | — |
 | `--allowed-signers` | `string` | — | `PTAH_ALLOWED_SIGNERS` | — |
 | `--approval` | `string` | — | `PTAH_APPROVAL` | — |
 | `--approve` | `string` | — | `PTAH_APPROVE` | — |

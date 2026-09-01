@@ -3,6 +3,8 @@ package embedreport
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"slices"
 	"strconv"
 	"time"
 
@@ -101,7 +103,7 @@ func ReadReadiness(
 			"["+string(finding.Layer)+"/"+string(finding.Severity)+"] "+finding.Summary)
 	}
 
-	plan, observed, err := BuildCutoverPlan(ctx, db, store, loaded, run, report, now)
+	plan, observed, err := BuildCutoverPlan(ctx, db, store, loaded, run, report, nil, now)
 	if err != nil {
 		return Readiness{}, err
 	}
@@ -163,6 +165,54 @@ func VerifyGeneration(
 		})
 }
 
+// splitBlocking sorts this report's blocking findings into the ones an operator
+// accepted and the ones they did not.
+//
+// An acceptance names a finding by its summary, and a summary that matches
+// nothing is refused rather than ignored. That is the direction that matters:
+// an acceptance outlives the finding it was written for -- copied into a
+// runbook, a pipeline, a shell history -- and one that silently applies to
+// nothing is an operator believing they have looked at something they have not.
+func splitBlocking(
+	report embedverify.Report, accepting []string,
+) (accepted, unaccepted []string, err error) {
+	blocking := make(map[string]bool)
+	for _, finding := range report.Blocking() {
+		blocking[finding.Summary] = true
+	}
+
+	// A set, so naming one finding twice is one acceptance. The flag is
+	// repeatable and an operator assembling it from a loop or a runbook can
+	// easily pass the same summary twice; carrying the repeat into
+	// AcceptedFindings would put it in the plan digest, and two invocations
+	// that accept exactly the same thing would produce two plans -- so the
+	// digest a refusal published would not match the plan the approval is
+	// offered against, and the two-step approve flow could not complete.
+	seen := make(map[string]bool, len(accepting))
+	for _, summary := range accepting {
+		if !blocking[summary] {
+			return nil, nil, fmt.Errorf(
+				"no blocking finding says %q, so there is nothing there to accept",
+				summary,
+			)
+		}
+		if seen[summary] {
+			continue
+		}
+		seen[summary] = true
+		accepted = append(accepted, summary)
+	}
+
+	for summary := range blocking {
+		if seen[summary] {
+			continue
+		}
+		unaccepted = append(unaccepted, summary)
+	}
+	slices.Sort(unaccepted)
+	return accepted, unaccepted, nil
+}
+
 // BuildCutoverPlan assembles the plan and what is true now.
 //
 // The moment is a parameter rather than a clock read here, so that a caller
@@ -171,7 +221,8 @@ func VerifyGeneration(
 // the plan's staleness check and the record it writes.
 func BuildCutoverPlan(
 	ctx context.Context, db *sql.DB, store *embedpg.Store,
-	loaded embedspec.Loaded, run embedrun.Run, report embedverify.Report, now time.Time,
+	loaded embedspec.Loaded, run embedrun.Run, report embedverify.Report,
+	accepting []string, now time.Time,
 ) (embedcutover.Plan, embedcutover.Observed, error) {
 	spec := loaded.Spec
 	active := ActivePointer(ctx, store, spec.Target.Schema, spec.Target.Table)
@@ -189,6 +240,10 @@ func BuildCutoverPlan(
 		return embedcutover.Plan{}, embedcutover.Observed{}, err
 	}
 	ready := indexReady(objects, structure)
+	accepted, unaccepted, err := splitBlocking(report, accepting)
+	if err != nil {
+		return embedcutover.Plan{}, embedcutover.Observed{}, err
+	}
 	plan := embedcutover.Plan{
 		Generation: spec.Identity().Digest, Previous: active,
 		Schema: spec.Target.Schema, Table: spec.Target.Table, Column: spec.Target.Column,
@@ -205,6 +260,8 @@ func BuildCutoverPlan(
 			VerificationDigest: embedrelease.VerificationOf(
 				spec.Identity().Digest, report, nil, time.Time{}).MeasurementDigest(),
 			VerificationPassed:   report.Passed(),
+			AcceptedFindings:     accepted,
+			UnacceptedFindings:   unaccepted,
 			ConsistencyMode:      string(loaded.Mode),
 			ConsistencyWatermark: run.CatchUpWatermark,
 			IndexReady:           ready,

@@ -34,6 +34,14 @@ type Evidence struct {
 	// by summary. An acceptance names what was accepted; "verification was
 	// overridden" is not a record of anything.
 	AcceptedFindings []string
+	// UnacceptedFindings are the blocking findings that were not accepted.
+	//
+	// Both lists, because one of them cannot answer the question. A plan
+	// carrying three blocking findings and one acceptance has a non-empty
+	// AcceptedFindings, and a decision reading only that lets the other two
+	// through -- an acceptance for one finding authorizing a cutover over
+	// findings nobody looked at (stokaro/ptah#2649).
+	UnacceptedFindings []string
 	// ConsistencyMode is the mode the specification declares, empty when it
 	// declares none.
 	//
@@ -129,6 +137,11 @@ func (p Plan) digestComponents() []string {
 
 	components = append(components, "evidence.accepted_findings")
 	components = append(components, accepted...)
+
+	unaccepted := append([]string(nil), p.Evidence.UnacceptedFindings...)
+	sort.Strings(unaccepted)
+	components = append(components, "evidence.unaccepted_findings")
+	components = append(components, unaccepted...)
 	return components
 }
 
@@ -143,7 +156,12 @@ func (p Plan) digestComponents() []string {
 // the consistency mode when the guarantee was incomplete, so an approval given
 // for one cannot be honored by a build that now distinguishes "no mode
 // declared" from "the declared mode has not caught up".
-const PlanVersion = 2
+//
+// It moved to 3 when the plan started binding the blocking findings that were
+// NOT accepted (stokaro/ptah#2649). A version-2 plan recorded which findings an
+// operator accepted and nothing about the ones they did not, so an approval
+// given under it says nothing about what the cutover would proceed over.
+const PlanVersion = 3
 
 // Short is the plan digest a person quotes in an approval.
 func (p Plan) Short() string {
