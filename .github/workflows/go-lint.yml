@@ -413,7 +413,8 @@ jobs:
             # by the runtime stack AND then by the goroutine that allocated the
             # object -- and it is the second one that says whether this is a Go
             # runtime bug or a data race in this repository's own code. Six
-            # lines reaches `runtime.throw` and stops short of it.
+            # lines gets as far as `runtime.throw` and stops well before the
+            # goroutine, which is the frame that matters.
             grep -A 80 -E '^fatal error:' unit-tests.log | head -120
             echo '```'
           } >>"$GITHUB_STEP_SUMMARY"
