@@ -383,3 +383,56 @@ func authorizedDetail(c *qt.C, report embedprovider.ProbeReport) string {
 	c.Fatal("the report carries no authorization check")
 	return ""
 }
+
+// TestProbe_AMalformedVectorIsShapeAndNotBatch is stokaro/ptah#2641 finding 2,
+// at the level where the two checks are told apart.
+//
+// `batchCheck` ran the same whole-answer validation `shapeCheck` does, so one
+// empty vector failed both -- and the second failure said the endpoint could
+// not carry a batch of two, which it can. An operator reducing their batch size
+// over that would be chasing a defect that is not there.
+func TestProbe_AMalformedVectorIsShapeAndNotBatch(t *testing.T) {
+	c := qt.New(t)
+	provider := working()
+	provider.width = 0
+
+	report := embedprovider.Probe(context.Background(), embedprovider.ProbeSubject{
+		Provider: provider, Dimension: 4, Absent: refusing(),
+	})
+
+	c.Assert(failureNamed(c, report, embedprovider.CheckShape).Detail, qt.Contains, "vector 0 is empty")
+	c.Assert(passedNamed(c, report, embedprovider.CheckBatch).Detail, qt.Equals,
+		"2 inputs answered with 2 vectors")
+}
+
+// TestProbe_AShortAnswerIsBatchAndNotShape is the other half of the pair.
+//
+// Either check alone can be satisfied by one that fires for everything. Only
+// the pair shows that each answers its own question: here the vectors are well
+// formed and the count is wrong, and the verdicts are the exact opposite of the
+// case above.
+func TestProbe_AShortAnswerIsBatchAndNotShape(t *testing.T) {
+	c := qt.New(t)
+	provider := working()
+	provider.answers = 1
+
+	report := embedprovider.Probe(context.Background(), embedprovider.ProbeSubject{
+		Provider: provider, Dimension: 4, Absent: refusing(),
+	})
+
+	c.Assert(passedNamed(c, report, embedprovider.CheckShape).Passed, qt.IsTrue)
+	c.Assert(failureNamed(c, report, embedprovider.CheckBatch).Detail, qt.Equals,
+		"2 inputs answered with 1 vector: a partial batch is not a complete one")
+}
+
+// passedNamed is the check by that name, which must have passed.
+func passedNamed(c *qt.C, report embedprovider.ProbeReport, name embedprovider.CheckName) embedprovider.Check {
+	c.Helper()
+	for _, check := range report.Checks {
+		if check.Name == name && check.Passed {
+			return check
+		}
+	}
+	c.Fatalf("the report carries no passing %s check", name)
+	return embedprovider.Check{}
+}
