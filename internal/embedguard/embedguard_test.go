@@ -2,6 +2,7 @@ package embedguard_test
 
 import (
 	"path/filepath"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -91,4 +92,38 @@ func TestExempt_EveryReasonSaysSomething(t *testing.T) {
 		c.Assert(len(reason) > 30, qt.IsTrue,
 			qt.Commentf("%s is exempt for %q, which is not a reason", name, reason))
 	}
+}
+
+// TestScan_StillReportsWhatNothingCalls is the control the call side did not
+// have, and the reason it needs one is that every other assertion here expects
+// ZERO findings.
+//
+// A `calledNames` that answered "called" for everything would satisfy them all
+// and report nothing ever again. The declaration side has
+// TestScan_FindsSomethingToScan; this is its opposite number.
+//
+// Exempt is exactly the set of declarations known to have no caller, so
+// emptying it must produce exactly those findings. That pins both directions at
+// once: the scan can still find an uncalled declaration, and Exempt suppresses
+// those and no others.
+func TestScan_StillReportsWhatNothingCalls(t *testing.T) {
+	c := qt.New(t)
+	exempt := embedguard.Exempt
+	embedguard.Exempt = make(map[string]string)
+	defer func() { embedguard.Exempt = exempt }()
+
+	findings, err := embedguard.Scan(moduleRoot)
+
+	c.Assert(err, qt.IsNil)
+	reported := make([]string, 0, len(findings))
+	for _, finding := range findings {
+		reported = append(reported, finding.Name)
+	}
+	slices.Sort(reported)
+	suppressed := make([]string, 0, len(exempt))
+	for name := range exempt {
+		suppressed = append(suppressed, name)
+	}
+	slices.Sort(suppressed)
+	c.Assert(reported, qt.DeepEquals, suppressed)
 }

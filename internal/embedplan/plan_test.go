@@ -75,7 +75,7 @@ func TestBuild_AnUncountedSourceIsUnknownRatherThanZero(t *testing.T) {
 
 	plan := embedplan.Build(inputs)
 
-	fact, found := plan.Facts.Lookup("source.estimated_rows")
+	fact, found := lookupFact(plan.Facts, "source.estimated_rows")
 	c.Assert(found, qt.IsTrue)
 	c.Assert(fact.Value, qt.Equals, "unknown")
 	c.Assert(fact.Provenance, qt.Equals, embedplan.Unknown)
@@ -122,7 +122,7 @@ func TestBuild_AnUnaskedCapabilityIsNotAnAbsentOne(t *testing.T) {
 
 			plan := embedplan.Build(inputs)
 
-			fact, found := plan.Facts.Lookup("target.capability.vector_type")
+			fact, found := lookupFact(plan.Facts, "target.capability.vector_type")
 			c.Assert(found, qt.IsTrue)
 			c.Assert(fact.Provenance, qt.Equals, test.wantFact)
 			c.Assert(plan.Runnable(), qt.IsFalse)
@@ -164,7 +164,7 @@ func TestBuild_AnImmutableSourceNeedsNoModeAndSaysWhy(t *testing.T) {
 
 	plan := embedplan.Build(inputs)
 
-	fact, found := plan.Facts.Lookup("run.consistency_mode")
+	fact, found := lookupFact(plan.Facts, "run.consistency_mode")
 	c.Assert(found, qt.IsTrue)
 	c.Assert(fact.Provenance, qt.Equals, embedplan.Inferred)
 	c.Assert(fact.Value, qt.Equals, "none")
@@ -192,9 +192,9 @@ func TestBuild_ThePlannerDoesNotOverwriteWhatWasResolved(t *testing.T) {
 	plan := embedplan.Build(resolved())
 
 	c.Assert(factNames(plan), qt.Contains, "source.table")
-	table, _ := plan.Facts.Lookup("source.table")
+	table, _ := lookupFact(plan.Facts, "source.table")
 	c.Assert(table.Provenance, qt.Equals, embedplan.Measured)
-	model, _ := plan.Facts.Lookup("model.identifier")
+	model, _ := lookupFact(plan.Facts, "model.identifier")
 	c.Assert(model.Provenance, qt.Equals, embedplan.Configured)
 	c.Assert(model.Detail, qt.Equals, "the migration specification")
 }
@@ -226,7 +226,7 @@ func TestBuild_AnExistingTargetIsNotCreatedTwice(t *testing.T) {
 
 	c.Assert(stepSummaries(plan), qt.Not(qt.Contains),
 		"create the vector column and metadata for generation gen-new")
-	target, _ := plan.Facts.Lookup("target.exists")
+	target, _ := lookupFact(plan.Facts, "target.exists")
 	c.Assert(target.Value, qt.Equals, "true")
 }
 
@@ -331,7 +331,7 @@ func TestBuild_AnEmptySourceIsAMeasurementAndNotAGap(t *testing.T) {
 
 	plan := embedplan.Build(inputs)
 
-	fact, found := plan.Facts.Lookup("source.estimated_rows")
+	fact, found := lookupFact(plan.Facts, "source.estimated_rows")
 	c.Assert(found, qt.IsTrue)
 	c.Assert(fact.Value, qt.Equals, "0")
 	c.Assert(fact.Provenance, qt.Equals, embedplan.Measured)
@@ -441,4 +441,19 @@ func TestBuild_TheVectorIndexCapabilityDoesNotStandInForBuildability(t *testing.
 
 	c.Assert(plan.Runnable(), qt.IsFalse)
 	c.Assert(factNames(plan), qt.Contains, "target.capability.vector_index")
+}
+
+// lookupFact finds a fact by name.
+//
+// A test helper rather than a method on Facts. It was exported there and no
+// production file called it -- the whole shape internal/embedguard reports --
+// and a helper the tests alone need belongs beside the tests
+// (stokaro/ptah#2682).
+func lookupFact(facts embedplan.Facts, name string) (embedplan.Fact, bool) {
+	for _, fact := range facts {
+		if fact.Name == name {
+			return fact, true
+		}
+	}
+	return embedplan.Fact{}, false
 }

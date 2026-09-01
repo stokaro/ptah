@@ -123,16 +123,6 @@ func (f *Facts) Add(fact Fact) {
 	*f = append(*f, fact)
 }
 
-// Lookup returns the fact of that name.
-func (f Facts) Lookup(name string) (Fact, bool) {
-	for _, fact := range f {
-		if fact.Name == name {
-			return fact, true
-		}
-	}
-	return Fact{}, false
-}
-
 // Unestablished lists the facts no decision should rest on, worst last.
 func (f Facts) Unestablished() Facts {
 	var weak Facts
