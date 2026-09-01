@@ -61,7 +61,7 @@ func (s Spec) TargetObjects() (TargetObjects, error) {
 		return objects, nil
 	}
 
-	operatorClass, err := s.operatorClass()
+	operatorClass, err := s.OperatorClass()
 	if err != nil {
 		return TargetObjects{}, err
 	}
@@ -126,14 +126,22 @@ func IndexName(table, column, identity string) string {
 	return fmt.Sprintf("%s_%s_%s_idx", table, column, embeddigest.Short(identity))
 }
 
-// operatorClass is the pgvector operator class for this representation and
+// OperatorClass is the pgvector operator class for this representation and
 // metric.
 //
 // The pair is looked up rather than composed, because the combinations that
 // exist are a fact about pgvector and not a naming pattern: a composed name
 // that happened to be wrong would fail at CREATE INDEX with the target's own
 // error, after the column and the backfill.
-func (s Spec) operatorClass() (string, error) {
+//
+// Which classes exist is only half the question, and this half is answered
+// offline. The other half is which ACCESS METHOD accepts one:
+// `sparsevec_cosine_ops` is a real class that `hnsw` takes and `ivfflat` does
+// not, so the pair below is satisfied and the index still fails
+// (stokaro/ptah#2648 finding 1). That question needs the target's catalog,
+// which is why this is exported -- the planner asks about the name the index
+// would actually be built with rather than one it composed for itself.
+func (s Spec) OperatorClass() (string, error) {
 	classes := map[string]map[DistanceMetric]string{
 		"vector": {
 			MetricCosine:       "vector_cosine_ops",

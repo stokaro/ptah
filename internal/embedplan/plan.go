@@ -21,6 +21,31 @@ type Inputs struct {
 	// TargetExists reports whether the desired generation's column is already
 	// there.
 	TargetExists bool
+	// SourceExists reports whether the table the specification reads from is
+	// there.
+	//
+	// It is a blocker rather than an uncertainty, and the difference is the
+	// point: a specification naming a table that does not exist planned green,
+	// exit 0, with the absence never named -- the only trace was
+	// `source.estimated_rows = unknown`, whose stated reason is about cost and
+	// duration. `prepare` then failed with a raw SQLSTATE 42P01
+	// (stokaro/ptah#2648 finding 1).
+	SourceExists bool
+	// TargetTableExists reports whether the table the generation's column would
+	// be added to is there. It is not [TargetExists], which is about the
+	// column: an absent column is what "prepare" is for, and an absent table is
+	// a plan that cannot run.
+	TargetTableExists bool
+	// VectorIndexBuildable reports whether the target database has the operator
+	// class this generation's index needs, under the access method the
+	// specification names.
+	//
+	// Distinct from the vector_index capability, which says the server can
+	// build vector indexes at all. This is the one that catches a pair the
+	// server refuses, and it is worth its own blocker because the refusal
+	// arrives at the index step -- after prepare, backfill and catchup, with
+	// the whole provider bill for the corpus already paid.
+	VectorIndexBuildable bool
 	// SourceMutable reports whether the source can change under the run.
 	SourceMutable bool
 	// ConsistencyMode is the mode the operator selected, empty for none.
@@ -156,6 +181,19 @@ func planCapabilities(plan *Plan, inputs Inputs) {
 		default:
 			plan.Facts.Add(MeasuredFact("target.capability."+required.key, "true"))
 		}
+	}
+	if !inputs.SourceExists {
+		plan.Blockers = append(plan.Blockers,
+			"the source table is not there, so there is nothing to read from")
+	}
+	if !inputs.TargetTableExists {
+		plan.Blockers = append(plan.Blockers,
+			"the target table is not there, so the generation's column has nowhere to go")
+	}
+	if !inputs.VectorIndexBuildable {
+		plan.Blockers = append(plan.Blockers,
+			"the target database has no operator class for this representation and metric "+
+				"under the index method the specification names, so the index cannot be built")
 	}
 	if !inputs.Permissions["inference:plan"] {
 		plan.Blockers = append(plan.Blockers, "the caller does not hold inference:plan")

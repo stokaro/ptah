@@ -19,11 +19,14 @@ func resolved() embedplan.Inputs {
 			embedplan.ConfiguredFact("model.identifier", "text-embedding-3-large",
 				"the migration specification"),
 		},
-		SourceMutable:   true,
-		ConsistencyMode: "outbox",
-		EstimatedRows:   120_000,
-		Capabilities:    map[string]bool{"vector_type": true, "vector_index": true},
-		Permissions:     map[string]bool{"inference:plan": true},
+		SourceExists:         true,
+		TargetTableExists:    true,
+		VectorIndexBuildable: true,
+		SourceMutable:        true,
+		ConsistencyMode:      "outbox",
+		EstimatedRows:        120_000,
+		Capabilities:         map[string]bool{"vector_type": true, "vector_index": true},
+		Permissions:          map[string]bool{"inference:plan": true},
 	}
 }
 
@@ -351,4 +354,91 @@ func phasesWhere(plan embedplan.Plan, accepts func(embedplan.Step) bool) []strin
 		}
 	}
 	return phases
+}
+
+// TestBuild_AMissingSourceTableIsABlocker covers the flagship case of
+// stokaro/ptah#2648 finding 1.
+//
+// A specification naming a table that is not there planned green: no blocker,
+// exit 0, and the absence never named. The only trace was
+// `source.estimated_rows = unknown`, whose stated reason is about cost and
+// duration — an uncertainty where a refusal belonged, so a CI job gating on the
+// plan passed and `prepare` then failed with a raw SQLSTATE 42P01.
+func TestBuild_AMissingSourceTableIsABlocker(t *testing.T) {
+	c := qt.New(t)
+	inputs := resolved()
+	inputs.SourceExists = false
+
+	plan := embedplan.Build(inputs)
+
+	c.Assert(plan.Runnable(), qt.IsFalse)
+	c.Assert(plan.Blockers, qt.Contains,
+		"the source table is not there, so there is nothing to read from")
+}
+
+// TestBuild_AMissingTargetTableIsABlocker covers the case the issue's own list
+// reached only in its verification: with the source present and the target
+// table absent, the plan was completely clean — `source.estimated_rows = 2
+// (measured)` and not one blocker — and the run died at `prepare`.
+func TestBuild_AMissingTargetTableIsABlocker(t *testing.T) {
+	c := qt.New(t)
+	inputs := resolved()
+	inputs.TargetTableExists = false
+
+	plan := embedplan.Build(inputs)
+
+	c.Assert(plan.Runnable(), qt.IsFalse)
+	c.Assert(plan.Blockers, qt.Contains,
+		"the target table is not there, so the generation's column has nowhere to go")
+}
+
+// TestBuild_AnAbsentTargetColumnIsNotABlocker is the control that keeps the two
+// target checks apart. Creating the generation's column is what `prepare` is
+// for, so a plan refusing because the column is missing would refuse every
+// first run there is.
+func TestBuild_AnAbsentTargetColumnIsNotABlocker(t *testing.T) {
+	c := qt.New(t)
+	inputs := resolved()
+	inputs.TargetExists = false
+
+	plan := embedplan.Build(inputs)
+
+	c.Assert(plan.Runnable(), qt.IsTrue, qt.Commentf("%v", plan.Blockers))
+}
+
+// TestBuild_AnUnbuildableVectorIndexIsABlocker covers the third case the
+// promise names, and the costliest one.
+//
+// `vector_index` answering true says the server builds vector indexes; it says
+// nothing about whether it builds THIS one. Measured on pgvector 0.8.1,
+// `ivfflat` with `sparsevec` was reported as `target.capability.vector_index =
+// true (measured)` with no blocker, and the run completed prepare, backfill and
+// catchup before dying at index — the whole provider bill for the corpus paid
+// before the plan's promise was found to be false.
+func TestBuild_AnUnbuildableVectorIndexIsABlocker(t *testing.T) {
+	c := qt.New(t)
+	inputs := resolved()
+	inputs.VectorIndexBuildable = false
+
+	plan := embedplan.Build(inputs)
+
+	c.Assert(plan.Runnable(), qt.IsFalse)
+	c.Assert(plan.Blockers, qt.Contains,
+		"the target database has no operator class for this representation and metric "+
+			"under the index method the specification names, so the index cannot be built")
+}
+
+// TestBuild_TheVectorIndexCapabilityDoesNotStandInForBuildability keeps the two
+// apart. A plan satisfied by the capability alone is the plan this case was
+// hidden behind.
+func TestBuild_TheVectorIndexCapabilityDoesNotStandInForBuildability(t *testing.T) {
+	c := qt.New(t)
+	inputs := resolved()
+	inputs.Capabilities = map[string]bool{"vector_type": true, "vector_index": true}
+	inputs.VectorIndexBuildable = false
+
+	plan := embedplan.Build(inputs)
+
+	c.Assert(plan.Runnable(), qt.IsFalse)
+	c.Assert(factNames(plan), qt.Contains, "target.capability.vector_index")
 }

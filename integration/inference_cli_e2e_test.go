@@ -780,15 +780,68 @@ func writeCLISpecWithMode(c *qt.C, endpoint, mode string) string {
 	return writeCLISpecFull(c, endpoint, mode, "cosine", "embedding")
 }
 
+// writeCLISpecWithSourceTable writes one reading from a chosen source table,
+// so a plan can be asked about a table that is not there.
+func writeCLISpecWithSourceTable(c *qt.C, endpoint, source string) string {
+	c.Helper()
+	return writeCLISpecTables(c, endpoint, source, "articles")
+}
+
+// writeCLISpecWithTargetTable writes one writing into a chosen target table.
+func writeCLISpecWithTargetTable(c *qt.C, endpoint, target string) string {
+	c.Helper()
+	return writeCLISpecTables(c, endpoint, "articles", target)
+}
+
+// writeCLISpecWithIndex writes one with a chosen access method and vector
+// representation, which is the pair a target's operator classes are declared
+// over.
+func writeCLISpecWithIndex(c *qt.C, endpoint, method, representation string) string {
+	c.Helper()
+	return writeCLISpecEverything(c, endpoint, "outbox", "cosine", "embedding",
+		"articles", "articles", method, representation)
+}
+
+// writeCLISpecTables writes one naming each table separately. The two are the
+// same table in every other fixture here, which is why an absent target could
+// not be asked about at all until this existed.
+func writeCLISpecTables(c *qt.C, endpoint, source, target string) string {
+	c.Helper()
+	return writeCLISpecEverything(c, endpoint, "outbox", "cosine", "embedding",
+		source, target, "", "vector")
+}
+
 // writeCLISpecFull writes one with both chosen.
 func writeCLISpecFull(c *qt.C, endpoint, mode, metric, column string) string {
+	c.Helper()
+	return writeCLISpecEverything(c, endpoint, mode, metric, column,
+		"articles", "articles", "", "vector")
+}
+
+// indexMethodLine renders the target's index_method key, or nothing at all.
+//
+// Nothing is the shape every fixture here had before an index method could be
+// chosen, and it is not a detail: a specification declaring no method asks for
+// no index, so writing `index_method: hnsw` into the shared template made five
+// lifecycle tests expect an index nobody built and fail their verification.
+func indexMethodLine(method string) string {
+	if method == "" {
+		return ""
+	}
+	return "  index_method: " + method + "\n"
+}
+
+// writeCLISpecEverything writes one with every varying part chosen.
+func writeCLISpecEverything(
+	c *qt.C, endpoint, mode, metric, column, source, target, method, representation string,
+) string {
 	c.Helper()
 	document := fmt.Sprintf(`
 version: 1
 name: cli articles
 source:
   schema: public
-  table: articles
+  table: %s
   key_fields: [id]
   input_fields: [title, body]
   version_strategy: updated_at
@@ -810,16 +863,16 @@ model:
   normalization: none
 target:
   schema: public
-  table: articles
+  table: %s
   column: %s
-  representation: vector
+  representation: %s
   metric: %s
-consistency:
+%sconsistency:
   mode: %s
 policy:
   require_exact_approval: true
   require_consistency_mode: true
-`, endpoint, column, metric, mode)
+`, source, endpoint, target, column, representation, metric, indexMethodLine(method), mode)
 	path := filepath.Join(c.TempDir(), "spec.yaml")
 	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)
 	return path

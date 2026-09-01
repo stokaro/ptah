@@ -105,7 +105,31 @@ func runPlan(
 	if err := printPlan(out, plan); err != nil {
 		return err
 	}
-	return publishRelease(ctx, out, options, opened.loaded, plan, evidence)
+	if err := publishRelease(ctx, out, options, opened.loaded, plan, evidence); err != nil {
+		return err
+	}
+	return planRefusal(plan)
+}
+
+// planRefusal turns a blocked plan into a refusal the caller's exit code
+// carries.
+//
+// It comes after the printing and after the release, deliberately. The
+// blockers are what the operator opened the plan to read, and
+// [publishRelease] says why a blocked plan is still published -- the proposal
+// waiting on something is the one most worth circulating. What was missing was
+// only the answer to "may this run", which every other verb gives by failing.
+//
+// The sentence names the count and not the reasons: they are already on
+// standard output, one per line, and repeating them into the error would
+// print each blocker twice.
+func planRefusal(plan embedreport.Plan) error {
+	if plan.Runnable() {
+		return nil
+	}
+	return fmt.Errorf(
+		"the plan cannot run: %d blocker(s) above have to be resolved first",
+		len(plan.Blockers))
 }
 
 // publishRelease leaves the record of what this change proposes.
