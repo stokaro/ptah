@@ -42,14 +42,14 @@ func ParseForeignKeyReference(foreign string) *ForeignKeyReference {
 	}
 
 	if strings.ContainsAny(foreign, "()") {
-		open := strings.IndexByte(foreign, '(')
-		close := strings.LastIndexByte(foreign, ')')
-		if open <= 0 || close != len(foreign)-1 ||
+		openingParen := strings.IndexByte(foreign, '(')
+		closingParen := strings.LastIndexByte(foreign, ')')
+		if openingParen <= 0 || closingParen != len(foreign)-1 ||
 			strings.Count(foreign, "(") != 1 || strings.Count(foreign, ")") != 1 {
 			return nil
 		}
-		table := strings.TrimSpace(foreign[:open])
-		column := strings.TrimSpace(foreign[open+1 : close])
+		table := strings.TrimSpace(foreign[:openingParen])
+		column := strings.TrimSpace(foreign[openingParen+1 : closingParen])
 		if table == "" || column == "" {
 			return nil
 		}
