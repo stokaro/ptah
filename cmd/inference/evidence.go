@@ -2,6 +2,7 @@ package inference
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -63,12 +64,19 @@ func (e evidenceOptions) destinationNamed() bool {
 	return e.publishTo != "" || e.writeTo != "" || e.attachTo != ""
 }
 
-// publishRecord pushes a record and says where it went.
+// publishRecord writes a record where it was asked to and says where it went.
 //
-// A failure to publish is reported and does not fail the verb. The measurement
-// or the pointer move already happened; failing here would report a run that did
-// not do what it did, and the registry being unreachable is not a fact about the
-// generation.
+// The two destinations are decided by the same policy, and that is the whole
+// point of this function taking one. A failed publication was already the
+// caller's decision to swallow or to fail on; a failed FILE write was nobody's
+// -- it reported itself on standard output and returned nil, so `plan
+// --evidence-file` into a directory that does not exist printed the failure and
+// exited 0, exactly as `--publish-evidence` had before #2683 fixed only the
+// registry half (stokaro/ptah#2649 finding 7).
+//
+// Both destinations are attempted even when the first one fails. A run naming
+// both asked for both, and stopping at the first failure would leave the
+// operator to discover the second one on the next invocation.
 func publishRecord(
 	ctx context.Context, out io.Writer, options commonOptions, evidence evidenceOptions,
 	record embedrelease.Record, err error, swallow publicationFailure,
@@ -76,26 +84,44 @@ func publishRecord(
 	if err != nil {
 		return err
 	}
-	if err := writeRecordFile(out, evidence.writeTo, record); err != nil {
-		return err
+	writeErr, reported := writeRecordFile(out, evidence.writeTo, record)
+	if reported != nil {
+		return reported
 	}
+	publishErr, reported := sendAndReport(ctx, out, options, evidence, record)
+	if reported != nil {
+		return reported
+	}
+	return publicationOutcome(swallow, errors.Join(writeErr, publishErr))
+}
+
+// sendAndReport pushes the record where a registry was named.
+//
+// It answers two errors, and they are different kinds: the first is what the
+// destination did, which the caller's policy decides the meaning of, and the
+// second is a failure to write to standard output, which ends the command
+// whatever the policy says.
+func sendAndReport(
+	ctx context.Context, out io.Writer, options commonOptions,
+	evidence evidenceOptions, record embedrelease.Record,
+) (destination, reported error) {
 	if evidence.publishTo == "" && evidence.attachTo == "" {
-		return nil
+		return nil, nil
 	}
 	if err := refuseMixedPlainHTTP(options, evidence); err != nil {
 		// Before the push rather than after: the point is that a credential
 		// for the second registry never leaves over an unencrypted connection.
-		return err
+		// Returned as the reported error because it is a usage refusal rather
+		// than a destination that would not take the record: no policy makes it
+		// survivable, and nothing was attempted.
+		return nil, err
 	}
 	result, publishErr := sendRecord(ctx, options.spec.plainHTTP, evidence, record)
 	if publishErr != nil {
-		if reported := writeLines(out, bullet(fmt.Sprintf(
-			"the record was not published: %v", publishErr))); reported != nil {
-			return reported
-		}
-		return publicationOutcome(swallow, publishErr)
+		return publishErr, writeLines(out, bullet(fmt.Sprintf(
+			"the record was not published: %v", publishErr)))
 	}
-	return writeLines(out, bullet(fmt.Sprintf(
+	return nil, writeLines(out, bullet(fmt.Sprintf(
 		"record %s published as %s", record.Digest[:12], result.Descriptor.Digest)))
 }
 
@@ -179,22 +205,28 @@ func registryHostOf(reference string) string {
 // regardless, because the cost of building it is nothing next to the run that
 // produced it.
 //
-// A failure to write is reported and does not fail the verb, for the reason a
-// failure to publish does not: the measurement or the pointer move already
-// happened, and a directory that is not there is not a fact about the
-// generation. Failing here would report a run that did not do what it did.
-func writeRecordFile(out io.Writer, path string, record embedrelease.Record) error {
+// What a failure to write MEANS is the caller's, exactly as a failure to
+// publish is. Where the verb's own work is already committed it is reported and
+// survivable; where writing the record IS the verb's effect it is fatal. This
+// function reports it and hands it back, and decides neither.
+//
+// The two errors are different kinds. The first is what the destination did,
+// which [publicationOutcome] weighs against the policy; the second is a failure
+// to write to standard output, which ends the command whatever the policy says.
+func writeRecordFile(
+	out io.Writer, path string, record embedrelease.Record,
+) (destination, reported error) {
 	if path == "" {
-		return nil
+		return nil, nil
 	}
 	// 0o600 because the record is the operator's to share rather than the
 	// filesystem's to offer. It carries no credential -- the specification
 	// names where one lives, never what it is -- and it does carry what a
 	// corpus was built from.
 	if err := os.WriteFile(path, record.Body, 0o600); err != nil {
-		return writeLines(out, bullet(fmt.Sprintf("the record was not written: %v", err)))
+		return err, writeLines(out, bullet(fmt.Sprintf("the record was not written: %v", err)))
 	}
-	return writeLines(out, bullet(fmt.Sprintf(
+	return nil, writeLines(out, bullet(fmt.Sprintf(
 		"record %s written to %s", record.Digest[:12], path)))
 }
 
@@ -208,18 +240,27 @@ const (
 	// would report a run that did not do what it did. The failure is on
 	// standard output and the exit code says the run succeeded, because it did.
 	swallowed publicationFailure = true
-	// fatal: publishing IS the verb's effect. `plan` writes nothing anywhere,
-	// so a `plan --publish-evidence` that published nothing did nothing, and
+	// fatal: recording IS the verb's effect. `plan` writes nothing anywhere, so
+	// a `plan --publish-evidence` that published nothing did nothing, and
 	// exiting 0 told a CI job it had released what the next environment
 	// promotes. The promotion downstream then kept running the previous release
 	// under the same tag (stokaro/ptah#2649 finding 7).
+	//
+	// It covers `--evidence-file` for the same reason and by the same argument:
+	// the destination differs, the verb's relationship to it does not. Fixing
+	// only the registry half left a CI job configured with the other flag
+	// exactly where it started, and left the operator a plan whose record is
+	// last run's file.
 	fatal publicationFailure = false
 )
 
-// publicationOutcome turns a reported failure into the caller's exit code.
-func publicationOutcome(swallow publicationFailure, publishErr error) error {
+// publicationOutcome turns the reported failures into the caller's exit code.
+//
+// It takes whatever [errors.Join] made of them, so a run that named two
+// destinations and lost both fails once, naming both.
+func publicationOutcome(swallow publicationFailure, destination error) error {
 	if swallow == swallowed {
 		return nil
 	}
-	return publishErr
+	return destination
 }

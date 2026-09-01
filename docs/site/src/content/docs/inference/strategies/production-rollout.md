@@ -128,14 +128,24 @@ Six months later the question is not whether it passed — the pointer answers
 that — but what it said. A record holding one boolean cannot be re-read into an
 answer.
 
-A failure to publish is reported and does not fail the verb. The measurement or
-the pointer move already happened, and a registry nobody can reach is not a fact
-about the generation.
-
 Without a registry, `--evidence-file <path>` writes the same record as JSON. The
 bytes are identical, so what you keep locally is what you would have fetched —
 which is the destination for a first migration, for a CI job that runs before
 anything is published, and for a team with no registry at all.
+
+What a lost record means depends on the verb, and the two answers are worth
+knowing before a pipeline reads an exit code. Where the verb already did
+something — `verify` measured, `cutover` moved the pointer, `retire` destroyed a
+corpus — a record that could not be left is reported and the verb still succeeds:
+failing there would report a run that did not do what it did, and a registry
+nobody can reach is not a fact about the generation. Where the record IS the
+effect, on `plan`, the verb fails. `plan` writes nothing else, so a `plan
+--publish-evidence` or `plan --evidence-file` that left no record did nothing,
+and exiting 0 would tell the pipeline it had released what the next environment
+is about to promote.
+
+Both destinations are attempted whatever the other did, and a run that lost both
+fails once, naming both.
 
 ## Promote one release through environments
 
