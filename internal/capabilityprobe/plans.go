@@ -345,6 +345,7 @@ func postgresFamilyPlan(dialect string) plan {
 		all(capability.RangeTypes, nil,
 			"CREATE TYPE utp_range AS RANGE (SUBTYPE = bigint)",
 		),
+		schemaComments(),
 		acceptance(capability.XMLType, nil,
 			t.table("xmlt", "c XML", "c"),
 		),
@@ -670,6 +671,9 @@ func mysqlFamilyPlan(dialect string) plan {
 	}
 
 	undecided := map[capability.Capability]string{
+		capability.SchemaComments: "MySQL and MariaDB carry a comment on the table and on the column and " +
+			"have no COMMENT ON SCHEMA to accept or refuse, so there is no statement to send. Their " +
+			"renderer emits none either (stokaro/ptah#2651)",
 		capability.SequenceStartCounterOnly: "the key is a restriction on the CREATE SEQUENCE grammar, decided by a " +
 			"server that takes the bare statement and refuses an option clause beside it. This dialect has no " +
 			"CREATE SEQUENCE for the control to run, so its answer would be to a different question",
@@ -746,6 +750,29 @@ func mysqlFamilyPlan(dialect string) plan {
 		"CREATE TABLE ser (id SERIAL PRIMARY KEY)",
 	))
 	return plan{experiments: experiments, undecided: undecided}
+}
+
+// schemaComments decides SchemaComments by commenting the probe's OWN schema.
+//
+// Its own rather than a schema of its making, because a sibling schema is not
+// inside the namespace the run drops with CASCADE at the end: an experiment
+// whose CREATE succeeds and whose COMMENT fails would leave one behind on a
+// server the probe does not own. The namespace is session state, which is why
+// this is a `decide` closure rather than a static statement -- there is nothing
+// to interpolate the name into until the session exists.
+//
+// Measured on the Cloud Spanner emulator behind PGAdapter 0.55.2: `CREATE
+// SCHEMA app` is accepted and `COMMENT ON SCHEMA app IS 'x'` immediately after
+// it answers `Unknown statement`, so the two are separate questions and only
+// the second one is this key (stokaro/ptah#2651).
+func schemaComments() experiment {
+	return experiment{
+		decides: []capability.Capability{capability.SchemaComments},
+		decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
+			commented := s.exec(ctx, "COMMENT ON SCHEMA "+s.namespace+" IS 'ptah capability probe'")
+			return verdicts{capability.SchemaComments: decided(commented.Accepted)}, []Attempt{commented}
+		},
+	}
 }
 
 // roleManagement decides RoleManagement on the PostgreSQL family and registers
