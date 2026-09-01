@@ -74,20 +74,22 @@ func TestReadSchema_LiveConstraintOrderIsTheQueryOrder(t *testing.T) {
 			defer cancel()
 
 			conn, schemaName := prepareConstraintOrderFixture(c, ctx, test.engine)
-			var want []string
 
-			for read := range readsPerCase {
+			// The first read fixes the expectation and every later one has to
+			// match it, so a scramble fails whichever read it lands on. It is
+			// taken outside the loop because a conditional in a test body is a
+			// style violation, and because the two reads are different claims:
+			// this one says the fixture is visible at all.
+			first, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
+			c.Assert(err, qt.IsNil)
+			want := uniqueConstraintNames(first.Constraints)
+			c.Assert(want, qt.HasLen, 3)
+
+			for read := range readsPerCase - 1 {
 				schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
 				c.Assert(err, qt.IsNil)
-				got := uniqueConstraintNames(schema.Constraints)
-				c.Assert(len(got) >= 3, qt.IsTrue, qt.Commentf(
-					"read %d saw %d constraints; the fixture declares three", read+1, len(got)))
-				// The first read fixes the expectation and every later one has
-				// to match it, so a scramble fails whichever read it lands on.
-				if read == 0 {
-					want = got
-				}
-				c.Assert(got, qt.DeepEquals, want, qt.Commentf("read %d", read+1))
+				c.Assert(uniqueConstraintNames(schema.Constraints), qt.DeepEquals, want,
+					qt.Commentf("read %d", read+2))
 			}
 		})
 	}
