@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -496,4 +497,52 @@ func TestOpenAICompatible_AnAnswerReportingZeroIsNotAnAnswerReportingNothing(t *
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Usage.Reported, qt.IsTrue)
 	c.Assert(result.Usage.PromptTokens, qt.Equals, 0)
+}
+
+// TestEmbed_ACanceledRequestIsNotAnUnreachableEndpoint is stokaro/ptah#2649
+// finding 10, at the provider.
+//
+// An operator stopping the run is not an endpoint that could not be reached,
+// and classifying it as one sent them looking at a provider that was answering
+// perfectly well.
+func TestEmbed_ACanceledRequestIsNotAnUnreachableEndpoint(t *testing.T) {
+	c := qt.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		time.Sleep(time.Minute)
+	}))
+	defer server.Close()
+
+	provider, err := embedprovider.NewOpenAICompatible(embedprovider.OpenAICompatibleOptions{
+		Name: "local", BaseURL: server.URL + "/v1", Model: "test-embed",
+	})
+	c.Assert(err, qt.IsNil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = provider.Embed(ctx, []string{"a document"})
+
+	c.Assert(err, qt.ErrorIs, context.Canceled)
+	c.Assert(err, qt.Not(qt.ErrorIs), embedprovider.ErrUnreachable)
+}
+
+// TestEmbed_ADeadlineIsStillAnUnreachableEndpoint is the control.
+//
+// `--provider-timeout` expiring IS a fact about the endpoint, and a fix that
+// reclassified every context error would take away the one word saying which.
+func TestEmbed_ADeadlineIsStillAnUnreachableEndpoint(t *testing.T) {
+	c := qt.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		time.Sleep(time.Minute)
+	}))
+	defer server.Close()
+
+	provider, err := embedprovider.NewOpenAICompatible(embedprovider.OpenAICompatibleOptions{
+		Name: "local", BaseURL: server.URL + "/v1", Model: "test-embed",
+		Timeout: 50 * time.Millisecond,
+	})
+	c.Assert(err, qt.IsNil)
+
+	_, err = provider.Embed(context.Background(), []string{"a document"})
+
+	c.Assert(err, qt.ErrorIs, embedprovider.ErrUnreachable)
 }
