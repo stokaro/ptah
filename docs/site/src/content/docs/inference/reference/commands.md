@@ -45,10 +45,11 @@ is what an air-gapped environment has instead of a registry.
 
 ## `describe`
 
-Reads a specification and reports what it says on its own. **The only verb that
-opens no connection**, which is what makes it usable where every other one
-cannot be: writing a specification, and asking in CI whether an edit changed the
-corpus.
+Reads a specification and reports what it says on its own. **It opens no
+database**, and with `--spec` it opens nothing at all, which is what makes it
+usable where every other one cannot be: writing a specification, and asking in
+CI whether an edit changed the corpus. `--release` fetches the release before it
+can read anything, so that form does reach a registry.
 
 | Flag | Meaning |
 | --- | --- |
@@ -85,8 +86,9 @@ have to be computed again.
 ## `probe`
 
 Asks the embedding provider what it answers, and sends nothing from your
-database. **The second verb that opens no connection**, so it runs in CI beside
-`describe`.
+database. **It opens no database either**, so it runs in CI beside `describe` --
+but it does open a connection, to the provider, which is the whole of what it
+measures.
 
 | Flag | Meaning |
 | --- | --- |

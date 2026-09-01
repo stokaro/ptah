@@ -22,6 +22,13 @@ changes are accounted for, and what a cutover requires.
 Fields marked **identity** are hashed into the generation identity: changing one
 addresses a different corpus.
 
+Fields marked **required** are refused when they are absent, before any verb
+does work -- `describe` included, which opens no database. A field not marked
+required is not thereby harmless to leave out: `source.table` is accepted by
+`describe` and produces a specification nothing else can run. What the mark says
+is narrower and worth having exactly: without these, every verb exits 2 and
+names the field. `version` is required in the same way, at the top of the file.
+
 ## Top level
 
 | Field | Meaning |
@@ -38,16 +45,16 @@ addresses a different corpus.
 
 ## `source`
 
-| Field | Identity | Meaning |
-| --- | --- | --- |
-| `schema` | yes | The schema the source table is in. |
-| `table` | yes | The source table. |
-| `filter` | yes | A SQL condition narrowing the rows in scope. |
-| `key_fields` | yes | The columns identifying a row, in order. |
-| `input_fields` | yes | The columns whose text is sent, in order. |
-| `version_strategy` | yes | How a stale vector is recognized. |
-| `version_field` | yes | The column the strategy reads, where it needs one. |
-| `mutable` | no | Whether the source changes during the run. |
+| Field | Identity | Required | Meaning |
+| --- | --- | --- | --- |
+| `schema` | yes | | The schema the source table is in. |
+| `table` | yes | | The source table. |
+| `filter` | yes | | A SQL condition narrowing the rows in scope. |
+| `key_fields` | yes | | The columns identifying a row, in order. |
+| `input_fields` | yes | | The columns whose text is sent, in order. |
+| `version_strategy` | yes | | How a stale vector is recognized. |
+| `version_field` | yes | | The column the strategy reads, where it needs one. |
+| `mutable` | no | **yes** | Whether the source changes during the run. |
 
 `filter` narrows both halves of the run, and the second half is worth stating.
 The backfill scans only rows the condition matches, and catch-up rereads a
@@ -88,18 +95,20 @@ worth checking when you write the specification.
 
 ## `preprocessing`
 
-Every field here is **identity**: each one changes the text that is sent.
+Every field here is **identity**: each one changes the text that is sent. Four
+of the eight are also required, including `truncate` even where
+`max_input_bytes` names no cap for it to act at.
 
-| Field | Meaning |
-| --- | --- |
-| `separator` | What joins the input fields. |
-| `prefix` | Text prepended to every input. Some models expect one. |
-| `null_policy` | What a NULL field becomes: `empty`, `skip`, or `refuse`. |
-| `empty_policy` | What an empty input means: `skip` or `refuse`. |
-| `unicode_normalization` | `none`, `nfc`, `nfd`, `nfkc`, or `nfkd`. |
-| `collapse_whitespace` | Whether runs of whitespace become one space. |
-| `max_input_bytes` | The cap on one input's size. |
-| `truncate` | What happens at the cap: `refuse` or `bytes`. |
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `separator` | | What joins the input fields. |
+| `prefix` | | Text prepended to every input. Some models expect one. |
+| `null_policy` | **yes** | What a NULL field becomes: `empty`, `skip`, or `refuse`. |
+| `empty_policy` | **yes** | What an empty input means: `skip` or `refuse`. |
+| `unicode_normalization` | **yes** | `none`, `nfc`, `nfd`, `nfkc`, or `nfkd`. |
+| `collapse_whitespace` | | Whether runs of whitespace become one space. |
+| `max_input_bytes` | | The cap on one input's size. |
+| `truncate` | **yes** | What happens at the cap: `refuse` or `bytes`. |
 
 `null_policy: skip` leaves the field out of the joined text. `refuse` stops the
 run on that row. `empty_policy: skip` records the row as a deliberate skip, which
@@ -107,18 +116,18 @@ coverage verification counts as accounted for.
 
 ## `model`
 
-| Field | Identity | Meaning |
-| --- | --- | --- |
-| `provider` | yes | The API shape. `openai-compatible` is what is implemented. |
-| `endpoint_class` | yes | `local`, `hosted`, or `gateway`. Your declaration, not a measurement. |
-| `endpoint` | no | The base URL. A credential in its userinfo is refused. |
-| `identifier` | yes | The model name sent to the provider. |
-| `revision` | yes | The provider's immutable revision, where it has one. |
-| `requested_dimension` | yes | The dimension asked for, where the provider supports asking. |
-| `reported_dimension` | yes | The dimension the model produces. |
-| `normalization` | yes | `none` or `l2`. |
-| `pooling` | yes | The pooling strategy, where the provider exposes one. |
-| `credential` | no | Where the credential is, never what it is. |
+| Field | Identity | Required | Meaning |
+| --- | --- | --- | --- |
+| `provider` | yes | | The API shape. `openai-compatible` is what is implemented. |
+| `endpoint_class` | yes | **yes** | `local`, `hosted`, or `gateway`. Your declaration, not a measurement. |
+| `endpoint` | no | | The base URL. A credential in its userinfo is refused. |
+| `identifier` | yes | | The model name sent to the provider. |
+| `revision` | yes | | The provider's immutable revision, where it has one. |
+| `requested_dimension` | yes | | The dimension asked for, where the provider supports asking. |
+| `reported_dimension` | yes | **yes** | The dimension the model produces. |
+| `normalization` | yes | **yes** | `none` or `l2`. |
+| `pooling` | yes | | The pooling strategy, where the provider exposes one. |
+| `credential` | no | | Where the credential is, never what it is. |
 
 `endpoint` is excluded from the identity because moving the same model behind a
 different address does not change the vectors. `endpoint_class` is included
@@ -146,15 +155,15 @@ not another copy of it.
 
 ## `target`
 
-| Field | Identity | Meaning |
-| --- | --- | --- |
-| `schema` | yes | The schema the target table is in. |
-| `table` | yes | The table the vectors go on. |
-| `column` | yes | The vector column. Two generations need two columns. |
-| `representation` | yes | `vector`, `halfvec`, or `sparsevec`. |
-| `metric` | yes | `cosine`, `l2`, or `inner_product`. |
-| `index_method` | yes | `hnsw` or `ivfflat`. Omit for no index. |
-| `index_options` | **no** | Build options such as `m` and `ef_construction`. |
+| Field | Identity | Required | Meaning |
+| --- | --- | --- | --- |
+| `schema` | yes | | The schema the target table is in. |
+| `table` | yes | **yes** | The table the vectors go on. |
+| `column` | yes | **yes** | The vector column. Two generations need two columns. |
+| `representation` | yes | **yes** | `vector`, `halfvec`, or `sparsevec`. |
+| `metric` | yes | **yes** | `cosine`, `l2`, or `inner_product`. |
+| `index_method` | yes | | `hnsw` or `ivfflat`. Omit for no index. |
+| `index_options` | **no** | | Build options such as `m` and `ef_construction`. |
 
 `index_options` is excluded deliberately: retuning an index trades build cost
 against recall over the *same* vectors, so it does not make a different corpus.

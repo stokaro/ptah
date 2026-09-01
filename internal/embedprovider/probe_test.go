@@ -303,3 +303,83 @@ func failureNamed(
 	c.Fatalf("no failed check named %s in %v", name, report.Checks)
 	return embedprovider.Check{}
 }
+
+// TestProbe_AnEndpointNeedingNoCredentialReadsAsOneSentence covers
+// stokaro/ptah#2648 finding 6.
+//
+// A specification with no `credential:` is the shape `guides/configure-a-
+// provider.md` recommends for a local endpoint, and the probe rendered its pass
+// line by appending " was accepted" to a string that was already a whole
+// sentence: `no credential was sent, and the endpoint asked for none was
+// accepted`. Two predicates, one subject.
+//
+// The pass line is asserted whole rather than by substring, because the defect
+// was a suffix and a Contains check on the first clause would have passed
+// throughout. The published sentence is the target.
+func TestProbe_AnEndpointNeedingNoCredentialReadsAsOneSentence(t *testing.T) {
+	c := qt.New(t)
+	provider := working()
+	provider.profile.CredentialSource = ""
+
+	report := embedprovider.Probe(context.Background(), embedprovider.ProbeSubject{
+		Provider: provider, Dimension: 4, Absent: refusing(),
+	})
+
+	c.Assert(authorizedDetail(c, report), qt.Equals,
+		"no credential was sent, and the endpoint asked for none")
+}
+
+// TestProbe_AnEndpointThatRefusesAnAbsentCredentialSaysSo is the half that was
+// not a papercut.
+//
+// The shared subject made a refusal read `no credential was sent, and the
+// endpoint asked for none was refused: 401` -- a sentence asserting the
+// endpoint asked for nothing while reporting that it refused the request. The
+// `Not(Contains)` is what keeps that clause from coming back: an assertion on
+// the new wording alone would pass over a string that carried both.
+func TestProbe_AnEndpointThatRefusesAnAbsentCredentialSaysSo(t *testing.T) {
+	c := qt.New(t)
+	provider := working()
+	provider.profile.CredentialSource = ""
+	provider.refuse = wrap(embedprovider.ErrUnauthorized, "answered 401")
+
+	report := embedprovider.Probe(context.Background(), embedprovider.ProbeSubject{
+		Provider: provider, Dimension: 4, Absent: refusing(),
+	})
+
+	detail := authorizedDetail(c, report)
+	c.Assert(detail, qt.Contains, "no credential was sent, and the endpoint refused the request")
+	c.Assert(detail, qt.Contains, "answered 401")
+	c.Assert(detail, qt.Not(qt.Contains), "asked for none")
+}
+
+// TestProbe_AConfiguredCredentialStillNamesItsSource is the control.
+//
+// Every assertion above is satisfied by a probe that stopped naming where a
+// credential came from at all, which is the fact an operator needs when the
+// endpoint says no.
+func TestProbe_AConfiguredCredentialStillNamesItsSource(t *testing.T) {
+	c := qt.New(t)
+	provider := working()
+	provider.refuse = wrap(embedprovider.ErrUnauthorized, "answered 401")
+
+	report := embedprovider.Probe(context.Background(), embedprovider.ProbeSubject{
+		Provider: provider, Dimension: 4, Absent: refusing(),
+	})
+
+	c.Assert(authorizedDetail(c, report), qt.Equals,
+		"the credential from env:PTAH_EMBED_TOKEN was refused: "+
+			"embedding endpoint refused the credential\nanswered 401")
+}
+
+// authorizedDetail is what the report says about authorization.
+func authorizedDetail(c *qt.C, report embedprovider.ProbeReport) string {
+	c.Helper()
+	for _, check := range report.Checks {
+		if check.Name == embedprovider.CheckAuthorized {
+			return check.Detail
+		}
+	}
+	c.Fatal("the report carries no authorization check")
+	return ""
+}

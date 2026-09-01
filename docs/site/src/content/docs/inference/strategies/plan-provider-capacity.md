@@ -94,9 +94,18 @@ preprocessing:
 `refuse` stops the run on a row that is too long. `bytes` cuts the input and
 embeds what is left.
 
-`refuse` is the default for a reason: a silently truncated document produces a
-vector for its first half, which searches plausibly and is wrong. Choose `bytes`
-deliberately, knowing that is what it means.
+There is no default. `truncate` is required, and a specification omitting it is
+refused before any verb does work -- which is the same reason stated as a rule
+rather than as a default: a silently truncated document produces a vector for
+its first half, which searches plausibly and is wrong. `refuse` is the answer to
+write unless you mean otherwise, and `bytes` is a decision to take deliberately,
+knowing that is what it means.
+
+`truncate` is required even where `max_input_bytes` names no cap for it to act
+at. The block above is two fields of a `preprocessing:` section rather than a
+whole one, so pasting it over a specification's own block is itself a refusal --
+see the [specification reference](../../reference/specification/) for the fields a
+run cannot start without.
 
 ## Running it overnight
 

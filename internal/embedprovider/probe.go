@@ -173,8 +173,7 @@ func probeRefusal(report ProbeReport, err error) ProbeReport {
 	if errors.Is(err, ErrCredentialUnusable) {
 		report.Checks = append(report.Checks, Check{
 			Name: CheckAuthorized, Passed: false,
-			Detail: fmt.Sprintf("%s could not be used: %v",
-				credentialSource(report.Profile), err),
+			Detail: credentialUnusable(report.Profile, err),
 		})
 		report.Unmeasured = append(report.Unmeasured,
 			"whether the endpoint at "+report.Profile.EndpointHost+
@@ -199,7 +198,7 @@ func probeRefusal(report ProbeReport, err error) ProbeReport {
 	if errors.Is(err, ErrUnauthorized) {
 		report.Checks = append(report.Checks, Check{
 			Name: CheckAuthorized, Passed: false,
-			Detail: fmt.Sprintf("%s was refused: %v", credentialSource(report.Profile), err),
+			Detail: credentialRefused(report.Profile, err),
 		})
 		report.Unmeasured = append(report.Unmeasured,
 			"everything after authentication, including the error shape, "+
@@ -226,15 +225,43 @@ func probeRefusal(report ProbeReport, err error) ProbeReport {
 }
 
 // credentialDetail names where the credential came from, never what it was.
+//
+// Each outcome renders its own sentence rather than sharing a subject that
+// three predicates are appended to. Sharing one produced
+// `no credential was sent, and the endpoint asked for none was accepted` on the
+// pass line -- two predicates hung off one subject, and not the sentence
+// `guides/configure-a-provider.md` publishes -- and, worse, a refusal that read
+// `no credential was sent, and the endpoint asked for none was refused: 401`.
+// That one is not a papercut: it asserts the endpoint asked for nothing in the
+// same breath as reporting that it refused the request (stokaro/ptah#2648).
 func credentialDetail(profile Profile) string {
-	return credentialSource(profile) + " was accepted"
-}
-
-// credentialSource names the reference, or the absence of one.
-func credentialSource(profile Profile) string {
 	if profile.CredentialSource == "" {
 		return "no credential was sent, and the endpoint asked for none"
 	}
+	return credentialFrom(profile) + " was accepted"
+}
+
+// credentialRefused is the same fact where the endpoint said no.
+func credentialRefused(profile Profile, err error) string {
+	if profile.CredentialSource == "" {
+		return fmt.Sprintf("no credential was sent, and the endpoint refused the request: %v", err)
+	}
+	return fmt.Sprintf("%s was refused: %v", credentialFrom(profile), err)
+}
+
+// credentialUnusable is the credential that never became a request.
+//
+// With no source configured this claims nothing about where it came from,
+// because there is nothing to claim: what the caller needs is the reason.
+func credentialUnusable(profile Profile, err error) string {
+	if profile.CredentialSource == "" {
+		return fmt.Sprintf("the credential could not be used: %v", err)
+	}
+	return fmt.Sprintf("%s could not be used: %v", credentialFrom(profile), err)
+}
+
+// credentialFrom names the reference, never the value.
+func credentialFrom(profile Profile) string {
 	return "the credential from " + profile.CredentialSource
 }
 
