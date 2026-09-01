@@ -274,12 +274,35 @@ func verificationQuery(spec embedgen.Spec, source *Source) (string, error) {
 		quoteIdentifier(column+StateSuffix),
 		storedWidthExpression(spec.Target.Representation, column))
 
+	// Whether the row is one the specification asks for, computed by the server
+	// from the same predicate that used to be the only thing in the WHERE.
+	//
+	// The walk reached one row set and split it into both sides, so every
+	// target row it produced was in scope by construction and
+	// `embedverify.reportOutOfScope` could not fire through the shipped reader
+	// (stokaro/ptah#2649 finding 2). A generation carrying vectors for rows the
+	// specification excludes -- which catch-up creates on its own -- passed
+	// every layer, and the reported target-row count was not the number of
+	// vectors in the column.
+	//
+	// One walk rather than two, and a widened WHERE rather than none: a
+	// verification already holds the corpus in memory (stokaro/ptah#2621), so a
+	// second full read is not a repair, and dropping the filter entirely would
+	// read every row of a table the specification deliberately narrows.
+	inScope := "TRUE"
+	generationColumn := quoteIdentifier(column + GenerationSuffix)
+	filter := strings.TrimSpace(spec.Source.Filter)
+	if filter != "" {
+		inScope = "(" + filter + ")"
+	}
+	columns = append(columns, inScope)
+
 	// #nosec G201 -- PostgreSQL takes no bind parameter for a relation or
 	// column name; the identifiers come from the specification and go through
 	// quoteIdentifier.
 	query := fmt.Sprintf("SELECT %s FROM %s", strings.Join(columns, ", "), source.qualifiedTable())
-	if filter := strings.TrimSpace(spec.Source.Filter); filter != "" {
-		query += " WHERE (" + filter + ")"
+	if filter != "" {
+		query += " WHERE (" + filter + ") OR " + generationColumn + " IS NOT NULL"
 	}
 	return query + " ORDER BY " + strings.Join(keys, ", "), nil
 }
@@ -297,11 +320,12 @@ func scanVerificationRows(
 	for rows.Next() {
 		values := make([]sql.NullString, keyCount+inputCount+versionCount+4)
 		var dimension sql.NullInt64
-		targetsScan := make([]any, 0, len(values)+1)
+		var inScope sql.NullBool
+		targetsScan := make([]any, 0, len(values)+2)
 		for index := range values {
 			targetsScan = append(targetsScan, &values[index])
 		}
-		targetsScan = append(targetsScan, &dimension)
+		targetsScan = append(targetsScan, &dimension, &inScope)
 		if err := rows.Scan(targetsScan...); err != nil {
 			return nil, nil, fmt.Errorf("read a verification row: %w", err)
 		}
@@ -309,7 +333,17 @@ func scanVerificationRows(
 		if err != nil {
 			return nil, nil, err
 		}
-		sources = append(sources, sourceRow)
+		// A row the filter excludes is not a source row: the specification does
+		// not ask for it, so a verification reporting it missing would report
+		// the filter as a defect. It is still a TARGET row, because the vector
+		// is there and something has to say so.
+		//
+		// NULL is not in scope. A three-valued filter answers NULL for a row it
+		// can say nothing about, and treating that as "asked for" would make
+		// the verification demand a vector the backfill never wrote.
+		if inScope.Valid && inScope.Bool {
+			sources = append(sources, sourceRow)
+		}
 		targets = append(targets, targetRow)
 	}
 	return sources, targets, nil

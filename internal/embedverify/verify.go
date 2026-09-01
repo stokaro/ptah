@@ -213,7 +213,7 @@ func verifyCoverageAndFreshness(
 ) {
 	byKey := indexTargetByKey(report, target)
 	inScope := classifySourceRows(report, expectation, source, byKey)
-	reportOutOfScope(report, target, inScope)
+	reportOutOfScope(report, expectation, target, inScope)
 }
 
 // indexTargetByKey builds the lookup the walk above needs, and reports a key
@@ -332,9 +332,21 @@ func classifyRow(expectation Expectation, row SourceRow, found TargetRow) rowVer
 }
 
 // reportOutOfScope names target rows the source no longer accounts for.
-func reportOutOfScope(report *Report, target []TargetRow, inScope map[string]bool) {
+// reportOutOfScope names the rows carrying THIS generation's vector that the
+// specification does not ask for.
+//
+// The generation is compared as well as the scope. A row holding another
+// generation's vector is out of this one's scope by definition -- that is what
+// a previous generation looks like -- and reporting it would make every
+// migration's verification blame its predecessor.
+func reportOutOfScope(
+	report *Report, expectation Expectation, target []TargetRow, inScope map[string]bool,
+) {
 	var unexpected []string
 	for _, row := range target {
+		if row.Generation != expectation.Generation {
+			continue
+		}
 		if !inScope[row.Key] && !row.Tombstone {
 			unexpected = append(unexpected, row.Key)
 		}
