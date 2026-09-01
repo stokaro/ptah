@@ -44,11 +44,18 @@ That is the whole guarantee, and it is worth stating precisely: a change that
 committed has an event, because a transaction that committed committed both. A
 change that rolled back has no event, for the same reason.
 
-`catchup` reads that table, embeds the rows it names, and records how far it got.
+`catchup` reads that table, embeds the rows it names, records how far it got,
+and removes the events every generation reading that table has passed.
 
 The cost is real: two triggers on a table your application writes to, and a
-table that grows until catch-up drains it. Both go away when the migration is
-over.
+table alongside it. The two have different lifetimes. Events go as they are
+passed, so the table tracks the backlog rather than the whole history of the
+migration; the triggers and the table itself go at `retire`.
+
+"Every generation" is the part worth reading twice. One source table has one
+companion table, so two generations over that source share it, and an event
+survives until the slower of them has processed it. A generation left behind
+holds events for as long as it is live — `retire` is what releases them.
 
 ## `immutable`
 

@@ -78,7 +78,7 @@ rather than a person.
 | `ptah help` | Prints the help text of the verb it names, or of the root when it names none; the verb itself is not run and nothing is opened | — |
 | `ptah inference` | Plan, run and cut over embedding-generation migrations | group |
 | `ptah inference backfill` | Reads the source, sends it to the embedding endpoint the specification names, and writes vectors and checkpoints into the target database | — |
-| `ptah inference catchup` | Rereads the source rows recorded as changed and writes their vectors, which sends that text to the embedding endpoint | — |
+| `ptah inference catchup` | Rereads the source rows recorded as changed and writes their vectors, which sends that text to the embedding endpoint, and deletes the change records every generation reading that source has processed | — |
 | `ptah inference cutover` | Moves the pointer queries read to a different generation, and refuses when the pointer is not where the plan it was built from expects | — |
 | `ptah inference describe` | Reads a specification file and reports what it says; it opens no database, and with `--spec` no connection at all, which is what makes it usable where every other verb here cannot be; `--release` fetches the release from a registry first | — |
 | `ptah inference evaluate` | Searches the generation with queries from a corpus, which sends those queries to the embedding endpoint; the database is only read | — |

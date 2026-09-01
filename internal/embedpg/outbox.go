@@ -517,12 +517,28 @@ func (o *Outbox) Unprocessed(ctx context.Context, from embedcatchup.Cursor) (int
 	return count, nil
 }
 
-// Prune removes events the run has processed.
+// Prune removes the events every live reader of this source table has passed.
 //
-// Bounded and policy-controlled, which the epic asks for: an outbox nobody
-// prunes is a table that grows for as long as the application writes, and one
-// pruned by time rather than by what was processed drops a tombstone a paused
-// run still owes.
+// before is a floor across readers and not the caller's own position. An outbox
+// belongs to a source table, so two generations over one table share it; a
+// prune at the invoking run's watermark deletes what the other one still owes,
+// and does it silently, because a deleted event fails the pending predicate and
+// so is never counted as unprocessed. Store.OutboxFloor is where that floor
+// comes from.
+//
+// Only the transaction half of the floor is used, and strictly. That is the
+// conservative half: it keeps a transaction whose events a page cut partway
+// through, which is the boundary stokaro/ptah#2628 established and which
+// tightening this predicate to the pair would undo.
+//
+// The floor must be built from watermarks already on disk. This statement
+// commits on its own, while a watermark reaches disk with the vectors it
+// belongs to, so pruning from a position held only in memory leaves the events
+// gone and the durable watermark behind them -- a hole a resumed run reads as
+// an empty range and reports as caught up.
+//
+// Pruning by time instead of by what was processed is the other way to get this
+// wrong: it drops a tombstone a paused run still owes.
 func (o *Outbox) Prune(ctx context.Context, before uint64) (int64, error) {
 	// #nosec G201 -- PostgreSQL takes no bind parameter for a relation name, so
 	// the table has to be interpolated. What stops that being an injection is

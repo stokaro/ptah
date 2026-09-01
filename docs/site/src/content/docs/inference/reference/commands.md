@@ -191,6 +191,13 @@ nothing left.
 Takes the flags `backfill` takes, and `--maintain-for` besides. Refused against
 a consistency mode that records nothing, rather than reported as success.
 
+It also removes the events every generation reading that source has passed, so
+the companion table holds the backlog rather than the whole migration. Nothing
+is removed while a slower generation still owes it, and the run says so instead
+of leaving the table's size unexplained. A removal that fails is reported and
+the command still succeeds: the catch-up itself is already committed, and the
+only cost of a failed removal is a larger table.
+
 | Flag | Meaning |
 | --- | --- |
 | `--maintain-for` | After catching up, extend this generation's stabilization window by this much |
