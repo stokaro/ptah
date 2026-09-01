@@ -3,6 +3,8 @@
 package cmdutil
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -69,6 +71,11 @@ func NormalizeCommandError(cmd *cobra.Command, err error, fallback int) error {
 	if err == nil {
 		return nil
 	}
+	// Before the exit-code policy and before anything is printed, because this
+	// is the one boundary every command reaches: ConfigureCommandArgs wraps the
+	// root's RunE alone, so a subcommand's failure never passes through
+	// WrapRunE. See [ErrCanceled].
+	err = asCancellation(cmd.Context(), err)
 	if code, ok := commandErrorCode(cmd); ok {
 		currentCode := exitcode.Code(err, unconfiguredErrorCode)
 		switch currentCode {
@@ -189,6 +196,17 @@ func commandErrorCode(cmd *cobra.Command) (int, bool) {
 	return 0, false
 }
 
+// ErrCanceled is what a command reports when the operator stopped it.
+//
+// A canceled command fails wherever the cancellation is first noticed, and that
+// is whichever subsystem happened to be mid-call: a store write answers
+// `save run r-1: context canceled`, a connection pool answers `driver: bad
+// connection`, and a provider request answers whatever its transport says.
+// Measured over sixteen interrupts at randomized delays, half of them leaked a
+// store or driver sentence to an operator who had pressed Ctrl-C
+// (stokaro/ptah#2649 finding 10).
+var ErrCanceled = errors.New("canceled")
+
 // WrapRunE maps ordinary command failures to exit code 2 while preserving
 // expected-negative results that already carry an explicit exit code.
 func WrapRunE(run func(*cobra.Command, []string) error) func(*cobra.Command, []string) error {
@@ -201,6 +219,41 @@ func WrapRunE(run func(*cobra.Command, []string) error) func(*cobra.Command, []s
 		return exitcode.New(nativeCommandErrorCode, err)
 	}
 }
+
+// asCancellation replaces a canceled command's error with the cancellation.
+//
+// BOTH conditions are required, and the second is what makes this safe: the
+// command's context has to be canceled, and the error has to carry
+// context.Canceled. An interrupt that arrives while a command is already
+// failing for its own reason must not hide that reason -- the operator would
+// then be told they stopped something that had already gone wrong.
+//
+// A deadline is deliberately not a cancellation. `--provider-timeout` expiring
+// is a fact about the endpoint, and reporting it as "canceled" would take away
+// the one word saying which.
+func asCancellation(ctx context.Context, err error) error {
+	if err == nil || ctx == nil || ctx.Err() == nil {
+		return err
+	}
+	if !errors.Is(err, context.Canceled) {
+		return err
+	}
+	return cancellation{cause: err}
+}
+
+// cancellation reads as the cancellation and still carries what noticed it.
+//
+// The cause stays reachable through errors.Is and errors.As, because a caller
+// asking whether this was a provider failure has to be able to find out; it is
+// only the SENTENCE that drops it, and the sentence is the part an operator
+// reads.
+type cancellation struct {
+	cause error
+}
+
+func (c cancellation) Error() string { return ErrCanceled.Error() }
+
+func (c cancellation) Unwrap() []error { return []error{ErrCanceled, c.cause} }
 
 // Fail prints err to the command's stderr and returns it as an exit-2 usage
 // error. Commands that set SilenceErrors must route their usage failures

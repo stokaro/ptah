@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -188,6 +189,14 @@ func (p *openAICompatible) post(ctx context.Context, token string, body []byte) 
 	}
 
 	response, err := p.client.Do(request)
+	if errors.Is(err, context.Canceled) {
+		// An operator stopping the run is not an endpoint that could not be
+		// reached, and classifying it as one sent them looking at a provider
+		// that was answering perfectly well. A DEADLINE is left as unreachable
+		// on purpose: `--provider-timeout` expiring is a fact about the
+		// endpoint (stokaro/ptah#2649 finding 10).
+		return nil, err
+	}
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s: %w", ErrUnreachable, p.host, err)
 	}

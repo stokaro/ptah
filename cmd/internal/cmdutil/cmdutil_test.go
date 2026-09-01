@@ -2,7 +2,9 @@ package cmdutil_test
 
 import (
 	"bytes"
+	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -400,4 +402,78 @@ func commandError(message string) func(*cobra.Command, []string) error {
 	return func(_ *cobra.Command, _ []string) error {
 		return errors.New(message)
 	}
+}
+
+// TestNormalizeCommandError_ACanceledCommandReportsTheCancellation is
+// stokaro/ptah#2649 finding 10.
+//
+// A canceled command fails wherever the cancellation is first noticed, and that
+// is whichever subsystem happened to be mid-call. Measured over sixteen
+// interrupts at randomized delays, half of them printed a store or driver
+// sentence -- `save run r-4: context canceled`, `driver: bad connection` -- to
+// an operator who had pressed Ctrl-C.
+func TestNormalizeCommandError_ACanceledCommandReportsTheCancellation(t *testing.T) {
+	c := qt.New(t)
+
+	var stderr bytes.Buffer
+	cmd := &cobra.Command{Use: "backfill"}
+	cmd.SetErr(&stderr)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd.SetContext(ctx)
+
+	err := cmdutil.NormalizeCommandError(cmd,
+		fmt.Errorf("save run r-4: %w", context.Canceled), 2)
+
+	c.Assert(err, qt.ErrorMatches, "canceled")
+	c.Assert(stderr.String(), qt.Equals, "error: canceled\n")
+	// The cause stays reachable, because a caller asking what noticed has to be
+	// able to find out. Only the sentence drops it.
+	c.Assert(err, qt.ErrorIs, cmdutil.ErrCanceled)
+	c.Assert(err, qt.ErrorIs, context.Canceled)
+}
+
+// TestNormalizeCommandError_ACancellationDoesNotMaskAnUnrelatedFailure is the
+// control that matters most.
+//
+// An interrupt arriving while a command is already failing for its own reason
+// must not hide that reason: the operator would be told they stopped something
+// that had already gone wrong, and the thing that went wrong would never be
+// named.
+func TestNormalizeCommandError_ACancellationDoesNotMaskAnUnrelatedFailure(t *testing.T) {
+	c := qt.New(t)
+
+	var stderr bytes.Buffer
+	cmd := &cobra.Command{Use: "backfill"}
+	cmd.SetErr(&stderr)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd.SetContext(ctx)
+
+	err := cmdutil.NormalizeCommandError(cmd,
+		errors.New("provider: the endpoint answered 500"), 2)
+
+	c.Assert(err, qt.ErrorMatches, "provider: the endpoint answered 500")
+	c.Assert(err, qt.Not(qt.ErrorIs), cmdutil.ErrCanceled)
+}
+
+// TestNormalizeCommandError_ADeadlineIsNotACancellation keeps the one word that
+// says which.
+//
+// `--provider-timeout` expiring is a fact about the endpoint, and reporting it
+// as "canceled" would take that away. The command's context is NOT canceled
+// here, which is the condition that separates them.
+func TestNormalizeCommandError_ADeadlineIsNotACancellation(t *testing.T) {
+	c := qt.New(t)
+
+	var stderr bytes.Buffer
+	cmd := &cobra.Command{Use: "backfill"}
+	cmd.SetErr(&stderr)
+	cmd.SetContext(context.Background())
+
+	err := cmdutil.NormalizeCommandError(cmd,
+		fmt.Errorf("provider: %w", context.DeadlineExceeded), 2)
+
+	c.Assert(err, qt.ErrorMatches, "provider: context deadline exceeded")
+	c.Assert(err, qt.Not(qt.ErrorIs), cmdutil.ErrCanceled)
 }
