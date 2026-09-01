@@ -23,6 +23,7 @@ run 2026-08-articles: caught_up, running
   - generation: 31122cc8322d44317514ca2b54f29853f1c43d19ecd3b2a1b183320ef8f5bb37
   - scanned 48231, embedded 48200, skipped 31, deleted 0
   - 965 batches committed, 0 retries since the last one
+  - 6104382 prompt tokens, 6104382 total, as the provider reported them
   - snapshot boundary: 8842
   - catch-up watermark: 9017
   - lease: worker-1, fencing token 1
@@ -34,6 +35,7 @@ run 2026-08-articles: caught_up, running
 | `generation` | The identity this run is building |
 | `scanned / embedded / skipped / deleted` | Rows read, rows given a vector, rows deliberately skipped, rows tombstoned |
 | `batches committed` | How many provider round trips landed |
+| `prompt tokens` | What the provider said it charged for, which is the number to compare against an invoice. Ptah counts none of its own, so a zero here is the provider reporting zero |
 | `snapshot boundary` | The point the backfill embeds the source as of |
 | `catch-up watermark` | How far catch-up has read past it |
 

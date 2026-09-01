@@ -482,6 +482,18 @@ func printStatus(out io.Writer, status embedreport.Status) error {
 			status.Progress.RowsSkipped, status.Progress.RowsDeleted)),
 		bullet(fmt.Sprintf("%d batches committed, %d retries since the last one",
 			status.Progress.BatchesCommitted, status.Progress.RetryCount)),
+		// The number an operator compares against an invoice, and the reason
+		// the capacity strategy page has a Cost section at all. It was
+		// recorded on the run and reachable only through --format json, while
+		// the page said `status` showed it and illustrated the promise with
+		// the batches line above -- so a hurried reader took a count of
+		// provider round trips for a count of tokens (stokaro/ptah#2648).
+		//
+		// "as the provider reported them" is load-bearing: Ptah counts no
+		// tokens of its own, so a zero here means the provider reported zero
+		// rather than that nothing was embedded.
+		bullet(fmt.Sprintf("%d prompt tokens, %d total, as the provider reported them",
+			status.Progress.ProviderPromptTokens, status.Progress.ProviderTotalTokens)),
 		bullet("snapshot boundary: " + status.SnapshotWatermark),
 		bullet("catch-up watermark: " + status.CatchUpWatermark),
 		bullet(fmt.Sprintf("lease: %s, fencing token %d",

@@ -68,12 +68,14 @@ The token counts the provider reports are recorded on the run and shown by
 `status`:
 
 ```text
-  - 41 batches committed, 0 retries since the last one
+  - 655360 prompt tokens, 655360 total, as the provider reported them
 ```
 
-`ptah inference status` reports what the provider charged for, which is the
-number to compare against your invoice. Ptah does not price anything — it has no
-idea what your contract is.
+That is what the provider charged for, and it is the number to compare against
+your invoice. The batches line above it in the report counts provider round
+trips, not tokens. Ptah prices nothing and counts no tokens of its own — it has
+no idea what your contract is, and a zero on that line is the provider reporting
+zero rather than a run that embedded nothing.
 
 Two things drive the bill more than anything else:
 

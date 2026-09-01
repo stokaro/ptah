@@ -52,6 +52,7 @@ run 2026-08-articles: backfilling, running
   - generation: 31122cc8322d...
   - scanned 5120, embedded 5120, skipped 0, deleted 0
   - 41 batches committed, 0 retries since the last one
+  - 655360 prompt tokens, 655360 total, as the provider reported them
   - lease: worker-1, fencing token 1
 ```
 
