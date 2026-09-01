@@ -20,6 +20,7 @@ import (
 	"go.5x5.cz/ptah/internal/planner/schemaprecondition"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/rlsscope"
+	"go.5x5.cz/ptah/internal/schemaprep"
 	"go.5x5.cz/ptah/internal/systemschema"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/diffpolicy"
@@ -550,10 +551,11 @@ func (p *Planner) addRegularForeignKeys(
 			continue
 		}
 
-		fkRef := fromschema.ParseForeignKeyReference(field.Foreign)
-		if fkRef == nil {
+		parsed := schemaprep.ParseForeignKeyReference(field.Foreign)
+		if parsed == nil {
 			continue
 		}
+		fkRef := astForeignKeyReference(parsed)
 		qualifyForeignKeyRef(declaredTables, table, fkRef)
 		if foreignKeyTargetsTable(fkRef, table) {
 			continue
@@ -577,6 +579,14 @@ func qualifyForeignKeyRef(
 	fkRef.Table = tablelookup.ResolveReference(declaredTables, current, fkRef.Table)
 }
 
+func astForeignKeyReference(reference *schemaprep.ForeignKeyReference) *ast.ForeignKeyRef {
+	return &ast.ForeignKeyRef{
+		Table:   reference.Table,
+		Column:  reference.Column,
+		Columns: slices.Clone(reference.Columns),
+	}
+}
+
 // addSelfReferencingForeignKeys adds self-referencing foreign key constraints
 func (p *Planner) addSelfReferencingForeignKeys(
 	result []ast.Node,
@@ -585,8 +595,9 @@ func (p *Planner) addSelfReferencingForeignKeys(
 ) []ast.Node {
 	table := creation.Table
 	for _, selfRefFK := range creation.SelfReferencingForeignKeys {
-		fkRef := fromschema.ParseForeignKeyReference(selfRefFK.Foreign)
-		if fkRef != nil {
+		parsed := schemaprep.ParseForeignKeyReference(selfRefFK.Foreign)
+		if parsed != nil {
+			fkRef := astForeignKeyReference(parsed)
 			qualifyForeignKeyRef(declaredTables, table, fkRef)
 			fkRef.OnDelete = selfRefFK.OnDelete
 			fkRef.OnUpdate = selfRefFK.OnUpdate
@@ -605,7 +616,7 @@ func selfReferencingForeignKeyName(tableName string, fk schemamodel.SelfReferenc
 	if fk.ForeignKeyName != "" {
 		return fk.ForeignKeyName
 	}
-	return fromschema.GenerateForeignKeyName(tableName, fk.FieldName)
+	return schemaprep.GenerateForeignKeyName(tableName, fk.FieldName)
 }
 
 // isRegularForeignKeyField checks if a field is a regular foreign key field for the given table.
@@ -625,12 +636,12 @@ func isRegularForeignKeyField(field schemamodel.Field, table schemamodel.Table) 
 // foreignKeyName returns the constraint name to use for a field-level foreign
 // key: the explicit foreign_key_name= when set, otherwise the conventional
 // fk_<table>_<column> name shared with the schemadiff comparator and the down
-// path via fromschema.GenerateForeignKeyName.
+// path via schemaprep.GenerateForeignKeyName.
 func foreignKeyName(tableName string, field schemamodel.Field) string {
 	if field.ForeignKeyName != "" {
 		return field.ForeignKeyName
 	}
-	return fromschema.GenerateForeignKeyName(tableName, field.Name)
+	return schemaprep.GenerateForeignKeyName(tableName, field.Name)
 }
 
 // createForeignKeyAlterStatement creates an ALTER TABLE statement for adding a foreign key constraint
@@ -701,8 +712,9 @@ func (p *Planner) addForeignKeyConstraintsForNewColumns(
 		// Only process fields that have foreign key constraints
 		if targetField.Foreign != "" {
 			// Parse the foreign key reference
-			fkRef := fromschema.ParseForeignKeyReference(targetField.Foreign)
-			if fkRef != nil {
+			parsed := schemaprep.ParseForeignKeyReference(targetField.Foreign)
+			if parsed != nil {
+				fkRef := astForeignKeyReference(parsed)
 				if targetTable != nil {
 					qualifyForeignKeyRef(declared, *targetTable, fkRef)
 				}

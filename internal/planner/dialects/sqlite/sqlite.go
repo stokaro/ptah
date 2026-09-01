@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/planner/sqliterebuild"
+	"go.5x5.cz/ptah/internal/schemaprep"
 	"go.5x5.cz/ptah/internal/sqliteforeignkeys"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -515,7 +516,7 @@ func withDefaultForeignKeyName(tableName string, constraint schemamodel.Constrai
 	if len(constraint.Columns) > 0 {
 		columnName = constraint.Columns[0]
 	}
-	constraint.Name = fromschema.GenerateForeignKeyName(tableName, columnName)
+	constraint.Name = schemaprep.GenerateForeignKeyName(tableName, columnName)
 	return constraint
 }
 

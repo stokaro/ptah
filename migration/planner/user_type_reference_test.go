@@ -14,7 +14,7 @@ import (
 )
 
 // TestGenerateSchemaDiffSQLQualifiesDeclaredUserTypes pins the second of the
-// two entry points fromschema.QualifyDeclaredUserTypes is wired into.
+// two entry points schemaprep.QualifyDeclaredUserTypes is wired into.
 //
 // The planner is where a diff-driven CREATE TABLE is built, and it reads its
 // columns out of one prepared value that every dialect planner shares. Wiring

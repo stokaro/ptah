@@ -11,7 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/constraintscope"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/schemaprep"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -282,7 +282,7 @@ func reverseConstraintRemovals(
 		if f.Foreign != "" {
 			name := f.ForeignKeyName
 			if name == "" {
-				name = fromschema.GenerateForeignKeyName(tableName, f.Name)
+				name = schemaprep.GenerateForeignKeyName(tableName, f.Name)
 			}
 			fkTables[name] = tableName
 		}
@@ -390,12 +390,12 @@ func (c *reverseForeignKeyRemovalCollector) addFieldForeignKeys(schema *schemamo
 		}
 		name := field.ForeignKeyName
 		if name == "" {
-			name = fromschema.GenerateForeignKeyName(table.Name, field.Name)
+			name = schemaprep.GenerateForeignKeyName(table.Name, field.Name)
 		}
 		if !c.selectedFieldForeignKey(*table, name, field.Name) {
 			continue
 		}
-		ref := fromschema.ParseForeignKeyReference(field.Foreign)
+		ref := schemaprep.ParseForeignKeyReference(field.Foreign)
 		if ref == nil {
 			continue
 		}
@@ -509,7 +509,7 @@ func appendAddedColumnForeignKeyRemovals(
 			}
 			name := field.ForeignKeyName
 			if name == "" {
-				name = fromschema.GenerateForeignKeyName(table.Name, field.Name)
+				name = schemaprep.GenerateForeignKeyName(table.Name, field.Name)
 			}
 			info := difftypes.ConstraintRemovalInfo{
 				Name: name, TableName: table.QualifiedName(), Type: "FOREIGN KEY",
@@ -545,7 +545,7 @@ func appendAddedTableForeignKeyRemovals(
 		tableName := table.QualifiedName()
 		name := field.ForeignKeyName
 		if name == "" {
-			name = fromschema.GenerateForeignKeyName(table.Name, field.Name)
+			name = schemaprep.GenerateForeignKeyName(table.Name, field.Name)
 		}
 		info := difftypes.ConstraintRemovalInfo{Name: name, TableName: tableName, Type: "FOREIGN KEY"}
 		infos = appendConstraintRemovalInfo(infos, seen, info)
@@ -596,5 +596,5 @@ func defaultForeignKeyConstraintName(tableName string, columns []string) string 
 	if columnName == "" {
 		columnName = "foreign_key"
 	}
-	return fromschema.GenerateForeignKeyName(tableName, columnName)
+	return schemaprep.GenerateForeignKeyName(tableName, columnName)
 }

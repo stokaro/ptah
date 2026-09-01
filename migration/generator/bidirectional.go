@@ -12,7 +12,7 @@ import (
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/concurrentindex"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/schemaprep"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/internal/identifiervalidation"
 	"go.5x5.cz/ptah/migration/planner"
@@ -402,8 +402,8 @@ func validateRollbackTarget(
 	dialect string,
 	caps capability.Capabilities,
 ) error {
-	prepared := fromschema.QualifyDeclaredUserTypes(
-		fromschema.AssignDefaultForeignKeyNames(prior, dialect),
+	prepared := schemaprep.QualifyDeclaredUserTypes(
+		schemaprep.AssignDefaultForeignKeyNames(prior, dialect),
 		dialect,
 	)
 	if prepared == nil {

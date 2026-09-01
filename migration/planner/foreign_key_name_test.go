@@ -10,7 +10,7 @@ import (
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/schemaprep"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -27,7 +27,7 @@ func TestGenerateSchemaDiffSQL_AssignsLengthLimitedForeignKeyNames(t *testing.T)
 	// comparison assembles a creation from. A hand-built diff completes it
 	// here, because TableCreationsFor takes the declaration as given
 	// (stokaro/ptah#2315).
-	named := fromschema.AssignDefaultForeignKeyNames(schema, platform.MySQL)
+	named := schemaprep.AssignDefaultForeignKeyNames(schema, platform.MySQL)
 	diff := &difftypes.SchemaDiff{
 		TablesAdded:    difftypes.TableCreationsFor(named, "parents", tableName),
 		DeclaredTables: named.Tables,
@@ -53,7 +53,7 @@ func TestGenerateSchemaDiffSQL_AvoidsExplicitAndGeneratedForeignKeyNameCollision
 		ForeignKeyName: "FK_CHILDREN_PARENT_ID",
 	})
 	schemamodel.Finalize(schema)
-	named := fromschema.AssignDefaultForeignKeyNames(schema, platform.MySQL)
+	named := schemaprep.AssignDefaultForeignKeyNames(schema, platform.MySQL)
 	diff := &difftypes.SchemaDiff{
 		TablesAdded:    difftypes.TableCreationsFor(named, "parents", "children"),
 		DeclaredTables: named.Tables,

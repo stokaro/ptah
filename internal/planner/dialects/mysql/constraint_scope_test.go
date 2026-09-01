@@ -8,7 +8,6 @@ import (
 
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -837,7 +836,7 @@ func declaredColumn(desired *schemamodel.Database, tableName, columnName string)
 		if table.Name != tableName && table.QualifiedName() != tableName {
 			continue
 		}
-		for _, field := range fromschema.ProcessEmbeddedFields(desired.EmbeddedFields, desired.Fields) {
+		for _, field := range schemamodel.ProcessEmbeddedFields(desired.EmbeddedFields, desired.Fields) {
 			if field.StructName == table.StructName && field.Name == columnName {
 				return field
 			}

@@ -15,10 +15,10 @@ import (
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/clickhouserbac"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/convert/goschematodb"
 	"go.5x5.cz/ptah/internal/crdbttl"
 	"go.5x5.cz/ptah/internal/reservedrole"
+	"go.5x5.cz/ptah/internal/schemaprep"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/internal/systemschema"
@@ -145,7 +145,7 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	if err := sqlitevirtual.ValidateComparison(info.Dialect, desired, database, virtualPolicy); err != nil {
 		return nil, nil, err
 	}
-	desired = fromschema.AssignDefaultForeignKeyNames(desired, info.Dialect)
+	desired = schemaprep.AssignDefaultForeignKeyNames(desired, info.Dialect)
 	semantics := info.IdentifierSemantics.Normalize(info.Dialect)
 	if !info.IdentifierSemantics.IsZero() &&
 		!info.IdentifierSemantics.Equal(semantics) {
@@ -268,7 +268,7 @@ func CompareReportingUndecidedAdditions(
 		// a drop. See suppressScopedAway.
 		omitted := schemamodel.OmissionsForDialect(desired, opts.Dialect)
 		desired = schemamodel.ScopeToDialect(desired, opts.Dialect)
-		desired = fromschema.AssignDefaultForeignKeyNames(desired, opts.Dialect)
+		desired = schemaprep.AssignDefaultForeignKeyNames(desired, opts.Dialect)
 		database = suppressScopedAway(database, omitted)
 	}
 
@@ -656,7 +656,7 @@ func ValidateDesiredSchema(desired *schemamodel.Database, info catalog.ServerInf
 	// gets the same schema back. A declaration this dialect was not given is
 	// not part of its desired state, and a foreign key without a name is one
 	// the plan would name the same way.
-	scoped := fromschema.AssignDefaultForeignKeyNames(
+	scoped := schemaprep.AssignDefaultForeignKeyNames(
 		schemamodel.ScopeToDialect(desired, info.Dialect),
 		info.Dialect,
 	)
@@ -674,7 +674,7 @@ func ValidateDesiredSchema(desired *schemamodel.Database, info catalog.ServerInf
 	// A column does not carry the schema of the user type it names, only the
 	// declaration does (stokaro/ptah#1138).
 	return renderer.ValidateSchemaWithCapabilities(
-		fromschema.QualifyDeclaredUserTypes(scoped, info.Dialect),
+		schemaprep.QualifyDeclaredUserTypes(scoped, info.Dialect),
 		info.Dialect,
 		caps,
 	)
