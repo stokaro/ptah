@@ -57,6 +57,73 @@ func CountRows(ctx context.Context, db *sql.DB, spec embedgen.Spec) (int64, erro
 	return count, nil
 }
 
+// SourceTableExists reports whether the table the specification reads from is
+// there.
+//
+// The measurement already existed inside [CountRows], where a missing table
+// produced a negative count and the plan reported it as an unknown ROW COUNT --
+// a fact about cost, printed where the absence of the table should have been
+// (stokaro/ptah#2648 finding 1). Exported so the planner can ask the question
+// it actually wants answered rather than infer it from a sentinel.
+func SourceTableExists(ctx context.Context, db *sql.DB, spec embedgen.Spec) (bool, error) {
+	return tableExists(ctx, db, spec.Source.Table)
+}
+
+// TargetTableExists reports whether the table the generation's column would be
+// added to is there.
+//
+// Distinct from the column check [ColumnExists] performs: a column that is not
+// there is what "prepare" is FOR, and a table that is not there is a plan that
+// cannot run. Measured before the split, a specification naming an absent
+// target table produced a completely clean plan -- `source.estimated_rows = 2
+// (measured)`, no blocker, exit 0 -- and failed at "prepare"
+// (stokaro/ptah#2648 finding 1).
+func TargetTableExists(ctx context.Context, db *sql.DB, spec embedgen.Spec) (bool, error) {
+	return tableExists(ctx, db, spec.Target.Table)
+}
+
+// VectorIndexBuildable reports whether the target database has the operator
+// class the generation's index would be built with, under the access method the
+// specification names.
+//
+// Both halves matter and only asking one is how the plan promised an index that
+// could not be built. `vector_index` says the server can build vector indexes
+// at all; this says it can build THIS one. Measured against pgvector 0.8.1:
+// `sparsevec_cosine_ops` exists and `hnsw` takes it, while `ivfflat` has no
+// sparsevec class at all and refuses with `operator class
+// "sparsevec_cosine_ops" does not exist for access method "ivfflat"` --
+// reported by the plan as `target.capability.vector_index = true (measured)`
+// with no blocker, after which the run completed prepare, backfill and catchup
+// and died at index, the whole provider bill for the corpus already paid
+// (stokaro/ptah#2648 finding 1).
+//
+// A specification whose representation and metric have no class at all is a
+// different answer: that is knowable offline, [embedgen.Spec.OperatorClass]
+// gives it, and the error is returned rather than turned into a false.
+func VectorIndexBuildable(ctx context.Context, db *sql.DB, spec embedgen.Spec) (bool, error) {
+	// A specification declaring no index method asks for no index, which
+	// [embedgen.Spec.TargetObjects] answers by emitting none. There is nothing
+	// for the target to be unable to build, and a check that refused this would
+	// refuse every generation that deliberately has no index.
+	if strings.TrimSpace(spec.Target.IndexMethod) == "" {
+		return true, nil
+	}
+	class, err := spec.OperatorClass()
+	if err != nil {
+		return false, err
+	}
+	const query = `SELECT EXISTS (
+		SELECT 1 FROM pg_opclass o JOIN pg_am a ON a.oid = o.opcmethod
+		WHERE a.amname = $1 AND o.opcname = $2)`
+	var buildable bool
+	if err := db.QueryRowContext(ctx, query,
+		spec.Target.IndexMethod, class).Scan(&buildable); err != nil {
+		return false, fmt.Errorf("read whether %s takes %s: %w",
+			spec.Target.IndexMethod, class, err)
+	}
+	return buildable, nil
+}
+
 // tableExists reports whether a table is there.
 func tableExists(ctx context.Context, db *sql.DB, table string) (bool, error) {
 	const query = `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1)`

@@ -153,6 +153,22 @@ type Status struct {
 	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
+// Runnable reports whether the plan can be executed.
+//
+// It asks [embedplan.Plan], rather than reading len(Blockers) here, so there is
+// one rule. That rule had no production caller at all: it was computed, tested
+// five times, and read by nothing, so `ptah inference plan` printed `blocked:`
+// lines and exited 0 -- a CI job gating on the plan passed against a
+// specification that could not run (stokaro/ptah#2648 finding 1).
+//
+// internal/embedguard exists to report exactly that shape and did not, because
+// it matches a declaration by bare name and cobra's own Command.Runnable is
+// called in cmd/atlas. The guard's doc comment names that false negative as the
+// direction it accepts; this is one it cost.
+func (p Plan) Runnable() bool {
+	return embedplan.Plan{Blockers: p.Blockers}.Runnable()
+}
+
 // BuildPlan resolves a specification against a live database.
 //
 // It measures what it can and says so when it cannot. Nothing is created and
@@ -201,6 +217,14 @@ func planInputs(
 	if err != nil {
 		return embedplan.Inputs{}, err
 	}
+	sourceExists, err := embedpg.SourceTableExists(ctx, db, spec)
+	if err != nil {
+		return embedplan.Inputs{}, err
+	}
+	targetTableExists, err := embedpg.TargetTableExists(ctx, db, spec)
+	if err != nil {
+		return embedplan.Inputs{}, err
+	}
 	rows, err := embedpg.CountRows(ctx, db, spec)
 	if err != nil {
 		return embedplan.Inputs{}, err
@@ -209,16 +233,23 @@ func planInputs(
 	if err != nil {
 		return embedplan.Inputs{}, err
 	}
+	indexBuildable, err := embedpg.VectorIndexBuildable(ctx, db, spec)
+	if err != nil {
+		return embedplan.Inputs{}, err
+	}
 
 	return embedplan.Inputs{
-		Current:         current,
-		Desired:         spec.Identity().Digest,
-		Facts:           facts,
-		TargetExists:    targetExists,
-		SourceMutable:   loaded.Source.Mutable,
-		ConsistencyMode: string(loaded.Mode),
-		EstimatedRows:   rows,
-		Capabilities:    capabilities,
+		Current:              current,
+		Desired:              spec.Identity().Digest,
+		Facts:                facts,
+		SourceExists:         sourceExists,
+		TargetTableExists:    targetTableExists,
+		VectorIndexBuildable: indexBuildable,
+		TargetExists:         targetExists,
+		SourceMutable:        loaded.Source.Mutable,
+		ConsistencyMode:      string(loaded.Mode),
+		EstimatedRows:        rows,
+		Capabilities:         capabilities,
 		// Planning reads. The permission a plan needs is the one it has by
 		// being able to open the database at all, and pretending otherwise
 		// would be a check with nothing behind it.
