@@ -127,11 +127,25 @@ func runBackfill(ctx context.Context, out io.Writer, options executeOptions) err
 	}
 	defer opened.close()
 
+	// Reached BEFORE the walk, because that is when it is true. It used to be
+	// set afterwards, which made `backfilling` the phase of a backfill that had
+	// FINISHED -- and verification, asking `Phase != PhaseBackfilling`, told a
+	// completed backfill it had not reached the end of its snapshot while
+	// telling a run that had never backfilled that it had (stokaro/ptah#2649).
+	//
+	// Reaching a phase the run has passed is a no-op, so a resumed backfill
+	// asks for this and is told nothing new.
+	if err := opened.store.ReachPhase(ctx, options.runID, embedrun.PhaseBackfilling); err != nil {
+		return err
+	}
 	run, pass, err := engine.Backfill(ctx, options.runID)
 	if err != nil {
 		return reportRun(out, run, err)
 	}
-	if err := opened.store.ReachPhase(ctx, options.runID, embedrun.PhaseBackfilling); err != nil {
+	// And this is the fact nothing recorded: the walk reached the end of the
+	// snapshot. An interrupted backfill returns above and never gets here, which
+	// is the answer -- it did not.
+	if err := opened.store.ReachPhase(ctx, options.runID, embedrun.PhaseBackfilled); err != nil {
 		return err
 	}
 	// A mode that records no changes has nothing for catch-up to process, so

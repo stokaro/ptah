@@ -145,3 +145,50 @@ func TestPostgres_AlterTable_SetGeneratedExpressionUnsupported(t *testing.T) {
 	c.Assert(renderer.Output(), qt.Contains, "ALTER COLUMN SET EXPRESSION requires target capability "+string(capability.AlterGeneratedColumnExpression))
 	c.Assert(renderer.Output(), qt.Not(qt.Contains), `SET EXPRESSION AS`)
 }
+
+// TestVisitCreateSchema_SpannerKeepsTheSchemaAndSaysWhatItLeftOut covers
+// stokaro/ptah#2651.
+//
+// The renderer emitted `COMMENT ON SCHEMA` for the whole PostgreSQL family with
+// no capability gate. Measured on the Cloud Spanner emulator behind PGAdapter
+// 0.55.2: the `CREATE SCHEMA` before it is accepted and the comment answers
+// `Unknown statement`. `ptah schema render` had always produced it, so an
+// operator applying that output by hand met the refusal; #2626 put it on the
+// plan, which is what made it a failing `ptah migrations up`.
+//
+// The schema is still created, because that is what the author asked for, and
+// the line naming what was left out is what keeps this from being a comment
+// quietly deleted from somebody's DDL.
+func TestVisitCreateSchema_SpannerKeepsTheSchemaAndSaysWhatItLeftOut(t *testing.T) {
+	c := qt.New(t)
+	r := postgres.NewWithCapabilities(capability.SpannerPostgres(), platform.Spanner)
+	r.Reset()
+
+	node := &ast.CreateSchemaNode{Name: "app", Comment: "the schema"}
+	c.Assert(node.Accept(r), qt.IsNil)
+
+	out := r.Output()
+	c.Assert(out, qt.Contains, `CREATE SCHEMA "app";`)
+	c.Assert(out, qt.Not(qt.Contains), "COMMENT ON SCHEMA")
+	c.Assert(out, qt.Contains, "schema comment app is not supported by this target; skipped.")
+}
+
+// TestVisitCreateSchema_PostgresStillCommentsTheSchema is the control.
+//
+// Every assertion above is satisfied by a renderer that stopped emitting the
+// statement for everyone, which would silently drop a comment three of the four
+// family members accept and read back -- measured on PostgreSQL 17,
+// CockroachDB v24.1.33 and YugabyteDB 2024.1.3.0.
+func TestVisitCreateSchema_PostgresStillCommentsTheSchema(t *testing.T) {
+	c := qt.New(t)
+	r := postgres.NewWithCapabilities(capability.Postgres17(), platform.Postgres)
+	r.Reset()
+
+	node := &ast.CreateSchemaNode{Name: "app", Comment: "the schema"}
+	c.Assert(node.Accept(r), qt.IsNil)
+
+	out := r.Output()
+	c.Assert(out, qt.Contains, `CREATE SCHEMA "app";`)
+	c.Assert(out, qt.Contains, `COMMENT ON SCHEMA "app" IS 'the schema';`)
+	c.Assert(out, qt.Not(qt.Contains), "skipped")
+}
