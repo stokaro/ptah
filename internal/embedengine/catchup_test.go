@@ -60,10 +60,16 @@ type fakeRereader struct {
 	versions map[string]string
 	// asked records the keys each call was given.
 	asked [][]string
+	// unreadable makes the reread fail, which is the source's own class of
+	// failure rather than the provider's.
+	unreadable bool
 }
 
 // Current returns the rows still present.
 func (f *fakeRereader) Current(_ context.Context, keys [][]string) ([]embedgen.Row, []string, error) {
+	if f.unreadable {
+		return nil, nil, errors.New("the source was unreadable")
+	}
 	var rows []embedgen.Row
 	var versions []string
 	for _, key := range keys {
@@ -534,4 +540,73 @@ func TestCatchUp_AResumedRunStartsFromItsOwnWatermark(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(changes.asked[0], qt.Equals, embedcatchup.Cursor{Transaction: 300})
 	c.Assert(run.CatchUpWatermark, qt.Equals, "400")
+}
+
+// TestCatchUp_AProviderFailureIsRecordedOnTheRun covers stokaro/ptah#2649
+// finding 9.
+//
+// The backfill's commitBatch records a provider failure; catch-up returned it
+// and recorded nothing. So a catch-up that died against an unreachable provider
+// left `status` at running with no failure class, no detail and no `failed`
+// event -- and `status` is the verb an operator asks when a run stops moving.
+//
+// The event is asserted as well as the row, because the row is what `status`
+// prints and the event is what an audit reads, and the two are written by
+// different calls.
+func TestCatchUp_AProviderFailureIsRecordedOnTheRun(t *testing.T) {
+	c := qt.New(t)
+	h := newHarness(c, defaultBounds())
+	h.provider.failOn = 1
+
+	changes := &fakeChanges{
+		pages:    [][]embedcatchup.Event{{changed(101, 1, "1", embedcatchup.OperationUpdate)}},
+		horizons: []uint64{102},
+	}
+
+	run, _, err := caughtUp(c, h, changes, livingRows("1"))
+
+	c.Assert(err, qt.ErrorMatches, `provider: the provider returned 503`)
+	c.Assert(run.FailureClass, qt.Equals, "provider")
+	c.Assert(run.FailureDetail, qt.Equals, "the provider returned 503")
+	c.Assert(run.Status, qt.Equals, embedrun.StatusFailed)
+	c.Assert(failedEvents(c, h, "run-1"), qt.Equals, 1)
+}
+
+// TestCatchUp_AnUnreadableSourceFailsAsTheSource is the other class, and it is
+// what keeps the class from being a constant.
+//
+// A reread that cannot read and a provider that will not answer send an
+// operator to different systems. A fix that recorded one class for both would
+// satisfy the test above and report a provider outage as a database problem.
+func TestCatchUp_AnUnreadableSourceFailsAsTheSource(t *testing.T) {
+	c := qt.New(t)
+	h := newHarness(c, defaultBounds())
+
+	source := livingRows("1")
+	source.unreadable = true
+	changes := &fakeChanges{
+		pages:    [][]embedcatchup.Event{{changed(101, 1, "1", embedcatchup.OperationUpdate)}},
+		horizons: []uint64{102},
+	}
+
+	run, _, err := caughtUp(c, h, changes, source)
+
+	c.Assert(err, qt.ErrorMatches, `source: reread 1 changed rows: the source was unreadable`)
+	c.Assert(run.FailureClass, qt.Equals, "source")
+	c.Assert(run.Status, qt.Equals, embedrun.StatusFailed)
+	c.Assert(failedEvents(c, h, "run-1"), qt.Equals, 1)
+}
+
+// failedEvents counts the run's failure events.
+func failedEvents(c *qt.C, h *harness, runID string) int {
+	c.Helper()
+	events, err := h.store.Events(context.Background(), runID)
+	c.Assert(err, qt.IsNil)
+	count := 0
+	for _, event := range events {
+		if event.Kind == embedrun.EventFailed {
+			count++
+		}
+	}
+	return count
 }

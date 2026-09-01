@@ -96,7 +96,13 @@ func (e *Engine) applyChanges(
 	collapsed := embedcatchup.Collapse(events)
 	writes, outcome, err := e.resolveChanges(ctx, source, collapsed)
 	if err != nil {
-		return run, err
+		// Recorded on the run, the way the backfill's commitBatch records its
+		// own. Returning the error alone left `status` at running with no
+		// failure class, no detail and no `failed` event -- so a catch-up that
+		// died against an unreachable provider reported a run that was still
+		// working, forever, and `status` was the verb an operator would ask
+		// (stokaro/ptah#2649 finding 9).
+		return e.fail(ctx, run, token, classOf(err), err)
 	}
 	outcome.CatchUpWatermark = next.String()
 	return e.commitProgress(ctx, run, token, writes, outcome)
@@ -108,6 +114,12 @@ func (e *Engine) applyChanges(
 // tombstoned. The event's own version is not used to decide what to write: it
 // says when the row changed, and the row may have changed again since -- which
 // is the ordinary case during a catch-up over a live source.
+// The failure class travels WITH the error, because it is a property of the
+// failure rather than of the call: the two ways this can fail send an operator
+// to different places -- a reread that could not read the source, and a
+// provider that would not answer -- and the caller cannot tell them apart from
+// the message. Guessing one class for both is how a provider outage gets
+// reported as a database problem.
 func (e *Engine) resolveChanges(
 	ctx context.Context, source Rereader, collapsed []embedcatchup.Event,
 ) ([]embedrun.TargetWrite, embedrun.BatchOutcome, error) {
@@ -117,12 +129,13 @@ func (e *Engine) resolveChanges(
 	}
 	rows, versions, err := source.Current(ctx, keys)
 	if err != nil {
-		return nil, embedrun.BatchOutcome{}, fmt.Errorf("reread %d changed rows: %w", len(keys), err)
+		return nil, embedrun.BatchOutcome{}, classified{"source",
+			fmt.Errorf("reread %d changed rows: %w", len(keys), err)}
 	}
 
 	writes, outcome, err := e.embedRereadRows(ctx, rows, versions)
 	if err != nil {
-		return nil, embedrun.BatchOutcome{}, err
+		return nil, embedrun.BatchOutcome{}, classified{"provider", err}
 	}
 	tombstones := tombstonesFor(collapsed, rows, e.Spec.Identity().Digest)
 	writes = append(writes, tombstones...)
@@ -252,4 +265,32 @@ func resumeAfterPage(events []embedcatchup.Event, horizon uint64, limit int) emb
 // keyIdentity renders a key so two of them can be compared.
 func keyIdentity(key []string) string {
 	return embedcatchup.KeyIdentity(key)
+}
+
+// classified is an error that knows which failure class it belongs to.
+//
+// The class reaches [Engine.fail] this way rather than as a second return
+// value, because revive holds a function to three results and because the
+// class is a fact about the failure rather than about the call that noticed
+// it: an error raised two frames down keeps its class on the way up.
+type classified struct {
+	class string
+	err   error
+}
+
+// Error is the underlying message. The class is added by [Engine.fail], so an
+// error that never reaches it reads exactly as it did before.
+func (c classified) Error() string { return c.err.Error() }
+
+// Unwrap keeps errors.Is and errors.As working through the classification.
+func (c classified) Unwrap() error { return c.err }
+
+// classOf reports the class an error was raised under, and the empty string for
+// one raised with none -- which [embedrun.Run.Fail] treats as unclassified
+// rather than as a class named "".
+func classOf(err error) string {
+	if carried, found := errors.AsType[classified](err); found {
+		return carried.class
+	}
+	return ""
 }
