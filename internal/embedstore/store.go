@@ -26,6 +26,22 @@ type Generation struct {
 	Identity string
 	// SpecDigest is the specification it came from.
 	SpecDigest string
+	// SpecDocument is that specification's bytes.
+	//
+	// Recorded because a PREVIOUS generation has to be measurable, and nothing
+	// else in this row can reconstruct it. Rollback asks whether the generation
+	// the pointer names as its way back is still fresh, and freshness is each
+	// row's stored input hash against a hash recomputed from the source -- which
+	// needs that generation's own source fields, preprocessing and identity.
+	//
+	// Without it, rollback measured the retired generation against WHICHEVER
+	// specification the operator passed. The documented command passes the
+	// current one, so every row's expected hash was computed under an identity
+	// belonging to no generation at all, every row mismatched, and the rollback
+	// the guide describes was refused with a false count -- while `verify` on
+	// the same generation at the same instant reported every layer passing
+	// (stokaro/ptah#2630).
+	SpecDocument string
 	// Name is a display name, outside the identity.
 	Name string
 	// Reproducibility and ReproducibilityReason are what the identity could

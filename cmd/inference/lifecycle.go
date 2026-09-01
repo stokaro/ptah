@@ -90,8 +90,9 @@ func runPrepare(
 		return err
 	}
 	if _, err := opened.store.RegisterGeneration(ctx, embedstore.Generation{
-		Identity: spec.Identity().Digest, SpecDigest: spec.Identity().Digest,
-		Name: spec.Name, Reproducibility: string(spec.Identity().Reproducibility),
+		Identity: spec.Identity().Digest, SpecDigest: opened.loaded.Digest,
+		SpecDocument: string(opened.loaded.Document),
+		Name:         spec.Name, Reproducibility: string(spec.Identity().Reproducibility),
 		ReproducibilityReason: spec.Identity().ReproducibilityReason,
 		Dimension:             spec.Model.ReportedDimension,
 		TargetSchema:          spec.Target.Schema,
@@ -608,7 +609,7 @@ func runRollback(
 	if err != nil {
 		return err
 	}
-	state, err := embedpg.RollbackState(ctx, opened.db, opened.loaded.Spec, toGeneration, pointer)
+	state, err := embedpg.RollbackState(ctx, opened.db, toGeneration, pointer)
 	if err != nil {
 		return err
 	}
