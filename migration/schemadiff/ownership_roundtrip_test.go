@@ -98,6 +98,32 @@ func ownershipShapes() []ownershipShape {
 				}}
 			},
 		},
+		{
+			name: "a FOREIGN KEY and an index carrying its name",
+			build: func(database *catalog.Database) {
+				database.Tables[0].Columns = append(database.Tables[0].Columns, catalog.Column{
+					Name: "p_id", DataType: "bigint", ColumnType: "bigint", IsNullable: "YES",
+				})
+				database.Tables = append(database.Tables, catalog.Table{
+					Name: "p", Type: "TABLE",
+					Columns: []catalog.Column{{
+						Name: "id", DataType: "bigint", ColumnType: "bigint",
+						IsNullable: "NO", IsPrimaryKey: true,
+					}},
+				})
+				foreignTable, foreignColumn := "p", "id"
+				database.Constraints = []catalog.Constraint{{
+					Name: "fk_t_p", TableName: "t", Type: "FOREIGN KEY",
+					ColumnName:   "p_id",
+					ColumnNames:  []string{"p_id"},
+					ForeignTable: &foreignTable, ForeignColumn: &foreignColumn,
+					ForeignColumns: []string{"id"},
+				}}
+				database.Indexes = []catalog.Index{{
+					Name: "fk_t_p", TableName: "t", Columns: []string{"p_id"},
+				}}
+			},
+		},
 	}
 }
 
