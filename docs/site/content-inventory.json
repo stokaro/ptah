@@ -1987,8 +1987,8 @@
         "/inference/guides/resume-and-recover/"
       ],
       "inboundLinks": [],
-      "visibleWords": 557,
-      "sourceBytes": 3905
+      "visibleWords": 588,
+      "sourceBytes": 4121
     },
     {
       "path": "docs/site/src/content/docs/inference/concepts/security-and-data-boundaries.md",
@@ -2584,8 +2584,8 @@
       "disposition": "keep",
       "outboundLinks": [],
       "inboundLinks": [],
-      "visibleWords": 1219,
-      "sourceBytes": 9546
+      "visibleWords": 1337,
+      "sourceBytes": 10222
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/specification.md",

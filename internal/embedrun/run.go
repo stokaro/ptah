@@ -206,8 +206,8 @@ var nextPhases = map[Phase][]Phase{
 	// It costs nothing that matters: a DECLARED index that is missing is
 	// refused by verification itself, which is where the check belongs, and
 	// cut_over is still reachable only from verified.
-	PhaseCaughtUp:   {PhaseIndexed, PhaseVerified},
-	PhaseIndexed:    {PhaseVerified},
+	PhaseCaughtUp: {PhaseIndexed, PhaseVerified},
+	PhaseIndexed:  {PhaseVerified},
 	PhaseVerified: {PhaseCutOver},
 	PhaseCutOver:  {PhaseRetired, PhaseRolledBack},
 	// A rolled-back generation is still a generation, and retiring it is the

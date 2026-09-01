@@ -23,12 +23,13 @@ each is a decision somebody takes separately.
 | Phase | Command | What it does |
 | --- | --- | --- |
 | boundary captured | `prepare` | Creates the target column and its bookkeeping, installs the change-capture mechanism, and records where the source was |
-| backfilling | `backfill` | Embeds the source as it was at that point |
+| backfilling / backfilled | `backfill` | Embeds the source as it was at that point, and records that the walk reached the end |
 | caught up | `catchup` | Embeds what changed since |
 | indexed | `index` | Builds the vector index |
 | verified | `verify` | Runs the deterministic checks |
 | cut over | `cutover` | Makes the new generation the one queries read |
-| rolled back / retired | `rollback`, `retire` | Go back, or destroy |
+| rolled back | `rollback` | Returns queries to an earlier generation. Reversible: cutting over again returns the run to cut over |
+| retired | `retire` | Destroys the generation. Nothing follows it, and the run becomes complete |
 
 `ptah inference status` reports the furthest phase a run reached.
 
