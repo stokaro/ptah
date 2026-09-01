@@ -164,6 +164,33 @@ func TestEvaluateRollback_AGoneGenerationSaysSoAndStops(t *testing.T) {
 	}
 }
 
+// TestEvaluateRollback_TheActiveGenerationIsNotAWayBack keeps a pointer from
+// becoming its own predecessor.
+//
+// Separate from the absent and retired cases above, because what is wrong is
+// different: that generation is fine, and the request is not. The pointer's
+// previous_generation IS the way back, so overwriting it with the active
+// generation leaves a row saying "to go back, go here" pointing at where the
+// reader already is -- and the real way back is gone (stokaro/ptah#2647).
+//
+// One blocker exactly, for the same reason the early returns above stop: a
+// report listing the maintenance and index of a generation nobody is leaving
+// buries the sentence that says why.
+func TestEvaluateRollback_TheActiveGenerationIsNotAWayBack(t *testing.T) {
+	c := qt.New(t)
+	policy, _, observed := rollbackReady()
+	state := embedcutover.RollbackState{
+		Present: true, CutOverAt: cutOverAt, AlreadyActive: true,
+	}
+
+	eligibility := embedcutover.EvaluateRollback(policy, state, observed)
+
+	c.Assert(eligibility.Eligible, qt.IsFalse)
+	c.Assert(eligibility.Blockers, qt.DeepEquals, []string{
+		"queries already read that generation, so there is nowhere to go back to",
+	})
+}
+
 // TestEvaluateRollback_TheZeroPolicyToleratesNothing pins the default.
 //
 // A rollback target nobody declared a policy for is one nobody thought about,

@@ -50,6 +50,14 @@ type RollbackState struct {
 	CutOverAt time.Time
 	// Retired reports whether the generation was destroyed, which is terminal.
 	Retired bool
+	// AlreadyActive reports that the generation named is the one queries
+	// already read.
+	//
+	// A rollback to the active generation moved the pointer onto itself and
+	// recorded itself as its own predecessor, which destroys the way back that
+	// row existed to hold -- and it printed "queries now read X, which replaced
+	// X" while doing it (stokaro/ptah#2647).
+	AlreadyActive bool
 }
 
 // RollbackEligibility is whether going back is possible, and why not.
@@ -81,12 +89,14 @@ func EvaluateRollback(
 	}
 
 	switch {
+	case state.AlreadyActive:
+		decision.refusef("queries already read that generation, so there is nowhere to go back to")
 	case state.Retired:
 		decision.refusef("the generation was retired, which is not something you come back from")
 	case !state.Present:
 		decision.refusef("the generation is no longer present")
 	}
-	if !state.Present || state.Retired {
+	if state.AlreadyActive || !state.Present || state.Retired {
 		eligibility.Blockers = decision.settle().Blockers
 		return eligibility
 	}
