@@ -483,7 +483,7 @@ func splitVerificationRow(
 		return embedverify.SourceRow{}, embedverify.TargetRow{},
 			fmt.Errorf("canonicalize %v for verification: %w", key, err)
 	}
-	identity := strings.Join(key, "\x1f")
+	identity := strings.Join(key, embedverify.KeyFieldSeparator)
 	state := values[offset+3].String
 	return embedverify.SourceRow{
 			Key: identity, Version: version,

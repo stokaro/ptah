@@ -817,3 +817,83 @@ func TestVerify_ARowAnotherGenerationWroteStillSaysSo(t *testing.T) {
 	c.Assert(summaries(report), qt.Not(qt.Contains),
 		"2 in-scope source rows have no vector in this generation")
 }
+
+// TestVerify_ATombstoneCarryingAVectorIsOutOfScope closes the hole the
+// out-of-scope check left open.
+//
+// A tombstone is Ptah's own record that a row left scope, so an out-of-scope
+// tombstone is the normal outcome and is exempt. One that still holds a vector
+// is not that shape at all: Ptah assigns the state column and the vector in one
+// UPDATE, so it was written by something else -- and it is searchable, which is
+// the whole reason the check exists (stokaro/ptah#2649 finding 2).
+func TestVerify_ATombstoneCarryingAVectorIsOutOfScope(t *testing.T) {
+	c := qt.New(t)
+	expectation, structure, source, target, state := healthy()
+	// A row the source no longer has, tombstoned, and still holding a vector.
+	target = append(target, embedverify.TargetRow{
+		Key: "4", Generation: generation, Tombstone: true, Dimension: 3,
+	})
+
+	report := verify(c, expectation, structure, source, target, state)
+
+	c.Assert(summaries(report), qt.Contains,
+		"1 target rows are outside the generation's source scope")
+}
+
+// TestVerify_AnOrdinaryTombstoneIsStillExempt is the control.
+//
+// Reporting every out-of-scope tombstone would satisfy the test above and turn
+// the documented way a row leaves scope into a blocking finding on every
+// catch-up that processed a deletion.
+func TestVerify_AnOrdinaryTombstoneIsStillExempt(t *testing.T) {
+	c := qt.New(t)
+	expectation, structure, source, target, state := healthy()
+	// The same row, tombstoned the way catch-up writes one: no vector.
+	target = append(target, embedverify.TargetRow{
+		Key: "4", Generation: generation, Tombstone: true,
+	})
+
+	report := verify(c, expectation, structure, source, target, state)
+
+	c.Assert(report.Blocking(), qt.HasLen, 0, qt.Commentf("%v", summaries(report)))
+}
+
+// TestRenderKey_ShowsACompositeKeyAsATuple is what an operator reads.
+//
+// The components are joined with a control character so that no column value
+// can forge a boundary, and a terminal swallows it: `(acme, 2)` and
+// `(globex, 1)` printed as `acme2` and `globex1`, which is ambiguous as well as
+// unreadable -- tenant `a` with id `11` and tenant `a1` with id `1` both render
+// as `a11`.
+func TestRenderKey_ShowsACompositeKeyAsATuple(t *testing.T) {
+	tests := []struct {
+		name string
+		key  string
+		want string
+	}{
+		{name: "single component", key: "4", want: "4"},
+		{
+			name: "two components",
+			key:  "acme" + embedverify.KeyFieldSeparator + "2",
+			want: "(acme, 2)",
+		},
+		{
+			name: "components a comma would have folded",
+			key:  "a" + embedverify.KeyFieldSeparator + "11",
+			want: "(a, 11)",
+		},
+		{
+			name: "the pair that folds onto it",
+			key:  "a1" + embedverify.KeyFieldSeparator + "1",
+			want: "(a1, 1)",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(embedverify.RenderKey(test.key), qt.Equals, test.want)
+		})
+	}
+}
