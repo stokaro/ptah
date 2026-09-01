@@ -217,7 +217,7 @@ func (e *Engine) backfillLoop(
 		if err != nil {
 			return run, err
 		}
-		run, err = e.recordWalkEnd(ctx, run, page.Done)
+		run, err = e.recordWalkEnd(ctx, run, page)
 		if err != nil {
 			return run, err
 		}
@@ -244,12 +244,12 @@ func (e *Engine) backfillLoop(
 // for a walk that had finished, and the next backfill sets it: an operator is
 // told to do something harmless rather than told nothing.
 func (e *Engine) recordWalkEnd(
-	ctx context.Context, run embedrun.Run, done bool,
+	ctx context.Context, run embedrun.Run, page Page,
 ) (embedrun.Run, error) {
-	if run.SnapshotDone == done {
+	if run.SnapshotDone == page.Done {
 		return run, nil
 	}
-	run.SnapshotDone = done
+	run.SnapshotDone = page.Done
 	run.UpdatedAt = e.now()
 	if err := e.Store.SaveRun(ctx, run); err != nil {
 		return run, fmt.Errorf("record the end of the walk: %w", err)
