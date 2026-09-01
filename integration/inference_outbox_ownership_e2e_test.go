@@ -137,6 +137,51 @@ func TestInferenceRetirementAnswersForItsOwnSchemaE2E(t *testing.T) {
 	c.Assert(schemaTriggerCount(c, ctx, db, "beta"), qt.Equals, 2)
 }
 
+// TestInferenceRetirementRemovesTheOutboxTheGenerationNamesE2E separates which
+// outbox is removed from how many readers were counted.
+//
+// The outbox to uninstall was constructed from the specification handed to the
+// invocation, so a retirement run with a file naming another source would have
+// taken another table's triggers off -- and every fixture here passes a file
+// whose source matches, which is why nothing could see it. `--generation` names
+// the generation explicitly and the registry records the document it was built
+// from, so that record is what decides, the way rollback's already does
+// (stokaro/ptah#2630).
+func TestInferenceRetirementRemovesTheOutboxTheGenerationNamesE2E(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.TimescaleDB)
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	db, dbName := freshOutboxOwnershipDatabase(c, ctx, dbURL, "ptah_outbox_named")
+	endpoint := httptest.NewServer(http.HandlerFunc(embeddingsHandler(c)))
+	defer endpoint.Close()
+
+	_, err := db.ExecContext(ctx, `CREATE EXTENSION IF NOT EXISTS vector`)
+	c.Assert(err, qt.IsNil)
+	seedSchemaScopedArticles(c, ctx, db, "alpha")
+	seedSchemaScopedArticles(c, ctx, db, "beta")
+
+	alphaSpec := writeSchemaScopedSpec(c, endpoint.URL, "alpha")
+	betaSpec := writeSchemaScopedSpec(c, endpoint.URL, "beta")
+	runInference(c, ctx, "prepare", "--spec", alphaSpec, "--db-url", dbName, "--run-id", "alpha")
+	runInference(c, ctx, "prepare", "--spec", betaSpec, "--db-url", dbName, "--run-id", "beta")
+	c.Assert(schemaTriggerCount(c, ctx, db, "alpha"), qt.Equals, 2)
+	c.Assert(schemaTriggerCount(c, ctx, db, "beta"), qt.Equals, 2)
+
+	// Alpha's generation, retired while the operator holds beta's file.
+	generation := generationOfRun(c, ctx, db, "alpha")
+	digest := retirementDigestOf(c, ctx, betaSpec, dbName, generation)
+	output := runInference(c, ctx, "retire",
+		"--spec", betaSpec, "--db-url", dbName, "--generation", generation,
+		"--approve", digest, "--approver", "an operator")
+
+	c.Assert(output, qt.Contains, "the outbox is gone")
+	c.Assert(output, qt.Contains, "alpha.articles")
+	c.Assert(schemaTriggerCount(c, ctx, db, "alpha"), qt.Equals, 0)
+	c.Assert(schemaTriggerCount(c, ctx, db, "beta"), qt.Equals, 2)
+}
+
 // TestInferenceRetirementReadsTheModeFromTheGenerationE2E covers the third way
 // the wrong outbox answer was reached.
 //
