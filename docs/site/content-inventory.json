@@ -2848,8 +2848,8 @@
         "/inference/reference/evaluation-corpus/"
       ],
       "inboundLinks": [],
-      "visibleWords": 972,
-      "sourceBytes": 8675
+      "visibleWords": 1085,
+      "sourceBytes": 9323
     },
     {
       "path": "docs/site/src/content/docs/inference/troubleshooting.md",
@@ -3709,8 +3709,8 @@
         "/testing/ci/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 3447,
-      "sourceBytes": 24996
+      "visibleWords": 3476,
+      "sourceBytes": 25176
     },
     {
       "path": "docs/site/src/content/docs/reference/extension-variables.md",
