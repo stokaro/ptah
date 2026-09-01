@@ -19,7 +19,12 @@ func TestParseForeignKeyReference(t *testing.T) {
 		{name: "empty", in: "", want: nil},
 		{name: "default column", in: " users ", want: &schemaprep.ForeignKeyReference{Table: "users", Column: "id"}},
 		{name: "named column", in: " users (account_id) ", want: &schemaprep.ForeignKeyReference{Table: "users", Column: "account_id"}},
+		{name: "missing close", in: "users(id", want: nil},
+		{name: "missing open", in: "usersid)", want: nil},
 		{name: "several opens", in: "users((id)", want: nil},
+		{name: "several closes", in: "users(id))", want: nil},
+		{name: "empty table", in: "(id)", want: nil},
+		{name: "empty column", in: "users()", want: nil},
 		{name: "trailing text", in: "users(id) trailing", want: nil},
 	}
 	for _, test := range tests {

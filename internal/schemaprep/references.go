@@ -36,26 +36,30 @@ func (r *ForeignKeyReference) ReferencedColumns() []string {
 // whose referenced column is "id". It returns nil for an empty or malformed
 // parenthesized reference.
 func ParseForeignKeyReference(foreign string) *ForeignKeyReference {
+	foreign = strings.TrimSpace(foreign)
 	if foreign == "" {
 		return nil
 	}
-	if strings.Contains(foreign, "(") && strings.Contains(foreign, ")") {
-		parts := strings.Split(foreign, "(")
-		if len(parts) != 2 {
+
+	if strings.ContainsAny(foreign, "()") {
+		open := strings.IndexByte(foreign, '(')
+		close := strings.LastIndexByte(foreign, ')')
+		if open <= 0 || close != len(foreign)-1 ||
+			strings.Count(foreign, "(") != 1 || strings.Count(foreign, ")") != 1 {
 			return nil
 		}
-		table := strings.TrimSpace(parts[0])
-		columnPart := strings.TrimSpace(parts[1])
-		if !strings.HasSuffix(columnPart, ")") {
+		table := strings.TrimSpace(foreign[:open])
+		column := strings.TrimSpace(foreign[open+1 : close])
+		if table == "" || column == "" {
 			return nil
 		}
 		return &ForeignKeyReference{
 			Table:  table,
-			Column: strings.TrimSuffix(columnPart, ")"),
+			Column: column,
 		}
 	}
 	return &ForeignKeyReference{
-		Table:  strings.TrimSpace(foreign),
+		Table:  foreign,
 		Column: "id",
 	}
 }

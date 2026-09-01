@@ -78,7 +78,7 @@ func TestWalkDatabase_StopsAtVisitorError(t *testing.T) {
 
 func stopAfterVisits(visited *int, stopAt int, stopErr error) func(ast.Node) error {
 	return func(ast.Node) error {
-		*visited++
+		(*visited)++
 		if *visited == stopAt {
 			return stopErr
 		}

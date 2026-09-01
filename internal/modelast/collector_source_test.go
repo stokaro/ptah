@@ -28,7 +28,7 @@ func collectDatabaseCallers(c *qt.C) []string {
 			return walkErr
 		}
 		if entry.IsDir() {
-			if entry.Name() == ".git" || entry.Name() == "vendor" {
+			if path != root && (strings.HasPrefix(entry.Name(), ".") || entry.Name() == "vendor") {
 				return filepath.SkipDir
 			}
 			return nil
