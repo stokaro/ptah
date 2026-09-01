@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -102,10 +103,73 @@ func publishVerification(
 		return err
 	}
 	defer opened.close()
+	return publishVerificationFor(ctx, out, options, opened, report, evidence, time.Now().UTC())
+}
+
+// publishVerificationFor is publishVerification for a caller that already holds
+// the session, and that knows when the measurement it is publishing was taken.
+//
+// `cutover` is that caller. It re-verifies before it moves the pointer and rests
+// its decision on THAT report, which is a different measurement from the one
+// `verify` published whenever the source moved between the two: measured in
+// stokaro/ptah#2643, the only published report for a generation said 3 source
+// rows and 3 target rows while the cutover's own re-verification saw 4 and 4,
+// and the counts, verdict and findings it actually rested on were recorded
+// nowhere (stokaro/ptah#2656).
+//
+// It publishes whenever a destination is named, rather than only when the
+// measurement differs from the last published one, and that is a decision
+// rather than the easier branch:
+//
+//   - the store records a verification's TIME, not its digest, so "differs from
+//     what verify published" is not knowable here without new bookkeeping --
+//     and bookkeeping that decides whether evidence exists is a worse thing to
+//     get wrong than a duplicate record;
+//   - the operator named a destination. Withholding a record they asked for
+//     because we judged it redundant is the silent omission this codebase
+//     refuses everywhere else;
+//   - `verify` already settled the same question the same way: it publishes a
+//     failing report too, because "a registry holding only the passes is a
+//     record of nothing".
+//
+// The cost is real and bounded: when the two measurements are identical the
+// registry holds two records that differ only in `measured_at`. They are the
+// same measurement -- MeasurementDigest excludes the timestamp -- so the cutover
+// record's citation resolves against either, which is exactly what
+// stokaro/ptah#2655 made well-defined.
+func publishVerificationFor(
+	ctx context.Context, out io.Writer, options commonOptions, opened *session,
+	report embedverify.Report, evidence evidenceOptions, measuredAt time.Time,
+) error {
+	if !evidence.destinationNamed() {
+		return nil
+	}
 	record, buildErr := embedrelease.NewVerificationRecord(
 		embedrelease.VerificationOf(
-			opened.loaded.Spec.Identity().Digest, report, nil, time.Now().UTC()))
-	return publishRecord(ctx, out, options, evidence, record, buildErr, swallowed)
+			opened.loaded.Spec.Identity().Digest, report, nil, measuredAt))
+	return publishRecord(ctx, out, options, beside(evidence), record, buildErr, swallowed)
+}
+
+// beside moves a record's FILE destination off the one the caller's other record
+// will use, and leaves the registry destinations alone.
+//
+// `--evidence-file` overwrites, and until this change no verb wrote two records
+// in one run, so nothing had to answer the question. A cutover writing its
+// verification and then its cutover record to one path would have left only the
+// second, and the existing evidence test -- which asserts the cutover record --
+// would have passed against exactly that loss.
+//
+// A registry holds both without help: two pushes, two artifacts, and the cutover
+// record's citation picks out the one it rested on. Only the single file needs
+// somewhere else to go, and it says on standard output where that was, so the
+// derived name is discoverable rather than a convention to know.
+func beside(evidence evidenceOptions) evidenceOptions {
+	if evidence.writeTo == "" {
+		return evidence
+	}
+	extension := filepath.Ext(evidence.writeTo)
+	evidence.writeTo = strings.TrimSuffix(evidence.writeTo, extension) + ".verification" + extension
+	return evidence
 }
 
 // recordVerification writes the pass onto the generation.
@@ -266,6 +330,19 @@ func runCutover(
 		// recorded sends the reader looking for a cutover that did not happen.
 		return fmt.Errorf(
 			"queries now read generation %s and the run could not record it: %w", plan.Generation, err)
+	}
+	// The measurement this cutover rested on, published before the record that
+	// cites it, so a reader following the citation finds the report rather than
+	// a digest of something the registry does not hold (stokaro/ptah#2656).
+	//
+	// After the pointer moved rather than before the decision: a REFUSED
+	// cutover rested on nothing and publishes nothing, which is what the
+	// refusal path above already does. A publication failure is swallowed here
+	// for the reason publishCutover swallows one -- the pointer has moved, and
+	// failing the verb now would report a cutover that did not happen.
+	if err := publishVerificationFor(
+		ctx, out, options, opened, report, evidence, now); err != nil {
+		return err
 	}
 	// The report is not passed: the record cites the value the plan already
 	// carries, so there is nothing left here to recompute it from.
