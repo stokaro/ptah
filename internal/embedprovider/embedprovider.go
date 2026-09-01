@@ -42,6 +42,14 @@ type Vector []float32
 type Usage struct {
 	PromptTokens int
 	TotalTokens  int
+	// Reported says the answer carried a usage object at all.
+	//
+	// Without it a provider that reports nothing is indistinguishable from one
+	// reporting zero, because both leave the two counts at zero -- and the
+	// counts are what an operator compares against an invoice. A run that
+	// embedded rows and shows zero tokens has to be able to say which of the
+	// two happened (stokaro/ptah#2648).
+	Reported bool
 }
 
 // Result is one provider answer: the vectors, in the order of the inputs, and

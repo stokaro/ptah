@@ -752,6 +752,9 @@
                 "provider_total_tokens": {
                   "type": "integer"
                 },
+                "provider_usage_batches": {
+                  "type": "integer"
+                },
                 "retry_count": {
                   "type": "integer"
                 },
@@ -776,7 +779,8 @@
                 "batches_committed",
                 "retry_count",
                 "provider_prompt_tokens",
-                "provider_total_tokens"
+                "provider_total_tokens",
+                "provider_usage_batches"
               ],
               "type": "object"
             },

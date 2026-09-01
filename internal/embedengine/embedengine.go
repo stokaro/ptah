@@ -412,6 +412,7 @@ func (e *Engine) embed(
 		RowsSkipped:      int64(len(batch.Rows) - embedded),
 		PromptTokens:     int64(result.Usage.PromptTokens),
 		TotalTokens:      int64(result.Usage.TotalTokens),
+		UsageReported:    result.Usage.Reported,
 		TargetCommitted:  true,
 		DeletesCommitted: true,
 	}

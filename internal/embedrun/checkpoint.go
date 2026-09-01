@@ -25,6 +25,11 @@ type BatchOutcome struct {
 	// PromptTokens and TotalTokens are what the provider reported for it.
 	PromptTokens int64
 	TotalTokens  int64
+	// UsageReported says the answer carried a usage object. A batch that
+	// reported nothing contributes no counts AND no claim that its counts are
+	// the provider's, which is the difference between a zero measured and a
+	// zero nobody asked for (stokaro/ptah#2648).
+	UsageReported bool
 	// CatchUpWatermark is how far catch-up has processed, set during catch-up
 	// and empty during the backfill.
 	CatchUpWatermark string
@@ -75,6 +80,9 @@ func (r *Run) Checkpoint(token int64, outcome BatchOutcome) error {
 	r.Progress.RowsDeleted += outcome.RowsDeleted
 	r.Progress.ProviderPromptTokens += outcome.PromptTokens
 	r.Progress.ProviderTotalTokens += outcome.TotalTokens
+	if outcome.UsageReported {
+		r.Progress.ProviderUsageBatches++
+	}
 	r.Progress.BatchesCommitted++
 	// The retry count is per-batch: a batch that finally committed says nothing
 	// about the next one, and carrying its retries forward would make a run

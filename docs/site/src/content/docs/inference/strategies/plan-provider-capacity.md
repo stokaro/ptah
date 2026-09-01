@@ -74,8 +74,12 @@ The token counts the provider reports are recorded on the run and shown by
 That is what the provider charged for, and it is the number to compare against
 your invoice. The batches line above it in the report counts provider round
 trips, not tokens. Ptah prices nothing and counts no tokens of its own — it has
-no idea what your contract is, and a zero on that line is the provider reporting
-zero rather than a run that embedded nothing.
+no idea what your contract is.
+
+Not every endpoint reports usage. Where none of a run's answers carried one,
+that line reads `the provider reported no token usage` instead of two zeros,
+because a provider that charged nothing and one that said nothing are not the
+same fact and the counts alone cannot tell them apart.
 
 Two things drive the bill more than anything else:
 

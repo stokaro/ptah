@@ -2287,7 +2287,7 @@
         "/inference/troubleshooting/"
       ],
       "visibleWords": 491,
-      "sourceBytes": 4568
+      "sourceBytes": 4638
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/rollback-and-retire.md",
@@ -2584,8 +2584,8 @@
       "disposition": "keep",
       "outboundLinks": [],
       "inboundLinks": [],
-      "visibleWords": 1155,
-      "sourceBytes": 9112
+      "visibleWords": 1219,
+      "sourceBytes": 9546
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/specification.md",
@@ -2775,8 +2775,8 @@
         "/inference/guides/resume-and-recover/",
         "/inference/troubleshooting/"
       ],
-      "visibleWords": 548,
-      "sourceBytes": 4420
+      "visibleWords": 616,
+      "sourceBytes": 4804
     },
     {
       "path": "docs/site/src/content/docs/inference/strategies/plan-vector-indexes.md",

@@ -174,6 +174,11 @@ type Progress struct {
 	// reported, for an operator's cost view.
 	ProviderPromptTokens int64
 	ProviderTotalTokens  int64
+	// ProviderUsageBatches counts the batches whose answer carried a usage
+	// object. Zero against a run that committed batches means the provider
+	// reported no usage at all, which the two counts above cannot say on their
+	// own -- they are zero for that and for a provider reporting zero alike.
+	ProviderUsageBatches int64
 	// RetryCount is how many times a batch has been retried since the last
 	// checkpoint, which is what tells a stuck run from a slow one.
 	RetryCount int

@@ -138,6 +138,7 @@ func RunFields() []schemamodel.Field {
 		bigint(RunTable, "batches_committed", false, "checkpoints behind the cursor"),
 		bigint(RunTable, "provider_prompt_tokens", false, "what the provider reported"),
 		bigint(RunTable, "provider_total_tokens", false, "and in total"),
+		bigint(RunTable, "provider_usage_batches", false, "batches whose answer carried usage"),
 		integer(RunTable, "retry_count", false, "retries since the last checkpoint"),
 		text(RunTable, "verification_ref", true, "the verification report"),
 		text(RunTable, "cutover_plan_ref", true, "the cutover plan"),

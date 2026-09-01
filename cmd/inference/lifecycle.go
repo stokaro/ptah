@@ -489,17 +489,32 @@ func printStatus(out io.Writer, status embedreport.Status) error {
 		// the batches line above -- so a hurried reader took a count of
 		// provider round trips for a count of tokens (stokaro/ptah#2648).
 		//
-		// "as the provider reported them" is load-bearing: Ptah counts no
-		// tokens of its own, so a zero here means the provider reported zero
-		// rather than that nothing was embedded.
-		bullet(fmt.Sprintf("%d prompt tokens, %d total, as the provider reported them",
-			status.Progress.ProviderPromptTokens, status.Progress.ProviderTotalTokens)),
+		// Ptah counts no tokens of its own, so the line says whose numbers
+		// these are -- and where the provider gave none, it says THAT instead
+		// of printing two zeros under the same sentence. A missing `usage`
+		// object and one carrying zeros both leave the counts at zero, and an
+		// operator reading a bill needs to know which happened.
+		bullet(tokenText(status.Progress)),
 		bullet("snapshot boundary: " + status.SnapshotWatermark),
 		bullet("catch-up watermark: " + status.CatchUpWatermark),
 		bullet(fmt.Sprintf("lease: %s, fencing token %d",
 			leaseText(status), status.FencingToken)),
 	}
 	return writeLines(out, append(lines, stoppedLines(status)...)...)
+}
+
+// tokenText is the token line, or the reason there is none.
+//
+// The batch count is what separates the two answers: a run that committed
+// batches and carries no usage-bearing one was told nothing by its provider.
+// A run that has committed nothing yet has no answer either way, and says so
+// the same way -- there is nothing to report until something is asked.
+func tokenText(progress embedreport.Progress) string {
+	if progress.ProviderUsageBatches == 0 {
+		return "the provider reported no token usage"
+	}
+	return fmt.Sprintf("%d prompt tokens, %d total, as the provider reported them",
+		progress.ProviderPromptTokens, progress.ProviderTotalTokens)
 }
 
 // stoppedLines says why a run is not running, if it is not.

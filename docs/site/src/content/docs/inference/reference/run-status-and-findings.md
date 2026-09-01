@@ -35,16 +35,17 @@ run 2026-08-articles: caught_up, running
 | `generation` | The identity this run is building |
 | `scanned / embedded / skipped / deleted` | Rows read, rows given a vector, rows deliberately skipped, rows tombstoned |
 | `batches committed` | How many provider round trips landed |
-| `prompt tokens` | What the provider said it charged for, which is the number to compare against an invoice. Ptah counts none of its own, so a zero here is the provider reporting zero |
+| `prompt tokens` | What the provider said it charged for, which is the number to compare against an invoice. Ptah counts none of its own |
+| `the provider reported no token usage` | Stands in place of the line above when no answer carried a usage object. A provider that charged zero and one that said nothing both leave the counts at zero, and this is which |
 | `snapshot boundary` | The point the backfill embeds the source as of |
 | `catch-up watermark` | How far catch-up has read past it |
+| `lease` | Who holds the run, and which token may still commit |
 
 A catch-up watermark is usually a transaction identity, as above: every
 transaction below it is processed in full. A run stopped partway through a
 transaction — a page that filled before that transaction ended — records the
 sequence it reached as well, and reads `9017:412`. Both are ordinary; the second
 says the next `catchup` resumes inside transaction 9017 rather than after it.
-| `lease` | Who holds the run, and which token may still commit |
 
 ### The phase
 

@@ -424,3 +424,76 @@ func TestOpenAICompatible_WithoutRawAnswersTheSameAnswerIsRefused(t *testing.T) 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "vector 0 is empty")
 }
+
+// TestOpenAICompatible_AnAnswerWithNoUsageSaysItReportedNone covers the review
+// finding on stokaro/ptah#2707.
+//
+// `json.Unmarshal` leaves a value struct at zero whether the field was absent
+// or carried zeros, so a provider that reports no usage at all was
+// indistinguishable from one reporting nothing spent -- and the counts are what
+// an operator compares against an invoice. Decoding into a pointer is what
+// separates them.
+func TestOpenAICompatible_AnAnswerWithNoUsageSaysItReportedNone(t *testing.T) {
+	c := qt.New(t)
+	provider := endpoint(c, 2, func(w http.ResponseWriter, _ *http.Request) {
+		answer(w, []int{0}, [][]float32{{0.1, 0.2}})
+	})
+
+	result, err := provider.Embed(context.Background(), []string{"one"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Usage.Reported, qt.IsFalse)
+	c.Assert(result.Usage.PromptTokens, qt.Equals, 0)
+	c.Assert(result.Usage.TotalTokens, qt.Equals, 0)
+}
+
+// TestOpenAICompatible_AnAnswerCarryingUsageKeepsIt is the control.
+//
+// Every assertion above is satisfied by a decoder that stopped reading usage
+// altogether, which would leave the Cost section with nothing to report.
+func TestOpenAICompatible_AnAnswerCarryingUsageKeepsIt(t *testing.T) {
+	c := qt.New(t)
+	provider := endpoint(c, 2, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"model": "test-model",
+			"data": []map[string]any{
+				{"index": 0, "embedding": []float32{0.1, 0.2}},
+			},
+			"usage": map[string]any{"prompt_tokens": 7, "total_tokens": 9},
+		})
+	})
+
+	result, err := provider.Embed(context.Background(), []string{"one"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Usage.Reported, qt.IsTrue)
+	c.Assert(result.Usage.PromptTokens, qt.Equals, 7)
+	c.Assert(result.Usage.TotalTokens, qt.Equals, 9)
+}
+
+// TestOpenAICompatible_AnAnswerReportingZeroIsNotAnAnswerReportingNothing is
+// the pair that makes the distinction worth carrying.
+//
+// Both leave the counts at zero. Only the flag separates a provider that
+// charged nothing from one that said nothing, and `status` renders a different
+// sentence for each.
+func TestOpenAICompatible_AnAnswerReportingZeroIsNotAnAnswerReportingNothing(t *testing.T) {
+	c := qt.New(t)
+	provider := endpoint(c, 2, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"model": "test-model",
+			"data": []map[string]any{
+				{"index": 0, "embedding": []float32{0.1, 0.2}},
+			},
+			"usage": map[string]any{"prompt_tokens": 0, "total_tokens": 0},
+		})
+	})
+
+	result, err := provider.Embed(context.Background(), []string{"one"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Usage.Reported, qt.IsTrue)
+	c.Assert(result.Usage.PromptTokens, qt.Equals, 0)
+}

@@ -109,6 +109,10 @@ type Progress struct {
 	// read against.
 	ProviderPromptTokens int64 `json:"provider_prompt_tokens"`
 	ProviderTotalTokens  int64 `json:"provider_total_tokens"`
+	// ProviderUsageBatches counts the batches whose answer carried a usage
+	// object, so a reader can tell a provider that reported zero from one that
+	// reported nothing. Both leave the counts above at zero.
+	ProviderUsageBatches int64 `json:"provider_usage_batches"`
 }
 
 // Status is what a run has done and what it is waiting for.
@@ -404,6 +408,7 @@ func StatusOf(run embedrun.Run, mode embedcatchup.Mode) Status {
 			RetryCount:           int64(run.Progress.RetryCount),
 			ProviderPromptTokens: run.Progress.ProviderPromptTokens,
 			ProviderTotalTokens:  run.Progress.ProviderTotalTokens,
+			ProviderUsageBatches: run.Progress.ProviderUsageBatches,
 		},
 		SnapshotWatermark: BoundaryText(run.SnapshotWatermark, mode),
 		CatchUpWatermark:  BoundaryText(run.CatchUpWatermark, mode),
