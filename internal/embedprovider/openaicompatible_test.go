@@ -284,3 +284,96 @@ func TestOpenAICompatible_RefusesAConfigurationItCannotHonour(t *testing.T) {
 		})
 	}
 }
+
+// TestOpenAICompatible_ARefusedCredentialCarriesTheProvidersReason covers
+// stokaro/ptah#2641 finding 5.
+//
+// 401 and 403 were the one status class whose body was dropped, so an operator
+// was told a number and nothing else -- and a provider answers those for a
+// wrong key, an expired one, a key without the model, the wrong organization
+// and an exhausted quota alike.
+func TestOpenAICompatible_ARefusedCredentialCarriesTheProvidersReason(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+	}{
+		{name: "unauthorized", status: http.StatusUnauthorized},
+		{name: "forbidden", status: http.StatusForbidden},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			provider := endpoint(c, 2, func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(test.status)
+				_, _ = w.Write([]byte(`{"error":{"message":"the key has no access to test-model"}}`))
+			})
+
+			_, err := provider.Embed(context.Background(), []string{"first"})
+
+			c.Assert(err, qt.ErrorIs, embedprovider.ErrUnauthorized)
+			c.Assert(err.Error(), qt.Contains, "the key has no access to test-model")
+		})
+	}
+}
+
+// TestOpenAICompatible_AQuotedBodyNeverCarriesTheCredential is the control, and
+// it is the reason the body is not quoted raw.
+//
+// A provider answering 401 commonly echoes the key it rejected. Quoting the
+// body is therefore exactly where a credential reaches a log, an exit message
+// and a CI transcript -- the disclosure stokaro/ptah#2644 closed at the
+// specification end, read back from the response end.
+//
+// Both status classes are asserted, because a rule that holds for one of them
+// is one somebody has to remember.
+func TestOpenAICompatible_AQuotedBodyNeverCarriesTheCredential(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+	}{
+		{name: "unauthorized", status: http.StatusUnauthorized},
+		{name: "a bad request", status: http.StatusBadRequest},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			// #nosec G101 -- a fixture, and its shape is the point: the test
+			// asserts a key is redacted from a body that echoes it, so a value
+			// that did not look like one would not exercise the redaction.
+			const secret = "sk-a-key-nobody-should-read"
+			c.Setenv("PTAH_2641_TOKEN", secret)
+			provider := credentialledEndpoint(c, func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(test.status)
+				_, _ = w.Write([]byte(`{"error":{"message":"Incorrect API key provided: ` + secret + `"}}`))
+			})
+
+			_, err := provider.Embed(context.Background(), []string{"first"})
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Not(qt.Contains), secret)
+			// And the rest of the sentence survives, so the redaction is not
+			// achieved by dropping the body again.
+			c.Assert(err.Error(), qt.Contains, "Incorrect API key provided: [redacted]")
+		})
+	}
+}
+
+// credentialledEndpoint is [endpoint] with a resolvable credential, which is
+// what makes a redaction assertion possible at all.
+func credentialledEndpoint(c *qt.C, handler http.HandlerFunc) embedprovider.Provider {
+	c.Helper()
+
+	server := httptest.NewServer(handler)
+	c.Cleanup(server.Close)
+
+	provider, err := embedprovider.NewOpenAICompatible(embedprovider.OpenAICompatibleOptions{
+		Name:          "test",
+		BaseURL:       server.URL + "/v1",
+		Model:         "test-model",
+		EndpointClass: "hosted",
+		Dimension:     2,
+		Credential:    embedprovider.CredentialRef{Scheme: "env", Locator: "PTAH_2641_TOKEN"},
+	})
+	c.Assert(err, qt.IsNil)
+	return provider
+}
