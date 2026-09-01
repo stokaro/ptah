@@ -269,11 +269,21 @@ func TestAnInlineSkippingIndexSurvivesARoundTrip(t *testing.T) {
 	c.Assert(first, qt.Contains, "ADD INDEX `idx_b` b TYPE set(100) GRANULARITY 4;")
 }
 
-func TestAnInlineIndexOnAnotherDialectIsStillAConstraint(t *testing.T) {
+// TestAnInlineIndexOnAnotherDialectIsNotASkippingIndex keeps this file's
+// invariant: the ClickHouse reading of `INDEX` is reached by dialect and must
+// not capture MySQL, which spells a table-level index the same way and means
+// something else.
+//
+// The expectation changed with stokaro/ptah#2713. It used to assert that MySQL
+// produced a CONSTRAINT, because that is what the parser did -- a plain KEY or
+// INDEX became an ast.UniqueConstraint, which is a uniqueness guarantee the
+// declaration never made. MySQL now produces an ordinary non-unique index, and
+// the discriminator this test exists for is unchanged and asserted below: a
+// ClickHouse skipping index carries a TYPE and a GRANULARITY, and this one
+// carries neither.
+func TestAnInlineIndexOnAnotherDialectIsNotASkippingIndex(t *testing.T) {
 	c := qt.New(t)
 
-	// MySQL spells a table-level index the same way and means something else.
-	// The ClickHouse reading is reached by dialect, so this must be untouched.
 	statements, err := parser.NewParser(
 		"CREATE TABLE t (a INT NOT NULL, b INT NOT NULL, INDEX idx_b (b)) ENGINE = InnoDB;",
 		parser.WithDialect(platform.MySQL),
@@ -282,9 +292,14 @@ func TestAnInlineIndexOnAnotherDialectIsStillAConstraint(t *testing.T) {
 	table, ok := statements.Statements[0].(*ast.CreateTableNode)
 	c.Assert(ok, qt.IsTrue)
 
-	c.Assert(table.Indexes, qt.HasLen, 0)
-	c.Assert(table.Constraints, qt.HasLen, 1)
-	c.Assert(table.Constraints[0].Name, qt.Equals, "idx_b")
+	c.Assert(table.Constraints, qt.HasLen, 0)
+	c.Assert(table.Indexes, qt.HasLen, 1)
+	c.Assert(table.Indexes[0].Name, qt.Equals, "idx_b")
+	c.Assert(table.Indexes[0].Columns, qt.DeepEquals, []string{"b"})
+	c.Assert(table.Indexes[0].Unique, qt.IsFalse)
+	// The two readings differ here, which is what this test is for.
+	c.Assert(table.Indexes[0].Type, qt.Equals, "")
+	c.Assert(table.Indexes[0].Granularity, qt.Equals, 0)
 }
 
 func parseOneClickHouseTable(c *qt.C, sql string) *ast.CreateTableNode {

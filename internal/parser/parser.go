@@ -2001,18 +2001,18 @@ func (p *Parser) parseTableElement(table *ast.CreateTableNode) error {
 			if p.dialect == platform.ClickHouse {
 				return p.parseInlineSkippingIndex(table)
 			}
-			constraint, err := p.parseTableConstraint()
+			constraint, index, err := p.parseTableConstraint()
 			if err != nil {
 				return err
 			}
-			table.AddConstraint(constraint)
+			addTableConstraintOrIndex(table, constraint, index)
 			return nil
 		case "CONSTRAINT", "PRIMARY", "UNIQUE", "FOREIGN", "CHECK", "EXCLUDE", "SPATIAL", "KEY":
-			constraint, err := p.parseTableConstraint()
+			constraint, index, err := p.parseTableConstraint()
 			if err != nil {
 				return err
 			}
-			table.AddConstraint(constraint)
+			addTableConstraintOrIndex(table, constraint, index)
 			return nil
 		}
 	}
@@ -3358,6 +3358,18 @@ func (p *Parser) handleTableConstraintExclude(constraint *ast.ConstraintNode) er
 	return nil
 }
 
+// handleTableConstraintSpatial reads `SPATIAL INDEX [name] (cols)`.
+//
+// It used to assign ast.UniqueConstraint and the fixed name "SPATIAL_INDEX",
+// which lost the access method, replaced whatever the author called the index,
+// and gave every spatial index in a document the same identity. Worse than
+// losing them: a UNIQUE constraint is a promise the declaration never made, and
+// planning one against a spatial column either fails or adds a uniqueness
+// guarantee nobody asked for (stokaro/ptah#2711).
+//
+// The name is read here rather than left to the caller because `SPATIAL INDEX`
+// puts it in the same position `INDEX` does, and an unnamed one keeps the empty
+// string so the dialect's own naming applies rather than a shared invention.
 func (p *Parser) handleTableConstraintSpatial(constraint *ast.ConstraintNode) error {
 	p.advance()
 	p.skipWhitespace()
@@ -3365,23 +3377,31 @@ func (p *Parser) handleTableConstraintSpatial(constraint *ast.ConstraintNode) er
 	if err := p.expect(lexer.TokenIdentifier, "INDEX"); err != nil {
 		return fmt.Errorf("expected INDEX after SPATIAL: %w", err)
 	}
-	// Treat as a special unique constraint for now
-	constraint.Type = ast.UniqueConstraint
-	constraint.Name = "SPATIAL_INDEX"
-	return nil
-}
-
-func (p *Parser) handleTableConstraintIndex(constraint *ast.ConstraintNode) {
-	p.advance()
 	p.skipWhitespace()
-	// Check for optional constraint name after INDEX/KEY
 	if p.current.Type == lexer.TokenIdentifier && p.current.Value != "(" {
 		constraint.Name = p.current.Value
 		p.advance()
 		p.skipWhitespace()
 	}
-	// Treat as a unique constraint for now
-	constraint.Type = ast.UniqueConstraint
+	return nil
+}
+
+// handleTableConstraintIndex reads MySQL's table-level `KEY`/`INDEX (cols)`.
+//
+// It used to assign ast.UniqueConstraint, which is not a representation
+// difference: a plain KEY is an ordinary non-unique index, and modelling it as
+// a uniqueness guarantee makes Ptah converge to a schema stricter than the DDL
+// it was given, report it in sync, and reject duplicate values the author
+// allowed (stokaro/ptah#2713).
+func (p *Parser) handleTableConstraintIndex(constraint *ast.ConstraintNode) {
+	p.advance()
+	p.skipWhitespace()
+	// Check for optional index name after INDEX/KEY
+	if p.current.Type == lexer.TokenIdentifier && p.current.Value != "(" {
+		constraint.Name = p.current.Value
+		p.advance()
+		p.skipWhitespace()
+	}
 }
 
 func (p *Parser) parseTableColumnList(constraint *ast.ConstraintNode) error {
@@ -3580,23 +3600,48 @@ func (p *Parser) parseExcludeWhereCondition() (string, error) {
 	return strings.TrimSpace(condition.String()), nil
 }
 
-// parseTableConstraint parses table-level constraints.
-func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, error) {
+// addTableConstraintOrIndex routes what parseTableConstraint read. Exactly one
+// of the two is non-nil.
+func addTableConstraintOrIndex(table *ast.CreateTableNode, constraint *ast.ConstraintNode, index *ast.IndexNode) {
+	if index != nil {
+		index.Table = table.Name
+		table.Indexes = append(table.Indexes, index)
+		return
+	}
+	table.AddConstraint(constraint)
+}
+
+// parseTableConstraint parses one table-level element from the column list.
+//
+// It returns EITHER a constraint or an index, never both, because MySQL spells
+// two different things in the same position: `UNIQUE (a)` is a guarantee about
+// the data and `KEY (a)` is an access path. They were previously both returned
+// as ast.UniqueConstraint, so a plain KEY became a uniqueness promise nobody
+// made (stokaro/ptah#2713, stokaro/ptah#2711).
+//
+// The index is built at the end rather than in the keyword handler because the
+// name, the column list and the access method are parsed by the same code for
+// both shapes; only the node they land in differs.
+func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, error) {
 	p.skipWhitespace()
 
 	constraint := &ast.ConstraintNode{}
 
 	// Check for CONSTRAINT name
 	if err := p.handleTableConstraintName(constraint); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Parse constraint type
 	if p.current.Type != lexer.TokenIdentifier {
-		return nil, fmt.Errorf("expected constraint type, got %s at position %d", p.current.Type, p.current.Start)
+		return nil, nil, fmt.Errorf("expected constraint type, got %s at position %d", p.current.Type, p.current.Start)
 	}
 
 	var err error
+	// indexMethod is empty for a constraint, and names the access method for an
+	// index: "" for a plain KEY/INDEX and "SPATIAL" for a spatial one.
+	indexMethod := ""
+	isIndex := false
 	constraintType := strings.ToUpper(p.current.Value)
 	switch constraintType {
 	case "PRIMARY":
@@ -3611,21 +3656,23 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, error) {
 		err = p.handleTableConstraintExclude(constraint)
 	case "SPATIAL":
 		err = p.handleTableConstraintSpatial(constraint)
+		isIndex, indexMethod = true, "SPATIAL"
 	case "INDEX", "KEY":
 		p.handleTableConstraintIndex(constraint)
+		isIndex = true
 	default:
 		err = fmt.Errorf("unsupported constraint type: %s at position %d", constraintType, p.current.Start)
 	}
 
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	p.skipWhitespace()
 	if constraint.Type == ast.UniqueConstraint {
 		constraint.NullsDistinct, err = p.parseNullsDistinctClause()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		p.skipWhitespace()
 	}
@@ -3633,33 +3680,41 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, error) {
 	// Parse column list for PRIMARY KEY, UNIQUE, FOREIGN KEY
 	err = p.parseTableColumnList(constraint)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	err = p.handleTableConstraintInclude(constraint)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Handle FOREIGN KEY REFERENCES
 	err = p.handleTableForeignKey(constraint)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Handle CHECK expression
 	err = p.handleTableCheck(constraint)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Handle EXCLUDE WHERE clause
 	err = p.handleTableExcludeWhere(constraint)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return constraint, nil
+	if isIndex {
+		return nil, &ast.IndexNode{
+			Name:    constraint.Name,
+			Columns: constraint.Columns,
+			Type:    indexMethod,
+		}, nil
+	}
+
+	return constraint, nil, nil
 }
 
 func (p *Parser) handleTableEngine(table *ast.CreateTableNode) error {
@@ -4581,9 +4636,18 @@ func (p *Parser) parseAddOperation() (ast.AlterOperation, error) {
 	p.skipWhitespace()
 
 	if p.isAlterAddConstraintStart() {
-		constraint, err := p.parseTableConstraint()
+		constraint, index, err := p.parseTableConstraint()
 		if err != nil {
 			return nil, err
+		}
+		// ALTER TABLE ... ADD INDEX is not reachable here: isAlterAddConstraintStart
+		// gates on the constraint keywords, and an added index takes its own
+		// statement. Refusing rather than dropping keeps that true if the gate
+		// ever widens (stokaro/ptah#2713).
+		if index != nil {
+			return nil, fmt.Errorf(
+				"ALTER TABLE ADD %s is not supported here; declare the index in its own statement",
+				strings.ToUpper(index.Type+" INDEX"))
 		}
 		return &ast.AddConstraintOperation{Constraint: constraint}, nil
 	}
