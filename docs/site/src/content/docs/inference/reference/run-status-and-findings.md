@@ -83,6 +83,20 @@ belong to catch-up, which is what the barrier finding is about; under
 `immutable` they are a source that changed when the specification said it would
 not, and coverage reports them as rows with no vector.
 
+### Out of scope, and the keys a finding names
+
+A target row this generation stamped, for a key the specification no longer
+asks for, is reported as outside the scope — it holds a vector queries can
+still return. A **tombstone** is exempt, because that is Ptah's own record of a
+row leaving scope and catch-up writes one for exactly this. A tombstone that
+still holds a vector is not exempt: Ptah assigns the state and the vector in one
+statement, so that shape came from somewhere else, and it is searchable.
+
+A composite key is printed as the tuple it is — `(acme, 2)` — in the
+specification's key order. The components are joined internally with a control
+character so that no column value can forge a boundary, and that form is never
+what you see.
+
 ### `skipped` is not `missing`
 
 A skipped row is one the specification declined to embed — an empty input under
