@@ -105,7 +105,7 @@ func publishVerification(
 	record, buildErr := embedrelease.NewVerificationRecord(
 		embedrelease.VerificationOf(
 			opened.loaded.Spec.Identity().Digest, report, nil, time.Now().UTC()))
-	return publishRecord(ctx, out, options, evidence, record, buildErr)
+	return publishRecord(ctx, out, options, evidence, record, buildErr, swallowed)
 }
 
 // recordVerification writes the pass onto the generation.
@@ -131,6 +131,15 @@ func printReport(out io.Writer, report embedverify.Report) error {
 	}
 	if len(report.Findings) == 0 {
 		lines = append(lines, bullet("every deterministic layer passed"))
+	}
+	// What the verification did NOT do, which is the half a passing report
+	// otherwise hides. Every run carries at least one entry, `status` prints
+	// them and the published record carries them, so the verb an operator runs
+	// was the only surface that dropped them -- and a run reporting only what
+	// passed reads as though every layer was checked, which is exactly what
+	// Report.Unmeasured was added to prevent (stokaro/ptah#2649 finding 4).
+	for _, unmeasured := range report.Unmeasured {
+		lines = append(lines, bullet("not measured: "+unmeasured))
 	}
 	return writeLines(out, lines...)
 }
@@ -305,7 +314,7 @@ func publishCutover(
 		cutover.StabilizeUntil = at.Add(stabilizeFor)
 	}
 	record, buildErr := embedrelease.NewCutoverRecord(cutover)
-	return publishRecord(ctx, out, options, evidence, record, buildErr)
+	return publishRecord(ctx, out, options, evidence, record, buildErr, swallowed)
 }
 
 // openStabilization starts the window in which the previous generation is still
@@ -585,7 +594,7 @@ func publishRetirement(
 		ApprovalSigned: approvalSigned(approval),
 		RetiredAt:      at,
 	})
-	return publishRecord(ctx, out, options.commonOptions, options.evidence, record, buildErr)
+	return publishRecord(ctx, out, options.commonOptions, options.evidence, record, buildErr, swallowed)
 }
 
 // retiredObjects names what the retirement removed.

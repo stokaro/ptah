@@ -146,7 +146,14 @@ func decideDrift(decision *Decision, plan Plan, observed Observed) {
 		decision.refusef("queries read %q and the plan was built to replace %q",
 			observed.ActivePointer, plan.Previous)
 	}
-	if !observed.IndexReady {
+	// Both halves, because the sentence claims both. An index that was never
+	// built fails the evidence check above, and this one fired beside it --
+	// two refusals, one saying the index is absent and one saying it used to
+	// be ready and something removed it. The second sent an operator looking
+	// for a DROP INDEX, a failed concurrent build or a retirement that never
+	// happened (stokaro/ptah#2649 finding 8). Drift is a change since the
+	// plan; there is no drift from a state the plan never recorded.
+	if plan.Evidence.IndexReady && !observed.IndexReady {
 		decision.refusef("the index was ready when the plan was built and is not ready now")
 	}
 	if plan.Evidence.ConsistencyWatermark != "" &&

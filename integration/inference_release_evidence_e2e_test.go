@@ -254,6 +254,7 @@ func TestInferenceEvidencePublishedByTheCLIE2E(t *testing.T) {
 	assertVerifyPublishesWhatItMeasured(c, ctx, specPath, dbName, repository, generation)
 	assertCutoverPublishesWhatAuthorizedIt(c, ctx, specPath, dbName, repository, generation)
 	assertAnUnreachableRegistryDoesNotUndoTheRun(c, ctx, specPath, dbName)
+	assertAnUnreachableRegistryFailsAPlanThatOnlyPublishes(c, ctx, specPath, dbName)
 	assertAVerificationIsKeptWithoutARegistry(c, ctx, specPath, dbName)
 	assertAnUnwritableEvidenceFileDoesNotUndoTheRun(c, ctx, specPath, dbName)
 }
@@ -472,6 +473,31 @@ func assertAnUnreachableRegistryDoesNotUndoTheRun(
 	// And the verification it could not publish is still in the output, which
 	// is the whole reason failing here would be wrong.
 	c.Assert(output, qt.Contains, "rows")
+}
+
+// assertAnUnreachableRegistryFailsAPlanThatOnlyPublishes is the other half of
+// the pair above, and the two have to be read together.
+//
+// `verify` measured something, so a failed publication must not undo the run.
+// `plan` writes nothing anywhere: publishing the release IS the whole effect of
+// `plan --publish-evidence`, so exiting 0 having published nothing told a CI
+// job it had released what the next environment promotes, and the promotion
+// downstream kept running the previous release under the same tag
+// (stokaro/ptah#2649 finding 7).
+//
+// The bullet is asserted as well as the failure, because the operator needs the
+// reason and it is the same line the swallowing verbs print.
+func assertAnUnreachableRegistryFailsAPlanThatOnlyPublishes(
+	c *qt.C, ctx context.Context, specPath, dbURL string,
+) {
+	c.Helper()
+
+	output, err := runInferenceExpectingFailure(c, ctx, "plan",
+		"--spec", specPath, "--db-url", dbURL,
+		"--publish-evidence", "oci://127.0.0.1:1/ptah-nowhere:release", "--plain-http")
+
+	c.Assert(err, qt.IsNotNil, qt.Commentf("%s", output))
+	c.Assert(output, qt.Contains, "the record was not published")
 }
 
 // assertAVerificationIsKeptWithoutARegistry is the destination an operator has
