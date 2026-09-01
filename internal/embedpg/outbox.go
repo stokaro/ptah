@@ -190,11 +190,24 @@ func (o *Outbox) filterColumns(ctx context.Context) ([]string, error) {
 //
 // `conkey` is the attribute numbers the constraint depends on, which is exactly
 // the question: which columns, if changed, could change this predicate's answer.
+// The constraint is found by name AND by namespace, because a constraint name
+// is unique only within a schema. Without the second condition the probe
+// answers with the columns of any identically named constraint anywhere in the
+// database -- measured on PostgreSQL 17, a `ptah_filter_probe_check` sitting on
+// an unrelated table added that table's column to the answer, and a column the
+// filter never reads becomes a column the update trigger watches. If the
+// collision happened to name the generation's own vector column, Ptah's writes
+// would fire the trigger and the non-terminating catch-up loop of ADR 0014 §5
+// would be back.
+//
+// `pg_my_temp_schema()` is the session's own temporary schema, so the scope is
+// narrower than a name comparison can be: no other session's probe is visible
+// through it either.
 const filterColumnsSQL = `SELECT a.attname
 	FROM pg_constraint c
 	JOIN unnest(c.conkey) AS k(attnum) ON true
 	JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
-	WHERE c.conname = $1
+	WHERE c.conname = $1 AND c.connamespace = pg_my_temp_schema()
 	ORDER BY a.attnum`
 
 // installStatements renders what Install runs.

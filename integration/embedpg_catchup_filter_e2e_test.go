@@ -270,6 +270,84 @@ func TestEmbedPGAFilterColumnIsWatchedE2E(t *testing.T) {
 	c.Assert(outboxRowsFor(c, ctx, db, spec, "2"), qt.Equals, 0)
 }
 
+// TestEmbedPGAFilterProbeIgnoresAnIdenticallyNamedConstraintE2E is the review
+// finding on stokaro/ptah#2698.
+//
+// The probe reads its answer out of `pg_constraint`, and a constraint name is
+// unique only within a schema. Asked by name alone, the query returns the
+// columns of every constraint in the database that happens to share the name --
+// so an unrelated table carrying one adds ITS columns to what the update
+// trigger watches. Measured on PostgreSQL 17 before the fix: two rows came
+// back, `title` from the probe and `other` from the decoy.
+//
+// The cost is not cosmetic. A column the filter never reads becomes a column
+// every application write to it fires the trigger on, and if the collision
+// named the generation's own vector column, Ptah's writes would produce events
+// about Ptah's writes -- the non-terminating catch-up loop ADR 0014 section 5
+// exists to prevent.
+//
+// The decoy's constraint name mirrors the one the probe uses. That coupling is
+// the point and also its limit: renaming the probe's constraint leaves this
+// fixture green while testing nothing, and this comment is what says so.
+func TestEmbedPGAFilterProbeIgnoresAnIdenticallyNamedConstraintE2E(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.TimescaleDB)
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	adminDB, err := sql.Open("pgx", dbURL)
+	c.Assert(err, qt.IsNil)
+	defer adminDB.Close()
+
+	name := fmt.Sprintf("ptah_filter_decoy_%d", time.Now().UnixNano())
+	createE2EDatabase(c, ctx, adminDB, name)
+	defer dropE2EDatabase(c, context.Background(), adminDB, name)
+
+	db, err := sql.Open("pgx", replaceDatabaseName(c, dbURL, name))
+	c.Assert(err, qt.IsNil)
+	defer db.Close()
+
+	spec := filteredLiveSpec()
+	seedFilteredArticles(c, ctx, db, spec)
+
+	// The column has to exist on `articles` as well, or the widened trigger
+	// would fail to render and the defect would announce itself. A column that
+	// exists on both is the quiet version: the trigger installs, watches one
+	// column too many, and nothing says so until the events arrive.
+	seedDecoyConstraint(c, ctx, db)
+
+	outbox, err := embedpg.NewOutbox(db, spec)
+	c.Assert(err, qt.IsNil)
+	c.Assert(outbox.Install(ctx), qt.IsNil)
+
+	_, err = db.ExecContext(ctx, `UPDATE articles SET unwatched = 'x' WHERE id = 2`)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(outboxRowsFor(c, ctx, db, spec, "2"), qt.Equals, 0)
+
+	// The control: the filter's own column is still watched, so the scoping did
+	// not achieve its result by finding nothing at all.
+	_, err = db.ExecContext(ctx, `UPDATE articles SET published = false WHERE id = 1`)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(outboxRowsFor(c, ctx, db, spec, "1"), qt.Equals, 1)
+}
+
+// seedDecoyConstraint plants a constraint sharing the probe's name on a table
+// the generation has nothing to do with.
+func seedDecoyConstraint(c *qt.C, ctx context.Context, db *sql.DB) {
+	c.Helper()
+	statements := []string{
+		`ALTER TABLE articles ADD COLUMN unwatched TEXT`,
+		`CREATE TABLE unrelated (id BIGINT PRIMARY KEY, unwatched TEXT)`,
+		`ALTER TABLE unrelated ADD CONSTRAINT ptah_filter_probe_check CHECK (unwatched IS NULL OR unwatched <> '')`,
+	}
+	for _, statement := range statements {
+		_, err := db.ExecContext(ctx, statement)
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", statement))
+	}
+}
+
 // TestEmbedPGAFilterTheServerRefusesIsRefusedE2E is the other half: a filter
 // whose columns cannot be established is refused at install rather than
 // installed with a trigger that cannot see them.
