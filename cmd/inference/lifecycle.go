@@ -482,12 +482,39 @@ func printStatus(out io.Writer, status embedreport.Status) error {
 			status.Progress.RowsSkipped, status.Progress.RowsDeleted)),
 		bullet(fmt.Sprintf("%d batches committed, %d retries since the last one",
 			status.Progress.BatchesCommitted, status.Progress.RetryCount)),
+		// The number an operator compares against an invoice, and the reason
+		// the capacity strategy page has a Cost section at all. It was
+		// recorded on the run and reachable only through --format json, while
+		// the page said `status` showed it and illustrated the promise with
+		// the batches line above -- so a hurried reader took a count of
+		// provider round trips for a count of tokens (stokaro/ptah#2648).
+		//
+		// Ptah counts no tokens of its own, so the line says whose numbers
+		// these are -- and where the provider gave none, it says THAT instead
+		// of printing two zeros under the same sentence. A missing `usage`
+		// object and one carrying zeros both leave the counts at zero, and an
+		// operator reading a bill needs to know which happened.
+		bullet(tokenText(status.Progress)),
 		bullet("snapshot boundary: " + status.SnapshotWatermark),
 		bullet("catch-up watermark: " + status.CatchUpWatermark),
 		bullet(fmt.Sprintf("lease: %s, fencing token %d",
 			leaseText(status), status.FencingToken)),
 	}
 	return writeLines(out, append(lines, stoppedLines(status)...)...)
+}
+
+// tokenText is the token line, or the reason there is none.
+//
+// The batch count is what separates the two answers: a run that committed
+// batches and carries no usage-bearing one was told nothing by its provider.
+// A run that has committed nothing yet has no answer either way, and says so
+// the same way -- there is nothing to report until something is asked.
+func tokenText(progress embedreport.Progress) string {
+	if progress.ProviderUsageBatches == 0 {
+		return "the provider reported no token usage"
+	}
+	return fmt.Sprintf("%d prompt tokens, %d total, as the provider reported them",
+		progress.ProviderPromptTokens, progress.ProviderTotalTokens)
 }
 
 // stoppedLines says why a run is not running, if it is not.

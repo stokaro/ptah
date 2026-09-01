@@ -131,7 +131,10 @@ type embeddingResponse struct {
 		Embedding []float32 `json:"embedding"`
 	} `json:"data"`
 	Model string `json:"model"`
-	Usage struct {
+	// A pointer so an absent `usage` object is distinguishable from one
+	// carrying zeros: json.Unmarshal leaves a value struct at zero either way,
+	// and the two mean different things to somebody reading a bill.
+	Usage *struct {
 		PromptTokens int `json:"prompt_tokens"`
 		TotalTokens  int `json:"total_tokens"`
 	} `json:"usage"`
@@ -241,7 +244,13 @@ func (p *openAICompatible) decode(payload []byte, inputs int) (Result, error) {
 		}
 		result.Vectors = append(result.Vectors, entry.Embedding)
 	}
-	result.Usage = Usage{PromptTokens: decoded.Usage.PromptTokens, TotalTokens: decoded.Usage.TotalTokens}
+	if decoded.Usage != nil {
+		result.Usage = Usage{
+			PromptTokens: decoded.Usage.PromptTokens,
+			TotalTokens:  decoded.Usage.TotalTokens,
+			Reported:     true,
+		}
+	}
 
 	// The probe is the one caller that must see a malformed answer rather than
 	// an error about one. Everywhere else a refusal here is the point: a vector

@@ -1147,6 +1147,16 @@ func assertStatusReportsTheRun(c *qt.C, ctx context.Context, specPath, dbURL str
 	// row and the inserted one -- the third change was a delete, which is the
 	// tombstone rather than an embedding.
 	c.Assert(output, qt.Contains, "scanned 6, embedded 5, skipped 0, deleted 1")
+	// The number an operator compares against an invoice. It was recorded on
+	// the run and reachable only through --format json, while the capacity
+	// strategy page said `status` showed it and illustrated the promise with
+	// the batches line -- so a reader took a count of provider round trips for
+	// a count of tokens (stokaro/ptah#2648 finding 8).
+	//
+	// The counts are the fixture provider's own arithmetic rather than a
+	// wildcard, because a zero here is a real answer -- a provider that
+	// reports no usage -- and `Contains` on the sentence alone would accept it.
+	c.Assert(output, qt.Contains, "5 prompt tokens, 10 total, as the provider reported them")
 	c.Assert(output, qt.Contains, "snapshot boundary: ")
 	c.Assert(output, qt.Contains, "catch-up watermark: ")
 }

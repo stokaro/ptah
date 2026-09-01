@@ -15,18 +15,24 @@ import (
 // One list, because the INSERT, the UPDATE and the SELECT all have to agree
 // about it and three hand-written lists agree until somebody adds a column to
 // two of them.
+//
+// A new column is appended rather than slotted in beside its relatives, so that
+// nothing after it renumbers. Renumbering ten placeholders by hand to keep a
+// thematic order is how a run comes to be written with its counters one column
+// over, and no test reads a column it was never given.
 const runColumns = `id, spec_digest, generation_identity, environment, source, target,
 	provider_profile, resolved_model, ptah_version, policy_digest, phase, status,
 	lease_owner, lease_expires, fencing_token, snapshot_watermark, catch_up_watermark, cursor,
 	rows_scanned, rows_embedded, rows_skipped, rows_deleted, batches_committed,
 	provider_prompt_tokens, provider_total_tokens, retry_count,
 	verification_ref, cutover_plan_ref, approval_ref, active_pointer, rollback_eligible,
-	failure_class, failure_detail, created_at, updated_at`
+	failure_class, failure_detail, created_at, updated_at,
+	provider_usage_batches`
 
 // insertRunSQL creates a run, refusing to replace one.
 const insertRunSQL = `INSERT INTO ` + embedstore.RunTable + ` (` + runColumns + `)
 	VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
-		$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)
+		$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36)
 	ON CONFLICT (id) DO NOTHING`
 
 // updateRunSQL writes a run's state, refusing a stale fencing token.
@@ -42,7 +48,8 @@ const updateRunSQL = `UPDATE ` + embedstore.RunTable + ` SET
 	rows_scanned=$19, rows_embedded=$20, rows_skipped=$21, rows_deleted=$22, batches_committed=$23,
 	provider_prompt_tokens=$24, provider_total_tokens=$25, retry_count=$26,
 	verification_ref=$27, cutover_plan_ref=$28, approval_ref=$29, active_pointer=$30,
-	rollback_eligible=$31, failure_class=$32, failure_detail=$33, created_at=$34, updated_at=$35
+	rollback_eligible=$31, failure_class=$32, failure_detail=$33, created_at=$34, updated_at=$35,
+	provider_usage_batches=$36
 	WHERE id=$1 AND fencing_token <= $15`
 
 // claimRunSQL takes the lease and nothing else.
@@ -91,6 +98,7 @@ func runArguments(run embedrun.Run, cursor any) []any {
 		nullable(run.ActivePointer), run.RollbackEligible,
 		nullable(run.FailureClass), nullable(run.FailureDetail),
 		run.CreatedAt.UTC(), run.UpdatedAt.UTC(),
+		run.Progress.ProviderUsageBatches,
 	}
 }
 
@@ -115,7 +123,8 @@ func scanRun(source row, id string) (embedrun.Run, error) {
 		&run.Progress.RowsDeleted, &run.Progress.BatchesCommitted,
 		&run.Progress.ProviderPromptTokens, &run.Progress.ProviderTotalTokens, &run.Progress.RetryCount,
 		&verification, &plan, &approval, &pointer, &run.RollbackEligible,
-		&failureClass, &failureDetail, &run.CreatedAt, &run.UpdatedAt)
+		&failureClass, &failureDetail, &run.CreatedAt, &run.UpdatedAt,
+		&run.Progress.ProviderUsageBatches)
 	if errors.Is(err, sql.ErrNoRows) {
 		return embedrun.Run{}, fmt.Errorf("%w: run %s", embedstore.ErrNotFound, id)
 	}
