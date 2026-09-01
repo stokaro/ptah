@@ -257,6 +257,8 @@ func TestInferenceEvidencePublishedByTheCLIE2E(t *testing.T) {
 	assertAnUnreachableRegistryFailsAPlanThatOnlyPublishes(c, ctx, specPath, dbName)
 	assertAVerificationIsKeptWithoutARegistry(c, ctx, specPath, dbName)
 	assertAnUnwritableEvidenceFileDoesNotUndoTheRun(c, ctx, specPath, dbName)
+	assertAnUnwritableEvidenceFileFailsAPlanThatOnlyRecords(c, ctx, specPath, dbName)
+	assertTwoLostDestinationsAreBothReported(c, ctx, specPath, dbName)
 }
 
 // assertPlanLeavesNoRecordUnasked is the control for the three below.
@@ -556,4 +558,54 @@ func assertAnUnwritableEvidenceFileDoesNotUndoTheRun(
 	// And the verification it could not write is still in the output, which is
 	// the whole reason failing here would be wrong.
 	c.Assert(output, qt.Contains, "rows")
+}
+
+// assertAnUnwritableEvidenceFileFailsAPlanThatOnlyRecords is the half that was
+// missing, and the asymmetry is why it went missing.
+//
+// The registry destination had both halves of the pair -- swallowed for a verb
+// that measured something, fatal for a verb whose whole effect is the record --
+// and the file destination had only the first. So #2683 fixed
+// `plan --publish-evidence` and left `plan --evidence-file` reporting its own
+// failure and exiting 0, which is the same false success on the flag a CI job
+// with no registry uses (stokaro/ptah#2649 finding 7).
+func assertAnUnwritableEvidenceFileFailsAPlanThatOnlyRecords(
+	c *qt.C, ctx context.Context, specPath, dbURL string,
+) {
+	c.Helper()
+	path := filepath.Join(c.TempDir(), "no-such-directory", "release.json")
+
+	output, err := runInferenceExpectingFailure(c, ctx, "plan",
+		"--spec", specPath, "--db-url", dbURL, "--evidence-file", path)
+
+	c.Assert(err, qt.IsNotNil, qt.Commentf("%s", output))
+	c.Assert(output, qt.Contains, "the record was not written")
+	// The file is not there, which is the fact the exit code now carries. A
+	// plan that reported the failure and exited 0 left a CI job promoting
+	// whatever the previous run wrote at that path.
+	_, statErr := os.Stat(path)
+	c.Assert(statErr, qt.ErrorIs, fs.ErrNotExist)
+}
+
+// assertTwoLostDestinationsAreBothReported is what a run naming both is owed.
+//
+// Each destination is attempted whatever the other did, and the verb fails once
+// naming both. Stopping at the first failure would leave the second to be
+// discovered on the next invocation, and reporting only one would send an
+// operator to fix half of what went wrong.
+func assertTwoLostDestinationsAreBothReported(
+	c *qt.C, ctx context.Context, specPath, dbURL string,
+) {
+	c.Helper()
+	path := filepath.Join(c.TempDir(), "no-such-directory", "release.json")
+
+	output, err := runInferenceExpectingFailure(c, ctx, "plan",
+		"--spec", specPath, "--db-url", dbURL, "--evidence-file", path,
+		"--publish-evidence", "oci://127.0.0.1:1/ptah-nowhere:release", "--plain-http")
+
+	c.Assert(err, qt.IsNotNil, qt.Commentf("%s", output))
+	c.Assert(output, qt.Contains, "the record was not written")
+	c.Assert(output, qt.Contains, "the record was not published")
+	c.Assert(err.Error(), qt.Contains, "release.json")
+	c.Assert(err.Error(), qt.Contains, "ptah-nowhere")
 }
