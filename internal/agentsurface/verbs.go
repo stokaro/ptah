@@ -89,8 +89,8 @@ var verbs = map[string]Verb{
 			"embedding endpoint; the database is only read"},
 	"inference describe": {TargetNone, ScratchNone,
 		"reads a specification file and reports what it says; it opens no database, and with " +
-			"--spec no connection at all, which is what makes it usable where every other " +
-			"verb here cannot be; --release fetches the release from a registry first"},
+			"`--spec` no connection at all, which is what makes it usable where every other " +
+			"verb here cannot be; `--release` fetches the release from a registry first"},
 	"inference index": {TargetWrites, ScratchNone,
 		"builds the generation's vector index concurrently, which writes an index into the " +
 			"target database and drops an invalid leftover before rebuilding it"},

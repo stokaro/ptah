@@ -80,7 +80,7 @@ rather than a person.
 | `ptah inference backfill` | Reads the source, sends it to the embedding endpoint the specification names, and writes vectors and checkpoints into the target database | — |
 | `ptah inference catchup` | Rereads the source rows recorded as changed and writes their vectors, which sends that text to the embedding endpoint | — |
 | `ptah inference cutover` | Moves the pointer queries read to a different generation, and refuses when the pointer is not where the plan it was built from expects | — |
-| `ptah inference describe` | Reads a specification file and reports what it says; it opens no database, and with --spec no connection at all, which is what makes it usable where every other verb here cannot be; --release fetches the release from a registry first | — |
+| `ptah inference describe` | Reads a specification file and reports what it says; it opens no database, and with `--spec` no connection at all, which is what makes it usable where every other verb here cannot be; `--release` fetches the release from a registry first | — |
 | `ptah inference evaluate` | Searches the generation with queries from a corpus, which sends those queries to the embedding endpoint; the database is only read | — |
 | `ptah inference index` | Builds the generation's vector index concurrently, which writes an index into the target database and drops an invalid leftover before rebuilding it | — |
 | `ptah inference pause` | Stops a run at the boundary its last checkpoint reached, which writes the run's own row: it takes the run for this process, so a worker that was running is refused at its next commit | — |
