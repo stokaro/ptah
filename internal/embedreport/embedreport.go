@@ -290,7 +290,10 @@ func configuredFacts(loaded embedspec.Loaded) embedplan.Facts {
 	// the words."
 	//
 	// It is reported on every run rather than only where it is partial, which
-	// is more than the pages promise. A fact that appears when the answer is
+	// is more than the pages promise, and more than `describe` says: that
+	// verb's `reproducibility_reason` is a complaint and stays absent for a
+	// `full` answer. The two agree wherever there is something to complain
+	// about, because both read the identity's own sentence. A fact that appears when the answer is
 	// bad and is absent when it is good is one a reader cannot tell from a fact
 	// nobody computed.
 	//
@@ -484,6 +487,11 @@ type Specification struct {
 	Short      string `json:"generation_short"`
 	// Reproducibility says whether the generation can be rebuilt, and Reason
 	// why not where it cannot. A file that says neither reads as "yes".
+	//
+	// Reason is a complaint, never a premise: it is absent for a `full` answer
+	// on purpose. `plan` states a premise for both answers because its fact
+	// vocabulary requires one, and the two are not in disagreement -- for
+	// `partial` they render the identity's same sentence.
 	Reproducibility string `json:"reproducibility"`
 	Reason          string `json:"reproducibility_reason,omitempty"`
 	// Disclosure is what running it would send out of the database. RowsInScope
@@ -514,7 +522,16 @@ func DescribeSpecification(loaded embedspec.Loaded) (Specification, error) {
 		Name:       loaded.Spec.Name,
 		Generation: identity.Digest,
 		Short:      identity.Short(),
-		// Rendered as the plan renders it, so the two agree on the words.
+		// The value, and the complaint where there is one, are the identity's
+		// own -- so `describe` and `plan` cannot word a `partial` answer
+		// differently: both read `ReproducibilityReason`.
+		//
+		// They differ on `full`, deliberately. The plan renders every fact as
+		// `name = value (provenance: detail)` and `Facts.Undetailed` refuses an
+		// inferred fact carrying no detail, so it states the premise it
+		// inferred from. This field means "why not", and a specification that
+		// pins a revision has no why not; `omitempty` keeps it out of the JSON
+		// rather than filling it with a sentence that is not a complaint.
 		Reproducibility: string(identity.Reproducibility),
 		Reason:          identity.ReproducibilityReason,
 		// Negative rather than zero: an uncounted source rendered as zero says

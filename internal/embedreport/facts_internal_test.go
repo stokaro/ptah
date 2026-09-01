@@ -145,3 +145,76 @@ func TestConfiguredFacts_ReproducibilityIsReportedEitherWay(t *testing.T) {
 		})
 	}
 }
+
+// TestReproducibility_DescribeAndThePlanWordAPartialAnswerIdentically holds the
+// one claim the comments make about the two verbs.
+//
+// They differ on `full` deliberately -- `describe`'s `reproducibility_reason`
+// is a complaint and stays absent, while the plan states the premise its fact
+// vocabulary requires. Where there IS a complaint they must say the same
+// sentence, and the only thing keeping them together is that both read the
+// identity's own field. This is what would notice if one of them started
+// composing its own.
+func TestReproducibility_DescribeAndThePlanWordAPartialAnswerIdentically(t *testing.T) {
+	c := qt.New(t)
+	loaded := embedspec.Loaded{Spec: describableSpec("")}
+
+	described, err := DescribeSpecification(loaded)
+	c.Assert(err, qt.IsNil)
+
+	fact := reproducibilityFact(c, configuredFacts(loaded))
+	c.Assert(described.Reproducibility, qt.Equals, "partial")
+	c.Assert(described.Reproducibility, qt.Equals, fact.Value)
+	c.Assert(described.Reason, qt.Equals, fact.Detail)
+	c.Assert(described.Reason, qt.Not(qt.Equals), "")
+}
+
+// TestReproducibility_OnlyThePlanCarriesAPremiseForAFullAnswer is the other
+// half, and the reason the test above cannot simply assert equality always.
+func TestReproducibility_OnlyThePlanCarriesAPremiseForAFullAnswer(t *testing.T) {
+	c := qt.New(t)
+	loaded := embedspec.Loaded{Spec: describableSpec("1")}
+
+	described, err := DescribeSpecification(loaded)
+	c.Assert(err, qt.IsNil)
+
+	fact := reproducibilityFact(c, configuredFacts(loaded))
+	c.Assert(described.Reproducibility, qt.Equals, "full")
+	c.Assert(described.Reason, qt.Equals, "")
+	c.Assert(fact.Value, qt.Equals, "full")
+	c.Assert(fact.Detail, qt.Equals, "the specification pins an immutable model revision")
+}
+
+// reproducibilityFact is the plan's answer, found by name.
+func reproducibilityFact(c *qt.C, facts embedplan.Facts) embedplan.Fact {
+	c.Helper()
+	for _, fact := range facts {
+		if fact.Name == "generation.reproducibility" {
+			return fact
+		}
+	}
+	c.Fatal("the plan carries no generation.reproducibility fact")
+	return embedplan.Fact{}
+}
+
+// describableSpec is the smallest specification DescribeSpecification accepts,
+// with the model revision as the one thing that varies.
+//
+// It carries a target because `describe` resolves the objects it would create,
+// and a specification naming no target table is refused before reproducibility
+// is reached. That refusal is stokaro/ptah#2648 finding 5 seen from the inside.
+func describableSpec(revision string) embedgen.Spec {
+	return embedgen.Spec{
+		Source: embedgen.Source{
+			Table: "articles", KeyFields: []string{"id"}, InputFields: []string{"body"},
+		},
+		Model: embedgen.Model{
+			Provider: "openai-compatible", Identifier: "bge-small-en",
+			Revision: revision, ReportedDimension: 4,
+		},
+		Target: embedgen.Target{
+			Table: "articles", Column: "embedding",
+			Representation: "vector", Metric: embedgen.MetricCosine,
+		},
+	}
+}
