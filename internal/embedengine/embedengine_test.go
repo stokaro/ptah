@@ -593,3 +593,43 @@ func failedRunEvents(c *qt.C, h *harness, runID string) int {
 	}
 	return count
 }
+
+// TestBackfill_ATakeoverDuringTheWalksLastWriteIsStillAHandoff covers the
+// window between the final checkpoint and the bookkeeping write that follows
+// it.
+//
+// Recording that the walk reached the end happens outside the checkpoint
+// transaction, deliberately -- it holds nothing a resume needs. But a worker
+// can take the run over in that window, and a takeover is a handoff rather than
+// a fault: reported as a generic write error it would surface as a failed
+// backfill naming a bookkeeping call, which is neither what happened nor
+// something an operator can act on.
+func TestBackfill_ATakeoverDuringTheWalksLastWriteIsStillAHandoff(t *testing.T) {
+	c := qt.New(t)
+	// Bounds that take the whole source in one page and one batch, so there is
+	// exactly ONE commit and the hook below fires after the last one. Under the
+	// default bounds it fires after the first of two, and the takeover is then
+	// caught by the next commit's own fencing check -- the path that already
+	// worked, which would make this test pass without the change.
+	h := newHarness(c, embedrun.BatchBounds{MaxRows: 4, MaxInputs: 4})
+	// After the last commit rather than before it: before is the window the
+	// checkpoint itself already covers, and this is the one after it.
+	h.target.afterCommit = stealAfterLastCommit(c, h)
+
+	run, _, err := h.engine.Backfill(context.Background(), "run-1")
+
+	c.Assert(err, qt.ErrorIs, embedengine.ErrFenced)
+	c.Assert(run.LeaseOwner, qt.Equals, "worker-b")
+	c.Assert(run.Status, qt.Not(qt.Equals), embedrun.StatusFailed)
+}
+
+// stealAfterLastCommit takes the run over once every row has been committed.
+func stealAfterLastCommit(c *qt.C, h *harness) func() {
+	return func() {
+		stored, err := h.store.Run(context.Background(), "run-1")
+		c.Assert(err, qt.IsNil)
+		stored.FencingToken = 99
+		stored.LeaseOwner = "worker-b"
+		c.Assert(h.store.SaveRun(context.Background(), stored), qt.IsNil)
+	}
+}

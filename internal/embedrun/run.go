@@ -118,6 +118,22 @@ type Run struct {
 	LeaseExpires time.Time
 	FencingToken int64
 
+	// SnapshotDone is whether the backfill's walk ran off the end of the
+	// source.
+	//
+	// Recorded rather than derived, because the phase cannot answer it. A phase
+	// is a high-water mark: a run whose backfill once finished and was then
+	// given more to do -- rows inserted past its cursor, or a resumed pass that
+	// failed partway -- has still REACHED `backfilled`, so every phase reading
+	// reported a complete snapshot for a run with work left, and verification's
+	// whole consistency layer went quiet (stokaro/ptah#2649 finding 3).
+	//
+	// It follows the last page the walk saw, in both directions: a page that is
+	// not the last one clears it, and only the page that ran off the end sets
+	// it. The backfill is the only thing that knows, which is why nothing else
+	// writes it.
+	SnapshotDone bool
+
 	// SnapshotWatermark is the boundary the backfill covers up to.
 	// CatchUpWatermark is how far catch-up has processed past it.
 	SnapshotWatermark string

@@ -175,6 +175,10 @@ type fakeTarget struct {
 	// beforeCommit runs just before the write, so a test can move the world
 	// underneath one.
 	beforeCommit func()
+	// afterCommit runs just after a write that landed, which is the only place
+	// a test can reach the window between the last checkpoint and the
+	// bookkeeping write that follows the walk.
+	afterCommit func()
 }
 
 // commit is one transaction's contents.
@@ -202,5 +206,8 @@ func (f *fakeTarget) Commit(ctx context.Context, writes []embedrun.TargetWrite, 
 		cursor: append([]string(nil), run.Cursor...),
 		rows:   run.Progress.RowsEmbedded,
 	})
+	if f.afterCommit != nil {
+		f.afterCommit()
+	}
 	return nil
 }

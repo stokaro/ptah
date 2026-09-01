@@ -127,6 +127,11 @@ type Status struct {
 	// are positions in a log, and a position is not content.
 	SnapshotWatermark string `json:"snapshot_watermark,omitempty"`
 	CatchUpWatermark  string `json:"catch_up_watermark,omitempty"`
+	// SnapshotDone is whether the backfill's walk ran off the end of the
+	// source. Reported rather than left to be inferred from the phase, which
+	// is a high-water mark and therefore cannot say that a finished backfill
+	// has been given more to do (stokaro/ptah#2649 finding 3).
+	SnapshotDone bool `json:"snapshot_done"`
 	// FencingToken is which holder may still commit. It is reported because a
 	// run that appears stalled is usually one whose lease moved.
 	FencingToken int64 `json:"fencing_token"`
@@ -411,6 +416,7 @@ func StatusOf(run embedrun.Run, mode embedcatchup.Mode) Status {
 			ProviderUsageBatches: run.Progress.ProviderUsageBatches,
 		},
 		SnapshotWatermark: BoundaryText(run.SnapshotWatermark, mode),
+		SnapshotDone:      run.SnapshotDone,
 		CatchUpWatermark:  BoundaryText(run.CatchUpWatermark, mode),
 		FencingToken:      run.FencingToken,
 		FailureClass:      run.FailureClass,

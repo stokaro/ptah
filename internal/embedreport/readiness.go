@@ -153,11 +153,16 @@ func VerifyGeneration(
 		},
 		structure, corpus,
 		embedverify.RunState{
-			// The run says it reached the end of its snapshot, rather than a
-			// phase inequality standing in for the fact. `Phase !=
-			// PhaseBackfilling` was true for every phase BEFORE the backfill
-			// as well as after it (stokaro/ptah#2649).
-			SnapshotComplete:    run.Reached(embedrun.PhaseBackfilled),
+			// The fact the backfill recorded when its walk ran off the end
+			// of the source, rather than a phase standing in for it. Two
+			// phase readings stood here and both were wrong in ways nothing
+			// noticed: `Phase != PhaseBackfilling` was true for every phase
+			// BEFORE the backfill as well as after it, and
+			// `Reached(PhaseBackfilled)` is a high-water mark, so a run whose
+			// backfill once finished and was then given more to do still read
+			// as complete -- and the whole consistency layer went quiet for a
+			// run whose status was `failed` (stokaro/ptah#2649 finding 3).
+			SnapshotComplete:    run.SnapshotDone,
 			CatchUpReached:      guarantee.Complete,
 			ConsistencyMode:     string(loaded.Mode),
 			SourceMutable:       loaded.Source.Mutable,

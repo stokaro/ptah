@@ -27,12 +27,12 @@ const runColumns = `id, spec_digest, generation_identity, environment, source, t
 	provider_prompt_tokens, provider_total_tokens, retry_count,
 	verification_ref, cutover_plan_ref, approval_ref, active_pointer, rollback_eligible,
 	failure_class, failure_detail, created_at, updated_at,
-	provider_usage_batches`
+	provider_usage_batches, snapshot_done`
 
 // insertRunSQL creates a run, refusing to replace one.
 const insertRunSQL = `INSERT INTO ` + embedstore.RunTable + ` (` + runColumns + `)
 	VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,
-		$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36)
+		$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37)
 	ON CONFLICT (id) DO NOTHING`
 
 // updateRunSQL writes a run's state, refusing a stale fencing token.
@@ -49,7 +49,7 @@ const updateRunSQL = `UPDATE ` + embedstore.RunTable + ` SET
 	provider_prompt_tokens=$24, provider_total_tokens=$25, retry_count=$26,
 	verification_ref=$27, cutover_plan_ref=$28, approval_ref=$29, active_pointer=$30,
 	rollback_eligible=$31, failure_class=$32, failure_detail=$33, created_at=$34, updated_at=$35,
-	provider_usage_batches=$36
+	provider_usage_batches=$36, snapshot_done=$37
 	WHERE id=$1 AND fencing_token <= $15`
 
 // claimRunSQL takes the lease and nothing else.
@@ -99,6 +99,7 @@ func runArguments(run embedrun.Run, cursor any) []any {
 		nullable(run.FailureClass), nullable(run.FailureDetail),
 		run.CreatedAt.UTC(), run.UpdatedAt.UTC(),
 		run.Progress.ProviderUsageBatches,
+		run.SnapshotDone,
 	}
 }
 
@@ -124,7 +125,7 @@ func scanRun(source row, id string) (embedrun.Run, error) {
 		&run.Progress.ProviderPromptTokens, &run.Progress.ProviderTotalTokens, &run.Progress.RetryCount,
 		&verification, &plan, &approval, &pointer, &run.RollbackEligible,
 		&failureClass, &failureDetail, &run.CreatedAt, &run.UpdatedAt,
-		&run.Progress.ProviderUsageBatches)
+		&run.Progress.ProviderUsageBatches, &run.SnapshotDone)
 	if errors.Is(err, sql.ErrNoRows) {
 		return embedrun.Run{}, fmt.Errorf("%w: run %s", embedstore.ErrNotFound, id)
 	}

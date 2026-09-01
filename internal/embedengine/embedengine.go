@@ -217,10 +217,55 @@ func (e *Engine) backfillLoop(
 		if err != nil {
 			return run, err
 		}
+		run, err = e.recordWalkEnd(ctx, run, page)
+		if err != nil {
+			return run, err
+		}
 		if page.Done {
 			return run, nil
 		}
 	}
+}
+
+// recordWalkEnd writes whether this page was the last one.
+//
+// The fact is the backfill's alone: nothing else in the lifecycle can see a
+// scan run off the end of the source, and every attempt to derive it from the
+// phase was wrong in one direction or the other (stokaro/ptah#2649 finding 3).
+// It follows the page in both directions, so a completed walk given more to do
+// clears it on the first page that is not the last.
+//
+// Written outside the checkpoint transaction, which is safe here and is not
+// safe for a checkpoint. A checkpoint and the vectors it accounts for must land
+// together or a resumed run repeats or skips work; this records nothing a
+// resume needs -- the cursor already says where to start -- so a process that
+// dies between the last checkpoint and this write leaves the flag false, which
+// is the conservative answer. Verification then reports an incomplete snapshot
+// for a walk that had finished, and the next backfill sets it: an operator is
+// told to do something harmless rather than told nothing.
+func (e *Engine) recordWalkEnd(
+	ctx context.Context, run embedrun.Run, page Page,
+) (embedrun.Run, error) {
+	if run.SnapshotDone == page.Done {
+		return run, nil
+	}
+	run.SnapshotDone = page.Done
+	run.UpdatedAt = e.now()
+	err := e.Store.SaveRun(ctx, run)
+	if errors.Is(err, embedstore.ErrConflict) {
+		// A worker took the run over between the last checkpoint and this
+		// write. That is a handoff rather than a fault, and it is reported the
+		// way every other write in this engine reports it -- reloading the
+		// store's copy and answering ErrFenced. Left as a generic error, a
+		// healthy takeover surfaced as a failed backfill naming a bookkeeping
+		// call, which is neither what happened nor something an operator can
+		// act on.
+		return e.reload(ctx, run.ID, ErrFenced)
+	}
+	if err != nil {
+		return run, fmt.Errorf("record the end of the walk: %w", err)
+	}
+	return run, nil
 }
 
 // stalled reports whether a page failed to move past the cursor it was given.

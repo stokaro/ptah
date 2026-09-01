@@ -826,6 +826,9 @@
             "run_id": {
               "type": "string"
             },
+            "snapshot_done": {
+              "type": "boolean"
+            },
             "snapshot_watermark": {
               "type": "string"
             },
@@ -848,6 +851,7 @@
             "phase",
             "state",
             "Progress",
+            "snapshot_done",
             "fencing_token",
             "rollback_eligible",
             "spec_digest"
