@@ -12,7 +12,7 @@ import (
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/schemaprep"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -361,13 +361,13 @@ func toDBFieldConstraints(table schemamodel.Table, field schemamodel.Field) []ca
 		})
 	}
 	if field.Foreign != "" {
-		fkRef := fromschema.ParseForeignKeyReference(field.Foreign)
+		fkRef := schemaprep.ParseForeignKeyReference(field.Foreign)
 		if fkRef == nil {
 			return out
 		}
 		name := field.ForeignKeyName
 		if name == "" {
-			name = fromschema.GenerateForeignKeyName(table.Name, field.Name)
+			name = schemaprep.GenerateForeignKeyName(table.Name, field.Name)
 		}
 		foreignTable, foreignSchema := splitTableIdentity(fkRef.Table)
 		out = append(out, catalog.Constraint{

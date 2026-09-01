@@ -6,9 +6,9 @@ import (
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
-	"go.5x5.cz/ptah/internal/planner/tablelookup"
+	"go.5x5.cz/ptah/internal/schemaprep"
+	"go.5x5.cz/ptah/internal/tablelookup"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -172,7 +172,7 @@ func recreatedForeignKeyName(prior *schemamodel.Database, table schemamodel.Tabl
 	if strings.TrimSpace(field.Foreign) == "" {
 		return "", false
 	}
-	ref := fromschema.ParseForeignKeyReference(field.Foreign)
+	ref := schemaprep.ParseForeignKeyReference(field.Foreign)
 	if ref == nil {
 		return "", false
 	}
@@ -182,7 +182,7 @@ func recreatedForeignKeyName(prior *schemamodel.Database, table schemamodel.Tabl
 	if field.ForeignKeyName != "" {
 		return field.ForeignKeyName, true
 	}
-	return fromschema.GenerateForeignKeyName(table.Name, field.Name), true
+	return schemaprep.GenerateForeignKeyName(table.Name, field.Name), true
 }
 
 // covers reports whether the named constraint on tableName is put back by that

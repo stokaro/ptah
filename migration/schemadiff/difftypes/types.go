@@ -17,9 +17,9 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
+	"go.5x5.cz/ptah/internal/schemaprep"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -2662,7 +2662,7 @@ type TableCreation struct {
 // `positive_int` to `app.positive_int` has to know the domain exists at all
 // (stokaro/ptah#2315).
 //
-// It is the four lists [fromschema.QualifyDeclaredUserTypes] reads, and no
+// It is the four lists [schemaprep.QualifyDeclaredUserTypes] reads, and no
 // more: what a caller must supply is exactly what the qualification consults.
 type UserTypeVocabulary struct {
 	Domains        []schemamodel.Domain
@@ -2778,7 +2778,7 @@ func appendFieldForeignKeys(
 		if field.Foreign == "" {
 			continue
 		}
-		reference := fromschema.ParseForeignKeyReference(field.Foreign)
+		reference := schemaprep.ParseForeignKeyReference(field.Foreign)
 		if reference == nil {
 			continue
 		}
@@ -2820,7 +2820,7 @@ func appendSelfReferencingForeignKeys(
 			bare = reference.Name
 		}
 		for _, foreignKey := range db.SelfReferencingForeignKeys[tableName] {
-			reference := fromschema.ParseForeignKeyReference(foreignKey.Foreign)
+			reference := schemaprep.ParseForeignKeyReference(foreignKey.Foreign)
 			if reference == nil {
 				continue
 			}
@@ -2864,7 +2864,7 @@ func declaredForeignKeyName(declared, tableName, columnName string) string {
 	if declared != "" {
 		return declared
 	}
-	return fromschema.GenerateForeignKeyName(tableName, columnName)
+	return schemaprep.GenerateForeignKeyName(tableName, columnName)
 }
 
 // ConstraintHostDeclarationsOf assembles the declaration of every table the
@@ -3114,8 +3114,8 @@ func nilWhenEmpty[T any](values []T) []T {
 // declared is the vocabulary in the shape the qualifier reads it, and is the
 // whole of what this hands over: the four lists, and no schema description
 // built around them.
-func (v UserTypeVocabulary) declared() fromschema.DeclaredUserTypes {
-	return fromschema.DeclaredUserTypes{
+func (v UserTypeVocabulary) declared() schemaprep.DeclaredUserTypes {
+	return schemaprep.DeclaredUserTypes{
 		Domains:        v.Domains,
 		CompositeTypes: v.CompositeTypes,
 		Ranges:         v.Ranges,
@@ -3138,7 +3138,7 @@ func TableCreationFor(desired *schemamodel.Database, table schemamodel.Table, na
 	if desired == nil {
 		return creation
 	}
-	all := fromschema.ProcessEmbeddedFields(desired.EmbeddedFields, desired.Fields)
+	all := schemamodel.ProcessEmbeddedFields(desired.EmbeddedFields, desired.Fields)
 	owned := make([]schemamodel.Field, 0, len(all))
 	for _, field := range all {
 		if field.StructName == table.StructName {
@@ -3146,7 +3146,7 @@ func TableCreationFor(desired *schemamodel.Database, table schemamodel.Table, na
 		}
 	}
 	creation.Fields = owned
-	creation.Enums = fromschema.EnumsFor(owned, desired.Enums)
+	creation.Enums = schemaprep.EnumsFor(owned, desired.Enums)
 	// Derived rather than read out of desired.Dependencies, because that map is
 	// filled by [schemamodel.Finalize] and a declaration assembled in memory has
 	// not necessarily been through it. The carry's promise is that everything the
@@ -3242,7 +3242,7 @@ func TableDeclarationFor(desired *schemamodel.Database, table schemamodel.Table)
 	}
 	qualified := table.QualifiedName()
 
-	all := fromschema.ProcessEmbeddedFields(desired.EmbeddedFields, desired.Fields)
+	all := schemamodel.ProcessEmbeddedFields(desired.EmbeddedFields, desired.Fields)
 	owned := make([]schemamodel.Field, 0, len(all))
 	for _, field := range all {
 		if field.StructName == table.StructName {
@@ -3250,7 +3250,7 @@ func TableDeclarationFor(desired *schemamodel.Database, table schemamodel.Table)
 		}
 	}
 	declaration.Fields = nilWhenEmpty(owned)
-	declaration.Enums = fromschema.EnumsFor(owned, desired.Enums)
+	declaration.Enums = schemaprep.EnumsFor(owned, desired.Enums)
 
 	declaration.Constraints = nilWhenEmpty(constraintsOfTable(desired.Constraints, table))
 
@@ -3283,7 +3283,7 @@ func TableDeclarationFor(desired *schemamodel.Database, table schemamodel.Table)
 //
 // It assembles from the declaration exactly as given. A declaration whose
 // foreign keys name themselves only by default needs
-// [fromschema.AssignDefaultForeignKeyNames] run over it first: that derivation
+// [schemaprep.AssignDefaultForeignKeyNames] run over it first: that derivation
 // reads the whole document -- it truncates an over-long name to a hashed one
 // and avoids colliding with an explicit name used anywhere -- so it cannot be
 // done per table, and a comparison does it before it assembles these.
@@ -3388,7 +3388,7 @@ func (t TableChanges) Qualified(vocabulary UserTypeVocabulary, dialect string) T
 	}
 	qualified := make(TableChanges, 0, len(t))
 	for _, creation := range t {
-		creation.Fields = fromschema.QualifyFieldUserTypes(creation.Fields, vocabulary.declared(), dialect)
+		creation.Fields = schemaprep.QualifyFieldUserTypes(creation.Fields, vocabulary.declared(), dialect)
 		qualified = append(qualified, creation)
 	}
 	return qualified

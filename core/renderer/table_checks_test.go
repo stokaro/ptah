@@ -38,7 +38,7 @@ func checksDatabase(checks ...string) *schemamodel.Database {
 //
 // The constraint is NAMED although the declaration names none. An unnamed CHECK
 // reads back under a name the server invented, which the comparison cannot
-// predict; see fromschema.TableCheckConstraints and the convergence test in
+// predict; see schemaprep.TableCheckConstraints and the convergence test in
 // migration/schemadiff.
 func TestTableChecks_HappyPath(t *testing.T) {
 	tests := []struct {

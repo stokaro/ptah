@@ -4,7 +4,7 @@ import (
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/schemaprep"
 	"go.5x5.cz/ptah/migration/internal/generatedschema"
 )
 
@@ -83,7 +83,7 @@ func synthesizeFieldLevelCheckConstraints(
 // list into the schemamodel.Constraint the renderer emits for it, so the list
 // participates in comparison the way the CHECK it becomes does.
 //
-// [fromschema.TableCheckConstraints] is the single answer both sides read --
+// [schemaprep.TableCheckConstraints] is the single answer both sides read --
 // the name it gives an entry is the name the DDL carries, so the constraint the
 // server reports lines up with the declaration. Deriving it twice is what this
 // avoids: measured before the synthesis existed, rendering the list alone made
@@ -114,7 +114,7 @@ func synthesizeTableLevelCheckConstraints(
 		if _, exists := dbTables[newQualifiedTableIdentity(table.QualifiedName(), semantics)]; !exists {
 			continue
 		}
-		synthesized = append(synthesized, fromschema.TableCheckConstraints(table, desired.Constraints)...)
+		synthesized = append(synthesized, schemaprep.TableCheckConstraints(table, desired.Constraints)...)
 	}
 	return synthesized
 }
@@ -293,7 +293,7 @@ func tablePrimaryKeyConstraintName(
 //
 // The constraint name follows the user-provided `foreign_key_name=` value when
 // set, otherwise it falls back to the conventional generated name from
-// fromschema.GenerateForeignKeyName ("fk_<table>_<column>"), which is the name
+// schemaprep.GenerateForeignKeyName ("fk_<table>_<column>"), which is the name
 // the planner emits when it creates the FK, so the synthesized name lines up
 // with whatever the reader sees on the DB side.
 //
@@ -355,14 +355,14 @@ func synthesizeFieldLevelForeignKeyConstraints(
 		}
 		name := f.ForeignKeyName
 		if name == "" {
-			name = fromschema.GenerateForeignKeyName(f.tableName, f.Name)
+			name = schemaprep.GenerateForeignKeyName(f.tableName, f.Name)
 		}
 		// Reuse the canonical generate-path parser so the synthesized table /
 		// column always match exactly what the planner emits (issue #189
 		// follow-up: a single source of truth removes the latent two-parser
 		// divergence). A malformed foreign= reference yields nil and is skipped
 		// rather than synthesizing a garbage constraint.
-		fkRef := fromschema.ParseForeignKeyReference(f.Foreign)
+		fkRef := schemaprep.ParseForeignKeyReference(f.Foreign)
 		if fkRef == nil {
 			continue
 		}

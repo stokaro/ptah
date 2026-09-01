@@ -12,11 +12,11 @@ import (
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 )
 
 func renderConformanceSQL(c *qt.C, target *schemamodel.Database, dialect string) string {
-	createAST := fromschema.FromDatabase(*target, dialect)
+	createAST := modelast.CollectDatabase(*target, dialect)
 	createSQL, err := renderer.RenderSQL(dialect, createAST.Statements...)
 	c.Assert(err, qt.IsNil)
 	return strings.TrimSpace(createSQL)

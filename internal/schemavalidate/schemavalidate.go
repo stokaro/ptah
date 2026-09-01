@@ -19,7 +19,6 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 )
 
 // Problem is one structural fault found in a desired schema.
@@ -175,7 +174,7 @@ func indexColumnNames(index schemamodel.Index) []string {
 // indexableColumns maps each table's qualified name to the columns an index on
 // it may name, embedded fields included.
 func indexableColumns(database *schemamodel.Database) map[string][]string {
-	fields := fromschema.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
+	fields := schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
 	byStruct := make(map[string][]string, len(database.Tables))
 	for _, field := range fields {
 		byStruct[field.StructName] = append(byStruct[field.StructName], field.Name)

@@ -9,9 +9,9 @@ import (
 
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
+	"go.5x5.cz/ptah/internal/schemaprep"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/internal/generatedschema"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -231,7 +231,7 @@ func priorTableCreation(prior *schemamodel.Database, name string) difftypes.Tabl
 	if table == nil {
 		return creation
 	}
-	fields := fromschema.ProcessEmbeddedFields(prior.EmbeddedFields, prior.Fields)
+	fields := schemamodel.ProcessEmbeddedFields(prior.EmbeddedFields, prior.Fields)
 	owned := make([]schemamodel.Field, 0, len(fields))
 	for _, field := range fields {
 		if field.StructName == table.StructName {
@@ -240,7 +240,7 @@ func priorTableCreation(prior *schemamodel.Database, name string) difftypes.Tabl
 	}
 	creation.Table = *table
 	creation.Fields = owned
-	creation.Enums = fromschema.EnumsFor(owned, prior.Enums)
+	creation.Enums = schemaprep.EnumsFor(owned, prior.Enums)
 	// The constraints that database's table had. A target with no
 	// ADD CONSTRAINT renders them inside the CREATE, so a rollback that
 	// omitted them would put the table back without them and report success

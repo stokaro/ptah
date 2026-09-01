@@ -9,7 +9,7 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -36,7 +36,7 @@ func (p *Planner) planSequences(result []ast.Node, diff *difftypes.SchemaDiff) [
 	// (stokaro/ptah#2315), so a name the desired schema could not resolve no
 	// longer plans nothing.
 	for _, sequence := range diff.SequencesAdded {
-		result = append(result, fromschema.FromSequence(sequence))
+		result = append(result, modelast.FromSequence(sequence))
 	}
 	for _, sequenceDiff := range diff.SequencesModified {
 		sequence := sequenceDiff.Desired

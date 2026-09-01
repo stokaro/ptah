@@ -87,7 +87,7 @@ func (l IdentifierLimit) Unlimited() bool {
 // existed; core/renderer's and dbschema's now consume this method, and ONE
 // remains:
 //
-//   - internal/convert/fromschema (foreignKeyNameFits, foreignKeyNameWithSuffix)
+//   - internal/schemaprep (foreignKeyNameFits, foreignKeyNameWithSuffix)
 //     TRUNCATES a generated name to fit rather than refusing it. Its predicate
 //     half is exactly !Exceeds — compared against this method over nine dialects
 //     and 16 name shapes chosen to straddle every boundary, 144 verdicts, zero

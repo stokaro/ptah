@@ -13,8 +13,8 @@ import (
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/dbschema/postgres"
+	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -65,7 +65,7 @@ func TestFieldLevelCheckConstraint_RoundTrip_Integration(t *testing.T) {
 	}
 
 	// Render the CREATE TABLE statement and apply it.
-	stmts := fromschema.FromDatabase(*target, "postgres")
+	stmts := modelast.CollectDatabase(*target, "postgres")
 	sqlText, err := renderer.RenderSQL("postgres", stmts.Statements...)
 	c.Assert(err, qt.IsNil)
 	sqlForAssert := legacyRenderedSQL(sqlText)
@@ -131,7 +131,7 @@ func TestFieldLevelCheckConstraint_Removal_Integration(t *testing.T) {
 			},
 		},
 	}
-	stmts := fromschema.FromDatabase(*withCheck, "postgres")
+	stmts := modelast.CollectDatabase(*withCheck, "postgres")
 	createSQL, err := renderer.RenderSQL("postgres", stmts.Statements...)
 	c.Assert(err, qt.IsNil)
 	_, err = db.Exec(createSQL)

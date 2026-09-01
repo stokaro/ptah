@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/schemaprep"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
@@ -953,7 +953,7 @@ func (r *Reader) readForeignKeysByTable(ctx context.Context,
 			constraint := groups[id]
 			applyForeignKeyDetail(constraint, details)
 			if constraint.Name == "" {
-				constraint.Name = fromschema.GenerateForeignKeyName(tableName, first(constraint.ColumnNames))
+				constraint.Name = schemaprep.GenerateForeignKeyName(tableName, first(constraint.ColumnNames))
 			}
 			constraints = append(constraints, *constraint)
 		}

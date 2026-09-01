@@ -507,7 +507,7 @@ func RLSPolicyDefinitionsWithExpressions(
 //
 // The key is the name as the DECLARATION spells it, and the match a caller
 // makes against it is string equality, which is what
-// [fromschema.QualifyRLSPolicyForTarget] did with the same two values. Folding
+// [schemaprep.QualifyRLSPolicyForTarget] did with the same two values. Folding
 // the two through identifier semantics would qualify policies that are not
 // qualified today; that is a defect worth fixing on its own evidence rather
 // than as a side effect of moving the lookup (stokaro/ptah#2440).

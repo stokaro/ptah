@@ -24,7 +24,7 @@ import (
 // twenty-four spellings, and a copied list is exactly what let the two drift
 // apart unnoticed (stokaro/ptah#270).
 //
-// internal/convert/fromschema/dialect_spelling_test.go reads the same switch the
+// internal/modelast/dialect_spelling_test.go reads the same switch the
 // same way. The extraction is duplicated rather than shared because the only
 // place to share it from would be a non-test package exported solely to be read
 // by tests.

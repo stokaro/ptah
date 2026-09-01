@@ -18,7 +18,6 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/schemaexport"
 	"go.5x5.cz/ptah/internal/tableref"
 )
@@ -82,7 +81,7 @@ func build(db *schemamodel.Database, opts Options) document {
 		byStruct[table.StructName] = table
 	}
 
-	fields := fromschema.ProcessEmbeddedFields(db.EmbeddedFields, db.Fields)
+	fields := schemamodel.ProcessEmbeddedFields(db.EmbeddedFields, db.Fields)
 	columns := make(map[string][]columnDoc, len(selected))
 	var relations []relation
 	for _, field := range fields {

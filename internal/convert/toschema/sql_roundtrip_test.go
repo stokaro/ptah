@@ -9,8 +9,8 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/convert/toschema"
+	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/internal/parser"
 )
 
@@ -265,7 +265,7 @@ func TestToDatabase_ParserPreservesIndexExpression(t *testing.T) {
 
 	rendered, err := renderer.RenderSQL(
 		"postgres",
-		fromschema.FromIndex(db.Indexes[0]),
+		modelast.FromIndex(db.Indexes[0]),
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered, qt.Contains, `(concat(first_name, '. ', last_name))`)
@@ -330,7 +330,7 @@ func TestToDatabase_PostgresExtensionIdentifiersUseCatalogIdentity(t *testing.T)
 		Name:   "pgcrypto",
 		Schema: "extensions",
 	}})
-	unquotedSQL, err := renderer.RenderSQL("postgres", fromschema.FromExtension(unquoted.Extensions[0]))
+	unquotedSQL, err := renderer.RenderSQL("postgres", modelast.FromExtension(unquoted.Extensions[0]))
 	c.Assert(err, qt.IsNil)
 	c.Assert(unquotedSQL, qt.Contains, `CREATE EXTENSION "pgcrypto" WITH SCHEMA "extensions";`)
 
@@ -340,7 +340,7 @@ func TestToDatabase_PostgresExtensionIdentifiersUseCatalogIdentity(t *testing.T)
 		Schema: " Extension Store ",
 	}})
 
-	rendered, err := renderer.RenderSQL("postgres", fromschema.FromExtension(quoted.Extensions[0]))
+	rendered, err := renderer.RenderSQL("postgres", modelast.FromExtension(quoted.Extensions[0]))
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered, qt.Contains, `CREATE EXTENSION "PGCrypto" WITH SCHEMA " Extension Store ";`)
 }

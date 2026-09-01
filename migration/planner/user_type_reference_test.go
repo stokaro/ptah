@@ -14,11 +14,11 @@ import (
 )
 
 // TestGenerateSchemaDiffSQLQualifiesDeclaredUserTypes pins the second of the
-// two entry points fromschema.QualifyDeclaredUserTypes is wired into.
+// two entry points schemaprep.QualifyDeclaredUserTypes is wired into.
 //
 // The planner is where a diff-driven CREATE TABLE is built, and it reads its
 // columns out of one prepared value that every dialect planner shares. Wiring
-// the pass into fromschema.FromDatabase alone is the plausible half-fix -- that
+// the pass into modelast.CollectDatabase alone is the plausible half-fix -- that
 // is the obvious whole-schema conversion -- and it leaves every `schema diff`
 // and every generated migration untouched, which is the path an inspected
 // database actually travels.
@@ -84,7 +84,7 @@ func TestGenerateSchemaDiffSQLQualifiesDeclaredUserTypes(t *testing.T) {
 }
 
 // TestGenerateSchemaDiffSQLLeavesABuiltInTypeAlone is the same enumeration at
-// the planner, and it is here rather than only in the fromschema package
+// the planner, and it is here rather than only in the modelast package
 // because this is the path an inspected database travels: `schema diff` builds
 // its CREATE TABLE here, and a guard that holds in the pass but is bypassed on
 // the way to this call site would still ship the retyped column.

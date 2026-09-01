@@ -1,10 +1,11 @@
 # What every desired-schema field is for
 
 A fact an author declares can disappear on the way to SQL, and the render still
-exits 0. Five repairs for that shape landed in one week across four packages —
-`internal/deporder`, the ClickHouse renderer, `internal/convert/dbschematogo`
-and `internal/convert/fromschema` twice — each of them a converter that walked
-the model field by field and a field nobody had taught it about.
+exits 0. Five repairs for that shape landed in one week across four package
+areas: `internal/deporder`, the ClickHouse renderer,
+`internal/convert/dbschematogo`, and the model-to-AST lowering now in
+`internal/modelast`. Each path walked the model field by field and omitted a
+field it had not been taught about.
 
 This document is the answer to "which fields could that happen to next". Every
 field reachable from `core/schemamodel.Database` carries one disposition, and

@@ -20,10 +20,10 @@ import (
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/dbexprprobe"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/genexprprobe"
+	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -350,10 +350,10 @@ func oracleConvergenceDeclaration() *schemamodel.Database {
 func oracleConvergenceNodes(declared *schemamodel.Database) []ast.Node {
 	nodes := make([]ast.Node, 0, len(declared.Tables)+len(declared.Indexes))
 	for _, table := range declared.Tables {
-		nodes = append(nodes, fromschema.FromTable(table, declared.Fields, declared.Enums, platform.Oracle))
+		nodes = append(nodes, modelast.FromTable(table, declared.Fields, declared.Enums, platform.Oracle))
 	}
 	for _, index := range declared.Indexes {
-		nodes = append(nodes, fromschema.FromIndex(index))
+		nodes = append(nodes, modelast.FromIndex(index))
 	}
 	return nodes
 }

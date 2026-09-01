@@ -386,7 +386,7 @@ func notIn(first, second []string) []string {
 // divergence fails, and a repaired one fails until its entry is removed.
 //
 // The object-kind half of this comparison lives in
-// internal/convert/fromschema.TestRenderAndPlanAgreeOnEveryPostgresFamilyTarget
+// internal/modelast.TestRenderAndPlanAgreeOnEveryPostgresFamilyTarget
 // and catches an object a surface loses. This half catches a FIELD one loses
 // while both still emit the object.
 func TestSurfaces_AgreeExceptWhereRecorded(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/convert/toschema"
+	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/internal/parser"
 )
 
@@ -30,7 +30,7 @@ func renderedSQL(c *qt.C, dialect, sql string) string {
 
 	nodes := make([]ast.Node, 0, len(database.Functions))
 	for _, function := range database.Functions {
-		nodes = append(nodes, fromschema.FromFunction(function))
+		nodes = append(nodes, modelast.FromFunction(function))
 	}
 	out, err := renderer.RenderSQL(dialect, nodes...)
 	c.Assert(err, qt.IsNil)

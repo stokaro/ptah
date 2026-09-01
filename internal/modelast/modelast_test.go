@@ -1,0 +1,3395 @@
+package modelast_test
+
+import (
+	"strings"
+	"testing"
+	"unicode/utf8"
+
+	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/internal/modelast"
+	"go.5x5.cz/ptah/internal/schemaprep"
+)
+
+func tableStatementByName(statements *ast.StatementList, name string) *ast.CreateTableNode {
+	for _, stmt := range statements.Statements {
+		table, ok := stmt.(*ast.CreateTableNode)
+		if ok && table.Name == name {
+			return table
+		}
+	}
+	return nil
+}
+
+func countColumns(table *ast.CreateTableNode, name string) int {
+	count := 0
+	for _, column := range table.Columns {
+		if column.Name == name {
+			count++
+		}
+	}
+	return count
+}
+
+func countFields(fields []schemamodel.Field, structName, name string) int {
+	count := 0
+	for _, field := range fields {
+		if field.StructName == structName && field.Name == name {
+			count++
+		}
+	}
+	return count
+}
+
+func columnByName(table *ast.CreateTableNode, name string) *ast.ColumnNode {
+	for _, column := range table.Columns {
+		if column.Name == name {
+			return column
+		}
+	}
+	return nil
+}
+
+func countEnumStatements(statements *ast.StatementList) int {
+	count := 0
+	for _, statement := range statements.Statements {
+		if _, ok := statement.(*ast.EnumNode); ok {
+			count++
+		}
+	}
+	return count
+}
+
+func tableStatementIndexByName(statements *ast.StatementList, name string) int {
+	for i, stmt := range statements.Statements {
+		table, ok := stmt.(*ast.CreateTableNode)
+		if ok && table.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+func extensionStatementIndexByName(statements *ast.StatementList, name string) int {
+	for i, stmt := range statements.Statements {
+		extension, ok := stmt.(*ast.ExtensionNode)
+		if ok && extension.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+func functionStatementIndexByName(statements *ast.StatementList, name string) int {
+	for i, stmt := range statements.Statements {
+		function, ok := stmt.(*ast.CreateFunctionNode)
+		if ok && function.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+func createSequenceStatementByName(statements *ast.StatementList, name string) *ast.CreateSequenceNode {
+	for _, stmt := range statements.Statements {
+		sequence, ok := stmt.(*ast.CreateSequenceNode)
+		if ok && sequence.Name == name {
+			return sequence
+		}
+	}
+	return nil
+}
+
+func createSequenceStatementIndexByName(statements *ast.StatementList, name string) int {
+	for i, stmt := range statements.Statements {
+		sequence, ok := stmt.(*ast.CreateSequenceNode)
+		if ok && sequence.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+func alterSequenceStatementIndexByName(statements *ast.StatementList, name string) int {
+	for i, stmt := range statements.Statements {
+		sequence, ok := stmt.(*ast.AlterSequenceNode)
+		if ok && sequence.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+func foreignKeyAlterStatementByName(statements *ast.StatementList, tableName, constraintName string) *ast.AlterTableNode {
+	for _, stmt := range statements.Statements {
+		alter, ok := stmt.(*ast.AlterTableNode)
+		if !ok || alter.Name != tableName {
+			continue
+		}
+		for _, operation := range alter.Operations {
+			add, ok := operation.(*ast.AddConstraintOperation)
+			if ok && add.Constraint.Name == constraintName && add.Constraint.Type == ast.ForeignKeyConstraint {
+				return alter
+			}
+		}
+	}
+	return nil
+}
+
+func indexStatementIndexByName(statements *ast.StatementList, name string) int {
+	for i, stmt := range statements.Statements {
+		index, ok := stmt.(*ast.IndexNode)
+		if ok && index.Name == name {
+			return i
+		}
+	}
+	return -1
+}
+
+func foreignKeyAlterStatementIndexByName(statements *ast.StatementList, constraintName string) int {
+	for i, stmt := range statements.Statements {
+		alter, ok := stmt.(*ast.AlterTableNode)
+		if !ok {
+			continue
+		}
+		for _, operation := range alter.Operations {
+			add, ok := operation.(*ast.AddConstraintOperation)
+			if ok && add.Constraint.Name == constraintName && add.Constraint.Type == ast.ForeignKeyConstraint {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func foreignKeyConstraintNames(statements *ast.StatementList) []string {
+	var names []string
+	for _, statement := range statements.Statements {
+		alter, ok := statement.(*ast.AlterTableNode)
+		if !ok {
+			continue
+		}
+		for _, operation := range alter.Operations {
+			add, ok := operation.(*ast.AddConstraintOperation)
+			if ok && add.Constraint.Type == ast.ForeignKeyConstraint {
+				names = append(names, add.Constraint.Name)
+			}
+		}
+	}
+	return names
+}
+
+func databaseWithGeneratedForeignKeys(tableName string, fieldNames ...string) schemamodel.Database {
+	fields := []schemamodel.Field{
+		{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
+		{StructName: "Child", Name: "id", Type: "INTEGER", Primary: true},
+	}
+	for _, fieldName := range fieldNames {
+		fields = append(fields, schemamodel.Field{
+			StructName: "Child",
+			Name:       fieldName,
+			Type:       "INTEGER",
+			Foreign:    "parents(id)",
+		})
+	}
+	return schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "Parent", Name: "parents"},
+			{StructName: "Child", Name: tableName},
+		},
+		Fields: fields,
+	}
+}
+
+func TestFromField_BasicProperties(t *testing.T) {
+	tests := []struct {
+		name           string
+		field          schemamodel.Field
+		targetPlatform string
+		expected       func(*ast.ColumnNode) bool
+	}{
+		{
+			name: "basic field with name and type",
+			field: schemamodel.Field{
+				Name:     "email",
+				Type:     "VARCHAR(255)",
+				Nullable: true, // Explicitly set to true
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.Name == "email" && col.Type == "VARCHAR(255)" && col.Nullable == true
+			},
+		},
+		{
+			name: "non-nullable field",
+			field: schemamodel.Field{
+				Name:     "id",
+				Type:     "INTEGER",
+				Nullable: false,
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.Name == "id" && col.Type == "INTEGER" && col.Nullable == false
+			},
+		},
+		{
+			name: "primary key field",
+			field: schemamodel.Field{
+				Name:    "id",
+				Type:    "SERIAL",
+				Primary: true,
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.Name == "id" && col.Primary == true
+			},
+		},
+		{
+			name: "unique field",
+			field: schemamodel.Field{
+				Name:   "username",
+				Type:   "VARCHAR(50)",
+				Unique: true,
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.Name == "username" && col.Unique == true
+			},
+		},
+		{
+			name: "auto-increment field",
+			field: schemamodel.Field{
+				Name:    "id",
+				Type:    "INTEGER",
+				AutoInc: true,
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.Name == "id" && col.AutoInc == true
+			},
+		},
+		{
+			name: "identity field",
+			field: schemamodel.Field{
+				Name:               "id",
+				Type:               "INTEGER",
+				IdentityGeneration: "ALWAYS",
+				IdentityStart:      "10",
+				IdentityIncrement:  "5",
+				IdentityOptions:    "START WITH 10 INCREMENT BY 5 CACHE 3",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.AutoInc == true &&
+					col.IdentityGeneration == "ALWAYS" &&
+					col.IdentityStart == "10" &&
+					col.IdentityIncrement == "5" &&
+					col.IdentityOptions == "START WITH 10 INCREMENT BY 5 CACHE 3"
+			},
+		},
+		{
+			name: "generated field",
+			field: schemamodel.Field{
+				Name:                "slug",
+				Type:                "TEXT",
+				GeneratedExpression: "lower(name)",
+				GeneratedKind:       "STORED",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.GeneratedExpression == "lower(name)" && col.GeneratedKind == "STORED"
+			},
+		},
+		{
+			name: "PostgreSQL generated field defaults to stored",
+			field: schemamodel.Field{
+				Name:                "slug",
+				Type:                "TEXT",
+				GeneratedExpression: "lower(name)",
+			},
+			targetPlatform: "postgres",
+			expected: func(col *ast.ColumnNode) bool {
+				return col.GeneratedExpression == "lower(name)" && col.GeneratedKind == "STORED"
+			},
+		},
+		{
+			name: "PostgreSQL explicit virtual generated field is preserved",
+			field: schemamodel.Field{
+				Name:                "slug",
+				Type:                "TEXT",
+				GeneratedExpression: "lower(name)",
+				GeneratedKind:       "VIRTUAL",
+			},
+			targetPlatform: "postgres",
+			expected: func(col *ast.ColumnNode) bool {
+				return col.GeneratedExpression == "lower(name)" && col.GeneratedKind == "VIRTUAL"
+			},
+		},
+		{
+			name: "MySQL generated field defaults to virtual",
+			field: schemamodel.Field{
+				Name:                "slug",
+				Type:                "TEXT",
+				GeneratedExpression: "lower(name)",
+			},
+			targetPlatform: "mysql",
+			expected: func(col *ast.ColumnNode) bool {
+				return col.GeneratedExpression == "lower(name)" && col.GeneratedKind == "VIRTUAL"
+			},
+		},
+		{
+			name: "SQLite generated field defaults to virtual",
+			field: schemamodel.Field{
+				Name:                "slug",
+				Type:                "TEXT",
+				GeneratedExpression: "lower(name)",
+			},
+			targetPlatform: "sqlite",
+			expected: func(col *ast.ColumnNode) bool {
+				return col.GeneratedExpression == "lower(name)" && col.GeneratedKind == "VIRTUAL"
+			},
+		},
+		{
+			name: "column update expression",
+			field: schemamodel.Field{
+				Name:             "updated_at",
+				Type:             "TIMESTAMP",
+				UpdateExpression: "CURRENT_TIMESTAMP",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.UpdateExpression == "CURRENT_TIMESTAMP"
+			},
+		},
+		{
+			name: "column charset and collate",
+			field: schemamodel.Field{
+				Name:    "name",
+				Type:    "VARCHAR(255)",
+				Charset: "hebrew",
+				Collate: "hebrew_general_ci",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.Charset == "hebrew" && col.Collate == "hebrew_general_ci"
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := modelast.FromField(test.field, nil, test.targetPlatform)
+			c.Assert(result, qt.IsNotNil)
+			c.Assert(test.expected(result), qt.IsTrue)
+		})
+	}
+}
+
+func TestFromField_DefaultValues(t *testing.T) {
+	tests := []struct {
+		name     string
+		field    schemamodel.Field
+		expected func(*ast.ColumnNode) bool
+	}{
+		{
+			name: "literal default value",
+			field: schemamodel.Field{
+				Name:    "status",
+				Type:    "VARCHAR(20)",
+				Default: "'active'",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.Default != nil && col.Default.Value == "'active'" &&
+					col.Default.HasLiteral() && col.Default.Expression == ""
+			},
+		},
+		{
+			name: "empty literal default value",
+			field: schemamodel.Field{
+				Name:       "status",
+				Type:       "VARCHAR(20)",
+				DefaultSet: true,
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.Default != nil && col.Default.Value == "" &&
+					col.Default.HasLiteral() && col.Default.Expression == ""
+			},
+		},
+		{
+			name: "expression default value",
+			field: schemamodel.Field{
+				Name:        "created_at",
+				Type:        "TIMESTAMP",
+				DefaultExpr: "NOW()",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.Default != nil && col.Default.Expression == "NOW()" && col.Default.Value == ""
+			},
+		},
+		{
+			name: "no default value",
+			field: schemamodel.Field{
+				Name: "description",
+				Type: "TEXT",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.Default == nil
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := modelast.FromField(test.field, nil, "")
+			c.Assert(result, qt.IsNotNil)
+			c.Assert(test.expected(result), qt.IsTrue)
+		})
+	}
+}
+
+func TestFromField_ForeignKeys(t *testing.T) {
+	tests := []struct {
+		name     string
+		field    schemamodel.Field
+		expected func(*ast.ColumnNode) bool
+	}{
+		{
+			name: "foreign key with table and column",
+			field: schemamodel.Field{
+				Name:    "user_id",
+				Type:    "INTEGER",
+				Foreign: "users(id)",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.ForeignKey != nil &&
+					col.ForeignKey.Table == "users" &&
+					col.ForeignKey.Column == "id"
+			},
+		},
+		{
+			name: "foreign key with table only (defaults to id)",
+			field: schemamodel.Field{
+				Name:    "category_id",
+				Type:    "INTEGER",
+				Foreign: "categories",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.ForeignKey != nil &&
+					col.ForeignKey.Table == "categories" &&
+					col.ForeignKey.Column == "id"
+			},
+		},
+		{
+			name: "foreign key with custom name",
+			field: schemamodel.Field{
+				Name:           "user_id",
+				Type:           "INTEGER",
+				Foreign:        "users(id)",
+				ForeignKeyName: "fk_posts_user",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.ForeignKey != nil &&
+					col.ForeignKey.Name == "fk_posts_user"
+			},
+		},
+		{
+			name: "no foreign key",
+			field: schemamodel.Field{
+				Name: "title",
+				Type: "VARCHAR(255)",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.ForeignKey == nil
+			},
+		},
+		{
+			name: "foreign key with ON DELETE CASCADE (issue #117)",
+			field: schemamodel.Field{
+				Name:           "commodity_id",
+				Type:           "TEXT",
+				Foreign:        "commodities(id)",
+				ForeignKeyName: "fk_cs_commodity",
+				OnDelete:       "CASCADE",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.ForeignKey != nil &&
+					col.ForeignKey.OnDelete == "CASCADE" &&
+					col.ForeignKey.OnUpdate == ""
+			},
+		},
+		{
+			name: "foreign key with ON DELETE SET NULL and ON UPDATE CASCADE",
+			field: schemamodel.Field{
+				Name:           "owner_id",
+				Type:           "INTEGER",
+				Foreign:        "users(id)",
+				ForeignKeyName: "fk_owner",
+				OnDelete:       "SET NULL",
+				OnUpdate:       "CASCADE",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.ForeignKey != nil &&
+					col.ForeignKey.OnDelete == "SET NULL" &&
+					col.ForeignKey.OnUpdate == "CASCADE"
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := modelast.FromField(test.field, nil, "")
+			c.Assert(result, qt.IsNotNil)
+			c.Assert(test.expected(result), qt.IsTrue)
+		})
+	}
+}
+
+func TestFromField_EnumConversion(t *testing.T) {
+	tests := []struct {
+		name           string
+		field          schemamodel.Field
+		enums          []schemamodel.Enum
+		targetPlatform string
+		expectedType   string
+		expectedCheck  string
+	}{
+		{
+			name: "PostgreSQL keeps enum type name",
+			field: schemamodel.Field{
+				Name: "status",
+				Type: "enum_user_status",
+			},
+			enums: []schemamodel.Enum{
+				{Name: "enum_user_status", Values: []string{"active", "inactive", "suspended"}},
+			},
+			targetPlatform: "postgres",
+			expectedType:   "enum_user_status",
+		},
+		{
+			name: "MySQL converts to inline enum",
+			field: schemamodel.Field{
+				Name: "status",
+				Type: "enum_user_status",
+			},
+			enums: []schemamodel.Enum{
+				{Name: "enum_user_status", Values: []string{"active", "inactive", "suspended"}},
+			},
+			targetPlatform: "mysql",
+			expectedType:   "ENUM('active', 'inactive', 'suspended')",
+		},
+		{
+			name: "MariaDB converts to inline enum",
+			field: schemamodel.Field{
+				Name: "status",
+				Type: "enum_user_status",
+			},
+			enums: []schemamodel.Enum{
+				{Name: "enum_user_status", Values: []string{"active", "inactive", "suspended"}},
+			},
+			targetPlatform: "mariadb",
+			expectedType:   "ENUM('active', 'inactive', 'suspended')",
+		},
+		{
+			name: "SQLite converts enum to text with check",
+			field: schemamodel.Field{
+				Name: "status",
+				Type: "enum_user_status",
+			},
+			enums: []schemamodel.Enum{
+				{Name: "enum_user_status", Values: []string{"active", "inactive", "suspended"}},
+			},
+			targetPlatform: "sqlite",
+			expectedType:   "TEXT",
+			expectedCheck:  "status IN ('active', 'inactive', 'suspended')",
+		},
+		{
+			name: "SQLite preserves explicit check when adding enum check",
+			field: schemamodel.Field{
+				Name:  "status",
+				Type:  "enum_user_status",
+				Check: "status <> 'suspended'",
+			},
+			enums: []schemamodel.Enum{
+				{Name: "enum_user_status", Values: []string{"active", "inactive", "suspended"}},
+			},
+			targetPlatform: "sqlite",
+			expectedType:   "TEXT",
+			expectedCheck:  "(status <> 'suspended') AND status IN ('active', 'inactive', 'suspended')",
+		},
+		{
+			name: "Non-enum field unchanged",
+			field: schemamodel.Field{
+				Name: "name",
+				Type: "VARCHAR(255)",
+			},
+			enums:          nil,
+			targetPlatform: "mysql",
+			expectedType:   "VARCHAR(255)",
+		},
+		{
+			name: "Enum field without matching enum definition unchanged",
+			field: schemamodel.Field{
+				Name: "status",
+				Type: "enum_unknown_status",
+			},
+			enums: []schemamodel.Enum{
+				{Name: "enum_user_status", Values: []string{"active", "inactive"}},
+			},
+			targetPlatform: "mysql",
+			expectedType:   "enum_unknown_status",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := modelast.FromField(test.field, test.enums, test.targetPlatform)
+			c.Assert(result, qt.IsNotNil)
+			c.Assert(result.Type, qt.Equals, test.expectedType)
+			c.Assert(result.Check, qt.Equals, test.expectedCheck)
+		})
+	}
+}
+
+func TestFromField_CheckAndComment(t *testing.T) {
+	tests := []struct {
+		name     string
+		field    schemamodel.Field
+		expected func(*ast.ColumnNode) bool
+	}{
+		{
+			name: "field with check constraint",
+			field: schemamodel.Field{
+				Name:  "age",
+				Type:  "INTEGER",
+				Check: "age >= 0",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.Check == "age >= 0"
+			},
+		},
+		{
+			name: "field with comment",
+			field: schemamodel.Field{
+				Name:    "email",
+				Type:    "VARCHAR(255)",
+				Comment: "User email address",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.Comment == "User email address"
+			},
+		},
+		{
+			name: "field with both check and comment",
+			field: schemamodel.Field{
+				Name:    "price",
+				Type:    "DECIMAL(10,2)",
+				Check:   "price > 0",
+				Comment: "Product price in USD",
+			},
+			expected: func(col *ast.ColumnNode) bool {
+				return col.Check == "price > 0" && col.Comment == "Product price in USD"
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := modelast.FromField(test.field, nil, "")
+			c.Assert(result, qt.IsNotNil)
+			c.Assert(test.expected(result), qt.IsTrue)
+		})
+	}
+}
+
+func TestFromTable_BasicTable(t *testing.T) {
+	tests := []struct {
+		name     string
+		table    schemamodel.Table
+		fields   []schemamodel.Field
+		expected func(*ast.CreateTableNode) bool
+	}{
+		{
+			name: "basic table with columns",
+			table: schemamodel.Table{
+				StructName: "User",
+				Name:       "users",
+			},
+			fields: []schemamodel.Field{
+				{
+					StructName: "User",
+					Name:       "id",
+					Type:       "SERIAL",
+					Primary:    true,
+				},
+				{
+					StructName: "User",
+					Name:       "email",
+					Type:       "VARCHAR(255)",
+					Nullable:   false,
+				},
+			},
+			expected: func(table *ast.CreateTableNode) bool {
+				return table.Name == "users" &&
+					len(table.Columns) == 2 &&
+					table.Columns[0].Name == "id" &&
+					table.Columns[1].Name == "email"
+			},
+		},
+		{
+			name: "table with comment",
+			table: schemamodel.Table{
+				StructName: "Product",
+				Name:       "products",
+				Comment:    "Product catalog",
+			},
+			fields: []schemamodel.Field{
+				{
+					StructName: "Product",
+					Name:       "id",
+					Type:       "SERIAL",
+					Primary:    true,
+				},
+			},
+			expected: func(table *ast.CreateTableNode) bool {
+				return table.Name == "products" &&
+					table.Comment == "Product catalog" &&
+					len(table.Columns) == 1
+			},
+		},
+		{
+			name: "table with engine option",
+			table: schemamodel.Table{
+				StructName: "Log",
+				Name:       "logs",
+				Engine:     "InnoDB",
+			},
+			fields: []schemamodel.Field{
+				{
+					StructName: "Log",
+					Name:       "id",
+					Type:       "BIGINT",
+					Primary:    true,
+				},
+			},
+			expected: func(table *ast.CreateTableNode) bool {
+				return table.Name == "logs" &&
+					table.Options["ENGINE"] == "InnoDB" &&
+					len(table.Columns) == 1
+			},
+		},
+		{
+			name: "table with auto increment option",
+			table: schemamodel.Table{
+				StructName:    "User",
+				Name:          "users",
+				AutoIncrement: "1000",
+			},
+			fields: []schemamodel.Field{
+				{
+					StructName: "User",
+					Name:       "id",
+					Type:       "BIGINT",
+					Primary:    true,
+					AutoInc:    true,
+				},
+			},
+			expected: func(table *ast.CreateTableNode) bool {
+				return table.Name == "users" &&
+					table.Options["AUTO_INCREMENT"] == "1000" &&
+					len(table.Columns) == 1
+			},
+		},
+		{
+			name: "table with charset and collate options",
+			table: schemamodel.Table{
+				StructName: "User",
+				Name:       "users",
+				Charset:    "utf8mb4",
+				Collate:    "utf8mb4_bin",
+			},
+			fields: []schemamodel.Field{
+				{
+					StructName: "User",
+					Name:       "name",
+					Type:       "VARCHAR(255)",
+				},
+			},
+			expected: func(table *ast.CreateTableNode) bool {
+				return table.Name == "users" &&
+					table.Options["CHARSET"] == "utf8mb4" &&
+					table.Options["COLLATE"] == "utf8mb4_bin" &&
+					len(table.Columns) == 1
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := modelast.FromTable(test.table, test.fields, nil, "")
+			c.Assert(result, qt.IsNotNil)
+			c.Assert(test.expected(result), qt.IsTrue)
+		})
+	}
+}
+
+func TestFromTable_CompositePrimaryKey(t *testing.T) {
+	c := qt.New(t)
+
+	table := schemamodel.Table{
+		StructName: "UserRole",
+		Name:       "user_roles",
+		PrimaryKey: []string{"user_id", "role_id"},
+	}
+
+	fields := []schemamodel.Field{
+		{
+			StructName: "UserRole",
+			Name:       "user_id",
+			Type:       "INTEGER",
+			Foreign:    "users(id)",
+		},
+		{
+			StructName: "UserRole",
+			Name:       "role_id",
+			Type:       "INTEGER",
+			Foreign:    "roles(id)",
+		},
+	}
+
+	result := modelast.FromTable(table, fields, nil, "")
+
+	c.Assert(result, qt.IsNotNil)
+	c.Assert(result.Name, qt.Equals, "user_roles")
+	c.Assert(result.Columns, qt.HasLen, 2)
+	c.Assert(result.Constraints, qt.HasLen, 1)
+	c.Assert(result.Constraints[0].Type, qt.Equals, ast.PrimaryKeyConstraint)
+	c.Assert(result.Constraints[0].Columns, qt.DeepEquals, []string{"user_id", "role_id"})
+}
+
+func TestFromTablePreservesSQLiteVirtualTableIdentifierWhitespace(t *testing.T) {
+	c := qt.New(t)
+	table := schemamodel.Table{
+		StructName:       "VirtualDocs",
+		Schema:           " aux ",
+		Name:             " docs ",
+		VirtualModule:    "fts5",
+		VirtualArguments: "body",
+	}
+
+	result := modelast.FromTable(table, nil, nil, platform.SQLite)
+
+	c.Assert(result.Name, qt.Equals, `" aux "." docs "`)
+	c.Assert(result.Options[ast.SQLiteVirtualModuleOption], qt.Equals, "fts5")
+	sql, err := renderer.RenderSQL(platform.SQLite, result)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Equals, "CREATE VIRTUAL TABLE \" aux \".\" docs \" USING fts5(body);\n")
+}
+
+func TestFromTable_FieldForeignKeyWithoutNameUsesTableColumnConvention(t *testing.T) {
+	c := qt.New(t)
+
+	table := schemamodel.Table{
+		StructName: "Book",
+		Name:       "books",
+	}
+	fields := []schemamodel.Field{
+		{
+			StructName: "Book",
+			Name:       "author_id",
+			Type:       "INTEGER",
+			Foreign:    "authors(id)",
+		},
+	}
+
+	result := modelast.FromTable(table, fields, nil, "postgres")
+	c.Assert(result, qt.IsNotNil)
+	c.Assert(result.Columns, qt.HasLen, 1)
+	c.Assert(result.Columns[0].ForeignKey, qt.IsNotNil)
+	c.Assert(result.Columns[0].ForeignKey.Name, qt.Equals, "fk_books_author_id")
+}
+
+func TestFromTable_PrimaryKeyParts(t *testing.T) {
+	c := qt.New(t)
+
+	table := schemamodel.Table{
+		StructName: "Token",
+		Name:       "tokens",
+		PrimaryKey: []string{"id"},
+		PrimaryKeyParts: []schemamodel.PrimaryKeyPart{{
+			Name:   "id",
+			Prefix: "7",
+			Desc:   true,
+		}},
+	}
+	fields := []schemamodel.Field{{
+		StructName: "Token",
+		Name:       "id",
+		Type:       "tinytext",
+		Primary:    true,
+	}}
+
+	result := modelast.FromTable(table, fields, nil, "")
+
+	c.Assert(result.Columns, qt.HasLen, 1)
+	c.Assert(result.Columns[0].Primary, qt.IsFalse)
+	c.Assert(result.Constraints, qt.HasLen, 1)
+	c.Assert(result.Constraints[0].Type, qt.Equals, ast.PrimaryKeyConstraint)
+	c.Assert(result.Constraints[0].Columns, qt.DeepEquals, []string{"id"})
+	c.Assert(result.Constraints[0].ColumnParts, qt.DeepEquals, []ast.ConstraintColumn{{
+		Name:   "id",
+		Prefix: "7",
+		Desc:   true,
+	}})
+}
+
+func TestFromTable_PrimaryKeyInclude(t *testing.T) {
+	c := qt.New(t)
+
+	table := schemamodel.Table{
+		StructName:        "User",
+		Name:              "users",
+		PrimaryKey:        []string{"id"},
+		PrimaryKeyInclude: []string{"covering"},
+	}
+	fields := []schemamodel.Field{
+		{
+			StructName: "User",
+			Name:       "id",
+			Type:       "INTEGER",
+			Primary:    true,
+		},
+		{
+			StructName: "User",
+			Name:       "covering",
+			Type:       "INTEGER",
+		},
+	}
+
+	result := modelast.FromTable(table, fields, nil, "")
+
+	c.Assert(result.Columns, qt.HasLen, 2)
+	c.Assert(result.Columns[0].Primary, qt.IsFalse)
+	c.Assert(result.Constraints, qt.HasLen, 1)
+	c.Assert(result.Constraints[0].Type, qt.Equals, ast.PrimaryKeyConstraint)
+	c.Assert(result.Constraints[0].Columns, qt.DeepEquals, []string{"id"})
+	c.Assert(result.Constraints[0].IncludeColumns, qt.DeepEquals, []string{"covering"})
+}
+
+func TestCollectDatabase_TableLevelConstraints(t *testing.T) {
+	c := qt.New(t)
+
+	db := schemamodel.Database{
+		Tables: []schemamodel.Table{{
+			StructName: "User",
+			Name:       "users",
+		}},
+		Fields: []schemamodel.Field{{
+			StructName: "User",
+			Name:       "email",
+			Type:       "VARCHAR(255)",
+		}},
+		Constraints: []schemamodel.Constraint{{
+			StructName:      "User",
+			Name:            "chk_users_email",
+			Type:            "CHECK",
+			CheckExpression: "position('@' in email) > 1",
+		}},
+	}
+
+	result := modelast.CollectDatabase(db, "postgres")
+
+	c.Assert(result.Statements, qt.HasLen, 1)
+	table, ok := result.Statements[0].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(table.Constraints, qt.HasLen, 1)
+	c.Assert(table.Constraints[0].Type, qt.Equals, ast.CheckConstraint)
+	c.Assert(table.Constraints[0].Name, qt.Equals, "chk_users_email")
+	c.Assert(table.Constraints[0].Expression, qt.Equals, "position('@' in email) > 1")
+}
+
+func TestCollectDatabase_TableLevelForeignKeysAreTwoPhase(t *testing.T) {
+	c := qt.New(t)
+
+	db := schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "Account", Name: "accounts"},
+			{StructName: "Profile", Name: "profiles"},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "Account", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Account", Name: "profile_id", Type: "INTEGER"},
+			{StructName: "Profile", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Profile", Name: "account_id", Type: "INTEGER"},
+		},
+		Constraints: []schemamodel.Constraint{
+			{
+				StructName:     "Account",
+				Name:           "fk_accounts_profiles",
+				Type:           "FOREIGN KEY",
+				Columns:        []string{"profile_id"},
+				ForeignTable:   "profiles",
+				ForeignColumns: []string{"id"},
+				OnDelete:       "CASCADE",
+			},
+			{
+				StructName:    "Profile",
+				Type:          "FOREIGN KEY",
+				Columns:       []string{"account_id"},
+				ForeignTable:  "accounts",
+				ForeignColumn: "id",
+				OnUpdate:      "RESTRICT",
+			},
+		},
+	}
+
+	result := modelast.CollectDatabase(db, "postgres")
+
+	c.Assert(result.Statements, qt.HasLen, 4)
+	accounts := result.Statements[0].(*ast.CreateTableNode)
+	profiles := result.Statements[1].(*ast.CreateTableNode)
+	c.Assert(accounts.Constraints, qt.HasLen, 0)
+	c.Assert(profiles.Constraints, qt.HasLen, 0)
+
+	accountsFK := foreignKeyAlterStatementByName(result, "accounts", "fk_accounts_profiles")
+	c.Assert(accountsFK, qt.IsNotNil)
+	addAccountsFK := accountsFK.Operations[0].(*ast.AddConstraintOperation)
+	c.Assert(addAccountsFK.Constraint.Columns, qt.DeepEquals, []string{"profile_id"})
+	c.Assert(addAccountsFK.Constraint.Reference.Table, qt.Equals, "profiles")
+	c.Assert(addAccountsFK.Constraint.Reference.ReferencedColumns(), qt.DeepEquals, []string{"id"})
+	c.Assert(addAccountsFK.Constraint.Reference.OnDelete, qt.Equals, "CASCADE")
+
+	profilesFK := foreignKeyAlterStatementByName(result, "profiles", "fk_profiles_account_id")
+	c.Assert(profilesFK, qt.IsNotNil)
+	addProfilesFK := profilesFK.Operations[0].(*ast.AddConstraintOperation)
+	c.Assert(addProfilesFK.Constraint.Columns, qt.DeepEquals, []string{"account_id"})
+	c.Assert(addProfilesFK.Constraint.Reference.Table, qt.Equals, "accounts")
+	c.Assert(addProfilesFK.Constraint.Reference.ReferencedColumns(), qt.DeepEquals, []string{"id"})
+	c.Assert(addProfilesFK.Constraint.Reference.OnUpdate, qt.Equals, "RESTRICT")
+}
+
+func TestCollectDatabase_ExtensionsPrecedeTablesAndIndexes(t *testing.T) {
+	c := qt.New(t)
+
+	db := schemamodel.Database{
+		Extensions: []schemamodel.Extension{{Name: "citext", IfNotExists: true}},
+		Tables: []schemamodel.Table{{
+			StructName: "User",
+			Name:       "users",
+		}},
+		Fields: []schemamodel.Field{
+			{StructName: "User", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "User", Name: "email", Type: "CITEXT"},
+		},
+		Indexes: []schemamodel.Index{{
+			StructName: "User",
+			Name:       "uq_users_email",
+			Fields:     []string{"email"},
+			Unique:     true,
+		}},
+	}
+
+	result := modelast.CollectDatabase(db, "postgres")
+
+	extension := extensionStatementIndexByName(result, "citext")
+	table := tableStatementIndexByName(result, "users")
+	index := indexStatementIndexByName(result, "uq_users_email")
+
+	c.Assert(extension, qt.Not(qt.Equals), -1)
+	c.Assert(table, qt.Not(qt.Equals), -1)
+	c.Assert(index, qt.Not(qt.Equals), -1)
+	c.Assert(extension < table, qt.IsTrue)
+	c.Assert(extension < index, qt.IsTrue)
+}
+
+func TestCollectDatabase_UniqueIndexesPrecedeForeignKeys(t *testing.T) {
+	c := qt.New(t)
+
+	db := schemamodel.Database{
+		Functions: []schemamodel.Function{{
+			Name:       "normalize_code",
+			Parameters: "value TEXT",
+			Returns:    "TEXT",
+			Language:   "sql",
+			Body:       "SELECT lower(value)",
+		}},
+		Tables: []schemamodel.Table{
+			{StructName: "Parent", Name: "parents"},
+			{StructName: "Child", Name: "children"},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Parent", Name: "code", Type: "TEXT"},
+			{StructName: "Child", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Child", Name: "parent_code", Type: "TEXT", Foreign: "parents(code)", ForeignKeyName: "fk_children_parent_code"},
+		},
+		Indexes: []schemamodel.Index{
+			{StructName: "Child", Name: "idx_children_parent_code", Fields: []string{"parent_code"}},
+			{StructName: "Parent", Name: "uq_parents_code", Fields: []string{"code"}, Unique: true},
+		},
+	}
+
+	result := modelast.CollectDatabase(db, "postgres")
+
+	function := functionStatementIndexByName(result, "normalize_code")
+	uniqueIndex := indexStatementIndexByName(result, "uq_parents_code")
+	foreignKey := foreignKeyAlterStatementIndexByName(result, "fk_children_parent_code")
+	nonUniqueIndex := indexStatementIndexByName(result, "idx_children_parent_code")
+
+	c.Assert(function, qt.Not(qt.Equals), -1)
+	c.Assert(uniqueIndex, qt.Not(qt.Equals), -1)
+	c.Assert(foreignKey, qt.Not(qt.Equals), -1)
+	c.Assert(nonUniqueIndex, qt.Not(qt.Equals), -1)
+	c.Assert(function < uniqueIndex, qt.IsTrue)
+	c.Assert(uniqueIndex < foreignKey, qt.IsTrue)
+	c.Assert(foreignKey < nonUniqueIndex, qt.IsTrue)
+}
+
+func TestCollectDatabase_DefaultForeignKeyNamesDoNotCollideAcrossSources(t *testing.T) {
+	c := qt.New(t)
+
+	database := schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "Parent", Name: "parents"},
+			{StructName: "Child", Name: "children"},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Child", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Child", Name: "parent_id", Type: "INTEGER", Foreign: "parents(id)"},
+		},
+		Constraints: []schemamodel.Constraint{{
+			StructName:    "Child",
+			Type:          "FOREIGN KEY",
+			Columns:       []string{"parent_id"},
+			ForeignTable:  "parents",
+			ForeignColumn: "id",
+		}},
+	}
+
+	statements := modelast.CollectDatabase(database, "postgres")
+	fieldAlter := statements.Statements[2].(*ast.AlterTableNode)
+	fieldOperation := fieldAlter.Operations[0].(*ast.AddConstraintOperation)
+	tableAlter := statements.Statements[3].(*ast.AlterTableNode)
+	tableOperation := tableAlter.Operations[0].(*ast.AddConstraintOperation)
+
+	c.Assert(fieldOperation.Constraint.Name, qt.Matches, `fk_children_parent_id_[0-9a-f]{8}`)
+	c.Assert(tableOperation.Constraint.Name, qt.Matches, `fk_children_parent_id_[0-9a-f]{8}`)
+	c.Assert(fieldOperation.Constraint.Name, qt.Not(qt.Equals), tableOperation.Constraint.Name)
+}
+
+func TestCollectDatabase_ExplicitForeignKeyNameReservesAutomaticName(t *testing.T) {
+	c := qt.New(t)
+
+	database := schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "Parent", Name: "parents"},
+			{StructName: "Child", Name: "children"},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Child", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Child", Name: "parent_id", Type: "INTEGER", Foreign: "parents(id)"},
+		},
+		Constraints: []schemamodel.Constraint{{
+			StructName:    "Child",
+			Name:          "fk_children_parent_id",
+			Type:          "FOREIGN KEY",
+			Columns:       []string{"parent_id"},
+			ForeignTable:  "parents",
+			ForeignColumn: "id",
+		}},
+	}
+
+	statements := modelast.CollectDatabase(database, "postgres")
+	fieldAlter := statements.Statements[2].(*ast.AlterTableNode)
+	fieldOperation := fieldAlter.Operations[0].(*ast.AddConstraintOperation)
+	tableAlter := statements.Statements[3].(*ast.AlterTableNode)
+	tableOperation := tableAlter.Operations[0].(*ast.AddConstraintOperation)
+
+	c.Assert(fieldOperation.Constraint.Name, qt.Matches, `fk_children_parent_id_[0-9a-f]{8}`)
+	c.Assert(tableOperation.Constraint.Name, qt.Equals, "fk_children_parent_id")
+}
+
+func TestCollectDatabase_MySQLFamilyExplicitForeignKeyNameReservesCaseInsensitiveAutomaticName(t *testing.T) {
+	database := schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "Parent", Name: "parents"},
+			{StructName: "Child", Name: "children"},
+			{StructName: "Audit", Name: "audit_entries"},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Child", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Child", Name: "parent_id", Type: "INTEGER", Foreign: "parents(id)"},
+			{StructName: "Audit", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Audit", Name: "parent_id", Type: "INTEGER"},
+		},
+		Constraints: []schemamodel.Constraint{{
+			StructName:    "Audit",
+			Name:          "FK_CHILDREN_PARENT_ID",
+			Type:          "FOREIGN KEY",
+			Columns:       []string{"parent_id"},
+			ForeignTable:  "parents",
+			ForeignColumn: "id",
+		}},
+	}
+
+	tests := []struct {
+		name    string
+		dialect string
+	}{
+		{name: "MySQL", dialect: platform.MySQL},
+		{name: "MariaDB", dialect: platform.MariaDB},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			names := foreignKeyConstraintNames(modelast.CollectDatabase(database, test.dialect))
+
+			c.Assert(names, qt.HasLen, 2)
+			c.Assert(names[0], qt.Matches, `fk_children_parent_id_[0-9a-f]{8}`)
+			c.Assert(names[1], qt.Equals, "FK_CHILDREN_PARENT_ID")
+		})
+	}
+}
+
+func TestCollectDatabase_GeneratedForeignKeyNamesRespectPostgreSQLByteLimit(t *testing.T) {
+	c := qt.New(t)
+	database := databaseWithGeneratedForeignKeys(
+		strings.Repeat("shared_table_prefix_", 4),
+		strings.Repeat("shared_column_prefix_", 4)+"alpha",
+		strings.Repeat("shared_column_prefix_", 4)+"beta",
+	)
+
+	names := foreignKeyConstraintNames(modelast.CollectDatabase(database, platform.Postgres))
+
+	c.Assert(names, qt.HasLen, 2)
+	c.Assert([]byte(names[0]), qt.HasLen, 63)
+	c.Assert([]byte(names[1]), qt.HasLen, 63)
+	c.Assert(names[0], qt.Matches, `.*_[0-9a-f]{8}`)
+	c.Assert(names[1], qt.Matches, `.*_[0-9a-f]{8}`)
+	c.Assert(names[0], qt.Not(qt.Equals), names[1])
+}
+
+func TestCollectDatabase_GeneratedForeignKeyNamesPreservePostgreSQLUTF8(t *testing.T) {
+	c := qt.New(t)
+	database := databaseWithGeneratedForeignKeys(
+		strings.Repeat("界", 30),
+		strings.Repeat("列", 20),
+	)
+
+	names := foreignKeyConstraintNames(modelast.CollectDatabase(database, platform.Postgres))
+
+	c.Assert(names, qt.HasLen, 1)
+	c.Assert(utf8.ValidString(names[0]), qt.IsTrue)
+	c.Assert([]byte(names[0]), qt.HasLen, 63)
+	c.Assert(names[0], qt.Matches, `.*_[0-9a-f]{8}`)
+}
+
+func TestCollectDatabase_GeneratedForeignKeyNamesRespectMySQLFamilyCharacterLimit(t *testing.T) {
+	database := databaseWithGeneratedForeignKeys(
+		strings.Repeat("資料", 40),
+		strings.Repeat("欄位", 20),
+	)
+	tests := []struct {
+		name    string
+		dialect string
+	}{
+		{name: "MySQL", dialect: platform.MySQL},
+		{name: "MariaDB", dialect: platform.MariaDB},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			names := foreignKeyConstraintNames(modelast.CollectDatabase(database, test.dialect))
+
+			c.Assert(names, qt.HasLen, 1)
+			c.Assert(utf8.RuneCountInString(names[0]), qt.Equals, 64)
+			c.Assert(len(names[0]) > 64, qt.IsTrue)
+			c.Assert(names[0], qt.Matches, `.*_[0-9a-f]{8}`)
+		})
+	}
+}
+
+func TestCollectDatabase_GeneratedForeignKeyNamesRespectSQLServerAndSpannerCharacterLimit(t *testing.T) {
+	database := databaseWithGeneratedForeignKeys(
+		strings.Repeat("資料", 70),
+		strings.Repeat("欄位", 40),
+	)
+	tests := []struct {
+		name    string
+		dialect string
+	}{
+		{name: "SQL Server", dialect: platform.SQLServer},
+		{name: "Spanner", dialect: platform.Spanner},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			names := foreignKeyConstraintNames(modelast.CollectDatabase(database, test.dialect))
+
+			c.Assert(names, qt.HasLen, 1)
+			c.Assert(utf8.RuneCountInString(names[0]), qt.Equals, 128)
+			c.Assert(len(names[0]) > 128, qt.IsTrue)
+			c.Assert(names[0], qt.Matches, `.*_[0-9a-f]{8}`)
+		})
+	}
+}
+
+func TestCollectDatabase_SchemaScopedForeignKeyNamesReserveExplicitNames(t *testing.T) {
+	tests := []struct {
+		name           string
+		dialect        string
+		explicitSchema string
+	}{
+		{name: "SQL Server default dbo", dialect: platform.SQLServer, explicitSchema: "dbo"},
+		{name: "Spanner default public", dialect: platform.Spanner, explicitSchema: "public"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			database := schemamodel.Database{
+				Tables: []schemamodel.Table{
+					{StructName: "Parent", Name: "parents"},
+					{StructName: "Child", Name: "children"},
+					{StructName: "Audit", Schema: test.explicitSchema, Name: "audit_entries"},
+				},
+				Fields: []schemamodel.Field{
+					{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
+					{StructName: "Child", Name: "parent_id", Type: "INTEGER", Foreign: "parents(id)"},
+					{
+						StructName:     "Audit",
+						Name:           "parent_id",
+						Type:           "INTEGER",
+						Foreign:        "parents(id)",
+						ForeignKeyName: "FK_CHILDREN_PARENT_ID",
+					},
+				},
+			}
+
+			names := foreignKeyConstraintNames(modelast.CollectDatabase(database, test.dialect))
+
+			c.Assert(names, qt.HasLen, 2)
+			c.Assert(names[0], qt.Matches, `fk_children_parent_id_[0-9a-f]{8}`)
+			c.Assert(names[1], qt.Equals, "FK_CHILDREN_PARENT_ID")
+		})
+	}
+}
+
+func TestCollectDatabase_SchemaScopedForeignKeyNamesMayRepeatAcrossSchemas(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+	}{
+		{name: "SQL Server", dialect: platform.SQLServer},
+		{name: "Spanner", dialect: platform.Spanner},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			database := schemamodel.Database{
+				Tables: []schemamodel.Table{
+					{StructName: "Parent", Name: "parents"},
+					{StructName: "TenantChild", Schema: "tenant", Name: "children"},
+					{StructName: "ArchiveChild", Schema: "archive", Name: "children"},
+				},
+				Fields: []schemamodel.Field{
+					{StructName: "Parent", Name: "id", Type: "INTEGER", Primary: true},
+					{StructName: "TenantChild", Name: "parent_id", Type: "INTEGER", Foreign: "parents(id)"},
+					{StructName: "ArchiveChild", Name: "parent_id", Type: "INTEGER", Foreign: "parents(id)"},
+				},
+			}
+
+			names := foreignKeyConstraintNames(modelast.CollectDatabase(database, test.dialect))
+
+			c.Assert(names, qt.DeepEquals, []string{"fk_children_parent_id", "fk_children_parent_id"})
+		})
+	}
+}
+
+func TestAssignDefaultForeignKeyNames_IsIdempotentAndCloneOnly(t *testing.T) {
+	c := qt.New(t)
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "Location", Name: "locations"},
+			{StructName: "Area", Name: "areas"},
+		},
+		Fields: []schemamodel.Field{{
+			StructName:     "Ownable",
+			Name:           "tenant_id",
+			Type:           "INTEGER",
+			Foreign:        "tenants(id)",
+			ForeignKeyName: "fk_entity_tenant",
+		}},
+		EmbeddedFields: []schemamodel.EmbeddedField{
+			{StructName: "Location", Mode: "inline", EmbeddedTypeName: "Ownable"},
+			{StructName: "Area", Mode: "inline", EmbeddedTypeName: "Ownable"},
+		},
+	}
+
+	first := schemaprep.AssignDefaultForeignKeyNames(database, platform.MySQL)
+	second := schemaprep.AssignDefaultForeignKeyNames(first, platform.MySQL)
+
+	c.Assert(second, qt.DeepEquals, first)
+	c.Assert(database.Fields, qt.DeepEquals, []schemamodel.Field{{
+		StructName:     "Ownable",
+		Name:           "tenant_id",
+		Type:           "INTEGER",
+		Foreign:        "tenants(id)",
+		ForeignKeyName: "fk_entity_tenant",
+	}})
+	c.Assert(database.EmbeddedFields, qt.HasLen, 2)
+}
+
+func TestCollectDatabase_GeneratedForeignKeyNamesAreDeterministic(t *testing.T) {
+	c := qt.New(t)
+	database := databaseWithGeneratedForeignKeys(
+		strings.Repeat("deterministic_table_", 4),
+		strings.Repeat("deterministic_column_", 4)+"alpha",
+		strings.Repeat("deterministic_column_", 4)+"beta",
+	)
+
+	first := foreignKeyConstraintNames(modelast.CollectDatabase(database, platform.Postgres))
+	second := foreignKeyConstraintNames(modelast.CollectDatabase(database, platform.Postgres))
+
+	c.Assert(first, qt.HasLen, 2)
+	c.Assert(second, qt.DeepEquals, first)
+	c.Assert(first, qt.DeepEquals, []string{
+		"fk_deterministic_table_deterministic_table_determinist_89ec4fc1",
+		"fk_deterministic_table_deterministic_table_determinist_cf1cecb2",
+	})
+}
+
+func TestCollectDatabase_SQLiteForeignKeysAreInline(t *testing.T) {
+	c := qt.New(t)
+
+	db := schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "Account", Name: "accounts"},
+			{StructName: "Profile", Name: "profiles"},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "Account", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Account", Name: "profile_id", Type: "INTEGER", Foreign: "profiles(id)", OnDelete: "CASCADE"},
+			{StructName: "Profile", Name: "id", Type: "INTEGER", Primary: true},
+			{StructName: "Profile", Name: "account_id", Type: "INTEGER"},
+		},
+		Constraints: []schemamodel.Constraint{{
+			StructName:    "Profile",
+			Type:          "FOREIGN KEY",
+			Columns:       []string{"account_id"},
+			ForeignTable:  "accounts",
+			ForeignColumn: "id",
+			OnUpdate:      "RESTRICT",
+		}},
+	}
+
+	result := modelast.CollectDatabase(db, "sqlite")
+
+	c.Assert(result.Statements, qt.HasLen, 2)
+	accounts := result.Statements[0].(*ast.CreateTableNode)
+	profiles := result.Statements[1].(*ast.CreateTableNode)
+	c.Assert(accounts.Columns[1].ForeignKey, qt.IsNotNil)
+	c.Assert(accounts.Columns[1].ForeignKey.Name, qt.Equals, "fk_accounts_profile_id")
+	c.Assert(accounts.Columns[1].ForeignKey.OnDelete, qt.Equals, "CASCADE")
+	c.Assert(profiles.Constraints, qt.HasLen, 1)
+	c.Assert(profiles.Constraints[0].Type, qt.Equals, ast.ForeignKeyConstraint)
+	c.Assert(profiles.Constraints[0].Name, qt.Equals, "fk_profiles_account_id")
+	c.Assert(foreignKeyAlterStatementByName(result, "accounts", "fk_accounts_profile_id"), qt.IsNil)
+	c.Assert(foreignKeyAlterStatementByName(result, "profiles", "fk_profiles_account_id"), qt.IsNil)
+}
+
+func TestCollectDatabase_Schemas(t *testing.T) {
+	c := qt.New(t)
+
+	db := schemamodel.Database{
+		Schemas: []schemamodel.Schema{{
+			Name:    "public",
+			Comment: "Application schema",
+		}},
+		Tables: []schemamodel.Table{{
+			StructName: "User",
+			Name:       "users",
+			Schema:     "public",
+		}},
+	}
+
+	result := modelast.CollectDatabase(db, "postgres")
+
+	c.Assert(result.Statements, qt.HasLen, 2)
+	schema, ok := result.Statements[0].(*ast.CreateSchemaNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(schema.Name, qt.Equals, "public")
+	c.Assert(schema.IfNotExists, qt.IsTrue)
+	c.Assert(schema.Comment, qt.Equals, "Application schema")
+}
+
+func TestFromTable_FiltersByStructName(t *testing.T) {
+	c := qt.New(t)
+
+	table := schemamodel.Table{
+		StructName: "User",
+		Name:       "users",
+	}
+
+	fields := []schemamodel.Field{
+		{
+			StructName: "User",
+			Name:       "id",
+			Type:       "SERIAL",
+		},
+		{
+			StructName: "Post", // Different struct - should be filtered out
+			Name:       "title",
+			Type:       "VARCHAR(255)",
+		},
+		{
+			StructName: "User",
+			Name:       "email",
+			Type:       "VARCHAR(255)",
+		},
+	}
+
+	result := modelast.FromTable(table, fields, nil, "")
+
+	c.Assert(result, qt.IsNotNil)
+	c.Assert(result.Name, qt.Equals, "users")
+	c.Assert(result.Columns, qt.HasLen, 2) // Only User fields
+	c.Assert(result.Columns[0].Name, qt.Equals, "id")
+	c.Assert(result.Columns[1].Name, qt.Equals, "email")
+}
+
+func TestFromIndex_BasicIndex(t *testing.T) {
+	tests := []struct {
+		name     string
+		index    schemamodel.Index
+		expected func(*ast.IndexNode) bool
+	}{
+		{
+			name: "simple index",
+			index: schemamodel.Index{
+				Name:       "idx_users_email",
+				StructName: "users",
+				Fields:     []string{"email"},
+			},
+			expected: func(idx *ast.IndexNode) bool {
+				return idx.Name == "idx_users_email" &&
+					idx.Table == "users" &&
+					len(idx.Columns) == 1 &&
+					idx.Columns[0] == "email" &&
+					idx.Unique == false
+			},
+		},
+		{
+			name: "unique index",
+			index: schemamodel.Index{
+				Name:       "idx_users_username",
+				StructName: "users",
+				Fields:     []string{"username"},
+				Unique:     true,
+			},
+			expected: func(idx *ast.IndexNode) bool {
+				return idx.Name == "idx_users_username" &&
+					idx.Unique == true
+			},
+		},
+		{
+			name: "composite index",
+			index: schemamodel.Index{
+				Name:       "idx_posts_user_created",
+				StructName: "posts",
+				Fields:     []string{"user_id", "created_at"},
+			},
+			expected: func(idx *ast.IndexNode) bool {
+				return idx.Name == "idx_posts_user_created" &&
+					idx.Table == "posts" &&
+					len(idx.Columns) == 2 &&
+					idx.Columns[0] == "user_id" &&
+					idx.Columns[1] == "created_at"
+			},
+		},
+		{
+			name: "index with comment",
+			index: schemamodel.Index{
+				Name:       "idx_products_price",
+				StructName: "products",
+				Fields:     []string{"price"},
+				Comment:    "Index for price range queries",
+			},
+			expected: func(idx *ast.IndexNode) bool {
+				return idx.Name == "idx_products_price" &&
+					idx.Comment == "Index for price range queries"
+			},
+		},
+		{
+			name: "fulltext index with parser",
+			index: schemamodel.Index{
+				Name:       "idx_users_bio",
+				StructName: "users",
+				Fields:     []string{"bio"},
+				Type:       "FULLTEXT",
+				Parser:     "ngram",
+			},
+			expected: func(idx *ast.IndexNode) bool {
+				return idx.Name == "idx_users_bio" &&
+					idx.Type == "FULLTEXT" &&
+					idx.Parser == "ngram"
+			},
+		},
+		{
+			name: "structured index parts",
+			index: schemamodel.Index{
+				Name:       "idx_users_rank_name",
+				StructName: "users",
+				Fields:     []string{"stale_rank", "stale_name"},
+				Parts: []schemamodel.IndexPart{
+					{Name: "rank", Operator: "bpchar_ops", Prefix: "7", Desc: true},
+					{Expr: "lower(name)", Operator: "text_pattern_ops"},
+				},
+			},
+			expected: func(idx *ast.IndexNode) bool {
+				return idx.Name == "idx_users_rank_name" &&
+					idx.Table == "users" &&
+					len(idx.Columns) == 2 &&
+					idx.Columns[0] == "rank" &&
+					idx.Columns[1] == "lower(name)" &&
+					len(idx.Parts) == 2 &&
+					idx.Parts[0] == (ast.IndexPart{Name: "rank", Operator: "bpchar_ops", Prefix: "7", Desc: true}) &&
+					idx.Parts[1] == (ast.IndexPart{Expr: "lower(name)", Operator: "text_pattern_ops"})
+			},
+		},
+		{
+			name: "index include columns",
+			index: schemamodel.Index{
+				Name:           "idx_users_name",
+				StructName:     "users",
+				Fields:         []string{"name"},
+				IncludeColumns: []string{"active"},
+			},
+			expected: func(idx *ast.IndexNode) bool {
+				return idx.Name == "idx_users_name" &&
+					idx.Table == "users" &&
+					idx.Columns[0] == "name" &&
+					idx.IncludeColumns[0] == "active"
+			},
+		},
+		{
+			name: "index storage params",
+			index: schemamodel.Index{
+				Name:          "idx_users_c",
+				StructName:    "users",
+				Fields:        []string{"c"},
+				Type:          "BRIN",
+				StorageParams: map[string]string{"pages_per_range": "2"},
+			},
+			expected: func(idx *ast.IndexNode) bool {
+				return idx.Name == "idx_users_c" &&
+					idx.Table == "users" &&
+					idx.Columns[0] == "c" &&
+					idx.Type == "BRIN" &&
+					idx.StorageParams["pages_per_range"] == "2"
+			},
+		},
+		{
+			name: "index nulls not distinct",
+			index: func() schemamodel.Index {
+				nullsDistinct := false
+				return schemamodel.Index{
+					Name:          "idx_users_c",
+					StructName:    "users",
+					Fields:        []string{"c"},
+					Unique:        true,
+					NullsDistinct: &nullsDistinct,
+				}
+			}(),
+			expected: func(idx *ast.IndexNode) bool {
+				return idx.Name == "idx_users_c" &&
+					idx.Unique &&
+					idx.NullsDistinct != nil &&
+					!*idx.NullsDistinct
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := modelast.FromIndex(test.index)
+			c.Assert(result, qt.IsNotNil)
+			c.Assert(test.expected(result), qt.IsTrue)
+		})
+	}
+}
+
+func TestCollectDatabase_IndexIncludeColumns(t *testing.T) {
+	c := qt.New(t)
+	db := schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{Name: "users", StructName: "User"},
+		},
+		Fields: []schemamodel.Field{
+			{Name: "name", Type: "text", StructName: "User"},
+			{Name: "active", Type: "boolean", StructName: "User"},
+		},
+		Indexes: []schemamodel.Index{
+			{
+				Name:           "users_name",
+				StructName:     "User",
+				Fields:         []string{"name"},
+				Condition:      "active",
+				IncludeColumns: []string{"active"},
+				StorageParams:  map[string]string{"pages_per_range": "2"},
+			},
+		},
+	}
+
+	result := modelast.CollectDatabase(db, "postgres")
+	c.Assert(result.Statements, qt.HasLen, 2)
+	index, ok := result.Statements[1].(*ast.IndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(index.Name, qt.Equals, "users_name")
+	c.Assert(index.Table, qt.Equals, "users")
+	c.Assert(index.Columns, qt.DeepEquals, []string{"name"})
+	c.Assert(index.Condition, qt.Equals, "active")
+	c.Assert(index.IncludeColumns, qt.DeepEquals, []string{"active"})
+	c.Assert(index.StorageParams, qt.DeepEquals, map[string]string{"pages_per_range": "2"})
+}
+
+func TestFromConstraint_UniqueNullsNotDistinct(t *testing.T) {
+	c := qt.New(t)
+	nullsDistinct := false
+
+	node := modelast.FromConstraint(schemamodel.Constraint{
+		Name:           "users_c_key",
+		Type:           "UNIQUE",
+		Columns:        []string{"c"},
+		IncludeColumns: []string{"covering"},
+		NullsDistinct:  &nullsDistinct,
+	})
+
+	c.Assert(node.Type, qt.Equals, ast.UniqueConstraint)
+	c.Assert(node.IncludeColumns, qt.DeepEquals, []string{"covering"})
+	c.Assert(node.NullsDistinct, qt.IsNotNil)
+	c.Assert(*node.NullsDistinct, qt.IsFalse)
+}
+
+func TestFromEnum_BasicEnum(t *testing.T) {
+	tests := []struct {
+		name     string
+		enum     schemamodel.Enum
+		expected func(*ast.EnumNode) bool
+	}{
+		{
+			name: "simple enum",
+			enum: schemamodel.Enum{
+				Name:   "status_type",
+				Values: []string{"active", "inactive", "pending"},
+			},
+			expected: func(enum *ast.EnumNode) bool {
+				return enum.Name == "status_type" &&
+					len(enum.Values) == 3 &&
+					enum.Values[0] == "active" &&
+					enum.Values[1] == "inactive" &&
+					enum.Values[2] == "pending"
+			},
+		},
+		{
+			name: "user role enum",
+			enum: schemamodel.Enum{
+				Name:   "user_role",
+				Values: []string{"admin", "moderator", "user", "guest"},
+			},
+			expected: func(enum *ast.EnumNode) bool {
+				return enum.Name == "user_role" &&
+					len(enum.Values) == 4 &&
+					enum.Values[0] == "admin" &&
+					enum.Values[3] == "guest"
+			},
+		},
+		{
+			name: "empty enum",
+			enum: schemamodel.Enum{
+				Name:   "empty_enum",
+				Values: make([]string, 0),
+			},
+			expected: func(enum *ast.EnumNode) bool {
+				return enum.Name == "empty_enum" &&
+					len(enum.Values) == 0
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := modelast.FromEnum(test.enum)
+			c.Assert(result, qt.IsNotNil)
+			c.Assert(test.expected(result), qt.IsTrue)
+		})
+	}
+}
+
+func TestCollectDatabase_CompleteSchema(t *testing.T) {
+	c := qt.New(t)
+
+	database := schemamodel.Database{
+		Enums: []schemamodel.Enum{
+			{
+				Name:   "user_status",
+				Values: []string{"active", "inactive"},
+			},
+		},
+		Tables: []schemamodel.Table{
+			{
+				StructName: "User",
+				Name:       "users",
+				Comment:    "User accounts",
+			},
+			{
+				StructName: "Post",
+				Name:       "posts",
+				Comment:    "Blog posts",
+			},
+		},
+		Fields: []schemamodel.Field{
+			{
+				StructName: "User",
+				Name:       "id",
+				Type:       "SERIAL",
+				Primary:    true,
+			},
+			{
+				StructName: "User",
+				Name:       "status",
+				Type:       "user_status",
+				Nullable:   false,
+			},
+			{
+				StructName: "Post",
+				Name:       "id",
+				Type:       "SERIAL",
+				Primary:    true,
+			},
+			{
+				StructName: "Post",
+				Name:       "user_id",
+				Type:       "INTEGER",
+				Foreign:    "users(id)",
+			},
+		},
+		Indexes: []schemamodel.Index{
+			{
+				Name:       "idx_users_status",
+				StructName: "users",
+				Fields:     []string{"status"},
+			},
+			{
+				Name:       "idx_posts_user",
+				StructName: "posts",
+				Fields:     []string{"user_id"},
+			},
+		},
+	}
+
+	result := modelast.CollectDatabase(database, "")
+
+	c.Assert(result, qt.IsNotNil)
+	c.Assert(result.Statements, qt.HasLen, 6) // 1 enum + 2 tables + 1 FK + 2 indexes
+
+	// Check statement ordering: enums first, then tables, then foreign keys, then indexes
+	enumNode, ok := result.Statements[0].(*ast.EnumNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(enumNode.Name, qt.Equals, "user_status")
+
+	table1Node, ok := result.Statements[1].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(table1Node.Name, qt.Equals, "users")
+
+	table2Node, ok := result.Statements[2].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(table2Node.Name, qt.Equals, "posts")
+
+	fkNode, ok := result.Statements[3].(*ast.AlterTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(fkNode.Name, qt.Equals, "posts")
+
+	index1Node, ok := result.Statements[4].(*ast.IndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(index1Node.Name, qt.Equals, "idx_users_status")
+
+	index2Node, ok := result.Statements[5].(*ast.IndexNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(index2Node.Name, qt.Equals, "idx_posts_user")
+}
+
+func TestCollectDatabase_EmptySchema(t *testing.T) {
+	c := qt.New(t)
+
+	database := schemamodel.Database{
+		Enums:   make([]schemamodel.Enum, 0),
+		Tables:  make([]schemamodel.Table, 0),
+		Fields:  make([]schemamodel.Field, 0),
+		Indexes: make([]schemamodel.Index, 0),
+	}
+
+	result := modelast.CollectDatabase(database, "")
+
+	c.Assert(result, qt.IsNotNil)
+	c.Assert(result.Statements, qt.HasLen, 0)
+}
+
+func TestCollectDatabase_InlineEnumDialectsOmitStandaloneEnumStatements(t *testing.T) {
+	database := schemamodel.Database{
+		Enums: []schemamodel.Enum{{
+			Name:   "enum_account_status",
+			Values: []string{"active", "suspended", "deleted"},
+		}},
+		Tables: []schemamodel.Table{{
+			StructName: "Account",
+			Name:       "accounts",
+		}},
+		Fields: []schemamodel.Field{{
+			StructName: "Account",
+			Name:       "status",
+			Type:       "enum_account_status",
+			Nullable:   false,
+			Default:    "active",
+			DefaultSet: true,
+		}},
+	}
+
+	tests := []struct {
+		dialect       string
+		expectedType  string
+		expectedCheck string
+	}{
+		{
+			dialect:      platform.MySQL,
+			expectedType: "ENUM('active', 'suspended', 'deleted')",
+		},
+		{
+			dialect:      platform.MariaDB,
+			expectedType: "ENUM('active', 'suspended', 'deleted')",
+		},
+		{
+			dialect:       platform.SQLite,
+			expectedType:  "TEXT",
+			expectedCheck: "status IN ('active', 'suspended', 'deleted')",
+		},
+		{
+			dialect:       platform.SQLServer,
+			expectedType:  "NVARCHAR(255)",
+			expectedCheck: "[status] IN ('active', 'suspended', 'deleted')",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			result := modelast.CollectDatabase(database, test.dialect)
+
+			c.Assert(result, qt.IsNotNil)
+			c.Assert(countEnumStatements(result), qt.Equals, 0)
+			table := tableStatementByName(result, "accounts")
+			c.Assert(table, qt.IsNotNil)
+			status := columnByName(table, "status")
+			c.Assert(status, qt.IsNotNil)
+			c.Assert(status.Type, qt.Equals, test.expectedType)
+			c.Assert(status.Check, qt.Equals, test.expectedCheck)
+		})
+	}
+}
+
+func TestCollectDatabase_PostgresKeepsStandaloneEnumStatements(t *testing.T) {
+	c := qt.New(t)
+
+	database := schemamodel.Database{
+		Enums: []schemamodel.Enum{{
+			Name:   "enum_account_status",
+			Values: []string{"active", "suspended", "deleted"},
+		}},
+		Tables: []schemamodel.Table{{
+			StructName: "Account",
+			Name:       "accounts",
+		}},
+		Fields: []schemamodel.Field{{
+			StructName: "Account",
+			Name:       "status",
+			Type:       "enum_account_status",
+			Nullable:   false,
+		}},
+	}
+
+	result := modelast.CollectDatabase(database, platform.Postgres)
+
+	c.Assert(result, qt.IsNotNil)
+	c.Assert(countEnumStatements(result), qt.Equals, 1)
+	table := tableStatementByName(result, "accounts")
+	c.Assert(table, qt.IsNotNil)
+	status := columnByName(table, "status")
+	c.Assert(status, qt.IsNotNil)
+	c.Assert(status.Type, qt.Equals, "enum_account_status")
+}
+
+func TestCollectDatabase_MySQLIncludesViewsAndTriggers(t *testing.T) {
+	c := qt.New(t)
+
+	database := schemamodel.Database{
+		Views: []schemamodel.View{{
+			Name: "active_users",
+			Body: "SELECT id FROM users WHERE deleted_at IS NULL",
+		}},
+		Triggers: []schemamodel.Trigger{{
+			Name:   "set_updated_at",
+			Table:  "users",
+			Timing: "BEFORE",
+			Event:  "UPDATE",
+			Body:   "SET NEW.updated_at = NOW()",
+		}},
+	}
+
+	result := modelast.CollectDatabase(database, "mysql")
+
+	c.Assert(result.Statements, qt.HasLen, 2)
+	viewNode, ok := result.Statements[0].(*ast.CreateViewNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(viewNode.Name, qt.Equals, "active_users")
+	triggerNode, ok := result.Statements[1].(*ast.CreateTriggerNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(triggerNode.Name, qt.Equals, "set_updated_at")
+	c.Assert(triggerNode.Table, qt.Equals, "users")
+}
+
+func TestCollectDatabase_SQLiteIncludesViewsAndTriggers(t *testing.T) {
+	c := qt.New(t)
+
+	database := schemamodel.Database{
+		Views: []schemamodel.View{{
+			Name: "active_users",
+			Body: "SELECT id FROM users WHERE deleted_at IS NULL",
+		}},
+		Triggers: []schemamodel.Trigger{{
+			Name:   "set_updated_at",
+			Table:  "users",
+			Timing: "BEFORE",
+			Event:  "UPDATE",
+			Body:   "BEGIN UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id; END",
+		}},
+	}
+
+	result := modelast.CollectDatabase(database, "sqlite")
+
+	c.Assert(result.Statements, qt.HasLen, 2)
+	viewNode, ok := result.Statements[0].(*ast.CreateViewNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(viewNode.Name, qt.Equals, "active_users")
+	triggerNode, ok := result.Statements[1].(*ast.CreateTriggerNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(triggerNode.Name, qt.Equals, "set_updated_at")
+	c.Assert(triggerNode.Table, qt.Equals, "users")
+}
+
+func TestFromField_PlatformOverrides(t *testing.T) {
+	tests := []struct {
+		name           string
+		field          schemamodel.Field
+		targetPlatform string
+		expected       func(*ast.ColumnNode) bool
+	}{
+		{
+			name: "MySQL type override",
+			field: schemamodel.Field{
+				Name: "data",
+				Type: "JSONB",
+				Overrides: map[string]map[string]string{
+					"mysql": {"type": "JSON"},
+				},
+			},
+			targetPlatform: "mysql",
+			expected: func(col *ast.ColumnNode) bool {
+				return col.Name == "data" && col.Type == "JSON"
+			},
+		},
+		{
+			name: "MariaDB type and check override",
+			field: schemamodel.Field{
+				Name:  "data",
+				Type:  "JSONB",
+				Check: "",
+				Overrides: map[string]map[string]string{
+					"mariadb": {
+						"type":  "LONGTEXT",
+						"check": "JSON_VALID(data)",
+					},
+				},
+			},
+			targetPlatform: "mariadb",
+			expected: func(col *ast.ColumnNode) bool {
+				return col.Name == "data" &&
+					col.Type == "LONGTEXT" &&
+					col.Check == "JSON_VALID(data)"
+			},
+		},
+		{
+			name: "PostgreSQL no override (uses default)",
+			field: schemamodel.Field{
+				Name: "data",
+				Type: "JSONB",
+				Overrides: map[string]map[string]string{
+					"mysql": {"type": "JSON"},
+				},
+			},
+			targetPlatform: "postgres",
+			expected: func(col *ast.ColumnNode) bool {
+				return col.Name == "data" && col.Type == "JSONB" // Uses default
+			},
+		},
+		{
+			name: "Comment override",
+			field: schemamodel.Field{
+				Name:    "status",
+				Type:    "VARCHAR(20)",
+				Comment: "Default comment",
+				Overrides: map[string]map[string]string{
+					"mysql": {"comment": "MySQL-specific comment"},
+				},
+			},
+			targetPlatform: "mysql",
+			expected: func(col *ast.ColumnNode) bool {
+				return col.Name == "status" &&
+					col.Comment == "MySQL-specific comment"
+			},
+		},
+		{
+			name: "Default value override",
+			field: schemamodel.Field{
+				Name:    "created_at",
+				Type:    "TIMESTAMP",
+				Default: "CURRENT_TIMESTAMP",
+				Overrides: map[string]map[string]string{
+					"postgres": {"default": "NOW()"},
+				},
+			},
+			targetPlatform: "postgres",
+			expected: func(col *ast.ColumnNode) bool {
+				return col.Name == "created_at" &&
+					col.Default != nil &&
+					col.Default.Value == "NOW()"
+			},
+		},
+		{
+			name: "Default expression override",
+			field: schemamodel.Field{
+				Name:        "updated_at",
+				Type:        "TIMESTAMP",
+				DefaultExpr: "CURRENT_TIMESTAMP",
+				Overrides: map[string]map[string]string{
+					"mysql": {"default_expr": "NOW()"},
+				},
+			},
+			targetPlatform: "mysql",
+			expected: func(col *ast.ColumnNode) bool {
+				return col.Name == "updated_at" &&
+					col.Default != nil &&
+					col.Default.Expression == "NOW()"
+			},
+		},
+		{
+			name: "No platform specified (uses defaults)",
+			field: schemamodel.Field{
+				Name: "data",
+				Type: "JSONB",
+				Overrides: map[string]map[string]string{
+					"mysql": {"type": "JSON"},
+				},
+			},
+			targetPlatform: "",
+			expected: func(col *ast.ColumnNode) bool {
+				return col.Name == "data" && col.Type == "JSONB" // Uses default
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := modelast.FromField(test.field, nil, test.targetPlatform)
+			c.Assert(result, qt.IsNotNil)
+			c.Assert(test.expected(result), qt.IsTrue)
+		})
+	}
+}
+
+func TestFromTable_PlatformOverrides(t *testing.T) {
+	tests := []struct {
+		name           string
+		table          schemamodel.Table
+		fields         []schemamodel.Field
+		targetPlatform string
+		expected       func(*ast.CreateTableNode) bool
+	}{
+		{
+			name: "MySQL engine and comment override",
+			table: schemamodel.Table{
+				StructName:    "Product",
+				Name:          "products",
+				Comment:       "Default comment",
+				Engine:        "MyISAM",
+				AutoIncrement: "100",
+				Overrides: map[string]map[string]string{
+					"mysql": {
+						"engine":         "InnoDB",
+						"comment":        "MySQL-specific comment",
+						"auto_increment": "1000",
+					},
+				},
+			},
+			fields:         make([]schemamodel.Field, 0),
+			targetPlatform: "mysql",
+			expected: func(table *ast.CreateTableNode) bool {
+				return table.Name == "products" &&
+					table.Comment == "MySQL-specific comment" &&
+					table.Options["ENGINE"] == "InnoDB" &&
+					table.Options["AUTO_INCREMENT"] == "1000"
+			},
+		},
+		{
+			name: "MariaDB charset override",
+			table: schemamodel.Table{
+				StructName: "User",
+				Name:       "users",
+				Overrides: map[string]map[string]string{
+					"mariadb": {
+						"charset":   "utf8mb4",
+						"collate":   "utf8mb4_bin",
+						"collation": "utf8mb4_unicode_ci",
+					},
+				},
+			},
+			fields:         make([]schemamodel.Field, 0),
+			targetPlatform: "mariadb",
+			expected: func(table *ast.CreateTableNode) bool {
+				return table.Name == "users" &&
+					table.Options["CHARSET"] == "utf8mb4" &&
+					table.Options["COLLATE"] == "utf8mb4_bin" &&
+					table.Options["COLLATION"] == "utf8mb4_unicode_ci"
+			},
+		},
+		{
+			name: "PostgreSQL no override (uses defaults)",
+			table: schemamodel.Table{
+				StructName: "Log",
+				Name:       "logs",
+				Comment:    "Default comment",
+				Engine:     "InnoDB",
+				Overrides: map[string]map[string]string{
+					"mysql": {"engine": "MyISAM"},
+				},
+			},
+			fields:         make([]schemamodel.Field, 0),
+			targetPlatform: "postgres",
+			expected: func(table *ast.CreateTableNode) bool {
+				return table.Name == "logs" &&
+					table.Comment == "Default comment" &&
+					table.Options["ENGINE"] == "InnoDB" // Uses default
+			},
+		},
+		{
+			name: "No platform specified (uses defaults)",
+			table: schemamodel.Table{
+				StructName: "Category",
+				Name:       "categories",
+				Comment:    "Default comment",
+				Overrides: map[string]map[string]string{
+					"mysql": {"comment": "MySQL comment"},
+				},
+			},
+			fields:         make([]schemamodel.Field, 0),
+			targetPlatform: "",
+			expected: func(table *ast.CreateTableNode) bool {
+				return table.Name == "categories" &&
+					table.Comment == "Default comment" // Uses default
+			},
+		},
+		{
+			name: "SQLite strict and without rowid options",
+			table: schemamodel.Table{
+				StructName:   "Event",
+				Name:         "events",
+				Strict:       true,
+				WithoutRowID: true,
+			},
+			fields:         make([]schemamodel.Field, 0),
+			targetPlatform: "sqlite",
+			expected: func(table *ast.CreateTableNode) bool {
+				return table.Name == "events" &&
+					table.Options["STRICT"] == "true" &&
+					table.Options["WITHOUT_ROWID"] == "true"
+			},
+		},
+		{
+			name: "SQLite table options use platform overrides",
+			table: schemamodel.Table{
+				StructName:   "Event",
+				Name:         "events",
+				Strict:       true,
+				WithoutRowID: true,
+				Overrides: map[string]map[string]string{
+					"sqlite": {
+						"strict":        "false",
+						"without_rowid": "false",
+					},
+				},
+			},
+			fields:         make([]schemamodel.Field, 0),
+			targetPlatform: "sqlite",
+			expected: func(table *ast.CreateTableNode) bool {
+				_, strict := table.Options["STRICT"]
+				_, withoutRowID := table.Options["WITHOUT_ROWID"]
+				return table.Name == "events" && !strict && !withoutRowID
+			},
+		},
+		{
+			name: "PostgreSQL partition",
+			table: schemamodel.Table{
+				StructName: "Metric",
+				Name:       "metrics",
+				Partition: &schemamodel.PartitionSpec{
+					Type: "RANGE",
+					Parts: []schemamodel.PartitionPart{
+						{Name: "x"},
+						{Expr: "floor(y)"},
+					},
+				},
+			},
+			fields:         make([]schemamodel.Field, 0),
+			targetPlatform: "postgres",
+			expected: func(table *ast.CreateTableNode) bool {
+				return table.Partition != nil &&
+					table.Partition.Type == "RANGE" &&
+					len(table.Partition.Parts) == 2 &&
+					table.Partition.Parts[0].Name == "x" &&
+					table.Partition.Parts[1].Expr == "floor(y)"
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := modelast.FromTable(test.table, test.fields, nil, test.targetPlatform)
+			c.Assert(result, qt.IsNotNil)
+			c.Assert(test.expected(result), qt.IsTrue)
+		})
+	}
+}
+
+func TestCollectDatabase_PlatformOverrides(t *testing.T) {
+	c := qt.New(t)
+
+	database := schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{
+				StructName: "Product",
+				Name:       "products",
+				Overrides: map[string]map[string]string{
+					"mysql": {"engine": "InnoDB"},
+				},
+			},
+		},
+		Fields: []schemamodel.Field{
+			{
+				StructName: "Product",
+				Name:       "data",
+				Type:       "JSONB",
+				Overrides: map[string]map[string]string{
+					"mysql": {"type": "JSON"},
+				},
+			},
+		},
+		Indexes: make([]schemamodel.Index, 0),
+		Enums:   make([]schemamodel.Enum, 0),
+	}
+
+	// Test MySQL platform
+	mysqlResult := modelast.CollectDatabase(database, "mysql")
+	c.Assert(mysqlResult, qt.IsNotNil)
+	c.Assert(mysqlResult.Statements, qt.HasLen, 1)
+
+	tableNode, ok := mysqlResult.Statements[0].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(tableNode.Name, qt.Equals, "products")
+	c.Assert(tableNode.Options["ENGINE"], qt.Equals, "InnoDB")
+	c.Assert(tableNode.Columns, qt.HasLen, 1)
+	c.Assert(tableNode.Columns[0].Type, qt.Equals, "JSON") // Overridden type
+
+	// Test PostgreSQL platform (no overrides)
+	postgresResult := modelast.CollectDatabase(database, "postgres")
+	c.Assert(postgresResult, qt.IsNotNil)
+	c.Assert(postgresResult.Statements, qt.HasLen, 1)
+
+	tableNode2, ok := postgresResult.Statements[0].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(tableNode2.Name, qt.Equals, "products")
+	c.Assert(tableNode2.Options["ENGINE"], qt.Equals, "") // No engine for PostgreSQL
+	c.Assert(tableNode2.Columns, qt.HasLen, 1)
+	c.Assert(tableNode2.Columns[0].Type, qt.Equals, "JSONB") // Default type
+}
+
+func TestCollectDatabase_EmbeddedFields_InlineMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		database schemamodel.Database
+		expected func(*ast.StatementList) bool
+	}{
+		{
+			name: "inline mode without prefix",
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{
+					{
+						StructName: "User",
+						Name:       "users",
+					},
+				},
+				Fields: []schemamodel.Field{
+					{
+						StructName: "User",
+						Name:       "id",
+						Type:       "SERIAL",
+						Primary:    true,
+					},
+					{
+						StructName: "Timestamps",
+						Name:       "created_at",
+						Type:       "TIMESTAMP",
+						Nullable:   false,
+					},
+					{
+						StructName: "Timestamps",
+						Name:       "updated_at",
+						Type:       "TIMESTAMP",
+						Nullable:   false,
+					},
+				},
+				EmbeddedFields: []schemamodel.EmbeddedField{
+					{
+						StructName:       "User",
+						Mode:             "inline",
+						EmbeddedTypeName: "Timestamps",
+					},
+				},
+			},
+			expected: func(result *ast.StatementList) bool {
+				if len(result.Statements) != 1 {
+					return false
+				}
+				tableNode, ok := result.Statements[0].(*ast.CreateTableNode)
+				if !ok {
+					return false
+				}
+				// Should have 3 columns: id + created_at + updated_at
+				return tableNode.Name == "users" &&
+					len(tableNode.Columns) == 3 &&
+					tableNode.Columns[0].Name == "id" &&
+					tableNode.Columns[1].Name == "created_at" &&
+					tableNode.Columns[2].Name == "updated_at"
+			},
+		},
+		{
+			name: "inline mode with prefix",
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{
+					{
+						StructName: "Article",
+						Name:       "articles",
+					},
+				},
+				Fields: []schemamodel.Field{
+					{
+						StructName: "Article",
+						Name:       "id",
+						Type:       "SERIAL",
+						Primary:    true,
+					},
+					{
+						StructName: "AuditInfo",
+						Name:       "by",
+						Type:       "TEXT",
+					},
+					{
+						StructName: "AuditInfo",
+						Name:       "reason",
+						Type:       "TEXT",
+					},
+				},
+				EmbeddedFields: []schemamodel.EmbeddedField{
+					{
+						StructName:       "Article",
+						Mode:             "inline",
+						Prefix:           "audit_",
+						EmbeddedTypeName: "AuditInfo",
+					},
+				},
+			},
+			expected: func(result *ast.StatementList) bool {
+				if len(result.Statements) != 1 {
+					return false
+				}
+				tableNode, ok := result.Statements[0].(*ast.CreateTableNode)
+				if !ok {
+					return false
+				}
+				// Should have 3 columns: id + audit_by + audit_reason
+				return tableNode.Name == "articles" &&
+					len(tableNode.Columns) == 3 &&
+					tableNode.Columns[0].Name == "id" &&
+					tableNode.Columns[1].Name == "audit_by" &&
+					tableNode.Columns[2].Name == "audit_reason"
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := modelast.CollectDatabase(test.database, "")
+			c.Assert(result, qt.IsNotNil)
+			c.Assert(test.expected(result), qt.IsTrue)
+		})
+	}
+}
+
+func TestCollectDatabase_EmbeddedFields_JsonMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		database schemamodel.Database
+		expected func(*ast.StatementList) bool
+	}{
+		{
+			name: "json mode with explicit name and type",
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{
+					{
+						StructName: "User",
+						Name:       "users",
+					},
+				},
+				Fields: []schemamodel.Field{
+					{
+						StructName: "User",
+						Name:       "id",
+						Type:       "SERIAL",
+						Primary:    true,
+					},
+				},
+				EmbeddedFields: []schemamodel.EmbeddedField{
+					{
+						StructName:       "User",
+						Mode:             "json",
+						Name:             "metadata",
+						Type:             "JSONB",
+						EmbeddedTypeName: "UserMeta",
+						Comment:          "User metadata in JSON format",
+					},
+				},
+			},
+			expected: func(result *ast.StatementList) bool {
+				if len(result.Statements) != 1 {
+					return false
+				}
+				tableNode, ok := result.Statements[0].(*ast.CreateTableNode)
+				if !ok {
+					return false
+				}
+				// Should have 2 columns: id + metadata
+				return tableNode.Name == "users" &&
+					len(tableNode.Columns) == 2 &&
+					tableNode.Columns[0].Name == "id" &&
+					tableNode.Columns[1].Name == "metadata" &&
+					tableNode.Columns[1].Type == "JSONB" &&
+					tableNode.Columns[1].Comment == "User metadata in JSON format"
+			},
+		},
+		{
+			name: "json mode with auto-generated name and default type",
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{
+					{
+						StructName: "Product",
+						Name:       "products",
+					},
+				},
+				Fields: []schemamodel.Field{
+					{
+						StructName: "Product",
+						Name:       "id",
+						Type:       "SERIAL",
+						Primary:    true,
+					},
+				},
+				EmbeddedFields: []schemamodel.EmbeddedField{
+					{
+						StructName:       "Product",
+						Mode:             "json",
+						EmbeddedTypeName: "Meta", // Should generate "meta_data" column name
+					},
+				},
+			},
+			expected: func(result *ast.StatementList) bool {
+				if len(result.Statements) != 1 {
+					return false
+				}
+				tableNode, ok := result.Statements[0].(*ast.CreateTableNode)
+				if !ok {
+					return false
+				}
+				// Should have 2 columns: id + meta_data
+				return tableNode.Name == "products" &&
+					len(tableNode.Columns) == 2 &&
+					tableNode.Columns[0].Name == "id" &&
+					tableNode.Columns[1].Name == "meta_data" &&
+					tableNode.Columns[1].Type == "JSONB" // Default type
+			},
+		},
+		{
+			name: "json mode with platform overrides",
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{
+					{
+						StructName: "Article",
+						Name:       "articles",
+					},
+				},
+				Fields: []schemamodel.Field{
+					{
+						StructName: "Article",
+						Name:       "id",
+						Type:       "SERIAL",
+						Primary:    true,
+					},
+				},
+				EmbeddedFields: []schemamodel.EmbeddedField{
+					{
+						StructName:       "Article",
+						Mode:             "json",
+						Name:             "content_data",
+						Type:             "JSONB",
+						EmbeddedTypeName: "Content",
+						Overrides: map[string]map[string]string{
+							"mysql":   {"type": "JSON"},
+							"mariadb": {"type": "LONGTEXT"},
+						},
+					},
+				},
+			},
+			expected: func(result *ast.StatementList) bool {
+				if len(result.Statements) != 1 {
+					return false
+				}
+				tableNode, ok := result.Statements[0].(*ast.CreateTableNode)
+				if !ok {
+					return false
+				}
+				// Should have 2 columns: id + content_data
+				return tableNode.Name == "articles" &&
+					len(tableNode.Columns) == 2 &&
+					tableNode.Columns[0].Name == "id" &&
+					tableNode.Columns[1].Name == "content_data" &&
+					tableNode.Columns[1].Type == "JSONB" // Default type (no platform specified)
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := modelast.CollectDatabase(test.database, "")
+			c.Assert(result, qt.IsNotNil)
+			c.Assert(test.expected(result), qt.IsTrue)
+		})
+	}
+}
+
+func TestCollectDatabase_EmbeddedFields_JsonModeDoesNotDuplicateAlreadyProcessedField(t *testing.T) {
+	c := qt.New(t)
+	database := schemamodel.Database{
+		Tables: []schemamodel.Table{{
+			StructName: "User",
+			Name:       "users",
+		}},
+		Fields: []schemamodel.Field{
+			{
+				StructName: "User",
+				Name:       "id",
+				Type:       "SERIAL",
+				Primary:    true,
+			},
+			{
+				StructName: "User",
+				FieldName:  "UserMeta",
+				Name:       "metadata",
+				Type:       "JSONB",
+				Nullable:   false,
+			},
+		},
+		EmbeddedFields: []schemamodel.EmbeddedField{{
+			StructName:       "User",
+			Mode:             "json",
+			Name:             "metadata",
+			Type:             "JSONB",
+			EmbeddedTypeName: "UserMeta",
+		}},
+	}
+
+	fields := schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
+	c.Assert(countFields(fields, "User", "metadata"), qt.Equals, 1)
+
+	statements := modelast.CollectDatabase(database, "postgres")
+	table := tableStatementByName(statements, "users")
+	c.Assert(table, qt.IsNotNil)
+	c.Assert(countColumns(table, "metadata"), qt.Equals, 1)
+}
+
+func TestProcessEmbeddedFields_PropagatesNestedPlatformOverrides(t *testing.T) {
+	c := qt.New(t)
+	fields := []schemamodel.Field{{
+		StructName: "Ownership",
+		Name:       "label",
+		Type:       "TEXT",
+		Overrides: map[string]map[string]string{
+			"postgres": {"type": "CITEXT"},
+		},
+	}}
+	embeddedFields := []schemamodel.EmbeddedField{
+		{
+			StructName:       "Order",
+			EmbeddedTypeName: "Ownership",
+			Mode:             "inline",
+			Prefix:           "owner_",
+			Overrides: map[string]map[string]string{
+				"mysql": {"type": "BIGINT"},
+			},
+		},
+		{
+			StructName:       "Ownership",
+			EmbeddedTypeName: "Tenant",
+			Mode:             "relation",
+			Field:            "tenant_id",
+			Ref:              "tenants(id)",
+			Type:             "BIGINT",
+			Overrides: map[string]map[string]string{
+				"postgres": {"type": "BIGINT"},
+			},
+		},
+	}
+
+	got := schemamodel.ProcessEmbeddedFields(embeddedFields, fields)
+
+	c.Assert(got, qt.HasLen, 4)
+	c.Assert(got[1].Name, qt.Equals, "owner_label")
+	c.Assert(got[1].GeneratedFromEmbedded, qt.IsTrue)
+	c.Assert(got[1].Overrides, qt.DeepEquals, map[string]map[string]string{
+		"mysql":    {"type": "BIGINT"},
+		"postgres": {"type": "CITEXT"},
+	})
+	c.Assert(got[2].Name, qt.Equals, "owner_tenant_id")
+	c.Assert(got[2].Type, qt.Equals, "BIGINT")
+	c.Assert(got[2].GeneratedFromEmbedded, qt.IsTrue)
+	c.Assert(got[2].Overrides, qt.DeepEquals, map[string]map[string]string{
+		"mysql":    {"type": "BIGINT"},
+		"postgres": {"type": "BIGINT"},
+	})
+}
+
+func TestCollectDatabase_EmbeddedFields_RelationMode(t *testing.T) {
+	tests := []struct {
+		name     string
+		database schemamodel.Database
+		expected func(*ast.StatementList) bool
+	}{
+		{
+			name: "relation mode with integer reference",
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{
+					{
+						StructName: "Post",
+						Name:       "posts",
+					},
+				},
+				Fields: []schemamodel.Field{
+					{
+						StructName: "Post",
+						Name:       "id",
+						Type:       "SERIAL",
+						Primary:    true,
+					},
+				},
+				EmbeddedFields: []schemamodel.EmbeddedField{
+					{
+						StructName:       "Post",
+						Mode:             "relation",
+						Field:            "user_id",
+						Ref:              "users(id)",
+						EmbeddedTypeName: "User",
+						Comment:          "Reference to user",
+					},
+				},
+			},
+			expected: func(result *ast.StatementList) bool {
+				if len(result.Statements) != 2 {
+					return false
+				}
+				tableNode, ok := result.Statements[0].(*ast.CreateTableNode)
+				if !ok {
+					return false
+				}
+				// Should have 2 columns: id + user_id
+				return tableNode.Name == "posts" &&
+					len(tableNode.Columns) == 2 &&
+					tableNode.Columns[0].Name == "id" &&
+					tableNode.Columns[1].Name == "user_id" &&
+					tableNode.Columns[1].Type == "INTEGER" &&
+					tableNode.Columns[1].ForeignKey == nil &&
+					tableNode.Columns[1].Comment == "Reference to user" &&
+					foreignKeyAlterStatementByName(result, "posts", "fk_post_user_id") != nil
+			},
+		},
+		{
+			name: "relation mode with UUID reference",
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{
+					{
+						StructName: "Order",
+						Name:       "orders",
+					},
+				},
+				Fields: []schemamodel.Field{
+					{
+						StructName: "Order",
+						Name:       "id",
+						Type:       "SERIAL",
+						Primary:    true,
+					},
+				},
+				EmbeddedFields: []schemamodel.EmbeddedField{
+					{
+						StructName:       "Order",
+						Mode:             "relation",
+						Field:            "customer_uuid",
+						Ref:              "customers(uuid)",
+						EmbeddedTypeName: "Customer",
+						Nullable:         true,
+					},
+				},
+			},
+			expected: func(result *ast.StatementList) bool {
+				if len(result.Statements) != 2 {
+					return false
+				}
+				tableNode, ok := result.Statements[0].(*ast.CreateTableNode)
+				if !ok {
+					return false
+				}
+				// Should have 2 columns: id + customer_uuid
+				return tableNode.Name == "orders" &&
+					len(tableNode.Columns) == 2 &&
+					tableNode.Columns[0].Name == "id" &&
+					tableNode.Columns[1].Name == "customer_uuid" &&
+					tableNode.Columns[1].Type == "VARCHAR(36)" && // UUID type inference
+					tableNode.Columns[1].Nullable == true &&
+					tableNode.Columns[1].ForeignKey == nil &&
+					foreignKeyAlterStatementByName(result, "orders", "fk_order_customer_uuid") != nil
+			},
+		},
+		{
+			name: "relation mode with incomplete definition (should be skipped)",
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{
+					{
+						StructName: "Comment",
+						Name:       "comments",
+					},
+				},
+				Fields: []schemamodel.Field{
+					{
+						StructName: "Comment",
+						Name:       "id",
+						Type:       "SERIAL",
+						Primary:    true,
+					},
+				},
+				EmbeddedFields: []schemamodel.EmbeddedField{
+					{
+						StructName:       "Comment",
+						Mode:             "relation",
+						Field:            "", // Missing field name
+						Ref:              "posts(id)",
+						EmbeddedTypeName: "Post",
+					},
+				},
+			},
+			expected: func(result *ast.StatementList) bool {
+				if len(result.Statements) != 1 {
+					return false
+				}
+				tableNode, ok := result.Statements[0].(*ast.CreateTableNode)
+				if !ok {
+					return false
+				}
+				// Should have only 1 column: id (relation field skipped)
+				return tableNode.Name == "comments" &&
+					len(tableNode.Columns) == 1 &&
+					tableNode.Columns[0].Name == "id"
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := modelast.CollectDatabase(test.database, "")
+			c.Assert(result, qt.IsNotNil)
+			c.Assert(test.expected(result), qt.IsTrue)
+		})
+	}
+}
+
+func TestCollectDatabase_EmbeddedFields_SkipAndDefaultModes(t *testing.T) {
+	tests := []struct {
+		name     string
+		database schemamodel.Database
+		expected func(*ast.StatementList) bool
+	}{
+		{
+			name: "skip mode ignores embedded field",
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{
+					{
+						StructName: "User",
+						Name:       "users",
+					},
+				},
+				Fields: []schemamodel.Field{
+					{
+						StructName: "User",
+						Name:       "id",
+						Type:       "SERIAL",
+						Primary:    true,
+					},
+					{
+						StructName: "Internal",
+						Name:       "debug_info",
+						Type:       "TEXT",
+					},
+				},
+				EmbeddedFields: []schemamodel.EmbeddedField{
+					{
+						StructName:       "User",
+						Mode:             "skip",
+						EmbeddedTypeName: "Internal",
+					},
+				},
+			},
+			expected: func(result *ast.StatementList) bool {
+				if len(result.Statements) != 1 {
+					return false
+				}
+				tableNode, ok := result.Statements[0].(*ast.CreateTableNode)
+				if !ok {
+					return false
+				}
+				// Should have only 1 column: id (Internal fields skipped)
+				return tableNode.Name == "users" &&
+					len(tableNode.Columns) == 1 &&
+					tableNode.Columns[0].Name == "id"
+			},
+		},
+		{
+			name: "default mode falls back to inline behavior",
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{
+					{
+						StructName: "User",
+						Name:       "users",
+					},
+				},
+				Fields: []schemamodel.Field{
+					{
+						StructName: "User",
+						Name:       "id",
+						Type:       "SERIAL",
+						Primary:    true,
+					},
+					{
+						StructName: "Timestamps",
+						Name:       "created_at",
+						Type:       "TIMESTAMP",
+						Nullable:   false,
+					},
+				},
+				EmbeddedFields: []schemamodel.EmbeddedField{
+					{
+						StructName:       "User",
+						Mode:             "", // Empty mode should default to inline
+						EmbeddedTypeName: "Timestamps",
+					},
+				},
+			},
+			expected: func(result *ast.StatementList) bool {
+				if len(result.Statements) != 1 {
+					return false
+				}
+				tableNode, ok := result.Statements[0].(*ast.CreateTableNode)
+				if !ok {
+					return false
+				}
+				// Should have 2 columns: id + created_at (inline behavior)
+				return tableNode.Name == "users" &&
+					len(tableNode.Columns) == 2 &&
+					tableNode.Columns[0].Name == "id" &&
+					tableNode.Columns[1].Name == "created_at"
+			},
+		},
+		{
+			name: "unrecognized mode falls back to inline behavior",
+			database: schemamodel.Database{
+				Tables: []schemamodel.Table{
+					{
+						StructName: "Product",
+						Name:       "products",
+					},
+				},
+				Fields: []schemamodel.Field{
+					{
+						StructName: "Product",
+						Name:       "id",
+						Type:       "SERIAL",
+						Primary:    true,
+					},
+					{
+						StructName: "Audit",
+						Name:       "created_by",
+						Type:       "VARCHAR(100)",
+					},
+				},
+				EmbeddedFields: []schemamodel.EmbeddedField{
+					{
+						StructName:       "Product",
+						Mode:             "unknown_mode", // Unrecognized mode
+						EmbeddedTypeName: "Audit",
+					},
+				},
+			},
+			expected: func(result *ast.StatementList) bool {
+				if len(result.Statements) != 1 {
+					return false
+				}
+				tableNode, ok := result.Statements[0].(*ast.CreateTableNode)
+				if !ok {
+					return false
+				}
+				// Should have 2 columns: id + created_by (inline behavior)
+				return tableNode.Name == "products" &&
+					len(tableNode.Columns) == 2 &&
+					tableNode.Columns[0].Name == "id" &&
+					tableNode.Columns[1].Name == "created_by"
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			result := modelast.CollectDatabase(test.database, "")
+			c.Assert(result, qt.IsNotNil)
+			c.Assert(test.expected(result), qt.IsTrue)
+		})
+	}
+}
+
+func TestCollectDatabase_EmbeddedFields_ComplexScenario(t *testing.T) {
+	c := qt.New(t)
+
+	// Complex scenario with multiple embedded fields using different modes
+	database := schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{
+				StructName: "Article",
+				Name:       "articles",
+				Comment:    "Blog articles",
+			},
+		},
+		Fields: []schemamodel.Field{
+			// Article fields
+			{
+				StructName: "Article",
+				Name:       "id",
+				Type:       "SERIAL",
+				Primary:    true,
+			},
+			{
+				StructName: "Article",
+				Name:       "title",
+				Type:       "VARCHAR(255)",
+				Nullable:   false,
+			},
+			// Timestamps fields (for inline mode)
+			{
+				StructName: "Timestamps",
+				Name:       "created_at",
+				Type:       "TIMESTAMP",
+				Nullable:   false,
+			},
+			{
+				StructName: "Timestamps",
+				Name:       "updated_at",
+				Type:       "TIMESTAMP",
+				Nullable:   false,
+			},
+			// AuditInfo fields (for inline mode with prefix)
+			{
+				StructName: "AuditInfo",
+				Name:       "by",
+				Type:       "TEXT",
+			},
+			{
+				StructName: "AuditInfo",
+				Name:       "reason",
+				Type:       "TEXT",
+			},
+		},
+		EmbeddedFields: []schemamodel.EmbeddedField{
+			// Mode 1: inline without prefix
+			{
+				StructName:       "Article",
+				Mode:             "inline",
+				EmbeddedTypeName: "Timestamps",
+			},
+			// Mode 2: inline with prefix
+			{
+				StructName:       "Article",
+				Mode:             "inline",
+				Prefix:           "audit_",
+				EmbeddedTypeName: "AuditInfo",
+			},
+			// Mode 3: json mode
+			{
+				StructName:       "Article",
+				Mode:             "json",
+				Name:             "meta_data",
+				Type:             "JSONB",
+				EmbeddedTypeName: "Meta",
+				Comment:          "Article metadata",
+			},
+			// Mode 4: relation mode
+			{
+				StructName:       "Article",
+				Mode:             "relation",
+				Field:            "author_id",
+				Ref:              "users(id)",
+				EmbeddedTypeName: "User",
+				Comment:          "Article author",
+			},
+			// Mode 5: skip mode
+			{
+				StructName:       "Article",
+				Mode:             "skip",
+				EmbeddedTypeName: "Internal",
+			},
+		},
+	}
+
+	result := modelast.CollectDatabase(database, "")
+
+	c.Assert(result, qt.IsNotNil)
+	c.Assert(result.Statements, qt.HasLen, 2)
+
+	tableNode, ok := result.Statements[0].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(tableNode.Name, qt.Equals, "articles")
+	c.Assert(tableNode.Comment, qt.Equals, "Blog articles")
+
+	// Should have 8 columns total:
+	// 1. id (original)
+	// 2. title (original)
+	// 3. created_at (from Timestamps inline)
+	// 4. updated_at (from Timestamps inline)
+	// 5. audit_by (from AuditInfo inline with prefix)
+	// 6. audit_reason (from AuditInfo inline with prefix)
+	// 7. meta_data (from Meta json mode)
+	// 8. author_id (from User relation mode)
+	// Note: Internal fields are skipped
+	c.Assert(tableNode.Columns, qt.HasLen, 8)
+
+	// Verify each column
+	columns := make(map[string]*ast.ColumnNode)
+	for _, col := range tableNode.Columns {
+		columns[col.Name] = col
+	}
+
+	// Original fields
+	c.Assert(columns["id"], qt.IsNotNil)
+	c.Assert(columns["id"].Type, qt.Equals, "SERIAL")
+	c.Assert(columns["id"].Primary, qt.IsTrue)
+
+	c.Assert(columns["title"], qt.IsNotNil)
+	c.Assert(columns["title"].Type, qt.Equals, "VARCHAR(255)")
+	c.Assert(columns["title"].Nullable, qt.IsFalse)
+
+	// Inline mode fields
+	c.Assert(columns["created_at"], qt.IsNotNil)
+	c.Assert(columns["created_at"].Type, qt.Equals, "TIMESTAMP")
+
+	c.Assert(columns["updated_at"], qt.IsNotNil)
+	c.Assert(columns["updated_at"].Type, qt.Equals, "TIMESTAMP")
+
+	// Inline mode with prefix fields
+	c.Assert(columns["audit_by"], qt.IsNotNil)
+	c.Assert(columns["audit_by"].Type, qt.Equals, "TEXT")
+
+	c.Assert(columns["audit_reason"], qt.IsNotNil)
+	c.Assert(columns["audit_reason"].Type, qt.Equals, "TEXT")
+
+	// JSON mode field
+	c.Assert(columns["meta_data"], qt.IsNotNil)
+	c.Assert(columns["meta_data"].Type, qt.Equals, "JSONB")
+	c.Assert(columns["meta_data"].Comment, qt.Equals, "Article metadata")
+
+	// Relation mode field
+	c.Assert(columns["author_id"], qt.IsNotNil)
+	c.Assert(columns["author_id"].Type, qt.Equals, "INTEGER")
+	c.Assert(columns["author_id"].Comment, qt.Equals, "Article author")
+	c.Assert(columns["author_id"].ForeignKey, qt.IsNil)
+
+	authorFK := foreignKeyAlterStatementByName(result, "articles", "fk_article_author_id")
+	c.Assert(authorFK, qt.IsNotNil)
+	addAuthorFK := authorFK.Operations[0].(*ast.AddConstraintOperation)
+	c.Assert(addAuthorFK.Constraint.Reference.Table, qt.Equals, "users")
+	c.Assert(addAuthorFK.Constraint.Reference.ReferencedColumns(), qt.DeepEquals, []string{"id"})
+}
+
+// TestFromField_EnumConversion_SQLInjectionPrevention tests that enum values are properly escaped
+func TestFromField_EnumConversion_SQLInjectionPrevention(t *testing.T) {
+	tests := []struct {
+		name          string
+		platform      string
+		enumValues    []string
+		expectedType  string
+		expectedCheck string
+	}{
+		{
+			name:         "MySQL enum with single quotes",
+			platform:     "mysql",
+			enumValues:   []string{"active", "inactive", "it's working"},
+			expectedType: "ENUM('active', 'inactive', 'it''s working')",
+		},
+		{
+			name:         "MariaDB enum with SQL injection attempt",
+			platform:     "mariadb",
+			enumValues:   []string{"normal", "'; DROP TABLE users; --"},
+			expectedType: "ENUM('normal', '''; DROP TABLE users; --')",
+		},
+		{
+			name:         "MySQL enum with consecutive quotes",
+			platform:     "mysql",
+			enumValues:   []string{"test", "''quoted''"},
+			expectedType: "ENUM('test', '''''quoted''''')",
+		},
+		{
+			name:          "SQLite enum check with SQL injection attempt",
+			platform:      "sqlite",
+			enumValues:    []string{"normal", "'; DROP TABLE users; --"},
+			expectedType:  "TEXT",
+			expectedCheck: "status IN ('normal', '''; DROP TABLE users; --')",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			// Create enum definition
+			enum := schemamodel.Enum{
+				Name:   "enum_test_status",
+				Values: tt.enumValues,
+			}
+
+			// Create field that uses this enum
+			field := schemamodel.Field{
+				Name: "status",
+				Type: "enum_test_status",
+			}
+
+			// Convert field with enum conversion
+			result := modelast.FromField(field, []schemamodel.Enum{enum}, tt.platform)
+
+			// Verify the type was properly escaped
+			c.Assert(result.Type, qt.Equals, tt.expectedType)
+			c.Assert(result.Check, qt.Equals, tt.expectedCheck)
+		})
+	}
+}
+
+// TestCollectDatabase_EmbeddedRelationFKActions verifies that on_delete /
+// on_update declared on a //ptah:embedded mode="relation" annotation
+// flow through to the generated foreign key constraint.
+//
+// Regression coverage for the embedded path of issue #117 — the field-level
+// fix wired the regular Field path, and this test pins the parallel wiring
+// in processEmbeddedRelationMode so embedded-relation FKs don't silently
+// drop their actions on the generate path.
+func TestCollectDatabase_EmbeddedRelationFKActions(t *testing.T) {
+	c := qt.New(t)
+
+	db := schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "User", Name: "users"},
+			{StructName: "Post", Name: "posts"},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
+			{StructName: "Post", Name: "id", Type: "SERIAL", Primary: true},
+		},
+		EmbeddedFields: []schemamodel.EmbeddedField{
+			{
+				StructName:       "Post",
+				EmbeddedTypeName: "User",
+				Mode:             "relation",
+				Field:            "author_id",
+				Ref:              "users(id)",
+				OnDelete:         "CASCADE",
+				OnUpdate:         "RESTRICT",
+			},
+		},
+	}
+
+	statements := modelast.CollectDatabase(db, "postgres")
+	c.Assert(statements, qt.IsNotNil)
+
+	postsTable := tableStatementByName(statements, "posts")
+	c.Assert(postsTable, qt.IsNotNil)
+
+	var authorCol *ast.ColumnNode
+	for _, col := range postsTable.Columns {
+		if col.Name == "author_id" {
+			authorCol = col
+			break
+		}
+	}
+	c.Assert(authorCol, qt.IsNotNil)
+	c.Assert(authorCol.ForeignKey, qt.IsNil)
+
+	authorFK := foreignKeyAlterStatementByName(statements, "posts", "fk_post_author_id")
+	c.Assert(authorFK, qt.IsNotNil)
+	addAuthorFK := authorFK.Operations[0].(*ast.AddConstraintOperation)
+	c.Assert(addAuthorFK.Constraint.Reference.Table, qt.Equals, "users")
+	c.Assert(addAuthorFK.Constraint.Reference.OnDelete, qt.Equals, "CASCADE")
+	c.Assert(addAuthorFK.Constraint.Reference.OnUpdate, qt.Equals, "RESTRICT")
+}

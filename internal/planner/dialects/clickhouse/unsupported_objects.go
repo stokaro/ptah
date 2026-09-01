@@ -10,8 +10,8 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
+	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -31,7 +31,7 @@ import (
 //
 // Unsupported nodes carry identity only because that is all their diagnostics
 // read. View-like additions and replacements resolve the declaration, carry
-// their bodies through fromschema, and share one deporder.ViewLikesForCreate
+// their bodies through modelast, and share one deporder.ViewLikesForCreate
 // pass so dependencies precede the objects that read them. Diagnostic comments
 // are stripped before execution by atlasschema.SplitApplyStatements.
 func reportUnsupportedObjectsBeforeTables(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
@@ -347,7 +347,7 @@ func clickHouseViewChangeFor(
 	if !caps.Has(capability.Views) {
 		return deporder.ViewLike{Name: view.Name}, ast.NewCreateView(view.Name)
 	}
-	node := fromschema.FromView(view)
+	node := modelast.FromView(view)
 	return deporder.ViewLike{Name: node.Name, Body: node.Body}, node
 }
 
@@ -392,7 +392,7 @@ func clickHouseMaterializedViewChangeFor(
 		return deporder.ViewLike{Name: view.Name, Materialized: true},
 			ast.NewCreateMaterializedView(view.Name)
 	}
-	node := fromschema.FromMaterializedView(view)
+	node := modelast.FromMaterializedView(view)
 	return deporder.ViewLike{Name: node.Name, Body: node.Body, Materialized: true}, node
 }
 

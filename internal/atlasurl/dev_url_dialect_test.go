@@ -18,7 +18,7 @@ import (
 // which is the whole point: this test exists because a copy of that list lived
 // in DialectFromURL and drifted by fifteen spellings.
 //
-// internal/lintdialect and internal/convert/fromschema read the same switch the
+// internal/lintdialect and internal/modelast read the same switch the
 // same way, for the same reason.
 const normalizeDialectSource = "../../core/platform/constants.go"
 

@@ -59,13 +59,14 @@ import (
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/sqlite"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/clickhouserbac"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/crdbttl"
+	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/objectidentity"
-	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/reservedrole"
+	"go.5x5.cz/ptah/internal/schemaprep"
 	"go.5x5.cz/ptah/internal/systemschema"
+	"go.5x5.cz/ptah/internal/tablelookup"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/internal/usertypescope"
 )
@@ -1014,20 +1015,23 @@ func GetOrderedCreateStatementsWithCapabilities(
 	if err != nil {
 		return nil, err
 	}
-	astNodes := fromschema.FromDatabase(database, dialect)
-	for _, node := range astNodes.Statements {
+	err = modelast.WalkDatabase(database, dialect, func(node ast.Node) error {
 		sql, err := RenderSQLWithCapabilities(dialect, caps, node)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		// A node a dialect renders as nothing is not a statement. Keeping it
 		// put a bare `;` in front of the script — SQLite renders no statement
 		// for its `main` namespace, which an introspected database now
 		// describes as a schema (stokaro/ptah#1264).
 		if strings.TrimSpace(sql) == "" {
-			continue
+			return nil
 		}
 		statements = append(statements, sql)
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return statements, nil
@@ -1651,7 +1655,7 @@ func makeMySQLForeignKeyTableEnginesExplicit(database *schemamodel.Database, dia
 
 func mysqlForeignKeyTableParticipants(database schemamodel.Database) map[string]struct{} {
 	participants := make(map[string]struct{})
-	fields := fromschema.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
+	fields := schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
 	for _, field := range fields {
 		if field.Foreign == "" {
 			continue
@@ -1663,7 +1667,7 @@ func mysqlForeignKeyTableParticipants(database schemamodel.Database) map[string]
 		target := referencedTable(
 			database.Tables,
 			*owner,
-			fromschema.ParseForeignKeyReference(field.Foreign).Table,
+			schemaprep.ParseForeignKeyReference(field.Foreign).Table,
 		)
 		participants[owner.QualifiedName()] = struct{}{}
 		participants[target.QualifiedName()] = struct{}{}
@@ -1701,7 +1705,7 @@ func validateFieldForeignKey(field schemamodel.Field, dialect string) error {
 }
 
 func validateForeignKeyReference(reference string) error {
-	parsed := fromschema.ParseForeignKeyReference(reference)
+	parsed := schemaprep.ParseForeignKeyReference(reference)
 	if parsed == nil || strings.TrimSpace(parsed.Table) == "" {
 		return fmt.Errorf("malformed reference %q", reference)
 	}
@@ -1786,7 +1790,7 @@ func validateSchemaForeignKeys(
 	dialect string,
 	caps capability.Capabilities,
 ) error {
-	fields := fromschema.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
+	fields := schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
 	bindings := make([]foreignKeyBinding, 0)
 	explicitNames := make(map[string]map[string]struct{})
 	for _, field := range fields {
@@ -1806,7 +1810,7 @@ func validateSchemaForeignKeys(
 		if err := reserveExplicitForeignKeyName(explicitNames, dialect, *owner, field.ForeignKeyName); err != nil {
 			return invalidSchemaForeignKeyError(dialect, err.Error())
 		}
-		reference := fromschema.ParseForeignKeyReference(field.Foreign)
+		reference := schemaprep.ParseForeignKeyReference(field.Foreign)
 		target := referencedTable(database.Tables, *owner, reference.Table)
 		if target == nil {
 			return invalidSchemaForeignKeyError(
@@ -1928,7 +1932,7 @@ func reserveExplicitForeignKeyName(
 // decides whether a multibyte name fits.
 //
 // That removes this file's copy of the rule. One other remains:
-// internal/convert/fromschema carries its own three-arm switch because it
+// internal/schemaprep carries its own three-arm switch because it
 // truncates a generated name to fit rather than refusing it, and the truncation
 // needs a budget in the limit's unit that IdentifierLimit does not expose. Its
 // predicate agrees with capability.Identifiers today — 144 verdicts across
@@ -2054,8 +2058,8 @@ func validateForeignKeyColumnCompatibility(
 	onUpdate string,
 ) error {
 	normalizedDialect := platform.NormalizeDialect(dialect)
-	local = fromschema.EffectiveFieldForPlatform(local, normalizedDialect)
-	referenced = fromschema.EffectiveFieldForPlatform(referenced, normalizedDialect)
+	local = schemaprep.EffectiveFieldForPlatform(local, normalizedDialect)
+	referenced = schemaprep.EffectiveFieldForPlatform(referenced, normalizedDialect)
 	if (onDelete == "SET NULL" || onUpdate == "SET NULL") && !local.Nullable {
 		return invalidSchemaForeignKeyError(
 			dialect,
@@ -2581,7 +2585,7 @@ func tableHasIndexedKey(database schemamodel.Database, table schemamodel.Table, 
 }
 
 func allDatabaseFields(database schemamodel.Database) []schemamodel.Field {
-	return fromschema.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
+	return schemamodel.ProcessEmbeddedFields(database.EmbeddedFields, database.Fields)
 }
 
 func isColumnPrefix(keyColumns, referencedColumns []string) bool {

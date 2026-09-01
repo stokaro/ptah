@@ -9,9 +9,9 @@ import (
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
+	"go.5x5.cz/ptah/internal/schemaprep"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -291,7 +291,7 @@ func ownableMixinConvergedDBForDialect(
 }
 
 func assignedForeignKeyName(desired *schemamodel.Database, dialect, tableName, columnName string) string {
-	assigned := fromschema.AssignDefaultForeignKeyNames(desired, dialect)
+	assigned := schemaprep.AssignDefaultForeignKeyNames(desired, dialect)
 	structName := ""
 	for _, table := range assigned.Tables {
 		if table.Name == tableName {

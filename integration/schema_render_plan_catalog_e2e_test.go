@@ -31,7 +31,7 @@ import (
 // records that it has no live coverage at all, and the pinned community binary
 // has no Spanner driver either. It is measured offline instead, by
 // TestRenderAndPlanAgreeOnEveryPostgresFamilyTarget in
-// ./internal/convert/fromschema.
+// ./internal/modelast.
 type renderPlanCatalogCase struct {
 	name    string
 	dialect string

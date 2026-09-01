@@ -36,8 +36,8 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/indexscope"
+	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
@@ -143,7 +143,7 @@ func (p *Planner) addNewTables(result []ast.Node, diff *difftypes.SchemaDiff) []
 		// FromTable applies platform.clickhouse.* overrides into the AST
 		// node's Options map (uppercased), which the renderer then reads
 		// to build the ENGINE clause.
-		tableNode := fromschema.FromTableWithConstraints(creation.Table, creation.Fields, creation.Enums, platform.ClickHouse, creation.Constraints)
+		tableNode := modelast.FromTableWithConstraints(creation.Table, creation.Fields, creation.Enums, platform.ClickHouse, creation.Constraints)
 		result = append(result, tableNode)
 	}
 
@@ -163,7 +163,7 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 		// the column it adds and a modification carries the column it renders
 		// (stokaro/ptah#2315). There is no lookup left to fail.
 		for _, column := range td.ColumnsAdded {
-			col := fromschema.FromField(column, diff.DeclaredUserTypes.Enums, platform.ClickHouse)
+			col := modelast.FromField(column, diff.DeclaredUserTypes.Enums, platform.ClickHouse)
 			result = append(result, &ast.AlterTableNode{
 				Name:       td.TableName,
 				Operations: []ast.AlterOperation{&ast.AddColumnOperation{Column: col}},
@@ -175,7 +175,7 @@ func (p *Planner) modifyExistingTables(result []ast.Node, diff *difftypes.Schema
 				result = append(result, ast.NewComment(fmt.Sprintf("WARNING: the diff carries no column definition for %s.%s; skipping MODIFY COLUMN", td.TableName, colDiff.ColumnName)))
 				continue
 			}
-			col := fromschema.FromField(colDiff.Desired, diff.DeclaredUserTypes.Enums, platform.ClickHouse)
+			col := modelast.FromField(colDiff.Desired, diff.DeclaredUserTypes.Enums, platform.ClickHouse)
 			result = append(result, &ast.AlterTableNode{
 				Name: td.TableName,
 				Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{

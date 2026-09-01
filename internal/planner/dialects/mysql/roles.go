@@ -3,7 +3,7 @@ package mysql
 import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -24,7 +24,7 @@ func (p *Planner) planRoles(result []ast.Node, diff *difftypes.SchemaDiff) []ast
 	// The attributes travel WITH the change, so this renders what it was
 	// handed rather than looking the name back up (stokaro/ptah#2315).
 	for _, role := range diff.RolesAdded {
-		result = append(result, fromschema.FromRole(role))
+		result = append(result, modelast.FromRole(role))
 	}
 	for _, roleDiff := range diff.RolesModified {
 		// A database role has no attributes to alter, and the renderer says so

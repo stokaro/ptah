@@ -89,7 +89,7 @@
 // This package integrates with several other Ptah components:
 //
 //   - ptah/core/ast: Provides AST node types for SQL representation
-//   - ptah/internal/convert/fromschema: Converts Go schema fields to AST columns
+//   - ptah/internal/modelast: Lowers desired-schema fields to AST columns
 //   - ptah/schema/differ/differtypes: Defines schema difference structures
 //   - ptah/core/goschema: Defines target schema structures
 //   - ptah/renderer: Converts AST nodes to dialect-specific SQL

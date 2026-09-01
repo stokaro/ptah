@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/schemaprep"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -117,7 +117,7 @@ func buildModel(db *schemamodel.Database, excludeTables []string) graphModel {
 		tableNames[table.QualifiedName()] = struct{}{}
 	}
 
-	fields := fromschema.ProcessEmbeddedFields(db.EmbeddedFields, db.Fields)
+	fields := schemamodel.ProcessEmbeddedFields(db.EmbeddedFields, db.Fields)
 	fieldsByTable := make(map[string][]schemamodel.Field)
 	seenFields := make(map[string]struct{})
 	for _, field := range fields {
@@ -170,7 +170,7 @@ func fieldRelationships(tables []schemamodel.Table, fieldsByTable map[string][]s
 			}
 			label := field.ForeignKeyName
 			if label == "" {
-				label = fromschema.GenerateForeignKeyName(table.Name, field.Name)
+				label = schemaprep.GenerateForeignKeyName(table.Name, field.Name)
 			}
 			relationships = append(relationships, relationship{
 				From:  table.QualifiedName(),
@@ -202,7 +202,7 @@ func constraintRelationships(tables []schemamodel.Table, constraints []schemamod
 		}
 		label := constraint.Name
 		if label == "" {
-			label = fromschema.GenerateForeignKeyName(table.Name, strings.Join(constraint.Columns, "_"))
+			label = schemaprep.GenerateForeignKeyName(table.Name, strings.Join(constraint.Columns, "_"))
 		}
 		relationships = append(relationships, relationship{
 			From:  table.QualifiedName(),

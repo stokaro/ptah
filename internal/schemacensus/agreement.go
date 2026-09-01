@@ -14,7 +14,7 @@ import (
 // compared against an empty database, planned, and rendered.
 //
 // It answers stokaro/ptah#2606's acceptance scenario 11 at the field level.
-// `internal/convert/fromschema.TestRenderAndPlanAgreeOnEveryPostgresFamilyTarget`
+// `internal/modelast.TestRenderAndPlanAgreeOnEveryPostgresFamilyTarget`
 // already compares the two surfaces by AST node kind, which catches an object
 // one of them loses; this catches a FIELD one of them loses while both still
 // emit the object.
