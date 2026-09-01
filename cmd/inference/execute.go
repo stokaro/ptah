@@ -243,7 +243,7 @@ func pruneOutbox(
 		return []string{bullet(fmt.Sprintf("the outbox was not pruned: %v", err))}
 	}
 	if !ok {
-		// No live reader answered, which is not a licence to empty the table.
+		// No live reader answered, which is not a license to empty the table.
 		return nil
 	}
 	removed, err := outbox.Prune(ctx, floor.Transaction)

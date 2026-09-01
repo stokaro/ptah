@@ -576,7 +576,7 @@ const outboxFloorSQL = `SELECT COALESCE(catch_up_watermark, ''), COALESCE(snapsh
 // it could not read is a floor that authorizes deleting what they owed.
 //
 // The false answer means no live reader was found, and a caller must delete
-// nothing: an empty reader set is not a licence to empty the table.
+// nothing: an empty reader set is not a license to empty the table.
 func (s *Store) OutboxFloor(
 	ctx context.Context, sourceTable string,
 ) (embedcatchup.Cursor, bool, error) {
