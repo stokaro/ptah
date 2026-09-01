@@ -952,6 +952,13 @@ func (r *Reader) readEnumsForSchema(ctx context.Context, schemaName string) ([]c
 	defer rows.Close()
 
 	enumMap := make(map[string][]string)
+	// The order the rows arrive in, which the query's ORDER BY already fixed.
+	// Ranging enumMap to build the result discarded it, so two reads of one
+	// unchanged schema returned the enum TYPES in different orders while the
+	// values inside each stayed put (stokaro/ptah#2712). catalog.Database.Enums
+	// serializes as a JSON slice that schema fingerprints and a plan artifact's
+	// current_schema_digest hash, so the swap reads as a stale plan.
+	var enumOrder []string
 	for rows.Next() {
 		var enumName, enumValue string
 		var sortOrder int
@@ -960,11 +967,18 @@ func (r *Reader) readEnumsForSchema(ctx context.Context, schemaName string) ([]c
 			return nil, fmt.Errorf("failed to scan enum: %w", err)
 		}
 
+		if _, seen := enumMap[enumName]; !seen {
+			enumOrder = append(enumOrder, enumName)
+		}
 		enumMap[enumName] = append(enumMap[enumName], enumValue)
 	}
 
+	// Nil rather than an empty slice, for the reason the MySQL constraint read
+	// states: catalog.Database.Enums has no `omitempty`, so `null` and `[]` are
+	// different bytes in the fingerprint this fix exists to stabilize.
 	var enums []catalog.Enum
-	for name, values := range enumMap {
+	for _, name := range enumOrder {
+		values := enumMap[name]
 		enums = append(enums, catalog.Enum{
 			Name: name,
 			// Same convention as tables, views and domains: blank for the
