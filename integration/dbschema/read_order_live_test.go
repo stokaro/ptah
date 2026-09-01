@@ -5,6 +5,7 @@ package dbschema_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,22 +74,22 @@ func TestReadSchema_LiveConstraintOrderIsTheQueryOrder(t *testing.T) {
 			ctx, cancel := context.WithTimeout(c.Context(), 2*time.Minute)
 			defer cancel()
 
-			conn, schemaName := prepareConstraintOrderFixture(c, ctx, test.engine)
+			conn, prefix := prepareConstraintOrderFixture(c, ctx, test.engine)
 
 			// The first read fixes the expectation and every later one has to
 			// match it, so a scramble fails whichever read it lands on. It is
 			// taken outside the loop because a conditional in a test body is a
 			// style violation, and because the two reads are different claims:
 			// this one says the fixture is visible at all.
-			first, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
+			first, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, nil)
 			c.Assert(err, qt.IsNil)
-			want := uniqueConstraintNames(first.Constraints)
+			want := ownUniqueConstraintNames(first.Constraints, prefix)
 			c.Assert(want, qt.HasLen, 3)
 
 			for read := range readsPerCase - 1 {
-				schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, []string{schemaName})
+				schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, nil)
 				c.Assert(err, qt.IsNil)
-				c.Assert(uniqueConstraintNames(schema.Constraints), qt.DeepEquals, want,
+				c.Assert(ownUniqueConstraintNames(schema.Constraints, prefix), qt.DeepEquals, want,
 					qt.Commentf("read %d", read+2))
 			}
 		})
@@ -103,10 +104,17 @@ func enumNames(enums []catalog.Enum) []string {
 	return names
 }
 
-func uniqueConstraintNames(constraints []catalog.Constraint) []string {
+// ownUniqueConstraintNames keeps only this fixture's constraints, in the order
+// the read returned them. The database is shared with every other test in the
+// contour, so an unfiltered list would be neither three long nor stable for
+// reasons that have nothing to do with the defect.
+func ownUniqueConstraintNames(constraints []catalog.Constraint, prefix string) []string {
 	names := make([]string, 0, len(constraints))
 	for _, constraint := range constraints {
 		if constraint.Type != "UNIQUE" {
+			continue
+		}
+		if !strings.Contains(constraint.Name, prefix) {
 			continue
 		}
 		names = append(names, constraint.Name)

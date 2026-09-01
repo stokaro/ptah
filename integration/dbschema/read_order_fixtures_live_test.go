@@ -41,6 +41,13 @@ func prepareEnumOrderFixture(c *qt.C, ctx context.Context) (*dbschema.DatabaseCo
 
 // prepareConstraintOrderFixture creates three named UNIQUE constraints across
 // two tables, which is the shape the report reproduces with.
+//
+// It creates TABLES in the database it connected to rather than a database of
+// its own. CI's ptah_user has no CREATE privilege at the server level -- an
+// earlier version issued CREATE DATABASE, passed locally against root, and
+// failed in CI with `Access denied for user 'ptah_user'@'%'`. The prefix is what
+// separates this fixture's constraints from everything else already in that
+// shared database.
 func prepareConstraintOrderFixture(
 	c *qt.C,
 	ctx context.Context,
@@ -51,38 +58,40 @@ func prepareConstraintOrderFixture(
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
 
-	schemaName := fmt.Sprintf("ptah_con_order_%d", time.Now().UnixNano())
-	dropDatabase(c, conn, schemaName)
-	c.Cleanup(func() { dropDatabase(c, conn, schemaName) })
+	prefix := fmt.Sprintf("ptah_con_order_%d", time.Now().UnixNano())
+	dropOrderTables(c, conn, prefix)
+	c.Cleanup(func() { dropOrderTables(c, conn, prefix) })
 
 	statements := []string{
-		fmt.Sprintf("CREATE DATABASE %s", schemaName),
-		fmt.Sprintf(`CREATE TABLE %s.users (
+		fmt.Sprintf(`CREATE TABLE %s_users (
 			id BIGINT NOT NULL PRIMARY KEY,
 			email VARCHAR(255) NOT NULL,
 			code VARCHAR(64) NOT NULL,
-			CONSTRAINT uq_users_email UNIQUE (email),
-			CONSTRAINT uq_users_code UNIQUE (code))`, schemaName),
-		fmt.Sprintf(`CREATE TABLE %s.orders (
+			CONSTRAINT uq_%[1]s_email UNIQUE (email),
+			CONSTRAINT uq_%[1]s_code UNIQUE (code))`, prefix),
+		fmt.Sprintf(`CREATE TABLE %s_orders (
 			id BIGINT NOT NULL PRIMARY KEY,
 			ref VARCHAR(64) NOT NULL,
-			CONSTRAINT uq_orders_ref UNIQUE (ref))`, schemaName),
+			CONSTRAINT uq_%[1]s_ref UNIQUE (ref))`, prefix),
 	}
 	for _, statement := range statements {
 		_, err := conn.ExecContext(ctx, statement)
 		c.Assert(err, qt.IsNil, qt.Commentf("execute %s", statement))
 	}
-	return conn, schemaName
+	return conn, prefix
+}
+
+func dropOrderTables(c *qt.C, conn *dbschema.DatabaseConnection, prefix string) {
+	c.Helper()
+	for _, suffix := range []string{"_users", "_orders"} {
+		_, err := conn.ExecContext(context.Background(),
+			fmt.Sprintf("DROP TABLE IF EXISTS %s%s", prefix, suffix))
+		c.Check(err, qt.IsNil)
+	}
 }
 
 func dropSchema(c *qt.C, conn *dbschema.DatabaseConnection, name string) {
 	c.Helper()
 	_, err := conn.ExecContext(context.Background(), fmt.Sprintf("DROP SCHEMA IF EXISTS %q CASCADE", name))
-	c.Check(err, qt.IsNil)
-}
-
-func dropDatabase(c *qt.C, conn *dbschema.DatabaseConnection, name string) {
-	c.Helper()
-	_, err := conn.ExecContext(context.Background(), fmt.Sprintf("DROP DATABASE IF EXISTS %s", name))
 	c.Check(err, qt.IsNil)
 }
