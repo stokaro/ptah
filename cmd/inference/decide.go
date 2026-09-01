@@ -155,6 +155,7 @@ func newCutoverCommand() *cobra.Command {
 	var runID string
 	var approval approvalOptions
 	var stabilizeFor time.Duration
+	var accepting []string
 	var evidence evidenceOptions
 
 	cmd := &cobra.Command{
@@ -179,7 +180,7 @@ specification setting policy.require_signed_approval refuses the typed form.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runCutover(cmd.Context(), cmd.OutOrStdout(), options,
-				runID, approval, stabilizeFor, evidence)
+				runID, approval, stabilizeFor, accepting, evidence)
 		},
 	}
 	addCommonFlags(cmd, &options)
@@ -187,6 +188,10 @@ specification setting policy.require_signed_approval refuses the typed form.`,
 	addApprovalFlags(cmd, &approval)
 	cmd.Flags().DurationVar(&stabilizeFor, "stabilize-for", 0,
 		"How long the previous generation stays a way back; zero leaves no rollback")
+	cmd.Flags().StringArrayVar(&accepting, "accept-finding", nil,
+		"A blocking finding, by its exact summary, to cut over despite. Repeatable. "+
+			"Refused unless policy.allow_accepted_findings is set, and refused when the "+
+			"summary matches no blocking finding")
 	addEvidenceFlags(cmd.Flags(), &evidence)
 	addSubjectFlag(cmd, &evidence)
 	return cmd
@@ -196,7 +201,7 @@ specification setting policy.require_signed_approval refuses the typed form.`,
 func runCutover(
 	ctx context.Context, out io.Writer, options commonOptions,
 	runID string, authorization approvalOptions,
-	stabilizeFor time.Duration, evidence evidenceOptions,
+	stabilizeFor time.Duration, accepting []string, evidence evidenceOptions,
 ) error {
 	report, run, err := verify(ctx, options, runID)
 	if err != nil {
@@ -210,7 +215,7 @@ func runCutover(
 
 	now := time.Now().UTC()
 	plan, observed, err := embedreport.BuildCutoverPlan(
-		ctx, opened.db, opened.store, opened.loaded, run, report, now)
+		ctx, opened.db, opened.store, opened.loaded, run, report, accepting, now)
 	if err != nil {
 		return err
 	}
@@ -268,19 +273,31 @@ func runCutover(
 		approverName(approval), approvalSigned(approval), now, stabilizeFor, evidence)
 }
 
-// recordVerified marks a run verified when the verification passed.
+// recordVerified marks a run verified when the cutover gate was satisfied.
 //
-// A report that found something is left alone: the cutover decision refuses on
-// it moments later, and a run recorded as verified because something looked at
-// it is the state this whole phase machine exists to prevent.
+// Called only after the decision allowed the cutover, so reaching here means
+// the gate was passed -- by a clean report, or by every blocking finding having
+// been named in an acceptance the policy permits and the plan digest binds.
+// Both are the run standing where the lifecycle calls verified; the difference
+// between them is what the VERIFICATION record says, which is why that record
+// is written for a clean report only.
+//
+// Keying the phase on report.Passed() alone leaves an accepted-findings cutover
+// stuck at `caught_up`: the pointer moves, and then the phase it cannot reach
+// fails the verb — the same shape stokaro/ptah#2631 fixed, reopened by the path
+// that makes acceptance possible at all.
 func recordVerified(
 	ctx context.Context, options commonOptions, runID string, report embedverify.Report,
 ) error {
-	if !report.Passed() {
-		return nil
-	}
 	if err := reachPhase(ctx, options, runID, embedrun.PhaseVerified); err != nil {
 		return err
+	}
+	if !report.Passed() {
+		// Accepted rather than clean. The plan carries what was accepted and
+		// the pointer carries the plan digest, so the acceptance is recorded;
+		// a verification record saying this generation verified would say
+		// something no layer measured.
+		return nil
 	}
 	return recordVerification(ctx, options, report.Generation)
 }

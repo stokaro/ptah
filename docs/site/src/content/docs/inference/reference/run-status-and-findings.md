@@ -111,9 +111,36 @@ Each finding names its **layer** and its **severity**.
 **Blocking** refuses the cutover and exits non-zero. **Advisory** is reported and
 does not.
 
-`policy.allow_accepted_findings` names findings that may be present without
-blocking — a deliberate decision recorded in the specification rather than a flag
-somebody remembers to pass.
+Accepting a blocking finding takes both halves. The specification says whether
+accepting is permitted at all:
+
+```yaml
+policy:
+  allow_accepted_findings: true
+```
+
+and the cutover names which findings, by their exact summary:
+
+```bash
+ptah inference cutover --spec spec.yaml --db-url "$DB" --run-id r1 \
+  --accept-finding "3 target rows are missing a vector"
+```
+
+The specification is where the permission lives because it is reviewed; the
+summary cannot be, because it carries counts and keys that only exist once a
+report has run.
+
+Three refusals follow from that, and each is deliberate. **Every** blocking
+finding has to be named — accepting one does not carry the others. A summary
+matching no blocking finding is refused rather than ignored, because an
+acceptance copied into a runbook outlives the finding it was written for. And
+the consistency decision is not reachable this way at all: accepting "changes
+after the snapshot are unprocessed" would be accepting a cutover onto a
+generation nobody claims covers the source.
+
+What was accepted, and what was left blocking, are both in the plan digest. So
+an approval given for a plan that accepted one finding does not authorize a plan
+that accepted another.
 
 ### What was not measured
 

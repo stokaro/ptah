@@ -109,6 +109,14 @@ func decideEvidence(decision *Decision, plan Plan, policy Policy) {
 		decision.refusef("verification did not pass and nothing was accepted")
 	case !policy.AllowAcceptedFindings:
 		decision.refusef("verification did not pass and this policy does not permit accepting findings")
+	default:
+		// Every blocking finding, not merely one of them. An acceptance names
+		// what it covers, so a finding nobody named is a finding nobody
+		// accepted, and letting it through on the strength of a neighbour is
+		// the acceptance mechanism authorizing something it never mentioned.
+		for _, blocker := range evidence.UnacceptedFindings {
+			decision.refusef("this blocking finding was not accepted: %s", blocker)
+		}
 	}
 	// The remaining case -- findings accepted under a policy that permits it --
 	// is allowed and is not silent: the plan digest covers exactly WHICH

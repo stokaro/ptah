@@ -2584,8 +2584,8 @@
       "disposition": "keep",
       "outboundLinks": [],
       "inboundLinks": [],
-      "visibleWords": 1014,
-      "sourceBytes": 8082
+      "visibleWords": 1155,
+      "sourceBytes": 9112
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/specification.md",
@@ -2622,8 +2622,8 @@
         "/inference/strategies/plan-provider-capacity/",
         "/inference/troubleshooting/"
       ],
-      "visibleWords": 1378,
-      "sourceBytes": 10574
+      "visibleWords": 1381,
+      "sourceBytes": 10610
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/support-and-limitations.md",
@@ -3602,8 +3602,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8666,
-      "sourceBytes": 80388
+      "visibleWords": 8672,
+      "sourceBytes": 80464
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",

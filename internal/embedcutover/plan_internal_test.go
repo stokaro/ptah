@@ -80,45 +80,59 @@ type mutatedPlan struct {
 
 // mutatedPlans produces one plan per leaf field, each differing from the base
 // in exactly that field.
+//
+// Derived from the struct rather than written out. The hand-written list this
+// replaces had fallen behind it: Evidence.ConsistencyBlockers joined Plan in
+// stokaro/ptah#2646 and never got a row, so the property this test exists for
+// -- that the field's VALUE reaches the digest -- was unproven for it while the
+// test reported full coverage. A list that has to be extended by hand records
+// the coverage somebody remembered, and the field that escapes is by definition
+// the one nobody was thinking about.
+//
+// The label ratchet above cannot stand in for this. It proves a component with
+// the right NAME is written; a component list that wrote the label and then the
+// wrong variable satisfies it and binds an approval to a plan it does not
+// describe.
 func mutatedPlans(base Plan) []mutatedPlan {
-	return []mutatedPlan{
-		{name: "Generation", plan: withPlan(base, func(p *Plan) { p.Generation = "gen-other" })},
-		{name: "Previous", plan: withPlan(base, func(p *Plan) { p.Previous = "gen-other" })},
-		{name: "Schema", plan: withPlan(base, func(p *Plan) { p.Schema = "other" })},
-		{name: "Table", plan: withPlan(base, func(p *Plan) { p.Table = "other" })},
-		{name: "Column", plan: withPlan(base, func(p *Plan) { p.Column = "other" })},
-		{
-			name: "Evidence.VerificationDigest",
-			plan: withPlan(base, func(p *Plan) { p.Evidence.VerificationDigest = "report-2" }),
-		},
-		{
-			name: "Evidence.VerificationPassed",
-			plan: withPlan(base, func(p *Plan) { p.Evidence.VerificationPassed = false }),
-		},
-		{
-			name: "Evidence.AcceptedFindings",
-			plan: withPlan(base, func(p *Plan) { p.Evidence.AcceptedFindings = []string{"another finding"} }),
-		},
-		{
-			name: "Evidence.AcceptedFindings count",
-			plan: withPlan(base, func(p *Plan) {
-				p.Evidence.AcceptedFindings = []string{"a finding", "another finding"}
-			}),
-		},
-		{
-			name: "Evidence.ConsistencyMode",
-			plan: withPlan(base, func(p *Plan) { p.Evidence.ConsistencyMode = "snapshot" }),
-		},
-		{
-			name: "Evidence.ConsistencyWatermark",
-			plan: withPlan(base, func(p *Plan) { p.Evidence.ConsistencyWatermark = "lsn-43" }),
-		},
-		{name: "Evidence.IndexReady", plan: withPlan(base, func(p *Plan) { p.Evidence.IndexReady = false })},
-		{name: "Evidence.SourceMutable", plan: withPlan(base, func(p *Plan) { p.Evidence.SourceMutable = false })},
-		{
-			name: "PreparedAt",
-			plan: withPlan(base, func(p *Plan) { p.PreparedAt = p.PreparedAt.Add(time.Nanosecond) }),
-		},
+	var mutated []mutatedPlan
+	for _, field := range leafFieldPaths(reflect.TypeFor[Plan](), "") {
+		mutated = append(mutated, mutatedPlan{
+			name: field,
+			plan: withPlan(base, func(p *Plan) { mutateLeaf(p, field) }),
+		})
+	}
+	// One case reflection cannot reach: a list of one and a list of two are
+	// different plans, and an encoding that dropped the elements after the
+	// first would still move the digest for the mutation above.
+	return append(mutated, mutatedPlan{
+		name: "Evidence.AcceptedFindings count",
+		plan: withPlan(base, func(p *Plan) {
+			p.Evidence.AcceptedFindings = []string{"a finding", "another finding"}
+		}),
+	})
+}
+
+// mutateLeaf changes one leaf field to a value it did not hold.
+//
+// Each kind gets a change that cannot coincide with the base: a string gains a
+// suffix, a bool flips, a list gains an element, an instant moves by the
+// smallest unit the encoding records.
+func mutateLeaf(plan *Plan, path string) {
+	field := reflect.ValueOf(plan).Elem()
+	for part := range strings.SplitSeq(path, ".") {
+		field = field.FieldByName(part)
+	}
+	switch value := field.Interface().(type) {
+	case string:
+		field.SetString(value + "-mutated")
+	case bool:
+		field.SetBool(!value)
+	case []string:
+		field.Set(reflect.ValueOf(append(append([]string(nil), value...), "a finding nobody named")))
+	case time.Time:
+		field.Set(reflect.ValueOf(value.Add(time.Nanosecond)))
+	default:
+		panic("mutateLeaf has no change for " + path + ": add one rather than leaving it unmutated")
 	}
 }
 
@@ -126,6 +140,8 @@ func mutatedPlans(base Plan) []mutatedPlan {
 func withPlan(base Plan, change func(*Plan)) Plan {
 	copied := base
 	copied.Evidence.AcceptedFindings = append([]string(nil), base.Evidence.AcceptedFindings...)
+	copied.Evidence.UnacceptedFindings = append([]string(nil), base.Evidence.UnacceptedFindings...)
+	copied.Evidence.ConsistencyBlockers = append([]string(nil), base.Evidence.ConsistencyBlockers...)
 	change(&copied)
 	return copied
 }
