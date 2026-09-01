@@ -22,7 +22,8 @@ type OutboxRelease struct {
 	Watched bool
 	// Source is the relation the outbox belongs to, as a diagnostic says it.
 	Source string
-	// Remaining is how many live generations are still fed from that source.
+	// Remaining is how many live outbox-mode generations are still fed from
+	// that source.
 	Remaining int
 	// Removed is whether the triggers, capture function and event table are
 	// gone. False with Remaining > 0 means they were deliberately left.
@@ -63,16 +64,16 @@ type OutboxRelease struct {
 func (s *Store) ReleaseOutbox(
 	ctx context.Context, registered embedstore.Generation,
 ) (OutboxRelease, error) {
+	source := embedstore.QualifiedName(registered.SourceSchema, registered.SourceTable)
+	if registered.ConsistencyMode != string(embedcatchup.ModeOutbox) {
+		return OutboxRelease{Source: source}, nil
+	}
 	recorded, err := RecordedSpec(registered,
 		"watched by an outbox this retirement would have to remove")
 	if err != nil {
 		return OutboxRelease{}, err
 	}
-	source := embedstore.QualifiedName(registered.SourceSchema, registered.SourceTable)
-	if recorded.Mode != embedcatchup.ModeOutbox {
-		return OutboxRelease{Source: source}, nil
-	}
-	remaining, err := s.LiveGenerationsReading(
+	remaining, err := s.LiveOutboxReadersOf(
 		ctx, registered.SourceSchema, registered.SourceTable, registered.Identity)
 	if err != nil {
 		return OutboxRelease{}, err

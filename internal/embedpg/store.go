@@ -51,16 +51,16 @@ func (s *Store) RegisterGeneration(
 	const query = `INSERT INTO ` + embedstore.GenerationTable + ` (
 		identity, spec_digest, spec_document, name, reproducibility, reproducibility_reason,
 		resolved_model, dimension, target_schema, target_table, target_column,
-		source_schema, source_table,
+		source_schema, source_table, consistency_mode,
 		created_at, retired_at, verified_at, maintained_until)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
 		ON CONFLICT (identity) DO NOTHING`
 	if _, err := s.db.ExecContext(ctx, query,
 		generation.Identity, generation.SpecDigest, generation.SpecDocument, generation.Name,
 		generation.Reproducibility, nullable(generation.ReproducibilityReason),
 		nullable(generation.ResolvedModel), generation.Dimension,
 		generation.TargetSchema, generation.TargetTable, generation.TargetColumn,
-		generation.SourceSchema, generation.SourceTable,
+		generation.SourceSchema, generation.SourceTable, generation.ConsistencyMode,
 		generation.CreatedAt.UTC(), nullableTime(generation.RetiredAt),
 		nullableTime(generation.VerifiedAt), nullableTime(generation.MaintainedUntil),
 	); err != nil {
@@ -74,7 +74,7 @@ func (s *Store) Generation(ctx context.Context, identity string) (embedstore.Gen
 	const query = `SELECT identity, spec_digest, spec_document, COALESCE(name,''), reproducibility,
 		COALESCE(reproducibility_reason,''), COALESCE(resolved_model,''), dimension,
 		target_schema, target_table, target_column, source_schema, source_table,
-		created_at, retired_at,
+		consistency_mode, created_at, retired_at,
 		verified_at, maintained_until
 		FROM ` + embedstore.GenerationTable + ` WHERE identity = $1`
 	var generation embedstore.Generation
@@ -84,7 +84,7 @@ func (s *Store) Generation(ctx context.Context, identity string) (embedstore.Gen
 		&generation.Reproducibility, &generation.ReproducibilityReason, &generation.ResolvedModel,
 		&generation.Dimension, &generation.TargetSchema, &generation.TargetTable,
 		&generation.TargetColumn, &generation.SourceSchema, &generation.SourceTable,
-		&generation.CreatedAt, &retired, &verified, &maintained)
+		&generation.ConsistencyMode, &generation.CreatedAt, &retired, &verified, &maintained)
 	if errors.Is(err, sql.ErrNoRows) {
 		return embedstore.Generation{}, fmt.Errorf("%w: generation %s", embedstore.ErrNotFound, identity)
 	}
@@ -528,7 +528,7 @@ func (s *Store) ClaimRun(
 //
 // Membership is retired_at rather than a run phase. That column is the one
 // statement that a generation no longer reads anything, and it is already the
-// authority removeOutboxIfLast consults through LiveGenerationsReading -- one
+// authority removeOutboxIfLast consults through LiveOutboxReadersOf -- one
 // authority, not two that can disagree. A run's own PhaseRetired means the run
 // whose PREVIOUS generation was removed, which is the live one.
 //
@@ -607,8 +607,8 @@ func (s *Store) OutboxFloor(
 	return floor, found, nil
 }
 
-// LiveGenerationsReading counts the generations still fed by a source relation,
-// other than the one named.
+// LiveOutboxReadersOf counts the generations still FED BY the outbox on a
+// source relation, other than the one named.
 //
 // It exists because an outbox belongs to a SOURCE TABLE rather than to a
 // generation -- two generations over one source share its changes -- so
@@ -623,18 +623,26 @@ func (s *Store) OutboxFloor(
 // answered for each other: retiring every generation over one of them left its
 // triggers firing forever on the strength of a reader in the other schema.
 //
+// The mode is in the predicate for the same kind of reason. Only an
+// outbox-mode generation is fed by the outbox, so only one of those is a reader
+// of it -- and counting every live generation over the source instead let an
+// `immutable` generation over the same table keep the change capture installed
+// forever, with no retirement able to remove it: retiring the immutable one
+// finds no outbox to remove, because its mode never installed one.
+//
 // Retired generations do not count: their vectors are gone, so nothing is left
 // for a catch-up to feed.
-func (s *Store) LiveGenerationsReading(
+func (s *Store) LiveOutboxReadersOf(
 	ctx context.Context, sourceSchema, sourceTable, excluding string,
 ) (int, error) {
 	const query = `SELECT count(*) FROM ` + embedstore.GenerationTable + `
-		WHERE source_schema = $1 AND source_table = $2
-			AND identity <> $3 AND retired_at IS NULL`
+		WHERE source_schema = $1 AND source_table = $2 AND consistency_mode = $3
+			AND identity <> $4 AND retired_at IS NULL`
 	var count int
-	err := s.db.QueryRowContext(ctx, query, sourceSchema, sourceTable, excluding).Scan(&count)
+	err := s.db.QueryRowContext(ctx, query,
+		sourceSchema, sourceTable, string(embedcatchup.ModeOutbox), excluding).Scan(&count)
 	if err != nil {
-		return 0, fmt.Errorf("count live generations reading %s: %w",
+		return 0, fmt.Errorf("count live outbox readers of %s: %w",
 			embedstore.QualifiedName(sourceSchema, sourceTable), err)
 	}
 	return count, nil

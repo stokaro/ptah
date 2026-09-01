@@ -587,10 +587,10 @@ func registerBareGenerationInColumn(
 		`INSERT INTO ptah_embedding_generation (
 			identity, spec_digest, spec_document, reproducibility, dimension,
 			target_schema, target_table, target_column,
-			source_schema, source_table, created_at)
-		 VALUES ($1, $2, $3, 'full', 4, 'public', 'articles', $4, $5, $6, now())
+			source_schema, source_table, consistency_mode, created_at)
+		 VALUES ($1, $2, $3, 'full', 4, 'public', 'articles', $4, $5, $6, $7, now())
 		 ON CONFLICT (identity) DO NOTHING`, identity, loaded.Digest, string(body), column,
-		loaded.Spec.Source.Schema, loaded.Spec.Source.Table)
+		loaded.Spec.Source.Schema, loaded.Spec.Source.Table, string(loaded.Mode))
 	c.Assert(err, qt.IsNil)
 }
 

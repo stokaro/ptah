@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -347,4 +348,63 @@ func outboxEventCount(c *qt.C, ctx context.Context, db *sql.DB) int {
 	c.Assert(db.QueryRowContext(ctx,
 		fmt.Sprintf(`SELECT count(*) FROM %q`, table)).Scan(&count), qt.IsNil)
 	return count
+}
+
+// TestInferenceAnImmutableGenerationIsNoOutboxReaderE2E closes the hole the
+// first version of this change left, and it is the one a reviewer found rather
+// than a measurement.
+//
+// Counting every live generation over the source counts generations that were
+// never fed by the outbox. `immutable` installs none, so a generation in that
+// mode over the same table would have kept the change capture installed for
+// good: it holds the count above zero while any outbox generation is retired,
+// and retiring it in turn removes nothing, because its own mode never put an
+// outbox there to remove.
+func TestInferenceAnImmutableGenerationIsNoOutboxReaderE2E(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.TimescaleDB)
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	db, dbName := freshOutboxOwnershipDatabase(c, ctx, dbURL, "ptah_outbox_immutable")
+	seedCLIArticles(c, ctx, db)
+	endpoint := httptest.NewServer(http.HandlerFunc(embeddingsHandler(c)))
+	defer endpoint.Close()
+
+	// One outbox generation and one immutable one, over the same source. Only
+	// the first installs anything.
+	watching := writeCLISpec(c, endpoint.URL)
+	frozen := writeCLISpecWithMetric(c, endpoint.URL, "cosine", "embedding_frozen")
+	frozen = withImmutableMode(c, frozen)
+	runInference(c, ctx, "prepare", "--spec", watching, "--db-url", dbName, "--run-id", "watching")
+	runInference(c, ctx, "prepare", "--spec", frozen, "--db-url", dbName, "--run-id", "frozen")
+	c.Assert(outboxTriggerCount(c, ctx, db), qt.Equals, 2)
+
+	generation := generationOfRun(c, ctx, db, "watching")
+	digest := retirementDigestOf(c, ctx, watching, dbName, generation)
+	output := runInference(c, ctx, "retire",
+		"--spec", watching, "--db-url", dbName, "--generation", generation,
+		"--approve", digest, "--approver", "an operator")
+
+	// The immutable generation is still live and still reads the same table,
+	// and it is not a reader of the outbox.
+	c.Assert(output, qt.Contains, "the outbox is gone")
+	c.Assert(outboxTriggerCount(c, ctx, db), qt.Equals, 0)
+	c.Assert(outboxObjectsExist(c, ctx, db), qt.IsFalse)
+}
+
+// withImmutableMode rewrites a specification's consistency mode in place.
+//
+// The shared template takes a mode or a column but not both, and this test
+// needs a generation that differs from its sibling in exactly two ways: where
+// its vectors go, and what watches the source.
+func withImmutableMode(c *qt.C, specPath string) string {
+	c.Helper()
+	body, err := os.ReadFile(specPath)
+	c.Assert(err, qt.IsNil)
+	rewritten := strings.Replace(string(body), "  mode: outbox", "  mode: immutable", 1)
+	c.Assert(rewritten, qt.Not(qt.Equals), string(body))
+	path := filepath.Join(c.TempDir(), "immutable-spec.yaml")
+	c.Assert(os.WriteFile(path, []byte(rewritten), 0o600), qt.IsNil)
+	return path
 }

@@ -90,6 +90,8 @@ func GenerationFields() []schemamodel.Field {
 			"the schema of the relation it reads, empty for search_path"),
 		text(GenerationTable, "source_table", false,
 			"that relation, which is what an outbox belongs to"),
+		text(GenerationTable, "consistency_mode", false,
+			"the mode it was built with, which decides whether it reads an outbox"),
 		timestamp(GenerationTable, "created_at", false, "when Ptah first recorded it"),
 		timestamp(GenerationTable, "retired_at", true, "when it was destroyed, which is terminal"),
 		timestamp(GenerationTable, "verified_at", true,

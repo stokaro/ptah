@@ -79,6 +79,17 @@ type Generation struct {
 	// its author asked for -- the same convention TargetSchema carries.
 	SourceSchema string
 	SourceTable  string
+	// ConsistencyMode is the mode it was built with, as
+	// [embedcatchup.Mode] spells it.
+	//
+	// Recorded for the same reason the source is, and it closes the same
+	// question from the other side: only an outbox-mode generation is fed by
+	// the outbox, so only one of those counts as a reader of it. Counting every
+	// live generation over the source instead, an `immutable` generation over
+	// the same table kept the change capture installed forever -- and retiring
+	// that generation could not remove it either, because there was no outbox
+	// to remove for a mode that never installs one.
+	ConsistencyMode string
 	// CreatedAt is when Ptah first recorded it.
 	CreatedAt time.Time
 	// RetiredAt is when it was destroyed, zero while it exists.
