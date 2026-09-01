@@ -251,11 +251,12 @@ func credentialRefused(profile Profile, err error) string {
 
 // credentialUnusable is the credential that never became a request.
 //
-// With no source configured this claims nothing about where it came from,
-// because there is nothing to claim: what the caller needs is the reason.
+// With no source configured it says that rather than naming one, because
+// "the credential could not be used" reads as though there were a credential
+// and sends an operator looking for the value that failed.
 func credentialUnusable(profile Profile, err error) string {
 	if profile.CredentialSource == "" {
-		return fmt.Sprintf("the credential could not be used: %v", err)
+		return fmt.Sprintf("no credential source is configured: %v", err)
 	}
 	return fmt.Sprintf("%s could not be used: %v", credentialFrom(profile), err)
 }

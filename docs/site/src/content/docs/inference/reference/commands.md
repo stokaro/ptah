@@ -46,8 +46,8 @@ is what an air-gapped environment has instead of a registry.
 ## `describe`
 
 Reads a specification and reports what it says on its own. **It opens no
-database**, and with `--spec` it opens nothing at all, which is what makes it
-usable where every other one cannot be: writing a specification, and asking in
+database**, and with `--spec` no connection at all -- it reads the file and
+nothing else -- which is what makes it usable where every other one cannot be: writing a specification, and asking in
 CI whether an edit changed the corpus. `--release` fetches the release before it
 can read anything, so that form does reach a registry.
 
