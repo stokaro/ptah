@@ -348,7 +348,12 @@ func (e *Engine) commitProgress(
 		// why the store's copy is what gets reloaded rather than trusted here.
 		return e.fail(ctx, run, token, "target", err)
 	}
-	if err := e.Store.AppendEvent(ctx,
+	// The transaction this records has already committed, so the event is
+	// written on a context the caller's cancellation cannot reach. An interrupt
+	// arriving here otherwise printed `append event: context canceled` about a
+	// checkpoint that landed, and left the trail missing the one entry that
+	// says it did.
+	if err := e.Store.AppendEvent(context.WithoutCancel(ctx),
 		embedrun.NewEvent(&run, embedrun.EventCheckpoint, e.Worker, "")); err != nil {
 		return run, fmt.Errorf("append event: %w", err)
 	}
@@ -425,10 +430,43 @@ func embeddableInputs(batch embedrun.Batch) ([]string, int) {
 func (e *Engine) fail(
 	ctx context.Context, run embedrun.Run, token int64, class string, cause error,
 ) (embedrun.Run, error) {
+	// An interrupt is not a failure of whichever subsystem happened to be
+	// mid-request when it arrived. Ctrl-C during a provider call reported
+	// `embedding endpoint unreachable`, during a target write `write [229]`,
+	// during a store write `save run`: twelve interrupts, six different causes,
+	// none of them the cause. The loop head already answers this correctly --
+	// stopping is not failing, the run is durable at its last checkpoint -- and
+	// this is the same answer for an interrupt that lands between two of its
+	// passes (stokaro/ptah#2649).
+	//
+	// The parent context is the discriminator rather than `errors.Is(cause,
+	// context.Canceled)`, because `--provider-timeout` is an
+	// `http.Client.Timeout` and surfaces as a deadline on the request alone. A
+	// request that timed out is a provider problem and must keep saying so.
+	if interrupted := ctx.Err(); interrupted != nil {
+		return e.reload(context.WithoutCancel(ctx), run.ID, errors.Join(ErrAborted, interrupted))
+	}
+
+	// Everything below records what happened, on a context the caller's
+	// cancellation cannot reach.
+	//
+	// The check above already turns a cancelled context into an abort, so what
+	// this guards is the narrower case: a DEADLINE that expires between here
+	// and the last of the three store calls. Bookkeeping abandoned that way
+	// leaves the run `running` with no failure class -- the state this whole
+	// function exists to prevent -- and the caller is handed a second error
+	// line about a reload nobody asked for.
+	//
+	// No test covers it, and none can through `embedstore.Memory`, which
+	// ignores the context it is given. Reaching it needs a store that honors
+	// one and a deadline landing inside a three-call window, which is a race
+	// rather than a fixture. Said here rather than left to look covered.
+	recording := context.WithoutCancel(ctx)
+
 	// The run in hand may have advanced past what was committed, so the failure
 	// is recorded against a fresh copy: marking the in-memory one failed and
 	// saving it would persist a cursor whose work never landed.
-	stored, err := e.Store.Run(ctx, run.ID)
+	stored, err := e.Store.Run(recording, run.ID)
 	if err != nil {
 		return run, errors.Join(cause, fmt.Errorf("reload run %s: %w", run.ID, err))
 	}
@@ -436,10 +474,10 @@ func (e *Engine) fail(
 		return stored, errors.Join(cause, err)
 	}
 	stored.UpdatedAt = e.now()
-	if err := e.Store.SaveRun(ctx, stored); err != nil {
+	if err := e.Store.SaveRun(recording, stored); err != nil {
 		return stored, errors.Join(cause, err)
 	}
-	if err := e.Store.AppendEvent(ctx,
+	if err := e.Store.AppendEvent(recording,
 		embedrun.NewEvent(&stored, embedrun.EventFailed, e.Worker, cause.Error())); err != nil {
 		return stored, errors.Join(cause, err)
 	}

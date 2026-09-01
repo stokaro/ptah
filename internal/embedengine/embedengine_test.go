@@ -532,3 +532,64 @@ func TestBackfill_AnEmptyFinalPageIsTheEndAndNotAStall(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(run.Progress.RowsScanned, qt.Equals, int64(4))
 }
+
+// TestBackfill_AnInterruptIsNotAProviderFailure covers stokaro/ptah#2649
+// finding 10.
+//
+// `fail` did its bookkeeping on the caller's context, so an interrupt arriving
+// mid-request took whichever subsystem was in flight and reported that as the
+// cause -- and then failed to record anything, because its first act was a
+// store read on the same dead context. The operator got a cause that was not
+// the cause, a second line about a reload nobody asked for, and a run left
+// `running` with no failure class.
+//
+// The assertions are the three separate consequences, because a repair that
+// fixed only the message would leave the run unmarked and a repair that only
+// detached the context would still blame the provider.
+func TestBackfill_AnInterruptIsNotAProviderFailure(t *testing.T) {
+	c := qt.New(t)
+	h := newHarness(c, defaultBounds())
+	ctx, cancel := context.WithCancel(context.Background())
+	h.provider.beforeEmbed = cancel
+
+	run, _, err := h.engine.Backfill(ctx, "run-1")
+
+	c.Assert(err, qt.ErrorIs, embedengine.ErrAborted)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "reload run")
+	c.Assert(run.Status, qt.Equals, embedrun.StatusRunning)
+	c.Assert(run.FailureClass, qt.Equals, "")
+	c.Assert(failedRunEvents(c, h, "run-1"), qt.Equals, 0)
+}
+
+// TestBackfill_AProviderFailureIsStillAProviderFailure is the control.
+//
+// Every assertion above is satisfied by an engine that stopped recording
+// failures at all. This is the same loop, the same call site, with a live
+// context and a provider that will not answer.
+func TestBackfill_AProviderFailureIsStillAProviderFailure(t *testing.T) {
+	c := qt.New(t)
+	h := newHarness(c, defaultBounds())
+	h.provider.failOn = 1
+
+	run, _, err := h.engine.Backfill(context.Background(), "run-1")
+
+	c.Assert(err, qt.Not(qt.ErrorIs), embedengine.ErrAborted)
+	c.Assert(err, qt.ErrorMatches, `provider: the provider returned 503`)
+	c.Assert(run.Status, qt.Equals, embedrun.StatusFailed)
+	c.Assert(run.FailureClass, qt.Equals, "provider")
+	c.Assert(failedRunEvents(c, h, "run-1"), qt.Equals, 1)
+}
+
+// failedRunEvents counts the run's failure events.
+func failedRunEvents(c *qt.C, h *harness, runID string) int {
+	c.Helper()
+	events, err := h.store.Events(context.Background(), runID)
+	c.Assert(err, qt.IsNil)
+	count := 0
+	for _, event := range events {
+		if event.Kind == embedrun.EventFailed {
+			count++
+		}
+	}
+	return count
+}
