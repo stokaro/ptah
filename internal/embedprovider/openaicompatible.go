@@ -234,7 +234,6 @@ func (p *openAICompatible) decode(payload []byte, inputs int) (Result, error) {
 	return result, nil
 }
 
-// firstLine keeps a provider's error body to one line for a diagnostic.
 // withoutToken removes the credential from a body before it is quoted.
 //
 // A provider answering 401 commonly echoes the key it rejected -- OpenAI's own
@@ -257,6 +256,7 @@ func withoutToken(body, token string) string {
 	return strings.ReplaceAll(body, token, "[redacted]")
 }
 
+// firstLine keeps a provider's error body to one line for a diagnostic.
 func firstLine(body string) string {
 	line, _, _ := strings.Cut(strings.TrimSpace(body), "\n")
 	const bound = 200

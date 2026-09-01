@@ -293,16 +293,27 @@ func TestOpenAICompatible_RefusesAConfigurationItCannotHonour(t *testing.T) {
 // wrong key, an expired one, a key without the model, the wrong organization
 // and an exhausted quota alike.
 func TestOpenAICompatible_ARefusedCredentialCarriesTheProvidersReason(t *testing.T) {
-	c := qt.New(t)
-	provider := endpoint(c, 2, func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"error":{"message":"the key has no access to test-model"}}`))
-	})
+	tests := []struct {
+		name   string
+		status int
+	}{
+		{name: "unauthorized", status: http.StatusUnauthorized},
+		{name: "forbidden", status: http.StatusForbidden},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			provider := endpoint(c, 2, func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(test.status)
+				_, _ = w.Write([]byte(`{"error":{"message":"the key has no access to test-model"}}`))
+			})
 
-	_, err := provider.Embed(context.Background(), []string{"first"})
+			_, err := provider.Embed(context.Background(), []string{"first"})
 
-	c.Assert(err, qt.ErrorIs, embedprovider.ErrUnauthorized)
-	c.Assert(err.Error(), qt.Contains, "the key has no access to test-model")
+			c.Assert(err, qt.ErrorIs, embedprovider.ErrUnauthorized)
+			c.Assert(err.Error(), qt.Contains, "the key has no access to test-model")
+		})
+	}
 }
 
 // TestOpenAICompatible_AQuotedBodyNeverCarriesTheCredential is the control, and
