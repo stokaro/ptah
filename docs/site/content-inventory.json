@@ -1875,8 +1875,8 @@
         "/inference/reference/specification/",
         "/inference/strategies/choose-a-consistency-mode/"
       ],
-      "visibleWords": 615,
-      "sourceBytes": 4325
+      "visibleWords": 702,
+      "sourceBytes": 4828
     },
     {
       "path": "docs/site/src/content/docs/inference/concepts/embeddings-and-inference-state.md",
@@ -2169,8 +2169,8 @@
       "inboundLinks": [
         "/inference/overview/"
       ],
-      "visibleWords": 598,
-      "sourceBytes": 4971
+      "visibleWords": 675,
+      "sourceBytes": 5396
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/migrate-a-paused-source.md",
@@ -2512,8 +2512,8 @@
       "inboundLinks": [
         "/inference/concepts/embeddings-and-inference-state/"
       ],
-      "visibleWords": 2549,
-      "sourceBytes": 18912
+      "visibleWords": 2624,
+      "sourceBytes": 19356
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/evaluation-corpus.md",
@@ -4039,8 +4039,8 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 7153,
-      "sourceBytes": 48523
+      "visibleWords": 7165,
+      "sourceBytes": 48606
     },
     {
       "path": "docs/site/src/content/docs/reference/overview.mdx",

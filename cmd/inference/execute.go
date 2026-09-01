@@ -212,7 +212,59 @@ func runCatchUp(ctx context.Context, out io.Writer, options executeOptions) erro
 	lines := []string{fmt.Sprintf("caught up to transaction %s: %d changed rows, %d tombstoned",
 		boundaryText(run.CatchUpWatermark, opened.loaded.Mode),
 		pass.RowsScanned, pass.RowsDeleted)}
+	lines = append(lines, pruneOutbox(ctx, opened, outbox, run)...)
 	return extendMaintenance(ctx, out, opened, run.GenerationIdentity, options.maintainFor, lines)
+}
+
+// pruneOutbox removes the events every live reader of this source has passed.
+//
+// Here rather than inside the engine, and after the phase is recorded, because
+// the floor has to be read from watermarks already on disk: this run's own
+// position reached disk with the vectors it belongs to when CatchUp returned,
+// and the delete commits on its own. Pruning from a position held in memory, or
+// between pages, would leave the events gone and the durable watermark behind
+// them, which a resumed run reads as an empty range and reports as caught up.
+//
+// Called on the concrete outbox rather than through embedengine's Changes
+// interface, deliberately. embedguard skips a name an interface declares as
+// soon as anything anywhere calls that name, and assistsession.Store.Prune
+// already supplies one -- so routing this through the interface would take the
+// exemption off and leave the guard permanently blind to the declaration, which
+// is the opposite of what removing the exemption is meant to prove.
+//
+// Reported and never fatal, for the reason extendMaintenance gives: the
+// catch-up's work is committed, and failing here would report a run that did
+// not do what it did. Nothing is lost when a prune fails; the table is bigger.
+func pruneOutbox(
+	ctx context.Context, opened *session, outbox *embedpg.Outbox, run embedrun.Run,
+) []string {
+	floor, ok, err := opened.store.OutboxFloor(ctx, opened.loaded.Spec.Source.Table)
+	if err != nil {
+		return []string{bullet(fmt.Sprintf("the outbox was not pruned: %v", err))}
+	}
+	if !ok {
+		// No live reader answered, which is not a license to empty the table.
+		return nil
+	}
+	removed, err := outbox.Prune(ctx, floor.Transaction)
+	if err != nil {
+		return []string{bullet(fmt.Sprintf("the outbox was not pruned: %v", err))}
+	}
+	if removed > 0 {
+		return []string{bullet(fmt.Sprintf(
+			"pruned %d processed event(s) from the outbox", removed))}
+	}
+	// Nothing went, and this run has moved past the floor: something else still
+	// reading this table is holding those events. Said out loud, because an
+	// operator watching the table not shrink should not have to guess whether
+	// pruning happened at all.
+	if reached, resumable, _ := embedcatchup.ResumeFrom(
+		run.CatchUpWatermark, run.SnapshotWatermark); resumable && floor.Before(reached) {
+		return []string{bullet(fmt.Sprintf(
+			"the outbox keeps events this run has processed: another live generation "+
+				"reading %s has not reached them", opened.loaded.Spec.Source.Table))}
+	}
+	return nil
 }
 
 // recordsChanges reports whether a mode leaves something for catch-up to read.

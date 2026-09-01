@@ -143,3 +143,10 @@ or, where something still needs it:
 ```text
   - the outbox stays: 1 other generation(s) still read articles
 ```
+
+The same fact decides how big the table gets. `catchup` removes the events every
+generation reading that table has passed, so the table holds the backlog and not
+the history — but a generation that is behind holds its events for everyone, and
+one that is live and idle holds them indefinitely. If the table is not shrinking,
+that is what to look at, and `retire` on the generation you are done with is what
+releases them.
