@@ -354,10 +354,14 @@ func (e *Engine) commitProgress(
 		return e.fail(ctx, run, token, "target", err)
 	}
 	// The transaction this records has already committed, so the event is
-	// written on a context the caller's cancellation cannot reach. An interrupt
-	// arriving here otherwise printed `append event: context canceled` about a
-	// checkpoint that landed, and left the trail missing the one entry that
-	// says it did.
+	// written on a context neither the caller's cancellation nor its deadline
+	// can reach. `context.WithoutCancel` drops both -- measured on Go 1.27:
+	// the returned context reports no deadline, its Done channel is nil, and
+	// its Err stays nil after the parent's deadline has passed.
+	//
+	// An interrupt arriving here otherwise printed `append event: context
+	// canceled` about a checkpoint that landed, and left the trail missing the
+	// one entry that says it did.
 	if err := e.Store.AppendEvent(context.WithoutCancel(ctx),
 		embedrun.NewEvent(&run, embedrun.EventCheckpoint, e.Worker, "")); err != nil {
 		return run, fmt.Errorf("append event: %w", err)
@@ -461,6 +465,10 @@ func (e *Engine) fail(
 	// leaves the run `running` with no failure class -- the state this whole
 	// function exists to prevent -- and the caller is handed a second error
 	// line about a reload nobody asked for.
+	//
+	// The deadline is genuinely gone rather than merely uncancelled:
+	// `context.WithoutCancel` reports no deadline and a nil Done channel, and
+	// its Err stays nil after the parent's has passed. Measured on Go 1.27.
 	//
 	// No test covers it, and none can through `embedstore.Memory`, which
 	// ignores the context it is given. Reaching it needs a store that honors
