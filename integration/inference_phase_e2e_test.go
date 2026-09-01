@@ -46,9 +46,13 @@ func TestInferencePhaseE2E(t *testing.T) {
 	runInference(c, ctx, "prepare", "--spec", specPath, "--db-url", dbName, "--run-id", cliRunID)
 	c.Assert(phaseOf(c, ctx, specPath, dbName), qt.Equals, "boundary_captured")
 
+	// A completed backfill leaves `backfilled`, not `backfilling`. The phase
+	// used to be set to `backfilling` AFTER the walk finished, which made it
+	// the phase of a backfill that had ended and left verification with no
+	// fact to read (stokaro/ptah#2649).
 	runInference(c, ctx, "backfill",
 		"--spec", specPath, "--db-url", dbName, "--run-id", cliRunID, "--batch-rows", "10")
-	c.Assert(phaseOf(c, ctx, specPath, dbName), qt.Equals, "backfilling")
+	c.Assert(phaseOf(c, ctx, specPath, dbName), qt.Equals, "backfilled")
 
 	runInference(c, ctx, "catchup",
 		"--spec", specPath, "--db-url", dbName, "--run-id", cliRunID, "--batch-rows", "10")
@@ -126,4 +130,46 @@ func phaseFixture(c *qt.C, ctx context.Context, dbURL string) (string, string) {
 	endpoint := httptest.NewServer(http.HandlerFunc(embeddingsHandler(c)))
 	c.Cleanup(endpoint.Close)
 	return dbName, writeIndexedCLISpec(c, endpoint.URL)
+}
+
+// TestInferenceSnapshotCompletionIsMeasuredE2E is stokaro/ptah#2649 finding 3,
+// and it asserts the two directions the old expression got wrong.
+//
+// `SnapshotComplete` read `run.Phase != PhaseBackfilling`, which is true for
+// every phase BEFORE the backfill as well as after it. So a run that had never
+// backfilled was told its snapshot was complete, and a run whose backfill had
+// embedded every row was told it was not -- the phase being set to
+// `backfilling` only once the walk had finished.
+//
+// Both halves are asserted against ONE run, in sequence, because either alone
+// passes under an expression that is simply inverted.
+func TestInferenceSnapshotCompletionIsMeasuredE2E(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.TimescaleDB)
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	dbName, specPath := phaseFixture(c, ctx, dbURL)
+	const snapshot = "the backfill has not reached the end of its snapshot"
+
+	runInference(c, ctx, "prepare", "--spec", specPath, "--db-url", dbName, "--run-id", cliRunID)
+
+	// Nothing has walked the snapshot, so verification must say so. This is the
+	// direction the old expression got backwards and no test covered.
+	before, beforeErr := runInferenceExpectingFailure(c, ctx, "verify",
+		"--spec", specPath, "--db-url", dbName, "--run-id", cliRunID)
+	c.Assert(beforeErr, qt.IsNotNil)
+	c.Assert(before, qt.Contains, snapshot)
+
+	runInference(c, ctx, "backfill",
+		"--spec", specPath, "--db-url", dbName, "--run-id", cliRunID, "--batch-rows", "10")
+
+	// And now it must not, about the same run, on the same corpus.
+	after, afterErr := runInferenceExpectingFailure(c, ctx, "verify",
+		"--spec", specPath, "--db-url", dbName, "--run-id", cliRunID)
+	c.Assert(afterErr, qt.IsNotNil)
+	c.Assert(after, qt.Not(qt.Contains), snapshot)
+	// The control: verification is still reporting, so the absence above is an
+	// answer rather than a report that stopped being produced.
+	c.Assert(after, qt.Contains, "catch-up has not reached the barrier")
 }
