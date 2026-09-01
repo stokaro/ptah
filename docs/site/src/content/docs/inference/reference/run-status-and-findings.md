@@ -94,8 +94,8 @@ statement, so that shape came from somewhere else, and it is searchable.
 
 A composite key is printed as the tuple it is — `(acme, 2)` — in the
 specification's key order. The components are joined internally with a control
-character so that no column value can forge a boundary, and that form is never
-what you see.
+character, chosen because every printable delimiter is one some column plainly
+holds, and that internal form is never what you see.
 
 ### `skipped` is not `missing`
 

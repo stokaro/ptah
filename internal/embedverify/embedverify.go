@@ -79,8 +79,15 @@ const MaxReportedKeys = 20
 // every layer compares rows by.
 //
 // U+001F, the ASCII unit separator, because the components are arbitrary column
-// values and any printable delimiter is a value some column can hold: joined on
-// a comma, tenant `a,b` with id `c` and tenant `a` with id `b,c` are one key.
+// values and every printable delimiter is one some column plainly holds: joined
+// on a comma, tenant `a,b` with id `c` and tenant `a` with id `b,c` are one key.
+//
+// It is a delimiter chosen for rarity, not an encoding that cannot be forged. A
+// TEXT column may contain U+001F, and two keys whose components differ only
+// across such a value fold onto one identity here. Making that impossible needs
+// a length-prefixed or escaped encoding, which is a change to what the walks
+// compare rather than to how a key is shown; the residual is recorded rather
+// than papered over.
 //
 // It is a comparison key, never a display one. Printed raw, a terminal swallows
 // it -- `(acme, 2)` and `(globex, 1)` came out as `acme2` and `globex1`, so the
