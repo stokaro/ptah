@@ -170,7 +170,8 @@ func TestReach_WalksTheWholeLifecycle(t *testing.T) {
 
 	for _, phase := range []embedrun.Phase{
 		embedrun.PhasePlanned, embedrun.PhasePrepared, embedrun.PhaseBoundaryCaptured,
-		embedrun.PhaseBackfilling, embedrun.PhaseCaughtUp, embedrun.PhaseIndexed,
+		embedrun.PhaseBackfilling, embedrun.PhaseBackfilled, embedrun.PhaseCaughtUp,
+		embedrun.PhaseIndexed,
 		embedrun.PhaseVerified, embedrun.PhaseCutOver, embedrun.PhaseRetired,
 	} {
 		c.Assert(run.Reach(run.FencingToken, phase), qt.IsNil, qt.Commentf("moving to %s", phase))
@@ -224,4 +225,41 @@ func TestNewEvent_RecordsWhoHeldWhatAndWhere(t *testing.T) {
 	c.Assert(event.FencingToken, qt.Equals, run.FencingToken)
 	c.Assert(event.ToPhase, qt.Equals, embedrun.PhaseBackfilling)
 	c.Assert(event.Counts.RowsEmbedded, qt.Equals, int64(9))
+}
+
+// TestReached_AnswersAtOrPast is the direction test, and it exists because I
+// got the direction wrong writing it.
+//
+// `reaches(from, to)` asks whether `to` is reachable FROM `from`, so
+// `Reached(phase)` has to ask `reaches(phase, r.Phase)` -- is the run's phase
+// reachable from the one being asked about. The transposition compiles, type
+// checks, and answers the exact opposite: it reports a run as having reached
+// every phase still ahead of it.
+//
+// Both directions are asserted for that reason. A test that only checked the
+// phases at or past the target passes just as happily with the arguments
+// swapped, because a run at `boundary_captured` can reach `backfilled` too.
+func TestReached_AnswersAtOrPast(t *testing.T) {
+	tests := []struct {
+		name  string
+		phase embedrun.Phase
+		want  bool
+	}{
+		{name: "the phase itself", phase: embedrun.PhaseBackfilled, want: true},
+		{name: "one past it", phase: embedrun.PhaseCaughtUp, want: true},
+		{name: "far past it", phase: embedrun.PhaseVerified, want: true},
+		{name: "the phase before it", phase: embedrun.PhaseBackfilling, want: false},
+		{name: "two before it", phase: embedrun.PhaseBoundaryCaptured, want: false},
+		{name: "the beginning", phase: embedrun.PhaseResolved, want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			run := embedrun.Run{Phase: test.phase}
+
+			c.Assert(run.Reached(embedrun.PhaseBackfilled), qt.Equals, test.want)
+		})
+	}
 }

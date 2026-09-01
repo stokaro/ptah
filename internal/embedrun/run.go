@@ -30,6 +30,15 @@ const (
 	PhaseBoundaryCaptured Phase = "boundary_captured"
 	// PhaseBackfilling is a run walking the snapshot.
 	PhaseBackfilling Phase = "backfilling"
+	// PhaseBackfilled is a run whose walk reached the end of the snapshot.
+	//
+	// It exists because nothing recorded that fact. The phase was set to
+	// `backfilling` AFTER the walk finished, and verification asked
+	// `Phase != PhaseBackfilling` -- so a backfill that had embedded every row
+	// was told it had not reached the end of its snapshot, while a run that had
+	// never backfilled at all, sitting at `boundary_captured`, was told it had
+	// (stokaro/ptah#2649).
+	PhaseBackfilled Phase = "backfilled"
 	// PhaseCaughtUp is a run whose catch-up watermark has reached the source.
 	PhaseCaughtUp Phase = "caught_up"
 	// PhaseIndexed is a run whose target index exists.
@@ -180,7 +189,8 @@ var nextPhases = map[Phase][]Phase{
 	PhasePlanned:          {PhasePrepared},
 	PhasePrepared:         {PhaseBoundaryCaptured},
 	PhaseBoundaryCaptured: {PhaseBackfilling},
-	PhaseBackfilling:      {PhaseCaughtUp},
+	PhaseBackfilling:      {PhaseBackfilled},
+	PhaseBackfilled:       {PhaseCaughtUp},
 	// Indexing is a step a specification may not have. One that declares no
 	// index method has nothing to build -- every query over that generation is
 	// a sequential scan, which is what its author asked for -- so verification
@@ -245,6 +255,17 @@ func (r *Run) Reach(token int64, to Phase) error {
 	r.Phase = to
 	r.UpdatedAt = time.Now().UTC()
 	return nil
+}
+
+// Reached reports whether the run is at the given phase or past it.
+//
+// Ask this rather than comparing phases with `!=`. A phase is a position on a
+// path, not a scalar, and `run.Phase != PhaseBackfilling` reads as "the
+// backfill is done" while also being true for every phase BEFORE it -- which
+// is how a run that had never backfilled came to be told its snapshot was
+// complete (stokaro/ptah#2649).
+func (r Run) Reached(phase Phase) bool {
+	return r.Phase == phase || reaches(phase, r.Phase)
 }
 
 // reaches reports whether one phase is ahead of another along the lifecycle.

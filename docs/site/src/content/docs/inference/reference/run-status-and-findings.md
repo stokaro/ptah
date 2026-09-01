@@ -50,8 +50,14 @@ The phase is a high-water mark: it records the furthest point the run reached,
 not where it is now. Running `catchup` again after a verification leaves it at
 `verified`.
 
-The order is `boundary_captured`, `backfilling`, `caught_up`, `indexed`,
-`verified`, `cut_over`, and then either `rolled_back` or `retired`.
+The order is `boundary_captured`, `backfilling`, `backfilled`, `caught_up`,
+`indexed`, `verified`, `cut_over`, and then either `rolled_back` or `retired`.
+
+`backfilling` and `backfilled` are two facts, not one worded twice. A run is at
+`backfilling` while it walks the snapshot and at `backfilled` once the walk
+reached the end, and verification needs the second: without it, "the backfill has
+not reached the end of its snapshot" was decided by a phase inequality that was
+true both before the backfill and after it.
 
 ### `skipped` is not `missing`
 

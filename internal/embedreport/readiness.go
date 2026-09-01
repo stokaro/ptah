@@ -147,11 +147,15 @@ func VerifyGeneration(
 			Dimension:     spec.Model.ReportedDimension,
 			IndexMethod:   objects.Index.Type,
 			OperatorClass: objects.Index.Operator,
-			RequireIndex:  objects.HasIndex && run.Phase != embedrun.PhaseBackfilling,
+			RequireIndex:  objects.HasIndex && run.Reached(embedrun.PhaseBackfilled),
 		},
 		structure, corpus,
 		embedverify.RunState{
-			SnapshotComplete:    run.Phase != embedrun.PhaseBackfilling,
+			// The run says it reached the end of its snapshot, rather than a
+			// phase inequality standing in for the fact. `Phase !=
+			// PhaseBackfilling` was true for every phase BEFORE the backfill
+			// as well as after it (stokaro/ptah#2649).
+			SnapshotComplete:    run.Reached(embedrun.PhaseBackfilled),
 			CatchUpReached:      guarantee.Complete,
 			ConsistencyMode:     string(loaded.Mode),
 			SourceMutable:       loaded.Source.Mutable,
