@@ -65,6 +65,17 @@ to stderr. A second interrupt reaches the default handler and ends the process
 at once, which is the escape hatch for a command that is not watching its
 context.
 
+What it prints when it stops is `error: canceled`, whichever call noticed the
+cancellation first. That matters because they all notice differently: a store
+write answers `save run r-4: context canceled`, a connection pool answers
+`driver: bad connection`, and a provider request answers whatever its transport
+says — three sentences about one Ctrl-C, none of them about the interrupt.
+
+A **deadline** is not a cancellation and keeps its own wording. A
+`--provider-timeout` that expires is a fact about the endpoint, and reporting it
+as canceled would take away the one word saying which. An interrupt that arrives
+while a command is already failing for its own reason keeps that reason too.
+
 ## Diagnostic prefix
 
 A *process-level diagnostic* is the single line a surface prints when a command
