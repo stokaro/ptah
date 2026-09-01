@@ -70,8 +70,13 @@ type Target interface {
 
 // Errors a caller distinguishes.
 var (
-	// ErrAborted is a run that stopped because its context was cancelled.
-	ErrAborted = errors.New("the run was cancelled")
+	// ErrAborted is a run that stopped because its context was canceled.
+	//
+	// The spelling is the repository's American English, and it matters more
+	// here than in a comment: this string is what an operator reads after every
+	// Ctrl-C now that an interrupt reports itself rather than whichever
+	// subsystem was mid-request (stokaro/ptah#2649).
+	ErrAborted = errors.New("the run was canceled")
 	// ErrFenced is a run another worker took over.
 	ErrFenced = errors.New("the run was taken over by another worker")
 	// ErrStalled is a source whose cursor does not move.
@@ -450,7 +455,7 @@ func (e *Engine) fail(
 	// Everything below records what happened, on a context the caller's
 	// cancellation cannot reach.
 	//
-	// The check above already turns a cancelled context into an abort, so what
+	// The check above already turns a canceled context into an abort, so what
 	// this guards is the narrower case: a DEADLINE that expires between here
 	// and the last of the three store calls. Bookkeeping abandoned that way
 	// leaves the run `running` with no failure class -- the state this whole
