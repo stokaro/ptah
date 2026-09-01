@@ -612,7 +612,7 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 	if err := opened.store.RetireGeneration(ctx, options.generation, retiredAt); err != nil {
 		return err
 	}
-	if err := reachTerminalPhase(
+	if err := reachPhaseOfGeneration(
 		ctx, opened, options.generation, embedrun.PhaseRetired); err != nil {
 		return err
 	}
