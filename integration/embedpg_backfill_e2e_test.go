@@ -310,8 +310,8 @@ func assertVerificationPasses(
 	c *qt.C, ctx context.Context, db *sql.DB, spec embedgen.Spec, run embedrun.Run,
 ) {
 	c.Helper()
-	source, target := readVerificationRows(c, ctx, db, spec)
-	report := embedverify.Verify(
+	corpus := readVerificationCorpus(c, ctx, db, spec)
+	report, err := embedverify.Verify(
 		embedverify.Expectation{
 			Generation: spec.Identity().Digest,
 			ColumnType: fmt.Sprintf("vector(%d)", spec.Model.ReportedDimension),
@@ -321,9 +321,10 @@ func assertVerificationPasses(
 			ColumnExists: true, ColumnType: fmt.Sprintf("vector(%d)", spec.Model.ReportedDimension),
 			Dimension: spec.Model.ReportedDimension, ExtensionPresent: true,
 		},
-		source, target,
+		corpus,
 		embedverify.RunState{SnapshotComplete: true, CatchUpReached: true},
 	)
+	c.Assert(err, qt.IsNil)
 
 	c.Assert(report.Blocking(), qt.HasLen, 0, qt.Commentf("%v", report.Findings))
 	c.Assert(report.Passed(), qt.IsTrue)
@@ -333,9 +334,9 @@ func assertVerificationPasses(
 }
 
 // readVerificationRows reads both sides out of the same table.
-func readVerificationRows(
+func readVerificationCorpus(
 	c *qt.C, ctx context.Context, db *sql.DB, spec embedgen.Spec,
-) ([]embedverify.SourceRow, []embedverify.TargetRow) {
+) embedverify.Corpus {
 	c.Helper()
 	column := spec.Target.Column
 	rows, err := db.QueryContext(ctx, fmt.Sprintf(
@@ -346,8 +347,12 @@ func readVerificationRows(
 	c.Assert(err, qt.IsNil)
 	defer rows.Close()
 
-	var sources []embedverify.SourceRow
-	var targets []embedverify.TargetRow
+	// Collected here rather than yielded lazily, because the walk is handed to
+	// a caller that runs after this function returns and the statement has to
+	// be closed before then. What Verify sees is still the sequence, so the
+	// pairing this fixture asserts against is the pairing the reader produces:
+	// one position per row, in key order, both sides read from the same row.
+	var walk []embedverify.Pair
 	for rows.Next() {
 		var key, version string
 		var title, body, generation, inputHash, storedVersion, state sql.NullString
@@ -358,17 +363,24 @@ func readVerificationRows(
 			Key: []string{key}, Fields: []*string{nullableOf(title), nullableOf(body)},
 		})
 		c.Assert(canonicalErr, qt.IsNil)
-		sources = append(sources, embedverify.SourceRow{
+		source := embedverify.SourceRow{
 			Key: key, Version: version, InputHash: spec.SourceInputHash(input), Skipped: input.Skipped,
-		})
-		targets = append(targets, embedverify.TargetRow{
+		}
+		target := embedverify.TargetRow{
 			Key: key, Generation: generation.String, Version: storedVersion.String,
 			InputHash: inputHash.String, Skipped: state.String == "skip",
 			Dimension: storedWidth(spec, state.String),
-		})
+		}
+		walk = append(walk, embedverify.Pair{Source: &source, Target: &target})
 	}
 	c.Assert(rows.Err(), qt.IsNil)
-	return sources, targets
+	return func(yield func(embedverify.Pair, error) bool) {
+		for _, pair := range walk {
+			if !yield(pair, nil) {
+				return
+			}
+		}
+	}
 }
 
 // storedWidth is how wide the stored vector is, or zero where there is none.

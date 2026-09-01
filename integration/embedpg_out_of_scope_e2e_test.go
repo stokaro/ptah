@@ -2,7 +2,7 @@
 
 // A vector outside the generation's source scope is reported.
 //
-// stokaro/ptah#2649 finding 2: `ReadVerificationRows` built both sides from one
+// stokaro/ptah#2649 finding 2: `VerificationCorpus` builds both sides from one
 // `SELECT ... WHERE (<filter>)`, so every target row it produced was in scope
 // by construction and `embedverify.reportOutOfScope` could not fire through the
 // shipped reader. A generation carrying vectors for rows the specification
@@ -155,18 +155,20 @@ func verifyFilteredCorpus(
 	c *qt.C, ctx context.Context, db *sql.DB, spec embedgen.Spec, generation string,
 ) embedverify.Report {
 	c.Helper()
-	source, target, err := embedpg.ReadVerificationRows(ctx, db, spec)
+	corpus, err := embedpg.VerificationCorpus(ctx, db, spec)
 	c.Assert(err, qt.IsNil)
 	structure, err := embedpg.ReadStructure(ctx, db, spec, "")
 	c.Assert(err, qt.IsNil)
-	return embedverify.Verify(
+	report, err := embedverify.Verify(
 		embedverify.Expectation{
 			Generation: generation,
 			ColumnType: spec.Target.Representation,
 			Dimension:  spec.Model.ReportedDimension,
 		},
-		structure, source, target, embedverify.RunState{},
+		structure, corpus, embedverify.RunState{},
 	)
+	c.Assert(err, qt.IsNil)
+	return report
 }
 
 // outOfScopeSummaries is the finding this file is about, and nothing else.

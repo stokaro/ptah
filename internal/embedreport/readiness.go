@@ -128,7 +128,7 @@ func VerifyGeneration(
 	if err != nil {
 		return embedverify.Report{}, err
 	}
-	source, target, err := embedpg.ReadVerificationRows(ctx, db, spec)
+	corpus, err := embedpg.VerificationCorpus(ctx, db, spec)
 	if err != nil {
 		return embedverify.Report{}, err
 	}
@@ -149,14 +149,14 @@ func VerifyGeneration(
 			OperatorClass: objects.Index.Operator,
 			RequireIndex:  objects.HasIndex && run.Phase != embedrun.PhaseBackfilling,
 		},
-		structure, source, target,
+		structure, corpus,
 		embedverify.RunState{
 			SnapshotComplete:    run.Phase != embedrun.PhaseBackfilling,
 			CatchUpReached:      guarantee.Complete,
 			ConsistencyMode:     string(loaded.Mode),
 			SourceMutable:       loaded.Source.Mutable,
 			UnreconciledBatches: 0,
-		}), nil
+		})
 }
 
 // BuildCutoverPlan assembles the plan and what is true now.

@@ -214,17 +214,20 @@ func recordedSpec(registered embedstore.Generation) (embedgen.Spec, error) {
 func generationFreshness(
 	ctx context.Context, db *sql.DB, spec embedgen.Spec, registered embedstore.Generation,
 ) (stale, missing int, err error) {
-	sources, targets, err := ReadVerificationRows(ctx, db, spec)
+	corpus, err := VerificationCorpus(ctx, db, spec)
 	if err != nil {
 		return 0, 0, err
 	}
-	report := embedverify.Verify(
+	report, err := embedverify.Verify(
 		embedverify.Expectation{Generation: registered.Identity, Dimension: registered.Dimension},
 		embedverify.Structure{
 			ColumnExists: true, ExtensionPresent: true, Dimension: registered.Dimension,
 		},
-		sources, targets,
+		corpus,
 		embedverify.RunState{SnapshotComplete: true, CatchUpReached: true})
+	if err != nil {
+		return 0, 0, err
+	}
 
 	for _, finding := range report.Blocking() {
 		switch finding.Layer {
@@ -237,37 +240,65 @@ func generationFreshness(
 	return stale, missing, nil
 }
 
-// ReadVerificationRows reads both sides of the comparison out of the source
+// VerificationCorpus walks both sides of the comparison out of the source
 // table.
 //
 // One walk, because the two sides have to agree about which key a row is. Two
 // queries would let a row inserted between them appear on one side and not the
 // other, and the report would name it as a coverage gap that nothing created.
-func ReadVerificationRows(
+//
+// The walk is handed back as a sequence rather than as two slices, and it owns
+// the result set: the statement closes when the range loop over it ends, by
+// break or by exhaustion. Nothing between here and the report holds the corpus,
+// which is the whole point -- materializing it made a verification's memory
+// proportional to the number of rows rather than to the number of findings
+// (stokaro/ptah#2621).
+//
+// The scan buffers and the two rows a position points at are built once and
+// written through on every row, so what a row costs does not depend on how many
+// there are. `embedverify.Pair` is what allows that: neither pointer outlives
+// the yield that produced it.
+//
+// A read that fails partway yields the error as the sequence's second value and
+// stops. It is not reported as a finding: an unread row is indistinguishable
+// from an in-scope row with no vector, so a report built over a truncated walk
+// blames the data for the read.
+//
+// Equal keys arrive adjacent, which is what `embedverify.Corpus` requires. The
+// ORDER BY is over the key COLUMNS, so equal keys are neighbors whatever the
+// encoded key strings would sort like.
+func VerificationCorpus(
 	ctx context.Context, db *sql.DB, spec embedgen.Spec,
-) ([]embedverify.SourceRow, []embedverify.TargetRow, error) {
+) (embedverify.Corpus, error) {
 	source, err := NewSource(db, spec)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	query, err := verificationQuery(spec, source)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
-		return nil, nil, fmt.Errorf("read %s for verification: %w", spec.Source.Table, err)
+		return nil, fmt.Errorf("read %s for verification: %w", spec.Source.Table, err)
 	}
-	defer rows.Close()
-
-	sourceRows, targetRows, err := scanVerificationRows(rows, spec)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, nil, fmt.Errorf("read %s for verification: %w", spec.Source.Table, err)
-	}
-	return sourceRows, targetRows, nil
+	scanner := newVerificationScanner(spec)
+	return func(yield func(embedverify.Pair, error) bool) {
+		defer rows.Close()
+		for rows.Next() {
+			pair, err := scanner.pair(rows)
+			if err != nil {
+				yield(embedverify.Pair{}, err)
+				return
+			}
+			if !yield(pair, nil) {
+				return
+			}
+		}
+		if err := rows.Err(); err != nil {
+			yield(embedverify.Pair{}, fmt.Errorf("read %s for verification: %w", spec.Source.Table, err))
+		}
+	}, nil
 }
 
 // storedWidthExpression asks the server how wide the vector in a row is.
@@ -343,46 +374,71 @@ func verificationQuery(spec embedgen.Spec, source *Source) (string, error) {
 	return query + " ORDER BY " + strings.Join(keys, ", "), nil
 }
 
-// scanVerificationRows turns the result set into the two sides.
-func scanVerificationRows(
-	rows *sql.Rows, spec embedgen.Spec,
-) ([]embedverify.SourceRow, []embedverify.TargetRow, error) {
-	keyCount := len(spec.Source.KeyFields)
-	inputCount := len(spec.Source.InputFields)
-	versionCount := len(versionColumnsOf(spec))
+// verificationScanner reads result rows into storage it reuses.
+//
+// Reused rather than allocated per row because `embedverify.Pair` permits it:
+// Verify copies what it needs before asking for the next position, and a
+// finding holds key strings, which are immutable. A reader that allocated a
+// pair per row would be paying for a guarantee nothing asks for, and this walk
+// exists not to cost anything proportional to the corpus (stokaro/ptah#2621).
+//
+// The scan destinations are built once too. They are the same addresses on
+// every row, so `database/sql` writes through them into the fields below.
+type verificationScanner struct {
+	spec       embedgen.Spec
+	keyCount   int
+	inputCount int
 
-	var sources []embedverify.SourceRow
-	var targets []embedverify.TargetRow
-	for rows.Next() {
-		values := make([]sql.NullString, keyCount+inputCount+versionCount+4)
-		var dimension sql.NullInt64
-		var inScope sql.NullBool
-		targetsScan := make([]any, 0, len(values)+2)
-		for index := range values {
-			targetsScan = append(targetsScan, &values[index])
-		}
-		targetsScan = append(targetsScan, &dimension, &inScope)
-		if err := rows.Scan(targetsScan...); err != nil {
-			return nil, nil, fmt.Errorf("read a verification row: %w", err)
-		}
-		sourceRow, targetRow, err := splitVerificationRow(values, dimension, spec, keyCount, inputCount)
-		if err != nil {
-			return nil, nil, err
-		}
-		// A row the filter excludes is not a source row: the specification does
-		// not ask for it, so a verification reporting it missing would report
-		// the filter as a defect. It is still a TARGET row, because the vector
-		// is there and something has to say so.
-		//
-		// NULL is not in scope. A three-valued filter answers NULL for a row it
-		// can say nothing about, and treating that as "asked for" would make
-		// the verification demand a vector the backfill never wrote.
-		if inScope.Valid && inScope.Bool {
-			sources = append(sources, sourceRow)
-		}
-		targets = append(targets, targetRow)
+	values    []sql.NullString
+	dimension sql.NullInt64
+	inScope   sql.NullBool
+	into      []any
+
+	source embedverify.SourceRow
+	target embedverify.TargetRow
+}
+
+// newVerificationScanner sizes the buffers one result row needs.
+func newVerificationScanner(spec embedgen.Spec) *verificationScanner {
+	scanner := &verificationScanner{
+		spec:       spec,
+		keyCount:   len(spec.Source.KeyFields),
+		inputCount: len(spec.Source.InputFields),
 	}
-	return sources, targets, nil
+	width := scanner.keyCount + scanner.inputCount + len(versionColumnsOf(spec)) + 4
+	scanner.values = make([]sql.NullString, width)
+	scanner.into = make([]any, 0, width+2)
+	for index := range scanner.values {
+		scanner.into = append(scanner.into, &scanner.values[index])
+	}
+	scanner.into = append(scanner.into, &scanner.dimension, &scanner.inScope)
+	return scanner
+}
+
+// pair reads the current row into the scanner's own rows and points at them.
+func (s *verificationScanner) pair(rows *sql.Rows) (embedverify.Pair, error) {
+	if err := rows.Scan(s.into...); err != nil {
+		return embedverify.Pair{}, fmt.Errorf("read a verification row: %w", err)
+	}
+	source, target, err := splitVerificationRow(
+		s.values, s.dimension, s.spec, s.keyCount, s.inputCount)
+	if err != nil {
+		return embedverify.Pair{}, err
+	}
+	s.source, s.target = source, target
+	// A row the filter excludes is not a source row: the specification does
+	// not ask for it, so a verification reporting it missing would report
+	// the filter as a defect. It is still a TARGET row, because the vector
+	// is there and something has to say so.
+	//
+	// NULL is not in scope. A three-valued filter answers NULL for a row it
+	// can say nothing about, and treating that as "asked for" would make
+	// the verification demand a vector the backfill never wrote.
+	pair := embedverify.Pair{Target: &s.target}
+	if s.inScope.Valid && s.inScope.Bool {
+		pair.Source = &s.source
+	}
+	return pair, nil
 }
 
 // splitVerificationRow turns one scanned row into what each side says about it.

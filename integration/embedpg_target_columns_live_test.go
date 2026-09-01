@@ -26,6 +26,7 @@ import (
 	"go.5x5.cz/ptah/internal/embedgen"
 	"go.5x5.cz/ptah/internal/embedpg"
 	"go.5x5.cz/ptah/internal/embedspec"
+	"go.5x5.cz/ptah/internal/embedverify"
 )
 
 // TestEnsureTarget_CreatesTheColumnsAGenerationWritesLive is the happy path.
@@ -237,7 +238,7 @@ policy:
 	return loaded.Spec
 }
 
-// TestReadVerificationRows_ReportsTheWidthAndNotTheVectorLive is what keeps a
+// TestVerificationCorpus_ReportsTheWidthAndNotTheVectorLive is what keeps a
 // verification's memory proportional to the corpus rather than to the corpus
 // times its dimension.
 //
@@ -251,7 +252,7 @@ policy:
 // A live test because the placeholder was built where the server's answer was
 // scanned, and every assertion about it that did not go through a real read
 // would be an assertion about a fixture.
-func TestReadVerificationRows_ReportsTheWidthAndNotTheVectorLive(t *testing.T) {
+func TestVerificationCorpus_ReportsTheWidthAndNotTheVectorLive(t *testing.T) {
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -268,12 +269,18 @@ func TestReadVerificationRows_ReportsTheWidthAndNotTheVectorLive(t *testing.T) {
 		spec.Target.Column, spec.Target.Column), "[1,2,3,4]")
 	c.Assert(err, qt.IsNil)
 
-	_, target, err := embedpg.ReadVerificationRows(ctx, db, spec)
+	corpus, err := embedpg.VerificationCorpus(ctx, db, spec)
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(target, qt.HasLen, 1)
+	var stored []embedverify.TargetRow
+	for pair, walkErr := range corpus {
+		c.Assert(walkErr, qt.IsNil)
+		stored = append(stored, *pair.Target)
+	}
+
+	c.Assert(stored, qt.HasLen, 1)
 	// The server's own answer to how wide the stored vector is, which is all
 	// the read reports: the values themselves are not fetched, and the field
 	// that used to carry them is gone (stokaro/ptah#2622).
-	c.Assert(target[0].Dimension, qt.Equals, 4)
+	c.Assert(stored[0].Dimension, qt.Equals, 4)
 }
