@@ -507,10 +507,7 @@ func TestOpenAICompatible_AnAnswerReportingZeroIsNotAnAnswerReportingNothing(t *
 // perfectly well.
 func TestEmbed_ACanceledRequestIsNotAnUnreachableEndpoint(t *testing.T) {
 	c := qt.New(t)
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		time.Sleep(time.Minute)
-	}))
-	defer server.Close()
+	server := neverAnswering(c)
 
 	provider, err := embedprovider.NewOpenAICompatible(embedprovider.OpenAICompatibleOptions{
 		Name: "local", BaseURL: server.URL + "/v1", Model: "test-embed",
@@ -531,10 +528,7 @@ func TestEmbed_ACanceledRequestIsNotAnUnreachableEndpoint(t *testing.T) {
 // reclassified every context error would take away the one word saying which.
 func TestEmbed_ADeadlineIsStillAnUnreachableEndpoint(t *testing.T) {
 	c := qt.New(t)
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		time.Sleep(time.Minute)
-	}))
-	defer server.Close()
+	server := neverAnswering(c)
 
 	provider, err := embedprovider.NewOpenAICompatible(embedprovider.OpenAICompatibleOptions{
 		Name: "local", BaseURL: server.URL + "/v1", Model: "test-embed",
@@ -545,4 +539,23 @@ func TestEmbed_ADeadlineIsStillAnUnreachableEndpoint(t *testing.T) {
 	_, err = provider.Embed(context.Background(), []string{"a document"})
 
 	c.Assert(err, qt.ErrorIs, embedprovider.ErrUnreachable)
+}
+
+// neverAnswering stands up a server whose handler blocks until the test ends.
+//
+// A sleeping handler would do the same and cost what it sleeps: httptest's
+// Close waits for outstanding handlers, so a one-minute sleep is a one-minute
+// unit test. Releasing on a channel the cleanup closes makes the same fixture
+// finish as soon as the test does.
+func neverAnswering(c *qt.C) *httptest.Server {
+	c.Helper()
+	released := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		<-released
+	}))
+	c.Cleanup(func() {
+		close(released)
+		server.Close()
+	})
+	return server
 }
