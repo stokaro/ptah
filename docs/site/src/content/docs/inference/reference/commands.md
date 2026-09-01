@@ -353,6 +353,22 @@ Makes the new generation the one queries read.
 The approval binds to the plan digest. What is true now — the pointer, the
 freshness, the findings — is checked again at the moment of the cutover.
 
+`cutover` re-verifies before it moves the pointer and rests its decision on that
+report, so naming a destination publishes **two** records: the verification it
+measured and the cutover record that cites it. The citation is a measurement
+digest, so it identifies that report rather than an artifact stamped at some
+other instant.
+
+Both records reach a registry destination as separate artifacts. A single
+`--evidence-file` cannot hold two, so the verification is written beside it with
+`.verification` before the extension — `cutover.json` gives
+`cutover.verification.json` — and the command prints where each one went.
+
+The verification is published whenever a destination is named, including when
+the source has not moved and it repeats what `verify` already measured. Two
+records for one measurement differ only in when it was taken, and the cutover
+record's citation resolves against either.
+
 `--approve` records the digest and `--approver` the name to put beside it. Where
 who approved something has to be evidence rather than a claim:
 

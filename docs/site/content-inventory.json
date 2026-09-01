@@ -2512,8 +2512,8 @@
       "inboundLinks": [
         "/inference/concepts/embeddings-and-inference-state/"
       ],
-      "visibleWords": 2414,
-      "sourceBytes": 18012
+      "visibleWords": 2549,
+      "sourceBytes": 18912
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/evaluation-corpus.md",
