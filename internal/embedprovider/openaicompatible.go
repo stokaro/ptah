@@ -181,10 +181,17 @@ func (p *openAICompatible) post(ctx context.Context, token string, body []byte) 
 	}
 	switch {
 	case response.StatusCode == http.StatusUnauthorized, response.StatusCode == http.StatusForbidden:
-		return nil, fmt.Errorf("%w: %s answered %d", ErrUnauthorized, p.host, response.StatusCode)
+		// The provider's own explanation, which this branch alone used to drop.
+		// It is the status class where the explanation matters most: 401 and
+		// 403 are answered for a wrong key, an expired one, a key without the
+		// model, an organization the key does not belong to, and a quota that
+		// was cut off -- and a bare "answered 401" sends an operator to check
+		// all five (stokaro/ptah#2641 finding 5).
+		return nil, fmt.Errorf("%w: %s answered %d: %s",
+			ErrUnauthorized, p.host, response.StatusCode, firstLine(withoutToken(string(payload), token)))
 	case response.StatusCode >= http.StatusBadRequest:
 		return nil, fmt.Errorf("%w: %s answered %d: %s",
-			ErrProvider, p.host, response.StatusCode, firstLine(string(payload)))
+			ErrProvider, p.host, response.StatusCode, firstLine(withoutToken(string(payload), token)))
 	}
 	return payload, nil
 }
@@ -228,6 +235,28 @@ func (p *openAICompatible) decode(payload []byte, inputs int) (Result, error) {
 }
 
 // firstLine keeps a provider's error body to one line for a diagnostic.
+// withoutToken removes the credential from a body before it is quoted.
+//
+// A provider answering 401 commonly echoes the key it rejected -- OpenAI's own
+// body says `Incorrect API key provided: sk-...`, and a self-hosted gateway may
+// echo it whole -- so quoting the body is exactly where a credential reaches a
+// log, an exit message and a CI transcript. That is the disclosure
+// stokaro/ptah#2644 closed at the specification end, and this is the same rule
+// at the response end: a key must not appear in output.
+//
+// Applied to every quoted body rather than to the 401 branch alone. A 400 from
+// a gateway that validates the header itself carries the same risk, and a rule
+// that holds for one status class is one somebody has to remember.
+//
+// An empty token removes nothing: a local endpoint that needs no credential
+// resolves to the empty string, and cutting on it would blank the whole body.
+func withoutToken(body, token string) string {
+	if token == "" {
+		return body
+	}
+	return strings.ReplaceAll(body, token, "[redacted]")
+}
+
 func firstLine(body string) string {
 	line, _, _ := strings.Cut(strings.TrimSpace(body), "\n")
 	const bound = 200
