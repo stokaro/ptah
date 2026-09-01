@@ -83,13 +83,16 @@ func TestReadSchema_LiveConstraintOrderIsTheQueryOrder(t *testing.T) {
 			// this one says the fixture is visible at all.
 			first, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, nil)
 			c.Assert(err, qt.IsNil)
-			want := ownUniqueConstraintNames(first.Constraints, prefix)
-			c.Assert(want, qt.HasLen, 3)
+			want := ownConstraintIdentities(first.Constraints, prefix)
+			// Three UNIQUE constraints and the two primary keys the fixture's
+			// tables declare. Pinned so a filter that silently stopped matching
+			// cannot make the order assertion vacuous.
+			c.Assert(len(want) >= 3, qt.IsTrue, qt.Commentf("saw %v", want))
 
 			for read := range readsPerCase - 1 {
 				schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, nil)
 				c.Assert(err, qt.IsNil)
-				c.Assert(ownUniqueConstraintNames(schema.Constraints, prefix), qt.DeepEquals, want,
+				c.Assert(ownConstraintIdentities(schema.Constraints, prefix), qt.DeepEquals, want,
 					qt.Commentf("read %d", read+2))
 			}
 		})
@@ -104,20 +107,26 @@ func enumNames(enums []catalog.Enum) []string {
 	return names
 }
 
-// ownUniqueConstraintNames keeps only this fixture's constraints, in the order
-// the read returned them. The database is shared with every other test in the
-// contour, so an unfiltered list would be neither three long nor stable for
-// reasons that have nothing to do with the defect.
-func ownUniqueConstraintNames(constraints []catalog.Constraint, prefix string) []string {
-	names := make([]string, 0, len(constraints))
+// ownConstraintIdentities keeps only this fixture's constraints, in the order
+// the read returned them, as "table.name (TYPE)".
+//
+// EVERY type, not just UNIQUE. An earlier version filtered to UNIQUE and would
+// have missed the reordering the report describes if the only swap were between
+// a PRIMARY KEY and a UNIQUE -- which is a swap the defect produces, since the
+// map holds both. The type travels in the identity so a read that returned the
+// right names under the wrong types is caught too.
+//
+// The prefix filter stays because the database is shared with the rest of the
+// contour, so an unfiltered list would be neither a fixed length nor stable for
+// reasons that have nothing to do with this defect.
+func ownConstraintIdentities(constraints []catalog.Constraint, prefix string) []string {
+	identities := make([]string, 0, len(constraints))
 	for _, constraint := range constraints {
-		if constraint.Type != "UNIQUE" {
+		if !strings.Contains(constraint.Name, prefix) && !strings.Contains(constraint.TableName, prefix) {
 			continue
 		}
-		if !strings.Contains(constraint.Name, prefix) {
-			continue
-		}
-		names = append(names, constraint.Name)
+		identities = append(identities, fmt.Sprintf("%s.%s (%s)",
+			constraint.TableName, constraint.Name, constraint.Type))
 	}
-	return names
+	return identities
 }
