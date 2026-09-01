@@ -1476,10 +1476,22 @@ MySQL or SQL Server is classified by what it is about, usually
 `schema-generation` -- do not invent an engine label. Milestones are not used
 here at all; do not start.
 
-Two labels carry a meaning beyond classification and are worth knowing:
-`frozen` means an issue is owned and actively worked, and nobody else should
-open a pull request against it until the label comes off; `hold-off-merge`
-means what it says.
+Two labels carry a meaning beyond classification and are worth knowing.
+
+`frozen` means work on the issue must not proceed, and the label does not say
+why -- the comments do. Read them before doing anything else with the issue.
+It is **not** a claim of ownership and says nothing about who is working on
+what; reading it that way turns an issue anybody could pick up into one nobody
+touches.
+
+A freeze is not permanent either. The reason is a fact about some moment, and
+facts expire: a dependency that has since shipped, a decision that has since
+been made, a release that has since happened. Where the comments name a
+condition that no longer holds, the label is stale rather than binding. Say so
+on the issue and let the freeze be lifted deliberately; do not decide alone
+that it has expired and start work under a label that still says stop.
+
+`hold-off-merge` means what it says.
 
 Prefer no label to a wrong one when you genuinely cannot tell. A wrong label
 pollutes every search that trusts it, and nobody re-checks an issue that already
