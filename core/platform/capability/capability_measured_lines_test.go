@@ -193,6 +193,11 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:          {true, "ACCEPTED CREATE TABLE xmlt (c XML)"},
 			},
 			carried: map[capability.Capability]string{
+				capability.SchemaComments: "this run predates the key and sent no COMMENT ON SCHEMA. The key was " +
+					"decided from the one target that refuses the statement -- the Spanner emulator behind " +
+					"PGAdapter 0.55.2, which takes the CREATE SCHEMA before it and answers `Unknown " +
+					"statement` -- and carried elsewhere from PostgreSQL 17, CockroachDB v24.1.33 and " +
+					"YugabyteDB 2024.1.3.0, which accept it and read it back (stokaro/ptah#2651)",
 				capability.UniqueConstraints: "this run predates the key and sent no UNIQUE constraint. The key was " +
 					"decided from the two servers that refuse the spelling -- the Spanner emulator and " +
 					"ClickHouse -- and carried true elsewhere, so this line inherits a value no statement " +
@@ -270,6 +275,11 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:                            {false, "REFUSED CREATE TABLE xmlt (c XML) -> Error 1064 (42000)"},
 			},
 			carried: map[capability.Capability]string{
+				capability.SchemaComments: "this run predates the key and sent no COMMENT ON SCHEMA. The key was " +
+					"decided from the one target that refuses the statement -- the Spanner emulator behind " +
+					"PGAdapter 0.55.2, which takes the CREATE SCHEMA before it and answers `Unknown " +
+					"statement` -- and carried elsewhere from PostgreSQL 17, CockroachDB v24.1.33 and " +
+					"YugabyteDB 2024.1.3.0, which accept it and read it back (stokaro/ptah#2651)",
 				capability.UniqueConstraints: "this run predates the key and sent no UNIQUE constraint. The key was " +
 					"decided from the two servers that refuse the spelling -- the Spanner emulator and " +
 					"ClickHouse -- and carried true elsewhere, so this line inherits a value no statement " +
@@ -348,6 +358,11 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:                            {false, "REFUSED CREATE TABLE xmlt (c XML) -> Error 4161 (HY000): Unknown data type: 'XML'"},
 			},
 			carried: map[capability.Capability]string{
+				capability.SchemaComments: "this run predates the key and sent no COMMENT ON SCHEMA. The key was " +
+					"decided from the one target that refuses the statement -- the Spanner emulator behind " +
+					"PGAdapter 0.55.2, which takes the CREATE SCHEMA before it and answers `Unknown " +
+					"statement` -- and carried elsewhere from PostgreSQL 17, CockroachDB v24.1.33 and " +
+					"YugabyteDB 2024.1.3.0, which accept it and read it back (stokaro/ptah#2651)",
 				capability.UniqueConstraints: "this run predates the key and sent no UNIQUE constraint. The key was " +
 					"decided from the two servers that refuse the spelling -- the Spanner emulator and " +
 					"ClickHouse -- and carried true elsewhere, so this line inherits a value no statement " +

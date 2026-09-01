@@ -94,9 +94,21 @@ func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
 	}
 	schemaName := r.escapeIdentifier(node.Name)
 	r.w.WriteLinef("CREATE SCHEMA%s %s;", guard, schemaName)
-	if node.Comment != "" {
-		r.w.WriteLinef("COMMENT ON SCHEMA %s IS %s;", schemaName, r.escapeValue(node.Comment))
+	if node.Comment == "" {
+		return nil
 	}
+	// The comment is gated where the schema is not. Spanner takes the
+	// `CREATE SCHEMA` and refuses the statement after it, so emitting both
+	// unconditionally meant a migration that used to create the schema and move
+	// on now fails on the line below (stokaro/ptah#2651).
+	//
+	// Skipped rather than refused, and SAID rather than dropped: the schema is
+	// what the author asked for and the comment is metadata the target cannot
+	// hold, so the DDL carries a line naming what was left out.
+	if r.refuses(capability.SchemaComments, "schema comment", node.Name) {
+		return nil
+	}
+	r.w.WriteLinef("COMMENT ON SCHEMA %s IS %s;", schemaName, r.escapeValue(node.Comment))
 	return nil
 }
 

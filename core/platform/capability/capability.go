@@ -403,6 +403,16 @@ const (
 	// is nothing there to hold them (stokaro/ptah#1856).
 	SequenceStartCounterOnly Capability = "sequence_start_counter_only"
 
+	// SchemaComments marks a target that stores a comment against a SCHEMA,
+	// through `COMMENT ON SCHEMA`.
+	//
+	// Separate from a table's or a column's comment because the statements are
+	// separate and one target takes some and not the others: measured on the
+	// Cloud Spanner emulator behind PGAdapter 0.55.2, `CREATE SCHEMA app`
+	// is accepted and `COMMENT ON SCHEMA app IS 'x'` immediately after it
+	// answers `Unknown statement` (stokaro/ptah#2651).
+	SchemaComments Capability = "schema_comments"
+
 	// XMLType marks support for the PostgreSQL XML column type. CockroachDB
 	// and Spanner PostgreSQL disable it; callers should use platform-specific
 	// type overrides for those targets.
@@ -853,6 +863,9 @@ var registry = map[Capability]spec{
 		doc:      "CREATE SEQUENCE takes a name and a start counter and refuses the option clauses PostgreSQL takes beside them",
 		requires: []Capability{Sequences},
 	},
+	SchemaComments: {
+		doc: "COMMENT ON SCHEMA, which stores a comment against a schema rather than a table or column",
+	},
 	XMLType: {
 		doc: "PostgreSQL XML column type",
 	},
@@ -1108,24 +1121,26 @@ func MySQL84() Capabilities {
 		ForeignKeysCreateBackingIndex:      false,
 		Sequences:                          false,
 		SequenceStartCounterOnly:           false,
-		XMLType:                            false,
-		AdvisoryLocks:                      false,
-		RowLevelTTL:                        false,
-		RowDeletionPolicy:                  false,
-		NamedNotNullConstraints:            false,
-		MigrationTimeouts:                  true,
-		TransactionalDDL:                   false,
-		CatalogPartitions:                  true,
-		CatalogRecursiveCTE:                true,
-		DDLInsideTransaction:               true,
-		CheckGrantStatement:                false,
-		CatalogViewDependencies:            true,
-		ShowRoutinePrivilege:               true,
-		RenameColumnClause:                 true,
-		CatalogCheckConstraintTableName:    false,
-		GeneratedColumns:                   true,
-		DeferrableConstraints:              false,
-		UniqueConstraints:                  true,
+		// MySQL comments live on the table and the column; there is no COMMENT ON SCHEMA.
+		SchemaComments:                  false,
+		XMLType:                         false,
+		AdvisoryLocks:                   false,
+		RowLevelTTL:                     false,
+		RowDeletionPolicy:               false,
+		NamedNotNullConstraints:         false,
+		MigrationTimeouts:               true,
+		TransactionalDDL:                false,
+		CatalogPartitions:               true,
+		CatalogRecursiveCTE:             true,
+		DDLInsideTransaction:            true,
+		CheckGrantStatement:             false,
+		CatalogViewDependencies:         true,
+		ShowRoutinePrivilege:            true,
+		RenameColumnClause:              true,
+		CatalogCheckConstraintTableName: false,
+		GeneratedColumns:                true,
+		DeferrableConstraints:           false,
+		UniqueConstraints:               true,
 	}
 }
 
@@ -1241,8 +1256,10 @@ func MariaDB1011() Capabilities {
 		// sequence's own row, which is the only place MariaDB reports the cache
 		// size. Measured on MariaDB 12.3, and MySQL keeps the key off because
 		// `CREATE SEQUENCE` there is a syntax error (stokaro/ptah#1759).
-		Sequences:                       true,
-		SequenceStartCounterOnly:        false,
+		Sequences:                true,
+		SequenceStartCounterOnly: false,
+		// As MySQL: no COMMENT ON SCHEMA.
+		SchemaComments:                  false,
 		XMLType:                         false,
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
@@ -1323,24 +1340,26 @@ func Postgres16() Capabilities {
 		ForeignKeysCreateBackingIndex:      false,
 		Sequences:                          true,
 		SequenceStartCounterOnly:           false,
-		XMLType:                            true,
-		AdvisoryLocks:                      true,
-		RowLevelTTL:                        false,
-		RowDeletionPolicy:                  false,
-		NamedNotNullConstraints:            false,
-		MigrationTimeouts:                  true,
-		TransactionalDDL:                   true,
-		CatalogPartitions:                  true,
-		CatalogRecursiveCTE:                true,
-		DDLInsideTransaction:               true,
-		CheckGrantStatement:                false,
-		CatalogViewDependencies:            true,
-		ShowRoutinePrivilege:               false,
-		RenameColumnClause:                 true,
-		CatalogCheckConstraintTableName:    false,
-		GeneratedColumns:                   true,
-		DeferrableConstraints:              true,
-		UniqueConstraints:                  true,
+		// Measured on PostgreSQL 17: accepted, and obj_description reads it back (stokaro/ptah#2651).
+		SchemaComments:                  true,
+		XMLType:                         true,
+		AdvisoryLocks:                   true,
+		RowLevelTTL:                     false,
+		RowDeletionPolicy:               false,
+		NamedNotNullConstraints:         false,
+		MigrationTimeouts:               true,
+		TransactionalDDL:                true,
+		CatalogPartitions:               true,
+		CatalogRecursiveCTE:             true,
+		DDLInsideTransaction:            true,
+		CheckGrantStatement:             false,
+		CatalogViewDependencies:         true,
+		ShowRoutinePrivilege:            false,
+		RenameColumnClause:              true,
+		CatalogCheckConstraintTableName: false,
+		GeneratedColumns:                true,
+		DeferrableConstraints:           true,
+		UniqueConstraints:               true,
 	}
 }
 
@@ -1504,8 +1523,10 @@ func ClickHouse24() Capabilities {
 		ForeignKeysCreateBackingIndex:      false,
 		Sequences:                          false,
 		SequenceStartCounterOnly:           false,
-		XMLType:                            false,
-		AdvisoryLocks:                      false,
+		// ClickHouse comments a database in CREATE DATABASE; there is no COMMENT ON SCHEMA.
+		SchemaComments: false,
+		XMLType:        false,
+		AdvisoryLocks:  false,
 		// NOT the MergeTree `TTL <expr>` clause, which ClickHouse accepts. This
 		// key names a row-expiry policy declared as STORAGE PARAMETERS, the
 		// shape CockroachDB answers and the probe reads back out of
@@ -1588,24 +1609,26 @@ func SQLite3() Capabilities {
 		ForeignKeysCreateBackingIndex:      false,
 		Sequences:                          false,
 		SequenceStartCounterOnly:           false,
-		XMLType:                            false,
-		AdvisoryLocks:                      false,
-		RowLevelTTL:                        false,
-		RowDeletionPolicy:                  false,
-		NamedNotNullConstraints:            false,
-		MigrationTimeouts:                  false,
-		TransactionalDDL:                   true,
-		CatalogPartitions:                  true,
-		CatalogRecursiveCTE:                true,
-		DDLInsideTransaction:               true,
-		CheckGrantStatement:                false,
-		CatalogViewDependencies:            false,
-		ShowRoutinePrivilege:               false,
-		RenameColumnClause:                 true,
-		CatalogCheckConstraintTableName:    false,
-		GeneratedColumns:                   true,
-		DeferrableConstraints:              true,
-		UniqueConstraints:                  true,
+		// SQLite has neither schemas in this sense nor comment statements.
+		SchemaComments:                  false,
+		XMLType:                         false,
+		AdvisoryLocks:                   false,
+		RowLevelTTL:                     false,
+		RowDeletionPolicy:               false,
+		NamedNotNullConstraints:         false,
+		MigrationTimeouts:               false,
+		TransactionalDDL:                true,
+		CatalogPartitions:               true,
+		CatalogRecursiveCTE:             true,
+		DDLInsideTransaction:            true,
+		CheckGrantStatement:             false,
+		CatalogViewDependencies:         false,
+		ShowRoutinePrivilege:            false,
+		RenameColumnClause:              true,
+		CatalogCheckConstraintTableName: false,
+		GeneratedColumns:                true,
+		DeferrableConstraints:           true,
+		UniqueConstraints:               true,
 	}
 }
 
@@ -1738,8 +1761,10 @@ func SQLServer2022() Capabilities {
 		// describes Ptah's generator, not the engine's brochure -- and the
 		// engine itself has had CREATE SEQUENCE since 2012
 		// (stokaro/ptah#1626).
-		Sequences:                       true,
-		SequenceStartCounterOnly:        false,
+		Sequences:                true,
+		SequenceStartCounterOnly: false,
+		// SQL Server carries this as an extended property, not COMMENT ON.
+		SchemaComments:                  false,
 		XMLType:                         true,
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
@@ -1995,6 +2020,12 @@ func SpannerPostgres() Capabilities {
 		// surface Spanner has -- RowLevelTTL stays false because the storage
 		// parameters it names are accepted and discarded (stokaro/ptah#2236).
 		With(RowDeletionPolicy, true).
+		// Measured on the Cloud Spanner emulator behind PGAdapter 0.55.2:
+		// `CREATE SCHEMA app` is accepted and `COMMENT ON SCHEMA app IS 'x'`
+		// immediately after it answers `Unknown statement`. PostgreSQL,
+		// CockroachDB v24.1.33 and YugabyteDB 2024.1.3.0 all accept it and read
+		// it back, so this is Spanner's alone (stokaro/ptah#2651).
+		With(SchemaComments, false).
 		// Measured on the Cloud Spanner emulator behind PGAdapter:
 		// `<DEFERRABLE> constraints are not supported` (stokaro/ptah#1624).
 		With(DeferrableConstraints, false).
@@ -2215,7 +2246,9 @@ func Oracle23() Capabilities {
 		// tablespace is SYSTEM -- ORA-43853, about SecureFiles LOBs rather
 		// than about the type -- which is a property of that account, not of
 		// the engine.
-		XMLType: true,
+		// Oracle comments tables and columns; there is no COMMENT ON SCHEMA.
+		SchemaComments: false,
+		XMLType:        true,
 		// pg_advisory_lock is ORA-00904: invalid identifier. Oracle's lock
 		// package is not these functions.
 		AdvisoryLocks:           false,

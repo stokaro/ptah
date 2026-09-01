@@ -128,6 +128,7 @@ so typos fail fast. Current registry:
 | `row_deletion_policy` | a table clause declaring an interval and a timestamp column after which the engine deletes a row (Spanner row deletion policy) |
 | `row_level_security` | row-level security policies (PostgreSQL) |
 | `row_level_ttl` | table storage parameters declaring a row-expiry policy (CockroachDB row-level TTL) |
+| `schema_comments` | COMMENT ON SCHEMA, which stores a comment against a schema rather than a table or column |
 | `sequence_start_counter_only` | CREATE SEQUENCE takes a name and a start counter and refuses the option clauses PostgreSQL takes beside them |
 | `sequences` | database sequence objects (SERIAL/BIGSERIAL or explicit CREATE SEQUENCE support) |
 | `show_routine_privilege` | routine metadata requires the global SHOW_ROUTINE privilege (MySQL 8.0.20+) |
@@ -262,6 +263,7 @@ set that names no mode at all, which only a hand-built set produces and
 | `row_deletion_policy` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
 | `row_level_security` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
 | `row_level_ttl` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `schema_comments` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `sequence_start_counter_only` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ |
 | `sequences` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
 | `show_routine_privilege` | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
