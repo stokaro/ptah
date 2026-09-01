@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/internal/embedcatchup"
 	"go.5x5.cz/ptah/internal/embedcutover"
 	"go.5x5.cz/ptah/internal/embedpg"
 	"go.5x5.cz/ptah/internal/embedrelease"
@@ -506,8 +505,12 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 	if err != nil {
 		return err
 	}
+	// Every part of the location comes from the registry, including the schema.
+	// It was the one part read off the invocation's file, so the plan an
+	// approval is bound to could name a schema other than the one
+	// RetireColumns and RetireIndex actually destroy in.
 	plan := embedcutover.RetirementPlan{
-		Generation: options.generation, Schema: opened.loaded.Spec.Target.Schema,
+		Generation: options.generation, Schema: registered.TargetSchema,
 		Table: registered.TargetTable, Column: registered.TargetColumn,
 		DropsIndex: hasIndex, DropsColumn: options.dropColumn, RowCount: rows,
 	}
@@ -557,44 +560,23 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 	return publishRetirement(ctx, out, options, plan, identity, approval, rows, retiredAt)
 }
 
-// removeOutboxIfLast takes the change capture off the source when the retired
-// generation was the last one reading it.
+// removeOutboxIfLast renders what [embedpg.Store.ReleaseOutbox] did.
 //
-// An outbox belongs to a SOURCE TABLE rather than to a generation -- two
-// generations over one table share its changes -- so retirement can only remove
-// it once nothing is left to feed. Until stokaro/ptah#2649 nothing removed it at
-// all: both triggers went on firing on the operator's table for every write,
-// and the event table grew with nothing that would ever read or trim it.
-//
-// It says what it did either way. "Retire removes the generation and its
-// bookkeeping" is what the guide promises, and an operator who is told nothing
-// cannot tell a removal from the silence that preceded this.
+// The decision is there rather than here because it is a general capability --
+// an outbox belongs to a source table, and whether a retirement is its last
+// reader is a question about the registry, not about a command line.
 func removeOutboxIfLast(
 	ctx context.Context, opened *session, registered embedstore.Generation,
 ) ([]string, error) {
-	if opened.loaded.Mode != embedcatchup.ModeOutbox {
+	release, err := opened.store.ReleaseOutbox(ctx, registered)
+	if err != nil {
+		return nil, err
+	}
+	sentence := release.Sentence()
+	if sentence == "" {
 		return nil, nil
 	}
-	remaining, err := opened.store.LiveGenerationsOver(
-		ctx, registered.TargetTable, registered.Identity)
-	if err != nil {
-		return nil, err
-	}
-	if remaining > 0 {
-		return []string{bullet(fmt.Sprintf(
-			"the outbox stays: %d other generation(s) still read %s",
-			remaining, registered.TargetTable))}, nil
-	}
-	outbox, err := embedpg.NewOutbox(opened.db, opened.loaded.Spec)
-	if err != nil {
-		return nil, err
-	}
-	if err := outbox.Uninstall(ctx); err != nil {
-		return nil, err
-	}
-	return []string{bullet(fmt.Sprintf(
-		"the outbox is gone: its triggers, capture function and event table were "+
-			"the last thing Ptah had on %s", registered.TargetTable))}, nil
+	return []string{bullet(sentence)}, nil
 }
 
 // publishRetirement records what was destroyed, where a destination was named.

@@ -97,7 +97,9 @@ func runPrepare(
 		Dimension:             spec.Model.ReportedDimension,
 		TargetSchema:          spec.Target.Schema,
 		TargetTable:           spec.Target.Table, TargetColumn: spec.Target.Column,
-		CreatedAt: time.Now().UTC(),
+		SourceSchema: spec.Source.Schema, SourceTable: spec.Source.Table,
+		ConsistencyMode: string(opened.loaded.Mode),
+		CreatedAt:       time.Now().UTC(),
 	}); err != nil {
 		return err
 	}

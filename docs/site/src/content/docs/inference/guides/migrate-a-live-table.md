@@ -129,20 +129,29 @@ and its triggers stay on your source table — that is the cost of the guarantee
 and it is worth knowing it is not free.
 
 The outbox belongs to the source **table**, not to one generation, so retiring a
-generation while another still reads that table leaves it in place. `retire`
-says which it did:
+generation while another still reads that table leaves it in place. The question
+is asked about the source rather than the target, and about both halves of its
+name: a second generation reading the same table but writing into a different
+one still needs the capture, and a same-named table in another schema does not
+count as a reader. `retire` says which it did, and names the source:
 
 ```text
 generation 3e0df4e18980 is gone, with 3 vectors
   - the outbox is gone: its triggers, capture function and event table were the
-    last thing Ptah had on articles
+    last thing Ptah had on public.articles
 ```
 
 or, where something still needs it:
 
 ```text
-  - the outbox stays: 1 other generation(s) still read articles
+  - the outbox stays: 1 other generation(s) still read public.articles
 ```
+
+Which mode the generation was built with is read from the specification the
+registry recorded for it, not from the file you pass to `retire`. Retiring an
+outbox-built generation while holding a specification that declares `immutable`
+still removes the triggers, and an `immutable` generation over the same source
+is not a reader of an outbox it was never fed by.
 
 The same fact decides how big the table gets. `catchup` removes the events every
 generation reading that table has passed, so the table holds the backlog and not
