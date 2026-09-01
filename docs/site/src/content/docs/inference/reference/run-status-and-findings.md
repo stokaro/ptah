@@ -121,23 +121,36 @@ measured.
 ## Reading `evaluate`
 
 ```console
-generation 31122cc8...: 24 cases, 24 with results
-  query parameters: ivfflat.probes=1
-  recall@10: 0.83  mrr: 0.91  ndcg: 0.87  exact agreement: 0.94
+generation b115a08fbd46e92857378a5eea6855091e76d428e522c6c180134541a1e1af4c against corpus 479e9ad227ce
+  - recall 1.000, MRR 1.000, NDCG 1.000 over 3 cases
+  - the index agrees with an exhaustive search on 1.000 of results, over 3 cases
+  - measured under hnsw.ef_search=40,ivfflat.probes=8
+  - not measured: retrieval quality was not compared against the generation being replaced, because no baseline was measured for it
 ```
 
-| Number | Means |
+That corpus holds three cases and every score is a 1.000, which is what a
+small corpus over a small table looks like. The shape is what to read.
+
+| In the report | Means |
 | --- | --- |
-| `recall@k` | The share of expected answers found in the top `k` |
-| `mrr` | Mean reciprocal rank: how high the first correct answer came |
-| `ndcg` | How well the whole ordering matches the expected one |
-| `exact agreement` | How often the index returned what an exhaustive search would have |
+| `recall` | The share of expected answers found, at the depth this case looked to |
+| `MRR` | Mean reciprocal rank: how high the first correct answer came |
+| `NDCG` | How well the whole ordering matches the expected one |
+| `the index agrees with an exhaustive search` | How often the index returned what a scan of every row would have |
 
-`exact agreement` measures the **index**, not the model. A low number means the
-index or its query parameters need attention, not that the embeddings are wrong.
+The depth is the case's own `k` where it names one, otherwise the corpus's
+`default_k`, otherwise `--k`. The corpus wins over the flag on purpose: a run at
+a different depth is a different measurement, and the file is where that is
+written down.
 
-The query parameters are printed with the numbers because a recall figure without
-them is not comparable to any other.
+The agreement figure measures the **index**, not the model. A low number means
+the index or its query parameters need attention, not that the embeddings are
+wrong.
+
+`measured under` names the query-time settings every number above it was taken
+at, because a recall figure without them is not comparable to any other. A
+setting the session does not carry is reported as `(absent)` rather than filled
+in with a default Ptah did not read.
 
 ## Where the records go
 

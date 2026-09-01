@@ -2584,8 +2584,8 @@
       "disposition": "keep",
       "outboundLinks": [],
       "inboundLinks": [],
-      "visibleWords": 834,
-      "sourceBytes": 6834
+      "visibleWords": 950,
+      "sourceBytes": 7705
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/specification.md",
@@ -2806,7 +2806,7 @@
       ],
       "inboundLinks": [],
       "visibleWords": 508,
-      "sourceBytes": 4084
+      "sourceBytes": 4194
     },
     {
       "path": "docs/site/src/content/docs/inference/strategies/production-rollout.md",

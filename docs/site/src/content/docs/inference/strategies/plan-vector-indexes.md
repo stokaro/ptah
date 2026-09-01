@@ -82,8 +82,9 @@ So a recall number without the parameters it was taken under means nothing.
 exactly this reason:
 
 ```text
-  query parameters: ivfflat.probes=1
-  recall@10: 0.80  mrr: 0.90  ndcg: 0.85
+  - recall 1.000, MRR 1.000, NDCG 1.000 over 3 cases
+  - the index agrees with an exhaustive search on 1.000 of results, over 3 cases
+  - measured under hnsw.ef_search=40,ivfflat.probes=8
 ```
 
 Comparing two generations means comparing them at the same settings. The
