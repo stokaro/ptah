@@ -50,10 +50,11 @@ func healthy() (
 // requires equal keys to arrive adjacent, and pairing source-first would put a
 // key's second stored row in the tail, where nothing sits next to the first.
 //
-// A key stored twice takes its source row on the first position only, so a
-// fixture's source count is the count Verify reports -- the reader produces a
-// source row per in-scope result row, and a fixture written as one source row
-// is describing one.
+// A key stored twice takes its source row on BOTH positions, because that is
+// what the reader produces: an in-scope row is in scope on every result row
+// carrying its key, and `scanVerificationPair` attaches a source to each. So a
+// fixture with one source row and two stored rows for one key reports two
+// source rows, which is the answer the server would give for the same data.
 //
 // This is a fixture rather than a second implementation of the join. The join
 // is the SQL query, and integration/embedpg_out_of_scope_e2e_test.go drives
