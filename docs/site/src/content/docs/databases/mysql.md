@@ -44,6 +44,13 @@ SQL:
   `CURRENT_USER()`. Connect as that definer, change the desired routine to
   `SQL SECURITY INVOKER`, or leave the foreign routine unchanged. Missing
   ownership facts fail closed too.
+- An index declaring `SPATIAL` or `FULLTEXT` is compared against the access
+  method the server reports, so a plain index of the same name over the same
+  column is a difference rather than a match. An index declaring **no** type
+  accepts whatever the engine chose, and the asymmetry is the engines': `CREATE
+  INDEX` over a `POINT` column leaves `INDEX_TYPE=BTREE` on MariaDB 11.8 and
+  `SPATIAL` on MySQL 8.4, so comparing an undeclared type would plan a rebuild
+  on MySQL that MySQL immediately undoes.
 - DDL commits implicitly on both engines, so a failed migration cannot be
   rolled back by the surrounding transaction.
 

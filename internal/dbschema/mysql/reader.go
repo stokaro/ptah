@@ -912,6 +912,12 @@ func (r *Reader) readIndexes(ctx context.Context, dbName string) ([]catalog.Inde
 	}
 	for position := range indexes {
 		index := &indexes[position]
+		// The access method as the server spells it, in the structured field a
+		// comparison can read. Carried only inside Definition below, a desired
+		// SPATIAL index and a BTREE index of the same name over the same column
+		// compared equal, and reconciliation reported InSync for a table that
+		// did not have the requested method (stokaro/ptah#2721).
+		index.Method = indexTypes[position]
 		index.Definition = fmt.Sprintf(
 			"%s INDEX %s ON %s (%s)",
 			indexTypes[position],
