@@ -1990,19 +1990,29 @@ Two limits are worth knowing before trusting a clean run:
   returns an `iter.Seq2` and checks `Rows.Err` inside it; that is a false
   positive and carries the tree's one `//nolint:rowserrcheck`.
 - **It does not follow rows through a parameter.** A helper taking `rows
-  *sql.Rows` is invisible to it -- `embedpg`'s `scanEvents` and `readPage` were
-  both unchecked and both clean under this linter. `readPage` is the one worth
-  remembering: it derives `Done` from the row COUNT, so a page truncated at row
-  400 of 500 set `Done` and ended the backfill, declaring a source fully read.
+  *sql.Rows` is invisible to it, and `embedpg`'s `scanEvents` and `readPage`
+  are both of that shape. Both are already correct: a helper that did not open
+  the result set does not own it either, and all three of their callers check
+  `Rows.Err` themselves. That is the distinction to draw when a sweep turns one
+  up -- a function that runs its own `QueryContext` owns the terminal check,
+  because no caller is holding the rows to make it.
 
 An AST sweep for `for x.Next()` in a function that never calls `x.Err()` finds
 that second class and misses what the SSA analysis catches, so the two are
-complementary rather than redundant. Neither is the reason the reader is
-correct: `TestReadSchemaContext_EveryReadRefusesATerminalRowErrorFailurePath`
-breaks each of the two dozen queries a full read asks, one at a time, and
-requires the whole read to fail. It killed twelve positions on the pre-fix
-reader, and a read added later without a terminal check reddens it without
-anyone having to remember this section.
+complementary rather than redundant. **Neither is a finding on its own.** Six of
+the sites either sweep reported were correct -- the two above, plus three that
+close a result set without ever advancing it and one that checks inside a
+returned iterator. Verify each against what the code does before adding a check;
+`Rows.Err` returns a field `Rows.Next` is the only writer of, so on a result set
+nobody advanced it is nil however the statement fared, and a call to it there
+reads as handling and can never fire.
+
+Neither sweep is the reason the reader is correct.
+`TestReadSchemaContext_EveryReadRefusesATerminalRowErrorFailurePath` breaks each
+of the two dozen queries a full read asks, one at a time, and requires the whole
+read to fail. It killed twelve positions on the pre-fix reader, and a read added
+later without a terminal check reddens it without anyone having to remember this
+section.
 
 ### A blank import says why
 
