@@ -71,6 +71,25 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 		want []catalog.Index
 	}{
 		{
+			// The access method the server chose, in the structured field
+			// rather than only inside the definition string. A comparison
+			// reading the string cannot tell SPATIAL from BTREE without
+			// parsing DDL, and one that read neither reported a table with a
+			// BTREE index as satisfying a desired SPATIAL one
+			// (stokaro/ptah#2721).
+			name: "a spatial index keeps its access method",
+			rows: [][]driver.Value{
+				{"sx_geo_location", "geo", "location", int64(1), "SPATIAL", nil},
+			},
+			want: []catalog.Index{{
+				Name:       "sx_geo_location",
+				TableName:  "geo",
+				Method:     "SPATIAL",
+				Columns:    []string{"location"},
+				Definition: "SPATIAL INDEX sx_geo_location ON geo (location)",
+			}},
+		},
+		{
 			name: "column name containing a comma",
 			rows: [][]driver.Value{
 				{"idx_weird", "t2", "a,b", int64(1), "BTREE"},
@@ -78,6 +97,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 			want: []catalog.Index{{
 				Name:       "idx_weird",
 				TableName:  "t2",
+				Method:     "BTREE",
 				Columns:    []string{"a,b"},
 				Definition: "BTREE INDEX idx_weird ON t2 (a,b)",
 			}},
@@ -88,6 +108,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 			want: []catalog.Index{{
 				Name:       "idx_wide",
 				TableName:  "wide",
+				Method:     "BTREE",
 				Columns:    wideKeyColumnNames(),
 				Definition: "BTREE INDEX idx_wide ON wide (" + strings.Join(wideKeyColumnNames(), ",") + ")",
 			}},
@@ -101,6 +122,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 			want: []catalog.Index{{
 				Name:       "idx_pair",
 				TableName:  "t",
+				Method:     "BTREE",
 				Columns:    []string{"b", "a"},
 				Definition: "BTREE INDEX idx_pair ON t (b,a)",
 			}},
@@ -117,6 +139,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 			want: []catalog.Index{{
 				Name:       "idx_notes",
 				TableName:  "orders",
+				Method:     "BTREE",
 				Columns:    []string{"notes"},
 				Parts:      []catalog.IndexPart{{Name: "notes", Prefix: "20"}},
 				Definition: "BTREE INDEX idx_notes ON orders (notes)",
@@ -133,6 +156,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 			want: []catalog.Index{{
 				Name:       "idx_plain",
 				TableName:  "orders",
+				Method:     "BTREE",
 				Columns:    []string{"customer_id"},
 				Definition: "BTREE INDEX idx_plain ON orders (customer_id)",
 			}},
@@ -148,6 +172,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 			want: []catalog.Index{{
 				Name:      "idx_mixed",
 				TableName: "orders",
+				Method:    "BTREE",
 				Columns:   []string{"customer_id", "notes"},
 				Parts: []catalog.IndexPart{
 					{Name: "customer_id"},
@@ -166,12 +191,14 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 				{
 					Name:       "idx_name",
 					TableName:  "orders",
+					Method:     "BTREE",
 					Columns:    []string{"reference"},
 					Definition: "BTREE INDEX idx_name ON orders (reference)",
 				},
 				{
 					Name:       "idx_name",
 					TableName:  "users",
+					Method:     "BTREE",
 					Columns:    []string{"email"},
 					IsUnique:   true,
 					Definition: "BTREE INDEX idx_name ON users (email)",
@@ -186,6 +213,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 			want: []catalog.Index{{
 				Name:       "uq_users_email",
 				TableName:  "users",
+				Method:     "BTREE",
 				Columns:    []string{"email"},
 				IsUnique:   true,
 				Definition: "BTREE INDEX uq_users_email ON users (email)",
@@ -199,6 +227,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 			want: []catalog.Index{{
 				Name:       "PRIMARY",
 				TableName:  "users",
+				Method:     "BTREE",
 				Columns:    []string{"id"},
 				IsUnique:   true,
 				IsPrimary:  true,
@@ -241,6 +270,7 @@ func TestReadIndexes_ReportsAKeyPartItCannotName(t *testing.T) {
 			want: []catalog.Index{{
 				Name:               "idx_expr",
 				TableName:          "t3",
+				Method:             "BTREE",
 				Definition:         "BTREE INDEX idx_expr ON t3 ()",
 				KeyPartsIncomplete: true,
 			}},
@@ -254,6 +284,7 @@ func TestReadIndexes_ReportsAKeyPartItCannotName(t *testing.T) {
 			want: []catalog.Index{{
 				Name:               "idx_mixed",
 				TableName:          "t4",
+				Method:             "BTREE",
 				Columns:            []string{"b"},
 				Definition:         "BTREE INDEX idx_mixed ON t4 (b)",
 				KeyPartsIncomplete: true,

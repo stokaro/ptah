@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/exprkey"
 	"go.5x5.cz/ptah/internal/indexscope"
+	"go.5x5.cz/ptah/internal/mysqlindex"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
 )
 
@@ -723,20 +724,40 @@ func indexDefinitionsChanged(
 // planned CREATE plus DROP of one name and the apply failed with
 // `Error 1061 (42000): Duplicate key name`.
 //
+// The access method is compared through [mysqlindex.Kind], the same
+// classification the renderer emits the DDL prefix from. A desired `SPATIAL`
+// index and a `BTREE` index of the same name over the same column are different
+// schema states, and comparing neither made reconciliation report `InSync` for
+// a table that did not have the requested method -- invisible until somebody
+// read MariaDB's own metadata (stokaro/ptah#2721). Which direction is compared,
+// and why only one, is at [mysqlindex.Kind.SatisfiedBy].
+//
 // Nothing else is compared, and the omissions are the reader's, not a
-// judgement that they do not matter. Ptah's MySQL reader keeps only the column
-// names and NON_UNIQUE out of information_schema.STATISTICS, so a descending
-// key and a prefix key both arrive as a plain column. Comparing a direction the
-// reader always reports as ascending against a desired `desc = true` would plan
-// a rebuild on every run forever, which is the oscillation this change exists
-// to remove. Those are reader gaps, recorded as such.
+// judgement that they do not matter. Ptah's MySQL reader keeps the column
+// names, NON_UNIQUE and INDEX_TYPE out of information_schema.STATISTICS, so a
+// descending key and a prefix key both arrive as a plain column. Comparing a
+// direction the reader always reports as ascending against a desired
+// `desc = true` would plan a rebuild on every run forever, which is the
+// oscillation this change exists to remove. Those are reader gaps, recorded as
+// such.
 func mysqlIndexDefinitionChanged(
 	desired schemamodel.Index,
 	database catalog.Index,
 	semantics identifier.Semantics,
 ) bool {
 	return desired.Unique != database.IsUnique ||
+		mysqlIndexMethodChanged(desired, database) ||
 		mysqlIndexKeyColumnsChanged(desired, database, semantics)
+}
+
+// mysqlIndexMethodChanged answers whether the server's index satisfies the
+// access method the desired index asks for.
+//
+// Both sides go through one classifier, which is what keeps this from becoming
+// a string comparison that agrees with the renderer today and stops agreeing
+// the moment either spelling moves.
+func mysqlIndexMethodChanged(desired schemamodel.Index, database catalog.Index) bool {
+	return !mysqlindex.KindOf(desired.Type).SatisfiedBy(mysqlindex.KindOf(database.Method))
 }
 
 // mysqlIndexKeyColumnsChanged compares the key columns in order, and only the

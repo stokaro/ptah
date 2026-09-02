@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/bufwriter"
+	"go.5x5.cz/ptah/internal/mysqlindex"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/tableref"
 )
@@ -532,14 +533,14 @@ func renderIndexParts(parts []ast.IndexPart) []string {
 	return specs
 }
 
+// mysqlIndexPrefixType is the access-method keyword this index's DDL carries.
+//
+// The classification is [mysqlindex.KindOf] rather than a switch here, because
+// the comparator has to ask the same question: what the DDL emits and what a
+// comparison accepts as satisfying it are one decision, and two copies of it
+// agreed until one was extended (stokaro/ptah#2721).
 func mysqlIndexPrefixType(indexType string) string {
-	normalized := strings.ToUpper(strings.TrimSpace(indexType))
-	switch normalized {
-	case "FULLTEXT", "SPATIAL":
-		return normalized
-	default:
-		return ""
-	}
+	return mysqlindex.KindOf(indexType).Prefix()
 }
 
 // VisitEnum renders enum handling for MariaDB (inline ENUM types like MySQL)
