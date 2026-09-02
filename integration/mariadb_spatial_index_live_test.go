@@ -146,3 +146,57 @@ func appendIfNamed(into []catalog.Index, index catalog.Index, name string) []cat
 	}
 	return append(into, index)
 }
+
+// TestMySQLPromotedSpatialIndexStaysSyncedLive is the control the asymmetry
+// exists for, measured on the engine that causes it.
+//
+// MySQL 8.4.11 answers `INDEX_TYPE=SPATIAL` to a plain `CREATE INDEX` over a
+// `POINT` column -- measured, not read off the manual. A schema declaring no
+// index type therefore has a database index whose method it never asked for,
+// and comparing the two would plan a rebuild MySQL undoes on the spot: the
+// next read reports SPATIAL again, and the plan comes back forever.
+//
+// So a declared-nothing index accepts any method, and this is what would break
+// if that rule were dropped. Measured: with [mysqlindex.Kind.SatisfiedBy]
+// narrowed to an equality, this test fails and the spatial one still passes.
+func TestMySQLPromotedSpatialIndexStaysSyncedLive(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	adminDB, err := sql.Open("mysql", dbtarget.DriverDSN(c, dbtarget.MySQLAdmin))
+	c.Assert(err, qt.IsNil)
+	defer adminDB.Close()
+	c.Assert(adminDB.PingContext(ctx), qt.IsNil)
+
+	name := fmt.Sprintf("ptah_promoted_%d", time.Now().UnixNano())
+	createMySQLDatabase(c, ctx, adminDB, name)
+	defer dropMySQLDatabase(c, context.Background(), adminDB, name)
+	dbURL := replaceMySQLDatabaseName(c, dbtarget.URL(t, dbtarget.MySQLAdmin), name)
+
+	_, err = adminDB.ExecContext(ctx, fmt.Sprintf(
+		"CREATE TABLE `%s`.`geo` "+
+			"(`id` BIGINT NOT NULL PRIMARY KEY, `location` POINT NOT NULL SRID 0)", name))
+	c.Assert(err, qt.IsNil)
+	// The plain spelling. What the server makes of it is the point.
+	_, err = adminDB.ExecContext(ctx, fmt.Sprintf(
+		"CREATE INDEX `sx_geo_location` ON `%s`.`geo` (`location`)", name))
+	c.Assert(err, qt.IsNil)
+	c.Assert(mariaDBIndexType(c, ctx, adminDB, name), qt.Equals, "SPATIAL",
+		qt.Commentf("this control is about MySQL's promotion; without it the test measures nothing"))
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	read, err := conn.Reader().ReadSchemaContext(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(spatialIndexOf(c, read).Method, qt.Equals, "SPATIAL")
+
+	// The desired schema declares no index type, which is what an author writes
+	// for an ordinary index.
+	desired := mariaDBSpatialDesired()
+	desired.Indexes[0].Type = ""
+
+	c.Assert(schemadiff.CompareWithDialect(desired, read, "mysql").HasChanges(), qt.IsFalse,
+		qt.Commentf("an index declaring no method accepts the one the engine chose"))
+}
