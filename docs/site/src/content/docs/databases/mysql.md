@@ -58,9 +58,10 @@ SQL:
   MariaDB has no functional key parts at all and answers `ERROR 1064` to every
   spelling, so the dialect decides; MySQL accepts them in an index and refuses
   one in a `PRIMARY KEY` with `ERROR 3756`, so that refusal holds on both
-  engines. A functional part in a table-body `UNIQUE KEY` is refused here too,
-  which MySQL accepts: that form becomes a constraint, which has nowhere to
-  keep an expression, and stokaro/ptah#2793 carries it.
+  engines. A functional part in a table-body `UNIQUE KEY` is read as a unique
+  index rather than as a constraint, which is what the server builds: MySQL
+  reports one index with `NON_UNIQUE=0`, a null column and the expression, and
+  a constraint has nowhere to keep an expression.
 - An inline `KEY`, `INDEX` or `UNIQUE KEY` the author did not name is read with
   the name its server would assign: the first key part's column, then `_2`,
   `_3` for a name already taken. A prefix length and a `DESC` direction stay

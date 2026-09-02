@@ -72,6 +72,12 @@ func TestParse_MySQLFunctionalKeyPart(t *testing.T) {
 //   - MySQL 8.4 accepts them in an index and answers `ERROR 3756`, "the primary
 //     key cannot be a functional index", for a PRIMARY KEY. That one is not a
 //     dialect difference and would be missed by reasoning from the rows above.
+//
+// A MySQL `UNIQUE KEY u ((a + 1))` used to sit in this table and no longer
+// does. It was refused because a schemamodel.Constraint has nowhere to keep an
+// expression, not because a server objects -- MySQL builds it, and
+// stokaro/ptah#2793 carries it through as a unique index instead.
+// TestParse_MySQLFunctionalUniqueBecomesAUniqueIndex is where it lives now.
 func TestParse_MySQLFunctionalKeyPartIsRefusedWhereTheServerRefusesIt(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -82,12 +88,6 @@ func TestParse_MySQLFunctionalKeyPartIsRefusedWhereTheServerRefusesIt(t *testing
 		{name: "mariadb refuses a named one too", dialect: "mariadb", declaration: "KEY k ((a + 1))"},
 		{name: "mariadb refuses a unique one", dialect: "mariadb", declaration: "UNIQUE KEY u ((a + 1))"},
 		{name: "mysql refuses one in a primary key", dialect: "mysql", declaration: "PRIMARY KEY ((a + 1))"},
-		// MySQL accepts this one; Ptah does not yet. A table-body UNIQUE becomes a
-		// constraint, which has nowhere to keep an expression, and accepting it
-		// rendered `CONSTRAINT u UNIQUE (``)` -- the expression gone and an empty
-		// identifier in its place. Refused rather than mangled; stokaro/ptah#2793
-		// carries it through as a unique index.
-		{name: "a unique constraint has nowhere to keep one", dialect: "mysql", declaration: "UNIQUE KEY u ((a + 1))"},
 		{name: "mariadb refuses one in a primary key", dialect: "mariadb", declaration: "PRIMARY KEY ((a + 1))"},
 	}
 
@@ -101,6 +101,62 @@ func TestParse_MySQLFunctionalKeyPartIsRefusedWhereTheServerRefusesIt(t *testing
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(statements, qt.IsNil)
+		})
+	}
+}
+
+// TestParse_MySQLFunctionalUniqueBecomesAUniqueIndex reads the one shape a
+// server accepts and a constraint cannot hold.
+//
+// Measured on MySQL 26.7: `UNIQUE KEY u ((a + 1))` builds one index named `u`
+// with `NON_UNIQUE=0`, a null `COLUMN_NAME` and `(`a` + 1)` in `EXPRESSION`.
+// That is an index with an expression key part and a uniqueness guarantee, and
+// ast.IndexNode already says exactly that -- so it is read as one rather than
+// as a constraint that would have to drop the expression.
+//
+// The unnamed row is the one that proves the promotion happens early enough:
+// the name is derived later, by the rule that gives every unnamed functional
+// index `functional_index`, and an element promoted after that pass would
+// reach the renderer nameless.
+func TestParse_MySQLFunctionalUniqueBecomesAUniqueIndex(t *testing.T) {
+	tests := []struct {
+		name        string
+		declaration string
+		wantName    string
+		wantExpr    string
+	}{
+		{
+			name:        "a named unique functional key",
+			declaration: "UNIQUE KEY u ((a + 1))",
+			wantName:    "u",
+			wantExpr:    "a + 1",
+		},
+		{
+			name:        "an unnamed one keeps no name for the deriving pass",
+			declaration: "UNIQUE KEY ((a + 1))",
+			wantName:    "",
+			wantExpr:    "a + 1",
+		},
+		{
+			name:        "a column and an expression together",
+			declaration: "UNIQUE KEY u (a, (b + 1))",
+			wantName:    "u",
+			wantExpr:    "b + 1",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			table := parsedTable(c, functionalKeyTable(test.declaration))
+
+			c.Assert(table.Constraints, qt.HasLen, 0)
+			c.Assert(table.Indexes, qt.HasLen, 1)
+			c.Assert(table.Indexes[0].Name, qt.Equals, test.wantName)
+			c.Assert(table.Indexes[0].Unique, qt.IsTrue)
+			last := table.Indexes[0].Parts[len(table.Indexes[0].Parts)-1]
+			c.Assert(last.Expr, qt.Equals, test.wantExpr)
+			c.Assert(last.Name, qt.Equals, "")
 		})
 	}
 }
