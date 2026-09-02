@@ -18,6 +18,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"go.5x5.cz/ptah/internal/dbtarget"
+	"go.5x5.cz/ptah/internal/embedpg"
 )
 
 // TestInferenceRetirementKeepsAnOutboxASecondTargetNeedsE2E is the defect the
@@ -123,6 +124,20 @@ func TestInferenceRetirementAnswersForItsOwnSchemaE2E(t *testing.T) {
 	// about schemas rather than about tables.
 	c.Assert(schemaTriggerCount(c, ctx, db, "alpha"), qt.Equals, 2)
 	c.Assert(schemaTriggerCount(c, ctx, db, "beta"), qt.Equals, 2)
+
+	// And two SOURCE identities, which is stokaro/ptah#2724. The run recorded
+	// `spec.Source.Table`, so both of these held the string `articles` while the
+	// outboxes above were keyed on the qualified pair -- and OutboxFloor, which
+	// matches readers by that string, gave each run the other's floor.
+	//
+	// Asserted through `prepare` rather than by seeding a row, because createRun
+	// is the thing under test: the floor's own live test seeds runs directly and
+	// stays green with the bare name restored.
+	alphaSource := sourceOfRun(c, ctx, db, "alpha")
+	betaSource := sourceOfRun(c, ctx, db, "beta")
+	c.Assert(alphaSource, qt.Not(qt.Equals), betaSource)
+	c.Assert(alphaSource, qt.Equals, embedpg.SourceIdentity("alpha", "articles"))
+	c.Assert(betaSource, qt.Equals, embedpg.SourceIdentity("beta", "articles"))
 
 	generation := generationOfRun(c, ctx, db, "alpha")
 	digest := retirementDigestOf(c, ctx, alphaSpec, dbName, generation)
@@ -318,6 +333,19 @@ func generationOfRun(c *qt.C, ctx context.Context, db *sql.DB, runID string) str
 		`SELECT generation_identity FROM ptah_embedding_run WHERE id = $1`, runID).
 		Scan(&generation), qt.IsNil)
 	return generation
+}
+
+// sourceOfRun reads what a run recorded as the source it reads.
+//
+// Straight off the row, because no verb prints it: it is written by createRun
+// and read back by OutboxFloor, and those two agreeing is the whole subject.
+func sourceOfRun(c *qt.C, ctx context.Context, db *sql.DB, runID string) string {
+	c.Helper()
+	var source string
+	c.Assert(db.QueryRowContext(ctx,
+		`SELECT source FROM ptah_embedding_run WHERE id = $1`, runID).
+		Scan(&source), qt.IsNil)
+	return source
 }
 
 // schemaTriggerCount counts Ptah's outbox triggers on one schema's articles.
