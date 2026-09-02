@@ -718,7 +718,7 @@ func appendStatement(database *schemamodel.Database, stmt ast.Node, sourcePlatfo
 	case *ast.IndexNode:
 		database.Indexes = append(database.Indexes, ToIndex(node))
 	case *ast.AlterTableNode:
-		appendAlterTableConstraints(database, node)
+		return appendAlterTableConstraints(database, node)
 	case *ast.CreateTypeNode:
 		appendCreateType(database, node)
 	case *ast.ExtensionNode:
@@ -851,7 +851,7 @@ func appendCreateTable(
 	// column, matching how it is expressed as an inline primary key and how
 	// the HCL loader treats it; a composite key stays on Table.PrimaryKey and
 	// renders as a table constraint.
-	markPrimaryFields(database.Fields[fieldsStart:], tableSchema.PrimaryKey)
+	markPrimaryFields(database.Fields[fieldsStart:], tableSchema.StructName, tableSchema.PrimaryKey)
 	constraintsStart := len(database.Constraints)
 	for _, constraint := range node.Constraints {
 		constraintSchema, ok := ToConstraint(
@@ -873,7 +873,7 @@ func appendCreateTable(
 // appendAlterTableConstraints captures constraints added by
 // ALTER TABLE ... ADD CONSTRAINT, such as the foreign keys ORM schema exporters
 // emit as separate statements after the CREATE TABLEs.
-func appendAlterTableConstraints(database *schemamodel.Database, node *ast.AlterTableNode) {
+func appendAlterTableConstraints(database *schemamodel.Database, node *ast.AlterTableNode) error {
 	tableSchemaName, tableName := normalizeSQLTableIdentifier(node.Name)
 	qualifiedTableName := schemamodel.QualifyTableName(tableSchemaName, tableName)
 	structName := tableStructName(node.Name)
@@ -881,6 +881,14 @@ func appendAlterTableConstraints(database *schemamodel.Database, node *ast.Alter
 		switch typed := op.(type) {
 		case *ast.AddConstraintOperation:
 			if typed.Constraint == nil {
+				continue
+			}
+			if typed.Constraint.Type == ast.PrimaryKeyConstraint {
+				if err := applyAlterTablePrimaryKey(
+					database, node.Name, structName, typed.Constraint,
+				); err != nil {
+					return err
+				}
 				continue
 			}
 			constraintSchema, ok := ToConstraint(
@@ -909,6 +917,7 @@ func appendAlterTableConstraints(database *schemamodel.Database, node *ast.Alter
 			})
 		}
 	}
+	return nil
 }
 
 // markPrimaryFields marks the field backing a single-column table-level primary
@@ -921,16 +930,52 @@ func appendAlterTableConstraints(database *schemamodel.Database, node *ast.Alter
 // on a table the source never asked to be strict. The dialects that do imply
 // NOT NULL from PRIMARY KEY apply that rule in their own renderer and in the
 // comparator, where it can be applied per dialect. See stokaro/ptah#1235.
-func markPrimaryFields(fields []schemamodel.Field, columns []string) {
+func markPrimaryFields(fields []schemamodel.Field, structName string, columns []string) {
 	if len(columns) != 1 {
 		return
 	}
 	for i := range fields {
-		if fields[i].Name == columns[0] {
+		if fields[i].StructName == structName && fields[i].Name == columns[0] {
 			fields[i].Primary = true
 			return
 		}
 	}
+}
+
+// applyAlterTablePrimaryKey puts a key added by ALTER TABLE ... ADD PRIMARY KEY
+// on the table it names, in the representation a CREATE TABLE's own key uses.
+//
+// [ToConstraint] declines a PRIMARY KEY, and is right to: a table-level one
+// belongs on [schemamodel.Table.PrimaryKey], and a copy in the constraint list
+// would declare it twice. That reasoning belongs to a CREATE TABLE, which
+// collects the key itself. The ALTER path called the same function and
+// collected nothing, so parse, convert and render all reported success against
+// a desired schema with no primary key (stokaro/ptah#2772).
+//
+// A statement naming a table this document does not declare is refused rather
+// than dropped. There is nowhere to put such a key -- unlike a foreign key,
+// which is carried in the constraint list and refused later by the renderer,
+// "has no owning table" -- and answering it with silence would leave a second
+// hole of exactly the kind this function exists to close.
+func applyAlterTablePrimaryKey(
+	database *schemamodel.Database,
+	tableName, structName string,
+	constraint *ast.ConstraintNode,
+) error {
+	for i := range database.Tables {
+		if database.Tables[i].StructName != structName {
+			continue
+		}
+		database.Tables[i].PrimaryKeyName = constraint.Name
+		database.Tables[i].PrimaryKey = normalizeSQLIdentifiers(constraint.Columns)
+		database.Tables[i].PrimaryKeyParts = toPrimaryKeyParts(constraint)
+		database.Tables[i].PrimaryKeyInclude = normalizeSQLIdentifiers(constraint.IncludeColumns)
+		markPrimaryFields(database.Fields, structName, database.Tables[i].PrimaryKey)
+		return nil
+	}
+	return fmt.Errorf(
+		"%w: ALTER TABLE %s ADD PRIMARY KEY names a table this schema does not declare",
+		ErrUnmodeledStatement, tableName)
 }
 
 func ToConstraint(constraint *ast.ConstraintNode, structName, tableName string) (schemamodel.Constraint, bool) {
