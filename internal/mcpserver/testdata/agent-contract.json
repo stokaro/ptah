@@ -740,7 +740,43 @@
         "status": {
           "additionalProperties": false,
           "properties": {
-            "Progress": {
+            "active_pointer": {
+              "type": "string"
+            },
+            "approval_ref": {
+              "type": "string"
+            },
+            "catch_up_watermark": {
+              "type": "string"
+            },
+            "cutover_plan_ref": {
+              "type": "string"
+            },
+            "environment": {
+              "type": "string"
+            },
+            "failure_class": {
+              "type": "string"
+            },
+            "failure_detail": {
+              "type": "string"
+            },
+            "fencing_token": {
+              "type": "integer"
+            },
+            "generation": {
+              "type": "string"
+            },
+            "lease_holder": {
+              "type": "string"
+            },
+            "lease_until": {
+              "type": "string"
+            },
+            "phase": {
+              "type": "string"
+            },
+            "progress": {
               "additionalProperties": false,
               "properties": {
                 "batches_committed": {
@@ -784,42 +820,6 @@
               ],
               "type": "object"
             },
-            "active_pointer": {
-              "type": "string"
-            },
-            "approval_ref": {
-              "type": "string"
-            },
-            "catch_up_watermark": {
-              "type": "string"
-            },
-            "cutover_plan_ref": {
-              "type": "string"
-            },
-            "environment": {
-              "type": "string"
-            },
-            "failure_class": {
-              "type": "string"
-            },
-            "failure_detail": {
-              "type": "string"
-            },
-            "fencing_token": {
-              "type": "integer"
-            },
-            "generation": {
-              "type": "string"
-            },
-            "lease_holder": {
-              "type": "string"
-            },
-            "lease_until": {
-              "type": "string"
-            },
-            "phase": {
-              "type": "string"
-            },
             "rollback_eligible": {
               "type": "boolean"
             },
@@ -850,7 +850,7 @@
             "generation",
             "phase",
             "state",
-            "Progress",
+            "progress",
             "snapshot_done",
             "fencing_token",
             "rollback_eligible",

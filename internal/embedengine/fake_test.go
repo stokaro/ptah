@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 
 	"go.5x5.cz/ptah/internal/embedengine"
 	"go.5x5.cz/ptah/internal/embedgen"
@@ -123,6 +124,15 @@ type fakeProvider struct {
 	// beforeEmbed runs at the start of a call, so a test can interrupt the run
 	// while a provider request is the thing in flight.
 	beforeEmbed func()
+	// reportsUsageOn are the call numbers whose answer carries a usage object.
+	// Nil means none of them, which is this fake's historical behavior and what
+	// every test written before it stayed on.
+	//
+	// It exists because a page can now be several provider requests: the
+	// distinction between a provider that reported zero and one that reported
+	// nothing is per REQUEST, and collapsing several into one answer needs a
+	// test that can make them differ.
+	reportsUsageOn []int
 }
 
 // Profile describes the endpoint.
@@ -153,9 +163,19 @@ func (f *fakeProvider) Embed(ctx context.Context, inputs []string) (embedprovide
 	if f.shortBy > 0 && len(vectors) >= f.shortBy {
 		vectors = vectors[:len(vectors)-f.shortBy]
 	}
+	// An answer that carried no usage object leaves BOTH counts at zero, which
+	// is what an adapter produces: openaicompatible fills Usage only inside
+	// `if decoded.Usage != nil`. Reporting counts beside Reported=false would
+	// let a test assert token totals in a state no provider can produce
+	// (stokaro/ptah#2740 review).
+	if !slices.Contains(f.reportsUsageOn, len(f.calls)) {
+		return embedprovider.Result{Vectors: vectors}, nil
+	}
 	return embedprovider.Result{
 		Vectors: vectors,
-		Usage:   embedprovider.Usage{PromptTokens: len(inputs), TotalTokens: len(inputs) * 2},
+		Usage: embedprovider.Usage{
+			PromptTokens: len(inputs), TotalTokens: len(inputs) * 2, Reported: true,
+		},
 	}, nil
 }
 

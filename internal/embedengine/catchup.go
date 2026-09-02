@@ -187,11 +187,46 @@ func (e *Engine) embedRereadRows(
 		return nil, embedrun.BatchOutcome{}, classified{"canonicalization",
 			fmt.Errorf("canonicalize a changed row: %w", err)}
 	}
-	batch := embedrun.Batch{Rows: prepared}
-	writes, outcome, err := e.embed(ctx, batch)
+	// Assembled, rather than sent as one request holding the whole page.
+	// --batch-inputs is the provider's limit on inputs per request, and
+	// catch-up registered the flag and ignored it: every prepared row went in
+	// one Batch, so the only thing bounding a request was --batch-rows, which
+	// is a different limit and belongs to the page (stokaro/ptah#2740).
+	//
+	// The batching is the provider request, not the commit. Every write here
+	// still lands in the one transaction the caller commits with the cursor,
+	// which is what lets a run that dies resume at a position whose work is on
+	// disk -- so this splits what is SENT and nothing else.
+	batches, err := embedrun.Assemble(prepared, e.Bounds)
 	if err != nil {
-		return nil, embedrun.BatchOutcome{}, classified{"provider", err}
+		return nil, embedrun.BatchOutcome{}, classified{"batching", err}
 	}
+	var writes []embedrun.TargetWrite
+	var outcome embedrun.BatchOutcome
+	for _, batch := range batches {
+		batchWrites, batchOutcome, err := e.embed(ctx, batch)
+		if err != nil {
+			return nil, embedrun.BatchOutcome{}, classified{"provider", err}
+		}
+		writes = append(writes, batchWrites...)
+		outcome.RowsEmbedded += batchOutcome.RowsEmbedded
+		outcome.RowsSkipped += batchOutcome.RowsSkipped
+		outcome.PromptTokens += batchOutcome.PromptTokens
+		outcome.TotalTokens += batchOutcome.TotalTokens
+		outcome.UsageReported = outcome.UsageReported || batchOutcome.UsageReported
+	}
+	// UsageReported is accumulated above rather than decided here, and ANY
+	// request reporting is enough. Requiring all of them reads as the stricter
+	// rule and contradicts itself: an answer that carries no usage object leaves
+	// both counts at zero, so a page whose second request said nothing still has
+	// real tokens from the first -- and `status` keys its "the provider reported
+	// no token usage" line on ProviderUsageBatches == 0, which would then sit
+	// beside a non-zero count.
+	//
+	// What it claims is exactly true: some answer in this commit accounted for
+	// itself, and the totals hold what those answers said. It under-reports a
+	// mixed page rather than saying anything false, and for the backfill's
+	// one-batch commits it is the same rule as before.
 	// The cursor belongs to the backfill's keyset and means nothing here:
 	// catch-up resumes from a transaction identity, not from a key.
 	outcome.Cursor = nil

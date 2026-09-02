@@ -84,7 +84,14 @@ import (
 // answer verbatim while only the artifact operations said so. The date does not
 // move for the same reason as above: a client that ignores the new field is
 // unaffected (stokaro/ptah#1490).
-const Version = "2026-08-24"
+//
+// 2026-09-02 renamed one response key. `inference status` carried its progress
+// object as `Progress` -- a Go field name in a document whose every other key
+// is snake_case, from a struct field that was the only one of twenty without a
+// tag (stokaro/ptah#2741). The date moves because this is a RENAME rather than
+// an addition: a client keying on `Progress` finds nothing, which is exactly
+// the case the additions above did not have.
+const Version = "2026-09-02"
 
 // SchemaSource names where a declared schema is read from.
 //
