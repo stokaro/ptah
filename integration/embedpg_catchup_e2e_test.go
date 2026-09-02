@@ -74,7 +74,10 @@ func TestEmbedPGCatchUpE2E(t *testing.T) {
 		ID: "catchup-run", SpecDigest: "spec-1", GenerationIdentity: spec.Identity().Digest,
 		Environment: "test", Source: "public.articles", Target: "public.articles.embedding",
 		ProviderProfile: "fake", PtahVersion: "test", PolicyDigest: "policy",
-		Phase: embedrun.PhaseBackfilling, Status: embedrun.StatusRunning,
+		// Backfilled, because that is what catch-up runs after. Created at
+		// `backfilling` these fixtures asked the engine to serve a run whose
+		// snapshot walk had not finished, which it did (stokaro/ptah#2737).
+		Phase: embedrun.PhaseBackfilled, Status: embedrun.StatusRunning,
 		LeaseOwner: "worker-a", FencingToken: 1,
 		SnapshotWatermark: strconv.FormatUint(boundary, 10),
 		CreatedAt:         time.Now().UTC(), UpdatedAt: time.Now().UTC(),
