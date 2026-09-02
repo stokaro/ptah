@@ -222,7 +222,14 @@ func (s *Searcher) qualifiedTable() string {
 	return qualify(s.spec.Target.Schema, s.spec.Target.Table)
 }
 
-// scanKeys reads the result keys, joined the way verification names them.
+// scanKeys reads the result keys, spelled the way an evaluation corpus does.
+//
+// [embedverify.KeyFieldSeparator] and not [embedverify.KeyIdentity]: these keys
+// are matched against what a person wrote in a corpus file, so they have to be
+// something a person can write. Switching them to the walk's identity turned
+// `billing` into `7:billing`, every expectation missed, and recall reported
+// 0.000 over a corpus that was answered correctly -- caught by
+// TestInferenceEvaluateE2E rather than by any unit test (stokaro/ptah#2744).
 func scanKeys(rows *sql.Rows, keyCount int) ([]string, error) {
 	var keys []string
 	for rows.Next() {
@@ -238,7 +245,7 @@ func scanKeys(rows *sql.Rows, keyCount int) ([]string, error) {
 		for index, value := range values {
 			components[index] = value.String
 		}
-		keys = append(keys, embedverify.KeyIdentity(components...))
+		keys = append(keys, strings.Join(components, embedverify.KeyFieldSeparator))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("read the search results: %w", err)

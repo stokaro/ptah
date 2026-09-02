@@ -77,6 +77,24 @@ type Finding struct {
 // million keys; it is unreadable, and the count is what an operator acts on.
 const MaxReportedKeys = 20
 
+// KeyFieldSeparator joins a composite key's components for a PERSON to write
+// and read -- in an evaluation corpus file, and in a search result compared
+// against one.
+//
+// It is not [KeyIdentity], and the difference is the whole of stokaro/ptah#2744.
+// An identity is compared for equality against another identity, so a delimiter
+// a column value can contain lets one row's key forge another's. A corpus key
+// is compared against what an author typed, so it has to be something an author
+// can type, and the format is theirs rather than ours to choose.
+//
+// U+001F, the ASCII unit separator, because the components are arbitrary column
+// values and every printable delimiter is one some column plainly holds: on a
+// comma, tenant `a,b` with id `c` and tenant `a` with id `b,c` are one key.
+// The same forgery is possible here, and it is a different thing -- it makes a
+// corpus expectation ambiguous, which the author can see and fix, rather than
+// making the verification walk compare the wrong rows.
+const KeyFieldSeparator = "\x1f"
+
 // KeyIdentity is the one string every layer compares a row by.
 //
 // Through [embeddigest.Encode], the length-prefixed encoding the rest of the
