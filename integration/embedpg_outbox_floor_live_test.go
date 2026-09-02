@@ -64,6 +64,61 @@ func TestEmbedPGOutboxFloorLive(t *testing.T) {
 	assertARetiredGenerationDoesNotLowerTheFloor(c, ctx, store)
 	assertAnUncaughtRunReadsFromItsBoundary(c, ctx, store)
 	assertARunWithNoPositionIsSkipped(c, ctx, store)
+	assertASameNamedTableInAnotherSchemaIsAnotherSource(c, ctx, store)
+	assertARunRecordedBeforeTheIdentityStillCounts(c, ctx, store)
+}
+
+// assertASameNamedTableInAnotherSchemaIsAnotherSource is stokaro/ptah#2724.
+//
+// An outbox is keyed on the qualified pair -- Outbox.TableName digests the
+// schema and the table -- while a run recorded the bare table name. So
+// `public.docs` and `archive.docs` were two outboxes and one source string, and
+// each of these two runs was counted as a reader of the other's outbox.
+//
+// The direction was safe, which is why #2690 recorded it rather than widening
+// the column under time pressure: over-including a reader only lowers the floor.
+// It is still an answer about the wrong table, and it stops being conservative
+// the moment anything reads this to decide something less forgiving.
+func assertASameNamedTableInAnotherSchemaIsAnotherSource(
+	c *qt.C, ctx context.Context, store *embedpg.Store,
+) {
+	c.Helper()
+	before, ok, err := store.OutboxFloor(ctx, "public", "articles")
+	c.Assert(err, qt.IsNil)
+	c.Assert(ok, qt.IsTrue)
+
+	// Deliberately EARLIER than anything reading public.articles, so a run
+	// counted against the wrong source would pull the floor down to it and the
+	// comparison below would say so.
+	seedReaderIn(c, ctx, store, "archive", "gen-archive", "run-archive", "articles", "3", floorAt)
+
+	after, ok, err := store.OutboxFloor(ctx, "public", "articles")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(after, qt.Equals, before)
+	c.Assert(after, qt.Not(qt.Equals), embedcatchup.Cursor{Transaction: 3})
+}
+
+// assertARunRecordedBeforeTheIdentityStillCounts is the safety half.
+//
+// A run created before stokaro/ptah#2724 holds a bare table name. Excluding it
+// would raise the floor and prune events it still owes, which is the one
+// direction this query may not be wrong in -- so the bare name is matched too,
+// deliberately, and this is what says so.
+func assertARunRecordedBeforeTheIdentityStillCounts(
+	c *qt.C, ctx context.Context, store *embedpg.Store,
+) {
+	c.Helper()
+	// Earlier than every reader seeded above, so a run this query stopped
+	// counting would leave the floor where it was and this would fail.
+	seedLegacyReader(c, ctx, store, "gen-legacy", "run-legacy", "articles", "2", floorAt)
+
+	floor, ok, err := store.OutboxFloor(ctx, "public", "articles")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(floor, qt.Equals, embedcatchup.Cursor{Transaction: 2})
 }
 
 // assertNoReaderIsNotAFloor is the control the others need.
@@ -73,7 +128,7 @@ func TestEmbedPGOutboxFloorLive(t *testing.T) {
 // ever captured sits above it.
 func assertNoReaderIsNotAFloor(c *qt.C, ctx context.Context, store *embedpg.Store) {
 	c.Helper()
-	floor, ok, err := store.OutboxFloor(ctx, "nothing_reads_this")
+	floor, ok, err := store.OutboxFloor(ctx, "public", "nothing_reads_this")
 	c.Assert(err, qt.IsNil)
 	c.Assert(ok, qt.IsFalse)
 	c.Assert(floor, qt.Equals, embedcatchup.Cursor{})
@@ -89,7 +144,7 @@ func assertFloorIsTheEarliestReader(c *qt.C, ctx context.Context, store *embedpg
 	seedReader(c, ctx, store, "gen-ahead", "run-ahead", "articles", "4446", floorAt)
 	seedReader(c, ctx, store, "gen-behind", "run-behind", "articles", "1200", floorAt)
 
-	floor, ok, err := store.OutboxFloor(ctx, "articles")
+	floor, ok, err := store.OutboxFloor(ctx, "public", "articles")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(ok, qt.IsTrue)
@@ -107,7 +162,7 @@ func assertAnotherSourceDoesNotLowerTheFloor(
 	c.Helper()
 	seedReader(c, ctx, store, "gen-elsewhere", "run-elsewhere", "invoices", "7", floorAt)
 
-	floor, ok, err := store.OutboxFloor(ctx, "articles")
+	floor, ok, err := store.OutboxFloor(ctx, "public", "articles")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(ok, qt.IsTrue)
@@ -127,7 +182,7 @@ func assertARetiredGenerationDoesNotLowerTheFloor(
 	seedReader(c, ctx, store, "gen-retired", "run-retired", "articles", "3", floorAt)
 	c.Assert(store.RetireGeneration(ctx, "gen-retired", floorAt), qt.IsNil)
 
-	floor, ok, err := store.OutboxFloor(ctx, "articles")
+	floor, ok, err := store.OutboxFloor(ctx, "public", "articles")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(ok, qt.IsTrue)
@@ -146,10 +201,11 @@ func assertAnUncaughtRunReadsFromItsBoundary(
 ) {
 	c.Helper()
 	seedRun(c, ctx, store, "gen-fresh", "run-fresh", "articles", embedrun.Run{
+		Source:            embedpg.SourceIdentity("public", "articles"),
 		SnapshotWatermark: "44",
 	}, floorAt)
 
-	floor, ok, err := store.OutboxFloor(ctx, "articles")
+	floor, ok, err := store.OutboxFloor(ctx, "public", "articles")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(ok, qt.IsTrue)
@@ -165,9 +221,11 @@ func assertAnUncaughtRunReadsFromItsBoundary(
 // no recovery, which is why it is asserted rather than reasoned about.
 func assertARunWithNoPositionIsSkipped(c *qt.C, ctx context.Context, store *embedpg.Store) {
 	c.Helper()
-	seedRun(c, ctx, store, "gen-immutable", "run-immutable", "articles", embedrun.Run{}, floorAt)
+	seedRun(c, ctx, store, "gen-immutable", "run-immutable", "articles", embedrun.Run{
+		Source: embedpg.SourceIdentity("public", "articles"),
+	}, floorAt)
 
-	floor, ok, err := store.OutboxFloor(ctx, "articles")
+	floor, ok, err := store.OutboxFloor(ctx, "public", "articles")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(ok, qt.IsTrue)
@@ -176,18 +234,54 @@ func assertARunWithNoPositionIsSkipped(c *qt.C, ctx context.Context, store *embe
 
 // seedReader registers a live generation and a run that has caught up to a
 // position.
+// seedReaderIn seeds a reader of a source in a named schema, and seedLegacyReader
+// one recorded the way a Ptah before stokaro/ptah#2724 recorded it.
+//
+// Three seeders rather than a flag, because what varies is the value written
+// into the column under test, and a test that asked a helper to decide it would
+// be asserting about whatever the helper chose.
+func seedReaderIn(
+	c *qt.C, ctx context.Context, store *embedpg.Store,
+	schema, generation, runID, source, watermark string, at time.Time,
+) {
+	c.Helper()
+	seedReaderWithSource(c, ctx, store, generation, runID, source,
+		embedpg.SourceIdentity(schema, source), watermark, at)
+}
+
+func seedLegacyReader(
+	c *qt.C, ctx context.Context, store *embedpg.Store,
+	generation, runID, source, watermark string, at time.Time,
+) {
+	c.Helper()
+	seedReaderWithSource(c, ctx, store, generation, runID, source, source, watermark, at)
+}
+
 func seedReader(
 	c *qt.C, ctx context.Context, store *embedpg.Store,
 	generation, runID, source, watermark string, at time.Time,
 ) {
 	c.Helper()
+	seedReaderWithSource(c, ctx, store, generation, runID, source,
+		embedpg.SourceIdentity("public", source), watermark, at)
+}
+
+func seedReaderWithSource(
+	c *qt.C, ctx context.Context, store *embedpg.Store,
+	generation, runID, source, recordedSource, watermark string, at time.Time,
+) {
+	c.Helper()
 	seedRun(c, ctx, store, generation, runID, source, embedrun.Run{
-		SnapshotWatermark: "1", CatchUpWatermark: watermark,
+		Source: recordedSource, SnapshotWatermark: "1", CatchUpWatermark: watermark,
 	}, at)
 }
 
-// seedRun registers a generation and the run over it, taking the watermarks
-// from the caller.
+// seedRun registers a generation and the run over it, taking the watermarks and
+// the recorded source from the caller.
+//
+// The source comes off `positioned` rather than from the `source` argument,
+// because what a run records is the thing under test: a current one records the
+// identity and one created before stokaro/ptah#2724 recorded the bare name.
 func seedRun(
 	c *qt.C, ctx context.Context, store *embedpg.Store,
 	generation, runID, source string, positioned embedrun.Run, at time.Time,
@@ -202,7 +296,6 @@ func seedRun(
 	run.ID = runID
 	run.GenerationIdentity = generation
 	run.SpecDigest = generation
-	run.Source = source
 	run.Phase = embedrun.PhasePrepared
 	run.Status = embedrun.StatusRunning
 	run.CreatedAt = at

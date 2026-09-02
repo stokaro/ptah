@@ -238,7 +238,8 @@ func runCatchUp(ctx context.Context, out io.Writer, options executeOptions) erro
 func pruneOutbox(
 	ctx context.Context, opened *session, outbox *embedpg.Outbox, run embedrun.Run,
 ) []string {
-	floor, ok, err := opened.store.OutboxFloor(ctx, opened.loaded.Spec.Source.Table)
+	floor, ok, err := opened.store.OutboxFloor(ctx,
+		opened.loaded.Spec.Source.Schema, opened.loaded.Spec.Source.Table)
 	if err != nil {
 		return []string{bullet(fmt.Sprintf("the outbox was not pruned: %v", err))}
 	}

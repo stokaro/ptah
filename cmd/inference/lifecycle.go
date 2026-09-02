@@ -165,7 +165,10 @@ func createRun(
 	spec := opened.loaded.Spec
 	run := embedrun.Run{
 		ID: runID, SpecDigest: spec.Identity().Digest, GenerationIdentity: spec.Identity().Digest,
-		Environment: "cli", Source: spec.Source.Table,
+		// The digest the outbox is keyed on, not the bare table name. Recorded
+		// bare, `public.docs` and `archive.docs` were one source string and two
+		// outboxes, so each run held the other's floor (stokaro/ptah#2724).
+		Environment: "cli", Source: embedpg.SourceIdentity(spec.Source.Schema, spec.Source.Table),
 		Target:          spec.Target.Table + "." + spec.Target.Column,
 		ProviderProfile: spec.Model.Provider, PtahVersion: "cli", PolicyDigest: "",
 		Phase: embedrun.PhasePrepared, Status: embedrun.StatusRunning,

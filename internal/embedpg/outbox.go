@@ -56,10 +56,26 @@ func NewOutbox(db *sql.DB, spec embedgen.Spec) (*Outbox, error) {
 // `b_c` cannot fold onto one name -- the same reason a key's components are
 // length-prefixed everywhere else in the lifecycle.
 func (o *Outbox) TableName() string {
-	identity := embeddigest.Short(
-		embeddigest.Of(o.spec.Source.Schema, o.spec.Source.Table))
 	return embedstore.TablePrefix + "outbox_" +
-		sanitizeIdentifier(o.spec.Source.Table) + "_" + identity
+		sanitizeIdentifier(o.spec.Source.Table) + "_" +
+		embeddigest.Short(SourceIdentity(o.spec.Source.Schema, o.spec.Source.Table))
+}
+
+// SourceIdentity is what identifies the source a run reads and an outbox
+// captures.
+//
+// One function because the two were each deciding it. An outbox is keyed on the
+// qualified pair, digested; a run recorded `spec.Source.Table` alone, so
+// `public.docs` and `archive.docs` were two outboxes and one source string --
+// and OutboxFloor, which matches readers by that string, gave each of them the
+// other's floor (stokaro/ptah#2724).
+//
+// The schema and the table are separate components, so a schema `a_b` with
+// table `c` and a schema `a` with table `b_c` cannot fold onto one identity --
+// the same reason a key's components are length-prefixed everywhere else in the
+// lifecycle.
+func SourceIdentity(schema, table string) string {
+	return embeddigest.Of(schema, table)
 }
 
 // FunctionName is what this outbox's trigger function is called.

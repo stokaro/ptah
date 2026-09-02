@@ -536,9 +536,21 @@ func (s *Store) ClaimRun(
 // counts as a reader. Every bound here leans the same way: a reader wrongly
 // included keeps events, and a reader wrongly excluded deletes events it still
 // owes.
+// $1 is the source identity SourceIdentity answers; $2 is the bare table name a
+// run recorded before it did.
+//
+// Both, and that is not a compatibility layer -- it is the same lean as every
+// other bound here. A run created before this change holds a bare table name,
+// and excluding it would raise the floor and prune events it still owes, which
+// is the one direction this query is not allowed to be wrong in. Matching it
+// keeps its events; the imprecision it brings back is the one it already had
+// (stokaro/ptah#2724).
+//
+// It costs nothing once no such run is live: a bare table name is not a digest,
+// so the second predicate matches nothing a current Ptah writes.
 const outboxFloorSQL = `SELECT COALESCE(catch_up_watermark, ''), COALESCE(snapshot_watermark, '')
 	FROM ` + embedstore.RunTable + ` r
-	WHERE r.source = $1
+	WHERE (r.source = $1 OR r.source = $2)
 	  AND NOT EXISTS (
 	        SELECT 1 FROM ` + embedstore.GenerationTable + ` g
 	        WHERE g.identity = r.generation_identity
@@ -571,9 +583,10 @@ const outboxFloorSQL = `SELECT COALESCE(catch_up_watermark, ''), COALESCE(snapsh
 // The false answer means no live reader was found, and a caller must delete
 // nothing: an empty reader set is not a license to empty the table.
 func (s *Store) OutboxFloor(
-	ctx context.Context, sourceTable string,
+	ctx context.Context, sourceSchema, sourceTable string,
 ) (embedcatchup.Cursor, bool, error) {
-	rows, err := s.db.QueryContext(ctx, outboxFloorSQL, sourceTable)
+	rows, err := s.db.QueryContext(ctx, outboxFloorSQL,
+		SourceIdentity(sourceSchema, sourceTable), sourceTable)
 	if err != nil {
 		return embedcatchup.Cursor{}, false, fmt.Errorf(
 			"read the outbox floor for %s: %w", sourceTable, err)
