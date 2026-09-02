@@ -163,9 +163,19 @@ func (f *fakeProvider) Embed(ctx context.Context, inputs []string) (embedprovide
 	if f.shortBy > 0 && len(vectors) >= f.shortBy {
 		vectors = vectors[:len(vectors)-f.shortBy]
 	}
+	// An answer that carried no usage object leaves BOTH counts at zero, which
+	// is what an adapter produces: openaicompatible fills Usage only inside
+	// `if decoded.Usage != nil`. Reporting counts beside Reported=false would
+	// let a test assert token totals in a state no provider can produce
+	// (stokaro/ptah#2740 review).
+	if !slices.Contains(f.reportsUsageOn, len(f.calls)) {
+		return embedprovider.Result{Vectors: vectors}, nil
+	}
 	return embedprovider.Result{
 		Vectors: vectors,
-		Usage:   usageFor(len(inputs), slices.Contains(f.reportsUsageOn, len(f.calls))),
+		Usage: embedprovider.Usage{
+			PromptTokens: len(inputs), TotalTokens: len(inputs) * 2, Reported: true,
+		},
 	}, nil
 }
 
@@ -220,18 +230,4 @@ func (f *fakeTarget) Commit(ctx context.Context, writes []embedrun.TargetWrite, 
 		f.afterCommit()
 	}
 	return nil
-}
-
-// usageFor builds one answer's usage the way a real adapter does.
-//
-// An answer that carried no usage object leaves BOTH counts at zero, which is
-// what openaicompatible produces: it fills Usage only inside
-// `if decoded.Usage != nil`. A fake that reported counts alongside
-// Reported=false would let a test assert token totals in a state no provider
-// can produce (stokaro/ptah#2740 review).
-func usageFor(inputs int, reported bool) embedprovider.Usage {
-	if !reported {
-		return embedprovider.Usage{}
-	}
-	return embedprovider.Usage{PromptTokens: inputs, TotalTokens: inputs * 2, Reported: true}
 }
