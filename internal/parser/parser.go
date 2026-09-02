@@ -3688,6 +3688,11 @@ func (p *Parser) handleTableConstraintInclude(constraint *ast.ConstraintNode) er
 }
 
 func (p *Parser) parseConstraintColumn() (ast.ConstraintColumn, error) {
+	p.skipWhitespace()
+	if p.current.MatchOperatorValue("(") {
+		return p.parseFunctionalKeyPart()
+	}
+
 	columnName, err := p.expectIdentifier()
 	if err != nil {
 		return ast.ConstraintColumn{}, fmt.Errorf("expected column name: %w", err)
@@ -3720,6 +3725,135 @@ func (p *Parser) parseConstraintColumn() (ast.ConstraintColumn, error) {
 	}
 
 	return column, nil
+}
+
+// readTableElementKind reads the keyword that opens a table element and hands
+// the rest of it to the handler for that kind.
+//
+// It answers whether the element turned out to be an index rather than a
+// constraint, and the access method an index carries: empty for a plain
+// KEY/INDEX, and the introducing keyword itself -- SPATIAL or FULLTEXT -- for
+// one that names a method.
+func (p *Parser) readTableElementKind(constraint *ast.ConstraintNode) (bool, string, error) {
+	constraintType := strings.ToUpper(p.current.Value)
+	switch constraintType {
+	case "PRIMARY":
+		return false, "", p.handleTableConstraintPrimaryKey(constraint)
+	case "UNIQUE":
+		return false, "", p.handleTableConstraintUnique(constraint)
+	case "FOREIGN":
+		return false, "", p.handleTableConstraintForeignKey(constraint)
+	case "CHECK":
+		p.handleTableConstraintCheck(constraint)
+		return false, "", nil
+	case "EXCLUDE":
+		return false, "", p.handleTableConstraintExclude(constraint)
+	case "SPATIAL", "FULLTEXT":
+		p.handleTableConstraintTypedIndex(constraint)
+		return true, constraintType, nil
+	case "INDEX", "KEY":
+		p.handleTableConstraintIndex(constraint)
+		return true, "", nil
+	default:
+		return false, "", fmt.Errorf(
+			"unsupported constraint type: %s at position %d", constraintType, p.current.Start)
+	}
+}
+
+// refuseFunctionalConstraintPart rejects a functional key part on a table
+// element that is a constraint rather than an index.
+//
+// Two different reasons meet here, and the message says which one applies.
+//
+// A PRIMARY KEY is the engine's own refusal: MySQL accepts `KEY ((a + 1))` and
+// `UNIQUE KEY u ((a + 1))` and answers `ERROR 3756 (HY000): The primary key
+// cannot be a functional index` -- measured on 8.4 -- so a reader that
+// generalized from the accepting rows would take a table the engine it was
+// written for cannot create.
+//
+// A UNIQUE is Ptah's: a table-body UNIQUE becomes a schemamodel.Constraint,
+// which carries column names and has nowhere to keep an expression. Accepting
+// it rendered `CONSTRAINT u UNIQUE (“)` -- the expression gone and an empty
+// identifier in its place, which no engine takes. Refusing loudly is the
+// policy's answer for a construct Ptah cannot yet model, and carrying it
+// through as a unique index is stokaro/ptah#2793.
+func refuseFunctionalConstraintPart(constraint *ast.ConstraintNode) error {
+	expression := ""
+	for _, column := range constraint.ColumnParts {
+		if column.Expr != "" {
+			expression = column.Expr
+			break
+		}
+	}
+	if expression == "" {
+		return nil
+	}
+	if constraint.Type == ast.PrimaryKeyConstraint {
+		return fmt.Errorf(
+			"a PRIMARY KEY cannot be a functional index: the key part (%s) is an expression",
+			expression)
+	}
+	return fmt.Errorf(
+		"a functional key part is not carried on a %s: the part (%s) is an expression, "+
+			"and only an index keeps one",
+		describeConstraintKind(constraint.Type), expression)
+}
+
+// describeConstraintKind names a constraint in the refusal above.
+func describeConstraintKind(kind ast.ConstraintType) string {
+	if kind == ast.UniqueConstraint {
+		return "UNIQUE constraint"
+	}
+	return "table constraint"
+}
+
+// parseFunctionalKeyPart reads MySQL's functional key part -- an expression
+// written where a key part's column name goes, as in `KEY k ((a + 1))`.
+//
+// Only MySQL has them, and the dialect decides here rather than later: MariaDB
+// 11.8 answers `ERROR 1064` to every spelling, named or unnamed, in an ordinary
+// key and in a unique one alike, so a reader that accepted the syntax for it
+// would take a document that engine cannot run.
+//
+// A reader with no dialect also refuses. The syntax is unambiguous, but a
+// dialect-neutral document is one meant to render anywhere, and this renders on
+// one engine.
+func (p *Parser) parseFunctionalKeyPart() (ast.ConstraintColumn, error) {
+	if p.dialect != platform.MySQL {
+		return ast.ConstraintColumn{}, fmt.Errorf(
+			"a functional key part at position %d is MySQL's alone; %s has no such syntax",
+			p.current.Start, describeFunctionalKeyDialect(p.dialect))
+	}
+	expression, err := p.collectParenthesizedBody("functional key part")
+	if err != nil {
+		return ast.ConstraintColumn{}, err
+	}
+	if expression == "" {
+		return ast.ConstraintColumn{}, fmt.Errorf(
+			"a functional key part at position %d declares no expression", p.current.Start)
+	}
+	column := ast.ConstraintColumn{Expr: expression}
+
+	p.skipWhitespace()
+	if p.current.MatchIdentifierValue("DESC") {
+		column.Desc = true
+		p.advance()
+		p.skipWhitespace()
+	} else if p.current.MatchIdentifierValue("ASC") {
+		p.advance()
+		p.skipWhitespace()
+	}
+	return column, nil
+}
+
+// describeFunctionalKeyDialect names the target in the refusal above, so the
+// message says which engine is being written for rather than only that the
+// syntax was rejected.
+func describeFunctionalKeyDialect(dialect string) string {
+	if dialect == "" {
+		return "a dialect-neutral document"
+	}
+	return dialect
 }
 
 func (p *Parser) handleTableForeignKey(constraint *ast.ConstraintNode) error {
@@ -3820,8 +3954,10 @@ func alterIndexKind(method string) string {
 // attributes across from the constraint shape the column-list parser fills.
 //
 // The two structs describe the same thing for an index declared in a column
-// list; ast.IndexPart simply carries more than a constraint can (an expression,
-// an operator class, a NULLS ordering), none of which this syntax produces.
+// list. ast.IndexPart still carries more than this syntax produces -- an
+// operator class and a NULLS ordering -- but the expression is no longer among
+// them: MySQL's functional key part, `KEY k ((a + 1))`, arrives here as a
+// ConstraintColumn with Expr set and Name empty (stokaro/ptah#2758).
 func indexPartsFromConstraintColumns(columns []ast.ConstraintColumn) []ast.IndexPart {
 	if len(columns) == 0 {
 		return nil
@@ -3830,6 +3966,7 @@ func indexPartsFromConstraintColumns(columns []ast.ConstraintColumn) []ast.Index
 	for _, column := range columns {
 		parts = append(parts, ast.IndexPart{
 			Name:   column.Name,
+			Expr:   column.Expr,
 			Prefix: column.Prefix,
 			Desc:   column.Desc,
 		})
@@ -3874,33 +4011,7 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 		return nil, nil, fmt.Errorf("expected constraint type, got %s at position %d", p.current.Type, p.current.Start)
 	}
 
-	var err error
-	// indexMethod is empty for a constraint, and names the access method for an
-	// index: "" for a plain KEY/INDEX and "SPATIAL" for a spatial one.
-	indexMethod := ""
-	isIndex := false
-	constraintType := strings.ToUpper(p.current.Value)
-	switch constraintType {
-	case "PRIMARY":
-		err = p.handleTableConstraintPrimaryKey(constraint)
-	case "UNIQUE":
-		err = p.handleTableConstraintUnique(constraint)
-	case "FOREIGN":
-		err = p.handleTableConstraintForeignKey(constraint)
-	case "CHECK":
-		p.handleTableConstraintCheck(constraint)
-	case "EXCLUDE":
-		err = p.handleTableConstraintExclude(constraint)
-	case "SPATIAL", "FULLTEXT":
-		p.handleTableConstraintTypedIndex(constraint)
-		isIndex, indexMethod = true, constraintType
-	case "INDEX", "KEY":
-		p.handleTableConstraintIndex(constraint)
-		isIndex = true
-	default:
-		err = fmt.Errorf("unsupported constraint type: %s at position %d", constraintType, p.current.Start)
-	}
-
+	isIndex, indexMethod, err := p.readTableElementKind(constraint)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -3925,6 +4036,16 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 	err = p.parseTableColumnList(constraint)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	// Only a real constraint is asked. ast.PrimaryKeyConstraint is the zero
+	// value of ConstraintType, and the KEY/INDEX branch never sets a type, so
+	// asking every element would refuse an ordinary functional key as though it
+	// were a primary one.
+	if !isIndex {
+		if err := refuseFunctionalConstraintPart(constraint); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	parserName, err := p.indexParserName(indexMethod)

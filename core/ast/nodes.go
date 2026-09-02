@@ -683,8 +683,18 @@ func (n *ColumnNode) SetForeignKey(table, column, name string) *ColumnNode {
 
 // ConstraintColumn represents a column reference inside a table-level constraint.
 type ConstraintColumn struct {
-	// Name is the referenced column name.
+	// Name is the referenced column name. It is empty when the part is an
+	// expression rather than a column, in which case Expr carries it.
 	Name string
+	// Expr is a MySQL functional key part -- the expression written where a
+	// column name would go, as in KEY k ((a + 1)) -- without its outer
+	// parentheses. It is empty for an ordinary column part, and the two are
+	// never both set.
+	//
+	// Only MySQL has these. MariaDB answers ERROR 1064 to the syntax, and MySQL
+	// itself refuses one in a PRIMARY KEY with ERROR 3756, so a reader that
+	// accepts this field is not thereby accepting it everywhere.
+	Expr string
 	// Prefix stores MySQL index prefix length, as in PRIMARY KEY (`name` (7)).
 	Prefix string
 	// Desc is true when the constraint column is declared with DESC ordering.
