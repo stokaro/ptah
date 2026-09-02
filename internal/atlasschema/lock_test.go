@@ -89,6 +89,41 @@ func TestAcquireApplyLock_HappyPath(t *testing.T) {
 	})
 }
 
+func TestWithApplyLockSession_UsesPinnedCallbackConnection(t *testing.T) {
+	c := qt.New(t)
+	conn := connectSQLite(c, filepath.Join(c.TB.TempDir(), "lock-session.db"))
+	defer dbschema.CloseAndWarn(conn)
+	var callbackConnection *dbschema.DatabaseConnection
+	var rootReadErr error
+
+	runErr, releaseErr := atlasschema.WithApplyLockSession(
+		c.Context(),
+		conn,
+		"",
+		time.Second,
+		func(session *dbschema.DatabaseConnection, lock *atlasschema.ApplyLock) error {
+			callbackConnection = session
+			c.Assert(session, qt.Not(qt.Equals), conn)
+			c.Assert(lock.Supported(), qt.IsFalse)
+			_, err := session.ExecContext(c.Context(),
+				"CREATE TEMPORARY TABLE apply_lock_session_marker (id INTEGER)")
+			c.Assert(err, qt.IsNil)
+
+			var count int
+			rootReadErr = conn.QueryRowContext(
+				c.Context(),
+				"SELECT COUNT(*) FROM apply_lock_session_marker",
+			).Scan(&count)
+			return nil
+		},
+	)
+
+	c.Assert(runErr, qt.IsNil)
+	c.Assert(releaseErr, qt.IsNil)
+	c.Assert(callbackConnection, qt.Not(qt.Equals), conn)
+	c.Assert(rootReadErr, qt.ErrorMatches, ".*no such table: apply_lock_session_marker.*")
+}
+
 func TestAcquireApplyLock_FailurePath(t *testing.T) {
 	t.Run("nil connection", func(t *testing.T) {
 		c := qt.New(t)
