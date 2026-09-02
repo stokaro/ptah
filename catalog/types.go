@@ -171,9 +171,9 @@ type Database struct {
 // VirtualTable identifies one SQLite virtual table and the module that owns
 // it, for the lists that talk about virtual tables rather than describe them.
 type VirtualTable struct {
-	Schema string
-	Name   string
-	Module string
+	Schema string `json:"schema"`
+	Name   string `json:"name"`
+	Module string `json:"module"`
 }
 
 // Schema represents a database schema/namespace.
@@ -589,8 +589,8 @@ type Domain struct {
 // reparses and prints a CHECK rather than storing the text it was given -- so
 // it compares equal only to another expression that made the same round trip.
 type DomainCheck struct {
-	Name       string
-	Expression string
+	Name       string `json:"name"`
+	Expression string `json:"expression"`
 }
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.
@@ -1446,7 +1446,12 @@ type MaterializedView struct {
 	// It is read from create_table_query, which is the only place the schedule
 	// survives: system.tables.as_select is byte-identical for a plain view and
 	// a refreshable one (stokaro/ptah#1802).
-	Refresh *ast.MatViewRefreshSpec
+	// Tagged like every other field here, and like the two ast specs Table
+	// embeds: this is a serialized document, and an untagged field puts a Go
+	// identifier into it. It rendered `"Refresh":{"Mode":...}` among lowercase
+	// keys, which no reader following the document's own convention could
+	// reach (stokaro/ptah#2760).
+	Refresh *ast.MatViewRefreshSpec `json:"refresh,omitzero"`
 }
 
 // QualifiedName returns schema.materialized_view when Schema is set, or Name otherwise.
