@@ -63,6 +63,25 @@ need one: a completed `backfill` is what carries it to `caught_up`, so `index`,
 switch to `outbox` and run `prepare` again to install the triggers and record a
 fresh boundary.
 
+## `catch-up needs a backfill that reached the end of its snapshot`
+
+**Cause.** `catchup` was run on a generation whose `backfill` has not finished.
+The message names the phase the run is actually at — `boundary_captured` for a
+run that was prepared and never backfilled, `backfilling` for one whose walk was
+interrupted.
+
+**Fix.** Run `backfill` until it reports the walk complete, then `catchup`.
+Catch-up covers what changed *after* the snapshot the backfill walked, so before
+that walk finishes there is no such range: the changes it would read are ones
+the backfill still owes.
+
+Nothing is spent to reach this refusal. It is raised before the first provider
+request, so no vector is written and the catch-up watermark does not move.
+
+Running `catchup` again once the run is past `backfilled` — after an index, a
+verification, or a cutover — is unaffected. That is ordinary, because the source
+keeps moving, and [the phase is a high-water mark](../concepts/lifecycle/).
+
 ## `provider: embedding endpoint unreachable`
 
 **Cause.** The endpoint is down, the address is wrong, or the network is not
