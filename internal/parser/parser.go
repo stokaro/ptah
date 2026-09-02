@@ -2007,7 +2007,8 @@ func (p *Parser) parseTableElement(table *ast.CreateTableNode) error {
 			}
 			addTableConstraintOrIndex(table, constraint, index)
 			return nil
-		case "CONSTRAINT", "PRIMARY", "UNIQUE", "FOREIGN", "CHECK", "EXCLUDE", "SPATIAL", "KEY":
+		case "CONSTRAINT", "PRIMARY", "UNIQUE", "FOREIGN", "CHECK", "EXCLUDE",
+			"SPATIAL", "FULLTEXT", "KEY":
 			constraint, index, err := p.parseTableConstraint()
 			if err != nil {
 				return err
@@ -3358,32 +3359,112 @@ func (p *Parser) handleTableConstraintExclude(constraint *ast.ConstraintNode) er
 	return nil
 }
 
-// handleTableConstraintSpatial reads `SPATIAL INDEX [name] (cols)`.
+// handleTableConstraintTypedIndex reads `SPATIAL|FULLTEXT INDEX|KEY [name] (cols)`.
 //
-// It used to assign ast.UniqueConstraint and the fixed name "SPATIAL_INDEX",
-// which lost the access method, replaced whatever the author called the index,
-// and gave every spatial index in a document the same identity. Worse than
-// losing them: a UNIQUE constraint is a promise the declaration never made, and
-// planning one against a spatial column either fails or adds a uniqueness
-// guarantee nobody asked for (stokaro/ptah#2711).
+// SPATIAL used to assign ast.UniqueConstraint and the fixed name
+// "SPATIAL_INDEX", which lost the access method, replaced whatever the author
+// called the index, and gave every spatial index in a document the same
+// identity. Worse than losing them: a UNIQUE constraint is a promise the
+// declaration never made, and planning one against a spatial column either
+// fails or adds a uniqueness guarantee nobody asked for (stokaro/ptah#2711).
 //
-// The name is read here rather than left to the caller because `SPATIAL INDEX`
-// puts it in the same position `INDEX` does, and an unnamed one keeps the empty
+// The grammar is `{SPATIAL|FULLTEXT} [INDEX|KEY] [name] (key_part, ...)`, and
+// every optional part of it is optional here. Requiring INDEX made this reader
+// unable to load a dump: both dumpers NORMALIZE to KEY, so a table created with
+// `SPATIAL INDEX` comes back out of mysqldump and mariadb-dump as
+// `SPATIAL KEY`, and no dump of a database holding a spatial or full-text index
+// could be read at all (stokaro/ptah#2747).
+//
+// The keyword itself is optional too, which is easy to miss because no dumper
+// writes that form. Measured on MySQL 26.7 and MariaDB 12.3:
+// `FULLTEXT ft_b (bio)` and `SPATIAL sp_g (geom)` both create the index and
+// both report the expected INDEX_TYPE. Refusing them would make this reader
+// stricter than either engine on valid SQL somebody hand-wrote.
+//
+// The name is read here rather than left to the caller because these forms put
+// it in the same position `INDEX` does, and an unnamed one keeps the empty
 // string so the dialect's own naming applies rather than a shared invention.
-func (p *Parser) handleTableConstraintSpatial(constraint *ast.ConstraintNode) error {
+func (p *Parser) handleTableConstraintTypedIndex(constraint *ast.ConstraintNode) {
 	p.advance()
 	p.skipWhitespace()
-	// Expect INDEX keyword
-	if err := p.expect(lexer.TokenIdentifier, "INDEX"); err != nil {
-		return fmt.Errorf("expected INDEX after SPATIAL: %w", err)
+	if p.currentIsIndexKeyword() {
+		p.advance()
+		p.skipWhitespace()
 	}
-	p.skipWhitespace()
 	if p.current.Type == lexer.TokenIdentifier && p.current.Value != "(" {
 		constraint.Name = p.current.Value
 		p.advance()
 		p.skipWhitespace()
 	}
-	return nil
+}
+
+// handleTableIndexParser reads MySQL's optional `WITH PARSER <name>` clause.
+//
+// It names the tokenizer a full-text index uses, and it is not decoration: the
+// difference between the default parser and `ngram` is whether CJK text is
+// indexed at all. Dropping it produced an index Ptah reported as matching while
+// it tokenized differently.
+//
+// The clause belongs to FULLTEXT alone, and anything else carrying it is
+// refused rather than ignored. Measured on MySQL 26.7 and MariaDB 12.3, both
+// answer `ERROR 1064` to `KEY k (a) WITH PARSER ngram`, so accepting it would
+// read a document neither engine takes -- and the renderer emits the clause
+// from a non-empty Parser without asking about the type, so the run would then
+// write DDL neither engine takes either.
+//
+// mysqldump writes the clause inside an executable comment,
+// `/*!50100 WITH PARSER `ngram` */`, which the MySQL and MariaDB lexers hand
+// back as ordinary tokens; a reader with no dialect sees an ordinary comment
+// and never reaches this (stokaro/ptah#2752). Both routes end here, so the
+// clause is read once rather than once per spelling.
+//
+// Absent, it answers the empty string, which is what every index that is not
+// full-text carries.
+func (p *Parser) handleTableIndexParser(indexMethod string) (string, error) {
+	p.skipWhitespace()
+	if p.current.Type != lexer.TokenIdentifier ||
+		!strings.EqualFold(p.current.Value, "WITH") {
+		return "", nil
+	}
+	p.advance()
+	p.skipWhitespace()
+	if err := p.expect(lexer.TokenIdentifier, "PARSER"); err != nil {
+		return "", fmt.Errorf("expected PARSER after WITH: %w", err)
+	}
+	p.skipWhitespace()
+	name, err := p.expectIdentifier()
+	if err != nil {
+		return "", fmt.Errorf("expected a parser name after WITH PARSER: %w", err)
+	}
+	if !strings.EqualFold(indexMethod, "FULLTEXT") {
+		return "", fmt.Errorf(
+			"WITH PARSER belongs to a FULLTEXT index, and this one is %s",
+			describeIndexMethod(indexMethod))
+	}
+	p.skipWhitespace()
+	return name, nil
+}
+
+// describeIndexMethod names an index's access method for a diagnostic, and says
+// "an ordinary index" rather than printing an empty string for the plain one.
+func describeIndexMethod(indexMethod string) string {
+	if indexMethod == "" {
+		return "an ordinary index"
+	}
+	return indexMethod
+}
+
+// currentIsIndexKeyword reports whether the cursor sits on INDEX or KEY.
+func (p *Parser) currentIsIndexKeyword() bool {
+	if p.current.Type != lexer.TokenIdentifier {
+		return false
+	}
+	switch strings.ToUpper(p.current.Value) {
+	case "INDEX", "KEY":
+		return true
+	default:
+		return false
+	}
 }
 
 // handleTableConstraintIndex reads MySQL's table-level `KEY`/`INDEX (cols)`.
@@ -3685,9 +3766,9 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 		p.handleTableConstraintCheck(constraint)
 	case "EXCLUDE":
 		err = p.handleTableConstraintExclude(constraint)
-	case "SPATIAL":
-		err = p.handleTableConstraintSpatial(constraint)
-		isIndex, indexMethod = true, "SPATIAL"
+	case "SPATIAL", "FULLTEXT":
+		p.handleTableConstraintTypedIndex(constraint)
+		isIndex, indexMethod = true, constraintType
 	case "INDEX", "KEY":
 		p.handleTableConstraintIndex(constraint)
 		isIndex = true
@@ -3710,6 +3791,11 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 
 	// Parse column list for PRIMARY KEY, UNIQUE, FOREIGN KEY
 	err = p.parseTableColumnList(constraint)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	parserName, err := p.handleTableIndexParser(indexMethod)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -3746,8 +3832,9 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 			// ast.ConstraintColumn, and dropping them here would keep the index
 			// but silently flatten `KEY k (name(7) DESC)` into `KEY k (name)` --
 			// a different index that applies cleanly.
-			Parts: indexPartsFromConstraintColumns(constraint.ColumnParts),
-			Type:  indexMethod,
+			Parts:  indexPartsFromConstraintColumns(constraint.ColumnParts),
+			Type:   indexMethod,
+			Parser: parserName,
 		}, nil
 	}
 
