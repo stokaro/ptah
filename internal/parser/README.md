@@ -18,6 +18,17 @@ The parser supports the following SQL DDL statements:
 - MySQL-style `CREATE TABLE ... SELECT ...` tails, preserved as raw SELECT SQL
 - Unicode identifiers and MySQL identifiers containing `$`
 
+A table element whose first word is none of `CONSTRAINT`, `PRIMARY`, `UNIQUE`,
+`FOREIGN`, `CHECK`, `EXCLUDE`, `SPATIAL`, `FULLTEXT`, `INDEX` or `KEY` is read as
+a column definition. The parser accepts a type it has never heard of, so
+`geometry(Point, 4326)` and a domain declared elsewhere both reach the renderer
+verbatim — but it refuses a column whose type carries a parenthesised list whose
+every argument is a column of the same table. A type is not an expression and
+cannot name a column, so `FULLTEXTT ft_b (bio)` is an index whose keyword is
+misspelled rather than a column of type `ft_b(bio)`, and the refusal says so
+instead of emitting a table nobody described. ClickHouse is exempt, where
+`Nullable(T)` and `Array(T)` make that shape ordinary.
+
 ### CREATE SCHEMA / CREATE DATABASE
 - Namespace creation with optional `IF NOT EXISTS`
 

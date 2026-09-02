@@ -1829,7 +1829,12 @@ func (p *Parser) parseCreateTableElements(table *ast.CreateTableNode) error {
 		return fmt.Errorf("expected ',' or ')' after table element at position %d", p.current.Start)
 	}
 
-	return nil
+	// Once, after the whole body. Not for correctness -- a per-element call
+	// answers the same, because the last of them sees every column and an index
+	// naming a column the body declares later (`KEYY k (b), b INT`) is caught by
+	// that one. Measured: moving the call inside the loop changes no test.
+	// It is one pass over the columns rather than one per element.
+	return refuseTableElementTypo(table, p.dialect, p.current.Start)
 }
 
 // parseCreateTableSuffix reads everything after the column list: table options
