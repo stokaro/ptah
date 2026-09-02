@@ -190,6 +190,47 @@ The archive has no top-level directory. Extract it into a temporary directory,
 then install the three binaries by name so `LICENSE` and `README.md` do not land
 in the binary directory.
 
+### On macOS, how you download decides whether it runs
+
+The published macOS binaries are ad-hoc signed — the signature the Go linker
+writes when nothing signs the binary afterwards. Gatekeeper rejects that
+signature, and whether it ever looks depends on which tool fetched the archive.
+
+`curl` and `gh release download` attach no `com.apple.quarantine` attribute, so
+Gatekeeper never evaluates the binary and it runs. A **browser** download
+attaches one, and the first run is refused with a system dialog titled
+`"ptah" Not Opened` whose highlighted button is **Move to Trash**. There is no
+Open Anyway in that dialog.
+
+Measured on macOS 26.5 arm64 against `ptah_0.3.0_darwin_arm64.tar.gz`:
+
+```console
+$ codesign -dv --verbose=4 ./ptah
+Identifier=a.out
+Signature=adhoc
+TeamIdentifier=not set
+
+$ spctl --assess --type execute -vv ./ptah
+./ptah: rejected
+```
+
+Two ways through. Fetch the archive with `curl` or `gh release download` rather
+than a browser, which is what the commands on this page already do. Or, for an
+archive a browser fetched, clear the attribute before the first run:
+
+```bash
+xattr -d com.apple.quarantine ptah ptah-compat ptah-ls
+```
+
+Clearing it says you trust the download, so verify the checksum and the release
+signature first — the two sections around this one are how.
+
+Developer ID signing and notarization would make a browser download run with no
+user action. They need an Apple Developer Program membership and a certificate
+held as a repository secret, which is why this is documented rather than solved;
+[#2363](https://github.com/stokaro/ptah/issues/2363) tracks it. Homebrew and
+`go install` are unaffected, because neither attaches the attribute.
+
 ## Verify the release signature
 
 The release workflow signs `checksums.txt` with Sigstore. After downloading

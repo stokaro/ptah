@@ -5273,8 +5273,8 @@
       "inboundLinks": [
         "/start/install/"
       ],
-      "visibleWords": 768,
-      "sourceBytes": 7528
+      "visibleWords": 995,
+      "sourceBytes": 9216
     },
     {
       "path": "docs/site/src/content/docs/start/install.mdx",
