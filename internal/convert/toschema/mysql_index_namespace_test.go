@@ -132,8 +132,9 @@ func TestToDatabase_SuffixingHonorsTheIdentifierLimit(t *testing.T) {
 		names := indexNames(database)
 		// `_10` is 64 bytes rather than 63, which is what tells a base cut to
 		// 61 from one cut to `64 - len(suffix)`.
-		c.Assert(names[len(names)-1], qt.Equals, strings.Repeat("a", 61)+"_10")
-		c.Assert(len(names[len(names)-1]), qt.Equals, 64)
+		last := names[len(names)-1]
+		c.Assert(last, qt.Equals, strings.Repeat("a", 61)+"_10")
+		c.Assert(last, qt.HasLen, 64)
 	})
 
 	t.Run("mariadb refuses a name it cannot render", func(t *testing.T) {
