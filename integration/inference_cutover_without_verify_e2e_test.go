@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -94,6 +95,28 @@ func TestInferenceCutoverWithoutVerifyE2E(t *testing.T) {
 	body, err := os.ReadFile(evidencePath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(body), qt.Contains, active)
+
+	// The measurement the cutover rested on is published too, beside the
+	// record that cites it (stokaro/ptah#2656). Before this, the cutover
+	// re-verified and published nothing about it, so the digest in the cutover
+	// record addressed a report the registry did not hold.
+	//
+	// A sibling path rather than the same one: --evidence-file overwrites, so
+	// writing both to evidencePath would leave only the cutover record and the
+	// assertion above would still pass -- which is the whole reason this
+	// assertion names its own file.
+	verificationPath := strings.TrimSuffix(evidencePath, ".json") + ".verification.json"
+	verification, err := os.ReadFile(verificationPath)
+	c.Assert(err, qt.IsNil, qt.Commentf("cutover published no verification beside %s", evidencePath))
+	c.Assert(string(verification), qt.Contains, active)
+	// The counts and the verdict -- what the cutover rested on, and what the
+	// cutover record carries only as a digest. They are also what tells the two
+	// records apart: a cutover record has no source_rows, so asserting this
+	// against the wrong file fails rather than passing on a duplicate.
+	c.Assert(string(verification), qt.Contains, `"source_rows"`)
+	c.Assert(string(verification), qt.Contains, `"target_rows"`)
+	c.Assert(string(verification), qt.Contains, `"passed"`)
+	c.Assert(string(body), qt.Not(qt.Contains), `"source_rows"`)
 }
 
 // writeDirectCutoverSpec writes the specification this lifecycle uses.
