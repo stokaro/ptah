@@ -94,16 +94,35 @@ freshness, the findings — is checked again at the moment of the cutover.
 
 ### What the plan cites
 
-The plan file an approver signs names the verification it was built on:
+The plan file an approver signs names every fact the plan digest binds:
 
 ```text
-ptah inference cutover plan, format 1
+ptah inference cutover plan, format 2
 generation: 8ddaf10bf421…
 replaces:
 target: public.articles.embedding_v1
-verification: 4c17a2e9b330…
+prepared at: 2026-09-02T09:14:22.104Z
+verification report: 4c17a2e9b330…
+verification passed: false
+consistency mode: outbox
+consistency watermark: 49731
+index ready: true
+source mutable: true
+consistency blockers: none
+accepts blocking finding: 412 rows are stale and this policy allows 0
+UNACCEPTED blocking findings: none
 plan: 2f7f81ece160…
 ```
+
+An approval binds to the digest, so anything the digest covers and the file
+omits is something the approver signed for and could not have read. The
+acceptance of blocking findings is the line that carries that weight: it is what
+separates a cutover going ahead over a failed verification from one going ahead
+because verification passed, and the two are otherwise the same operation.
+
+Empty lists still write their line. A file silent about accepted findings cannot
+be told from one whose author had nothing to say, and the reader deciding is the
+one who cannot tell.
 
 `verification` is a digest of what the report *measured* — the verdict, the row
 counts, the findings, the layers that did not run — and not of when it ran. Two
