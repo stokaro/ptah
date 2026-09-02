@@ -48,8 +48,35 @@ const (
 	// source text, not a database object.
 	SourceOrigin Disposition = "source"
 
-	// Export: names and shapes an exported API document carries. It is a
-	// contract about a generated document, and it reaches no database.
+	// Export: what a generated document carries, or reports that it cannot.
+	// Either way it is a fact about a document rather than about a database,
+	// and it reaches no DDL.
+	//
+	// The first half is the `Field.API*` and `TargetNames` contract: names and
+	// shapes an exported API document carries. The second half was added for
+	// `Grant.GrantedBy`, and the widening is deliberate rather than a place to
+	// put a field that fits nowhere.
+	//
+	// That field is observed -- the PostgreSQL and Oracle catalog readers fill
+	// it -- and exactly one thing reads it: `internal/atlashclrender` warns that
+	// an HCL permission block cannot represent a grantor. Nothing renders it and
+	// nothing compares it, which is what makes it look like a gap; it was
+	// recorded as one, naming stokaro/ptah#2611.
+	//
+	// It is not a gap, because rendering it would be wrong. Measured on
+	// PostgreSQL 18.6: `GRANT ... GRANTED BY <role>` succeeds only when that
+	// role IS the current user. Being a member of it is not enough --
+	// `ERROR: grantor must be current user` -- and a `SET ROLE` first makes it
+	// succeed. So emitting the observed grantor would fail on every apply whose
+	// connecting role is not that exact role, which is the ordinary case: object
+	// owners make grants and a migration role applies schemas.
+	//
+	// The alternative considered was an eighth disposition for exactly this
+	// shape. It was not taken because the set is closed on purpose and this
+	// field is genuinely about a generated document: what one carries and what
+	// one discloses it cannot carry are the same kind of fact. A field that is
+	// populated and that NOTHING reads still has no value here and is still a
+	// defect, which is the sentence above that this widening does not touch.
 	Export Disposition = "export"
 
 	// Data: reference or seed rows, and where to find them. Rows are not DDL,

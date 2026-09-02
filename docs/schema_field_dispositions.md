@@ -49,23 +49,17 @@ exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 296 | reaches rendered SQL on at least one target |
+| `ddl` | 295 | reaches rendered SQL on at least one target |
 | `comparison` | 7 | read when two schemas are compared, and written into no statement |
 | `planning` | 4 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
 | `source` | 14 | identifies the source text the declaration was read from |
-| `export` | 9 | a name or shape an exported API document carries |
+| `export` | 10 | what a generated document carries, or reports that it cannot |
 | `data` | 7 | reference or seed rows, which are not DDL |
 
 ### Fields that should render and do not
 
-1, each recorded against the issue that tracks the repair. The gate
-refuses a gap that has started rendering, so a repair fails the build until
-its entry is reclassified.
-
-| Field | Issue |
-| --- | --- |
-| `schemamodel.Grant.GrantedBy` | https://github.com/stokaro/ptah/issues/2611 |
+None.
 
 ### Every field
 
@@ -255,7 +249,7 @@ its entry is reclassified.
 | `schemamodel.Function.Volatility` | `ddl` | — |
 | `schemamodel.Grant.Comment` | `ddl` | — |
 | `schemamodel.Grant.Dialects` | `ddl` | — |
-| `schemamodel.Grant.GrantedBy` | `ddl` | — |
+| `schemamodel.Grant.GrantedBy` | `export` | the grantor a catalog read observed, carried so that a generated document can report it cannot represent one; PostgreSQL accepts GRANTED BY only for the role that IS the current user, so rendering the observed grantor would fail on every apply by another role |
 | `schemamodel.Grant.OnSchema` | `ddl` | — |
 | `schemamodel.Grant.OnSequence` | `ddl` | — |
 | `schemamodel.Grant.OnTable` | `ddl` | — |
