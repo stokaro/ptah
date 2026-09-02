@@ -1,10 +1,12 @@
 package embedverify
 
 import (
+	"fmt"
 	"iter"
 	"slices"
 	"sort"
 	"strings"
+	"time"
 )
 
 // SourceRow is one in-scope source row as it is NOW.
@@ -143,11 +145,26 @@ type RunState struct {
 	// CatchUpReached reports that catch-up processed everything past the
 	// snapshot boundary.
 	CatchUpReached bool
-	// UnreconciledBatches counts batches whose outcome was never decided.
-	UnreconciledBatches int
-	// StaleLeaseHolder names a worker still holding a lease the run has moved
-	// past, empty when none does.
-	StaleLeaseHolder string
+	// LeaseHolder and LeaseExpires are who holds the run and until when, empty
+	// and zero when nobody does.
+	//
+	// They are reported rather than judged. Whether a live lease means another
+	// worker could still write is not answerable from what a run records: every
+	// CLI verb claims under the constant name `ptah-cli`, and no verb releases
+	// its lease -- it expires. So a live lease is the ORDINARY state right after
+	// a backfill, and a finding raised on one would fire on the documented
+	// `backfill; verify; cutover` sequence every time (stokaro/ptah#2738).
+	//
+	// A RunState.UnreconciledBatches count stood here too, feeding a blocking
+	// finding. It went, because nothing in the tree ever set the
+	// [go.5x5.cz/ptah/internal/embedrun.BatchOutcome] Unreconciled flag it would
+	// have counted -- and the checkpoint refuses such a batch rather than
+	// committing one to be counted later, so the guarantee lives there.
+	LeaseHolder  string
+	LeaseExpires time.Time
+	// Now is when the report is being taken, so a lease's liveness is decided
+	// against the caller's clock rather than this package's.
+	Now time.Time
 	// ConsistencyMode is the mode the run was configured with, empty when none
 	// was.
 	ConsistencyMode string
@@ -557,6 +574,39 @@ func reportCoverage(report *Report, missing, stale, wrongGeneration keySample) {
 	}
 }
 
+// reportLease says what is known about the lease and does not judge it.
+//
+// The page advertises this layer as asking "is a lease still held?", and the
+// answer was neither given nor its absence admitted: the field feeding the
+// finding was set nowhere, so a run whose lease was live read as
+// `every deterministic layer passed` (stokaro/ptah#2738).
+//
+// It is unmeasured rather than a finding because the question the finding asked
+// -- could another worker still write -- cannot be answered from what a run
+// records. Every CLI verb claims under the constant `ptah-cli`, so the holder
+// does not identify a process, and no verb releases its lease, so a live one is
+// the ordinary state immediately after a backfill. A blocking finding there
+// would refuse the sequence the guides publish; silence would report the check
+// as made.
+//
+// Saying it is unmeasured AND naming the holder gives an operator the fact to
+// act on without this layer claiming a verdict it cannot reach. A factual
+// advisory is the natural next step once a worker identity distinguishes
+// processes.
+func reportLease(report *Report, state RunState) {
+	if state.LeaseHolder == "" {
+		return
+	}
+	if !state.LeaseExpires.After(state.Now) {
+		return
+	}
+	report.Unmeasured = append(report.Unmeasured, fmt.Sprintf(
+		"a lease on this run is held by %q until %s, and whether that worker could still write "+
+			"was not decided: every command claims under one name, so the holder does not identify "+
+			"a process",
+		state.LeaseHolder, state.LeaseExpires.UTC().Format(time.RFC3339)))
+}
+
 // verifyConsistency answers layer 5: whether the run finished what it started.
 func verifyConsistency(report *Report, state RunState) {
 	if !state.SnapshotComplete {
@@ -566,14 +616,7 @@ func verifyConsistency(report *Report, state RunState) {
 		report.addf(LayerConsistency, Blocking, 0, nil,
 			"catch-up has not reached the barrier, so changes after the snapshot are unprocessed")
 	}
-	if state.UnreconciledBatches > 0 {
-		report.addf(LayerConsistency, Blocking, state.UnreconciledBatches, nil,
-			"%d batches were never reconciled, so what they wrote is unknown", state.UnreconciledBatches)
-	}
-	if state.StaleLeaseHolder != "" {
-		report.addf(LayerConsistency, Blocking, 0, nil,
-			"worker %q still holds a lease on this run and could still write", state.StaleLeaseHolder)
-	}
+	reportLease(report, state)
 	if state.SourceMutable && state.ConsistencyMode == "" {
 		// The epic's cutover rule: a mutable source with no consistency mode
 		// cannot be declared ready, because nothing establishes that what was

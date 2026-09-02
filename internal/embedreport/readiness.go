@@ -162,11 +162,19 @@ func VerifyGeneration(
 			// backfill once finished and was then given more to do still read
 			// as complete -- and the whole consistency layer went quiet for a
 			// run whose status was `failed` (stokaro/ptah#2649 finding 3).
-			SnapshotComplete:    run.SnapshotDone,
-			CatchUpReached:      guarantee.Complete,
-			ConsistencyMode:     string(loaded.Mode),
-			SourceMutable:       loaded.Source.Mutable,
-			UnreconciledBatches: 0,
+			SnapshotComplete: run.SnapshotDone,
+			CatchUpReached:   guarantee.Complete,
+			ConsistencyMode:  string(loaded.Mode),
+			SourceMutable:    loaded.Source.Mutable,
+			// The lease, which had no producer at all: the field the consistency
+			// layer read was set nowhere outside its own tests, so a run whose
+			// lease was live reported `every deterministic layer passed` while
+			// `SELECT lease_owner, lease_expires > now()` answered otherwise
+			// (stokaro/ptah#2738). What the layer does with it is
+			// [embedverify.reportLease]'s decision, not this one's.
+			LeaseHolder:  run.LeaseOwner,
+			LeaseExpires: run.LeaseExpires,
+			Now:          time.Now().UTC(),
 		})
 }
 

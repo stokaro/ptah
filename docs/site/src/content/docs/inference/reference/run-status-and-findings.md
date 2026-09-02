@@ -168,7 +168,15 @@ Each finding names its **layer** and its **severity**.
 | `coverage` | Does every in-scope row have a vector, a skip, or a tombstone, and does anything else carry one? | rows with no vector and not marked skipped or deleted; `N target rows are outside the generation's source scope` |
 | `freshness` | Was each vector computed from the source as it is now? | rows computed from a source state that has since changed |
 | `vector_validity` | Are the stored vectors the shape the generation declares? | `the column holds N dimensions and the generation expects M` |
-| `consistency` | Has the backfill finished, has catch-up reached the barrier, is a lease still held? | `catch-up has not reached the barrier, so changes after the snapshot are unprocessed` |
+| `consistency` | Has the backfill finished, has catch-up reached the barrier, does the run have a consistency mode? | `catch-up has not reached the barrier, so changes after the snapshot are unprocessed` |
+
+A held lease is **reported, not judged.** Where one is live, `verify` says so
+among its unmeasured entries and names the holder — it does not raise a finding.
+Whether that worker could still write is not answerable from what a run records:
+every command claims under the one name `ptah-cli`, and no verb releases its
+lease, so a live lease is the ordinary state immediately after a `backfill`.
+A finding there would refuse the sequence these guides publish, on every healthy
+run.
 
 ### Severity
 

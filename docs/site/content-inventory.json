@@ -2288,8 +2288,8 @@
         "/inference/concepts/lifecycle/",
         "/inference/troubleshooting/"
       ],
-      "visibleWords": 491,
-      "sourceBytes": 4638
+      "visibleWords": 490,
+      "sourceBytes": 4648
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/rollback-and-retire.md",
@@ -2586,8 +2586,8 @@
       "disposition": "keep",
       "outboundLinks": [],
       "inboundLinks": [],
-      "visibleWords": 1824,
-      "sourceBytes": 13063
+      "visibleWords": 1911,
+      "sourceBytes": 13561
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/specification.md",

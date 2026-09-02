@@ -91,7 +91,7 @@ Read which layer:
 | `freshness` | Writes happened after those rows were embedded | Run `catchup` again |
 | `coverage` | The backfill did not finish, or rows arrived after it | Run `backfill`, then `catchup` |
 | `structural` | The index is missing or invalid | Run `index` |
-| `consistency` | Backfill unfinished, or a lease is still held | Finish the phase, or wait for the holder |
+| `consistency` | Backfill unfinished, catch-up behind, or no consistency mode | Finish the phase, or declare a mode |
 | `vector_validity` | The stored vectors are not the declared shape | The dimension in the specification does not match the model |
 
 Only the last one needs the specification changed. The rest are a phase that has
