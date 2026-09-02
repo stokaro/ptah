@@ -351,7 +351,7 @@ trusted local registry.
 
 ## Publish a desired schema
 
-Publish one or more SQL, YAML, or HCL sources:
+Publish one or more SQL, YAML, HCL, or DBML sources:
 
 ```bash
 ptah schema push \
@@ -363,6 +363,17 @@ ptah schema push \
 Annotated Go models publish the same way, with `--root-dir ./models` in place
 of `--schema-file`. Ptah merges the selected sources and renders one canonical
 `schema.hcl` layer.
+
+That canonical HCL includes API export metadata authored in YAML, HCL, or Go:
+`api_name`, `openapi_name`, `graphql_name`, and `proto_name` on tables and
+columns, plus column `api_type` and `api_expose`. Pulling the artifact and
+rendering it again preserves those values and therefore the same OpenAPI,
+GraphQL, and Protobuf identities. SQL and DBML inputs have no lossless spelling
+for this metadata, so their contracts continue to derive names and types from
+storage. A [composite source](../../schema/composite/) retains metadata from
+each complete YAML, HCL, or Go-owned object and rejects conflicting duplicate
+definitions.
+
 Schema publication fails closed:
 
 - managed reference data is rejected because it cannot be represented without

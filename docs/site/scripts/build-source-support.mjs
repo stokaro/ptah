@@ -8,20 +8,32 @@ import { fileURLToPath } from 'node:url';
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(scriptDir, '..', '..', '..');
 const outputPath = join(repoRoot, 'docs', 'source-support.json');
-const verifiedAt = '2026-08-30';
+const verifiedAt = '2026-09-02';
+
+const exportMetadataStatuses = new Set([
+  'supported',
+  'unsupported-design',
+  'declared-format',
+  'component-dependent',
+  'not-applicable',
+]);
+
+function exportMetadata(status, detail) {
+  return { status, detail };
+}
 
 const sources = [
-  { id: 'sql-file', label: 'SQL file', spelling: '--schema-file schema.sql', transport: 'local file', expressiveness: 'The Ptah DDL parser subset for the selected dialect.' },
-  { id: 'yaml-file', label: 'YAML file', spelling: '--schema-file schema.yaml', transport: 'local file', expressiveness: 'Ptah YAML schema objects and their documented dialect overrides.' },
-  { id: 'hcl-file', label: 'HCL file', spelling: '--schema-file schema.hcl', transport: 'local file', expressiveness: 'The documented Atlas-compatible HCL subset plus named Ptah extensions.' },
-  { id: 'dbml-file', label: 'DBML file', spelling: '--schema-file schema.dbml', transport: 'local file', expressiveness: 'DBML tables, columns, keys, indexes, relationships, and supported notes; not every Ptah object.' },
-  { id: 'go-annotations', label: 'Go annotations', spelling: '--root-dir ./models', transport: 'local Go source tree', expressiveness: 'The native annotation model, including Ptah-specific objects that narrower interchange formats may omit.' },
-  { id: 'external-program', label: 'External program', spelling: '--schema-cmd ./load-schema --schema-format sql', transport: 'explicit child process', expressiveness: 'Exactly the SQL, HCL, or YAML format declared by --schema-format.' },
-  { id: 'configured-external', label: 'Configured external source', spelling: '--config ptah.yaml --allow-external-schema', transport: 'opt-in configured child process', expressiveness: 'Exactly the SQL, HCL, or YAML format declared by the selected external_schema block.' },
-  { id: 'oci-artifact', label: 'OCI artifact', spelling: '--schema-file oci://registry.example/app:v1', transport: 'OCI 1.1 artifact', expressiveness: 'The lossless canonical HCL document stored in the artifact.' },
-  { id: 'live-database', label: 'Live database', spelling: '--db-url sqlite://app.db', transport: 'database connection', expressiveness: 'Objects and attributes the selected database reader can measure from that server.' },
-  { id: 'migration-directory', label: 'Migration directory', spelling: '--migrations-dir ./migrations', transport: 'local directory or command-specific URL', expressiveness: 'The schema produced by ordered replay on a disposable dev database.' },
-  { id: 'composite-source', label: 'Composite source', spelling: '--schema-file schema/tables.sql --schema-file schema/views.hcl', transport: 'repeated and mixed accepted sources', expressiveness: 'The union of the selected sources; conflicting definitions fail instead of silently choosing one.' },
+  { id: 'sql-file', label: 'SQL file', spelling: '--schema-file schema.sql', transport: 'local file', expressiveness: 'The Ptah DDL parser subset for the selected dialect; SQL has no portable API export-metadata spelling.', exportMetadata: exportMetadata('unsupported-design', 'SQL DDL cannot carry Ptah API names, type overrides, or exposure without overloading comments or unrelated storage syntax.') },
+  { id: 'yaml-file', label: 'YAML file', spelling: '--schema-file schema.yaml', transport: 'local file', expressiveness: 'Ptah YAML schema objects, API export metadata, and documented dialect overrides.', exportMetadata: exportMetadata('supported', 'Tables and columns carry the documented Ptah API export-metadata keys.') },
+  { id: 'hcl-file', label: 'HCL file', spelling: '--schema-file schema.hcl', transport: 'local file', expressiveness: 'The documented Atlas-compatible HCL subset plus named Ptah extensions, including API export metadata.', exportMetadata: exportMetadata('supported', 'Ptah table and column attributes carry API export metadata through canonical HCL round trips.') },
+  { id: 'dbml-file', label: 'DBML file', spelling: '--schema-file schema.dbml', transport: 'local file', expressiveness: 'DBML tables, columns, keys, indexes, relationships, and supported notes; DBML has no lossless API export-metadata spelling.', exportMetadata: exportMetadata('unsupported-design', 'Ptah refuses attempted API export metadata instead of overloading DBML notes or presentation settings.') },
+  { id: 'go-annotations', label: 'Go annotations', spelling: '--root-dir ./models', transport: 'local Go source tree', expressiveness: 'The native annotation model, including API export metadata and Ptah-specific objects that narrower interchange formats may omit.', exportMetadata: exportMetadata('supported', 'Table and field annotations carry every API export-metadata attribute.') },
+  { id: 'external-program', label: 'External program', spelling: '--schema-cmd ./load-schema --schema-format sql', transport: 'explicit child process', expressiveness: 'Exactly the SQL, HCL, or YAML format declared by --schema-format.', exportMetadata: exportMetadata('declared-format', 'YAML and HCL payloads carry API export metadata; SQL payloads do not.') },
+  { id: 'configured-external', label: 'Configured external source', spelling: '--config ptah.yaml --allow-external-schema', transport: 'opt-in configured child process', expressiveness: 'Exactly the SQL, HCL, or YAML format declared by the selected external_schema block.', exportMetadata: exportMetadata('declared-format', 'YAML and HCL payloads carry API export metadata; SQL payloads do not.') },
+  { id: 'oci-artifact', label: 'OCI artifact', spelling: '--schema-file oci://registry.example/app:v1', transport: 'OCI 1.1 artifact', expressiveness: 'The lossless canonical Ptah HCL document stored in the artifact.', exportMetadata: exportMetadata('supported', 'Canonical HCL preserves API export metadata across push and pull.') },
+  { id: 'live-database', label: 'Live database', spelling: '--db-url sqlite://app.db', transport: 'database connection', expressiveness: 'Objects and attributes the selected database reader can measure from that server.', exportMetadata: exportMetadata('not-applicable', 'Database catalogs do not store Ptah API export metadata.') },
+  { id: 'migration-directory', label: 'Migration directory', spelling: '--migrations-dir ./migrations', transport: 'local directory or command-specific URL', expressiveness: 'The schema produced by ordered replay on a disposable dev database.', exportMetadata: exportMetadata('not-applicable', 'Migration replay reconstructs database state, which does not contain Ptah API export metadata.') },
+  { id: 'composite-source', label: 'Composite source', spelling: '--schema-file schema/tables.sql --schema-file schema/views.hcl', transport: 'repeated and mixed accepted sources', expressiveness: 'The union of complete selected sources; API metadata follows each component format and conflicting definitions fail instead of silently choosing one.', exportMetadata: exportMetadata('component-dependent', 'YAML, HCL, and Go components can own metadata; SQL and DBML components cannot act as metadata overlays.') },
 ];
 
 const localFiles = ['sql-file', 'yaml-file', 'hcl-file', 'dbml-file'];
@@ -160,13 +172,31 @@ const commands = [
       design: ['external-program', 'configured-external', 'live-database', 'migration-directory'],
       composableSources: [...localFiles, 'go-annotations', 'composite-source'],
     })),
-  ...['markdown', 'html', 'dbml'].map((target) =>
+  ...['markdown', 'html'].map((target) =>
     desiredCommand(`ptah schema export --to ${target}`, ['schema', 'export'], 'cmd/schema', ['cmd/schema/export_dbml_test.go', 'internal/schemaexport'], {
       verified: ['go-annotations'],
       missing: [...localFiles, 'oci-artifact', 'composite-source'],
       design: ['external-program', 'configured-external', 'live-database', 'migration-directory'],
       composableSources: [...localFiles, 'go-annotations', 'composite-source'],
     })),
+  desiredCommand('ptah schema export --to dbml', ['schema', 'export'], 'cmd/schema', ['cmd/schema/export_dbml_test.go', 'internal/dbmlrender'], {
+    verified: ['go-annotations'],
+    missing: [...localFiles, 'oci-artifact', 'composite-source'],
+    design: ['external-program', 'configured-external', 'live-database', 'migration-directory'],
+    composableSources: [...localFiles, 'go-annotations', 'composite-source'],
+    limitations: Object.fromEntries([
+      'yaml-file',
+      'hcl-file',
+      'go-annotations',
+      'external-program',
+      'configured-external',
+      'oci-artifact',
+      'composite-source',
+    ].map((id) => [
+      id,
+      'DBML export succeeds only when selected tables and columns carry no API export metadata; metadata-bearing schemas are refused before output.',
+    ])),
+  }),
   desiredCommand('ptah schema export --to hcl', ['schema', 'export'], 'cmd/schema', ['cmd/schema/export_source_test.go'], {
     verified: ['go-annotations'],
     design: [...localFiles, 'external-program', 'configured-external', 'oci-artifact', 'live-database', 'migration-directory', 'composite-source'],
@@ -300,7 +330,7 @@ export function buildManifest() {
     }
   }
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     verifiedAt,
     statuses: [...statuses],
     sources,
@@ -310,13 +340,17 @@ export function buildManifest() {
 
 export function manifestProblems(manifest, { binary } = {}) {
   const problems = [];
-  if (manifest.schemaVersion !== 1) problems.push('schemaVersion must be 1');
+  if (manifest.schemaVersion !== 2) problems.push('schemaVersion must be 2');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(manifest.verifiedAt ?? '')) problems.push('verifiedAt must be YYYY-MM-DD');
   if (!Array.isArray(manifest.sources) || manifest.sources.length !== sources.length) {
     problems.push(`sources has ${manifest.sources?.length ?? 'no'} rows, want ${sources.length}`);
   } else {
     for (const source of manifest.sources) {
       if (!source.transport || !source.expressiveness) problems.push(`${source.id}: transport and expressiveness are required`);
+      if (!exportMetadataStatuses.has(source.exportMetadata?.status)) {
+        problems.push(`${source.id}: exportMetadata.status must name a supported state`);
+      }
+      if (!source.exportMetadata?.detail) problems.push(`${source.id}: exportMetadata.detail is required`);
     }
   }
   const wanted = commands.length * sources.length;
@@ -374,6 +408,16 @@ function selftest() {
   missingExpressiveness.sources[0].expressiveness = '';
   if (!manifestProblems(missingExpressiveness).some((problem) => problem.includes('transport and expressiveness'))) {
     throw new Error('source without an expressiveness boundary passed');
+  }
+  const missingExportMetadata = structuredClone(manifest);
+  delete missingExportMetadata.sources[0].exportMetadata;
+  if (!manifestProblems(missingExportMetadata).some((problem) => problem.includes('exportMetadata.status'))) {
+    throw new Error('source without an export-metadata boundary passed');
+  }
+  const invalidExportMetadata = structuredClone(manifest);
+  invalidExportMetadata.sources[0].exportMetadata.status = 'maybe';
+  if (!manifestProblems(invalidExportMetadata).some((problem) => problem.includes('exportMetadata.status'))) {
+    throw new Error('source with an invalid export-metadata state passed');
   }
   console.log(`build-source-support.mjs --selftest: OK (${manifest.entries.length} complete command/source cells)`);
 }

@@ -231,8 +231,8 @@
         "/atlas/strict-ce-mode/",
         "/operate/troubleshooting/"
       ],
-      "visibleWords": 8335,
-      "sourceBytes": 58662
+      "visibleWords": 8340,
+      "sourceBytes": 58693
     },
     {
       "path": "docs/site/src/content/docs/atlas/license-boundary.md",
@@ -734,8 +734,8 @@
       "inboundLinks": [
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 384,
-      "sourceBytes": 3299
+      "visibleWords": 490,
+      "sourceBytes": 3977
     },
     {
       "path": "docs/site/src/content/docs/concepts/dialects-and-capabilities.md",
@@ -3298,6 +3298,7 @@
         "/reference/capabilities/",
         "/reference/exit-codes/",
         "/reference/native-commands/",
+        "/schema/composite/",
         "/versioned/integrity-and-safety/",
         "/versioned/lint/"
       ],
@@ -3312,8 +3313,8 @@
         "/versioned/apply/",
         "/versioned/lint/"
       ],
-      "visibleWords": 2424,
-      "sourceBytes": 21117
+      "visibleWords": 2521,
+      "sourceBytes": 21753
     },
     {
       "path": "docs/site/src/content/docs/operate/overview.mdx",
@@ -3856,7 +3857,9 @@
       "sourceOfTruth": [
         "cmd",
         "core",
-        "migration"
+        "migration",
+        "internal/atlashcl",
+        "internal/atlashclrender"
       ],
       "owns": [],
       "generated": false,
@@ -3873,7 +3876,8 @@
         "/atlas/docs-coverage/",
         "/atlas/project-config/",
         "/atlas/schema-commands/",
-        "/reference/native-commands/"
+        "/reference/native-commands/",
+        "/schema/export/"
       ],
       "inboundLinks": [
         "/atlas/docs-coverage/",
@@ -3882,8 +3886,8 @@
         "/schema/hcl/",
         "/schema/overview/"
       ],
-      "visibleWords": 1834,
-      "sourceBytes": 14990
+      "visibleWords": 2117,
+      "sourceBytes": 16934
     },
     {
       "path": "docs/site/src/content/docs/reference/lint-rules.md",
@@ -4150,7 +4154,8 @@
       "sourceOfTruth": [
         "cmd",
         "core",
-        "migration"
+        "migration",
+        "core/yamlschema"
       ],
       "owns": [
         "gopkg-core-yamlschema"
@@ -4165,14 +4170,15 @@
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
-        "/reference/native-commands/"
+        "/reference/native-commands/",
+        "/schema/export/"
       ],
       "inboundLinks": [
         "/schema/overview/",
         "/schema/yaml/"
       ],
-      "visibleWords": 968,
-      "sourceBytes": 8076
+      "visibleWords": 1151,
+      "sourceBytes": 9422
     },
     {
       "path": "docs/site/src/content/docs/schema/composite.md",
@@ -4202,6 +4208,7 @@
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
+        "/schema/export/",
         "/schema/orm-and-external/",
         "/schema/visualize/",
         "/versioned/generate/"
@@ -4210,6 +4217,7 @@
         "/atlas/docs-coverage/",
         "/concepts/desired-schema-and-sources/",
         "/direct/compare-and-drift/",
+        "/operate/oci-registry/",
         "/schema/document/",
         "/schema/export/",
         "/schema/hcl/",
@@ -4222,8 +4230,8 @@
         "/schema/yaml/",
         "/versioned/generate/"
       ],
-      "visibleWords": 456,
-      "sourceBytes": 4199
+      "visibleWords": 592,
+      "sourceBytes": 5110
     },
     {
       "path": "docs/site/src/content/docs/schema/dbml.md",
@@ -4254,17 +4262,21 @@
       "disposition": "keep",
       "outboundLinks": [
         "/schema/export/",
+        "/schema/go-annotations/",
+        "/schema/hcl/",
         "/schema/visualize/",
         "/schema/work-with-a-source/",
+        "/schema/yaml/",
         "/versioned/reference-data/"
       ],
       "inboundLinks": [
         "/schema/document/",
         "/schema/export/",
+        "/schema/protobuf/",
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 691,
-      "sourceBytes": 5928
+      "visibleWords": 823,
+      "sourceBytes": 6888
     },
     {
       "path": "docs/site/src/content/docs/schema/document.mdx",
@@ -4341,10 +4353,15 @@
       "sourceOfTruth": [
         "cmd/schema",
         "internal/schemaload",
+        "core/yamlschema",
         "core/goschema",
+        "internal/atlashcl",
+        "internal/atlashclrender",
         "internal/schemaexport",
         "internal/goannotationexport",
-        "internal/schemaartifact"
+        "internal/schemaartifact",
+        "internal/dbmlparse",
+        "internal/dbmlrender"
       ],
       "owns": [
         "cli-ptah-schema-export"
@@ -4371,6 +4388,9 @@
         "/testing/ci/"
       ],
       "inboundLinks": [
+        "/reference/hcl-schema/",
+        "/reference/yaml-schema/",
+        "/schema/composite/",
         "/schema/dbml/",
         "/schema/document/",
         "/schema/hcl/",
@@ -4380,8 +4400,8 @@
         "/schema/visualize/",
         "/schema/yaml/"
       ],
-      "visibleWords": 3931,
-      "sourceBytes": 30384
+      "visibleWords": 4212,
+      "sourceBytes": 35195
     },
     {
       "path": "docs/site/src/content/docs/schema/go-annotations.md",
@@ -4425,12 +4445,14 @@
       "inboundLinks": [
         "/concepts/desired-schema-and-sources/",
         "/reference/go-annotations/",
+        "/schema/dbml/",
         "/schema/document/",
         "/schema/export/",
         "/schema/hcl/",
         "/schema/lineage/",
         "/schema/protobuf/",
         "/schema/serve/",
+        "/schema/sql/",
         "/schema/validate-and-format/",
         "/schema/visualize/",
         "/schema/work-with-a-source/"
@@ -4453,7 +4475,9 @@
       "goal": "Render a desired schema from Atlas-compatible HCL.",
       "sourceOfTruth": [
         "cmd/schema",
-        "internal/schemaload"
+        "internal/schemaload",
+        "internal/atlashcl",
+        "internal/atlashclrender"
       ],
       "owns": [],
       "generated": false,
@@ -4480,13 +4504,16 @@
       "inboundLinks": [
         "/atlas/docs-coverage/",
         "/concepts/desired-schema-and-sources/",
+        "/schema/dbml/",
         "/schema/document/",
         "/schema/export/",
         "/schema/go-annotations/",
+        "/schema/protobuf/",
+        "/schema/sql/",
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 352,
-      "sourceBytes": 4217
+      "visibleWords": 517,
+      "sourceBytes": 5780
     },
     {
       "path": "docs/site/src/content/docs/schema/lineage.mdx",
@@ -4576,8 +4603,8 @@
         "/schema/composite/",
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 964,
-      "sourceBytes": 8498
+      "visibleWords": 1008,
+      "sourceBytes": 8759
     },
     {
       "path": "docs/site/src/content/docs/schema/overview.mdx",
@@ -4647,7 +4674,10 @@
       "goal": "Generate Protobuf while preserving field-number compatibility.",
       "sourceOfTruth": [
         "cmd/schema",
-        "internal/schemaload"
+        "internal/schemaload",
+        "core/yamlschema",
+        "internal/atlashcl",
+        "internal/protobufrender"
       ],
       "owns": [],
       "generated": false,
@@ -4664,16 +4694,19 @@
       "outboundLinks": [
         "/reference/exit-codes/",
         "/reference/native-commands/",
+        "/schema/dbml/",
         "/schema/export/",
         "/schema/go-annotations/",
+        "/schema/hcl/",
+        "/schema/yaml/",
         "/start/adopt-an-existing-database/",
         "/testing/ci/"
       ],
       "inboundLinks": [
         "/schema/export/"
       ],
-      "visibleWords": 4162,
-      "sourceBytes": 34332
+      "visibleWords": 4286,
+      "sourceBytes": 35477
     },
     {
       "path": "docs/site/src/content/docs/schema/security.mdx",
@@ -4805,7 +4838,10 @@
         "/schema/composite/",
         "/schema/document/",
         "/schema/export/",
+        "/schema/go-annotations/",
+        "/schema/hcl/",
         "/schema/work-with-a-source/",
+        "/schema/yaml/",
         "/versioned/generate/"
       ],
       "inboundLinks": [
@@ -4815,8 +4851,8 @@
         "/schema/go-annotations/",
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 689,
-      "sourceBytes": 6313
+      "visibleWords": 758,
+      "sourceBytes": 6778
     },
     {
       "path": "docs/site/src/content/docs/schema/stats.mdx",
@@ -5043,7 +5079,8 @@
       "goal": "Render and validate a desired schema from Ptah YAML.",
       "sourceOfTruth": [
         "cmd/schema",
-        "internal/schemaload"
+        "internal/schemaload",
+        "core/yamlschema"
       ],
       "owns": [],
       "generated": false,
@@ -5067,13 +5104,16 @@
       "inboundLinks": [
         "/concepts/desired-schema-and-sources/",
         "/extend/components/",
+        "/schema/dbml/",
         "/schema/document/",
         "/schema/export/",
         "/schema/go-annotations/",
+        "/schema/protobuf/",
+        "/schema/sql/",
         "/schema/work-with-a-source/"
       ],
-      "visibleWords": 235,
-      "sourceBytes": 3226
+      "visibleWords": 349,
+      "sourceBytes": 4388
     },
     {
       "path": "docs/site/src/content/docs/start/adopt-an-existing-database.mdx",

@@ -479,11 +479,21 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 	if err != nil {
 		return err
 	}
+	apiName, err := p.stringAttr(block, "api_name", "table")
+	if err != nil {
+		return err
+	}
+	apiNames, err := p.targetNames(block, "table")
+	if err != nil {
+		return err
+	}
 
 	table := schemamodel.Table{
 		StructName:    hclTableStructName(labels.schema, labels.name),
 		Name:          labels.name,
 		Schema:        labels.schema,
+		APIName:       apiName,
+		APINames:      apiNames,
 		Engine:        p.optionalString(block.Body.Attributes["engine"]),
 		AutoIncrement: p.optionalString(block.Body.Attributes["auto_increment"]),
 		Charset:       p.optionalString(block.Body.Attributes["charset"]),
@@ -678,6 +688,22 @@ func (p *parser) parseColumn(structName string, block *hclsyntax.Block) (schemam
 	if err != nil {
 		return schemamodel.Field{}, err
 	}
+	apiName, err := p.stringAttr(block, "api_name", "column")
+	if err != nil {
+		return schemamodel.Field{}, err
+	}
+	apiNames, err := p.targetNames(block, "column")
+	if err != nil {
+		return schemamodel.Field{}, err
+	}
+	apiType, err := p.stringAttr(block, "api_type", "column")
+	if err != nil {
+		return schemamodel.Field{}, err
+	}
+	apiExpose, err := p.stringAttr(block, "api_expose", "column")
+	if err != nil {
+		return schemamodel.Field{}, err
+	}
 
 	columnType, typeRawSQL := p.columnTypeName(block, typeAttr)
 
@@ -685,6 +711,10 @@ func (p *parser) parseColumn(structName string, block *hclsyntax.Block) (schemam
 		StructName:          structName,
 		FieldName:           name,
 		Name:                name,
+		APIName:             apiName,
+		APINames:            apiNames,
+		APIType:             apiType,
+		APIExpose:           apiExpose,
 		Type:                columnType,
 		TypeRawSQL:          typeRawSQL,
 		Nullable:            p.optionalBool(block.Body.Attributes["null"], false),
@@ -1729,6 +1759,10 @@ func (p *parser) rejectUnsupportedEnumAttrs(block *hclsyntax.Block) error {
 func (p *parser) rejectUnsupportedTableAttrs(block *hclsyntax.Block) error {
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"schema":         true,
+		"api_name":       true,
+		"openapi_name":   true,
+		"graphql_name":   true,
+		"proto_name":     true,
 		"engine":         true,
 		"auto_increment": true,
 		"charset":        true,
@@ -1774,6 +1808,12 @@ func (p *parser) rejectUnsupportedPartitionByAttrs(block *hclsyntax.Block) error
 func (p *parser) rejectUnsupportedColumnAttrs(block *hclsyntax.Block) error {
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"type":           true,
+		"api_name":       true,
+		"openapi_name":   true,
+		"graphql_name":   true,
+		"proto_name":     true,
+		"api_type":       true,
+		"api_expose":     true,
 		"null":           true,
 		"auto_increment": true,
 		"unique":         true,
@@ -2036,6 +2076,26 @@ func (p *parser) stringAttr(block *hclsyntax.Block, name, label string) (string,
 		return "", p.blockError(block, "%s attribute %q must be a string", label, name)
 	}
 	return value.AsString(), nil
+}
+
+func (p *parser) targetNames(block *hclsyntax.Block, label string) (schemamodel.TargetNames, error) {
+	openAPI, err := p.stringAttr(block, "openapi_name", label)
+	if err != nil {
+		return schemamodel.TargetNames{}, err
+	}
+	graphql, err := p.stringAttr(block, "graphql_name", label)
+	if err != nil {
+		return schemamodel.TargetNames{}, err
+	}
+	protobuf, err := p.stringAttr(block, "proto_name", label)
+	if err != nil {
+		return schemamodel.TargetNames{}, err
+	}
+	return schemamodel.TargetNames{
+		OpenAPI:  openAPI,
+		GraphQL:  graphql,
+		Protobuf: protobuf,
+	}, nil
 }
 
 func (p *parser) optionalBool(attr *hclsyntax.Attribute, fallback bool) bool {

@@ -1,6 +1,6 @@
 {
-  "schemaVersion": 1,
-  "verifiedAt": "2026-08-30",
+  "schemaVersion": 2,
+  "verifiedAt": "2026-09-02",
   "statuses": [
     "verified",
     "supported-missing-command-test",
@@ -15,77 +15,121 @@
       "label": "SQL file",
       "spelling": "--schema-file schema.sql",
       "transport": "local file",
-      "expressiveness": "The Ptah DDL parser subset for the selected dialect."
+      "expressiveness": "The Ptah DDL parser subset for the selected dialect; SQL has no portable API export-metadata spelling.",
+      "exportMetadata": {
+        "status": "unsupported-design",
+        "detail": "SQL DDL cannot carry Ptah API names, type overrides, or exposure without overloading comments or unrelated storage syntax."
+      }
     },
     {
       "id": "yaml-file",
       "label": "YAML file",
       "spelling": "--schema-file schema.yaml",
       "transport": "local file",
-      "expressiveness": "Ptah YAML schema objects and their documented dialect overrides."
+      "expressiveness": "Ptah YAML schema objects, API export metadata, and documented dialect overrides.",
+      "exportMetadata": {
+        "status": "supported",
+        "detail": "Tables and columns carry the documented Ptah API export-metadata keys."
+      }
     },
     {
       "id": "hcl-file",
       "label": "HCL file",
       "spelling": "--schema-file schema.hcl",
       "transport": "local file",
-      "expressiveness": "The documented Atlas-compatible HCL subset plus named Ptah extensions."
+      "expressiveness": "The documented Atlas-compatible HCL subset plus named Ptah extensions, including API export metadata.",
+      "exportMetadata": {
+        "status": "supported",
+        "detail": "Ptah table and column attributes carry API export metadata through canonical HCL round trips."
+      }
     },
     {
       "id": "dbml-file",
       "label": "DBML file",
       "spelling": "--schema-file schema.dbml",
       "transport": "local file",
-      "expressiveness": "DBML tables, columns, keys, indexes, relationships, and supported notes; not every Ptah object."
+      "expressiveness": "DBML tables, columns, keys, indexes, relationships, and supported notes; DBML has no lossless API export-metadata spelling.",
+      "exportMetadata": {
+        "status": "unsupported-design",
+        "detail": "Ptah refuses attempted API export metadata instead of overloading DBML notes or presentation settings."
+      }
     },
     {
       "id": "go-annotations",
       "label": "Go annotations",
       "spelling": "--root-dir ./models",
       "transport": "local Go source tree",
-      "expressiveness": "The native annotation model, including Ptah-specific objects that narrower interchange formats may omit."
+      "expressiveness": "The native annotation model, including API export metadata and Ptah-specific objects that narrower interchange formats may omit.",
+      "exportMetadata": {
+        "status": "supported",
+        "detail": "Table and field annotations carry every API export-metadata attribute."
+      }
     },
     {
       "id": "external-program",
       "label": "External program",
       "spelling": "--schema-cmd ./load-schema --schema-format sql",
       "transport": "explicit child process",
-      "expressiveness": "Exactly the SQL, HCL, or YAML format declared by --schema-format."
+      "expressiveness": "Exactly the SQL, HCL, or YAML format declared by --schema-format.",
+      "exportMetadata": {
+        "status": "declared-format",
+        "detail": "YAML and HCL payloads carry API export metadata; SQL payloads do not."
+      }
     },
     {
       "id": "configured-external",
       "label": "Configured external source",
       "spelling": "--config ptah.yaml --allow-external-schema",
       "transport": "opt-in configured child process",
-      "expressiveness": "Exactly the SQL, HCL, or YAML format declared by the selected external_schema block."
+      "expressiveness": "Exactly the SQL, HCL, or YAML format declared by the selected external_schema block.",
+      "exportMetadata": {
+        "status": "declared-format",
+        "detail": "YAML and HCL payloads carry API export metadata; SQL payloads do not."
+      }
     },
     {
       "id": "oci-artifact",
       "label": "OCI artifact",
       "spelling": "--schema-file oci://registry.example/app:v1",
       "transport": "OCI 1.1 artifact",
-      "expressiveness": "The lossless canonical HCL document stored in the artifact."
+      "expressiveness": "The lossless canonical Ptah HCL document stored in the artifact.",
+      "exportMetadata": {
+        "status": "supported",
+        "detail": "Canonical HCL preserves API export metadata across push and pull."
+      }
     },
     {
       "id": "live-database",
       "label": "Live database",
       "spelling": "--db-url sqlite://app.db",
       "transport": "database connection",
-      "expressiveness": "Objects and attributes the selected database reader can measure from that server."
+      "expressiveness": "Objects and attributes the selected database reader can measure from that server.",
+      "exportMetadata": {
+        "status": "not-applicable",
+        "detail": "Database catalogs do not store Ptah API export metadata."
+      }
     },
     {
       "id": "migration-directory",
       "label": "Migration directory",
       "spelling": "--migrations-dir ./migrations",
       "transport": "local directory or command-specific URL",
-      "expressiveness": "The schema produced by ordered replay on a disposable dev database."
+      "expressiveness": "The schema produced by ordered replay on a disposable dev database.",
+      "exportMetadata": {
+        "status": "not-applicable",
+        "detail": "Migration replay reconstructs database state, which does not contain Ptah API export metadata."
+      }
     },
     {
       "id": "composite-source",
       "label": "Composite source",
       "spelling": "--schema-file schema/tables.sql --schema-file schema/views.hcl",
       "transport": "repeated and mixed accepted sources",
-      "expressiveness": "The union of the selected sources; conflicting definitions fail instead of silently choosing one."
+      "expressiveness": "The union of complete selected sources; API metadata follows each component format and conflicting definitions fail instead of silently choosing one.",
+      "exportMetadata": {
+        "status": "component-dependent",
+        "detail": "YAML, HCL, and Go components can own metadata; SQL and DBML components cannot act as metadata overlays."
+      }
     }
   ],
   "entries": [
@@ -2011,7 +2055,7 @@
       "implementationOwner": "cmd/schema",
       "evidence": [
         "cmd/schema/export_dbml_test.go",
-        "internal/schemaexport"
+        "internal/dbmlrender"
       ],
       "limitations": "",
       "composable": true,
@@ -2025,9 +2069,9 @@
       "implementationOwner": "cmd/schema",
       "evidence": [
         "cmd/schema/export_dbml_test.go",
-        "internal/schemaexport"
+        "internal/dbmlrender"
       ],
-      "limitations": "",
+      "limitations": "DBML export succeeds only when selected tables and columns carry no API export metadata; metadata-bearing schemas are refused before output.",
       "composable": true,
       "externalExecutionRequiresOptIn": false
     },
@@ -2039,9 +2083,9 @@
       "implementationOwner": "cmd/schema",
       "evidence": [
         "cmd/schema/export_dbml_test.go",
-        "internal/schemaexport"
+        "internal/dbmlrender"
       ],
-      "limitations": "",
+      "limitations": "DBML export succeeds only when selected tables and columns carry no API export metadata; metadata-bearing schemas are refused before output.",
       "composable": true,
       "externalExecutionRequiresOptIn": false
     },
@@ -2053,7 +2097,7 @@
       "implementationOwner": "cmd/schema",
       "evidence": [
         "cmd/schema/export_dbml_test.go",
-        "internal/schemaexport"
+        "internal/dbmlrender"
       ],
       "limitations": "",
       "composable": true,
@@ -2067,9 +2111,9 @@
       "implementationOwner": "cmd/schema",
       "evidence": [
         "cmd/schema/export_dbml_test.go",
-        "internal/schemaexport"
+        "internal/dbmlrender"
       ],
-      "limitations": "",
+      "limitations": "DBML export succeeds only when selected tables and columns carry no API export metadata; metadata-bearing schemas are refused before output.",
       "composable": true,
       "externalExecutionRequiresOptIn": false
     },
@@ -2081,9 +2125,9 @@
       "implementationOwner": "cmd/schema",
       "evidence": [
         "cmd/schema/export_dbml_test.go",
-        "internal/schemaexport"
+        "internal/dbmlrender"
       ],
-      "limitations": "",
+      "limitations": "DBML export succeeds only when selected tables and columns carry no API export metadata; metadata-bearing schemas are refused before output.",
       "composable": false,
       "externalExecutionRequiresOptIn": false
     },
@@ -2095,9 +2139,9 @@
       "implementationOwner": "cmd/schema",
       "evidence": [
         "cmd/schema/export_dbml_test.go",
-        "internal/schemaexport"
+        "internal/dbmlrender"
       ],
-      "limitations": "",
+      "limitations": "DBML export succeeds only when selected tables and columns carry no API export metadata; metadata-bearing schemas are refused before output.",
       "composable": false,
       "externalExecutionRequiresOptIn": true
     },
@@ -2109,9 +2153,9 @@
       "implementationOwner": "cmd/schema",
       "evidence": [
         "cmd/schema/export_dbml_test.go",
-        "internal/schemaexport"
+        "internal/dbmlrender"
       ],
-      "limitations": "",
+      "limitations": "DBML export succeeds only when selected tables and columns carry no API export metadata; metadata-bearing schemas are refused before output.",
       "composable": false,
       "externalExecutionRequiresOptIn": false
     },
@@ -2123,7 +2167,7 @@
       "implementationOwner": "cmd/schema",
       "evidence": [
         "cmd/schema/export_dbml_test.go",
-        "internal/schemaexport"
+        "internal/dbmlrender"
       ],
       "limitations": "",
       "composable": false,
@@ -2137,7 +2181,7 @@
       "implementationOwner": "cmd/schema",
       "evidence": [
         "cmd/schema/export_dbml_test.go",
-        "internal/schemaexport"
+        "internal/dbmlrender"
       ],
       "limitations": "",
       "composable": false,
@@ -2151,9 +2195,9 @@
       "implementationOwner": "cmd/schema",
       "evidence": [
         "cmd/schema/export_dbml_test.go",
-        "internal/schemaexport"
+        "internal/dbmlrender"
       ],
-      "limitations": "",
+      "limitations": "DBML export succeeds only when selected tables and columns carry no API export metadata; metadata-bearing schemas are refused before output.",
       "composable": true,
       "externalExecutionRequiresOptIn": false
     },

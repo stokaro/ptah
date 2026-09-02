@@ -128,6 +128,23 @@ func TestRenderRefusesATableAPINameCollision(t *testing.T) {
 	c.Assert(res.Data, qt.HasLen, 0)
 }
 
+func TestRenderRefusesInvalidSharedTableAPIName(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := openapirender.Render(&schemamodel.Database{
+		Tables: []schemamodel.Table{{
+			StructName: "Invoice", Name: "billing_invoices", APIName: "invoice documents",
+		}},
+		Fields: []schemamodel.Field{{
+			StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true,
+		}},
+	}, openapirender.Options{})
+
+	c.Assert(err, qt.ErrorMatches,
+		`table "billing_invoices" declares api_name "invoice documents", which is not a valid OpenAPI component name`)
+	c.Assert(res.Data, qt.HasLen, 0)
+}
+
 // The documented limitation this exists for: DECIMAL maps to `number`, which
 // can lose decimal precision. Carrying it as text keeps the digits.
 func TestRenderUsesTheDeclaredAPIType(t *testing.T) {
@@ -258,4 +275,18 @@ func TestRenderIgnoresAnotherTargetsName(t *testing.T) {
 	c.Assert(schemas["invoices"], qt.IsNil)
 	c.Assert(props["amount"], qt.IsNotNil)
 	c.Assert(props["amountMinor"], qt.IsNil)
+}
+
+func TestRenderRefusesAnInvalidOpenAPIComponentName(t *testing.T) {
+	c := qt.New(t)
+	db := apiNameFixture(
+		schemamodel.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+	)
+	db.Tables[0].APINames.OpenAPI = "invoice documents"
+
+	res, err := openapirender.Render(db, openapirender.Options{})
+
+	c.Assert(err, qt.ErrorMatches,
+		`table "invoices" declares openapi_name "invoice documents", which is not a valid OpenAPI component name`)
+	c.Assert(res.Data, qt.HasLen, 0)
 }

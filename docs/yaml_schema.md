@@ -15,7 +15,7 @@ tool needs to generate a Ptah schema from another language.
 go run ./cmd/ptah schema render --schema-file schema.yaml --dialect postgres
 ```
 
-`--schema-file` accepts `.yaml`, `.yml`, `.hcl`, and `.sql` files and is
+`--schema-file` accepts `.yaml`, `.yml`, `.hcl`, `.sql`, and `.dbml` files and is
 repeatable. It can be combined with repeatable `--root-dir` values; Ptah merges
 all inputs into one desired schema, deduplicates identical named objects, and
 rejects conflicting definitions. If `--dialect` is omitted, Ptah renders every
@@ -168,6 +168,10 @@ Each entry under `tables` declares one table.
 |---|---|
 | `name` | Database table name. Defaults to the map key. |
 | `struct_name` | Internal goschema owner name. Defaults to the map key. |
+| `api_name` | Shared OpenAPI, GraphQL, and Protobuf table-name fallback. |
+| `openapi_name` | Exact OpenAPI component key for this table. |
+| `graphql_name` | GraphQL type-name stem for this table. |
+| `proto_name` | Protobuf message-name stem for this table. |
 | `engine` | Table engine value used by dialects that support it. |
 | `comment` | Table comment. |
 | `primary_key` | Table-level primary key column list. Scalar comma-separated values and YAML sequences are both accepted. |
@@ -190,6 +194,12 @@ Columns support the same information as field annotations:
 |---|---|
 | `name` | Database column name. Defaults to the column map key. |
 | `field_name` | Internal goschema field name. Defaults to the column map key. |
+| `api_name` | Shared OpenAPI, GraphQL, and Protobuf column-name fallback. |
+| `openapi_name` | Exact OpenAPI property key for this column. |
+| `graphql_name` | Exact GraphQL field identifier for this column. |
+| `proto_name` | Exact lower-snake-case Protobuf field name for this column. |
+| `api_type` | Contract-only type override shared by all three export targets. It must name a type Ptah maps or a declared enum. |
+| `api_expose` | Contract exposure: `read`, `write`, `read-write`, or `none`. |
 | `type` | SQL type or enum type name. |
 | `nullable` | Explicit nullability. Defaults to nullable unless `not_null` is true. |
 | `not_null` | Marks the column `NOT NULL`. |
@@ -223,6 +233,15 @@ of an automatic destructive drop-and-recreate plan.
 
 If `enum` is provided and `type` is empty or `ENUM`, Ptah creates an enum named
 `enum_<struct_name>_<field_name>` and uses that generated type for the column.
+
+API names resolve from the target-specific key, then `api_name`, then the
+database name. GraphQL and Protobuf table values are stems that Ptah
+singularizes and PascalCases into a type or message name; their column values
+are exact field identifiers. API metadata changes generated OpenAPI, GraphQL,
+and Protobuf contracts, not DDL or migration planning. Unknown keys, invalid
+explicit target names, and per-target collisions fail before output. See
+[`docs/site/src/content/docs/schema/export.mdx`](site/src/content/docs/schema/export.mdx)
+for complete semantics and source-neutral examples.
 
 PostgreSQL identity columns can be declared without using legacy `SERIAL`
 types:

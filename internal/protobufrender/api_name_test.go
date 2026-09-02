@@ -2,6 +2,7 @@ package protobufrender_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -380,19 +381,94 @@ func TestRenamingTheTableProtoNameIsRefusedAsARemoval(t *testing.T) {
 	c.Assert(err.Error(), qt.Contains, "types removed from the source schema: InvoiceRecord")
 }
 
-// A scoped name is an arbitrary annotation string like any other, so the
-// format's naming rules still run on it -- and the diagnostic still names the
-// TABLE, because that is the line the reader has to edit.
-func TestSanitizationRunsOnTheProtoName(t *testing.T) {
+// A table target name is a message-name stem, but it must still produce a valid
+// message name without the renderer's fallback sanitation.
+func TestAnInvalidProtoNameIsRefused(t *testing.T) {
 	c := qt.New(t)
 
-	res := mustRender(c,
+	res, err := protobufrender.Render(context.Background(),
 		protoNamedTable("things", "", "2fa records", column("id", "BIGINT")),
 		baseOptions())
 
-	c.Assert(string(res.Data), qt.Contains, "message _2faRecord {")
-	c.Assert(diagnosticMessages(res), qt.Any(qt.Contains),
-		`table "things" was sanitized to protobuf message "_2faRecord"`)
+	c.Assert(err, qt.ErrorMatches,
+		`table "things" declares proto_name "2fa records", which does not produce a valid Protobuf message name`)
+	c.Assert(res.Data, qt.HasLen, 0)
+}
+
+func TestDeclaredProtoNamesThatNormalizeToOneMessageAreRefused(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := protobufrender.Render(context.Background(), &schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "Records", Schema: "a", Name: "first", APINames: schemamodel.TargetNames{Protobuf: "invoice_records"}},
+			{StructName: "Record", Schema: "b", Name: "second", APINames: schemamodel.TargetNames{Protobuf: "invoice_record"}},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "Records", Name: "id", Type: "BIGINT"},
+			{StructName: "Record", Name: "id", Type: "BIGINT"},
+		},
+	}, baseOptions())
+
+	c.Assert(err, qt.ErrorMatches,
+		`tables map to the same explicitly declared protobuf message name: InvoiceRecord: a.first \(struct Records\), b.second \(struct Record\); give one of them a distinct proto_name`)
+	c.Assert(res.Data, qt.HasLen, 0)
+}
+
+func TestSharedAPINamesThatNormalizeToOneMessageAreRefused(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := protobufrender.Render(context.Background(), &schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "Records", Schema: "a", Name: "first", APIName: "invoice_records"},
+			{StructName: "Record", Schema: "b", Name: "second", APIName: "invoice_record"},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "Records", Name: "id", Type: "BIGINT"},
+			{StructName: "Record", Name: "id", Type: "BIGINT"},
+		},
+	}, baseOptions())
+
+	c.Assert(err, qt.ErrorMatches,
+		`tables map to the same explicitly declared protobuf message name: InvoiceRecord: a.first \(struct Records\), b.second \(struct Record\); give one of them a distinct proto_name`)
+	c.Assert(res.Data, qt.HasLen, 0)
+}
+
+func TestSharedAPINameCollidingWithDerivedMessageIsRefusedInEitherOrder(t *testing.T) {
+	tables := []schemamodel.Table{
+		{StructName: "Derived", Schema: "a", Name: "invoice_records"},
+		{StructName: "Alias", Schema: "b", Name: "archive", APIName: "invoice_record"},
+	}
+	for _, reverse := range []bool{false, true} {
+		t.Run(fmt.Sprintf("reverse=%t", reverse), func(t *testing.T) {
+			c := qt.New(t)
+			if reverse {
+				tables[0], tables[1] = tables[1], tables[0]
+			}
+			res, err := protobufrender.Render(context.Background(), &schemamodel.Database{
+				Tables: tables,
+				Fields: []schemamodel.Field{
+					{StructName: "Derived", Name: "id", Type: "BIGINT"},
+					{StructName: "Alias", Name: "id", Type: "BIGINT"},
+				},
+			}, baseOptions())
+			c.Assert(err, qt.ErrorMatches,
+				`tables map to the same explicitly declared protobuf message name: InvoiceRecord: a.invoice_records \(struct Derived\), b.archive \(struct Alias\); give one of them a distinct proto_name`)
+			c.Assert(res.Data, qt.HasLen, 0)
+		})
+	}
+}
+
+func TestAnInvalidProtoFieldNameIsRefused(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := protobufrender.Render(context.Background(), oneTable(
+		column("id", "BIGINT"),
+		protoNamedColumn("billing_amount_minor", "amount", "amountMinor", "INTEGER"),
+	), baseOptions())
+
+	c.Assert(err, qt.ErrorMatches,
+		`column "billing_amount_minor" on table "things" declares proto_name "amountMinor", which is not a valid lower_snake_case Protobuf field name`)
+	c.Assert(res.Data, qt.HasLen, 0)
 }
 
 // An override does not silence the loss it causes. Projecting a BIGINT as an

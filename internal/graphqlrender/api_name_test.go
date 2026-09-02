@@ -1,6 +1,8 @@
 package graphqlrender_test
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -90,6 +92,41 @@ func TestRenderRefusesAnAPINameCollision(t *testing.T) {
 	c.Assert(res.Data, qt.HasLen, 0, qt.Commentf("nothing may be written on the refusing path"))
 }
 
+func TestRenderRefusesDeclaredFieldNameThatCollidesAfterNormalization(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(apiNameFixture(
+		schemamodel.Field{StructName: "Invoice", Name: "amount-minor", Type: "INTEGER"},
+		schemamodel.Field{
+			StructName: "Invoice", Name: "billing_amount_minor", Type: "INTEGER",
+			APINames: schemamodel.TargetNames{GraphQL: "amount_minor"},
+		},
+	), graphqlrender.Options{})
+
+	c.Assert(err, qt.ErrorMatches,
+		`columns "amount-minor" and "billing_amount_minor" on table "invoices" both produce GraphQL field name "amount_minor"; give one of them a distinct graphql_name`)
+	c.Assert(res.Data, qt.HasLen, 0)
+}
+
+func TestRenderRefusesSharedFieldNameThatCollidesWithDerivedName(t *testing.T) {
+	fields := []schemamodel.Field{
+		{StructName: "Invoice", Name: "amount_minor", Type: "INTEGER"},
+		{StructName: "Invoice", Name: "billing_amount_minor", APIName: "amount-minor", Type: "INTEGER"},
+	}
+	for _, reverse := range []bool{false, true} {
+		t.Run(fmt.Sprintf("reverse=%t", reverse), func(t *testing.T) {
+			c := qt.New(t)
+			if reverse {
+				fields[0], fields[1] = fields[1], fields[0]
+			}
+			res, err := graphqlrender.Render(apiNameFixture(fields...), graphqlrender.Options{})
+			c.Assert(err, qt.ErrorMatches,
+				`columns "(amount_minor|billing_amount_minor)" and "(amount_minor|billing_amount_minor)" on table "invoices" both produce GraphQL field name "amount_minor"; give one of them a distinct graphql_name`)
+			c.Assert(res.Data, qt.HasLen, 0)
+		})
+	}
+}
+
 // The GraphQL type name is derived from the table's API name, so a published
 // `Invoice` survives the table underneath being renamed.
 func TestRenderDerivesTheTypeNameFromTheTableAPIName(t *testing.T) {
@@ -126,6 +163,536 @@ func TestRenderRefusesATableAPINameCollision(t *testing.T) {
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, `two tables export as "invoices"`)
+	c.Assert(res.Data, qt.HasLen, 0)
+}
+
+func TestRenderRefusesDeclaredTableNamesThatNormalizeToOneType(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(&schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "Records", Name: "invoice_records", APINames: schemamodel.TargetNames{GraphQL: "invoice_records"}},
+			{StructName: "Record", Name: "invoice_record", APINames: schemamodel.TargetNames{GraphQL: "invoice_record"}},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "Records", Name: "id", Type: "BIGINT"},
+			{StructName: "Record", Name: "id", Type: "BIGINT"},
+		},
+	}, graphqlrender.Options{})
+
+	c.Assert(err, qt.ErrorMatches,
+		`tables "invoice_records" and "invoice_record" both produce GraphQL type name "InvoiceRecord"; give one of them a distinct graphql_name`)
+	c.Assert(res.Data, qt.HasLen, 0)
+}
+
+func TestRenderRefusesSharedTableNamesThatNormalizeToOneType(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(&schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "Records", Name: "first", APIName: "invoice_records"},
+			{StructName: "Record", Name: "second", APIName: "invoice_record"},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "Records", Name: "id", Type: "BIGINT"},
+			{StructName: "Record", Name: "id", Type: "BIGINT"},
+		},
+	}, graphqlrender.Options{})
+
+	c.Assert(err, qt.ErrorMatches,
+		`tables "first" and "second" both produce GraphQL type name "InvoiceRecord"; give one of them a distinct graphql_name`)
+	c.Assert(res.Data, qt.HasLen, 0)
+}
+
+func TestRenderRefusesSharedTableNameThatCollidesWithDerivedNameInEitherOrder(t *testing.T) {
+	tables := []schemamodel.Table{
+		{StructName: "Records", Name: "invoice_records"},
+		{StructName: "Alias", Name: "archive", APIName: "invoice_record"},
+	}
+	for _, reverse := range []bool{false, true} {
+		t.Run(fmt.Sprintf("reverse=%t", reverse), func(t *testing.T) {
+			c := qt.New(t)
+			if reverse {
+				tables[0], tables[1] = tables[1], tables[0]
+			}
+			res, err := graphqlrender.Render(&schemamodel.Database{
+				Tables: tables,
+				Fields: []schemamodel.Field{
+					{StructName: "Records", Name: "id", Type: "BIGINT"},
+					{StructName: "Alias", Name: "id", Type: "BIGINT"},
+				},
+			}, graphqlrender.Options{})
+			c.Assert(err, qt.ErrorMatches,
+				`tables "(invoice_records|archive)" and "(invoice_records|archive)" both produce GraphQL type name "InvoiceRecord"; give one of them a distinct graphql_name`)
+			c.Assert(res.Data, qt.HasLen, 0)
+		})
+	}
+}
+
+func TestRenderRefusesSharedTableNamesThatShadowReservedTypes(t *testing.T) {
+	tests := []struct {
+		apiName string
+		want    string
+	}{
+		{apiName: "query", want: "Query"},
+		{apiName: "page_infos", want: "PageInfo"},
+		{apiName: "string", want: "String"},
+	}
+	for _, test := range tests {
+		t.Run(test.want, func(t *testing.T) {
+			c := qt.New(t)
+			res, err := graphqlrender.Render(&schemamodel.Database{
+				Tables: []schemamodel.Table{{StructName: "Thing", Name: "things", APIName: test.apiName}},
+				Fields: []schemamodel.Field{{StructName: "Thing", Name: "id", Type: "BIGINT"}},
+			}, graphqlrender.Options{})
+			c.Assert(err, qt.ErrorMatches, fmt.Sprintf(
+				`table "things" declares api_name %q, which produces reserved GraphQL type name %q; choose a different graphql_name`,
+				test.apiName,
+				test.want,
+			))
+			c.Assert(res.Data, qt.HasLen, 0)
+		})
+	}
+}
+
+func TestRenderKeepsDistinctNamesForSameTableNameInTwoSchemas(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(&schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "AUser", Schema: "a", Name: "users", APINames: schemamodel.TargetNames{GraphQL: "a_users"}},
+			{StructName: "BUser", Schema: "b", Name: "users", APINames: schemamodel.TargetNames{GraphQL: "b_users"}},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "AUser", Name: "id", Type: "BIGINT"},
+			{StructName: "BUser", Name: "id", Type: "BIGINT"},
+		},
+	}, graphqlrender.Options{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(res.Data), qt.Contains, "type AUser {")
+	c.Assert(string(res.Data), qt.Contains, "type BUser {")
+}
+
+func TestRenderUsesResolvedTableNamesForListQueries(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(&schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "AUser", Schema: "a", Name: "users", APINames: schemamodel.TargetNames{GraphQL: "a_users"}},
+			{StructName: "BUser", Schema: "b", Name: "users", APINames: schemamodel.TargetNames{GraphQL: "b_users"}},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "AUser", Name: "id", Type: "BIGINT"},
+			{StructName: "BUser", Name: "id", Type: "BIGINT"},
+		},
+	}, graphqlrender.Options{Operations: graphqlrender.Operations{List: true}})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(res.Data), qt.Contains, "aUsers(first: Int, after: String): AUserConnection")
+	c.Assert(string(res.Data), qt.Contains, "bUsers(first: Int, after: String): BUserConnection")
+}
+
+func TestRenderRefusesGeneratedOperationTypeCollisionsBeforeOutput(t *testing.T) {
+	tests := []struct {
+		name       string
+		collision  string
+		operations graphqlrender.Operations
+	}{
+		{name: "edge", collision: "user_edges", operations: graphqlrender.Operations{List: true}},
+		{name: "connection", collision: "user_connections", operations: graphqlrender.Operations{List: true}},
+		{name: "create input", collision: "user_create_inputs", operations: graphqlrender.Operations{CreateInput: true}},
+		{name: "update input", collision: "user_update_inputs", operations: graphqlrender.Operations{UpdateInput: true}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			res, err := graphqlrender.Render(&schemamodel.Database{
+				Tables: []schemamodel.Table{
+					{StructName: "User", Name: "users", APINames: schemamodel.TargetNames{GraphQL: "users"}},
+					{StructName: "Collision", Name: "collision", APINames: schemamodel.TargetNames{GraphQL: test.collision}},
+				},
+				Fields: []schemamodel.Field{
+					{StructName: "User", Name: "name", Type: "TEXT"},
+					{StructName: "Collision", Name: "id", Type: "BIGINT"},
+				},
+			}, graphqlrender.Options{Operations: test.operations})
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Contains, "collides with another type")
+			c.Assert(res.Data, qt.HasLen, 0)
+		})
+	}
+}
+
+func TestRenderRefusesGeneratedOperationTypeCollisionsWithOneAuthoredOwner(t *testing.T) {
+	tests := []struct {
+		name       string
+		collision  string
+		operations graphqlrender.Operations
+	}{
+		{name: "edge", collision: "user_edges", operations: graphqlrender.Operations{List: true}},
+		{name: "connection", collision: "user_connections", operations: graphqlrender.Operations{List: true}},
+		{name: "create input", collision: "user_create_inputs", operations: graphqlrender.Operations{CreateInput: true}},
+		{name: "update input", collision: "user_update_inputs", operations: graphqlrender.Operations{UpdateInput: true}},
+	}
+	for _, test := range tests {
+		for _, authoredGenerator := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/authored-generator=%t", test.name, authoredGenerator), func(t *testing.T) {
+				c := qt.New(t)
+				user := schemamodel.Table{StructName: "User", Name: "users"}
+				collision := schemamodel.Table{StructName: "Collision", Name: test.collision}
+				if authoredGenerator {
+					user.APINames.GraphQL = "users"
+				} else {
+					collision.APINames.GraphQL = test.collision
+				}
+
+				res, err := graphqlrender.Render(&schemamodel.Database{
+					Tables: []schemamodel.Table{user, collision},
+					Fields: []schemamodel.Field{
+						{StructName: "User", Name: "name", Type: "TEXT"},
+						{StructName: "Collision", Name: "id", Type: "BIGINT"},
+					},
+				}, graphqlrender.Options{Operations: test.operations})
+
+				c.Assert(err, qt.IsNotNil)
+				c.Assert(err.Error(), qt.Contains, "collides with another type")
+				c.Assert(res.Data, qt.HasLen, 0)
+			})
+		}
+	}
+}
+
+func TestRenderPreservesDerivedOnlyOperationCollisionBehavior(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(&schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "User", Name: "users"},
+			{StructName: "UserEdge", Name: "user_edges"},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "User", Name: "id", Type: "BIGINT"},
+			{StructName: "UserEdge", Name: "id", Type: "BIGINT"},
+		},
+	}, graphqlrender.Options{Operations: graphqlrender.Operations{List: true}})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(res.Data), qt.Contains, "type UserEdge2 {")
+}
+
+func TestRenderRefusesEnumTypeCollisionBeforeOutput(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(&schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "State", Name: "states", APINames: schemamodel.TargetNames{GraphQL: "invoice_statuses"}},
+			{StructName: "Invoice", Name: "invoices"},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "State", Name: "id", Type: "BIGINT"},
+			{StructName: "Invoice", Name: "status", Type: "invoice_status"},
+		},
+		Enums: []schemamodel.Enum{{Name: "invoice_status", Values: []string{"OPEN", "PAID"}}},
+	}, graphqlrender.Options{})
+
+	c.Assert(err, qt.ErrorMatches,
+		`column "status" on table "invoices" produces GraphQL enum type name "InvoiceStatus", which collides with another type; choose distinct API names or api_type`)
+	c.Assert(res.Data, qt.HasLen, 0)
+}
+
+func TestRenderRefusesAuthoredEnumThatCollidesWithDerivedObject(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(&schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "State", Name: "invoice_statuses"},
+			{StructName: "Invoice", Name: "invoices"},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "State", Name: "id", Type: "BIGINT"},
+			{StructName: "Invoice", Name: "status", Type: "TEXT", APIType: "invoice_status"},
+		},
+		Enums: []schemamodel.Enum{{Name: "invoice_status", Values: []string{"OPEN", "PAID"}}},
+	}, graphqlrender.Options{})
+
+	c.Assert(err, qt.ErrorMatches,
+		`column "status" on table "invoices" produces GraphQL enum type name "InvoiceStatus", which collides with another type; choose distinct API names or api_type`)
+	c.Assert(res.Data, qt.HasLen, 0)
+}
+
+func TestRenderRefusesAuthoredEnumThatShadowsAReservedType(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(&schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Invoice", Name: "invoices"}},
+		Fields: []schemamodel.Field{{
+			StructName: "Invoice", Name: "status", Type: "TEXT", APIType: "query",
+		}},
+		Enums: []schemamodel.Enum{{Name: "query", Values: []string{"OPEN", "PAID"}}},
+	}, graphqlrender.Options{})
+
+	c.Assert(err, qt.ErrorMatches,
+		`column "status" on table "invoices" produces GraphQL enum type name "Query", which collides with another type; choose distinct API names or api_type`)
+	c.Assert(res.Data, qt.HasLen, 0)
+}
+
+func TestRenderPreservesDerivedOnlyEnumCollisionBehavior(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(&schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "State", Name: "invoice_statuses"},
+			{StructName: "Invoice", Name: "invoices"},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "State", Name: "id", Type: "BIGINT"},
+			{StructName: "Invoice", Name: "status", Type: "invoice_status"},
+		},
+		Enums: []schemamodel.Enum{{Name: "invoice_status", Values: []string{"OPEN", "PAID"}}},
+	}, graphqlrender.Options{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(res.Data), qt.Contains, "enum InvoiceStatus2 {")
+}
+
+func TestRenderPreservesDerivedOnlyDuplicateQueryBehavior(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(&schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "User", Name: "user"}},
+		Fields: []schemamodel.Field{{StructName: "User", Name: "id", Type: "BIGINT", Primary: true}},
+	}, graphqlrender.Options{Operations: graphqlrender.Operations{List: true, ByID: true}})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.Count(string(res.Data), "  user("), qt.Equals, 1)
+	c.Assert(res.Diagnostics, qt.HasLen, 1)
+	c.Assert(res.Diagnostics[0].Message, qt.Equals, "duplicate query field name; omitted")
+}
+
+func TestRenderRefusesAuthoredDuplicateQueryFieldBeforeOutput(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(&schemamodel.Database{
+		Tables: []schemamodel.Table{{
+			StructName: "User", Name: "user",
+			APINames: schemamodel.TargetNames{GraphQL: "user"},
+		}},
+		Fields: []schemamodel.Field{{StructName: "User", Name: "id", Type: "BIGINT", Primary: true}},
+	}, graphqlrender.Options{Operations: graphqlrender.Operations{List: true, ByID: true}})
+
+	c.Assert(err, qt.ErrorMatches,
+		`table "user" produces GraphQL Query field name "user", which collides with another table; choose a distinct graphql_name`)
+	c.Assert(res.Data, qt.HasLen, 0)
+}
+
+func TestRenderRefusesAuthoredFieldThatShadowsARelation(t *testing.T) {
+	fields := []schemamodel.Field{
+		{StructName: "Book", Name: "author_id", Type: "BIGINT", Foreign: "authors(id)"},
+		{
+			StructName: "Book", Name: "display_name", Type: "TEXT",
+			APINames: schemamodel.TargetNames{GraphQL: "author"},
+		},
+		{StructName: "Author", Name: "id", Type: "BIGINT"},
+	}
+	for _, reverse := range []bool{false, true} {
+		t.Run(fmt.Sprintf("reverse=%t", reverse), func(t *testing.T) {
+			c := qt.New(t)
+			if reverse {
+				fields[0], fields[1] = fields[1], fields[0]
+			}
+			res, err := graphqlrender.Render(&schemamodel.Database{
+				Tables: []schemamodel.Table{
+					{StructName: "Book", Name: "books"},
+					{StructName: "Author", Name: "authors"},
+				},
+				Fields: fields,
+			}, graphqlrender.Options{})
+
+			c.Assert(err, qt.ErrorMatches,
+				`foreign-key column "author_id" on table "books" produces GraphQL relation field name "author", which collides with another field; choose a distinct graphql_name`)
+			c.Assert(res.Data, qt.HasLen, 0)
+		})
+	}
+}
+
+func TestRenderRefusesAuthoredForeignKeyThatShadowsItsRelation(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(&schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "Book", Name: "books"},
+			{StructName: "Author", Name: "authors"},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "Book", Name: "author_id", APIName: "author", Type: "BIGINT", Foreign: "authors(id)"},
+			{StructName: "Author", Name: "id", Type: "BIGINT"},
+		},
+	}, graphqlrender.Options{})
+
+	c.Assert(err, qt.ErrorMatches,
+		`foreign-key column "author_id" on table "books" produces GraphQL relation field name "author", which collides with another field; choose a distinct graphql_name`)
+	c.Assert(res.Data, qt.HasLen, 0)
+}
+
+func TestRenderRefusesAuthoredRelationThatShadowsADerivedField(t *testing.T) {
+	for _, targetSpecific := range []bool{false, true} {
+		for _, reverse := range []bool{false, true} {
+			t.Run(fmt.Sprintf("target-specific=%t/reverse=%t", targetSpecific, reverse), func(t *testing.T) {
+				c := qt.New(t)
+				foreignKey := schemamodel.Field{
+					StructName: "Book", Name: "author_id", Type: "BIGINT", Foreign: "authors(id)",
+				}
+				if targetSpecific {
+					foreignKey.APINames.GraphQL = "author_id"
+				} else {
+					foreignKey.APIName = "author_id"
+				}
+				fields := []schemamodel.Field{
+					{StructName: "Book", Name: "author", Type: "TEXT"},
+					foreignKey,
+					{StructName: "Author", Name: "id", Type: "BIGINT"},
+				}
+				if reverse {
+					fields[0], fields[1] = fields[1], fields[0]
+				}
+
+				res, err := graphqlrender.Render(&schemamodel.Database{
+					Tables: []schemamodel.Table{
+						{StructName: "Book", Name: "books"},
+						{StructName: "Author", Name: "authors"},
+					},
+					Fields: fields,
+				}, graphqlrender.Options{})
+
+				c.Assert(err, qt.ErrorMatches,
+					`foreign-key column "author_id" on table "books" produces GraphQL relation field name "author", which collides with another field; choose a distinct graphql_name`)
+				c.Assert(res.Data, qt.HasLen, 0)
+			})
+		}
+	}
+}
+
+func TestRenderPreservesDerivedOnlyRelationCollisionBehavior(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(&schemamodel.Database{
+		Tables: []schemamodel.Table{
+			{StructName: "Book", Name: "books"},
+			{StructName: "Author", Name: "authors"},
+		},
+		Fields: []schemamodel.Field{
+			{StructName: "Book", Name: "author_id", Type: "BIGINT", Foreign: "authors(id)"},
+			{StructName: "Book", Name: "authorId", Type: "BIGINT", Foreign: "authors(id)"},
+			{StructName: "Author", Name: "id", Type: "BIGINT"},
+		},
+	}, graphqlrender.Options{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.Count(string(res.Data), "  author: Author!"), qt.Equals, 1)
+}
+
+func TestRenderKeepsRelationNameAcrossStorageRename(t *testing.T) {
+	c := qt.New(t)
+
+	render := func(storageName string) graphqlrender.Result {
+		res, err := graphqlrender.Render(&schemamodel.Database{
+			Tables: []schemamodel.Table{
+				{StructName: "Book", Name: "books"},
+				{StructName: "Author", Name: "authors"},
+			},
+			Fields: []schemamodel.Field{
+				{StructName: "Book", Name: storageName, APIName: "owner_id", Type: "BIGINT", Foreign: "authors(id)"},
+				{StructName: "Author", Name: "id", Type: "BIGINT"},
+			},
+		}, graphqlrender.Options{})
+		c.Assert(err, qt.IsNil)
+		return res
+	}
+
+	before := render("author_id")
+	after := render("writer_id")
+	c.Assert(string(before.Data), qt.Contains, "  owner_id: Int!")
+	c.Assert(string(before.Data), qt.Contains, "  owner: Author!")
+	c.Assert(after.Data, qt.DeepEquals, before.Data)
+}
+
+func TestRenderRefusesSharedFieldNameThatShadowsGraphQLIntrospection(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(apiNameFixture(
+		schemamodel.Field{StructName: "Invoice", Name: "kind", APIName: "__typename", Type: "TEXT"},
+	), graphqlrender.Options{})
+
+	c.Assert(err, qt.ErrorMatches,
+		`column "kind" on table "invoices" declares api_name "__typename", which produces reserved GraphQL field name "__typename"; choose a different graphql_name`)
+	c.Assert(res.Data, qt.HasLen, 0)
+}
+
+func TestRenderValidatesWriteOnlyFieldsForFinalNameCollisions(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(apiNameFixture(
+		schemamodel.Field{
+			StructName: "Invoice", Name: "first", APIName: "amount-minor", Type: "INTEGER",
+			APIExpose: "read",
+		},
+		schemamodel.Field{
+			StructName: "Invoice", Name: "second", APIName: "amount_minor", Type: "INTEGER",
+			APIExpose: "write",
+		},
+	), graphqlrender.Options{FieldPolicy: "allowlist"})
+
+	c.Assert(err, qt.ErrorMatches,
+		`columns "first" and "second" on table "invoices" both produce GraphQL field name "amount_minor"; give one of them a distinct graphql_name`)
+	c.Assert(res.Data, qt.HasLen, 0)
+}
+
+func TestRenderValidatesWriteOnlyTargetName(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(apiNameFixture(
+		schemamodel.Field{
+			StructName: "Invoice", Name: "amount", Type: "INTEGER",
+			APINames: schemamodel.TargetNames{GraphQL: "amount minor"}, APIExpose: "write",
+		},
+	), graphqlrender.Options{FieldPolicy: "allowlist"})
+
+	c.Assert(err, qt.ErrorMatches,
+		`column "amount" on table "invoices" declares graphql_name "amount minor", which is not a valid GraphQL field name`)
+	c.Assert(res.Data, qt.HasLen, 0)
+}
+
+func TestRenderValidatesWriteOnlyAPIType(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(apiNameFixture(
+		schemamodel.Field{
+			StructName: "Invoice", Name: "amount", Type: "INTEGER",
+			APIType: "money_ish", APIExpose: "write",
+		},
+	), graphqlrender.Options{FieldPolicy: "allowlist"})
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, `declares api_type "money_ish"`)
+	c.Assert(err.Error(), qt.Contains, "GraphQL projection does not recognize")
+	c.Assert(res.Data, qt.HasLen, 0)
+}
+
+func TestRenderRefusesDeclaredTableNameThatShadowsAReservedType(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(&schemamodel.Database{
+		Tables: []schemamodel.Table{{
+			StructName: "Queries", Name: "queries",
+			APINames: schemamodel.TargetNames{GraphQL: "query"},
+		}},
+		Fields: []schemamodel.Field{{StructName: "Queries", Name: "id", Type: "BIGINT"}},
+	}, graphqlrender.Options{})
+
+	c.Assert(err, qt.ErrorMatches,
+		`table "queries" declares graphql_name "query", which produces reserved GraphQL type name "Query"; choose a different graphql_name`)
 	c.Assert(res.Data, qt.HasLen, 0)
 }
 
@@ -199,6 +766,28 @@ func TestRenderProjectsEnumsBothWays(t *testing.T) {
 	c.Assert(sdl, qt.Contains, "promoted: InvoiceState!")
 }
 
+func TestRenderUsesPublishedIdentitiesForInlineEnumType(t *testing.T) {
+	c := qt.New(t)
+
+	render := func(storageName string) graphqlrender.Result {
+		res, err := graphqlrender.Render(apiNameFixture(
+			schemamodel.Field{
+				StructName: "Invoice", Name: storageName, Type: "VARCHAR(16)",
+				APINames: schemamodel.TargetNames{GraphQL: "status"},
+				Enum:     []string{"DRAFT", "SENT"},
+			},
+		), graphqlrender.Options{})
+		c.Assert(err, qt.IsNil)
+		return res
+	}
+
+	before := render("billing_status")
+	after := render("stored_status")
+	c.Assert(string(before.Data), qt.Contains, "enum InvoiceStatus {")
+	c.Assert(string(before.Data), qt.Contains, "status: InvoiceStatus!")
+	c.Assert(after.Data, qt.DeepEquals, before.Data)
+}
+
 // Inline enum values answer before the type, so an override that did not clear
 // them would do nothing at all, and say nothing about it.
 func TestRenderOverridesInlineEnumValues(t *testing.T) {
@@ -259,10 +848,10 @@ func TestRenderIgnoresAnotherTargetsName(t *testing.T) {
 	c.Assert(sdl, qt.Not(qt.Contains), "InvoiceRecord")
 }
 
-// The format's naming rules run on a scoped name too, and the warning keeps
-// naming the column: a reader told about a name they cannot find in their
-// schema source has been told nothing they can act on.
-func TestRenderSanitizesAnIllegalGraphQLName(t *testing.T) {
+// A field-level target-specific name is an exact contract declaration, not
+// another persistence name to normalize. Table names remain stems because the
+// exporter singularizes and PascalCases every object type.
+func TestRenderRefusesAnIllegalGraphQLName(t *testing.T) {
 	c := qt.New(t)
 
 	res, err := graphqlrender.Render(apiNameFixture(
@@ -273,8 +862,9 @@ func TestRenderSanitizesAnIllegalGraphQLName(t *testing.T) {
 			APINames: schemamodel.TargetNames{GraphQL: "amount minor"},
 		},
 	), graphqlrender.Options{})
-	c.Assert(err, qt.IsNil)
+	c.Assert(err, qt.ErrorMatches,
+		`column "billing_amount_minor" on table "invoices" declares graphql_name "amount minor", which is not a valid GraphQL field name`)
 
-	c.Assert(string(res.Data), qt.Contains, "amount_minor: Int!")
-	c.Assert(res.Diagnostics, qt.Not(qt.HasLen), 0)
+	c.Assert(res.Data, qt.HasLen, 0)
+	c.Assert(res.Diagnostics, qt.HasLen, 0)
 }

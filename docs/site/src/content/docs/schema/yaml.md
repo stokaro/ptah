@@ -9,6 +9,7 @@ goal: "Render and validate a desired schema from Ptah YAML."
 sourceOfTruth:
   - "cmd/schema"
   - "internal/schemaload"
+  - "core/yamlschema"
 generated: false
 overlaps: []
 disposition: keep
@@ -76,6 +77,38 @@ documentation targets, so
 
 Path confinement is shared by every `--schema-file` source; see
 [Schema file paths](../../reference/native-commands/#schema-file-paths).
+
+## Declare API export metadata
+
+YAML can carry the API contract identity without changing the database
+identity. Tables accept `api_name`, `openapi_name`, `graphql_name`, and
+`proto_name`. Columns accept those four keys plus `api_type` and `api_expose`:
+
+```yaml
+tables:
+  billing_invoices:
+    api_name: invoices
+    openapi_name: invoice_documents
+    graphql_name: invoice_records
+    proto_name: invoice_records
+    columns:
+      billing_amount_minor:
+        type: INTEGER
+        api_name: amount
+        openapi_name: amount_value
+        graphql_name: amountMinor
+        proto_name: amount_minor
+        api_type: TEXT
+        api_expose: read
+```
+
+The target-specific name wins over `api_name`, which wins over the database
+name. Table GraphQL and Protobuf values are type/message stems; column GraphQL
+and Protobuf values are exact field names. `api_type` changes only the generated
+contract type, and `api_expose` accepts `read`, `write`, `read-write`, or
+`none`. Invalid or unknown keys fail before output. See
+[API schema export](../export/#names-in-the-contract) for target naming rules,
+collisions, and exposure behavior.
 
 ## Use it
 

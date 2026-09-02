@@ -7,6 +7,7 @@ package openapirender
 import (
 	"bytes"
 	"fmt"
+	"regexp"
 	"strings"
 
 	yaml "go.yaml.in/yaml/v3"
@@ -20,6 +21,8 @@ const (
 	defaultTitle   = "Ptah Exported Schema"
 	defaultVersion = "1.0.0"
 )
+
+var openAPIComponentNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // withheldOnly keeps the diagnostics whose column reached neither shape.
 func withheldOnly(diagnostics []schemaexport.Diagnostic, emitted []schemamodel.Field) []schemaexport.Diagnostic {
@@ -101,6 +104,22 @@ func Render(db *schemamodel.Database, opts Options) (Result, error) {
 		IncludeTables: opts.IncludeTables,
 		ExcludeTables: opts.ExcludeTables,
 	})
+	for _, table := range tables {
+		attribute, declared := "openapi_name", table.APINames.OpenAPI
+		if declared == "" && table.APIName != "" {
+			attribute, declared = "api_name", table.APIName
+		}
+		if declared != "" && !openAPIComponentNamePattern.MatchString(
+			schemaexport.TableAPIName(table, schemaexport.TargetOpenAPI),
+		) {
+			return Result{}, fmt.Errorf(
+				"table %q declares %s %q, which is not a valid OpenAPI component name",
+				table.Name,
+				attribute,
+				declared,
+			)
+		}
+	}
 	// Refused before anything is written, for the same reason a field
 	// collision is: a table that shadows another drops it from the document,
 	// and the document cannot record that it lost one.

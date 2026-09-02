@@ -139,16 +139,18 @@ type EmbeddedSources struct {
 // A shared APIName answers all three targets and is what a schema normally
 // declares. These exist for the case that shared name cannot cover: a format's
 // own naming rules. A name that is legal in OpenAPI can be illegal in GraphQL,
-// where the exporter has to sanitize it and say so, and the author who wants a
-// deliberate name there should not have to change what the other two publish
-// (stokaro/ptah#905).
+// and the author who wants a deliberate GraphQL name should not have to change
+// what the other two publish. Target-specific field names must already satisfy
+// the target grammar; target-specific table names are target type-name stems
+// and must produce a valid final type without fallback sanitation
+// (stokaro/ptah#905, stokaro/ptah#2607).
 //
 // An empty target name falls back to APIName, and an empty APIName to the
 // database name, so an unannotated schema exports exactly as it always did.
 type TargetNames struct {
-	OpenAPI  string
-	GraphQL  string
-	Protobuf string
+	OpenAPI  string `ptah_export:"openapi_name"`
+	GraphQL  string `ptah_export:"graphql_name"`
+	Protobuf string `ptah_export:"proto_name"`
 }
 
 // Field represents a database column/field definition parsed from Go struct field annotations.
@@ -190,10 +192,10 @@ type Field struct {
 	// rename a published field, and a storage-shaped name should not have to
 	// become the public one — `billing_amount_minor` can be exported as
 	// `amount` and stay itself in the database (stokaro/ptah#905).
-	APIName string
+	APIName string `ptah_export:"api_name"`
 	// APINames overrides APIName for a single export target, and is empty in
 	// the ordinary case. See TargetNames.
-	APINames TargetNames
+	APINames TargetNames `ptah_export:",inline"`
 	// APIType re-maps this column for API export only: the exporters project it
 	// as though the column had this type. It names a type Ptah's own mapping
 	// already recognizes, so no format-specific vocabulary is introduced and
@@ -203,7 +205,7 @@ type Field struct {
 	// than for a new one -- a DECIMAL carried as TEXT keeps its digits, where
 	// the numeric mapping would hand it to a float. It changes no value and
 	// adds no runtime validation (stokaro/ptah#905).
-	APIType string
+	APIType string `ptah_export:"api_type"`
 	// APIExpose declares whether this column reaches an exported API contract,
 	// and in which direction: "none", "read", "write" or "read-write". Empty
 	// means the column says nothing, and what that resolves to is the export's
@@ -219,7 +221,7 @@ type Field struct {
 	// field serializing unconditionally would change that fingerprint for every
 	// schema anyone has already planned against. See
 	// TestDatabaseJSONEncodingIsTheFingerprint.
-	APIExpose string `json:",omitempty"`
+	APIExpose string `json:",omitempty" ptah_export:"api_expose"`
 	Type      string // Database column type (e.g., "VARCHAR(255)", "INTEGER")
 	// TypeRawSQL records that Type was written with Atlas HCL's sql() raw
 	// expression -- `type = sql("USER_DEFINED")` -- rather than as a type the
@@ -627,17 +629,17 @@ type Table struct {
 	// storage rename should not rename a published type, so an established
 	// `Invoice` can keep its name while the table underneath becomes
 	// `billing_invoices` (stokaro/ptah#905).
-	APIName string
+	APIName string `ptah_export:"api_name"`
 	// APINames overrides APIName for a single export target, and is empty in
 	// the ordinary case. See TargetNames.
-	APINames      TargetNames
-	Schema        string // Optional database schema/namespace (PostgreSQL-style)
-	Engine        string // Storage engine (MySQL/MariaDB specific, e.g., "InnoDB")
-	AutoIncrement string // Initial AUTO_INCREMENT value (MySQL/MariaDB specific)
-	Charset       string // Table default character set (MySQL/MariaDB specific)
-	Collate       string // Table default collation (MySQL/MariaDB specific)
-	Strict        bool   // SQLite STRICT table option
-	WithoutRowID  bool   // SQLite WITHOUT ROWID table option
+	APINames      TargetNames `ptah_export:",inline"`
+	Schema        string      // Optional database schema/namespace (PostgreSQL-style)
+	Engine        string      // Storage engine (MySQL/MariaDB specific, e.g., "InnoDB")
+	AutoIncrement string      // Initial AUTO_INCREMENT value (MySQL/MariaDB specific)
+	Charset       string      // Table default character set (MySQL/MariaDB specific)
+	Collate       string      // Table default collation (MySQL/MariaDB specific)
+	Strict        bool        // SQLite STRICT table option
+	WithoutRowID  bool        // SQLite WITHOUT ROWID table option
 	// VirtualModule is the SQLite module that owns this table, from the USING
 	// clause of its CREATE VIRTUAL TABLE statement. The SQLite reader sets it,
 	// and so does the native SQL parser -- a `.sql` schema file may declare

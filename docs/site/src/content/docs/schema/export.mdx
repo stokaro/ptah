@@ -9,10 +9,15 @@ goal: "Generate and review an OpenAPI or GraphQL contract candidate."
 sourceOfTruth:
   - "cmd/schema"
   - "internal/schemaload"
+  - "core/yamlschema"
   - "core/goschema"
+  - "internal/atlashcl"
+  - "internal/atlashclrender"
   - "internal/schemaexport"
   - "internal/goannotationexport"
   - "internal/schemaartifact"
+  - "internal/dbmlparse"
+  - "internal/dbmlrender"
 generated: false
 overlaps: []
 disposition: keep
@@ -20,6 +25,8 @@ sourceMode: source-neutral
 owns:
   - cli-ptah-schema-export
 ---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
 
 export const contractSamples = `${import.meta.env.BASE_URL}samples/contracts/`;
 
@@ -116,9 +123,11 @@ desired schema is spelled the same way on both commands. Every target except
 - **Go annotations** — the directory named by `--root-dir`, which defaults to
   `.`. This is `--from go`.
 
-An export taken from a schema file is byte-identical to the export taken from
-annotated Go models describing the same tables, so a project can change how it
-spells its schema without republishing a different contract.
+For semantics both sources can express, an export taken from a schema file is
+byte-identical to the export taken from annotated Go models describing the same
+tables. YAML, HCL, and Go can also carry the API metadata documented below.
+SQL and DBML still produce contracts, but their names and API types are derived
+from storage because those formats have no lossless spelling for that metadata.
 
 `--from` declares the file's format and is checked against its extension:
 `--from yaml --schema-file schema.sql` is refused rather than parsed as YAML.
@@ -131,10 +140,12 @@ Two combinations are refused rather than approximated:
 
 - `--to hcl` with `--schema-file`. That target rewrites the Go files it reads —
   `--cleanup-go-annotations` removes their annotations after writing HCL — so
-  its source is `--root-dir`. Cleanup refuses outright when the annotations
-  carry [export-only naming metadata](#names-in-the-contract), because HCL
-  cannot preserve it. Converting a schema file to HCL is a different operation
-  from migrating annotations out of Go code.
+  its source is `--root-dir`. The canonical HCL preserves the API names, API
+  type overrides, and exposure declarations documented below. Cleanup still
+  refuses before writing or removing annotations if any other modeled value
+  would be lost or if the generated HCL does not parse and render back to the
+  same canonical bytes. Converting a schema file to HCL is a different
+  operation from migrating annotations out of Go code.
 - `--from db`. An export reads a schema definition, not a live database. Run
   [`ptah schema inspect`](../../direct/inspect/) to write HCL, SQL, or DBML
   from a database URL, review the file, then export it.
@@ -278,44 +289,76 @@ By default the second is derived from the first, which couples them: renaming a
 column renames a published field, and a storage-shaped name has to become the
 public one.
 
-Ptah can export SQL, YAML, HCL, DBML, Go, OCI, and composite desired schemas,
-but only Go annotations can author export-only naming metadata. The other
-accepted sources still produce OpenAPI, GraphQL, and Protobuf contracts; their
-published names are derived from the persistence names. Broader authoring
-support is tracked in
-[`stokaro/ptah#2607`](https://github.com/stokaro/ptah/issues/2607).
+YAML, HCL, and Go annotations can author every export-metadata attribute. SQL
+and DBML can still produce all three contracts, but their published identity is
+derived from storage. Ptah does not overload SQL comments, DBML notes, or DBML
+presentation settings with product metadata that those formats cannot preserve
+losslessly.
 
-| Desired-schema source | Naming behavior |
-| --- | --- |
-| SQL, YAML, HCL, or DBML file | Uses derived names; these formats have no `api_name` or target-specific name syntax. |
-| Go annotations | Can declare `api_name`, `openapi_name`, `graphql_name`, and `proto_name`. |
-| OCI artifact | Uses the names in its canonical HCL payload, which cannot carry export-only names; publishing a schema that declares them is refused. |
-| Composite source | Preserves overrides on objects loaded from Go; a static source cannot add or overlay them. |
-| External or configured loader | Is not an input to `schema export`; materialize its SQL, HCL, or YAML output first, which then uses derived names. |
+{/* export-metadata-support */}
 
-:::caution[HCL cannot carry these declarations, and refuses rather than drop them]
-HCL has no spelling for `api_name`, `api_type`, `api_expose` or the
-target-specific names, so `ptah schema export --to hcl` reports each one it
-would lose:
+| Source | Support | Limitation |
+| --- | --- | --- |
+| SQL file | `unsupported-design` | SQL DDL cannot carry Ptah API names, type overrides, or exposure without overloading comments or unrelated storage syntax. |
+| YAML file | `supported` | Tables and columns carry the documented Ptah API export-metadata keys. |
+| HCL file | `supported` | Ptah table and column attributes carry API export metadata through canonical HCL round trips. |
+| DBML file | `unsupported-design` | Ptah refuses attempted API export metadata instead of overloading DBML notes or presentation settings. |
+| Go annotations | `supported` | Table and field annotations carry every API export-metadata attribute. |
+| External program | `declared-format` | YAML and HCL payloads carry API export metadata; SQL payloads do not. |
+| Configured external source | `declared-format` | YAML and HCL payloads carry API export metadata; SQL payloads do not. |
+| OCI artifact | `supported` | Canonical HCL preserves API export metadata across push and pull. |
+| Live database | `not-applicable` | Database catalogs do not store Ptah API export metadata. |
+| Migration directory | `not-applicable` | Migration replay reconstructs database state, which does not contain Ptah API export metadata. |
+| Composite source | `component-dependent` | YAML, HCL, and Go components can own metadata; SQL and DBML components cannot act as metadata overlays. |
 
-```text
-export metadata api_name="Account" is not represented in HCL
-export metadata api_expose="read" is not represented in HCL
+An external loader inherits the expressiveness of its declared
+`--schema-format`: YAML and HCL payloads carry the attributes below; SQL does
+not. `ptah schema export` itself does not execute `--schema-cmd` or a configured
+loader. Materialize that payload first, then pass it through `--schema-file`.
+An OCI schema stores canonical HCL, so a push/pull round trip preserves the
+metadata. A composite schema retains metadata on each complete YAML, HCL, or Go
+definition and refuses conflicting definitions; a SQL or DBML component cannot
+serve as a metadata-only overlay.
+
+Declare `api_name` on a table or column when the persistence and API identities
+should differ:
+
+<Tabs syncKey="schema-source">
+<TabItem label="YAML">
+
+```yaml
+tables:
+  billing_invoices:
+    api_name: invoices
+    columns:
+      id:
+        type: BIGSERIAL
+        primary: true
+      billing_amount_minor:
+        type: INTEGER
+        api_name: amount
 ```
 
-`--cleanup-go-annotations` refuses on that report, exits 2, and leaves the Go
-sources untouched, so the annotations holding the contract are never the only
-casualty of a conversion. Publishing an OCI artifact refuses for the same
-reason, before anything is pushed.
+</TabItem>
+<TabItem label="HCL">
 
-Keep the annotated Go source and export contracts directly from it. A static
-spelling for this metadata is
-[`stokaro/ptah#2607`](https://github.com/stokaro/ptah/issues/2607).
-:::
+```hcl
+table "billing_invoices" {
+  api_name = "invoices"
 
-The examples in this section therefore use Go annotations. There is no
-equivalent static-file spelling to substitute. Declare `api_name` on the table
-or field directive when the persistence and API identities should differ:
+  column "id" {
+    type = bigint
+  }
+
+  column "billing_amount_minor" {
+    type     = integer
+    api_name = "amount"
+  }
+}
+```
+
+</TabItem>
+<TabItem label="Go annotations">
 
 ```go
 //ptah:schema:table name="billing_invoices" api_name="invoices"
@@ -327,6 +370,9 @@ type Invoice struct {
     AmountMinor int32
 }
 ```
+
+</TabItem>
+</Tabs>
 
 The table exports as `invoices` in OpenAPI and as `type Invoice` in GraphQL —
 singularized and PascalCased from the API name exactly as it would be from a
@@ -340,10 +386,11 @@ table or column name.
 - It does not change a **type**. `api_name` renames, and it adds no runtime
   validation of any kind. Re-mapping the exported representation is a separate
   declaration — see [Types in the contract](#types-in-the-contract).
-- It does not sanitize away a format's naming rules. GraphQL still rewrites a
-  name that is not a legal identifier, and still reports having done so — the
-  per-target names above are how a schema chooses that name deliberately instead
-  of accepting the rewrite.
+- It does not bypass a format's naming rules. Names derived from persistence or
+  from the shared `api_name` follow the target's normal normalization. An
+  explicit `graphql_name` or `proto_name` is a deliberate target identifier and
+  an invalid value fails before output. An invalid table `openapi_name` also
+  fails instead of producing an invalid component key.
 - It does not rename the diagnostics you read. A GraphQL or Protobuf diagnostic
   path names the **column**, because that is where you go to change something.
   An OpenAPI diagnostic path names the published names, because that path is a
@@ -354,28 +401,88 @@ table or column name.
 `api_name` answers every target, and that is what a schema normally declares.
 A format's own naming rules are the case it cannot cover: `amountMinor` is
 idiomatic in GraphQL and fails `buf lint` in Protobuf, which wants
-`amount_minor`. Go annotations provide one shared attribute and three
-target-specific attributes on both the field and table directives:
+`amount_minor`. YAML, HCL, and Go annotations provide one shared attribute and
+three target-specific attributes on both tables and columns:
 
-| Attribute | Export target |
-| --- | --- |
-| `api_name` | Shared fallback for OpenAPI, GraphQL, and Protobuf. |
-| `openapi_name` | OpenAPI only. |
-| `graphql_name` | GraphQL only. |
-| `proto_name` | Protobuf only. |
+| Attribute | Scope | Export target |
+| --- | --- | --- |
+| `api_name` | table and column | Shared fallback for OpenAPI, GraphQL, and Protobuf. |
+| `openapi_name` | table and column | OpenAPI only. |
+| `graphql_name` | table and column | GraphQL only. |
+| `proto_name` | table and column | Protobuf only. |
+
+<Tabs syncKey="schema-source">
+<TabItem label="YAML">
+
+```yaml
+tables:
+  billing_invoices:
+    api_name: invoices
+    openapi_name: invoice_documents
+    graphql_name: invoice_records
+    proto_name: invoice_records
+    columns:
+      billing_amount_minor:
+        type: INTEGER
+        api_name: amount
+        openapi_name: amount_value
+        graphql_name: amountMinor
+        proto_name: amount_minor
+```
+
+</TabItem>
+<TabItem label="HCL">
+
+```hcl
+table "billing_invoices" {
+  api_name     = "invoices"
+  openapi_name = "invoice_documents"
+  graphql_name = "invoice_records"
+  proto_name   = "invoice_records"
+
+  column "billing_amount_minor" {
+    type         = integer
+    api_name     = "amount"
+    openapi_name = "amount_value"
+    graphql_name = "amountMinor"
+    proto_name   = "amount_minor"
+  }
+}
+```
+
+</TabItem>
+<TabItem label="Go annotations">
 
 ```go
-//ptah:schema:table name="billing_invoices" api_name="invoices" openapi_name="invoice_documents" graphql_name="Invoice" proto_name="invoice_records"
+//ptah:schema:table name="billing_invoices" api_name="invoices" openapi_name="invoice_documents" graphql_name="invoice_records" proto_name="invoice_records"
 type Invoice struct {
     //ptah:schema:field name="billing_amount_minor" type="INTEGER" api_name="amount" openapi_name="amount_value" graphql_name="amountMinor" proto_name="amount_minor"
     AmountMinor int32
 }
 ```
 
+</TabItem>
+</Tabs>
+
 Names resolve in order — the target's own name, `api_name`, then the database
 name. A shared alias therefore answers every target, while a scoped name changes
 one export without touching the other two. A target with no scoped declaration
 is unaffected by one declared for its neighbor.
+
+Table and column declarations do not use target names in exactly the same way:
+
+- A table `openapi_name` is the exact OpenAPI component key. A table
+  `graphql_name` or `proto_name` is a stem: Ptah singularizes and PascalCases it
+  into the final GraphQL type or Protobuf message name. For example,
+  `invoice_records` becomes `InvoiceRecord`.
+- A column `openapi_name` is the exact OpenAPI property key. A column
+  `graphql_name` is the exact GraphQL field identifier, and a column
+  `proto_name` is the exact lower-snake-case Protobuf field name.
+
+Invalid explicit target names fail before a file is written. That is different
+from target normalization of a persistence name or shared `api_name`: explicit
+target names state the intended contract spelling, so Ptah does not silently
+replace them with a different one.
 
 Collisions are checked per target, because a collision can now exist in one
 export and not in another. The refusal says which export refused, and names both
@@ -425,6 +532,41 @@ stored one. It names a type Ptah already maps — the left column of the table
 below, or a declared enum — so one declaration answers all three targets and no
 per-format type vocabulary is introduced:
 
+<Tabs syncKey="schema-source">
+<TabItem label="YAML">
+
+```yaml
+tables:
+  invoices:
+    columns:
+      amount:
+        type: DECIMAL(12,2)
+        api_type: TEXT
+      stored_utc_at:
+        type: TIMESTAMP
+        api_type: TIMESTAMPTZ
+```
+
+</TabItem>
+<TabItem label="HCL">
+
+```hcl
+table "invoices" {
+  column "amount" {
+    type     = decimal(12, 2)
+    api_type = "TEXT"
+  }
+
+  column "stored_utc_at" {
+    type     = timestamp
+    api_type = "TIMESTAMPTZ"
+  }
+}
+```
+
+</TabItem>
+<TabItem label="Go annotations">
+
 ```go
 //ptah:schema:field name="amount" type="DECIMAL(12,2)" api_type="TEXT"
 Amount string
@@ -433,18 +575,52 @@ Amount string
 StoredUTCAt time.Time
 ```
 
+</TabItem>
+</Tabs>
+
 The first publishes as a string in all three formats and keeps its digits. The
 second publishes as `google.protobuf.Timestamp` in Protobuf, pulling in the
 import that goes with it, and as a date-time string in OpenAPI and GraphQL.
 
 Only the contract moves. `type` is what the migration engine plans against, and
 it is unaffected: the column stays `DECIMAL(12,2)` in the database, and
-`ptah migrate` never reads `api_type`.
+migration planning and apply never read `api_type`.
 
 ### Enums, in both directions
 
 An override reaches enum resolution as well as the scalar mapping, so it works
 whichever way the pair sits:
+
+<Tabs syncKey="schema-source">
+<TabItem label="YAML">
+
+```yaml
+columns:
+  state:
+    type: invoice_state
+    api_type: TEXT
+  legacy_state:
+    type: VARCHAR(32)
+    api_type: invoice_state
+```
+
+</TabItem>
+<TabItem label="HCL">
+
+```hcl
+column "state" {
+  type     = enum.invoice_state
+  api_type = "TEXT"
+}
+
+column "legacy_state" {
+  type     = varchar(32)
+  api_type = "invoice_state"
+}
+```
+
+</TabItem>
+<TabItem label="Go annotations">
 
 ```go
 //ptah:schema:field name="state" type="invoice_state" api_type="TEXT"
@@ -453,6 +629,9 @@ State string
 //ptah:schema:field name="legacy_state" type="VARCHAR(32)" api_type="invoice_state"
 LegacyState string
 ```
+
+</TabItem>
+</Tabs>
 
 The first publishes an enum column as a plain string. The second publishes a
 text column as the declared enum — which is the case worth having, because on a
@@ -575,10 +754,40 @@ columns, declare `api_expose` on the field:
 | `read-write` | Both |
 | `none` | Neither — the column is absent from the generated document |
 
+<Tabs syncKey="schema-source">
+<TabItem label="YAML">
+
+```yaml
+tables:
+  accounts:
+    columns:
+      password_hash:
+        type: TEXT
+        api_expose: write
+```
+
+</TabItem>
+<TabItem label="HCL">
+
+```hcl
+table "accounts" {
+  column "password_hash" {
+    type       = text
+    api_expose = "write"
+  }
+}
+```
+
+</TabItem>
+<TabItem label="Go annotations">
+
 ```go
 //ptah:schema:field name="password_hash" type="TEXT" api_expose="write"
 PasswordHash string
 ```
+
+</TabItem>
+</Tabs>
 
 Each target expresses the two directions in its own vocabulary. OpenAPI marks
 the single schema's properties `readOnly` and `writeOnly`; GraphQL puts a read
@@ -629,10 +838,11 @@ write a field or row. Keep authorization in the service that implements the
 contract. Do not infer API permissions from database constraints or from the
 presence or absence of a generated field.
 
-Database identifiers also become API identifiers after target-specific name
-normalization. Ptah does not currently provide a stable alias between a table or
-column name and its exported API name. A storage rename can therefore become a
-contract rename.
+Database identifiers become API identifiers after target-specific
+normalization when no API name is declared. Use `api_name` to keep a shared API
+identity stable across a storage rename, or a target-specific name to pin only
+one generated format. Changing that published identity is itself a contract
+rename.
 
 GraphQL operation-shaped definitions do not grant access by themselves, but
 they can be wired unsafely. They are opt-in for that reason: request the shapes
@@ -668,7 +878,8 @@ wrapper messages when the public model must differ.
 
 - Need a stateful wire contract? Use
   [Protobuf schema export](../protobuf/).
-- Need to verify what the source model declares? Review
-  [Go annotations](../go-annotations/).
+- Need to verify what a source declares? Review [YAML](../yaml/),
+  [HCL](../hcl/), or [Go annotations](../go-annotations/), and the
+  [SQL](../sql/) and [DBML](../dbml/) limitations.
 - Publishing the artifact from a pull request? Add it to
   [Continuous integration](../../testing/ci/).

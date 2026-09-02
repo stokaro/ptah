@@ -160,32 +160,56 @@ func gqlStringLiteral(s string) string {
 	return `"` + s + `"`
 }
 
-// nameRegistry assigns unique GraphQL type names, disambiguating collisions with
-// a numeric suffix so the emitted schema has no duplicate definitions.
+// nameRegistry assigns unique GraphQL type names and records whether the name
+// came from authored API metadata. Derived-only collisions keep the historical
+// numeric suffix; a collision involving an authored contract name is refused
+// by claim so the exporter cannot silently publish a different declaration.
 type nameRegistry struct {
-	used map[string]bool
+	owners map[string]bool
 }
 
 func newNameRegistry() *nameRegistry {
-	return &nameRegistry{used: make(map[string]bool)}
+	return &nameRegistry{owners: make(map[string]bool)}
 }
 
 func (r *nameRegistry) reserve(name string) {
-	r.used[name] = true
+	r.owners[name] = false
 }
 
-func (r *nameRegistry) unique(desired string) string {
+// claim assigns desired, preserving the historical numeric suffix only when
+// both sides are derived from persistence names. The second result reports a
+// collision that involves authored API metadata.
+func (r *nameRegistry) claim(desired string, authored bool) (string, bool) {
 	if desired == "" {
 		desired = "Type"
 	}
-	if !r.used[desired] {
-		r.used[desired] = true
+	firstAuthored, taken := r.owners[desired]
+	if !taken {
+		r.owners[desired] = authored
+		return desired, false
+	}
+	if authored || firstAuthored {
+		return "", true
+	}
+	return r.uniqueOwned(desired, false), false
+}
+
+func (r *nameRegistry) unique(desired string) string {
+	return r.uniqueOwned(desired, false)
+}
+
+func (r *nameRegistry) uniqueOwned(desired string, authored bool) string {
+	if desired == "" {
+		desired = "Type"
+	}
+	if _, used := r.owners[desired]; !used {
+		r.owners[desired] = authored
 		return desired
 	}
 	for i := 2; ; i++ {
 		candidate := desired + strconv.Itoa(i)
-		if !r.used[candidate] {
-			r.used[candidate] = true
+		if _, used := r.owners[candidate]; !used {
+			r.owners[candidate] = authored
 			return candidate
 		}
 	}

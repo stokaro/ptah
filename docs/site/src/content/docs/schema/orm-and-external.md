@@ -54,7 +54,10 @@ ptah schema render --schema-cmd "./scripts/export-schema" --dialect postgres
 
 - **Format**: stdout is parsed as SQL by default. Set `--schema-format hcl` or
   `--schema-format yaml` when the loader emits another supported source
-  format; `yml` is accepted as a YAML alias.
+  format; `yml` is accepted as a YAML alias. HCL and YAML payloads can carry
+  `api_name`, `openapi_name`, `graphql_name`, `proto_name`, `api_type`, and
+  `api_expose`. SQL payloads cannot author those export-only attributes, so
+  public names, types, and exposure are derived from the persistence schema.
 - **No shell**: the program runs with an explicit argument vector split on
   whitespace, so pipes, globbing, and variable expansion are not available and
   arguments cannot contain spaces. Wrap a more complex invocation in a small

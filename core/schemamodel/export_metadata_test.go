@@ -2,6 +2,7 @@ package schemamodel_test
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -9,15 +10,33 @@ import (
 	"go.5x5.cz/ptah/core/schemamodel"
 )
 
-// TestTargetNamesAreAllReported is the guard the reflection in
-// targetNameMetadata exists for.
+func TestExportMetadataModelFieldsCarryCensusTags(t *testing.T) {
+	for _, model := range []reflect.Type{
+		reflect.TypeFor[schemamodel.Table](),
+		reflect.TypeFor[schemamodel.Field](),
+		reflect.TypeFor[schemamodel.TargetNames](),
+	} {
+		for field := range model.Fields() {
+			if model != reflect.TypeFor[schemamodel.TargetNames]() &&
+				!strings.HasPrefix(field.Name, "API") {
+				continue
+			}
+			t.Run(model.Name()+"."+field.Name, func(t *testing.T) {
+				c := qt.New(t)
+				attribute, tagged := field.Tag.Lookup("ptah_export")
+				c.Assert(tagged, qt.IsTrue)
+				c.Assert(attribute, qt.Not(qt.Equals), "")
+			})
+		}
+	}
+}
+
+// TestTargetNamesAreAllReported guards the tag-driven metadata census.
 //
-// A per-target name added to TargetNames and forgotten by the loss report would
-// be lost exactly the way every attribute in that file already was, and
-// silently: the report is the only thing standing between such an attribute and
-// a cleanup that deletes the annotations holding it. This asserts every field of
-// the struct has an authored spelling, so adding one without teaching
-// TargetNameAttribute about it fails here rather than in somebody's contract.
+// A per-target name added to TargetNames and forgotten by the metadata census
+// could cross a format boundary silently. This asserts every field of the
+// struct has an authored spelling, so adding one without a ptah_export tag
+// fails here rather than in somebody's contract.
 func TestTargetNamesAreAllReported(t *testing.T) {
 	fields := reflect.TypeFor[schemamodel.TargetNames]()
 
@@ -68,4 +87,37 @@ func TestExportMetadataIn_ReportsNothingWithoutMetadata(t *testing.T) {
 	})
 
 	c.Assert(carried, qt.HasLen, 0)
+}
+
+func TestExportMetadataIn_ReportsEveryCurrentAttribute(t *testing.T) {
+	c := qt.New(t)
+
+	carried := schemamodel.ExportMetadataIn(&schemamodel.Database{
+		Tables: []schemamodel.Table{{
+			StructName: "U", Name: "users", APIName: "accounts",
+			APINames: schemamodel.TargetNames{
+				OpenAPI: "account_documents", GraphQL: "account_records", Protobuf: "account_records",
+			},
+		}},
+		Fields: []schemamodel.Field{{
+			StructName: "U", Name: "stored_amount", APIName: "amount",
+			APINames: schemamodel.TargetNames{
+				OpenAPI: "amount_value", GraphQL: "amountMinor", Protobuf: "amount_minor",
+			},
+			APIType: "TEXT", APIExpose: "read",
+		}},
+	})
+
+	c.Assert(carried, qt.DeepEquals, []schemamodel.ExportMetadata{
+		{Kind: "table", Name: "users", Attribute: "api_name", Value: "accounts"},
+		{Kind: "table", Name: "users", Attribute: "graphql_name", Value: "account_records"},
+		{Kind: "table", Name: "users", Attribute: "openapi_name", Value: "account_documents"},
+		{Kind: "table", Name: "users", Attribute: "proto_name", Value: "account_records"},
+		{Kind: "column", Name: "users.stored_amount", Attribute: "api_expose", Value: "read"},
+		{Kind: "column", Name: "users.stored_amount", Attribute: "api_name", Value: "amount"},
+		{Kind: "column", Name: "users.stored_amount", Attribute: "api_type", Value: "TEXT"},
+		{Kind: "column", Name: "users.stored_amount", Attribute: "graphql_name", Value: "amountMinor"},
+		{Kind: "column", Name: "users.stored_amount", Attribute: "openapi_name", Value: "amount_value"},
+		{Kind: "column", Name: "users.stored_amount", Attribute: "proto_name", Value: "amount_minor"},
+	})
 }

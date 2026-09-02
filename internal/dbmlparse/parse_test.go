@@ -125,6 +125,21 @@ func TestParse_RefusesWhatItCannotRepresent(t *testing.T) {
 			message:  `unsupported column setting "unsupported"`,
 		},
 		{
+			name:     "API export metadata on a table",
+			document: "Table t [api_name: 'Account'] {\n  a int\n}\n",
+			message:  `DBML cannot represent export metadata "api_name" on a table`,
+		},
+		{
+			name:     "API export metadata on a column",
+			document: "Table t {\n  a int [graphql_name: 'accountId']\n}\n",
+			message:  `DBML cannot represent export metadata "graphql_name" on a column`,
+		},
+		{
+			name:     "API export metadata on an enum value",
+			document: "Enum status {\n  active [api_name: 'public_active']\n}\n",
+			message:  `DBML cannot represent export metadata "api_name" on an enum value`,
+		},
+		{
 			name:     "an unsupported index setting",
 			document: "Table t {\n  a int\n\n  Indexes {\n    a [nope]\n  }\n}\n",
 			message:  `unsupported index setting "nope"`,

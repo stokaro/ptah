@@ -81,6 +81,24 @@ for views, functions, triggers, sequences, domains, composite types, ranges,
 policies, roles, extensions, synonyms, extended properties, hypertables,
 continuous aggregates or virtual tables.
 
+DBML also has no lossless spelling for Ptah API export metadata: `api_name`,
+`openapi_name`, `graphql_name`, `proto_name`, `api_type`, and `api_expose` are
+not DBML settings. Ptah deliberately does not hide them in `note:` text or
+presentation settings, because another DBML reader would not recover the same
+contract. An attempted table or column setting fails explicitly:
+
+```text
+DBML cannot represent export metadata "api_name" on a table; use YAML, HCL, or Go annotations
+```
+
+Going the other direction is fail-closed too. Exporting any desired schema that
+already carries API metadata to DBML fails before stdout is written or an
+existing `--out` file is opened. Use [YAML](../yaml/), [HCL](../hcl/), or
+[Go annotations](../go-annotations/) when the source must own API names, type
+overrides, or exposure. A DBML source without that metadata can still generate
+OpenAPI, GraphQL, and Protobuf; Ptah derives the contract from persistence
+names and types.
+
 That has a consequence worth understanding before you apply a DBML document to
 an existing database: **Ptah records those families as not described**, so a
 sequence or a policy the database already holds is left alone rather than read

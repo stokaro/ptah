@@ -19,6 +19,35 @@ type setting struct {
 	hasValue bool
 }
 
+// exportMetadataSettings are Ptah's API-contract attributes. DBML has no
+// lossless spelling for them: a table setting is presentation metadata and a
+// column setting has a closed DBML meaning, so borrowing either would make the
+// same document mean different things to Ptah and other DBML readers.
+var exportMetadataSettings = map[string]bool{
+	"api_name":     true,
+	"openapi_name": true,
+	"graphql_name": true,
+	"proto_name":   true,
+	"api_type":     true,
+	"api_expose":   true,
+}
+
+func rejectExportMetadataSetting(kind string, entry setting) error {
+	if !exportMetadataSettings[entry.key] {
+		return nil
+	}
+	article := "a"
+	if strings.HasPrefix(kind, "enum ") {
+		article = "an"
+	}
+	return fmt.Errorf(
+		"DBML cannot represent export metadata %q on %s %s; use YAML, HCL, or Go annotations",
+		entry.key,
+		article,
+		kind,
+	)
+}
+
 // settings reads a `[ ... ]` list.
 func (p *parser) settings() ([]setting, error) {
 	if err := p.expectPunct("["); err != nil {
@@ -105,6 +134,9 @@ func (p *parser) settingKey() (string, error) {
 // exactly this: an unsupported property fails rather than being removed).
 func applyColumnSettings(field *schemamodel.Field, settings []setting, schema string) error {
 	for _, entry := range settings {
+		if err := rejectExportMetadataSetting("column", entry); err != nil {
+			return err
+		}
 		switch entry.key {
 		case "pk", "primary key":
 			// Primary only. `pk` says the column is the key and says nothing

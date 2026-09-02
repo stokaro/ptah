@@ -5,11 +5,12 @@ schemas, GraphQL SDL, and Protobuf definitions. The parsed
 `schemamodel.Database` already carries types, nullability, enums and foreign
 keys, so each format is a direct projection of that intermediate
 representation.
-That intermediate representation is also what makes the source format
-interchangeable: `--root-dir` reads Go annotations and `--schema-file` reads a
-YAML, HCL, or SQL schema file through `internal/schemaload`, the resolver
-behind `ptah schema render`, and the two produce the same artifact for the same
-tables.
+That intermediate representation also separates source transport from export:
+`--schema-file` reads YAML, HCL, SQL, or DBML through `internal/schemaload`, and
+`--root-dir` reads Go annotations. Sources produce the same artifact for
+semantics both can express. YAML, HCL, and Go can additionally author API names,
+contract type overrides, and exposure; SQL and DBML cannot carry that metadata
+losslessly and derive the contract from storage instead.
 This is contract generation, not database publication: Ptah emits no runtime
 server, data access, authentication, or authorization.
 
@@ -39,28 +40,28 @@ and the `--proto-*` policy flags are documented in
 
 ```bash
 # OpenAPI 3.0 — components.schemas keyed by table name
-ptah schema export --to openapi-v3 --root-dir ./models --out openapi.yaml
+ptah schema export --to openapi-v3 --schema-file schema.yaml --out openapi.yaml
 
 # GraphQL SDL — data types per table, and nothing else by default
-ptah schema export --to graphql --root-dir ./models --out schema.graphql
+ptah schema export --to graphql --schema-file schema.yaml --out schema.graphql
 
 # Ask for operation shapes by name
-ptah schema export --to graphql --root-dir ./models \
+ptah schema export --to graphql --schema-file schema.yaml \
   --graphql-operations list,by-id,create-input --out schema.graphql
 
 # Omit --out to write the schema to stdout for piping into a validator
-ptah schema export --to graphql --root-dir ./models > schema.graphql
+ptah schema export --to graphql --schema-file schema.yaml > schema.graphql
 
-# Read the desired schema from a YAML, HCL, or SQL file instead
-ptah schema export --to openapi-v3 --schema-file schema.yaml --out openapi.yaml
+# Go annotations use --root-dir instead
+ptah schema export --to openapi-v3 --root-dir ./models --out openapi.yaml
 ```
 
 | Flag | Applies to | Meaning |
 | --- | --- | --- |
-| `--from` | all | Format of the `--schema-file` value: `go` (default), `yaml`, `hcl`, or `sql`. Checked against the file extension; unset takes the format from the extension. `db` is refused — run `ptah introspect` first. |
-| `--to` | all | Target format: `hcl`, `openapi-v3`, `graphql`, or [`protobuf`](./site/src/content/docs/schema/protobuf.md). The old `atlas-hcl` value is accepted as an alias. |
+| `--from` | all | Format of the `--schema-file` value: `go` (default), `yaml`, `hcl`, `sql`, or `dbml`. Checked against the file extension; unset takes the format from the extension. `db` is refused — inspect the database to a file first. |
+| `--to` | all | Target format: `hcl`, `openapi-v3`, `graphql`, [`protobuf`](./site/src/content/docs/schema/protobuf.md), `markdown`, `html`, or `dbml`. The old `atlas-hcl` value is accepted as an alias. |
 | `--root-dir` | all | Directory scanned for Go annotations. |
-| `--schema-file` | `openapi-v3`, `graphql`, `protobuf` | YAML, HCL, or SQL schema file to export instead of Go annotations. Repeatable; merged with `--root-dir` when both are given. Refused for `hcl`, whose export rewrites the Go files it reads. |
+| `--schema-file` | every target except `hcl` | YAML, HCL, SQL, or DBML schema file. Repeatable; merged with `--root-dir` when both are given. Refused for `hcl`, whose export rewrites the Go files it reads. |
 | `--out` | all | Output file. Optional for `openapi-v3`/`graphql` (stdout when omitted); required for `hcl` and for [`protobuf`](./site/src/content/docs/schema/protobuf.md), where it is also the compatibility state read back on the next run. |
 | `--include-tables` | `openapi-v3`, `graphql`, `protobuf` | Comma-separated allowlist of tables. |
 | `--exclude-tables` | `openapi-v3`, `graphql`, `protobuf` | Comma-separated denylist, applied after the allowlist. |
@@ -168,6 +169,32 @@ An unrecognized column type maps to `string` / `String` and emits a warning, so
 an unresolved custom type (for example an enum whose definition was not found) is
 visible rather than silently wrong.
 
+## API export metadata by source
+
+YAML, HCL, and Go annotations use the same authored names:
+
+- tables: `api_name`, `openapi_name`, `graphql_name`, `proto_name`;
+- columns: those four plus `api_type` and `api_expose`.
+
+Target-specific names win over `api_name`, which wins over the database name.
+Table GraphQL and Protobuf values are stems that Ptah singularizes and
+PascalCases; column GraphQL and Protobuf values are exact field identifiers.
+`api_type` changes the generated contract type only. `api_expose` accepts
+`read`, `write`, `read-write`, or `none`.
+
+SQL has no portable DDL spelling for these values. DBML settings and notes are
+also not a lossless carrier, so Ptah rejects attempted metadata in DBML and
+refuses to render a metadata-bearing schema to DBML before writing output.
+Canonical HCL preserves all attributes through an OCI push/pull round trip.
+Composite sources retain metadata on complete YAML, HCL, or Go definitions and
+reject a duplicate definition with absent or different metadata; SQL and DBML
+cannot act as overlays. External loaders carry metadata only when their declared
+payload format is YAML or HCL.
+
+See the reader-facing
+[API schema export guide](./site/src/content/docs/schema/export.mdx#names-in-the-contract)
+for YAML, HCL, and Go examples and the collision/refusal behavior.
+
 ## Scope and limitations
 
 The export describes selected table columns, primary keys, foreign keys, and
@@ -175,12 +202,13 @@ enums. Non-column database objects such as views, materialized views, triggers,
 functions, row-level security (RLS) policies, and standalone indexes are not
 emitted.
 
-`--include-tables` and `--exclude-tables` select whole tables. Once a table is
-selected, every exportable column enters the generated shape. Ptah does not
-currently provide field allowlists, separate read/write projections,
-sensitive-field markers, or stable API aliases independent of database names.
-An additive database column can therefore become an unintended API change.
-Generated descriptions also expose table and field comments.
+`--include-tables` and `--exclude-tables` select whole tables. `api_expose`
+selects a column's read/write direction, and
+`--api-field-policy=allowlist` withholds undeclared columns. These controls shape
+the document; they are not authorization. `api_name` and the target-specific
+names can keep a published identity stable across storage renames. An additive
+database column can still become an unintended API change under the default
+field policy. Generated descriptions also expose table and field comments.
 
 OpenAPI output contains components but no paths, Protobuf output contains
 messages and enums but no services, and GraphQL output contains data types and

@@ -80,6 +80,15 @@ includes the two documentation targets, so
 Path confinement is shared by every `--schema-file` source; see
 [Schema file paths](../../reference/native-commands/#schema-file-paths).
 
+## API export metadata
+
+SQL DDL cannot author Ptah's export-only `api_name`, `openapi_name`,
+`graphql_name`, `proto_name`, `api_type`, or `api_expose` metadata. OpenAPI,
+GraphQL, and Protobuf exports still work from a SQL schema, but their public
+names, types, and exposure are derived from the persistence schema. Use
+[YAML](../yaml/), [HCL](../hcl/), or [Go annotations](../go-annotations/) when
+the published contract must differ from database names and types.
+
 ## Use it
 
 Everything a desired schema is for — comparing, gating on drift, generating

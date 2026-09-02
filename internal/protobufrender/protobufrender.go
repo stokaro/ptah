@@ -471,6 +471,18 @@ func (b *builder) buildDesired(db *schemamodel.Database) (desiredShape, error) {
 func (b *builder) assignMessageNames(tables []schemamodel.Table) (map[string]string, error) {
 	bare := make(map[string][]schemamodel.Table)
 	for _, table := range tables {
+		// A table-level proto_name is a message-name stem, so ordinary word
+		// boundaries are transformed. It is still refused if producing a valid
+		// message would require fallback sanitation.
+		if declared := table.APINames.Protobuf; declared != "" {
+			if _, changed := messageName(declared); changed {
+				return nil, fmt.Errorf(
+					"table %q declares proto_name %q, which does not produce a valid Protobuf message name",
+					table.Name,
+					declared,
+				)
+			}
+		}
 		name, changed := messageName(schemaexport.TableAPIName(table, schemaexport.TargetProtobuf))
 		if changed {
 			b.warn(table.Name, fmt.Sprintf(
@@ -478,6 +490,25 @@ func (b *builder) assignMessageNames(tables []schemamodel.Table) (map[string]str
 				table.Name, name))
 		}
 		bare[name] = append(bare[name], table)
+	}
+
+	var declaredCollisions []string
+	for name, group := range bare {
+		if len(group) < 2 || !hasAuthoredProtobufTableName(group) {
+			continue
+		}
+		var sources []string
+		for _, table := range group {
+			sources = append(sources, fmt.Sprintf("%s (struct %s)", table.QualifiedName(), table.StructName))
+		}
+		sort.Strings(sources)
+		declaredCollisions = append(declaredCollisions, fmt.Sprintf("%s: %s", name, strings.Join(sources, ", ")))
+	}
+	if len(declaredCollisions) > 0 {
+		sort.Strings(declaredCollisions)
+		return nil, fmt.Errorf(
+			"tables map to the same explicitly declared protobuf message name: %s; give one of them a distinct proto_name",
+			strings.Join(declaredCollisions, "; "))
 	}
 
 	names := make(map[string]string)
@@ -519,6 +550,15 @@ func (b *builder) assignMessageNames(tables []schemamodel.Table) (map[string]str
 	return names, nil
 }
 
+func hasAuthoredProtobufTableName(tables []schemamodel.Table) bool {
+	for _, table := range tables {
+		if table.APINames.Protobuf != "" || table.APIName != "" {
+			return true
+		}
+	}
+	return false
+}
+
 func (b *builder) buildField(table schemamodel.Table, f schemamodel.Field, enumIndex map[string][]string) (desiredField, error) {
 	// An explicit type override the mapping cannot honor is refused rather than
 	// defaulted to string. Here the stake is higher than in the other two
@@ -542,6 +582,17 @@ func (b *builder) buildField(table schemamodel.Table, f schemamodel.Field, enumI
 	//
 	// The diagnostic path stays on the source names. It is not a coordinate in
 	// the generated file; it is where the author has to go to change anything.
+	if declared := f.APINames.Protobuf; declared != "" {
+		name, changed, lintDirty := fieldName(declared)
+		if changed || lintDirty || name != declared {
+			return desiredField{}, fmt.Errorf(
+				"column %q on table %q declares proto_name %q, which is not a valid lower_snake_case Protobuf field name",
+				f.Name,
+				table.Name,
+				declared,
+			)
+		}
+	}
 	name, changed, lintDirty := fieldName(schemaexport.FieldAPIName(f, schemaexport.TargetProtobuf))
 	path := table.Name + "." + f.Name
 	if changed {

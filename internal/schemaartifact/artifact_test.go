@@ -20,6 +20,20 @@ func TestPushToPullFrom_RoundTrip(t *testing.T) {
 	store := memory.New()
 	db := usersDatabase()
 	db.Sequences = []schemamodel.Sequence{{Name: "users_id_seq"}}
+	db.Tables[0].APIName = "Account"
+	db.Tables[0].APINames = schemamodel.TargetNames{
+		OpenAPI:  "AccountDocument",
+		GraphQL:  "AccountNode",
+		Protobuf: "account_record",
+	}
+	db.Fields[1].APIName = "emailAddress"
+	db.Fields[1].APINames = schemamodel.TargetNames{
+		OpenAPI:  "emailDocument",
+		GraphQL:  "emailNode",
+		Protobuf: "email_value",
+	}
+	db.Fields[1].APIType = "string"
+	db.Fields[1].APIExpose = "read"
 
 	pushed, err := schemaartifact.PushTo(context.Background(), store, db, schemaartifact.PushOptions{
 		Tags:             []string{"stable"},
@@ -37,6 +51,8 @@ func TestPushToPullFrom_RoundTrip(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(pulled.Database.Tables, qt.HasLen, 1)
 	c.Assert(pulled.Database.Tables[0].Name, qt.Equals, "users")
+	c.Assert(pulled.Database.Tables[0].APIName, qt.Equals, "Account")
+	c.Assert(pulled.Database.Tables[0].APINames, qt.DeepEquals, db.Tables[0].APINames)
 	c.Assert(pulled.Database.Sequences, qt.HasLen, 1)
 	c.Assert(pulled.Database.Sequences[0].Name, qt.Equals, "users_id_seq")
 	c.Assert(pulled.Database.Fields, qt.HasLen, 2)
@@ -48,9 +64,15 @@ func TestPushToPullFrom_RoundTrip(t *testing.T) {
 		qt.DeepEquals,
 		[]string{"id", "email"},
 	)
+	c.Assert(pulled.Database.Fields[1].APIName, qt.Equals, "emailAddress")
+	c.Assert(pulled.Database.Fields[1].APINames, qt.DeepEquals, db.Fields[1].APINames)
+	c.Assert(pulled.Database.Fields[1].APIType, qt.Equals, "string")
+	c.Assert(pulled.Database.Fields[1].APIExpose, qt.Equals, "read")
 	data, err := fs.ReadFile(pulled.FileSystem, schemaartifact.FileName)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(data), qt.Contains, `table "users"`)
+	c.Assert(string(data), qt.Contains, `openapi_name = "AccountDocument"`)
+	c.Assert(string(data), qt.Contains, `api_expose = "read"`)
 }
 
 func TestCapture_FailurePath(t *testing.T) {

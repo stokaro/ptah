@@ -9,6 +9,9 @@ goal: "Generate Protobuf while preserving field-number compatibility."
 sourceOfTruth:
   - "cmd/schema"
   - "internal/schemaload"
+  - "core/yamlschema"
+  - "internal/atlashcl"
+  - "internal/protobufrender"
 generated: false
 searchAliases:
   - "generate protobuf"
@@ -39,8 +42,8 @@ only if you want to lint or compatibility-check the result yourself.
 :::caution[Wire compatibility is not API safety]
 Compatibility checks prevent accidental field-number reuse and detect selected
 wire or JSON contract breaks. They do not decide whether a field is appropriate
-for an API. Once a table is selected, every exportable column enters its
-generated message.
+for an API. Under the default field policy, every selected column not declared
+with `api_expose: none` enters its generated message.
 :::
 
 ## Generate the first file
@@ -187,10 +190,12 @@ ptah schema export --to protobuf \
   --proto-package acme.inventory.v1
 ```
 
-The source format never reaches the generated file: a schema file and Go
-annotations describing the same tables produce the same `.proto`, down
-to the field numbers and the content digest. Moving a project from Go
-annotations to a schema file therefore does not restart its numbering history.
+The source format never reaches the generated file: YAML, HCL, or Go sources
+describing the same tables and the same API metadata produce the same `.proto`,
+down to the field numbers and content digest. SQL and DBML produce the same
+result for storage semantics, but cannot author API names, type overrides, or
+exposure. Moving between sources that express the same schema therefore does
+not restart the numbering history.
 
 `--from` declares the file's format and is checked against its extension, so
 `--from yaml --schema-file schema.sql` is refused rather than parsed as the
@@ -287,8 +292,9 @@ unresolved custom type is visible rather than silently wrong.
 The three lossy rows are lossy because the stored type does not say enough. A
 `TIMESTAMP` gets `string` rather than `google.protobuf.Timestamp` because
 nothing in the schema states its time zone — but the author knows, and can say
-so with `api_type="TIMESTAMPTZ"`, which publishes the well-typed field and its
-import. See [Types in the contract](../export/#types-in-the-contract). The
+so with YAML or HCL `api_type: TIMESTAMPTZ` / `api_type = "TIMESTAMPTZ"`, or
+Go annotation `api_type="TIMESTAMPTZ"`. That publishes the well-typed field and
+its import. See [Types in the contract](../export/#types-in-the-contract). The
 override picks a row of this table, or names a declared enum; it cannot
 introduce a Protobuf type that is neither, and one the export cannot produce
 fails the export rather than defaulting to `string`.
@@ -399,8 +405,37 @@ columns produces no diff, and a new column takes the next number above
 everything the message has ever used — including retired numbers, so a number
 is never recycled.
 
+The table-level `proto_name` is a message-name stem: Ptah singularizes and
+PascalCases `invoice_records` into `InvoiceRecord`. The column-level
+`proto_name` is the exact lower-snake-case field name. An explicit value that
+does not produce a valid message name, or an invalid field value such as
+`amountMinor`, fails before the compatibility file is written.
+
 That is what makes a storage rename survivable. Declare the published name once
-and the column underneath can change without touching the wire:
+and the column underneath can change without touching the wire. Each authoring
+format spells the same identity directly:
+
+**YAML**
+
+```yaml
+columns:
+  billing_amount_minor:
+    type: INTEGER
+    api_name: amount
+# renamed later to invoice_total_cents with api_name unchanged
+```
+
+**HCL**
+
+```hcl
+column "billing_amount_minor" {
+  type     = integer
+  api_name = "amount"
+}
+# renamed later to "invoice_total_cents" with api_name unchanged
+```
+
+**Go annotations**
 
 ```go
 //ptah:schema:field name="billing_amount_minor" api_name="amount" type="INTEGER"
@@ -715,7 +750,8 @@ Every bullet below ends with either the issue that tracks it or the reason it is
 permanent, so nothing on this list is an unowned gap.
 
 - A live database is not a source. `--root-dir` and `--schema-file` cover Go
-  annotations, YAML, HCL, and SQL; there is no database URL for this target, so
+  annotations, YAML, HCL, SQL, and DBML; there is no database URL for this
+  target, so
   run [`ptah introspect`](../../start/adopt-an-existing-database/) first to
   generate annotated models from an existing database and export those. That
   split is permanent because a wire contract is reviewed from a file in version
@@ -728,13 +764,14 @@ permanent, so nothing on this list is an unowned gap.
   permanent because the wire format has one message per type and it is used for
   both directions.
 - Database identifiers determine generated API identifiers after Protobuf name
-  normalization. Renaming a table or column therefore renames a public symbol.
-  A column rename reads to the exporter as one field removed and another added,
-  because a column carries no identity beyond its name, so it is refused by
-  default like every other change to the contract — pass
-  `--proto-on-field-removal=reserve` to retire the old number and name. An
-  alias layer that would let a storage rename keep its API identity is tracked
-  by [#905](https://github.com/stokaro/ptah/issues/905).
+  normalization only when the schema declares neither `proto_name` nor
+  `api_name`. Pin one of those API identities before a storage rename to keep
+  the message or field name stable. Renaming both storage and published
+  identity reads as one field removed and another added, so it is refused by
+  default like every other contract change; pass
+  `--proto-on-field-removal=reserve` to retire the old number and name. This is
+  permanent because only an explicitly retained API identity can distinguish a
+  storage rename from a real contract removal and addition.
 - Additive compatibility is not the same as intentional exposure. Adding a
   column to a selected table adds a field on the next export under the default
   field policy; pass `--api-field-policy=allowlist` so only columns declaring
@@ -769,11 +806,10 @@ permanent, so nothing on this list is an unowned gap.
   several tables at once and protobuf cannot declare one type twice, so an enum
   has no single table to follow.
 - Two tables that map to the same message name fail the export naming both.
-  Give one a distinct `schema=` or exclude it. A table and an enum that produce
+  Give one a distinct `proto_name` or `api_name`, or exclude it. A table and an enum that produce
   the same name fail the same way. The refusal is permanent because any
   automatic disambiguation, a numeric suffix included, would depend on table
-  order; a declarative alias that spares you renaming a database object is
-  tracked by [#905](https://github.com/stokaro/ptah/issues/905).
+  order and silently change a published API identity.
 - A table with no exportable columns is skipped with
   `table has no exportable columns; message omitted`. Protobuf has no way to
   tell an empty message apart from a type retained only for its reservations.
@@ -785,5 +821,6 @@ permanent, so nothing on this list is an unowned gap.
 ## Next steps
 
 - Need OpenAPI or GraphQL from the same models? [API schema export](../export/).
-- Not sure which columns the annotations produce? [Go annotations](../go-annotations/).
+- Not sure which columns a source produces? Review [YAML](../yaml/),
+  [HCL](../hcl/), [DBML](../dbml/), or [Go annotations](../go-annotations/).
 - Wiring the export into a pull-request gate? [Continuous integration](../../testing/ci/).
