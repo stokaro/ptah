@@ -63,6 +63,13 @@ when a source row is inserted.
 Choose it when the source table is one you would rather not add columns to — a
 table owned by another team, or one with a `SELECT *` you cannot audit.
 
+Two tables can disagree about which keys exist, and `ptah inference verify`
+reports both directions. A source row with no row in the target table is a
+coverage gap, the same finding the single-table layout gives a row with no
+vector. A row in the target table whose key the source does not have is reported
+as outside the generation's source scope — a shape the single-table layout cannot
+produce, and the one to expect after a source row is deleted.
+
 ## Two generations, two columns
 
 Either layout needs a new column per generation. `prepare` refuses to write a
