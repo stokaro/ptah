@@ -39,6 +39,7 @@ const schemaTestOverloadedRoot = /--root-dir(?:=|\s+)(?:['"]?)(?:[^\s'"]+\.(?:sq
 const expressivenessOverclaim = /\b(?:all|every) (?:schema )?sources? (?:are|is) (?:fully |exactly )?(?:equivalent|interchangeable)|\bsame expressiveness\b/i;
 const supportedStatuses = new Set(['verified', 'supported-missing-command-test', 'supported-untested']);
 const acceptedStatuses = new Set([...supportedStatuses, 'conditional']);
+const exportMetadataContractRoutes = new Set(['/schema/export/']);
 
 function bodyOf(source) {
   return source.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '');
@@ -132,6 +133,10 @@ function declaredSourceCommands(source) {
   return commands;
 }
 
+function exportMetadataMarkers(source) {
+  return [...source.matchAll(/<!--\s*export-metadata-support\s*-->|\{\/\*\s*export-metadata-support\s*\*\/\}/g)];
+}
+
 function normalizeCell(value) {
   return value
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
@@ -142,6 +147,10 @@ function normalizeCell(value) {
 function tableCells(line) {
   const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '');
   return trimmed.split('|').map(normalizeCell);
+}
+
+function canonicalTableDetail(value) {
+  return normalizeCell(value).replace(/\s+/g, ' ');
 }
 
 function optionNames(value) {
@@ -304,11 +313,70 @@ export function declaredSourceListProblems(source, manifest) {
   return problems;
 }
 
+export function exportMetadataTableProblems(source, manifest) {
+  const problems = [];
+  for (const marker of exportMetadataMarkers(source)) {
+    const tail = source.slice(marker.index + marker[0].length);
+    const lines = tail.split(/\r?\n/);
+    const headerIndex = lines.findIndex((line) => /^\s*\|\s*Source\s*\|/i.test(line));
+    if (headerIndex === -1 || !/^\s*\|(?:\s*:?-+:?\s*\|)+\s*$/.test(lines[headerIndex + 1] ?? '')) {
+      problems.push('export-metadata-support marker must be followed by a Source table');
+      continue;
+    }
+    const headers = tableCells(lines[headerIndex]);
+    const statusIndex = headers.findIndex((header) => /status|support/i.test(header));
+    const detailIndex = headers.findIndex((header) => /detail|behavior|limitation/i.test(header));
+    if (statusIndex === -1 || detailIndex === -1) {
+      problems.push('export metadata table must have status and behavior or limitation columns');
+      continue;
+    }
+    const rows = new Map();
+    for (const line of lines.slice(headerIndex + 2)) {
+      if (!/^\s*\|/.test(line)) break;
+      const cells = tableCells(line);
+      rows.set(cells[0] ?? '', cells);
+    }
+    const expectedLabels = manifest.sources.map((sourceDefinition) => sourceDefinition.label);
+    const missing = expectedLabels.filter((label) => !rows.has(label));
+    const extra = [...rows.keys()].filter((label) => !expectedLabels.includes(label));
+    if (missing.length > 0 || extra.length > 0) {
+      problems.push(
+        'export metadata table disagrees with docs/source-support.json' +
+        `${missing.length > 0 ? `; missing ${missing.join(', ')}` : ''}` +
+        `${extra.length > 0 ? `; unexpected ${extra.join(', ')}` : ''}`,
+      );
+    }
+    for (const sourceDefinition of manifest.sources) {
+      const cells = rows.get(sourceDefinition.label);
+      if (!cells) continue;
+      const contract = sourceDefinition.exportMetadata;
+      if (!contract) {
+        problems.push(`${sourceDefinition.label}: exportMetadata is missing from docs/source-support.json`);
+        continue;
+      }
+      if (normalizeCell(cells[statusIndex] ?? '') !== contract.status) {
+        problems.push(`${sourceDefinition.label}: export metadata status must be ${contract.status}`);
+      }
+      if (canonicalTableDetail(cells[detailIndex] ?? '') !== canonicalTableDetail(contract.detail ?? '')) {
+        problems.push(`${sourceDefinition.label}: export metadata limitation must match the manifest detail`);
+      }
+    }
+  }
+  return problems;
+}
+
 export function pageContractProblems(page, source, manifest, options = {}) {
   const problems = [];
   const label = `${page.path} (${page.route})`;
   const intro = firstProse(source);
   const opening = firstProse(source, 700);
+
+  if (exportMetadataContractRoutes.has(page.route)) {
+    const markers = exportMetadataMarkers(source);
+    if (markers.length !== 1) {
+      problems.push(`${label}: canonical export page must have exactly one export-metadata-support table`);
+    }
+  }
 
   for (const invocation of commandBlocks(source, manifest)) {
     if (commandName(invocation, manifest) === 'ptah schema test' && schemaTestOverloadedRoot.test(invocation)) {
@@ -421,6 +489,7 @@ export function pageContractProblems(page, source, manifest, options = {}) {
   }
 
   problems.push(...declaredSourceListProblems(source, manifest).map((problem) => `${label}: ${problem}`));
+  problems.push(...exportMetadataTableProblems(source, manifest).map((problem) => `${label}: ${problem}`));
   return problems;
 }
 
@@ -435,8 +504,16 @@ function fixturePage(sourceMode, overrides = {}) {
 function selftest() {
   const manifest = {
     sources: [
-      { id: 'sql-file', label: 'SQL file', spelling: '--schema-file schema.sql', expressiveness: 'The Ptah DDL parser subset.' },
-      { id: 'go-annotations', label: 'Go annotations', spelling: '--root-dir ./models', expressiveness: 'The native Go annotation model.' },
+      {
+        id: 'sql-file', label: 'SQL file', spelling: '--schema-file schema.sql',
+        expressiveness: 'The Ptah DDL parser subset.',
+        exportMetadata: { status: 'unsupported-design', detail: 'SQL DDL cannot carry API names.' },
+      },
+      {
+        id: 'go-annotations', label: 'Go annotations', spelling: '--root-dir ./models',
+        expressiveness: 'The native Go annotation model.',
+        exportMetadata: { status: 'supported', detail: 'Annotations carry every API export attribute.' },
+      },
     ],
     entries: [
       { command: 'ptah migrations generate', source: 'sql-file', status: 'verified' },
@@ -489,6 +566,31 @@ function selftest() {
   if (!declaredSourceListProblems(staleList, manifest).some((problem) => problem.includes('missing Go annotations'))) {
     throw new Error('manual source list inconsistent with the manifest passed');
   }
+  const metadataTable = '<!-- export-metadata-support -->\n\n' +
+    '| Source | Status | Limitation |\n| --- | --- | --- |\n' +
+    '| SQL file | `unsupported-design` | SQL DDL cannot carry API names. |\n' +
+    '| Go annotations | `supported` | Annotations carry every API export attribute. |\n';
+  if (exportMetadataTableProblems(metadataTable, manifest).length !== 0) {
+    throw new Error('manifest-backed export metadata table failed');
+  }
+  const staleMetadataTable = metadataTable.replace('supported`', 'unsupported-design`');
+  if (!exportMetadataTableProblems(staleMetadataTable, manifest)
+    .some((problem) => problem.includes('Go annotations: export metadata status must be supported'))) {
+    throw new Error('stale export metadata status passed');
+  }
+  const contradictoryMetadataTable = metadataTable.replace(
+    'SQL DDL cannot carry API names.',
+    'SQL fully supports API export metadata without limitations.',
+  );
+  if (!exportMetadataTableProblems(contradictoryMetadataTable, manifest)
+    .some((problem) => problem.includes('SQL file: export metadata limitation must match the manifest detail'))) {
+    throw new Error('contradictory export metadata detail passed');
+  }
+  const exportPage = fixturePage(undefined, { route: '/schema/export/' });
+  if (!pageContractProblems(exportPage, 'No source contract.\n', manifest)
+    .some((problem) => problem.includes('exactly one export-metadata-support table'))) {
+    throw new Error('canonical export page without a metadata contract passed');
+  }
   const labelsOnly = '<!-- source-support-command: ptah migrations generate -->\n\n' +
     '| Source | Selector | Limitation |\n| --- | --- | --- |\n' +
     '| SQL file | `--root-dir schema.sql` | All sources are interchangeable. |\n' +
@@ -518,7 +620,7 @@ function selftest() {
   if (sourceModeDeclarationProblems(shReference, shSource).length !== 1) {
     throw new Error('authored reference page in an sh fence bypassed sourceMode discovery');
   }
-  console.log('check-source-page-contracts.mjs --selftest: OK (12 contract fixtures)');
+  console.log('check-source-page-contracts.mjs --selftest: OK (15 contract fixtures)');
 }
 
 function main() {

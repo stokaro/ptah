@@ -119,6 +119,36 @@ func TestRender_RefusesANilSchema(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 }
 
+// TestRender_RefusesExportMetadataBeforeRendering records DBML's deliberate
+// expressiveness boundary. A warning beside a usable document is insufficient:
+// the document would look canonical while losing the API contract carried by
+// the source schema.
+func TestRender_RefusesExportMetadataBeforeRendering(t *testing.T) {
+	c := qt.New(t)
+	db := bookshop()
+	db.Tables[1].APIName = "Account"
+	db.Fields[5].APINames.GraphQL = "emailAddress"
+
+	result, err := dbmlrender.Render(db, dbmlrender.Options{})
+
+	c.Assert(err, qt.ErrorMatches,
+		`.*DBML cannot represent API export metadata without loss:.*api_name="Account".*graphql_name="emailAddress".*`)
+	c.Assert(result.DBML, qt.Equals, "")
+	c.Assert(result.Omitted, qt.HasLen, 0)
+}
+
+func TestRender_IgnoresMetadataOnAnExcludedTable(t *testing.T) {
+	c := qt.New(t)
+	db := bookshop()
+	db.Tables[0].APIName = "articles"
+
+	result, err := dbmlrender.Render(db, dbmlrender.Options{ExcludeTables: []string{"posts"}})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.DBML, qt.Not(qt.Contains), `Table "public"."posts"`)
+	c.Assert(result.DBML, qt.Contains, `Table "public"."users"`)
+}
+
 // bookshop is one schema carrying one of each thing DBML can say, declared in
 // an order the renderer has to sort rather than echo.
 func bookshop() *schemamodel.Database {

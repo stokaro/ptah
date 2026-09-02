@@ -10,6 +10,7 @@ sourceOfTruth:
   - "cmd"
   - "core"
   - "migration"
+  - "core/yamlschema"
 generated: false
 overlaps: []
 disposition: keep
@@ -31,7 +32,7 @@ schema to Go structs or HCL syntax.
 ptah schema render --schema-file schema.yaml --dialect postgres
 ```
 
-`--schema-file` accepts `.yaml`, `.yml`, `.hcl`, and `.sql` inputs. This page
+`--schema-file` accepts `.yaml`, `.yml`, `.hcl`, `.sql`, and `.dbml` inputs. This page
 documents the YAML shape only. Relative inputs are confined to the process
 working directory after symbolic-link resolution; use an absolute pathname for
 an intentional source outside it, as detailed under [schema file paths](../native-commands/#schema-file-paths).
@@ -134,6 +135,10 @@ Each entry under `tables` declares one table.
 | --- | --- |
 | `name` | Database table name. Defaults to the map key. |
 | `struct_name` | Internal Go-schema owner name. Defaults to the map key. |
+| `api_name` | Shared OpenAPI, GraphQL, and Protobuf table-name fallback. |
+| `openapi_name` | Exact OpenAPI component key for this table. |
+| `graphql_name` | GraphQL type-name stem for this table. |
+| `proto_name` | Protobuf message-name stem for this table. |
 | `engine` | Table engine value for dialects that support it. |
 | `comment` | Table comment. |
 | `primary_key` | Table-level primary key column list. |
@@ -154,6 +159,12 @@ author order. Top-level maps render deterministically by sorted key.
 | --- | --- |
 | `name` | Database column name. Defaults to the column key. |
 | `field_name` | Internal Go-schema field name. Defaults to the column key. |
+| `api_name` | Shared OpenAPI, GraphQL, and Protobuf column-name fallback. |
+| `openapi_name` | Exact OpenAPI property key for this column. |
+| `graphql_name` | Exact GraphQL field identifier for this column. |
+| `proto_name` | Exact lower-snake-case Protobuf field name for this column. |
+| `api_type` | Contract-only type override shared by all three export targets. It must name a type Ptah maps or a declared enum. |
+| `api_expose` | Contract exposure: `read`, `write`, `read-write`, or `none`. |
 | `type` | SQL type or enum type name. |
 | `nullable` | Explicit nullability. |
 | `not_null` | Marks the column `NOT NULL`. |
@@ -182,6 +193,15 @@ author order. Top-level maps render deterministically by sorted key.
 
 If `enum` is provided and `type` is empty or `ENUM`, Ptah creates a generated
 enum type name and uses that type for the column.
+
+API names resolve from the target-specific key, then `api_name`, then the
+database name. GraphQL and Protobuf table values are stems that Ptah
+singularizes and PascalCases into a type or message name; their column values
+are exact field identifiers. API metadata changes generated OpenAPI, GraphQL,
+and Protobuf contracts, not DDL or migration planning. Unknown keys, invalid
+explicit target names, and per-target collisions fail before output. See
+[API schema export](../../schema/export/#names-in-the-contract) for complete
+semantics and examples.
 
 A column needs a name. An empty column key, or an explicit `name: ""`, fails
 rendering on every dialect with `table "<name>" declares a column that has no

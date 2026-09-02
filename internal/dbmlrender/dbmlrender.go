@@ -55,12 +55,40 @@ func Render(db *schemamodel.Database, opts Options) (Result, error) {
 		return Result{}, fmt.Errorf("schema database is nil")
 	}
 	b := &builder{db: db, opts: opts}
+	if metadata := b.selectedExportMetadata(); len(metadata) > 0 {
+		return Result{}, exportMetadataError(metadata)
+	}
 	return Result{DBML: b.render(), Omitted: omittedFamilies(db)}, nil
+}
+
+func exportMetadataError(metadata []schemamodel.ExportMetadata) error {
+	declarations := make([]string, 0, len(metadata))
+	for _, item := range metadata {
+		declarations = append(declarations, fmt.Sprintf(
+			"%s %q %s=%q",
+			item.Kind,
+			item.Name,
+			item.Attribute,
+			item.Value,
+		))
+	}
+	return fmt.Errorf(
+		"DBML cannot represent API export metadata without loss: %s; use YAML, HCL, or Go annotations",
+		strings.Join(declarations, "; "),
+	)
 }
 
 type builder struct {
 	db   *schemamodel.Database
 	opts Options
+}
+
+func (b *builder) selectedExportMetadata() []schemamodel.ExportMetadata {
+	selected := &schemamodel.Database{Tables: b.selected()}
+	for _, table := range selected.Tables {
+		selected.Fields = append(selected.Fields, b.fieldsOf(table)...)
+	}
+	return schemamodel.ExportMetadataIn(selected)
 }
 
 func (b *builder) render() string {

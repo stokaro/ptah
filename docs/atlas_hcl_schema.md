@@ -18,7 +18,7 @@ used as a Ptah schema source.
 go run ./cmd/ptah schema render --schema-file schema.hcl --dialect postgres
 ```
 
-`--schema-file` accepts `.hcl`, `.yaml`, `.yml`, and `.sql` inputs and is
+`--schema-file` accepts `.hcl`, `.yaml`, `.yml`, `.sql`, and `.dbml` inputs and is
 repeatable. It can be combined with repeatable `--root-dir` values; Ptah merges
 all inputs into one desired schema, deduplicates identical named objects, and
 rejects conflicting definitions. If `--dialect` is omitted, Ptah renders every
@@ -35,12 +35,15 @@ current schema IR:
 
 - `schema` labels and `comment`, for table namespace references such as
   `schema = schema.main`
-- `table` blocks, including Ptah `checks`, `custom`, and nested `platform`
-  parity extensions
+- `table` blocks, including Ptah `checks`, `custom`, `api_name`,
+  `openapi_name`, `graphql_name`, `proto_name`, and nested `platform` parity
+  extensions
 - `column` blocks with `type`, `null`, `auto_increment`, `unique`,
   `unique_expr`, `default`, `check`, `check_name`, `identity` (including its
   `options`), `comment`, and nested `platform` parity extensions; the Ptah
-  `enum` parity extension preserves inline Go-annotation enum values
+  `enum` parity extension preserves inline Go-annotation enum values, and
+  `api_name`, `openapi_name`, `graphql_name`, `proto_name`, `api_type`, and
+  `api_expose` preserve API export metadata
 - `primary_key` blocks with `columns`; PostgreSQL primary keys also support
   `include`
 - `index` blocks with `columns`, `on { column = ..., prefix = ... }`,
@@ -308,6 +311,48 @@ The `data.file` path is relative to the HCL file. Go annotation export rebases
 paths that were relative to a Go source file so the same data file is loaded
 after migration. Role passwords remain string literals in the exported HCL;
 treat those files as sensitive.
+
+### API export metadata
+
+Ptah HCL uses the following quoted-string attributes:
+
+| Attribute | Accepted on | Meaning |
+| --- | --- | --- |
+| `api_name` | `table`, `column` | Shared OpenAPI, GraphQL, and Protobuf name fallback. |
+| `openapi_name` | `table`, `column` | Exact OpenAPI component key on a table or property key on a column. |
+| `graphql_name` | `table`, `column` | GraphQL type-name stem on a table or exact field identifier on a column. |
+| `proto_name` | `table`, `column` | Protobuf message-name stem on a table or exact lower-snake-case field name on a column. |
+| `api_type` | `column` | Contract-only type override shared by all three export targets. |
+| `api_expose` | `column` | `read`, `write`, `read-write`, or `none`. |
+
+```hcl
+table "billing_invoices" {
+  api_name     = "invoices"
+  openapi_name = "invoice_documents"
+  graphql_name = "invoice_records"
+  proto_name   = "invoice_records"
+
+  column "billing_amount_minor" {
+    type         = integer
+    api_name     = "amount"
+    openapi_name = "amount_value"
+    graphql_name = "amountMinor"
+    proto_name   = "amount_minor"
+    api_type     = "TEXT"
+    api_expose   = "read"
+  }
+}
+```
+
+The target-specific attribute wins over `api_name`, which wins over the
+database identity. GraphQL and Protobuf table values are stems that Ptah
+singularizes and PascalCases; their column values are exact field identifiers.
+Canonical HCL rendering preserves every attribute above, including through OCI
+schema push and pull. Invalid target names, conflicts, and unknown or non-string
+attributes fail before output. Strict Atlas CE mode rejects this Ptah extension
+rather than silently discarding it. See
+[API schema export](site/src/content/docs/schema/export.mdx) for complete
+contract semantics and YAML/Go equivalents.
 
 Function, view, materialized-view, and trigger bodies remain raw SQL strings.
 Go annotation export emits them as opaque HCL text and reports a warning for

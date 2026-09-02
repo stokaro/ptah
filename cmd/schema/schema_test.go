@@ -342,27 +342,23 @@ type SecurityMarker struct{}
 	c.Assert(outAfter, qt.DeepEquals, outData)
 }
 
-// TestSchemaExportCommand_FailurePath_ExportMetadataCleanupPreservesSources is
-// the path the defect actually took (stokaro/ptah#2607).
-//
-// The diagnostic tests in internal/atlashclrender prove the loss is reported;
-// only this proves the report reaches the refusal, before the annotations are
-// gone. On master the same invocation printed
-// `Cleaned 1 file(s), removed 3 annotation line(s)`, exited 0, and left the API
-// contract nowhere: the HCL could not carry it and the Go sources no longer did.
-func TestSchemaExportCommand_FailurePath_ExportMetadataCleanupPreservesSources(t *testing.T) {
+// TestSchemaExportCommand_HappyPath_ExportMetadataSurvivesCleanup proves the
+// canonical HCL owns the whole API contract before Go annotations are removed.
+// Reparsing the file after cleanup is the boundary that failed in #2607: an
+// export that only happened to print the attributes would not satisfy it.
+func TestSchemaExportCommand_HappyPath_ExportMetadataSurvivesCleanup(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	modelPath := filepath.Join(dir, "model.go")
 	outPath := filepath.Join(dir, "schema.hcl")
 	modelData := []byte(`package models
 
-//ptah:schema:table name="users" api_name="Account"
+//ptah:schema:table name="users" api_name="Account" openapi_name="AccountDocument" graphql_name="AccountNode" proto_name="account_record"
 type User struct {
 	//ptah:schema:field name="id" type="INTEGER" primary="true"
 	ID int64
 
-	//ptah:schema:field name="email_addr" type="TEXT" api_name="email" api_expose="read"
+	//ptah:schema:field name="email_addr" type="TEXT" api_name="email" openapi_name="emailDocument" graphql_name="emailNode" proto_name="email_value" api_type="string" api_expose="read"
 	Email string
 }
 `)
@@ -380,12 +376,26 @@ type User struct {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorIs, goannotationexport.ErrLossyCleanup)
-	c.Assert(stderr.String(), qt.Contains, `export metadata api_name="Account" is not represented in HCL`)
-	c.Assert(stderr.String(), qt.Contains, `export metadata api_expose="read" is not represented in HCL`)
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
 	modelAfter, err := os.ReadFile(modelPath)
 	c.Assert(err, qt.IsNil)
-	c.Assert(modelAfter, qt.DeepEquals, modelData)
+	c.Assert(string(modelAfter), qt.Not(qt.Contains), "ptah:schema")
+	hclData, err := os.ReadFile(outPath)
+	c.Assert(err, qt.IsNil)
+	parsed, err := atlashcl.Parse(hclData, "schema.hcl")
+	c.Assert(err, qt.IsNil, qt.Commentf("schema.hcl:\n%s", hclData))
+	c.Assert(parsed.Tables, qt.HasLen, 1)
+	c.Assert(parsed.Tables[0].APIName, qt.Equals, "Account")
+	c.Assert(parsed.Tables[0].APINames.OpenAPI, qt.Equals, "AccountDocument")
+	c.Assert(parsed.Tables[0].APINames.GraphQL, qt.Equals, "AccountNode")
+	c.Assert(parsed.Tables[0].APINames.Protobuf, qt.Equals, "account_record")
+	c.Assert(parsed.Fields, qt.HasLen, 2)
+	c.Assert(parsed.Fields[1].APIName, qt.Equals, "email")
+	c.Assert(parsed.Fields[1].APINames.OpenAPI, qt.Equals, "emailDocument")
+	c.Assert(parsed.Fields[1].APINames.GraphQL, qt.Equals, "emailNode")
+	c.Assert(parsed.Fields[1].APINames.Protobuf, qt.Equals, "email_value")
+	c.Assert(parsed.Fields[1].APIType, qt.Equals, "string")
+	c.Assert(parsed.Fields[1].APIExpose, qt.Equals, "read")
 }
 
 // TestSchemaExportCommand_HappyPath_CleanupWithoutExportMetadata is the control

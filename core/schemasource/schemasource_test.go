@@ -29,11 +29,11 @@ var helperModes = map[string]func(){
 		exitHelper(0)
 	},
 	"yaml": func() {
-		fmt.Fprint(os.Stdout, "tables:\n  widgets:\n    columns:\n      id: {type: INTEGER, primary: true}\n      name: {type: TEXT, not_null: true}\n")
+		fmt.Fprint(os.Stdout, "tables:\n  widgets:\n    api_name: catalog_items\n    openapi_name: widget_documents\n    graphql_name: Widget\n    proto_name: widget_records\n    columns:\n      id: {type: INTEGER, primary: true}\n      name: {type: TEXT, not_null: true, api_name: label, openapi_name: display_name, graphql_name: displayName, proto_name: display_name, api_type: VARCHAR(255), api_expose: read}\n")
 		exitHelper(0)
 	},
 	"hcl": func() {
-		fmt.Fprint(os.Stdout, "table \"widgets\" {\n  column \"id\" {\n    type = int\n  }\n  column \"name\" {\n    type = text\n    null = false\n  }\n  primary_key {\n    columns = [column.id]\n  }\n}\n")
+		fmt.Fprint(os.Stdout, "table \"widgets\" {\n  api_name = \"catalog_items\"\n  openapi_name = \"widget_documents\"\n  graphql_name = \"Widget\"\n  proto_name = \"widget_records\"\n  column \"id\" {\n    type = int\n  }\n  column \"name\" {\n    type = text\n    null = false\n    api_name = \"label\"\n    openapi_name = \"display_name\"\n    graphql_name = \"displayName\"\n    proto_name = \"display_name\"\n    api_type = \"VARCHAR(255)\"\n    api_expose = \"read\"\n  }\n  primary_key {\n    columns = [column.id]\n  }\n}\n")
 		exitHelper(0)
 	},
 	"badsql": func() {
@@ -244,7 +244,17 @@ func TestRun_ParsesYAMLStdout(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, "widgets")
+	c.Assert(db.Tables[0].APIName, qt.Equals, "catalog_items")
+	c.Assert(db.Tables[0].APINames.OpenAPI, qt.Equals, "widget_documents")
+	c.Assert(db.Tables[0].APINames.GraphQL, qt.Equals, "Widget")
+	c.Assert(db.Tables[0].APINames.Protobuf, qt.Equals, "widget_records")
 	c.Assert(db.Fields, qt.HasLen, 2)
+	c.Assert(db.Fields[1].APIName, qt.Equals, "label")
+	c.Assert(db.Fields[1].APINames.OpenAPI, qt.Equals, "display_name")
+	c.Assert(db.Fields[1].APINames.GraphQL, qt.Equals, "displayName")
+	c.Assert(db.Fields[1].APINames.Protobuf, qt.Equals, "display_name")
+	c.Assert(db.Fields[1].APIType, qt.Equals, "VARCHAR(255)")
+	c.Assert(db.Fields[1].APIExpose, qt.Equals, "read")
 }
 
 func TestRun_ParsesHCLStdout(t *testing.T) {
@@ -259,7 +269,17 @@ func TestRun_ParsesHCLStdout(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, "widgets")
+	c.Assert(db.Tables[0].APIName, qt.Equals, "catalog_items")
+	c.Assert(db.Tables[0].APINames.OpenAPI, qt.Equals, "widget_documents")
+	c.Assert(db.Tables[0].APINames.GraphQL, qt.Equals, "Widget")
+	c.Assert(db.Tables[0].APINames.Protobuf, qt.Equals, "widget_records")
 	c.Assert(db.Fields, qt.HasLen, 2)
+	c.Assert(db.Fields[1].APIName, qt.Equals, "label")
+	c.Assert(db.Fields[1].APINames.OpenAPI, qt.Equals, "display_name")
+	c.Assert(db.Fields[1].APINames.GraphQL, qt.Equals, "displayName")
+	c.Assert(db.Fields[1].APINames.Protobuf, qt.Equals, "display_name")
+	c.Assert(db.Fields[1].APIType, qt.Equals, "VARCHAR(255)")
+	c.Assert(db.Fields[1].APIExpose, qt.Equals, "read")
 }
 
 func TestRun_SurfacesStderrOnFailure(t *testing.T) {

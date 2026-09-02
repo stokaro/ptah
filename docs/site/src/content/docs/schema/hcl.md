@@ -9,6 +9,8 @@ goal: "Render a desired schema from Atlas-compatible HCL."
 sourceOfTruth:
   - "cmd/schema"
   - "internal/schemaload"
+  - "internal/atlashcl"
+  - "internal/atlashclrender"
 generated: false
 overlaps: []
 disposition: keep
@@ -98,6 +100,45 @@ Path confinement is shared by every `--schema-file` source; see
 
 To replace Go annotations with an HCL source, use the review-aware one-time
 export workflow in [Go annotations](../go-annotations/#move-the-schema-to-hcl).
+
+## Declare API export metadata
+
+Ptah HCL extends the Atlas-compatible table and column blocks with contract
+metadata. Tables accept `api_name`, `openapi_name`, `graphql_name`, and
+`proto_name`. Columns accept those four attributes plus `api_type` and
+`api_expose`:
+
+```hcl
+table "billing_invoices" {
+  api_name     = "invoices"
+  openapi_name = "invoice_documents"
+  graphql_name = "invoice_records"
+  proto_name   = "invoice_records"
+
+  column "billing_amount_minor" {
+    type         = integer
+    api_name     = "amount"
+    openapi_name = "amount_value"
+    graphql_name = "amountMinor"
+    proto_name   = "amount_minor"
+    api_type     = "TEXT"
+    api_expose   = "read"
+  }
+}
+```
+
+The target-specific name wins over `api_name`, which wins over the database
+name. Table GraphQL and Protobuf values are type/message stems; column GraphQL
+and Protobuf values are exact field names. `api_type` changes only the generated
+contract type, and `api_expose` accepts `read`, `write`, `read-write`, or
+`none`. Canonical HCL export and OCI schema artifacts preserve all six column
+attributes and all four table attributes. Unknown or non-string attributes fail
+before output. See [API schema export](../export/#names-in-the-contract) for
+target naming rules and collision behavior.
+
+These attributes are Ptah extensions, not Atlas CE schema syntax. Native Ptah
+and the default compatibility profile preserve them; strict Atlas CE mode
+refuses a schema that contains API export metadata instead of discarding it.
 
 ## Use it
 

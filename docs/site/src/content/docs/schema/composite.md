@@ -80,6 +80,21 @@ objects, and roles. Ptah resolves table-scoped identities before comparing
 definitions, so different Go struct names cannot hide a database-object
 conflict.
 
+API export metadata follows the same complete-definition rule. A table or
+column loaded from YAML, HCL, or Go keeps its `api_name`, target-specific names,
+`api_type`, and `api_expose` in the merged schema. Identical complete
+definitions deduplicate. If another source declares the same database identity
+with missing or different metadata, the definitions conflict before rendering
+or connecting; Ptah does not guess that one source is a metadata overlay.
+
+SQL and DBML cannot author this metadata, so do not repeat a YAML/HCL/Go-owned
+table in one of those formats merely to add storage syntax. Give each component
+distinct object ownership instead. An external loader carries metadata only
+when its declared payload is YAML or HCL, and an OCI component carries the
+metadata preserved in its canonical HCL artifact. See
+[API schema export](../export/#names-in-the-contract) for the source-by-source
+contract.
+
 ## Source boundaries and type ownership
 
 Treat each repeatable `--root-dir` and `--schema-file` value, plus the selected

@@ -30,8 +30,14 @@ func (p *parser) enum() error {
 		}
 		// A value may carry a note, which describes it rather than defines it.
 		if p.isPunct("[") {
-			if _, err := p.settings(); err != nil {
+			settings, err := p.settings()
+			if err != nil {
 				return err
+			}
+			for _, entry := range settings {
+				if err := rejectExportMetadataSetting("enum value", entry); err != nil {
+					return p.wrapAt(err)
+				}
 			}
 		}
 		enum.Values = append(enum.Values, value)
@@ -60,8 +66,14 @@ func (p *parser) table() error {
 		}
 	}
 	if p.isPunct("[") {
-		if _, err := p.settings(); err != nil {
+		settings, err := p.settings()
+		if err != nil {
 			return err
+		}
+		for _, entry := range settings {
+			if err := rejectExportMetadataSetting("table", entry); err != nil {
+				return p.wrapAt(err)
+			}
 		}
 	}
 	if err := p.expectPunct("{"); err != nil {

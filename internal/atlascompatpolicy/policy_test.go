@@ -206,6 +206,7 @@ func TestStrictCEValidatesDesiredSchemaExtensions(t *testing.T) {
 		{name: "roles", database: &schemamodel.Database{Roles: []schemamodel.Role{{}}}},
 		{name: "grants", database: &schemamodel.Database{Grants: []schemamodel.Grant{{}}}},
 		{name: "managed data", database: &schemamodel.Database{ManagedData: []schemamodel.ManagedData{{}}}},
+		{name: "API export metadata", database: &schemamodel.Database{Tables: []schemamodel.Table{{Name: "users", APIName: "Account"}}}},
 		{name: "table partitioning", database: &schemamodel.Database{Tables: []schemamodel.Table{{Partition: &schemamodel.PartitionSpec{}}}}},
 		{name: "platform overrides", database: &schemamodel.Database{Fields: []schemamodel.Field{{Overrides: map[string]map[string]string{"mysql": {"type": "bigint"}}}}}},
 	}

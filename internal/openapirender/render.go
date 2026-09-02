@@ -7,6 +7,7 @@ package openapirender
 import (
 	"bytes"
 	"fmt"
+	"regexp"
 	"strings"
 
 	yaml "go.yaml.in/yaml/v3"
@@ -20,6 +21,8 @@ const (
 	defaultTitle   = "Ptah Exported Schema"
 	defaultVersion = "1.0.0"
 )
+
+var openAPIComponentNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // withheldOnly keeps the diagnostics whose column reached neither shape.
 func withheldOnly(diagnostics []schemaexport.Diagnostic, emitted []schemamodel.Field) []schemaexport.Diagnostic {
@@ -91,6 +94,12 @@ type Result struct {
 	Diagnostics []schemaexport.Diagnostic
 }
 
+type tableSchemaResult struct {
+	name        string
+	schema      *schemaObject
+	diagnostics []schemaexport.Diagnostic
+}
+
 // Render renders db as a deterministic OpenAPI 3.0 YAML document.
 func Render(db *schemamodel.Database, opts Options) (Result, error) {
 	if db == nil {
@@ -101,6 +110,9 @@ func Render(db *schemamodel.Database, opts Options) (Result, error) {
 		IncludeTables: opts.IncludeTables,
 		ExcludeTables: opts.ExcludeTables,
 	})
+	if err := validateComponentNames(tables); err != nil {
+		return Result{}, err
+	}
 	// Refused before anything is written, for the same reason a field
 	// collision is: a table that shadows another drops it from the document,
 	// and the document cannot record that it lost one.
@@ -116,75 +128,12 @@ func Render(db *schemamodel.Database, opts Options) (Result, error) {
 	}
 	schemas := newOrderedMap()
 	for _, table := range tables {
-		// One schema per table carries both contract directions, so the read
-		// shape decides membership and the write-only columns are added to it
-		// below. OpenAPI 3.0 says a writeOnly property is still declared and
-		// merely not returned, which is why this is a shape declaration rather
-		// than a second document.
-		fields, exposureDiagnostics, err := schemaexport.ExposedFields(
-			db, table, schemaexport.ShapeRead, policy)
+		result, err := renderTableSchema(db, table, policy, enums)
 		if err != nil {
 			return Result{}, err
 		}
-		writable, _, err := schemaexport.ExposedFields(db, table, schemaexport.ShapeWrite, policy)
-		if err != nil {
-			return Result{}, err
-		}
-		fields, writeOnly, readOnlyNames := mergeWriteOnly(fields, writable)
-		// The shared model reports per shape, and this target publishes one
-		// schema carrying both. A column the read shape withheld but the write
-		// shape kept IS in the document, marked writeOnly, so reporting it as
-		// omitted would describe something the reader can see is there.
-		diagnostics = append(diagnostics, withheldOnly(exposureDiagnostics, fields)...)
-		// Refused before anything is written: an alias that shadows another
-		// column would drop it from the document, and the reader of the
-		// document has nothing left to notice the loss with. It reads the
-		// EXPORTED set, so two columns colliding on api_name where a policy
-		// publishes only one of them is not a collision.
-		if err := schemaexport.ValidateFieldAPINames(table, fields, schemaexport.TargetOpenAPI); err != nil {
-			return Result{}, err
-		}
-		pk := toSet(schemaexport.EffectivePrimaryKey(table, fields))
-		obj := &schemaObject{Type: "object"}
-		obj.Description = table.Comment
-		properties := newOrderedMap()
-		var required []string
-		for _, field := range fields {
-			// The API type is substituted once here, so the mapping, the array
-			// detection and the enum lookup below all read one answer.
-			projected := schemaexport.ProjectedField(field)
-			if err := schemaexport.RefuseUnknownAPIType(
-				table, field, schemaexport.TargetOpenAPI, enums,
-				func(t string) bool { return mapOpenAPIType(t).Known },
-			); err != nil {
-				return Result{}, err
-			}
-			property, diag := columnSchema(table, projected, enums, pk)
-			if diag != nil {
-				diagnostics = append(diagnostics, *diag)
-			}
-			// readOnly and writeOnly are OpenAPI's own words for the two
-			// directions, so the shape is declared on the property rather than
-			// by emitting a second schema. They are set on the property and
-			// never on an items sub-schema, where the specification says they
-			// mean nothing.
-			property.ReadOnly = readOnlyNames[field.Name]
-			property.WriteOnly = writeOnly[field.Name]
-			apiName := schemaexport.FieldAPIName(field, schemaexport.TargetOpenAPI)
-			properties.set(apiName, property)
-			// A primary-key column is NOT NULL by SQL rule, regardless of how the
-			// nullability was declared on the source annotation. The membership
-			// test stays on the COLUMN name: the primary key is a property of
-			// the table, not of what the column is published as.
-			if !field.Nullable || pk[field.Name] {
-				required = append(required, apiName)
-			}
-		}
-		obj.Required = required
-		if properties.len() > 0 {
-			obj.Properties = properties
-		}
-		schemas.set(schemaexport.TableAPIName(table, schemaexport.TargetOpenAPI), obj)
+		diagnostics = append(diagnostics, result.diagnostics...)
+		schemas.set(result.name, result.schema)
 	}
 
 	doc := document{
@@ -208,6 +157,106 @@ func Render(db *schemamodel.Database, opts Options) (Result, error) {
 		return Result{}, fmt.Errorf("finalize OpenAPI document: %w", err)
 	}
 	return Result{Data: buf.Bytes(), Diagnostics: diagnostics}, nil
+}
+
+func validateComponentNames(tables []schemamodel.Table) error {
+	for _, table := range tables {
+		attribute, declared := "openapi_name", table.APINames.OpenAPI
+		if declared == "" && table.APIName != "" {
+			attribute, declared = "api_name", table.APIName
+		}
+		if declared != "" && !openAPIComponentNamePattern.MatchString(
+			schemaexport.TableAPIName(table, schemaexport.TargetOpenAPI),
+		) {
+			return fmt.Errorf(
+				"table %q declares %s %q, which is not a valid OpenAPI component name",
+				table.Name,
+				attribute,
+				declared,
+			)
+		}
+	}
+	return nil
+}
+
+func renderTableSchema(
+	db *schemamodel.Database,
+	table schemamodel.Table,
+	policy schemaexport.FieldPolicy,
+	enums map[string][]string,
+) (tableSchemaResult, error) {
+	// One schema per table carries both contract directions, so the read
+	// shape decides membership and the write-only columns are added to it
+	// below. OpenAPI 3.0 says a writeOnly property is still declared and
+	// merely not returned, which is why this is a shape declaration rather
+	// than a second document.
+	fields, exposureDiagnostics, err := schemaexport.ExposedFields(
+		db, table, schemaexport.ShapeRead, policy)
+	if err != nil {
+		return tableSchemaResult{}, err
+	}
+	writable, _, err := schemaexport.ExposedFields(db, table, schemaexport.ShapeWrite, policy)
+	if err != nil {
+		return tableSchemaResult{}, err
+	}
+	fields, writeOnly, readOnlyNames := mergeWriteOnly(fields, writable)
+	// The shared model reports per shape, and this target publishes one
+	// schema carrying both. A column the read shape withheld but the write
+	// shape kept IS in the document, marked writeOnly, so reporting it as
+	// omitted would describe something the reader can see is there.
+	diagnostics := withheldOnly(exposureDiagnostics, fields)
+	// Refused before anything is written: an alias that shadows another
+	// column would drop it from the document, and the reader of the
+	// document has nothing left to notice the loss with. It reads the
+	// EXPORTED set, so two columns colliding on api_name where a policy
+	// publishes only one of them is not a collision.
+	if err := schemaexport.ValidateFieldAPINames(table, fields, schemaexport.TargetOpenAPI); err != nil {
+		return tableSchemaResult{}, err
+	}
+	pk := toSet(schemaexport.EffectivePrimaryKey(table, fields))
+	obj := &schemaObject{Type: "object", Description: table.Comment}
+	properties := newOrderedMap()
+	var required []string
+	for _, field := range fields {
+		// The API type is substituted once here, so the mapping, the array
+		// detection and the enum lookup below all read one answer.
+		projected := schemaexport.ProjectedField(field)
+		if err := schemaexport.RefuseUnknownAPIType(
+			table, field, schemaexport.TargetOpenAPI, enums,
+			func(t string) bool { return mapOpenAPIType(t).Known },
+		); err != nil {
+			return tableSchemaResult{}, err
+		}
+		property, diag := columnSchema(table, projected, enums, pk)
+		if diag != nil {
+			diagnostics = append(diagnostics, *diag)
+		}
+		// readOnly and writeOnly are OpenAPI's own words for the two
+		// directions, so the shape is declared on the property rather than
+		// by emitting a second schema. They are set on the property and
+		// never on an items sub-schema, where the specification says they
+		// mean nothing.
+		property.ReadOnly = readOnlyNames[field.Name]
+		property.WriteOnly = writeOnly[field.Name]
+		apiName := schemaexport.FieldAPIName(field, schemaexport.TargetOpenAPI)
+		properties.set(apiName, property)
+		// A primary-key column is NOT NULL by SQL rule, regardless of how the
+		// nullability was declared on the source annotation. The membership
+		// test stays on the COLUMN name: the primary key is a property of
+		// the table, not of what the column is published as.
+		if !field.Nullable || pk[field.Name] {
+			required = append(required, apiName)
+		}
+	}
+	obj.Required = required
+	if properties.len() > 0 {
+		obj.Properties = properties
+	}
+	return tableSchemaResult{
+		name:        schemaexport.TableAPIName(table, schemaexport.TargetOpenAPI),
+		schema:      obj,
+		diagnostics: diagnostics,
+	}, nil
 }
 
 // columnSchema builds the Schema Object for one column, resolving enums and

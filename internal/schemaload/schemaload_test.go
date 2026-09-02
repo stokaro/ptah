@@ -11,6 +11,7 @@ import (
 
 	"go.5x5.cz/ptah/catalog"
 	"go.5x5.cz/ptah/core/renderer"
+	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/schemasource"
 	"go.5x5.cz/ptah/internal/schemaload"
 	"go.5x5.cz/ptah/migration/planner"
@@ -121,7 +122,7 @@ func TestLoad_MergesMultipleRoots(t *testing.T) {
 	rootB := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(rootA, "users.go"), []byte(`package entities
 
-//ptah:schema:table name="users"
+//ptah:schema:table name="users" api_name="accounts"
 type User struct {
 	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
@@ -139,6 +140,9 @@ type Order struct {
 	db, err := schemaload.Load(schemaload.Options{RootDirs: []string{rootA, rootB}})
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 2)
+	c.Assert(schemamodel.ExportMetadataIn(db), qt.DeepEquals, []schemamodel.ExportMetadata{
+		{Kind: "table", Name: "users", Attribute: "api_name", Value: "accounts"},
+	})
 }
 
 func TestLoad_RejectsMissingRoot(t *testing.T) {
@@ -180,7 +184,7 @@ func TestLoad_MergesGoYAMLAndAtlasHCLSources(t *testing.T) {
 	root := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(root, "users.go"), []byte(`package entities
 
-//ptah:schema:table name="users"
+//ptah:schema:table name="users" api_name="accounts"
 type User struct {
 	//ptah:schema:field name="id" type="SERIAL" primary="true"
 	ID int64
@@ -192,12 +196,15 @@ type User struct {
 	c.Assert(os.WriteFile(yamlPath, []byte(`
 tables:
   orders:
+    graphql_name: OrderRecord
     columns:
       id: { type: SERIAL, primary: true }
 `), 0o600), qt.IsNil)
 	hclPath := filepath.Join(dir, "products.hcl")
 	c.Assert(os.WriteFile(hclPath, []byte(`
 table "products" {
+  proto_name = "product_records"
+
   column "id" {
     type = int
   }
@@ -214,6 +221,13 @@ table "products" {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 3)
+	metadata := make(map[string]schemamodel.Table, len(db.Tables))
+	for _, table := range db.Tables {
+		metadata[table.Name] = table
+	}
+	c.Assert(metadata["users"].APIName, qt.Equals, "accounts")
+	c.Assert(metadata["orders"].APINames.GraphQL, qt.Equals, "OrderRecord")
+	c.Assert(metadata["products"].APINames.Protobuf, qt.Equals, "product_records")
 }
 
 func TestLoad_MergesMultipleSchemaFiles(t *testing.T) {
@@ -295,9 +309,9 @@ func TestLoad_MergesGoRootAndSchemaCommand(t *testing.T) {
 	root := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(root, "users.go"), []byte(`package entities
 
-//ptah:schema:table name="users"
+//ptah:schema:table name="users" api_name="accounts" graphql_name="Account"
 type User struct {
-	//ptah:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true" api_name="identifier" proto_name="identifier" api_type="BIGINT" api_expose="read"
 	ID int64
 }
 `), 0o600), qt.IsNil)
@@ -308,6 +322,14 @@ type User struct {
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 2)
+	c.Assert(schemamodel.ExportMetadataIn(db), qt.DeepEquals, []schemamodel.ExportMetadata{
+		{Kind: "table", Name: "users", Attribute: "api_name", Value: "accounts"},
+		{Kind: "table", Name: "users", Attribute: "graphql_name", Value: "Account"},
+		{Kind: "column", Name: "users.id", Attribute: "api_expose", Value: "read"},
+		{Kind: "column", Name: "users.id", Attribute: "api_name", Value: "identifier"},
+		{Kind: "column", Name: "users.id", Attribute: "api_type", Value: "BIGINT"},
+		{Kind: "column", Name: "users.id", Attribute: "proto_name", Value: "identifier"},
+	})
 }
 
 func TestLoadContext_OCIReferenceFailurePath(t *testing.T) {
@@ -327,9 +349,9 @@ func TestLoad_IdenticalGoAndYAMLSourcesDeduplicate(t *testing.T) {
 	root := t.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(root, "users.go"), []byte(`package entities
 
-//ptah:schema:table name="users"
+//ptah:schema:table name="users" api_name="accounts" graphql_name="Account"
 type User struct {
-	//ptah:schema:field name="id" type="SERIAL" primary="true"
+	//ptah:schema:field name="id" type="SERIAL" primary="true" api_name="identifier" proto_name="identifier" api_type="BIGINT" api_expose="read"
 	ID int64
 }
 `), 0o600), qt.IsNil)
@@ -338,8 +360,10 @@ type User struct {
 	c.Assert(os.WriteFile(yamlPath, []byte(`
 tables:
   users:
+    api_name: accounts
+    graphql_name: Account
     columns:
-      id: { type: SERIAL, primary: true }
+      id: { type: SERIAL, primary: true, api_name: identifier, proto_name: identifier, api_type: BIGINT, api_expose: read }
 `), 0o600), qt.IsNil)
 
 	db, err := schemaload.Load(schemaload.Options{
@@ -350,6 +374,92 @@ tables:
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Fields, qt.HasLen, 1)
+	c.Assert(db.Tables[0].APIName, qt.Equals, "accounts")
+	c.Assert(db.Tables[0].APINames.GraphQL, qt.Equals, "Account")
+	c.Assert(db.Fields[0].APIName, qt.Equals, "identifier")
+	c.Assert(db.Fields[0].APINames.Protobuf, qt.Equals, "identifier")
+	c.Assert(db.Fields[0].APIType, qt.Equals, "BIGINT")
+	c.Assert(db.Fields[0].APIExpose, qt.Equals, "read")
+}
+
+func TestLoad_CompositeMetadataConflictsAreOrderIndependent(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	first := filepath.Join(dir, "first.yaml")
+	second := filepath.Join(dir, "second.yaml")
+	c.Assert(os.WriteFile(first, []byte(`
+tables:
+  users:
+    graphql_name: Account
+    columns:
+      id: { type: SERIAL, primary: true }
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(second, []byte(`
+tables:
+  users:
+    graphql_name: UserAccount
+    columns:
+      id: { type: SERIAL, primary: true }
+`), 0o600), qt.IsNil)
+
+	for _, files := range [][]string{{first, second}, {second, first}} {
+		db, err := schemaload.Load(schemaload.Options{SchemaFiles: files})
+
+		c.Assert(err, qt.ErrorMatches,
+			`error merging composite schema: conflicting table "users" definitions`)
+		c.Assert(db, qt.IsNil)
+	}
+}
+
+func TestLoad_CompositeDoesNotTreatMetadataAsAnOverlay(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	plain := filepath.Join(dir, "plain.yaml")
+	metadata := filepath.Join(dir, "metadata.yaml")
+	c.Assert(os.WriteFile(plain, []byte(`
+tables:
+  users:
+    columns:
+      id: { type: SERIAL, primary: true }
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(metadata, []byte(`
+tables:
+  users:
+    api_name: accounts
+    columns:
+      id: { type: SERIAL, primary: true }
+`), 0o600), qt.IsNil)
+
+	db, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{plain, metadata}})
+
+	c.Assert(err, qt.ErrorMatches,
+		`error merging composite schema: conflicting table "users" definitions`)
+	c.Assert(db, qt.IsNil)
+}
+
+func TestLoad_CompositeFieldMetadataConflictIsRefused(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	first := filepath.Join(dir, "first.yaml")
+	second := filepath.Join(dir, "second.yaml")
+	c.Assert(os.WriteFile(first, []byte(`
+tables:
+  users:
+    columns:
+      id: { type: SERIAL, primary: true, api_name: identifier }
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(second, []byte(`
+tables:
+  users:
+    columns:
+      id: { type: SERIAL, primary: true, api_name: id }
+`), 0o600), qt.IsNil)
+
+	db, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{first, second}})
+
+	c.Assert(err, qt.ErrorMatches,
+		`error merging composite schema: conflicting field "id" definitions on table "users"`)
+	c.Assert(db, qt.IsNil)
 }
 
 func TestLoad_ConflictingGoAndYAMLSourcesFail(t *testing.T) {

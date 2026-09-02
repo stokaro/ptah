@@ -10,6 +10,8 @@ sourceOfTruth:
   - "cmd"
   - "core"
   - "migration"
+  - "internal/atlashcl"
+  - "internal/atlashclrender"
 generated: false
 overlaps: []
 disposition: keep
@@ -95,8 +97,8 @@ for the message and the flag it names.
 | Object | Supported shape |
 | --- | --- |
 | `schema` | Labels and comments for table namespace references. |
-| `table` | Columns, keys, indexes, constraints, checks, row security, and Ptah `checks`, `custom`, and `platform` extensions. |
-| `column` | Type, nullability, defaults, generated/identity metadata, comments, checks, and Ptah `enum` and `platform` extensions. |
+| `table` | Columns, keys, indexes, constraints, checks, row security, and Ptah `checks`, `custom`, `platform`, `api_name`, `openapi_name`, `graphql_name`, and `proto_name` extensions. |
+| `column` | Type, nullability, defaults, generated/identity metadata, comments, checks, and Ptah `enum`, `platform`, `api_name`, `openapi_name`, `graphql_name`, `proto_name`, `api_type`, and `api_expose` extensions. |
 | `primary_key` | `columns`; PostgreSQL also supports `include`. |
 | `index` | `columns`, `on { column = ... }`, `on { expr = ... }`, `desc`, `on { nulls_first = ... }` or `on { nulls_last = ... }`, `unique`, `type`, `where`, `comment`, ClickHouse `granularity`, and PostgreSQL include/storage options. |
 | `constraint` | Ptah block used when annotation metadata cannot fit the Atlas-native constraint blocks, and for `EXCLUDE` constraints. |
@@ -121,6 +123,34 @@ for the message and the flag it names.
 | `synonym` | SQL Server alias: `target`, plus the `schema` the alias lives in and a comment. |
 | `extended_property` | SQL Server named value: `value`, and the object it is attached to as `schema`, `table` and `column`. |
 | `data` | Ptah managed-data declaration with a table reference, key columns, and a file path relative to the HCL file. |
+
+## API export metadata attributes
+
+API export metadata is a Ptah HCL extension. All values are quoted strings:
+
+| Attribute | Accepted on | Meaning |
+| --- | --- | --- |
+| `api_name` | `table`, `column` | Shared OpenAPI, GraphQL, and Protobuf name fallback. |
+| `openapi_name` | `table`, `column` | Exact OpenAPI component key on a table or property key on a column. |
+| `graphql_name` | `table`, `column` | GraphQL type-name stem on a table or exact field identifier on a column. |
+| `proto_name` | `table`, `column` | Protobuf message-name stem on a table or exact lower-snake-case field name on a column. |
+| `api_type` | `column` | Contract-only type override shared by all three targets. It must name a type Ptah maps or a declared enum. |
+| `api_expose` | `column` | Contract exposure: `read`, `write`, `read-write`, or `none`. |
+
+Names resolve from the target-specific attribute, then `api_name`, then the
+database identity. Ptah singularizes and PascalCases GraphQL and Protobuf table
+stems into final type/message names; it does not rewrite an invalid explicit
+field identifier. Invalid target names and collisions fail before output.
+These attributes affect OpenAPI, GraphQL, and Protobuf exports only; they do not
+change DDL or migration planning.
+
+Canonical HCL rendering includes every non-empty attribute above. Parsing the
+rendered document and rendering it again must produce the same bytes, and OCI
+schema artifacts use that canonical form. Native Ptah and the default
+compatibility profile preserve the extension. Strict Atlas CE mode rejects a
+schema carrying it rather than silently dropping it. See
+[API schema export](../../schema/export/#names-in-the-contract) for
+source-neutral examples and the target-specific behavior.
 
 An `extended_property` block names its owner with plain strings rather than
 block references, and the level it stops at is the scope it applies to. A block

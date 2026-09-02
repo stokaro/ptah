@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 )
 
 // ExportMetadata names one export-only attribute a declaration carries.
@@ -28,13 +29,14 @@ type ExportMetadata struct {
 // ExportMetadataIn names every export-only attribute the database declares, in
 // a stable order.
 //
-// It exists because HCL has no spelling for any of them (stokaro/ptah#2607).
-// Rendering a document that carries them is a real loss, and a loss nothing
-// reports is what let `ptah schema export --to hcl --cleanup-go-annotations`
-// delete the Go annotations holding an API contract and exit 0 -- measured, the
-// published OpenAPI schema went from `AccountDoc` with property `emailDoc` and
-// `readOnly: true` to `users` with property `email_addr` and no exposure, with
-// nothing said and nowhere left to read the original.
+// It is the shared census for every boundary that must either preserve this
+// metadata or refuse it: HCL and OCI preserve the attributes, strict Atlas CE
+// rejects the Ptah extension, and formats without a lossless spelling reject a
+// conversion before producing output. Export-only model fields carry a
+// ptah_export tag, and the census reads that tag rather than a parallel list.
+// The model test requires every API-prefixed field to carry one, so a newly
+// added attribute fails the guard until each boundary makes an explicit
+// preservation decision (stokaro/ptah#2607).
 func ExportMetadataIn(db *Database) []ExportMetadata {
 	if db == nil {
 		return nil
@@ -56,70 +58,47 @@ func ExportMetadataIn(db *Database) []ExportMetadata {
 }
 
 func tableExportMetadata(table Table) []ExportMetadata {
-	name := table.QualifiedName()
-	found := namedExportMetadata("table", name, map[string]string{
-		"api_name": table.APIName,
-	})
-	return append(found, targetNameMetadata("table", name, table.APINames)...)
+	return taggedExportMetadata("table", table.QualifiedName(), reflect.ValueOf(table))
 }
 
 func fieldExportMetadata(field Field, db *Database) []ExportMetadata {
 	name := fmt.Sprintf("%s.%s", fieldTableName(field, db), field.Name)
-	found := namedExportMetadata("column", name, map[string]string{
-		"api_name":   field.APIName,
-		"api_type":   field.APIType,
-		"api_expose": field.APIExpose,
-	})
-	return append(found, targetNameMetadata("column", name, field.APINames)...)
+	return taggedExportMetadata("column", name, reflect.ValueOf(field))
 }
 
-// targetNameMetadata reads [TargetNames] by reflection rather than by listing
-// its fields.
-//
-// A per-target name that is added to the struct and forgotten here would be
-// lost exactly the way every attribute in this file already was, and silently:
-// the loss report is the only thing standing between such an attribute and a
-// cleanup that deletes it. Reflection makes the list impossible to fall behind.
-// TestTargetNamesAreAllReported holds the two spellings together.
-func targetNameMetadata(kind, name string, names TargetNames) []ExportMetadata {
-	values := reflect.ValueOf(names)
-	fields := values.Type()
-	declared := make(map[string]string, fields.NumField())
+func taggedExportMetadata(kind, name string, value reflect.Value) []ExportMetadata {
+	fields := value.Type()
+	found := make([]ExportMetadata, 0)
 	for i := range fields.NumField() {
-		declared[TargetNameAttribute(fields.Field(i).Name)] = values.Field(i).String()
+		field := fields.Field(i)
+		attribute, tagged := field.Tag.Lookup("ptah_export")
+		if !tagged {
+			continue
+		}
+		if attribute == ",inline" {
+			found = append(found, taggedExportMetadata(kind, name, value.Field(i))...)
+			continue
+		}
+		if field.Type.Kind() != reflect.String {
+			panic(fmt.Sprintf("schemamodel: ptah_export field %s.%s is not a string or inline struct", fields, field.Name))
+		}
+		if declared := value.Field(i).String(); declared != "" {
+			found = append(found, ExportMetadata{
+				Kind: kind, Name: name, Attribute: attribute, Value: declared,
+			})
+		}
 	}
-	return namedExportMetadata(kind, name, declared)
+	return found
 }
 
 // TargetNameAttribute spells the annotation attribute a [TargetNames] field is
 // authored as.
 func TargetNameAttribute(fieldName string) string {
-	switch fieldName {
-	case "OpenAPI":
-		return "openapi_name"
-	case "GraphQL":
-		return "graphql_name"
-	case "Protobuf":
-		return "proto_name"
-	default:
+	field, ok := reflect.TypeFor[TargetNames]().FieldByName(fieldName)
+	if !ok {
 		return ""
 	}
-}
-
-func namedExportMetadata(kind, name string, attributes map[string]string) []ExportMetadata {
-	found := make([]ExportMetadata, 0, len(attributes))
-	for attribute, value := range attributes {
-		if attribute == "" || value == "" {
-			continue
-		}
-		found = append(found, ExportMetadata{
-			Kind:      kind,
-			Name:      name,
-			Attribute: attribute,
-			Value:     value,
-		})
-	}
-	return found
+	return strings.TrimSpace(field.Tag.Get("ptah_export"))
 }
 
 func fieldTableName(field Field, db *Database) string {

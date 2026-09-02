@@ -94,6 +94,36 @@ type RecentPosts struct{}
 	c.Assert(stdout, qt.Not(qt.Contains), "cannot express")
 }
 
+// TestSchemaExportDBMLRefusesContractMetadataBeforeWriting proves the command
+// cannot leave a plausible but contract-incomplete DBML file behind. The
+// existing file is the control for ordering: validation must happen before the
+// output path is opened or truncated.
+func TestSchemaExportDBMLRefusesContractMetadataBeforeWriting(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	model := strings.Replace(
+		dbmlModel,
+		`//ptah:schema:table name="users"`,
+		`//ptah:schema:table name="users" api_name="Account"`,
+		1,
+	)
+	c.Assert(os.WriteFile(filepath.Join(dir, "model.go"), []byte(model), 0o600), qt.IsNil)
+	outPath := filepath.Join(dir, "schema.dbml")
+	before := []byte("keep this file\n")
+	c.Assert(os.WriteFile(outPath, before, 0o600), qt.IsNil)
+
+	stdout, stderr, err := runSchemaExport(
+		"--to", "dbml", "--root-dir", dir, "--out", outPath,
+	)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(stderr, qt.Contains, "DBML cannot represent API export metadata without loss")
+	c.Assert(stdout, qt.Equals, "")
+	after, readErr := os.ReadFile(outPath)
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(after, qt.DeepEquals, before)
+}
+
 // TestSchemaExportRefusesAnUnknownTargetAndNamesDBML keeps the refusal in step
 // with what the command accepts. A target wired in and left out of that
 // sentence reads as unsupported to whoever hits the error.

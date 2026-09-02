@@ -115,6 +115,36 @@ cmp "$workspace/models.before.go" "$cleanup_root/models.go"
 grep -Fq -- '-//ptah:schema:table' "$workspace/cleanup.diff"
 grep -Fq -- '-	//ptah:embedded' "$workspace/cleanup.diff"
 
+# The cleanup fixture carries every export-metadata family. The canonical HCL
+# must own those declarations before the only Go copy is removed, and API
+# exports from that HCL must remain byte-identical to exports from the original
+# annotations.
+metadata_attributes=(
+	'api_name'
+	'openapi_name'
+	'graphql_name'
+	'proto_name'
+	'api_type'
+	'api_expose'
+)
+for attribute in "${metadata_attributes[@]}"; do
+	grep -Fq "$attribute" "$workspace/cleanup.hcl"
+done
+
+"$ptah_bin" schema export \
+	--to openapi-v3 \
+	--root-dir "$cleanup_root" \
+	--out "$workspace/metadata.before.openapi.yaml"
+"$ptah_bin" schema export \
+	--to graphql \
+	--root-dir "$cleanup_root" \
+	--out "$workspace/metadata.before.graphql"
+"$ptah_bin" schema export \
+	--to protobuf \
+	--proto-package ptah.acceptance.v1 \
+	--root-dir "$cleanup_root" \
+	--out "$workspace/metadata.before.proto"
+
 "$ptah_bin" schema export \
 	--from go \
 	--to hcl \
@@ -132,6 +162,23 @@ grep -Fq '// User is the application user.' "$cleanup_root/models.go"
 grep -Fq 'type User struct {' "$cleanup_root/models.go"
 grep -Fq 'Email string' "$cleanup_root/models.go"
 grep -Fq 'type Audit struct {' "$cleanup_root/models.go"
+
+"$ptah_bin" schema export \
+	--to openapi-v3 \
+	--schema-file "$workspace/cleanup.hcl" \
+	--out "$workspace/metadata.after.openapi.yaml"
+"$ptah_bin" schema export \
+	--to graphql \
+	--schema-file "$workspace/cleanup.hcl" \
+	--out "$workspace/metadata.after.graphql"
+"$ptah_bin" schema export \
+	--to protobuf \
+	--proto-package ptah.acceptance.v1 \
+	--schema-file "$workspace/cleanup.hcl" \
+	--out "$workspace/metadata.after.proto"
+cmp "$workspace/metadata.before.openapi.yaml" "$workspace/metadata.after.openapi.yaml"
+cmp "$workspace/metadata.before.graphql" "$workspace/metadata.after.graphql"
+cmp "$workspace/metadata.before.proto" "$workspace/metadata.after.proto"
 
 cp "$workspace/cleanup.hcl" "$workspace/cleanup.before-repeat.hcl"
 cp "$cleanup_root/models.go" "$workspace/models.before-repeat.go"

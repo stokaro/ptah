@@ -474,27 +474,17 @@ func (r *renderer) reportDialectScopes() {
 }
 
 // reportExportMetadata names every export-only attribute this document carries
-// and HCL cannot.
+// but this HCL writer does not represent.
 //
-// `api_name`, `api_type`, `api_expose` and the per-target names steer the
-// OpenAPI, GraphQL and Protobuf projections and reach no DDL, so a render that
-// carries the storage perfectly still loses all of them. Atlas HCL has no
-// spelling for any of it, and inventing a Ptah-only attribute would produce a
-// file the pinned Atlas community binary refuses -- the same reasoning
-// [renderer.reportDialectScopes] records for dialect scope.
-//
-// Reporting it is what protects the declaration, for the same reason: any
-// diagnostic turns `ptah schema export --cleanup-go-annotations` into
-// [go.5x5.cz/ptah/internal/goannotationexport.ErrLossyCleanup], refused BEFORE
-// the annotations are deleted, and makes
-// [go.5x5.cz/ptah/internal/schemaartifact] refuse to build an artifact rather
-// than publish one that lost the contract. Without this the cleanup ran, exited
-// 0, and changed the published contract -- measured, an OpenAPI schema named
-// `AccountDoc` with a read-only `emailDoc` came back as `users` with a writable
-// `email_addr`, and the only copy of the intent had just been deleted from the
-// Go sources.
+// The census deliberately remains independent of the supported-attribute set.
+// A future model attribute therefore becomes a loss diagnostic until both the
+// parser and renderer explicitly learn its spelling. That diagnostic protects
+// annotation cleanup and OCI publication from silently deleting contract data.
 func (r *renderer) reportExportMetadata() {
 	for _, carried := range schemamodel.ExportMetadataIn(r.db) {
+		if hclRepresentsExportMetadata(carried) {
+			continue
+		}
 		r.diagnostics = append(r.diagnostics, Diagnostic{
 			Severity: SeverityWarning,
 			Path:     fmt.Sprintf("%s.%s", carried.Kind, carried.Name),
@@ -505,6 +495,22 @@ func (r *renderer) reportExportMetadata() {
 			),
 		})
 	}
+}
+
+func hclRepresentsExportMetadata(metadata schemamodel.ExportMetadata) bool {
+	switch metadata.Kind {
+	case "table":
+		switch metadata.Attribute {
+		case "api_name", "openapi_name", "graphql_name", "proto_name":
+			return true
+		}
+	case "column":
+		switch metadata.Attribute {
+		case "api_name", "openapi_name", "graphql_name", "proto_name", "api_type", "api_expose":
+			return true
+		}
+	}
+	return false
 }
 
 func (r *renderer) renderBody() {
@@ -686,6 +692,10 @@ func (r *renderer) renderTable(
 		r.rawAttr(1, "schema", r.schemaRef(schema))
 	}
 	r.stringAttr(1, "engine", table.Engine)
+	r.stringAttr(1, "api_name", table.APIName)
+	r.stringAttr(1, "openapi_name", table.APINames.OpenAPI)
+	r.stringAttr(1, "graphql_name", table.APINames.GraphQL)
+	r.stringAttr(1, "proto_name", table.APINames.Protobuf)
 	r.stringAttr(1, "charset", table.Charset)
 	r.stringAttr(1, "collate", table.Collate)
 	r.stringAttr(1, "comment", table.Comment)
@@ -741,6 +751,12 @@ func (r *renderer) renderTable(
 func (r *renderer) renderColumn(field schemamodel.Field) {
 	r.linef(`  column %s {`, quote(field.Name))
 	r.rawAttr(2, "type", r.columnTypeExpr(field))
+	r.stringAttr(2, "api_name", field.APIName)
+	r.stringAttr(2, "openapi_name", field.APINames.OpenAPI)
+	r.stringAttr(2, "graphql_name", field.APINames.GraphQL)
+	r.stringAttr(2, "proto_name", field.APINames.Protobuf)
+	r.stringAttr(2, "api_type", field.APIType)
+	r.stringAttr(2, "api_expose", field.APIExpose)
 	if field.Nullable {
 		r.rawAttr(2, "null", "true")
 	}

@@ -6,114 +6,89 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
 
-// exportMetadataDatabase is one table and one column, with the export-only
-// attributes the caller names.
-func exportMetadataDatabase(table schemamodel.Table, field schemamodel.Field) *schemamodel.Database {
-	table.StructName = "U"
-	table.Name = "users"
-	field.StructName = "U"
-	field.Name = "email_addr"
-	field.Type = "TEXT"
-	return &schemamodel.Database{
+func exportMetadataDatabase() *schemamodel.Database {
+	db := &schemamodel.Database{
 		Schemas: []schemamodel.Schema{{Name: "public"}},
-		Tables:  []schemamodel.Table{table},
-		Fields:  []schemamodel.Field{field},
+		Tables: []schemamodel.Table{{
+			StructName: "U",
+			Name:       "users",
+			Schema:     "public",
+			APIName:    "Account",
+			APINames: schemamodel.TargetNames{
+				OpenAPI:  "AccountDocument",
+				GraphQL:  "AccountNode",
+				Protobuf: "account_record",
+			},
+		}},
+		Fields: []schemamodel.Field{{
+			StructName: "U",
+			FieldName:  "Email",
+			Name:       "email_addr",
+			Type:       "TEXT",
+			APIName:    "email",
+			APINames: schemamodel.TargetNames{
+				OpenAPI:  "emailDocument",
+				GraphQL:  "emailNode",
+				Protobuf: "email_value",
+			},
+			APIType:   "string",
+			APIExpose: "read",
+		}},
 	}
+	schemamodel.Finalize(db)
+	return db
 }
 
-// TestRender_ExportMetadataIsReportedAsAnExportLoss is what protects an API
-// contract from the exporter, and it is the same mechanism the dialect scope
-// beside it relies on.
-//
-// HCL has no spelling for any of these attributes, so the loss is real. It was
-// tolerable for a scope only because a scope is reported; this was not reported
-// at all. Measured on the baseline: `ptah schema export --to hcl
-// --cleanup-go-annotations` wrote HCL without the metadata, deleted the Go
-// annotations holding it, said `Cleaned 1 file(s), removed 3 annotation
-// line(s)` and exited 0 — after which the published OpenAPI schema had gone
-// from `AccountDoc` with a read-only `emailDoc` to `users` with a writable
-// `email_addr`, and the intent existed nowhere (stokaro/ptah#2607).
-func TestRender_ExportMetadataIsReportedAsAnExportLoss(t *testing.T) {
-	tests := []struct {
-		name string
-		db   *schemamodel.Database
-		want []atlashclrender.Diagnostic
-	}{
-		{
-			name: "a table api name",
-			db: exportMetadataDatabase(
-				schemamodel.Table{APIName: "Account"},
-				schemamodel.Field{},
-			),
-			want: []atlashclrender.Diagnostic{{
-				Severity: atlashclrender.SeverityWarning,
-				Path:     "table.users",
-				Message:  `export metadata api_name="Account" is not represented in HCL`,
-			}},
-		},
-		{
-			name: "a column api type",
-			db: exportMetadataDatabase(
-				schemamodel.Table{},
-				schemamodel.Field{APIType: "TEXT"},
-			),
-			want: []atlashclrender.Diagnostic{{
-				Severity: atlashclrender.SeverityWarning,
-				Path:     "column.users.email_addr",
-				Message:  `export metadata api_type="TEXT" is not represented in HCL`,
-			}},
-		},
-		{
-			name: "a column exposure",
-			db: exportMetadataDatabase(
-				schemamodel.Table{},
-				schemamodel.Field{APIExpose: "read"},
-			),
-			want: []atlashclrender.Diagnostic{{
-				Severity: atlashclrender.SeverityWarning,
-				Path:     "column.users.email_addr",
-				Message:  `export metadata api_expose="read" is not represented in HCL`,
-			}},
-		},
-		{
-			name: "a per-target name",
-			db: exportMetadataDatabase(
-				schemamodel.Table{},
-				schemamodel.Field{APINames: schemamodel.TargetNames{GraphQL: "emailNode"}},
-			),
-			want: []atlashclrender.Diagnostic{{
-				Severity: atlashclrender.SeverityWarning,
-				Path:     "column.users.email_addr",
-				Message:  `export metadata graphql_name="emailNode" is not represented in HCL`,
-			}},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			rendered, err := atlashclrender.Render(test.db)
-
-			c.Assert(err, qt.IsNil)
-			c.Assert(rendered.Diagnostics, qt.DeepEquals, test.want)
-		})
-	}
-}
-
-// TestRender_ASchemaWithoutExportMetadataReportsNothing is the control.
-//
-// Without it, a report that fired on every table would satisfy the table above
-// and would refuse every cleanup in the product — the feature is only useful
-// while a schema that loses nothing still cleans.
-func TestRender_ASchemaWithoutExportMetadataReportsNothing(t *testing.T) {
+func TestRender_ExportMetadataRoundTripsWithoutLoss(t *testing.T) {
 	c := qt.New(t)
 
-	rendered, err := atlashclrender.Render(
-		exportMetadataDatabase(schemamodel.Table{}, schemamodel.Field{}))
+	first, err := atlashclrender.Render(exportMetadataDatabase())
+	c.Assert(err, qt.IsNil)
+	c.Assert(first.Diagnostics, qt.HasLen, 0)
+	c.Assert(string(first.Data), qt.Contains, `api_name = "Account"`)
+	c.Assert(string(first.Data), qt.Contains, `graphql_name = "emailNode"`)
+	c.Assert(string(first.Data), qt.Contains, `api_expose = "read"`)
+
+	parsed, err := atlashcl.Parse(first.Data, "schema.hcl")
+	c.Assert(err, qt.IsNil)
+	c.Assert(parsed.Tables, qt.HasLen, 1)
+	c.Assert(parsed.Tables[0].APIName, qt.Equals, "Account")
+	c.Assert(parsed.Tables[0].APINames, qt.DeepEquals, schemamodel.TargetNames{
+		OpenAPI:  "AccountDocument",
+		GraphQL:  "AccountNode",
+		Protobuf: "account_record",
+	})
+	c.Assert(parsed.Fields, qt.HasLen, 1)
+	c.Assert(parsed.Fields[0].APIName, qt.Equals, "email")
+	c.Assert(parsed.Fields[0].APINames, qt.DeepEquals, schemamodel.TargetNames{
+		OpenAPI:  "emailDocument",
+		GraphQL:  "emailNode",
+		Protobuf: "email_value",
+	})
+	c.Assert(parsed.Fields[0].APIType, qt.Equals, "string")
+	c.Assert(parsed.Fields[0].APIExpose, qt.Equals, "read")
+
+	second, err := atlashclrender.Render(parsed)
+	c.Assert(err, qt.IsNil)
+	c.Assert(second.Diagnostics, qt.HasLen, 0)
+	c.Assert(second.Data, qt.DeepEquals, first.Data)
+}
+
+func TestRender_ASchemaWithoutExportMetadataReportsNothing(t *testing.T) {
+	c := qt.New(t)
+	db := exportMetadataDatabase()
+	db.Tables[0].APIName = ""
+	db.Tables[0].APINames = schemamodel.TargetNames{}
+	db.Fields[0].APIName = ""
+	db.Fields[0].APINames = schemamodel.TargetNames{}
+	db.Fields[0].APIType = ""
+	db.Fields[0].APIExpose = ""
+
+	rendered, err := atlashclrender.Render(db)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered.Diagnostics, qt.HasLen, 0)

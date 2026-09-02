@@ -25,9 +25,10 @@ computed difference.
 A **schema source** is anything that can declare part of the desired schema:
 
 - annotated Go structs (`--root-dir`),
-- YAML, HCL, or SQL schema files (`--schema-file`),
+- YAML, HCL, SQL, or DBML schema files (`--schema-file`),
 - an external loader — any program that emits SQL, HCL, or YAML, such as an
   ORM exporter (`--schema-cmd`),
+- a canonical HCL desired-schema artifact pulled from an OCI registry,
 - a live database, turned into annotated Go models by `ptah introspect`.
 
 Every source parses into the same internal schema representation before any
@@ -50,9 +51,18 @@ a database — the merge rules live on
   workflow applies the change.
 - **Sources converge on one IR.** `ptah schema export` converts Go annotations
   to HCL, and a brownfield database can be introspected into source at any time.
-  Every valid Go annotation semantic has an HCL representation. Export reports
-  opaque SQL bodies and byte-level normalization before destructive cleanup;
-  HCL may additionally express semantics with no Go annotation spelling.
+  Canonical HCL preserves the currently modeled API names, contract type
+  overrides, and exposure declarations. Export still reports opaque SQL bodies,
+  byte-level normalization, and any other value it cannot prove lossless before
+  destructive cleanup; HCL may additionally express semantics with no Go
+  annotation spelling.
+- **A transport is not an expressiveness promise.** YAML, HCL, and Go can
+  author Ptah API export metadata. SQL and DBML can still feed contract exports,
+  but they have no lossless spelling for that metadata, so names and contract
+  types are derived from storage. An external program has exactly the
+  expressiveness of its declared SQL, YAML, or HCL payload, and an OCI artifact
+  carries canonical HCL. Accepted input does not mean that every format can
+  declare every Ptah object or attribute.
 - **Declaring is not supporting.** What a concrete target accepts is decided
   later, by capability-aware planning — see
   [Dialects and capabilities](../dialects-and-capabilities/).

@@ -54,6 +54,12 @@
     "reason": "The generated first-level index and filter lead to one exact behavior section for every native command."
   },
   {
+    "route": "/schema/export/",
+    "check": "page-length",
+    "target": "page",
+    "reason": "The contract-export workflow keeps its three targets and the equivalent YAML, HCL, and Go metadata spellings together so a reader can compare one declaration without crossing pages."
+  },
+  {
     "route": "/schema/protobuf/",
     "check": "page-length",
     "target": "page",

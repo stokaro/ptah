@@ -24,7 +24,7 @@ contributor or implementation detail beyond the site.
 | `docs/architecture_boundaries.md` | The measured boundary inventory and the executable invariant set, with the baseline the gate ratchets against. |
 | `docs/canonical_pipeline_prototype.md` | What the ADR 0001 prototype measured, and what it changed about the record. |
 | `docs/feature-inventory.json` | The derived feature register: every native verb, ledger package, released program and dialect, with the page that claims it. Generated. |
-| `docs/source-support.json` | The generated command-by-source audit: exact invocation, implementation owner, evidence, composability, opt-in, limitation, and verification status for every audited cell. |
+| `docs/source-support.json` | The generated command-by-source audit: transport support, export-metadata expressiveness, exact invocation, implementation owner, evidence, composability, opt-in, limitation, and verification status for every audited cell. |
 | `examples/*` | Runnable local examples and generated artifacts. |
 | `ptah-atlas-conformance` | External Atlas compatibility evidence and gap reports. |
 
@@ -103,6 +103,11 @@ keep in step.
 supported cells that still lack a command-level test, conditional uses,
 deliberate exclusions, and product gaps. Do not infer one command's source
 support from another command merely because they share a loader.
+
+Each source also declares whether it can author export-only API metadata. That
+field is about schema expressiveness, not transport: accepting SQL or DBML as a
+desired-schema source does not imply that those formats can preserve metadata
+they cannot represent losslessly.
 
 Regenerate and check the manifest against the built command tree:
 

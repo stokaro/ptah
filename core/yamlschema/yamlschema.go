@@ -34,7 +34,8 @@
 // overrides. A column carries the type, its nullability, key and uniqueness
 // flags, defaults, generated and identity expressions, a foreign key with its
 // referential actions, character set and collation, and its own per-platform
-// overrides.
+// overrides. Tables and columns can also declare shared and per-target API
+// names; columns additionally carry API-only type and exposure metadata.
 //
 // # Strictness
 //
@@ -129,6 +130,10 @@ type document struct {
 type tableSpec struct {
 	StructName  stringScalar               `yaml:"struct_name"`
 	Name        stringScalar               `yaml:"name"`
+	APIName     stringScalar               `yaml:"api_name"`
+	OpenAPIName stringScalar               `yaml:"openapi_name"`
+	GraphQLName stringScalar               `yaml:"graphql_name"`
+	ProtoName   stringScalar               `yaml:"proto_name"`
 	Engine      stringScalar               `yaml:"engine"`
 	Comment     stringScalar               `yaml:"comment"`
 	PrimaryKey  stringList                 `yaml:"primary_key"`
@@ -146,6 +151,12 @@ type tableSpec struct {
 type fieldSpec struct {
 	FieldName          stringScalar `yaml:"field_name"`
 	Name               stringScalar `yaml:"name"`
+	APIName            stringScalar `yaml:"api_name"`
+	OpenAPIName        stringScalar `yaml:"openapi_name"`
+	GraphQLName        stringScalar `yaml:"graphql_name"`
+	ProtoName          stringScalar `yaml:"proto_name"`
+	APIType            stringScalar `yaml:"api_type"`
+	APIExpose          stringScalar `yaml:"api_expose"`
 	Type               stringScalar `yaml:"type"`
 	Nullable           *bool        `yaml:"nullable"`
 	NotNull            bool         `yaml:"not_null"`
@@ -384,6 +395,12 @@ func (d document) addTables(db *schemamodel.Database) error {
 		db.Tables = append(db.Tables, schemamodel.Table{
 			StructName: structName,
 			Name:       tableName,
+			APIName:    string(table.APIName),
+			APINames: schemamodel.TargetNames{
+				OpenAPI:  string(table.OpenAPIName),
+				GraphQL:  string(table.GraphQLName),
+				Protobuf: string(table.ProtoName),
+			},
 			Engine:     string(table.Engine),
 			Comment:    string(table.Comment),
 			PrimaryKey: cleanStrings(table.PrimaryKey),
@@ -464,9 +481,17 @@ func buildField(structName, key string, spec fieldSpec, db *schemamodel.Database
 	}
 
 	return schemamodel.Field{
-		StructName:          structName,
-		FieldName:           fieldName,
-		Name:                columnName,
+		StructName: structName,
+		FieldName:  fieldName,
+		Name:       columnName,
+		APIName:    string(spec.APIName),
+		APINames: schemamodel.TargetNames{
+			OpenAPI:  string(spec.OpenAPIName),
+			GraphQL:  string(spec.GraphQLName),
+			Protobuf: string(spec.ProtoName),
+		},
+		APIType:             string(spec.APIType),
+		APIExpose:           string(spec.APIExpose),
 		Type:                fieldType,
 		Nullable:            nullable,
 		Primary:             spec.Primary,

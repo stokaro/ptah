@@ -586,6 +586,11 @@ func strictCEUnsupportedDesiredObjects(database *schemamodel.Database) []strictC
 		{name: "roles", present: len(database.Roles) > 0},
 		{name: "grants", present: len(database.Grants) > 0},
 		{name: "managed data", present: len(database.ManagedData) > 0},
+		// These attributes are Ptah HCL extensions. The default compatibility
+		// profile keeps them so an Atlas Pro migration path does not discard a
+		// contract, while strict CE must refuse the extension rather than accept
+		// syntax the pinned Community Edition does not recognize.
+		{name: "API export metadata", present: len(schemamodel.ExportMetadataIn(database)) > 0},
 		{name: "table partitioning", present: hasTablePartitioning(database)},
 		{name: "platform overrides", present: hasPlatformOverrides(database)},
 	}

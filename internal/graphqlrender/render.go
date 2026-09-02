@@ -43,72 +43,56 @@ func Render(db *schemamodel.Database, opts Options) (Result, error) {
 		IncludeTables: opts.IncludeTables,
 		ExcludeTables: opts.ExcludeTables,
 	})
-	// Refused before anything is built: an alias that shadows another column
-	// would drop it from the schema, and the reader of that schema has nothing
-	// left to notice the loss with. This is the DECLARED collision; a collision
-	// that only appears after GraphQL name sanitization is a naming-rules
-	// artifact and stays a warning below.
-	if err := schemaexport.ValidateTableAPINames(tables, schemaexport.TargetGraphQL); err != nil {
-		return Result{}, err
-	}
-	enums := schemaexport.EnumIndex(db)
 	policy := opts.FieldPolicy
 	if policy == "" {
 		policy = schemaexport.FieldPolicyAll
 	}
-	for _, table := range tables {
-		// The validation pre-pass reads the EXPORTED set, so two columns
-		// colliding on api_name where the policy publishes only one of them is
-		// not a collision. It has to agree with the build pass below or a
-		// refusal describes a schema nobody asked for.
-		fields, _, err := schemaexport.ExposedFields(db, table, schemaexport.ShapeRead, policy)
-		if err != nil {
-			return Result{}, err
-		}
-		if err := schemaexport.ValidateFieldAPINames(table, fields, schemaexport.TargetGraphQL); err != nil {
-			return Result{}, err
-		}
-		// An explicit type override the scalar mapping cannot honor is refused
-		// rather than defaulted to String. Defaulting is right for an
-		// unrecognized COLUMN type, which is a fact about the schema; here it
-		// would answer a request nobody made and hide that the declaration did
-		// nothing.
-		for _, field := range fields {
-			if err := schemaexport.RefuseUnknownAPIType(
-				table, field, schemaexport.TargetGraphQL, enums,
-				func(t string) bool { return mapGraphQLScalar(t).Known },
-			); err != nil {
-				return Result{}, err
-			}
-		}
+	enums := schemaexport.EnumIndex(db)
+	if err := validateGraphQLExport(db, tables, policy, enums); err != nil {
+		return Result{}, err
 	}
 
 	reg := newNameRegistry()
 	// Reserve built-in and structural names so no generated type can shadow
 	// them. They are reserved whatever the operation selection is, so a table
 	// named "page_info" gets the same object-type name in every profile.
-	for _, reserved := range []string{
-		scalarInt, scalarFloat, scalarString, scalarBoolean, scalarID, scalarDateTime, scalarJSON,
-		pageInfoType, queryType, "Mutation", "Subscription",
-	} {
+	for _, reserved := range reservedGraphQLTypeNames {
 		reg.reserve(reserved)
 	}
 
 	// Pass 1: assign a unique object-type name per table, so relations can
 	// reference targets defined later in the file.
 	typeNames := make(map[string]string, len(tables))
+	unqualifiedTypeNames := make(map[string]string, len(tables))
+	ambiguousUnqualified := make(map[string]bool)
 	for _, table := range tables {
-		typeNames[table.Name] = reg.unique(schemaexport.SanitizeGraphQLName(schemaexport.TypeName(schemaexport.TableAPIName(table, schemaexport.TargetGraphQL))))
+		name := reg.uniqueOwned(
+			schemaexport.SanitizeGraphQLName(schemaexport.TypeName(
+				schemaexport.TableAPIName(table, schemaexport.TargetGraphQL),
+			)),
+			tableNameOwnership(table),
+		)
+		typeNames[table.QualifiedName()] = name
+		if ambiguousUnqualified[table.Name] {
+			continue
+		}
+		if _, exists := unqualifiedTypeNames[table.Name]; exists {
+			delete(unqualifiedTypeNames, table.Name)
+			ambiguousUnqualified[table.Name] = true
+			continue
+		}
+		unqualifiedTypeNames[table.Name] = name
 	}
 
 	b := &builder{
-		reg:             reg,
-		ops:             opts.Operations,
-		enums:           enums,
-		typeNames:       typeNames,
-		enumNameByKey:   make(map[string]string),
-		customScalars:   make(map[string]bool),
-		usedQueryFields: make(map[string]bool),
+		reg:              reg,
+		ops:              opts.Operations,
+		enums:            enums,
+		typeNames:        typeNames,
+		unqualifiedTypes: unqualifiedTypeNames,
+		enumNameByKey:    make(map[string]string),
+		customScalars:    make(map[string]bool),
+		usedQueryFields:  make(map[string]bool),
 	}
 	for _, table := range tables {
 		if err := b.addTable(db, table, policy); err != nil {
@@ -122,14 +106,225 @@ func Render(db *schemamodel.Database, opts Options) (Result, error) {
 	return Result{Data: []byte(b.render()), Diagnostics: b.diagnostics}, nil
 }
 
+// validateGraphQLExport refuses contract declarations that the renderer would
+// otherwise have to rename, omit, or silently map to a different type. It runs
+// before the builder emits any part of the document.
+func validateGraphQLExport(
+	db *schemamodel.Database,
+	tables []schemamodel.Table,
+	policy schemaexport.FieldPolicy,
+	enums map[string][]string,
+) error {
+	// An alias that shadows another column would drop it from the schema, and
+	// the reader of that schema has nothing left to notice the loss with.
+	// Raw-name collisions keep this direct error; the final-name checks below
+	// catch collisions introduced by GraphQL normalization.
+	if err := schemaexport.ValidateTableAPINames(tables, schemaexport.TargetGraphQL); err != nil {
+		return err
+	}
+	if err := validateDeclaredGraphQLTableNames(tables); err != nil {
+		return err
+	}
+	for _, table := range tables {
+		if err := validateGraphQLTableFields(db, table, policy, enums); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateGraphQLTableFields(
+	db *schemamodel.Database,
+	table schemamodel.Table,
+	policy schemaexport.FieldPolicy,
+	enums map[string][]string,
+) error {
+	// The validation pre-pass reads the EXPORTED set, so two columns colliding
+	// on api_name where the policy publishes only one of them is not a
+	// collision. It has to agree with the build pass below or a refusal would
+	// describe a schema nobody asked for.
+	readable, _, err := schemaexport.ExposedFields(db, table, schemaexport.ShapeRead, policy)
+	if err != nil {
+		return err
+	}
+	writable, _, err := schemaexport.ExposedFields(db, table, schemaexport.ShapeWrite, policy)
+	if err != nil {
+		return err
+	}
+	fields, _, _ := unionShapes(readable, writable)
+	if err := schemaexport.ValidateFieldAPINames(table, fields, schemaexport.TargetGraphQL); err != nil {
+		return err
+	}
+	for _, field := range fields {
+		if err := validateDeclaredGraphQLFieldName(table, field); err != nil {
+			return err
+		}
+	}
+	if err := validateDeclaredGraphQLFieldNames(table, fields); err != nil {
+		return err
+	}
+	// An explicit type override the scalar mapping cannot honor is refused
+	// rather than defaulted to String. Defaulting is right for an unrecognized
+	// COLUMN type; here it would hide that the declaration did nothing.
+	for _, field := range fields {
+		if err := schemaexport.RefuseUnknownAPIType(
+			table, field, schemaexport.TargetGraphQL, enums,
+			func(t string) bool { return mapGraphQLScalar(t).Known },
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var reservedGraphQLTypeNames = []string{
+	scalarInt, scalarFloat, scalarString, scalarBoolean, scalarID, scalarDateTime, scalarJSON,
+	pageInfoType, queryType, "Mutation", "Subscription",
+}
+
+// validateDeclaredGraphQLTableNames protects authored contract names from
+// collision resolution after they are parsed. An ordinary persistence name may
+// still take the renderer's historical collision suffix, but api_name and
+// graphql_name are contract declarations: silently turning InvoiceRecord into
+// InvoiceRecord2 would publish a different contract from the one requested.
+func validateDeclaredGraphQLTableNames(tables []schemamodel.Table) error {
+	type owner struct {
+		table    schemamodel.Table
+		authored bool
+	}
+
+	reserved := make(map[string]bool, len(reservedGraphQLTypeNames))
+	for _, name := range reservedGraphQLTypeNames {
+		reserved[name] = true
+	}
+
+	owners := make(map[string]owner, len(tables))
+	for _, table := range tables {
+		targetDeclared := table.APINames.GraphQL != ""
+		authored := targetDeclared || table.APIName != ""
+		name := schemaexport.TypeName(schemaexport.TableAPIName(table, schemaexport.TargetGraphQL))
+		if targetDeclared {
+			if !schemaexport.IsValidGraphQLName(name) || strings.HasPrefix(name, "__") {
+				return fmt.Errorf(
+					"table %q declares graphql_name %q, which does not produce a valid GraphQL type name",
+					table.Name,
+					table.APINames.GraphQL,
+				)
+			}
+		} else {
+			name = schemaexport.SanitizeGraphQLName(name)
+		}
+		if authored && reserved[name] {
+			attribute, value := "api_name", table.APIName
+			if targetDeclared {
+				attribute, value = "graphql_name", table.APINames.GraphQL
+			}
+			return fmt.Errorf(
+				"table %q declares %s %q, which produces reserved GraphQL type name %q; choose a different graphql_name",
+				table.Name,
+				attribute,
+				value,
+				name,
+			)
+		}
+
+		if first, taken := owners[name]; taken && (authored || first.authored) {
+			return fmt.Errorf(
+				"tables %q and %q both produce GraphQL type name %q; give one of them a distinct graphql_name",
+				first.table.Name,
+				table.Name,
+				name,
+			)
+		}
+		owners[name] = owner{table: table, authored: authored}
+	}
+	return nil
+}
+
+func hasAuthoredGraphQLTableName(table schemamodel.Table) bool {
+	return table.APIName != "" || table.APINames.GraphQL != ""
+}
+
+func tableNameOwnership(table schemamodel.Table) nameOwnership {
+	if hasAuthoredGraphQLTableName(table) {
+		return authoredName
+	}
+	return derivedName
+}
+
+func hasAuthoredGraphQLFieldName(field schemamodel.Field) bool {
+	return field.APIName != "" || field.APINames.GraphQL != ""
+}
+
+// GraphQL table declarations are stems: every table name is singularized and
+// PascalCased into a type. Field declarations, by contrast, are the exact
+// published identifier and must already satisfy GraphQL's grammar.
+func validateDeclaredGraphQLFieldName(table schemamodel.Table, field schemamodel.Field) error {
+	declared := field.APINames.GraphQL
+	if declared == "" {
+		return nil
+	}
+	if schemaexport.IsValidGraphQLName(declared) && !strings.HasPrefix(declared, "__") {
+		return nil
+	}
+	return fmt.Errorf(
+		"column %q on table %q declares graphql_name %q, which is not a valid GraphQL field name",
+		field.Name,
+		table.Name,
+		declared,
+	)
+}
+
+func validateDeclaredGraphQLFieldNames(table schemamodel.Table, fields []schemamodel.Field) error {
+	type owner struct {
+		field    schemamodel.Field
+		authored bool
+	}
+	owners := make(map[string]owner, len(fields))
+	for _, field := range fields {
+		targetDeclared := field.APINames.GraphQL != ""
+		authored := targetDeclared || field.APIName != ""
+		name := schemaexport.FieldAPIName(field, schemaexport.TargetGraphQL)
+		if !targetDeclared {
+			name = schemaexport.SanitizeGraphQLName(name)
+		}
+		if authored && strings.HasPrefix(name, "__") {
+			attribute, value := "api_name", field.APIName
+			if targetDeclared {
+				attribute, value = "graphql_name", field.APINames.GraphQL
+			}
+			return fmt.Errorf(
+				"column %q on table %q declares %s %q, which produces reserved GraphQL field name %q; choose a different graphql_name",
+				field.Name,
+				table.Name,
+				attribute,
+				value,
+				name,
+			)
+		}
+		if first, taken := owners[name]; taken && (authored || first.authored) {
+			return fmt.Errorf(
+				"columns %q and %q on table %q both produce GraphQL field name %q; give one of them a distinct graphql_name",
+				first.field.Name,
+				field.Name,
+				table.Name,
+				name,
+			)
+		}
+		owners[name] = owner{field: field, authored: authored}
+	}
+	return nil
+}
+
 // builder accumulates the SDL model across tables before serialization.
 type builder struct {
-	reg           *nameRegistry
-	ops           Operations
-	enums         map[string][]string
-	typeNames     map[string]string
-	enumNameByKey map[string]string
-	customScalars map[string]bool
+	reg              *nameRegistry
+	ops              Operations
+	enums            map[string][]string
+	typeNames        map[string]string
+	unqualifiedTypes map[string]string
+	enumNameByKey    map[string]string
+	customScalars    map[string]bool
 
 	objectTypes     []gqlType
 	createInputs    []gqlType
@@ -148,6 +343,12 @@ type builder struct {
 type column struct {
 	source schemamodel.Field
 	field  gqlField
+}
+
+type tableColumns struct {
+	object         gqlType
+	inputs         []column
+	usedFieldNames map[string]bool
 }
 
 // unionShapes returns every column that reaches either contract, and which of
@@ -189,64 +390,113 @@ func (b *builder) addTable(db *schemamodel.Database, table schemamodel.Table, po
 	b.diagnostics = append(b.diagnostics, diagnostics...)
 	fields, inObject, inInput := unionShapes(readable, writable)
 	pk := toSet(schemaexport.EffectivePrimaryKey(table, fields))
-	typeName := b.typeNames[table.Name]
+	typeName := b.typeNames[table.QualifiedName()]
 
-	object := gqlType{name: typeName, desc: table.Comment}
-	usedFieldNames := make(map[string]bool)
-	var columns []column
+	built, err := b.buildTableColumns(
+		table, fields, pk, inObject, inInput, typeName,
+	)
+	if err != nil {
+		return err
+	}
+	if err := b.addTableRelations(table, fields, typeName, built.usedFieldNames, &built.object); err != nil {
+		return err
+	}
+
+	// A type with no fields is a GraphQL syntax error; skip the whole table.
+	// Its operations go with it: they would all reference a type that does not
+	// exist.
+	if len(built.object.fields) == 0 {
+		b.warn("type "+typeName, "table has no exportable columns; type omitted")
+		return nil
+	}
+
+	b.objectTypes = append(b.objectTypes, built.object)
+	if err := b.addInputs(table, typeName, built.inputs, pk); err != nil {
+		return err
+	}
+	return b.addQueries(table, typeName, built.inputs, pk)
+}
+
+func (b *builder) buildTableColumns(
+	table schemamodel.Table,
+	fields []schemamodel.Field,
+	pk, inObject, inInput map[string]bool,
+	typeName string,
+) (tableColumns, error) {
+	built := tableColumns{
+		object:         gqlType{name: typeName, desc: table.Comment},
+		usedFieldNames: make(map[string]bool),
+	}
 
 	for _, field := range fields {
-		// The API type is substituted once here, so the scalar mapping, the
-		// array detection, the enum lookup and the input projections that reuse
-		// `source` below all read one answer.
+		// Substitute the API type once, so scalar mapping, array detection, enum
+		// lookup, and the input projections all read the same answer.
 		field = schemaexport.ProjectedField(field)
-		// The name to export is the field's API name, which is its column name
-		// unless the schema declared a different one. Sanitization runs on the
-		// result either way: an alias is an arbitrary annotation string too,
-		// and a GraphQL field name must be a legal identifier or the schema
-		// fails to build.
-		//
-		// The diagnostic paths keep naming the COLUMN. A warning about a name
-		// the reader cannot find in their schema source is a warning they
-		// cannot act on.
 		exported := schemaexport.FieldAPIName(field, schemaexport.TargetGraphQL)
 		name := schemaexport.SanitizeGraphQLName(exported)
 		if name != exported {
 			b.warn("type "+typeName+"."+field.Name, "column name is not a valid GraphQL name; exported as "+name)
 		}
-		if usedFieldNames[name] {
+		if _, used := built.usedFieldNames[name]; used {
 			b.warn("type "+typeName+"."+field.Name, "field name "+name+" collides with another column; omitted")
 			continue
 		}
-		usedFieldNames[name] = true
+		built.usedFieldNames[name] = hasAuthoredGraphQLFieldName(field)
 
-		objectField := b.columnField(table, field, pk, name)
+		objectField, err := b.columnField(table, field, pk, name)
+		if err != nil {
+			return tableColumns{}, err
+		}
 		if inObject[field.Name] {
-			object.fields = append(object.fields, objectField)
+			built.object.fields = append(built.object.fields, objectField)
 		}
 		if inInput[field.Name] {
-			columns = append(columns, column{source: field, field: objectField})
+			built.inputs = append(built.inputs, column{source: field, field: objectField})
 		}
 	}
+	return built, nil
+}
 
-	// Foreign keys become object relations alongside the scalar id column.
+// addTableRelations adds object relations alongside the scalar foreign-key
+// columns. Derived-only collisions keep the historical omission behavior;
+// authored names are refused rather than silently changed.
+func (b *builder) addTableRelations(
+	table schemamodel.Table,
+	fields []schemamodel.Field,
+	typeName string,
+	usedFieldNames map[string]bool,
+	object *gqlType,
+) error {
 	for _, field := range fields {
-		if strings.TrimSpace(field.Foreign) == "" {
+		ref, ok := schemaexport.ParseForeignRef(field.Foreign)
+		if strings.TrimSpace(field.Foreign) == "" || !ok {
 			continue
 		}
-		if _, ok := schemaexport.ParseForeignRef(field.Foreign); !ok {
-			continue
+		relName, ok := schemaexport.RelationFieldName(
+			schemaexport.FieldAPIName(field, schemaexport.TargetGraphQL),
+		)
+		if !ok {
+			// A published scalar name without an id suffix cannot name the
+			// relation by itself. Preserve the relation derived from storage.
+			relName, ok = schemaexport.RelationFieldName(field.Name)
 		}
-		relName, ok := schemaexport.RelationFieldName(field.Name)
 		if !ok {
 			continue
 		}
 		relName = schemaexport.SanitizeGraphQLName(relName)
-		if usedFieldNames[relName] {
-			continue // collides with a column or another relation
+		relationAuthored := hasAuthoredGraphQLFieldName(field)
+		if firstAuthored, used := usedFieldNames[relName]; used {
+			if relationAuthored || firstAuthored {
+				return fmt.Errorf(
+					"foreign-key column %q on table %q produces GraphQL relation field name %q, which collides with another field; choose a distinct graphql_name",
+					field.Name,
+					table.Name,
+					relName,
+				)
+			}
+			continue
 		}
-		ref, _ := schemaexport.ParseForeignRef(field.Foreign)
-		targetType, ok := b.typeNames[ref.Table]
+		targetType, ok := b.resolveTableTypeName(table, ref.Table)
 		if !ok {
 			b.warn("type "+typeName+"."+field.Name,
 				fmt.Sprintf("foreign key references table %q which is not exported; relation field omitted", ref.Table))
@@ -255,36 +505,46 @@ func (b *builder) addTable(db *schemamodel.Database, table schemamodel.Table, po
 		object.fields = append(object.fields, gqlField{
 			name: relName, typ: targetType, nonNull: !field.Nullable,
 		})
-		usedFieldNames[relName] = true
+		usedFieldNames[relName] = relationAuthored
 	}
-
-	// A type with no fields is a GraphQL syntax error; skip the whole table.
-	// Its operations go with it: they would all reference a type that does not
-	// exist.
-	if len(object.fields) == 0 {
-		b.warn("type "+typeName, "table has no exportable columns; type omitted")
-		return nil
-	}
-
-	b.objectTypes = append(b.objectTypes, object)
-	b.addInputs(typeName, columns, pk)
-	b.addQueries(table, typeName, columns, pk)
 	return nil
+}
+
+func (b *builder) resolveTableTypeName(source schemamodel.Table, reference string) (string, bool) {
+	if name, ok := b.typeNames[reference]; ok {
+		return name, true
+	}
+	if source.Schema != "" && !strings.Contains(reference, ".") {
+		if name, ok := b.typeNames[schemamodel.QualifyTableName(source.Schema, reference)]; ok {
+			return name, true
+		}
+	}
+	name, ok := b.unqualifiedTypes[reference]
+	return name, ok
 }
 
 // addInputs emits the requested operation inputs from the write projection: the
 // columns a client may set, rather than every column that is not
 // server-generated. An input whose projection is empty is omitted, because an
 // input type with no fields does not parse.
-func (b *builder) addInputs(typeName string, columns []column, pk map[string]bool) {
+func (b *builder) addInputs(table schemamodel.Table, typeName string, columns []column, pk map[string]bool) error {
 	if b.ops.CreateInput {
 		fields := writeProjection(columns, pk, createShape)
 		if len(fields) == 0 {
 			b.warn("input "+typeName+createInputSuffix,
 				"every column is server-owned, so the create projection is empty; input omitted")
 		} else {
+			desired := typeName + createInputSuffix
+			name, collision := b.reg.claim(desired, tableNameOwnership(table))
+			if collision {
+				return fmt.Errorf(
+					"table %q produces GraphQL operation type name %q, which collides with another type; choose a distinct graphql_name",
+					table.Name,
+					desired,
+				)
+			}
 			b.createInputs = append(b.createInputs,
-				gqlType{name: b.reg.unique(typeName + createInputSuffix), fields: fields})
+				gqlType{name: name, fields: fields})
 		}
 	}
 	if b.ops.UpdateInput {
@@ -293,17 +553,35 @@ func (b *builder) addInputs(typeName string, columns []column, pk map[string]boo
 			b.warn("input "+typeName+updateInputSuffix,
 				"every column is server-owned or part of the primary key, so the update projection is empty; input omitted")
 		} else {
+			desired := typeName + updateInputSuffix
+			name, collision := b.reg.claim(desired, tableNameOwnership(table))
+			if collision {
+				return fmt.Errorf(
+					"table %q produces GraphQL operation type name %q, which collides with another type; choose a distinct graphql_name",
+					table.Name,
+					desired,
+				)
+			}
 			b.updateInputs = append(b.updateInputs,
-				gqlType{name: b.reg.unique(typeName + updateInputSuffix), fields: fields})
+				gqlType{name: name, fields: fields})
 		}
 	}
+	return nil
 }
 
 // addQueries emits the requested Query root fields and, for the list shape, the
 // connection and edge types they return.
-func (b *builder) addQueries(table schemamodel.Table, typeName string, columns []column, pk map[string]bool) {
+func (b *builder) addQueries(table schemamodel.Table, typeName string, columns []column, pk map[string]bool) error {
 	if b.ops.List {
-		edgeName := b.reg.unique(typeName + "Edge")
+		desiredEdgeName := typeName + "Edge"
+		edgeName, collision := b.reg.claim(desiredEdgeName, tableNameOwnership(table))
+		if collision {
+			return fmt.Errorf(
+				"table %q produces GraphQL operation type name %q, which collides with another type; choose a distinct graphql_name",
+				table.Name,
+				desiredEdgeName,
+			)
+		}
 		b.edgeTypes = append(b.edgeTypes, gqlType{
 			name: edgeName,
 			fields: []gqlField{
@@ -311,7 +589,18 @@ func (b *builder) addQueries(table schemamodel.Table, typeName string, columns [
 				{name: "cursor", typ: scalarString, nonNull: true},
 			},
 		})
-		connName := b.reg.unique(typeName + "Connection")
+		desiredConnectionName := typeName + "Connection"
+		connName, collision := b.reg.claim(
+			desiredConnectionName,
+			tableNameOwnership(table),
+		)
+		if collision {
+			return fmt.Errorf(
+				"table %q produces GraphQL operation type name %q, which collides with another type; choose a distinct graphql_name",
+				table.Name,
+				desiredConnectionName,
+			)
+		}
 		b.connTypes = append(b.connTypes, gqlType{
 			name: connName,
 			fields: []gqlField{
@@ -319,20 +608,24 @@ func (b *builder) addQueries(table schemamodel.Table, typeName string, columns [
 				{name: "pageInfo", typ: pageInfoType, nonNull: true},
 			},
 		})
-		b.addQueryField(gqlField{
-			name: lowerFirst(schemaexport.SanitizeGraphQLName(schemaexport.PascalCase(table.Name))),
+		if err := b.addQueryField(table, gqlField{
+			name: lowerFirst(schemaexport.SanitizeGraphQLName(schemaexport.PascalCase(
+				schemaexport.TableAPIName(table, schemaexport.TargetGraphQL),
+			))),
 			args: "(first: Int, after: String)",
 			typ:  connName,
-		})
+		}); err != nil {
+			return err
+		}
 	}
 	if !b.ops.ByID {
-		return
+		return nil
 	}
 	key, ok := b.keyArgument(typeName, columns, pk)
 	if !ok {
-		return
+		return nil
 	}
-	b.addQueryField(gqlField{name: lowerFirst(typeName), args: "(" + key + ")", typ: typeName})
+	return b.addQueryField(table, gqlField{name: lowerFirst(typeName), args: "(" + key + ")", typ: typeName})
 }
 
 // keyArgument renders the by-key Query argument for a table. It reports false
@@ -400,14 +693,22 @@ func writeProjection(columns []column, pk map[string]bool, shape writeShape) []g
 
 // columnField builds the GraphQL field for a column, mapping an array column to a
 // list of the element type.
-func (b *builder) columnField(table schemamodel.Table, field schemamodel.Field, pk map[string]bool, name string) gqlField {
+func (b *builder) columnField(
+	table schemamodel.Table,
+	field schemamodel.Field,
+	pk map[string]bool,
+	name string,
+) (gqlField, error) {
 	elementField := field
 	list := false
 	if element, isArray := schemaexport.ElementType(field.Type); isArray {
 		elementField.Type = element
 		list = true
 	}
-	gt := b.resolveColumnType(table, elementField, pk)
+	gt, err := b.resolveColumnType(table, elementField, pk)
+	if err != nil {
+		return gqlField{}, err
+	}
 	nonNull := !field.Nullable || pk[field.Name]
 	return gqlField{
 		name:        name,
@@ -416,16 +717,25 @@ func (b *builder) columnField(table schemamodel.Table, field schemamodel.Field, 
 		list:        list,
 		listNonNull: false, // SQL arrays may contain null elements
 		desc:        field.Comment,
-	}
+	}, nil
 }
 
-func (b *builder) addQueryField(field gqlField) {
-	if b.usedQueryFields[field.name] {
+func (b *builder) addQueryField(table schemamodel.Table, field gqlField) error {
+	authored := hasAuthoredGraphQLTableName(table)
+	if firstAuthored, used := b.usedQueryFields[field.name]; used {
+		if authored || firstAuthored {
+			return fmt.Errorf(
+				"table %q produces GraphQL Query field name %q, which collides with another table; choose a distinct graphql_name",
+				table.Name,
+				field.name,
+			)
+		}
 		b.warn("type Query."+field.name, "duplicate query field name; omitted")
-		return
+		return nil
 	}
-	b.usedQueryFields[field.name] = true
+	b.usedQueryFields[field.name] = authored
 	b.queryFields = append(b.queryFields, field)
+	return nil
 }
 
 func lowerFirst(s string) string {
@@ -439,15 +749,23 @@ func lowerFirst(s string) string {
 // resolveColumnType returns the GraphQL type name for a column, resolving enums,
 // applying the ID convention to primary keys, and recording custom scalars and
 // diagnostics as a side effect.
-func (b *builder) resolveColumnType(table schemamodel.Table, field schemamodel.Field, pk map[string]bool) string {
+func (b *builder) resolveColumnType(
+	table schemamodel.Table,
+	field schemamodel.Field,
+	pk map[string]bool,
+) (string, error) {
 	if values, ok := schemaexport.ResolveEnumValues(field, b.enums); ok {
-		if name, ok := b.enumType(table, field, values); ok {
-			return name
+		name, valid, err := b.enumType(table, field, values)
+		if err != nil {
+			return "", err
+		}
+		if valid {
+			return name, nil
 		}
 		// Values are not valid GraphQL enum names; fall back to a scalar.
-		b.warn("type "+b.typeNames[table.Name]+"."+field.Name,
+		b.warn("type "+b.typeNames[table.QualifiedName()]+"."+field.Name,
 			"enum values are not valid GraphQL enum names; emitted as String")
-		return scalarString
+		return scalarString, nil
 	}
 
 	scalar := mapGraphQLScalar(field.Type)
@@ -455,39 +773,59 @@ func (b *builder) resolveColumnType(table schemamodel.Table, field schemamodel.F
 		b.customScalars[scalar.Custom] = true
 	}
 	if !scalar.Known {
-		b.warn("type "+b.typeNames[table.Name]+"."+field.Name,
+		b.warn("type "+b.typeNames[table.QualifiedName()]+"."+field.Name,
 			fmt.Sprintf("unknown column type %q mapped to String", field.Type))
 	}
 	if pk[field.Name] && scalar.Known {
-		return scalarID
+		return scalarID, nil
 	}
-	return scalar.Name
+	return scalar.Name, nil
 }
 
-// enumType returns the GraphQL enum type name for a field, defining the enum once
-// and deduplicating fields that share the same source enum. The second result is
-// false when the values are not valid GraphQL enum names.
-func (b *builder) enumType(table schemamodel.Table, field schemamodel.Field, values []string) (string, bool) {
+// enumType returns the GraphQL enum type name for a field, defining the enum
+// once and deduplicating fields that share the same source enum. The second
+// result is false when the values are not valid GraphQL enum names. A type-name
+// collision is returned separately so it cannot be mistaken for that lossy
+// fallback.
+func (b *builder) enumType(
+	table schemamodel.Table,
+	field schemamodel.Field,
+	values []string,
+) (string, bool, error) {
 	for _, value := range values {
 		if !schemaexport.IsValidGraphQLName(value) {
-			return "", false
+			return "", false, nil
 		}
 	}
 	key := b.enumSourceKey(table, field)
 	if name, ok := b.enumNameByKey[key]; ok {
-		return name, true
+		return name, true, nil
 	}
-	name := b.reg.unique(b.desiredEnumName(table, field))
+	desired := b.desiredEnumName(table, field)
+	ownership := derivedName
+	if hasAuthoredGraphQLTableName(table) ||
+		hasAuthoredGraphQLFieldName(field) || field.APIType != "" {
+		ownership = authoredName
+	}
+	name, collision := b.reg.claim(desired, ownership)
+	if collision {
+		return "", false, fmt.Errorf(
+			"column %q on table %q produces GraphQL enum type name %q, which collides with another type; choose distinct API names or api_type",
+			field.Name,
+			table.Name,
+			desired,
+		)
+	}
 	b.enumNameByKey[key] = name
 	b.enumTypes = append(b.enumTypes, gqlEnum{name: name, values: values})
-	return name, true
+	return name, true, nil
 }
 
 func (b *builder) enumSourceKey(table schemamodel.Table, field schemamodel.Field) string {
 	if !mapGraphQLScalar(field.Type).Known {
 		return "type:" + field.Type // named enum type shared across columns
 	}
-	return "col:" + table.Name + "." + field.Name // inline enum, unique per column
+	return "col:" + table.QualifiedName() + "." + field.Name // inline enum, unique per column
 }
 
 func (b *builder) desiredEnumName(table schemamodel.Table, field schemamodel.Field) string {
@@ -495,7 +833,8 @@ func (b *builder) desiredEnumName(table schemamodel.Table, field schemamodel.Fie
 	if !mapGraphQLScalar(field.Type).Known {
 		raw = schemaexport.PascalCase(strings.TrimPrefix(field.Type, "enum_"))
 	} else {
-		raw = schemaexport.TypeName(table.Name) + schemaexport.PascalCase(field.Name)
+		raw = schemaexport.TypeName(schemaexport.TableAPIName(table, schemaexport.TargetGraphQL)) +
+			schemaexport.PascalCase(schemaexport.FieldAPIName(field, schemaexport.TargetGraphQL))
 	}
 	return schemaexport.SanitizeGraphQLName(raw)
 }
