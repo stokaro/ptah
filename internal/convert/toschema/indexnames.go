@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
+	"unicode/utf8"
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/schemamodel"
@@ -13,11 +15,33 @@ import (
 // rule here can supply one for.
 //
 // Refused rather than guessed at. The one shape that reaches it is an index
-// whose first element is an expression: MySQL 8.4 calls that `functional_index`
-// and MariaDB 11.8 rejects the syntax outright, so there is no name the two
-// engines would agree on and any invention would be a name the server never
-// assigns.
+// whose first element is an expression: MySQL calls that `functional_index`
+// and MariaDB rejects the syntax outright, so there is no name the two engines
+// would agree on.
+//
+// Ptah's own parser refuses `KEY ((a + 1))` before this pass sees it -- named
+// or unnamed, measured -- so nothing reaches this branch through a SQL source
+// today. Naming it for MySQL is stokaro/ptah#2758, and it belongs with the
+// parser change that makes such an index representable rather than here, where
+// it would be a rule with no caller.
 var ErrUnnamedIndex = errors.New("the index has no name and none can be derived")
+
+// ErrIndexNameTooLong is the class of a derived name the engine will not accept.
+//
+// MariaDB appends its suffix without truncating and refuses the result:
+// measured on 11.8.9, a 63-character column with two unnamed indexes is
+// `ERROR 1280 (42000): Incorrect index name`, while 62 characters is accepted.
+// MySQL never reaches this -- it truncates instead -- so a source Ptah refuses
+// here is one MariaDB refuses too, reported at conversion rather than at
+// execution (stokaro/ptah#2759).
+var ErrIndexNameTooLong = errors.New("the derived index name is longer than the engine accepts")
+
+// ErrReservedIndexName is the class of an index an author named PRIMARY.
+//
+// Both engines answer `ERROR 1280 (42000): Incorrect index name 'PRIMARY'`
+// -- measured on MySQL 9.7.2 and MariaDB 11.8.9. It is not a duplicate: the
+// name is refused whether or not the table has a primary key.
+var ErrReservedIndexName = errors.New("PRIMARY is reserved and cannot name a secondary index")
 
 // ErrDuplicateIndexName is the class of two indexes on one table claiming a
 // single name.
@@ -28,6 +52,52 @@ var ErrUnnamedIndex = errors.New("the index has no name and none can be derived"
 // indexes on {table, name}, so the second declaration was discarded without a
 // word and the schema converged as though it had never been written.
 var ErrDuplicateIndexName = errors.New("two indexes on one table claim the same name")
+
+// indexNames is the per-table index-name namespace, with the engine's own
+// notion of when two names are one.
+//
+// Case-insensitively, because both engines are: measured on MySQL 9.7.2 and
+// MariaDB 11.8.9, `KEY Foo (a), KEY foo (b)` is `ERROR 1061 (42000): Duplicate
+// key name 'foo'`. A Go map keyed on the raw string called those two distinct
+// and accepted a table neither server can create (stokaro/ptah#2757).
+//
+// The FOLDED name decides identity and the original decides what is written:
+// measured, a table with a column `Foo` and an index explicitly named `foo`
+// yields `foo` and `Foo_2`, so the derived name keeps its column's spelling.
+type indexNames map[string]struct{}
+
+func (n indexNames) taken(name string) bool {
+	_, found := n[strings.ToLower(name)]
+	return found
+}
+
+func (n indexNames) claim(name string) {
+	n[strings.ToLower(name)] = struct{}{}
+}
+
+// engineIndexNaming is what one engine does when it has to name an index.
+//
+// Two engines, two answers, and every field here was measured rather than read
+// off documentation. A family-wide rule is what produced the defect this
+// replaces: the two agree on the namespace and disagree on the length.
+type engineIndexNaming struct {
+	// baseBytes is how much of the base name survives before a `_N` suffix is
+	// appended, zero where the engine does not truncate.
+	//
+	// BYTES rather than characters, and 61 rather than 64 - len(suffix):
+	// measured on MySQL 9.7.2, a 64-character column yields a 63-character
+	// `_2` and a 64-character `_10`, so the base is cut to 61 whatever the
+	// suffix costs.
+	baseBytes int
+	// maxBytes is the longest index name the engine accepts.
+	maxBytes int
+}
+
+// mysqlNaming and mariaDBNaming are the two measured answers.
+var (
+	mysqlNaming   = engineIndexNaming{baseBytes: 61, maxBytes: 64}
+	mariaDBNaming = engineIndexNaming{maxBytes: 64}
+)
 
 // nameMySQLInlineIndexes gives every unnamed inline index and unique constraint
 // of one table the name a MySQL-family server would assign it.
@@ -65,33 +135,34 @@ func nameMySQLInlineIndexes(
 	database *schemamodel.Database, table schemamodel.Table,
 	fieldsStart, constraintsStart, indexesStart int, sourcePlatform string,
 ) error {
-	if !isMySQLFamily(sourcePlatform) {
+	naming, ok := namingFor(sourcePlatform)
+	if !ok {
 		return nil
 	}
-	claimed := make(map[string]struct{})
-	// PRIMARY is the one name a server reserves rather than derives, and it is
-	// taken by the key's existence rather than by any column of it: measured,
-	// `a INT PRIMARY KEY, KEY (a)` leaves the index called `a`.
-	if len(table.PrimaryKey) > 0 {
-		claimed["PRIMARY"] = struct{}{}
-	}
+	claimed := make(indexNames)
+	// PRIMARY is reserved rather than derived, and UNCONDITIONALLY: measured on
+	// MySQL 9.7.2 and MariaDB 11.8.9, a table whose only key is
+	// ``KEY (`PRIMARY`)`` over a column called `PRIMARY` gets `PRIMARY_2`,
+	// with no primary key anywhere. Seeding this only when a primary key
+	// existed derived `PRIMARY` for that table (stokaro/ptah#2757).
+	//
+	// It is taken by the name rather than by any column of it: `a INT PRIMARY
+	// KEY, KEY (a)` still leaves the index called `a`.
+	claimed.claim("PRIMARY")
 	for _, field := range database.Fields[fieldsStart:] {
-		if field.Primary {
-			claimed["PRIMARY"] = struct{}{}
-		}
 		// A column-level UNIQUE is an index named after its column, and it is
 		// created before any table-level element, so it claims the bare name.
 		if field.Unique {
-			claimed[field.Name] = struct{}{}
+			claimed.claim(field.Name)
 		}
 	}
 	for i := constraintsStart; i < len(database.Constraints); i++ {
-		if err := claimConstraintName(claimed, &database.Constraints[i], table); err != nil {
+		if err := claimConstraintName(claimed, &database.Constraints[i], table, naming); err != nil {
 			return err
 		}
 	}
 	for i := indexesStart; i < len(database.Indexes); i++ {
-		if err := claimIndexName(claimed, &database.Indexes[i], table); err != nil {
+		if err := claimIndexName(claimed, &database.Indexes[i], table, naming); err != nil {
 			return err
 		}
 	}
@@ -105,7 +176,8 @@ func nameMySQLInlineIndexes(
 // covering index rather than adding a name -- measured, an FK declared beside
 // `KEY (a)` on the same column produces one index called `a` and not two.
 func claimConstraintName(
-	claimed map[string]struct{}, constraint *schemamodel.Constraint, table schemamodel.Table,
+	claimed indexNames, constraint *schemamodel.Constraint, table schemamodel.Table,
+	naming engineIndexNaming,
 ) error {
 	if constraint.Type != "UNIQUE" {
 		return nil
@@ -117,13 +189,18 @@ func claimConstraintName(
 		return fmt.Errorf("%w: a unique constraint on %s names no column",
 			ErrUnnamedIndex, table.Name)
 	}
-	constraint.Name = derive(claimed, constraint.Columns[0])
+	name, err := derive(claimed, constraint.Columns[0], table, naming)
+	if err != nil {
+		return err
+	}
+	constraint.Name = name
 	return nil
 }
 
 // claimIndexName names one inline index.
 func claimIndexName(
-	claimed map[string]struct{}, index *schemamodel.Index, table schemamodel.Table,
+	claimed indexNames, index *schemamodel.Index, table schemamodel.Table,
+	naming engineIndexNaming,
 ) error {
 	if index.Name != "" {
 		return claimExplicit(claimed, index.Name, table)
@@ -135,7 +212,11 @@ func claimIndexName(
 				"functional_index and MariaDB refuses outright",
 			ErrUnnamedIndex, table.Name)
 	}
-	index.Name = derive(claimed, candidate)
+	name, err := derive(claimed, candidate, table, naming)
+	if err != nil {
+		return err
+	}
+	index.Name = name
 	return nil
 }
 
@@ -155,11 +236,18 @@ func firstIndexColumn(index schemamodel.Index) string {
 }
 
 // claimExplicit records a name the author wrote, refusing a second claim on it.
-func claimExplicit(claimed map[string]struct{}, name string, table schemamodel.Table) error {
-	if _, taken := claimed[name]; taken {
+func claimExplicit(claimed indexNames, name string, table schemamodel.Table) error {
+	// PRIMARY is refused rather than reported as a duplicate, because it is one
+	// even on a table with no other index: both engines answer
+	// `ERROR 1280 (42000): Incorrect index name 'PRIMARY'`, and calling that a
+	// collision would send the reader looking for the other index.
+	if strings.EqualFold(name, "PRIMARY") {
+		return fmt.Errorf("%w: %s", ErrReservedIndexName, table.Name)
+	}
+	if claimed.taken(name) {
 		return fmt.Errorf("%w: %s on %s", ErrDuplicateIndexName, name, table.Name)
 	}
-	claimed[name] = struct{}{}
+	claimed.claim(name)
 	return nil
 }
 
@@ -168,29 +256,57 @@ func claimExplicit(claimed map[string]struct{}, name string, table schemamodel.T
 // The counter walks upward from 2 and skips a name already claimed rather than
 // counting how many claims share the base, which is what the servers do:
 // measured, `KEY a_2 (b), KEY (a), KEY (a)` yields a_2, a and a_3.
-func derive(claimed map[string]struct{}, column string) string {
+//
+// The unsuffixed candidate is never truncated: it is the column's own name, and
+// a column the engine accepted is short enough to name an index.
+func derive(
+	claimed indexNames, column string, table schemamodel.Table, naming engineIndexNaming,
+) (string, error) {
 	candidate := column
 	for suffix := 2; ; suffix++ {
-		if _, taken := claimed[candidate]; !taken {
-			claimed[candidate] = struct{}{}
-			return candidate
+		if !claimed.taken(candidate) {
+			if len(candidate) > naming.maxBytes {
+				return "", fmt.Errorf("%w: %s on %s is %d bytes and the limit is %d",
+					ErrIndexNameTooLong, candidate, table.Name, len(candidate), naming.maxBytes)
+			}
+			claimed.claim(candidate)
+			return candidate, nil
 		}
-		candidate = column + "_" + strconv.Itoa(suffix)
+		candidate = truncateBase(column, naming) + "_" + strconv.Itoa(suffix)
 	}
 }
 
-// isMySQLFamily reports whether a source dialect names its indexes the way this
-// file describes.
+// truncateBase cuts the base name down to what the engine leaves room for.
 //
-// Deliberately not a predicate in core/platform: PostgreSQL derives a different
-// name for the same declaration -- users_a_key rather than a -- so this is a
-// statement about one naming rule and not about a family of engines that share
-// a catalog.
-func isMySQLFamily(dialect string) bool {
+// MySQL truncates to 61 BYTES and does it whatever the suffix costs -- measured
+// on 9.7.2, a 64-character column yields a 63-character `_2` and a
+// 64-character `_10`. MariaDB does not truncate at all and refuses the result
+// instead, which is what maxBytes then reports.
+//
+// Truncation that splits a multibyte character is the engine's behavior too,
+// and the engine then rejects its own name: measured, a 32-character `ä` column
+// produces `ERROR 1280` naming a string cut mid-character. Ptah cuts on a rune
+// boundary instead, so the name it derives is one the engine can accept -- the
+// alternative is reproducing a defect for the sake of matching it.
+func truncateBase(column string, naming engineIndexNaming) string {
+	if naming.baseBytes <= 0 || len(column) <= naming.baseBytes {
+		return column
+	}
+	cut := naming.baseBytes
+	for cut > 0 && !utf8.RuneStart(column[cut]) {
+		cut--
+	}
+	return column[:cut]
+}
+
+// namingFor answers which engine's rules apply, and whether any do.
+func namingFor(dialect string) (engineIndexNaming, bool) {
 	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB:
-		return true
+	case platform.MySQL:
+		return mysqlNaming, true
+	case platform.MariaDB:
+		return mariaDBNaming, true
 	default:
-		return false
+		return engineIndexNaming{}, false
 	}
 }
