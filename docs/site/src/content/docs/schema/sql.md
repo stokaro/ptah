@@ -89,6 +89,33 @@ names, types, and exposure are derived from the persistence schema. Use
 [YAML](../yaml/), [HCL](../hcl/), or [Go annotations](../go-annotations/) when
 the published contract must differ from database names and types.
 
+## `--dialect` decides how the file is read, not only how it is written
+
+The dialect selects the tokenizer as well as the renderer: whether a backslash
+escapes inside a string, whether `E'...'` is an escape string, whether `--x`
+without a space is a comment, and whether `[name]` is an identifier.
+
+Two consequences are worth knowing before you pick one.
+
+**A file that the named engine would reject is rejected here.** PostgreSQL runs
+with `standard_conforming_strings` on, so a backslash is an ordinary character
+and `DEFAULT 'a\'b'` is an unterminated string — PostgreSQL 18 answers
+`unterminated bit string literal`. Read with `--dialect postgres`, Ptah refuses
+it too. Read with `--dialect mysql`, where a backslash escapes, the same bytes
+are a valid default.
+
+**A version-guarded span is stepped over, and the one clause a schema needs is
+read out of it.** `mysqldump` writes a full-text index's parser as
+``FULLTEXT KEY `ft` (`bio`) /*!50100 WITH PARSER `ngram` */``, and that clause
+now reaches the schema. The rest of a guard is not read: those spans hold
+version-conditional fragments Ptah does not model, and `mariadb-dump` opens
+every file with `/*M!999999\- enable the sandbox mode */` — a guard no server
+executes, because no server is version 999999.
+
+**Omitting `--dialect` keeps a permissive reader.** No dialect means no
+dialect's rules, which is what lets one file mixing conventions be read at all.
+Name the dialect when the file belongs to one engine, which is nearly always.
+
 ## Use it
 
 Everything a desired schema is for — comparing, gating on drift, generating
