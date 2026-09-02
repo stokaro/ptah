@@ -147,6 +147,24 @@ CREATE TABLE "pets" (
   Write `b INTEGER DEFAULT 1` instead. A name Ptah accepts and cannot read back
   would make every later comparison report a difference no apply can settle.
 
+- `ALTER TABLE ... ADD PRIMARY KEY` is read onto the table it names, with its
+  prefix length and direction, exactly as the same key written inside the
+  `CREATE TABLE` would be. A statement naming a table the file does not declare
+  is refused rather than dropped:
+
+  ```sql
+  ALTER TABLE nosuch ADD PRIMARY KEY (a);
+  ```
+
+  ```text
+  the schema model has no place for this statement: ALTER TABLE nosuch ADD
+  PRIMARY KEY names a table this schema does not declare
+  ```
+
+  A primary key has nowhere to live without its table, and the document is not
+  one any engine would run either. Declare the table in the same file, or drop
+  the statement.
+
 - A routine whose body Ptah did not parse is refused rather than dropped. The
   parser understands the outer boundary of every `CREATE PROCEDURE` and
   `CREATE FUNCTION` it accepts; where it cannot model the body, it keeps the
