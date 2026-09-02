@@ -425,10 +425,11 @@ var Cells = []Cell{
 		Preset: capability.ClickHouse2411, PresetName: "ClickHouse2411",
 		Refinement: RefinedByVersion, Support: capability.Certified, Image: "clickhouse/clickhouse-server:26.8",
 		Note: "certified because .github/workflows/go-integration-tests.yml starts this server, which " +
-			"is what the level asserts; the preset is the arm clickHouseForVersion already returns for " +
-			"every line above 24.11 rather than a probe result, because no capability-matrix run has " +
-			"measured 26.8 yet. capabilityline still names 26.7 as the newest measured line, so a live " +
-			"26.8 reports saturation until a probe measures it and that constant moves with the evidence",
+			"is what the level asserts. Measured on 26.8.2.7: 54 rows, 34 agreements, 0 disagreements, " +
+			"and this cell's floor of 34 met, which is what says ClickHouse2411 -- the arm " +
+			"clickHouseForVersion returns for every line above 24.11 -- is right for 26.8 rather than " +
+			"assumed. capabilityline names 26.8 as the newest measured line on the strength of that " +
+			"measurement (stokaro/ptah#2802)",
 	},
 	{
 		Dialect: platform.ClickHouse, Line: "26.7",

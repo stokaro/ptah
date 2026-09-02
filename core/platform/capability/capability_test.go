@@ -9,6 +9,7 @@ import (
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/internal/capabilityline"
 )
 
 // The version strings below are what four servers answer about themselves.
@@ -668,9 +669,15 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 		// step and below the newest measured line, so it climbs to the upper
 		// arm, is not attributable to a declared line (25.3 is not one), and is
 		// not saturated either.
-		{"clickhouse above the step, on no declared line", "clickhouse", "25.3.1.100", capability.ClickHouse2411(), false, false, "26.7"},
-		{"clickhouse on its newest measured line", "clickhouse", "26.7.3.19", capability.ClickHouse2411(), true, false, "26.7"},
-		{"clickhouse past the newest measured line", "clickhouse", "27.1.1.1", capability.ClickHouse2411(), false, true, "26.7"},
+		// These three name the constant rather than its value, unlike the rows
+		// above. `MySQL26` and `ClickHouse267` are both "26.7" today, so a
+		// literal here reads as though it were the MySQL rows' answer and a
+		// blind replace when one of them moves corrupts the other
+		// (stokaro/ptah#2802).
+		{"clickhouse above the step, on no declared line", "clickhouse", "25.3.1.100", capability.ClickHouse2411(), false, false, capabilityline.ClickHouse268},
+		{"clickhouse on a measured line below the newest", "clickhouse", capabilityline.ClickHouse267 + ".3.19", capability.ClickHouse2411(), true, false, capabilityline.ClickHouse268},
+		{"clickhouse on its newest measured line", "clickhouse", capabilityline.ClickHouse268 + ".2.7", capability.ClickHouse2411(), true, false, capabilityline.ClickHouse268},
+		{"clickhouse past the newest measured line", "clickhouse", "27.1.1.1", capability.ClickHouse2411(), false, true, capabilityline.ClickHouse268},
 		// SQLite has a ladder now, of one step at 3.25. It reports
 		// VersionSpecific because a version DID select an arm, and no newest
 		// measured line because the matrix declares one SQLite cell and it has
