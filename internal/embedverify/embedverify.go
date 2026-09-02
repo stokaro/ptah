@@ -24,6 +24,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"go.5x5.cz/ptah/internal/embeddigest"
 )
 
 // Severity is how much a finding matters.
@@ -75,27 +77,32 @@ type Finding struct {
 // million keys; it is unreadable, and the count is what an operator acts on.
 const MaxReportedKeys = 20
 
-// KeyFieldSeparator joins a composite key's components into the one string
-// every layer compares rows by.
+// KeyIdentity is the one string every layer compares a row by.
 //
-// U+001F, the ASCII unit separator, because the components are arbitrary column
-// values and every printable delimiter is one some column plainly holds: joined
-// on a comma, tenant `a,b` with id `c` and tenant `a` with id `b,c` are one key.
+// Through [embeddigest.Encode], the length-prefixed encoding the rest of the
+// lifecycle already addresses content with. A joiner was used here -- U+001F,
+// the ASCII unit separator, chosen for rarity -- and rarity is not the same
+// property as safety: a TEXT column may hold that byte, and with `key_fields:
+// [tenant, id]` the rows (`a<US>b`, `c`) and (`a`, `b<US>c`) folded onto one
+// identity. Coverage then compared one source row against the other's target
+// row, and the layer that exists to answer key by key answered about the wrong
+// key (stokaro/ptah#2744).
 //
-// It is a delimiter chosen for rarity, not an encoding that cannot be forged. A
-// TEXT column may contain U+001F, and two keys whose components differ only
-// across such a value fold onto one identity here. Making that impossible needs
-// a length-prefixed or escaped encoding, which is a change to what the walks
-// compare rather than to how a key is shown; the residual is recorded rather
-// than papered over.
+// Length prefixes remove the boundary question rather than making it rarer.
+// Nothing a component can contain moves where it ends, so there is no value
+// left to choose a separator against -- which is why this is the encoder
+// [embeddigest.Of] hashes and why [go.5x5.cz/ptah/internal/embedcatchup.KeyIdentity]
+// already reached for it.
 //
 // It is a comparison key, never a display one. Printed raw, a terminal swallows
-// it -- `(acme, 2)` and `(globex, 1)` came out as `acme2` and `globex1`, so the
-// only line telling an operator which rows to remove was neither
-// copy-pasteable nor unambiguous, since tenant `a` with id `11` and tenant `a1`
-// with id `1` both render as `a11` (stokaro/ptah#2649 finding 2). Anything
+// a control byte -- `(acme, 2)` and `(globex, 1)` came out as `acme2` and
+// `globex1`, so the only line telling an operator which rows to remove was
+// neither copy-pasteable nor unambiguous (stokaro/ptah#2649 finding 2). It is
+// no longer raw-printable at all: `6:acme1:2` is the identity, and anything
 // showing a key to a person calls [RenderKey].
-const KeyFieldSeparator = "\x1f"
+func KeyIdentity(components ...string) string {
+	return embeddigest.Encode(components...)
+}
 
 // RenderKey is how a key is shown to a person.
 //
@@ -103,10 +110,19 @@ const KeyFieldSeparator = "\x1f"
 // column say nothing. A composite one is rendered as the tuple it is, in the
 // specification's key order, which is the shape it would be written in a
 // predicate.
+//
+// The components come back out of the identity rather than being carried
+// beside it: a second copy of a key is a second thing that can disagree with
+// the first. An identity this package did not produce is returned unchanged --
+// there is nothing truer to say about it, and rendering a guess would be worse
+// than showing what is there.
 func RenderKey(key string) string {
-	components := strings.Split(key, KeyFieldSeparator)
-	if len(components) == 1 {
+	components, ok := embeddigest.Decode(key)
+	if !ok || len(components) == 0 {
 		return key
+	}
+	if len(components) == 1 {
+		return components[0]
 	}
 	return "(" + strings.Join(components, ", ") + ")"
 }
