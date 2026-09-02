@@ -665,6 +665,140 @@ CREATE TABLE pg_escaped_defaults (c text default E'\\A\\');`
 	c.Assert(pgEscapedTable.Columns[0].Default.Value, qt.Equals, `E'\\A\\'`)
 }
 
+// TestParser_NamedDialectUsesThatDialectsLexerRules_HappyPath covers
+// stokaro/ptah#2752.
+//
+// internal/dialectlexer is the one place that says how a lexer behaves per
+// dialect -- backslash escapes, standard strings, `--` comment rules, bracket
+// identifiers, and MySQL's and MariaDB's executable comments. NewParser did not
+// consult it. It hand-built a two-field literal, so a document read with
+// `--dialect mysql` was tokenized as though no dialect had been named.
+//
+// Each row is a literal whose bytes only survive under its dialect's rules. The
+// commas and parentheses inside them are what makes the row discriminating: a
+// tokenizer that ends the literal early hands the table parser those bytes as
+// table elements, which is how the permissive reader refuses the first row --
+// TestParser_NoDialectCannotReadADoubledQuoteLiteral measures that refusal.
+func TestParser_NamedDialectUsesThatDialectsLexerRules_HappyPath(t *testing.T) {
+	tests := []struct {
+		name        string
+		dialect     string
+		sql         string
+		wantDefault string
+	}{
+		{
+			name:        "mysql reads a doubled-quote literal",
+			dialect:     platform.MySQL,
+			sql:         `CREATE TABLE t (c TEXT DEFAULT 'O''Brien, (x), y');`,
+			wantDefault: `'O''Brien, (x), y'`,
+		},
+		{
+			name:        "postgres reads a doubled-quote literal",
+			dialect:     platform.Postgres,
+			sql:         `CREATE TABLE t (c TEXT DEFAULT 'O''Brien, (x), y');`,
+			wantDefault: `'O''Brien, (x), y'`,
+		},
+		{
+			name:        "mysql reads a backslash-escaped quote",
+			dialect:     platform.MySQL,
+			sql:         `CREATE TABLE t (c TEXT DEFAULT 'a\'b, (c)');`,
+			wantDefault: `'a\'b, (c)'`,
+		},
+		{
+			name:        "mariadb reads a backslash-escaped quote",
+			dialect:     platform.MariaDB,
+			sql:         `CREATE TABLE t (c TEXT DEFAULT 'a\'b, (c)');`,
+			wantDefault: `'a\'b, (c)'`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := parser.NewParser(test.sql, parser.WithDialect(test.dialect)).Parse()
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements.Statements, qt.HasLen, 1)
+
+			table, ok := statements.Statements[0].(*ast.CreateTableNode)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(table.Columns, qt.HasLen, 1)
+			c.Assert(table.Columns[0].Default.Value, qt.Equals, test.wantDefault)
+		})
+	}
+}
+
+// TestParser_NamedDialectRefusesAnotherDialectsEscaping_FailurePath is why the
+// parser keeps the permissive tokenizer when no dialect was named.
+//
+// TestParser_ParseCreateTable_EscapedDefaultStrings reads a MySQL
+// backslash-escaped quote, PostgreSQL's literal trailing backslash and its
+// `E'\\A\\'` out of ONE document with no dialect. The rows below are that
+// document's statements measured one at a time against the other dialect: each
+// refuses the other's spelling, so any single dialect's answer would refuse one
+// of the three. A classifying read has
+// no dialect by construction, and the permissive lexer is the only setting that
+// reads a document nobody has classified yet.
+//
+// The message is compared whole rather than matched, because `'` and `(` are
+// regular-expression metacharacters and a pattern quietly matching less than it
+// appears to is the failure this test could not see.
+func TestParser_NamedDialectRefusesAnotherDialectsEscaping_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		sql     string
+		wantErr string
+	}{
+		{
+			name:    "mysql refuses a literal trailing backslash",
+			dialect: platform.MySQL,
+			sql:     `CREATE TABLE pg_plain_defaults (c text default '\');`,
+			wantErr: `expected ',' or ')' after table element at position 52`,
+		},
+		{
+			name:    "postgres refuses a backslash-escaped quote",
+			dialect: platform.Postgres,
+			sql:     `CREATE TABLE mysql_defaults (c text default "\"" + '\'');`,
+			wantErr: `expected ',' or ')' after table element at position 57`,
+		},
+		{
+			name:    "postgres reads a backslash as itself",
+			dialect: platform.Postgres,
+			sql:     `CREATE TABLE t (c TEXT DEFAULT 'a\'b, (c)');`,
+			wantErr: `unsupported column attribute: B at position 35`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := parser.NewParser(test.sql, parser.WithDialect(test.dialect)).Parse()
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Equals, test.wantErr)
+		})
+	}
+}
+
+// TestParser_NoDialectCannotReadADoubledQuoteLiteral is what the permissive
+// tokenizer costs, stated once so it is a decision rather than a surprise.
+//
+// A reader with no dialect accepts three contradictory escaping rules in one
+// document, and the price is that it does not apply the SQL-standard rule that
+// a doubled quote stays inside the literal. The same statement parses under
+// every named dialect;
+// TestParser_NamedDialectUsesThatDialectsLexerRules_HappyPath carries two of
+// them. Naming the dialect is the answer, and before stokaro/ptah#2752 naming
+// it did not help.
+func TestParser_NoDialectCannotReadADoubledQuoteLiteral(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := parser.NewParser(`CREATE TABLE t (c TEXT DEFAULT 'O''Brien, (x), y');`).Parse()
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Equals, `expected ',' or ')' after table element at position 34`)
+}
+
 func TestParser_ParseCreateView(t *testing.T) {
 	c := qt.New(t)
 
@@ -2500,6 +2634,79 @@ func TestParser_ParseRejectsUnknownStatement(t *testing.T) {
 
 	_, err := parser.NewParser("BROKEN STATEMENT;").Parse()
 	c.Assert(err, qt.ErrorMatches, `unsupported SQL statement: BROKEN at position 0`)
+}
+
+// TestParser_AVersionGuardedStatementIsSteppedOverNotRefused pins the decision
+// naming a dialect forced.
+//
+// With no dialect, `/*!50001 LOCK TABLES ... */` is an ordinary comment and the
+// document reads. Naming one turns the span into a single token, and the
+// question becomes what to do with it. Refusing its contents was measured and
+// rejected: mariadb-dump opens every file with
+// `/*M!999999\- enable the sandbox mode */`, a guard no server executes because
+// no server is version 999999, so refusing would make naming the dialect the
+// thing that stopped a dump being readable.
+//
+// The same statement written in the open is still refused, and that contrast is
+// the assertion. A guard is a version-conditional fragment Ptah does not model;
+// a statement is a statement.
+func TestParser_AVersionGuardedStatementIsSteppedOverNotRefused(t *testing.T) {
+	t.Run("guarded, and stepped over", func(t *testing.T) {
+		c := qt.New(t)
+
+		statements, err := parser.NewParser(
+			"CREATE TABLE t (id BIGINT PRIMARY KEY);\n/*!50001 LOCK TABLES `t` WRITE */;",
+			parser.WithDialect(platform.MySQL)).Parse()
+
+		c.Assert(err, qt.IsNil)
+		c.Assert(statements.Statements, qt.HasLen, 1)
+	})
+
+	t.Run("the same statement in the open is refused", func(t *testing.T) {
+		c := qt.New(t)
+
+		_, err := parser.NewParser(
+			"CREATE TABLE t (id BIGINT PRIMARY KEY);\nLOCK TABLES `t` WRITE;",
+			parser.WithDialect(platform.MySQL)).Parse()
+
+		c.Assert(err, qt.IsNotNil)
+		c.Assert(err.Error(), qt.Equals, "unsupported SQL statement: LOCK at position 40")
+	})
+}
+
+// TestParser_ExecutableCommentContentThatIsSchemaNeutralIsSkipped is the other
+// half of that dispatch, and the half every mysqldump depends on.
+//
+// A dump opens with a run of session settings written as version guards --
+// `/*!40101 SET @saved_cs_client = @@character_set_client */` and its
+// relatives. SET is on the list of statements that change no schema, so it is
+// skipped rather than refused, and it is skipped for the same reason inside a
+// guard as outside one. A reader that refused it could not read any dump at
+// all.
+func TestParser_ExecutableCommentContentThatIsSchemaNeutralIsSkipped(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+	}{
+		{
+			name: "inside an executable comment",
+			sql:  "/*!40101 SET @saved_cs_client = @@character_set_client */;",
+		},
+		{
+			name: "in the open",
+			sql:  "SET @saved_cs_client = @@character_set_client;",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := parser.NewParser(test.sql, parser.WithDialect(platform.MySQL)).Parse()
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements.Statements, qt.HasLen, 0)
+		})
+	}
 }
 
 func TestParser_ParseAlterTable(t *testing.T) {

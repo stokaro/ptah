@@ -197,10 +197,12 @@ func TestParse_MySQLTypedIndexKeepsItsKeyParts(t *testing.T) {
 // Ptah reports as matching while it tokenizes differently, which is a silent
 // wrong answer rather than a missing feature.
 //
-// Only the bare spelling is covered. mysqldump writes the clause inside an
-// executable comment, /*!50100 WITH PARSER `ngram` */, and the parser's lexer
-// does not enable MySQL executable comments, so that spelling still loses the
-// name; it is filed separately rather than asserted here.
+// Only the bare spelling is covered here. mysqldump writes the clause inside an
+// executable comment, /*!50100 WITH PARSER `ngram` */, and
+// TestParse_MySQLTypedIndexReadsWithParserInsideAnExecutableComment covers that
+// spelling (stokaro/ptah#2752). The two reach this field by different routes --
+// one through the table-element grammar, one through a lexer that opens the
+// guard -- so each carries its own rows.
 //
 // The AST is also as far as the clause is followed anywhere. No live test
 // declares it, because MariaDB 12.3 answers `ERROR 1128 Function 'ngram' is not
@@ -236,6 +238,93 @@ func TestParse_MySQLTypedIndexReadsWithParser(t *testing.T) {
 			c.Assert(table.Indexes[0].Parser, qt.Equals, test.wantParser)
 			c.Assert(table.Indexes[0].Name, qt.Equals, "ft_b")
 			c.Assert(table.Indexes[0].Type, qt.Equals, "FULLTEXT")
+		})
+	}
+}
+
+// TestParse_MySQLTypedIndexReadsWithParserInsideAnExecutableComment covers
+// stokaro/ptah#2752, and is the spelling every dump of such a table contains.
+//
+// mysqldump writes a full-text index's parser inside a version guard, the same
+// way Ptah's own renderer emits it:
+//
+//	FULLTEXT KEY `ft` (`bio`) /*!50100 WITH PARSER `ngram` */
+//
+// MySQL executes what is inside `/*!...*/`. A reader that treats it as a
+// comment does not, so the two spellings of one clause diverged: written bare
+// it round-tripped, written the way every dump writes it the parser name was
+// gone with nothing said. The name decides whether CJK text is indexed at all,
+// so the loss is a wrong answer rather than a missing feature.
+//
+// The dialect column is the point. The clause is read because the dialect's
+// lexer rules reach this reader, and the row that names no dialect is the
+// control: a classifying read has no dialect by construction, keeps the
+// permissive tokenizer, and therefore sees an ordinary comment. That row is
+// also what every named dialect did before the fix.
+//
+// The assertion is on the parsed model rather than on rendered SQL, because a
+// renderer that dropped the clause and a reader that never read it produce the
+// same text.
+func TestParse_MySQLTypedIndexReadsWithParserInsideAnExecutableComment(t *testing.T) {
+	const dumped = "/*!40101 SET @saved_cs_client = @@character_set_client */;\n" +
+		"CREATE TABLE `ng` (\n" +
+		"  `id` bigint NOT NULL,\n" +
+		"  `bio` text,\n" +
+		"  PRIMARY KEY (`id`),\n" +
+		"  FULLTEXT KEY `ft` (`bio`) /*!50100 WITH PARSER `ngram` */\n" +
+		") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;\n"
+	const dumpedWithAnUnquotedParser = "CREATE TABLE `ng` (\n" +
+		"  `id` bigint NOT NULL,\n" +
+		"  `bio` text,\n" +
+		"  FULLTEXT KEY `ft` (`bio`) /*!50100 WITH PARSER ngram */\n" +
+		");\n"
+
+	tests := []struct {
+		name       string
+		dialect    string
+		sql        string
+		wantParser string
+	}{
+		{
+			name:       "mysql reads the guarded clause",
+			dialect:    platform.MySQL,
+			sql:        dumped,
+			wantParser: "`ngram`",
+		},
+		{
+			name:       "mariadb reads the guarded clause",
+			dialect:    platform.MariaDB,
+			sql:        dumped,
+			wantParser: "`ngram`",
+		},
+		{
+			name:       "the name travels with whatever quoting it was written in",
+			dialect:    platform.MySQL,
+			sql:        dumpedWithAnUnquotedParser,
+			wantParser: "ngram",
+		},
+		{
+			name:       "no dialect reads a comment",
+			dialect:    "",
+			sql:        dumped,
+			wantParser: "",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, err := parser.NewParser(test.sql, parser.WithDialect(test.dialect)).Parse()
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements.Statements, qt.HasLen, 1)
+
+			table, ok := statements.Statements[0].(*ast.CreateTableNode)
+			c.Assert(ok, qt.IsTrue)
+			c.Assert(table.Indexes, qt.HasLen, 1)
+			c.Assert(table.Indexes[0].Name, qt.Equals, "`ft`")
+			c.Assert(table.Indexes[0].Type, qt.Equals, "FULLTEXT")
+			c.Assert(table.Indexes[0].Parser, qt.Equals, test.wantParser)
 		})
 	}
 }
