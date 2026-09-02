@@ -937,11 +937,22 @@ func (r *Reader) readEnums(ctx context.Context) ([]catalog.Enum, error) {
 }
 
 func (r *Reader) readEnumsForSchema(ctx context.Context, schemaName string) ([]catalog.Enum, error) {
+	// enumsortorder is ordered BY and deliberately not selected. It is a float4,
+	// not an integer: initial members take 1..n, and a value added with BEFORE
+	// or AFTER takes a position between its neighbors, so `ADD VALUE
+	// 'processing' BEFORE 'sent'` on a two-member type produces 1, 1.5, 2. The
+	// reader scanned that column into an int purely to discard it, and the
+	// fractional position it was never asked about failed the scan -- taking the
+	// whole schema read down with it, for a type PostgreSQL considers ordinary
+	// (stokaro/ptah#2719).
+	//
+	// Selecting a value only to throw it away is what made a column this reader
+	// has no use for able to fail it. The order the rows arrive in IS the
+	// answer, and ORDER BY delivers that without the value crossing the wire.
 	enumsQuery := `
 		SELECT
 			t.typname AS enum_name,
-			e.enumlabel AS enum_value,
-			e.enumsortorder
+			e.enumlabel AS enum_value
 		FROM pg_type t
 		JOIN pg_enum e ON t.oid = e.enumtypid
 		JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
@@ -964,8 +975,7 @@ func (r *Reader) readEnumsForSchema(ctx context.Context, schemaName string) ([]c
 	var enumOrder []string
 	for rows.Next() {
 		var enumName, enumValue string
-		var sortOrder int
-		err := rows.Scan(&enumName, &enumValue, &sortOrder)
+		err := rows.Scan(&enumName, &enumValue)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan enum: %w", err)
 		}

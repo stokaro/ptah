@@ -27,8 +27,8 @@ import (
 func enumFunctionCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 	if strings.Contains(query, "pg_enum") {
 		return dbtest.QueryResult{
-			Columns: []string{"enum_name", "enum_value", "enumsortorder"},
-			Rows:    [][]driver.Value{{"color", "r", int64(1)}},
+			Columns: []string{"enum_name", "enum_value"},
+			Rows:    [][]driver.Value{{"color", "r"}},
 		}, nil
 	}
 	if !strings.Contains(query, "pg_get_function_identity_arguments(p.oid)") {
