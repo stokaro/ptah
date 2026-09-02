@@ -12,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/internal/dialectlexer"
 	"go.5x5.cz/ptah/internal/lexer"
 	"go.5x5.cz/ptah/internal/tableref"
 )
@@ -22,6 +23,10 @@ import (
 // representation of SQL DDL statements. It supports CREATE TABLE, ALTER TABLE, CREATE INDEX,
 // and other DDL operations.
 type Parser struct {
+	// lastGuard is the text of the most recent version-guarded span
+	// skipWhitespace stepped over, so a clause hiding inside one can still be
+	// read at the place that expects it.
+	lastGuard string
 	lexer     *lexer.Lexer
 	input     string
 	current   lexer.Token
@@ -50,12 +55,32 @@ func NewParser(input string, opts ...Option) *Parser {
 	for _, opt := range opts {
 		opt(p)
 	}
-	p.lexer = lexer.NewLexerWithOptions(normalized, lexer.Options{
-		BracketIdentifiers:  p.dialect == platform.SQLServer,
-		DisableHashComments: p.dialect == platform.SQLServer,
-	})
+	p.lexer = lexer.NewLexerWithOptions(normalized, lexerOptions(p.dialect))
 	p.advance() // Load the first token
 	return p
+}
+
+// lexerOptions is how this parser tokenizes for a dialect.
+//
+// A named dialect gets internal/dialectlexer's answer, which is the one place
+// that says what a dialect's lexer does -- backslash escapes, standard
+// strings, `--` comment rules, bracket identifiers, and MySQL's and MariaDB's
+// executable comments. This parser used to carry a two-field literal of its
+// own, so a document read with `--dialect mysql` was tokenized as though no
+// dialect had been named at all (stokaro/ptah#2752).
+//
+// No dialect keeps the permissive tokenizer, and that is a decision rather than
+// an oversight. A classifying read has no dialect by construction, and
+// TestParser_ParseCreateTable_EscapedDefaultStrings puts MySQL's `'\”`,
+// PostgreSQL's literal `'\'` and its `E'\\A\\'` in one document: the three
+// escaping rules contradict each other, so any single dialect's answer refuses
+// one of them. Permissive is the only setting that reads a document nobody has
+// classified yet.
+func lexerOptions(dialect string) lexer.Options {
+	if dialect == "" {
+		return lexer.Options{}
+	}
+	return dialectlexer.Options(dialect)
 }
 
 // Parse parses the input SQL and returns a list of AST statements.
@@ -78,6 +103,19 @@ func (p *Parser) Parse() (*ast.StatementList, error) {
 
 		// Skip whitespace and comments
 		if p.current.Type == lexer.TokenWhitespace || p.current.Type == lexer.TokenComment {
+			p.advance()
+			continue
+		}
+
+		// A version-guarded statement is skipped whole, the way it was when the
+		// lexer handed it back as an ordinary comment. Naming a dialect turns
+		// `/*!40101 SET ... */` into one TokenUnknown, and a dump opens with
+		// several of them -- mariadb-dump's very first line is
+		// `/*M!999999\- enable the sandbox mode */`, a guard no server executes
+		// because no server is version 999999. Reading their contents is a
+		// separate question with its own answer; what matters here is that
+		// naming the dialect must not make a dump unreadable.
+		if p.current.Type == lexer.TokenUnknown {
 			p.advance()
 			continue
 		}
@@ -576,9 +614,29 @@ func (p *Parser) parseQualifiedIdentifier(label string) (string, error) {
 }
 
 // skipWhitespace skips whitespace and comment tokens.
+// skipWhitespace steps over whitespace, comments, and the version-guarded
+// spans a dump is full of.
+//
+// Naming a dialect turns `/*!50100 ... */` into one TokenUnknown where an
+// unnamed read saw an ordinary comment, and those spans sit anywhere a dump
+// needs one: on a column (`point NOT NULL /*!80003 SRID 4326 */`), after an
+// index (`FULLTEXT KEY ft (bio) /*!50100 WITH PARSER \`ngram\` */`), and as
+// whole statements. Stepping over them here keeps every one of those documents
+// readable, which is what the unnamed read already did (stokaro/ptah#2752).
+//
+// The last one stepped over is remembered rather than discarded, because one of
+// them carries a clause the schema needs. See lastGuard.
 func (p *Parser) skipWhitespace() {
-	for p.current.Type == lexer.TokenWhitespace || p.current.Type == lexer.TokenComment {
-		p.advance()
+	for {
+		switch p.current.Type {
+		case lexer.TokenWhitespace, lexer.TokenComment:
+			p.advance()
+		case lexer.TokenUnknown:
+			p.lastGuard = p.current.Value
+			p.advance()
+		default:
+			return
+		}
 	}
 }
 
@@ -3398,6 +3456,73 @@ func (p *Parser) handleTableConstraintTypedIndex(constraint *ast.ConstraintNode)
 	}
 }
 
+// indexParserName resolves a `WITH PARSER` clause in either spelling an author
+// or a dumper may have used.
+//
+// The guarded one is looked for only after the bare one came back empty, and
+// only AFTER handleTableIndexParser has run: that call opens with
+// skipWhitespace, which is what steps over the guard and records it.
+//
+// It is asked for a constraint as well as an index, deliberately. A guard
+// carrying the clause after something that is not a full-text index is refused
+// there rather than ignored here, which is the answer both servers give.
+func (p *Parser) indexParserName(indexMethod string) (string, error) {
+	name, err := p.handleTableIndexParser(indexMethod)
+	if err != nil || name != "" {
+		return name, err
+	}
+	return p.guardedIndexParser(p.lastGuard, indexMethod)
+}
+
+// guardedIndexParser reads a `WITH PARSER` clause out of a version-guarded
+// span that followed this index.
+//
+// mysqldump writes the clause that way and only that way:
+// `FULLTEXT KEY `ft` (`bio`) /*!50100 WITH PARSER `ngram` */`. The guard is
+// stepped over as whitespace so the rest of the dump stays readable, so the
+// clause has to be read from the span's own text rather than from the token
+// stream (stokaro/ptah#2752).
+//
+// A guard holding anything else is left alone. It is a version-conditional
+// fragment Ptah does not model, and it was invisible before a dialect was
+// named; refusing it here would make naming the dialect the thing that broke
+// the document.
+func (p *Parser) guardedIndexParser(guard, indexMethod string) (string, error) {
+	body, ok := executableCommentBody(guard)
+	if !ok {
+		return "", nil
+	}
+	inner := NewParser(body, WithDialect(p.dialect))
+	inner.skipWhitespace()
+	if inner.current.Type != lexer.TokenIdentifier ||
+		!strings.EqualFold(inner.current.Value, "WITH") {
+		return "", nil
+	}
+	return inner.handleTableIndexParser(indexMethod)
+}
+
+// executableCommentBody is the SQL inside `/*!NNNNN ... */` and MariaDB's
+// `/*M!NNNNN ... */`, and reports whether the text was one of those at all.
+//
+// The two markers are different lengths, which is the kind of thing a fixed
+// offset gets wrong on exactly one engine.
+func executableCommentBody(text string) (string, bool) {
+	rest, ok := strings.CutPrefix(text, "/*")
+	if !ok {
+		return "", false
+	}
+	rest = strings.TrimPrefix(strings.TrimPrefix(rest, "M"), "m")
+	rest, ok = strings.CutPrefix(rest, "!")
+	if !ok {
+		return "", false
+	}
+	rest, ok = strings.CutSuffix(rest, "*/")
+	if !ok {
+		return "", false
+	}
+	return strings.TrimLeft(rest, "0123456789"), true
+}
+
 // handleTableIndexParser reads MySQL's optional `WITH PARSER <name>` clause.
 //
 // It names the tokenizer a full-text index uses, and it is not decoration: the
@@ -3789,13 +3914,20 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 		p.skipWhitespace()
 	}
 
+	// Cleared here rather than read as it stands: skipWhitespace remembers
+	// every guard it steps over, and only one that appears AFTER the column
+	// list belongs to this index. Without this, a guard on an earlier column --
+	// `point NOT NULL /*!80003 SRID 4326 */` -- would still be the last one seen
+	// when the clause is looked for.
+	p.lastGuard = ""
+
 	// Parse column list for PRIMARY KEY, UNIQUE, FOREIGN KEY
 	err = p.parseTableColumnList(constraint)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	parserName, err := p.handleTableIndexParser(indexMethod)
+	parserName, err := p.indexParserName(indexMethod)
 	if err != nil {
 		return nil, nil, err
 	}
