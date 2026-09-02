@@ -99,6 +99,18 @@ func TestParse_MySQLTableBodyIndexKeywordsAreNotAWildcard(t *testing.T) {
 		{name: "FULLTEXT followed by neither keyword", declaration: "FULLTEXT ft_b (bio)"},
 		{name: "FULLTEXT followed by a wrong keyword", declaration: "FULLTEXT CLUSTER ft_b (bio)"},
 		{name: "the keyword itself misspelled", declaration: "FULLTEX KEY ft_b (bio)"},
+		// `WITH PARSER` belongs to FULLTEXT and to nothing else. Measured on
+		// MySQL 8.4, each of these three is `ERROR 1064` there.
+		//
+		// The first two are the ones that discriminate: offering the clause to
+		// every index accepted them, and the renderer then emitted a clause the
+		// server refuses. The unique key is refused either way -- MySQL's
+		// UNIQUE is read as a constraint, so the parser clause was never
+		// offered to it -- and it is kept because the behavior is required, not
+		// because it measures this gate.
+		{name: "a parser clause on a plain key", declaration: "KEY idx_b (bio(20)) WITH PARSER ngram"},
+		{name: "a parser clause on a unique key", declaration: "UNIQUE KEY uq_b (bio(20)) WITH PARSER ngram"},
+		{name: "a parser clause on a spatial key", declaration: "SPATIAL KEY sp_g (geom) WITH PARSER ngram"},
 	}
 
 	for _, test := range tests {

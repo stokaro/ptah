@@ -211,11 +211,15 @@ than a constraint:
 - `KEY name (columns)` / `INDEX name (columns)`
 - `SPATIAL KEY name (columns)` / `SPATIAL INDEX name (columns)`
 - `FULLTEXT KEY name (columns)` / `FULLTEXT INDEX name (columns)`
-- any of the above followed by `WITH PARSER name`
+- a **FULLTEXT** key followed by `WITH PARSER name`
 
 The introducing keyword is required after `SPATIAL` and `FULLTEXT`, because the
 engines require it: `SPATIAL sp (geom)` is a syntax error there and is refused
 here rather than read as a column named `SPATIAL`.
+
+`WITH PARSER` belongs to FULLTEXT alone. MySQL answers a plain, unique or
+spatial key carrying it with a syntax error, so the reader refuses those too
+rather than accepting a declaration the server would not.
 
 ### Table Options
 - `ENGINE=InnoDB`

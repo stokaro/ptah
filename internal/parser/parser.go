@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/internal/lexer"
+	"go.5x5.cz/ptah/internal/mysqlindex"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -3422,9 +3423,10 @@ func (p *Parser) parseTableConstraintTrailingClauses(constraint *ast.ConstraintN
 // which follows a FULLTEXT key's column list, and answers the empty string when
 // the declaration carries none.
 //
-// The caller reaches it only for a table element that turned out to be an
-// index. A constraint cannot take the clause, and reading it for one would
-// accept `UNIQUE uq (a) WITH PARSER ngram`, a declaration MySQL refuses.
+// The caller reaches it only for a FULLTEXT key, which is the one kind MySQL
+// allows it on. Reading it for anything else would accept
+// `UNIQUE uq (a) WITH PARSER ngram` and `SPATIAL KEY sp (g) WITH PARSER ngram`,
+// declarations the server answers with a syntax error.
 //
 // A `WITH` that reaches this point must be that clause, and one followed by
 // anything else is refused rather than skipped. This parser holds one token and
@@ -3793,13 +3795,19 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 		return nil, nil, err
 	}
 
-	// MySQL puts `WITH PARSER <name>` after a FULLTEXT key's columns. It has to
-	// be read for the declaration to round-trip, because the renderer already
-	// emits it from ast.IndexNode.Parser: dropping it here would turn an ngram
-	// index into a default-parser one, which tokenizes CJK text differently and
-	// changes which rows a MATCH finds.
+	// MySQL puts `WITH PARSER <name>` after a FULLTEXT key's columns, and after
+	// no other kind: measured on MySQL 8.4, the clause is a syntax error on a
+	// plain KEY, a UNIQUE KEY and a SPATIAL KEY alike. Offering it to every
+	// index would make this reader accept three declarations the server
+	// refuses, and the renderer emits the clause whenever Parser is set, so the
+	// round trip would produce SQL that cannot be applied.
+	//
+	// It has to be read for a FULLTEXT key, because the renderer already emits
+	// it: dropping it would turn an ngram index into a default-parser one,
+	// which tokenizes CJK text differently and changes which rows a MATCH
+	// finds.
 	indexParser := ""
-	if isIndex {
+	if mysqlindex.KindOf(indexMethod) == mysqlindex.FullText {
 		indexParser, err = p.parseIndexParserClause()
 		if err != nil {
 			return nil, nil, err
