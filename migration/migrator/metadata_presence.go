@@ -83,6 +83,13 @@ func (m *Migrator) migrationsTableUsesLegacyRevisionLayout(ctx context.Context) 
 	if err != nil {
 		return false, fmt.Errorf("failed to read migrations metadata columns: %w", err)
 	}
+	// Nothing iterates this result set -- the query is `WHERE 1 = 0` and only
+	// the column list is wanted -- so Rows.Err is where a statement that failed
+	// on the server reports it. Without this the layout question answers from a
+	// column list the server never sent.
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("failed to read migrations metadata columns: %w", err)
+	}
 	present := make(map[string]struct{}, len(columns))
 	for _, column := range columns {
 		present[strings.ToLower(column)] = struct{}{}

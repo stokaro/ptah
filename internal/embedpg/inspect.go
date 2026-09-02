@@ -313,6 +313,10 @@ func VerificationCorpus(
 	if err != nil {
 		return nil, err
 	}
+	//nolint:rowserrcheck // Rows.Err is checked, in the iterator returned below:
+	// this function hands back an iter.Seq2 rather than iterating here, and
+	// rowserrcheck's analysis does not follow the rows into the closure. See the
+	// `if err := rows.Err()` after the loop.
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("read %s for verification: %w", spec.Source.Table, err)

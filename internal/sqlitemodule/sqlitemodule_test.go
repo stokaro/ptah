@@ -186,6 +186,9 @@ func primeWithPragmaFunctions(t *testing.T, db *sql.DB) {
 		if err != nil {
 			t.Fatalf("prime %q: %v", query, err)
 		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("prime %q: %v", query, err)
+		}
 		if err := rows.Close(); err != nil {
 			t.Fatalf("close %q: %v", query, err)
 		}

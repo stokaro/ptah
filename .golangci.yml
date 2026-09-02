@@ -31,6 +31,7 @@ linters:
     - nestif
     - nolintlint
     - revive
+    - rowserrcheck
     - staticcheck
     - unused
     - whitespace
@@ -224,6 +225,28 @@ linters:
           disabled: false
         - name: waitgroup-by-value
           disabled: false
+    rowserrcheck:
+      # The list is what the linter can SEE, and the default is database/sql
+      # alone. Ptah's schema readers query through go.5x5.cz/ptah/internal/sqlrunner
+      # rather than through *sql.DB, so with the default list this linter ran over
+      # the PostgreSQL reader and reported nothing while eleven of its reads were
+      # missing the terminal check -- stokaro/ptah#2720 measured that directly, on
+      # the reader the issue was filed against.
+      #
+      # So every package here declares a Query/QueryContext returning *sql.Rows,
+      # and adding another such declaration means adding it here. A missing entry
+      # does not fail: it makes this linter silent about that package, which is
+      # the shape the reported defect already had once.
+      packages:
+        - database/sql
+        - go.5x5.cz/ptah/dbschema
+        - go.5x5.cz/ptah/internal/atlasscript
+        - go.5x5.cz/ptah/internal/dbschema/postgres
+        - go.5x5.cz/ptah/internal/schemaselection
+        - go.5x5.cz/ptah/internal/sqlitemodule
+        - go.5x5.cz/ptah/internal/sqlrunner
+        - go.5x5.cz/ptah/migration/migrator
+
     staticcheck:
       checks:
         # STxxxx checks in https://staticcheck.io/docs/checks/#ST

@@ -82,6 +82,7 @@ func TestDatabaseConnectionWithIsolatedQuerySession_RollsBackWrites(t *testing.T
 	err = conn.WithIsolatedQuerySession(t.Context(), new(sql.TxOptions), func(queryer dbschema.IsolatedQueryer) error {
 		attachmentRows, queryErr := queryer.QueryContext(t.Context(), "ATTACH DATABASE ':memory:' AS aux")
 		c.Assert(queryErr, qt.IsNil)
+		c.Assert(attachmentRows.Err(), qt.IsNil)
 		c.Assert(attachmentRows.Close(), qt.IsNil)
 
 		rows, queryErr := queryer.QueryContext(t.Context(), "DELETE FROM users RETURNING id")
