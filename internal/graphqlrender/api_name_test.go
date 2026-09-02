@@ -109,17 +109,21 @@ func TestRenderRefusesDeclaredFieldNameThatCollidesAfterNormalization(t *testing
 }
 
 func TestRenderRefusesSharedFieldNameThatCollidesWithDerivedName(t *testing.T) {
-	fields := []schemamodel.Field{
-		{StructName: "Invoice", Name: "amount_minor", Type: "INTEGER"},
-		{StructName: "Invoice", Name: "billing_amount_minor", APIName: "amount-minor", Type: "INTEGER"},
+	derived := schemamodel.Field{StructName: "Invoice", Name: "amount_minor", Type: "INTEGER"}
+	authored := schemamodel.Field{
+		StructName: "Invoice", Name: "billing_amount_minor", APIName: "amount-minor", Type: "INTEGER",
 	}
-	for _, reverse := range []bool{false, true} {
-		t.Run(fmt.Sprintf("reverse=%t", reverse), func(t *testing.T) {
+	tests := []struct {
+		name   string
+		fields []schemamodel.Field
+	}{
+		{name: "derived first", fields: []schemamodel.Field{derived, authored}},
+		{name: "authored first", fields: []schemamodel.Field{authored, derived}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			if reverse {
-				fields[0], fields[1] = fields[1], fields[0]
-			}
-			res, err := graphqlrender.Render(apiNameFixture(fields...), graphqlrender.Options{})
+			res, err := graphqlrender.Render(apiNameFixture(test.fields...), graphqlrender.Options{})
 			c.Assert(err, qt.ErrorMatches,
 				`columns "(amount_minor|billing_amount_minor)" and "(amount_minor|billing_amount_minor)" on table "invoices" both produce GraphQL field name "amount_minor"; give one of them a distinct graphql_name`)
 			c.Assert(res.Data, qt.HasLen, 0)
@@ -205,18 +209,20 @@ func TestRenderRefusesSharedTableNamesThatNormalizeToOneType(t *testing.T) {
 }
 
 func TestRenderRefusesSharedTableNameThatCollidesWithDerivedNameInEitherOrder(t *testing.T) {
-	tables := []schemamodel.Table{
-		{StructName: "Records", Name: "invoice_records"},
-		{StructName: "Alias", Name: "archive", APIName: "invoice_record"},
+	derived := schemamodel.Table{StructName: "Records", Name: "invoice_records"}
+	authored := schemamodel.Table{StructName: "Alias", Name: "archive", APIName: "invoice_record"}
+	tests := []struct {
+		name   string
+		tables []schemamodel.Table
+	}{
+		{name: "derived first", tables: []schemamodel.Table{derived, authored}},
+		{name: "authored first", tables: []schemamodel.Table{authored, derived}},
 	}
-	for _, reverse := range []bool{false, true} {
-		t.Run(fmt.Sprintf("reverse=%t", reverse), func(t *testing.T) {
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			if reverse {
-				tables[0], tables[1] = tables[1], tables[0]
-			}
 			res, err := graphqlrender.Render(&schemamodel.Database{
-				Tables: tables,
+				Tables: test.tables,
 				Fields: []schemamodel.Field{
 					{StructName: "Records", Name: "id", Type: "BIGINT"},
 					{StructName: "Alias", Name: "id", Type: "BIGINT"},
@@ -337,19 +343,33 @@ func TestRenderRefusesGeneratedOperationTypeCollisionsWithOneAuthoredOwner(t *te
 		{name: "update input", collision: "user_update_inputs", operations: graphqlrender.Operations{UpdateInput: true}},
 	}
 	for _, test := range tests {
-		for _, authoredGenerator := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%s/authored-generator=%t", test.name, authoredGenerator), func(t *testing.T) {
+		owners := []struct {
+			name      string
+			user      schemamodel.Table
+			collision schemamodel.Table
+		}{
+			{
+				name: "generated type authored",
+				user: schemamodel.Table{
+					StructName: "User", Name: "users",
+					APINames: schemamodel.TargetNames{GraphQL: "users"},
+				},
+				collision: schemamodel.Table{StructName: "Collision", Name: test.collision},
+			},
+			{
+				name: "colliding type authored",
+				user: schemamodel.Table{StructName: "User", Name: "users"},
+				collision: schemamodel.Table{
+					StructName: "Collision", Name: test.collision,
+					APINames: schemamodel.TargetNames{GraphQL: test.collision},
+				},
+			},
+		}
+		for _, owner := range owners {
+			t.Run(test.name+"/"+owner.name, func(t *testing.T) {
 				c := qt.New(t)
-				user := schemamodel.Table{StructName: "User", Name: "users"}
-				collision := schemamodel.Table{StructName: "Collision", Name: test.collision}
-				if authoredGenerator {
-					user.APINames.GraphQL = "users"
-				} else {
-					collision.APINames.GraphQL = test.collision
-				}
-
 				res, err := graphqlrender.Render(&schemamodel.Database{
-					Tables: []schemamodel.Table{user, collision},
+					Tables: []schemamodel.Table{owner.user, owner.collision},
 					Fields: []schemamodel.Field{
 						{StructName: "User", Name: "name", Type: "TEXT"},
 						{StructName: "Collision", Name: "id", Type: "BIGINT"},
@@ -488,26 +508,30 @@ func TestRenderRefusesAuthoredDuplicateQueryFieldBeforeOutput(t *testing.T) {
 }
 
 func TestRenderRefusesAuthoredFieldThatShadowsARelation(t *testing.T) {
-	fields := []schemamodel.Field{
-		{StructName: "Book", Name: "author_id", Type: "BIGINT", Foreign: "authors(id)"},
-		{
-			StructName: "Book", Name: "display_name", Type: "TEXT",
-			APINames: schemamodel.TargetNames{GraphQL: "author"},
-		},
-		{StructName: "Author", Name: "id", Type: "BIGINT"},
+	foreignKey := schemamodel.Field{
+		StructName: "Book", Name: "author_id", Type: "BIGINT", Foreign: "authors(id)",
 	}
-	for _, reverse := range []bool{false, true} {
-		t.Run(fmt.Sprintf("reverse=%t", reverse), func(t *testing.T) {
+	authored := schemamodel.Field{
+		StructName: "Book", Name: "display_name", Type: "TEXT",
+		APINames: schemamodel.TargetNames{GraphQL: "author"},
+	}
+	authorID := schemamodel.Field{StructName: "Author", Name: "id", Type: "BIGINT"}
+	tests := []struct {
+		name   string
+		fields []schemamodel.Field
+	}{
+		{name: "foreign key first", fields: []schemamodel.Field{foreignKey, authored, authorID}},
+		{name: "authored field first", fields: []schemamodel.Field{authored, foreignKey, authorID}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			if reverse {
-				fields[0], fields[1] = fields[1], fields[0]
-			}
 			res, err := graphqlrender.Render(&schemamodel.Database{
 				Tables: []schemamodel.Table{
 					{StructName: "Book", Name: "books"},
 					{StructName: "Author", Name: "authors"},
 				},
-				Fields: fields,
+				Fields: test.fields,
 			}, graphqlrender.Options{})
 
 			c.Assert(err, qt.ErrorMatches,
@@ -537,40 +561,40 @@ func TestRenderRefusesAuthoredForeignKeyThatShadowsItsRelation(t *testing.T) {
 }
 
 func TestRenderRefusesAuthoredRelationThatShadowsADerivedField(t *testing.T) {
-	for _, targetSpecific := range []bool{false, true} {
-		for _, reverse := range []bool{false, true} {
-			t.Run(fmt.Sprintf("target-specific=%t/reverse=%t", targetSpecific, reverse), func(t *testing.T) {
-				c := qt.New(t)
-				foreignKey := schemamodel.Field{
-					StructName: "Book", Name: "author_id", Type: "BIGINT", Foreign: "authors(id)",
-				}
-				if targetSpecific {
-					foreignKey.APINames.GraphQL = "author_id"
-				} else {
-					foreignKey.APIName = "author_id"
-				}
-				fields := []schemamodel.Field{
-					{StructName: "Book", Name: "author", Type: "TEXT"},
-					foreignKey,
-					{StructName: "Author", Name: "id", Type: "BIGINT"},
-				}
-				if reverse {
-					fields[0], fields[1] = fields[1], fields[0]
-				}
+	derived := schemamodel.Field{StructName: "Book", Name: "author", Type: "TEXT"}
+	authorID := schemamodel.Field{StructName: "Author", Name: "id", Type: "BIGINT"}
+	sharedName := schemamodel.Field{
+		StructName: "Book", Name: "author_id", APIName: "author_id",
+		Type: "BIGINT", Foreign: "authors(id)",
+	}
+	targetName := schemamodel.Field{
+		StructName: "Book", Name: "author_id", Type: "BIGINT", Foreign: "authors(id)",
+		APINames: schemamodel.TargetNames{GraphQL: "author_id"},
+	}
+	tests := []struct {
+		name   string
+		fields []schemamodel.Field
+	}{
+		{name: "shared name/derived first", fields: []schemamodel.Field{derived, sharedName, authorID}},
+		{name: "shared name/relation first", fields: []schemamodel.Field{sharedName, derived, authorID}},
+		{name: "target name/derived first", fields: []schemamodel.Field{derived, targetName, authorID}},
+		{name: "target name/relation first", fields: []schemamodel.Field{targetName, derived, authorID}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			res, err := graphqlrender.Render(&schemamodel.Database{
+				Tables: []schemamodel.Table{
+					{StructName: "Book", Name: "books"},
+					{StructName: "Author", Name: "authors"},
+				},
+				Fields: test.fields,
+			}, graphqlrender.Options{})
 
-				res, err := graphqlrender.Render(&schemamodel.Database{
-					Tables: []schemamodel.Table{
-						{StructName: "Book", Name: "books"},
-						{StructName: "Author", Name: "authors"},
-					},
-					Fields: fields,
-				}, graphqlrender.Options{})
-
-				c.Assert(err, qt.ErrorMatches,
-					`foreign-key column "author_id" on table "books" produces GraphQL relation field name "author", which collides with another field; choose a distinct graphql_name`)
-				c.Assert(res.Data, qt.HasLen, 0)
-			})
-		}
+			c.Assert(err, qt.ErrorMatches,
+				`foreign-key column "author_id" on table "books" produces GraphQL relation field name "author", which collides with another field; choose a distinct graphql_name`)
+			c.Assert(res.Data, qt.HasLen, 0)
+		})
 	}
 }
 

@@ -1,5 +1,9 @@
 package atlashclrender
 
+// White-box testing required: the current model has no unknown metadata field
+// to exercise through Render, but the future-loss guard must reject a census
+// entry until the HCL parser and renderer explicitly support it.
+
 import (
 	"reflect"
 	"testing"
@@ -9,9 +13,6 @@ import (
 	"go.5x5.cz/ptah/core/schemamodel"
 )
 
-// This is intentionally a white-box test: the current model has no unknown
-// metadata field to exercise through Render, but the future-loss guard must
-// reject a census entry until the HCL parser and renderer explicitly support it.
 func TestHCLRepresentsExportMetadataRequiresAnExplicitSpelling(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -34,8 +35,8 @@ func TestHCLRepresentsExportMetadataRequiresAnExplicitSpelling(t *testing.T) {
 
 func TestHCLRepresentsEveryTargetNameSpelling(t *testing.T) {
 	targetNames := reflect.TypeFor[schemamodel.TargetNames]()
-	for i := range targetNames.NumField() {
-		attribute := schemamodel.TargetNameAttribute(targetNames.Field(i).Name)
+	for field := range targetNames.Fields() {
+		attribute := schemamodel.TargetNameAttribute(field.Name)
 		t.Run(attribute, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(hclRepresentsExportMetadata(schemamodel.ExportMetadata{

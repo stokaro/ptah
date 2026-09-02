@@ -2,7 +2,6 @@ package protobufrender_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -434,18 +433,29 @@ func TestSharedAPINamesThatNormalizeToOneMessageAreRefused(t *testing.T) {
 }
 
 func TestSharedAPINameCollidingWithDerivedMessageIsRefusedInEitherOrder(t *testing.T) {
-	tables := []schemamodel.Table{
-		{StructName: "Derived", Schema: "a", Name: "invoice_records"},
-		{StructName: "Alias", Schema: "b", Name: "archive", APIName: "invoice_record"},
-	}
-	for _, reverse := range []bool{false, true} {
-		t.Run(fmt.Sprintf("reverse=%t", reverse), func(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		tables []schemamodel.Table
+	}{
+		{
+			name: "derived first",
+			tables: []schemamodel.Table{
+				{StructName: "Derived", Schema: "a", Name: "invoice_records"},
+				{StructName: "Alias", Schema: "b", Name: "archive", APIName: "invoice_record"},
+			},
+		},
+		{
+			name: "alias first",
+			tables: []schemamodel.Table{
+				{StructName: "Alias", Schema: "b", Name: "archive", APIName: "invoice_record"},
+				{StructName: "Derived", Schema: "a", Name: "invoice_records"},
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			if reverse {
-				tables[0], tables[1] = tables[1], tables[0]
-			}
 			res, err := protobufrender.Render(context.Background(), &schemamodel.Database{
-				Tables: tables,
+				Tables: test.tables,
 				Fields: []schemamodel.Field{
 					{StructName: "Derived", Name: "id", Type: "BIGINT"},
 					{StructName: "Alias", Name: "id", Type: "BIGINT"},

@@ -10,17 +10,24 @@ import (
 	"go.5x5.cz/ptah/core/schemamodel"
 )
 
+func exportMetadataCensusFields(model reflect.Type) []reflect.StructField {
+	targetNames := reflect.TypeFor[schemamodel.TargetNames]()
+	var fields []reflect.StructField
+	for field := range model.Fields() {
+		if model == targetNames || strings.HasPrefix(field.Name, "API") {
+			fields = append(fields, field)
+		}
+	}
+	return fields
+}
+
 func TestExportMetadataModelFieldsCarryCensusTags(t *testing.T) {
 	for _, model := range []reflect.Type{
 		reflect.TypeFor[schemamodel.Table](),
 		reflect.TypeFor[schemamodel.Field](),
 		reflect.TypeFor[schemamodel.TargetNames](),
 	} {
-		for field := range model.Fields() {
-			if model != reflect.TypeFor[schemamodel.TargetNames]() &&
-				!strings.HasPrefix(field.Name, "API") {
-				continue
-			}
+		for _, field := range exportMetadataCensusFields(model) {
 			t.Run(model.Name()+"."+field.Name, func(t *testing.T) {
 				c := qt.New(t)
 				attribute, tagged := field.Tag.Lookup("ptah_export")

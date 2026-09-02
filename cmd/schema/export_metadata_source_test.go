@@ -103,6 +103,23 @@ func metadataSourceFixture(c *qt.C) (goDir, yamlPath, hclPath string) {
 func TestSchemaExportMetadataIsEquivalentAcrossGoYAMLAndHCL(t *testing.T) {
 	c := qt.New(t)
 	goDir, yamlPath, hclPath := metadataSourceFixture(c)
+	markersByTarget := map[string][]string{
+		"openapi-v3": {
+			"    invoice_documents:\n",
+			"        amount:\n",
+			"        note-value:\n",
+		},
+		"graphql": {
+			"type InvoiceRecord {",
+			"amount: String",
+			"noteText: String",
+		},
+		"protobuf": {
+			"message InvoiceRecord {",
+			"string amount =",
+			"string note_text =",
+		},
+	}
 	sources := []struct {
 		name string
 		args []string
@@ -115,6 +132,8 @@ func TestSchemaExportMetadataIsEquivalentAcrossGoYAMLAndHCL(t *testing.T) {
 	for _, target := range apiExportTargets() {
 		t.Run(target.name, func(t *testing.T) {
 			c := qt.New(t)
+			markers, found := markersByTarget[target.name]
+			c.Assert(found, qt.IsTrue, qt.Commentf("missing metadata markers for %s", target.name))
 			baseline := runExportTarget(c, target, sources[0].args)
 			for _, source := range sources[1:] {
 				t.Run(source.name, func(t *testing.T) {
@@ -123,19 +142,8 @@ func TestSchemaExportMetadataIsEquivalentAcrossGoYAMLAndHCL(t *testing.T) {
 				})
 			}
 
-			switch target.name {
-			case "openapi-v3":
-				c.Assert(baseline, qt.Contains, "    invoice_documents:\n")
-				c.Assert(baseline, qt.Contains, "        amount:\n")
-				c.Assert(baseline, qt.Contains, "        note-value:\n")
-			case "graphql":
-				c.Assert(baseline, qt.Contains, "type InvoiceRecord {")
-				c.Assert(baseline, qt.Contains, "amount: String")
-				c.Assert(baseline, qt.Contains, "noteText: String")
-			case "protobuf":
-				c.Assert(baseline, qt.Contains, "message InvoiceRecord {")
-				c.Assert(baseline, qt.Contains, "string amount =")
-				c.Assert(baseline, qt.Contains, "string note_text =")
+			for _, marker := range markers {
+				c.Assert(baseline, qt.Contains, marker)
 			}
 		})
 	}
