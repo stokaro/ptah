@@ -3984,7 +3984,7 @@ func indexPartsFromConstraintColumns(columns []ast.ConstraintColumn) []ast.Index
 func addTableConstraintOrIndex(table *ast.CreateTableNode, constraint *ast.ConstraintNode, index *ast.IndexNode) {
 	if index != nil {
 		index.Table = table.Name
-		table.Indexes = append(table.Indexes, index)
+		table.AddIndex(index)
 		return
 	}
 	table.AddConstraint(constraint)
@@ -5076,7 +5076,7 @@ func (p *Parser) parseInlineSkippingIndex(table *ast.CreateTableNode) error {
 	if !ok {
 		return fmt.Errorf("internal: skipping index parsed as %T", operation)
 	}
-	table.Indexes = append(table.Indexes, &ast.IndexNode{
+	table.AddIndex(&ast.IndexNode{
 		Name:        index.Name,
 		Table:       table.Name,
 		Columns:     []string{index.Expression},

@@ -833,14 +833,6 @@ func appendCreateTable(
 	tableSchema := ToTable(node, sourcePlatform)
 	database.Tables = append(database.Tables, tableSchema)
 
-	// Indexes declared inside the column list are indexes of the schema, not
-	// of the statement. Leaving them on the table node kept them parsed and
-	// unrendered (stokaro/ptah#1574).
-	indexesStart := len(database.Indexes)
-	for _, index := range node.Indexes {
-		database.Indexes = append(database.Indexes, ToIndex(index))
-	}
-
 	// Extract fields from table columns
 	fieldsStart := len(database.Fields)
 	for _, column := range node.Columns {
@@ -852,22 +844,95 @@ func appendCreateTable(
 	// the HCL loader treats it; a composite key stays on Table.PrimaryKey and
 	// renders as a table constraint.
 	markPrimaryFields(database.Fields[fieldsStart:], tableSchema.StructName, tableSchema.PrimaryKey)
-	constraintsStart := len(database.Constraints)
-	for _, constraint := range node.Constraints {
-		constraintSchema, ok := ToConstraint(
-			constraint,
-			tableSchema.StructName,
-			tableSchema.QualifiedName(),
-		)
-		if ok {
-			database.Constraints = append(database.Constraints, constraintSchema)
-		}
-	}
+
+	// Indexes declared inside the column list are indexes of the schema, not
+	// of the statement. Leaving them on the table node kept them parsed and
+	// unrendered (stokaro/ptah#1574). They are appended here together with the
+	// constraints so that the order the document declared them in survives to
+	// the naming pass below.
+	order := declaredOrder(database, node, tableSchema)
+
 	// An inline index or unique constraint the author left unnamed gets the
 	// name its server would give it, before Finalize can deduplicate two of
 	// them onto one empty key.
-	return nameMySQLInlineIndexes(
-		database, tableSchema, fieldsStart, constraintsStart, indexesStart, sourcePlatform)
+	return nameMySQLInlineIndexes(database, tableSchema, fieldsStart, order, sourcePlatform)
+}
+
+// declaredOrder appends this table's indexes and constraints to the model and
+// hands back the values in the order the document declared them.
+//
+// The pairing is made while appending rather than reconstructed afterwards. An
+// earlier version matched an AST element to a model value by comparing name and
+// column count, and that is not an identity: ToConstraint declines a table-level
+// PRIMARY KEY, so an unnamed `PRIMARY KEY (a)` and an unnamed one-column
+// `UNIQUE (cc)` had the same signature and the primary key consumed the
+// unique's slot, naming both at the wrong positions.
+//
+// A node with no recorded order -- one a fluent builder produced rather than a
+// parser -- keeps the old two passes, constraints before indexes, which is what
+// every reader saw before the order existed. So does a node whose recorded
+// order does not account for every element, because a partial order is worse
+// than none: it would silently drop whatever it failed to mention.
+func declaredOrder(
+	database *schemamodel.Database, node *ast.CreateTableNode, table schemamodel.Table,
+) []namedElement {
+	if !ordersEverything(node) {
+		return unorderedElements(database, node, table)
+	}
+	order := make([]namedElement, 0, len(node.Elements))
+	for _, element := range node.Elements {
+		if element.Index != nil {
+			database.Indexes = append(database.Indexes, ToIndex(element.Index))
+			order = append(order, namedElement{
+				constraint: noPosition, index: len(database.Indexes) - 1})
+			continue
+		}
+		converted, ok := ToConstraint(element.Constraint, table.StructName, table.QualifiedName())
+		if !ok {
+			continue
+		}
+		database.Constraints = append(database.Constraints, converted)
+		order = append(order, namedElement{
+			constraint: len(database.Constraints) - 1, index: noPosition})
+	}
+	return order
+}
+
+// ordersEverything reports whether the recorded order names every element the
+// node carries.
+func ordersEverything(node *ast.CreateTableNode) bool {
+	indexes, constraints := 0, 0
+	for _, element := range node.Elements {
+		if element.Index != nil {
+			indexes++
+			continue
+		}
+		constraints++
+	}
+	return indexes == len(node.Indexes) && constraints == len(node.Constraints)
+}
+
+// unorderedElements appends in the order this package always used, for a node
+// that recorded none.
+func unorderedElements(
+	database *schemamodel.Database, node *ast.CreateTableNode, table schemamodel.Table,
+) []namedElement {
+	order := make([]namedElement, 0, len(node.Indexes)+len(node.Constraints))
+	for _, constraint := range node.Constraints {
+		converted, ok := ToConstraint(constraint, table.StructName, table.QualifiedName())
+		if !ok {
+			continue
+		}
+		database.Constraints = append(database.Constraints, converted)
+		order = append(order, namedElement{
+			constraint: len(database.Constraints) - 1, index: noPosition})
+	}
+	for _, index := range node.Indexes {
+		database.Indexes = append(database.Indexes, ToIndex(index))
+		order = append(order, namedElement{
+			constraint: noPosition, index: len(database.Indexes) - 1})
+	}
+	return order
 }
 
 // appendAlterTableConstraints captures constraints added by

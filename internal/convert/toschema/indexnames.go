@@ -3,6 +3,7 @@ package toschema
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -143,7 +144,7 @@ var (
 // Ptah reports and converges on the next apply rather than fighting forever.
 func nameMySQLInlineIndexes(
 	database *schemamodel.Database, table schemamodel.Table,
-	fieldsStart, constraintsStart, indexesStart int, sourcePlatform string,
+	fieldsStart int, order []namedElement, sourcePlatform string,
 ) error {
 	naming, ok := namingFor(sourcePlatform)
 	if !ok {
@@ -166,29 +167,139 @@ func nameMySQLInlineIndexes(
 			claimed.claim(field.Name)
 		}
 	}
-	for i := constraintsStart; i < len(database.Constraints); i++ {
-		if err := claimConstraintName(claimed, &database.Constraints[i], table, naming); err != nil {
-			return err
+	// Coverage is a property of the whole table body and order is not.
+	// Measured on MySQL 26.7 and MariaDB 12.3, all three of these leave the
+	// foreign key with no backing index of its own, so its name stays free:
+	//
+	//	CONSTRAINT fk1 FOREIGN KEY (a) ..., KEY (a)   the key comes AFTER
+	//	a INT NOT NULL PRIMARY KEY, ... FOREIGN KEY (a)   a column-level key
+	//	a INT UNIQUE, ... FOREIGN KEY (a)                 a column-level unique
+	//
+	// Deciding it from what precedes the constraint refused all three, which
+	// are documents both engines accept.
+	covered := coversOf(database, table, fieldsStart, order)
+	// Names, though, are allocated in the order the document declared them:
+	// that is the order the server allocates in, and the two disagree on a
+	// document that is valid one way round and refused the other
+	// (stokaro/ptah#2773).
+	for _, element := range order {
+		if element.isIndex() {
+			if err := claimIndexName(
+				claimed, &database.Indexes[element.index], table, naming); err != nil {
+				return err
+			}
+			continue
 		}
-	}
-	for i := indexesStart; i < len(database.Indexes); i++ {
-		if err := claimIndexName(claimed, &database.Indexes[i], table, naming); err != nil {
+		if err := claimConstraintName(
+			claimed, &database.Constraints[element.constraint], table, naming, covered); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+// coversOf is every access path the table body declares, in any position.
+//
+// A foreign key reuses whichever of them leads with its columns, so all of them
+// have to be here: the table's primary key, a column's own primary key or
+// unique, every inline index, and every unique constraint.
+func coversOf(
+	database *schemamodel.Database, table schemamodel.Table,
+	fieldsStart int, order []namedElement,
+) coverage {
+	covered := coverage{table.PrimaryKey}
+	for _, field := range database.Fields[fieldsStart:] {
+		if field.Primary || field.Unique {
+			covered = append(covered, []string{field.Name})
+		}
+	}
+	for _, element := range order {
+		if element.isIndex() {
+			covered = append(covered, database.Indexes[element.index].Fields)
+			continue
+		}
+		if constraint := database.Constraints[element.constraint]; constraint.Type == "UNIQUE" {
+			covered = append(covered, constraint.Columns)
+		}
+	}
+	return covered
+}
+
+// namedElement is one table-body element the naming pass walks, as a POSITION
+// in the model rather than a pointer into it.
+//
+// A pointer would be the obvious spelling and it is wrong: these are collected
+// while the same slices are still being appended to, and an append that grows
+// past the capacity moves the backing array. Measured -- with two inline
+// indexes on one table, the first one's name was written through a pointer into
+// the abandoned array and the index reached the renderer nameless.
+//
+// Exactly one position is set; the other is absent.
+type namedElement struct {
+	// constraint is the element's position in Database.Constraints, when it was
+	// a table-level constraint.
+	constraint int
+	// index is the element's position in Database.Indexes, when it was an
+	// inline index.
+	index int
+}
+
+// noPosition marks the half of a namedElement that is not set.
+const noPosition = -1
+
+// isIndex reports whether this element is an inline index.
+func (e namedElement) isIndex() bool { return e.index != noPosition }
+
+// coverage is the key prefixes a table already has an access path for, in the
+// order they were declared.
+type coverage [][]string
+
+// covers reports whether some key already declared can serve as a foreign key's
+// backing index.
+//
+// A foreign key needs an index whose leading columns are the key's columns, in
+// order. MySQL and MariaDB create one when nothing satisfies that and reuse
+// whatever does, which is why the same foreign key sometimes takes a name in
+// the index namespace and sometimes takes none.
+func (c coverage) covers(columns []string) bool {
+	for _, key := range c {
+		if len(key) < len(columns) || len(columns) == 0 {
+			continue
+		}
+		if slices.Equal(key[:len(columns)], columns) {
+			return true
+		}
+	}
+	return false
+}
+
 // claimConstraintName names one table-level constraint.
 //
-// Only the ones that occupy the index namespace: a UNIQUE constraint is an
-// index on these engines, while a CHECK is not and a FOREIGN KEY reuses a
-// covering index rather than adding a name -- measured, an FK declared beside
-// `KEY (a)` on the same column produces one index called `a` and not two.
+// Only the ones that occupy the index namespace. A UNIQUE constraint is an
+// index on these engines and always takes a name; a CHECK is not and never
+// does.
+//
+// A FOREIGN KEY is the one that depends on what came before it. It needs an
+// index whose leading columns are its own, so it reuses one already declared
+// and otherwise gets a backing index named after the constraint -- a name in
+// the same namespace every other key draws from. Measured on MySQL 26.7 and
+// MariaDB 12.3: `CONSTRAINT b FOREIGN KEY (a) ..., KEY (b)` builds `b` and
+// `b_2`, while `FOREIGN KEY (a) ..., KEY (a)` builds a single `a`, because
+// there the index covers the key.
+//
+// An earlier version of this comment said a foreign key "reuses a covering
+// index rather than adding a name" with no condition, generalized from the
+// second measurement alone. It is the first one this file has to get right.
 func claimConstraintName(
 	claimed indexNames, constraint *schemamodel.Constraint, table schemamodel.Table,
-	naming engineIndexNaming,
+	naming engineIndexNaming, covered coverage,
 ) error {
+	if constraint.Type == "FOREIGN KEY" {
+		if constraint.Name == "" || covered.covers(constraint.Columns) {
+			return nil
+		}
+		return claimExplicit(claimed, constraint.Name, table)
+	}
 	if constraint.Type != "UNIQUE" {
 		return nil
 	}
