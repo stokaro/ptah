@@ -1962,6 +1962,48 @@ must never do is take a handle and assert its way to the concrete type:
 `c.TB.(*testing.T)` inside a helper declared for `testing.TB` panics the moment
 it is called from a benchmark, and the signature promises otherwise.
 
+### A linter's reach is configuration, not a property of the linter
+
+`rowserrcheck` reports a `for rows.Next()` loop that never asks `rows.Err()`.
+A result set that ends early -- a dropped connection, a server-side
+cancellation, a statement killed mid-stream -- ends the loop exactly as an
+exhausted one does, so the reader returns the rows that arrived and reports
+success. `readEnumsForSchema` did that with eleven of its siblings, and the
+answer reached a schema fingerprint and a plan's `current_schema_digest` as
+complete catalog state (stokaro/ptah#2720).
+
+The linter's default `packages:` list is `database/sql` alone, and it tracks
+rows by where the `Query` that produced them was DECLARED. Ptah's schema readers
+hold a `sqlrunner.Runner`, so with the default list this linter ran over the
+PostgreSQL reader and reported nothing -- measured on the pre-fix tree, where it
+found the two MySQL sites and none of the eleven PostgreSQL ones. Enabling it
+would have looked like coverage and been silence.
+
+`.golangci.yml` therefore names every package in the tree that declares a
+`Query`/`QueryContext` returning `*sql.Rows`, and **a new such declaration means
+a new entry**. Nothing fails when one is missing; the linter stops seeing
+that package, which is the state the reported defect was already in.
+
+Two limits are worth knowing before trusting a clean run:
+
+- **It does not follow rows into a closure.** `internal/embedpg/inspect.go`
+  returns an `iter.Seq2` and checks `Rows.Err` inside it; that is a false
+  positive and carries the tree's one `//nolint:rowserrcheck`.
+- **It does not follow rows through a parameter.** A helper taking `rows
+  *sql.Rows` is invisible to it -- `embedpg`'s `scanEvents` and `readPage` were
+  both unchecked and both clean under this linter. `readPage` is the one worth
+  remembering: it derives `Done` from the row COUNT, so a page truncated at row
+  400 of 500 set `Done` and ended the backfill, declaring a source fully read.
+
+An AST sweep for `for x.Next()` in a function that never calls `x.Err()` finds
+that second class and misses what the SSA analysis catches, so the two are
+complementary rather than redundant. Neither is the reason the reader is
+correct: `TestReadSchemaContext_EveryReadRefusesATerminalRowErrorFailurePath`
+breaks each of the two dozen queries a full read asks, one at a time, and
+requires the whole read to fail. It killed twelve positions on the pre-fix
+reader, and a read added later without a terminal check reddens it without
+anyone having to remember this section.
+
 ### A blank import says why
 
 `_ "github.com/jackc/pgx/v5/stdlib"` is the one import whose removal the
