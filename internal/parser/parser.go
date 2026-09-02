@@ -3765,6 +3765,35 @@ func (p *Parser) readTableElementKind(constraint *ast.ConstraintNode) (bool, str
 	}
 }
 
+// isFunctionalUnique reports whether a table element is a UNIQUE KEY carrying a
+// functional key part, which is read as a unique INDEX rather than refused.
+//
+// It is what the server builds. Measured on MySQL 26.7,
+// `UNIQUE KEY u ((a + 1))` yields one index named `u` with `NON_UNIQUE=0`, a
+// null `COLUMN_NAME` and the expression in `EXPRESSION` -- an index with an
+// expression key part and a uniqueness guarantee, which is exactly
+// ast.IndexNode with Unique set. A schemamodel.Constraint holds column names
+// and has nowhere for an expression, which is why carrying it there rendered
+// `CONSTRAINT u UNIQUE (“)` and why stokaro/ptah#2795 refused it instead.
+//
+// A PRIMARY KEY is not promoted and stays refused: MySQL answers
+// `ERROR 3756 The primary key cannot be a functional index`, so there is
+// nothing to carry it to.
+//
+// The dialect is not asked here because parseFunctionalKeyPart has asked
+// already -- only MySQL reaches this with an expression at all.
+func isFunctionalUnique(constraint *ast.ConstraintNode) bool {
+	if constraint.Type != ast.UniqueConstraint {
+		return false
+	}
+	for _, column := range constraint.ColumnParts {
+		if column.Expr != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // refuseFunctionalConstraintPart rejects a functional key part on a table
 // element that is a constraint rather than an index.
 //
@@ -4047,8 +4076,11 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 	// value of ConstraintType, and the KEY/INDEX branch never sets a type, so
 	// asking every element would refuse an ordinary functional key as though it
 	// were a primary one.
+	uniqueIndex := false
 	if !isIndex {
-		if err := refuseFunctionalConstraintPart(constraint); err != nil {
+		if isFunctionalUnique(constraint) {
+			isIndex, uniqueIndex = true, true
+		} else if err := refuseFunctionalConstraintPart(constraint); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -4093,6 +4125,7 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 			Parts:  indexPartsFromConstraintColumns(constraint.ColumnParts),
 			Type:   indexMethod,
 			Parser: parserName,
+			Unique: uniqueIndex,
 		}, nil
 	}
 
