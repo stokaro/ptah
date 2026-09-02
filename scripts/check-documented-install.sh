@@ -15,25 +15,94 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
-readonly MIN_EXPECTED=2
-
-# A read loop rather than mapfile: mapfile is bash 4+, and the bash shipped on
-# macOS is 3.2, so a developer running this locally would otherwise get
-# "command not found" and, because it sits in a pipeline, a zero exit status.
-commands=()
+# What the product says it releases. `.goreleaser.yaml` is the declaration --
+# `go list` can find main packages, it cannot know which ones ship -- and every
+# released binary is one a reader can be told to `go install`, so this is also
+# the number of install commands the documentation is expected to publish.
+#
+# Read as text because this script has no YAML parser and adding one to buy a
+# three-line list would be the larger change. The guard is below: an empty read
+# fails rather than turning the loop into a no-op.
+#
+# A hand-written count sat here instead, and it was a number that was true when
+# it was written (stokaro/ptah#2799).
+released=()
 while IFS= read -r line; do
-	commands+=("$line")
+	released+=("$line")
 done < <(
-	git grep -hoE 'go install go\.5x5\.cz/ptah/cmd/[a-z-]+@latest' -- \
-		'*.md' '*.mdx' '*.yml' '*.yaml' '*.sh' |
+	grep -oE '^[[:space:]]*binary:[[:space:]]*[A-Za-z0-9_-]+' .goreleaser.yaml |
+		awk '{print $2}' |
 		sort -u
 )
 
-if [ "${#commands[@]}" -lt "$MIN_EXPECTED" ]; then
-	echo "install-smoke: found ${#commands[@]} documented install command(s), expected at least $MIN_EXPECTED" >&2
+if [ "${#released[@]}" -eq 0 ]; then
+	echo "install-smoke: .goreleaser.yaml declares no binary:, so there is nothing to expect" >&2
+	echo "install-smoke: refusing to pass without testing anything" >&2
+	exit 1
+fi
+
+# The PACKAGE the documentation names, not the whole command. A page telling a
+# reader to pin a version writes `@vX.Y.Z`, which is the right thing for that
+# page and is not installable as written; the question this script asks -- does
+# the package install and does the binary run -- does not depend on how the
+# version is spelled. Requiring `@latest` here made two of the three released
+# binaries stop being covered the day the placeholder landed, and the floor
+# below is what reported it.
+#
+# A read loop rather than mapfile: mapfile is bash 4+, and the bash shipped on
+# macOS is 3.2, so a developer running this locally would otherwise get
+# "command not found" and, because it sits in a pipeline, a zero exit status.
+documented=()
+while IFS= read -r line; do
+	documented+=("$line")
+done < <(
+	git grep -hoE 'go install go\.5x5\.cz/ptah/cmd/[A-Za-z0-9_-]+@' -- \
+		'*.md' '*.mdx' '*.yml' '*.yaml' '*.sh' |
+		sed -e 's|^go install go\.5x5\.cz/ptah/cmd/||' -e 's|@$||' |
+		sort -u
+)
+
+# Nothing found at all is reported here rather than left to `set -u`. Under the
+# bash 3.2 macOS ships, expanding an empty array with "${a[@]}" is an unbound
+# variable and the script dies with a shell diagnostic instead of the sentence
+# below -- and a newer bash expands it to nothing, so the difference is
+# invisible on a CI runner and only bites the person running this locally.
+if [ "${#documented[@]}" -eq 0 ]; then
+	echo "install-smoke: found no documented 'go install' command at all" >&2
 	echo "install-smoke: either the docs changed shape or the pattern stopped matching; refusing to pass without testing anything" >&2
 	exit 1
 fi
+
+# Every released binary has to be among them. This is the assertion the floor
+# was standing in for, and it is derived rather than counted: a fourth released
+# binary is covered the day it ships, and one that stops being documented fails
+# here instead of quietly shrinking the run.
+missing=()
+for binary in "${released[@]}"; do
+	found=0
+	for candidate in "${documented[@]}"; do
+		if [ "$candidate" = "$binary" ]; then
+			found=1
+		fi
+	done
+	if [ "$found" -eq 0 ]; then
+		missing+=("$binary")
+	fi
+done
+
+if [ "${#missing[@]}" -ne 0 ]; then
+	echo "install-smoke: no documented 'go install' command names ${missing[*]}" >&2
+	echo "install-smoke: .goreleaser.yaml releases it, so a reader needs a command for it" >&2
+	exit 1
+fi
+
+# Installed at @latest whatever the page spelled: that is the published module,
+# which is what this script has always installed and what a reader following a
+# pinned page would get with their own tag substituted.
+commands=()
+for binary in "${documented[@]}"; do
+	commands+=("go install go.5x5.cz/ptah/cmd/$binary@latest")
+done
 
 bindir="$(mktemp -d)"
 trap 'rm -rf "$bindir"' EXIT
