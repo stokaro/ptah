@@ -714,7 +714,7 @@ func appendStatement(database *schemamodel.Database, stmt ast.Node, sourcePlatfo
 	case *ast.EnumNode:
 		database.Enums = append(database.Enums, ToEnum(node))
 	case *ast.CreateTableNode:
-		appendCreateTable(database, node, sourcePlatform)
+		return appendCreateTable(database, node, sourcePlatform)
 	case *ast.IndexNode:
 		database.Indexes = append(database.Indexes, ToIndex(node))
 	case *ast.AlterTableNode:
@@ -827,13 +827,16 @@ func appendRoutine(database *schemamodel.Database, stmt ast.Node) bool {
 	return true
 }
 
-func appendCreateTable(database *schemamodel.Database, node *ast.CreateTableNode, sourcePlatform string) {
+func appendCreateTable(
+	database *schemamodel.Database, node *ast.CreateTableNode, sourcePlatform string,
+) error {
 	tableSchema := ToTable(node, sourcePlatform)
 	database.Tables = append(database.Tables, tableSchema)
 
 	// Indexes declared inside the column list are indexes of the schema, not
 	// of the statement. Leaving them on the table node kept them parsed and
 	// unrendered (stokaro/ptah#1574).
+	indexesStart := len(database.Indexes)
 	for _, index := range node.Indexes {
 		database.Indexes = append(database.Indexes, ToIndex(index))
 	}
@@ -849,6 +852,7 @@ func appendCreateTable(database *schemamodel.Database, node *ast.CreateTableNode
 	// the HCL loader treats it; a composite key stays on Table.PrimaryKey and
 	// renders as a table constraint.
 	markPrimaryFields(database.Fields[fieldsStart:], tableSchema.PrimaryKey)
+	constraintsStart := len(database.Constraints)
 	for _, constraint := range node.Constraints {
 		constraintSchema, ok := ToConstraint(
 			constraint,
@@ -859,6 +863,11 @@ func appendCreateTable(database *schemamodel.Database, node *ast.CreateTableNode
 			database.Constraints = append(database.Constraints, constraintSchema)
 		}
 	}
+	// An inline index or unique constraint the author left unnamed gets the
+	// name its server would give it, before Finalize can deduplicate two of
+	// them onto one empty key.
+	return nameMySQLInlineIndexes(
+		database, tableSchema, fieldsStart, constraintsStart, indexesStart, sourcePlatform)
 }
 
 // appendAlterTableConstraints captures constraints added by

@@ -51,6 +51,17 @@ SQL:
   INDEX` over a `POINT` column leaves `INDEX_TYPE=BTREE` on MariaDB 11.8 and
   `SPATIAL` on MySQL 8.4, so comparing an undeclared type would plan a rebuild
   on MySQL that MySQL immediately undoes.
+- An inline `KEY`, `INDEX` or `UNIQUE KEY` the author did not name is read with
+  the name its server would assign: the first key part's column, then `_2`,
+  `_3` for a name already taken. A prefix length and a `DESC` direction stay
+  out of the name, and a column-level `UNIQUE` claims its column before any
+  index does. The name is decided when the SQL is read rather than when it is
+  written, because the catalog reports what the server chose and a desired
+  schema that guessed differently would never converge with it.
+- Two indexes on one table claiming one name are refused. Both engines answer
+  `ERROR 1061 Duplicate key name`, so accepting it would describe a table
+  neither can create. `KEY (a), KEY a (b)` is that shape: the unnamed index
+  takes `a` as soon as it is read, and the later explicit `a` collides with it.
 - DDL commits implicitly on both engines, so a failed migration cannot be
   rolled back by the surrounding transaction.
 
