@@ -182,12 +182,20 @@ func primeWithPragmaFunctions(t *testing.T, db *sql.DB) {
 		"SELECT name FROM pragma_table_list",
 		"SELECT name FROM pragma_module_list",
 	} {
-		// Each query runs for its side effect and is closed without being
-		// advanced, so Rows.Err stays nil however it fared -- database/sql
-		// writes that field from Rows.Next alone.
-		//nolint:rowserrcheck // No Next, so Rows.Err cannot report anything.
 		rows, err := db.Query(query)
 		if err != nil {
+			t.Fatalf("prime %q: %v", query, err)
+		}
+		// Drained rather than closed straight away: Rows.Err reads a field
+		// Rows.Next is the only writer of, so a priming query that died
+		// mid-stream reports nothing to a caller that never advanced it.
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				t.Fatalf("prime %q: %v", query, err)
+			}
+		}
+		if err := rows.Err(); err != nil {
 			t.Fatalf("prime %q: %v", query, err)
 		}
 		if err := rows.Close(); err != nil {

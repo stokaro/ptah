@@ -71,12 +71,6 @@ func (m *Migrator) RevisionLayoutBase(ctx context.Context) (bool, error) {
 }
 
 func (m *Migrator) migrationsTableUsesLegacyRevisionLayout(ctx context.Context) (bool, error) {
-	// Nothing here iterates: the query is `WHERE 1 = 0` and only the column
-	// list is wanted. Rows.Err returns database/sql's lasterr, which is written
-	// by Rows.Next and by nothing else, so on a result set no one advances it is
-	// nil however the statement fared -- measured, not assumed. A call to it
-	// would read as handling and never fire.
-	//nolint:rowserrcheck // No Next, so Rows.Err cannot report anything; see above.
 	rows, err := m.conn.QueryContext(
 		ctx,
 		fmt.Sprintf("SELECT * FROM %s WHERE 1 = 0", m.qualifiedMigrationsTable()),
@@ -87,6 +81,16 @@ func (m *Migrator) migrationsTableUsesLegacyRevisionLayout(ctx context.Context) 
 	defer rows.Close()
 	columns, err := rows.Columns()
 	if err != nil {
+		return false, fmt.Errorf("failed to read migrations metadata columns: %w", err)
+	}
+	// The result set is empty by construction -- `WHERE 1 = 0` -- and only the
+	// column list is wanted, but the set still has to be DRIVEN before its
+	// terminal error means anything: Rows.Err returns a field Rows.Next is the
+	// only writer of, so reading it off an unadvanced result set answers nil
+	// however the statement fared. One Next exhausts a set with no rows, which
+	// also closes it, so the deferred Close becomes the no-op it should be.
+	rows.Next()
+	if err := rows.Err(); err != nil {
 		return false, fmt.Errorf("failed to read migrations metadata columns: %w", err)
 	}
 	present := make(map[string]struct{}, len(columns))
