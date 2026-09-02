@@ -415,7 +415,16 @@ jobs:
             # runtime bug or a data race in this repository's own code. Six
             # lines gets as far as `runtime.throw` and stops well before the
             # goroutine, which is the frame that matters.
-            grep -A 80 -E '^fatal error:' unit-tests.log | head -120
+            #
+            # Two headers, because a Windows abort writes neither `fatal error:`
+            # nor `panic:`. Measured on run 33658087552: the crash printed
+            # `Exception 0xc0000005 0x8 0xc 0xc` and `PC=0xc`, the whole
+            # 2965-line log held no `fatal error`, `panic`, `SIGSEGV` or
+            # `runtime error` anywhere, and this summary was therefore empty of
+            # the crash while the raw log had all of it -- which is how a
+            # sighting loses its evidence on the one platform the issue is
+            # about.
+            grep -A 80 -E '^(fatal error:|Exception 0x)' unit-tests.log | head -120
             echo '```'
           } >>"$GITHUB_STEP_SUMMARY"
           exit "$status"
