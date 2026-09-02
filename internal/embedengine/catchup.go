@@ -45,6 +45,27 @@ func (e *Engine) CatchUp(
 	if err != nil {
 		return embedrun.Run{}, embedrun.Progress{}, err
 	}
+	// Before the loop, because everything after this line is irreversible: a
+	// provider request is charged, a vector lands in the operator's table, and
+	// the catch-up watermark moves.
+	//
+	// Catch-up covers what changed AFTER the snapshot the backfill walked, so a
+	// run that has not finished that walk has no such range -- its cursor falls
+	// back to the boundary and the events it reads are ones the backfill still
+	// owes. Asked at `boundary_captured` this engine embedded a row, wrote it,
+	// advanced the watermark PAST the boundary, and returned a nil error; the
+	// only refusal came from the CLI reaching for `caught_up` afterwards, by
+	// which point the money was spent and the watermark -- the value that
+	// clears the "catch-up has not reached the barrier" finding -- said the run
+	// was further along than it was (stokaro/ptah#2737).
+	//
+	// Reached rather than an equality, because catching up again after an
+	// index, a verification or a cutover is ordinary: the source keeps moving.
+	if !run.Reached(embedrun.PhaseBackfilled) {
+		return embedrun.Run{}, embedrun.Progress{}, fmt.Errorf(
+			"catch-up needs a backfill that reached the end of its snapshot, and this run is at %q",
+			run.Phase)
+	}
 	// This pass's work, for the reason [Engine.Backfill] gives.
 	started := run.Progress
 	final, err := e.catchUpLoop(ctx, runID, run, token, changes, source)
