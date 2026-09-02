@@ -24,14 +24,63 @@ import (
 // them the same bytes, and the failure it causes is an approval binding to a
 // plan that is not the plan.
 func Of(components ...string) string {
+	sum := sha256.Sum256([]byte(Encode(components...)))
+	return hex.EncodeToString(sum[:])
+}
+
+// Encode is the length-prefixed encoding [Of] hashes, before it hashes it.
+//
+// Exported because a caller sometimes needs the encoding WITHOUT the hash: an
+// identity that has to be compared for equality and then shown to a person
+// cannot be a digest, and a caller that wrote its own joiner to keep it
+// readable reintroduces exactly the boundary this encoding removes. It did:
+// the verification walk joined a composite key on U+001F, so a tenant holding
+// that byte could forge another row's identity (stokaro/ptah#2744).
+//
+// Each component is its byte length, a colon, then the component. Nothing
+// separates one from the next, because nothing needs to -- the length says
+// where each ends, which is what makes the encoding unambiguous for ANY
+// component value including one holding a colon, a digit, or the encoding of
+// another list.
+//
+// Decoded by [Decode].
+func Encode(components ...string) string {
 	var b strings.Builder
 	for _, component := range components {
 		b.WriteString(strconv.Itoa(len(component)))
 		b.WriteByte(':')
 		b.WriteString(component)
 	}
-	sum := sha256.Sum256([]byte(b.String()))
-	return hex.EncodeToString(sum[:])
+	return b.String()
+}
+
+// Decode reverses [Encode], and reports whether the input was one of its
+// answers.
+//
+// A caller that shows an identity to a person needs the components back, and
+// asking it to keep them beside the identity is a second copy that can disagree
+// with the first. False for anything Encode could not have produced, so a
+// value from somewhere else is refused rather than rendered as a truncated
+// guess.
+func Decode(encoded string) ([]string, bool) {
+	var components []string
+	for rest := encoded; rest != ""; {
+		colon := strings.IndexByte(rest, ':')
+		if colon <= 0 {
+			return nil, false
+		}
+		width, err := strconv.Atoi(rest[:colon])
+		if err != nil || width < 0 {
+			return nil, false
+		}
+		rest = rest[colon+1:]
+		if len(rest) < width {
+			return nil, false
+		}
+		components = append(components, rest[:width])
+		rest = rest[width:]
+	}
+	return components, true
 }
 
 // ShortLength is how much of a digest a name carries.

@@ -860,32 +860,43 @@ func TestVerify_AnOrdinaryTombstoneIsStillExempt(t *testing.T) {
 
 // TestRenderKey_ShowsACompositeKeyAsATuple is what an operator reads.
 //
-// The components are joined with a control character so that no column value
-// can forge a boundary, and a terminal swallows it: `(acme, 2)` and
-// `(globex, 1)` printed as `acme2` and `globex1`, which is ambiguous as well as
-// unreadable -- tenant `a` with id `11` and tenant `a1` with id `1` both render
-// as `a11`.
+// The identity is length-prefixed so that no column value can forge a boundary,
+// and it is not printable as it stands: a raw identity reads `6:acme1:2`, and
+// the joiner it replaced was a control character a terminal swallowed --
+// `(acme, 2)` and `(globex, 1)` printed as `acme2` and `globex1`, which is
+// ambiguous as well as unreadable, since tenant `a` with id `11` and tenant
+// `a1` with id `1` both render as `a11`.
 func TestRenderKey_ShowsACompositeKeyAsATuple(t *testing.T) {
 	tests := []struct {
 		name string
 		key  string
 		want string
 	}{
-		{name: "single component", key: "4", want: "4"},
+		{name: "single component", key: embedverify.KeyIdentity("4"), want: "4"},
 		{
 			name: "two components",
-			key:  "acme" + embedverify.KeyFieldSeparator + "2",
+			key:  embedverify.KeyIdentity("acme", "2"),
 			want: "(acme, 2)",
 		},
 		{
 			name: "components a comma would have folded",
-			key:  "a" + embedverify.KeyFieldSeparator + "11",
+			key:  embedverify.KeyIdentity("a", "11"),
 			want: "(a, 11)",
 		},
 		{
 			name: "the pair that folds onto it",
-			key:  "a1" + embedverify.KeyFieldSeparator + "1",
+			key:  embedverify.KeyIdentity("a1", "1"),
 			want: "(a1, 1)",
+		},
+		{
+			name: "a component holding the separator the joiner used",
+			key:  embedverify.KeyIdentity("a\x1fb", "c"),
+			want: "(a\x1fb, c)",
+		},
+		{
+			name: "an identity this package did not produce",
+			key:  "not an encoding",
+			want: "not an encoding",
 		},
 	}
 

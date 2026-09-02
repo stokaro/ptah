@@ -2553,8 +2553,8 @@
         "/inference/strategies/plan-vector-indexes/",
         "/inference/strategies/production-rollout/"
       ],
-      "visibleWords": 684,
-      "sourceBytes": 5005
+      "visibleWords": 734,
+      "sourceBytes": 5293
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/run-status-and-findings.md",
@@ -2586,8 +2586,8 @@
       "disposition": "keep",
       "outboundLinks": [],
       "inboundLinks": [],
-      "visibleWords": 1773,
-      "sourceBytes": 12791
+      "visibleWords": 1824,
+      "sourceBytes": 13063
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/specification.md",
