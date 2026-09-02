@@ -1980,9 +1980,12 @@ found the two MySQL sites and none of the eleven PostgreSQL ones. Enabling it
 would have looked like coverage and been silence.
 
 `.golangci.yml` therefore names every package in the tree that declares a
-`Query`/`QueryContext` returning `*sql.Rows`, and **a new such declaration means
-a new entry**. Nothing fails when one is missing; the linter stops seeing
-that package, which is the state the reported defect was already in.
+`Query`/`QueryContext` returning `*sql.Rows`. Nothing about a missing entry
+fails on its own -- the linter stops seeing that package, which is the state the
+reported defect was already in -- so the list is not left as a claim.
+`internal/rowserrguard` compares it with what the tree declares, in both
+directions, and asserts that the linter is enabled: a list kept in perfect order
+under a linter nobody runs is the same silence with more evidence of care.
 
 Two limits are worth knowing before trusting a clean run:
 

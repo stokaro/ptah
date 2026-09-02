@@ -234,9 +234,11 @@ linters:
       # the reader the issue was filed against.
       #
       # So every package here declares a Query/QueryContext returning *sql.Rows,
-      # and adding another such declaration means adding it here. A missing entry
-      # does not fail: it makes this linter silent about that package, which is
-      # the shape the reported defect already had once.
+      # and adding another such declaration means adding it here. Nothing about
+      # a missing entry would fail on its own -- it makes this linter silent
+      # about the package, which is the shape the reported defect already had --
+      # so internal/rowserrguard compares this list with what the tree declares,
+      # in both directions, and asserts the linter above is enabled.
       packages:
         - database/sql
         - go.5x5.cz/ptah/dbschema

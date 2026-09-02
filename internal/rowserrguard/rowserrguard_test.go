@@ -38,8 +38,7 @@ func TestRowsErrCheckIsEnabledHappyPath(t *testing.T) {
 	c := qt.New(t)
 	loaded := loadConfig(c)
 
-	c.Assert(slices.Contains(loaded.Linters.Enable, "rowserrcheck"), qt.IsTrue,
-		qt.Commentf("linters.enable: %v", loaded.Linters.Enable))
+	c.Assert(loaded.Linters.Enable, qt.Contains, "rowserrcheck")
 	c.Assert(loaded.Linters.Settings.RowsErrCheck.Packages, qt.Contains, "database/sql")
 }
 
@@ -77,7 +76,7 @@ func declaringPackages(c *qt.C) []string {
 	root := repositoryRoot(c)
 	modules := moduleDirectories(c, root)
 
-	found := map[string]struct{}{}
+	found := make(map[string]struct{})
 	fileSet := token.NewFileSet()
 	for _, relative := range trackedGoFiles(c, root) {
 		file, err := parser.ParseFile(fileSet, filepath.Join(root, relative), nil, parser.SkipObjectResolution)
@@ -162,7 +161,7 @@ func importPath(c *qt.C, modules map[string]string, relative string) string {
 // moduleDirectories maps each module's repository-relative directory to its
 // declared module path.
 func moduleDirectories(c *qt.C, root string) map[string]string {
-	modules := map[string]string{}
+	modules := make(map[string]string)
 	for _, relative := range trackedFiles(c, root, "go.mod") {
 		contents, err := os.ReadFile(filepath.Join(root, relative))
 		c.Assert(err, qt.IsNil)
