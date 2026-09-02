@@ -61,8 +61,7 @@ func untaggedFieldsUnder(root reflect.Type) ([]string, int) {
 			return
 		}
 		seen[typ] = true
-		for index := range typ.NumField() {
-			field := typ.Field(index)
+		for field := range typ.Fields() {
 			if !field.IsExported() {
 				continue
 			}
