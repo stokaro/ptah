@@ -817,8 +817,9 @@ func writeCLISpecWithTargetTable(c *qt.C, endpoint, target string) string {
 // over.
 func writeCLISpecWithIndex(c *qt.C, endpoint, method, representation string) string {
 	c.Helper()
-	return writeCLISpecEverything(c, endpoint, "outbox", "cosine", "embedding",
-		"articles", "articles", method, representation)
+	spec := defaultCLISpec(endpoint)
+	spec.indexMethod, spec.representation = method, representation
+	return writeCLISpecFrom(c, spec)
 }
 
 // writeCLISpecTables writes one naming each table separately. The two are the
@@ -826,15 +827,59 @@ func writeCLISpecWithIndex(c *qt.C, endpoint, method, representation string) str
 // not be asked about at all until this existed.
 func writeCLISpecTables(c *qt.C, endpoint, source, target string) string {
 	c.Helper()
-	return writeCLISpecEverything(c, endpoint, "outbox", "cosine", "embedding",
-		source, target, "", "vector")
+	spec := defaultCLISpec(endpoint)
+	spec.sourceTable, spec.targetTable = source, target
+	return writeCLISpecFrom(c, spec)
 }
 
 // writeCLISpecFull writes one with both chosen.
 func writeCLISpecFull(c *qt.C, endpoint, mode, metric, column string) string {
 	c.Helper()
-	return writeCLISpecEverything(c, endpoint, mode, metric, column,
-		"articles", "articles", "", "vector")
+	spec := defaultCLISpec(endpoint)
+	spec.mode, spec.metric, spec.column = mode, metric, column
+	return writeCLISpecFrom(c, spec)
+}
+
+// cliSpec is every part of the shared fixture specification a test may vary.
+//
+// A struct rather than another positional parameter: the writer it replaced
+// took nine strings in a fixed order, and the axes a caller needs are not the
+// same across tests -- one wants the two tables apart, one wants a refusing
+// input policy, one wants a composite key. Adding each as a parameter made
+// every existing call site restate defaults it does not care about, in an order
+// nothing checks. A caller now starts from `defaultCLISpec` and names the
+// fields it changes.
+type cliSpec struct {
+	endpoint       string
+	mode           string
+	metric         string
+	column         string
+	sourceTable    string
+	targetTable    string
+	indexMethod    string
+	representation string
+	keyFields      []string
+	inputFields    []string
+	filter         string
+	nullPolicy     string
+	emptyPolicy    string
+}
+
+// defaultCLISpec is the specification every lifecycle fixture here uses.
+func defaultCLISpec(endpoint string) cliSpec {
+	return cliSpec{
+		endpoint:       endpoint,
+		mode:           "outbox",
+		metric:         "cosine",
+		column:         "embedding",
+		sourceTable:    "articles",
+		targetTable:    "articles",
+		representation: "vector",
+		keyFields:      []string{"id"},
+		inputFields:    []string{"title", "body"},
+		nullPolicy:     "empty",
+		emptyPolicy:    "skip",
+	}
 }
 
 // indexMethodLine renders the target's index_method key, or nothing at all.
@@ -850,10 +895,25 @@ func indexMethodLine(method string) string {
 	return "  index_method: " + method + "\n"
 }
 
-// writeCLISpecEverything writes one with every varying part chosen.
-func writeCLISpecEverything(
-	c *qt.C, endpoint, mode, metric, column, source, target, method, representation string,
-) string {
+// filterLine renders the source's filter key, or nothing at all.
+//
+// Absent by default for the same reason the index method is: a filter narrows
+// what a run embeds, so writing one into the shared template would change what
+// every fixture's counts mean.
+func filterLine(filter string) string {
+	if filter == "" {
+		return ""
+	}
+	return "  filter: '" + filter + "'\n"
+}
+
+// yamlList renders a flow sequence the specification reader accepts.
+func yamlList(values []string) string {
+	return "[" + strings.Join(values, ", ") + "]"
+}
+
+// writeCLISpecFrom writes the specification file the verbs are given.
+func writeCLISpecFrom(c *qt.C, spec cliSpec) string {
 	c.Helper()
 	document := fmt.Sprintf(`
 version: 1
@@ -861,15 +921,15 @@ name: cli articles
 source:
   schema: public
   table: %s
-  key_fields: [id]
-  input_fields: [title, body]
-  version_strategy: updated_at
+  key_fields: %s
+  input_fields: %s
+%s  version_strategy: updated_at
   version_field: updated_at
   mutable: true
 preprocessing:
   separator: "\n"
-  null_policy: empty
-  empty_policy: skip
+  null_policy: %s
+  empty_policy: %s
   unicode_normalization: none
   truncate: refuse
 model:
@@ -891,7 +951,10 @@ target:
 policy:
   require_exact_approval: true
   require_consistency_mode: true
-`, source, endpoint, target, column, representation, metric, indexMethodLine(method), mode)
+`, spec.sourceTable, yamlList(spec.keyFields), yamlList(spec.inputFields),
+		filterLine(spec.filter), spec.nullPolicy, spec.emptyPolicy, spec.endpoint,
+		spec.targetTable, spec.column, spec.representation, spec.metric,
+		indexMethodLine(spec.indexMethod), spec.mode)
 	path := filepath.Join(c.TempDir(), "spec.yaml")
 	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)
 	return path

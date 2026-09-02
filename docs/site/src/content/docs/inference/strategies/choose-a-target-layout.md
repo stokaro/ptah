@@ -66,9 +66,15 @@ table owned by another team, or one with a `SELECT *` you cannot audit.
 Two tables can disagree about which keys exist, and `ptah inference verify`
 reports both directions. A source row with no row in the target table is a
 coverage gap, the same finding the single-table layout gives a row with no
-vector. A row in the target table whose key the source does not have is reported
-as outside the generation's source scope — a shape the single-table layout cannot
-produce, and the one to expect after a source row is deleted.
+vector; the target-row count is the number of rows that relation holds, so the
+two numbers differ. A row in the target table carrying this generation's vector
+at a key the source does not have is reported as outside the generation's source
+scope — the shape to expect after a source row is deleted.
+
+A row in the target table that no generation ever wrote is reported by none of
+them. It belongs to no generation, so a generation's verification is not where
+it is named. That is the row you get from creating the sidecar row before the
+run that fills it, and it does not block a cutover.
 
 ## Two generations, two columns
 
