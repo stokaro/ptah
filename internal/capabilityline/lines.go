@@ -29,8 +29,20 @@ const (
 	ClickHouse25 = "25.8"
 	// ClickHouse263 is the measured ClickHouse 26.3 LTS release line.
 	ClickHouse263 = "26.3"
-	// ClickHouse26 is the newest measured ClickHouse release line.
+	// ClickHouse26 is the measured ClickHouse 26.7 release line, and the one
+	// core/renderer/internal/dialects/clickhouse pins its statement-level
+	// findings against.
 	ClickHouse26 = "26.7"
+	// ClickHouse268 is the newest measured ClickHouse release line.
+	//
+	// It moved here from 26.7 on the evidence the line asks for. Probed against
+	// a live clickhouse/clickhouse-server:26.8, banner 26.8.2.7: 54 rows, 34
+	// agreeing, 0 disagreeing, 20 undecidable, and the decided count meeting
+	// the cell's floor. Nothing about 26.8 contradicts the preset
+	// clickHouseForVersion already returns for every line above 24.11, so this
+	// records a measurement rather than promoting an assumption
+	// (stokaro/ptah#2802).
+	ClickHouse268 = "26.8"
 	// YugabyteDB2024 is the measured YugabyteDB 2024 LTS release line, and the
 	// only one below the PostgreSQL 11 to 15 engine swap.
 	YugabyteDB2024 = "2024.2"
@@ -56,7 +68,7 @@ func YugabyteDBMeasured() []string {
 // ClickHouseMeasured returns every ClickHouse release line with direct matrix
 // evidence.
 func ClickHouseMeasured() []string {
-	return []string{ClickHouse24, ClickHouse25, ClickHouse263, ClickHouse26}
+	return []string{ClickHouse24, ClickHouse25, ClickHouse263, ClickHouse26, ClickHouse268}
 }
 
 // MySQLMeasured returns every MySQL release line with direct matrix evidence.

@@ -668,9 +668,13 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 		// step and below the newest measured line, so it climbs to the upper
 		// arm, is not attributable to a declared line (25.3 is not one), and is
 		// not saturated either.
-		{"clickhouse above the step, on no declared line", "clickhouse", "25.3.1.100", capability.ClickHouse2411(), false, false, "26.7"},
-		{"clickhouse on its newest measured line", "clickhouse", "26.7.3.19", capability.ClickHouse2411(), true, false, "26.7"},
-		{"clickhouse past the newest measured line", "clickhouse", "27.1.1.1", capability.ClickHouse2411(), false, true, "26.7"},
+		{"clickhouse above the step, on no declared line", "clickhouse", "25.3.1.100", capability.ClickHouse2411(), false, false, "26.8"},
+		{"clickhouse on its newest measured line", "clickhouse", "26.8.2.7", capability.ClickHouse2411(), true, false, "26.8"},
+		// The line 26.8 replaced as newest. It is still measured and still
+		// version-specific, which is what separates moving the newest line
+		// from replacing it (stokaro/ptah#2802).
+		{"clickhouse on the line below the newest", "clickhouse", "26.7.3.19", capability.ClickHouse2411(), true, false, "26.8"},
+		{"clickhouse past the newest measured line", "clickhouse", "27.1.1.1", capability.ClickHouse2411(), false, true, "26.8"},
 		// SQLite has a ladder now, of one step at 3.25. It reports
 		// VersionSpecific because a version DID select an arm, and no newest
 		// measured line because the matrix declares one SQLite cell and it has
