@@ -5076,7 +5076,7 @@ func (p *Parser) parseInlineSkippingIndex(table *ast.CreateTableNode) error {
 	if !ok {
 		return fmt.Errorf("internal: skipping index parsed as %T", operation)
 	}
-	table.Indexes = append(table.Indexes, &ast.IndexNode{
+	table.AddIndex(&ast.IndexNode{
 		Name:        index.Name,
 		Table:       table.Name,
 		Columns:     []string{index.Expression},

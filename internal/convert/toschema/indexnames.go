@@ -167,37 +167,88 @@ func nameMySQLInlineIndexes(
 			claimed.claim(field.Name)
 		}
 	}
-	// In the order the document declared them, because that is the order the
-	// server allocates in, and the two disagree on a document that is valid one
-	// way round and refused the other (stokaro/ptah#2773).
-	covered := coverage{table.PrimaryKey}
+	// Coverage is a property of the whole table body and order is not.
+	// Measured on MySQL 26.7 and MariaDB 12.3, all three of these leave the
+	// foreign key with no backing index of its own, so its name stays free:
+	//
+	//	CONSTRAINT fk1 FOREIGN KEY (a) ..., KEY (a)   the key comes AFTER
+	//	a INT NOT NULL PRIMARY KEY, ... FOREIGN KEY (a)   a column-level key
+	//	a INT UNIQUE, ... FOREIGN KEY (a)                 a column-level unique
+	//
+	// Deciding it from what precedes the constraint refused all three, which
+	// are documents both engines accept.
+	covered := coversOf(database, table, fieldsStart, order)
+	// Names, though, are allocated in the order the document declared them:
+	// that is the order the server allocates in, and the two disagree on a
+	// document that is valid one way round and refused the other
+	// (stokaro/ptah#2773).
 	for _, element := range order {
-		if element.index != nil {
-			if err := claimIndexName(claimed, element.index, table, naming); err != nil {
+		if element.isIndex() {
+			if err := claimIndexName(
+				claimed, &database.Indexes[element.index], table, naming); err != nil {
 				return err
 			}
-			covered = append(covered, element.index.Fields)
 			continue
 		}
-		if err := claimConstraintName(claimed, element.constraint, table, naming, covered); err != nil {
+		if err := claimConstraintName(
+			claimed, &database.Constraints[element.constraint], table, naming, covered); err != nil {
 			return err
 		}
-		covered = append(covered, element.constraint.Columns)
 	}
 	return nil
 }
 
-// namedElement is one table-body element the naming pass walks, as the model
-// value it has to write a name into.
+// coversOf is every access path the table body declares, in any position.
 //
-// Exactly one field is set, and both are pointers into the caller's slices
-// because naming an element means writing to it.
-type namedElement struct {
-	// constraint is the element, when it was a table-level constraint.
-	constraint *schemamodel.Constraint
-	// index is the element, when it was an inline index.
-	index *schemamodel.Index
+// A foreign key reuses whichever of them leads with its columns, so all of them
+// have to be here: the table's primary key, a column's own primary key or
+// unique, every inline index, and every unique constraint.
+func coversOf(
+	database *schemamodel.Database, table schemamodel.Table,
+	fieldsStart int, order []namedElement,
+) coverage {
+	covered := coverage{table.PrimaryKey}
+	for _, field := range database.Fields[fieldsStart:] {
+		if field.Primary || field.Unique {
+			covered = append(covered, []string{field.Name})
+		}
+	}
+	for _, element := range order {
+		if element.isIndex() {
+			covered = append(covered, database.Indexes[element.index].Fields)
+			continue
+		}
+		if constraint := database.Constraints[element.constraint]; constraint.Type == "UNIQUE" {
+			covered = append(covered, constraint.Columns)
+		}
+	}
+	return covered
 }
+
+// namedElement is one table-body element the naming pass walks, as a POSITION
+// in the model rather than a pointer into it.
+//
+// A pointer would be the obvious spelling and it is wrong: these are collected
+// while the same slices are still being appended to, and an append that grows
+// past the capacity moves the backing array. Measured -- with two inline
+// indexes on one table, the first one's name was written through a pointer into
+// the abandoned array and the index reached the renderer nameless.
+//
+// Exactly one position is set; the other is absent.
+type namedElement struct {
+	// constraint is the element's position in Database.Constraints, when it was
+	// a table-level constraint.
+	constraint int
+	// index is the element's position in Database.Indexes, when it was an
+	// inline index.
+	index int
+}
+
+// noPosition marks the half of a namedElement that is not set.
+const noPosition = -1
+
+// isIndex reports whether this element is an inline index.
+func (e namedElement) isIndex() bool { return e.index != noPosition }
 
 // coverage is the key prefixes a table already has an access path for, in the
 // order they were declared.
