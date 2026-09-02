@@ -120,8 +120,30 @@ type Report struct {
 	Findings []Finding
 	// SourceRows and TargetRows are the counts, reported beside key-level
 	// coverage rather than instead of it.
+	//
+	// TargetRows is every row the walk stood opposite on the target side, which
+	// is not the number of vectors: a tombstone, a skip and a row nothing ever
+	// wrote each occupy a position and hold none. That is the count the
+	// verification record stores as the shape it was taken on, and it is what
+	// the three below break down.
 	SourceRows int
 	TargetRows int
+	// TargetVectors is how many of TargetRows actually hold a vector.
+	//
+	// It exists because the header printed TargetRows and a reader read it as
+	// this: `2 source rows, 3 target rows` beside a column holding two vectors,
+	// after catch-up tombstoned one row through Ptah's own verbs
+	// (stokaro/ptah#2742).
+	TargetVectors int
+	// Tombstones and SkippedTargets are the deliberate absences among them --
+	// a row whose source is gone, and one the specification asked not to embed.
+	//
+	// Reported separately because they are the reason the two counts differ,
+	// and a reader given only the difference has to guess which it was. They
+	// are the row's flags rather than a partition: a tombstone that still holds
+	// a vector is counted in both, and is a finding.
+	Tombstones     int
+	SkippedTargets int
 	// Unmeasured names the checks that did not run at all.
 	//
 	// A check that could not be made is not a check that passed, and the
