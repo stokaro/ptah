@@ -2059,8 +2059,8 @@
       "inboundLinks": [
         "/inference/concepts/generations/"
       ],
-      "visibleWords": 1072,
-      "sourceBytes": 7905
+      "visibleWords": 1073,
+      "sourceBytes": 7912
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/configure-a-provider.md",
