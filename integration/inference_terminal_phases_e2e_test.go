@@ -249,6 +249,9 @@ func TestInferenceARolledBackGenerationCanBeRetiredE2E(t *testing.T) {
 	runInference(c, ctx, "rollback",
 		"--spec", secondSpec, "--db-url", dbName, "--to", first, "--window", "1h")
 	c.Assert(runPhase(c, ctx, db, "retire-second"), qt.Equals, "rolled_back")
+	activeStatusBefore, activeOwnerBefore := runStatusAndLease(c, ctx, db, "retire-first")
+	c.Assert(activeStatusBefore, qt.Equals, "running")
+	c.Assert(activeOwnerBefore, qt.Equals, "")
 
 	digest := retirementDigestOf(c, ctx, secondSpec, dbName, second)
 	runInference(c, ctx, "retire",
@@ -263,13 +266,13 @@ func TestInferenceARolledBackGenerationCanBeRetiredE2E(t *testing.T) {
 	c.Assert(status, qt.Equals, "complete")
 	c.Assert(owner, qt.Equals, "")
 	// The control against a completion that reached too far: the run behind the
-	// generation queries actually read is untouched, still running and still
-	// held. That `rolled_back` itself does not complete a run is the other
-	// control, and it is a unit test -- reaching it here would need a rollback
-	// this fixture then never reverses.
+	// generation queries actually read is untouched. It stays running and keeps
+	// the empty lease recorded by cutover. That `rolled_back` itself does not
+	// complete a run is the other control, and it is a unit test -- reaching it
+	// here would need a rollback this fixture then never reverses.
 	activeStatus, activeOwner := runStatusAndLease(c, ctx, db, "retire-first")
-	c.Assert(activeStatus, qt.Equals, "running")
-	c.Assert(activeOwner, qt.Not(qt.Equals), "")
+	c.Assert(activeStatus, qt.Equals, activeStatusBefore)
+	c.Assert(activeOwner, qt.Equals, activeOwnerBefore)
 }
 
 // freshTerminalPhaseDatabase makes a database of its own and hands back a

@@ -5,10 +5,12 @@ package integration_test
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -82,8 +84,9 @@ func TestInferenceCatchUpPrunesTheOutboxE2E(t *testing.T) {
 	c.Assert(outboxRowsFrom(c, ctx, db, specPath), qt.Equals, 0)
 }
 
-// TestInferenceCatchUpKeepsWhatASecondGenerationOwesE2E is the half that makes
-// the pruning above safe to do at all.
+// TestInferenceCatchUpKeepsWhatASecondGenerationOwesUntilItIsAbandonedE2E is
+// the half that makes the pruning above safe to do at all, plus stokaro/ptah#2723's
+// non-destructive way to release that reader.
 //
 // An outbox belongs to the source TABLE -- [embedpg.Outbox.TableName] digests
 // the source's qualified name, not the generation's -- so two generations over
@@ -95,10 +98,11 @@ func TestInferenceCatchUpPrunesTheOutboxE2E(t *testing.T) {
 // waited.
 //
 // Both directions are asserted, and only together do they say anything. The
-// first says the floor holds events back while a reader is behind; the second
-// says the same three events go once that reader arrives, which is what
-// separates a floor from a prune that never deletes anything.
-func TestInferenceCatchUpKeepsWhatASecondGenerationOwesE2E(t *testing.T) {
+// first says a pass may prune an older prefix while naming the run that still
+// holds a newer suffix; the second says that suffix goes once the reader is
+// abandoned, which separates a released floor from a prune that never deletes
+// anything.
+func TestInferenceCatchUpKeepsWhatASecondGenerationOwesUntilItIsAbandonedE2E(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.TimescaleDB)
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -141,36 +145,91 @@ func TestInferenceCatchUpKeepsWhatASecondGenerationOwesE2E(t *testing.T) {
 	prepareAndBackfill(c, ctx, first, dbName, "prune-first")
 	prepareAndBackfill(c, ctx, second, dbName, "prune-second")
 
-	changeTheSourceThreeWays(c, ctx, db)
-	c.Assert(outboxRowsFrom(c, ctx, db, first), qt.Equals, 3)
+	// Bring both runs through one event first. That establishes a floor above
+	// the snapshot boundary, so the later held-floor pass can both prune an
+	// older prefix and retain a newer suffix -- the ordinary case in which the
+	// holder diagnostic used to disappear behind the prune count.
+	changeTheSource(c, ctx, db, sourceChanges[0])
+	runInference(c, ctx, "catchup",
+		"--spec", first, "--db-url", dbName, "--run-id", "prune-first", "--batch-rows", "10")
+	runInference(c, ctx, "catchup",
+		"--spec", second, "--db-url", dbName, "--run-id", "prune-second", "--batch-rows", "10")
+	c.Assert(outboxRowsFrom(c, ctx, db, first), qt.Equals, 0)
+
+	changeTheSource(c, ctx, db, sourceChanges[1])
+	runInference(c, ctx, "catchup",
+		"--spec", first, "--db-url", dbName, "--run-id", "prune-first", "--batch-rows", "10")
+	changeTheSource(c, ctx, db, sourceChanges[2])
 
 	held := runInference(c, ctx, "catchup",
 		"--spec", second, "--db-url", dbName, "--run-id", "prune-second", "--batch-rows", "10")
 
-	// Said out loud, not merely done. A companion table that does not shrink
-	// after a catch-up reported no work is what an operator would open an issue
-	// about, so the run names the reason; this is the only fixture in the tree
-	// that reaches that sentence.
+	// Said out loud, not merely done. The diagnostic names the exact run and
+	// generation holding the floor, so the operator has an identifier to inspect
+	// or abandon instead of a generic explanation with no next action.
+	c.Assert(held, qt.Contains, "pruned 1 processed event(s) from the outbox")
 	c.Assert(held, qt.Contains,
-		"the outbox keeps events this run has processed: "+
-			"another live generation reading articles has not reached them")
+		"the outbox keeps events this run has processed: floor ")
+	c.Assert(held, qt.Contains, "for public.articles is held by run prune-first "+
+		"(generation "+generationFromSpec(c, first)+")")
 
-	// The second generation has processed all three and may not remove one of
-	// them, because the first generation has read none of them. Asked through
-	// the first specification, which resolves to the same table: two
-	// specifications addressing one outbox is the whole premise.
-	c.Assert(outboxRowsFrom(c, ctx, db, first), qt.Equals, 3)
+	// The older event was pruned, but the newest remains because the first run
+	// has not reached it. Asked through the first specification, which resolves
+	// to the same table: two specifications addressing one outbox is the whole
+	// premise.
+	c.Assert(outboxRowsFrom(c, ctx, db, first), qt.Equals, 1)
+
+	abandoned := runInference(c, ctx, "abandon",
+		"--db-url", dbName, "--run-id", "prune-first",
+		"--reason", "the migration was superseded")
+	c.Assert(abandoned, qt.Contains, "abandoned run prune-first")
+	c.Assert(abandoned, qt.Contains, "the run no longer holds shared outbox events")
+	repeated := runInference(c, ctx, "abandon",
+		"--db-url", dbName, "--run-id", "prune-first",
+		"--reason", "a retry after the response was lost")
+	c.Assert(repeated, qt.Contains, "the migration was superseded")
+	c.Assert(repeated, qt.Not(qt.Contains), "a retry after the response was lost")
+
+	// Abandonment releases a reader, not its corpus. The old generation remains
+	// inspectable and explicitly retireable, including vectors already written.
+	var kept bool
+	c.Assert(db.QueryRowContext(ctx,
+		`SELECT embedding_v1 IS NOT NULL FROM articles WHERE id = 1`).Scan(&kept), qt.IsNil)
+	c.Assert(kept, qt.IsTrue)
+	status := runInference(c, ctx, "status",
+		"--spec", first, "--db-url", dbName, "--run-id", "prune-first")
+	c.Assert(status, qt.Contains, "abandoned: the migration was superseded")
+	statusJSON := runInference(c, ctx, "status",
+		"--spec", first, "--db-url", dbName, "--run-id", "prune-first", "--format", "json")
+	var document struct {
+		Readiness struct {
+			Verified     bool     `json:"verified"`
+			CutoverReady bool     `json:"cutover_ready"`
+			Blockers     []string `json:"blockers"`
+			Unmeasured   []string `json:"unmeasured"`
+		} `json:"readiness"`
+	}
+	c.Assert(json.Unmarshal([]byte(statusJSON), &document), qt.IsNil, qt.Commentf("%s", statusJSON))
+	c.Assert(document.Readiness.Verified, qt.IsFalse)
+	c.Assert(document.Readiness.CutoverReady, qt.IsFalse)
+	c.Assert(strings.Join(document.Readiness.Blockers, "\n"), qt.Contains,
+		"run prune-first was abandoned and cannot be cut over")
+	c.Assert(strings.Join(document.Readiness.Unmeasured, "\n"), qt.Contains,
+		"every deterministic layer, because the run is terminal")
+	gate, gateErr := runInferenceExpectingFailure(c, ctx, "status",
+		"--spec", first, "--db-url", dbName, "--run-id", "prune-first", "--require-ready")
+	c.Assert(gateErr, qt.IsNotNil, qt.Commentf("%s", gate))
 
 	released := runInference(c, ctx, "catchup",
-		"--spec", first, "--db-url", dbName, "--run-id", "prune-first", "--batch-rows", "10")
+		"--spec", second, "--db-url", dbName, "--run-id", "prune-second", "--batch-rows", "10")
 
-	// The same three, reported by the run that lifted the floor rather than by
-	// the one that was held back -- which is the direction that says the floor
-	// rose, and not that the events were quietly dropped somewhere earlier.
-	c.Assert(released, qt.Contains, "pruned 3 processed event(s) from the outbox")
+	// The retained event is reported by the next catch-up after abandonment.
+	// That is the direction that proves the terminal status changed reader
+	// membership rather than merely changing what `status` prints.
+	c.Assert(released, qt.Contains, "pruned 1 processed event(s) from the outbox")
 
-	// Every live reader has now passed them, so the floor rises and the same
-	// three events go.
+	// Every live reader has now passed it, so the floor rises and the final event
+	// goes.
 	c.Assert(outboxRowsFrom(c, ctx, db, second), qt.Equals, 0)
 }
 
@@ -199,16 +258,22 @@ func prepareAndBackfill(c *qt.C, ctx context.Context, specPath, dbURL, runID str
 // count neither assertion here accepts.
 func changeTheSourceThreeWays(c *qt.C, ctx context.Context, db *sql.DB) {
 	c.Helper()
-	statements := []string{
-		`UPDATE articles SET title = 'First rewritten', updated_at = '8' WHERE id = 1`,
-		`INSERT INTO articles (id, title, body, updated_at)
-			VALUES (4, 'Fourth', 'about invoices', '8')`,
-		`DELETE FROM articles WHERE id = 3`,
+	for _, statement := range sourceChanges {
+		changeTheSource(c, ctx, db, statement)
 	}
-	for _, statement := range statements {
-		_, err := db.ExecContext(ctx, statement)
-		c.Assert(err, qt.IsNil, qt.Commentf("%s", statement))
-	}
+}
+
+var sourceChanges = []string{
+	`UPDATE articles SET title = 'First rewritten', updated_at = '8' WHERE id = 1`,
+	`INSERT INTO articles (id, title, body, updated_at)
+		VALUES (4, 'Fourth', 'about invoices', '8')`,
+	`DELETE FROM articles WHERE id = 3`,
+}
+
+func changeTheSource(c *qt.C, ctx context.Context, db *sql.DB, statement string) {
+	c.Helper()
+	_, err := db.ExecContext(ctx, statement)
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", statement))
 }
 
 // outboxRowsFrom counts every event the outbox for a specification's source
@@ -246,4 +311,14 @@ func outboxTableFor(c *qt.C, db *sql.DB, specPath string) string {
 	outbox, err := embedpg.NewOutbox(db, loaded.Spec)
 	c.Assert(err, qt.IsNil)
 	return outbox.TableName()
+}
+
+// generationFromSpec returns the identity printed in the floor diagnostic.
+func generationFromSpec(c *qt.C, specPath string) string {
+	c.Helper()
+	body, err := os.ReadFile(specPath)
+	c.Assert(err, qt.IsNil)
+	loaded, err := embedspec.Parse(body, specPath)
+	c.Assert(err, qt.IsNil)
+	return loaded.Spec.Identity().Digest
 }

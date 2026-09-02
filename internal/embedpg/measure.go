@@ -160,7 +160,7 @@ func VectorCapabilities(ctx context.Context, db *sql.DB) (map[string]bool, error
 }
 
 // extensionInstalled reports whether an extension is installed.
-func extensionInstalled(ctx context.Context, db *sql.DB, name string) (bool, error) {
+func extensionInstalled(ctx context.Context, db queryRower, name string) (bool, error) {
 	const query = `SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = $1)`
 	var installed bool
 	if err := db.QueryRowContext(ctx, query, name).Scan(&installed); err != nil {

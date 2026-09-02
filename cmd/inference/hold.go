@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/internal/embedengine"
+	"go.5x5.cz/ptah/internal/embedpg"
 	"go.5x5.cz/ptah/internal/embedrun"
 )
 
@@ -83,6 +84,41 @@ by name rather than quietly set to running.`,
 	return cmd
 }
 
+// newAbandonCommand returns "ptah inference abandon".
+func newAbandonCommand() *cobra.Command {
+	var dbURL string
+	var runID string
+	var reason string
+
+	cmd := &cobra.Command{
+		Use:   "abandon",
+		Short: "End one run and release its outbox position without deleting its vectors",
+		Args:  cobra.NoArgs,
+		Long: `Permanently end one run without retiring its generation.
+
+The run keeps its checkpoint, progress, and generation vectors. It stops
+holding shared outbox events, and a worker already running is fenced at its next
+commit. The run cannot resume; start another attempt under a new run identifier.
+
+Ending the last usable live feeder for an active generation is refused because
+its vectors must keep following the source. The same guard applies inside a
+maintenance window, whose rollback promise still needs a feeder. For outbox
+consistency, a replacement counts only after it has a durable, readable resume
+position; an unprepared or damaged sibling does not make abandonment safe.
+
+The reason is required and appears in status. This command needs the run-state
+database and run identifier, not the original specification.`,
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runAbandon(cmd.Context(), cmd.OutOrStdout(), dbURL, runID, reason)
+		},
+	}
+	addDatabaseFlag(cmd, &dbURL)
+	cmd.Flags().StringVar(&runID, "run-id", "", "Identifier of the run (required)")
+	cmd.Flags().StringVar(&reason, "reason", "", "Why the run is being ended (required)")
+	return cmd
+}
+
 // runPause stops the run and says what it stopped.
 func runPause(
 	ctx context.Context, out io.Writer, options commonOptions, runID, reason, worker string,
@@ -124,6 +160,37 @@ func runResume(
 		return err
 	}
 	return writeRunHold(out, "resumed", run, "")
+}
+
+// runAbandon ends one run and reports what remains.
+func runAbandon(
+	ctx context.Context, out io.Writer, dbURL, runID, reason string,
+) error {
+	if runID == "" {
+		return fmt.Errorf("--run-id is required")
+	}
+	if reason == "" {
+		return fmt.Errorf("--reason is required")
+	}
+	if err := validateDatabaseURL(dbURL); err != nil {
+		return err
+	}
+	db, err := connectDatabase(ctx, dbURL)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = db.Close() }()
+
+	run, err := (embedengine.Runs{Store: embedpg.NewStore(db)}).Abandon(ctx, runID, reason)
+	if err != nil {
+		return err
+	}
+	return writeLines(out,
+		fmt.Sprintf("abandoned run %s at phase %s, fencing token %d",
+			run.ID, run.Phase, run.FencingToken),
+		bullet("this command did not delete generation "+run.GenerationIdentity+" or its vectors"),
+		bullet("the run no longer holds shared outbox events"),
+		bullet(run.FailureDetail))
 }
 
 // writeRunHold reports what changed, including the token.

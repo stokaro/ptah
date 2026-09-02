@@ -25,7 +25,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0013](0013-inference-state-transitions-answer-with-their-provenance.md) | An inference-state transition answers with its provenance, and its approval binds to exact content | Proposed |
 | [0014](0014-the-outbox-boundary-is-a-transaction-and-the-order-is-a-sequence.md) | The outbox boundary is a transaction, the order is a sequence, and the trigger does not watch itself | Proposed |
 | [0015](0015-a-declared-fact-has-a-disposition-and-a-physical-object-has-one-emitter.md) | A declared fact carries a disposition, and a physical object has one emitter | Proposed |
-| [0016](0016-an-outbox-event-lives-until-every-live-generation-has-passed-it.md) | An outbox event lives until every live generation has passed it | Proposed |
+| [0016](0016-an-outbox-event-lives-until-every-live-generation-has-passed-it.md) | An outbox event lives until every usable live feeder has passed it | Proposed |
 
 ## Writing one
 

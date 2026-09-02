@@ -119,6 +119,92 @@ func TestClaim_TheSecondWorkerIsNotFencedByTheFirstLive(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 }
 
+// TestTargetCommit_CannotSmuggleATerminalRunPastLifecycleChecksLive guards the
+// private batch-commit path. Target.Commit writes the run and vectors in one
+// transaction, but it must not become a second abandonment or retirement API:
+// those decisions require generation lifecycle locks and reader checks.
+func TestTargetCommit_CannotSmuggleATerminalRunPastLifecycleChecksLive(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	db, spec, store := claimFixture(c, ctx)
+	before, err := store.Run(ctx, "claim-run")
+	c.Assert(err, qt.IsNil)
+	terminal := before
+	terminal.Status = embedrun.StatusAbandoned
+	terminal.FailureDetail = "smuggled through a batch"
+
+	target, err := embedpg.NewTarget(db, spec)
+	c.Assert(err, qt.IsNil)
+	err = target.Commit(ctx, []embedrun.TargetWrite{{
+		Key: []string{"1"}, Generation: spec.Identity().Digest,
+		InputHash: "must-not-land", Version: "9",
+		Vector: make([]float32, spec.Model.ReportedDimension),
+		Kind:   embedrun.WriteUpsert,
+	}}, terminal)
+
+	c.Assert(err, qt.ErrorIs, embedrun.ErrTerminal)
+	after, err := store.Run(ctx, "claim-run")
+	c.Assert(err, qt.IsNil)
+	c.Assert(after, qt.DeepEquals, before)
+	var vector sql.NullString
+	c.Assert(db.QueryRowContext(ctx,
+		`SELECT embedding::text FROM articles WHERE id = 1`).Scan(&vector), qt.IsNil)
+	c.Assert(vector.Valid, qt.IsFalse)
+}
+
+func TestTargetCommit_CannotRewindOrChangeRunMembershipLive(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	db, spec, store := claimFixture(c, ctx)
+	before, err := store.Run(ctx, "claim-run")
+	c.Assert(err, qt.IsNil)
+	target, err := embedpg.NewTarget(db, spec)
+	c.Assert(err, qt.IsNil)
+	advanced := before
+	advanced.Cursor = []string{"1"}
+	advanced.Progress.RowsScanned = 1
+	advanced.Progress.RowsEmbedded = 1
+	advanced.Progress.BatchesCommitted = 1
+	c.Assert(target.Commit(ctx, []embedrun.TargetWrite{{
+		Key: []string{"1"}, Generation: spec.Identity().Digest,
+		InputHash: "fresh", Version: "9", Vector: make([]float32, spec.Model.ReportedDimension),
+		Kind: embedrun.WriteUpsert,
+	}}, advanced), qt.IsNil)
+
+	tests := []struct {
+		name   string
+		mutate func(*embedrun.Run)
+	}{
+		{name: "stale checkpoint", mutate: func(*embedrun.Run) {}},
+		{name: "source change", mutate: func(run *embedrun.Run) { run.Source = "wrong" }},
+		{name: "position membership", mutate: func(run *embedrun.Run) {
+			run.SnapshotWatermark = "100"
+		}},
+		{name: "pointer phase", mutate: func(run *embedrun.Run) {
+			run.Phase = embedrun.PhaseCutOver
+		}},
+	}
+	for _, test := range tests {
+		offered := before
+		test.mutate(&offered)
+		err := target.Commit(ctx, []embedrun.TargetWrite{{
+			Key: []string{"1"}, Generation: spec.Identity().Digest,
+			InputHash: "must-not-land-" + test.name, Version: "10",
+			Vector: make([]float32, spec.Model.ReportedDimension), Kind: embedrun.WriteUpsert,
+		}}, offered)
+		c.Assert(err, qt.ErrorIs, embedstore.ErrConflict, qt.Commentf("%s", test.name))
+		stored, readErr := store.Run(ctx, before.ID)
+		c.Assert(readErr, qt.IsNil)
+		c.Assert(stored, qt.DeepEquals, advanced, qt.Commentf("%s", test.name))
+	}
+	var inputHash string
+	c.Assert(db.QueryRowContext(ctx,
+		`SELECT embedding_input_hash FROM articles WHERE id = 1`).Scan(&inputHash), qt.IsNil)
+	c.Assert(inputHash, qt.Equals, "fresh")
+}
+
 // claimEngine builds one for a named worker.
 func claimEngine(
 	c *qt.C, db *sql.DB, spec embedgen.Spec, store *embedpg.Store, worker string,

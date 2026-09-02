@@ -136,6 +136,13 @@ func assertARollbackToARetiredGenerationIsRefusedByName(
 	_, err := db.ExecContext(ctx,
 		`UPDATE ptah_embedding_generation SET retired_at = now() WHERE identity = 'a-retired-one'`)
 	c.Assert(err, qt.IsNil)
+	// A healthy lifecycle cannot retire the pointer's recorded way back. Put the
+	// row in that damaged state deliberately so this control reaches the
+	// retired-target refusal without weakening rollback's rule that --to must be
+	// exactly previous_generation.
+	_, err = db.ExecContext(ctx,
+		`UPDATE ptah_embedding_pointer SET previous_generation = 'a-retired-one'`)
+	c.Assert(err, qt.IsNil)
 
 	output, err := runInferenceExpectingFailure(c, ctx, "rollback",
 		"--spec", specPath, "--db-url", dbURL, "--to", "a-retired-one", "--window", "24h")
@@ -144,6 +151,7 @@ func assertARollbackToARetiredGenerationIsRefusedByName(
 	c.Assert(output, qt.Contains, "was retired")
 	c.Assert(output, qt.Not(qt.Contains), "does not exist")
 	c.Assert(activePointerOf(c, ctx, db), qt.Equals, active)
+	c.Assert(previousPointerOf(c, ctx, db), qt.Equals, "a-retired-one")
 }
 
 // activePointerOf reads which generation queries currently read.

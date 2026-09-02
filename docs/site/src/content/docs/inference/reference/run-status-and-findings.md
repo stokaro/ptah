@@ -31,7 +31,7 @@ run 2026-08-articles: caught_up, running
 
 | Line | Means |
 | --- | --- |
-| `caught_up, running` | The phase reached, and the run's state: `running`, `paused`, `failed`, or `complete` once the run reached `retired` |
+| `caught_up, running` | The phase reached, and the run's state: `running`, `paused`, `failed`, `abandoned`, or `complete` after its generation was retired |
 | `generation` | The identity this run is building |
 | `scanned / embedded / skipped / deleted` | Rows read, rows given a vector, rows deliberately skipped, rows tombstoned |
 | `batches committed` | How many provider round trips landed |
@@ -57,14 +57,30 @@ not where it is now. Running `catchup` again after a verification leaves it at
 The order is `boundary_captured`, `backfilling`, `backfilled`, `caught_up`,
 `indexed`, `verified`, `cut_over`, and then either `rolled_back` or `retired`.
 
-Those last two are not the same kind of end. `retired` is where a run stops:
-the corpus is destroyed, nothing further is possible, and the run's status
-becomes `complete` and its lease is released. `rolled_back` is reversible,
-because the rollback it records is — cutting the generation over again returns
-the run to `cut_over`, and a generation rolled off the pointer can still be
-retired later. A generation merely *replaced* by a newer cutover is neither: it
-keeps `cut_over`, because that is the furthest point its run reached, and which
+Those last two are not the same kind of end. Retirement destroys the corpus,
+makes every run for that generation `complete`, releases their leases, and
+fences their workers. A run that had reached `cut_over` or `rolled_back` also
+advances to `retired`; an earlier run keeps the furthest phase it truthfully
+reached. `rolled_back` is reversible before retirement, because the rollback it
+records is — cutting the generation over again returns the run to `cut_over`.
+A generation merely *replaced* by a newer cutover is neither: it keeps
+`cut_over`, because that is the furthest point its run reached, and which
 generation queries read now is what the pointer says.
+
+`abandoned` is a terminal **run status**, not another phase. It means an
+operator ended that attempt with `ptah inference abandon`: the checkpoint,
+progress, generation, and vectors remain, but the run cannot resume and no
+longer holds shared outbox events. The text status adds the recorded reason:
+
+```text
+  - abandoned: superseded by the multilingual model run
+```
+
+Retiring the preserved generation later destroys its vectors and changes the
+run status from `abandoned` to `complete`. A run that had already reached
+`cut_over` or `rolled_back` also advances to `retired`; an earlier run keeps the
+furthest phase it actually reached. Abandonment itself never changes the phase
+or destroys vectors.
 
 `backfilling` and `backfilled` are two facts, not one worded twice. A run is at
 `backfilling` while it walks the snapshot and at `backfilled` once the walk

@@ -24,18 +24,19 @@ owns:
   - cli-ptah-inference-evaluate
   - cli-ptah-inference-pause
   - cli-ptah-inference-resume
+  - cli-ptah-inference-abandon
   - cli-ptah-inference-status
   - cli-ptah-inference-cutover
   - cli-ptah-inference-rollback
   - cli-ptah-inference-retire
 ---
 
-Fifteen verbs. Each is a decision taken separately: none of them is implied by
-another.
+Each verb is a decision taken separately: none of them is implied by another.
 
-Every verb takes `--spec` or `--release`, and most take `--db-url` and
-`--run-id` — an identifier you choose, and how a resumed run finds its
-checkpoint.
+All verbs except `abandon` take `--spec` or `--release`. Most also take
+`--db-url` and `--run-id` — an identifier you choose, and how a resumed run
+finds its checkpoint. `abandon` reads the generation identity from the existing
+run, so it needs only the run-state database and run identifier.
 
 `--release` names a published release instead of a file. The release carries the
 specification it was built from, so an environment that has never seen the file
@@ -191,12 +192,13 @@ nothing left.
 Takes the flags `backfill` takes, and `--maintain-for` besides. Refused against
 a consistency mode that records nothing, rather than reported as success.
 
-It also removes the events every generation reading that source has passed, so
-the companion table holds the backlog rather than the whole migration. Nothing
-is removed while a slower generation still owes it, and the run says so instead
-of leaving the table's size unexplained. A removal that fails is reported and
-the command still succeeds: the catch-up itself is already committed, and the
-only cost of a failed removal is a larger table.
+It also removes the events every usable live feeder reading that source has passed, so the
+companion table holds the backlog rather than the whole migration. Nothing is
+removed while a slower run still owes it, and the command names every run and
+generation tied at the oldest retained position instead of leaving the table's
+size unexplained. A removal that fails is reported and the command still
+succeeds: the catch-up itself is already committed, and the only cost of a
+failed removal is a larger table.
 
 | Flag | Meaning |
 | --- | --- |
@@ -314,12 +316,37 @@ commit into it.
 
 Only a paused run resumes. Anything else is refused by name.
 
+## `abandon`
+
+Permanently ends one run and releases the outbox position it held, without
+retiring the generation or deleting its vectors.
+
+| Flag | Meaning |
+| --- | --- |
+| `--db-url` | Run-state database URL (required) |
+| `--run-id` | Identifier of the run to end (required) |
+| `--reason` | Why the run is being ended (required) |
+
+No specification is needed: the stored run already names its generation. The
+operation advances the fencing token, records the terminal `abandoned` status,
+keeps the last checkpoint and progress, and clears the lease. A worker holding
+the previous token is refused at its next commit. Repeating the command returns
+the same abandoned run and preserves the first reason.
+
+Ptah refuses the operation when it would leave an active generation, or a
+generation promised by a maintenance window, without another usable live feeder
+to keep it current. For outbox consistency, that sibling must have a durable,
+readable resume position; an unprepared or damaged run cannot stand in for the
+feeder being ended. Start a replacement run first, or move queries and let the
+maintenance window end. Use `retire` only when the intended outcome is to
+destroy the generation.
+
 ## `status`
 
 Reports what a run has done, how far it got, and what it is waiting for: the
 phase, the progress counts, the watermarks, the lease and its fencing token, and
-why it stopped if it did — the reason for a pause, the class and detail for a
-failure.
+why it stopped if it did — the reason for a pause or abandonment, or the class
+and detail for a failure.
 
 | Flag | Meaning |
 | --- | --- |
@@ -406,7 +433,7 @@ Puts the previous generation back, while it is still a place to go back to.
 
 | Flag | Meaning |
 | --- | --- |
-| `--to` | Identity of the generation to return to (required) |
+| `--to` | Identity recorded as the active pointer's previous generation (required) |
 | `--publish-evidence` | OCI reference to publish the rollback record to |
 | `--attach-to` | OCI reference of the release this record is about |
 | `--evidence-file` | Path to write the rollback record to as JSON |

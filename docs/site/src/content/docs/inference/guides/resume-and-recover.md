@@ -10,9 +10,12 @@ goal: "Recover an inference migration after a provider or worker failure."
 sourceOfTruth:
   - "cmd/inference"
   - "integration/inference_cli_e2e_test.go"
+  - "integration/inference_outbox_prune_e2e_test.go"
 generated: false
 searchAliases:
   - "resume inference migration"
+  - "abandon inference run"
+  - "release outbox floor"
 overlaps: []
 disposition: keep
 ---
@@ -107,22 +110,36 @@ The run identifier is wrong, or you are pointed at the wrong database. Run
 identifiers are yours to choose and are not derived from anything, so a typo
 looks exactly like a run that was never prepared.
 
-## Starting over
+## End a superseded run without deleting its vectors
 
-There is no "reset" command, deliberately. To abandon a generation and start
-again:
+If this attempt is over but you still need its vectors for inspection, abandon
+the run:
 
-1. `ptah inference retire --generation <identity> --drop-column ...` destroys it,
-   with the same digest-bound approval a cutover needs. It is refused while
-   queries still read the generation.
-2. Then `prepare` a fresh run.
+```bash
+ptah inference abandon --db-url "$DB" --run-id "$RUN" \
+  --reason "superseded by the multilingual model run"
+```
 
-If the generation was never cut over to, retiring it costs nothing but the
-provider spend already made. If it was, put the pointer back first with
-`rollback`.
+The command needs no specification. The run already records its generation and
+source. It becomes terminal, keeps its checkpoint and vectors, fences a worker
+that may still be running, and stops holding shared outbox events. Start the
+replacement with a new run identifier; an abandoned run cannot resume.
+
+Ptah refuses to abandon the last usable live feeder for a generation that queries
+currently read or one inside a maintenance window. For outbox consistency, a
+replacement counts only after it has a durable, readable resume position. Move
+the active pointer, or keep catching up until the rollback window ends.
+Releasing the last feeder would otherwise let the corpus become stale while
+Ptah still presented it as current or maintained.
+
+Use `retire` only when the vectors themselves should go. Retirement destroys
+the generation under a digest-bound approval; abandonment does not. If the
+generation is active, put the pointer back first with `rollback` or cut over to
+its replacement.
 
 ## What is not recoverable
 
-Vectors destroyed by `retire` are gone. Rebuilding them means paying the provider
-for the whole corpus again. That is why retirement takes an approval and refuses
-while anything reads the generation.
+Vectors destroyed by `retire` are gone. Rebuilding them means paying the
+provider for the whole corpus again. That is why retirement takes an approval
+and refuses while anything reads the generation. `abandon` leaves those vectors
+intact, but the run itself is permanently closed.

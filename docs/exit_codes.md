@@ -156,6 +156,7 @@ root-level command spellings are removed instead of preserved.
 | `ptah inference backfill` | Source embedded into the generation, or the run resumed and finished. | Not used. | Usage error, connection failure, lease loss, provider failure, or target write failure. |
 | `ptah inference catchup` | Source changes processed into the generation. | Not used. | Usage error, connection failure, a consistency mode that records no boundary, provider failure, or target write failure. |
 | `ptah inference index` | Vector index built and valid, or the specification declares none. | Not used. | Usage error, connection failure, or an index build that failed or left an invalid index. |
+| `ptah inference abandon` | Run permanently ended without deleting its generation or vectors. | Not used. | Usage error, no reason given, connection failure, a complete run, or an abandonment that would leave an active or maintained generation without another usable live feeder; an outbox feeder needs a durable resume position. |
 | `ptah inference pause` | Run paused at its last checkpoint. | Not used. | Usage error, no reason given, connection failure, or a run that cannot be paused from its current state. |
 | `ptah inference resume` | Paused run returned to running. | Not used. | Usage error, connection failure, or a run that is not paused. |
 | `ptah inference verify` | Every deterministic layer passed. | One or more blocking findings. | Usage error, connection failure, or a read failure. |

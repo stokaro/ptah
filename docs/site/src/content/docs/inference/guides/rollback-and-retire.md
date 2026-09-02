@@ -108,6 +108,11 @@ old one** — the rollback did not do that for you.
 
 ## Retire
 
+Retirement is not how you stop an unfinished attempt while keeping its work.
+For that, use [`inference abandon`](../resume-and-recover/#end-a-superseded-run-without-deleting-its-vectors):
+it permanently closes one run and releases its outbox position, but preserves
+the generation and vectors. Retirement destroys them.
+
 Retirement drops the generation's index and, with `--drop-column`, its column and
 the four bookkeeping columns beside it.
 
@@ -141,5 +146,11 @@ asked to go back.
 ## After retirement
 
 There is no undo. The vectors are gone and rebuilding them means paying for the
-whole corpus again. The outbox table and its triggers go with the generation, so
-retiring is also how the write-time cost on your source table ends.
+whole corpus again.
+
+The outbox table and its triggers belong to the source table, not to one
+generation. Retirement removes that shared capture only when this was the last
+non-retired outbox generation over the source. If another such generation
+remains, the capture and its write-time cost remain too. See
+[When the triggers go away](../migrate-a-live-table/#when-the-triggers-go-away)
+for the shared-outbox behavior.

@@ -26,8 +26,9 @@ Fields marked **required** are refused when they are absent, before any verb
 does work -- `describe` included, which opens no database. A field not marked
 required is not thereby harmless to leave out: `source.table` is accepted by
 `describe` and produces a specification nothing else can run. What the mark says
-is narrower and worth having exactly: without these, every verb exits 2 and
-names the field. `version` is required in the same way, at the top of the file.
+is narrower and worth having exactly: without these, every verb that reads the
+specification exits 2 and names the field. `version` is required in the same
+way, at the top of the file.
 
 ## Top level
 

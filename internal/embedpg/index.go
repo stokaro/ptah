@@ -12,6 +12,15 @@ import (
 	"go.5x5.cz/ptah/internal/embedgen"
 )
 
+// indexDatabase is the SQL surface index creation needs. Both *sql.DB and the
+// dedicated *sql.Conn used by Store.EnsureRunIndex implement it; the latter is
+// what keeps one PostgreSQL session-level lifecycle lock across CREATE INDEX
+// CONCURRENTLY, which cannot run inside a transaction.
+type indexDatabase interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
 // IndexOutcome is what EnsureIndex did, for a caller that has to say so.
 type IndexOutcome string
 
@@ -46,7 +55,7 @@ const (
 // After the backfill rather than in prepare. An IVFFlat index trains its lists
 // on the data present when it is built, so one built over an empty column is
 // valid and useless.
-func EnsureIndex(ctx context.Context, db *sql.DB, spec embedgen.Spec) (IndexOutcome, error) {
+func EnsureIndex(ctx context.Context, db indexDatabase, spec embedgen.Spec) (IndexOutcome, error) {
 	objects, err := spec.TargetObjects()
 	if err != nil {
 		return "", err
@@ -97,7 +106,7 @@ func EnsureIndex(ctx context.Context, db *sql.DB, spec embedgen.Spec) (IndexOutc
 
 // indexState reports whether an index exists and whether it is usable.
 func indexState(
-	ctx context.Context, db *sql.DB, name string,
+	ctx context.Context, db indexDatabase, name string,
 ) (present, valid bool, err error) {
 	const query = `SELECT i.indisvalid
 		FROM pg_index i JOIN pg_class ic ON ic.oid = i.indexrelid

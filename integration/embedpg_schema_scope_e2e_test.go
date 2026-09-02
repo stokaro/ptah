@@ -112,8 +112,8 @@ func assertEachSchemaGetsItsOwnOutbox(c *qt.C, ctx context.Context, db *sql.DB) 
 	c.Assert(first.TriggerNames()[0], qt.Not(qt.Equals), second.TriggerNames()[0])
 	c.Assert(first.TriggerNames()[1], qt.Not(qt.Equals), second.TriggerNames()[1])
 
-	c.Assert(first.Install(ctx), qt.IsNil)
-	c.Assert(second.Install(ctx), qt.IsNil)
+	c.Assert(first.InstallForIsolatedSource(ctx), qt.IsNil)
+	c.Assert(second.InstallForIsolatedSource(ctx), qt.IsNil)
 
 	_, err = db.ExecContext(ctx,
 		`INSERT INTO tenant_a.notes (id, title, body, updated_at) VALUES (1, 'A', 'a', '1')`)
@@ -260,6 +260,25 @@ func assertTwoSchemasHaveTwoPointers(c *qt.C, ctx context.Context, db *sql.DB) {
 	c.Assert(store.EnsureSchema(ctx), qt.IsNil)
 
 	at := time.Now().UTC().Truncate(time.Second)
+	for _, generation := range []embedstore.Generation{
+		{
+			Identity: "gen-a", SpecDigest: "spec-gen-a",
+			Reproducibility: "full", Dimension: 4,
+			TargetSchema: "tenant_a", TargetTable: "notes", TargetColumn: "embedding",
+			SourceSchema: "tenant_a", SourceTable: "notes",
+			CreatedAt: at,
+		},
+		{
+			Identity: "gen-b", SpecDigest: "spec-gen-b",
+			Reproducibility: "full", Dimension: 4,
+			TargetSchema: "tenant_b", TargetTable: "notes", TargetColumn: "embedding",
+			SourceSchema: "tenant_b", SourceTable: "notes",
+			CreatedAt: at,
+		},
+	} {
+		_, err := store.RegisterGeneration(ctx, generation)
+		c.Assert(err, qt.IsNil)
+	}
 	c.Assert(store.MovePointer(ctx, embedstore.Pointer{
 		TargetSchema: "tenant_a", TargetTable: "notes", Active: "gen-a", CutOverAt: at,
 	}, ""), qt.IsNil)

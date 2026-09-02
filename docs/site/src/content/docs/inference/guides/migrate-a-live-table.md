@@ -154,8 +154,9 @@ still removes the triggers, and an `immutable` generation over the same source
 is not a reader of an outbox it was never fed by.
 
 The same fact decides how big the table gets. `catchup` removes the events every
-generation reading that table has passed, so the table holds the backlog and not
-the history — but a generation that is behind holds its events for everyone, and
-one that is live and idle holds them indefinitely. If the table is not shrinking,
-that is what to look at, and `retire` on the generation you are done with is what
-releases them.
+usable live feeder reading that table has passed, so the table holds the backlog and not
+the history — but a run that is behind holds its events for everyone. If that
+attempt is over, `abandon` releases its floor position without deleting its
+generation or vectors. `retire` remains the destructive generation-level lever,
+and removes the shared outbox only after the last generation that owns it is
+gone.

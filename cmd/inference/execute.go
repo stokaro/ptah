@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -221,16 +222,14 @@ func runCatchUp(ctx context.Context, out io.Writer, options executeOptions) erro
 // Here rather than inside the engine, and after the phase is recorded, because
 // the floor has to be read from watermarks already on disk: this run's own
 // position reached disk with the vectors it belongs to when CatchUp returned,
-// and the delete commits on its own. Pruning from a position held in memory, or
-// between pages, would leave the events gone and the durable watermark behind
-// them, which a resumed run reads as an empty range and reports as caught up.
+// and the floor query and delete then commit together under the source
+// lifecycle lock. Pruning from a position held in memory, or between pages,
+// would leave the events gone and the durable watermark behind them, which a
+// resumed run reads as an empty range and reports as caught up.
 //
-// Called on the concrete outbox rather than through embedengine's Changes
-// interface, deliberately. embedguard skips a name an interface declares as
-// soon as anything anywhere calls that name, and assistsession.Store.Prune
-// already supplies one -- so routing this through the interface would take the
-// exemption off and leave the guard permanently blind to the declaration, which
-// is the opposite of what removing the exemption is meant to prove.
+// Called on the concrete PostgreSQL store rather than through embedengine's
+// Changes interface, deliberately. The store owns the durable reader set and
+// is the only layer that can bind its floor to the deleting statement.
 //
 // Reported and never fatal, for the reason extendMaintenance gives: the
 // catch-up's work is committed, and failing here would report a run that did
@@ -238,8 +237,7 @@ func runCatchUp(ctx context.Context, out io.Writer, options executeOptions) erro
 func pruneOutbox(
 	ctx context.Context, opened *session, outbox *embedpg.Outbox, run embedrun.Run,
 ) []string {
-	floor, ok, err := opened.store.OutboxFloor(ctx,
-		opened.loaded.Spec.Source.Schema, opened.loaded.Spec.Source.Table)
+	floor, ok, removed, err := opened.store.PruneOutbox(ctx, outbox)
 	if err != nil {
 		return []string{bullet(fmt.Sprintf("the outbox was not pruned: %v", err))}
 	}
@@ -247,25 +245,37 @@ func pruneOutbox(
 		// No live reader answered, which is not a license to empty the table.
 		return nil
 	}
-	removed, err := outbox.Prune(ctx, floor.Transaction)
-	if err != nil {
-		return []string{bullet(fmt.Sprintf("the outbox was not pruned: %v", err))}
-	}
+	lines := make([]string, 0, 2)
 	if removed > 0 {
-		return []string{bullet(fmt.Sprintf(
-			"pruned %d processed event(s) from the outbox", removed))}
+		lines = append(lines, bullet(fmt.Sprintf(
+			"pruned %d processed event(s) from the outbox", removed)))
 	}
-	// Nothing went, and this run has moved past the floor: something else still
-	// reading this table is holding those events. Said out loud, because an
-	// operator watching the table not shrink should not have to guess whether
-	// pruning happened at all.
+	// This run has moved past the floor: something else still reading this
+	// table is holding the remaining events. Report it even when this pass
+	// deleted an older prefix; otherwise a normally advancing floor says only
+	// what went away and hides why the rest remains.
 	if reached, resumable, _ := embedcatchup.ResumeFrom(
-		run.CatchUpWatermark, run.SnapshotWatermark); resumable && floor.Before(reached) {
-		return []string{bullet(fmt.Sprintf(
-			"the outbox keeps events this run has processed: another live generation "+
-				"reading %s has not reached them", opened.loaded.Spec.Source.Table))}
+		run.CatchUpWatermark, run.SnapshotWatermark); resumable && floor.Position.Before(reached) {
+		lines = append(lines, bullet(fmt.Sprintf(
+			"the outbox keeps events this run has processed: floor %s for %s is held by %s",
+			floor.Position.String(),
+			embedstore.QualifiedName(
+				opened.loaded.Spec.Source.Schema, opened.loaded.Spec.Source.Table),
+			outboxFloorHolders(floor.Holders))))
 	}
-	return nil
+	return lines
+}
+
+// outboxFloorHolders renders the exact runs an operator can inspect or
+// abandon. The query returns them in generation and run order, so the message
+// is stable across repeated catch-up passes.
+func outboxFloorHolders(holders []embedpg.OutboxFloorHolder) string {
+	named := make([]string, 0, len(holders))
+	for _, holder := range holders {
+		named = append(named, fmt.Sprintf(
+			"run %s (generation %s)", holder.RunID, holder.Generation))
+	}
+	return strings.Join(named, ", ")
 }
 
 // recordsChanges reports whether a mode leaves something for catch-up to read.
@@ -298,9 +308,12 @@ func extendMaintenance(
 	}
 	until := time.Now().UTC().Add(window)
 	err := opened.store.Maintain(ctx, generation, until)
-	if errorsIs(err, embedstore.ErrNotFound) || errorsIs(err, embedstore.ErrRetired) {
-		// The catch-up already happened and its work is committed. Failing here
-		// would report a run that did not do what it did.
+	if errorsIs(err, embedstore.ErrNotFound) || errorsIs(err, embedstore.ErrRetired) ||
+		errorsIs(err, embedstore.ErrNoLiveRun) {
+		// The catch-up already happened and its work is committed. Retirement or
+		// abandonment may have ended the generation while this command moved from
+		// its barrier to the maintenance decision; failing here would report a run
+		// that did not do what it did.
 		return writeLines(out, append(lines, bullet(fmt.Sprintf(
 			"the window was not extended: %v", err)))...)
 	}

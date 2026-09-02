@@ -24,7 +24,7 @@ import (
 //
 // Idempotent, because a worker starting is the normal time to call this and
 // several of them start at once -- the same reasoning EnsureSchema carries.
-func EnsureTarget(ctx context.Context, db *sql.DB, spec embedgen.Spec) error {
+func EnsureTarget(ctx context.Context, db indexDatabase, spec embedgen.Spec) error {
 	objects, err := spec.TargetObjects()
 	if err != nil {
 		return err
@@ -68,7 +68,7 @@ func EnsureTarget(ctx context.Context, db *sql.DB, spec embedgen.Spec) error {
 // is what makes a cutover a pointer move rather than a data migration: the
 // previous generation's vectors are still there to go back to.
 func refuseAnotherGenerationsColumn(
-	ctx context.Context, db *sql.DB, spec embedgen.Spec,
+	ctx context.Context, db indexDatabase, spec embedgen.Spec,
 ) error {
 	// #nosec G201 -- identifiers from the specification, through quoteIdentifier.
 	query := fmt.Sprintf(
@@ -99,7 +99,7 @@ func refuseAnotherGenerationsColumn(
 // did not ask is the kind of surprise this repository refuses elsewhere. The
 // refusal carries the statement to run, so being told is one copy away from
 // being fixed.
-func requireVectorExtension(ctx context.Context, db *sql.DB) error {
+func requireVectorExtension(ctx context.Context, db indexDatabase) error {
 	installed, err := extensionInstalled(ctx, db, "vector")
 	if err != nil {
 		return err

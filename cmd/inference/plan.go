@@ -56,10 +56,17 @@ production run one document rather than three copies of it.`,
 	return cmd
 }
 
-// addCommonFlags registers the flags every verb takes.
+// addCommonFlags registers the source and database shared by the
+// specification-led database verbs.
 func addCommonFlags(cmd *cobra.Command, options *commonOptions) {
 	addSpecFlags(cmd, options)
-	cmd.Flags().StringVar(&options.dbURL, "db-url", "",
+	addDatabaseFlag(cmd, &options.dbURL)
+}
+
+// addDatabaseFlag registers the run-state database without implying that the
+// command also needs a specification.
+func addDatabaseFlag(cmd *cobra.Command, destination *string) {
+	cmd.Flags().StringVar(destination, "db-url", "",
 		"Database URL (required). Example: postgres://localhost:5432/dbname")
 }
 

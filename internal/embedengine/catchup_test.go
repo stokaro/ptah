@@ -329,15 +329,14 @@ func embeddedKeys(commits []commit) []string {
 // long-lived one that is a different migration, run by accident.
 func TestCatchUp_RefusesToStartWithoutABoundary(t *testing.T) {
 	c := qt.New(t)
-	h := newHarness(c, defaultBounds())
+	h := newHarnessState(c, defaultBounds(), spec(), embedrun.PhaseBackfilled, "")
 	// Backfilled, so the phase guard is satisfied and this asserts the boundary
 	// guard alone. A run that reached this phase always has a watermark, so the
 	// state is one only corruption produces -- which is what makes it worth
 	// refusing separately rather than folding into the phase question.
 	stored, err := h.store.Run(context.Background(), "run-1")
 	c.Assert(err, qt.IsNil)
-	stored.Phase = embedrun.PhaseBackfilled
-	c.Assert(h.store.SaveRun(context.Background(), stored), qt.IsNil)
+	c.Assert(stored.Phase, qt.Equals, embedrun.PhaseBackfilled)
 
 	_, _, err = h.engine.CatchUp(context.Background(), "run-1",
 		&fakeChanges{}, livingRows())
@@ -476,8 +475,9 @@ func TestCatchUp_TheWatermarkIsATransactionAndNotAKey(t *testing.T) {
 	stored, err := h.store.Run(context.Background(), "run-1")
 	c.Assert(err, qt.IsNil)
 	stored.Phase = embedrun.PhaseBackfilled
-	stored.SnapshotWatermark = "100"
-	stored.Cursor = []string{"4"}
+	c.Assert(stored.Checkpoint(stored.FencingToken, embedrun.BatchOutcome{
+		Cursor: []string{"4"}, TargetCommitted: true, DeletesCommitted: true,
+	}), qt.IsNil)
 	c.Assert(h.store.SaveRun(context.Background(), stored), qt.IsNil)
 	changes := &fakeChanges{
 		pages:    [][]embedcatchup.Event{{changed(101, 1, "1", embedcatchup.OperationUpdate)}},
@@ -649,15 +649,12 @@ func failedEvents(c *qt.C, h *harness, runID string) int {
 // that had in fact asked the provider would be a class nobody could act on.
 func TestCatchUp_ARowTheSpecificationRefusesIsNotAProviderOutage(t *testing.T) {
 	c := qt.New(t)
-	h := newHarness(c, defaultBounds())
-	h.engine.Spec.Preprocessing.NullPolicy = embedgen.NullRefuseRow
+	desired := spec()
+	desired.Preprocessing.NullPolicy = embedgen.NullRefuseRow
+	h := newHarnessForSpec(c, defaultBounds(), desired)
 	// The policy is part of the generation identity, so the run has to be the
-	// one this specification produces. Without this the catch-up refuses for a
-	// different reason entirely and the test asserts nothing about classes.
-	stored, err := h.store.Run(context.Background(), "run-1")
-	c.Assert(err, qt.IsNil)
-	stored.GenerationIdentity = h.engine.Spec.Identity().Digest
-	c.Assert(h.store.SaveRun(context.Background(), stored), qt.IsNil)
+	// one this specification produces from creation. Rewriting the identity of
+	// an existing run is correctly refused by the store.
 
 	source := livingRows("1")
 	source.rows[embedcatchup.KeyIdentity([]string{"1"})] = embedgen.Row{

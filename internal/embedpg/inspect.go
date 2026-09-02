@@ -846,7 +846,7 @@ func versionColumnsOf(spec embedgen.Spec) []string {
 
 // CountGenerationRows counts the vectors a generation holds.
 func CountGenerationRows(
-	ctx context.Context, db *sql.DB, generation embedstore.Generation,
+	ctx context.Context, db queryRower, generation embedstore.Generation,
 ) (int, error) {
 	// #nosec G201 -- relation and column names from the registry, through
 	// qualify and quoteIdentifier.
@@ -879,7 +879,7 @@ func GenerationIndexName(generation embedstore.Generation) string {
 // drop an index whether or not one existed and the record afterwards claimed
 // one had been dropped (stokaro/ptah#2642).
 func GenerationIndexExists(
-	ctx context.Context, db *sql.DB, generation embedstore.Generation,
+	ctx context.Context, db queryRower, generation embedstore.Generation,
 ) (bool, error) {
 	name := GenerationIndexName(generation)
 	// The schema is part of the question for the same reason it is part of the
@@ -921,8 +921,12 @@ func GenerationIndexExists(
 // the registry does not record it; the gate consulted the current
 // specification's index method, which answers about a different generation.
 // `IF EXISTS` is the honest form of the same question, asked of the server.
+type contextExecer interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
 func RetireIndex(
-	ctx context.Context, db *sql.DB, generation embedstore.Generation,
+	ctx context.Context, db contextExecer, generation embedstore.Generation,
 ) error {
 	// An index lives in its table's schema, so the DROP names it there. Left
 	// bare it resolved through search_path, which dropped a like-named index
@@ -938,7 +942,7 @@ func RetireIndex(
 
 // RetireColumns drops a generation's vector column and its metadata.
 func RetireColumns(
-	ctx context.Context, db *sql.DB, generation embedstore.Generation,
+	ctx context.Context, db contextExecer, generation embedstore.Generation,
 ) error {
 	for _, suffix := range append([]string{""}, MetadataSuffixes()...) {
 		// #nosec G201 -- relation and column names from the registry, through

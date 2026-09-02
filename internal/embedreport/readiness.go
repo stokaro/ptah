@@ -74,6 +74,9 @@ func ReadReadiness(
 		return Readiness{}, err
 	}
 	readiness := Readiness{MeasuredAt: now.UTC().Format(timeLayout)}
+	if terminal, ok := terminalReadiness(run, now); ok {
+		return terminal, nil
+	}
 
 	// A generation whose column is not there yet has nothing to measure, and
 	// asking anyway means selecting a column that does not exist -- an error
@@ -113,6 +116,32 @@ func ReadReadiness(
 	readiness.PlanDigest = assessed.PlanDigest
 	readiness.ApprovalRequired = assessed.ApprovalRequired
 	return readiness, nil
+}
+
+// terminalReadiness stops a status read before it touches generation objects
+// retirement may already have removed. Terminal runs are historical records,
+// not candidates whose current corpus can be verified or cut over.
+func terminalReadiness(run embedrun.Run, now time.Time) (Readiness, bool) {
+	if !run.Terminal() {
+		return Readiness{}, false
+	}
+	readiness := Readiness{
+		MeasuredAt: now.UTC().Format(timeLayout),
+		Unmeasured: []string{
+			"every deterministic layer, because the run is terminal",
+		},
+	}
+	switch run.Status {
+	case embedrun.StatusAbandoned:
+		readiness.Blockers = []string{
+			"run " + run.ID + " was abandoned and cannot be cut over",
+		}
+	case embedrun.StatusComplete:
+		readiness.Blockers = []string{
+			"run " + run.ID + " is complete because its generation was retired and cannot be cut over",
+		}
+	}
+	return readiness, true
 }
 
 // VerifyGeneration runs every deterministic layer against the live generation.

@@ -62,18 +62,55 @@ type harness struct {
 
 // newHarness builds one.
 func newHarness(c *qt.C, bounds embedrun.BatchBounds) *harness {
+	return newHarnessForSpec(c, bounds, spec())
+}
+
+// newHarnessForSpec builds a harness whose stored run was created for the
+// exact specification the engine will execute. A generation identity is
+// immutable after run creation, so a test that varies identity-bearing policy
+// must choose it here rather than rewrite the stored run later.
+func newHarnessForSpec(c *qt.C, bounds embedrun.BatchBounds, desired embedgen.Spec) *harness {
+	return newHarnessState(c, bounds, desired, embedrun.PhaseBackfilling, "100")
+}
+
+// newHarnessAtPhase creates the durable state at its intended phase. Tests do
+// not add a snapshot boundary through SaveRun: production captures it before
+// CreateRun under the source lifecycle lock, and allowing a later membership
+// change would race outbox pruning.
+func newHarnessAtPhase(
+	c *qt.C, bounds embedrun.BatchBounds, desired embedgen.Spec, phase embedrun.Phase,
+) *harness {
+	return newHarnessState(c, bounds, desired, phase, "100")
+}
+
+func newHarnessState(
+	c *qt.C, bounds embedrun.BatchBounds, desired embedgen.Spec,
+	phase embedrun.Phase, snapshot string,
+) *harness {
 	source := &fakeSource{rows: sourceRows(), versions: []string{"7", "7", "7", "7"}, failAfter: -1}
 	provider := &fakeProvider{dimension: 4}
 	store := embedstore.NewMemory()
 	target := &fakeTarget{store: store}
+	identity := desired.Identity().Digest
+	_, err := store.RegisterGeneration(context.Background(), embedstore.Generation{
+		Identity: identity, SpecDigest: identity, Reproducibility: "full",
+		Dimension:    desired.Model.ReportedDimension,
+		TargetSchema: desired.Target.Schema, TargetTable: desired.Target.Table,
+		TargetColumn: desired.Target.Column,
+		SourceSchema: desired.Source.Schema, SourceTable: desired.Source.Table,
+		CreatedAt: at,
+	})
+	c.Assert(err, qt.IsNil)
 	c.Assert(store.CreateRun(context.Background(), embedrun.Run{
-		ID: "run-1", GenerationIdentity: spec().Identity().Digest,
-		Phase: embedrun.PhaseBackfilling, Status: embedrun.StatusRunning,
+		ID: "run-1", GenerationIdentity: identity,
+		Source:            embedstore.SourceIdentity(desired.Source.Schema, desired.Source.Table),
+		SnapshotWatermark: snapshot,
+		Phase:             phase, Status: embedrun.StatusRunning,
 		LeaseOwner: "worker-a", FencingToken: 1, CreatedAt: at, UpdatedAt: at,
 	}), qt.IsNil)
 	return &harness{
 		engine: &embedengine.Engine{
-			Spec: spec(), Source: source, Provider: provider, Target: target, Store: store,
+			Spec: desired, Source: source, Provider: provider, Target: target, Store: store,
 			Bounds: bounds, Worker: "worker-a", Now: func() time.Time { return at },
 		},
 		source: source, provider: provider, target: target, store: store,

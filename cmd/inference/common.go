@@ -18,7 +18,7 @@ import (
 	"go.5x5.cz/ptah/internal/embedspec"
 )
 
-// commonOptions are what every verb needs.
+// commonOptions are what the specification-led database verbs share.
 type commonOptions struct {
 	// spec is where the specification comes from. It is a pointer so that every
 	// copy of these options shares one resolution; see [specSource].
@@ -82,25 +82,43 @@ func (s *session) close() {
 // a registry, and a run that was going to be refused for naming no database
 // should not spend a network round trip finding that out.
 func open(ctx context.Context, options commonOptions) (*session, error) {
-	if strings.TrimSpace(options.dbURL) == "" {
-		return nil, fmt.Errorf("--db-url is required")
-	}
-	if err := refuseAnotherEngine(options.dbURL); err != nil {
+	if err := validateDatabaseURL(options.dbURL); err != nil {
 		return nil, err
 	}
 	loaded, err := options.spec.resolve(ctx)
 	if err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("pgx", options.dbURL)
+	db, err := connectDatabase(ctx, options.dbURL)
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", redact(options.dbURL), err)
+		return nil, err
+	}
+	return &session{loaded: loaded, db: db, store: embedpg.NewStore(db)}, nil
+}
+
+// validateDatabaseURL checks the part of a database connection that does not
+// require opening it. Kept separate from connectDatabase so specification-led
+// verbs preserve their error order: arguments and engine first, specification
+// second, network third.
+func validateDatabaseURL(dbURL string) error {
+	if strings.TrimSpace(dbURL) == "" {
+		return fmt.Errorf("--db-url is required")
+	}
+	return refuseAnotherEngine(dbURL)
+}
+
+// connectDatabase opens the PostgreSQL run-state database after its arguments
+// have been checked.
+func connectDatabase(ctx context.Context, dbURL string) (*sql.DB, error) {
+	db, err := sql.Open("pgx", dbURL)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", redact(dbURL), err)
 	}
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("connect to %s: %w", redact(options.dbURL), err)
+		return nil, fmt.Errorf("connect to %s: %w", redact(dbURL), err)
 	}
-	return &session{loaded: loaded, db: db, store: embedpg.NewStore(db)}, nil
+	return db, nil
 }
 
 // resolve reads the specification from wherever the operator put it: a file

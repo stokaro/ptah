@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"go.5x5.cz/ptah/internal/embedcatchup"
@@ -18,9 +19,70 @@ type Store struct {
 	db *sql.DB
 }
 
+// transactionStarter is the shared transaction surface of a database pool and
+// a pinned connection. Lifecycle operations use the latter when PostgreSQL
+// session advisory locks must bridge several transactions and DDL statements.
+type transactionStarter interface {
+	BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error)
+}
+
+type runTransactionSource interface {
+	transactionStarter
+	queryRower
+}
+
 // NewStore returns a store over an open database.
 func NewStore(db *sql.DB) *Store {
 	return &Store{db: db}
+}
+
+// lifecycleLock takes a transaction-scoped PostgreSQL advisory lock for one
+// lifecycle identity. The prefix gives runs and generations disjoint keys;
+// hash collisions only serialize unrelated work and cannot weaken a rule.
+//
+// Every operation that can create or terminalize a run takes the generation
+// lock. Ordinary claims and checkpoints stay on their one-statement hot path:
+// they do not change membership in the live-feeder set, and AbandonRun's
+// targeted token increment fences them through the run row itself. An
+// operation over several generations sorts them before locking, which keeps
+// two concurrent pointer moves from deadlocking each other.
+func lifecycleLock(ctx context.Context, tx *sql.Tx, kind, identity string) error {
+	const statement = `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`
+	if _, err := tx.ExecContext(ctx, statement, lifecycleLockName(kind, identity)); err != nil {
+		return fmt.Errorf("lock inference %s %s: %w", kind, identity, err)
+	}
+	return nil
+}
+
+// lockGenerations takes generation locks in stable order, ignoring empty and
+// duplicate identities.
+func lockGenerations(ctx context.Context, tx *sql.Tx, identities ...string) error {
+	slices.Sort(identities)
+	previous := ""
+	for _, identity := range identities {
+		if identity == "" || identity == previous {
+			continue
+		}
+		if err := lifecycleLock(ctx, tx, "generation", identity); err != nil {
+			return err
+		}
+		previous = identity
+	}
+	return nil
+}
+
+// begin starts a lifecycle transaction and installs a safe rollback for every
+// return path. A successful caller still commits explicitly.
+func (s *Store) begin(ctx context.Context) (*sql.Tx, error) {
+	return beginStoreTransaction(ctx, s.db)
+}
+
+func beginStoreTransaction(ctx context.Context, source transactionStarter) (*sql.Tx, error) {
+	tx, err := source.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("begin inference store transaction: %w", err)
+	}
+	return tx, nil
 }
 
 // EnsureSchema creates the store's tables if they are not there.
@@ -48,6 +110,29 @@ func (s *Store) EnsureSchema(ctx context.Context) error {
 func (s *Store) RegisterGeneration(
 	ctx context.Context, generation embedstore.Generation,
 ) (embedstore.Generation, error) {
+	return registerGeneration(ctx, s.db, generation)
+}
+
+func registerGeneration(
+	ctx context.Context,
+	source transactionStarter,
+	generation embedstore.Generation,
+) (embedstore.Generation, error) {
+	tx, err := beginStoreTransaction(ctx, source)
+	if err != nil {
+		return embedstore.Generation{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if generation.SourceTable != "" {
+		if err := lifecycleLock(
+			ctx, tx, "source",
+			embedstore.SourceIdentity(generation.SourceSchema, generation.SourceTable)); err != nil {
+			return embedstore.Generation{}, err
+		}
+	}
+	if err := lockGenerations(ctx, tx, generation.Identity); err != nil {
+		return embedstore.Generation{}, err
+	}
 	const query = `INSERT INTO ` + embedstore.GenerationTable + ` (
 		identity, spec_digest, spec_document, name, reproducibility, reproducibility_reason,
 		resolved_model, dimension, target_schema, target_table, target_column,
@@ -55,7 +140,7 @@ func (s *Store) RegisterGeneration(
 		created_at, retired_at, verified_at, maintained_until)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
 		ON CONFLICT (identity) DO NOTHING`
-	if _, err := s.db.ExecContext(ctx, query,
+	result, err := tx.ExecContext(ctx, query,
 		generation.Identity, generation.SpecDigest, generation.SpecDocument, generation.Name,
 		generation.Reproducibility, nullable(generation.ReproducibilityReason),
 		nullable(generation.ResolvedModel), generation.Dimension,
@@ -63,15 +148,103 @@ func (s *Store) RegisterGeneration(
 		generation.SourceSchema, generation.SourceTable, generation.ConsistencyMode,
 		generation.CreatedAt.UTC(), nullableTime(generation.RetiredAt),
 		nullableTime(generation.VerifiedAt), nullableTime(generation.MaintainedUntil),
-	); err != nil {
+	)
+	if err != nil {
 		return embedstore.Generation{}, fmt.Errorf("register generation: %w", err)
 	}
-	return s.Generation(ctx, generation.Identity)
+	inserted, err := result.RowsAffected()
+	if err != nil {
+		return embedstore.Generation{}, fmt.Errorf("register generation: %w", err)
+	}
+	registered, err := readGeneration(ctx, tx, generation.Identity)
+	if err != nil {
+		return embedstore.Generation{}, err
+	}
+	if inserted == 1 {
+		if err := validateInsertedGenerationState(ctx, tx, generation); err != nil {
+			return embedstore.Generation{}, err
+		}
+	}
+	if inserted == 0 && registered.Retired() {
+		return embedstore.Generation{}, fmt.Errorf("%w: generation %s was retired at %s",
+			embedstore.ErrRetired, registered.Identity,
+			registered.RetiredAt.UTC().Format(time.RFC3339))
+	}
+	if err := tx.Commit(); err != nil {
+		return embedstore.Generation{}, fmt.Errorf("register generation: %w", err)
+	}
+	return registered, nil
+}
+
+func validateInsertedGenerationState(
+	ctx context.Context, tx *sql.Tx, generation embedstore.Generation,
+) error {
+	if !generation.Retired() && generation.MaintainedUntil.IsZero() {
+		return nil
+	}
+	if generation.Retired() {
+		if err := validateInsertedRetirement(ctx, tx, generation); err != nil {
+			return err
+		}
+	}
+	counts, err := generationRunCounts(ctx, tx, generation)
+	if err != nil {
+		return err
+	}
+	if generation.Retired() && counts.nonterminal > 0 {
+		return fmt.Errorf(
+			"%w: cannot register generation %s as retired while a nonterminal run still reads it",
+			embedstore.ErrConflict, generation.Identity)
+	}
+	if !generation.Retired() && counts.total > 0 && counts.live == 0 {
+		return fmt.Errorf(
+			"register maintained generation %s: %w: generation %s has run history, "+
+				"but no usable live feeder",
+			generation.Identity, embedstore.ErrNoLiveRun, generation.Identity)
+	}
+	return nil
+}
+
+func validateInsertedRetirement(
+	ctx context.Context, tx *sql.Tx, generation embedstore.Generation,
+) error {
+	if generation.MaintainedUntil.After(generation.RetiredAt) {
+		return fmt.Errorf(
+			"%w: generation %s cannot be registered as both retired and maintained",
+			embedstore.ErrConflict, generation.Identity)
+	}
+	const active = `SELECT EXISTS (SELECT 1 FROM ` + embedstore.PointerTable + `
+		WHERE active_generation = $1)`
+	var isActive bool
+	if err := tx.QueryRowContext(ctx, active, generation.Identity).Scan(&isActive); err != nil {
+		return fmt.Errorf(
+			"read active pointer for generation %s: %w", generation.Identity, err)
+	}
+	if isActive {
+		return fmt.Errorf(
+			"%w: cannot register active generation %s as retired",
+			embedstore.ErrConflict, generation.Identity)
+	}
+	return nil
 }
 
 // Generation reads one back.
 func (s *Store) Generation(ctx context.Context, identity string) (embedstore.Generation, error) {
-	const query = `SELECT identity, spec_digest, spec_document, COALESCE(name,''), reproducibility,
+	return readGeneration(ctx, s.db, identity)
+}
+
+// queryRower is the shared surface of a database and a transaction needed by
+// the row readers below.
+type queryRower interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+// readGeneration reads a generation through either the database or the
+// transaction holding the lifecycle lock for it.
+func readGeneration(
+	ctx context.Context, source queryRower, identity string,
+) (embedstore.Generation, error) {
+	const statement = `SELECT identity, spec_digest, spec_document, COALESCE(name,''), reproducibility,
 		COALESCE(reproducibility_reason,''), COALESCE(resolved_model,''), dimension,
 		target_schema, target_table, target_column, source_schema, source_table,
 		consistency_mode, created_at, retired_at,
@@ -79,7 +252,7 @@ func (s *Store) Generation(ctx context.Context, identity string) (embedstore.Gen
 		FROM ` + embedstore.GenerationTable + ` WHERE identity = $1`
 	var generation embedstore.Generation
 	var retired, verified, maintained sql.NullTime
-	err := s.db.QueryRowContext(ctx, query, identity).Scan(
+	err := source.QueryRowContext(ctx, statement, identity).Scan(
 		&generation.Identity, &generation.SpecDigest, &generation.SpecDocument, &generation.Name,
 		&generation.Reproducibility, &generation.ReproducibilityReason, &generation.ResolvedModel,
 		&generation.Dimension, &generation.TargetSchema, &generation.TargetTable,
@@ -104,28 +277,6 @@ func (s *Store) Generation(ctx context.Context, identity string) (embedstore.Gen
 	return generation, nil
 }
 
-// RetireGeneration marks one destroyed, which is terminal.
-//
-// The WHERE clause is what makes it terminal rather than a check-then-write: a
-// second retirement would otherwise move the timestamp, and when a corpus was
-// destroyed is the whole value of the row that remains.
-func (s *Store) RetireGeneration(ctx context.Context, identity string, at time.Time) error {
-	const query = `UPDATE ` + embedstore.GenerationTable + `
-		SET retired_at = $2 WHERE identity = $1 AND retired_at IS NULL`
-	result, err := s.db.ExecContext(ctx, query, identity, at.UTC())
-	if err != nil {
-		return fmt.Errorf("retire generation %s: %w", identity, err)
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("retire generation %s: %w", identity, err)
-	}
-	if changed == 1 {
-		return nil
-	}
-	return s.explainRetirementRefusal(ctx, identity)
-}
-
 // explainRetirementRefusal says which of the two reasons applied.
 //
 // A caller told only that nothing changed cannot tell a generation that is
@@ -146,8 +297,42 @@ func (s *Store) RecordVerification(ctx context.Context, identity string, at time
 
 // Maintain records how long something will keep a generation current.
 func (s *Store) Maintain(ctx context.Context, identity string, until time.Time) error {
+	tx, err := s.begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lockGenerations(ctx, tx, identity); err != nil {
+		return err
+	}
+	generation, err := readGeneration(ctx, tx, identity)
+	if err != nil {
+		return err
+	}
+	if generation.Retired() {
+		return fmt.Errorf("%w: generation %s was retired at %s",
+			embedstore.ErrRetired, identity, generation.RetiredAt.Format(time.RFC3339))
+	}
+	if !until.IsZero() {
+		counts, err := generationRunCounts(ctx, tx, generation)
+		if err != nil {
+			return fmt.Errorf("maintain generation %s: %w", identity, err)
+		}
+		if counts.total > 0 && counts.live == 0 {
+			return fmt.Errorf(
+				"maintain generation %s: %w: generation %s has run history, but no usable live feeder",
+				identity, embedstore.ErrNoLiveRun, identity)
+		}
+	}
+
 	if until.IsZero() {
-		return s.updateGeneration(ctx, identity, "maintained_until", nullableTime(until))
+		const query = `UPDATE ` + embedstore.GenerationTable + `
+			SET maintained_until = NULL WHERE identity = $1 AND retired_at IS NULL`
+		result, err := tx.ExecContext(ctx, query, identity)
+		if err != nil {
+			return fmt.Errorf("record maintained_until for generation %s: %w", identity, err)
+		}
+		return s.finishGenerationUpdate(ctx, tx, result, identity, "maintained_until")
 	}
 	// GREATEST, so maintenance never moves the deadline earlier. Written as a
 	// plain assignment it made `--maintain-for 1h` after a
@@ -166,11 +351,86 @@ func (s *Store) Maintain(ctx context.Context, identity string, until time.Time) 
 	const query = `UPDATE ` + embedstore.GenerationTable + `
 		SET maintained_until = GREATEST(maintained_until, $2)
 		WHERE identity = $1 AND retired_at IS NULL`
-	result, err := s.db.ExecContext(ctx, query, identity, until.UTC())
+	result, err := tx.ExecContext(ctx, query, identity, until.UTC())
 	if err != nil {
 		return fmt.Errorf("record maintained_until for generation %s: %w", identity, err)
 	}
-	return s.oneGenerationChanged(ctx, result, identity, "maintained_until")
+	return s.finishGenerationUpdate(ctx, tx, result, identity, "maintained_until")
+}
+
+// finishGenerationUpdate explains a missing row without leaving the lifecycle
+// lock, or commits the one-row change.
+func (s *Store) finishGenerationUpdate(
+	ctx context.Context, tx *sql.Tx, result sql.Result, identity, column string,
+) error {
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("record %s for generation %s: %w", column, identity, err)
+	}
+	if changed == 0 {
+		generation, readErr := readGeneration(ctx, tx, identity)
+		if readErr != nil {
+			return readErr
+		}
+		return fmt.Errorf("%w: generation %s was retired at %s",
+			embedstore.ErrRetired, identity, generation.RetiredAt.Format(time.RFC3339))
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("record %s for generation %s: %w", column, identity, err)
+	}
+	return nil
+}
+
+// generationRunCounts returns all runs, the non-terminal subset, and the
+// usable live feeder subset. The caller holds the generation lifecycle lock,
+// so no Store operation can move a run into or out of those sets before the
+// protected write commits.
+type generationRunCensus struct {
+	total       int
+	nonterminal int
+	live        int
+}
+
+func generationRunCounts(
+	ctx context.Context, tx *sql.Tx, generation embedstore.Generation,
+) (generationRunCensus, error) {
+	const query = `SELECT source, COALESCE(catch_up_watermark, ''),
+			COALESCE(snapshot_watermark, ''), status
+		FROM ` + embedstore.RunTable + ` WHERE generation_identity = $1`
+	rows, err := tx.QueryContext(ctx, query, generation.Identity)
+	if err != nil {
+		return generationRunCensus{}, fmt.Errorf("count runs for generation %s: %w", generation.Identity, err)
+	}
+	defer rows.Close()
+	var counts generationRunCensus
+	for rows.Next() {
+		var source, catchUp, snapshot string
+		var status embedrun.Status
+		if err := rows.Scan(&source, &catchUp, &snapshot, &status); err != nil {
+			return generationRunCensus{}, fmt.Errorf("count runs for generation %s: %w", generation.Identity, err)
+		}
+		counts.total++
+		if status == embedrun.StatusComplete || status == embedrun.StatusAbandoned {
+			continue
+		}
+		counts.nonterminal++
+		if generation.ConsistencyMode != string(embedcatchup.ModeOutbox) {
+			counts.live++
+			continue
+		}
+		canonical := embedstore.SourceIdentity(generation.SourceSchema, generation.SourceTable)
+		if generation.SourceTable == "" || source != canonical && source != generation.SourceTable {
+			continue
+		}
+		_, positioned, parseErr := embedcatchup.ResumeFrom(catchUp, snapshot)
+		if parseErr == nil && positioned {
+			counts.live++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return generationRunCensus{}, fmt.Errorf("count runs for generation %s: %w", generation.Identity, err)
+	}
+	return counts, nil
 }
 
 // updateGeneration writes one column of a generation that is there and not
@@ -211,11 +471,35 @@ func (s *Store) oneGenerationChanged(
 
 // CreateRun records a new run.
 func (s *Store) CreateRun(ctx context.Context, run embedrun.Run) error {
-	cursor, err := encodeCursor(run.Cursor)
+	return createRunRecord(ctx, s.db, run)
+}
+
+func createRunRecord(
+	ctx context.Context,
+	source runTransactionSource,
+	run embedrun.Run,
+) error {
+	state, err := prepareRunCreation(ctx, source, run)
 	if err != nil {
 		return err
 	}
-	result, err := s.db.ExecContext(ctx, insertRunSQL, runArguments(run, cursor)...)
+	tx, err := beginStoreTransaction(ctx, source)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if state.positioned {
+		if err := lifecycleLock(ctx, tx, "source", state.sourceIdentity); err != nil {
+			return err
+		}
+	}
+	if err := lockGenerations(ctx, tx, run.GenerationIdentity); err != nil {
+		return err
+	}
+	if err := validateRunCreationGeneration(ctx, tx, run, state); err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(ctx, insertRunSQL, runArguments(run, state.cursor)...)
 	if err != nil {
 		return fmt.Errorf("create run %s: %w", run.ID, err)
 	}
@@ -226,7 +510,100 @@ func (s *Store) CreateRun(ctx context.Context, run embedrun.Run) error {
 	if changed == 0 {
 		return fmt.Errorf("%w: run %s already exists", embedstore.ErrConflict, run.ID)
 	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("create run %s: %w", run.ID, err)
+	}
 	return nil
+}
+
+type runCreationState struct {
+	cursor         any
+	positioned     bool
+	sourceIdentity string
+}
+
+func prepareRunCreation(
+	ctx context.Context, source runTransactionSource, run embedrun.Run,
+) (runCreationState, error) {
+	if run.Phase == embedrun.PhaseRetired && run.Status != embedrun.StatusComplete {
+		return runCreationState{}, fmt.Errorf("create run %s: %w: phase %s requires status %s",
+			run.ID, embedrun.ErrPhase, embedrun.PhaseRetired, embedrun.StatusComplete)
+	}
+	if run.Terminal() {
+		return runCreationState{}, fmt.Errorf("create run %s: %w: run is already %s",
+			run.ID, embedrun.ErrTerminal, run.Status)
+	}
+	if err := validateRunResume(run); err != nil {
+		return runCreationState{}, err
+	}
+	cursor, err := encodeCursor(run.Cursor)
+	if err != nil {
+		return runCreationState{}, err
+	}
+	state := runCreationState{
+		cursor:     cursor,
+		positioned: run.SnapshotWatermark != "" || run.CatchUpWatermark != "",
+	}
+	if state.positioned {
+		generation, readErr := readGeneration(ctx, source, run.GenerationIdentity)
+		if readErr != nil {
+			if errors.Is(readErr, embedstore.ErrNotFound) {
+				return runCreationState{}, fmt.Errorf("create positioned run %s: %w: generation %s must be registered",
+					run.ID, embedstore.ErrNotFound, run.GenerationIdentity)
+			}
+			return runCreationState{}, readErr
+		}
+		state.sourceIdentity, err = validateRunSource(run, generation)
+		if err != nil {
+			return runCreationState{}, err
+		}
+	}
+	return state, nil
+}
+
+func validateRunCreationGeneration(
+	ctx context.Context, tx *sql.Tx, run embedrun.Run, state runCreationState,
+) error {
+	generation, err := readGeneration(ctx, tx, run.GenerationIdentity)
+	if state.positioned {
+		if err != nil {
+			return err
+		}
+		lockedSourceIdentity, validateErr := validateRunSource(run, generation)
+		if validateErr != nil {
+			return validateErr
+		}
+		if lockedSourceIdentity != state.sourceIdentity {
+			return fmt.Errorf("%w: generation %s source changed while its lifecycle lock was acquired",
+				embedstore.ErrConflict, generation.Identity)
+		}
+	}
+	if err == nil && generation.Retired() {
+		return fmt.Errorf("%w: generation %s was retired at %s",
+			embedstore.ErrRetired, generation.Identity,
+			generation.RetiredAt.UTC().Format(time.RFC3339))
+	}
+	if err != nil && !errors.Is(err, embedstore.ErrNotFound) {
+		return err
+	}
+	return nil
+}
+
+func validateRunSource(
+	run embedrun.Run, generation embedstore.Generation,
+) (string, error) {
+	if generation.SourceTable == "" {
+		return "", fmt.Errorf(
+			"%w: generation %s does not record a source for positioned run %s",
+			embedstore.ErrConflict, generation.Identity, run.ID)
+	}
+	canonical := embedstore.SourceIdentity(generation.SourceSchema, generation.SourceTable)
+	if run.Source != canonical && run.Source != generation.SourceTable {
+		return "", fmt.Errorf("%w: run %s records source %s, generation %s uses %s",
+			embedstore.ErrConflict, run.ID, run.Source, generation.Identity,
+			embedstore.QualifiedName(generation.SourceSchema, generation.SourceTable))
+	}
+	return canonical, nil
 }
 
 // Run reads one back.
@@ -265,9 +642,24 @@ func (s *Store) RunsForGeneration(ctx context.Context, identity string) ([]embed
 // The refusal is a WHERE clause rather than a read followed by a write, because
 // between those two a takeover is exactly what happens.
 func (s *Store) SaveRun(ctx context.Context, run embedrun.Run) error {
+	if run.Phase == embedrun.PhaseRetired && run.Status != embedrun.StatusComplete {
+		return fmt.Errorf("save run %s: %w: phase %s requires status %s",
+			run.ID, embedrun.ErrPhase, embedrun.PhaseRetired, embedrun.StatusComplete)
+	}
+	if run.Status == embedrun.StatusComplete {
+		return fmt.Errorf("save run %s: %w: terminal state is owned by generation retirement",
+			run.ID, embedrun.ErrTerminal)
+	}
+	if err := validateRunResume(run); err != nil {
+		return err
+	}
 	cursor, err := encodeCursor(run.Cursor)
 	if err != nil {
 		return err
+	}
+	if run.Status == embedrun.StatusAbandoned {
+		return fmt.Errorf("%w: run %s must be abandoned through AbandonRun",
+			embedstore.ErrConflict, run.ID)
 	}
 	result, err := s.db.ExecContext(ctx, updateRunSQL, runArguments(run, cursor)...)
 	if err != nil {
@@ -288,6 +680,18 @@ func (s *Store) explainSaveRefusal(ctx context.Context, run embedrun.Run) error 
 	stored, err := s.Run(ctx, run.ID)
 	if err != nil {
 		return err
+	}
+	if stored.GenerationIdentity != run.GenerationIdentity {
+		return fmt.Errorf("save run %s: %w: stored generation is %s, write names %s",
+			run.ID, embedrun.ErrGeneration, stored.GenerationIdentity, run.GenerationIdentity)
+	}
+	if run.FencingToken < stored.FencingToken {
+		return fmt.Errorf("%w: run %s is fenced at token %d and this write carries %d",
+			embedstore.ErrConflict, run.ID, stored.FencingToken, run.FencingToken)
+	}
+	if stored.Terminal() {
+		return fmt.Errorf("save run %s: %w: run %s is %s",
+			run.ID, embedrun.ErrTerminal, run.ID, stored.Status)
 	}
 	return fmt.Errorf("%w: run %s is fenced at token %d and this write carries %d",
 		embedstore.ErrConflict, run.ID, stored.FencingToken, run.FencingToken)
@@ -376,12 +780,357 @@ func (s *Store) Pointer(
 // read the pointer, then write it -- is the shape that reintroduces the race
 // the cutover decision already refused.
 func (s *Store) MovePointer(ctx context.Context, pointer embedstore.Pointer, expectedActive string) error {
-	// The SELECT's condition has to let the row through in BOTH cases this
-	// statement covers, which is why it is not simply `$7 = ''`: that guard
-	// alone made every move onto an existing pointer produce no row to conflict
-	// with, so ON CONFLICT never fired and a correct cutover was refused as a
-	// conflict. Measured against PostgreSQL 18, not reasoned about -- the
-	// in-memory store agreed with the wrong SQL.
+	return s.movePointer(
+		ctx, pointer, expectedActive, "", 0, false, "", time.Time{}, time.Time{}, nil)
+}
+
+// MovePointerWithMaintenance moves a pointer and opens the previous
+// generation's maintenance window in the same transaction.
+func (s *Store) MovePointerWithMaintenance(
+	ctx context.Context, pointer embedstore.Pointer, expectedActive, requiredRunID string,
+	stabilizeFor time.Duration,
+) (embedstore.CutoverMove, error) {
+	var move embedstore.CutoverMove
+	err := s.movePointer(
+		ctx, pointer, expectedActive, requiredRunID, stabilizeFor, true, "",
+		time.Time{}, time.Time{}, &move)
+	if err != nil {
+		return embedstore.CutoverMove{}, err
+	}
+	return move, nil
+}
+
+// MovePointerWithRollback moves the pointer and records the displaced
+// generation's rollback in the same transaction.
+func (s *Store) MovePointerWithRollback(
+	ctx context.Context, pointer embedstore.Pointer, expectedActive string,
+	expectedMaintainedUntil, eligibilityNotAfter time.Time,
+) (time.Time, error) {
+	var move embedstore.CutoverMove
+	err := s.movePointer(
+		ctx, pointer, expectedActive, "", 0, false, expectedActive,
+		expectedMaintainedUntil, eligibilityNotAfter, &move)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return move.CutOverAt, nil
+}
+
+func (s *Store) movePointer(
+	ctx context.Context, pointer embedstore.Pointer, expectedActive, requiredRunID string,
+	stabilizeFor time.Duration, managePrevious bool, rolledBackGeneration string,
+	expectedMaintainedUntil, eligibilityNotAfter time.Time,
+	committed *embedstore.CutoverMove,
+) error {
+	operation := pointerMoveOperation{
+		pointer:                 pointer,
+		expectedActive:          expectedActive,
+		requiredRunID:           requiredRunID,
+		stabilizeFor:            stabilizeFor,
+		managePrevious:          managePrevious,
+		rolledBackGeneration:    rolledBackGeneration,
+		expectedMaintainedUntil: expectedMaintainedUntil,
+		eligibilityNotAfter:     eligibilityNotAfter,
+		committed:               committed,
+	}
+	if pointer.Previous != expectedActive {
+		return fmt.Errorf("%w: pointer previous generation %q does not match expected active generation %q",
+			embedstore.ErrConflict, pointer.Previous, expectedActive)
+	}
+	tx, err := s.begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lockGenerations(ctx, tx, pointer.Active, expectedActive, pointer.Previous); err != nil {
+		return err
+	}
+	if err := lockPointerForMove(ctx, tx, operation); err != nil {
+		return err
+	}
+	destination, err := validatePointerMoveDestination(ctx, tx, operation)
+	if err != nil {
+		return err
+	}
+	authorizing, err := authorizePointerMove(ctx, tx, operation)
+	if err != nil {
+		return err
+	}
+	previous, err := validatePointerMovePrevious(ctx, tx, operation)
+	if err != nil {
+		return err
+	}
+	rolledBackRuns, err := lockRollbackRuns(ctx, tx, operation)
+	if err != nil {
+		return err
+	}
+	pointer, move, err := preparePointerMove(ctx, tx, operation, destination, previous)
+	if err != nil {
+		return err
+	}
+	changed, target, err := writePointerMove(ctx, tx, pointer, expectedActive)
+	if err != nil {
+		return err
+	}
+	if changed != 1 {
+		return explainPointerMoveConflict(ctx, tx, pointer, expectedActive, target)
+	}
+	if err := commitPointerMove(
+		ctx, tx, operation, pointer, target, &move, authorizing, rolledBackRuns); err != nil {
+		return err
+	}
+	return nil
+}
+
+type pointerMoveOperation struct {
+	pointer                 embedstore.Pointer
+	expectedActive          string
+	requiredRunID           string
+	stabilizeFor            time.Duration
+	managePrevious          bool
+	rolledBackGeneration    string
+	expectedMaintainedUntil time.Time
+	eligibilityNotAfter     time.Time
+	committed               *embedstore.CutoverMove
+}
+
+func lockPointerForMove(
+	ctx context.Context, tx *sql.Tx, operation pointerMoveOperation,
+) error {
+	if operation.committed == nil || operation.expectedActive == "" {
+		return nil
+	}
+	lockedPrevious, err := lockExpectedPointer(
+		ctx, tx, operation.pointer, operation.expectedActive)
+	if err != nil {
+		return err
+	}
+	if operation.rolledBackGeneration == "" {
+		return nil
+	}
+	if lockedPrevious == "" || lockedPrevious != operation.pointer.Active {
+		return fmt.Errorf(
+			"%w: rollback destination generation %s is not the pointer's previous generation %s",
+			embedstore.ErrConflict, operation.pointer.Active, lockedPrevious)
+	}
+	return nil
+}
+
+func validatePointerMoveDestination(
+	ctx context.Context, tx *sql.Tx, operation pointerMoveOperation,
+) (embedstore.Generation, error) {
+	pointer := operation.pointer
+	destination, err := readGeneration(ctx, tx, pointer.Active)
+	if err != nil {
+		return embedstore.Generation{}, err
+	}
+	if destination.Retired() {
+		return embedstore.Generation{}, fmt.Errorf("%w: generation %s was retired at %s",
+			embedstore.ErrRetired, destination.Identity,
+			destination.RetiredAt.UTC().Format(time.RFC3339))
+	}
+	if destination.TargetSchema != pointer.TargetSchema ||
+		destination.TargetTable != pointer.TargetTable {
+		return embedstore.Generation{}, fmt.Errorf("%w: generation %s targets %s, not pointer target %s",
+			embedstore.ErrConflict, destination.Identity,
+			embedstore.QualifiedName(destination.TargetSchema, destination.TargetTable),
+			embedstore.QualifiedName(pointer.TargetSchema, pointer.TargetTable))
+	}
+	counts, err := generationRunCounts(ctx, tx, destination)
+	if err != nil {
+		return embedstore.Generation{}, fmt.Errorf("move pointer for %s: %w",
+			embedstore.QualifiedName(pointer.TargetSchema, pointer.TargetTable), err)
+	}
+	if counts.total > 0 && counts.live == 0 {
+		return embedstore.Generation{}, fmt.Errorf("move pointer for %s to generation %s: %w: "+
+			"generation %s has run history, but no usable live feeder",
+			embedstore.QualifiedName(pointer.TargetSchema, pointer.TargetTable), pointer.Active,
+			embedstore.ErrNoLiveRun, pointer.Active)
+	}
+	if operation.rolledBackGeneration != "" &&
+		!destination.MaintainedUntil.Equal(operation.expectedMaintainedUntil) {
+		return embedstore.Generation{}, fmt.Errorf(
+			"%w: rollback destination generation %s maintenance changed from %s to %s",
+			embedstore.ErrConflict, destination.Identity,
+			operation.expectedMaintainedUntil.UTC().Format(time.RFC3339),
+			destination.MaintainedUntil.UTC().Format(time.RFC3339))
+	}
+	return destination, nil
+}
+
+func authorizePointerMove(
+	ctx context.Context, tx *sql.Tx, operation pointerMoveOperation,
+) (embedrun.Run, error) {
+	if operation.requiredRunID == "" {
+		return embedrun.Run{}, nil
+	}
+	run, err := scanRun(
+		tx.QueryRowContext(ctx, selectRunForUpdateSQL, operation.requiredRunID),
+		operation.requiredRunID)
+	if err != nil {
+		return embedrun.Run{}, err
+	}
+	if run.GenerationIdentity != operation.pointer.Active {
+		return embedrun.Run{}, fmt.Errorf("%w: run %s authorizes generation %s, not %s",
+			embedstore.ErrConflict, operation.requiredRunID,
+			run.GenerationIdentity, operation.pointer.Active)
+	}
+	if run.Terminal() {
+		return embedrun.Run{}, fmt.Errorf("%w: run %s is %s",
+			embedrun.ErrTerminal, operation.requiredRunID, run.Status)
+	}
+	run.FencingToken++
+	if err := run.Reach(run.FencingToken, embedrun.PhaseCutOver); err != nil {
+		return embedrun.Run{}, fmt.Errorf(
+			"record cutover on run %s: %w", operation.requiredRunID, err)
+	}
+	run.LeaseOwner = ""
+	run.LeaseExpires = time.Time{}
+	return run, nil
+}
+
+func validatePointerMovePrevious(
+	ctx context.Context, tx *sql.Tx, operation pointerMoveOperation,
+) (embedstore.Generation, error) {
+	pointer := operation.pointer
+	if pointer.Previous == "" {
+		return embedstore.Generation{}, nil
+	}
+	previous, err := readGeneration(ctx, tx, pointer.Previous)
+	if err != nil {
+		return embedstore.Generation{}, err
+	}
+	if previous.Retired() {
+		return embedstore.Generation{}, fmt.Errorf("%w: generation %s was retired at %s",
+			embedstore.ErrRetired, previous.Identity,
+			previous.RetiredAt.UTC().Format(time.RFC3339))
+	}
+	if previous.TargetSchema != pointer.TargetSchema || previous.TargetTable != pointer.TargetTable {
+		return embedstore.Generation{}, fmt.Errorf(
+			"%w: previous generation %s targets %s, not pointer target %s",
+			embedstore.ErrConflict, previous.Identity,
+			embedstore.QualifiedName(previous.TargetSchema, previous.TargetTable),
+			embedstore.QualifiedName(pointer.TargetSchema, pointer.TargetTable))
+	}
+	if !operation.managePrevious || operation.stabilizeFor <= 0 {
+		return previous, nil
+	}
+	counts, err := generationRunCounts(ctx, tx, previous)
+	if err != nil {
+		return embedstore.Generation{}, fmt.Errorf(
+			"maintain previous generation %s while moving pointer for %s: %w",
+			pointer.Previous,
+			embedstore.QualifiedName(pointer.TargetSchema, pointer.TargetTable), err)
+	}
+	if counts.total > 0 && counts.live == 0 {
+		return embedstore.Generation{}, fmt.Errorf(
+			"maintain previous generation %s while moving pointer for %s: %w: "+
+				"generation %s has run history, but no usable live feeder",
+			pointer.Previous,
+			embedstore.QualifiedName(pointer.TargetSchema, pointer.TargetTable),
+			embedstore.ErrNoLiveRun, pointer.Previous)
+	}
+	return previous, nil
+}
+
+func lockRollbackRuns(
+	ctx context.Context, tx *sql.Tx, operation pointerMoveOperation,
+) ([]embedrun.Run, error) {
+	identity := operation.rolledBackGeneration
+	if identity == "" {
+		return nil, nil
+	}
+	if identity != operation.expectedActive {
+		return nil, fmt.Errorf("%w: rollback generation %s is not expected active generation %s",
+			embedstore.ErrConflict, identity, operation.expectedActive)
+	}
+	rows, err := tx.QueryContext(ctx, selectRunsForGenerationForUpdateSQL, identity)
+	if err != nil {
+		return nil, fmt.Errorf("read runs for rollback generation %s: %w", identity, err)
+	}
+	var runs []embedrun.Run
+	for rows.Next() {
+		run, scanErr := scanRun(rows, identity)
+		if scanErr != nil {
+			_ = rows.Close()
+			return nil, scanErr
+		}
+		if !run.Phase.LeadsTo(embedrun.PhaseRolledBack) || run.Terminal() {
+			continue
+		}
+		run.FencingToken++
+		if err := run.Reach(run.FencingToken, embedrun.PhaseRolledBack); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("record rollback on run %s: %w", run.ID, err)
+		}
+		run.LeaseOwner = ""
+		run.LeaseExpires = time.Time{}
+		runs = append(runs, run)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, fmt.Errorf("read runs for rollback generation %s: %w", identity, err)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("read runs for rollback generation %s: %w", identity, err)
+	}
+	return runs, nil
+}
+
+func preparePointerMove(
+	ctx context.Context,
+	tx *sql.Tx,
+	operation pointerMoveOperation,
+	destination, previous embedstore.Generation,
+) (embedstore.Pointer, embedstore.CutoverMove, error) {
+	pointer := operation.pointer
+	var move embedstore.CutoverMove
+	if operation.committed == nil {
+		return pointer, move, nil
+	}
+	if err := tx.QueryRowContext(ctx, `SELECT clock_timestamp()`).Scan(&move.CutOverAt); err != nil {
+		return embedstore.Pointer{}, embedstore.CutoverMove{}, fmt.Errorf(
+			"sample pointer move time: %w", err)
+	}
+	move.CutOverAt = move.CutOverAt.UTC()
+	if operation.rolledBackGeneration != "" && !destination.Maintained(move.CutOverAt) {
+		return embedstore.Pointer{}, embedstore.CutoverMove{}, fmt.Errorf(
+			"%w: rollback destination generation %s maintenance expired at %s before %s",
+			embedstore.ErrConflict, destination.Identity,
+			destination.MaintainedUntil.UTC().Format(time.RFC3339),
+			move.CutOverAt.Format(time.RFC3339))
+	}
+	if operation.rolledBackGeneration != "" &&
+		!operation.eligibilityNotAfter.IsZero() &&
+		move.CutOverAt.After(operation.eligibilityNotAfter) {
+		return embedstore.Pointer{}, embedstore.CutoverMove{}, fmt.Errorf(
+			"%w: rollback eligibility expired at %s before %s",
+			embedstore.ErrConflict,
+			operation.eligibilityNotAfter.UTC().Format(time.RFC3339),
+			move.CutOverAt.Format(time.RFC3339))
+	}
+	pointer.CutOverAt = move.CutOverAt
+	if operation.managePrevious && pointer.Previous != "" && operation.stabilizeFor > 0 {
+		move.PreviousMaintainedUntil = move.CutOverAt.Add(operation.stabilizeFor)
+		if previous.MaintainedUntil.After(move.PreviousMaintainedUntil) {
+			move.PreviousMaintainedUntil = previous.MaintainedUntil
+		}
+	}
+	return pointer, move, nil
+}
+
+// writePointerMove covers both a first pointer and a compare-and-swap update.
+// The SELECT's condition must let the row through in both cases: a guard of
+// only an empty expected-active guard made every move onto an existing pointer produce no row to
+// conflict with, so ON CONFLICT never fired and a correct cutover was refused
+// as a conflict. This was measured against PostgreSQL 18; the in-memory store
+// agreed with the wrong SQL.
+func writePointerMove(
+	ctx context.Context,
+	tx *sql.Tx,
+	pointer embedstore.Pointer,
+	expectedActive string,
+) (int64, string, error) {
 	const query = `INSERT INTO ` + embedstore.PointerTable + ` (
 		target_schema, target_table, active_generation, previous_generation,
 		cut_over_at, cut_over_by, plan_digest)
@@ -396,39 +1145,165 @@ func (s *Store) MovePointer(ctx context.Context, pointer embedstore.Pointer, exp
 			cut_over_by = EXCLUDED.cut_over_by,
 			plan_digest = EXCLUDED.plan_digest
 		WHERE ` + embedstore.PointerTable + `.active_generation = $8`
-	result, err := s.db.ExecContext(ctx, query,
+	result, err := tx.ExecContext(ctx, query,
 		pointer.TargetSchema, pointer.TargetTable, pointer.Active, nullable(pointer.Previous),
 		pointer.CutOverAt.UTC(), nullable(pointer.CutOverBy), nullable(pointer.PlanDigest),
 		expectedActive)
 	target := embedstore.QualifiedName(pointer.TargetSchema, pointer.TargetTable)
 	if err != nil {
-		return fmt.Errorf("move pointer for %s: %w", target, err)
+		return 0, target, fmt.Errorf("move pointer for %s: %w", target, err)
 	}
 	changed, err := result.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("move pointer for %s: %w", target, err)
+		return 0, target, fmt.Errorf("move pointer for %s: %w", target, err)
 	}
-	if changed == 1 {
-		return nil
-	}
-	return s.explainPointerRefusal(ctx, pointer.TargetSchema, pointer.TargetTable, expectedActive)
+	return changed, target, nil
 }
 
-// explainPointerRefusal says what the pointer actually reads.
-func (s *Store) explainPointerRefusal(
-	ctx context.Context, targetSchema, targetTable, expectedActive string,
+func commitPointerMove(
+	ctx context.Context,
+	tx *sql.Tx,
+	operation pointerMoveOperation,
+	pointer embedstore.Pointer,
+	target string,
+	move *embedstore.CutoverMove,
+	authorizing embedrun.Run,
+	rolledBackRuns []embedrun.Run,
 ) error {
-	target := embedstore.QualifiedName(targetSchema, targetTable)
-	current, err := s.Pointer(ctx, targetSchema, targetTable)
-	if errors.Is(err, embedstore.ErrNotFound) {
+	if err := updatePreviousMaintenance(ctx, tx, operation, pointer, target, move); err != nil {
+		return err
+	}
+	if operation.requiredRunID != "" {
+		if err := recordPointerRun(ctx, tx, authorizing, "cutover"); err != nil {
+			return err
+		}
+	}
+	for _, run := range rolledBackRuns {
+		if err := recordPointerRun(ctx, tx, run, "rollback"); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("move pointer for %s: %w", target, err)
+	}
+	if operation.committed != nil {
+		*operation.committed = *move
+	}
+	return nil
+}
+
+func updatePreviousMaintenance(
+	ctx context.Context,
+	tx *sql.Tx,
+	operation pointerMoveOperation,
+	pointer embedstore.Pointer,
+	target string,
+	move *embedstore.CutoverMove,
+) error {
+	if !operation.managePrevious || pointer.Previous == "" {
+		return nil
+	}
+	var maintained sql.NullTime
+	var err error
+	if operation.stabilizeFor > 0 {
+		const maintain = `UPDATE ` + embedstore.GenerationTable + `
+			SET maintained_until = GREATEST(maintained_until, $2)
+			WHERE identity = $1 AND retired_at IS NULL
+			RETURNING maintained_until`
+		err = tx.QueryRowContext(
+			ctx, maintain, pointer.Previous,
+			move.PreviousMaintainedUntil.UTC()).Scan(&maintained)
+	} else {
+		const clearMaintenance = `UPDATE ` + embedstore.GenerationTable + `
+			SET maintained_until = NULL
+			WHERE identity = $1 AND retired_at IS NULL
+			RETURNING maintained_until`
+		err = tx.QueryRowContext(ctx, clearMaintenance, pointer.Previous).Scan(&maintained)
+	}
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("maintain previous generation %s while moving pointer for %s: "+
+			"the generation changed while its lifecycle lock was held", pointer.Previous, target)
+	}
+	if err != nil {
+		return fmt.Errorf("maintain previous generation %s while moving pointer for %s: %w",
+			pointer.Previous, target, err)
+	}
+	if !maintained.Valid {
+		move.PreviousMaintainedUntil = time.Time{}
+		return nil
+	}
+	move.PreviousMaintainedUntil = maintained.Time.UTC()
+	return nil
+}
+
+func recordPointerRun(
+	ctx context.Context, tx *sql.Tx, run embedrun.Run, action string,
+) error {
+	cursor, err := encodeCursor(run.Cursor)
+	if err != nil {
+		return err
+	}
+	result, err := tx.ExecContext(
+		ctx, updateRunLifecyclePhaseSQL, runArguments(run, cursor)...)
+	if err != nil {
+		return fmt.Errorf("record %s on run %s: %w", action, run.ID, err)
+	}
+	updated, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("record %s on run %s: %w", action, run.ID, err)
+	}
+	if updated != 1 {
+		return fmt.Errorf("record %s on run %s: %w", action, run.ID, embedstore.ErrConflict)
+	}
+	return nil
+}
+
+func explainPointerMoveConflict(
+	ctx context.Context,
+	tx *sql.Tx,
+	pointer embedstore.Pointer,
+	expectedActive, target string,
+) error {
+	const currentQuery = `SELECT active_generation FROM ` + embedstore.PointerTable + `
+		WHERE target_schema = $1 AND target_table = $2`
+	var active string
+	err := tx.QueryRowContext(ctx, currentQuery, pointer.TargetSchema, pointer.TargetTable).Scan(&active)
+	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("%w: %s has no pointer and this move expected %s",
 			embedstore.ErrConflict, target, expectedActive)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("read pointer for %s: %w", target, err)
 	}
 	return fmt.Errorf("%w: %s reads %s and this move expected %s",
-		embedstore.ErrConflict, target, current.Active, expectedActive)
+		embedstore.ErrConflict, target, active, expectedActive)
+}
+
+// lockExpectedPointer removes the last wait between sampling a rollback's
+// clock and changing the pointer. Generation lifecycle locks serialize Ptah
+// operations, while this row lock also covers a transaction that already held
+// the pointer row before entering that protocol.
+func lockExpectedPointer(
+	ctx context.Context, tx *sql.Tx, pointer embedstore.Pointer, expectedActive string,
+) (string, error) {
+	const query = `SELECT active_generation, COALESCE(previous_generation, '') FROM ` + embedstore.PointerTable + `
+		WHERE target_schema = $1 AND target_table = $2 FOR UPDATE`
+	target := embedstore.QualifiedName(pointer.TargetSchema, pointer.TargetTable)
+	var active, previous string
+	err := tx.QueryRowContext(ctx, query, pointer.TargetSchema, pointer.TargetTable).Scan(
+		&active, &previous)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", fmt.Errorf("%w: %s has no pointer and this move expected %s",
+			embedstore.ErrConflict, target, expectedActive)
+	}
+	if err != nil {
+		return "", fmt.Errorf("lock pointer for %s: %w", target, err)
+	}
+	if active != expectedActive {
+		return "", fmt.Errorf("%w: %s reads %s and this move expected %s",
+			embedstore.ErrConflict, target, active, expectedActive)
+	}
+	return previous, nil
 }
 
 // nullable turns an empty string into a SQL NULL.
@@ -516,21 +1391,242 @@ func (s *Store) ReachPhase(ctx context.Context, runID string, to embedrun.Phase)
 func (s *Store) ClaimRun(
 	ctx context.Context, id, worker string, leaseExpires time.Time,
 ) (embedrun.Run, int64, error) {
-	row := s.db.QueryRowContext(ctx, claimRunSQL, id, worker, leaseExpires.UTC(), time.Now().UTC())
+	row := s.db.QueryRowContext(ctx, claimRunSQL,
+		id, worker, leaseExpires.UTC(), time.Now().UTC(),
+		string(embedrun.StatusComplete), string(embedrun.StatusAbandoned))
 	run, err := scanRun(row, id)
 	if err != nil {
+		// The conditional update deliberately has the same empty result for a
+		// missing row and a terminal one. Read once to distinguish them for the
+		// operator; terminal state never becomes claimable again, so this cannot
+		// race back to a different answer.
+		if errors.Is(err, embedstore.ErrNotFound) {
+			stored, readErr := s.Run(ctx, id)
+			if readErr == nil && stored.Terminal() {
+				return embedrun.Run{}, 0, fmt.Errorf(
+					"claim run %s: %w: run %s is %s",
+					id, embedrun.ErrTerminal, id, stored.Status)
+			}
+		}
 		return embedrun.Run{}, 0, fmt.Errorf("claim run %s: %w", id, err)
 	}
 	return run, run.FencingToken, nil
 }
 
+// AbandonRun permanently ends a run without destroying its generation.
+//
+// The targeted UPDATE's token increment fences claims and saves through the
+// run row. The generation lock makes the last-feeder decision one instant with
+// retirement, maintenance, pointer moves, sibling creation and sibling
+// terminal transitions.
+func (s *Store) AbandonRun(
+	ctx context.Context, id, reason string,
+) (embedrun.Run, error) {
+	if reason == "" {
+		return embedrun.Run{}, fmt.Errorf(
+			"abandon run %s: %w: an abandonment without a reason cannot be acted on",
+			id, embedrun.ErrCheckpoint)
+	}
+	for {
+		initial, err := s.Run(ctx, id)
+		if err != nil {
+			return embedrun.Run{}, err
+		}
+		run, retry, err := s.abandonRunInGeneration(ctx, initial, reason)
+		if !retry {
+			return run, err
+		}
+	}
+}
+
+func (s *Store) abandonRunInGeneration(
+	ctx context.Context, initial embedrun.Run, reason string,
+) (embedrun.Run, bool, error) {
+	id := initial.ID
+	tx, err := s.begin(ctx)
+	if err != nil {
+		return embedrun.Run{}, false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := lockGenerations(ctx, tx, initial.GenerationIdentity); err != nil {
+		return embedrun.Run{}, false, err
+	}
+	stored, err := scanRun(tx.QueryRowContext(ctx, selectRunForUpdateSQL, id), id)
+	if err != nil {
+		return embedrun.Run{}, false, err
+	}
+	if stored.GenerationIdentity != initial.GenerationIdentity {
+		return embedrun.Run{}, true, nil
+	}
+	if stored.Status == embedrun.StatusAbandoned {
+		return stored, false, nil
+	}
+	if stored.Status == embedrun.StatusComplete {
+		return embedrun.Run{}, false, fmt.Errorf(
+			"abandon run %s: %w: run %s is complete", id, embedrun.ErrTerminal, id)
+	}
+	generation, err := readGeneration(ctx, tx, stored.GenerationIdentity)
+	generationFound := !errors.Is(err, embedstore.ErrNotFound)
+	if !generationFound {
+		// Missing registry rows are deliberately kept in pruning's reader set.
+		// They have no maintenance window, but a historical pointer can still
+		// make the identity active and therefore protected.
+		generation.Identity = stored.GenerationIdentity
+	} else if err != nil {
+		return embedrun.Run{}, false, err
+	}
+	if generation.Retired() {
+		return embedrun.Run{}, false, fmt.Errorf("%w: generation %s was retired at %s",
+			embedstore.ErrRetired, generation.Identity,
+			generation.RetiredAt.UTC().Format(time.RFC3339))
+	}
+	var when time.Time
+	if err := tx.QueryRowContext(ctx, `SELECT clock_timestamp()`).Scan(&when); err != nil {
+		return embedrun.Run{}, false, fmt.Errorf("sample abandonment time for run %s: %w", id, err)
+	}
+	when = when.UTC()
+	requirement, err := abandonmentFeederRequirement(generation, stored)
+	if err != nil {
+		return embedrun.Run{}, false, fmt.Errorf("abandon run %s: %w", id, err)
+	}
+
+	protected, why, err := protectedGeneration(ctx, tx, generation, when)
+	if err != nil {
+		return embedrun.Run{}, false, err
+	}
+	if protected {
+		other, err := hasOtherFeeder(
+			ctx, tx, generation, stored, id, requirement)
+		if err != nil {
+			return embedrun.Run{}, false, err
+		}
+		if !other {
+			return embedrun.Run{}, false, fmt.Errorf(
+				"abandon run %s: %w: generation %s is %s and no other usable live feeder remains",
+				id, embedstore.ErrNoLiveRun, generation.Identity, why)
+		}
+	}
+
+	run, err := scanRun(tx.QueryRowContext(ctx, abandonRunSQL,
+		id, string(embedrun.StatusAbandoned), reason, when.UTC()), id)
+	if err != nil {
+		return embedrun.Run{}, false, fmt.Errorf("abandon run %s: %w", id, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return embedrun.Run{}, false, fmt.Errorf("abandon run %s: %w", id, err)
+	}
+	return run, false, nil
+}
+
+type feederRequirement uint8
+
+const (
+	feederRequirementAny feederRequirement = iota
+	feederRequirementPositioned
+)
+
+func hasOtherFeeder(
+	ctx context.Context, tx *sql.Tx, generation embedstore.Generation,
+	current embedrun.Run, excluding string, requirement feederRequirement,
+) (bool, error) {
+	const otherRuns = `SELECT source, COALESCE(catch_up_watermark, ''),
+			COALESCE(snapshot_watermark, '')
+		FROM ` + embedstore.RunTable + `
+		WHERE generation_identity = $1 AND id <> $2 AND status NOT IN ($3, $4)`
+	rows, err := tx.QueryContext(ctx, otherRuns, generation.Identity, excluding,
+		string(embedrun.StatusComplete), string(embedrun.StatusAbandoned))
+	if err != nil {
+		return false, fmt.Errorf("read other live runs for generation %s: %w",
+			generation.Identity, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var source, catchUp, snapshot string
+		if err := rows.Scan(&source, &catchUp, &snapshot); err != nil {
+			return false, fmt.Errorf("read other live runs for generation %s: %w",
+				generation.Identity, err)
+		}
+		if !sameGenerationSource(source, current.Source, generation) {
+			continue
+		}
+		if requirement == feederRequirementAny {
+			return true, nil
+		}
+		_, positioned, parseErr := embedcatchup.ResumeFrom(catchUp, snapshot)
+		if parseErr == nil && positioned {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("read other live runs for generation %s: %w",
+			generation.Identity, err)
+	}
+	return false, nil
+}
+
+func abandonmentFeederRequirement(
+	generation embedstore.Generation, current embedrun.Run,
+) (feederRequirement, error) {
+	if generation.ConsistencyMode != "" {
+		if generation.ConsistencyMode == string(embedcatchup.ModeOutbox) {
+			return feederRequirementPositioned, nil
+		}
+		return feederRequirementAny, nil
+	}
+	_, positioned, err := embedcatchup.ResumeFrom(
+		current.CatchUpWatermark, current.SnapshotWatermark)
+	if err != nil {
+		return feederRequirementAny, fmt.Errorf(
+			"current run %s has an invalid resume position: %w", current.ID, err)
+	}
+	if positioned {
+		return feederRequirementPositioned, nil
+	}
+	return feederRequirementAny, nil
+}
+
+func sameGenerationSource(
+	candidate, current string, generation embedstore.Generation,
+) bool {
+	if generation.SourceTable == "" {
+		return candidate == current
+	}
+	canonical := embedstore.SourceIdentity(generation.SourceSchema, generation.SourceTable)
+	candidateMatches := candidate == canonical || candidate == generation.SourceTable
+	currentMatches := current == canonical || current == generation.SourceTable
+	return candidateMatches && currentMatches
+}
+
+// protectedGeneration reports why a generation must keep a usable live feeder.
+// The caller holds its lifecycle lock.
+func protectedGeneration(
+	ctx context.Context, tx *sql.Tx, generation embedstore.Generation, now time.Time,
+) (bool, string, error) {
+	const activeQuery = `SELECT target_schema, target_table FROM ` + embedstore.PointerTable + `
+		WHERE active_generation = $1 ORDER BY target_schema, target_table LIMIT 1`
+	var schema, table string
+	err := tx.QueryRowContext(ctx, activeQuery, generation.Identity).Scan(&schema, &table)
+	switch {
+	case err == nil:
+		return true, "active for " + embedstore.QualifiedName(schema, table), nil
+	case !errors.Is(err, sql.ErrNoRows):
+		return false, "", fmt.Errorf("read active pointer for generation %s: %w",
+			generation.Identity, err)
+	case generation.Maintained(now):
+		return true, "maintained until " + generation.MaintainedUntil.UTC().Format(time.RFC3339), nil
+	default:
+		return false, "", nil
+	}
+}
+
 // outboxFloorSQL reads the watermarks of every run still reading a source table.
 //
-// Membership is retired_at rather than a run phase. That column is the one
-// statement that a generation no longer reads anything, and it is already the
-// authority removeOutboxIfLast consults through LiveOutboxReadersOf -- one
-// authority, not two that can disagree. A run's own PhaseRetired means the run
-// whose PREVIOUS generation was removed, which is the live one.
+// A reader leaves in either of two explicit ways. Retiring its generation
+// destroys the vectors and terminalizes every run over it. Abandoning one run
+// keeps the vectors and releases only that run. A phase is deliberately not
+// used: retirement advances only phases that lead directly to PhaseRetired,
+// while earlier runs keep their truthful high-water phase and still become
+// terminal.
 //
 // NOT EXISTS rather than a join, so a run whose generation row is missing still
 // counts as a reader. Every bound here leans the same way: a reader wrongly
@@ -548,115 +1644,29 @@ func (s *Store) ClaimRun(
 //
 // It costs nothing once no such run is live: a bare table name is not a digest,
 // so the second predicate matches nothing a current Ptah writes.
-const outboxFloorSQL = `SELECT COALESCE(catch_up_watermark, ''), COALESCE(snapshot_watermark, '')
+const outboxFloorSQL = `SELECT r.id, r.generation_identity,
+		COALESCE(catch_up_watermark, ''), COALESCE(snapshot_watermark, '')
 	FROM ` + embedstore.RunTable + ` r
 	WHERE (r.source = $1 OR r.source = $2)
+	  AND r.status NOT IN ($3, $4)
 	  AND NOT EXISTS (
 	        SELECT 1 FROM ` + embedstore.GenerationTable + ` g
 	        WHERE g.identity = r.generation_identity
-	          AND g.retired_at IS NOT NULL)`
+	          AND g.retired_at IS NOT NULL)
+	ORDER BY r.generation_identity, r.id`
 
-// OutboxFloor is the earliest position any live run still reading a source
-// table has reached, and reports whether there is one at all.
-//
-// An outbox belongs to a source table rather than to a run -- Outbox.TableName
-// digests the source's schema and table -- so two generations over one table
-// share its events, which is why retirement has to ask whether it is the last
-// reader before removing the table. The same fact decides what may be deleted
-// from it: an event is dead only once EVERY live reader has passed it, and the
-// bound is therefore the minimum of their positions rather than the position of
-// whichever run happens to be catching up.
-//
-// sourceTable is matched against the runs' unqualified source, which is what
-// lifecycle.go records, while an outbox is keyed on the qualified pair. The
-// match therefore over-includes across schemas and can never under-include: two
-// runs share an outbox exactly when their schema and table are both equal, so
-// their source strings are equal too. Over-inclusion only lowers the floor,
-// which keeps more events than necessary.
-//
-// A run recording neither watermark is not a reader positioned at zero, it is a
-// run that reads no change log at all -- prepare writes both empty for a mode
-// that records nothing -- so it is skipped. A watermark that does not parse is
-// an error rather than a skip, because a floor built by ignoring the positions
-// it could not read is a floor that authorizes deleting what they owed.
-//
-// The false answer means no live reader was found, and a caller must delete
-// nothing: an empty reader set is not a license to empty the table.
-func (s *Store) OutboxFloor(
-	ctx context.Context, sourceSchema, sourceTable string,
-) (embedcatchup.Cursor, bool, error) {
-	rows, err := s.db.QueryContext(ctx, outboxFloorSQL,
-		SourceIdentity(sourceSchema, sourceTable), sourceTable)
-	if err != nil {
-		return embedcatchup.Cursor{}, false, fmt.Errorf(
-			"read the outbox floor for %s: %w", sourceTable, err)
-	}
-	defer rows.Close()
-
-	var floor embedcatchup.Cursor
-	var found bool
-	for rows.Next() {
-		var catchUp, snapshot string
-		if err := rows.Scan(&catchUp, &snapshot); err != nil {
-			return embedcatchup.Cursor{}, false, fmt.Errorf(
-				"read the outbox floor for %s: %w", sourceTable, err)
-		}
-		cursor, ok, err := embedcatchup.ResumeFrom(catchUp, snapshot)
-		if err != nil {
-			return embedcatchup.Cursor{}, false, fmt.Errorf(
-				"read the outbox floor for %s: %w", sourceTable, err)
-		}
-		if !ok {
-			continue
-		}
-		if !found || cursor.Before(floor) {
-			floor, found = cursor, true
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return embedcatchup.Cursor{}, false, fmt.Errorf(
-			"read the outbox floor for %s: %w", sourceTable, err)
-	}
-	return floor, found, nil
+// OutboxFloorHolder identifies a run at the earliest position in an outbox.
+type OutboxFloorHolder struct {
+	// RunID is the exact identifier an operator can pass to `inference
+	// abandon` or inspect with `inference status`.
+	RunID string
+	// Generation is the generation that run was building.
+	Generation string
 }
 
-// LiveOutboxReadersOf counts the generations still FED BY the outbox on a
-// source relation, other than the one named.
-//
-// It exists because an outbox belongs to a SOURCE TABLE rather than to a
-// generation -- two generations over one source share its changes -- so
-// retiring one may not remove it. Asking the registry is what tells a
-// retirement whether it is the last (stokaro/ptah#2649).
-//
-// The question is asked about the SOURCE, and both halves of the source's name
-// are in it. Asked about the target instead, a specification whose target table
-// differs from its source counted zero readers for a source another live
-// generation was still fed from, and retirement took that generation's change
-// capture away. Asked about a bare relation name, `alpha.docs` and `beta.docs`
-// answered for each other: retiring every generation over one of them left its
-// triggers firing forever on the strength of a reader in the other schema.
-//
-// The mode is in the predicate for the same kind of reason. Only an
-// outbox-mode generation is fed by the outbox, so only one of those is a reader
-// of it -- and counting every live generation over the source instead let an
-// `immutable` generation over the same table keep the change capture installed
-// forever, with no retirement able to remove it: retiring the immutable one
-// finds no outbox to remove, because its mode never installed one.
-//
-// Retired generations do not count: their vectors are gone, so nothing is left
-// for a catch-up to feed.
-func (s *Store) LiveOutboxReadersOf(
-	ctx context.Context, sourceSchema, sourceTable, excluding string,
-) (int, error) {
-	const query = `SELECT count(*) FROM ` + embedstore.GenerationTable + `
-		WHERE source_schema = $1 AND source_table = $2 AND consistency_mode = $3
-			AND identity <> $4 AND retired_at IS NULL`
-	var count int
-	err := s.db.QueryRowContext(ctx, query,
-		sourceSchema, sourceTable, string(embedcatchup.ModeOutbox), excluding).Scan(&count)
-	if err != nil {
-		return 0, fmt.Errorf("count live outbox readers of %s: %w",
-			embedstore.QualifiedName(sourceSchema, sourceTable), err)
-	}
-	return count, nil
+// OutboxFloorResult is the earliest position every usable live feeder has
+// passed and the positioned readers currently holding it there.
+type OutboxFloorResult struct {
+	Position embedcatchup.Cursor
+	Holders  []OutboxFloorHolder
 }

@@ -150,9 +150,9 @@ fails once, naming both.
 ## Promote one release through environments
 
 `plan --publish-evidence` writes the release, and the release carries the
-specification it was built from. Every verb takes `--release` in place of
-`--spec`, so development, staging and production run one document rather than
-three copies of it:
+specification it was built from. Every specification-led verb takes `--release`
+in place of `--spec`, so development, staging and production run one document
+rather than three copies of it. The store-only `abandon` verb needs neither:
 
 ```bash
 # Once, from the machine that holds the file.
