@@ -513,17 +513,15 @@ func openStabilization(
 // cutoverPlanIdentity is what an approver reads and signs.
 //
 // The facts, and not only the digest: a signature over sixty-four hex
-// characters attests to a number nobody could have checked.
+// characters attests to a number nobody could have checked. Which facts is
+// [embedcutover.Plan.IdentityLines]'s answer, bound to what the digest covers,
+// because this command deciding it separately is how the file came to omit the
+// acceptance an approval exists to authorize (stokaro/ptah#2739).
 func cutoverPlanIdentity(plan embedcutover.Plan) planIdentity {
 	return planIdentity{
 		operation: "cutover",
 		digest:    plan.Digest(),
-		lines: []string{
-			"generation: " + plan.Generation,
-			"replaces: " + plan.Previous,
-			"target: " + plan.Schema + "." + plan.Table + "." + plan.Column,
-			"verification: " + plan.Evidence.VerificationDigest,
-		},
+		lines:     plan.IdentityLines(),
 	}
 }
 

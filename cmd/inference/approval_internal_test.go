@@ -50,7 +50,7 @@ func TestWritePlanFile_SaysWhatIsBeingApproved(t *testing.T) {
 
 	body, err := os.ReadFile(path)
 	c.Assert(err, qt.IsNil)
-	c.Assert(string(body), qt.Contains, "ptah inference cutover plan, format 1")
+	c.Assert(string(body), qt.Contains, "ptah inference cutover plan, format 2")
 	c.Assert(string(body), qt.Contains, "target: public.articles.embedding_v2")
 	c.Assert(string(body), qt.Contains, "plan: "+aPlan().digest)
 	// And it says how to sign it, because the next thing whoever ran this does

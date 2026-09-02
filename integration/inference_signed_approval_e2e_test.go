@@ -115,9 +115,20 @@ func assertARefusedCutoverWritesAPlanToSign(
 	// move when the report changed -- an approval that bound to no measurement
 	// at all (stokaro/ptah#2643). Asserting the two lines differ is the whole
 	// defect: they were byte-identical in every plan the audit produced.
-	c.Assert(planFieldFrom(c, string(body), "verification"), qt.Not(qt.Equals),
+	//
+	// The label is `verification report` since stokaro/ptah#2739, because it now
+	// sits beside `verification passed` and a digest called `verification` read
+	// as the verdict.
+	c.Assert(planFieldFrom(c, string(body), "verification report"), qt.Not(qt.Equals),
 		planFieldFrom(c, string(body), "generation"))
-	c.Assert(planFieldFrom(c, string(body), "verification"), qt.Not(qt.Equals), "")
+	c.Assert(planFieldFrom(c, string(body), "verification report"), qt.Not(qt.Equals), "")
+
+	// The acceptance the approver is being asked for, which is what
+	// stokaro/ptah#2739 is: this plan was refused, so it accepts nothing, and a
+	// file that said nothing about acceptance could not be told from one that
+	// accepted everything.
+	c.Assert(string(body), qt.Contains, "accepts blocking findings: none")
+	c.Assert(planFieldFrom(c, string(body), "verification passed"), qt.Not(qt.Equals), "")
 
 	return planPath, anAllowedSignersFile(c, dir, "alice@example.com")
 }
@@ -175,7 +186,7 @@ func assertASignedPlanCutsOverAndRecordsThePrincipal(
 	// The record cites what the plan cited, so the two cannot disagree about
 	// what "verification digest" means.
 	c.Assert(record.VerificationDigest, qt.Equals,
-		planFieldFrom(c, planText(c, planPath), "verification"))
+		planFieldFrom(c, planText(c, planPath), "verification report"))
 
 	var approver string
 	c.Assert(db.QueryRowContext(ctx,

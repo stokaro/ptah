@@ -54,7 +54,20 @@ func addApprovalFlags(cmd *cobra.Command, options *approvalOptions) {
 }
 
 // planFileVersion is the format of the file an approver signs.
-const planFileVersion = 1
+//
+// 2 names every fact the plan digest binds, rather than four of them. The
+// acceptance of blocking findings was the one that mattered: under
+// policy.require_signed_approval the file is the whole of what a person sees,
+// and two plans differing only in whether both blocking findings were accepted
+// rendered byte-identical apart from the digest (stokaro/ptah#2739). The line
+// naming the verification report is also spelled `verification report` now,
+// because it sits beside `verification passed` and a digest called
+// `verification` read as the verdict.
+//
+// Nothing in Ptah parses this number -- [planDigestIn] reads the digest line
+// and ignores the rest -- so it moves for the reader outside this repository
+// who does.
+const planFileVersion = 2
 
 // planDigestKey is the line the digest is read back from.
 const planDigestKey = "plan"
