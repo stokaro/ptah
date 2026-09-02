@@ -41,7 +41,7 @@ func atPhase(c *qt.C, h *harness, phase embedrun.Phase) {
 // afterwards, so a command that reported failure had already spent the money.
 //
 // The assertions are on what was NOT done, because an error alone would pass
-// against the reported behaviour too -- the CLI raised one. What distinguishes
+// against the reported behavior too -- the CLI raised one. What distinguishes
 // the fix is the provider never being called.
 func TestCatchUp_RefusesBeforeSpendingAnythingFailurePath(t *testing.T) {
 	tests := []struct {
