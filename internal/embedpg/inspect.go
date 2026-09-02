@@ -406,11 +406,19 @@ func oneRelation(spec embedgen.Spec) bool {
 // exactly how stokaro/ptah#2736 arrived, as `read articles for verification:
 // column "embedding_generation" does not exist` about a column on
 // `article_vectors`.
+//
+// Schema-qualified, through the same helper the statements use, because the two
+// relations can differ by schema alone -- `alpha.articles` and `beta.articles`
+// are two tables, and naming them by their bare names would produce
+// `articles and articles`, which reads as a bug in the message rather than as
+// the two relations it is about. `ReadStructure` already names its subject this
+// way.
 func verificationSubject(spec embedgen.Spec) string {
+	source := qualify(spec.Source.Schema, spec.Source.Table)
 	if oneRelation(spec) {
-		return spec.Source.Table
+		return source
 	}
-	return spec.Source.Table + " and " + spec.Target.Table
+	return source + " and " + qualify(spec.Target.Schema, spec.Target.Table)
 }
 
 // oneRelationVerificationQuery renders the walk when both sides are one table.
