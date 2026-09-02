@@ -145,6 +145,64 @@ func (p Plan) digestComponents() []string {
 	return components
 }
 
+// IdentityLines are the facts an approver reads before signing this plan.
+//
+// They live here rather than in the command that writes the file because they
+// are a description of the PLAN, and the file format -- its header and where
+// the digest sits -- is the command's. What the command must not do is decide
+// which facts a signature is worth giving over.
+//
+// Every field the digest binds appears here, and that is the contract rather
+// than a convenience. An approval binds to the digest, so a fact the digest
+// covers and the file omits is a fact the approver signed for and could not
+// have read. Under policy.require_signed_approval the file WAS the whole of
+// what a person saw, and two plans differing only in whether both blocking
+// findings were accepted rendered byte-identical apart from the digest: the
+// `verification:` line named a report and read as evidence that it passed
+// (stokaro/ptah#2739).
+//
+// An empty list still writes its line. Silence about accepted findings is not
+// distinguishable from a file whose author had nothing to say, and the reader
+// deciding is the one who cannot tell.
+func (p Plan) IdentityLines() []string {
+	lines := []string{
+		"generation: " + p.Generation,
+		"replaces: " + p.Previous,
+		"target: " + p.Schema + "." + p.Table + "." + p.Column,
+		"prepared at: " + p.PreparedAt.UTC().Format(time.RFC3339Nano),
+		"verification report: " + p.Evidence.VerificationDigest,
+		"verification passed: " + strconv.FormatBool(p.Evidence.VerificationPassed),
+		"consistency mode: " + p.Evidence.ConsistencyMode,
+		"consistency watermark: " + p.Evidence.ConsistencyWatermark,
+		"index ready: " + strconv.FormatBool(p.Evidence.IndexReady),
+		"source mutable: " + strconv.FormatBool(p.Evidence.SourceMutable),
+	}
+	lines = append(lines, identityList("consistency blocker", p.Evidence.ConsistencyBlockers)...)
+	lines = append(lines, identityList("accepts blocking finding", p.Evidence.AcceptedFindings)...)
+	lines = append(lines, identityList("UNACCEPTED blocking finding", p.Evidence.UnacceptedFindings)...)
+	return lines
+}
+
+// identityList renders one of the evidence lists, sorted the way the digest
+// sorts it so the file and the number it carries describe the same plan.
+//
+// The label is repeated per element rather than written once above an indented
+// block: a reader scanning for what they are accepting sees it on the line that
+// says it, and a list that ran on past its heading cannot be misread as part of
+// the one before.
+func identityList(label string, values []string) []string {
+	if len(values) == 0 {
+		return []string{label + "s: none"}
+	}
+	sorted := append([]string(nil), values...)
+	sort.Strings(sorted)
+	lines := make([]string, 0, len(sorted))
+	for _, value := range sorted {
+		lines = append(lines, label+": "+value)
+	}
+	return lines
+}
+
 // PlanVersion is the schema version of the digest encoding above.
 //
 // It is in the digest so that a future change to what a plan binds cannot make

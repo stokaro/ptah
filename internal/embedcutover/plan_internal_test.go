@@ -51,6 +51,68 @@ func TestPlan_TheDigestCoversEveryFieldSeparately(t *testing.T) {
 	}
 }
 
+// TestPlan_TheSignedFileCoversEveryFieldSeparately is the digest test above,
+// asked of the thing a person actually reads.
+//
+// An approval binds to the digest, so any fact the digest distinguishes and the
+// FILE does not is a fact the approver signed for and could not have checked.
+// stokaro/ptah#2739 is what that looks like: two plans differing only in
+// whether both blocking findings were accepted rendered byte-identical apart
+// from the digest, and the line naming the verification report read as evidence
+// that verification passed.
+//
+// It reuses mutatedPlans deliberately. Two lists of what a plan binds would
+// drift, and the one that drifts is this one -- the digest has its own
+// enumeration test and the file had nothing.
+func TestPlan_TheSignedFileCoversEveryFieldSeparately(t *testing.T) {
+	base := samplePlan()
+	tests := mutatedPlans(base)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(test.plan.IdentityLines(), qt.Not(qt.DeepEquals), base.IdentityLines(),
+				qt.Commentf("changing %s left the signed file identical", test.name))
+		})
+	}
+}
+
+// TestPlan_AnEmptyEvidenceListStillSaysSo is the half a mutation cannot reach.
+//
+// Every mutation above changes a value, so a renderer that dropped empty lists
+// entirely would pass all of them. What it would produce is a file that says
+// nothing about accepted findings -- indistinguishable, to the person signing
+// it, from one whose author had nothing to say.
+func TestPlan_AnEmptyEvidenceListStillSaysSo(t *testing.T) {
+	c := qt.New(t)
+
+	lines := Plan{}.IdentityLines()
+
+	c.Assert(lines, qt.Contains, "accepts blocking findings: none")
+	c.Assert(lines, qt.Contains, "UNACCEPTED blocking findings: none")
+	c.Assert(lines, qt.Contains, "consistency blockers: none")
+}
+
+// TestPlan_AcceptedAndUnacceptedFindingsAreTold apart is the report the issue
+// opened on: the operator accepting both findings and the operator accepting
+// neither must not sign the same sentences.
+func TestPlan_AcceptedAndUnacceptedFindingsAreToldApart(t *testing.T) {
+	c := qt.New(t)
+	blocking := []string{"stale rows exceed the policy", "the index is not ready"}
+
+	accepted := samplePlan()
+	accepted.Evidence.AcceptedFindings = blocking
+	accepted.Evidence.UnacceptedFindings = nil
+
+	refused := samplePlan()
+	refused.Evidence.AcceptedFindings = nil
+	refused.Evidence.UnacceptedFindings = blocking
+
+	c.Assert(accepted.IdentityLines(), qt.Not(qt.DeepEquals), refused.IdentityLines())
+	c.Assert(accepted.IdentityLines(), qt.Contains, "accepts blocking finding: the index is not ready")
+	c.Assert(refused.IdentityLines(), qt.Contains, "UNACCEPTED blocking finding: the index is not ready")
+}
+
 // samplePlan is a plan with every field set to something distinguishable.
 func samplePlan() Plan {
 	return Plan{
