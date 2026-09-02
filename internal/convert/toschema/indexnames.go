@@ -91,11 +91,21 @@ type engineIndexNaming struct {
 	baseBytes int
 	// maxBytes is the longest index name the engine accepts.
 	maxBytes int
+	// functionalBase is the name the engine gives an index whose first key
+	// part is an expression, and the empty string where the engine has no such
+	// index at all.
+	//
+	// Measured on MySQL 8.4: `KEY ((a + 1))` becomes `functional_index`, and
+	// further unnamed ones become `functional_index_2` and `functional_index_3`
+	// -- the same `_N` walk every other derived name takes, so it is a base
+	// here rather than a rule of its own. MariaDB 11.8 answers `ERROR 1064` to
+	// the syntax, which is why its entry is empty (stokaro/ptah#2758).
+	functionalBase string
 }
 
 // mysqlNaming and mariaDBNaming are the two measured answers.
 var (
-	mysqlNaming   = engineIndexNaming{baseBytes: 61, maxBytes: 64}
+	mysqlNaming   = engineIndexNaming{baseBytes: 61, maxBytes: 64, functionalBase: "functional_index"}
 	mariaDBNaming = engineIndexNaming{maxBytes: 64}
 )
 
@@ -207,9 +217,12 @@ func claimIndexName(
 	}
 	candidate := firstIndexColumn(*index)
 	if candidate == "" {
+		candidate = naming.functionalBase
+	}
+	if candidate == "" {
 		return fmt.Errorf(
-			"%w: the index on %s starts with an expression, which MySQL names "+
-				"functional_index and MariaDB refuses outright",
+			"%w: the index on %s starts with an expression, which this engine "+
+				"has no functional index for",
 			ErrUnnamedIndex, table.Name)
 	}
 	name, err := derive(claimed, candidate, table, naming)

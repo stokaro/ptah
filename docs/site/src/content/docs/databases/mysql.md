@@ -51,6 +51,16 @@ SQL:
   INDEX` over a `POINT` column leaves `INDEX_TYPE=BTREE` on MariaDB 11.8 and
   `SPATIAL` on MySQL 8.4, so comparing an undeclared type would plan a rebuild
   on MySQL that MySQL immediately undoes.
+- A key part may be an expression on MySQL -- `KEY ((a + 1))`, a functional key
+  part -- and an unnamed one takes the name the server gives it,
+  `functional_index`, then `functional_index_2` and `functional_index_3`. Two
+  refusals go with it, and they are different facts rather than one rule:
+  MariaDB has no functional key parts at all and answers `ERROR 1064` to every
+  spelling, so the dialect decides; MySQL accepts them in an index and refuses
+  one in a `PRIMARY KEY` with `ERROR 3756`, so that refusal holds on both
+  engines. A functional part in a table-body `UNIQUE KEY` is refused here too,
+  which MySQL accepts: that form becomes a constraint, which has nowhere to
+  keep an expression, and stokaro/ptah#2793 carries it.
 - An inline `KEY`, `INDEX` or `UNIQUE KEY` the author did not name is read with
   the name its server would assign: the first key part's column, then `_2`,
   `_3` for a name already taken. A prefix length and a `DESC` direction stay
