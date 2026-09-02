@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -275,8 +276,7 @@ func generationFreshness(
 	return stale, missing, nil
 }
 
-// VerificationCorpus walks both sides of the comparison out of the source
-// table.
+// VerificationCorpus walks both sides of the comparison in one statement.
 //
 // One walk, because the two sides have to agree about which key a row is. Two
 // queries would let a row inserted between them appear on one side and not the
@@ -319,7 +319,7 @@ func VerificationCorpus(
 	// `if err := rows.Err()` after the loop.
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("read %s for verification: %w", spec.Source.Table, err)
+		return nil, fmt.Errorf("read %s for verification: %w", verificationSubject(spec), err)
 	}
 	scanner := newVerificationScanner(spec)
 	return func(yield func(embedverify.Pair, error) bool) {
@@ -335,7 +335,7 @@ func VerificationCorpus(
 			}
 		}
 		if err := rows.Err(); err != nil {
-			yield(embedverify.Pair{}, fmt.Errorf("read %s for verification: %w", spec.Source.Table, err))
+			yield(embedverify.Pair{}, fmt.Errorf("read %s for verification: %w", verificationSubject(spec), err))
 		}
 	}, nil
 }
@@ -367,7 +367,60 @@ func storedWidthExpression(representation, column string) string {
 }
 
 // verificationQuery renders the one walk over both sides.
+//
+// Which shape it renders depends on whether the specification's two sides name
+// one relation or two, and that is the whole of stokaro/ptah#2736: the
+// single-relation query reads the target's four state columns off the source
+// table, which is correct exactly when they are the same table and a missing
+// column when they are not. `verify`, `status` and the cutover they gate all
+// died with `column "embedding_generation" does not exist` on a specification
+// that kept its vectors out of the hot table -- a shape `prepare`, `backfill`,
+// `catchup` and `index` all accept, and one an outbox belongs to the source
+// half of.
 func verificationQuery(spec embedgen.Spec, source *Source) (string, error) {
+	if oneRelation(spec) {
+		return oneRelationVerificationQuery(spec, source), nil
+	}
+	return joinedVerificationQuery(spec, source), nil
+}
+
+// oneRelation reports whether the specification's two sides name one relation.
+//
+// Compared as it is written rather than as the server would resolve it: an
+// unqualified name means the connection's own search_path, and this has no
+// connection to ask. Two spellings of one relation therefore take the joined
+// shape, which reads that relation twice and answers identically -- a full
+// outer join of a table to itself on its own key is the identity. The mistake
+// in the other direction is the one with no recovery, because it reads one
+// table's columns off another.
+func oneRelation(spec embedgen.Spec) bool {
+	return strings.TrimSpace(spec.Source.Schema) == strings.TrimSpace(spec.Target.Schema) &&
+		spec.Source.Table == spec.Target.Table
+}
+
+// verificationSubject names what the walk reads, for a diagnostic.
+//
+// Both relations when the specification names two. The error a failed read
+// carries is usually about a column, and a message naming one table for a
+// column that lives on the other sends the reader to the wrong `\d`: that is
+// exactly how stokaro/ptah#2736 arrived, as `read articles for verification:
+// column "embedding_generation" does not exist` about a column on
+// `article_vectors`.
+func verificationSubject(spec embedgen.Spec) string {
+	if oneRelation(spec) {
+		return spec.Source.Table
+	}
+	return spec.Source.Table + " and " + spec.Target.Table
+}
+
+// oneRelationVerificationQuery renders the walk when both sides are one table.
+//
+// Kept beside the joined shape rather than folded into it because a
+// verification is the one read proportional to the corpus (stokaro/ptah#2621),
+// and this is the overwhelmingly common specification: making it join a
+// million-row table to itself to reach an identical answer would be a cost paid
+// on every run for a generality this case does not have.
+func oneRelationVerificationQuery(spec embedgen.Spec, source *Source) string {
 	keys := quoteAll(spec.Source.KeyFields)
 	columns := append([]string(nil), castToText(keys)...)
 	columns = append(columns, quoteAll(spec.Source.InputFields)...)
@@ -410,7 +463,158 @@ func verificationQuery(spec embedgen.Spec, source *Source) (string, error) {
 	if filter != "" {
 		query += " WHERE (" + filter + ") OR " + generationColumn + " IS NOT NULL"
 	}
-	return query + " ORDER BY " + strings.Join(keys, ", "), nil
+	return query + " ORDER BY " + strings.Join(keys, ", ")
+}
+
+// The column names the joined walk gives itself.
+//
+// Every expression either side selects is aliased to one of these, so the two
+// derived tables publish no name the specification chose. A source column
+// called `in_scope`, or one whose name collides with a target state column,
+// would otherwise make `s.in_scope` ambiguous and refuse the whole read -- and
+// the specification is where those names come from, so there is no name here
+// that a table could not already have.
+const (
+	scopeAlias          = "ptah_in_scope"
+	generationAlias     = "ptah_generation"
+	inputHashAlias      = "ptah_input_hash"
+	targetVersionAlias  = "ptah_target_version"
+	stateAlias          = "ptah_state"
+	storedWidthAlias    = "ptah_stored_width"
+	keyAliasPrefix      = "ptah_key_"
+	inputFieldPrefix    = "ptah_input_"
+	sourceVersionPrefix = "ptah_source_version_"
+	sourceSide          = "s"
+	targetSide          = "t"
+)
+
+// aliasAt names one member of a list the join carries positionally.
+func aliasAt(prefix string, index int) string {
+	return prefix + strconv.Itoa(index)
+}
+
+// coalescedKeys is the key each output row is identified by.
+//
+// A full outer join produces rows the source did not have and rows the target
+// did not have, so neither side's key column is present on every row. The pair
+// the scanner builds carries ONE key for both halves, which the join condition
+// makes sound: where both sides are present their keys are equal.
+func coalescedKeys(keys []string) []string {
+	coalesced := make([]string, len(keys))
+	for index := range keys {
+		alias := aliasAt(keyAliasPrefix, index)
+		coalesced[index] = fmt.Sprintf("COALESCE(%s.%s, %s.%s)", sourceSide, alias, targetSide, alias)
+	}
+	return coalesced
+}
+
+// joinedVerificationQuery renders the walk when the two sides are two tables.
+//
+// A full outer join and not a left one. Verification has to see a target row
+// whose key the source no longer has -- catch-up writes tombstones, a delete
+// leaves a vector behind, and `embedverify` reports both -- so dropping the
+// unmatched target side would answer that a generation is clean by not looking
+// at the rows that are not.
+//
+// The join is on the keys AS TEXT, which is exactly how the write path
+// addresses a target row: `Target.upsertStatement` renders
+// `<key>::text = $n` against values the scan produced the same way. A join that
+// matched rows the writer cannot address would report coverage for vectors that
+// could never have been written there.
+func joinedVerificationQuery(spec embedgen.Spec, source *Source) string {
+	keys := coalescedKeys(spec.Source.KeyFields)
+	columns := append([]string(nil), keys...)
+	for index := range spec.Source.InputFields {
+		columns = append(columns, sourceSide+"."+aliasAt(inputFieldPrefix, index))
+	}
+	for index := range source.versionColumns() {
+		columns = append(columns, sourceSide+"."+aliasAt(sourceVersionPrefix, index))
+	}
+	scope := fmt.Sprintf("COALESCE(%s.%s, FALSE)", sourceSide, scopeAlias)
+	columns = append(columns,
+		targetSide+"."+generationAlias, targetSide+"."+inputHashAlias,
+		targetSide+"."+targetVersionAlias, targetSide+"."+stateAlias,
+		targetSide+"."+storedWidthAlias,
+		// A row only the target has is not one the specification asked for: its
+		// source columns are absent, so a literal TRUE here would hand the
+		// scanner a source row made of nulls and the verification would demand
+		// a vector for a key the source does not hold.
+		scope)
+
+	on := make([]string, 0, len(spec.Source.KeyFields))
+	for index := range spec.Source.KeyFields {
+		alias := aliasAt(keyAliasPrefix, index)
+		on = append(on, fmt.Sprintf("%s.%s = %s.%s", sourceSide, alias, targetSide, alias))
+	}
+
+	// #nosec G201 -- PostgreSQL takes no bind parameter for a relation or
+	// column name; the identifiers come from the specification and go through
+	// quoteIdentifier, and every alias here is this package's own literal.
+	query := fmt.Sprintf("SELECT %s FROM %s %s FULL OUTER JOIN %s %s ON %s",
+		strings.Join(columns, ", "),
+		verificationSourceSide(spec, source), sourceSide,
+		verificationTargetSide(spec), targetSide,
+		strings.Join(on, " AND "))
+	if strings.TrimSpace(spec.Source.Filter) != "" {
+		query += fmt.Sprintf(" WHERE %s OR %s.%s IS NOT NULL", scope, targetSide, generationAlias)
+	}
+	return query + " ORDER BY " + strings.Join(keys, ", ")
+}
+
+// verificationSourceSide is the source half of the join, as a derived table.
+//
+// The filter is evaluated here rather than in the outer WHERE because that is
+// where the source's own columns are in scope; what leaves this subquery is one
+// boolean saying whether the specification asks for the row.
+func verificationSourceSide(spec embedgen.Spec, source *Source) string {
+	selected := make([]string, 0, len(spec.Source.KeyFields)+len(spec.Source.InputFields)+2)
+	for index, key := range spec.Source.KeyFields {
+		selected = append(selected,
+			quoteIdentifier(key)+"::text AS "+aliasAt(keyAliasPrefix, index))
+	}
+	for index, field := range spec.Source.InputFields {
+		selected = append(selected,
+			quoteIdentifier(field)+" AS "+aliasAt(inputFieldPrefix, index))
+	}
+	for index, field := range source.versionColumns() {
+		selected = append(selected,
+			quoteIdentifier(field)+" AS "+aliasAt(sourceVersionPrefix, index))
+	}
+	scope := "TRUE"
+	if filter := strings.TrimSpace(spec.Source.Filter); filter != "" {
+		scope = "(" + filter + ")"
+	}
+	selected = append(selected, scope+" AS "+scopeAlias)
+	// #nosec G201 -- as verificationQuery: identifiers from the specification
+	// through quoteIdentifier, aliases this package's own literals.
+	return fmt.Sprintf("(SELECT %s FROM %s)",
+		strings.Join(selected, ", "), source.qualifiedTable())
+}
+
+// verificationTargetSide is the target half, carrying the four state columns
+// and the width of the vector standing at the key.
+//
+// It selects the key by the SOURCE's key field names, because that is what the
+// write path addresses a target row by: a target table is a relation carrying
+// the same key, which is what makes an `UPDATE ... WHERE key = $n` reach the
+// row a source row's vector belongs to.
+func verificationTargetSide(spec embedgen.Spec) string {
+	column := spec.Target.Column
+	selected := make([]string, 0, len(spec.Source.KeyFields)+5)
+	for index, key := range spec.Source.KeyFields {
+		selected = append(selected,
+			quoteIdentifier(key)+"::text AS "+aliasAt(keyAliasPrefix, index))
+	}
+	selected = append(selected,
+		quoteIdentifier(column+GenerationSuffix)+" AS "+generationAlias,
+		quoteIdentifier(column+InputHashSuffix)+" AS "+inputHashAlias,
+		quoteIdentifier(column+VersionSuffix)+" AS "+targetVersionAlias,
+		quoteIdentifier(column+StateSuffix)+" AS "+stateAlias,
+		storedWidthExpression(spec.Target.Representation, column)+" AS "+storedWidthAlias)
+	// #nosec G201 -- as verificationQuery: identifiers from the specification
+	// through quoteIdentifier, aliases this package's own literals.
+	return fmt.Sprintf("(SELECT %s FROM %s)",
+		strings.Join(selected, ", "), qualify(spec.Target.Schema, spec.Target.Table))
 }
 
 // verificationScanner reads result rows into storage it reuses.
