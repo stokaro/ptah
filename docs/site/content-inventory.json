@@ -1986,7 +1986,9 @@
         "/inference/concepts/consistency/",
         "/inference/guides/resume-and-recover/"
       ],
-      "inboundLinks": [],
+      "inboundLinks": [
+        "/inference/troubleshooting/"
+      ],
       "visibleWords": 588,
       "sourceBytes": 4121
     },
@@ -2880,6 +2882,7 @@
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
+        "/inference/concepts/lifecycle/",
         "/inference/guides/resume-and-recover/",
         "/inference/guides/rollback-and-retire/",
         "/inference/reference/specification/",
@@ -2889,8 +2892,8 @@
         "/inference/overview/",
         "/operate/troubleshooting/"
       ],
-      "visibleWords": 935,
-      "sourceBytes": 6521
+      "visibleWords": 1093,
+      "sourceBytes": 7502
     },
     {
       "path": "docs/site/src/content/docs/operate/ai-agent-changes.md",

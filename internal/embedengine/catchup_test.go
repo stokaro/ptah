@@ -147,13 +147,21 @@ func livingRows(keys ...string) *fakeRereader {
 	return reader
 }
 
-// caughtUp runs a catch-up over a harness whose run already has a boundary.
+// caughtUp runs a catch-up over a harness whose run has a boundary and a
+// finished backfill.
+//
+// The phase is set here rather than left at the harness default, and that is
+// the fixture repair stokaro/ptah#2737 needed: newHarness creates the run at
+// `backfilling`, so every test in this file used to catch up over a run whose
+// snapshot walk had not finished. That is the state the engine had no business
+// serving, and twenty-odd tests documented it as ordinary.
 func caughtUp(
 	c *qt.C, h *harness, changes *fakeChanges, source *fakeRereader,
 ) (embedrun.Run, embedrun.Progress, error) {
 	c.Helper()
 	stored, err := h.store.Run(context.Background(), "run-1")
 	c.Assert(err, qt.IsNil)
+	stored.Phase = embedrun.PhaseBackfilled
 	stored.SnapshotWatermark = "100"
 	c.Assert(h.store.SaveRun(context.Background(), stored), qt.IsNil)
 	return h.engine.CatchUp(context.Background(), "run-1", changes, source)
@@ -232,6 +240,7 @@ func TestCatchUp_APageCutInsideATransactionStillProcessesTheRest(t *testing.T) {
 
 	stored, err := h.store.Run(context.Background(), "run-1")
 	c.Assert(err, qt.IsNil)
+	stored.Phase = embedrun.PhaseBackfilled
 	stored.SnapshotWatermark = "100"
 	c.Assert(h.store.SaveRun(context.Background(), stored), qt.IsNil)
 	run, _, err := h.engine.CatchUp(context.Background(), "run-1", changes, livingRows("1", "2", "3"))
@@ -261,6 +270,7 @@ func TestCatchUp_ATransactionSpanningManyPagesLosesNothing(t *testing.T) {
 
 	stored, err := h.store.Run(context.Background(), "run-1")
 	c.Assert(err, qt.IsNil)
+	stored.Phase = embedrun.PhaseBackfilled
 	stored.SnapshotWatermark = "100"
 	c.Assert(h.store.SaveRun(context.Background(), stored), qt.IsNil)
 	run, _, err := h.engine.CatchUp(context.Background(), "run-1", log, livingRows(want...))
@@ -290,6 +300,7 @@ func TestCatchUp_APageEndingOnATransactionEdgeResumesAtTheNextOne(t *testing.T) 
 
 	stored, err := h.store.Run(context.Background(), "run-1")
 	c.Assert(err, qt.IsNil)
+	stored.Phase = embedrun.PhaseBackfilled
 	stored.SnapshotWatermark = "100"
 	c.Assert(h.store.SaveRun(context.Background(), stored), qt.IsNil)
 	run, _, err := h.engine.CatchUp(context.Background(), "run-1", changes, livingRows("1", "2", "3"))
@@ -319,8 +330,16 @@ func embeddedKeys(commits []commit) []string {
 func TestCatchUp_RefusesToStartWithoutABoundary(t *testing.T) {
 	c := qt.New(t)
 	h := newHarness(c, defaultBounds())
+	// Backfilled, so the phase guard is satisfied and this asserts the boundary
+	// guard alone. A run that reached this phase always has a watermark, so the
+	// state is one only corruption produces -- which is what makes it worth
+	// refusing separately rather than folding into the phase question.
+	stored, err := h.store.Run(context.Background(), "run-1")
+	c.Assert(err, qt.IsNil)
+	stored.Phase = embedrun.PhaseBackfilled
+	c.Assert(h.store.SaveRun(context.Background(), stored), qt.IsNil)
 
-	_, _, err := h.engine.CatchUp(context.Background(), "run-1",
+	_, _, err = h.engine.CatchUp(context.Background(), "run-1",
 		&fakeChanges{}, livingRows())
 
 	c.Assert(err, qt.ErrorMatches,
@@ -419,6 +438,7 @@ func TestCatchUp_AWatermarkAlreadyAtTheHorizonWritesNothing(t *testing.T) {
 	h := newHarness(c, defaultBounds())
 	stored, err := h.store.Run(context.Background(), "run-1")
 	c.Assert(err, qt.IsNil)
+	stored.Phase = embedrun.PhaseBackfilled
 	stored.SnapshotWatermark = "100"
 	stored.CatchUpWatermark = "500"
 	c.Assert(h.store.SaveRun(context.Background(), stored), qt.IsNil)
@@ -455,6 +475,7 @@ func TestCatchUp_TheWatermarkIsATransactionAndNotAKey(t *testing.T) {
 	h := newHarness(c, defaultBounds())
 	stored, err := h.store.Run(context.Background(), "run-1")
 	c.Assert(err, qt.IsNil)
+	stored.Phase = embedrun.PhaseBackfilled
 	stored.SnapshotWatermark = "100"
 	stored.Cursor = []string{"4"}
 	c.Assert(h.store.SaveRun(context.Background(), stored), qt.IsNil)
@@ -527,6 +548,7 @@ func TestCatchUp_AResumedRunStartsFromItsOwnWatermark(t *testing.T) {
 	h := newHarness(c, defaultBounds())
 	stored, err := h.store.Run(context.Background(), "run-1")
 	c.Assert(err, qt.IsNil)
+	stored.Phase = embedrun.PhaseBackfilled
 	stored.SnapshotWatermark = "100"
 	stored.CatchUpWatermark = "300"
 	c.Assert(h.store.SaveRun(context.Background(), stored), qt.IsNil)
