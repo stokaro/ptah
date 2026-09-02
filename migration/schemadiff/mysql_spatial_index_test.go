@@ -76,7 +76,10 @@ func TestCompareWithDialect_MariaDBSpatialAgainstPlainIsAChange(t *testing.T) {
 			c := qt.New(t)
 
 			diff := schemadiff.CompareWithDialect(
-				spatialDesiredSchema("SPATIAL"), spatialDatabaseSchema("BTREE"), test.dialect)
+				spatialDesiredSchema("SPATIAL"),
+				spatialDatabaseSchema("BTREE"),
+				test.dialect,
+			)
 
 			c.Assert(diff.HasChanges(), qt.IsTrue,
 				qt.Commentf("a BTREE index does not satisfy a requested SPATIAL index: %+v", diff))
@@ -109,7 +112,10 @@ func TestCompareWithDialect_MariaDBMatchingSpatialIndexesAreSynced(t *testing.T)
 			c := qt.New(t)
 
 			diff := schemadiff.CompareWithDialect(
-				spatialDesiredSchema("SPATIAL"), spatialDatabaseSchema("SPATIAL"), test.dialect)
+				spatialDesiredSchema("SPATIAL"),
+				spatialDatabaseSchema("SPATIAL"),
+				test.dialect,
+			)
 
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 		})
@@ -140,7 +146,10 @@ func TestCompareWithDialect_MariaDBAPlainIndexIsSyncedAgainstAnyReportedMethod(t
 			c := qt.New(t)
 
 			diff := schemadiff.CompareWithDialect(
-				spatialDesiredSchema(""), spatialDatabaseSchema(test.method), "mariadb")
+				spatialDesiredSchema(""),
+				spatialDatabaseSchema(test.method),
+				"mariadb",
+			)
 
 			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("round-trip diff: %+v", diff))
 		})

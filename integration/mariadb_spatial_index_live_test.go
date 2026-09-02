@@ -56,10 +56,14 @@ func TestMariaDBSpatialIndexIsNotSatisfiedByBTreeLive(t *testing.T) {
 	// trip through whatever the renderer writes, and a reader defect stays
 	// invisible against a fixture the renderer wrote.
 	_, err = adminDB.ExecContext(ctx, fmt.Sprintf(
-		"CREATE TABLE `%s`.`geo` (`id` BIGINT NOT NULL PRIMARY KEY, `location` POINT NOT NULL)", name))
+		"CREATE TABLE `%s`.`geo` (`id` BIGINT NOT NULL PRIMARY KEY, `location` POINT NOT NULL)",
+		name,
+	))
 	c.Assert(err, qt.IsNil)
 	_, err = adminDB.ExecContext(ctx, fmt.Sprintf(
-		"CREATE INDEX `sx_geo_location` ON `%s`.`geo` (`location`)", name))
+		"CREATE INDEX `sx_geo_location` ON `%s`.`geo` (`location`)",
+		name,
+	))
 	c.Assert(err, qt.IsNil)
 
 	// What the catalog says, before Ptah is asked. Without it the assertions
@@ -87,7 +91,9 @@ func TestMariaDBSpatialIndexIsNotSatisfiedByBTreeLive(t *testing.T) {
 	_, err = adminDB.ExecContext(ctx, fmt.Sprintf("DROP INDEX `sx_geo_location` ON `%s`.`geo`", name))
 	c.Assert(err, qt.IsNil)
 	_, err = adminDB.ExecContext(ctx, fmt.Sprintf(
-		"CREATE SPATIAL INDEX `sx_geo_location` ON `%s`.`geo` (`location`)", name))
+		"CREATE SPATIAL INDEX `sx_geo_location` ON `%s`.`geo` (`location`)",
+		name,
+	))
 	c.Assert(err, qt.IsNil)
 	c.Assert(mariaDBIndexType(c, ctx, adminDB, name), qt.Equals, "SPATIAL")
 
@@ -182,11 +188,15 @@ func TestMySQLPromotedSpatialIndexStaysSyncedLive(t *testing.T) {
 
 	_, err = adminDB.ExecContext(ctx, fmt.Sprintf(
 		"CREATE TABLE `%s`.`geo` "+
-			"(`id` BIGINT NOT NULL PRIMARY KEY, `location` POINT NOT NULL SRID 0)", name))
+			"(`id` BIGINT NOT NULL PRIMARY KEY, `location` POINT NOT NULL SRID 0)",
+		name,
+	))
 	c.Assert(err, qt.IsNil)
 	// The plain spelling. What the server makes of it is the point.
 	_, err = adminDB.ExecContext(ctx, fmt.Sprintf(
-		"CREATE INDEX `sx_geo_location` ON `%s`.`geo` (`location`)", name))
+		"CREATE INDEX `sx_geo_location` ON `%s`.`geo` (`location`)",
+		name,
+	))
 	c.Assert(err, qt.IsNil)
 	c.Assert(mariaDBIndexType(c, ctx, adminDB, name), qt.Equals, "SPATIAL",
 		qt.Commentf("this control is about MySQL's promotion; without it the test measures nothing"))
