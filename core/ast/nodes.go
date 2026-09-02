@@ -138,10 +138,10 @@ type CreateTableNode struct {
 // policy, for the same reason.
 type RowDeletionPolicySpec struct {
 	// Column is the timestamp column the interval is measured from.
-	Column string
+	Column string `json:"column,omitempty"`
 	// Interval is the interval literal, without the INTERVAL keyword and
 	// without quotes: `30 days`.
-	Interval string
+	Interval string `json:"interval,omitempty"`
 }
 
 // IsZero reports whether this is a policy at all. Nil is zero, and so is a spec
@@ -178,7 +178,7 @@ func (s *RowDeletionPolicySpec) Clone() *RowDeletionPolicySpec {
 type RowTTLSpec struct {
 	// ExpirationExpression is `ttl_expiration_expression`, the SQL expression
 	// whose value is when a row expires.
-	ExpirationExpression string
+	ExpirationExpression string `json:"expiration_expression,omitempty"`
 	// ExpireAfter is `ttl_expire_after`, the interval after a row is written
 	// at which it expires.
 	//
@@ -187,7 +187,7 @@ type RowTTLSpec struct {
 	// `72 hours` reads back as `72:00:00`. Comparison goes through
 	// [go.5x5.cz/ptah/internal/crdbinterval], which reads both sides into the
 	// value they denote (stokaro/ptah#1605).
-	ExpireAfter string
+	ExpireAfter string `json:"expire_after,omitempty"`
 	// RowStatsPollInterval is `ttl_row_stats_poll_interval`, how often the TTL
 	// job refreshes its row-count estimate.
 	//
@@ -195,23 +195,23 @@ type RowTTLSpec struct {
 	// the duration to whole seconds and stores it in Go's duration form, so
 	// `600s` reads back as `10m0s`. Comparison goes through
 	// [go.5x5.cz/ptah/internal/crdbduration] (stokaro/ptah#1721).
-	RowStatsPollInterval string
+	RowStatsPollInterval string `json:"row_stats_poll_interval,omitempty"`
 	// JobCron is `ttl_job_cron`.
-	JobCron string
+	JobCron string `json:"job_cron,omitempty"`
 	// SelectBatchSize is `ttl_select_batch_size`.
-	SelectBatchSize *int64
+	SelectBatchSize *int64 `json:"select_batch_size,omitempty"`
 	// DeleteBatchSize is `ttl_delete_batch_size`.
-	DeleteBatchSize *int64
+	DeleteBatchSize *int64 `json:"delete_batch_size,omitempty"`
 	// SelectRateLimit is `ttl_select_rate_limit`.
-	SelectRateLimit *int64
+	SelectRateLimit *int64 `json:"select_rate_limit,omitempty"`
 	// DeleteRateLimit is `ttl_delete_rate_limit`.
-	DeleteRateLimit *int64
+	DeleteRateLimit *int64 `json:"delete_rate_limit,omitempty"`
 	// Pause is `ttl_pause`.
-	Pause *bool
+	Pause *bool `json:"pause,omitempty"`
 	// LabelMetrics is `ttl_label_metrics`.
-	LabelMetrics *bool
+	LabelMetrics *bool `json:"label_metrics,omitempty"`
 	// DisableChangefeedReplication is `ttl_disable_changefeed_replication`.
-	DisableChangefeedReplication *bool
+	DisableChangefeedReplication *bool `json:"disable_changefeed_replication,omitempty"`
 }
 
 // SQLite virtual-table option keys for CreateTableNode.Options.
@@ -2163,20 +2163,20 @@ type CreateMaterializedViewNode struct {
 type MatViewRefreshSpec struct {
 	// Mode is EVERY, which refreshes on a wall-clock schedule, or AFTER, which
 	// refreshes that long after the previous run finished.
-	Mode string
+	Mode string `json:"mode,omitempty"`
 	// Interval is the schedule, in the server's spelling: `1 HOUR`,
 	// `1 MINUTE 30 SECOND`, `1 YEAR 6 MONTH`.
-	Interval string
+	Interval string `json:"interval,omitempty"`
 	// Offset shifts an EVERY schedule within its period. It is empty for AFTER,
 	// which the server refuses to combine with one.
-	Offset string
+	Offset string `json:"offset,omitempty"`
 	// Randomize spreads the refresh over a window, the RANDOMIZE FOR clause.
-	Randomize string
+	Randomize string `json:"randomize,omitempty"`
 	// DependsOn names the views this one refreshes after, schema-qualified the
 	// way the server stores them.
-	DependsOn []string
+	DependsOn []string `json:"depends_on,omitempty"`
 	// Append adds each refresh's rows instead of replacing the previous ones.
-	Append bool
+	Append bool `json:"append,omitempty"`
 }
 
 // Clone returns a deep copy, so a spec handed to a diff cannot be mutated

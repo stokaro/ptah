@@ -206,10 +206,10 @@ func ParseKind(token string) (Kind, error) {
 // a kind is a complete, valid record -- and neither changes what a comparator
 // may do. They change what it can say (stokaro/ptah#1346).
 type Object struct {
-	Kind       Kind
-	Name       string
-	Reason     Reason
-	Provenance Provenance
+	Kind       Kind       `json:"kind"`
+	Name       string     `json:"name"`
+	Reason     Reason     `json:"reason"`
+	Provenance Provenance `json:"provenance"`
 }
 
 // Refused is the record a reader makes when the target would not let it look:
@@ -255,7 +255,7 @@ func (o Object) Validate() error {
 type Set struct {
 	// Objects names what the description does not claim to describe. A record
 	// with an empty name covers its whole kind.
-	Objects []Object
+	Objects []Object `json:"objects"`
 }
 
 // IsZero reports whether the description claims to describe everything.
