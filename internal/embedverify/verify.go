@@ -315,10 +315,13 @@ func walkCorpus(report *Report, expectation Expectation, corpus Corpus) error {
 // grows with the corpus except a finding list, and a corpus that produced an
 // unbounded one is a corpus where every row is wrong.
 type corpusWalk struct {
-	expectation Expectation
-	sourceRows  int
-	targetRows  int
-	skipped     int
+	expectation    Expectation
+	sourceRows     int
+	targetRows     int
+	targetVectors  int
+	tombstones     int
+	skippedTargets int
+	skipped        int
 	// lastKey is the previous STORED row's key, and haveLast says whether there
 	// was one. A source-only position leaves both alone, so a key stored twice
 	// is still adjacent across one.
@@ -347,6 +350,7 @@ func (w *corpusWalk) take(pair Pair) {
 	}
 	if pair.Target != nil {
 		w.targetRows++
+		w.takeTargetShape(*pair.Target)
 		w.takeDuplicate(*pair.Target)
 		w.takeVector(*pair.Target)
 		if pair.Source == nil {
@@ -355,6 +359,23 @@ func (w *corpusWalk) take(pair Pair) {
 	}
 	if pair.Source != nil {
 		w.takeCoverage(*pair.Source, pair.Target)
+	}
+}
+
+// takeTargetShape counts what one stored row actually holds.
+//
+// By the row's own flags rather than as a partition of targetRows: a tombstone
+// that still holds a vector is both, and it is a finding rather than a category
+// to pick between (stokaro/ptah#2734).
+func (w *corpusWalk) takeTargetShape(row TargetRow) {
+	if row.Dimension > 0 {
+		w.targetVectors++
+	}
+	if row.Tombstone {
+		w.tombstones++
+	}
+	if row.Skipped {
+		w.skippedTargets++
 	}
 }
 
@@ -438,6 +459,9 @@ func (w *corpusWalk) takeVector(row TargetRow) {
 func (w *corpusWalk) report(report *Report) {
 	report.SourceRows = w.sourceRows
 	report.TargetRows = w.targetRows
+	report.TargetVectors = w.targetVectors
+	report.Tombstones = w.tombstones
+	report.SkippedTargets = w.skippedTargets
 	if w.duplicates.total > 0 {
 		report.addf(LayerCoverage, Blocking, w.duplicates.total, w.duplicates.kept,
 			"%d target keys appear more than once", w.duplicates.total)

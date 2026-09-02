@@ -188,10 +188,44 @@ func recordVerification(ctx context.Context, options commonOptions, generation s
 	return opened.store.RecordVerification(ctx, generation, time.Now().UTC())
 }
 
+// targetShapeText explains a target-row count that is not a vector count.
+//
+// The header printed the walk's target-row total on its own, and a reader took
+// it for the number of vectors: `2 source rows, 3 target rows` sat beside a
+// column holding two, after catch-up tombstoned a row through Ptah's own verbs
+// (stokaro/ptah#2742). A tombstone occupies a position and holds nothing, and
+// so does a skip.
+//
+// The total is kept rather than replaced. It is the shape the verification
+// record stores, and a header that quietly reported a different number would
+// disagree with the evidence file beside it. What was missing is why the two
+// differ, so the breakdown is appended and nothing is taken away.
+//
+// It names the deliberate absences and is not a partition. A row nothing ever
+// wrote holds no vector and carries neither flag, so it is part of the
+// difference and not part of the breakdown -- the coverage layer reports it as
+// a finding, which is where a reader should be sent for it.
+//
+// Silent when there is nothing to explain: on a healthy generation every target
+// row holds a vector, and "(2 with a vector)" after "2 target rows" is noise.
+func targetShapeText(report embedverify.Report) string {
+	if report.TargetVectors == report.TargetRows {
+		return ""
+	}
+	parts := []string{fmt.Sprintf("%d with a vector", report.TargetVectors)}
+	if report.Tombstones > 0 {
+		parts = append(parts, fmt.Sprintf("%d tombstoned", report.Tombstones))
+	}
+	if report.SkippedTargets > 0 {
+		parts = append(parts, fmt.Sprintf("%d skipped", report.SkippedTargets))
+	}
+	return " (" + strings.Join(parts, ", ") + ")"
+}
+
 // printReport renders a verification report.
 func printReport(out io.Writer, report embedverify.Report) error {
-	lines := []string{fmt.Sprintf("generation %s: %d source rows, %d target rows",
-		report.Generation, report.SourceRows, report.TargetRows)}
+	lines := []string{fmt.Sprintf("generation %s: %d source rows, %d target rows%s",
+		report.Generation, report.SourceRows, report.TargetRows, targetShapeText(report))}
 	for _, finding := range report.Findings {
 		lines = append(lines, bullet(fmt.Sprintf("[%s/%s] %s",
 			finding.Layer, finding.Severity, finding.Summary)))
