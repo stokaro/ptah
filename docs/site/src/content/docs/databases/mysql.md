@@ -62,6 +62,14 @@ SQL:
   `ERROR 1061 Duplicate key name`, so accepting it would describe a table
   neither can create. `KEY (a), KEY a (b)` is that shape: the unnamed index
   takes `a` as soon as it is read, and the later explicit `a` collides with it.
+- A table body declares a spatial or full-text index as
+  `{SPATIAL|FULLTEXT} [INDEX|KEY] [name] (columns)`, and every optional part of
+  that is optional here too — `FULLTEXT (bio)` is as readable as
+  `FULLTEXT INDEX ft_bio (bio)`. The `WITH PARSER <name>` clause travels with
+  it. `KEY` matters as much as `INDEX`: both dump tools normalize to it, so a
+  table written with `FULLTEXT INDEX` comes back out of `mysqldump` as
+  `FULLTEXT KEY`. An index left unnamed takes the name its server would give
+  it, by the rule above.
 - DDL commits implicitly on both engines, so a failed migration cannot be
   rolled back by the surrounding transaction.
 
