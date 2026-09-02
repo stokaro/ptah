@@ -6,6 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/parser"
 )
 
 // TestParse_MySQLTypedIndexAcceptsIndexAndKey_HappyPath covers
@@ -295,6 +297,49 @@ func TestParse_MySQLTypedIndexOmitsTheKeyword(t *testing.T) {
 			c.Assert(table.Indexes[0].Type, qt.Equals, test.wantType)
 			c.Assert(table.Indexes[0].Columns, qt.DeepEquals, test.wantColumns)
 			c.Assert(table.Indexes[0].Unique, qt.IsFalse)
+		})
+	}
+}
+
+// TestParse_MySQLIndexParserBelongsToFulltext_FailurePath keeps the clause with
+// the index type that has it.
+//
+// `WITH PARSER` is FULLTEXT's alone. Measured on MySQL 26.7 and MariaDB 12.3,
+// both answer `ERROR 1064` to `KEY k (a) WITH PARSER ngram`, so reading it
+// anywhere else would accept a document neither engine takes -- and because
+// the renderer emits the clause from a non-empty Parser without asking about
+// the type, the run would then write DDL neither engine takes either. Ignoring
+// the clause instead of refusing it would be the same defect one layer quieter.
+func TestParse_MySQLIndexParserBelongsToFulltext_FailurePath(t *testing.T) {
+	tests := []struct {
+		name    string
+		sql     string
+		wantErr string
+	}{
+		{
+			name:    "an ordinary index",
+			sql:     "CREATE TABLE t (id BIGINT PRIMARY KEY, a VARCHAR(50), KEY k (a) WITH PARSER ngram);",
+			wantErr: `WITH PARSER belongs to a FULLTEXT index, and this one is an ordinary index`,
+		},
+		{
+			name:    "a spatial index",
+			sql:     "CREATE TABLE t (id BIGINT PRIMARY KEY, g GEOMETRY NOT NULL, SPATIAL KEY k (g) WITH PARSER ngram);",
+			wantErr: `WITH PARSER belongs to a FULLTEXT index, and this one is SPATIAL`,
+		},
+		{
+			name:    "a unique constraint",
+			sql:     "CREATE TABLE t (id BIGINT PRIMARY KEY, a VARCHAR(50), UNIQUE KEY k (a) WITH PARSER ngram);",
+			wantErr: `WITH PARSER belongs to a FULLTEXT index, and this one is an ordinary index`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := parser.NewParser(test.sql, parser.WithDialect(platform.MySQL)).Parse()
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}
 }

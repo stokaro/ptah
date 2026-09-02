@@ -3405,15 +3405,22 @@ func (p *Parser) handleTableConstraintTypedIndex(constraint *ast.ConstraintNode)
 // indexed at all. Dropping it produced an index Ptah reported as matching while
 // it tokenized differently.
 //
+// The clause belongs to FULLTEXT alone, and anything else carrying it is
+// refused rather than ignored. Measured on MySQL 26.7 and MariaDB 12.3, both
+// answer `ERROR 1064` to `KEY k (a) WITH PARSER ngram`, so accepting it would
+// read a document neither engine takes -- and the renderer emits the clause
+// from a non-empty Parser without asking about the type, so the run would then
+// write DDL neither engine takes either.
+//
 // mysqldump writes the clause inside an executable comment,
 // `/*!50100 WITH PARSER `ngram` */`, which the MySQL and MariaDB lexers hand
 // back as ordinary tokens; a reader with no dialect sees an ordinary comment
-// and never reaches this. Both routes end here, so the clause is read once
-// rather than once per spelling.
+// and never reaches this (stokaro/ptah#2752). Both routes end here, so the
+// clause is read once rather than once per spelling.
 //
 // Absent, it answers the empty string, which is what every index that is not
 // full-text carries.
-func (p *Parser) handleTableIndexParser() (string, error) {
+func (p *Parser) handleTableIndexParser(indexMethod string) (string, error) {
 	p.skipWhitespace()
 	if p.current.Type != lexer.TokenIdentifier ||
 		!strings.EqualFold(p.current.Value, "WITH") {
@@ -3429,8 +3436,22 @@ func (p *Parser) handleTableIndexParser() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("expected a parser name after WITH PARSER: %w", err)
 	}
+	if !strings.EqualFold(indexMethod, "FULLTEXT") {
+		return "", fmt.Errorf(
+			"WITH PARSER belongs to a FULLTEXT index, and this one is %s",
+			describeIndexMethod(indexMethod))
+	}
 	p.skipWhitespace()
 	return name, nil
+}
+
+// describeIndexMethod names an index's access method for a diagnostic, and says
+// "an ordinary index" rather than printing an empty string for the plain one.
+func describeIndexMethod(indexMethod string) string {
+	if indexMethod == "" {
+		return "an ordinary index"
+	}
+	return indexMethod
 }
 
 // currentIsIndexKeyword reports whether the cursor sits on INDEX or KEY.
@@ -3774,7 +3795,7 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 		return nil, nil, err
 	}
 
-	parserName, err := p.handleTableIndexParser()
+	parserName, err := p.handleTableIndexParser(indexMethod)
 	if err != nil {
 		return nil, nil, err
 	}
