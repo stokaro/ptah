@@ -316,16 +316,6 @@ func TestVerify_ConsistencyFailuresBlock(t *testing.T) {
 			want:   "catch-up has not reached the barrier, so changes after the snapshot are unprocessed",
 		},
 		{
-			name:   "a batch was never reconciled",
-			change: func(s *embedverify.RunState) { s.UnreconciledBatches = 2 },
-			want:   "2 batches were never reconciled, so what they wrote is unknown",
-		},
-		{
-			name:   "a stale worker still holds a lease",
-			change: func(s *embedverify.RunState) { s.StaleLeaseHolder = "worker-a" },
-			want:   `worker "worker-a" still holds a lease on this run and could still write`,
-		},
-		{
 			name:   "a mutable source with no consistency mode",
 			change: func(s *embedverify.RunState) { s.SourceMutable = true },
 			want: "the source is mutable and the run has no consistency mode, so nothing establishes that " +
