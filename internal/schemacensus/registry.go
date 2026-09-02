@@ -191,7 +191,13 @@ var registry = []Entry{
 	{Field: "schemamodel.Function.Volatility", Disposition: DDL},
 	{Field: "schemamodel.Grant.Comment", Disposition: DDL},
 	{Field: "schemamodel.Grant.Dialects", Disposition: DDL},
-	{Field: "schemamodel.Grant.GrantedBy", Disposition: DDL, Gap: "https://github.com/stokaro/ptah/issues/2611"},
+	{
+		Field: "schemamodel.Grant.GrantedBy", Disposition: Export,
+		Reason: "the grantor a catalog read observed, carried so that a generated document " +
+			"can report it cannot represent one; PostgreSQL accepts GRANTED BY only for the " +
+			"role that IS the current user, so rendering the observed grantor would fail on " +
+			"every apply by another role",
+	},
 	{Field: "schemamodel.Grant.OnSchema", Disposition: DDL},
 	{Field: "schemamodel.Grant.OnSequence", Disposition: DDL},
 	{Field: "schemamodel.Grant.OnTable", Disposition: DDL},

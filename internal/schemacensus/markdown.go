@@ -15,7 +15,7 @@ var meanings = map[Disposition]string{
 	Planning:     "read while a change set is assembled or ordered",
 	Derived:      "computed from other fields rather than authored",
 	SourceOrigin: "identifies the source text the declaration was read from",
-	Export:       "a name or shape an exported API document carries",
+	Export:       "what a generated document carries, or reports that it cannot",
 	Data:         "reference or seed rows, which are not DDL",
 }
 
