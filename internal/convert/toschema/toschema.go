@@ -866,8 +866,54 @@ func appendCreateTable(
 	// An inline index or unique constraint the author left unnamed gets the
 	// name its server would give it, before Finalize can deduplicate two of
 	// them onto one empty key.
-	return nameMySQLInlineIndexes(
-		database, tableSchema, fieldsStart, constraintsStart, indexesStart, sourcePlatform)
+	return nameMySQLInlineIndexes(database, tableSchema, fieldsStart,
+		declaredOrder(node, database, constraintsStart, indexesStart), sourcePlatform)
+}
+
+// declaredOrder pairs the table body's elements with the model values this call
+// just appended, in the order the document declared them.
+//
+// The two slices are appended separately and in different passes, so neither
+// one carries the interleaving; ast.CreateTableNode.Elements does, and this is
+// where that order is handed to the only pass that needs it. A node with no
+// recorded order -- one a fluent builder produced rather than a parser -- falls
+// back to constraints before indexes, which is what every caller saw before
+// the order existed.
+//
+// Relative order within each kind is preserved by the appends above, so the
+// k-th element of a kind is the k-th value appended for it. A constraint
+// ToConstraint declined is not appended and not counted.
+func declaredOrder(
+	node *ast.CreateTableNode, database *schemamodel.Database,
+	constraintsStart, indexesStart int,
+) []namedElement {
+	order := make([]namedElement, 0, len(node.Elements))
+	if len(node.Elements) == 0 {
+		for i := constraintsStart; i < len(database.Constraints); i++ {
+			order = append(order, namedElement{constraint: &database.Constraints[i]})
+		}
+		for i := indexesStart; i < len(database.Indexes); i++ {
+			order = append(order, namedElement{index: &database.Indexes[i]})
+		}
+		return order
+	}
+	constraint, index := constraintsStart, indexesStart
+	for _, element := range node.Elements {
+		if element.Index != nil {
+			order = append(order, namedElement{index: &database.Indexes[index]})
+			index++
+			continue
+		}
+		// A declined constraint consumed no slot, so nothing advances and the
+		// element contributes nothing to the namespace either.
+		if constraint < len(database.Constraints) &&
+			database.Constraints[constraint].Name == element.Constraint.Name &&
+			len(database.Constraints[constraint].Columns) == len(element.Constraint.Columns) {
+			order = append(order, namedElement{constraint: &database.Constraints[constraint]})
+			constraint++
+		}
+	}
+	return order
 }
 
 // appendAlterTableConstraints captures constraints added by

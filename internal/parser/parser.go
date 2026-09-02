@@ -3984,7 +3984,7 @@ func indexPartsFromConstraintColumns(columns []ast.ConstraintColumn) []ast.Index
 func addTableConstraintOrIndex(table *ast.CreateTableNode, constraint *ast.ConstraintNode, index *ast.IndexNode) {
 	if index != nil {
 		index.Table = table.Name
-		table.Indexes = append(table.Indexes, index)
+		table.AddIndex(index)
 		return
 	}
 	table.AddConstraint(constraint)

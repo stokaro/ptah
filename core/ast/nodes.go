@@ -84,6 +84,22 @@ type CreateTableNode struct {
 	// and a live server's SHOW CREATE TABLE returns them that way, so a reader
 	// that only understood standalone CREATE INDEX lost them (stokaro/ptah#1574).
 	Indexes []*IndexNode
+	// Elements is the order the table body declared its constraints and
+	// indexes in.
+	//
+	// Constraints and Indexes above are two slices, so between them they cannot
+	// say which came first, and on MySQL and MariaDB that is load-bearing: an
+	// index takes its name from the first free candidate at the moment it is
+	// read, so `CONSTRAINT b FOREIGN KEY (a) ..., KEY (b)` builds `b` and `b_2`
+	// while the same two elements the other way round is refused with
+	// `ERROR 1061 Duplicate key name`. Measured on MySQL 26.7 and MariaDB 12.3,
+	// and on the 8.4 and 11.8 lines before them.
+	//
+	// Empty for a node nothing ordered -- one built by a fluent builder rather
+	// than parsed -- and a reader that finds it empty falls back to the two
+	// slices, which is what every reader did before it existed
+	// (stokaro/ptah#2773).
+	Elements []TableElement
 	// SelectBody stores the SELECT tail for CREATE TABLE ... SELECT statements.
 	SelectBody string
 	// CustomSQL is raw SQL the author asked to be appended to CREATE TABLE,
@@ -335,6 +351,18 @@ func (n *CreateTableNode) SetSelectBody(body string) *CreateTableNode {
 	return n
 }
 
+// TableElement is one entry in a table body's declaration order.
+//
+// Exactly one field is set. A pair of pointers rather than a slice index,
+// because an index into a slice that is still being appended to is a second
+// piece of state to keep true, and this one cannot go stale.
+type TableElement struct {
+	// Constraint is the element, when it was a table-level constraint.
+	Constraint *ConstraintNode
+	// Index is the element, when it was an inline index.
+	Index *IndexNode
+}
+
 // AddConstraint adds a table-level constraint and returns the table node for chaining.
 //
 // Example:
@@ -342,6 +370,18 @@ func (n *CreateTableNode) SetSelectBody(body string) *CreateTableNode {
 //	table.AddConstraint(NewUniqueConstraint("uk_email", "email"))
 func (n *CreateTableNode) AddConstraint(constraint *ConstraintNode) *CreateTableNode {
 	n.Constraints = append(n.Constraints, constraint)
+	n.Elements = append(n.Elements, TableElement{Constraint: constraint})
+	return n
+}
+
+// AddIndex adds an inline index and records where it sat in the table body.
+//
+// It exists so that the order cannot be recorded by some callers and not
+// others: appending to Indexes directly leaves Elements behind, and a reader
+// that trusts Elements would then see a table missing one of its indexes.
+func (n *CreateTableNode) AddIndex(index *IndexNode) *CreateTableNode {
+	n.Indexes = append(n.Indexes, index)
+	n.Elements = append(n.Elements, TableElement{Index: index})
 	return n
 }
 

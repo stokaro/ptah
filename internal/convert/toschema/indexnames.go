@@ -3,6 +3,7 @@ package toschema
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -143,7 +144,7 @@ var (
 // Ptah reports and converges on the next apply rather than fighting forever.
 func nameMySQLInlineIndexes(
 	database *schemamodel.Database, table schemamodel.Table,
-	fieldsStart, constraintsStart, indexesStart int, sourcePlatform string,
+	fieldsStart int, order []namedElement, sourcePlatform string,
 ) error {
 	naming, ok := namingFor(sourcePlatform)
 	if !ok {
@@ -166,29 +167,88 @@ func nameMySQLInlineIndexes(
 			claimed.claim(field.Name)
 		}
 	}
-	for i := constraintsStart; i < len(database.Constraints); i++ {
-		if err := claimConstraintName(claimed, &database.Constraints[i], table, naming); err != nil {
+	// In the order the document declared them, because that is the order the
+	// server allocates in, and the two disagree on a document that is valid one
+	// way round and refused the other (stokaro/ptah#2773).
+	covered := coverage{table.PrimaryKey}
+	for _, element := range order {
+		if element.index != nil {
+			if err := claimIndexName(claimed, element.index, table, naming); err != nil {
+				return err
+			}
+			covered = append(covered, element.index.Fields)
+			continue
+		}
+		if err := claimConstraintName(claimed, element.constraint, table, naming, covered); err != nil {
 			return err
 		}
-	}
-	for i := indexesStart; i < len(database.Indexes); i++ {
-		if err := claimIndexName(claimed, &database.Indexes[i], table, naming); err != nil {
-			return err
-		}
+		covered = append(covered, element.constraint.Columns)
 	}
 	return nil
 }
 
+// namedElement is one table-body element the naming pass walks, as the model
+// value it has to write a name into.
+//
+// Exactly one field is set, and both are pointers into the caller's slices
+// because naming an element means writing to it.
+type namedElement struct {
+	// constraint is the element, when it was a table-level constraint.
+	constraint *schemamodel.Constraint
+	// index is the element, when it was an inline index.
+	index *schemamodel.Index
+}
+
+// coverage is the key prefixes a table already has an access path for, in the
+// order they were declared.
+type coverage [][]string
+
+// covers reports whether some key already declared can serve as a foreign key's
+// backing index.
+//
+// A foreign key needs an index whose leading columns are the key's columns, in
+// order. MySQL and MariaDB create one when nothing satisfies that and reuse
+// whatever does, which is why the same foreign key sometimes takes a name in
+// the index namespace and sometimes takes none.
+func (c coverage) covers(columns []string) bool {
+	for _, key := range c {
+		if len(key) < len(columns) || len(columns) == 0 {
+			continue
+		}
+		if slices.Equal(key[:len(columns)], columns) {
+			return true
+		}
+	}
+	return false
+}
+
 // claimConstraintName names one table-level constraint.
 //
-// Only the ones that occupy the index namespace: a UNIQUE constraint is an
-// index on these engines, while a CHECK is not and a FOREIGN KEY reuses a
-// covering index rather than adding a name -- measured, an FK declared beside
-// `KEY (a)` on the same column produces one index called `a` and not two.
+// Only the ones that occupy the index namespace. A UNIQUE constraint is an
+// index on these engines and always takes a name; a CHECK is not and never
+// does.
+//
+// A FOREIGN KEY is the one that depends on what came before it. It needs an
+// index whose leading columns are its own, so it reuses one already declared
+// and otherwise gets a backing index named after the constraint -- a name in
+// the same namespace every other key draws from. Measured on MySQL 26.7 and
+// MariaDB 12.3: `CONSTRAINT b FOREIGN KEY (a) ..., KEY (b)` builds `b` and
+// `b_2`, while `FOREIGN KEY (a) ..., KEY (a)` builds a single `a`, because
+// there the index covers the key.
+//
+// An earlier version of this comment said a foreign key "reuses a covering
+// index rather than adding a name" with no condition, generalized from the
+// second measurement alone. It is the first one this file has to get right.
 func claimConstraintName(
 	claimed indexNames, constraint *schemamodel.Constraint, table schemamodel.Table,
-	naming engineIndexNaming,
+	naming engineIndexNaming, covered coverage,
 ) error {
+	if constraint.Type == "FOREIGN KEY" {
+		if constraint.Name == "" || covered.covers(constraint.Columns) {
+			return nil
+		}
+		return claimExplicit(claimed, constraint.Name, table)
+	}
 	if constraint.Type != "UNIQUE" {
 		return nil
 	}
