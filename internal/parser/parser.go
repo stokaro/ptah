@@ -3402,13 +3402,29 @@ func (p *Parser) handleTableConstraintTypedIndex(constraint *ast.ConstraintNode,
 	return nil
 }
 
+// parseTableConstraintTrailingClauses reads the clauses that may follow a table
+// element's column list. Each belongs to one kind of element and reads nothing
+// for the others, so they are asked in sequence rather than selected between.
+func (p *Parser) parseTableConstraintTrailingClauses(constraint *ast.ConstraintNode) error {
+	if err := p.handleTableConstraintInclude(constraint); err != nil {
+		return err
+	}
+	if err := p.handleTableForeignKey(constraint); err != nil {
+		return err
+	}
+	if err := p.handleTableCheck(constraint); err != nil {
+		return err
+	}
+	return p.handleTableExcludeWhere(constraint)
+}
+
 // parseIndexParserClause reads MySQL's optional `WITH PARSER <name>` clause,
 // which follows a FULLTEXT key's column list, and answers the empty string when
 // the declaration carries none.
 //
-// It is offered only to a table element that turned out to be an index. A
-// constraint cannot take the clause, and reading it for one would accept
-// `UNIQUE uq (a) WITH PARSER ngram`, a declaration MySQL refuses.
+// The caller reaches it only for a table element that turned out to be an
+// index. A constraint cannot take the clause, and reading it for one would
+// accept `UNIQUE uq (a) WITH PARSER ngram`, a declaration MySQL refuses.
 //
 // A `WITH` that reaches this point must be that clause, and one followed by
 // anything else is refused rather than skipped. This parser holds one token and
@@ -3417,10 +3433,7 @@ func (p *Parser) handleTableConstraintTypedIndex(constraint *ast.ConstraintNode,
 // MySQL's alone, and PARSER is the only thing MySQL writes here, so requiring
 // it costs no valid declaration and refuses loudly instead of dropping an
 // option that changes what the index does.
-func (p *Parser) parseIndexParserClause(isIndex bool) (string, error) {
-	if !isIndex {
-		return "", nil
-	}
+func (p *Parser) parseIndexParserClause() (string, error) {
 	p.skipWhitespace()
 	if p.current.Type != lexer.TokenIdentifier || !strings.EqualFold(p.current.Value, "WITH") {
 		return "", nil
@@ -3785,30 +3798,15 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 	// emits it from ast.IndexNode.Parser: dropping it here would turn an ngram
 	// index into a default-parser one, which tokenizes CJK text differently and
 	// changes which rows a MATCH finds.
-	indexParser, err := p.parseIndexParserClause(isIndex)
-	if err != nil {
-		return nil, nil, err
+	indexParser := ""
+	if isIndex {
+		indexParser, err = p.parseIndexParserClause()
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
-	err = p.handleTableConstraintInclude(constraint)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Handle FOREIGN KEY REFERENCES
-	err = p.handleTableForeignKey(constraint)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Handle CHECK expression
-	err = p.handleTableCheck(constraint)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Handle EXCLUDE WHERE clause
-	err = p.handleTableExcludeWhere(constraint)
+	err = p.parseTableConstraintTrailingClauses(constraint)
 	if err != nil {
 		return nil, nil, err
 	}
