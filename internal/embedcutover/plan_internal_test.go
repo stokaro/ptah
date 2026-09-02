@@ -93,7 +93,7 @@ func TestPlan_AnEmptyEvidenceListStillSaysSo(t *testing.T) {
 	c.Assert(lines, qt.Contains, "consistency blockers: none")
 }
 
-// TestPlan_AcceptedAndUnacceptedFindingsAreTold apart is the report the issue
+// TestPlan_AcceptedAndUnacceptedFindingsAreToldApart is the report the issue
 // opened on: the operator accepting both findings and the operator accepting
 // neither must not sign the same sentences.
 func TestPlan_AcceptedAndUnacceptedFindingsAreToldApart(t *testing.T) {

@@ -124,7 +124,7 @@ Empty lists still write their line. A file silent about accepted findings cannot
 be told from one whose author had nothing to say, and the reader deciding is the
 one who cannot tell.
 
-`verification` is a digest of what the report *measured* — the verdict, the row
+`verification report` is a digest of what the report *measured* — the verdict, the row
 counts, the findings, the layers that did not run — and not of when it ran. Two
 consequences follow, and both are why the line is there:
 
