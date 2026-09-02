@@ -47,7 +47,13 @@ statement about whether search results are good.
 | `relevant` | A map from source key to graded relevance, for the ranked measures. |
 
 A key is the source row's key as a string. Where the specification declares a
-composite key, the components are joined in the order `key_fields` names them.
+composite key, the components are joined with U+001F, the ASCII unit separator,
+in the order `key_fields` names them.
+
+This is the corpus file's spelling, and it is deliberately not the identity
+verification compares rows by — that one is length-prefixed and reads
+`6:acme1:2`. A key here is matched against what you wrote, so it has to be
+something you can write.
 
 A case must declare `required`, `relevant`, or both. One that declares neither
 is refused: any answer satisfies it, including none, and it lifts the mean of

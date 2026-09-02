@@ -93,9 +93,14 @@ still holds a vector is not exempt: Ptah assigns the state and the vector in one
 statement, so that shape came from somewhere else, and it is searchable.
 
 A composite key is printed as the tuple it is — `(acme, 2)` — in the
-specification's key order. The components are joined internally with a control
-character, chosen because every printable delimiter is one some column plainly
-holds, and that internal form is never what you see.
+specification's key order. Internally each component is length-prefixed, so no
+value a column can hold decides where one component ends and the next begins;
+that internal form reads `6:acme1:2` and is never what you see.
+
+A delimiter was used for this and a rare one is not a safe one: with
+`key_fields: [tenant, id]`, a tenant holding the delimiter byte could produce
+the same identity as a different row's, and coverage then compared one source
+row against the other's target row.
 
 ### `skipped` is not `missing`
 
