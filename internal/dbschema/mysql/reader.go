@@ -526,6 +526,9 @@ func (r *Reader) readViews(ctx context.Context, dbName string) ([]catalog.View, 
 		view.Schema = dbName
 		views = append(views, view)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return views, nil
 }
 
@@ -761,6 +764,9 @@ func (r *Reader) readTriggers(ctx context.Context, dbName string) ([]catalog.Tri
 			return nil, err
 		}
 		triggers = append(triggers, trigger)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return triggers, nil
 }

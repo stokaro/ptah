@@ -82,6 +82,11 @@ func TestDatabaseConnectionWithIsolatedQuerySession_RollsBackWrites(t *testing.T
 	err = conn.WithIsolatedQuerySession(t.Context(), new(sql.TxOptions), func(queryer dbschema.IsolatedQueryer) error {
 		attachmentRows, queryErr := queryer.QueryContext(t.Context(), "ATTACH DATABASE ':memory:' AS aux")
 		c.Assert(queryErr, qt.IsNil)
+		// ATTACH returns no rows, and the set still has to be advanced before
+		// its terminal error means anything: database/sql writes the field
+		// Rows.Err reads from Rows.Next alone.
+		c.Assert(attachmentRows.Next(), qt.IsFalse)
+		c.Assert(attachmentRows.Err(), qt.IsNil)
 		c.Assert(attachmentRows.Close(), qt.IsNil)
 
 		rows, queryErr := queryer.QueryContext(t.Context(), "DELETE FROM users RETURNING id")

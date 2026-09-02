@@ -186,6 +186,18 @@ func primeWithPragmaFunctions(t *testing.T, db *sql.DB) {
 		if err != nil {
 			t.Fatalf("prime %q: %v", query, err)
 		}
+		// Drained rather than closed straight away: Rows.Err reads a field
+		// Rows.Next is the only writer of, so a priming query that died
+		// mid-stream reports nothing to a caller that never advanced it.
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				t.Fatalf("prime %q: %v", query, err)
+			}
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("prime %q: %v", query, err)
+		}
 		if err := rows.Close(); err != nil {
 			t.Fatalf("close %q: %v", query, err)
 		}

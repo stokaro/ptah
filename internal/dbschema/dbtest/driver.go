@@ -16,6 +16,17 @@ import (
 type QueryResult struct {
 	Columns []string
 	Rows    [][]driver.Value
+
+	// TerminalErr is delivered INSTEAD of the end of the result set, after
+	// every row in Rows has been handed over. It is what a connection dropping
+	// mid-stream looks like to a reader: database/sql reports it through
+	// [database/sql.Rows.Err] and not through Scan, so a reader that only
+	// checks Scan sees the rows that did arrive and no error at all.
+	//
+	// Leave it nil for an ordinary result. It must not be [driver.ErrBadConn],
+	// which database/sql intercepts and retries the whole query on rather than
+	// surfacing.
+	TerminalErr error
 }
 
 type QueryHandler func(query string, args []driver.NamedValue) (QueryResult, error)
@@ -148,7 +159,7 @@ func (c *countingConn) QueryContext(_ context.Context, query string, args []driv
 	if err != nil {
 		return nil, err
 	}
-	return &rows{columns: result.Columns, rows: result.Rows}, nil
+	return &rows{columns: result.Columns, rows: result.Rows, terminalErr: result.TerminalErr}, nil
 }
 
 func (c *countingConn) ExecContext(_ context.Context, query string, args []driver.NamedValue) (driver.Result, error) {
@@ -179,9 +190,10 @@ var _ driver.ExecerContext = (*countingConn)(nil)
 var _ driver.QueryerContext = (*countingConn)(nil)
 
 type rows struct {
-	columns []string
-	rows    [][]driver.Value
-	index   int
+	columns     []string
+	rows        [][]driver.Value
+	index       int
+	terminalErr error
 }
 
 func (r *rows) Columns() []string {
@@ -194,6 +206,9 @@ func (r *rows) Close() error {
 
 func (r *rows) Next(dest []driver.Value) error {
 	if r.index >= len(r.rows) {
+		if r.terminalErr != nil {
+			return r.terminalErr
+		}
 		return io.EOF
 	}
 	copy(dest, r.rows[r.index])

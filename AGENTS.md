@@ -1962,6 +1962,61 @@ must never do is take a handle and assert its way to the concrete type:
 `c.TB.(*testing.T)` inside a helper declared for `testing.TB` panics the moment
 it is called from a benchmark, and the signature promises otherwise.
 
+### A linter's reach is configuration, not a property of the linter
+
+`rowserrcheck` reports a `for rows.Next()` loop that never asks `rows.Err()`.
+A result set that ends early -- a dropped connection, a server-side
+cancellation, a statement killed mid-stream -- ends the loop exactly as an
+exhausted one does, so the reader returns the rows that arrived and reports
+success. `readEnumsForSchema` did that with eleven of its siblings, and the
+answer reached a schema fingerprint and a plan's `current_schema_digest` as
+complete catalog state (stokaro/ptah#2720).
+
+The linter's default `packages:` list is `database/sql` alone, and it tracks
+rows by where the `Query` that produced them was DECLARED. Ptah's schema readers
+hold a `sqlrunner.Runner`, so with the default list this linter ran over the
+PostgreSQL reader and reported nothing -- measured on the pre-fix tree, where it
+found the two MySQL sites and none of the eleven PostgreSQL ones. Enabling it
+would have looked like coverage and been silence.
+
+`.golangci.yml` therefore names every package in the tree that declares a
+`Query`/`QueryContext` returning `*sql.Rows`. Nothing about a missing entry
+fails on its own -- the linter stops seeing that package, which is the state the
+reported defect was already in -- so the list is not left as a claim.
+`internal/rowserrguard` compares it with what the tree declares, in both
+directions, and asserts that the linter is enabled: a list kept in perfect order
+under a linter nobody runs is the same silence with more evidence of care.
+
+Two limits are worth knowing before trusting a clean run:
+
+- **It does not follow rows into a closure.** `internal/embedpg/inspect.go`
+  returns an `iter.Seq2` and checks `Rows.Err` inside it; that is a false
+  positive and carries the tree's one `//nolint:rowserrcheck`.
+- **It does not follow rows through a parameter.** A helper taking `rows
+  *sql.Rows` is invisible to it, and `embedpg`'s `scanEvents` and `readPage`
+  are both of that shape. Both are already correct: a helper that did not open
+  the result set does not own it either, and all three of their callers check
+  `Rows.Err` themselves. That is the distinction to draw when a sweep turns one
+  up -- a function that runs its own `QueryContext` owns the terminal check,
+  because no caller is holding the rows to make it.
+
+An AST sweep for `for x.Next()` in a function that never calls `x.Err()` finds
+that second class and misses what the SSA analysis catches, so the two are
+complementary rather than redundant. **Neither is a finding on its own.** Six of
+the sites either sweep reported were correct -- the two above, plus three that
+close a result set without ever advancing it and one that checks inside a
+returned iterator. Verify each against what the code does before adding a check;
+`Rows.Err` returns a field `Rows.Next` is the only writer of, so on a result set
+nobody advanced it is nil however the statement fared, and a call to it there
+reads as handling and can never fire.
+
+Neither sweep is the reason the reader is correct.
+`TestReadSchemaContext_EveryReadRefusesATerminalRowErrorFailurePath` breaks each
+of the two dozen queries a full read asks, one at a time, and requires the whole
+read to fail. It killed twelve positions on the pre-fix reader, and a read added
+later without a terminal check reddens it without anyone having to remember this
+section.
+
 ### A blank import says why
 
 `_ "github.com/jackc/pgx/v5/stdlib"` is the one import whose removal the
