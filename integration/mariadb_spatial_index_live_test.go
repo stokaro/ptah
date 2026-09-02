@@ -29,9 +29,14 @@ import (
 // a live read joins them.
 //
 // MariaDB is the engine because MariaDB is where both states exist. `CREATE
-// INDEX` over a POINT column leaves `INDEX_TYPE=BTREE` here; MySQL 8.4 promotes
-// the same statement to SPATIAL, so the false convergence cannot be built
-// there. The reader and the comparator are shared, and the fix is in both.
+// INDEX` over a POINT column leaves `INDEX_TYPE=BTREE` here; MySQL promotes the
+// same statement to SPATIAL, so the false convergence cannot be built there.
+// The reader and the comparator are shared, and the fix is in both.
+//
+// Measured on MariaDB 11.8.9 and on 12.3.3, which is what the integration
+// workflow starts. A test whose premise holds only on the version its author
+// happened to run is one that fails in CI for a reason unrelated to the change,
+// so the fixture asserts the catalog's own answer before it asks Ptah anything.
 func TestMariaDBSpatialIndexIsNotSatisfiedByBTreeLive(t *testing.T) {
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -150,8 +155,9 @@ func appendIfNamed(into []catalog.Index, index catalog.Index, name string) []cat
 // TestMySQLPromotedSpatialIndexStaysSyncedLive is the control the asymmetry
 // exists for, measured on the engine that causes it.
 //
-// MySQL 8.4.11 answers `INDEX_TYPE=SPATIAL` to a plain `CREATE INDEX` over a
-// `POINT` column -- measured, not read off the manual. A schema declaring no
+// MySQL answers `INDEX_TYPE=SPATIAL` to a plain `CREATE INDEX` over a `POINT`
+// column -- measured on 8.4.11 and on 26.7.0, which is what the integration
+// workflow starts, rather than read off the manual. A schema declaring no
 // index type therefore has a database index whose method it never asked for,
 // and comparing the two would plan a rebuild MySQL undoes on the spot: the
 // next read reports SPATIAL again, and the plan comes back forever.
