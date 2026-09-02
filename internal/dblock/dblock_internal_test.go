@@ -13,6 +13,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"math"
+	"path/filepath"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -21,8 +22,151 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
+
+func TestWithLockSession_KeepsLockAndCallbackOnPinnedSession(t *testing.T) {
+	c := qt.New(t)
+	conn := openSessionLockSQLite(c)
+	runFailure := errors.New("target operation failed")
+	releaseFailure := errors.New("lock release failed")
+	var events []string
+	var acquiredSession, callbackSession, witnessConnection *dbschema.DatabaseConnection
+
+	acquire := func(
+		ctx context.Context,
+		session,
+		witness *dbschema.DatabaseConnection,
+		_, name string,
+		_ time.Duration,
+	) (*Lock, error) {
+		events = append(events, "acquire")
+		acquiredSession = session
+		witnessConnection = witness
+		_, err := session.ExecContext(ctx, "CREATE TEMPORARY TABLE lock_session_marker (id INTEGER)")
+		c.Assert(err, qt.IsNil)
+		return &Lock{
+			name: name,
+			release: func(releaseCtx context.Context) error {
+				events = append(events, "release")
+				var count int
+				queryErr := session.QueryRowContext(
+					releaseCtx,
+					"SELECT COUNT(*) FROM lock_session_marker",
+				).Scan(&count)
+				c.Assert(queryErr, qt.IsNil)
+				c.Assert(count, qt.Equals, 0)
+				return releaseFailure
+			},
+		}, nil
+	}
+
+	runErr, releaseErr := withLockSession(
+		c.Context(),
+		conn,
+		"ptah_test",
+		time.Second,
+		acquire,
+		func(session *dbschema.DatabaseConnection, lock *Lock) error {
+			events = append(events, "callback")
+			callbackSession = session
+			var count int
+			queryErr := session.QueryRowContext(
+				c.Context(),
+				"SELECT COUNT(*) FROM lock_session_marker",
+			).Scan(&count)
+			c.Assert(queryErr, qt.IsNil)
+			c.Assert(count, qt.Equals, 0)
+			c.Assert(lock.Supported(), qt.IsTrue)
+			return runFailure
+		},
+	)
+
+	c.Assert(runErr, qt.ErrorIs, runFailure)
+	c.Assert(releaseErr, qt.ErrorIs, releaseFailure)
+	c.Assert(acquiredSession, qt.Equals, callbackSession)
+	c.Assert(witnessConnection, qt.Equals, conn)
+	c.Assert(witnessConnection, qt.Not(qt.Equals), acquiredSession)
+	c.Assert(events, qt.DeepEquals, []string{"acquire", "callback", "release"})
+	var count int
+	c.Assert(
+		conn.QueryRowContext(c.Context(), "SELECT COUNT(*) FROM lock_session_marker").Scan(&count),
+		qt.ErrorMatches,
+		".*no such table: lock_session_marker.*",
+	)
+}
+
+func TestWithLockSession_AcquisitionFailureSkipsCallbackAndRelease(t *testing.T) {
+	c := qt.New(t)
+	conn := openSessionLockSQLite(c)
+	acquireFailure := errors.New("lock acquisition failed")
+	var callbackCount atomic.Int64
+
+	runErr, releaseErr := withLockSession(
+		c.Context(),
+		conn,
+		"ptah_test",
+		time.Second,
+		func(
+			context.Context,
+			*dbschema.DatabaseConnection,
+			*dbschema.DatabaseConnection,
+			string,
+			string,
+			time.Duration,
+		) (*Lock, error) {
+			return nil, acquireFailure
+		},
+		func(*dbschema.DatabaseConnection, *Lock) error {
+			callbackCount.Add(1)
+			return nil
+		},
+	)
+
+	c.Assert(runErr, qt.ErrorIs, acquireFailure)
+	c.Assert(releaseErr, qt.IsNil)
+	c.Assert(callbackCount.Load(), qt.Equals, int64(0))
+}
+
+func TestWithLockSession_PromotesReleaseFailureAfterSuccessfulCallback(t *testing.T) {
+	c := qt.New(t)
+	conn := openSessionLockSQLite(c)
+	releaseFailure := errors.New("lock release failed")
+
+	runErr, releaseErr := withLockSession(
+		c.Context(),
+		conn,
+		"ptah_test",
+		time.Second,
+		func(
+			context.Context,
+			*dbschema.DatabaseConnection,
+			*dbschema.DatabaseConnection,
+			string,
+			string,
+			time.Duration,
+		) (*Lock, error) {
+			return &Lock{release: func(context.Context) error { return releaseFailure }}, nil
+		},
+		func(*dbschema.DatabaseConnection, *Lock) error { return nil },
+	)
+
+	c.Assert(runErr, qt.ErrorMatches, "advisory lock session failed during release: lock release failed")
+	c.Assert(runErr, qt.ErrorIs, releaseFailure)
+	c.Assert(releaseErr, qt.IsNil)
+}
+
+func openSessionLockSQLite(c *qt.C) *dbschema.DatabaseConnection {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(
+		c.Context(),
+		"sqlite://"+filepath.Join(c.TB.TempDir(), "session-lock.db"),
+	)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
+	return conn
+}
 
 func TestAcquirePostgresLock_RetriesUntilAcquired(t *testing.T) {
 	c := qt.New(t)

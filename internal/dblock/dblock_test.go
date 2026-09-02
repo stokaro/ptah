@@ -69,6 +69,36 @@ func TestAcquire_HappyPath(t *testing.T) {
 	})
 }
 
+func TestWithLockSession_NoOpDialectStillPinsCallback(t *testing.T) {
+	c := qt.New(t)
+	conn := openSQLite(c)
+	var callbackSession *dbschema.DatabaseConnection
+
+	runErr, releaseErr := dblock.WithLockSession(
+		c.Context(),
+		conn,
+		"ptah_test_lock",
+		time.Second,
+		func(session *dbschema.DatabaseConnection, lock *dblock.Lock) error {
+			callbackSession = session
+			c.Assert(lock.Supported(), qt.IsFalse)
+			_, err := session.ExecContext(c.Context(),
+				"CREATE TEMPORARY TABLE lock_session_marker (id INTEGER)")
+			return err
+		},
+	)
+
+	c.Assert(runErr, qt.IsNil)
+	c.Assert(releaseErr, qt.IsNil)
+	c.Assert(callbackSession, qt.Not(qt.Equals), conn)
+	var count int
+	c.Assert(
+		conn.QueryRowContext(c.Context(), "SELECT COUNT(*) FROM lock_session_marker").Scan(&count),
+		qt.ErrorMatches,
+		".*no such table: lock_session_marker.*",
+	)
+}
+
 func TestAcquire_FailurePath(t *testing.T) {
 	t.Run("empty name rejected", func(t *testing.T) {
 		c := qt.New(t)

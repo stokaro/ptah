@@ -47,6 +47,47 @@ type ApplyLock struct {
 	lock *dblock.Lock
 }
 
+// WithApplyLockSession pins one physical target session, acquires the schema
+// apply advisory lock on it, and runs use with that same session. The original
+// pool is used only for the independent PostgreSQL exclusion witness. The
+// lock is released before the pinned session is discarded.
+//
+// When use fails, its error and a secondary release error are returned
+// separately so callers can preserve the operation failure while reporting a
+// cleanup warning. A release failure after a successful callback is returned
+// as the operation error: losing the session must never look like success.
+func WithApplyLockSession(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	name string,
+	timeout time.Duration,
+	use func(*dbschema.DatabaseConnection, *ApplyLock) error,
+) (runErr, releaseErr error) {
+	if conn == nil {
+		return fmt.Errorf("acquire schema apply lock: %w",
+			errors.New("schema apply locking requires database connection")), nil
+	}
+	if use == nil {
+		return errors.New("schema apply lock session callback is nil"), nil
+	}
+
+	callbackStarted := false
+	runErr, releaseErr = dblock.WithLockSession(
+		ctx,
+		conn,
+		EffectiveApplyLockName(name),
+		timeout,
+		func(session *dbschema.DatabaseConnection, lock *dblock.Lock) error {
+			callbackStarted = true
+			return use(session, &ApplyLock{lock: lock})
+		},
+	)
+	if runErr != nil && !callbackStarted {
+		runErr = fmt.Errorf("acquire schema apply lock: %w", runErr)
+	}
+	return runErr, releaseErr
+}
+
 // AcquireApplyLock takes the dialect-specific session advisory lock that
 // serializes schema apply runs on conn's database. It must be held before the
 // target inspection and planning that the apply serializes. A zero timeout

@@ -74,6 +74,10 @@ type Lock struct {
 	release func(context.Context) error
 }
 
+type queryRower interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
 type ambiguousAcquisitionError struct {
 	err error
 }
@@ -89,7 +93,7 @@ func (e *ambiguousAcquisitionError) Unwrap() error {
 // Supported reports whether the lock is backed by a real database lock, as
 // opposed to the no-op lock acquired on dialects without advisory locks.
 func (l *Lock) Supported() bool {
-	return l != nil && l.conn != nil
+	return l != nil && l.release != nil
 }
 
 // Name returns the advisory lock name this lock was acquired under, after the
@@ -107,19 +111,106 @@ func (l *Lock) Name() string {
 	return l.name
 }
 
-// Release releases the advisory lock and closes its dedicated session
-// connection. Releasing a nil or no-op lock is a no-op.
+// Release releases the advisory lock and closes a session owned by the lock.
+// A session-bound lock leaves its borrowed session open for its owner to
+// discard. Releasing a nil or no-op lock is a no-op.
 func (l *Lock) Release(ctx context.Context) error {
-	if l == nil || l.conn == nil {
+	if l == nil || l.release == nil {
 		return nil
 	}
+	release := l.release
+	l.release = nil
 	conn := l.conn
 	l.conn = nil
-	releaseErr := l.release(ctx)
+	releaseErr := release(ctx)
+	if conn == nil {
+		return releaseErr
+	}
 	if releaseErr != nil {
 		return errors.Join(releaseErr, discardConnection(conn))
 	}
 	return conn.Close()
+}
+
+// WithLockSession pins one physical database session, acquires name on that
+// session, and runs use with the same session. The original pool is retained
+// only as the independent PostgreSQL exclusion witness. Dialects without
+// advisory-lock semantics still pin the callback session and receive an
+// explicit no-op lock.
+//
+// The lock is released before the pinned session is discarded. Callback and
+// release errors are returned separately so a command can preserve the
+// callback failure while reporting a secondary cleanup warning. If the
+// callback succeeds but release fails, the release failure becomes the run
+// error: losing the session must never be reported as a successful operation.
+// A zero timeout waits indefinitely; context cancellation always interrupts
+// the acquisition and the callback.
+func WithLockSession(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	name string,
+	timeout time.Duration,
+	use func(*dbschema.DatabaseConnection, *Lock) error,
+) (runErr, releaseErr error) {
+	return withLockSession(ctx, conn, name, timeout, acquireSessionLock, use)
+}
+
+type sessionLockAcquirer func(
+	context.Context,
+	*dbschema.DatabaseConnection,
+	*dbschema.DatabaseConnection,
+	string,
+	string,
+	time.Duration,
+) (*Lock, error)
+
+func withLockSession(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	name string,
+	timeout time.Duration,
+	acquire sessionLockAcquirer,
+	use func(*dbschema.DatabaseConnection, *Lock) error,
+) (runErr, releaseErr error) {
+	if conn == nil {
+		return errors.New("advisory locking requires database connection"), nil
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("advisory lock name must not be empty"), nil
+	}
+	if use == nil {
+		return errors.New("advisory lock session callback is nil"), nil
+	}
+	dialect := platform.NormalizeDialect(conn.Info().Dialect)
+
+	runErr = conn.WithSession(ctx, func(session *dbschema.DatabaseConnection) (callbackErr error) {
+		lock, err := acquire(ctx, session, conn, dialect, name, timeout)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			releaseCtx, cancel := context.WithTimeout(context.Background(), DefaultReleaseTimeout)
+			defer cancel()
+			releaseErr = lock.Release(releaseCtx)
+		}()
+		return use(session, lock)
+	})
+	if runErr == nil && releaseErr != nil {
+		return fmt.Errorf("advisory lock session failed during release: %w", releaseErr), nil
+	}
+	return runErr, releaseErr
+}
+
+func acquireSessionLock(
+	ctx context.Context,
+	session,
+	witness *dbschema.DatabaseConnection,
+	dialect,
+	name string,
+	timeout time.Duration,
+) (*Lock, error) {
+	return acquireOnSession(ctx, session, witness, dialect, name, timeout)
 }
 
 // Acquire takes the dialect-specific session advisory lock named name on a
@@ -151,14 +242,36 @@ func Acquire(
 		return nil, err
 	}
 
-	lock := &Lock{conn: session, name: name}
+	lock, acquireErr := acquireOnSession(ctx, session, conn, dialect, name, timeout)
+	if acquireErr != nil {
+		return nil, closeAfterFailedAcquisition(session, acquireErr)
+	}
+	lock.conn = session
+	return lock, nil
+}
+
+func acquireOnSession(
+	ctx context.Context,
+	session queryRower,
+	witness connOpener,
+	dialect,
+	name string,
+	timeout time.Duration,
+) (*Lock, error) {
+	lock := &Lock{name: name}
+	if !Supported(dialect) {
+		return lock, nil
+	}
+
 	var acquireErr error
 	switch dialect {
 	case platform.Postgres, platform.YugabyteDB:
 		lock.release = releasePostgresLock(session, dialect, name)
 		acquireErr = acquirePostgresLock(ctx, session, dialect, name, timeout)
 		if acquireErr == nil {
-			acquireErr = verifyPostgresLockExcludes(ctx, conn, dialect, name)
+			if verifyErr := verifyPostgresLockExcludes(ctx, witness, dialect, name); verifyErr != nil {
+				acquireErr = &ambiguousAcquisitionError{err: verifyErr}
+			}
 		}
 	case platform.MySQL, platform.MariaDB:
 		lock.release = releaseMySQLLock(session, name)
@@ -168,7 +281,7 @@ func Acquire(
 		acquireErr = acquireSQLServerLock(ctx, session, name, timeout)
 	}
 	if acquireErr != nil {
-		return nil, closeAfterFailedAcquisition(session, acquireErr)
+		return nil, acquireErr
 	}
 	return lock, nil
 }
@@ -275,7 +388,7 @@ func PostgresKey(name string) int64 {
 
 func acquirePostgresLock(
 	ctx context.Context,
-	conn *sql.Conn,
+	conn queryRower,
 	dialect, name string,
 	timeout time.Duration,
 ) error {
@@ -334,7 +447,7 @@ func postgresLockWaitError(
 	return fallback
 }
 
-func releasePostgresLock(conn *sql.Conn, dialect, name string) func(context.Context) error {
+func releasePostgresLock(conn queryRower, dialect, name string) func(context.Context) error {
 	return func(ctx context.Context) error {
 		var released bool
 		if err := conn.QueryRowContext(ctx, "SELECT pg_advisory_unlock($1)", PostgresKey(name)).Scan(&released); err != nil {
@@ -347,7 +460,7 @@ func releasePostgresLock(conn *sql.Conn, dialect, name string) func(context.Cont
 	}
 }
 
-func acquireMySQLLock(ctx context.Context, conn *sql.Conn, dialect, name string, timeout time.Duration) error {
+func acquireMySQLLock(ctx context.Context, conn queryRower, dialect, name string, timeout time.Duration) error {
 	timeoutSeconds := mySQLLockTimeoutSeconds(dialect, timeout)
 
 	var acquired sql.NullInt64
@@ -363,7 +476,7 @@ func acquireMySQLLock(ctx context.Context, conn *sql.Conn, dialect, name string,
 	return nil
 }
 
-func releaseMySQLLock(conn *sql.Conn, name string) func(context.Context) error {
+func releaseMySQLLock(conn queryRower, name string) func(context.Context) error {
 	return func(ctx context.Context) error {
 		var released sql.NullInt64
 		if err := conn.QueryRowContext(ctx, "SELECT RELEASE_LOCK(?)", name).Scan(&released); err != nil {
@@ -379,7 +492,7 @@ func releaseMySQLLock(conn *sql.Conn, name string) func(context.Context) error {
 	}
 }
 
-func acquireSQLServerLock(ctx context.Context, conn *sql.Conn, name string, timeout time.Duration) error {
+func acquireSQLServerLock(ctx context.Context, conn queryRower, name string, timeout time.Duration) error {
 	timeoutMilliseconds := sqlServerLockTimeoutMilliseconds(timeout)
 
 	var result int
@@ -402,7 +515,7 @@ SELECT @result;`, name, timeoutMilliseconds).Scan(&result); err != nil {
 	return fmt.Errorf("sqlserver sp_getapplock(%q) failed with return code %d", name, result)
 }
 
-func releaseSQLServerLock(conn *sql.Conn, name string) func(context.Context) error {
+func releaseSQLServerLock(conn queryRower, name string) func(context.Context) error {
 	return func(ctx context.Context) error {
 		var result int
 		if err := conn.QueryRowContext(ctx, `
