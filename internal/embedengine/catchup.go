@@ -187,15 +187,66 @@ func (e *Engine) embedRereadRows(
 		return nil, embedrun.BatchOutcome{}, classified{"canonicalization",
 			fmt.Errorf("canonicalize a changed row: %w", err)}
 	}
-	batch := embedrun.Batch{Rows: prepared}
-	writes, outcome, err := e.embed(ctx, batch)
+	// Assembled, rather than sent as one request holding the whole page.
+	// --batch-inputs is the provider's limit on inputs per request, and
+	// catch-up registered the flag and ignored it: every prepared row went in
+	// one Batch, so the only thing bounding a request was --batch-rows, which
+	// is a different limit and belongs to the page (stokaro/ptah#2740).
+	//
+	// The batching is the provider request, not the commit. Every write here
+	// still lands in the one transaction the caller commits with the cursor,
+	// which is what lets a run that dies resume at a position whose work is on
+	// disk -- so this splits what is SENT and nothing else.
+	batches, err := embedrun.Assemble(prepared, e.Bounds)
 	if err != nil {
-		return nil, embedrun.BatchOutcome{}, classified{"provider", err}
+		return nil, embedrun.BatchOutcome{}, classified{"batching", err}
 	}
+	var writes []embedrun.TargetWrite
+	var outcome embedrun.BatchOutcome
+	requested, reported := 0, 0
+	for _, batch := range batches {
+		batchWrites, batchOutcome, err := e.embed(ctx, batch)
+		if err != nil {
+			return nil, embedrun.BatchOutcome{}, classified{"provider", err}
+		}
+		writes = append(writes, batchWrites...)
+		outcome.RowsEmbedded += batchOutcome.RowsEmbedded
+		outcome.RowsSkipped += batchOutcome.RowsSkipped
+		outcome.PromptTokens += batchOutcome.PromptTokens
+		outcome.TotalTokens += batchOutcome.TotalTokens
+		requested += requestsIn(batchOutcome)
+		reported += reportsIn(batchOutcome)
+	}
+	// True only when every request that was actually sent reported usage. The
+	// field's meaning is that the counts beside it are the provider's, and a
+	// page whose second request answered without a usage object has counts
+	// that are short by an unknown amount -- which is the zero-nobody-asked-for
+	// this flag exists to separate from a measured one. A batch of skipped rows
+	// sends nothing and is not a request, so it neither reports nor withholds.
+	outcome.UsageReported = requested > 0 && reported == requested
 	// The cursor belongs to the backfill's keyset and means nothing here:
 	// catch-up resumes from a transaction identity, not from a key.
 	outcome.Cursor = nil
 	return writes, outcome, nil
+}
+
+// requestsIn and reportsIn read one batch's outcome for whether a provider was
+// asked and whether it accounted for the answer.
+//
+// A batch every row of which was skipped reaches no endpoint, and its zero
+// counts are not a provider reporting zero.
+func requestsIn(outcome embedrun.BatchOutcome) int {
+	if outcome.RowsEmbedded == 0 {
+		return 0
+	}
+	return 1
+}
+
+func reportsIn(outcome embedrun.BatchOutcome) int {
+	if outcome.RowsEmbedded == 0 || !outcome.UsageReported {
+		return 0
+	}
+	return 1
 }
 
 // tombstonesFor writes a tombstone for every changed key the source no longer

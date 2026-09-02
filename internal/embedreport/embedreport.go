@@ -117,11 +117,11 @@ type Progress struct {
 
 // Status is what a run has done and what it is waiting for.
 type Status struct {
-	RunID      string `json:"run_id"`
-	Generation string `json:"generation"`
-	Phase      string `json:"phase"`
-	State      string `json:"state"`
-	Progress   Progress
+	RunID      string   `json:"run_id"`
+	Generation string   `json:"generation"`
+	Phase      string   `json:"phase"`
+	State      string   `json:"state"`
+	Progress   Progress `json:"progress"`
 	// SnapshotWatermark and CatchUpWatermark are where the backfill's snapshot
 	// began and how far the catch-up has read, rendered rather than raw: they
 	// are positions in a log, and a position is not content.
