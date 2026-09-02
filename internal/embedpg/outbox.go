@@ -578,6 +578,9 @@ func scanEvents(rows *sql.Rows) ([]embedcatchup.Event, error) {
 		event.At = event.At.UTC()
 		events = append(events, event)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read outbox events: %w", err)
+	}
 	return events, nil
 }
 

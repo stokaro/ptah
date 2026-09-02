@@ -90,6 +90,13 @@ func (s *Source) readPage(rows *sql.Rows, limit int) (embedengine.Page, error) {
 		page.Versions = append(page.Versions, version)
 		page.Cursor = row.Key
 	}
+	// Before Done is computed, because Done is derived from the row COUNT and a
+	// short read is indistinguishable from a final page: a connection that
+	// dropped after row 400 of a 500-row page sets Done and ends the backfill,
+	// declaring a source fully read that was not (stokaro/ptah#2720).
+	if err := rows.Err(); err != nil {
+		return embedengine.Page{}, fmt.Errorf("read rows from %s: %w", s.spec.Source.Table, err)
+	}
 	page.Done = len(page.Rows) < limit
 	return page, nil
 }

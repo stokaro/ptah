@@ -488,6 +488,9 @@ func (r *Reader) readTablesForSchema(ctx context.Context, schemaName string) ([]
 
 		tables = append(tables, table)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read tables for schema %s: %w", schemaName, err)
+	}
 
 	return tables, nil
 }
@@ -971,6 +974,17 @@ func (r *Reader) readEnumsForSchema(ctx context.Context, schemaName string) ([]c
 			enumOrder = append(enumOrder, enumName)
 		}
 		enumMap[enumName] = append(enumMap[enumName], enumValue)
+	}
+	// The terminal error, which a mid-stream driver or server failure surfaces
+	// HERE and nowhere else: rows.Next() answers false for a closed result set
+	// exactly as it does for an exhausted one, so a read that lost its
+	// connection after the third row returns the first three and reports
+	// success (stokaro/ptah#2720). catalog.Database.Enums feeds a schema
+	// fingerprint and a plan's current_schema_digest, so a short answer is not
+	// a smaller read -- it is enum types the planner is about to CREATE and
+	// values it is about to add, from a schema that already has them.
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read enums for schema %s: %w", schemaName, err)
 	}
 
 	// Nil rather than an empty slice, for the reason the MySQL constraint read
@@ -1534,6 +1548,9 @@ func (r *Reader) readIndexesForSchema(ctx context.Context, schemaName string) ([
 		index.Schema = r.outputSchema(row.schemaName)
 
 		indexes = append(indexes, index)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read indexes for schema %s: %w", schemaName, err)
 	}
 
 	return indexes, nil
@@ -2117,6 +2134,9 @@ func (r *Reader) readBasicConstraintsForSchema(ctx context.Context, schemaName s
 
 		constraints = append(constraints, constraint)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read constraints for schema %s: %w", schemaName, err)
+	}
 
 	return constraints, nil
 }
@@ -2270,6 +2290,9 @@ func (r *Reader) readPostgreSQLConstraintsForSchema(ctx context.Context, schemaN
 		}
 
 		constraints = append(constraints, constraint)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read constraints for schema %s: %w", schemaName, err)
 	}
 
 	return constraints, nil
@@ -3078,6 +3101,9 @@ func (r *Reader) readViewsForSchema(ctx context.Context, schemaName string) ([]c
 		view.Schema = r.outputSchema(view.Schema)
 		views = append(views, view)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read views for schema %s: %w", schemaName, err)
+	}
 	return views, nil
 }
 
@@ -3121,6 +3147,9 @@ func (r *Reader) readMaterializedViewsForSchema(ctx context.Context, schemaName 
 		}
 		view.Schema = r.outputSchema(view.Schema)
 		views = append(views, view)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read materialized views for schema %s: %w", schemaName, err)
 	}
 	return views, nil
 }
@@ -3191,6 +3220,9 @@ func (r *Reader) readTriggersForSchema(ctx context.Context, schemaName string) (
 		}
 		trigger.Schema = r.outputSchema(trigger.Schema)
 		triggers = append(triggers, trigger)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read triggers for schema %s: %w", schemaName, err)
 	}
 	return triggers, nil
 }
@@ -3281,6 +3313,9 @@ func (r *Reader) readFunctionsForSchema(ctx context.Context, schemaName string) 
 		fn.IdentityArguments = &identityArguments
 		functions = append(functions, fn)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read functions for schema %s: %w", schemaName, err)
+	}
 
 	return functions, nil
 }
@@ -3352,6 +3387,9 @@ func (r *Reader) readRLSPoliciesForSchema(ctx context.Context, schemaName string
 		policy.Table = catalog.QualifyTableName(r.outputSchema(schemaName), policy.Table)
 
 		policies = append(policies, policy)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read RLS policies for schema %s: %w", schemaName, err)
 	}
 
 	return policies, nil
@@ -3619,6 +3657,9 @@ func (r *Reader) queryRoles(ctx context.Context, membership string) ([]catalog.R
 		}
 
 		roles = append(roles, role)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read roles: %w", err)
 	}
 
 	return roles, nil
