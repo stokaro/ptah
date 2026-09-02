@@ -12,6 +12,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/internal/pathguard"
 )
 
 func TestEffectiveStringPrefersExplicitCLIFlag(t *testing.T) {
@@ -353,7 +354,13 @@ func TestExternalSchemaCommandsFallsBackToConfig(t *testing.T) {
 	cmd := &cobra.Command{Use: "test"}
 	dbcli.RegisterExternalSchemaOptInFlag(cmd.Flags())
 	c.Assert(cmd.Flags().Set(dbcli.AllowExternalSchemaFlagName, "true"), qt.IsNil)
-	workingDir, err := filepath.Abs(".")
+	// Derived the way the code under test derives it, not re-computed. Both
+	// answers are absolute and they differ wherever a symlink is in the way:
+	// ResolveCLIPath resolves one and filepath.Abs does not, so on macOS -- where
+	// /var is a symlink to /private/var -- a checkout under a temporary
+	// directory failed this line with two spellings of one directory
+	// (stokaro/ptah#2809).
+	workingDir, err := pathguard.ResolveCLIPath(".")
 	c.Assert(err, qt.IsNil)
 
 	cfg := projectconfig.Config{
