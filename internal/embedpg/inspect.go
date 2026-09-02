@@ -462,7 +462,12 @@ func oneRelationVerificationQuery(spec embedgen.Spec, source *Source) string {
 	if filter != "" {
 		inScope = "(" + filter + ")"
 	}
-	columns = append(columns, inScope)
+	// And whether anything stands at the key on the target side, which here is
+	// the row itself: one relation cannot have a position the target half is
+	// missing from. It is selected anyway so that both builders hand the
+	// scanner the same shape, and so that the scanner has one answer to read
+	// rather than a rule about which query produced the row.
+	columns = append(columns, inScope, "TRUE")
 
 	// #nosec G201 -- PostgreSQL takes no bind parameter for a relation or
 	// column name; the identifiers come from the specification and go through
@@ -484,6 +489,7 @@ func oneRelationVerificationQuery(spec embedgen.Spec, source *Source) string {
 // that a table could not already have.
 const (
 	scopeAlias          = "ptah_in_scope"
+	presenceAlias       = "ptah_target_present"
 	generationAlias     = "ptah_generation"
 	inputHashAlias      = "ptah_input_hash"
 	targetVersionAlias  = "ptah_target_version"
@@ -539,6 +545,7 @@ func joinedVerificationQuery(spec embedgen.Spec, source *Source) string {
 		columns = append(columns, sourceSide+"."+aliasAt(sourceVersionPrefix, index))
 	}
 	scope := fmt.Sprintf("COALESCE(%s.%s, FALSE)", sourceSide, scopeAlias)
+	presence := fmt.Sprintf("COALESCE(%s.%s, FALSE)", targetSide, presenceAlias)
 	columns = append(columns,
 		targetSide+"."+generationAlias, targetSide+"."+inputHashAlias,
 		targetSide+"."+targetVersionAlias, targetSide+"."+stateAlias,
@@ -547,7 +554,18 @@ func joinedVerificationQuery(spec embedgen.Spec, source *Source) string {
 		// source columns are absent, so a literal TRUE here would hand the
 		// scanner a source row made of nulls and the verification would demand
 		// a vector for a key the source does not hold.
-		scope)
+		scope,
+		// And the mirror of it. A row only the source has is not a target row:
+		// nothing stands at the key, which is the state `embedverify.Pair`
+		// spells as a nil Target. A literal here counted an absent row in
+		// `TargetRows` and reported it as a stored row carrying no vector
+		// (stokaro/ptah#2781).
+		//
+		// Neither answer can be a bare literal in the SELECT list, because one
+		// there is evaluated per OUTPUT row and is true on both sides of an
+		// outer join. Each side carries its own inside its derived table, where
+		// the join is what makes it NULL.
+		presence)
 
 	on := make([]string, 0, len(spec.Source.KeyFields))
 	for index := range spec.Source.KeyFields {
@@ -563,9 +581,22 @@ func joinedVerificationQuery(spec embedgen.Spec, source *Source) string {
 		verificationSourceSide(spec, source), sourceSide,
 		verificationTargetSide(spec), targetSide,
 		strings.Join(on, " AND "))
-	if strings.TrimSpace(spec.Source.Filter) != "" {
-		query += fmt.Sprintf(" WHERE %s OR %s.%s IS NOT NULL", scope, targetSide, generationAlias)
-	}
+	// Unconditionally, unlike the single-relation shape, and the difference is
+	// not an oversight in either direction. There a row can only be out of
+	// scope because a filter excluded it, so with no filter the predicate is
+	// `TRUE OR ...` and emitting it says nothing. Here "out of scope" also
+	// covers "absent from the source", which happens with no filter at all --
+	// so guarding the WHERE on a filter made the verdict for one database
+	// depend on whether the specification carried a filter that had nothing to
+	// do with the row. Measured on identical state, a no-op `filter: 'id > 0'`
+	// turned a blocking finding into `every deterministic layer passed`
+	// (stokaro/ptah#2781).
+	//
+	// What it drops is a target row standing at a key the source does not have
+	// and carrying no generation: a sidecar row nothing ever wrote. It belongs
+	// to no generation, so no generation's verification is the place it is
+	// reported.
+	query += fmt.Sprintf(" WHERE %s OR %s.%s IS NOT NULL", scope, targetSide, generationAlias)
 	return query + " ORDER BY " + strings.Join(keys, ", ")
 }
 
@@ -618,7 +649,13 @@ func verificationTargetSide(spec embedgen.Spec) string {
 		quoteIdentifier(column+InputHashSuffix)+" AS "+inputHashAlias,
 		quoteIdentifier(column+VersionSuffix)+" AS "+targetVersionAlias,
 		quoteIdentifier(column+StateSuffix)+" AS "+stateAlias,
-		storedWidthExpression(spec.Target.Representation, column)+" AS "+storedWidthAlias)
+		storedWidthExpression(spec.Target.Representation, column)+" AS "+storedWidthAlias,
+		// What says a row stands here at all. Every other column this side
+		// selects can be NULL in a row that exists -- a target row is created
+		// before anything writes a vector into it -- so none of them can answer
+		// it. A literal inside the derived table can, because the join is what
+		// turns it into NULL.
+		"TRUE AS "+presenceAlias)
 	// #nosec G201 -- as verificationQuery: identifiers from the specification
 	// through quoteIdentifier, aliases this package's own literals.
 	return fmt.Sprintf("(SELECT %s FROM %s)",
@@ -643,6 +680,7 @@ type verificationScanner struct {
 	values    []sql.NullString
 	dimension sql.NullInt64
 	inScope   sql.NullBool
+	present   sql.NullBool
 	into      []any
 
 	source embedverify.SourceRow
@@ -658,11 +696,11 @@ func newVerificationScanner(spec embedgen.Spec) *verificationScanner {
 	}
 	width := scanner.keyCount + scanner.inputCount + len(versionColumnsOf(spec)) + 4
 	scanner.values = make([]sql.NullString, width)
-	scanner.into = make([]any, 0, width+2)
+	scanner.into = make([]any, 0, width+3)
 	for index := range scanner.values {
 		scanner.into = append(scanner.into, &scanner.values[index])
 	}
-	scanner.into = append(scanner.into, &scanner.dimension, &scanner.inScope)
+	scanner.into = append(scanner.into, &scanner.dimension, &scanner.inScope, &scanner.present)
 	return scanner
 }
 
@@ -671,65 +709,110 @@ func (s *verificationScanner) pair(rows *sql.Rows) (embedverify.Pair, error) {
 	if err := rows.Scan(s.into...); err != nil {
 		return embedverify.Pair{}, fmt.Errorf("read a verification row: %w", err)
 	}
-	source, target, err := splitVerificationRow(
-		s.values, s.dimension, s.spec, s.keyCount, s.inputCount)
+	// Which halves this position actually has, decided before either is built.
+	//
+	// A row the filter excludes is not a source row: the specification does
+	// not ask for it, so a verification reporting it missing would report
+	// the filter as a defect. NULL is not in scope either -- a three-valued
+	// filter answers NULL for a row it can say nothing about, and treating that
+	// as "asked for" would make the verification demand a vector the backfill
+	// never wrote.
+	//
+	// And a row the target relation has no row for is not a target row.
+	// `embedverify.Pair` spells that as a nil Target, and under the join it is
+	// a position that really occurs.
+	inScope := s.inScope.Valid && s.inScope.Bool
+	present := s.present.Valid && s.present.Bool
+
+	s.target = targetVerificationRow(s.values, s.dimension, s.spec, s.keyCount, s.inputCount)
+	pair := embedverify.Pair{}
+	if present {
+		pair.Target = &s.target
+	}
+	if !inScope {
+		return pair, nil
+	}
+	// Canonicalization happens here and not above, because it is the source
+	// half's work and it can REFUSE. A target-only position carries every input
+	// field as NULL by construction, so a specification whose null or empty
+	// policy is `refuse` turned every tombstone into a fatal error for the whole
+	// walk -- `verify`, `status` and the cutover they gate (stokaro/ptah#2781).
+	// A row the specification does not ask for is not a row its input policy
+	// governs.
+	source, err := sourceVerificationRow(s.values, s.spec, s.keyCount, s.inputCount)
 	if err != nil {
 		return embedverify.Pair{}, err
 	}
-	s.source, s.target = source, target
-	// A row the filter excludes is not a source row: the specification does
-	// not ask for it, so a verification reporting it missing would report
-	// the filter as a defect. It is still a TARGET row, because the vector
-	// is there and something has to say so.
-	//
-	// NULL is not in scope. A three-valued filter answers NULL for a row it
-	// can say nothing about, and treating that as "asked for" would make
-	// the verification demand a vector the backfill never wrote.
-	pair := embedverify.Pair{Target: &s.target}
-	if s.inScope.Valid && s.inScope.Bool {
-		pair.Source = &s.source
-	}
+	s.source = source
+	pair.Source = &s.source
 	return pair, nil
 }
 
-// splitVerificationRow turns one scanned row into what each side says about it.
-func splitVerificationRow(
-	values []sql.NullString, dimension sql.NullInt64, spec embedgen.Spec, keyCount, inputCount int,
-) (embedverify.SourceRow, embedverify.TargetRow, error) {
+// verificationKey is the key both halves of a position are identified by.
+func verificationKey(values []sql.NullString, keyCount int) []string {
 	key := make([]string, keyCount)
 	for index := range keyCount {
 		key[index] = values[index].String
 	}
+	return key
+}
+
+// targetStateOffset is where the four state columns start in a scanned row.
+func targetStateOffset(spec embedgen.Spec, keyCount, inputCount int) int {
+	return keyCount + inputCount + len(versionColumnsOf(spec))
+}
+
+// targetVerificationRow is what the stored side of one position says.
+//
+// Built for every row, including a position the target relation has no row for:
+// the caller decides whether to hand it over, and a value nobody points at
+// costs nothing because the scanner reuses one.
+func targetVerificationRow(
+	values []sql.NullString, dimension sql.NullInt64, spec embedgen.Spec, keyCount, inputCount int,
+) embedverify.TargetRow {
+	offset := targetStateOffset(spec, keyCount, inputCount)
+	state := values[offset+3].String
+	return embedverify.TargetRow{
+		Key:        embedverify.KeyIdentity(verificationKey(values, keyCount)...),
+		Generation: values[offset].String,
+		InputHash:  values[offset+1].String,
+		Version:    values[offset+2].String,
+		Tombstone:  state == "tombstone",
+		Skipped:    state == "skip",
+		Dimension:  storedDimension(dimension),
+	}
+}
+
+// sourceVerificationRow is what the source side of one position says.
+//
+// It canonicalizes, so it is the half that can refuse, and it is called only
+// for a position the specification asks for.
+func sourceVerificationRow(
+	values []sql.NullString, spec embedgen.Spec, keyCount, inputCount int,
+) (embedverify.SourceRow, error) {
+	key := verificationKey(values, keyCount)
 	fields := make([]*string, inputCount)
 	for index := range inputCount {
 		if value := values[keyCount+index]; value.Valid {
 			fields[index] = &value.String
 		}
 	}
-	offset := keyCount + inputCount
 	version := ""
 	if len(versionColumnsOf(spec)) > 0 {
-		version = values[offset].String
-		offset++
+		version = values[keyCount+inputCount].String
 	}
 
 	input, err := spec.Canonicalize(embedgen.Row{Key: key, Fields: fields})
 	if err != nil {
-		return embedverify.SourceRow{}, embedverify.TargetRow{},
+		return embedverify.SourceRow{},
 			fmt.Errorf("canonicalize %v for verification: %w", key, err)
 	}
-	identity := embedverify.KeyIdentity(key...)
-	state := values[offset+3].String
 	return embedverify.SourceRow{
-			Key: identity, Version: version,
-			InputHash: spec.SourceInputHash(input), Skipped: input.Skipped,
-		},
-		embedverify.TargetRow{
-			Key: identity, Generation: values[offset].String,
-			InputHash: values[offset+1].String, Version: values[offset+2].String,
-			Tombstone: state == "tombstone", Skipped: state == "skip",
-			Dimension: storedDimension(dimension),
-		}, nil
+		Key:       embedverify.KeyIdentity(key...),
+		Version:   version,
+		InputHash: spec.SourceInputHash(input),
+		Skipped:   input.Skipped,
+	}, nil
 }
 
 // storedDimension is the width the server reported, or zero for no vector.
