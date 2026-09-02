@@ -202,6 +202,21 @@ for _, stmt := range statements.Statements {
 - `CHECK (expression)`
 - `CONSTRAINT name PRIMARY KEY (columns)`
 
+### Table Indexes
+
+MySQL and MariaDB declare an index inside the table body, and `KEY` and `INDEX`
+are interchangeable in every position. Each of these produces an index rather
+than a constraint:
+
+- `KEY name (columns)` / `INDEX name (columns)`
+- `SPATIAL KEY name (columns)` / `SPATIAL INDEX name (columns)`
+- `FULLTEXT KEY name (columns)` / `FULLTEXT INDEX name (columns)`
+- any of the above followed by `WITH PARSER name`
+
+The introducing keyword is required after `SPATIAL` and `FULLTEXT`, because the
+engines require it: `SPATIAL sp (geom)` is a syntax error there and is refused
+here rather than read as a column named `SPATIAL`.
+
 ### Table Options
 - `ENGINE=InnoDB`
 - `CHARSET=utf8mb4` / `CHARACTER SET=utf8mb4`

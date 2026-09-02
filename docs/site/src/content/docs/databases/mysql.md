@@ -51,6 +51,13 @@ SQL:
   INDEX` over a `POINT` column leaves `INDEX_TYPE=BTREE` on MariaDB 11.8 and
   `SPATIAL` on MySQL 8.4, so comparing an undeclared type would plan a rebuild
   on MySQL that MySQL immediately undoes.
+- A table-body index is read in either spelling the engines accept: `KEY` and
+  `INDEX` are interchangeable on their own and after `SPATIAL` and `FULLTEXT`
+  alike, which is what `mysqldump` writes. One of the two keywords is still
+  required, so `SPATIAL sp (geom)` is refused here because the engines refuse
+  it. A FULLTEXT key's `WITH PARSER` clause is read and rendered, but only where
+  the declaration carries it plainly; the version-gated form a dump wraps it in
+  is dropped, which stokaro/ptah#2749 owns.
 - An inline `KEY`, `INDEX` or `UNIQUE KEY` the author did not name is read with
   the name its server would assign: the first key part's column, then `_2`,
   `_3` for a name already taken. A prefix length and a `DESC` direction stay
