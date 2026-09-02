@@ -1137,6 +1137,18 @@ func assertVerifyPasses(c *qt.C, ctx context.Context, specPath, dbURL string) {
 	// unmeasured is a product decision that moves, and pinning the sentence
 	// would fail for the wrong reason.
 	c.Assert(output, qt.Contains, "not measured:")
+	// And the lease, which is the half stokaro/ptah#2738 reported: the layer
+	// advertised "is a lease still held?" on two pages and the field feeding it
+	// was set nowhere outside its own package's tests, so a run whose lease was
+	// live said `every deterministic layer passed`.
+	//
+	// Asserted HERE rather than in a test of its own because this is the state
+	// an operator is actually in: the backfill and catch-up above claimed the
+	// run, no verb releases a lease, and this verification runs seconds later.
+	// A unit test can prove the sentence renders; only this proves the producer
+	// is wired to a run that has one.
+	c.Assert(output, qt.Contains, "a lease on this run is held by \"ptah-cli\" until ")
+	c.Assert(output, qt.Contains, "the holder does not identify a process")
 }
 
 // assertStatusReportsTheRun is the read-only verb an operator reaches for after
