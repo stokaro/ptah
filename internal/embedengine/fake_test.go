@@ -165,10 +165,7 @@ func (f *fakeProvider) Embed(ctx context.Context, inputs []string) (embedprovide
 	}
 	return embedprovider.Result{
 		Vectors: vectors,
-		Usage: embedprovider.Usage{
-			PromptTokens: len(inputs), TotalTokens: len(inputs) * 2,
-			Reported: slices.Contains(f.reportsUsageOn, len(f.calls)),
-		},
+		Usage:   usageFor(len(inputs), slices.Contains(f.reportsUsageOn, len(f.calls))),
 	}, nil
 }
 
@@ -223,4 +220,18 @@ func (f *fakeTarget) Commit(ctx context.Context, writes []embedrun.TargetWrite, 
 		f.afterCommit()
 	}
 	return nil
+}
+
+// usageFor builds one answer's usage the way a real adapter does.
+//
+// An answer that carried no usage object leaves BOTH counts at zero, which is
+// what openaicompatible produces: it fills Usage only inside
+// `if decoded.Usage != nil`. A fake that reported counts alongside
+// Reported=false would let a test assert token totals in a state no provider
+// can produce (stokaro/ptah#2740 review).
+func usageFor(inputs int, reported bool) embedprovider.Usage {
+	if !reported {
+		return embedprovider.Usage{}
+	}
+	return embedprovider.Usage{PromptTokens: inputs, TotalTokens: inputs * 2, Reported: true}
 }

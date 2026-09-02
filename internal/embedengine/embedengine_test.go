@@ -379,6 +379,11 @@ func TestBackfill_AnEmptySourceCompletesWithoutAskingTheProvider(t *testing.T) {
 func TestBackfill_ProviderUsageIsAccumulated(t *testing.T) {
 	c := qt.New(t)
 	h := newHarness(c, defaultBounds())
+	// Both answers carry a usage object. Without that the counts are zero
+	// rather than unreported-but-present: an adapter fills Usage only when the
+	// answer had one, so a fixture asserting totals alongside Reported=false
+	// would assert a state no provider produces (stokaro/ptah#2740 review).
+	h.provider.reportsUsageOn = []int{1, 2}
 
 	run, _, err := h.engine.Backfill(context.Background(), "run-1")
 
@@ -387,6 +392,7 @@ func TestBackfill_ProviderUsageIsAccumulated(t *testing.T) {
 	// input and two total.
 	c.Assert(run.Progress.ProviderPromptTokens, qt.Equals, int64(3))
 	c.Assert(run.Progress.ProviderTotalTokens, qt.Equals, int64(6))
+	c.Assert(run.Progress.ProviderUsageBatches, qt.Equals, int64(2))
 }
 
 // lastKeyOf returns the key of a batch's last write.

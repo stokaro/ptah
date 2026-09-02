@@ -203,7 +203,6 @@ func (e *Engine) embedRereadRows(
 	}
 	var writes []embedrun.TargetWrite
 	var outcome embedrun.BatchOutcome
-	requested, reported := 0, 0
 	for _, batch := range batches {
 		batchWrites, batchOutcome, err := e.embed(ctx, batch)
 		if err != nil {
@@ -214,39 +213,24 @@ func (e *Engine) embedRereadRows(
 		outcome.RowsSkipped += batchOutcome.RowsSkipped
 		outcome.PromptTokens += batchOutcome.PromptTokens
 		outcome.TotalTokens += batchOutcome.TotalTokens
-		requested += requestsIn(batchOutcome)
-		reported += reportsIn(batchOutcome)
+		outcome.UsageReported = outcome.UsageReported || batchOutcome.UsageReported
 	}
-	// True only when every request that was actually sent reported usage. The
-	// field's meaning is that the counts beside it are the provider's, and a
-	// page whose second request answered without a usage object has counts
-	// that are short by an unknown amount -- which is the zero-nobody-asked-for
-	// this flag exists to separate from a measured one. A batch of skipped rows
-	// sends nothing and is not a request, so it neither reports nor withholds.
-	outcome.UsageReported = requested > 0 && reported == requested
+	// UsageReported is accumulated above rather than decided here, and ANY
+	// request reporting is enough. Requiring all of them reads as the stricter
+	// rule and contradicts itself: an answer that carries no usage object leaves
+	// both counts at zero, so a page whose second request said nothing still has
+	// real tokens from the first -- and `status` keys its "the provider reported
+	// no token usage" line on ProviderUsageBatches == 0, which would then sit
+	// beside a non-zero count.
+	//
+	// What it claims is exactly true: some answer in this commit accounted for
+	// itself, and the totals hold what those answers said. It under-reports a
+	// mixed page rather than saying anything false, and for the backfill's
+	// one-batch commits it is the same rule as before.
 	// The cursor belongs to the backfill's keyset and means nothing here:
 	// catch-up resumes from a transaction identity, not from a key.
 	outcome.Cursor = nil
 	return writes, outcome, nil
-}
-
-// requestsIn and reportsIn read one batch's outcome for whether a provider was
-// asked and whether it accounted for the answer.
-//
-// A batch every row of which was skipped reaches no endpoint, and its zero
-// counts are not a provider reporting zero.
-func requestsIn(outcome embedrun.BatchOutcome) int {
-	if outcome.RowsEmbedded == 0 {
-		return 0
-	}
-	return 1
-}
-
-func reportsIn(outcome embedrun.BatchOutcome) int {
-	if outcome.RowsEmbedded == 0 || !outcome.UsageReported {
-		return 0
-	}
-	return 1
 }
 
 // tombstonesFor writes a tombstone for every changed key the source no longer

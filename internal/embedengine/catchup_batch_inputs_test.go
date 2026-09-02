@@ -84,32 +84,61 @@ func commitsWithWrites(h *harness) []commit {
 func TestCatchUp_TokenCountsCoverEveryRequestHappyPath(t *testing.T) {
 	c := qt.New(t)
 	h := newHarness(c, embedrun.BatchBounds{MaxRows: 4, MaxInputs: 2})
+	h.provider.reportsUsageOn = []int{1, 2}
 	run, _, err := caughtUp(c, h, fourChanges(), livingRows("1", "2", "3", "4"))
 
 	c.Assert(err, qt.IsNil)
-	// The fake reports one prompt token per input, so four inputs across two
-	// requests are four however they were split.
+	// One prompt token per input, so four inputs across two requests are four
+	// however they were split. Both requests report, because an answer carrying
+	// no usage object leaves its counts at zero -- asserting totals without
+	// that would assert a state no provider produces.
 	c.Assert(run.Progress.ProviderPromptTokens, qt.Equals, int64(4))
 	c.Assert(run.Progress.ProviderTotalTokens, qt.Equals, int64(8))
+}
+
+// TestCatchUp_ARequestThatReportedNothingAddsNoTokensHappyPath is the other
+// side, and it is what keeps the counts and the flag from contradicting.
+//
+// `status` prints "the provider reported no token usage" when no batch carried
+// a usage object, so a total including tokens from an answer that reported none
+// would sit beside that sentence.
+func TestCatchUp_ARequestThatReportedNothingAddsNoTokensHappyPath(t *testing.T) {
+	c := qt.New(t)
+	h := newHarness(c, embedrun.BatchBounds{MaxRows: 4, MaxInputs: 2})
+	h.provider.reportsUsageOn = []int{1}
+	run, _, err := caughtUp(c, h, fourChanges(), livingRows("1", "2", "3", "4"))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(h.provider.calls, qt.HasLen, 2)
+	// Two inputs from the request that accounted for itself, nothing from the
+	// one that did not.
+	c.Assert(run.Progress.ProviderPromptTokens, qt.Equals, int64(2))
+	c.Assert(run.Progress.ProviderTotalTokens, qt.Equals, int64(4))
+	c.Assert(run.Progress.ProviderUsageBatches, qt.Equals, int64(1))
 }
 
 // TestCatchUp_UsageIsClaimedOnlyWhenEveryRequestReportedIt is the rule the
 // split forced a decision about.
 //
 // ProviderUsageBatches exists to separate a provider that reported zero from
-// one that reported nothing. A page that is now several requests has to collapse
-// several answers into one, and claiming the counts are the provider's when only
-// some requests accounted for themselves would report a total short by an
-// unknown amount as a measurement.
-func TestCatchUp_UsageIsClaimedOnlyWhenEveryRequestReportedIt(t *testing.T) {
+// one that reported nothing, and a page that is now several requests has to
+// collapse several answers into one.
+//
+// Any answer carrying a usage object is enough. Requiring all of them reads as
+// the stricter rule and contradicts itself: an answer with no usage object
+// leaves its counts at zero, so a mixed page still holds real tokens from the
+// requests that did report -- and `status` keys "the provider reported no token
+// usage" on this count being zero, which would then sit beside a non-zero
+// total (stokaro/ptah#2740 review).
+func TestCatchUp_UsageIsClaimedWhenAnyRequestReportedIt(t *testing.T) {
 	tests := []struct {
 		name       string
 		reportedOn []int
 		want       int64
 	}{
 		{name: "neither request reported", reportedOn: nil, want: 0},
-		{name: "only the first reported", reportedOn: []int{1}, want: 0},
-		{name: "only the second reported", reportedOn: []int{2}, want: 0},
+		{name: "only the first reported", reportedOn: []int{1}, want: 1},
+		{name: "only the second reported", reportedOn: []int{2}, want: 1},
 		{name: "both reported", reportedOn: []int{1, 2}, want: 1},
 	}
 
