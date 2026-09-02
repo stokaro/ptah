@@ -136,8 +136,8 @@ The header's two numbers are the shape the report was taken on: in-scope source
 rows, and positions the walk stood opposite on the target side.
 
 **A target row is not always a vector.** A tombstone, a skip, and a row nothing
-ever wrote each occupy a position and hold none, so where the two differ the
-header says which:
+ever wrote each occupy a position and hold none. Where the two counts differ the
+header names the **deliberate** absences:
 
 ```console
 generation 4d42572104c3...: 2 source rows, 3 target rows (2 with a vector, 1 tombstoned)
@@ -147,6 +147,11 @@ The total is what the verification record stores and what its digest binds, so
 it is kept rather than replaced by the vector count. The breakdown is silent on
 a generation where every target row holds a vector, because there is nothing to
 explain.
+
+It is not a partition. A row nothing ever wrote is neither tombstoned nor
+skipped, so it is part of the difference and not part of the breakdown — the
+`coverage` layer reports it as a finding, and that is where to read about it. A
+tombstone that still holds a vector is counted in both, and is also a finding.
 
 Each finding names its **layer** and its **severity**.
 

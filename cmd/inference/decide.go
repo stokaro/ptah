@@ -201,8 +201,13 @@ func recordVerification(ctx context.Context, options commonOptions, generation s
 // disagree with the evidence file beside it. What was missing is why the two
 // differ, so the breakdown is appended and nothing is taken away.
 //
+// It names the deliberate absences and is not a partition. A row nothing ever
+// wrote holds no vector and carries neither flag, so it is part of the
+// difference and not part of the breakdown -- the coverage layer reports it as
+// a finding, which is where a reader should be sent for it.
+//
 // Silent when there is nothing to explain: on a healthy generation every target
-// row holds a vector, and "(2 vectors)" after "2 target rows" is noise.
+// row holds a vector, and "(2 with a vector)" after "2 target rows" is noise.
 func targetShapeText(report embedverify.Report) string {
 	if report.TargetVectors == report.TargetRows {
 		return ""

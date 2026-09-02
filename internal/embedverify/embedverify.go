@@ -135,13 +135,18 @@ type Report struct {
 	// after catch-up tombstoned one row through Ptah's own verbs
 	// (stokaro/ptah#2742).
 	TargetVectors int
-	// Tombstones and SkippedTargets are the deliberate absences among them --
+	// Tombstones and SkippedTargets are the DELIBERATE absences among them --
 	// a row whose source is gone, and one the specification asked not to embed.
 	//
-	// Reported separately because they are the reason the two counts differ,
-	// and a reader given only the difference has to guess which it was. They
-	// are the row's flags rather than a partition: a tombstone that still holds
-	// a vector is counted in both, and is a finding.
+	// Reported separately because they are the reason a healthy generation's
+	// two counts differ, and a reader given only the difference has to guess
+	// which it was.
+	//
+	// They do not partition the difference, in either direction. A tombstone
+	// that still holds a vector is counted in both TargetVectors and Tombstones
+	// and is a finding (stokaro/ptah#2734); a row nothing ever wrote is counted
+	// in neither, because it is not a deliberate absence -- the coverage layer
+	// reports it, which is where it belongs.
 	Tombstones     int
 	SkippedTargets int
 	// Unmeasured names the checks that did not run at all.
