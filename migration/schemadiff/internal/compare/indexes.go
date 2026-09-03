@@ -223,7 +223,11 @@ func constraintBackedIndexIdentities(
 		case "FOREIGN KEY":
 			if normalizedDialect == platform.MySQL ||
 				normalizedDialect == platform.MariaDB {
-				owned.foreignKeys[ref] = struct{}{}
+				for _, backing := range mysqlForeignKeyBackingIndexes(
+					database, constraint, normalizedDialect, semantics,
+				) {
+					owned.foreignKeys[backing] = struct{}{}
+				}
 			}
 			if normalizedDialect == platform.Spanner {
 				for _, backing := range spannerForeignKeyBackingIndexes(
@@ -265,6 +269,106 @@ func constraintBackedIndexIdentities(
 // A user's own index over the same columns is not swallowed by this: an
 // identity the desired state declares as an index never reaches the ownership
 // filter at all, which is the rule collectDatabaseIndexes states below.
+// mysqlForeignKeyBackingIndexes is the index MySQL or MariaDB built for one
+// foreign key, where it built one at all.
+//
+// The name alone used to decide it, and a name is not evidence. Measured on
+// MySQL 8.4.11 and MariaDB 11.8.9, both engines accept this table:
+//
+//	CREATE TABLE children (
+//	    a INT, b INT,
+//	    KEY cover (a), KEY f (b),
+//	    CONSTRAINT f FOREIGN KEY (a) REFERENCES parents(id));
+//
+// `cover(a)` backs the constraint and `f(b)` is an ordinary performance index
+// that happens to share the symbol. Claiming it for the foreign key suppressed
+// it from the comparison, so removing it from the desired schema reported
+// `InSync` with no plan and left it unmanaged forever (stokaro/ptah#2782).
+//
+// So both signals are required, the way the Spanner arm below already requires
+// them: the NAME says the engine could have made it, and the COLUMNS say it
+// could serve the key. Neither is sufficient -- a user index over the foreign
+// key's own columns under a different name is droppable, and a same-named index
+// over different columns is a different object.
+//
+// Direction is asked of the leading parts and is engine-specific, which is the
+// same split the naming pass carries: MySQL will not back a foreign key with a
+// descending key and MariaDB will (stokaro/ptah#2769). An index whose leading
+// part is descending is therefore the backing index on MariaDB and an
+// independent object on MySQL.
+func mysqlForeignKeyBackingIndexes(
+	database *catalog.Database,
+	constraint catalog.Constraint,
+	dialect string,
+	semantics identifier.Semantics,
+) []difftypes.IndexRef {
+	columns := uniqueStringsPreserveOrder(constraint.ColumnNamesOrDefault())
+	if len(columns) == 0 {
+		return nil
+	}
+	table := constraint.QualifiedTableName()
+	var refs []difftypes.IndexRef
+	for _, index := range database.Indexes {
+		if !mysqlIndexBacksForeignKey(index, constraint.Name, table, columns, dialect, semantics) {
+			continue
+		}
+		refs = append(refs, indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{
+			Name:      index.Name,
+			TableName: index.QualifiedTableName(),
+		}))
+	}
+	return refs
+}
+
+// mysqlIndexBacksForeignKey reports whether one index is the one the engine
+// created to back a foreign key.
+func mysqlIndexBacksForeignKey(
+	index catalog.Index,
+	constraintName string,
+	table string,
+	columns []string,
+	dialect string,
+	semantics identifier.Semantics,
+) bool {
+	if index.IsPrimary {
+		return false
+	}
+	if semantics.IndexIdentityKey(strings.TrimSpace(index.Name)) !=
+		semantics.IndexIdentityKey(strings.TrimSpace(constraintName)) {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(index.QualifiedTableName()), strings.TrimSpace(table)) {
+		return false
+	}
+	// The LEADING columns, not the whole list: a wider index backs the key when
+	// the key's columns lead it, which is the engines' own rule.
+	if len(index.Columns) < len(columns) {
+		return false
+	}
+	if !sameColumnNames(semantics, columns, index.Columns[:len(columns)]) {
+		return false
+	}
+	return dialect == platform.MariaDB || !mysqlLeadingPartDescends(index, len(columns))
+}
+
+// mysqlLeadingPartDescends reports whether any of an index's first parts is
+// ordered DESC.
+//
+// Parts rather than Columns, because Columns has already flattened the
+// direction away. An index the catalog reports without parts is read as
+// ascending, which is what every reader that fills only Columns means.
+func mysqlLeadingPartDescends(index catalog.Index, leading int) bool {
+	for position, part := range index.Parts {
+		if position >= leading {
+			return false
+		}
+		if part.Desc {
+			return true
+		}
+	}
+	return false
+}
+
 func spannerForeignKeyBackingIndexes(
 	database *catalog.Database,
 	constraint catalog.Constraint,
