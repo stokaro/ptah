@@ -184,3 +184,34 @@ func TestCompare_ASameNamedBackingIndexIsDroppableWhenAnotherCoversHappyPath(t *
 		})
 	}
 }
+
+// TestCompare_ASoleCoveringIndexUnderItsOwnNameIsStillTheAuthorsHappyPath is
+// what the NAME condition is for, and nothing else here reaches it.
+//
+// `cover(a)` is the only index on the table and it backs the foreign key, so a
+// rule reading columns alone calls it the engine's and suppresses it. It is the
+// author's: they named it, and the engine builds its own only where nothing
+// covers.
+//
+// Planning the removal is the right answer even though the engine will refuse
+// it. Measured on both: `DROP INDEX cover` answers
+// `ERROR 1553 (HY000): Cannot drop index 'cover': needed in a foreign key
+// constraint`. A declaration that drops an index its own foreign key needs is a
+// mistake, and an engine naming the reason is a better outcome than a
+// comparison that reports the target synchronized and leaves the two disagreeing
+// for good.
+func TestCompare_ASoleCoveringIndexUnderItsOwnNameIsStillTheAuthorsHappyPath(t *testing.T) {
+	for _, test := range ownershipEngines {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			removed := compareChildren(c, test.dialect,
+				liveChildren(catalog.Index{
+					Name: "cover", TableName: "children", Columns: []string{"a"},
+				}),
+				desiredChildren())
+
+			c.Assert(removed, qt.DeepEquals, []string{"cover"})
+		})
+	}
+}
