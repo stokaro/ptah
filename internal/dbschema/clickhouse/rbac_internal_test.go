@@ -589,7 +589,11 @@ func TestReadRolesReportsTheOnlyAttributeClickHouseHas(t *testing.T) {
 	described, _, err := reader.readRoles(t.Context(), grants)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(described, qt.DeepEquals, []catalog.Role{{Name: "reader", Inherit: true}})
+	c.Assert(described, qt.DeepEquals, []catalog.Role{{
+		Name:          "reader",
+		Inherit:       true,
+		PasswordState: catalog.RolePasswordAbsent,
+	}})
 }
 
 func TestReadSchemaFillsTheDescriptionUnderTheCapability(t *testing.T) {

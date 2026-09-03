@@ -139,11 +139,11 @@ func TestOracleRolesAndGrantsAreReadWithPrivilegeE2E(t *testing.T) {
 
 	// Inherit is the one attribute an Oracle role does not report false for:
 	// a grantee holds the role's privileges while the role is enabled, and
-	// there is no NOINHERIT to read. HasPassword is false because this role is
+	// there is no NOINHERIT to read. PasswordState is absent because this role is
 	// not IDENTIFIED BY one -- DBA_ROLES.AUTHENTICATION_TYPE says NONE.
 	described := oracleRoleByName(c, read.Roles, role)
 	c.Assert(described.Inherit, qt.IsTrue)
-	c.Assert(described.HasPassword, qt.IsFalse)
+	c.Assert(described.PasswordState, qt.Equals, catalog.RolePasswordAbsent)
 	c.Assert(described.Login, qt.IsFalse)
 	c.Assert(described.Superuser, qt.IsFalse)
 

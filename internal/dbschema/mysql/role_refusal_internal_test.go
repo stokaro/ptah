@@ -24,6 +24,56 @@ import (
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
+func TestReadRolesMarksNonAuthenticatingPasswordsAbsent(t *testing.T) {
+	tests := []struct {
+		name          string
+		hasIsRole     int64
+		wantPredicate string
+	}{
+		{
+			name:          "MariaDB role discriminator",
+			hasIsRole:     1,
+			wantPredicate: "is_role = 'Y'",
+		},
+		{
+			name:          "MySQL empty authentication data",
+			wantPredicate: "account_locked = 'Y' AND password_expired = 'Y' AND authentication_string = ''",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var queries []string
+			db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+				queries = append(queries, query)
+				return map[bool]dbtest.QueryResult{
+					true: {
+						Columns: []string{"count"},
+						Rows:    [][]driver.Value{{test.hasIsRole}},
+					},
+					false: {
+						Columns: []string{"user"},
+						Rows:    [][]driver.Value{{"app_reader"}},
+					},
+				}[strings.Contains(query, "SELECT COUNT(*)")], nil
+			})
+			reader := NewMySQLReader(db.SQL, "app")
+
+			roles, err := reader.readRoles(t.Context())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(queries, qt.HasLen, 2)
+			c.Assert(queries[1], qt.Contains, "SELECT user")
+			c.Assert(queries[1], qt.Contains, test.wantPredicate)
+			c.Assert(roles, qt.DeepEquals, []catalog.Role{{
+				Name:          "app_reader",
+				PasswordState: catalog.RolePasswordAbsent,
+			}})
+		})
+	}
+}
+
 func TestReadRolesInto_RecordsWhyTheRoleCatalogWasNotRead(t *testing.T) {
 	tests := []struct {
 		name    string

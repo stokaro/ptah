@@ -273,7 +273,7 @@ func (r *Reader) readRoles(ctx context.Context, grants []catalog.Grant) (describ
 // read, and the annotation parser defaults a declared role to inherit=true. A
 // live read of false would make every role differ from its own declaration.
 func liveRole(name string) catalog.Role {
-	return catalog.Role{Name: name, Inherit: true}
+	return catalog.Role{Name: name, Inherit: true, PasswordState: catalog.RolePasswordAbsent}
 }
 
 // grantedRoleNames is the set of roles the described grants name.

@@ -161,6 +161,9 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	if err := ValidateDesiredSchema(desired, info); err != nil {
 		return nil, nil, err
 	}
+	if err := ValidateRolePasswordComparison(desired, database, info.Dialect); err != nil {
+		return nil, nil, err
+	}
 	merged.IdentifierSemantics = &semantics
 	diff, undecided := CompareReportingUndecidedAdditions(desired, database, merged)
 	// The half of the SQLite virtual-table guard that only the comparator can

@@ -3487,7 +3487,11 @@ func (r *Reader) rolesInScopeClauses() []string {
 // the rest of the description can mention, so the description never references
 // a role it does not also define.
 func (r *Reader) readRoles(ctx context.Context) ([]catalog.Role, error) {
-	return r.queryRoles(ctx, rolesUsedByScope)
+	catalogAccess, err := r.rolePasswordCatalogAccess(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return r.queryRoles(ctx, rolesUsedByScope, catalogAccess)
 }
 
 // readRolesInto performs both role reads and decides which of them the
@@ -3521,7 +3525,12 @@ func (r *Reader) readRolesInto(ctx context.Context, schema *catalog.Database) er
 		return err
 	}
 
-	described, err := r.readRoles(ctx)
+	catalogAccess, err := r.rolePasswordCatalogAccess(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to determine role password visibility: %w", err)
+	}
+
+	described, err := r.queryRoles(ctx, rolesUsedByScope, catalogAccess)
 	if err != nil {
 		return fmt.Errorf("failed to read roles: %w", err)
 	}
@@ -3530,7 +3539,7 @@ func (r *Reader) readRolesInto(ctx context.Context, schema *catalog.Database) er
 	// comparator that is not told so plans CREATE ROLE for them. Read the
 	// complement so "not described" and "not present" stay different answers.
 	// See stokaro/ptah#1267 and stokaro/ptah#1276.
-	outOfScope, err := r.readRolesOutOfScope(ctx)
+	outOfScope, err := r.queryRoles(ctx, rolesNotUsedByScope, catalogAccess)
 	if err != nil {
 		return fmt.Errorf("failed to read roles outside the inspected scope: %w", err)
 	}
@@ -3586,7 +3595,11 @@ func (r *Reader) readRolesInto(ctx context.Context, schema *catalog.Database) er
 // over a subquery yielding a single NULL matches nothing at all, which would
 // silently empty this list and restore the very defect it exists to prevent.
 func (r *Reader) readRolesOutOfScope(ctx context.Context) ([]catalog.Role, error) {
-	return r.queryRoles(ctx, rolesNotUsedByScope)
+	catalogAccess, err := r.rolePasswordCatalogAccess(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return r.queryRoles(ctx, rolesNotUsedByScope, catalogAccess)
 }
 
 // Membership predicates for the role query, applied against the `used` set the
@@ -3597,15 +3610,63 @@ const (
 	rolesNotUsedByScope = `NOT EXISTS (SELECT 1 FROM used u WHERE u.roleoid = r.oid)`
 )
 
+const roleAuthVisibilityQuery = `
+	SELECT has_table_privilege(
+		current_user,
+		'pg_catalog.pg_authid',
+		'SELECT'
+	)`
+
+type roleAuthCatalogAccess uint8
+
+const (
+	roleAuthCatalogHidden roleAuthCatalogAccess = iota
+	roleAuthCatalogReadable
+)
+
+// rolePasswordCatalogAccess reports whether this session may read the protected
+// role catalog. PostgreSQL's public pg_roles view masks rolpassword and cannot
+// distinguish an absent password from a present one, so the reader must not
+// infer a state from that view.
+func (r *Reader) rolePasswordCatalogAccess(ctx context.Context) (roleAuthCatalogAccess, error) {
+	// CockroachDB exposes pg_authid but masks rolpassword even when
+	// has_table_privilege reports SELECT. Treating that answer as visibility
+	// would turn a present password into an apparently absent one, so its role
+	// reads never consult the protected-looking catalog.
+	if r.dialect == platform.CockroachDB {
+		return roleAuthCatalogHidden, nil
+	}
+
+	var readable bool
+	if err := r.db.QueryRowContext(ctx, roleAuthVisibilityQuery).Scan(&readable); err != nil {
+		return roleAuthCatalogHidden, fmt.Errorf("query role password visibility: %w", err)
+	}
+	if readable {
+		return roleAuthCatalogReadable, nil
+	}
+	return roleAuthCatalogHidden, nil
+}
+
 // queryRoles reads pg_roles restricted by one of the two membership
-// predicates above.
-func (r *Reader) queryRoles(ctx context.Context, membership string) ([]catalog.Role, error) {
+// predicates above. The protected catalog appears in the statement only after
+// rolePasswordCatalogAccess has established SELECT privilege for this session.
+func (r *Reader) queryRoles(
+	ctx context.Context,
+	membership string,
+	catalogAccess roleAuthCatalogAccess,
+) ([]catalog.Role, error) {
 	schemas := r.schemasToRead()
 	placeholders := make([]string, 0, len(schemas))
 	args := make([]any, 0, len(schemas))
 	for i, schemaName := range schemas {
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
 		args = append(args, schemaName)
+	}
+	authProjection := `NULL::boolean AS has_password`
+	protectedJoin := ""
+	if catalogAccess == roleAuthCatalogReadable {
+		authProjection = `COALESCE(a.rolpassword IS NOT NULL AND a.rolpassword != '', false) AS has_password`
+		protectedJoin = `LEFT JOIN pg_catalog.pg_authid a ON r.oid = a.oid`
 	}
 
 	rolesQuery := `
@@ -3627,10 +3688,10 @@ func (r *Reader) queryRoles(ctx context.Context, membership string) ([]catalog.R
 			r.rolcreaterole AS create_role,
 			r.rolinherit AS inherit,
 			r.rolreplication AS replication,
-			COALESCE(a.rolpassword IS NOT NULL AND a.rolpassword != '', false) AS has_password,
+			` + authProjection + `,
 			COALESCE(shobj_description(r.oid, 'pg_authid'), '') AS comment
 		FROM pg_roles r
-		LEFT JOIN pg_authid a ON r.oid = a.oid
+		` + protectedJoin + `
 		-- Reserved system roles and the bootstrap superuser, excluded through
 		-- the same definition the desired-schema refusal tests against, so the
 		-- two cannot drift into disagreeing about what "reserved" means
@@ -3651,6 +3712,7 @@ func (r *Reader) queryRoles(ctx context.Context, membership string) ([]catalog.R
 	var roles []catalog.Role
 	for rows.Next() {
 		var role catalog.Role
+		var hasPassword sql.NullBool
 		err := rows.Scan(
 			&role.Name,
 			&role.Login,
@@ -3659,11 +3721,20 @@ func (r *Reader) queryRoles(ctx context.Context, membership string) ([]catalog.R
 			&role.CreateRole,
 			&role.Inherit,
 			&role.Replication,
-			&role.HasPassword,
+			&hasPassword,
 			&role.Comment,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan role: %w", err)
+		}
+
+		switch {
+		case !hasPassword.Valid:
+			role.PasswordState = catalog.RolePasswordUnknown
+		case hasPassword.Bool:
+			role.PasswordState = catalog.RolePasswordPresent
+		default:
+			role.PasswordState = catalog.RolePasswordAbsent
 		}
 
 		roles = append(roles, role)

@@ -201,8 +201,9 @@ func Roles(
 // # Password Handling
 //
 // Password comparison is handled specially:
-//   - If target role has a password and database role doesn't, it's marked as changed
-//   - If target role has no password and database role has one, no change is recorded
+//   - If target role has a password and the database reports it absent, it's marked as changed
+//   - If target role has no password and the database reports one present, no change is recorded
+//   - If password presence is unknown, no change is inferred
 //   - Actual password values are not compared for security reasons
 //
 // # Change Format
@@ -246,7 +247,7 @@ func RoleDefinitions(desired schemamodel.Role, database catalog.Role) difftypes.
 
 	// Compare password (special handling for security)
 	// We only detect if a password needs to be set, not compare actual values
-	if desired.Password != "" && !database.HasPassword {
+	if desired.Password != "" && database.PasswordState == catalog.RolePasswordAbsent {
 		// If target has password but database role doesn't, mark for update
 		roleDiff.Changes["password"] = "password_update_required"
 	}

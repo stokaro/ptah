@@ -30,6 +30,9 @@ func enumCatalog(capturedSQL *string) dbtest.QueryHandler {
 		if strings.Contains(query, "SELECT EXISTS") {
 			return dbtest.QueryResult{Columns: []string{"exists"}, Rows: [][]driver.Value{{true}}}, nil
 		}
+		if strings.Contains(query, "has_table_privilege") {
+			return dbtest.QueryResult{Columns: []string{"has_table_privilege"}, Rows: [][]driver.Value{{false}}}, nil
+		}
 		if strings.Contains(query, "pg_enum") {
 			*capturedSQL = strings.Join(strings.Fields(query), " ")
 			return dbtest.QueryResult{

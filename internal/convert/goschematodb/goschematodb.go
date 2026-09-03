@@ -591,16 +591,20 @@ func toDBRLSPolicies(policies []schemamodel.RLSPolicy) []catalog.RLSPolicy {
 func toDBRoles(roles []schemamodel.Role) []catalog.Role {
 	out := make([]catalog.Role, 0, len(roles))
 	for _, role := range roles {
+		passwordState := catalog.RolePasswordAbsent
+		if role.Password != "" {
+			passwordState = catalog.RolePasswordPresent
+		}
 		out = append(out, catalog.Role{
-			Name:        role.Name,
-			Login:       role.Login,
-			Superuser:   role.Superuser,
-			CreateDB:    role.CreateDB,
-			CreateRole:  role.CreateRole,
-			Inherit:     role.Inherit,
-			Replication: role.Replication,
-			HasPassword: role.Password != "",
-			Comment:     role.Comment,
+			Name:          role.Name,
+			Login:         role.Login,
+			Superuser:     role.Superuser,
+			CreateDB:      role.CreateDB,
+			CreateRole:    role.CreateRole,
+			Inherit:       role.Inherit,
+			Replication:   role.Replication,
+			PasswordState: passwordState,
+			Comment:       role.Comment,
 		})
 	}
 	return out

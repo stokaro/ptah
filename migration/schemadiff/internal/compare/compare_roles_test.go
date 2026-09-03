@@ -407,13 +407,14 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 			Replication: true,
 		}
 		database := catalog.Role{
-			Name:        "test_role",
-			Login:       false,
-			Superuser:   false,
-			CreateDB:    false,
-			CreateRole:  false,
-			Inherit:     true,
-			Replication: false,
+			Name:          "test_role",
+			Login:         false,
+			Superuser:     false,
+			CreateDB:      false,
+			CreateRole:    false,
+			Inherit:       true,
+			Replication:   false,
+			PasswordState: catalog.RolePasswordAbsent,
 		}
 
 		diff := compare.RoleDefinitions(desired, database)
@@ -454,7 +455,8 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 			Password: "new_password",
 		}
 		database := catalog.Role{
-			Name: "test_role",
+			Name:          "test_role",
+			PasswordState: catalog.RolePasswordAbsent,
 		}
 
 		diff := compare.RoleDefinitions(desired, database)
@@ -464,6 +466,23 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 		c.Assert(diff.Changes["password"], qt.Equals, "password_update_required")
 	})
 
+	t.Run("unknown password presence does not infer an update", func(t *testing.T) {
+		c := qt.New(t)
+		desired := schemamodel.Role{
+			Name:     "test_role",
+			Password: "new_password",
+		}
+		database := catalog.Role{
+			Name:          "test_role",
+			PasswordState: catalog.RolePasswordUnknown,
+		}
+
+		diff := compare.RoleDefinitions(desired, database)
+
+		c.Assert(diff.RoleName, qt.Equals, "test_role")
+		c.Assert(diff.Changes, qt.HasLen, 0)
+	})
+
 	t.Run("no password change when target has no password", func(t *testing.T) {
 		c := qt.New(t)
 		desired := schemamodel.Role{
@@ -471,8 +490,8 @@ func TestRoleDefinitionsComparison(t *testing.T) {
 			Password: "", // No password in target
 		}
 		database := catalog.Role{
-			Name:        "test_role",
-			HasPassword: true, // Database role has a password
+			Name:          "test_role",
+			PasswordState: catalog.RolePasswordPresent,
 		}
 
 		diff := compare.RoleDefinitions(desired, database)
