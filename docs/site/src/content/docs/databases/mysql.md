@@ -92,6 +92,14 @@ SQL:
   `PRIMARY`. ASCII folding is shared and deterministic and is unchanged; a name
   derived from a non-ASCII column is refused for the same reason an explicit
   one is.
+- A non-ASCII column named by a key, a constraint, or its own `UNIQUE` is
+  refused for the same reason, and the disagreement runs deeper there. Asked
+  whether two columns differing only by the pair are one name, MySQL folds
+  dotted `İ`/`i` and the Kelvin sign/`K` while MariaDB folds `I`/`ı` and
+  `σ`/`ς` -- and MariaDB folds the Kelvin pair for that question while treating
+  the two as different columns when it resolves a foreign key, so the rule is
+  not one per engine either. A column nothing keys takes part in no comparison
+  and is kept.
 - Two indexes on one table claiming one name are refused. Both engines answer
   `ERROR 1061 Duplicate key name`, so accepting it would describe a table
   neither can create. `KEY (a), KEY a (b)` is that shape: the unnamed index

@@ -72,17 +72,60 @@ func TestToDatabase_NonASCIIIndexNameFailurePath(t *testing.T) {
 	}
 }
 
-// A name derived from a column reaches the same refusal, because the question
-// is about the name that ends up in the namespace rather than where it came
-// from.
-func TestToDatabase_NonASCIIDerivedIndexNameFailurePath(t *testing.T) {
+// A key over a non-ASCII column is refused for the column rather than for the
+// name derived from it. The column is the comparison Ptah cannot make, and the
+// derived name is a consequence of it, so the column refusal is the one that
+// fires and the one that names the real obstacle.
+func TestToDatabase_NonASCIIKeyColumnFailurePath(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+	}{
+		{
+			name: "an unnamed key over the column",
+			sql:  "CREATE TABLE nz (`\u0438\u043c\u044f` INT, KEY (`\u0438\u043c\u044f`));",
+		},
+		{
+			name: "an ASCII-named key over the column",
+			sql:  "CREATE TABLE nz (`\u0438\u043c\u044f` INT, KEY k (`\u0438\u043c\u044f`));",
+		},
+		{
+			name: "a column carrying its own UNIQUE",
+			sql:  "CREATE TABLE nz (`\u0438\u043c\u044f` INT UNIQUE);",
+		},
+		{
+			name: "a constraint over the column",
+			sql:  "CREATE TABLE nz (`\u0438\u043c\u044f` INT, CONSTRAINT u UNIQUE (`\u0438\u043c\u044f`));",
+		},
+	}
+
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		for _, test := range tests {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
+
+				_, err := dialectSchema(c, dialect, test.sql)
+
+				c.Assert(err, qt.ErrorIs, toschema.ErrNonASCIIColumnName)
+			})
+		}
+	}
+}
+
+// A column nothing keys takes part in no comparison here, so it converts. The
+// refusal is about a relation Ptah has to resolve, not about the character set
+// of a schema.
+func TestToDatabase_NonASCIIColumnWithNoKeyIsKept(t *testing.T) {
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := dialectSchema(c, dialect, "CREATE TABLE nz (`\u0438\u043c\u044f` INT, KEY (`\u0438\u043c\u044f`));")
+			database, err := dialectSchema(c, dialect,
+				"CREATE TABLE nz (a INT, `\u0438\u043c\u044f` INT, KEY k (a));")
 
-			c.Assert(err, qt.ErrorIs, toschema.ErrNonASCIIIndexName)
+			c.Assert(err, qt.IsNil)
+			c.Assert(database.Fields, qt.HasLen, 2)
+			c.Assert(database.Fields[1].Name, qt.Equals, "\u0438\u043c\u044f")
 		})
 	}
 }

@@ -183,6 +183,12 @@ func nameMySQLInlineIndexes(
 	if !ok {
 		return nil
 	}
+	// Before anything folds a name: every comparison below -- the namespace,
+	// the coverage check, the derived names -- rests on a column equivalence
+	// the two engines do not share.
+	if err := refuseNonASCIIKeyColumns(database, table, fieldsStart, order); err != nil {
+		return err
+	}
 	claimed := make(indexNames)
 	// PRIMARY is reserved rather than derived, and UNCONDITIONALLY: measured on
 	// MySQL 9.7.2 and MariaDB 11.8.9, a table whose only key is
@@ -469,13 +475,10 @@ func firstIndexColumn(index schemamodel.Index) string {
 // the question is about the name that ends up in the namespace rather than
 // about where it came from.
 func refuseNonASCIIIndexName(name string, table schemamodel.Table) error {
-	for _, r := range name {
-		if r < utf8.RuneSelf {
-			continue
-		}
-		return fmt.Errorf("%w: %s on %s", ErrNonASCIIIndexName, name, table.Name)
+	if isASCII(name) {
+		return nil
 	}
-	return nil
+	return fmt.Errorf("%w: %s on %s", ErrNonASCIIIndexName, name, table.Name)
 }
 
 func claimExplicit(claimed indexNames, name string, table schemamodel.Table) error {
@@ -507,9 +510,6 @@ func claimExplicit(claimed indexNames, name string, table schemamodel.Table) err
 func derive(
 	claimed indexNames, column string, table schemamodel.Table, naming engineIndexNaming,
 ) (string, error) {
-	if err := refuseNonASCIIIndexName(column, table); err != nil {
-		return "", err
-	}
 	candidate := column
 	for suffix := 2; ; suffix++ {
 		if !claimed.taken(candidate) {
