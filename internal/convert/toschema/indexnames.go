@@ -44,6 +44,34 @@ var ErrIndexNameTooLong = errors.New("the derived index name is longer than the 
 // name is refused whether or not the table has a primary key.
 var ErrReservedIndexName = errors.New("PRIMARY is reserved and cannot name a secondary index")
 
+// ErrNonASCIIIndexName is the class of a MySQL-family index name Ptah has no
+// one comparison rule for.
+//
+// The two engines fold non-ASCII identifiers differently, and not in a way any
+// single rule covers. Measured 2026-09-03 on MySQL 8.4.11 and MariaDB 11.8.9,
+// two named secondary indexes on one table, the identifiers sent as UTF-8 over
+// a utf8mb4 connection:
+//
+//	I and dotless ı                 accepted        ERROR 1061
+//	dotted İ and i                  ERROR 1061      accepted
+//	Sigma and final sigma           accepted        ERROR 1061
+//	Kelvin sign and ASCII K         ERROR 1061      accepted
+//	a lone `prımary`                accepted        ERROR 1280
+//
+// The engines disagree on every row, and the last one shows why a solitary
+// non-ASCII name is not a safe exception either: it is still an unresolved
+// comparison against the reserved PRIMARY.
+//
+// Ptah folded with strings.ToLower, which is one rule, and it was wrong for
+// MariaDB on all five: it missed the three collisions that engine reports and
+// invented the two it does not. So the name is refused rather than compared.
+// Refusing is not the answer this deserves -- stokaro/ptah#2768 carries the
+// engine-specific modeling -- but it is the one that neither asserts an
+// equality the server denies nor accepts a collision it will refuse at apply
+// time.
+var ErrNonASCIIIndexName = errors.New(
+	"a non-ASCII index name has no single comparison rule across the MySQL family")
+
 // ErrDuplicateIndexName is the class of two indexes on one table claiming a
 // single name.
 //
@@ -154,6 +182,12 @@ func nameMySQLInlineIndexes(
 	naming, ok := namingFor(sourcePlatform)
 	if !ok {
 		return nil
+	}
+	// Before anything folds a name: every comparison below -- the namespace,
+	// the coverage check, the derived names -- rests on a column equivalence
+	// the two engines do not share.
+	if err := refuseNonASCIIKeyColumns(database, table, fieldsStart, order); err != nil {
+		return err
 	}
 	claimed := make(indexNames)
 	// PRIMARY is reserved rather than derived, and UNCONDITIONALLY: measured on
@@ -434,7 +468,23 @@ func firstIndexColumn(index schemamodel.Index) string {
 }
 
 // claimExplicit records a name the author wrote, refusing a second claim on it.
+// refuseNonASCIIIndexName fails closed on an index name the two engines do not
+// agree how to compare. [ErrNonASCIIIndexName] carries the measurement.
+//
+// Both the author-written name and one derived from a column reach it, because
+// the question is about the name that ends up in the namespace rather than
+// about where it came from.
+func refuseNonASCIIIndexName(name string, table schemamodel.Table) error {
+	if isASCII(name) {
+		return nil
+	}
+	return fmt.Errorf("%w: %s on %s", ErrNonASCIIIndexName, name, table.Name)
+}
+
 func claimExplicit(claimed indexNames, name string, table schemamodel.Table) error {
+	if err := refuseNonASCIIIndexName(name, table); err != nil {
+		return err
+	}
 	// PRIMARY is refused rather than reported as a duplicate, because it is one
 	// even on a table with no other index: both engines answer
 	// `ERROR 1280 (42000): Incorrect index name 'PRIMARY'`, and calling that a
