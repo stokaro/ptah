@@ -92,6 +92,18 @@ referenced-key policy: `ForeignKeysRequireUniqueReference`,
 schema validation without rendering SQL. Migration planning calls this path
 before producing AST nodes.
 
+An object whose key payload is empty is refused with
+`ptaherr.ErrInvalidSchemaDiff` before any statement is emitted:
+
+- an index naming no column and no expression;
+- a UNIQUE or PRIMARY KEY constraint naming no column;
+- a CHECK constraint carrying no expression.
+
+These are not dialect refusals. No engine accepts the shape, so the guard sits
+on the AST that both entry points converge on and `RenderSQL` refuses the same
+nodes. A blank column name counts as no column, because a structured key part
+carrying only a direction or a prefix length converts to one.
+
 `core/ast` and `core/renderer` carry the DDL language: the visitor node tree
 and the dialect engines that turn it into schema SQL. `core/query` carries the
 whole DML language: the SELECT / INSERT / UPDATE / DELETE statement and
