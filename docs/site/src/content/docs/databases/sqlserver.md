@@ -317,6 +317,13 @@ rendered SQL always preserves your annotation text verbatim.
 - Engine-specific options such as `WITH (ONLINE = ON)` are not planned.
 - Dev-database cleanup rejects database replication, replicated tables, and
   unsupported database-scoped artifacts before its first DDL statement.
+- A column declared both `PRIMARY KEY` and `UNIQUE` is refused rather than
+  rendered. SQL Server rejects `a INT PRIMARY KEY UNIQUE` outright, where the
+  other engines fold it, so there is no rendering of that column this server
+  accepts and emitting the key alone would discard what the author wrote. Write
+  the key alone, or write `a INT UNIQUE, PRIMARY KEY (a)`, which is a different
+  statement this server does accept and which Ptah renders as the primary key
+  plus the unique constraint it produces.
 
 ## Next steps
 
