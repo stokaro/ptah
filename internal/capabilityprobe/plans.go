@@ -459,7 +459,15 @@ func postgresFamilyPlan(dialect string) plan {
 			   AND COALESCE(array_to_json(reloptions)::text, '[]') LIKE '%ttl_expiration_expression%'`,
 		),
 	}
-	return plan{experiments: experiments, undecided: map[capability.Capability]string{
+	return plan{experiments: experiments, undecided: postgresFamilyUndecided()}
+}
+
+// postgresFamilyUndecided names the keys this family's probe cannot answer,
+// and why each one is a question no statement it sends can settle. It is
+// separate from postgresFamilyPlan because it is a different kind of statement
+// -- what the probe declines to measure, rather than what it measures.
+func postgresFamilyUndecided() map[capability.Capability]string {
+	return map[capability.Capability]string{
 		// The probe connects as ONE account and cannot ask whether a privilege
 		// EXISTS without being able to grant it: a server that refuses
 		// `GRANT SHOW_ROUTINE` because the privilege is unknown and one that
@@ -486,7 +494,7 @@ func postgresFamilyPlan(dialect string) plan {
 		capability.ContinuousAggregates: "the key names TimescaleDB continuous aggregates, for the same " +
 			"reason: a PostgreSQL image without the extension refuses CREATE MATERIALIZED VIEW WITH " +
 			"(timescaledb.continuous) for the extension's absence",
-	}}
+	}
 }
 
 // mysqlFamilyPlan is the statement table for MySQL and MariaDB.

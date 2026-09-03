@@ -24,14 +24,14 @@ import (
 
 func nullsDistinctIndexes(desired, current *bool) (*schemamodel.Database, *catalog.Database) {
 	return &schemamodel.Database{
-			Indexes: []schemamodel.Index{
-				{Name: "idx_t_s", TableName: "t", Fields: []string{"s"}, Unique: true, NullsDistinct: desired},
-			},
-		}, &catalog.Database{
-			Indexes: []catalog.Index{
-				{Name: "idx_t_s", TableName: "t", Columns: []string{"s"}, IsUnique: true, NullsDistinct: current},
-			},
-		}
+		Indexes: []schemamodel.Index{
+			{Name: "idx_t_s", TableName: "t", Fields: []string{"s"}, Unique: true, NullsDistinct: desired},
+		},
+	}, &catalog.Database{
+		Indexes: []catalog.Index{
+			{Name: "idx_t_s", TableName: "t", Columns: []string{"s"}, IsUnique: true, NullsDistinct: current},
+		},
+	}
 }
 
 func TestIndexes_NullsDistinctConvergence_HappyPath(t *testing.T) {

@@ -35,13 +35,6 @@ func stringSetsEqual(left, right []string) bool {
 	return slices.Equal(left, right)
 }
 
-func boolPtrEqual(left, right *bool) bool {
-	if left == nil || right == nil {
-		return left == right
-	}
-	return *left == *right
-}
-
 func cloneBoolPtr(value *bool) *bool {
 	if value == nil {
 		return nil
@@ -65,8 +58,9 @@ func uniqueStringsPreserveOrder(values []string) []string {
 // nullsDistinctEqual compares two NULLS [NOT] DISTINCT states, reading an
 // unset value as NULLS DISTINCT rather than as a third state.
 //
-// It is not boolPtrEqual, and the difference is a convergence bug rather than
-// a nicety. PostgreSQL prints the clause back only when it is NOT DISTINCT:
+// Comparing the two as pointers instead -- unset equal only to unset -- is a
+// convergence bug rather than a nicety. PostgreSQL prints the clause back only
+// when it is NOT DISTINCT:
 // pg_get_indexdef renders nothing for the default, so the reader answers nil
 // for an index the author declared nulls_distinct="true" on. Compared as
 // pointers, a declaration that spells its engine's own default therefore
