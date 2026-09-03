@@ -223,7 +223,11 @@ func constraintBackedIndexIdentities(
 		case "FOREIGN KEY":
 			if normalizedDialect == platform.MySQL ||
 				normalizedDialect == platform.MariaDB {
-				owned.foreignKeys[ref] = struct{}{}
+				for _, backing := range mysqlForeignKeyBackingIndexes(
+					database, constraint, semantics,
+				) {
+					owned.foreignKeys[backing] = struct{}{}
+				}
 			}
 			if normalizedDialect == platform.Spanner {
 				for _, backing := range spannerForeignKeyBackingIndexes(
@@ -265,6 +269,90 @@ func constraintBackedIndexIdentities(
 // A user's own index over the same columns is not swallowed by this: an
 // identity the desired state declares as an index never reaches the ownership
 // filter at all, which is the rule collectDatabaseIndexes states below.
+// mysqlForeignKeyBackingIndexes is the index MySQL or MariaDB built for one
+// foreign key, where it built one at all.
+//
+// The name alone used to decide it, and a name is not evidence. Measured on
+// MySQL 8.4.11 and MariaDB 11.8.9, both engines accept this table:
+//
+//	CREATE TABLE children (
+//	    a INT, b INT,
+//	    KEY cover (a), KEY f (b),
+//	    CONSTRAINT f FOREIGN KEY (a) REFERENCES parents(id));
+//
+// `cover(a)` backs the constraint and `f(b)` is an ordinary performance index
+// that happens to share the symbol. Claiming it for the foreign key suppressed
+// it from the comparison, so removing it from the desired schema reported
+// `InSync` with no plan and left a live index nothing would ever manage
+// (stokaro/ptah#2782).
+//
+// Both signals are required, the way the Spanner arm below already requires
+// them: the NAME says the engine could have made it, and the LEADING COLUMNS
+// say it could serve the key. Neither is sufficient -- a covering index under
+// the author's own name is droppable, and a same-named index over different
+// columns is a different object.
+//
+// A third condition is deliberately NOT here, and its absence is a measurement
+// rather than an oversight. The engine builds this index only where nothing
+// else covers the key, so a same-named index that backs the key is still the
+// author's where another index backs it too -- measured, `DROP INDEX f`
+// succeeds on both engines with `cover(a)` beside `f(a)`. Deciding that needs
+// each candidate's DIRECTION, because MySQL will not back a foreign key with a
+// descending key and MariaDB will (stokaro/ptah#2769), and the catalog does not
+// carry it: internal/dbschema/mysql's index query selects SUB_PART and not
+// COLLATION, so every part arrives ascending. Asking anyway reads a descending
+// index as covering, un-owns the real backing index, and plans a DROP the engine
+// refuses with ERROR 1553 -- which is what the live test from #2769 caught. The
+// narrower case waits on the reader recording direction.
+func mysqlForeignKeyBackingIndexes(
+	database *catalog.Database,
+	constraint catalog.Constraint,
+	semantics identifier.Semantics,
+) []difftypes.IndexRef {
+	columns := uniqueStringsPreserveOrder(constraint.ColumnNamesOrDefault())
+	if len(columns) == 0 {
+		return nil
+	}
+	table := constraint.QualifiedTableName()
+	var refs []difftypes.IndexRef
+	for _, index := range database.Indexes {
+		if !identifiersEqual(semantics, index.Name, constraint.Name) {
+			continue
+		}
+		if !mysqlIndexBacksForeignKey(index, table, columns, semantics) {
+			continue
+		}
+		refs = append(refs, indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{
+			Name:      index.Name,
+			TableName: index.QualifiedTableName(),
+		}))
+	}
+	return refs
+}
+
+// mysqlIndexBacksForeignKey reports whether one index could serve a foreign key
+// on table: its LEADING columns are the key's, which is the engines' own rule.
+func mysqlIndexBacksForeignKey(
+	index catalog.Index,
+	table string,
+	columns []string,
+	semantics identifier.Semantics,
+) bool {
+	if !strings.EqualFold(strings.TrimSpace(index.QualifiedTableName()), strings.TrimSpace(table)) {
+		return false
+	}
+	if len(index.Columns) < len(columns) {
+		return false
+	}
+	return sameColumnNames(semantics, columns, index.Columns[:len(columns)])
+}
+
+// identifiersEqual compares two identifiers under the target's own rules.
+func identifiersEqual(semantics identifier.Semantics, left, right string) bool {
+	return semantics.IndexIdentityKey(strings.TrimSpace(left)) ==
+		semantics.IndexIdentityKey(strings.TrimSpace(right))
+}
+
 func spannerForeignKeyBackingIndexes(
 	database *catalog.Database,
 	constraint catalog.Constraint,
