@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 )
 
@@ -53,4 +54,33 @@ func Refuse(dialect, clause string) error {
 			normalized,
 		),
 	}
+}
+
+// Validate refuses a carried NULLS [NOT] DISTINCT clause on a target whose
+// capability set has no spelling for it, and answers nil for the far more
+// common model that carries none. A nil nullsDistinct is the ordinary case:
+// nothing defaults the field, so it is non-nil only where an author wrote
+// nulls_distinct=, an atlas.hcl declared it, the parser read the clause, or
+// PostgreSQL printed it back.
+//
+// Both spellings are refused, not just the one that inverts the default,
+// because which spelling inverts it depends on the target.
+// [capability.UniqueNullsDistinctClause] records the measurement: PostgreSQL,
+// MySQL, MariaDB, SQLite and Oracle all treat nulls as distinct in a plain
+// UNIQUE, so NULLS DISTINCT is their default and NULLS NOT DISTINCT is the
+// one that changes meaning -- while SQL Server treats them as equal, which
+// inverts the pair. A rule that dropped whichever value happened to be the
+// default would therefore have to be a per-dialect rule, and dropping the
+// other one silently is the defect stokaro/ptah#2820 reports.
+//
+// The returned error satisfies errors.Is(err, [ptaherr.ErrUnsupportedFeature])
+// and errors.As against *[ptaherr.CapabilityError].
+func Validate(dialect string, caps capability.Capabilities, nullsDistinct *bool) error {
+	if nullsDistinct == nil {
+		return nil
+	}
+	if caps.Has(capability.UniqueNullsDistinctClause) {
+		return nil
+	}
+	return Refuse(dialect, Clause(*nullsDistinct))
 }

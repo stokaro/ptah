@@ -135,6 +135,7 @@ so typos fail fast. Current registry:
 | `transactional_ddl` | schema changes run inside a transaction that rolls back as a unit, which is what --tx-mode all needs |
 | `triggers` | CREATE TRIGGER objects |
 | `unique_constraints` | UNIQUE accepted as a constraint rather than only as a unique index (false on Spanner and ClickHouse) |
+| `unique_nulls_distinct_clause` | NULLS [NOT] DISTINCT accepted on a unique constraint or index (PostgreSQL 15+ and YugabyteDB 2025+ only) |
 | `views` | standalone CREATE VIEW ... AS <query> objects |
 | `xml_type` | PostgreSQL XML column type |
 <!-- END GENERATED CAPABILITY KEYS -->
@@ -270,6 +271,7 @@ set that names no mode at all, which only a hand-built set produces and
 | `transactional_ddl` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 | `triggers` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
 | `unique_constraints` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ |
+| `unique_nulls_distinct_clause` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `views` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `xml_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ |
 <!-- END GENERATED PRESET MATRIX -->

@@ -250,6 +250,13 @@ func clickHousePlan() plan {
 		acceptance(capability.UniqueConstraints, nil,
 			t.table("uqc", "n Int64, CONSTRAINT uqc_uq UNIQUE (n)", "n"),
 		),
+		// The NULLS [NOT] DISTINCT clause, asked as a unique index because the
+		// constraint spelling is refused here for its own reason above
+		// (stokaro/ptah#2820).
+		acceptance(capability.UniqueNullsDistinctClause,
+			[]string{t.table("ndc", "n Int64", "n")},
+			"CREATE UNIQUE INDEX ndc_uq ON ndc (n) NULLS NOT DISTINCT",
+		),
 		acceptance(capability.DeferrableConstraints,
 			[]string{t.table("dfp", "id Int64", "id"), t.table("dfc", "n Int64, id Int64", "n")},
 			"ALTER TABLE dfc ADD CONSTRAINT dfc_fk FOREIGN KEY (id) REFERENCES dfp (id) DEFERRABLE INITIALLY DEFERRED",

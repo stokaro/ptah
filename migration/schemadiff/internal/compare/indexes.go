@@ -848,7 +848,7 @@ func indexDefinitionsChanged(
 	if resolved.Resolved {
 		declaredPredicate = resolved.Predicate
 	}
-	if !boolPtrEqual(desired.NullsDistinct, database.NullsDistinct) ||
+	if !nullsDistinctEqual(desired.NullsDistinct, database.NullsDistinct) ||
 		indexPredicateChanged(declaredPredicate, database.Condition, dialect) {
 		return true
 	}

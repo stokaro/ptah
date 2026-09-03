@@ -12,14 +12,40 @@ import (
 	"go.5x5.cz/ptah/core/schemamodel"
 )
 
-// A model reaches the MySQL renderer from more sources than MySQL SQL -- Go
-// annotations, a YAML schema, a PostgreSQL database read and re-rendered. The
-// parser refuses the clause when it reads MySQL-family SQL; this file covers
-// the other boundary, where the clause is already in the model. Measured
-// 2026-09-03: MySQL 8.4.11 and MariaDB 11.8.9 both answer error 1064 to every
-// spelling of it, so there is no output for these inputs -- rendering the
-// constraint without the clause would invert its null-equality semantics.
-// See stokaro/ptah#2788.
+// A model reaches a renderer from more sources than that dialect's own SQL --
+// Go annotations, a YAML schema, a PostgreSQL database read and re-rendered.
+// The parser refuses the clause when it reads SQL for a dialect that has no
+// spelling for it; this file covers the other boundary, where the clause is
+// already in the model.
+//
+// The refusal began as a MySQL-family one (stokaro/ptah#2788) and is now keyed
+// on capability.UniqueNullsDistinctClause, because the dialects outside that
+// family were not silent about the clause in one way. Measured 2026-09-03:
+// MySQL 8.4.11 and MariaDB 11.8.9 answer error 1064; SQLite, SQL Server and
+// Oracle have no such clause; ClickHouse and Spanner refuse the unique
+// constraint before reaching it; and CockroachDB v26.3.1 answered `ERROR: at
+// or near "nulls": syntax error` to Ptah's own output, which made it an
+// unappliable migration rather than a silent drop. SQL Server is the reason
+// both spellings are refused rather than only the one that inverts the
+// default: its plain UNIQUE already treats nulls as equal, so there the pair
+// runs the other way round. See stokaro/ptah#2820.
+
+// refusingDialects are the targets whose default capability set cannot spell
+// the clause. YugabyteDB is deliberately absent: its 2025.2 and 2026.1 lines
+// accept, honor and read the clause back, and only the 2024.2 line refuses
+// it, which is a release-line answer rather than a dialect one.
+func refusingDialects() []string {
+	return []string{
+		platform.MySQL,
+		platform.MariaDB,
+		platform.SQLite,
+		platform.SQLServer,
+		platform.Oracle,
+		platform.ClickHouse,
+		platform.Spanner,
+		platform.CockroachDB,
+	}
+}
 
 func nullsDistinctSchema(nullsDistinct bool) *schemamodel.Database {
 	return &schemamodel.Database{
@@ -52,7 +78,7 @@ func nullsDistinctIndexNode(nullsDistinct bool) *ast.IndexNode {
 	return index
 }
 
-func TestRenderNullsDistinct_MySQLFamilyFailurePath(t *testing.T) {
+func TestRenderNullsDistinct_FailurePath(t *testing.T) {
 	tests := []struct {
 		name          string
 		nullsDistinct bool
@@ -62,7 +88,7 @@ func TestRenderNullsDistinct_MySQLFamilyFailurePath(t *testing.T) {
 		{name: "distinct", nullsDistinct: true, wantClause: "NULLS DISTINCT"},
 	}
 
-	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+	for _, dialect := range refusingDialects() {
 		for _, test := range tests {
 			t.Run(dialect+"/whole model/"+test.name, func(t *testing.T) {
 				c := qt.New(t)
@@ -102,9 +128,9 @@ func TestRenderNullsDistinct_MySQLFamilyFailurePath(t *testing.T) {
 }
 
 // The control that keeps the refusal keyed on the clause rather than on the
-// dialect: an ordinary unique constraint and an ordinary unique index still
-// render on both engines.
-func TestRenderUniqueWithoutNullsDistinct_MySQLFamilyHappyPath(t *testing.T) {
+// dialect: an ordinary unique index still renders on every engine that refuses
+// the clause. Without it, deleting the feature outright would read as a fix.
+func TestRenderUniqueWithoutNullsDistinct_HappyPath(t *testing.T) {
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
@@ -126,8 +152,9 @@ func TestRenderUniqueWithoutNullsDistinct_MySQLFamilyHappyPath(t *testing.T) {
 	}
 }
 
-// PostgreSQL is the control that keeps the refusal dialect-scoped: the same
-// model still renders the clause it carries.
+// PostgreSQL and YugabyteDB are the control that keeps the refusal scoped to
+// the capability: the same model still renders the clause it carries on a
+// target whose default set can spell it.
 func TestRenderNullsDistinct_PostgresHappyPath(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -146,6 +173,11 @@ func TestRenderNullsDistinct_PostgresHappyPath(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, test.want)
+
+			yugabyteSQL, err := renderer.RenderSQL(platform.YugabyteDB, nullsDistinctTableNode(test.nullsDistinct))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(yugabyteSQL, qt.Contains, test.want)
 		})
 	}
 }

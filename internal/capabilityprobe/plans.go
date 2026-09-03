@@ -398,6 +398,17 @@ func postgresFamilyPlan(dialect string) plan {
 		// Spanner interface in this family refuses. capability.UniqueConstraints
 		// carries the measurement (stokaro/ptah#2585).
 		acceptance(capability.UniqueConstraints, nil, t.table("uqc", "n int NOT NULL, CONSTRAINT uqc_uq UNIQUE (n)", "n")),
+		// The NULLS [NOT] DISTINCT clause, asked as a unique INDEX rather than
+		// a unique constraint because this family splits on the constraint
+		// spelling and not on the clause: the Spanner interface refuses
+		// CONSTRAINT ... UNIQUE outright, so asking through it would answer a
+		// question about capability.UniqueConstraints instead of this one.
+		// PostgreSQL grew the clause in 15, so the older line answers no here
+		// rather than being told so (stokaro/ptah#2820).
+		acceptance(capability.UniqueNullsDistinctClause,
+			[]string{t.table("ndc", "n int", "n")},
+			"CREATE UNIQUE INDEX ndc_uq ON ndc (n) NULLS NOT DISTINCT",
+		),
 		acceptance(capability.DeferrableConstraints,
 			append(t.uniquelyReferenced("dfp", "dfp_uq", "id"), t.table("dfc", "n int, id int", "n")),
 			"ALTER TABLE dfc ADD CONSTRAINT dfc_fk FOREIGN KEY (id) REFERENCES dfp (id) DEFERRABLE INITIALLY DEFERRED",
@@ -448,7 +459,15 @@ func postgresFamilyPlan(dialect string) plan {
 			   AND COALESCE(array_to_json(reloptions)::text, '[]') LIKE '%ttl_expiration_expression%'`,
 		),
 	}
-	return plan{experiments: experiments, undecided: map[capability.Capability]string{
+	return plan{experiments: experiments, undecided: postgresFamilyUndecided()}
+}
+
+// postgresFamilyUndecided names the keys this family's probe cannot answer,
+// and why each one is a question no statement it sends can settle. It is
+// separate from postgresFamilyPlan because it is a different kind of statement
+// -- what the probe declines to measure, rather than what it measures.
+func postgresFamilyUndecided() map[capability.Capability]string {
+	return map[capability.Capability]string{
 		// The probe connects as ONE account and cannot ask whether a privilege
 		// EXISTS without being able to grant it: a server that refuses
 		// `GRANT SHOW_ROUTINE` because the privilege is unknown and one that
@@ -475,7 +494,7 @@ func postgresFamilyPlan(dialect string) plan {
 		capability.ContinuousAggregates: "the key names TimescaleDB continuous aggregates, for the same " +
 			"reason: a PostgreSQL image without the extension refuses CREATE MATERIALIZED VIEW WITH " +
 			"(timescaledb.continuous) for the extension's absence",
-	}}
+	}
 }
 
 // mysqlFamilyPlan is the statement table for MySQL and MariaDB.
@@ -644,6 +663,12 @@ func mysqlFamilyPlan(dialect string) plan {
 		// family spells it the standard way (stokaro/ptah#2585).
 		acceptance(capability.UniqueConstraints, nil,
 			"CREATE TABLE uqc (n int NOT NULL, CONSTRAINT uqc_uq UNIQUE (n))",
+		),
+		// The NULLS [NOT] DISTINCT clause. Asked rather than assumed because
+		// the refusal Ptah renders rests on it (stokaro/ptah#2820).
+		acceptance(capability.UniqueNullsDistinctClause,
+			[]string{"CREATE TABLE ndc (n int)"},
+			"CREATE UNIQUE INDEX ndc_uq ON ndc (n) NULLS NOT DISTINCT",
 		),
 		// The MySQL family spells the table the same way, so the statement is
 		// the same question.
