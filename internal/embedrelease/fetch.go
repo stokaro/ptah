@@ -91,29 +91,24 @@ func Fetch(ctx context.Context, reference string, opts FetchOptions) (Fetched, e
 	}, nil
 }
 
-// pullRelease opens whichever kind of address the reference is.
+// pullRelease reads the release at whichever kind of address the reference is.
+//
+// It used to open an image layout itself, because [ociartifact.Client.Pull]
+// could only address a registry. That made this function the second place that
+// had to recognize a layout reference, and the two were not equivalent: a
+// registry pull went through the client's limits and options and a layout pull
+// did not. The client resolves both kinds now, so there is one recognition
+// again (stokaro/ptah#2623).
 func pullRelease(
 	ctx context.Context, reference string, opts FetchOptions,
 ) (ociartifact.Artifact, error) {
-	pullOptions := ociartifact.PullOptions{
-		ExpectedArtifactTypes: []string{ReleaseArtifactType},
-	}
-	if ociartifact.IsLayoutRef(reference) {
-		target, selector, err := ociartifact.OpenLayout(reference)
-		if err != nil {
-			return ociartifact.Artifact{}, err
-		}
-		artifact, err := ociartifact.PullFrom(ctx, target, selector, pullOptions)
-		if err != nil {
-			return ociartifact.Artifact{}, fmt.Errorf("fetch the release %s: %w", reference, err)
-		}
-		return artifact, nil
-	}
 	client, err := ociartifact.NewClient(ociartifact.ClientOptions{PlainHTTP: opts.PlainHTTP})
 	if err != nil {
 		return ociartifact.Artifact{}, fmt.Errorf("fetch the release %s: %w", reference, err)
 	}
-	artifact, err := client.Pull(ctx, reference, pullOptions)
+	artifact, err := client.Pull(ctx, reference, ociartifact.PullOptions{
+		ExpectedArtifactTypes: []string{ReleaseArtifactType},
+	})
 	if err != nil {
 		return ociartifact.Artifact{}, fmt.Errorf("fetch the release %s: %w", reference, err)
 	}

@@ -41,14 +41,35 @@ var (
 	ErrReferrerIndexRequired = errors.New("the referrer policy requires the registry's referrers index")
 )
 
-// Reference is a parsed oci:// registry reference.
+// Reference is a parsed OCI reference, registry or local image layout.
+//
+// A layout reference carries the directory it names instead of a registry and
+// repository, and reports it from [Reference.String]. The registry-shaped
+// accessors answer empty for one: a directory has no host, and a caller
+// comparing hosts must not be handed a value that compares equal to another
+// layout's. Nothing outside this package reads them today, and
+// [Reference.IsLayout] is what a caller should ask.
 type Reference struct {
 	registry   string
 	repository string
 	selector   string
 	tag        string
 	digest     bool
+	layout     string
 }
+
+// layoutReference is the reference a layout endpoint reports having written to.
+//
+// It exists so [PushResult.Reference] means "where this went" for both kinds.
+// The alternative was leaving it zero for a layout, which renders as `oci:///:`
+// -- a registry reference naming nothing, which is worse than no answer.
+func layoutReference(raw, tag string) Reference {
+	return Reference{layout: strings.TrimSpace(raw), selector: tag, tag: tag}
+}
+
+// IsLayout reports whether this reference addresses a local image layout
+// rather than a registry.
+func (r Reference) IsLayout() bool { return r.layout != "" }
 
 // ParseRef parses an oci://registry/repository[:tag][@digest] reference.
 // An omitted selector resolves to :latest.
@@ -171,6 +192,9 @@ func (r Reference) PinnedString(digest string) string {
 // and a digest renders both, so round-tripping through String preserves what
 // the author wrote rather than silently narrowing it to the digest.
 func (r Reference) String() string {
+	if r.layout != "" {
+		return r.layout
+	}
 	if !r.digest {
 		return Scheme + r.repositoryName() + ":" + r.selector
 	}

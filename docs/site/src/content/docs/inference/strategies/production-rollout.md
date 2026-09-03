@@ -176,6 +176,14 @@ An air-gapped environment takes the same flag over a directory:
 `ptah oci copy oci://... oci-layout://./release` on one side of the gap, carry
 the directory across, and `--release oci-layout://./release` on the other.
 
+A producer with no registry at all writes the directory directly.
+`--publish-evidence oci-layout://./release` publishes the record and the
+specification beside it, which is what makes the result a release rather than a
+report: `--evidence-file` writes `release.json` alone, and a release is runnable
+elsewhere because it carries the document too. The copy above stays the right
+shape when a registry exists on one side, and is no longer the only way to reach
+a directory.
+
 ## Gate a deployment on the state
 
 `ptah inference status --require-ready` exits 1 until the generation is verified

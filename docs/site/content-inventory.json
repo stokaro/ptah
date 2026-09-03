@@ -2862,8 +2862,8 @@
         "/inference/reference/evaluation-corpus/"
       ],
       "inboundLinks": [],
-      "visibleWords": 1092,
-      "sourceBytes": 9386
+      "visibleWords": 1166,
+      "sourceBytes": 9859
     },
     {
       "path": "docs/site/src/content/docs/inference/troubleshooting.md",
