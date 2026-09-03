@@ -104,7 +104,9 @@ func isFieldLevelConstraint(
 		// the constraint name rather than the column, because the synthesized
 		// name is keyed on table.constraint_name and getConstraintColumn does
 		// not always resolve the FK column.
-		key := newConstraintKey(dbConstraint.QualifiedTableName(), dbConstraint.Name, semantics)
+		key := newConstraintKey(
+			dbConstraint.QualifiedTableName(), dbConstraint.Name, dbConstraint.Type, semantics,
+		)
 		if _, synthesized := synthesizedFKKeys[key]; synthesized {
 			return false
 		}

@@ -1610,7 +1610,20 @@ func constraintDedupKey(c Constraint) string {
 
 func constraintIdentity(scope string, constraint Constraint) string {
 	if name := strings.TrimSpace(constraint.Name); name != "" {
-		return scope + "\x00named\x00" + name
+		// The TYPE is part of a named constraint's identity for the same reason
+		// the branch below already carries it: MySQL and MariaDB let two
+		// constraints on one table share a name, and both accept
+		// `CONSTRAINT same UNIQUE (a)` beside `CONSTRAINT same FOREIGN KEY
+		// (a)`. Identified by scope and name alone the second was deduplicated
+		// away, so a desired schema declaring both reached the comparison with
+		// one -- and a database missing the other was reported in sync
+		// (stokaro/ptah#2774).
+		//
+		// On a target whose names are unique per table whatever the type,
+		// PostgreSQL among them, this keeps both rather than dropping one:
+		// louder than silence, and the server says which it refuses.
+		return scope + "\x00named\x00" +
+			strings.ToUpper(strings.TrimSpace(constraint.Type)) + "\x00" + name
 	}
 
 	nullsDistinct := "unset"

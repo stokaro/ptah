@@ -32,9 +32,18 @@ type checkConstraintClauses struct {
 	byName      map[string]string
 }
 
+// constraintKey identifies one constraint within a read.
+//
+// The TYPE is part of the identity because MySQL and MariaDB let two
+// constraints on one table share a name -- `CONSTRAINT same UNIQUE (a)` beside
+// `CONSTRAINT same FOREIGN KEY (a)` is accepted by both, and their catalogs
+// report two rows. Keyed by table and name alone the second one landed on the
+// first, so a live schema came back with the foreign key gone
+// (stokaro/ptah#2774).
 type constraintKey struct {
-	table string
-	name  string
+	table          string
+	name           string
+	constraintType string
 }
 
 type tableColumnKey struct {
@@ -1033,10 +1042,24 @@ func (r *Reader) readConstraints(ctx context.Context, dbName string) ([]catalog.
 		LEFT JOIN information_schema.KEY_COLUMN_USAGE kcu ON
 			tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME AND
 			tc.TABLE_SCHEMA = kcu.TABLE_SCHEMA AND
-			tc.TABLE_NAME = kcu.TABLE_NAME
+			tc.TABLE_NAME = kcu.TABLE_NAME AND
+			-- KEY_COLUMN_USAGE carries no constraint type, so the referenced
+			-- table stands in for one: a foreign key's rows name it and every
+			-- other kind's leave it null. Without this the join is a cross
+			-- product wherever two constraints on one table share a name, which
+			-- both engines allow: a UNIQUE over one column came back over four
+			-- (stokaro/ptah#2774).
+			((tc.CONSTRAINT_TYPE = 'FOREIGN KEY' AND kcu.REFERENCED_TABLE_NAME IS NOT NULL)
+				OR (tc.CONSTRAINT_TYPE <> 'FOREIGN KEY' AND kcu.REFERENCED_TABLE_NAME IS NULL))
 		LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS rc ON
 			tc.CONSTRAINT_NAME = rc.CONSTRAINT_NAME AND
-			tc.TABLE_SCHEMA = rc.CONSTRAINT_SCHEMA
+			tc.TABLE_SCHEMA = rc.CONSTRAINT_SCHEMA AND
+			-- REFERENTIAL_CONSTRAINTS holds foreign keys alone, so a same-named
+			-- UNIQUE would otherwise borrow the foreign key's referential
+			-- actions. The table name is required for the same reason the type
+			-- is: the name is unique per table, not per schema.
+			tc.TABLE_NAME = rc.TABLE_NAME AND
+			tc.CONSTRAINT_TYPE = 'FOREIGN KEY'
 		WHERE tc.TABLE_SCHEMA = ?
 		AND tc.TABLE_NAME NOT IN ('schema_migrations')
 		ORDER BY tc.TABLE_NAME, tc.CONSTRAINT_NAME, kcu.ORDINAL_POSITION`
@@ -1076,7 +1099,7 @@ func (r *Reader) readConstraints(ctx context.Context, dbName string) ([]catalog.
 			return nil, err
 		}
 
-		key := constraintKey{table: tableName, name: constraintName}
+		key := constraintKey{table: tableName, name: constraintName, constraintType: constraintType}
 
 		// Get or create the constraint
 		constraint, exists := constraintMap[key]
@@ -1155,18 +1178,43 @@ func newConstraint(name, tableName, constraintType string, refs constraintRefs, 
 	if refs.updateRule != "" {
 		constraint.UpdateRule = &refs.updateRule
 	}
-	if checkClause := checkClauses.forConstraint(tableName, name); checkClause != "" {
+	if checkClause := checkClauses.forConstraint(tableName, name, constraintType); checkClause != "" {
 		constraint.CheckClause = &checkClause
 	}
 	return constraint
 }
 
-func (c checkConstraintClauses) forConstraint(tableName, constraintName string) string {
-	if checkClause := c.byTableName[constraintKey{table: tableName, name: constraintName}]; checkClause != "" {
+// forConstraint answers the CHECK clause a constraint carries, and the empty
+// string for every other kind.
+//
+// The type is asked because a clause is looked up for every constraint the read
+// produced, and MySQL lets a CHECK share a name with a UNIQUE on one table --
+// measured on 8.4, accepted; MariaDB answers ERROR 1826 and so never reaches
+// this. Without the check the unique constraint came back carrying the other
+// one's expression (stokaro/ptah#2774).
+func (c checkConstraintClauses) forConstraint(tableName, constraintName, constraintType string) string {
+	if !strings.EqualFold(constraintType, checkConstraintType) {
+		return ""
+	}
+	if checkClause := c.byTableName[checkClauseKey(tableName, constraintName)]; checkClause != "" {
 		return checkClause
 	}
 	return c.byName[constraintName]
 }
+
+// checkClauseKey is the one spelling of a CHECK clause's key, so the read that
+// fills the map and the read that queries it cannot drift apart.
+func checkClauseKey(tableName, constraintName string) constraintKey {
+	return constraintKey{
+		table:          tableName,
+		name:           constraintName,
+		constraintType: checkConstraintType,
+	}
+}
+
+// checkConstraintType is the catalog's spelling for a CHECK in
+// TABLE_CONSTRAINTS.CONSTRAINT_TYPE.
+const checkConstraintType = "CHECK"
 
 func (r *Reader) readCheckConstraintClauses(ctx context.Context, dbName string) (checkConstraintClauses, error) {
 	clauses := checkConstraintClauses{
@@ -1254,7 +1302,7 @@ func (r *Reader) readTableAwareCheckConstraintClauses(ctx context.Context, dbNam
 		if err := rows.Scan(&constraintName, &tableName, &checkClause); err != nil {
 			return err
 		}
-		clauses[constraintKey{table: tableName, name: constraintName}] = checkClause
+		clauses[checkClauseKey(tableName, constraintName)] = checkClause
 	}
 	return rows.Err()
 }
