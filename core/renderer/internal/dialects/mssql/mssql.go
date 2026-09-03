@@ -943,6 +943,9 @@ func renderColumn(column *ast.ColumnNode) (string, error) {
 	if column.GeneratedExpression != "" {
 		return "  " + escapeIdentifier(column.Name) + " " + renderGeneratedColumn(column), nil
 	}
+	if err := refusePrimaryKeyBesideUnique(column); err != nil {
+		return "", err
+	}
 	parts := []string{"  " + escapeIdentifier(column.Name), columnTypeFor(column)}
 	if column.AutoInc {
 		parts = append(parts, renderIdentity(column))
@@ -972,6 +975,37 @@ func renderColumn(column *ast.ColumnNode) (string, error) {
 		parts = append(parts, renderInlineForeignKey(column.ForeignKey))
 	}
 	return strings.Join(parts, " "), nil
+}
+
+// refusePrimaryKeyBesideUnique refuses a column SQL Server will not accept.
+//
+// Measured on SQL Server 2022, `CREATE TABLE t (a INT PRIMARY KEY UNIQUE)`:
+//
+//	Msg 8151, Level 16, State 1
+//	Both a PRIMARY KEY and UNIQUE constraint have been defined for column 'a',
+//	table 't'. Only one is allowed.
+//
+// Other engines fold the two rather than refusing -- MySQL 8.4.11 builds a
+// secondary unique index beside the key, PostgreSQL 18 keeps the key alone --
+// so a renderer emitting the key alone reads as one of those foldings. It is
+// not one. The statement is invalid here, so there is no rendering that
+// reproduces the source, and dropping the author's UNIQUE produces a table
+// nobody described at exit 0 (stokaro/ptah#2812).
+//
+// The refusal is narrow on purpose. `a INT UNIQUE, PRIMARY KEY (a)` is a
+// different statement, SQL Server accepts it, and it reaches this renderer as a
+// column carrying UNIQUE beside a table-level key -- not as one column carrying
+// both. Measured on the same server, that spelling yields two indexes, one
+// `is_primary_key` and one `is_unique_constraint`, and Ptah's rendering of it
+// yields the same pair.
+func refusePrimaryKeyBesideUnique(column *ast.ColumnNode) error {
+	if !column.Primary || !column.Unique {
+		return nil
+	}
+	return unsupportedFeaturef(
+		"a column cannot be declared both PRIMARY KEY and UNIQUE; column %q declares both, "+
+			"so write the key alone or declare the unique constraint over a different column",
+		column.Name)
 }
 
 // refuseDeferrable refuses a foreign key SQL Server cannot host as written.
