@@ -127,7 +127,8 @@ func TestDecideRetirement_APlanThatDestroysNothingIsRefused(t *testing.T) {
 
 	c.Assert(decision.Allowed, qt.IsFalse)
 	c.Assert(decision.Blockers, qt.Contains,
-		"the plan destroys nothing, so it would record a retirement that did not happen")
+		"the plan destroys nothing, so it would record a retirement that did not happen; "+
+			"a retirement has to drop the generation's index, its column, or both")
 }
 
 // TestDecideRetirement_TheApprovalBindsToWhatIsDestroyed is why the digest

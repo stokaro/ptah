@@ -543,6 +543,12 @@ a shell history.`,
 	addCommonFlags(cmd, &options)
 	cmd.Flags().StringVar(&generation, "generation", "", "Identity of the generation to destroy (required)")
 	addApprovalFlags(cmd, &approval)
+	// Default true, and measured rather than assumed (stokaro/ptah#2743).
+	// Dropping the column is what destroys the vectors: RetireColumns runs only
+	// under this flag, so `--drop-column=false` retires a generation whose
+	// every vector is still in the table. Making it opt-in would turn the plain
+	// verb into an index drop, and refuse outright for a specification that
+	// declares no index method.
 	cmd.Flags().BoolVar(&dropColumn, "drop-column", true,
 		"Drop the vector column as well as the index")
 	addEvidenceFlags(cmd.Flags(), &evidence)
@@ -636,8 +642,7 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 		return err
 	}
 	retiredAt := release.RetiredAt
-	lines := []string{fmt.Sprintf("generation %s is gone, with %d vectors",
-		options.generation, rows)}
+	lines := []string{retirementSummary(options.generation, rows, plan)}
 	if sentence := release.Sentence(); sentence != "" {
 		lines = append(lines, bullet(sentence))
 	}
@@ -645,6 +650,24 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 		return err
 	}
 	return publishRetirement(ctx, out, options, plan, identity, approval, rows, retiredAt)
+}
+
+// retirementSummary says what the retirement actually destroyed.
+//
+// The vectors live in the target column, and RetireColumns is what removes it,
+// so a retirement that keeps the column keeps every vector in it -- dropping
+// the index is then the whole of the operation. Reporting "is gone, with N
+// vectors" for that run named a destruction that did not happen, and it is the
+// sentence an operator reads to decide whether storage was reclaimed
+// (stokaro/ptah#2743).
+func retirementSummary(generation string, rows int, plan embedcutover.RetirementPlan) string {
+	if plan.DropsColumn {
+		return fmt.Sprintf("generation %s is gone, with %d vectors", generation, rows)
+	}
+	return fmt.Sprintf(
+		"generation %s is retired, and its %d vectors are still in column %s: "+
+			"the run kept the column, so it dropped the index and nothing else",
+		generation, rows, plan.Column)
 }
 
 // publishRetirement records what was destroyed, where a destination was named.

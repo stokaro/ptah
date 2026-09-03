@@ -113,8 +113,12 @@ For that, use [`inference abandon`](../resume-and-recover/#end-a-superseded-run-
 it permanently closes one run and releases its outbox position, but preserves
 the generation and vectors. Retirement destroys them.
 
-Retirement drops the generation's index and, with `--drop-column`, its column and
-the four bookkeeping columns beside it.
+Retirement drops the generation's index, and by default its column and the four
+bookkeeping columns beside it. `--drop-column` defaults to **true**, and the
+column is where the vectors are: `--drop-column=false` keeps every vector in the
+table and reduces the run to dropping the index. For a generation whose
+specification declares no index method there is then nothing left to destroy,
+and the retirement is refused rather than recorded.
 
 ```bash
 ptah inference retire --spec spec.yaml --db-url "$DB" \

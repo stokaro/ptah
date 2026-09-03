@@ -88,7 +88,13 @@ func DecideRetirement(
 		// A retirement plan that destroys nothing is not a safer retirement.
 		// It is a record saying a generation was retired while the storage,
 		// the rows and the index are all still there.
-		decision.refusef("the plan destroys nothing, so it would record a retirement that did not happen")
+		// Naming what would satisfy it matters more since --drop-column became
+		// opt-in: the reachable way to land here is a generation whose index is
+		// already gone, retired without asking for the column too, and the
+		// blocker has to say that rather than only that nothing happened.
+		decision.refusef(
+			"the plan destroys nothing, so it would record a retirement that did not happen; " +
+				"a retirement has to drop the generation's index, its column, or both")
 	}
 	if !observed.holds(PermissionRetire) {
 		decision.refusef("the caller does not hold %s", PermissionRetire)
