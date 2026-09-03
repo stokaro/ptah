@@ -794,13 +794,32 @@ func (r *Renderer) appendColumnMainClauses(parts []string, column *ast.ColumnNod
 func appendMySQLColumnConstraints(parts []string, column *ast.ColumnNode) []string {
 	if column.Primary {
 		parts = append(parts, "PRIMARY KEY")
-	} else {
-		if !column.Nullable {
-			parts = append(parts, "NOT NULL")
-		}
+		// And UNIQUE beside it when the column carries both. This used to be an
+		// `else`, so a column that was primary AND unique rendered as the
+		// primary key alone -- a schema with different key semantics than the
+		// one that was read, emitted at exit 0 (stokaro/ptah#2787).
+		//
+		// The two engines answer differently and both answers are reproduced by
+		// writing what the source wrote: measured, MySQL 8.4 builds a secondary
+		// unique index for `a INT PRIMARY KEY UNIQUE` and MariaDB 11.8 folds it
+		// into the primary key. A column reaches here carrying both only when
+		// the source spelled them inline, because a table-level primary key
+		// over a unique column is kept as a table constraint by
+		// `modelast.tableNeedsPrimaryKeyConstraint` -- where MariaDB's folding
+		// would otherwise lose the source's second index.
+		//
+		// NOT NULL stays out: MySQL implies it from PRIMARY KEY, which is why
+		// this branch never emitted it.
 		if column.Unique {
 			parts = append(parts, "UNIQUE")
 		}
+		return parts
+	}
+	if !column.Nullable {
+		parts = append(parts, "NOT NULL")
+	}
+	if column.Unique {
+		parts = append(parts, "UNIQUE")
 	}
 	return parts
 }

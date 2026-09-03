@@ -81,6 +81,13 @@ SQL:
   table written with `FULLTEXT INDEX` comes back out of `mysqldump` as
   `FULLTEXT KEY`. An index left unnamed takes the name its server would give
   it, by the rule above.
+- A column carrying both a primary key and a `UNIQUE` is written back the way
+  it was read, because the two spellings do not mean the same thing.
+  `a INT UNIQUE, PRIMARY KEY (a)` builds the primary key and a secondary unique
+  index named `a` on both engines, and it is rendered as the table-level key it
+  was; `a INT PRIMARY KEY UNIQUE` builds both on MySQL and the primary key
+  alone on MariaDB, and it is rendered inline so each engine gives its own
+  answer. Folding the first into the second would lose MariaDB's second index.
 - DDL commits implicitly on both engines, so a failed migration cannot be
   rolled back by the surrounding transaction.
 
