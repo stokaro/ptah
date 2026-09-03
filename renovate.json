@@ -64,6 +64,16 @@
       ]
     },
     {
+      "description": "astro is held below 7.3.0 because 7.3.0 cannot build this site. Its own dist/assets/vite-plugin-assets.js emits `import { astroToRuntimeLogger } from \"astro/_internal/logger\"`, and astro's package.json exports map publishes no `./_internal/*` subpath at all, so rolldown refuses to resolve it: `\"./_internal/logger\" is not exported under the conditions [\"module\", \"node\", \"production\", \"astro\", \"import\"]`. Measured 2026-09-03: `npm run build` fails on 7.3.0 and builds 130 pages on 7.2.10, same tree. It is a packaging defect in the release rather than anything this repository does, so the hold is on the version and not on the dependency -- lift it when a release exports the subpath it imports. stokaro/ptah#2829 is the bump that landed it; its Build versioned site and Documentation gate were both red when it merged.",
+      "matchDatasources": [
+        "npm"
+      ],
+      "matchPackageNames": [
+        "astro"
+      ],
+      "allowedVersions": "<7.3.0"
+    },
+    {
       "description": "The clickhouse-legacy integration service is pinned below 24.11 deliberately: CHECK GRANT catalog visibility arrived in 24.11, and TestWriterDropDatabaseRealm_RejectsLegacyServerLive proves the realm-drop guard fails closed without it. Matching on the current value freezes only that pin and leaves the current clickhouse service free to update.",
       "matchDatasources": [
         "docker"
