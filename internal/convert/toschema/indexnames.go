@@ -102,12 +102,17 @@ type engineIndexNaming struct {
 	// here rather than a rule of its own. MariaDB 11.8 answers `ERROR 1064` to
 	// the syntax, which is why its entry is empty (stokaro/ptah#2758).
 	functionalBase string
+	// descendingCovers is whether a descending key can back a foreign key.
+	//
+	// MariaDB reuses one and MySQL does not, so the same document gives the two
+	// engines different index names. coverage.covers carries the measurement.
+	descendingCovers bool
 }
 
 // mysqlNaming and mariaDBNaming are the two measured answers.
 var (
 	mysqlNaming   = engineIndexNaming{baseBytes: 61, maxBytes: 64, functionalBase: "functional_index"}
-	mariaDBNaming = engineIndexNaming{maxBytes: 64}
+	mariaDBNaming = engineIndexNaming{maxBytes: 64, descendingCovers: true}
 )
 
 // nameMySQLInlineIndexes gives every unnamed inline index and unique constraint
@@ -207,22 +212,50 @@ func coversOf(
 	database *schemamodel.Database, table schemamodel.Table,
 	fieldsStart int, order []namedElement,
 ) coverage {
-	covered := coverage{table.PrimaryKey}
+	covered := coverage{ascending(table.PrimaryKey)}
 	for _, field := range database.Fields[fieldsStart:] {
 		if field.Primary || field.Unique {
-			covered = append(covered, []string{field.Name})
+			covered = append(covered, ascending([]string{field.Name}))
 		}
 	}
 	for _, element := range order {
 		if element.isIndex() {
-			covered = append(covered, database.Indexes[element.index].Fields)
+			covered = append(covered, indexCandidate(database.Indexes[element.index]))
 			continue
 		}
 		if constraint := database.Constraints[element.constraint]; constraint.Type == "UNIQUE" {
-			covered = append(covered, constraint.Columns)
+			covered = append(covered, ascending(constraint.Columns))
 		}
 	}
 	return covered
+}
+
+// ascending is a candidate whose every part is in the default direction.
+//
+// A primary key, a column's own key and a UNIQUE constraint have no per-part
+// direction to lose: the model carries their columns and nothing else.
+func ascending(columns []string) candidateKey {
+	return candidateKey{columns: columns, descending: make([]bool, len(columns))}
+}
+
+// indexCandidate reads an inline index as the engine would consider it.
+//
+// Parts before Fields, because Parts is where the direction lives -- Fields is
+// the column list with `a DESC` already flattened to `a`, so a candidate built
+// from it claims to cover what MySQL will not reuse.
+func indexCandidate(index schemamodel.Index) candidateKey {
+	if len(index.Parts) == 0 {
+		return ascending(index.Fields)
+	}
+	candidate := candidateKey{
+		columns:    make([]string, 0, len(index.Parts)),
+		descending: make([]bool, 0, len(index.Parts)),
+	}
+	for _, part := range index.Parts {
+		candidate.columns = append(candidate.columns, part.Name)
+		candidate.descending = append(candidate.descending, part.Desc)
+	}
+	return candidate
 }
 
 // namedElement is one table-body element the naming pass walks, as a POSITION
@@ -252,7 +285,18 @@ func (e namedElement) isIndex() bool { return e.index != noPosition }
 
 // coverage is the key prefixes a table already has an access path for, in the
 // order they were declared.
-type coverage [][]string
+type coverage []candidateKey
+
+// candidateKey is one access path the table body declares, as the engine sees
+// it: the columns in order, and whether the part at each position is DESC.
+//
+// Per position rather than one flag for the key, because coverage asks about
+// the LEADING columns only: `KEY (a, b DESC)` backs a foreign key on `a` even
+// where the descending part would disqualify a wider one.
+type candidateKey struct {
+	columns    []string
+	descending []bool
+}
 
 // covers reports whether some key already declared can serve as a foreign key's
 // backing index.
@@ -261,12 +305,42 @@ type coverage [][]string
 // order. MySQL and MariaDB create one when nothing satisfies that and reuse
 // whatever does, which is why the same foreign key sometimes takes a name in
 // the index namespace and sometimes takes none.
-func (c coverage) covers(columns []string) bool {
+//
+// Two things decide it that a column-name comparison alone gets wrong, both
+// measured on live MySQL 8.4.11 and MariaDB 11.8.9 (stokaro/ptah#2769).
+//
+// Column identity FOLDS CASE, on both engines:
+//
+//	CREATE TABLE c (`B` INT, z INT, KEY k (`B`),
+//	                CONSTRAINT z FOREIGN KEY (`b`) REFERENCES p(id), KEY (z));
+//
+// leaves `k` and `z` on both -- `k(B)` backs the key on `b`, so the constraint
+// consumes no name and the unnamed index keeps `z`. Comparing the spellings
+// reserved `z`, derived `z_2`, and described a table neither server builds.
+//
+// DIRECTION is engine-specific, and it is the half that cannot be shared:
+//
+//	CREATE TABLE c (a INT, KEY k (a DESC),
+//	                CONSTRAINT f FOREIGN KEY (a) REFERENCES p(id));
+//
+// MySQL keeps `k` descending and adds an ascending `f`; MariaDB reuses `k` and
+// adds nothing. So a descending candidate covers on MariaDB and does not on
+// MySQL. Treating it one way for both either invents a MariaDB suffix or misses
+// the name MySQL is about to take -- and the second is the duplicate-key error
+// this issue opened on, because Ptah then emits `CREATE INDEX b` for a name the
+// foreign key's own backing index already holds.
+func (c coverage) covers(columns []string, naming engineIndexNaming) bool {
+	if len(columns) == 0 {
+		return false
+	}
 	for _, key := range c {
-		if len(key) < len(columns) || len(columns) == 0 {
+		if len(key.columns) < len(columns) {
 			continue
 		}
-		if slices.Equal(key[:len(columns)], columns) {
+		if !slices.EqualFunc(key.columns[:len(columns)], columns, strings.EqualFold) {
+			continue
+		}
+		if naming.descendingCovers || !slices.Contains(key.descending[:len(columns)], true) {
 			return true
 		}
 	}
@@ -295,7 +369,7 @@ func claimConstraintName(
 	naming engineIndexNaming, covered coverage,
 ) error {
 	if constraint.Type == "FOREIGN KEY" {
-		if constraint.Name == "" || covered.covers(constraint.Columns) {
+		if constraint.Name == "" || covered.covers(constraint.Columns, naming) {
 			return nil
 		}
 		return claimExplicit(claimed, constraint.Name, table)
