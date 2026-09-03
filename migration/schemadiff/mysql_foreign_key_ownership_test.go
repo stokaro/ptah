@@ -139,7 +139,9 @@ func TestCompare_AWiderIndexLedByTheForeignKeysColumnsBacksIt(t *testing.T) {
 //
 // `cover(a)` can serve the foreign key, and the engine did not create it -- the
 // author did, under a name of their own. It stays an ordinary index, so
-// removing it from the desired schema plans its removal.
+// removing it from the desired schema plans its removal -- and so does `f`,
+// because an index the engine had no reason to build is the author's whatever
+// it is called.
 func TestCompare_ADifferentlyNamedCoveringIndexIsDroppable(t *testing.T) {
 	for _, test := range ownershipEngines {
 		t.Run(test.name, func(t *testing.T) {
@@ -152,12 +154,17 @@ func TestCompare_ADifferentlyNamedCoveringIndexIsDroppable(t *testing.T) {
 				),
 				desiredChildren())
 
-			// Only cover. `f` shares the constraint's name and backs the key,
-			// so it is read as the engine's -- which is right where the engine
-			// built it and conservative where the author did, since the catalog
-			// cannot tell the two apart without direction. See
-			// mysqlForeignKeyBackingIndexes.
-			c.Assert(removed, qt.DeepEquals, []string{"cover"})
+			// Both. `cover(a)` can serve the key, so the engine built no index
+			// of its own and `f` is the author's despite sharing the
+			// constraint's name -- measured, `DROP INDEX f` succeeds on both
+			// engines with `cover(a)` beside `f(a)`.
+			//
+			// This assertion read `[]string{"cover"}` until the reader began
+			// recording key-part direction (stokaro/ptah#2816). Without it the
+			// catalog could not tell an index that covers from one that only
+			// looks like it, so `f` was held as the engine's -- right where the
+			// engine built it, and conservative where the author did.
+			c.Assert(removed, qt.DeepEquals, []string{"cover", "f"})
 		})
 	}
 }
