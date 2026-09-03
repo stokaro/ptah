@@ -224,7 +224,7 @@ func constraintBackedIndexIdentities(
 			if normalizedDialect == platform.MySQL ||
 				normalizedDialect == platform.MariaDB {
 				for _, backing := range mysqlForeignKeyBackingIndexes(
-					database, constraint, semantics, normalizedDialect,
+					database, constraint, semantics,
 				) {
 					owned.foreignKeys[backing] = struct{}{}
 				}
@@ -292,15 +292,16 @@ func constraintBackedIndexIdentities(
 // the author's own name is droppable, and a same-named index over different
 // columns is a different object.
 //
-// A third condition joins them, and it is what the reader recording key-part
-// direction unblocked (stokaro/ptah#2816). The engine builds this index only
-// where nothing else covers the key, so a same-named index is still the
-// author's where another index backs the key too, and dropping it is what the
-// author asked for.
+// A third condition joins them (stokaro/ptah#2816): the engine builds this
+// index only where nothing else covers the key, so a same-named index is still
+// the author's where another index backs the key too, and dropping it is what
+// the author asked for.
 //
-// Covering is dialect-specific, measured on MySQL 8.4.11 and MariaDB 11.8.9 by
-// declaring one index and then adding the foreign key, and reading back whether
-// the engine built a second index of its own:
+// # Two moments, and only one of them is this question
+//
+// Direction decides which index the engine BUILDS. Measured on MySQL 8.4.11 and
+// MariaDB 11.8.9 by declaring one index, then adding the foreign key, and
+// reading back whether the engine built a second index of its own:
 //
 //	cover           MySQL              MariaDB
 //	(a)             reuses cover       reuses cover
@@ -308,14 +309,35 @@ func constraintBackedIndexIdentities(
 //	(a, b DESC)     reuses cover       reuses cover
 //	(a DESC, b)     builds its own     reuses cover
 //
-// So MySQL requires the LEADING parts -- the ones the key uses -- to be
-// ascending, and MariaDB does not care. The third row is what makes that
-// precise rather than "no descending part anywhere".
+// It does NOT decide whether an index already there may be DROPPED, which is
+// the question ownership actually asks. Same servers, constraint in place:
+//
+//	DROP INDEX f                        MySQL    MariaDB
+//	f(a) is the only covering index     1553     1553
+//	ascending cover(a) beside it        ok       ok
+//	descending cover(a DESC) beside it  ok       ok
+//
+// MySQL keeps the constraint over a lone descending index once that index
+// exists; it just will not choose one while deciding whether to build its own.
+// Consulting the first table here answered the second question, and an author
+// who removed a same-named index beside a descending cover got `InSync` and no
+// plan -- the #2782 shape again, narrowed to MySQL (stokaro/ptah#2822).
+//
+// # Which way to be wrong
+//
+// Two authors reach the identical catalog -- cover(a DESC), f(a ASC),
+// constraint f. One wrote `KEY f (a)` and MySQL reused it; one wrote only the
+// cover and MySQL built f itself. Nothing in the catalog separates them, so
+// this has to pick.
+//
+// It picks the author, because that costs the other case nothing measurable:
+// the drop is permitted and the constraint keeps working on the descending
+// index, which is the last row of the second table. The other choice costs the
+// first author their change, in silence.
 func mysqlForeignKeyBackingIndexes(
 	database *catalog.Database,
 	constraint catalog.Constraint,
 	semantics identifier.Semantics,
-	dialect string,
 ) []difftypes.IndexRef {
 	columns := uniqueStringsPreserveOrder(constraint.ColumnNamesOrDefault())
 	if len(columns) == 0 {
@@ -330,7 +352,7 @@ func mysqlForeignKeyBackingIndexes(
 		if !mysqlIndexBacksForeignKey(index, table, columns, semantics) {
 			continue
 		}
-		if mysqlAnotherIndexCoversForeignKey(database, index, table, columns, semantics, dialect) {
+		if mysqlAnotherIndexCoversForeignKey(database, index, table, columns, semantics) {
 			continue
 		}
 		refs = append(refs, indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{
@@ -345,6 +367,11 @@ func mysqlForeignKeyBackingIndexes(
 // candidate already serves the key, which is what makes the candidate the
 // author's rather than the engine's.
 //
+// Leading columns alone, on both engines and in both directions: the question
+// is whether the candidate may be dropped, and the second table on
+// [mysqlForeignKeyBackingIndexes] is the measurement that says a descending
+// cover is enough for that. It takes no dialect for the same reason.
+//
 // Identity is compared through the target's own semantics rather than by
 // string, so the candidate is not mistaken for a second index under a spelling
 // the engine folds onto the same name.
@@ -354,55 +381,13 @@ func mysqlAnotherIndexCoversForeignKey(
 	table string,
 	columns []string,
 	semantics identifier.Semantics,
-	dialect string,
 ) bool {
 	for _, other := range database.Indexes {
 		if identifiersEqual(semantics, other.Name, candidate.Name) &&
 			strings.EqualFold(other.QualifiedTableName(), candidate.QualifiedTableName()) {
 			continue
 		}
-		if mysqlIndexCoversForeignKey(other, table, columns, semantics, dialect) {
-			return true
-		}
-	}
-	return false
-}
-
-// mysqlIndexCoversForeignKey reports whether an index can serve as the engine's
-// backing index for a foreign key over these columns.
-//
-// Leading columns decide it on both engines. Direction decides it on MySQL
-// alone, and only for the parts the key uses: see the table on
-// [mysqlForeignKeyBackingIndexes] for the measurement, including the row that
-// separates "the leading parts are ascending" from "no part is descending".
-//
-// An index whose Parts the reader dropped is ascending throughout -- the MySQL
-// reader clears a parts list that says nothing its column names do not, and a
-// descending part is one of the two things that keep it.
-func mysqlIndexCoversForeignKey(
-	index catalog.Index,
-	table string,
-	columns []string,
-	semantics identifier.Semantics,
-	dialect string,
-) bool {
-	if !mysqlIndexBacksForeignKey(index, table, columns, semantics) {
-		return false
-	}
-	if platform.NormalizeDialect(dialect) == platform.MariaDB {
-		return true
-	}
-	return !mysqlLeadingPartsDescend(index, len(columns))
-}
-
-// mysqlLeadingPartsDescend reports whether any of an index's first count parts
-// is descending.
-func mysqlLeadingPartsDescend(index catalog.Index, count int) bool {
-	for position, part := range index.Parts {
-		if position >= count {
-			return false
-		}
-		if part.Desc {
+		if mysqlIndexBacksForeignKey(other, table, columns, semantics) {
 			return true
 		}
 	}

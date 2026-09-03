@@ -200,31 +200,25 @@ func TestCompare_ASoleCoveringIndexUnderItsOwnNameIsStillTheAuthorsHappyPath(t *
 	}
 }
 
-// TestCompare_ADescendingCoverDoesNotUnownTheEnginesIndexOnMySQL is the control
-// on the direction rule, and it is the reason direction had to reach the
-// catalog at all (stokaro/ptah#2816).
+// TestCompare_ADescendingCoverStillMakesASameNamedIndexTheAuthorsHappyPath is
+// the case ownership gets wrong when it consults direction.
 //
-// `cover(a DESC)` beside `f(a)`: whether `f` is the engine's turns on whether
-// the descending index could have served the key instead, and the two engines
-// answer differently. Measured by declaring the cover, adding the foreign key,
-// and reading back whether a second index appeared -- MySQL 8.4.11 built its
-// own, MariaDB 11.8.9 reused the cover.
+// This row read `{mysql: ["cover"]}` until stokaro/ptah#2822, on a measurement
+// that is correct about a different moment. Declaring `cover(a DESC)` and THEN
+// adding the foreign key, MySQL 8.4.11 builds its own index and MariaDB 11.8.9
+// reuses the cover -- so direction decides what the engine BUILDS.
 //
-// So on MySQL `f` is the engine's and only `cover` is removable; on MariaDB
-// nothing made `f` the engine's and both are. Reading a descending index as
-// covering on MySQL would un-own the real backing index and plan a DROP the
-// engine refuses with ERROR 1553.
-func TestCompare_ADescendingCoverDoesNotUnownTheEnginesIndexOnMySQL(t *testing.T) {
-	tests := []struct {
-		name        string
-		dialect     string
-		wantRemoved []string
-	}{
-		{name: "mysql keeps f as the engine's", dialect: platform.MySQL, wantRemoved: []string{"cover"}},
-		{name: "mariadb reuses the cover", dialect: platform.MariaDB, wantRemoved: []string{"cover", "f"}},
-	}
-
-	for _, test := range tests {
+// It does not decide what may be DROPPED, which is what ownership asks. Same
+// servers, `cover(a DESC)` and `f(a)` both present with the constraint:
+// `DROP INDEX f` succeeds on both, and MySQL keeps the constraint over the
+// descending cover afterwards. Holding `f` as the engine's therefore reported
+// `InSync` for an author who removed it, and the drop they asked for was one
+// the server would have accepted -- the #2782 shape, narrowed.
+//
+// Both engines now remove both, and the engine's own index is still protected
+// by the case below, where nothing else covers the key at all.
+func TestCompare_ADescendingCoverStillMakesASameNamedIndexTheAuthorsHappyPath(t *testing.T) {
+	for _, test := range ownershipEngines {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
@@ -238,19 +232,23 @@ func TestCompare_ADescendingCoverDoesNotUnownTheEnginesIndexOnMySQL(t *testing.T
 				),
 				desiredChildren())
 
-			c.Assert(removed, qt.DeepEquals, test.wantRemoved)
+			c.Assert(removed, qt.DeepEquals, []string{"cover", "f"})
 		})
 	}
 }
 
-// TestCompare_ADescendingCoverBeyondTheKeysColumnsStillCovers pins that the
-// direction rule reads the LEADING parts rather than the whole index.
+// TestCompare_ADescendingCoverBeyondTheKeysColumnsStillCovers is a wider cover
+// than the key needs, carrying a descending part outside it.
 //
-// Measured on MySQL 8.4.11: a cover of `(a, b DESC)` for a key on `a` is
-// reused, while `(a DESC, b)` is not. An implementation asking "is any part
-// descending" would get the first of those wrong and un-own nothing that should
-// be owned -- it would hold `f` as the engine's where the engine did not build
-// it, and never plan the author's DROP.
+// It pinned the LEADING-parts half of the direction rule until
+// stokaro/ptah#2822 stopped ownership consulting direction at all -- measured
+// on MySQL 8.4.11, `(a, b DESC)` is reused for a key on `a` and `(a DESC, b)`
+// is not, which is a true statement about what the engine BUILDS and no longer
+// one this decision reads.
+//
+// The case is kept because it is still worth answering: an index wider than the
+// key covers it, and a rule that required an exact column list would hold `f`
+// as the engine's and never plan the author's DROP.
 func TestCompare_ADescendingCoverBeyondTheKeysColumnsStillCovers(t *testing.T) {
 	for _, test := range ownershipEngines {
 		t.Run(test.name, func(t *testing.T) {
