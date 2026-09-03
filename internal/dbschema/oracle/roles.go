@@ -83,9 +83,10 @@ ORDER BY r.role`
 //   - Inherit, which is true for the same reason as on SQL Server. A grantee
 //     of an Oracle role holds that role's privileges while the role is
 //     enabled; there is no NOINHERIT to report.
-//   - HasPassword, from AUTHENTICATION_TYPE. A role can be IDENTIFIED BY a
-//     password, and PASSWORD is the value that says so. NONE is the ordinary
-//     case and every role in the measurement above reported it.
+//   - PasswordState, from AUTHENTICATION_TYPE. A role can be IDENTIFIED BY a
+//     password, and PASSWORD is the value that says so. NONE, EXTERNAL,
+//     GLOBAL, and APPLICATION are the documented non-password forms. A NULL
+//     or an unknown future value cannot safely establish either state.
 func (r *Reader) readRoles(ctx context.Context) ([]catalog.Role, error) {
 	rows, err := r.db.QueryContext(ctx, roleQuery)
 	if err != nil {
@@ -101,7 +102,14 @@ func (r *Reader) readRoles(ctx context.Context) ([]catalog.Role, error) {
 			return nil, err
 		}
 		role.Inherit = true
-		role.HasPassword = strings.EqualFold(strings.TrimSpace(authentication.String), "PASSWORD")
+		switch strings.ToUpper(strings.TrimSpace(authentication.String)) {
+		case "PASSWORD":
+			role.PasswordState = catalog.RolePasswordPresent
+		case "NONE", "EXTERNAL", "GLOBAL", "APPLICATION":
+			role.PasswordState = catalog.RolePasswordAbsent
+		default:
+			role.PasswordState = catalog.RolePasswordUnknown
+		}
 		roles = append(roles, role)
 	}
 	return roles, rows.Err()

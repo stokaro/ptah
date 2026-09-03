@@ -15,6 +15,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/migratesum"
@@ -84,6 +85,61 @@ func executeCompatSchemaDiff(c *qt.C, args ...string) (string, error) {
 
 	err := cmd.Execute()
 	return out.String(), err
+}
+
+// TestSchemaDiffRefusesAnUnknownLiveRolePasswordStatePostgres pins the
+// compatibility adapter's database-backed safety boundary. Its structural
+// comparator is deliberately non-erroring, so the adapter must reject an
+// undecidable password comparison before a false no-change result reaches the
+// renderer.
+func TestSchemaDiffRefusesAnUnknownLiveRolePasswordStatePostgres(t *testing.T) {
+	c := qt.New(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
+	suffix := uniqueScopeSuffix()
+	owner := "ptah_password_owner_" + suffix
+	databaseName := "ptah_password_diff_" + suffix
+	connectionPassword := "connection_password_fixture"
+	desiredPassword := "desired_password_fixture"
+
+	admin, err := dbschema.ConnectToDatabase(c.Context(), adminURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() {
+		_, _ = admin.ExecContext(context.Background(), `DROP DATABASE IF EXISTS "`+databaseName+`" WITH (FORCE)`)
+		_, _ = admin.ExecContext(context.Background(), `DROP ROLE IF EXISTS "`+owner+`"`)
+		dbschema.CloseAndWarn(admin)
+	})
+	_, err = admin.ExecContext(c.Context(), `CREATE ROLE "`+owner+`" LOGIN PASSWORD '`+
+		connectionPassword+`' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`)
+	c.Assert(err, qt.IsNil)
+	_, err = admin.ExecContext(c.Context(), `CREATE DATABASE "`+databaseName+`" OWNER "`+owner+`"`)
+	c.Assert(err, qt.IsNil)
+
+	parsed, err := url.Parse(adminURL)
+	c.Assert(err, qt.IsNil)
+	parsed.Path = "/" + databaseName
+	parsed.User = url.UserPassword(owner, connectionPassword)
+
+	desiredPath := filepath.Join(c.TempDir(), "schema.hcl")
+	desired := `role "` + owner + `" {
+  login    = true
+  password = "` + desiredPassword + `"
+}
+`
+	c.Assert(os.WriteFile(desiredPath, []byte(desired), 0o600), qt.IsNil)
+
+	out, err := executeCompatSchemaDiff(c,
+		"--from", parsed.String(),
+		"--to", "file://"+desiredPath,
+		"--dev-url", parsed.String(),
+	)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+	c.Assert(err, qt.ErrorMatches, `(?s).*cannot compare password for role "`+owner+`": current password state is unknown.*`)
+	c.Assert(err.Error(), qt.Not(qt.Contains), connectionPassword)
+	c.Assert(err.Error(), qt.Not(qt.Contains), desiredPassword)
+	c.Assert(out, qt.Not(qt.Contains), connectionPassword)
+	c.Assert(out, qt.Not(qt.Contains), desiredPassword)
 }
 
 // TestSchemaDiffIntrospectsRequestedSchemaLivePostgres pins that a

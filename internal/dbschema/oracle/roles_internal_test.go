@@ -91,8 +91,13 @@ func TestReadRolesInto_DescribesWhatAPrivilegedAccountSees(t *testing.T) {
 	c.Assert(reader.readRolesInto(t.Context(), schema), qt.IsNil)
 
 	c.Assert(schema.Roles, qt.DeepEquals, []catalog.Role{
-		{Name: "APP_READER", Inherit: true},
-		{Name: "APP_SECRET", Inherit: true, HasPassword: true},
+		{Name: "APP_APPLICATION", Inherit: true, PasswordState: catalog.RolePasswordAbsent},
+		{Name: "APP_EXTERNAL", Inherit: true, PasswordState: catalog.RolePasswordAbsent},
+		{Name: "APP_FUTURE", Inherit: true, PasswordState: catalog.RolePasswordUnknown},
+		{Name: "APP_GLOBAL", Inherit: true, PasswordState: catalog.RolePasswordAbsent},
+		{Name: "APP_NULL", Inherit: true, PasswordState: catalog.RolePasswordUnknown},
+		{Name: "APP_READER", Inherit: true, PasswordState: catalog.RolePasswordAbsent},
+		{Name: "APP_SECRET", Inherit: true, PasswordState: catalog.RolePasswordPresent},
 	})
 	c.Assert(schema.Grants, qt.DeepEquals, []catalog.Grant{
 		{
@@ -189,6 +194,11 @@ func roleRows() dbtest.QueryResult {
 	return dbtest.QueryResult{
 		Columns: []string{"ROLE", "AUTHENTICATION_TYPE"},
 		Rows: [][]driver.Value{
+			{"APP_APPLICATION", "APPLICATION"},
+			{"APP_EXTERNAL", "EXTERNAL"},
+			{"APP_FUTURE", "FUTURE_AUTHENTICATION"},
+			{"APP_GLOBAL", "GLOBAL"},
+			{"APP_NULL", nil},
 			{"APP_READER", "NONE"},
 			{"APP_SECRET", "PASSWORD"},
 		},

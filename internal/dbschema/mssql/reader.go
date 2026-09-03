@@ -788,6 +788,7 @@ func (r *Reader) readRoles(ctx context.Context) ([]catalog.Role, error) {
 		// Inherit is the one attribute whose T-SQL answer is not false: a
 		// database role's members always receive its permissions.
 		role.Inherit = true
+		role.PasswordState = catalog.RolePasswordAbsent
 		roles = append(roles, role)
 	}
 	if err := rows.Err(); err != nil {

@@ -54,11 +54,15 @@ func (r *Reader) readRoles(ctx context.Context) ([]catalog.Role, error) {
 		if err := rows.Scan(&name); err != nil {
 			return nil, err
 		}
-		// Every attribute a Role can carry is a PostgreSQL one, and a
+		// Every configurable Role attribute is a PostgreSQL one, and a
 		// MySQL-family role carries none of them: CREATE ROLE takes a name and
-		// nothing else. Reporting them false is not a default standing in for
-		// an unread value -- it is what the object is.
-		roles = append(roles, catalog.Role{Name: name})
+		// nothing else. The discriminator above also establishes that the
+		// principal cannot authenticate, so password absence is known rather
+		// than a zero value standing in for unread data.
+		roles = append(roles, catalog.Role{
+			Name:          name,
+			PasswordState: catalog.RolePasswordAbsent,
+		})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

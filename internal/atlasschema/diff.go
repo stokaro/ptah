@@ -217,10 +217,9 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 	// comparator through the variant that returns no error, so a desired
 	// schema this target cannot host would otherwise reach the planner
 	// (stokaro/ptah#2315).
-	if err := schemadiff.ValidateDesiredSchema(to, catalog.ServerInfo{
-		Dialect:      dialect,
-		Capabilities: target.Capabilities,
-	}); err != nil {
+	if err := validateDesiredDiffComparison(
+		to, fromSide.database, dialect, target.Capabilities,
+	); err != nil {
 		return atlasreport.SchemaDiff{}, nil, err
 	}
 
@@ -270,6 +269,23 @@ func DiffReportingChanges(ctx context.Context, opts DiffOptions) (atlasreport.Sc
 func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error) {
 	report, _, err := DiffReportingChanges(ctx, opts)
 	return report, err
+}
+
+// validateDesiredDiffComparison collects the error-capable validation needed
+// before this adapter calls the deliberately non-erroring pure comparator.
+func validateDesiredDiffComparison(
+	desired *schemamodel.Database,
+	current *catalog.Database,
+	dialect string,
+	capabilities capability.Capabilities,
+) error {
+	if err := schemadiff.ValidateDesiredSchema(desired, catalog.ServerInfo{
+		Dialect:      dialect,
+		Capabilities: capabilities,
+	}); err != nil {
+		return err
+	}
+	return schemadiff.ValidateRolePasswordComparison(desired, current, dialect)
 }
 
 func validateDiffSystemSchemaStates(

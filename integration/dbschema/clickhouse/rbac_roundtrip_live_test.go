@@ -267,10 +267,10 @@ func TestClickHouseDescriptionCarriesNoCredentialLive(t *testing.T) {
 	// would render as the empty string, so a leaked user grant is a grant naming
 	// a principal no role list reports. This catches it whatever the name is.
 	c.Assert(clickHouseGrantsNamingNoKnownRole(described), qt.HasLen, 0)
-	// Every attribute types.Role carries beyond a name is a PostgreSQL notion
-	// ClickHouse has no column for. HasPassword is the one that would be a
-	// credential claim rather than a harmless false, and it is asserted together
-	// with the rest so that a reader which started answering any of them from
+	// Every mutable attribute catalog.Role carries beyond a name is a PostgreSQL
+	// notion ClickHouse has no column for. PasswordState is explicitly absent:
+	// ClickHouse roles cannot authenticate, unlike users. It is asserted together
+	// with the rest so that a reader which started answering any attribute from
 	// somewhere is caught by the same line.
 	c.Assert(clickHouseRolesCarryingAnAttribute(described), qt.HasLen, 0)
 
@@ -576,7 +576,11 @@ func clickHouseGrantsNamingNoKnownRole(schema *catalog.Database) []catalog.Grant
 func clickHouseRolesCarryingAnAttribute(schema *catalog.Database) []catalog.Role {
 	all := slices.Concat(schema.Roles, schema.RolesOutOfScope)
 	return slices.DeleteFunc(all, func(role catalog.Role) bool {
-		return role == (catalog.Role{Name: role.Name, Inherit: true})
+		return role == (catalog.Role{
+			Name:          role.Name,
+			Inherit:       true,
+			PasswordState: catalog.RolePasswordAbsent,
+		})
 	})
 }
 

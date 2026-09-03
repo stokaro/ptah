@@ -38,7 +38,11 @@ func TestGenerateDownMigration_RolledBackPasswordChangeSetsNoPassword(t *testing
 		}},
 	}
 	database := &catalog.Database{
-		Roles: []catalog.Role{{Name: "app_user", Login: true}},
+		Roles: []catalog.Role{{
+			Name:          "app_user",
+			Login:         true,
+			PasswordState: catalog.RolePasswordAbsent,
+		}},
 	}
 
 	caps := capability.Postgres17().With(capability.RoleManagement, true)

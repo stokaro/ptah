@@ -44,6 +44,9 @@ func catalogAnswers(truncation func(index int, query string, answer dbtest.Query
 		if strings.Contains(query, "SELECT EXISTS") {
 			result = dbtest.QueryResult{Columns: []string{"exists"}, Rows: [][]driver.Value{{true}}}
 		}
+		if strings.Contains(query, "has_table_privilege") {
+			result = dbtest.QueryResult{Columns: []string{"has_table_privilege"}, Rows: [][]driver.Value{{false}}}
+		}
 		if strings.Contains(query, enumMarker) {
 			result = dbtest.QueryResult{
 				Columns: []string{"enum_name", "enum_value"},

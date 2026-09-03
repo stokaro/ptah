@@ -42,6 +42,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/catalog"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
@@ -63,6 +64,9 @@ type clusterRole struct {
 	// the same catalog for different columns are separate reasons, and one of
 	// them stopping must not be covered by the other.
 	reads []string
+	// hasPassword is visible only when the fake grants the session access to
+	// the protected role catalog.
+	hasPassword bool
 }
 
 // Catalog expressions, one per reason a role counts as used. These are the
@@ -228,8 +232,39 @@ func newRecordingRolesServer(
 	schemas []string,
 	caps capability.Capabilities,
 ) (*Reader, *[]string) {
+	return newRecordingRolesServerWithPasswordVisibility(
+		tb, cluster, schemas, caps, roleAuthCatalogHidden,
+	)
+}
+
+// newRecordingRolesServerWithPasswordVisibility also controls the answer to
+// the independent privilege probe that guards protected password metadata.
+func newRecordingRolesServerWithPasswordVisibility(
+	tb interface{ Cleanup(func()) },
+	cluster []clusterRole,
+	schemas []string,
+	caps capability.Capabilities,
+	catalogAccess roleAuthCatalogAccess,
+) (*Reader, *[]string) {
 	var sent []string
 	db := dbtest.Open(tb, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+		normalized := strings.Join(strings.Fields(query), " ")
+		if strings.Contains(normalized, "has_table_privilege") {
+			const expected = "SELECT has_table_privilege( current_user, 'pg_catalog.pg_authid', 'SELECT' )"
+			if normalized != expected {
+				return dbtest.QueryResult{}, fmt.Errorf("unexpected role password privilege probe %q", normalized)
+			}
+			return dbtest.QueryResult{
+				Columns: []string{"has_table_privilege"},
+				Rows:    [][]driver.Value{{catalogAccess == roleAuthCatalogReadable}},
+			}, nil
+		}
+		if catalogAccess == roleAuthCatalogHidden &&
+			(strings.Contains(normalized, "FROM pg_catalog.pg_authid") ||
+				strings.Contains(normalized, "JOIN pg_catalog.pg_authid") ||
+				strings.Contains(normalized, ".rolpassword")) {
+			return dbtest.QueryResult{}, fmt.Errorf("unprivileged role query reads protected password metadata")
+		}
 		sent = append(sent, query)
 		return answerRoles(query, args, cluster)
 	})
@@ -279,13 +314,18 @@ func answerRoles(query string, args []driver.NamedValue, cluster []clusterRole) 
 			"create_role", "inherit", "replication", "has_password", "comment",
 		},
 	}
+	passwordsReadable := strings.Contains(stripped, "JOIN pg_catalog.pg_authid")
 	branches := unionBranches(stripped)
 	for _, role := range cluster {
 		if !roleIsAnswerable(role, membership, stripped, branches, bound, reserved) {
 			continue
 		}
+		var hasPassword driver.Value
+		if passwordsReadable {
+			hasPassword = role.hasPassword
+		}
 		result.Rows = append(result.Rows, []driver.Value{
-			role.name, false, false, false, false, true, false, false, "",
+			role.name, false, false, false, false, true, false, hasPassword, "",
 		})
 	}
 	return result, nil
@@ -427,6 +467,124 @@ func roleNames(roles []catalog.Role) []string {
 		names = append(names, role.Name)
 	}
 	return names
+}
+
+func rolePasswordStates(roles []catalog.Role) map[string]catalog.RolePasswordState {
+	states := make(map[string]catalog.RolePasswordState, len(roles))
+	for _, role := range roles {
+		states[role.Name] = role.PasswordState
+	}
+	return states
+}
+
+func TestReadRolesLeavesPasswordStateUnknownWithoutProtectedCatalogAccess(t *testing.T) {
+	c := qt.New(t)
+	cluster := []clusterRole{
+		{name: "password_absent", schema: "public", reads: byRelationGrant},
+		{name: "password_present", schema: "public", reads: byRelationGrant, hasPassword: true},
+	}
+	reader, sent := newRecordingRolesServerWithPasswordVisibility(
+		c,
+		cluster,
+		[]string{"public"},
+		capability.Postgres16(),
+		roleAuthCatalogHidden,
+	)
+
+	roles, err := reader.readRoles(t.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(rolePasswordStates(roles), qt.DeepEquals, map[string]catalog.RolePasswordState{
+		"password_absent":  catalog.RolePasswordUnknown,
+		"password_present": catalog.RolePasswordUnknown,
+	})
+	c.Assert(*sent, qt.HasLen, 1)
+	query := strings.Join(strings.Fields((*sent)[0]), " ")
+	c.Assert(query, qt.Contains, "NULL::boolean AS has_password")
+	c.Assert(query, qt.Not(qt.Contains), "FROM pg_catalog.pg_authid")
+	c.Assert(query, qt.Not(qt.Contains), "JOIN pg_catalog.pg_authid")
+	c.Assert(query, qt.Not(qt.Contains), ".rolpassword",
+		qt.Commentf("the public masked value cannot classify password presence"))
+	c.Assert(query, qt.Contains, "shobj_description(r.oid, 'pg_authid')",
+		qt.Commentf("public role comments remain readable without the protected join"))
+}
+
+func TestReadRolesCockroachLeavesPasswordStateUnknownWithoutProtectedCatalogRead(t *testing.T) {
+	c := qt.New(t)
+	cluster := []clusterRole{
+		{name: "password_absent", schema: "public", reads: byRelationGrant},
+		{name: "password_present", schema: "public", reads: byRelationGrant, hasPassword: true},
+	}
+	var sent []string
+	db := dbtest.Open(c, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+		normalized := strings.Join(strings.Fields(query), " ")
+		c.Assert(normalized, qt.Not(qt.Contains), "has_table_privilege",
+			qt.Commentf("this dialect must not trust the table-privilege answer"))
+		sent = append(sent, query)
+		return answerRoles(query, args, cluster)
+	})
+	reader := NewPostgreSQLWireReaderWithCapabilities(
+		db.SQL,
+		"public",
+		platform.CockroachDB,
+		capability.CockroachDB26(),
+	)
+
+	roles, err := reader.readRoles(t.Context())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(rolePasswordStates(roles), qt.DeepEquals, map[string]catalog.RolePasswordState{
+		"password_absent":  catalog.RolePasswordUnknown,
+		"password_present": catalog.RolePasswordUnknown,
+	})
+	c.Assert(sent, qt.HasLen, 1)
+	query := strings.Join(strings.Fields(sent[0]), " ")
+	c.Assert(query, qt.Contains, "NULL::boolean AS has_password")
+	c.Assert(query, qt.Not(qt.Contains), "FROM pg_catalog.pg_authid")
+	c.Assert(query, qt.Not(qt.Contains), "JOIN pg_catalog.pg_authid")
+	c.Assert(query, qt.Not(qt.Contains), ".rolpassword")
+}
+
+func TestReadRolesClassifiesPasswordWithProtectedCatalogAccess(t *testing.T) {
+	tests := []struct {
+		name        string
+		hasPassword bool
+		want        catalog.RolePasswordState
+	}{
+		{name: "absent", hasPassword: false, want: catalog.RolePasswordAbsent},
+		{name: "present", hasPassword: true, want: catalog.RolePasswordPresent},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			reader, sent := newRecordingRolesServerWithPasswordVisibility(
+				c,
+				[]clusterRole{{
+					name:        "app_role",
+					schema:      "public",
+					reads:       byRelationGrant,
+					hasPassword: test.hasPassword,
+				}},
+				[]string{"public"},
+				capability.Postgres16(),
+				roleAuthCatalogReadable,
+			)
+
+			roles, err := reader.readRoles(t.Context())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(rolePasswordStates(roles), qt.DeepEquals, map[string]catalog.RolePasswordState{
+				"app_role": test.want,
+			})
+			c.Assert(*sent, qt.HasLen, 1)
+			query := strings.Join(strings.Fields((*sent)[0]), " ")
+			c.Assert(query, qt.Contains, "LEFT JOIN pg_catalog.pg_authid a ON r.oid = a.oid")
+			c.Assert(query, qt.Contains, "a.rolpassword")
+			c.Assert(query, qt.Not(qt.Contains), "r.rolpassword",
+				qt.Commentf("the public masked value cannot classify password presence"))
+		})
+	}
 }
 
 func TestReadRolesReportsOneRolePerReason(t *testing.T) {
