@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/internal/dialectlexer"
 	"go.5x5.cz/ptah/internal/lexer"
+	"go.5x5.cz/ptah/internal/nullsdistinct"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -5425,6 +5426,13 @@ func (p *Parser) parseNullsDistinctClause() (*bool, error) {
 	}
 	if err := p.expect(lexer.TokenIdentifier, "DISTINCT"); err != nil {
 		return nil, fmt.Errorf("expected DISTINCT after NULLS clause: %w", err)
+	}
+	// Refused after the clause is fully recognized rather than on the NULLS
+	// keyword alone: MySQL and MariaDB both accept NULLS as an index name, so
+	// `CONSTRAINT uq UNIQUE NULLS (a)` is a table they create. Firing here
+	// leaves that spelling to whatever the name grammar makes of it.
+	if isMySQLFamilyDialect(p.dialect) {
+		return nil, nullsdistinct.Refuse(p.dialect, nullsdistinct.Clause(nullsDistinct))
 	}
 	return &nullsDistinct, nil
 }

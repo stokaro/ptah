@@ -3854,8 +3854,8 @@
         "/schema/overview/",
         "/start/install-options/"
       ],
-      "visibleWords": 4154,
-      "sourceBytes": 33098
+      "visibleWords": 4184,
+      "sourceBytes": 33278
     },
     {
       "path": "docs/site/src/content/docs/reference/hcl-schema.md",
