@@ -3329,23 +3329,106 @@ func (p *Parser) handleTableConstraintPrimaryKey(constraint *ast.ConstraintNode)
 func (p *Parser) handleTableConstraintUnique(constraint *ast.ConstraintNode) error {
 	p.advance()
 	p.skipWhitespace()
-	// Optional KEY or INDEX keyword
-	if p.current.Type == lexer.TokenIdentifier {
-		keyword := strings.ToUpper(p.current.Value)
-		if keyword == "KEY" || keyword == "INDEX" {
-			p.advance()
-			p.skipWhitespace()
-			// Check for optional constraint name after UNIQUE KEY
-			if p.current.Type == lexer.TokenIdentifier && p.current.Value != "(" {
-				constraint.Name = p.current.Value
-				p.advance()
-				p.skipWhitespace()
-			}
-		}
+	keyworded := p.currentIsIndexKeyword()
+	if keyworded {
+		p.advance()
+		p.skipWhitespace()
 	}
+	// The name is read whether or not KEY or INDEX preceded it. The MySQL-family
+	// grammar is `UNIQUE [INDEX|KEY] [name] (key_part, ...)` and both optional
+	// parts are optional independently: measured on MySQL 26.7 and MariaDB
+	// 12.3, `UNIQUE uq (a)`, `UNIQUE (a)`, `UNIQUE KEY uq (a)` and
+	// `UNIQUE KEY (a)` all create the index, and the first was refused here
+	// because the name was read only inside the KEY branch
+	// (stokaro/ptah#2776).
+	//
+	// The BARE form is read for those dialects alone, because the same position
+	// is a keyword elsewhere: PostgreSQL writes `CONSTRAINT c UNIQUE NULLS NOT
+	// DISTINCT (col)`, and a reader that took the next identifier for a name
+	// would call that index `NULLS` -- which is how gating this too widely broke
+	// a MariaDB fixture that parses with no dialect at all. After KEY or INDEX
+	// no dialect puts a keyword there, so that name is read whatever the
+	// document was declared as, exactly as before.
+	if (keyworded || p.isMySQLFamilyDialect()) && p.currentIsUniqueName() {
+		constraint.Name = p.current.Value
+		p.advance()
+		p.skipWhitespace()
+	}
+	p.skipIndexAccessMethod()
 	constraint.Type = ast.UniqueConstraint
 
 	return nil
+}
+
+// isMySQLFamilyDialect reports whether this parse is reading MySQL-family
+// grammar, where a bare name may follow UNIQUE.
+func (p *Parser) isMySQLFamilyDialect() bool {
+	switch platform.NormalizeDialect(p.dialect) {
+	case platform.MySQL, platform.MariaDB:
+		return true
+	default:
+		return false
+	}
+}
+
+// uniqueClauseKeywords are the words that may stand where a unique key's name
+// goes and are not names.
+//
+// Both are load-bearing and both were measured by breaking them:
+//
+//   - USING opens the access method. `UNIQUE USING BTREE (a)` names no index
+//     and both servers call it after its column, so reading USING as the name
+//     renames the index silently.
+//   - NULLS opens PostgreSQL's `UNIQUE NULLS [NOT] DISTINCT (col)`. Reading it
+//     as a name did not merely mis-name anything: the MySQL family refuses that
+//     clause on purpose (stokaro/ptah#2788), and a parse that consumed NULLS as
+//     an identifier walked past the refusal entirely.
+var uniqueClauseKeywords = []string{"USING", "NULLS"}
+
+// currentIsUniqueName reports whether the cursor sits on a name rather than on
+// a clause that may take its place.
+func (p *Parser) currentIsUniqueName() bool {
+	if p.current.Type != lexer.TokenIdentifier || p.current.Value == "(" {
+		return false
+	}
+	for _, keyword := range uniqueClauseKeywords {
+		if strings.EqualFold(p.current.Value, keyword) {
+			return false
+		}
+	}
+	return true
+}
+
+// skipIndexAccessMethod steps over MySQL's optional `USING {BTREE|HASH}`.
+//
+// Read and discarded, which is the least wrong of three answers rather than a
+// free one. Refusing the clause would refuse ordinary DDL both engines accept;
+// carrying it needs somewhere to put it, and a table-body UNIQUE that stays a
+// constraint has none.
+//
+// The engines do not agree on whether the discard is observable, so this is not
+// the harmless skip an earlier version of this comment claimed. Measured, both
+// on InnoDB:
+//
+//	UNIQUE KEY uq USING HASH (a)    MySQL 26.7   INDEX_TYPE BTREE
+//	                                MariaDB 12.3 INDEX_TYPE HASH
+//
+// MySQL discards it itself, so there nothing downstream could compare against.
+// MariaDB keeps it, and prints it back from SHOW CREATE TABLE, so a read-back
+// there reports HASH against a desired model that dropped it -- a difference no
+// apply converges. `USING BTREE` is invisible on both, being the default.
+// stokaro/ptah#2825 carries that gap; skipping is what this reader does until
+// there is a field to keep it in.
+func (p *Parser) skipIndexAccessMethod() {
+	if p.current.Type != lexer.TokenIdentifier || !strings.EqualFold(p.current.Value, "USING") {
+		return
+	}
+	p.advance()
+	p.skipWhitespace()
+	if p.current.Type == lexer.TokenIdentifier {
+		p.advance()
+		p.skipWhitespace()
+	}
 }
 
 func (p *Parser) handleTableConstraintForeignKey(constraint *ast.ConstraintNode) error {
@@ -3788,7 +3871,7 @@ func isFunctionalUnique(constraint *ast.ConstraintNode) bool {
 		return false
 	}
 	for _, column := range constraint.ColumnParts {
-		if column.Expr != "" {
+		if column.Expr != "" || column.Prefix != "" || column.Desc {
 			return true
 		}
 	}
