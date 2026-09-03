@@ -492,3 +492,79 @@ func userCount(c *qt.C, ctx context.Context, target inlineIndexTarget) int {
 		fmt.Sprintf("SELECT COUNT(*) FROM `%s`.`users`", target.database)).Scan(&count), qt.IsNil)
 	return count
 }
+
+// foreignKeyOwnershipSchema is the desired state of stokaro/ptah#2782 AFTER the
+// unrelated index is removed from it: `cover` backs the foreign key and the
+// same-named `f` is gone.
+const foreignKeyOwnershipSchema = `CREATE TABLE parents (
+  id BIGINT NOT NULL PRIMARY KEY
+);
+
+CREATE TABLE users (
+  id BIGINT NOT NULL PRIMARY KEY,
+  parent_id BIGINT NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  KEY cover (parent_id),
+  CONSTRAINT f FOREIGN KEY (parent_id) REFERENCES parents (id)
+);
+`
+
+// TestAnIndexSharingAForeignKeysNameIsPlannedForRemoval is stokaro/ptah#2782
+// applied: the live database holds an unrelated `f(email)` beside the covering
+// `cover(parent_id)`, and the desired schema no longer declares it.
+//
+// Ownership was inferred from the name, so `f(email)` was suppressed from the
+// comparison entirely and the run reported the target synchronized. The index
+// then stayed in the database forever, managed by nothing.
+//
+// The live half is what shows the drop is legal. Both engines refuse to drop
+// an index a foreign key needs -- `ERROR 1553` -- so a plan that names the
+// wrong index does not merely disagree with the model, it fails to apply. Here
+// it applies and the catalog converges on both engines.
+func TestAnIndexSharingAForeignKeysNameIsPlannedForRemoval(t *testing.T) {
+	for _, test := range inlineIndexEngines {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+
+			target := newInlineIndexDatabase(c, ctx, test.admin, "fkowned")
+			seedForeignKeyOwnership(c, ctx, target)
+
+			// The unrelated index is there, sharing the constraint's name.
+			c.Assert(inlineIndexShape(c, ctx, target), qt.DeepEquals, map[string]inlineIndex{
+				"PRIMARY": {NonUnique: 0, Columns: []string{"id"}},
+				"cover":   {NonUnique: 1, Columns: []string{"parent_id"}},
+				"f":       {NonUnique: 1, Columns: []string{"email"}},
+			})
+
+			schemaPath := writeInlineIndexSchema(c, foreignKeyOwnershipSchema)
+			applyDesiredSchema(c, target.url, schemaPath)
+
+			c.Assert(inlineIndexShape(c, ctx, target), qt.DeepEquals, map[string]inlineIndex{
+				"PRIMARY": {NonUnique: 0, Columns: []string{"id"}},
+				"cover":   {NonUnique: 1, Columns: []string{"parent_id"}},
+			})
+
+			assertComparesInSync(c, target.url, schemaPath)
+		})
+	}
+}
+
+// seedForeignKeyOwnership builds the live shape by hand, because it is the one
+// Ptah must READ correctly rather than one it would write.
+func seedForeignKeyOwnership(c *qt.C, ctx context.Context, target inlineIndexTarget) {
+	c.Helper()
+	for _, statement := range []string{
+		"CREATE TABLE parents (id BIGINT NOT NULL PRIMARY KEY)",
+		"CREATE TABLE users (" +
+			"id BIGINT NOT NULL PRIMARY KEY, parent_id BIGINT NOT NULL, " +
+			"email VARCHAR(255) NOT NULL, KEY cover (parent_id), KEY f (email), " +
+			"CONSTRAINT f FOREIGN KEY (parent_id) REFERENCES parents (id))",
+	} {
+		_, err := target.admin.ExecContext(ctx, "USE "+target.database)
+		c.Assert(err, qt.IsNil)
+		_, err = target.admin.ExecContext(ctx, statement)
+		c.Assert(err, qt.IsNil, qt.Commentf("seeding %s", statement))
+	}
+}
