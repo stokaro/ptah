@@ -127,9 +127,10 @@ type ArtifactCopyOptions struct {
 // copyEndpoint is one side of a copy, resolved to something oras can read or
 // write and the selector that names the artifact within it.
 type copyEndpoint struct {
-	target   oras.Target
-	selector string
-	display  string
+	target    oras.Target
+	selector  string
+	display   string
+	reference Reference
 }
 
 // copySource opens the side a copy reads from, registry or image layout.
@@ -150,7 +151,12 @@ func (c *Client) copySource(raw string) (copyEndpoint, error) {
 	if err != nil {
 		return copyEndpoint{}, err
 	}
-	return copyEndpoint{target: repository, selector: ref.Selector(), display: ref.String()}, nil
+	return copyEndpoint{
+		target:    repository,
+		selector:  ref.Selector(),
+		display:   ref.String(),
+		reference: ref,
+	}, nil
 }
 
 // copyDestination opens the side a copy writes to, and refuses a digest.
@@ -172,7 +178,12 @@ func (c *Client) copyDestination(raw string) (copyEndpoint, error) {
 	if err != nil {
 		return copyEndpoint{}, err
 	}
-	return copyEndpoint{target: repository, selector: ref.Selector(), display: ref.String()}, nil
+	return copyEndpoint{
+		target:    repository,
+		selector:  ref.Selector(),
+		display:   ref.String(),
+		reference: ref,
+	}, nil
 }
 
 func openLayoutEndpoint(raw string) (copyEndpoint, error) {
@@ -180,7 +191,12 @@ func openLayoutEndpoint(raw string) (copyEndpoint, error) {
 	if err != nil {
 		return copyEndpoint{}, err
 	}
-	return copyEndpoint{target: target, selector: tag, display: strings.TrimSpace(raw)}, nil
+	return copyEndpoint{
+		target:    target,
+		selector:  tag,
+		display:   strings.TrimSpace(raw),
+		reference: layoutReference(raw, tag),
+	}, nil
 }
 
 // CopyArtifact copies one artifact between repositories, preserving its digest.

@@ -126,14 +126,12 @@ func (c *Client) Push(ctx context.Context, rawRef string, fsys fs.FS, opts PushO
 	ctx, cancel := c.operationContext(ctx)
 	defer cancel()
 
-	ref, err := ParseRef(rawRef)
-	if err != nil {
-		return PushResult{}, err
-	}
-	if ref.IsDigest() {
-		return PushResult{}, fmt.Errorf("%w: %s", ErrDigestPush, ref)
-	}
-	repository, err := c.repository(ref)
+	// The same resolution the copy verb uses, for the reason stated at
+	// copyDestination: an export to a directory is not a second operation, and
+	// an air-gapped producer must not be given a second code path to trust.
+	// copyDestination refuses a digest, which is the check this function used
+	// to make for itself.
+	endpoint, err := c.copyDestination(rawRef)
 	if err != nil {
 		return PushResult{}, err
 	}
@@ -142,12 +140,12 @@ func (c *Client) Push(ctx context.Context, rawRef string, fsys fs.FS, opts PushO
 	// doing two operations under one verb, and the second one -- promoting
 	// whatever was just built -- is the one an operator has to be able to
 	// decline.
-	opts.Tags = append(opts.Tags, ref.Selector())
+	opts.Tags = append(opts.Tags, endpoint.selector)
 	opts.Limits = mergeLimits(opts.Limits, c.options.Limits)
-	result, err := PushTo(ctx, repository, fsys, opts)
-	result.Reference = ref
+	result, err := PushTo(ctx, endpoint.target, fsys, opts)
+	result.Reference = endpoint.reference
 	if err != nil {
-		return result, fmt.Errorf("push %s: %w", ref, err)
+		return result, fmt.Errorf("push %s: %w", endpoint.display, err)
 	}
 	return result, nil
 }
@@ -157,20 +155,19 @@ func (c *Client) Pull(ctx context.Context, rawRef string, opts PullOptions) (Art
 	ctx, cancel := c.operationContext(ctx)
 	defer cancel()
 
-	ref, err := ParseRef(rawRef)
-	if err != nil {
-		return Artifact{}, err
-	}
-	repository, err := c.repository(ref)
+	// A layout is readable here for the same reason it is writable above.
+	// embedrelease.Fetch used to branch on the reference kind itself because
+	// this function could not, which is one recognition living in two places.
+	endpoint, err := c.copySource(rawRef)
 	if err != nil {
 		return Artifact{}, err
 	}
 	opts.Limits = mergeLimits(opts.Limits, c.options.Limits)
-	artifact, err := PullFrom(ctx, repository, ref.Selector(), opts)
+	artifact, err := PullFrom(ctx, endpoint.target, endpoint.selector, opts)
 	if err != nil {
-		return Artifact{}, fmt.Errorf("pull %s: %w", ref, err)
+		return Artifact{}, fmt.Errorf("pull %s: %w", endpoint.display, err)
 	}
-	artifact.Reference = ref
+	artifact.Reference = endpoint.reference
 	return artifact, nil
 }
 
