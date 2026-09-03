@@ -372,7 +372,11 @@ func releaseOutboxForRetirement(
 	if err != nil {
 		return OutboxRelease{}, err
 	}
-	outbox, err := NewOutbox(db, recorded.Spec)
+	physical, err := WithResolvedRelations(ctx, db, recorded.Spec)
+	if err != nil {
+		return OutboxRelease{}, err
+	}
+	outbox, err := NewOutbox(db, physical)
 	if err != nil {
 		return OutboxRelease{}, err
 	}

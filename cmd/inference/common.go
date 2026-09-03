@@ -62,6 +62,18 @@ type session struct {
 	loaded embedspec.Loaded
 	db     *sql.DB
 	store  *embedpg.Store
+	// source and target are the physical relations the specification's
+	// spellings resolve to on this server, which is what every durable
+	// identity is derived from: the source digest the outbox is named after,
+	// the source-scoped advisory lock, and the target pointer.
+	//
+	// They are resolved once, here, because every verb comes through open()
+	// and because an unqualified spelling means whatever the session's
+	// search_path says it means. A spelling that names no relation keeps the
+	// authored value, so the verb that needs the relation reports its absence
+	// rather than this resolution doing it (stokaro/ptah#2806).
+	source embedpg.Relation
+	target embedpg.Relation
 }
 
 // close releases the connection.
@@ -93,7 +105,22 @@ func open(ctx context.Context, options commonOptions) (*session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &session{loaded: loaded, db: db, store: embedpg.NewStore(db)}, nil
+	source, _, err := embedpg.ResolveRelation(
+		ctx, db, loaded.Spec.Source.Schema, loaded.Spec.Source.Table)
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	target, _, err := embedpg.ResolveRelation(
+		ctx, db, loaded.Spec.Target.Schema, loaded.Spec.Target.Table)
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return &session{
+		loaded: loaded, db: db, store: embedpg.NewStore(db),
+		source: source, target: target,
+	}, nil
 }
 
 // validateDatabaseURL checks the part of a database connection that does not
