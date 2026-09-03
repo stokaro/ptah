@@ -483,6 +483,9 @@ func prepareIndexNode(dialect string, caps capability.Capabilities, node *ast.In
 	if err := validateIndexInclude(dialect, caps, node.Name, node.Type, node.IncludeColumns); err != nil {
 		return nil, err
 	}
+	if err := validateIndexKeyParts(dialect, node); err != nil {
+		return nil, err
+	}
 	return node, nil
 }
 
@@ -778,6 +781,9 @@ func prepareConstraintNode(
 	); err != nil {
 		return nil, err
 	}
+	if err := validateConstraintKeyParts(dialect, node); err != nil {
+		return nil, err
+	}
 	if node.Type != ast.ForeignKeyConstraint {
 		return node, nil
 	}
@@ -931,6 +937,12 @@ func foreignKeysUnsupportedError(dialect string) error {
 // each reach a target through the table they name, in StructName or in the
 // table field; a declaration carrying neither used to be dropped or rendered
 // against an empty identifier (stokaro/ptah#2612).
+//
+// An index that names no column and no expression, a UNIQUE or PRIMARY KEY
+// constraint that names no column, and a CHECK constraint carrying no
+// expression are refused the same way. No dialect can render those as
+// anything, so there is no target for which the shape would have been valid
+// (stokaro/ptah#2790).
 func GetOrderedCreateStatements(r *schemamodel.Database, dialect string) ([]string, error) {
 	return GetOrderedCreateStatementsWithCapabilities(r, dialect, capability.ForDialect(dialect))
 }
