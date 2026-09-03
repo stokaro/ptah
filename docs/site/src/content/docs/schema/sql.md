@@ -191,6 +191,26 @@ CREATE TABLE "pets" (
 
   A name written beside an explicit `CONSTRAINT` symbol is accepted and
   ignored, because both engines record the symbol for the backing index too.
+- A column-level `REFERENCES` clause is refused under `--dialect mysql`. MySQL
+  accepts the syntax and builds nothing from it, so reading it as a foreign key
+  would make rendering add a constraint the source schema never had:
+
+  ```sql
+  CREATE TABLE child (a INT REFERENCES parents (id));
+  ```
+
+  ```text
+  a column-level REFERENCES clause at position 26: MySQL accepts the clause and
+  creates neither a foreign key nor an index: SHOW CREATE TABLE reports the
+  column alone, and information_schema.referential_constraints stays empty, so
+  Ptah refuses it rather than reading a foreign key the source schema does not
+  have; write a table-level FOREIGN KEY clause to declare an enforced
+  relationship
+  ```
+
+  Write the relationship as a table-level `FOREIGN KEY (a) REFERENCES parents
+  (id)` instead. MariaDB enforces the column-level spelling and builds a backing
+  index for it, so `--dialect mariadb` reads it unchanged.
 
 - `ALTER TABLE ... ADD KEY` adds a secondary index on MySQL and MariaDB, in
   every spelling the engines take: `ADD KEY`, `ADD INDEX`, `ADD SPATIAL KEY` and
