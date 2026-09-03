@@ -221,6 +221,30 @@ func (op *RenameTableOperation) Accept(_visitor Visitor) error { return nil }
 // alterOperation implements the marker method for type safety.
 func (op *RenameTableOperation) alterOperation() {}
 
+// AddIndexOperation adds a secondary index to an existing table, the shape
+// MySQL and MariaDB write as `ALTER TABLE t ADD KEY k (a)` and its `ADD INDEX`,
+// `ADD SPATIAL KEY` and `ADD FULLTEXT KEY` spellings.
+//
+// It carries the whole index rather than a copy of its parts, because a
+// table-body `KEY` and an added one are the same object declared in two places
+// and a reader that modelled them differently would compare them as different.
+//
+// A `UNIQUE` key is not this operation. Both engines take it, but it is a
+// uniqueness guarantee rather than an index alone, and it reaches the model as
+// an AddConstraintOperation so that every comparison reading the constraint
+// list still sees it.
+type AddIndexOperation struct {
+	// Index is the index to add. It is never nil in a node the parser built.
+	Index *IndexNode
+}
+
+// Accept implements the Node interface for AddIndexOperation.
+//
+// The actual rendering is handled by the dialect's VisitAlterTable method.
+func (op *AddIndexOperation) Accept(_visitor Visitor) error { return nil }
+
+func (op *AddIndexOperation) alterOperation() {}
+
 // AddSkippingIndexOperation represents ClickHouse's
 // `ALTER TABLE x ADD INDEX name expression TYPE indexType GRANULARITY n`.
 //

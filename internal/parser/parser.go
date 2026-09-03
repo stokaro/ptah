@@ -5055,15 +5055,11 @@ func (p *Parser) parseAddOperation() (ast.AlterOperation, error) {
 		if err != nil {
 			return nil, err
 		}
-		// ALTER TABLE ... ADD INDEX is not reachable here: isAlterAddConstraintStart
-		// gates on the constraint keywords, and an added index takes its own
-		// statement. Refusing rather than dropping keeps that true if the gate
-		// ever widens (stokaro/ptah#2713).
+		// The gate admits an index for the MySQL family, so one arrives here
+		// rather than being refused as it was while the gate held only the
+		// constraint keywords (stokaro/ptah#2713, widened by #2778).
 		if index != nil {
-			return nil, fmt.Errorf(
-				"ALTER TABLE ADD %s is not supported here; declare the index in its own statement",
-				alterIndexKind(index.Type),
-			)
+			return &ast.AddIndexOperation{Index: index}, nil
 		}
 		return &ast.AddConstraintOperation{Constraint: constraint}, nil
 	}
@@ -5192,9 +5188,26 @@ func (p *Parser) isAlterAddConstraintStart() bool {
 	switch strings.ToUpper(p.current.Value) {
 	case "CONSTRAINT", "PRIMARY", "UNIQUE", "FOREIGN", "CHECK", "EXCLUDE":
 		return true
+	case "KEY", "SPATIAL", "FULLTEXT":
+		// MySQL and MariaDB add a secondary index this way, and both accept
+		// every one of these spellings -- measured on 8.4 and 11.8. Left out of
+		// the gate, `ADD KEY k (a)` fell through to the column parser and was
+		// dropped without a word (stokaro/ptah#2778).
+		return isMySQLFamilyDialect(p.dialect)
+	case "INDEX":
+		// `ADD INDEX` is MySQL's other spelling of the same statement, and
+		// ClickHouse's data-skipping index. The dialect is what tells them
+		// apart, exactly as it does for the table-body `INDEX` keyword.
+		return isMySQLFamilyDialect(p.dialect)
 	default:
 		return false
 	}
+}
+
+// isMySQLFamilyDialect reports whether a dialect writes MySQL's ALTER TABLE
+// index syntax.
+func isMySQLFamilyDialect(dialect string) bool {
+	return dialect == platform.MySQL || dialect == platform.MariaDB
 }
 
 // parseDropOperation parses DROP COLUMN operations.

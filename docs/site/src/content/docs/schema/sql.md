@@ -174,6 +174,13 @@ CREATE TABLE "pets" (
   Write `b INTEGER DEFAULT 1` instead. A name Ptah accepts and cannot read back
   would make every later comparison report a difference no apply can settle.
 
+- `ALTER TABLE ... ADD KEY` adds a secondary index on MySQL and MariaDB, in
+  every spelling the engines take: `ADD KEY`, `ADD INDEX`, `ADD SPATIAL KEY` and
+  `ADD FULLTEXT KEY`, with a key part's prefix length and direction. A
+  `UNIQUE` key stays a constraint, because it is a uniqueness guarantee rather
+  than an index alone. `ADD INDEX` still declares ClickHouse's data-skipping
+  index on that dialect; which one a statement means is decided by the dialect,
+  as it is for the same keyword inside a table body.
 - `ALTER TABLE ... ADD PRIMARY KEY` is read onto the table it names, with its
   prefix length and direction, exactly as the same key written inside the
   `CREATE TABLE` would be. A statement naming a table the file does not declare
