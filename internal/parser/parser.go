@@ -3401,11 +3401,24 @@ func (p *Parser) currentIsUniqueName() bool {
 
 // skipIndexAccessMethod steps over MySQL's optional `USING {BTREE|HASH}`.
 //
-// Read and discarded rather than carried, and the difference matters: InnoDB
-// discards it too. Measured on MySQL 26.7, `USING HASH`, `USING BTREE` and no
-// clause at all leave the same `INDEX_TYPE = BTREE` in the catalog, so nothing
-// downstream could compare against a value that was kept. Refusing the clause
-// instead would refuse ordinary DDL over a difference the engine does not make.
+// Read and discarded, which is the least wrong of three answers rather than a
+// free one. Refusing the clause would refuse ordinary DDL both engines accept;
+// carrying it needs somewhere to put it, and a table-body UNIQUE that stays a
+// constraint has none.
+//
+// The engines do not agree on whether the discard is observable, so this is not
+// the harmless skip an earlier version of this comment claimed. Measured, both
+// on InnoDB:
+//
+//	UNIQUE KEY uq USING HASH (a)    MySQL 26.7   INDEX_TYPE BTREE
+//	                                MariaDB 12.3 INDEX_TYPE HASH
+//
+// MySQL discards it itself, so there nothing downstream could compare against.
+// MariaDB keeps it, and prints it back from SHOW CREATE TABLE, so a read-back
+// there reports HASH against a desired model that dropped it -- a difference no
+// apply converges. `USING BTREE` is invisible on both, being the default.
+// stokaro/ptah#2825 carries that gap; skipping is what this reader does until
+// there is a field to keep it in.
 func (p *Parser) skipIndexAccessMethod() {
 	if p.current.Type != lexer.TokenIdentifier || !strings.EqualFold(p.current.Value, "USING") {
 		return
