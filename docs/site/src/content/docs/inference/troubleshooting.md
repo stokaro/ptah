@@ -129,6 +129,33 @@ resume position. Start a positioned replacement, move queries elsewhere, or
 finish the maintenance window first. Use `retire` instead only when the
 generation and its vectors should be destroyed.
 
+## Two specifications over one table have separate outboxes
+
+**Cause.** They were prepared by a Ptah that keyed the source on the spelling
+each document used rather than on the relation it names. `table: docs` and
+`schema: public, table: docs` are one `pg_class` row when `search_path` is
+`public`, so one physical source ended up with two outbox tables, two trigger
+pairs, two advisory-lock domains and two reader floors that did not know about
+each other.
+
+Ptah now resolves both halves of `source` and `target` against the connected
+session before it derives any of that, so the two spellings share one outbox,
+one floor, one lock and one target pointer. An omitted schema resolves through
+the session's `search_path` rather than defaulting to `public`, and two
+genuinely different schemas holding the same table name stay separate.
+
+The generation identity is deliberately not resolved. It is a content address
+of the document, which `ptah inference describe` computes with no database at
+all, so two spellings remain two generations over one source — which is the
+ordinary state during a generation change.
+
+**Fix.** Rows recorded before this are not reinterpreted: an outbox created
+under the old key keeps its name and its runs. Finish or `abandon` the runs on
+the outbox you no longer want, then `retire` its generation; the remaining
+specification's next `prepare` installs against the resolved source. Pick one
+spelling for new documents so a reader can see at a glance that two
+specifications are about one table.
+
 ## `provider: embedding endpoint unreachable`
 
 **Cause.** The endpoint is down, the address is wrong, or the network is not

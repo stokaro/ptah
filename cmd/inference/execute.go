@@ -189,7 +189,14 @@ func runCatchUp(ctx context.Context, out io.Writer, options executeOptions) erro
 			"catch-up needs a consistency mode that records changes, and this specification "+
 				"selects %q", embedreport.ModeName(opened.loaded.Mode))
 	}
-	outbox, err := embedpg.NewOutbox(opened.db, opened.loaded.Spec)
+	// The outbox is named after the PHYSICAL source, so it is built from the
+	// specification resolved against this server rather than from the
+	// spelling the document used (stokaro/ptah#2806).
+	physical, err := embedpg.WithResolvedRelations(ctx, opened.db, opened.loaded.Spec)
+	if err != nil {
+		return err
+	}
+	outbox, err := embedpg.NewOutbox(opened.db, physical)
 	if err != nil {
 		return err
 	}

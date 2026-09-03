@@ -64,11 +64,18 @@ func (s *Store) PrepareRun(
 			"%w: generation %s records consistency mode %q, prepare selected %q",
 			embedstore.ErrConflict, identity, generation.ConsistencyMode, mode)
 	}
-	if run.Source != SourceIdentity(spec.Source.Schema, spec.Source.Table) {
+	// Resolved before it is compared, and against this connection: the run's
+	// digest is taken over the physical relation, so comparing it to a digest
+	// of the authored spelling refuses a run this same call just created from
+	// a specification whose schema was omitted (stokaro/ptah#2806).
+	source, _, err := ResolveRelation(ctx, s.db, spec.Source.Schema, spec.Source.Table)
+	if err != nil {
+		return PrepareResult{}, err
+	}
+	if run.Source != SourceIdentity(source.Schema, source.Table) {
 		return PrepareResult{}, fmt.Errorf(
 			"%w: run %s records source %s, specification uses %s",
-			embedstore.ErrConflict, run.ID, run.Source,
-			embedstore.QualifiedName(spec.Source.Schema, spec.Source.Table))
+			embedstore.ErrConflict, run.ID, run.Source, source)
 	}
 
 	var result PrepareResult
@@ -76,13 +83,51 @@ func (s *Store) PrepareRun(
 		{kind: "source", identity: run.Source},
 		{kind: "generation", identity: identity},
 	}
-	err := s.withLifecycleSessionLocks(ctx, scopes, func(conn *sql.Conn) error {
+	err = s.withLifecycleSessionLocks(ctx, scopes, func(conn *sql.Conn) error {
 		prepared, err := s.prepareRunLocked(
 			ctx, conn, spec, generation, run, mode, identity)
 		result = prepared
 		return err
 	})
 	return result, err
+}
+
+// prepareOutboxForSource builds the outbox this run will feed, and the live
+// contracts already installed on its source, or nothing at all when the run
+// records no changes.
+//
+// Separate from prepareRunLocked because it is the one part of preparation
+// that is about the SOURCE rather than about the run: it resolves the physical
+// relation, names the outbox after it, and refuses an event format the source's
+// existing readers cannot share.
+func prepareOutboxForSource(
+	ctx context.Context, conn *sql.Conn, spec embedgen.Spec, mode embedcatchup.Mode,
+) (*Outbox, []embedgen.Spec, error) {
+	if mode != embedcatchup.ModeOutbox {
+		return nil, nil, nil
+	}
+	// The outbox is named after the physical relation, so the specification is
+	// resolved against this connection first: an omitted schema means whatever
+	// the session's search_path says it means (stokaro/ptah#2806).
+	physical, err := WithResolvedRelations(ctx, conn, spec)
+	if err != nil {
+		return nil, nil, err
+	}
+	outbox, err := NewOutbox(conn, physical)
+	if err != nil {
+		return nil, nil, err
+	}
+	contracts, err := liveOutboxContracts(ctx, conn, physical)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Contract incompatibility is knowable without DDL. Refuse it before
+	// creating target columns or registering a generation that cannot be fed
+	// by the source's existing event format.
+	if err := outbox.validateSharedSpecs(contracts); err != nil {
+		return nil, nil, err
+	}
+	return outbox, contracts, nil
 }
 
 func (s *Store) prepareRunLocked(
@@ -121,23 +166,9 @@ func (s *Store) prepareRunLocked(
 		return PrepareResult{}, err
 	}
 
-	var outbox *Outbox
-	var contracts []embedgen.Spec
-	if mode == embedcatchup.ModeOutbox {
-		outbox, err = NewOutbox(conn, spec)
-		if err != nil {
-			return PrepareResult{}, err
-		}
-		contracts, err = liveOutboxContracts(ctx, conn, spec)
-		if err != nil {
-			return PrepareResult{}, err
-		}
-		// Contract incompatibility is knowable without DDL. Refuse it before
-		// creating target columns or registering a generation that cannot be
-		// fed by the source's existing event format.
-		if err := outbox.validateSharedSpecs(contracts); err != nil {
-			return PrepareResult{}, err
-		}
+	outbox, contracts, err := prepareOutboxForSource(ctx, conn, spec, mode)
+	if err != nil {
+		return PrepareResult{}, err
 	}
 
 	if err := EnsureTarget(ctx, conn, spec); err != nil {
@@ -254,7 +285,11 @@ func validatePreparedRunRetry(
 			"prepare run %s: %w: outbox mode has no durable resume position",
 			existing.ID, embedrun.ErrCheckpoint)
 	}
-	outbox, err := NewOutbox(conn, spec)
+	physical, err := WithResolvedRelations(ctx, conn, spec)
+	if err != nil {
+		return err
+	}
+	outbox, err := NewOutbox(conn, physical)
 	if err != nil {
 		return err
 	}

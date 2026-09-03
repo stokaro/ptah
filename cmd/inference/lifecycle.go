@@ -77,9 +77,12 @@ func runPrepare(
 		Name:         spec.Name, Reproducibility: string(spec.Identity().Reproducibility),
 		ReproducibilityReason: spec.Identity().ReproducibilityReason,
 		Dimension:             spec.Model.ReportedDimension,
-		TargetSchema:          spec.Target.Schema,
-		TargetTable:           spec.Target.Table, TargetColumn: spec.Target.Column,
-		SourceSchema: spec.Source.Schema, SourceTable: spec.Source.Table,
+		// The resolved relations rather than the authored spellings: these
+		// say where the data physically is, and they are what the source
+		// digest below is taken over (stokaro/ptah#2806).
+		TargetSchema: opened.target.Schema,
+		TargetTable:  opened.target.Table, TargetColumn: spec.Target.Column,
+		SourceSchema: opened.source.Schema, SourceTable: opened.source.Table,
 		ConsistencyMode: string(opened.loaded.Mode),
 		CreatedAt:       time.Now().UTC(),
 	}
@@ -88,7 +91,7 @@ func runPrepare(
 		// The digest the outbox is keyed on, not the bare table name. Recorded
 		// bare, `public.docs` and `archive.docs` were one source string and two
 		// outboxes, so each run held the other's floor (stokaro/ptah#2724).
-		Environment: "cli", Source: embedpg.SourceIdentity(spec.Source.Schema, spec.Source.Table),
+		Environment: "cli", Source: embedpg.SourceIdentity(opened.source.Schema, opened.source.Table),
 		Target:          spec.Target.Table + "." + spec.Target.Column,
 		ProviderProfile: spec.Model.Provider, PtahVersion: "cli", PolicyDigest: "",
 		Phase: embedrun.PhasePrepared, Status: embedrun.StatusRunning,

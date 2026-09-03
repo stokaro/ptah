@@ -155,7 +155,16 @@ func VerifyGeneration(
 	loaded embedspec.Loaded, run embedrun.Run,
 ) (embedverify.Report, error) {
 	spec := loaded.Spec
-	structure, err := embedpg.ReadStructure(ctx, db, spec, ActivePointer(ctx, store, spec.Target.Schema, spec.Target.Table))
+	// The pointer names a physical target, so it is looked up by the relation
+	// the server resolves rather than by the spelling the document used: two
+	// spellings of one table must not have two active pointers
+	// (stokaro/ptah#2806).
+	physical, err := embedpg.WithResolvedRelations(ctx, db, spec)
+	if err != nil {
+		return embedverify.Report{}, err
+	}
+	structure, err := embedpg.ReadStructure(ctx, db, spec,
+		ActivePointer(ctx, store, physical.Target.Schema, physical.Target.Table))
 	if err != nil {
 		return embedverify.Report{}, err
 	}
@@ -267,7 +276,11 @@ func BuildCutoverPlan(
 	accepting []string, now time.Time,
 ) (embedcutover.Plan, embedcutover.Observed, error) {
 	spec := loaded.Spec
-	active := ActivePointer(ctx, store, spec.Target.Schema, spec.Target.Table)
+	physical, err := embedpg.WithResolvedRelations(ctx, db, spec)
+	if err != nil {
+		return embedcutover.Plan{}, embedcutover.Observed{}, err
+	}
+	active := ActivePointer(ctx, store, physical.Target.Schema, physical.Target.Table)
 	structure, err := embedpg.ReadStructure(ctx, db, spec, active)
 	if err != nil {
 		return embedcutover.Plan{}, embedcutover.Observed{}, err
@@ -382,7 +395,11 @@ func readBarrier(
 	if loaded.Mode != embedcatchup.ModeOutbox {
 		return embedcatchup.Barrier{}, nil
 	}
-	outbox, err := embedpg.NewOutbox(db, loaded.Spec)
+	physical, err := embedpg.WithResolvedRelations(ctx, db, loaded.Spec)
+	if err != nil {
+		return embedcatchup.Barrier{}, err
+	}
+	outbox, err := embedpg.NewOutbox(db, physical)
 	if err != nil {
 		return embedcatchup.Barrier{}, err
 	}
