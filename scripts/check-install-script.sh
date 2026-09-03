@@ -181,7 +181,19 @@ printf '{"id":1,"tag_name":"v0.2.0","name":"v0.2.0"}\n' >"$site/latest"
 # archive rather than by inventing a hash that never matched anything.
 asset_030="$(build_release 0.3.0)"
 good_030="$(sha256_hex "$site/download/v0.3.0/$asset_030")"
-printf 'x' | dd of="$site/download/v0.3.0/$asset_030" bs=1 seek=64 conv=notrunc status=none
+# The replacement byte has to differ from the one already there. The archive is
+# gzip output, so the byte at any given offset is effectively arbitrary, and
+# writing a fixed `x` was a no-op whenever offset 64 already held one -- about
+# once in 256 runs, which is a red `ptah-go-lint` on a pull request that
+# touched nothing near this. The guard below caught it rather than letting the
+# tampered-download case pass vacuously, which is why it is a guard.
+corrupt_byte=x
+if [ "$(dd if="$site/download/v0.3.0/$asset_030" bs=1 skip=64 count=1 status=none |
+	od -An -tx1 | tr -d ' \n')" = "78" ]; then
+	corrupt_byte=y
+fi
+printf '%s' "$corrupt_byte" |
+	dd of="$site/download/v0.3.0/$asset_030" bs=1 seek=64 conv=notrunc status=none
 write_checksums 0.3.0 "$good_030"
 if [ "$(sha256_hex "$site/download/v0.3.0/$asset_030")" = "$good_030" ]; then
 	echo "check-install-script: the corruption fixture did not change the archive" >&2
