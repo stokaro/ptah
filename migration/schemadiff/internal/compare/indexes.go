@@ -864,7 +864,7 @@ func indexDefinitionsChanged(
 	case platform.Postgres:
 		return postgresIndexDefinitionChanged(desired, database, semantics, resolved)
 	case platform.MySQL, platform.MariaDB:
-		return mysqlIndexDefinitionChanged(desired, database, semantics)
+		return mysqlIndexDefinitionChanged(desired, database, semantics, dialect)
 	default:
 		return false
 	}
@@ -911,9 +911,10 @@ func mysqlIndexDefinitionChanged(
 	desired schemamodel.Index,
 	database catalog.Index,
 	semantics identifier.Semantics,
+	dialect string,
 ) bool {
 	return desired.Unique != database.IsUnique ||
-		mysqlIndexMethodChanged(desired, database) ||
+		mysqlIndexMethodChanged(desired, database, dialect) ||
 		mysqlIndexKeyColumnsChanged(desired, database, semantics)
 }
 
@@ -923,8 +924,16 @@ func mysqlIndexDefinitionChanged(
 // Both sides go through one classifier, which is what keeps this from becoming
 // a string comparison that agrees with the renderer today and stops agreeing
 // the moment either spelling moves.
-func mysqlIndexMethodChanged(desired schemamodel.Index, database catalog.Index) bool {
-	return !mysqlindex.KindOf(desired.Type).SatisfiedBy(mysqlindex.KindOf(database.Method))
+func mysqlIndexMethodChanged(
+	desired schemamodel.Index, database catalog.Index, dialect string,
+) bool {
+	if !mysqlindex.KindOf(desired.Type).SatisfiedBy(mysqlindex.KindOf(database.Method)) {
+		return true
+	}
+	// The USING clause is a second question about the same field, and it needs
+	// the dialect because only one of the two engines records what was asked
+	// for. [mysqlindex.MethodSatisfiedBy] carries the per-engine measurement.
+	return !mysqlindex.MethodSatisfiedBy(dialect, desired.Type, database.Method)
 }
 
 // mysqlIndexKeyColumnsChanged compares the key columns in order, and only the

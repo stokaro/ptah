@@ -631,13 +631,20 @@ func TestPostgresIndexSemantics_ChangeStaysInItsOwnSchema(t *testing.T) {
 // Each row is the access-method fixture -- the axis with the widest reach,
 // since schemamodel.Index.Type means something different on ClickHouse -- under a
 // dialect that must not react to it.
+//
+// MariaDB left the list when its own semantics for this axis were measured:
+// there `USING HASH` is recorded on every engine that takes an index, so a
+// desired `hash` against a server reporting otherwise is a real difference
+// rather than a guess borrowed from PostgreSQL. It reacts for its own reason,
+// which TestIndexes_MariaDBAccessMethod_FailurePath asserts, and the isolation
+// this control exists for is unchanged: MySQL stays in the list because its
+// catalog records the clause only on MEMORY (stokaro/ptah#2834).
 func TestPostgresIndexSemantics_OtherDialectsAreUnaffected(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
 	}{
 		{name: "mysql", dialect: platform.MySQL},
-		{name: "mariadb", dialect: platform.MariaDB},
 		{name: "sqlite", dialect: platform.SQLite},
 		{name: "clickhouse", dialect: platform.ClickHouse},
 		{name: "cockroachdb", dialect: platform.CockroachDB},
