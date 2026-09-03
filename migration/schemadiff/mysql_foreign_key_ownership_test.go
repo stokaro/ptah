@@ -139,7 +139,9 @@ func TestCompare_AWiderIndexLedByTheForeignKeysColumnsBacksIt(t *testing.T) {
 //
 // `cover(a)` can serve the foreign key, and the engine did not create it -- the
 // author did, under a name of their own. It stays an ordinary index, so
-// removing it from the desired schema plans its removal.
+// removing it from the desired schema plans its removal -- and so does `f`,
+// because an index the engine had no reason to build is the author's whatever
+// it is called.
 func TestCompare_ADifferentlyNamedCoveringIndexIsDroppable(t *testing.T) {
 	for _, test := range ownershipEngines {
 		t.Run(test.name, func(t *testing.T) {
@@ -152,12 +154,17 @@ func TestCompare_ADifferentlyNamedCoveringIndexIsDroppable(t *testing.T) {
 				),
 				desiredChildren())
 
-			// Only cover. `f` shares the constraint's name and backs the key,
-			// so it is read as the engine's -- which is right where the engine
-			// built it and conservative where the author did, since the catalog
-			// cannot tell the two apart without direction. See
-			// mysqlForeignKeyBackingIndexes.
-			c.Assert(removed, qt.DeepEquals, []string{"cover"})
+			// Both. `cover(a)` can serve the key, so the engine built no index
+			// of its own and `f` is the author's despite sharing the
+			// constraint's name -- measured, `DROP INDEX f` succeeds on both
+			// engines with `cover(a)` beside `f(a)`.
+			//
+			// This assertion read `[]string{"cover"}` until the reader began
+			// recording key-part direction (stokaro/ptah#2816). Without it the
+			// catalog could not tell an index that covers from one that only
+			// looks like it, so `f` was held as the engine's -- right where the
+			// engine built it, and conservative where the author did.
+			c.Assert(removed, qt.DeepEquals, []string{"cover", "f"})
 		})
 	}
 }
@@ -189,6 +196,77 @@ func TestCompare_ASoleCoveringIndexUnderItsOwnNameIsStillTheAuthorsHappyPath(t *
 				desiredChildren())
 
 			c.Assert(removed, qt.DeepEquals, []string{"cover"})
+		})
+	}
+}
+
+// TestCompare_ADescendingCoverDoesNotUnownTheEnginesIndexOnMySQL is the control
+// on the direction rule, and it is the reason direction had to reach the
+// catalog at all (stokaro/ptah#2816).
+//
+// `cover(a DESC)` beside `f(a)`: whether `f` is the engine's turns on whether
+// the descending index could have served the key instead, and the two engines
+// answer differently. Measured by declaring the cover, adding the foreign key,
+// and reading back whether a second index appeared -- MySQL 8.4.11 built its
+// own, MariaDB 11.8.9 reused the cover.
+//
+// So on MySQL `f` is the engine's and only `cover` is removable; on MariaDB
+// nothing made `f` the engine's and both are. Reading a descending index as
+// covering on MySQL would un-own the real backing index and plan a DROP the
+// engine refuses with ERROR 1553.
+func TestCompare_ADescendingCoverDoesNotUnownTheEnginesIndexOnMySQL(t *testing.T) {
+	tests := []struct {
+		name        string
+		dialect     string
+		wantRemoved []string
+	}{
+		{name: "mysql keeps f as the engine's", dialect: platform.MySQL, wantRemoved: []string{"cover"}},
+		{name: "mariadb reuses the cover", dialect: platform.MariaDB, wantRemoved: []string{"cover", "f"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			removed := compareChildren(c, test.dialect,
+				liveChildren(
+					catalog.Index{
+						Name: "cover", TableName: "children", Columns: []string{"a"},
+						Parts: []catalog.IndexPart{{Name: "a", Desc: true}},
+					},
+					catalog.Index{Name: "f", TableName: "children", Columns: []string{"a"}},
+				),
+				desiredChildren())
+
+			c.Assert(removed, qt.DeepEquals, test.wantRemoved)
+		})
+	}
+}
+
+// TestCompare_ADescendingCoverBeyondTheKeysColumnsStillCovers pins that the
+// direction rule reads the LEADING parts rather than the whole index.
+//
+// Measured on MySQL 8.4.11: a cover of `(a, b DESC)` for a key on `a` is
+// reused, while `(a DESC, b)` is not. An implementation asking "is any part
+// descending" would get the first of those wrong and un-own nothing that should
+// be owned -- it would hold `f` as the engine's where the engine did not build
+// it, and never plan the author's DROP.
+func TestCompare_ADescendingCoverBeyondTheKeysColumnsStillCovers(t *testing.T) {
+	for _, test := range ownershipEngines {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			removed := compareChildren(c, test.dialect,
+				liveChildren(
+					catalog.Index{
+						Name: "cover", TableName: "children", Columns: []string{"a", "b"},
+						Parts: []catalog.IndexPart{{Name: "a"}, {Name: "b", Desc: true}},
+					},
+					catalog.Index{Name: "f", TableName: "children", Columns: []string{"a"}},
+				),
+				desiredChildren())
+
+			c.Assert(removed, qt.DeepEquals, []string{"cover", "f"})
 		})
 	}
 }

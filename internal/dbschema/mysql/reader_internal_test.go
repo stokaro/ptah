@@ -29,6 +29,7 @@ var statisticsColumns = []string{
 	"NON_UNIQUE",
 	"INDEX_TYPE",
 	"SUB_PART",
+	"COLLATION",
 }
 
 // wideKeyColumnNames is a 16-part key of 64-character column names: 1039 bytes
@@ -50,7 +51,7 @@ func wideKeyColumnNames() []string {
 func wideKeyRows() [][]driver.Value {
 	rows := make([][]driver.Value, 0, 16)
 	for _, name := range wideKeyColumnNames() {
-		rows = append(rows, []driver.Value{"idx_wide", "wide", name, int64(1), "BTREE", nil})
+		rows = append(rows, []driver.Value{"idx_wide", "wide", name, int64(1), "BTREE", nil, "A"})
 	}
 	return rows
 }
@@ -79,7 +80,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 			// (stokaro/ptah#2721).
 			name: "a spatial index keeps its access method",
 			rows: [][]driver.Value{
-				{"sx_geo_location", "geo", "location", int64(1), "SPATIAL", nil},
+				{"sx_geo_location", "geo", "location", int64(1), "SPATIAL", nil, "A"},
 			},
 			want: []catalog.Index{{
 				Name:       "sx_geo_location",
@@ -116,8 +117,8 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 		{
 			name: "key order follows the rows",
 			rows: [][]driver.Value{
-				{"idx_pair", "t", "b", int64(1), "BTREE", nil},
-				{"idx_pair", "t", "a", int64(1), "BTREE", nil},
+				{"idx_pair", "t", "b", int64(1), "BTREE", nil, "A"},
+				{"idx_pair", "t", "a", int64(1), "BTREE", nil, "A"},
 			},
 			want: []catalog.Index{{
 				Name:       "idx_pair",
@@ -134,7 +135,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 			// (stokaro/ptah#2112). SUB_PART is where the catalog keeps it.
 			name: "a prefix key carries its length",
 			rows: [][]driver.Value{
-				{"idx_notes", "orders", "notes", int64(1), "BTREE", int64(20)},
+				{"idx_notes", "orders", "notes", int64(1), "BTREE", int64(20), "A"},
 			},
 			want: []catalog.Index{{
 				Name:       "idx_notes",
@@ -151,7 +152,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 			// spelling is what the document gets.
 			name: "a whole-column key carries no parts",
 			rows: [][]driver.Value{
-				{"idx_plain", "orders", "customer_id", int64(1), "BTREE", nil},
+				{"idx_plain", "orders", "customer_id", int64(1), "BTREE", nil, "A"},
 			},
 			want: []catalog.Index{{
 				Name:       "idx_plain",
@@ -166,8 +167,8 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 			// ones would render the key over one column.
 			name: "a mixed key keeps both kinds in order",
 			rows: [][]driver.Value{
-				{"idx_mixed", "orders", "customer_id", int64(1), "BTREE", nil},
-				{"idx_mixed", "orders", "notes", int64(1), "BTREE", int64(20)},
+				{"idx_mixed", "orders", "customer_id", int64(1), "BTREE", nil, "A"},
+				{"idx_mixed", "orders", "notes", int64(1), "BTREE", int64(20), "A"},
 			},
 			want: []catalog.Index{{
 				Name:      "idx_mixed",
@@ -184,8 +185,8 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 		{
 			name: "one index name per owning table",
 			rows: [][]driver.Value{
-				{"idx_name", "orders", "reference", int64(1), "BTREE", nil},
-				{"idx_name", "users", "email", int64(0), "BTREE", nil},
+				{"idx_name", "orders", "reference", int64(1), "BTREE", nil, "A"},
+				{"idx_name", "users", "email", int64(0), "BTREE", nil, "A"},
 			},
 			want: []catalog.Index{
 				{
@@ -208,7 +209,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 		{
 			name: "unique key and its definition",
 			rows: [][]driver.Value{
-				{"uq_users_email", "users", "email", int64(0), "BTREE", nil},
+				{"uq_users_email", "users", "email", int64(0), "BTREE", nil, "A"},
 			},
 			want: []catalog.Index{{
 				Name:       "uq_users_email",
@@ -222,7 +223,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 		{
 			name: "primary key",
 			rows: [][]driver.Value{
-				{"PRIMARY", "users", "id", int64(0), "BTREE", nil},
+				{"PRIMARY", "users", "id", int64(0), "BTREE", nil, "A"},
 			},
 			want: []catalog.Index{{
 				Name:       "PRIMARY",
@@ -232,6 +233,76 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 				IsUnique:   true,
 				IsPrimary:  true,
 				Definition: "BTREE INDEX PRIMARY ON users (id)",
+			}},
+		},
+		{
+			// COLLATION is the catalog's answer, 'A' or 'D'. KEY (a DESC) and
+			// KEY (a) are different indexes on both engines, so a read that
+			// discarded this could not tell a declaration that changed
+			// direction from one that did not (stokaro/ptah#2816).
+			name: "a descending key part carries its direction",
+			rows: [][]driver.Value{
+				{"idx_desc", "t", "a", int64(1), "BTREE", nil, "D"},
+			},
+			want: []catalog.Index{{
+				Name:       "idx_desc",
+				TableName:  "t",
+				Method:     "BTREE",
+				Columns:    []string{"a"},
+				Parts:      []catalog.IndexPart{{Name: "a", Desc: true}},
+				Definition: "BTREE INDEX idx_desc ON t (a)",
+			}},
+		},
+		{
+			// The control. An ascending key says nothing its column names do
+			// not, so its parts are dropped -- and an assertion that only
+			// checked the descending row would pass just as well if every part
+			// were marked descending.
+			name: "an ascending key part is not reported descending",
+			rows: [][]driver.Value{
+				{"idx_asc", "t", "a", int64(1), "BTREE", nil, "A"},
+			},
+			want: []catalog.Index{{
+				Name:       "idx_asc",
+				TableName:  "t",
+				Method:     "BTREE",
+				Columns:    []string{"a"},
+				Definition: "BTREE INDEX idx_asc ON t (a)",
+			}},
+		},
+		{
+			// A key with no order to report at all: both engines leave
+			// COLLATION null for a FULLTEXT key.
+			name: "a key the catalog gives no direction is ascending",
+			rows: [][]driver.Value{
+				{"ft", "t", "bio", int64(1), "FULLTEXT", nil, nil},
+			},
+			want: []catalog.Index{{
+				Name:       "ft",
+				TableName:  "t",
+				Method:     "FULLTEXT",
+				Columns:    []string{"bio"},
+				Definition: "FULLTEXT INDEX ft ON t (bio)",
+			}},
+		},
+		{
+			// Direction travels per part, beside the prefix length, so a key
+			// mixing them keeps both facts in order.
+			name: "direction and prefix travel together, per part",
+			rows: [][]driver.Value{
+				{"idx_mix", "t", "a", int64(1), "BTREE", nil, "D"},
+				{"idx_mix", "t", "b", int64(1), "BTREE", int64(7), "A"},
+			},
+			want: []catalog.Index{{
+				Name:      "idx_mix",
+				TableName: "t",
+				Method:    "BTREE",
+				Columns:   []string{"a", "b"},
+				Parts: []catalog.IndexPart{
+					{Name: "a", Desc: true},
+					{Name: "b", Prefix: "7"},
+				},
+				Definition: "BTREE INDEX idx_mix ON t (a,b)",
 			}},
 		},
 	}
@@ -265,7 +336,7 @@ func TestReadIndexes_ReportsAKeyPartItCannotName(t *testing.T) {
 		{
 			name: "whole key is an expression",
 			rows: [][]driver.Value{
-				{"idx_expr", "t3", nil, int64(1), "BTREE", nil},
+				{"idx_expr", "t3", nil, int64(1), "BTREE", nil, "A"},
 			},
 			want: []catalog.Index{{
 				Name:               "idx_expr",
@@ -278,8 +349,8 @@ func TestReadIndexes_ReportsAKeyPartItCannotName(t *testing.T) {
 		{
 			name: "column beside an expression",
 			rows: [][]driver.Value{
-				{"idx_mixed", "t4", "b", int64(1), "BTREE", nil},
-				{"idx_mixed", "t4", nil, int64(1), "BTREE", nil},
+				{"idx_mixed", "t4", "b", int64(1), "BTREE", nil, "A"},
+				{"idx_mixed", "t4", nil, int64(1), "BTREE", nil, "A"},
 			},
 			want: []catalog.Index{{
 				Name:               "idx_mixed",

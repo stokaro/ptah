@@ -51,6 +51,13 @@ SQL:
   INDEX` over a `POINT` column leaves `INDEX_TYPE=BTREE` on MariaDB 11.8 and
   `SPATIAL` on MySQL 8.4, so comparing an undeclared type would plan a rebuild
   on MySQL that MySQL immediately undoes.
+- A key part's direction is read back from the catalog, so `KEY (a DESC)` and
+  `KEY (a)` are told apart rather than both arriving ascending. It also decides
+  which index a foreign key owns: MySQL will not back one with a descending
+  leading part and builds its own index instead, while MariaDB reuses whatever
+  covers the columns. So a same-named index beside a covering one is the
+  author's on MariaDB and the engine's on MySQL, and only the first is planned
+  for removal.
 - A key part may be an expression on MySQL -- `KEY ((a + 1))`, a functional key
   part -- and an unnamed one takes the name the server gives it,
   `functional_index`, then `functional_index_2` and `functional_index_3`. Two
