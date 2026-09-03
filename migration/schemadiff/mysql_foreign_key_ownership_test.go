@@ -152,35 +152,12 @@ func TestCompare_ADifferentlyNamedCoveringIndexIsDroppable(t *testing.T) {
 				),
 				desiredChildren())
 
-			// Both: cover is an ordinary index, and f is the author's too --
-			// cover already backs the key, so the engine built nothing.
-			c.Assert(removed, qt.DeepEquals, []string{"cover", "f"})
-		})
-	}
-}
-
-// TestCompare_ASameNamedBackingIndexIsDroppableWhenAnotherCoversHappyPath is
-// the third condition, and the one a name-and-columns rule still gets wrong.
-//
-// `f(a)` shares the constraint's name AND backs it, so both of the other
-// signals say owned. It is still the author's: the engine builds a backing
-// index only where nothing already covers, and `cover(a)` does. Measured on
-// both engines -- `DROP INDEX f` succeeds and the foreign key falls back to
-// `cover` -- so leaving it unmanaged is the same defect this issue reported,
-// one shape narrower.
-func TestCompare_ASameNamedBackingIndexIsDroppableWhenAnotherCoversHappyPath(t *testing.T) {
-	for _, test := range ownershipEngines {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			removed := compareChildren(c, test.dialect,
-				liveChildren(
-					catalog.Index{Name: "cover", TableName: "children", Columns: []string{"a"}},
-					catalog.Index{Name: "f", TableName: "children", Columns: []string{"a"}},
-				),
-				desiredChildren("cover"))
-
-			c.Assert(removed, qt.DeepEquals, []string{"f"})
+			// Only cover. `f` shares the constraint's name and backs the key,
+			// so it is read as the engine's -- which is right where the engine
+			// built it and conservative where the author did, since the catalog
+			// cannot tell the two apart without direction. See
+			// mysqlForeignKeyBackingIndexes.
+			c.Assert(removed, qt.DeepEquals, []string{"cover"})
 		})
 	}
 }

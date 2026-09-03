@@ -286,22 +286,24 @@ func constraintBackedIndexIdentities(
 // `InSync` with no plan and left a live index nothing would ever manage
 // (stokaro/ptah#2782).
 //
-// Three conditions, and the third is the one a name-and-columns rule still gets
-// wrong. The engine creates this index ONLY when nothing else already covers
-// the key, so an index that shares the name and backs the key is still the
-// author's where another index backs it too -- and it is droppable, measured:
-// with `cover(a)` beside `f(a)`, `DROP INDEX f` succeeds on both engines and
-// the foreign key falls back to `cover`.
+// Both signals are required, the way the Spanner arm below already requires
+// them: the NAME says the engine could have made it, and the LEADING COLUMNS
+// say it could serve the key. Neither is sufficient -- a covering index under
+// the author's own name is droppable, and a same-named index over different
+// columns is a different object.
 //
-// Direction is deliberately not asked about here, though it decides the same
-// question on the naming side (stokaro/ptah#2769). It cannot be observed from a
-// catalog: the only shape that would exhibit it is a descending index carrying
-// the constraint's own name as the sole candidate, and MySQL refuses to create
-// that table at all -- `KEY f (a DESC), CONSTRAINT f FOREIGN KEY (a)` is
-// `ERROR 1061 (42000): Duplicate key name 'f'`, because MySQL wants the name for
-// the backing index it has to build. MariaDB accepts it and reuses the key,
-// which the rule below already reads as backing. A dialect-conditional branch
-// here would be a rule with no reachable caller.
+// A third condition is deliberately NOT here, and its absence is a measurement
+// rather than an oversight. The engine builds this index only where nothing
+// else covers the key, so a same-named index that backs the key is still the
+// author's where another index backs it too -- measured, `DROP INDEX f`
+// succeeds on both engines with `cover(a)` beside `f(a)`. Deciding that needs
+// each candidate's DIRECTION, because MySQL will not back a foreign key with a
+// descending key and MariaDB will (stokaro/ptah#2769), and the catalog does not
+// carry it: internal/dbschema/mysql's index query selects SUB_PART and not
+// COLLATION, so every part arrives ascending. Asking anyway reads a descending
+// index as covering, un-owns the real backing index, and plans a DROP the engine
+// refuses with ERROR 1553 -- which is what the live test from #2769 caught. The
+// narrower case waits on the reader recording direction.
 func mysqlForeignKeyBackingIndexes(
 	database *catalog.Database,
 	constraint catalog.Constraint,
@@ -314,13 +316,10 @@ func mysqlForeignKeyBackingIndexes(
 	table := constraint.QualifiedTableName()
 	var refs []difftypes.IndexRef
 	for _, index := range database.Indexes {
-		if !mysqlIndexBacksForeignKey(index, table, columns, semantics) {
-			continue
-		}
 		if !identifiersEqual(semantics, index.Name, constraint.Name) {
 			continue
 		}
-		if anotherIndexBacksForeignKey(database, index, table, columns, semantics) {
+		if !mysqlIndexBacksForeignKey(index, table, columns, semantics) {
 			continue
 		}
 		refs = append(refs, indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{
@@ -331,30 +330,6 @@ func mysqlForeignKeyBackingIndexes(
 	return refs
 }
 
-// anotherIndexBacksForeignKey reports whether some index other than this one can
-// serve the same key.
-//
-// Where one can, the engine had no backing index to build, so the candidate is
-// the author's however it is named.
-func anotherIndexBacksForeignKey(
-	database *catalog.Database,
-	candidate catalog.Index,
-	table string,
-	columns []string,
-	semantics identifier.Semantics,
-) bool {
-	for _, index := range database.Indexes {
-		if identifiersEqual(semantics, index.Name, candidate.Name) &&
-			strings.EqualFold(index.QualifiedTableName(), candidate.QualifiedTableName()) {
-			continue
-		}
-		if mysqlIndexBacksForeignKey(index, table, columns, semantics) {
-			return true
-		}
-	}
-	return false
-}
-
 // mysqlIndexBacksForeignKey reports whether one index could serve a foreign key
 // on table: its LEADING columns are the key's, which is the engines' own rule.
 func mysqlIndexBacksForeignKey(
@@ -363,11 +338,6 @@ func mysqlIndexBacksForeignKey(
 	columns []string,
 	semantics identifier.Semantics,
 ) bool {
-	if index.IsPrimary {
-		return len(index.Columns) >= len(columns) &&
-			strings.EqualFold(strings.TrimSpace(index.QualifiedTableName()), strings.TrimSpace(table)) &&
-			sameColumnNames(semantics, columns, index.Columns[:len(columns)])
-	}
 	if !strings.EqualFold(strings.TrimSpace(index.QualifiedTableName()), strings.TrimSpace(table)) {
 		return false
 	}
