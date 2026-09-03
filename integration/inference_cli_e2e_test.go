@@ -147,6 +147,10 @@ func TestInferenceCLIRollbackE2E(t *testing.T) {
 	assertAWindowMakesTheGenerationAWayBack(c, ctx, db, specPath, dbName, generation)
 	assertRollbackMovesThePointerBack(c, ctx, specPath, dbName, generation)
 	assertNoWindowIsAskedForMeansNoWindow(c, ctx, db, specPath, dbName)
+	// The helpers below move the pointer as if a later generation had cut over.
+	// Keep that stand-in in the registry: pointer moves now reject a generation
+	// identity that no real prepare/cutover could have produced.
+	registerBareGeneration(c, ctx, db, specPath, "the-newest-one")
 	assertADriftedGenerationIsNotAWayBack(c, ctx, db, specPath, dbName, generation)
 	assertASkipIsNotAGapAndAGapIsNotASkip(c, ctx, db, specPath, dbName, generation)
 	assertMaintainingAGenerationKeepsItAWayBack(c, ctx, db, specPath, dbName, generation)
@@ -460,6 +464,7 @@ func assertAWindowMakesTheGenerationAWayBack(
 
 	// And now the pointer records this generation as previous, so the rollback
 	// below has somewhere to go back from.
+	registerBareGeneration(c, ctx, db, specPath, "the-newer-one")
 	_, err = db.ExecContext(ctx,
 		`UPDATE ptah_embedding_pointer SET active_generation = 'the-newer-one', previous_generation = $1
 		 WHERE target_table = 'articles'`, generation)
@@ -652,6 +657,7 @@ func assertAnUnmaintainedPreviousGenerationBlocksNothing(
 	generation := activeGenerationFrom(c, ctx, specPath, dbURL)
 	// The state a cutover leaves behind: the pointer records this generation as
 	// the one before the active one.
+	registerBareGeneration(c, ctx, db, specPath, "the-newer-one")
 	_, err := db.ExecContext(ctx,
 		`UPDATE ptah_embedding_pointer
 		 SET active_generation = 'the-newer-one', previous_generation = $1
@@ -736,6 +742,7 @@ func assertACutoverIsRefusedWhenSomebodyElseMovedThePointer(
 	c.Assert(err, qt.IsNotNil)
 	digest := planDigestFrom(c, refused)
 
+	registerBareGeneration(c, ctx, db, specPath, "somebody-elses-generation")
 	_, err = db.ExecContext(ctx,
 		`UPDATE ptah_embedding_pointer SET active_generation = 'somebody-elses-generation'
 		 WHERE target_table = 'articles'`)
@@ -1486,6 +1493,13 @@ func assertRollbackIsRefusedWithoutEvidence(
 ) {
 	c.Helper()
 	registerBareGenerationInColumn(c, ctx, db, specPath, "an-unmaintained-one", "embedding_unmaintained")
+	// Rollback only accepts the pointer's exact previous generation. Merely
+	// registering an arbitrary generation no longer reaches the maintenance
+	// decision this assertion is about.
+	_, err := db.ExecContext(ctx,
+		`UPDATE ptah_embedding_pointer SET previous_generation = 'an-unmaintained-one'
+		 WHERE target_schema = 'public' AND target_table = 'articles'`)
+	c.Assert(err, qt.IsNil)
 
 	output, err := runInferenceExpectingFailure(c, ctx, "rollback",
 		"--spec", specPath, "--db-url", dbURL, "--to", "an-unmaintained-one")
@@ -1494,6 +1508,10 @@ func assertRollbackIsRefusedWithoutEvidence(
 	c.Assert(output, qt.Contains, "rollback refused")
 	c.Assert(output, qt.Contains, "no longer maintained")
 	c.Assert(output, qt.Not(qt.Contains), "queries already read")
+	_, err = db.ExecContext(ctx,
+		`UPDATE ptah_embedding_pointer SET previous_generation = NULL
+		 WHERE target_schema = 'public' AND target_table = 'articles'`)
+	c.Assert(err, qt.IsNil)
 }
 
 // runInference runs one verb and requires it to succeed.

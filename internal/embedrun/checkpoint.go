@@ -60,6 +60,9 @@ func (r *Run) Checkpoint(token int64, outcome BatchOutcome) error {
 	if err := r.Fence(token); err != nil {
 		return err
 	}
+	if r.Terminal() {
+		return fmt.Errorf("%w: run %s is %s", ErrTerminal, r.ID, r.Status)
+	}
 	if err := checkpointReady(outcome); err != nil {
 		return err
 	}
@@ -121,6 +124,9 @@ func (r *Run) Pause(token int64, reason string) error {
 	if err := r.Fence(token); err != nil {
 		return err
 	}
+	if r.Terminal() {
+		return fmt.Errorf("%w: run %s is %s", ErrTerminal, r.ID, r.Status)
+	}
 	if reason == "" {
 		return fmt.Errorf("%w: a pause without a reason cannot be acted on", ErrCheckpoint)
 	}
@@ -138,6 +144,9 @@ func (r *Run) Pause(token int64, reason string) error {
 func (r *Run) Fail(token int64, class, detail string) error {
 	if err := r.Fence(token); err != nil {
 		return err
+	}
+	if r.Terminal() {
+		return fmt.Errorf("%w: run %s is %s", ErrTerminal, r.ID, r.Status)
 	}
 	if class == "" || detail == "" {
 		return fmt.Errorf("%w: a failure needs a class and a detail", ErrCheckpoint)
@@ -159,6 +168,34 @@ func (r *Run) Resume(token int64) error {
 	}
 	r.Status = StatusRunning
 	r.FailureDetail = ""
+	r.UpdatedAt = time.Now().UTC()
+	return nil
+}
+
+// Abandon ends a run without destroying the generation it built.
+//
+// The checkpoint, progress and vectors are kept for inspection or retirement.
+// The lease is released, and the fencing token taken by the caller stops the
+// worker that previously held the run at its next commit.
+func (r *Run) Abandon(token int64, reason string) error {
+	if err := r.Fence(token); err != nil {
+		return err
+	}
+	if reason == "" {
+		return fmt.Errorf("%w: an abandonment without a reason cannot be acted on", ErrCheckpoint)
+	}
+	if r.Status == StatusAbandoned {
+		return nil
+	}
+	if r.Status == StatusComplete {
+		return fmt.Errorf("%w: run %s is complete", ErrTerminal, r.ID)
+	}
+	r.Status = StatusAbandoned
+	r.FailureClass = ""
+	r.FailureDetail = reason
+	r.LeaseOwner = ""
+	r.LeaseExpires = time.Time{}
+	r.RollbackEligible = false
 	r.UpdatedAt = time.Now().UTC()
 	return nil
 }

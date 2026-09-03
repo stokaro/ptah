@@ -19,6 +19,7 @@ import (
 	"go.5x5.cz/ptah/internal/embedgen"
 	"go.5x5.cz/ptah/internal/embedpg"
 	"go.5x5.cz/ptah/internal/embedrun"
+	"go.5x5.cz/ptah/internal/embedstore"
 	"go.5x5.cz/ptah/internal/embedverify"
 )
 
@@ -56,6 +57,7 @@ func TestEmbedPGCatchUpE2E(t *testing.T) {
 
 	store := embedpg.NewStore(db)
 	c.Assert(store.EnsureSchema(ctx), qt.IsNil)
+	registerCatchUpGeneration(c, ctx, store, spec)
 	source, err := embedpg.NewSource(db, spec)
 	c.Assert(err, qt.IsNil)
 	target, err := embedpg.NewTarget(db, spec)
@@ -66,13 +68,14 @@ func TestEmbedPGCatchUpE2E(t *testing.T) {
 	// The order is the epic's, and it is the order because of what sits in the
 	// gaps: installing after recording a boundary leaves the changes between
 	// them captured by nothing at all.
-	c.Assert(outbox.Install(ctx), qt.IsNil)
+	c.Assert(outbox.InstallForIsolatedSource(ctx), qt.IsNil)
 	boundary, err := outbox.Horizon(ctx)
 	c.Assert(err, qt.IsNil)
 
 	run := embedrun.Run{
 		ID: "catchup-run", SpecDigest: "spec-1", GenerationIdentity: spec.Identity().Digest,
-		Environment: "test", Source: "public.articles", Target: "public.articles.embedding",
+		Environment: "test", Source: embedpg.SourceIdentity(spec.Source.Schema, spec.Source.Table),
+		Target:          "public.articles.embedding",
 		ProviderProfile: "fake", PtahVersion: "test", PolicyDigest: "policy",
 		// Backfilled, because that is what catch-up runs after. Created at
 		// `backfilling` these fixtures asked the engine to serve a run whose
@@ -102,6 +105,25 @@ func TestEmbedPGCatchUpE2E(t *testing.T) {
 	c.Assert(caught.CatchUpWatermark, qt.Not(qt.Equals), "")
 	assertTheBarrierIsReached(c, ctx, outbox, caught)
 	assertTheCorpusMatchesTheSourceNow(c, ctx, db, spec)
+}
+
+// registerCatchUpGeneration records the source contract that makes a stored
+// resume position meaningful. Production prepare does this before it creates a
+// positioned run; these lower-level fixtures must preserve the same ordering.
+func registerCatchUpGeneration(
+	c *qt.C, ctx context.Context, store *embedpg.Store, spec embedgen.Spec,
+) {
+	c.Helper()
+	identity := spec.Identity().Digest
+	_, err := store.RegisterGeneration(ctx, embedstore.Generation{
+		Identity: identity, SpecDigest: "spec-1", Name: spec.Name,
+		Dimension:    spec.Model.ReportedDimension,
+		TargetSchema: spec.Target.Schema, TargetTable: spec.Target.Table,
+		TargetColumn: spec.Target.Column, SourceSchema: spec.Source.Schema,
+		SourceTable: spec.Source.Table, ConsistencyMode: string(embedcatchup.ModeOutbox),
+		CreatedAt: time.Now().UTC(),
+	})
+	c.Assert(err, qt.IsNil)
 }
 
 // changeTheSourceUnderneath makes the four changes a live migration meets.

@@ -10,7 +10,11 @@ goal: "Identify an inference migration symptom and follow its recovery path."
 sourceOfTruth:
   - "cmd/inference"
   - "integration/inference_cli_e2e_test.go"
+  - "integration/inference_outbox_prune_e2e_test.go"
 generated: false
+searchAliases:
+  - "outbox not shrinking"
+  - "release outbox floor"
 overlaps: []
 disposition: keep
 ---
@@ -52,6 +56,19 @@ would overwrite the one your queries read.
 **Fix.** Give the new generation its own column. Keeping the previous one is what
 makes a rollback possible.
 
+## `live generations sharing one source must use the same ordered key fields ...`
+
+**Cause.** The new outbox specification changes how a shared event identifies
+or versions a row while another run over that source is still live. One source
+has one outbox event format, even when generations embed different input fields
+or apply different filters.
+
+**Fix.** Keep `source.key_fields`, `version_strategy`, and `version_field`
+identical until the earlier run is abandoned or its generation is retired.
+Input and filter columns may differ; Ptah makes the shared trigger watch their
+union. The refusal occurs before target DDL and leaves the existing trigger in
+place.
+
 ## `catch-up needs a consistency mode that records changes`
 
 **Cause.** The specification selects `immutable` or nothing, and you ran
@@ -81,6 +98,36 @@ request, so no vector is written and the catch-up watermark does not move.
 Running `catchup` again once the run is past `backfilled` — after an index, a
 verification, or a cutover — is unaffected. That is ordinary, because the source
 keeps moving, and [the phase is a high-water mark](../concepts/lifecycle/).
+
+## `the outbox keeps events this run has processed: floor ... is held by run ...`
+
+**Cause.** Another usable live feeder over the same source has not reached those
+events. One source table has one outbox, so `catchup` may delete only what every
+positioned, source-matched feeder has passed. The message names each run at the
+minimum position and the generation it belongs to.
+
+**Fix.** Inspect the named run:
+
+```bash
+ptah inference status --spec old-spec.yaml --db-url "$DB" --run-id old-run
+```
+
+If the migration is still wanted, catch it up. If that attempt is permanently
+over but its vectors should remain available for inspection, release only its
+outbox position:
+
+```bash
+ptah inference abandon --db-url "$DB" --run-id old-run \
+  --reason "superseded by run 2026-09-articles-v2"
+```
+
+The next catch-up prunes events the remaining runs have all passed. The
+abandoned run cannot resume. Ptah refuses this action when it would leave an
+active or maintained generation without another usable live feeder: for outbox
+mode, that means a nonterminal, source-matched run with a readable durable
+resume position. Start a positioned replacement, move queries elsewhere, or
+finish the maintenance window first. Use `retire` instead only when the
+generation and its vectors should be destroyed.
 
 ## `provider: embedding endpoint unreachable`
 

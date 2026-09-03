@@ -35,6 +35,7 @@ separately:
   index      build the vector index and wait for it to be valid
   pause      stop a run where its last checkpoint left it
   resume     return a paused run to running
+  abandon    end a run and release its outbox position without deleting vectors
   verify     the deterministic checks a cutover rests on
   evaluate   what the generation actually retrieves, against a corpus you wrote
   status     what a run has done and what it is waiting for
@@ -57,6 +58,7 @@ cutting over does not make the old generation disposable.`,
 	cmd.AddCommand(newIndexCommand())
 	cmd.AddCommand(newPauseCommand())
 	cmd.AddCommand(newResumeCommand())
+	cmd.AddCommand(newAbandonCommand())
 	cmd.AddCommand(newVerifyCommand())
 	cmd.AddCommand(newEvaluateCommand())
 	cmd.AddCommand(newStatusCommand())

@@ -13,7 +13,7 @@
   ],
   "generator": "scripts/check-feature-inventory.sh --write",
   "claimed_floor": 79,
-  "claimed": 83,
+  "claimed": 84,
   "rows": [
     {
       "id": "cli-ptah-assist-context",
@@ -110,6 +110,12 @@
       "kind": "native-verb",
       "surface": "ptah help",
       "claimed_by": null
+    },
+    {
+      "id": "cli-ptah-inference-abandon",
+      "kind": "native-verb",
+      "surface": "ptah inference abandon",
+      "claimed_by": "docs/site/src/content/docs/inference/reference/commands.md"
     },
     {
       "id": "cli-ptah-inference-backfill",

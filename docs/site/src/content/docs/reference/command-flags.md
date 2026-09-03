@@ -224,6 +224,14 @@ Read the columns as follows.
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 
+**`ptah inference abandon`**
+
+| Flag | Type | Default | Environment variable | Notes |
+| --- | --- | --- | --- | --- |
+| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--reason` | `string` | — | `PTAH_REASON` | — |
+| `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
+
 **`ptah inference backfill`**
 
 | Flag | Type | Default | Environment variable | Notes |

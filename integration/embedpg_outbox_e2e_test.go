@@ -16,6 +16,8 @@ import (
 	"go.5x5.cz/ptah/internal/embedcatchup"
 	"go.5x5.cz/ptah/internal/embedgen"
 	"go.5x5.cz/ptah/internal/embedpg"
+	"go.5x5.cz/ptah/internal/embedrun"
+	"go.5x5.cz/ptah/internal/embedstore"
 )
 
 // TestEmbedPGOutboxE2E is the part of #2068 the epic itself flagged as needing
@@ -63,25 +65,69 @@ func TestEmbedPGOutboxE2E(t *testing.T) {
 
 	outbox, err := embedpg.NewOutbox(db, spec)
 	c.Assert(err, qt.IsNil)
+	store := embedpg.NewStore(db)
+	c.Assert(store.EnsureSchema(ctx), qt.IsNil)
 
 	assertNothingIsCapturedBeforeInstall(c, ctx, db, outbox)
-	c.Assert(outbox.Install(ctx), qt.IsNil)
+	c.Assert(outbox.InstallForIsolatedSource(ctx), qt.IsNil)
 	// Twice, because installing is what happens at the start of a run and a run
 	// can be restarted.
-	c.Assert(outbox.Install(ctx), qt.IsNil)
+	c.Assert(outbox.InstallForIsolatedSource(ctx), qt.IsNil)
 
 	installed, err := outbox.Installed(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(installed, qt.IsTrue)
+	assertAFailedReinstallKeepsTheLiveCapture(c, ctx, db, spec, outbox)
 
 	assertEveryOperationIsCaptured(c, ctx, db, outbox)
 	assertARolledBackChangeLeavesNoEvent(c, ctx, db, outbox)
 	assertTheHorizonExcludesAnInFlightTransaction(c, ctx, db, url, outbox)
 	assertAWriteToTheGenerationsOwnColumnsIsNotAChange(c, ctx, db, outbox)
 	assertTheSequenceOrdersAndTheTransactionOnlyBounds(c, ctx, db, url, outbox)
-	assertPruningRemovesOnlyWhatIsBehindTheCursor(c, ctx, outbox)
+	assertPruningRemovesOnlyWhatIsBehindTheCursor(c, ctx, store, outbox)
 	assertAPageCutInsideATransactionResumesInsideIt(c, ctx, db, outbox)
 	assertHalfAnInstallationIsNotInstalled(c, ctx, db, outbox)
+}
+
+// assertAFailedReinstallKeepsTheLiveCapture forces a late installation error.
+// The invalid watched column is reached only while creating the update trigger,
+// after the installer has replaced the function and dropped both old triggers.
+// All installation DDL must roll back together so a live generation never
+// loses capture because a later prepare supplied a broken specification.
+func assertAFailedReinstallKeepsTheLiveCapture(
+	c *qt.C,
+	ctx context.Context,
+	db *sql.DB,
+	spec embedgen.Spec,
+	outbox *embedpg.Outbox,
+) {
+	c.Helper()
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO articles (id, title, body, updated_at) VALUES (51, 'before', 'body', '1')`)
+	c.Assert(err, qt.IsNil)
+	start, err := outbox.Horizon(ctx)
+	c.Assert(err, qt.IsNil)
+
+	broken := spec
+	broken.Source.InputFields = append(
+		append([]string(nil), spec.Source.InputFields...), "no_such_watched_column")
+	brokenOutbox, err := embedpg.NewOutbox(db, broken)
+	c.Assert(err, qt.IsNil)
+	err = brokenOutbox.InstallForIsolatedSource(ctx)
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "no_such_watched_column")
+
+	installed, err := outbox.Installed(ctx)
+	c.Assert(err, qt.IsNil)
+	c.Assert(installed, qt.IsTrue)
+	_, err = db.ExecContext(ctx,
+		`UPDATE articles SET title = 'after' WHERE id = 51`)
+	c.Assert(err, qt.IsNil)
+	events, _, err := outbox.Since(ctx, embedcatchup.AtTransaction(start), 100)
+	c.Assert(err, qt.IsNil)
+	updates := eventsForKey(events, "51")
+	c.Assert(updates, qt.HasLen, 1)
+	c.Assert(updates[0].Operation, qt.Equals, embedcatchup.OperationUpdate)
 }
 
 // assertAPageCutInsideATransactionResumesInsideIt is stokaro/ptah#2628 measured
@@ -171,7 +217,7 @@ func assertHalfAnInstallationIsNotInstalled(
 		c.Assert(err, qt.IsNil)
 		c.Assert(installed, qt.IsFalse, qt.Commentf("with %s dropped", name))
 
-		c.Assert(outbox.Install(ctx), qt.IsNil)
+		c.Assert(outbox.InstallForIsolatedSource(ctx), qt.IsNil)
 		installed, err = outbox.Installed(ctx)
 		c.Assert(err, qt.IsNil)
 		c.Assert(installed, qt.IsTrue)
@@ -292,17 +338,19 @@ func assertEveryOperationIsCaptured(
 	c *qt.C, ctx context.Context, db *sql.DB, outbox *embedpg.Outbox,
 ) {
 	c.Helper()
+	start, err := outbox.Horizon(ctx)
+	c.Assert(err, qt.IsNil)
 	statements := []string{
 		`INSERT INTO articles (id, title, body, updated_at) VALUES (1, 'First', 'a', '7')`,
 		`UPDATE articles SET title = 'First again', updated_at = '8' WHERE id = 1`,
 		`DELETE FROM articles WHERE id = 1`,
 	}
 	for _, statement := range statements {
-		_, err := db.ExecContext(ctx, statement)
+		_, err = db.ExecContext(ctx, statement)
 		c.Assert(err, qt.IsNil, qt.Commentf("%s", statement))
 	}
 
-	events, horizon, err := outbox.Since(ctx, embedcatchup.Cursor{}, 100)
+	events, horizon, err := outbox.Since(ctx, embedcatchup.AtTransaction(start), 100)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(horizon > 0, qt.IsTrue)
@@ -464,7 +512,7 @@ func assertTheHorizonExcludesAnInFlightTransaction(
 // longer has -- which verification reports as an unexpected row and no amount of
 // re-running fixes.
 func assertPruningRemovesOnlyWhatIsBehindTheCursor(
-	c *qt.C, ctx context.Context, outbox *embedpg.Outbox,
+	c *qt.C, ctx context.Context, store *embedpg.Store, outbox *embedpg.Outbox,
 ) {
 	c.Helper()
 	events, _, err := outbox.Since(ctx, embedcatchup.Cursor{}, 100)
@@ -472,9 +520,30 @@ func assertPruningRemovesOnlyWhatIsBehindTheCursor(
 	c.Assert(len(events) >= 3, qt.IsTrue)
 	cursor := events[1].Transaction
 
-	removed, err := outbox.Prune(ctx, cursor)
+	created := time.Now().UTC()
+	generation := embedstore.Generation{
+		Identity: "prune-floor-generation", SpecDigest: "prune-floor-generation",
+		Name: "prune floor", TargetSchema: "public", TargetTable: "articles",
+		TargetColumn: "embedding_prune_floor", SourceSchema: "public", SourceTable: "articles",
+		CreatedAt: created,
+	}
+	_, err = store.RegisterGeneration(ctx, generation)
+	c.Assert(err, qt.IsNil)
+	run := embedrun.Run{
+		ID: "prune-floor-run", SpecDigest: generation.SpecDigest,
+		GenerationIdentity: generation.Identity, Environment: "test",
+		Source: embedpg.SourceIdentity("public", "articles"), Target: "articles.embedding_prune_floor",
+		ProviderProfile: "test", PtahVersion: "test", Phase: embedrun.PhaseCaughtUp,
+		Status: embedrun.StatusPaused, CatchUpWatermark: fmt.Sprint(cursor),
+		CreatedAt: created, UpdatedAt: created,
+	}
+	c.Assert(store.CreateRun(ctx, run), qt.IsNil)
+
+	floor, found, removed, err := store.PruneOutbox(ctx, outbox)
 
 	c.Assert(err, qt.IsNil)
+	c.Assert(found, qt.IsTrue)
+	c.Assert(floor.Position.Transaction, qt.Equals, cursor)
 	c.Assert(removed, qt.Equals, int64(1))
 	remaining, _, err := outbox.Since(ctx, embedcatchup.Cursor{}, 100)
 	c.Assert(err, qt.IsNil)

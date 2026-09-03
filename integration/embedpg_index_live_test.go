@@ -20,10 +20,93 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
+	"go.5x5.cz/ptah/internal/embedcatchup"
 	"go.5x5.cz/ptah/internal/embedgen"
 	"go.5x5.cz/ptah/internal/embedpg"
+	"go.5x5.cz/ptah/internal/embedrun"
 	"go.5x5.cz/ptah/internal/embedstore"
 )
+
+// TestEnsureRunIndex_BindsTheCatalogChangeToAFencedRunTransitionLive measures
+// the operation the CLI uses. The index is non-transactional PostgreSQL DDL,
+// while the phase is a run-table write; the generation advisory lock bridges
+// them and the final token increment prevents an old worker from putting its
+// pre-index checkpoint back over the row.
+func TestEnsureRunIndex_BindsTheCatalogChangeToAFencedRunTransitionLive(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	db, table := targetColumnsDatabase(c, ctx, withVector)
+	spec := indexedSpec(c, table)
+	c.Assert(embedpg.EnsureTarget(ctx, db, spec), qt.IsNil)
+	store := embedpg.NewStore(db)
+	seedIndexRun(c, ctx, store, spec, "index-run", embedrun.StatusRunning)
+	// The lifecycle lock, catalog DDL, and row update must share one pinned
+	// session. A lock-only transaction on a second connection deadlocks here.
+	db.SetMaxOpenConns(1)
+
+	outcome, err := store.EnsureRunIndex(ctx, "index-run", spec)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(outcome, qt.Equals, embedpg.IndexBuilt)
+	stored, err := store.Run(ctx, "index-run")
+	c.Assert(err, qt.IsNil)
+	c.Assert(stored.Phase, qt.Equals, embedrun.PhaseIndexed)
+	c.Assert(stored.FencingToken, qt.Equals, int64(8))
+	c.Assert(stored.LeaseOwner, qt.Equals, "")
+	c.Assert(stored.LeaseExpires.IsZero(), qt.IsTrue)
+	_, valid, _ := indexInCatalog(c, ctx, db, spec)
+	c.Assert(valid, qt.IsTrue)
+}
+
+// TestEnsureRunIndex_RefusesATerminalRunBeforeDDLIs the terminal control. An
+// abandoned floor holder cannot be restarted by a later index invocation, and
+// the absence in the catalog proves the refusal happened before the mutation.
+func TestEnsureRunIndex_RefusesATerminalRunBeforeDDLLive(t *testing.T) {
+	c := qt.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+	db, table := targetColumnsDatabase(c, ctx, withVector)
+	spec := indexedSpec(c, table)
+	c.Assert(embedpg.EnsureTarget(ctx, db, spec), qt.IsNil)
+	store := embedpg.NewStore(db)
+	seedIndexRun(c, ctx, store, spec, "abandoned-index-run", embedrun.StatusAbandoned)
+
+	_, err := store.EnsureRunIndex(ctx, "abandoned-index-run", spec)
+
+	c.Assert(err, qt.ErrorIs, embedrun.ErrTerminal, qt.Commentf("%v", err))
+	c.Assert(indexNames(c, ctx, db, table), qt.HasLen, 0)
+}
+
+func seedIndexRun(
+	c *qt.C, ctx context.Context, store *embedpg.Store, spec embedgen.Spec,
+	runID string, status embedrun.Status,
+) {
+	c.Helper()
+	now := time.Now().UTC()
+	identity := spec.Identity().Digest
+	_, err := store.RegisterGeneration(ctx, embedstore.Generation{
+		Identity: identity, SpecDigest: identity, Name: spec.Name,
+		TargetSchema: spec.Target.Schema, TargetTable: spec.Target.Table,
+		TargetColumn: spec.Target.Column, SourceSchema: spec.Source.Schema,
+		SourceTable: spec.Source.Table, ConsistencyMode: string(embedcatchup.ModeOutbox),
+		CreatedAt: now,
+	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(store.CreateRun(ctx, embedrun.Run{
+		ID: runID, SpecDigest: identity, GenerationIdentity: identity,
+		Environment: "test", Source: embedpg.SourceIdentity(spec.Source.Schema, spec.Source.Table),
+		Target:          spec.Target.Table + "." + spec.Target.Column,
+		ProviderProfile: spec.Model.Provider, PtahVersion: "test",
+		Phase: embedrun.PhaseCaughtUp, Status: embedrun.StatusRunning,
+		LeaseOwner: "worker-a", LeaseExpires: now.Add(time.Hour), FencingToken: 7,
+		CreatedAt: now, UpdatedAt: now,
+	}), qt.IsNil)
+	if status == embedrun.StatusAbandoned {
+		_, err := store.AbandonRun(ctx, runID, "the test ends this run")
+		c.Assert(err, qt.IsNil)
+	}
+}
 
 // TestEnsureIndex_BuildsAValidIndexLive is the happy path.
 //

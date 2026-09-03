@@ -244,6 +244,7 @@ linters:
         - go.5x5.cz/ptah/dbschema
         - go.5x5.cz/ptah/internal/atlasscript
         - go.5x5.cz/ptah/internal/dbschema/postgres
+        - go.5x5.cz/ptah/internal/embedpg
         - go.5x5.cz/ptah/internal/schemaselection
         - go.5x5.cz/ptah/internal/sqlitemodule
         - go.5x5.cz/ptah/internal/sqlrunner

@@ -269,6 +269,23 @@ func vectorLiteral(vector []float32) any {
 // The refusal has to happen here rather than before the transaction, because
 // before it is a moment the takeover can happen in.
 func saveRunTx(ctx context.Context, transaction *sql.Tx, run embedrun.Run) error {
+	// Batch commits are ordinary progress writes. A terminal status may only be
+	// established by AbandonRun or retirement, where generation membership is
+	// checked under its lifecycle lock; accepting it here would turn a stale
+	// worker snapshot into an unchecked second terminalization path. A retired
+	// phase with a nonterminal status is the inverse invalid state and would
+	// remain claimable after its corpus was declared gone.
+	if run.Terminal() {
+		return fmt.Errorf("save run %s with target writes: %w: run is %s",
+			run.ID, embedrun.ErrTerminal, run.Status)
+	}
+	if run.Phase == embedrun.PhaseRetired {
+		return fmt.Errorf("save run %s with target writes: %w: phase %s requires terminal retirement",
+			run.ID, embedrun.ErrPhase, run.Phase)
+	}
+	if err := validateRunResume(run); err != nil {
+		return err
+	}
 	cursor, err := encodeCursor(run.Cursor)
 	if err != nil {
 		return err

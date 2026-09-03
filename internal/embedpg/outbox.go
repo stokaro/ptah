@@ -23,12 +23,22 @@ import (
 // back has none. An application that writes both does not have that property --
 // it has two writes and a hope (stokaro/ptah#2068).
 type Outbox struct {
-	db   *sql.DB
+	db   outboxDatabase
 	spec embedgen.Spec
 }
 
+// outboxDatabase is the SQL surface used while preparing or consuming an
+// outbox. Both a pool and the pinned lifecycle session used by prepare satisfy
+// it.
+type outboxDatabase interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+	BeginTx(context.Context, *sql.TxOptions) (*sql.Tx, error)
+}
+
 // NewOutbox returns an outbox for a specification.
-func NewOutbox(db *sql.DB, spec embedgen.Spec) (*Outbox, error) {
+func NewOutbox(db outboxDatabase, spec embedgen.Spec) (*Outbox, error) {
 	if err := validateSource(spec); err != nil {
 		return nil, err
 	}
@@ -75,7 +85,7 @@ func (o *Outbox) TableName() string {
 // the same reason a key's components are length-prefixed everywhere else in the
 // lifecycle.
 func SourceIdentity(schema, table string) string {
-	return embeddigest.Of(schema, table)
+	return embedstore.SourceIdentity(schema, table)
 }
 
 // FunctionName is what this outbox's trigger function is called.
@@ -94,23 +104,79 @@ func (o *Outbox) TriggerNames() []string {
 	return []string{o.TableName() + "_write", o.TableName() + "_update"}
 }
 
-// Install creates the outbox table, its capture function and its trigger.
-//
-// Idempotent, because installing is what happens at the start of a run and a
-// run can be restarted. It does NOT record a boundary: that is Horizon's job
-// and the order matters -- installing after recording a boundary leaves changes
-// in the gap between them captured by nothing.
-func (o *Outbox) Install(ctx context.Context) error {
-	// The filter's columns are asked of the server before anything is created,
-	// because the update trigger has to watch them and this package cannot
-	// parse SQL. See [Outbox.filterColumns].
-	filtered, err := o.filterColumns(ctx)
-	if err != nil {
+// installForSpecs installs one source-level outbox for every live generation
+// that reads it. Keys and versions are stored once in each event, so those
+// contracts must agree. The update trigger watches the union of every
+// generation's inputs and filter columns; otherwise preparing generation B
+// replaces generation A's trigger and a change only A cares about disappears.
+func (o *Outbox) installForSpecs(ctx context.Context, specs []embedgen.Spec) error {
+	if err := o.validateSharedSpecs(specs); err != nil {
 		return err
 	}
-	for _, statement := range o.installStatements(filtered) {
-		if _, err := o.db.ExecContext(ctx, statement); err != nil {
+
+	watched := make([]string, 0)
+	for _, spec := range specs {
+		candidate := &Outbox{db: o.db, spec: spec}
+		// The filter's columns are asked of the server before anything is
+		// created, because the update trigger has to watch them and this package
+		// cannot parse SQL. See [Outbox.filterColumns].
+		filtered, err := candidate.filterColumns(ctx)
+		if err != nil {
+			return err
+		}
+		watched = append(watched, spec.Source.KeyFields...)
+		watched = append(watched, spec.Source.InputFields...)
+		watched = append(watched, candidate.versionColumns()...)
+		watched = append(watched, filtered...)
+	}
+	transaction, err := o.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin outbox installation for %s: %w", o.spec.Source.Table, err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+	for _, statement := range o.installStatements(watched) {
+		if _, err := transaction.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("install outbox for %s: %w", o.spec.Source.Table, err)
+		}
+	}
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("finish outbox installation for %s: %w", o.spec.Source.Table, err)
+	}
+	return nil
+}
+
+// InstallForIsolatedSource installs this generation's source contract after a
+// caller has established that no other live generation shares the outbox.
+//
+// Store.PrepareRun makes that decision under the source lifecycle lock. The
+// distinction matters because installing one specification over a shared
+// source would discard fields watched only by another generation. Integration
+// fixtures that own their source table use the same production path directly.
+func (o *Outbox) InstallForIsolatedSource(ctx context.Context) error {
+	return o.installForSpecs(ctx, []embedgen.Spec{o.spec})
+}
+
+func (o *Outbox) validateSharedSpecs(specs []embedgen.Spec) error {
+	if len(specs) == 0 {
+		return fmt.Errorf("install outbox for %s: no source contracts were provided",
+			o.spec.Source.Table)
+	}
+	for _, spec := range specs {
+		if spec.Source.Schema != o.spec.Source.Schema ||
+			spec.Source.Table != o.spec.Source.Table {
+			return fmt.Errorf(
+				"install outbox for %s: generation source %s does not match %s",
+				o.spec.Source.Table,
+				embedstore.QualifiedName(spec.Source.Schema, spec.Source.Table),
+				embedstore.QualifiedName(o.spec.Source.Schema, o.spec.Source.Table))
+		}
+		if !slices.Equal(spec.Source.KeyFields, o.spec.Source.KeyFields) ||
+			spec.Source.VersionStrategy != o.spec.Source.VersionStrategy ||
+			spec.Source.VersionField != o.spec.Source.VersionField {
+			return fmt.Errorf(
+				"install outbox for %s: live generations sharing one source must use "+
+					"the same ordered key fields, version strategy, and version field",
+				o.spec.Source.Table)
 		}
 	}
 	return nil
@@ -398,13 +464,17 @@ func (o *Outbox) versionColumns() []string {
 func (o *Outbox) Installed(ctx context.Context) (bool, error) {
 	// Both triggers, and counted rather than existence-checked: half an
 	// installation captures half the changes, and the half it misses is
-	// whichever one somebody dropped.
+	// whichever one somebody dropped. A trigger must also fire for ordinary
+	// writes. PostgreSQL keeps disabled and replica-only triggers in pg_trigger;
+	// counting their names reported capture installed while an application's
+	// normal session emitted no events.
 	// Scoped to the relation rather than to a bare relname: a same-named table
 	// in another schema, carrying its own outbox, answered this question for a
 	// source that had no trigger at all -- so a run reported itself as
 	// capturing changes while every write went unrecorded (stokaro/ptah#2629).
 	const query = `SELECT COUNT(*) FROM pg_trigger
 		WHERE pg_trigger.tgname = ANY($1) AND pg_trigger.tgrelid = to_regclass($2)
+			AND pg_trigger.tgenabled IN ('O', 'A')
 			AND NOT pg_trigger.tgisinternal`
 	names := o.TriggerNames()
 	source := o.qualifiedSourceTable()
@@ -533,45 +603,6 @@ func (o *Outbox) Unprocessed(ctx context.Context, from embedcatchup.Cursor) (int
 	return count, nil
 }
 
-// Prune removes the events every live reader of this source table has passed.
-//
-// before is a floor across readers and not the caller's own position. An outbox
-// belongs to a source table, so two generations over one table share it; a
-// prune at the invoking run's watermark deletes what the other one still owes,
-// and does it silently, because a deleted event fails the pending predicate and
-// so is never counted as unprocessed. Store.OutboxFloor is where that floor
-// comes from.
-//
-// Only the transaction half of the floor is used, and strictly. That is the
-// conservative half: it keeps a transaction whose events a page cut partway
-// through, which is the boundary stokaro/ptah#2628 established and which
-// tightening this predicate to the pair would undo.
-//
-// The floor must be built from watermarks already on disk. This statement
-// commits on its own, while a watermark reaches disk with the vectors it
-// belongs to, so pruning from a position held only in memory leaves the events
-// gone and the durable watermark behind them -- a hole a resumed run reads as
-// an empty range and reports as caught up.
-//
-// Pruning by time instead of by what was processed is the other way to get this
-// wrong: it drops a tombstone a paused run still owes.
-func (o *Outbox) Prune(ctx context.Context, before uint64) (int64, error) {
-	// #nosec G201 -- PostgreSQL takes no bind parameter for a relation name, so
-	// the table has to be interpolated. What stops that being an injection is
-	// quoteIdentifier, which doubles an embedded quote and is measured against
-	// a live server by a fixture whose column name holds one.
-	query := fmt.Sprintf(`DELETE FROM %s WHERE xact < $1`, quoteIdentifier(o.TableName()))
-	result, err := o.db.ExecContext(ctx, query, before)
-	if err != nil {
-		return 0, fmt.Errorf("prune outbox for %s: %w", o.spec.Source.Table, err)
-	}
-	removed, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("prune outbox for %s: %w", o.spec.Source.Table, err)
-	}
-	return removed, nil
-}
-
 // qualifiedSourceTable renders the source table with its schema when it has one.
 func (o *Outbox) qualifiedSourceTable() string {
 	return qualify(o.spec.Source.Schema, o.spec.Source.Table)
@@ -615,34 +646,4 @@ func sanitizeIdentifier(name string) string {
 		}
 	}
 	return b.String()
-}
-
-// Uninstall removes the outbox: both triggers, the capture function, and the
-// event table.
-//
-// It is the other half of [Outbox.Install], and until stokaro/ptah#2649 there
-// was no other half. `retire` dropped a generation's index and columns and left
-// the outbox alone, so both triggers went on firing on the operator's table for
-// every write, the capture function stayed, and the event table grew with
-// nothing that would ever read or trim it. The page that says when the cost
-// ends -- "retire removes the generation and its bookkeeping" -- described a
-// verb that did not.
-//
-// The order is triggers, then function, then table: a trigger outlives neither
-// safely, and dropping the function while a trigger still names it leaves a
-// write erroring on the operator's table rather than on ours.
-//
-// Every statement is IF EXISTS, so uninstalling twice is a no-op and a partial
-// installation is removed rather than refused.
-func (o *Outbox) Uninstall(ctx context.Context) error {
-	statements := append([]string(nil), o.dropTriggers()...)
-	statements = append(statements,
-		fmt.Sprintf("DROP FUNCTION IF EXISTS %s()", quoteIdentifier(o.FunctionName())),
-		fmt.Sprintf("DROP TABLE IF EXISTS %s", quoteIdentifier(o.TableName())))
-	for _, statement := range statements {
-		if _, err := o.db.ExecContext(ctx, statement); err != nil {
-			return fmt.Errorf("uninstall outbox for %s: %w", o.spec.Source.Table, err)
-		}
-	}
-	return nil
 }

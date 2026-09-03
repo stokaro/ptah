@@ -10,6 +10,7 @@ goal: "Explain Ptah's model for consistency modes."
 sourceOfTruth:
   - "cmd/inference"
   - "integration/inference_cli_e2e_test.go"
+  - "integration/inference_outbox_prune_e2e_test.go"
 generated: false
 overlaps: []
 disposition: keep
@@ -45,17 +46,36 @@ committed has an event, because a transaction that committed committed both. A
 change that rolled back has no event, for the same reason.
 
 `catchup` reads that table, embeds the rows it names, records how far it got,
-and removes the events every generation reading that table has passed.
+and removes the events every usable live feeder reading that table has passed.
 
 The cost is real: two triggers on a table your application writes to, and a
 table alongside it. The two have different lifetimes. Events go as they are
 passed, so the table tracks the backlog rather than the whole history of the
-migration; the triggers and the table itself go at `retire`.
+migration. The triggers and the table itself remain until the last non-retired
+outbox generation over that source retires.
 
-"Every generation" is the part worth reading twice. One source table has one
-companion table, so two generations over that source share it, and an event
-survives until the slower of them has processed it. A generation left behind
-holds events for as long as it is live — `retire` is what releases them.
+"Every usable live feeder" is the part worth reading twice. One source table
+has one companion table, so two generations over that source share it, and an
+event survives until the slower run has processed it. An outbox feeder must be
+nonterminal, source-matched, and carry a readable durable resume position. When
+that floor is behind the run performing catch-up, the output names each holding
+run and its generation.
+
+Those generations may embed different input fields or use different filters.
+Ptah keeps their shared update trigger watching the union, so an edit relevant
+only to the older generation still produces an event. They must agree on the
+ordered source key fields, version strategy, and version field: one shared
+event stores one key and one source version. `prepare` refuses an incompatible
+generation without replacing the live trigger.
+
+Two actions release a reader for different reasons. `retire` destroys an entire
+generation and its vectors. `abandon` permanently ends one run while preserving
+the generation, its vectors, and the run's checkpoint for inspection. Ptah
+refuses to abandon the last usable live feeder for an active generation or one
+inside a maintenance window, because either state still promises that a
+positioned, source-matched run will follow source changes. A duplicate
+superseded run may be abandoned while another usable live feeder keeps that
+promise.
 
 ## `immutable`
 

@@ -87,6 +87,8 @@ var generationMustMatch = map[string]string{
 	"catchup":  "the same, from the run's watermark",
 	"index":    "builds the specification's index and marks the run's phase",
 	"verify":   "measures the specification's rows against the run's watermark",
+	"status": "renders watermarks using the selected consistency mode and measures " +
+		"readiness against the selected generation",
 	"cutover": "moves a pointer on the strength of a verification, and reaches " +
 		"the check through the same verify the report comes from",
 }
@@ -97,8 +99,6 @@ var generationNeedNotMatch = map[string]string{
 	"pause": "stops whatever the run is doing; a run driven with the wrong " +
 		"specification is exactly the run an operator needs to be able to stop",
 	"resume": "returns a paused run to running, for the same reason pause does",
-	"status": "reports the run's own record, so a specification that disagrees " +
-		"is a question this verb answers rather than a state it acts on",
 }
 
 // verbsTakingASpecificationAndARun is every leaf command registering both.

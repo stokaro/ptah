@@ -348,7 +348,8 @@ func runCutover(
 
 	// The internal verification establishes what the `verify` verb does -- the
 	// same layers over the same rows -- so it records the same phase, and the
-	// run is at `verified` before anything moves.
+	// run is at `verified` before anything moves. The store binds the pointer
+	// move to this exact run and records `cut_over` in the same transaction.
 	//
 	// Without this, `cut_over` was reachable only after a SEPARATE `verify`
 	// run, and nothing said so until after the pointer had already moved: the
@@ -365,22 +366,17 @@ func runCutover(
 	if err := recordVerified(ctx, options, runID, report); err != nil {
 		return err
 	}
-	if err := opened.store.MovePointer(ctx, embedstore.Pointer{
+	move, err := opened.store.MovePointerWithMaintenance(ctx, embedstore.Pointer{
 		TargetSchema: opened.loaded.Spec.Target.Schema,
 		TargetTable:  opened.loaded.Spec.Target.Table, Active: plan.Generation,
-		Previous: plan.Previous, CutOverAt: now,
+		Previous:  plan.Previous,
 		CutOverBy: approverName(approval), PlanDigest: plan.Digest(),
-	}, plan.Previous); err != nil {
+	}, plan.Previous, runID, stabilizeFor)
+	if err != nil {
 		return err
 	}
-	if err := openStabilization(ctx, out, opened, plan, now, stabilizeFor); err != nil {
+	if err := reportStabilization(out, plan, move.PreviousMaintainedUntil); err != nil {
 		return err
-	}
-	if err := reachPhase(ctx, options, runID, embedrun.PhaseCutOver); err != nil {
-		// The pointer has moved; saying only that a phase could not be
-		// recorded sends the reader looking for a cutover that did not happen.
-		return fmt.Errorf(
-			"queries now read generation %s and the run could not record it: %w", plan.Generation, err)
 	}
 	// The measurement this cutover rested on, published before the record that
 	// cites it, so a reader following the citation finds the report rather than
@@ -398,7 +394,8 @@ func runCutover(
 	// The report is not passed: the record cites the value the plan already
 	// carries, so there is nothing left here to recompute it from.
 	return publishCutover(ctx, out, options, opened, plan,
-		approverName(approval), approvalSigned(approval), now, stabilizeFor, evidence)
+		approverName(approval), approvalSigned(approval),
+		move.CutOverAt, move.PreviousMaintainedUntil, evidence)
 }
 
 // recordVerified marks a run verified when the cutover gate was satisfied.
@@ -437,8 +434,7 @@ func recordVerified(
 // is not a fact about it.
 func publishCutover(
 	ctx context.Context, out io.Writer, options commonOptions, opened *session, plan embedcutover.Plan,
-	approver string, signed bool, at time.Time,
-	stabilizeFor time.Duration, evidence evidenceOptions,
+	approver string, signed bool, at, stabilizeUntil time.Time, evidence evidenceOptions,
 ) error {
 	if !evidence.destinationNamed() {
 		return nil
@@ -455,15 +451,15 @@ func publishCutover(
 		Watermark:          plan.Evidence.ConsistencyWatermark,
 		CutOverAt:          at,
 	}
-	if plan.Previous != "" && stabilizeFor > 0 {
-		cutover.StabilizeUntil = at.Add(stabilizeFor)
+	if plan.Previous != "" && !stabilizeUntil.IsZero() {
+		cutover.StabilizeUntil = stabilizeUntil
 	}
 	record, buildErr := embedrelease.NewCutoverRecord(cutover)
 	return publishRecord(ctx, out, options, evidence, record, buildErr, swallowed)
 }
 
-// openStabilization starts the window in which the previous generation is still
-// a way back.
+// reportStabilization says which window the atomic pointer move opened over the
+// previous generation.
 //
 // Phase K. The old generation stops receiving changes the moment queries stop
 // reading it, so what makes it a rollback target is somebody keeping it
@@ -471,9 +467,8 @@ func publishCutover(
 // eligibility check reads it. A zero window records nothing, which is the
 // honest answer for an operator who did not ask for one: the previous
 // generation is immediately not a way back, and rollback says so.
-func openStabilization(
-	ctx context.Context, out io.Writer, opened *session,
-	plan embedcutover.Plan, now time.Time, window time.Duration,
+func reportStabilization(
+	out io.Writer, plan embedcutover.Plan, stabilizeUntil time.Time,
 ) error {
 	lines := []string{fmt.Sprintf("queries now read generation %s (plan %s)",
 		plan.Generation, plan.Short())}
@@ -486,28 +481,14 @@ func openStabilization(
 			"this is the first generation over this target, so there is no previous "+
 				"one to keep current and nothing to roll back to"))...)
 	}
-	if window <= 0 {
+	if stabilizeUntil.IsZero() {
 		return writeLines(out, append(lines, bullet(
 			"no stabilization window was asked for, so nothing is keeping the previous "+
 				"generation current and there is no rollback to it"))...)
 	}
-	until := now.Add(window)
-	err := opened.store.Maintain(ctx, plan.Previous, until)
-	if errorsIs(err, embedstore.ErrNotFound) || errorsIs(err, embedstore.ErrRetired) {
-		// The pointer names a generation the registry does not have, or has as
-		// destroyed. The cutover itself already happened -- failing here would
-		// leave an operator with a moved pointer and an error, which is the
-		// worst of both. Say what could not be recorded and why it matters.
-		return writeLines(out, append(lines, bullet(fmt.Sprintf(
-			"no window was opened over %s: %v, so there is no rollback to it",
-			plan.Previous, err)))...)
-	}
-	if err != nil {
-		return err
-	}
 	return writeLines(out, append(lines, bullet(fmt.Sprintf(
 		"generation %s stays a way back until %s, for as long as catch-up keeps feeding it",
-		plan.Previous, until.Format(time.RFC3339))))...)
+		plan.Previous, stabilizeUntil.Format(time.RFC3339))))...)
 }
 
 // cutoverPlanIdentity is what an approver reads and signs.
@@ -630,7 +611,8 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 		Table: registered.TargetTable, Column: registered.TargetColumn,
 		DropsIndex: hasIndex, DropsColumn: options.dropColumn, RowCount: rows,
 	}
-	state, observed, err := retirementFacts(ctx, opened, registered, options.generation)
+	facts, err := retirementFacts(
+		ctx, opened, registered, options.generation)
 	if err != nil {
 		return err
 	}
@@ -639,60 +621,30 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 	if err != nil {
 		return err
 	}
-	decision := embedcutover.DecideRetirement(plan, state, observed, approval, opened.loaded.Policy)
+	decision := embedcutover.DecideRetirement(
+		plan, facts.state, facts.observed, approval, opened.loaded.Policy)
 	if !decision.Allowed {
-		_ = writeLines(out, retirementContext(plan, state, rows)...)
+		_ = writeLines(out, retirementContext(plan, facts.state, rows)...)
 		_ = writePlanFile(out, options.approval.planFile, identity)
 		return refusal(out, "retirement refused", decision.Blockers)
 	}
 
-	if err := embedpg.RetireIndex(ctx, opened.db, registered); err != nil {
-		return err
-	}
-	if plan.DropsColumn {
-		if err := embedpg.RetireColumns(ctx, opened.db, registered); err != nil {
-			return err
-		}
-	}
-	retiredAt := time.Now().UTC()
-	if err := opened.store.RetireGeneration(ctx, options.generation, retiredAt); err != nil {
-		return err
-	}
-	if err := reachPhaseOfGeneration(
-		ctx, opened, options.generation, embedrun.PhaseRetired); err != nil {
-		return err
-	}
-	lines := []string{fmt.Sprintf("generation %s is gone, with %d vectors",
-		options.generation, rows)}
-	// After the registry says so, because the answer is "is this the last one"
-	// and this one has to be retired before it can be counted out.
-	outboxLine, err := removeOutboxIfLast(ctx, opened, registered)
+	release, err := opened.store.RetireGenerationObjects(
+		ctx, options.generation, facts.pointer, plan.RowCount,
+		plan.DropsIndex, plan.DropsColumn)
 	if err != nil {
 		return err
 	}
-	if err := writeLines(out, append(lines, outboxLine...)...); err != nil {
+	retiredAt := release.RetiredAt
+	lines := []string{fmt.Sprintf("generation %s is gone, with %d vectors",
+		options.generation, rows)}
+	if sentence := release.Sentence(); sentence != "" {
+		lines = append(lines, bullet(sentence))
+	}
+	if err := writeLines(out, lines...); err != nil {
 		return err
 	}
 	return publishRetirement(ctx, out, options, plan, identity, approval, rows, retiredAt)
-}
-
-// removeOutboxIfLast renders what [embedpg.Store.ReleaseOutbox] did.
-//
-// The decision is there rather than here because it is a general capability --
-// an outbox belongs to a source table, and whether a retirement is its last
-// reader is a question about the registry, not about a command line.
-func removeOutboxIfLast(
-	ctx context.Context, opened *session, registered embedstore.Generation,
-) ([]string, error) {
-	release, err := opened.store.ReleaseOutbox(ctx, registered)
-	if err != nil {
-		return nil, err
-	}
-	sentence := release.Sentence()
-	if sentence == "" {
-		return nil, nil
-	}
-	return []string{bullet(sentence)}, nil
 }
 
 // publishRetirement records what was destroyed, where a destination was named.
@@ -800,12 +752,18 @@ func retirementContext(
 // pointer records as the one before the active generation is somebody's way
 // back, and destroying it while that is still true removes a rollback the
 // operator believes they have.
+type retirementSnapshot struct {
+	state    embedcutover.RetirementState
+	observed embedcutover.Observed
+	pointer  embedstore.Pointer
+}
+
 func retirementFacts(
 	ctx context.Context, opened *session, registered embedstore.Generation, generation string,
-) (embedcutover.RetirementState, embedcutover.Observed, error) {
+) (retirementSnapshot, error) {
 	pointer, err := opened.store.Pointer(ctx, registered.TargetSchema, registered.TargetTable)
 	if err != nil && !errorsIs(err, embedstore.ErrNotFound) {
-		return embedcutover.RetirementState{}, embedcutover.Observed{}, err
+		return retirementSnapshot{}, err
 	}
 
 	state := embedcutover.RetirementState{}
@@ -813,14 +771,18 @@ func retirementFacts(
 		state.IsRollbackTargetFor = pointer.Active
 		eligibility, err := rollbackEligibility(ctx, opened, generation, pointer)
 		if err != nil {
-			return embedcutover.RetirementState{}, embedcutover.Observed{}, err
+			return retirementSnapshot{}, err
 		}
 		state.RollbackEligible = eligibility.Eligible
 	}
-	return state, embedcutover.Observed{
-		ActivePointer: pointer.Active,
-		Permissions:   []embedcutover.Permission{embedcutover.PermissionRetire},
-		Now:           time.Now().UTC(),
+	return retirementSnapshot{
+		state: state,
+		observed: embedcutover.Observed{
+			ActivePointer: pointer.Active,
+			Permissions:   []embedcutover.Permission{embedcutover.PermissionRetire},
+			Now:           time.Now().UTC(),
+		},
+		pointer: pointer,
 	}, nil
 }
 
@@ -833,7 +795,11 @@ func rollbackEligibility(
 	if err != nil {
 		return embedcutover.RollbackEligibility{}, err
 	}
-	policy, err := rollbackPolicy(opened, 0)
+	destination, err := opened.store.Generation(ctx, generation)
+	if err != nil {
+		return embedcutover.RollbackEligibility{}, err
+	}
+	policy, err := rollbackPolicy(destination, 0)
 	if err != nil {
 		return embedcutover.RollbackEligibility{}, err
 	}
@@ -881,6 +847,10 @@ func verify(
 	run, err := opened.store.Run(ctx, runID)
 	if err != nil {
 		return embedverify.Report{}, embedrun.Run{}, err
+	}
+	if run.Terminal() {
+		return embedverify.Report{}, embedrun.Run{}, fmt.Errorf(
+			"%w: run %s is %s", embedrun.ErrTerminal, run.ID, run.Status)
 	}
 	// Verification reads the run's watermark and the specification's rows, so a
 	// run for another generation measures one generation against another's

@@ -20,16 +20,6 @@ func pendingChange() *fakeChanges {
 	}
 }
 
-// atPhase puts the run at a phase, with the boundary a prepared run holds.
-func atPhase(c *qt.C, h *harness, phase embedrun.Phase) {
-	c.Helper()
-	stored, err := h.store.Run(context.Background(), "run-1")
-	c.Assert(err, qt.IsNil)
-	stored.Phase = phase
-	stored.SnapshotWatermark = "100"
-	c.Assert(h.store.SaveRun(context.Background(), stored), qt.IsNil)
-}
-
 // TestCatchUp_RefusesBeforeSpendingAnythingFailurePath covers
 // stokaro/ptah#2737.
 //
@@ -56,8 +46,7 @@ func TestCatchUp_RefusesBeforeSpendingAnythingFailurePath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			h := newHarness(c, defaultBounds())
-			atPhase(c, h, test.phase)
+			h := newHarnessAtPhase(c, defaultBounds(), spec(), test.phase)
 
 			_, _, err := h.engine.CatchUp(context.Background(), "run-1",
 				pendingChange(), livingRows("1"))
@@ -101,8 +90,7 @@ func TestCatchUp_RunsOncePastTheBackfillHappyPath(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			h := newHarness(c, defaultBounds())
-			atPhase(c, h, test.phase)
+			h := newHarnessAtPhase(c, defaultBounds(), spec(), test.phase)
 
 			run, pass, err := h.engine.CatchUp(context.Background(), "run-1",
 				pendingChange(), livingRows("1"))

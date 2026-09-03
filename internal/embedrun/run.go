@@ -48,7 +48,7 @@ const (
 	PhaseVerified Phase = "verified"
 	// PhaseCutOver is a run whose active pointer names this generation.
 	PhaseCutOver Phase = "cut_over"
-	// PhaseRetired is a run whose previous generation has been removed.
+	// PhaseRetired is a run whose generation was retired.
 	PhaseRetired Phase = "retired"
 	// PhaseRolledBack is a run returned to the previous generation.
 	PhaseRolledBack Phase = "rolled_back"
@@ -65,7 +65,12 @@ const (
 	// StatusFailed is a run stopped by a failure, with the classification
 	// recorded.
 	StatusFailed Status = "failed"
-	// StatusComplete is a run that reached its terminal phase.
+	// StatusAbandoned is a run the operator ended without destroying its
+	// generation. It is terminal for the run and releases its claim on shared
+	// outbox history; the vectors remain until the generation is retired.
+	StatusAbandoned Status = "abandoned"
+	// StatusComplete is a run whose generation was retired. A run destroyed
+	// before cutover keeps the furthest phase it truthfully reached.
 	StatusComplete Status = "complete"
 )
 
@@ -79,6 +84,9 @@ var (
 	ErrCheckpoint = errors.New("checkpoint refused")
 	// ErrGeneration is a run asked to work on a generation it is not for.
 	ErrGeneration = errors.New("the run was prepared for a different generation")
+	// ErrTerminal is an operation that would restart or mutate a run that has
+	// ended permanently.
+	ErrTerminal = errors.New("the run is terminal")
 )
 
 // Run is one embedding migration's durable state.
@@ -162,8 +170,8 @@ type Run struct {
 	ActivePointer    string
 	RollbackEligible bool
 
-	// FailureClass classifies why a failed run stopped, and FailureDetail says
-	// what happened.
+	// FailureClass classifies why a failed run stopped. FailureDetail says why
+	// a failed, paused or abandoned run stopped.
 	FailureClass  string
 	FailureDetail string
 
@@ -303,6 +311,16 @@ func (r *Run) Reach(token int64, to Phase) error {
 	if err := r.Fence(token); err != nil {
 		return err
 	}
+	// Retirement may finish a cut-over or rolled-back run after it was
+	// abandoned: the generation is being destroyed, so recording that terminal
+	// phase is still truthful. Every other move would restart a run whose
+	// operator explicitly ended it.
+	if r.Status == StatusAbandoned && to != PhaseRetired {
+		return fmt.Errorf("%w: run %s is abandoned", ErrTerminal, r.ID)
+	}
+	if r.Status == StatusComplete && to != r.Phase {
+		return fmt.Errorf("%w: run %s is complete", ErrTerminal, r.ID)
+	}
 	if _, known := nextPhases[to]; !known {
 		return fmt.Errorf("%w: %s is not a phase of this lifecycle", ErrPhase, to)
 	}
@@ -417,6 +435,15 @@ func (r *Run) Claim(owner string, lease time.Duration) int64 {
 	r.LeaseExpires = time.Now().UTC().Add(lease)
 	r.UpdatedAt = time.Now().UTC()
 	return r.FencingToken
+}
+
+// Terminal reports whether no worker may claim or continue this run.
+//
+// Complete means the generation was retired. Abandoned means the operator
+// ended this run while keeping the generation's vectors. Both are permanent;
+// a new attempt uses a new run identifier.
+func (r Run) Terminal() bool {
+	return r.Status == StatusComplete || r.Status == StatusAbandoned
 }
 
 // DescribesGeneration reports whether this run is the one a caller holding that

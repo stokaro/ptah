@@ -29,9 +29,11 @@ each is a decision somebody takes separately.
 | verified | `verify` | Runs the deterministic checks |
 | cut over | `cutover` | Makes the new generation the one queries read |
 | rolled back | `rollback` | Returns queries to an earlier generation. Reversible: cutting over again returns the run to cut over |
-| retired | `retire` | Destroys the generation. Nothing follows it, and the run becomes complete |
+| retired | `retire` | Destroys the generation and makes every run for it complete. Runs already at cut over or rolled back advance to retired; earlier attempts keep their truthful high-water phase |
 
-`ptah inference status` reports the furthest phase a run reached.
+`ptah inference status` reports the furthest phase a run reached. `abandoned` is
+a terminal run status rather than a phase: it ends one attempt without
+destroying the generation or its vectors.
 
 ## Why they are separate
 

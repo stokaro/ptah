@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"go.5x5.cz/ptah/internal/embeddigest"
 	"go.5x5.cz/ptah/internal/embedrun"
 )
 
@@ -18,6 +19,12 @@ var (
 	ErrConflict = errors.New("the state changed underneath this write")
 	// ErrRetired is an operation on a generation that was destroyed.
 	ErrRetired = errors.New("the generation was retired")
+	// ErrNoLiveRun is a generation that has run history but no usable live
+	// feeder. For an outbox generation, a merely non-terminal run is not enough:
+	// it must name the registered source and carry a valid resume position. A
+	// generation with no run history is not covered: callers may register and
+	// point at generations imported by a store this process never saw.
+	ErrNoLiveRun = errors.New("the generation has no usable live feeder")
 )
 
 // Generation is a registry row.
@@ -113,7 +120,7 @@ type Generation struct {
 
 // Maintained reports whether something is keeping this generation current.
 func (g Generation) Maintained(now time.Time) bool {
-	return !g.MaintainedUntil.IsZero() && now.Before(g.MaintainedUntil)
+	return !g.MaintainedUntil.IsZero() && !now.After(g.MaintainedUntil)
 }
 
 // Retired reports whether the generation was destroyed.
@@ -143,6 +150,14 @@ type Pointer struct {
 	PlanDigest string
 }
 
+// CutoverMove is the time-bearing state committed by an atomic pointer move.
+// The store owns these timestamps because it samples time only after acquiring
+// the lifecycle locks that can delay the operation.
+type CutoverMove struct {
+	CutOverAt               time.Time
+	PreviousMaintainedUntil time.Time
+}
+
 // QualifiedName names a target the way a diagnostic should say it.
 //
 // One function, used by both stores, because a message is a thing an operator
@@ -155,6 +170,14 @@ func QualifiedName(schema, table string) string {
 		return trimmed + "." + table
 	}
 	return table
+}
+
+// SourceIdentity is the canonical identity of a source relation. Runs created
+// before the source lock carried the bare table name; lifecycle operations may
+// still recognize that spelling, but new locks always use this qualified,
+// collision-safe identity.
+func SourceIdentity(schema, table string) string {
+	return embeddigest.Of(schema, table)
 }
 
 // Store is where run state lives.
@@ -172,8 +195,6 @@ type Store interface {
 	RegisterGeneration(ctx context.Context, generation Generation) (Generation, error)
 	// Generation reads one back.
 	Generation(ctx context.Context, identity string) (Generation, error)
-	// RetireGeneration marks one destroyed, which is terminal.
-	RetireGeneration(ctx context.Context, identity string, at time.Time) error
 	// RecordVerification records that a verification passed over a generation.
 	RecordVerification(ctx context.Context, identity string, at time.Time) error
 	// Maintain records how long something will keep a generation current.
@@ -206,14 +227,18 @@ type Store interface {
 	// generation identity is a digest of the specification, so a second run of
 	// the same specification builds the same generation.
 	RunsForGeneration(ctx context.Context, identity string) ([]embedrun.Run, error)
-	// SaveRun writes a run's state, refusing a stale fencing token.
+	// SaveRun writes a non-terminal run's state, refusing a stale fencing token.
 	//
 	// The token is what makes this safe rather than the lease: a worker whose
 	// lease expired mid-request still holds the token it was given, and the
 	// store is the only place that can tell it has been superseded.
+	// Terminal membership changes belong to AbandonRun and the atomic generation
+	// retirement operation; SaveRun cannot create them.
 	SaveRun(ctx context.Context, run embedrun.Run) error
-	// ClaimRun takes a run for a worker and returns it as the store now holds
-	// it, with the fencing token the store assigned.
+	// ClaimRun takes a non-terminal run for a worker and returns it as the store
+	// now holds it, with the fencing token the store assigned. Complete and
+	// abandoned runs are refused atomically rather than claimed and checked
+	// afterwards.
 	//
 	// It writes the LEASE ALONE -- owner, expiry, token -- and not the run.
 	// Claiming used to be a read-modify-write of the whole row, so a worker
@@ -232,6 +257,16 @@ type Store interface {
 	// The returned run is what the row holds after the claim, so a caller that
 	// goes on to write it back carries whatever landed while it was reading.
 	ClaimRun(ctx context.Context, id, worker string, leaseExpires time.Time) (embedrun.Run, int64, error)
+	// AbandonRun permanently ends one run without destroying its generation.
+	// It fences the current worker and writes the terminal status in the same
+	// atomic operation, preserving every checkpoint and progress counter.
+	//
+	// If the generation is active or maintained, the store permits the
+	// abandonment only while another usable live run can keep feeding it.
+	// The check and terminal write are serialized with claims, saves, pointer
+	// moves, maintenance changes and retirement. The store samples the persisted
+	// abandonment time only after acquiring those lifecycle locks.
+	AbandonRun(ctx context.Context, id, reason string) (embedrun.Run, error)
 
 	// AppendEvent records what happened.
 	AppendEvent(ctx context.Context, event embedrun.Event) error
@@ -246,4 +281,36 @@ type Store interface {
 	// one pointer and executed against another is exactly the case the decision
 	// layer refuses and the store must not reintroduce.
 	MovePointer(ctx context.Context, pointer Pointer, expectedActive string) error
+	// MovePointerWithMaintenance moves the pointer and, when stabilizeFor is
+	// positive, opens or extends the maintenance window over pointer.Previous in
+	// the same atomic operation. It samples the cutover time after acquiring the
+	// lifecycle locks, derives the deadline from that sample, commits both, and
+	// returns the committed values. When pointer.Previous is nonempty, a zero
+	// stabilizeFor explicitly clears its existing maintenance deadline in that
+	// same operation; zero is not a no-op.
+	//
+	// Keeping these writes together prevents an abandonment in the gap between
+	// cutover and maintenance from leaving queries moved but the requested
+	// rollback window absent. A non-zero window therefore refuses before moving
+	// when the previous generation has run history but no usable live feeder.
+	// requiredRunID is the run whose verified state authorizes the cutover; the
+	// same transaction requires it to be non-terminal, fences it, and records
+	// PhaseCutOver. That keeps an abandonment from landing after the pointer
+	// moved but before the authorizing run recorded the move.
+	MovePointerWithMaintenance(
+		ctx context.Context, pointer Pointer, expectedActive, requiredRunID string,
+		stabilizeFor time.Duration,
+	) (CutoverMove, error)
+	// MovePointerWithRollback moves the pointer and records PhaseRolledBack on
+	// every non-terminal run of expectedActive for which the lifecycle declares
+	// that transition. The compare-and-set, run fences and phase changes are one
+	// atomic operation, so abandonment cannot leave a successful pointer move
+	// followed by a failed run update. The store samples the move time after it
+	// holds the lifecycle locks, rechecks both the exact maintenance deadline and
+	// eligibilityNotAfter, records that sampled time on the pointer, and returns
+	// it. A zero eligibilityNotAfter means the policy has no independent expiry.
+	MovePointerWithRollback(
+		ctx context.Context, pointer Pointer, expectedActive string,
+		expectedMaintainedUntil, eligibilityNotAfter time.Time,
+	) (time.Time, error)
 }

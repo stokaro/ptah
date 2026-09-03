@@ -190,6 +190,7 @@ func aFilteredCatchUpEngine(
 	c.Helper()
 	store := embedpg.NewStore(db)
 	c.Assert(store.EnsureSchema(ctx), qt.IsNil)
+	registerCatchUpGeneration(c, ctx, store, spec)
 	source, err := embedpg.NewSource(db, spec)
 	c.Assert(err, qt.IsNil)
 	target, err := embedpg.NewTarget(db, spec)
@@ -197,13 +198,14 @@ func aFilteredCatchUpEngine(
 	outbox, err := embedpg.NewOutbox(db, spec)
 	c.Assert(err, qt.IsNil)
 
-	c.Assert(outbox.Install(ctx), qt.IsNil)
+	c.Assert(outbox.InstallForIsolatedSource(ctx), qt.IsNil)
 	boundary, err := outbox.Horizon(ctx)
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(store.CreateRun(ctx, embedrun.Run{
 		ID: filterRunID, SpecDigest: "spec-1", GenerationIdentity: spec.Identity().Digest,
-		Environment: "test", Source: "public.articles", Target: "public.articles.embedding",
+		Environment: "test", Source: embedpg.SourceIdentity(spec.Source.Schema, spec.Source.Table),
+		Target:          "public.articles.embedding",
 		ProviderProfile: "fake", PtahVersion: "test", PolicyDigest: "policy",
 		// Backfilled, because that is what catch-up runs after. Created at
 		// `backfilling` these fixtures asked the engine to serve a run whose
@@ -253,7 +255,7 @@ func TestEmbedPGAFilterColumnIsWatchedE2E(t *testing.T) {
 	seedFilteredArticles(c, ctx, db, spec)
 	outbox, err := embedpg.NewOutbox(db, spec)
 	c.Assert(err, qt.IsNil)
-	c.Assert(outbox.Install(ctx), qt.IsNil)
+	c.Assert(outbox.InstallForIsolatedSource(ctx), qt.IsNil)
 
 	// A published row leaves the filter's scope. Nothing else about it changes:
 	// no key, no input field, no version -- so before this, no event.
@@ -321,7 +323,7 @@ func TestEmbedPGAFilterProbeIgnoresAnIdenticallyNamedConstraintE2E(t *testing.T)
 
 	outbox, err := embedpg.NewOutbox(db, spec)
 	c.Assert(err, qt.IsNil)
-	c.Assert(outbox.Install(ctx), qt.IsNil)
+	c.Assert(outbox.InstallForIsolatedSource(ctx), qt.IsNil)
 
 	_, err = db.ExecContext(ctx, `UPDATE articles SET unwatched = 'x' WHERE id = 2`)
 	c.Assert(err, qt.IsNil)
@@ -382,7 +384,7 @@ func TestEmbedPGAFilterTheServerRefusesIsRefusedE2E(t *testing.T) {
 	outbox, err := embedpg.NewOutbox(db, refused)
 	c.Assert(err, qt.IsNil)
 
-	err = outbox.Install(ctx)
+	err = outbox.InstallForIsolatedSource(ctx)
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "cannot be watched for changes")

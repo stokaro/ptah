@@ -75,12 +75,15 @@ var verbs = map[string]Verb{
 		"introspects the database and prints what it found"},
 
 	// inference.
+	"inference abandon": {TargetWrites, ScratchNone,
+		"ends one run and releases its position in shared outbox history; the run-state row " +
+			"is written, and this command does not delete the generation or its vectors"},
 	"inference backfill": {TargetWrites, ScratchNone,
 		"reads the source, sends it to the embedding endpoint the specification names, and " +
 			"writes vectors and checkpoints into the target database"},
 	"inference catchup": {TargetWrites, ScratchNone,
 		"rereads the source rows recorded as changed and writes their vectors, which sends that " +
-			"text to the embedding endpoint, and deletes the change records every generation " +
+			"text to the embedding endpoint, and deletes the change records every usable live feeder " +
 			"reading that source has processed"},
 	"inference cutover": {TargetWrites, ScratchNone,
 		"moves the pointer queries read to a different generation, and refuses when the pointer " +
@@ -114,8 +117,8 @@ var verbs = map[string]Verb{
 	"inference retire": {TargetWrites, ScratchNone,
 		"drops a generation's index and column; it is the one verb here that cannot be undone"},
 	"inference rollback": {TargetWrites, ScratchNone,
-		"moves the pointer queries read back to a previous generation, when that generation is " +
-			"still measurably one you can go back to"},
+		"moves the pointer queries read back to its recorded previous generation, when that " +
+			"generation is still measurably one you can go back to"},
 	"inference status": {TargetReads, ScratchNone,
 		"prints a run's phase, progress and watermarks from the run-state tables"},
 	"inference verify": {TargetReads, ScratchNone,

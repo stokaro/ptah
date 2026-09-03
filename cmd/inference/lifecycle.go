@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strconv"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -72,24 +71,7 @@ func runPrepare(
 		return err
 	}
 	spec := opened.loaded.Spec
-	// Asked BEFORE any of the work below, because all of it is durable and
-	// none of it is undone by the conflict branch that used to notice. A second
-	// prepare under one run id -- which is the documented second-generation
-	// workflow, the guide deriving the id from a date and the quick start
-	// exporting PTAH_RUN_ID -- added five columns to the user's table and
-	// registered a second generation, then said "leaving it as it is" and
-	// exited 0 (stokaro/ptah#2637).
-	if err := prepareAgreesWithTheRun(ctx, opened, runID, spec.Identity().Digest); err != nil {
-		return err
-	}
-	// The target columns, which is the step the plan names and nothing
-	// performed. Before the generation is registered, because a registry row
-	// for a generation with nowhere to write is a row every later verb trusts
-	// (stokaro/ptah#2390).
-	if err := embedpg.EnsureTarget(ctx, opened.db, spec); err != nil {
-		return err
-	}
-	if _, err := opened.store.RegisterGeneration(ctx, embedstore.Generation{
+	generation := embedstore.Generation{
 		Identity: spec.Identity().Digest, SpecDigest: opened.loaded.Digest,
 		SpecDocument: string(opened.loaded.Document),
 		Name:         spec.Name, Reproducibility: string(spec.Identity().Reproducibility),
@@ -100,69 +82,7 @@ func runPrepare(
 		SourceSchema: spec.Source.Schema, SourceTable: spec.Source.Table,
 		ConsistencyMode: string(opened.loaded.Mode),
 		CreatedAt:       time.Now().UTC(),
-	}); err != nil {
-		return err
 	}
-
-	boundary, err := prepareConsistency(ctx, opened)
-	if err != nil {
-		return err
-	}
-	return createRun(ctx, out, opened, runID, worker, boundary)
-}
-
-// prepareAgreesWithTheRun refuses a prepare whose run is for another generation.
-//
-// A run that does not exist yet is the ordinary case and agrees with anything;
-// a run that exists for this same generation is a restart, which prepare is
-// documented to be safe for and remains so.
-func prepareAgreesWithTheRun(
-	ctx context.Context, opened *session, runID, identity string,
-) error {
-	run, err := opened.store.Run(ctx, runID)
-	if errorsIs(err, embedstore.ErrNotFound) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	return run.DescribesGeneration(identity)
-}
-
-// prepareConsistency installs what the selected mode needs and records the
-// boundary it starts from.
-func prepareConsistency(ctx context.Context, opened *session) (string, error) {
-	if opened.loaded.Mode != embedcatchup.ModeOutbox {
-		return "", nil
-	}
-	outbox, err := embedpg.NewOutbox(opened.db, opened.loaded.Spec)
-	if err != nil {
-		return "", err
-	}
-	if err := outbox.Install(ctx); err != nil {
-		return "", err
-	}
-	// Only now. Everything before this point is captured by the outbox; the
-	// boundary says where the backfill's own reading begins.
-	boundary, err := outbox.Horizon(ctx)
-	if err != nil {
-		return "", err
-	}
-	return strconv.FormatUint(boundary, 10), nil
-}
-
-// createRun records the run, or reports the one that is already there.
-// defaultPrepareLease is how long the lease prepare takes is good for.
-//
-// Prepare does no long work, so this is short: it names the worker that
-// prepared the run and leaves a token a later claim moves past. The engine
-// takes its own, longer lease when it starts embedding.
-const defaultPrepareLease = time.Minute
-
-func createRun(
-	ctx context.Context, out io.Writer, opened *session, runID, worker, boundary string,
-) error {
-	spec := opened.loaded.Spec
 	run := embedrun.Run{
 		ID: runID, SpecDigest: spec.Identity().Digest, GenerationIdentity: spec.Identity().Digest,
 		// The digest the outbox is keyed on, not the bare table name. Recorded
@@ -172,38 +92,30 @@ func createRun(
 		Target:          spec.Target.Table + "." + spec.Target.Column,
 		ProviderProfile: spec.Model.Provider, PtahVersion: "cli", PolicyDigest: "",
 		Phase: embedrun.PhasePrepared, Status: embedrun.StatusRunning,
-		SnapshotWatermark: boundary,
-		CreatedAt:         time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	}
-	// Claimed rather than written. `FencingToken: 1` in a literal is the
-	// mechanism's starting value and never its second, so a run created that
-	// way is one no later claim has anything to move past -- which is how a
-	// fence that is enforced on every write came to fence nothing
-	// (stokaro/ptah#2474).
 	run.Claim(worker, defaultPrepareLease)
-
-	err := opened.store.CreateRun(ctx, run)
-	switch {
-	case err == nil:
-		// The boundary-capture step ran, so the run reaches it -- the phase
-		// names the step rather than the artifact, and a mode that records no
-		// boundary answered the step rather than skipping it. Without this a
-		// backfill's move would be a jump, and jumps are refused.
-		if err := opened.store.ReachPhase(ctx, runID, embedrun.PhaseBoundaryCaptured); err != nil {
-			return err
-		}
-		return writeLines(out,
-			fmt.Sprintf("prepared run %s for generation %s", runID, spec.Identity().Short()),
-			bullet("snapshot boundary: "+boundaryText(boundary, opened.loaded.Mode)))
-	case isConflict(err):
-		// A restarted prepare finds its own run. Saying so beats failing, and
-		// beats overwriting a run that may be halfway through a backfill.
-		return writeLines(out,
-			fmt.Sprintf("run %s already exists; leaving it as it is", runID))
-	default:
+	result, err := opened.store.PrepareRun(
+		ctx, spec, generation, run, opened.loaded.Mode)
+	if err != nil {
 		return err
 	}
+	if !result.Created {
+		return writeLines(out,
+			fmt.Sprintf("run %s already exists; leaving it as it is", runID))
+	}
+	return writeLines(out,
+		fmt.Sprintf("prepared run %s for generation %s", runID, spec.Identity().Short()),
+		bullet("snapshot boundary: "+boundaryText(
+			result.Run.SnapshotWatermark, opened.loaded.Mode)))
 }
+
+// defaultPrepareLease is how long the lease prepare takes is good for.
+//
+// Prepare does no long work, so this is short: it names the worker that
+// prepared the run and leaves a token a later claim moves past. The engine
+// takes its own, longer lease when it starts embedding.
+const defaultPrepareLease = time.Minute
 
 // boundaryText renders the recorded boundary, or says why there is none.
 //
@@ -212,11 +124,6 @@ func createRun(
 // (stokaro/ptah#2646).
 func boundaryText(boundary string, mode embedcatchup.Mode) string {
 	return embedreport.BoundaryText(boundary, mode)
-}
-
-// isConflict reports whether an error is the store refusing a duplicate.
-func isConflict(err error) bool {
-	return err != nil && errorsIs(err, embedstore.ErrConflict)
 }
 
 // newIndexCommand returns "ptah inference index".
@@ -262,25 +169,12 @@ func runIndex(ctx context.Context, out io.Writer, options commonOptions, runID s
 	}
 	defer opened.close()
 
-	run, err := opened.store.Run(ctx, runID)
+	// Index DDL and the run transition are one lifecycle operation even though
+	// CREATE INDEX CONCURRENTLY cannot be in the run transaction. The store's
+	// generation lock prevents abandonment or retirement between them, and its
+	// fenced row update preserves a checkpoint committed during the build.
+	outcome, err := opened.store.EnsureRunIndex(ctx, runID, opened.loaded.Spec)
 	if err != nil {
-		return err
-	}
-	// The index is built for the SPECIFICATION's generation and the phase is
-	// marked on the RUN, so a disagreement advances one run's lifecycle on the
-	// strength of another generation's index (stokaro/ptah#2637).
-	if err := run.DescribesGeneration(opened.loaded.Spec.Identity().Digest); err != nil {
-		return err
-	}
-
-	outcome, err := embedpg.EnsureIndex(ctx, opened.db, opened.loaded.Spec)
-	if err != nil {
-		return err
-	}
-	// The phase names the step rather than the artifact, so a specification
-	// that declares no index method still reaches it: the indexing step is
-	// done, and a run left short of it could never be verified.
-	if err := opened.store.ReachPhase(ctx, runID, embedrun.PhaseIndexed); err != nil {
 		return err
 	}
 	return writeLines(out, indexOutcomeText(outcome, opened.loaded.Spec))
@@ -377,6 +271,13 @@ func runStatus(ctx context.Context, out io.Writer, options statusOptions) error 
 		return err
 	}
 	defer opened.close()
+	run, err := opened.store.Run(ctx, options.runID)
+	if err != nil {
+		return err
+	}
+	if err := run.DescribesGeneration(opened.loaded.Spec.Identity().Digest); err != nil {
+		return err
+	}
 
 	status, err := embedreport.ReadStatus(ctx, opened.store, options.runID, opened.loaded.Mode)
 	if err != nil {
@@ -536,6 +437,9 @@ func stoppedLines(status embedreport.Status) []string {
 	if status.State == string(embedrun.StatusPaused) {
 		return []string{bullet("paused: " + status.FailureDetail)}
 	}
+	if status.State == string(embedrun.StatusAbandoned) {
+		return []string{bullet("abandoned: " + status.FailureDetail)}
+	}
 	return nil
 }
 
@@ -557,7 +461,7 @@ func newRollbackCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "rollback",
 		Short: "Put the previous generation back, if it is still a place to go back to",
-		Long: `Move the active pointer back to a previous generation.
+		Long: `Move the active pointer back to the generation recorded as its previous generation.
 
 Whether that is possible is measured rather than assumed. A generation whose
 tables still exist is not necessarily one you can return to: it may never have
@@ -577,7 +481,8 @@ to it.`,
 		},
 	}
 	addCommonFlags(cmd, &options)
-	cmd.Flags().StringVar(&toGeneration, "to", "", "Identity of the generation to return to (required)")
+	cmd.Flags().StringVar(&toGeneration, "to", "",
+		"Identity recorded as the active pointer's previous generation (required)")
 	cmd.Flags().DurationVar(&window, "window", 0,
 		"How long after a cutover the previous generation stays eligible; zero for no limit")
 	addEvidenceFlags(cmd.Flags(), &evidence)
@@ -585,50 +490,9 @@ to it.`,
 	return cmd
 }
 
-// runRollback evaluates eligibility and moves the pointer.
-// reachPhaseOfGeneration advances every run that built one generation into a
-// phase the verb naming that generation has just made true of it.
-//
-// `retired` and `rolled_back` had no producer at all: the transition table
-// declared `cut_over -> {retired, rolled_back}` and neither verb reached
-// either, so a generation rolled off the pointer or destroyed kept reporting
-// `cut_over` forever (stokaro/ptah#2649 finding 6). Neither was a high-water
-// mark that stopped; both were states the lifecycle could never enter.
-//
-// The lookup is by generation because that is what these verbs name -- neither
-// takes a --run-id -- and the run table's generation index exists for exactly
-// it, its comment saying "a run is almost always looked up by the generation it
-// builds". That index had no reader either.
-//
-// Which runs are advanced comes from the transition table rather than from a
-// phase named here. Naming one was wrong for retirement: it advanced runs
-// standing at `cut_over`, and a generation rolled back before it was retired
-// had its runs at `rolled_back`, so the retirement destroyed the vectors and
-// left the row describing a corpus that no longer existed. Asking
-// [embedrun.Phase.LeadsTo] means each verb reaches exactly the runs its own
-// transition applies to, and a phase added to the table needs no edit here.
-//
-// Nothing is skipped in silence: a run the table declares no move for never
-// reached the state this verb follows, so there is no transition for it to have
-// missed.
-func reachPhaseOfGeneration(
-	ctx context.Context, opened *session, generation string, to embedrun.Phase,
-) error {
-	runs, err := opened.store.RunsForGeneration(ctx, generation)
-	if err != nil {
-		return err
-	}
-	for _, run := range runs {
-		if !run.Phase.LeadsTo(to) {
-			continue
-		}
-		if err := opened.store.ReachPhase(ctx, run.ID, to); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
+// runRollback evaluates eligibility, moves the pointer, and records the
+// displaced generation's rollback atomically. An abandonment therefore sees
+// either the state before the move or the fully recorded state after it.
 func runRollback(
 	ctx context.Context, out io.Writer, options commonOptions,
 	toGeneration string, window time.Duration, evidence evidenceOptions,
@@ -648,11 +512,30 @@ func runRollback(
 	if err != nil {
 		return err
 	}
+	switch {
+	case toGeneration == pointer.Active:
+		return refusal(out, "rollback refused", []string{
+			"queries already read that generation",
+		})
+	case pointer.Previous == "":
+		return refusal(out, "rollback refused", []string{
+			"the active pointer has no previous generation",
+		})
+	case toGeneration != pointer.Previous:
+		return refusal(out, "rollback refused", []string{
+			fmt.Sprintf("--to names %s, but the active pointer's previous generation is %s",
+				toGeneration, pointer.Previous),
+		})
+	}
 	state, err := embedpg.RollbackState(ctx, opened.db, toGeneration, pointer)
 	if err != nil {
 		return err
 	}
-	policy, err := rollbackPolicy(opened, window)
+	destination, err := opened.store.Generation(ctx, toGeneration)
+	if err != nil {
+		return err
+	}
+	policy, err := rollbackPolicy(destination, window)
 	if err != nil {
 		return err
 	}
@@ -662,16 +545,11 @@ func runRollback(
 		return refusal(out, "rollback refused", eligibility.Blockers)
 	}
 
-	now := time.Now().UTC()
-	if err := opened.store.MovePointer(ctx, embedstore.Pointer{
+	rolledBackAt, err := opened.store.MovePointerWithRollback(ctx, embedstore.Pointer{
 		TargetSchema: schema, TargetTable: table, Active: toGeneration, Previous: pointer.Active,
-		CutOverAt: now, CutOverBy: "ptah-cli",
-	}, pointer.Active); err != nil {
-		return err
-	}
-	// The generation left behind, not the one returned to: rolling back ends
-	// the run that put the pointer where it was.
-	if err := reachPhaseOfGeneration(ctx, opened, pointer.Active, embedrun.PhaseRolledBack); err != nil {
+		CutOverBy: "ptah-cli",
+	}, pointer.Active, destination.MaintainedUntil, eligibility.Expires)
+	if err != nil {
 		return err
 	}
 	if err := writeLines(out, fmt.Sprintf("queries now read %s, which replaced %s",
@@ -683,7 +561,7 @@ func runRollback(
 		Target:     opened.loaded.Spec.Target.Table,
 		Maintained: state.Maintained, VerifiedAt: state.VerifiedAt,
 		StaleRows: state.StaleRows, MissingRows: state.MissingRows,
-		Expires: eligibility.Expires, RolledBackAt: now,
+		Expires: eligibility.Expires, RolledBackAt: rolledBackAt,
 	}, evidence)
 }
 
@@ -711,12 +589,18 @@ func publishRollback(
 // demanding one refuses every rollback to it while naming an index nobody
 // configured -- the same defect the cutover decision had, one verb over.
 //
-// The index method comes from the specification in hand rather than from the
-// registry, which records what a generation IS and not how it was built. Two
-// generations over one table with different index methods would need the
-// registry to carry it, and that is a change to make when something needs it.
-func rollbackPolicy(opened *session, window time.Duration) (embedcutover.RollbackPolicy, error) {
-	objects, err := opened.loaded.Spec.TargetObjects()
+// The index method comes from the destination generation's recorded
+// specification. The file supplied to this invocation describes the current
+// operator intent; it is not evidence of how a previous generation was built.
+func rollbackPolicy(
+	destination embedstore.Generation, window time.Duration,
+) (embedcutover.RollbackPolicy, error) {
+	recorded, err := embedpg.RecordedSpec(destination,
+		"checked for the index required to roll back to it")
+	if err != nil {
+		return embedcutover.RollbackPolicy{}, err
+	}
+	objects, err := recorded.Spec.TargetObjects()
 	if err != nil {
 		return embedcutover.RollbackPolicy{}, err
 	}

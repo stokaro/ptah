@@ -2,6 +2,7 @@ package embedrun_test
 
 import (
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
@@ -184,6 +185,41 @@ func TestResume_OnlyAPausedRunResumes(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, embedrun.ErrCheckpoint)
 	c.Assert(run.Status, qt.Equals, embedrun.StatusFailed)
 	c.Assert(run.FailureClass, qt.Equals, "provider")
+}
+
+// TestAbandon_KeepsTheCheckpointAndReleasesTheLease is the non-destructive
+// distinction from retirement. The run ends, but everything already built is
+// still described by the row.
+func TestAbandon_KeepsTheCheckpointAndReleasesTheLease(t *testing.T) {
+	c := qt.New(t)
+	run := running(embedrun.PhaseBackfilling)
+	c.Assert(run.Checkpoint(run.FencingToken, committed("42")), qt.IsNil)
+
+	err := run.Abandon(run.FencingToken, "the migration was superseded")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(run.Status, qt.Equals, embedrun.StatusAbandoned)
+	c.Assert(run.Terminal(), qt.IsTrue)
+	c.Assert(run.FailureDetail, qt.Equals, "the migration was superseded")
+	c.Assert(run.Cursor, qt.DeepEquals, []string{"42"})
+	c.Assert(run.Progress.BatchesCommitted, qt.Equals, int64(1))
+	c.Assert(run.LeaseOwner, qt.Equals, "")
+	c.Assert(run.LeaseExpires.IsZero(), qt.IsTrue)
+	c.Assert(run.Checkpoint(run.FencingToken, committed("43")), qt.ErrorIs, embedrun.ErrTerminal)
+	c.Assert(run.Reach(run.FencingToken, embedrun.PhaseBackfilled), qt.ErrorIs, embedrun.ErrTerminal)
+}
+
+// TestAbandon_RequiresAReasonAndTheCurrentToken keeps the terminal state from
+// becoming an unowned status write.
+func TestAbandon_RequiresAReasonAndTheCurrentToken(t *testing.T) {
+	c := qt.New(t)
+	run := running(embedrun.PhaseBackfilling)
+	stale := run.FencingToken
+	run.Claim("worker-b", time.Minute)
+
+	c.Assert(run.Abandon(stale, "the migration was superseded"), qt.ErrorIs, embedrun.ErrFenced)
+	c.Assert(run.Abandon(run.FencingToken, ""), qt.ErrorIs, embedrun.ErrCheckpoint)
+	c.Assert(run.Status, qt.Equals, embedrun.StatusRunning)
 }
 
 // TestCheckpoint_ACatchUpBatchResumesFromAWatermarkRatherThanAKey is the other

@@ -35,15 +35,19 @@ Four answers, and the right one depends on whether you control the writes.
 
 | Mode | Write-time cost | Setup | Cleanup |
 | --- | --- | --- | --- |
-| `outbox` | Two triggers and one insert per changed row | `prepare` installs them | `retire` removes them |
+| `outbox` | Two triggers and one insert per changed row | `prepare` installs shared capture | Retirement removes it after the last non-retired outbox generation over the source |
 | `immutable` | None | None | None |
 | `dual_write` (not selectable) | Your writer's reporting call | Your application code | Your application code |
 | *(none)* | None | None | None — and no cutover |
 
 The outbox cost is a row written into a companion table inside the same
 transaction as the change. On a table taking thousands of writes per second that
-is measurable; on most tables it is not. Measure it rather than assuming, and
-remember it lasts only until the migration ends.
+is measurable; on most tables it is not. Measure it rather than assuming. The
+write-time cost ends only after the last non-retired outbox generation over that
+source retires; retiring one generation leaves shared capture in place when
+another still owns it. See
+[When the triggers go away](../../guides/migrate-a-live-table/#when-the-triggers-go-away)
+for the shared-outbox behavior.
 
 ## What each cannot prove
 

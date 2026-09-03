@@ -64,7 +64,25 @@ func TestInferenceASecondGenerationUnderOneRunIDE2E(t *testing.T) {
 
 	assertASecondPrepareIsRefusedBeforeItTouchesTheTable(c, ctx, db, second, dbName, runID)
 	assertABackfillForAnotherGenerationIsRefused(c, ctx, second, dbName, runID)
+	assertStatusForAnotherGenerationIsRefused(c, ctx, second, dbName, runID, "running")
 	assertTheFirstGenerationIsStillUsable(c, ctx, first, dbName, runID)
+	runInference(c, ctx, "abandon",
+		"--db-url", dbName, "--run-id", runID, "--reason", "superseded test run")
+	assertStatusForAnotherGenerationIsRefused(c, ctx, second, dbName, runID, "abandoned")
+}
+
+// assertStatusForAnotherGenerationIsRefused covers both sides of the status
+// reporting path. A running run used the wrong specification to measure
+// readiness; a terminal run short-circuited readiness and used the wrong
+// consistency mode to render its stored watermarks.
+func assertStatusForAnotherGenerationIsRefused(
+	c *qt.C, ctx context.Context, specPath, dbURL, runID, state string,
+) {
+	c.Helper()
+	_, err := runInferenceExpectingFailure(c, ctx, "status",
+		"--spec", specPath, "--db-url", dbURL, "--run-id", runID)
+	c.Assert(err, qt.ErrorMatches, `(?s).*was prepared for a different generation.*`,
+		qt.Commentf("wrong-spec status must refuse a %s run", state))
 }
 
 // assertASecondPrepareIsRefusedBeforeItTouchesTheTable is finding 2.

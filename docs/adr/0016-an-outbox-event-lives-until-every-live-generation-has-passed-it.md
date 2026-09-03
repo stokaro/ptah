@@ -1,8 +1,9 @@
-# ADR 0016: An outbox event lives until every live generation has passed it
+# ADR 0016: An outbox event lives until every usable live feeder has passed it
 
 - Status: proposed
 - Deciders: Ptah maintainers
-- Issue: [#2690](https://github.com/stokaro/ptah/issues/2690)
+- Issues: [#2690](https://github.com/stokaro/ptah/issues/2690),
+  [#2723](https://github.com/stokaro/ptah/issues/2723)
 - Takes the pruning-policy decision [ADR 0014](0014-the-outbox-boundary-is-a-transaction-and-the-order-is-a-sequence.md) deferred
 
 ## 1. Context
@@ -36,24 +37,52 @@ never what it embedded".
 
 ## 2. Decision
 
-An outbox event is kept until **every live generation reading that source
+An outbox event is kept until **every usable live feeder reading that source
 table** has passed it. `catchup` deletes the rest, at the end of a pass, from
 positions already on disk.
 
 The bound is the minimum resume position across readers, not the position of
 whichever run is catching up. A run's own watermark is the wrong bound because
-the table is shared: pruning there deletes what another generation still owes.
+the table is shared: pruning there deletes what another run still owes.
 
 There is no retention setting. "How long is a processed event kept for audit" is
 answered with "it is not, and the outbox was never the audit surface". "Who
-decides" is answered with "the generation registry": an event survives while any
-unretired generation over that source has yet to pass it, and `retire` is the
-operator's lever.
+decides" is answered by durable lifecycle state. An event survives while any
+positioned, nonterminal run over that source has yet to pass it. `abandon`
+releases one run without deleting its generation or vectors; `retire` remains
+the destructive lever for a whole generation.
 
-Membership of the reader set is `retired_at`, the same authority retirement
-already consults. A run recording no position at all — which is what `prepare`
-writes for a mode that captures nothing — is not a reader at the zero position;
-it is not a reader.
+Membership of the pruning reader set is the run status, with runs whose
+generation is retired excluded as well. `abandoned` and `complete` are terminal;
+`running`, `paused`, and `failed` remain recoverable readers. A run whose
+generation row is missing is included conservatively. A run recording no
+position at all — which is what `prepare` writes for a mode that captures
+nothing — is not a reader at the zero position; it is not a reader.
+
+The generation-level `retired_at` check remains the authority for whether the
+shared change-capture objects may be removed. A live generation can own those
+objects before any run has a position, so trigger ownership and the pruning
+floor deliberately answer different questions.
+
+The shared trigger preserves every live reader's capture contract. Generations
+over one source must use the same ordered key fields, version strategy, and
+version field because one event stores one key and one version. Their input and
+filter columns may differ; prepare rebuilds the update trigger from the union of
+those columns so a change relevant only to an older generation still produces
+an event. An incompatible contract is refused while the existing trigger stays
+installed. The rebuild's function and trigger DDL commits atomically, so a late
+failure cannot leave a live source between dropped and recreated triggers.
+
+The floor query and the deleting statement are one transaction under a
+source-scoped lifecycle lock. Creating a positioned run can add a reader behind
+the current floor, so the normal `PrepareRun` path holds the same lock from
+target creation through run creation. The lower-level positioned `CreateRun`
+path takes that lock too, while ordinary whole-run persistence cannot add the
+first resume position. Retirement holds the source lock while removing
+membership and shared source objects. Checkpointing and abandonment can only
+advance or remove an existing floor, so their run-row fencing remains
+sufficient. This prevents a new reader from appearing between the floor query
+and the delete.
 
 ## 3. Alternatives
 
@@ -76,7 +105,7 @@ would win, silently. Deferring costs one conjunct in one statement the day a
 consumer appears, and retention zero collapses to exactly the predicate chosen
 here.
 
-**Keep deferring — leave `Prune` unwired and correct the page instead.**
+**Keep deferring — leave pruning unwired and correct the page instead.**
 Rejected: it leaves a declaration carrying a rule nothing applies, which
 `AGENTS.md` names as a rule that is not in effect, and it leaves operators
 sizing storage for the whole history of a migration.
@@ -88,26 +117,28 @@ happens and is the state this record ends.
 ## 4. Consequences
 
 The companion table tracks the backlog rather than the history, so its size
-follows how far behind the slowest live generation is rather than how long the
-migration has run. An operator watching it not shrink is looking at a generation
-that is behind or idle, and `retire` releases it.
+follows how far behind the slowest usable live feeder is rather than how long
+the migration has run. For outbox mode, a feeder is usable only when it is
+nonterminal, source-matched, and carries a readable durable resume position.
+When another run holds the floor, `catchup` names every run and generation tied
+at that position.
 
-A generation that is live and forgotten pins the floor for as long as it exists.
-That is the cost of the safety property and it is deliberate: the alternative is
-deleting what a reader still owes. There is no verb today for "this run is
-abandoned", which is worth having and is tracked in
+A forgotten run pins the floor until it advances, its generation is retired,
+or an operator records that attempt as abandoned. Abandonment is terminal,
+preserves its checkpoint and vectors, advances the fencing token, and is
+refused when it would leave an active or maintained generation without another
+usable live feeder. This keeps the safety property while adding the
+non-destructive lever tracked in
 [#2723](https://github.com/stokaro/ptah/issues/2723).
+
+Preparing another generation over the same source may widen the update
+trigger's watched-column set. It cannot change the event key or version
+contract while an earlier run is live. Retiring or abandoning the incompatible
+reader first makes the narrower contract eligible again.
 
 An operator can no longer read the accumulated change log of a finished
 migration out of that table. That capability was an accident of nothing calling
 `Prune`, and retirement destroyed it anyway, so nothing durable is lost.
-
-Runs are matched to an outbox by their unqualified source name while the table
-is keyed on the qualified pair, so two same-named tables in different schemas
-share a floor. That over-includes readers and therefore keeps more events than
-necessary; it can never delete one that is owed. It is tracked in
-[#2724](https://github.com/stokaro/ptah/issues/2724) rather than fixed here, so
-that the conservative direction is a written decision and not an accident.
 
 A failed prune is reported and the command still succeeds. The catch-up it
 follows is already committed, and the only cost of the failure is a larger

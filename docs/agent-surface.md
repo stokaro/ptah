@@ -98,8 +98,9 @@ to rule out — so they are named here, where a claim nothing measures belongs.
 | `db drop-all` | **writes** | none | `--db-url` | drops every schema object in the database it is given |
 | `db read` | reads | none | `--db-url` | introspects the database and prints what it found |
 | `help` | none | none | — | prints the help text of the verb it names, or of the root when it names none; the verb itself is not run and nothing is opened |
+| `inference abandon` | **writes** | none | `--db-url` | ends one run and releases its position in shared outbox history; the run-state row is written, and this command does not delete the generation or its vectors |
 | `inference backfill` | **writes** | none | `--db-url` | reads the source, sends it to the embedding endpoint the specification names, and writes vectors and checkpoints into the target database |
-| `inference catchup` | **writes** | none | `--db-url` | rereads the source rows recorded as changed and writes their vectors, which sends that text to the embedding endpoint, and deletes the change records every generation reading that source has processed |
+| `inference catchup` | **writes** | none | `--db-url` | rereads the source rows recorded as changed and writes their vectors, which sends that text to the embedding endpoint, and deletes the change records every usable live feeder reading that source has processed |
 | `inference cutover` | **writes** | none | `--db-url` | moves the pointer queries read to a different generation, and refuses when the pointer is not where the plan it was built from expects |
 | `inference describe` | none | none | — | reads a specification file and reports what it says; it opens no database, and with `--spec` no connection at all, which is what makes it usable where every other verb here cannot be; `--release` fetches the release from a registry first |
 | `inference evaluate` | reads | none | `--db-url` | searches the generation with queries from a corpus, which sends those queries to the embedding endpoint; the database is only read |
@@ -110,7 +111,7 @@ to rule out — so they are named here, where a claim nothing measures belongs.
 | `inference probe` | none | none | — | sends two fixed strings to the embedding endpoint the specification names and reports what came back; it opens no database, and nothing from one is sent |
 | `inference resume` | **writes** | none | `--db-url` | returns a paused run to running, which writes the run's own row and takes the run for this process; nothing starts working here |
 | `inference retire` | **writes** | none | `--db-url` | drops a generation's index and column; it is the one verb here that cannot be undone |
-| `inference rollback` | **writes** | none | `--db-url` | moves the pointer queries read back to a previous generation, when that generation is still measurably one you can go back to |
+| `inference rollback` | **writes** | none | `--db-url` | moves the pointer queries read back to its recorded previous generation, when that generation is still measurably one you can go back to |
 | `inference status` | reads | none | `--db-url` | prints a run's phase, progress and watermarks from the run-state tables |
 | `inference verify` | reads | none | `--db-url` | reads the source and the generation and reports what a cutover would rest on; it writes nothing |
 | `introspect` | reads | none | `--db-url` | reads a live database and writes annotated Go models to disk; the database is only read |
