@@ -167,6 +167,13 @@ run_shell_selftest_case() {
 
 echo "check-gate-selftests: breaking each gate's own rule and requiring it to notice"
 
+# A skipped scoped job is safe only when the classifier selected the inert
+# path. Short-circuit the mismatch refusal and require the gate's self-test to
+# catch the false green.
+run_shell_selftest_case check-ci-scope-gate.sh \
+	"the scoped-job result mismatch refusal short-circuited" \
+	"perl -0pi -e 's/local expected=skipped/local expected=\"\$JOB_RESULT\"/' scripts/check-ci-scope-gate.sh"
+
 # The path is assembled rather than written out, because check-repository-local-
 # paths.sh reads this file too and would find its own fixture. Its exclusion
 # list names only the gate itself, which is the right list: a harness that had

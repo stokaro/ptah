@@ -22,9 +22,11 @@ jobs:
       site: ${{ steps.filter.outputs.site }}
       style: ${{ steps.filter.outputs.style }}
       generated: ${{ steps.filter.outputs.generated }}
+      inventory: ${{ steps.filter.outputs.inventory }}
       examples: ${{ steps.filter.outputs.examples }}
       inference: ${{ steps.filter.outputs.inference }}
       quickstart: ${{ steps.filter.outputs.quickstart }}
+      embedded: ${{ steps.embedded-filter.outputs.embedded }}
     steps:
       - uses: actions/checkout@v7
       - id: filter
@@ -35,6 +37,8 @@ jobs:
               - 'docs/site/**'
               - '.github/workflows/docs.yml'
             style:
+              - '**/*.md'
+              - '**/*.mdx'
               - 'docs/**'
               - 'examples/**'
               - 'integration/**'
@@ -43,6 +47,7 @@ jobs:
               - 'AGENTS.md'
               - '.github/workflows/docs.yml'
             generated:
+              - '**/*.go'
               - 'cmd/**'
               - 'core/**'
               - 'dbschema/**'
@@ -60,21 +65,37 @@ jobs:
               - 'internal/schemaexport/**'
               - 'internal/schemaload/**'
               - 'migration/**'
-              - 'docs/feature-inventory.json'
               - 'docs/source-support.json'
+              - 'docs/capabilities.md'
+              - 'docs/schema_field_dispositions.md'
+              - 'docs/agent-surface.md'
               - 'docs/site/fixtures/source-equivalence/**'
+              - 'docs/site/fixtures/protobuf-export/**'
               - 'docs/site/scripts/build-source-support.mjs'
               - 'docs/site/src/content/docs/databases/support-matrix.md'
               - 'docs/site/src/content/docs/reference/native-commands.md'
+              - 'docs/site/src/content/docs/reference/atlas-commands.md'
               - 'docs/site/src/content/docs/reference/command-flags.md'
               - 'docs/site/src/content/docs/reference/lint-rules.md'
+              - 'go.mod'
+              - 'go.sum'
               - 'scripts/check-docsync.sh'
-              - 'scripts/check-feature-inventory.sh'
               - 'scripts/check-source-equivalence.sh'
               - 'scripts/check-source-equivalence-selftest.sh'
               - 'scripts/check-source-workflows.sh'
               - '.github/workflows/docs.yml'
+            inventory:
+              - '**/*.go'
+              - '.goreleaser.yaml'
+              - 'go.mod'
+              - 'docs/public_api.md'
+              - 'docs/feature-inventory.json'
+              - 'docs/site/src/content/docs/**'
+              - 'internal/featureinventory/**'
+              - 'scripts/check-feature-inventory.sh'
+              - '.github/workflows/docs.yml'
             examples:
+              - '**/*.go'
               - 'cmd/**'
               - 'core/**'
               - 'migration/**'
@@ -112,6 +133,21 @@ jobs:
               - '.github/workflows/docs.yml'
               - '.github/workflows/quickstart-acceptance.yml'
 
+      # Keep this narrow scope separate from the validation-group filter above:
+      # it selects an extra check inside Documentation style rather than an
+      # independently gated job.
+      - id: embedded-filter
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            embedded:
+              - 'README.md'
+              - 'docs/*.md'
+              - 'docs/*.json'
+              - 'docs/adr/**'
+              - 'docs/site/scripts/data/**'
+              - 'docs/site/src/content/docs/**'
+
   style:
     name: Documentation style
     needs: changes
@@ -121,12 +157,50 @@ jobs:
     # cannot merge unchecked.
     if: >-
       ( github.event_name == 'pull_request' && needs.changes.outputs.style == 'true' ) ||
-      ( github.event_name == 'push' && github.ref == 'refs/heads/master' &&
-        needs.changes.outputs.style == 'true' )
+      ( github.event_name == 'push' && github.ref == 'refs/heads/master' )
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+
+      - name: Set up Go for embedded documentation tests
+        if: >-
+          ( github.event_name == 'pull_request' && needs.changes.outputs.embedded == 'true' ) ||
+          ( github.event_name == 'push' && github.ref == 'refs/heads/master' )
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      # These packages read reader-facing pages as test inputs. Keep this
+      # focused contour here: an authored-page edit can invalidate a command,
+      # flag, limitation, or generated-table contract without changing Go,
+      # but it still does not need the repository-wide lint/test matrices.
+      - name: Test documentation contracts
+        if: >-
+          ( github.event_name == 'pull_request' && needs.changes.outputs.embedded == 'true' ) ||
+          ( github.event_name == 'push' && github.ref == 'refs/heads/master' )
+        run: |
+          go test ./docs ./internal/docsembed -count=1
+          go test \
+            ./cmd/atlas/internal/migratetests \
+            ./cmd/internal/terminologyguard \
+            ./cmd/oci \
+            ./cmd/root \
+            ./core/query \
+            ./internal/agentapi \
+            ./internal/agentdiag \
+            ./internal/assistloop \
+            ./internal/atlascompatpolicy \
+            ./internal/atlasfilter \
+            ./internal/lintcatalog \
+            ./internal/parser \
+            ./migration/migrator \
+            -count=1
+          go test ./internal/mcpserver \
+            -run '^(TestSearchDocs_|TestDescribeSession_ReportsWhatTheDocumentationToolCanReach$|TestToolDocs_)' \
+            -count=1
 
       - uses: actions/setup-node@v7
         with:
@@ -206,7 +280,7 @@ jobs:
       ( github.event_name == 'pull_request' && needs.changes.outputs.site == 'true' ) ||
       ( github.event_name == 'push' &&
         ( startsWith(github.ref, 'refs/tags/v') ||
-          (github.ref == 'refs/heads/master' && needs.changes.outputs.site == 'true') ) )
+          github.ref == 'refs/heads/master' ) )
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -386,7 +460,10 @@ jobs:
             --source-commit "$edge_source_commit"
 
       - name: Build each released tag
-        if: github.event_name == 'push'
+        if: >-
+          github.event_name == 'push' &&
+          ( startsWith(github.ref, 'refs/tags/v') ||
+            ( github.ref == 'refs/heads/master' && needs.changes.outputs.site == 'true' ) )
         run: |
           set -euo pipefail
           version_action_browser_marker="$RUNNER_TEMP/ptah-version-action-browser-ready"
@@ -483,7 +560,10 @@ jobs:
           done
 
       - name: Generate root version index and redirect
-        if: github.event_name == 'push'
+        if: >-
+          github.event_name == 'push' &&
+          ( startsWith(github.ref, 'refs/tags/v') ||
+            ( github.ref == 'refs/heads/master' && needs.changes.outputs.site == 'true' ) )
         run: node docs/site/scripts/gen-versions.mjs "$GITHUB_WORKSPACE/_site"
 
       # The install scripts answer at the Pages root rather than inside a
@@ -494,7 +574,10 @@ jobs:
       # condition as the version index beside it so a tag deploy publishes them
       # too.
       - name: Publish the install scripts at the site root
-        if: github.event_name == 'push'
+        if: >-
+          github.event_name == 'push' &&
+          ( startsWith(github.ref, 'refs/tags/v') ||
+            ( github.ref == 'refs/heads/master' && needs.changes.outputs.site == 'true' ) )
         run: node docs/site/scripts/publish-root-assets.mjs "$GITHUB_WORKSPACE/_site"
 
       # Read back what was assembled rather than what the tree holds. Every
@@ -502,12 +585,18 @@ jobs:
       # missing a file the documentation publishes, and that 404 is silent: the
       # command keeps being printed and stops working.
       - name: The assembled Pages root carries every published file
-        if: github.event_name == 'push'
+        if: >-
+          github.event_name == 'push' &&
+          ( startsWith(github.ref, 'refs/tags/v') ||
+            ( github.ref == 'refs/heads/master' && needs.changes.outputs.site == 'true' ) )
         run: node docs/site/scripts/check-pages-root.mjs --site "$GITHUB_WORKSPACE/_site"
 
       - name: Record the edge source in the deployment candidate
         id: deployment-metadata
-        if: github.event_name == 'push'
+        if: >-
+          github.event_name == 'push' &&
+          ( startsWith(github.ref, 'refs/tags/v') ||
+            ( github.ref == 'refs/heads/master' && needs.changes.outputs.site == 'true' ) )
         run: |
           set -euo pipefail
           source_commit="$(jq -er '.source_commit | select(test("^[0-9a-f]{40}$"))' _site/edge/build-info.json)"
@@ -516,18 +605,40 @@ jobs:
           echo "version-slugs=$version_slugs" >> "$GITHUB_OUTPUT"
 
       - name: Upload Pages artifact
-        if: github.event_name == 'push'
+        if: >-
+          github.event_name == 'push' &&
+          ( startsWith(github.ref, 'refs/tags/v') ||
+            ( github.ref == 'refs/heads/master' && needs.changes.outputs.site == 'true' ) )
         uses: actions/upload-pages-artifact@v5
         with:
           path: _site
+
+  feature-inventory:
+    name: Feature inventory
+    needs: changes
+    if: >-
+      ( github.event_name == 'pull_request' && needs.changes.outputs.inventory == 'true' ) ||
+      ( github.event_name == 'push' && github.ref == 'refs/heads/master' )
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+      - name: Verify the derived feature inventory
+        run: scripts/check-feature-inventory.sh
 
   inference-quick-start:
     name: Inference quick-start acceptance
     needs: changes
     if: >-
       ( github.event_name == 'pull_request' && needs.changes.outputs.inference == 'true' ) ||
-      ( github.event_name == 'push' && github.ref == 'refs/heads/master' &&
-        needs.changes.outputs.inference == 'true' )
+      ( github.event_name == 'push' && github.ref == 'refs/heads/master' )
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -547,8 +658,7 @@ jobs:
     needs: changes
     if: >-
       ( github.event_name == 'pull_request' && needs.changes.outputs.generated == 'true' ) ||
-      ( github.event_name == 'push' && github.ref == 'refs/heads/master' &&
-        needs.changes.outputs.generated == 'true' )
+      ( github.event_name == 'push' && github.ref == 'refs/heads/master' )
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -560,7 +670,6 @@ jobs:
         run: |
           set -euo pipefail
           scripts/check-docsync.sh
-          scripts/check-feature-inventory.sh
           go build -o "$RUNNER_TEMP/ptah" ./cmd/ptah
           node docs/site/scripts/build-source-support.mjs --binary "$RUNNER_TEMP/ptah"
           PTAH_BIN="$RUNNER_TEMP/ptah" scripts/check-source-equivalence.sh
@@ -573,8 +682,7 @@ jobs:
     needs: changes
     if: >-
       ( github.event_name == 'pull_request' && needs.changes.outputs.examples == 'true' ) ||
-      ( github.event_name == 'push' && github.ref == 'refs/heads/master' &&
-        needs.changes.outputs.examples == 'true' )
+      ( github.event_name == 'push' && github.ref == 'refs/heads/master' )
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -599,6 +707,7 @@ jobs:
       - style
       - build
       - generated-documentation
+      - feature-inventory
       - example-acceptance
       - inference-quick-start
       - quickstart-acceptance
@@ -611,6 +720,7 @@ jobs:
           SITE_CHANGED: ${{ needs.changes.outputs.site }}
           STYLE_CHANGED: ${{ needs.changes.outputs.style }}
           GENERATED_CHANGED: ${{ needs.changes.outputs.generated }}
+          INVENTORY_CHANGED: ${{ needs.changes.outputs.inventory }}
           EXAMPLES_CHANGED: ${{ needs.changes.outputs.examples }}
           INFERENCE_CHANGED: ${{ needs.changes.outputs.inference }}
           QUICKSTART_CHANGED: ${{ needs.changes.outputs.quickstart }}
@@ -618,6 +728,7 @@ jobs:
           SITE_RESULT: ${{ needs.build.result }}
           STYLE_RESULT: ${{ needs.style.result }}
           GENERATED_RESULT: ${{ needs.generated-documentation.result }}
+          INVENTORY_RESULT: ${{ needs.feature-inventory.result }}
           EXAMPLES_RESULT: ${{ needs.example-acceptance.result }}
           INFERENCE_RESULT: ${{ needs.inference-quick-start.result }}
           QUICKSTART_RESULT: ${{ needs.quickstart-acceptance.result }}

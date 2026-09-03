@@ -11,16 +11,19 @@ const jobContracts = [
   { changed: 'SITE_CHANGED', result: 'SITE_RESULT', label: 'versioned site' },
   { changed: 'STYLE_CHANGED', result: 'STYLE_RESULT', label: 'documentation style' },
   { changed: 'GENERATED_CHANGED', result: 'GENERATED_RESULT', label: 'generated documentation' },
+  { changed: 'INVENTORY_CHANGED', result: 'INVENTORY_RESULT', label: 'feature inventory' },
   { changed: 'EXAMPLES_CHANGED', result: 'EXAMPLES_RESULT', label: 'example acceptance' },
   { changed: 'INFERENCE_CHANGED', result: 'INFERENCE_RESULT', label: 'inference quick start' },
   { changed: 'QUICKSTART_CHANGED', result: 'QUICKSTART_RESULT', label: 'quick-start acceptance' },
 ];
 
-export function changeFilters(workflow) {
+export function changeFilters(workflow, stepId = 'filter') {
   const filters = {};
   const lines = workflow.split(/\r?\n/);
-  const start = lines.findIndex((line) => /^\s+filters:\s*\|\s*$/.test(line));
-  if (start === -1) throw new Error('Docs workflow has no paths-filter block');
+  const step = lines.findIndex((line) => line.trim() === `- id: ${stepId}`);
+  if (step === -1) throw new Error(`Docs workflow has no ${stepId} step`);
+  const start = lines.findIndex((line, index) => index > step && /^\s+filters:\s*\|\s*$/.test(line));
+  if (start === -1) throw new Error(`Docs workflow step ${stepId} has no paths-filter block`);
   const baseIndent = lines[start].search(/\S/);
   let group;
   for (const line of lines.slice(start + 1)) {
@@ -134,17 +137,27 @@ function selftest() {
     {
       label: 'unrelated Go-only change',
       paths: ['internal/retry/backoff.go'],
-      groups: [],
+      groups: ['examples', 'generated', 'inventory'],
+    },
+    {
+      label: 'docs-site package-only bump',
+      paths: ['docs/site/package.json', 'docs/site/package-lock.json'],
+      groups: ['site', 'style'],
+    },
+    {
+      label: 'top-level contributor Markdown',
+      paths: ['PARSER_IMPLEMENTATION.md'],
+      groups: ['style'],
     },
     {
       label: 'documentation-only change',
       paths: ['docs/site/src/content/docs/concepts/desired-schema-and-sources.md'],
-      groups: ['site', 'style'],
+      groups: ['inventory', 'site', 'style'],
     },
     {
       label: 'generated command-reference change',
       paths: ['docs/site/src/content/docs/reference/command-flags.md'],
-      groups: ['generated', 'site', 'style'],
+      groups: ['generated', 'inventory', 'site', 'style'],
     },
     {
       label: 'example change',
@@ -159,7 +172,22 @@ function selftest() {
     {
       label: 'default quick-start change',
       paths: ['docs/site/src/content/docs/start/quick-start.mdx'],
-      groups: ['quickstart', 'site', 'style'],
+      groups: ['inventory', 'quickstart', 'site', 'style'],
+    },
+    {
+      label: 'root Go dependency change',
+      paths: ['go.mod'],
+      groups: ['examples', 'generated', 'inference', 'inventory', 'quickstart'],
+    },
+    {
+      label: 'nested documentation module source',
+      paths: ['docs/site/fixtures/source-equivalence/models/schema.go'],
+      groups: ['examples', 'generated', 'inventory', 'site', 'style'],
+    },
+    {
+      label: 'Protobuf export fixture',
+      paths: ['docs/site/fixtures/protobuf-export/schema.yaml'],
+      groups: ['generated', 'site', 'style'],
     },
   ];
   for (const pathCase of pathCases) {
@@ -177,7 +205,24 @@ function selftest() {
     }
     assert(aggregateGate(environment).length === 0, `${pathCase.label} did not produce a successful aggregate`);
   }
-  console.log('check-documentation-gate.mjs --selftest: OK (six path shapes and aggregate failures)');
+
+  const embeddedFilters = changeFilters(readFileSync(workflowPath, 'utf8'), 'embedded-filter');
+  const embeddedCases = [
+    { path: 'docs/site/package.json', selected: false },
+    { path: 'README.md', selected: true },
+    { path: 'docs/architecture_boundaries.json', selected: true },
+    { path: 'docs/site/src/content/docs/start/quick-start.mdx', selected: true },
+    { path: 'docs/site/scripts/data/feature-matrix-rows.json', selected: true },
+  ];
+  for (const embeddedCase of embeddedCases) {
+    const selected = groupsForPaths([embeddedCase.path], embeddedFilters).includes('embedded');
+    assert(
+      selected === embeddedCase.selected,
+      `${embeddedCase.path} embedded=${selected}, want ${embeddedCase.selected}`,
+    );
+  }
+
+  console.log(`check-documentation-gate.mjs --selftest: OK (${pathCases.length} path shapes, ${embeddedCases.length} Go-contract scopes, and aggregate failures)`);
 }
 
 function main() {

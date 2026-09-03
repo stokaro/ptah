@@ -18,12 +18,6 @@ on:
   push:
     branches:
       - master
-    paths:
-      - "scripts/check-documented-install.sh"
-      - "scripts/check-install-script.sh"
-      - "docs/site/public/install.sh"
-      - "docs/site/public/install.ps1"
-      - ".github/workflows/install-smoke.yml"
 
 permissions:
   contents: read

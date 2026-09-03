@@ -308,6 +308,34 @@ and its per-database variants such as `make integration-test-postgres`. Those
 targets bind fixed host ports and `make docker-clean` prunes system-wide Docker
 state, so look at what is already running before invoking either.
 
+Pull-request workflows classify the complete pull-request diff before skipping
+an expensive compiled contour. `scripts/ci-diff-scope.sh` is the shared
+authority: it fails open to running the contour for empty, unreadable, unknown,
+or newly introduced paths, compares from the pull request's merge base, and
+treats every nested Go module and testdata tree as compiled input even when a
+file there is Markdown. `.gitattributes` and the architecture-boundary baseline
+are compiled inputs too: they control the bytes tests see and a Go-backed
+ratchet respectively. Workflow-level
+`paths` filters are not a substitute, because a filtered workflow leaves no
+check on the pull request. Each scoped workflow keeps an always-visible scope
+job and an aggregate gate that fails when the decision and job conclusions do
+not agree.
+
+That classification applies only to pull requests. Every validation contour
+runs on a push to `master`; deployment and external monitoring remain governed
+by their own event contracts. Ordinary documentation changes still run the
+documentation workflow and the focused package tests that read those pages as
+contract inputs, while unrelated Go lint, fuzz, security, export, and database
+contours are skipped. A `docs/site/package.json` or lockfile-only bump runs the
+site and style checks without setting up Go. `release-master-check.yml` builds
+a release snapshot on every master push without making that push eligible for
+the tag-only publication job. Exercise both halves before changing the rule:
+
+```bash
+scripts/ci-diff-scope.sh --selftest
+scripts/check-ci-scope-gate.sh --selftest
+```
+
 ### The version matrix
 
 Which database release lines Ptah covers as matrix cells is declared in exactly
@@ -2155,14 +2183,20 @@ the repository is outside both Ubuntu contours. Measured: with
 the Windows contour exits 3 and names it while the Linux contour exits 0. Two
 real violations were sitting in those files when the job was added.
 
-The Windows job runs `make lint-qtlint` rather than repeating its arguments, so
-a rule added to `QTLINT_RULES` reaches every contour without a second list to
-keep in step. It also runs `go vet`, `golangci-lint` and the unit tests, because
+The Windows lint job runs `make lint-qtlint` rather than repeating its
+arguments, so a rule added to `QTLINT_RULES` reaches every contour without a
+second list to keep in step. It also runs `go vet` and `golangci-lint`, because
 qtlint is not the only gate a Linux runner cannot point at Windows-only code:
 four gosec G115 findings were sitting in Windows-only source when the job was
 added, every one of them an unchecked narrowing into a structure the Windows
-API reads. Windows-only source is not merely unanalyzed without this job, it is
-unrun -- a `_windows_test.go` file exercises code no other runner compiles.
+API reads.
+
+The full Windows unit contour is the `windows-unit-tests` job in
+`.github/workflows/go-unit-tests.yml`. Windows-only source is not merely
+unanalyzed without these two jobs, it is unrun without the second one -- a
+`_windows_test.go` file exercises code no other runner compiles. Keep lint and
+execution as separate jobs: a runtime failure must not make the lint result
+disappear, and a lint-only rerun must not spend another full unit-test budget.
 
 `make lint-qtlint-fix` applies the rewrites. Invoking the tool directly, run the
 rules in separate passes: applied together, one rule can delete a receiver
