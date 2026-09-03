@@ -121,6 +121,119 @@ const twoUnnamedKeysSchema = `CREATE TABLE users (
 );
 `
 
+// foreignKeyBackingSchema is stokaro/ptah#2769: a foreign key with nothing to
+// reuse, and an unnamed index that would take the name the engine is about to
+// give its backing index.
+const foreignKeyBackingSchema = `CREATE TABLE parents (
+  id BIGINT NOT NULL PRIMARY KEY
+);
+
+CREATE TABLE users (
+  id BIGINT NOT NULL PRIMARY KEY,
+  parent_id BIGINT NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  CONSTRAINT email FOREIGN KEY (parent_id) REFERENCES parents (id),
+  KEY (email)
+);
+`
+
+// descendingCandidateSchema is the same contention with a descending key that
+// could back the foreign key -- which is where the two engines part.
+const descendingCandidateSchema = `CREATE TABLE parents (
+  id BIGINT NOT NULL PRIMARY KEY
+);
+
+CREATE TABLE users (
+  id BIGINT NOT NULL PRIMARY KEY,
+  parent_id BIGINT NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  KEY by_parent (parent_id DESC),
+  CONSTRAINT email FOREIGN KEY (parent_id) REFERENCES parents (id),
+  KEY (email)
+);
+`
+
+// TestAForeignKeysBackingIndexTakesItsNameBeforeAnUnnamedIndex is
+// stokaro/ptah#2769 through the verb that failed.
+//
+// A foreign key with no covering index makes the engine build one named after
+// the constraint. Ptah derived that same name for the later unnamed index and
+// emits it as its own CREATE INDEX first, so the ALTER TABLE that follows
+// failed with `ERROR 1061 (42000): Duplicate key name`.
+//
+// Only apply can show it. The name Ptah derives is a model fact and the
+// collision is a server fact, so a fixture asserting `email_2` restates the
+// rule while an apply demonstrates that the two agree -- and the catalog read
+// is what separates "Ptah picked the same name as the server" from "Ptah picked
+// a name and read its own invention back".
+func TestAForeignKeysBackingIndexTakesItsNameBeforeAnUnnamedIndex(t *testing.T) {
+	for _, test := range inlineIndexEngines {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+
+			target := newInlineIndexDatabase(c, ctx, test.admin, "fkbacking")
+			schemaPath := writeInlineIndexSchema(c, foreignKeyBackingSchema)
+
+			applyDesiredSchema(c, target.url, schemaPath)
+
+			c.Assert(inlineIndexShape(c, ctx, target), qt.DeepEquals, map[string]inlineIndex{
+				"PRIMARY": {NonUnique: 0, Columns: []string{"id"}},
+				"email":   {NonUnique: 1, Columns: []string{"parent_id"}},
+				"email_2": {NonUnique: 1, Columns: []string{"email"}},
+			})
+
+			assertComparesInSync(c, target.url, schemaPath)
+		})
+	}
+}
+
+// TestADescendingCandidateBacksTheForeignKeyOnMariaDBOnly is the rule the two
+// engines answer differently, applied.
+//
+// Measured on MySQL 8.4.11 and MariaDB 11.8.9 before it was written here: with
+// `KEY by_parent (parent_id DESC)` ahead of the constraint, MySQL keeps that
+// index descending and adds an ascending `email` to back the key, while MariaDB
+// reuses it and adds nothing. So the same declaration is three indexes on one
+// engine and two on the other, and the unnamed `KEY (email)` takes a different
+// name on each.
+//
+// A shared answer is wrong for exactly one engine whichever way it is chosen,
+// which is what makes this worth an apply on both rather than one.
+func TestADescendingCandidateBacksTheForeignKeyOnMariaDBOnly(t *testing.T) {
+	shapes := map[string]map[string]inlineIndex{
+		"mysql": {
+			"PRIMARY":   {NonUnique: 0, Columns: []string{"id"}},
+			"by_parent": {NonUnique: 1, Columns: []string{"parent_id"}},
+			"email":     {NonUnique: 1, Columns: []string{"parent_id"}},
+			"email_2":   {NonUnique: 1, Columns: []string{"email"}},
+		},
+		"mariadb": {
+			"PRIMARY":   {NonUnique: 0, Columns: []string{"id"}},
+			"by_parent": {NonUnique: 1, Columns: []string{"parent_id"}},
+			"email":     {NonUnique: 1, Columns: []string{"email"}},
+		},
+	}
+
+	for _, test := range inlineIndexEngines {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			defer cancel()
+
+			target := newInlineIndexDatabase(c, ctx, test.admin, "fkdesc")
+			schemaPath := writeInlineIndexSchema(c, descendingCandidateSchema)
+
+			applyDesiredSchema(c, target.url, schemaPath)
+
+			c.Assert(inlineIndexShape(c, ctx, target), qt.DeepEquals, shapes[test.name])
+
+			assertComparesInSync(c, target.url, schemaPath)
+		})
+	}
+}
+
 // TestUnnamedInlineKeyTakesTheNameItsServerWouldGiveIt establishes that a plain
 // `KEY (email)` reaches the database as the non-unique index `email`, that the
 // column it indexes still accepts a repeated value, and that the declaration
