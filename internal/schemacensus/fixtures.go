@@ -78,6 +78,7 @@ func Fixtures() []Fixture {
 		{Name: "constraint-exclude", Schema: constraintExcludeFixture()},
 		{Name: "index-basic", Schema: indexBasicFixture()},
 		{Name: "index-partial", Schema: indexPartialFixture()},
+		{Name: "index-nulls-not-distinct", Schema: indexNullsNotDistinctFixture()},
 		{Name: "index-include", Schema: indexIncludeFixture()},
 		{Name: "index-parts", Schema: indexPartsFixture()},
 		{Name: "index-storage", Schema: indexStorageFixture()},
@@ -806,7 +807,22 @@ func indexPartialFixture() schemamodel.Database {
 	db := indexedTable()
 	db.Indexes = []schemamodel.Index{{
 		StructName: "T", Name: "idx_t_s", TableName: "t", Fields: []string{"s"},
-		Condition: "s IS NOT NULL", NullsDistinct: new(false),
+		Condition: "s IS NOT NULL",
+	}}
+	return db
+}
+
+// indexNullsNotDistinctFixture carries the NULLS [NOT] DISTINCT clause on its
+// own, and on a UNIQUE index, which is the only index PostgreSQL accepts it
+// on. It used to ride along on the partial-index fixture, where it hid a
+// second field: once the renderer began refusing the clause on targets that
+// cannot spell it (stokaro/ptah#2820), the refusal took the whole statement
+// with it and the partial predicate stopped being observed anywhere.
+func indexNullsNotDistinctFixture() schemamodel.Database {
+	db := indexedTable()
+	db.Indexes = []schemamodel.Index{{
+		StructName: "T", Name: "idx_t_s", TableName: "t", Fields: []string{"s"},
+		Unique: true, NullsDistinct: new(false),
 	}}
 	return db
 }

@@ -193,6 +193,12 @@ func oraclePlan() plan {
 		acceptance(capability.UniqueConstraints, nil,
 			"CREATE TABLE uqc (n NUMBER(10) NOT NULL, CONSTRAINT uqc_uq UNIQUE (n))",
 		),
+		// The NULLS [NOT] DISTINCT clause, which is a PostgreSQL spelling
+		// Oracle is not expected to have (stokaro/ptah#2820).
+		acceptance(capability.UniqueNullsDistinctClause,
+			[]string{"CREATE TABLE ndc (n NUMBER(10))"},
+			"CREATE UNIQUE INDEX ndc_uq ON ndc (n) NULLS NOT DISTINCT",
+		),
 		acceptance(capability.DeferrableConstraints,
 			[]string{
 				"CREATE TABLE dfc_parent (id NUMBER(10) PRIMARY KEY)",

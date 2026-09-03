@@ -736,6 +736,30 @@ const (
 	// True everywhere else: PostgreSQL, CockroachDB, YugabyteDB, MySQL, MariaDB,
 	// SQLite, SQL Server and Oracle all take the constraint spelling.
 	UniqueConstraints Capability = "unique_constraints"
+	// UniqueNullsDistinctClause is whether the target spells PostgreSQL's
+	// `NULLS [NOT] DISTINCT` on a unique constraint or index.
+	//
+	// It is a capability rather than a list of dialect names because the answer
+	// moves with the release line, which a name cannot say. Measured 2026-09-03,
+	// same six spellings on each engine -- named and bare table constraints, and
+	// CREATE UNIQUE INDEX:
+	//
+	//	PostgreSQL 15+                    accepts, honors
+	//	YugabyteDB 2025.2, 2026.1         accepts, honors, reads back
+	//	YugabyteDB 2024.2 LTS             refuses all six
+	//	CockroachDB v26.3.1               42601 syntax error at or near "nulls"
+	//	SQLite, SQL Server, Oracle        no such clause
+	//	MySQL, MariaDB                    1064 (stokaro/ptah#2788)
+	//
+	// The YugabyteDB split is the PostgreSQL 11 -> 15 engine swap this package
+	// already models as YugabyteDB24 and YugabyteDB25, and it is the reason this
+	// key exists at all: the PostgreSQL renderer serves that dialect, so an
+	// offline plan for a 2024 server emitted a clause it cannot parse.
+	//
+	// No `requires` edge to UniqueConstraints, deliberately: Spanner refuses the
+	// constraint spelling and still has unique indexes, so coupling them would
+	// make a valid preset invalid (stokaro/ptah#2820).
+	UniqueNullsDistinctClause Capability = "unique_nulls_distinct_clause"
 )
 
 // spec documents a registry entry and its implication edges.
@@ -926,6 +950,9 @@ var registry = map[Capability]spec{
 	},
 	UniqueConstraints: {
 		doc: "UNIQUE accepted as a constraint rather than only as a unique index (false on Spanner and ClickHouse)",
+	},
+	UniqueNullsDistinctClause: {
+		doc: "NULLS [NOT] DISTINCT accepted on a unique constraint or index (PostgreSQL 15+ and YugabyteDB 2025+ only)",
 	},
 }
 
@@ -1141,6 +1168,7 @@ func MySQL84() Capabilities {
 		GeneratedColumns:                true,
 		DeferrableConstraints:           false,
 		UniqueConstraints:               true,
+		UniqueNullsDistinctClause:       false,
 	}
 }
 
@@ -1278,6 +1306,7 @@ func MariaDB1011() Capabilities {
 		GeneratedColumns:                true,
 		DeferrableConstraints:           false,
 		UniqueConstraints:               true,
+		UniqueNullsDistinctClause:       false,
 	}
 }
 
@@ -1360,6 +1389,7 @@ func Postgres16() Capabilities {
 		GeneratedColumns:                true,
 		DeferrableConstraints:           true,
 		UniqueConstraints:               true,
+		UniqueNullsDistinctClause:       true,
 	}
 }
 
@@ -1392,6 +1422,8 @@ func Postgres18() Capabilities {
 // PostgreSQL 14.
 func Postgres13() Capabilities {
 	return Postgres16().
+		// PostgreSQL grew NULLS [NOT] DISTINCT in 15.
+		With(UniqueNullsDistinctClause, false).
 		With(CreateOrReplaceTrigger, false).
 		With(IndexIncludeSPGiST, false)
 }
@@ -1546,6 +1578,7 @@ func ClickHouse24() Capabilities {
 		GeneratedColumns:                false,
 		DeferrableConstraints:           false,
 		UniqueConstraints:               false,
+		UniqueNullsDistinctClause:       false,
 	}
 }
 
@@ -1629,6 +1662,10 @@ func SQLite3() Capabilities {
 		GeneratedColumns:                true,
 		DeferrableConstraints:           true,
 		UniqueConstraints:               true,
+		// SQLite has no NULLS [NOT] DISTINCT clause and no capability probe
+		// plan, so this value is a hand measurement rather than a probed one
+		// (stokaro/ptah#2820).
+		UniqueNullsDistinctClause: false,
 	}
 }
 
@@ -1783,6 +1820,13 @@ func SQLServer2022() Capabilities {
 		GeneratedColumns:                false,
 		DeferrableConstraints:           false,
 		UniqueConstraints:               true,
+		// SQL Server has no NULLS [NOT] DISTINCT clause and no capability probe
+		// plan, so this value is a hand measurement rather than a probed one.
+		// It is also the engine that inverts the pair: a plain UNIQUE here
+		// already treats nulls as equal, which is why the renderer refuses
+		// both spellings rather than dropping whichever one is the default
+		// (stokaro/ptah#2820).
+		UniqueNullsDistinctClause: false,
 	}
 }
 
@@ -1825,6 +1869,10 @@ func SQLServer2022() Capabilities {
 // (stokaro/ptah#1027).
 func CockroachDB23() Capabilities {
 	return Postgres16().
+		// Measured on v26.3.1: `42601 syntax error at or near "nulls"`. The
+		// PostgreSQL renderer serves this dialect, so without this the clause
+		// was emitted into SQL CockroachDB cannot parse (stokaro/ptah#2820).
+		With(UniqueNullsDistinctClause, false).
 		// CockroachDB is the one PostgreSQL-family target without this, and it
 		// is a whole absence rather than a partial one: v26.2.5 answers
 		// `unimplemented: this syntax` to DEFERRABLE, to DEFERRABLE INITIALLY
@@ -1981,6 +2029,11 @@ func YugabyteDB25() Capabilities {
 // nothing: what differs there is why, not what (stokaro/ptah#916).
 func YugabyteDB24() Capabilities {
 	return YugabyteDB25().
+		// The same PostgreSQL 11 -> 15 engine swap GeneratedColumns below turns
+		// on: measured 2026-09-03, 2024.2 LTS refuses all six spellings while
+		// 2025.2 and 2026.1 accept, honor and read them back
+		// (stokaro/ptah#2820).
+		With(UniqueNullsDistinctClause, false).
 		With(AdvisoryLocks, false).
 		With(CreateOrReplaceTrigger, false).
 		With(GeneratedColumns, false)
@@ -2014,6 +2067,11 @@ func YugabyteDB24() Capabilities {
 // line stays best-effort -- not for want of coverage.
 func SpannerPostgres() Capabilities {
 	return Postgres16().
+		// Unmeasured against a live emulator and false on the conservative
+		// side: Spanner refuses the UNIQUE constraint spelling outright, so a
+		// clause on it cannot be reached, and its renderer already errors on
+		// this shape (stokaro/ptah#2820).
+		With(UniqueNullsDistinctClause, false).
 		// Measured on the Cloud Spanner emulator behind PGAdapter 0.55.2:
 		// `TTL INTERVAL '30 days' ON created_at` is accepted and STORED, and
 		// reads back from information_schema.tables. It is the one row-expiry
@@ -2274,8 +2332,9 @@ func Oracle23() Capabilities {
 		// GENERATED ALWAYS AS (expr) is ACCEPTED both VIRTUAL and STORED.
 		GeneratedColumns: true,
 		// DEFERRABLE INITIALLY DEFERRED is ACCEPTED on a foreign key.
-		DeferrableConstraints: true,
-		UniqueConstraints:     true,
+		DeferrableConstraints:     true,
+		UniqueConstraints:         true,
+		UniqueNullsDistinctClause: false,
 	}
 }
 

@@ -62,6 +62,7 @@ import (
 	"go.5x5.cz/ptah/internal/crdbttl"
 	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
+	"go.5x5.cz/ptah/internal/nullsdistinct"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/internal/schemaprep"
@@ -486,6 +487,9 @@ func prepareIndexNode(dialect string, caps capability.Capabilities, node *ast.In
 	if err := validateIndexKeyParts(dialect, node); err != nil {
 		return nil, err
 	}
+	if err := nullsdistinct.Validate(dialect, caps, node.NullsDistinct); err != nil {
+		return nil, err
+	}
 	return node, nil
 }
 
@@ -782,6 +786,9 @@ func prepareConstraintNode(
 		return nil, err
 	}
 	if err := validateConstraintKeyParts(dialect, node); err != nil {
+		return nil, err
+	}
+	if err := nullsdistinct.Validate(dialect, caps, node.NullsDistinct); err != nil {
 		return nil, err
 	}
 	if node.Type != ast.ForeignKeyConstraint {
@@ -1209,7 +1216,38 @@ func validateDatabaseDeclarations(
 	if err := validateDeclaredConstraintIncludes(dialect, database); err != nil {
 		return err
 	}
+	if err := validateDeclaredNullsDistinct(dialect, caps, database); err != nil {
+		return err
+	}
 	return validateDeclaredIndexIncludes(dialect, caps, database.Indexes)
+}
+
+// validateDeclaredNullsDistinct runs the NULLS [NOT] DISTINCT refusal over a
+// whole declaration, before the first statement is rendered.
+//
+// It is not redundant with the AST check in prepareIndexNode and
+// prepareConstraintNode, and the relationship is the one
+// validateDeclaredConstraintIncludes already has with validateConstraintInclude:
+// a declaration reaches the renderer through more than one path, and a
+// refusal that fires only once a node has been built reports the first
+// offending statement rather than the schema. Refusing here means a run that
+// cannot be rendered writes nothing at all.
+func validateDeclaredNullsDistinct(
+	dialect string,
+	caps capability.Capabilities,
+	database *schemamodel.Database,
+) error {
+	for _, index := range database.Indexes {
+		if err := nullsdistinct.Validate(dialect, caps, index.NullsDistinct); err != nil {
+			return err
+		}
+	}
+	for _, constraint := range database.Constraints {
+		if err := nullsdistinct.Validate(dialect, caps, constraint.NullsDistinct); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // validateRoutineIdentityCollisions refuses two function declarations the

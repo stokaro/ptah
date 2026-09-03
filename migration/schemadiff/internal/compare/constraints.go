@@ -442,5 +442,5 @@ func checkExpressionsOf(opts *config.CompareOptions) map[string]config.CheckExpr
 func uniqueConstraintChanged(genConstraint schemamodel.Constraint, dbConstraint catalog.Constraint) bool {
 	return !stringSetsEqual(genConstraint.Columns, dbConstraint.ColumnNamesOrDefault()) ||
 		!stringSetsEqual(genConstraint.IncludeColumns, dbConstraint.IncludeColumns) ||
-		!boolPtrEqual(genConstraint.NullsDistinct, dbConstraint.NullsDistinct)
+		!nullsDistinctEqual(genConstraint.NullsDistinct, dbConstraint.NullsDistinct)
 }

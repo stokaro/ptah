@@ -15,7 +15,6 @@ import (
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/bufwriter"
 	"go.5x5.cz/ptah/internal/mysqlindex"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
-	"go.5x5.cz/ptah/internal/nullsdistinct"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -490,10 +489,6 @@ func (r *Renderer) VisitConstraint(node *ast.ConstraintNode) error {
 
 // VisitIndex renders a CREATE INDEX statement for MySQL
 func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
-	if node.NullsDistinct != nil {
-		return refuseNullsDistinct(r.dialect, node.NullsDistinct)
-	}
-
 	var parts []string
 
 	parts = append(parts, "CREATE")
@@ -973,24 +968,12 @@ func (r *Renderer) renderTableOptions(options map[string]string) string {
 	return strings.Join(parts, " ")
 }
 
-// refuseNullsDistinct reports this renderer refusing PostgreSQL's
-// NULLS [NOT] DISTINCT unique semantics rather than emitting a unique
-// constraint without them. The parser refuses the same clause when it reads
-// MySQL-family SQL; this is the boundary a model reaches when it was authored
-// or read somewhere else. See internal/nullsdistinct for the measurement.
-func refuseNullsDistinct(dialect string, nullsDistinct *bool) error {
-	return nullsdistinct.Refuse(dialect, nullsdistinct.Clause(*nullsDistinct))
-}
-
 // renderConstraint renders a table-level constraint
 func (r *Renderer) renderConstraint(constraint *ast.ConstraintNode) (string, error) {
 	switch constraint.Type {
 	case ast.PrimaryKeyConstraint:
 		return fmt.Sprintf("  PRIMARY KEY (%s)", renderMySQLConstraintColumns(constraint)), nil
 	case ast.UniqueConstraint:
-		if constraint.NullsDistinct != nil {
-			return "", refuseNullsDistinct(r.dialect, constraint.NullsDistinct)
-		}
 		if constraint.Name != "" {
 			return fmt.Sprintf("  CONSTRAINT %s UNIQUE (%s)", escapeIdentifier(constraint.Name), renderMySQLConstraintColumns(constraint)), nil
 		}
