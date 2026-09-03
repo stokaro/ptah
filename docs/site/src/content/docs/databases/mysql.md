@@ -51,6 +51,20 @@ SQL:
   INDEX` over a `POINT` column leaves `INDEX_TYPE=BTREE` on MariaDB 11.8 and
   `SPATIAL` on MySQL 8.4, so comparing an undeclared type would plan a rebuild
   on MySQL that MySQL immediately undoes.
+- `USING BTREE` and `USING HASH` are read on a `KEY`, `INDEX` or `UNIQUE KEY`
+  and rendered back after the column list. A `UNIQUE KEY` asking for a method
+  is read as a unique index, which is what the server builds and where a method
+  has somewhere to live. `BTREE` is not carried: `INDEX_TYPE` reports it for a
+  declared `USING BTREE` and for an index that asked for nothing alike, so the
+  two are one index to every reader Ptah has, and emitting it would put the
+  clause into the DDL of every index read back from a server. `HASH` is
+  carried, and whether the server honors it belongs to the storage engine
+  rather than to the dialect: on InnoDB, MySQL 8.4 records `BTREE` and drops
+  the clause from `SHOW CREATE TABLE` while MariaDB 11.8 records `HASH` and
+  prints it back, and on `MEMORY` both record `HASH`. The comparison does not
+  report a method change, for the same reason the undeclared type above is not
+  compared: on InnoDB a desired `HASH` reads back as `BTREE`, so reporting it
+  would plan a rebuild MySQL immediately undoes.
 - Two constraints on one table may share a name, and both engines accept
   `CONSTRAINT same UNIQUE (a)` beside `CONSTRAINT same FOREIGN KEY (a)`. Ptah
   identifies a named constraint by its type as well as its table and name, so

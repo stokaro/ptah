@@ -76,3 +76,37 @@ func (k Kind) Prefix() string {
 func (k Kind) SatisfiedBy(reported Kind) bool {
 	return k == Plain || k == reported
 }
+
+// Method is the `USING` clause a MySQL-family index asks for, empty where it
+// asks for none.
+//
+// It reads the same field [KindOf] does, because an index carries a prefix or a
+// method and never both: `SPATIAL` and `FULLTEXT` take no `USING` clause, and
+// `USING {BTREE|HASH}` is the whole of what the grammar allows beside them.
+//
+// BTREE folds to empty on purpose, and that is not a shortcut. Ptah reads an
+// existing index's method out of `information_schema.STATISTICS.INDEX_TYPE`,
+// which reports `BTREE` for a declared `USING BTREE` and for an index that
+// asked for nothing alike -- measured 2026-09-03 on MySQL 8.4.11 and MariaDB
+// 11.8.9. The two are therefore the same index to every reader Ptah has, and a
+// renderer that emitted `USING BTREE` for one of them would put a clause into
+// the DDL of every index it ever read back from a server.
+//
+// HASH is the one spelling that survives to be worth carrying, and only where
+// the storage engine implements it. Measured on the same pair, `KEY k USING
+// HASH (a)`:
+//
+//	MySQL 8.4.11    InnoDB   INDEX_TYPE BTREE, and SHOW CREATE TABLE drops the clause
+//	MySQL 8.4.11    MEMORY   INDEX_TYPE HASH
+//	MariaDB 11.8.9  InnoDB   INDEX_TYPE HASH, and SHOW CREATE TABLE prints it back
+//	MariaDB 11.8.9  MEMORY   INDEX_TYPE HASH
+//
+// So the clause is honored per storage engine rather than per dialect, which is
+// why this answers what the DDL asked for and leaves what the server did with
+// it to the reader. See stokaro/ptah#2825.
+func Method(indexType string) string {
+	if strings.EqualFold(strings.TrimSpace(indexType), "HASH") {
+		return "HASH"
+	}
+	return ""
+}
