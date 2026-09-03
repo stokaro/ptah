@@ -275,7 +275,7 @@ var migrationRuleMeta = map[string]ruleMeta{
 		Summary: "this ALTER TABLE form usually rebuilds the table and blocks writes for the duration",
 	},
 	"MY102": {
-		Summary:   "MySQL ignores an inline REFERENCES clause in ADD COLUMN",
+		Summary:   "an inline REFERENCES clause on a column is ignored by MySQL and enforced by MariaDB",
 		AtlasCode: "MY102",
 	},
 	"MY131": {
