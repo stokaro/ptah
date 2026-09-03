@@ -10,7 +10,11 @@
 // declared (stokaro/ptah#2721).
 package mysqlindex
 
-import "strings"
+import (
+	"strings"
+
+	"go.5x5.cz/ptah/core/platform"
+)
 
 // Kind is the access method a MySQL-family index carries.
 //
@@ -109,4 +113,43 @@ func Method(indexType string) string {
 		return "HASH"
 	}
 	return ""
+}
+
+// MethodSatisfiedBy reports whether the method a server reports answers the
+// method a desired index asked for.
+//
+// The asymmetry is [Kind.SatisfiedBy]'s, for the same reason: a desired index
+// asking for no method takes whatever the engine chose, and comparing that
+// would plan a rebuild the server undoes.
+//
+// The dialect decides the other direction, and it is a measurement rather than
+// a convenience. `KEY k USING HASH (a)`, 2026-09-03:
+//
+//	                MySQL 8.4.11   MariaDB 11.8.9
+//	InnoDB          BTREE          HASH
+//	MEMORY          HASH           HASH
+//	MyISAM          BTREE          HASH
+//	Aria            --             HASH
+//	ARCHIVE         error 1030     error 1286
+//
+// MariaDB records the declaration on every engine that takes an index, so what
+// the catalog reports there is what was asked for and a difference is real.
+// MySQL records it only on MEMORY, so a desired HASH read back as BTREE is the
+// ordinary outcome on the default engine and reporting it would plan a rebuild
+// MySQL immediately undoes.
+//
+// Deciding the MySQL case properly needs the table's storage engine, which
+// this comparison does not have; until it does, MySQL accepts whatever the
+// server reports. That leaves a desired HASH against a BTREE on MySQL + MEMORY
+// unreported, which is the narrow half of stokaro/ptah#2834 and is recorded
+// there rather than guessed at here.
+func MethodSatisfiedBy(dialect, desiredType, reportedType string) bool {
+	desired := Method(desiredType)
+	if desired == "" {
+		return true
+	}
+	if platform.NormalizeDialect(dialect) != platform.MariaDB {
+		return true
+	}
+	return desired == Method(reportedType)
 }

@@ -61,10 +61,15 @@ SQL:
   carried, and whether the server honors it belongs to the storage engine
   rather than to the dialect: on InnoDB, MySQL 8.4 records `BTREE` and drops
   the clause from `SHOW CREATE TABLE` while MariaDB 11.8 records `HASH` and
-  prints it back, and on `MEMORY` both record `HASH`. The comparison does not
-  report a method change, for the same reason the undeclared type above is not
-  compared: on InnoDB a desired `HASH` reads back as `BTREE`, so reporting it
-  would plan a rebuild MySQL immediately undoes.
+  prints it back, and on `MEMORY` both record `HASH`. MariaDB records it on
+  every engine that takes an index -- `InnoDB`, `MEMORY`, `MyISAM` and `Aria`
+  all report `HASH`, and `ARCHIVE` refuses an index at all -- so there a desired
+  `HASH` against a server reporting otherwise is a real difference and is
+  reported. MySQL records it only on `MEMORY`, so the comparison stays quiet
+  there for the same reason the undeclared type above is not compared: on the
+  default engine a desired `HASH` reads back as `BTREE`, and reporting it would
+  plan a rebuild MySQL immediately undoes. Deciding the MySQL case properly
+  needs the table's storage engine, which the index comparison does not have.
 - Two constraints on one table may share a name, and both engines accept
   `CONSTRAINT same UNIQUE (a)` beside `CONSTRAINT same FOREIGN KEY (a)`. Ptah
   identifies a named constraint by its type as well as its table and name, so
