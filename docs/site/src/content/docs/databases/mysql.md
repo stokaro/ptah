@@ -81,6 +81,17 @@ SQL:
   index does. The name is decided when the SQL is read rather than when it is
   written, because the catalog reports what the server chose and a desired
   schema that guessed differently would never converge with it.
+- A non-ASCII index name is refused, rather than compared. The two engines fold
+  such names differently and not in a way one rule covers: measured on MySQL
+  8.4.11 and MariaDB 11.8.9 over a `utf8mb4` connection, `I` beside dotless
+  `ı` and `Σ` beside final `ς` are accepted by MySQL and answer `ERROR 1061` on
+  MariaDB, while dotted `İ` beside `i` and the Kelvin sign beside `K` do the
+  opposite. A lone `prımary` is accepted by MySQL and answers `ERROR 1280` on
+  MariaDB, which is why a solitary non-ASCII name is not a safe exception
+  either -- it is still an unresolved comparison against the reserved
+  `PRIMARY`. ASCII folding is shared and deterministic and is unchanged; a name
+  derived from a non-ASCII column is refused for the same reason an explicit
+  one is.
 - Two indexes on one table claiming one name are refused. Both engines answer
   `ERROR 1061 Duplicate key name`, so accepting it would describe a table
   neither can create. `KEY (a), KEY a (b)` is that shape: the unnamed index
