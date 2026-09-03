@@ -2060,8 +2060,8 @@
       "inboundLinks": [
         "/inference/concepts/generations/"
       ],
-      "visibleWords": 1073,
-      "sourceBytes": 7912
+      "visibleWords": 1099,
+      "sourceBytes": 8063
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/configure-a-provider.md",
@@ -2335,8 +2335,8 @@
         "/inference/strategies/production-rollout/",
         "/inference/troubleshooting/"
       ],
-      "visibleWords": 700,
-      "sourceBytes": 5647
+      "visibleWords": 751,
+      "sourceBytes": 5965
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/run-in-kubernetes.md",
@@ -2525,8 +2525,8 @@
       "inboundLinks": [
         "/inference/concepts/embeddings-and-inference-state/"
       ],
-      "visibleWords": 2840,
-      "sourceBytes": 20817
+      "visibleWords": 2852,
+      "sourceBytes": 20885
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/evaluation-corpus.md",

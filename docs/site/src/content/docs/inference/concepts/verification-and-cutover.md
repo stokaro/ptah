@@ -186,8 +186,10 @@ the time.
 
 ## Retirement is separate and permanent
 
-`retire` drops a generation's index and, with `--drop-column`, its column. It
-takes the same digest-bound approval a cutover does and is refused while queries
+`retire` drops a generation's index and, by default, its column. The vectors
+live in that column, so `--drop-column=false` keeps them: the run becomes an
+index drop. It takes the same digest-bound approval a cutover does, the digest
+binds which of the two answers was approved, and it is refused while queries
 still read the generation.
 
 There is no undo. The vectors are gone, and rebuilding them means paying the
