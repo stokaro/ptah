@@ -12,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/internal/dialectlexer"
 	"go.5x5.cz/ptah/internal/lexer"
@@ -2170,6 +2171,70 @@ func (p *Parser) handleCheck(column *ast.ColumnNode) error {
 	return nil
 }
 
+// mysqlColumnReferencesAnswers spells what MySQL answers to each column-level
+// REFERENCES spelling, so a refusal quotes the engine rather than a boolean.
+// It is a lookup rather than a branch because the spelling selects a sentence,
+// not a code path.
+//
+// Measured 2026-09-03 on MySQL 8.4.11, `CREATE TABLE child (a INT ...)`
+// against `CREATE TABLE parents (id INT PRIMARY KEY)`.
+var mysqlColumnReferencesAnswers = map[bool]string{
+	false: "MySQL accepts the clause and creates neither a foreign key nor an " +
+		"index: SHOW CREATE TABLE reports the column alone, and " +
+		"information_schema.referential_constraints stays empty",
+	true: "MySQL refuses that spelling outright with error 1064 (42000)",
+}
+
+// refuseColumnReferences reports MySQL having no enforced column-level
+// REFERENCES, and answers nil for every other dialect.
+//
+// Reading the clause as a foreign key is not a smaller version of what the
+// engine does, it is a different schema: rendering the parsed model back emits
+// an ALTER TABLE ... ADD CONSTRAINT for a relationship the source never had,
+// which turns inspect-and-re-render into a schema change (stokaro/ptah#2791).
+//
+// MariaDB is deliberately not gated. Measured 2026-09-03 on MariaDB 11.8.9,
+// both spellings are enforced there and both build a backing index -- the bare
+// form as `KEY a` under the server-generated symbol `child_ibfk_1`, the named
+// form as `KEY f` under the symbol the author wrote -- so on that engine the
+// clause means what Ptah already reads it to mean.
+//
+// A parse with no dialect is not gated either, for the reason
+// parseFunctionalKeyPart states in reverse: this syntax is not one engine's
+// alone, so a dialect-neutral document carrying it is not yet wrong. The
+// refusal belongs to the target that would be misread, and only the MySQL
+// reader knows it is that target.
+//
+// The returned error satisfies errors.Is(err, [ptaherr.ErrUnsupportedFeature])
+// and errors.As against *[ptaherr.CapabilityError].
+func (p *Parser) refuseColumnReferences(name string) error {
+	if platform.NormalizeDialect(p.dialect) != platform.MySQL {
+		return nil
+	}
+	return &ptaherr.CapabilityError{
+		Dialect: platform.MySQL,
+		Feature: "enforced column-level REFERENCES",
+		Err:     ptaherr.ErrUnsupportedFeature,
+		Message: fmt.Sprintf(
+			"%s at position %d: %s, so Ptah refuses it rather than reading a "+
+				"foreign key the source schema does not have; write a table-level "+
+				"FOREIGN KEY clause to declare an enforced relationship",
+			describeColumnReferences(name),
+			p.current.Start,
+			mysqlColumnReferencesAnswers[name != ""],
+		),
+	}
+}
+
+// describeColumnReferences names the spelling a refusal is about, so the
+// message opens with the text the author wrote.
+func describeColumnReferences(name string) string {
+	if name == "" {
+		return "a column-level REFERENCES clause"
+	}
+	return fmt.Sprintf("the column-level REFERENCES clause named %q", name)
+}
+
 func (p *Parser) handleReferences(column *ast.ColumnNode) error {
 	// Handle REFERENCES
 	p.advance()
@@ -2538,6 +2603,9 @@ func (p *Parser) parseColumnConstraintOrAttribute(table *ast.CreateTableNode, co
 	case "CONSTRAINT":
 		return p.handleColumnConstraint(table, column)
 	case "REFERENCES":
+		if err := p.refuseColumnReferences(""); err != nil {
+			return err
+		}
 		return p.handleReferences(column)
 	case "AS":
 		return p.handleAs(column)
@@ -2611,6 +2679,9 @@ func (p *Parser) handleColumnConstraint(table *ast.CreateTableNode, column *ast.
 		column.SetCheckName(name)
 		return nil
 	case p.current.MatchIdentifierValue("REFERENCES"):
+		if err := p.refuseColumnReferences(name); err != nil {
+			return err
+		}
 		if err := p.handleReferences(column); err != nil {
 			return err
 		}
