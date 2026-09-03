@@ -28,12 +28,17 @@ type Parser struct {
 	// skipWhitespace stepped over, so a clause hiding inside one can still be
 	// read at the place that expects it.
 	lastGuard string
-	lexer     *lexer.Lexer
-	input     string
-	current   lexer.Token
-	previous  lexer.Token
-	startTime time.Time
-	timeout   time.Duration
+	// foreignKeyIndexName is the optional identifier the MySQL family allows
+	// between FOREIGN KEY and the column list. It lives on the parser for the
+	// same reason lastGuard does: the keyword handler reads it, and the node it
+	// belongs to is not built until the column list has been read too.
+	foreignKeyIndexName string
+	lexer               *lexer.Lexer
+	input               string
+	current             lexer.Token
+	previous            lexer.Token
+	startTime           time.Time
+	timeout             time.Duration
 
 	dialect      string
 	capabilities capability.Capabilities
@@ -3438,7 +3443,67 @@ func (p *Parser) handleTableConstraintForeignKey(constraint *ast.ConstraintNode)
 		return fmt.Errorf("expected KEY after FOREIGN: %w", err)
 	}
 	constraint.Type = ast.ForeignKeyConstraint
+	return p.readForeignKeyIndexName()
+}
+
+// readForeignKeyIndexName takes the optional identifier the MySQL family
+// allows between FOREIGN KEY and the column list.
+//
+// Measured 2026-09-03 against `CREATE TABLE parents (id INT PRIMARY KEY)`, the
+// name declares the backing INDEX rather than the constraint symbol:
+// `FOREIGN KEY zidx (a) REFERENCES parents(id)` and
+// `KEY zidx (a), FOREIGN KEY (a) REFERENCES parents(id)` leave MySQL 8.4.11
+// with the same catalog -- symbol `child_ibfk_1`, index `zidx` -- so what the
+// name builds is a node Ptah already has. parseTableConstraint turns it into
+// that index rather than into a field beside the constraint.
+//
+// Reading it is gated on the MySQL family for the reason
+// parseFunctionalKeyPart states: the syntax renders on those engines alone,
+// and a dialect-neutral document is one meant to render anywhere. PostgreSQL
+// refuses the spelling, and so does a parse with no dialect -- as both did
+// before this was read at all, but now saying which engines have it rather
+// than only that a parenthesis was expected.
+func (p *Parser) readForeignKeyIndexName() error {
+	p.foreignKeyIndexName = ""
+	p.skipWhitespace()
+	if p.current.Type != lexer.TokenIdentifier {
+		return nil
+	}
+	name := p.current.Value
+	if !isMySQLFamilyDialect(p.dialect) {
+		return fmt.Errorf(
+			"an index name after FOREIGN KEY at position %d is the MySQL family's alone; "+
+				"%s has no such syntax, so write the key as FOREIGN KEY (columns) and "+
+				"declare the index %q separately",
+			p.current.Start, describeFunctionalKeyDialect(p.dialect), name)
+	}
+	p.foreignKeyIndexName = name
+	p.advance()
 	return nil
+}
+
+// foreignKeyBackingIndex answers the index a FOREIGN KEY's optional name
+// declares, and nil when it declares none.
+//
+// A name written beside an explicit CONSTRAINT symbol declares nothing:
+// measured on MySQL 8.4.11 and MariaDB 11.8.9 alike,
+// `CONSTRAINT zsym FOREIGN KEY zidx (a) REFERENCES parents(id)` records `zsym`
+// for the index as well, so `zidx` is gone the moment a symbol is present.
+// Reading it into an index would model an object neither server has, and every
+// later comparison would report a difference no apply settles. It is accepted
+// and ignored, which is what the engine does with it.
+func (p *Parser) foreignKeyBackingIndex(constraint *ast.ConstraintNode) *ast.IndexNode {
+	if constraint.Type != ast.ForeignKeyConstraint || p.foreignKeyIndexName == "" {
+		return nil
+	}
+	if constraint.Name != "" {
+		return nil
+	}
+	return &ast.IndexNode{
+		Name:    p.foreignKeyIndexName,
+		Columns: constraint.Columns,
+		Parts:   indexPartsFromConstraintColumns(constraint.ColumnParts),
+	}
 }
 
 func (p *Parser) handleTableConstraintCheck(constraint *ast.ConstraintNode) {
@@ -4092,15 +4157,21 @@ func indexPartsFromConstraintColumns(columns []ast.ConstraintColumn) []ast.Index
 	return parts
 }
 
-// addTableConstraintOrIndex routes what parseTableConstraint read. Exactly one
-// of the two is non-nil.
+// addTableConstraintOrIndex routes what parseTableConstraint read.
+//
+// A constraint alone and an index alone are the two ordinary answers. Both are
+// non-nil for one element: a FOREIGN KEY carrying the MySQL family's optional
+// name, which declares the index that backs it as well as the key itself. The
+// index is added first, so the declared order matches the order the engine
+// reports -- the backing index exists to serve the key.
 func addTableConstraintOrIndex(table *ast.CreateTableNode, constraint *ast.ConstraintNode, index *ast.IndexNode) {
 	if index != nil {
 		index.Table = table.Name
 		table.AddIndex(index)
-		return
 	}
-	table.AddConstraint(constraint)
+	if constraint != nil {
+		table.AddConstraint(constraint)
+	}
 }
 
 // parseTableConstraint parses one table-level element from the column list.
@@ -4213,7 +4284,7 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 		}, nil
 	}
 
-	return constraint, nil, nil
+	return constraint, p.foreignKeyBackingIndex(constraint), nil
 }
 
 func (p *Parser) handleTableEngine(table *ast.CreateTableNode) error {

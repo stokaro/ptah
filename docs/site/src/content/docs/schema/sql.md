@@ -174,6 +174,24 @@ CREATE TABLE "pets" (
   Write `b INTEGER DEFAULT 1` instead. A name Ptah accepts and cannot read back
   would make every later comparison report a difference no apply can settle.
 
+- An index name between `FOREIGN KEY` and its column list is read under
+  `--dialect mysql` and `--dialect mariadb`, and refused elsewhere. On those
+  engines the name declares the index that backs the key, so Ptah reads it as
+  the index it builds; no other engine has the syntax:
+
+  ```sql
+  CREATE TABLE child (a INT, FOREIGN KEY zidx (a) REFERENCES parents (id));
+  ```
+
+  ```text
+  an index name after FOREIGN KEY at position 39 is the MySQL family's alone;
+  postgres has no such syntax, so write the key as FOREIGN KEY (columns) and
+  declare the index "zidx" separately
+  ```
+
+  A name written beside an explicit `CONSTRAINT` symbol is accepted and
+  ignored, because both engines record the symbol for the backing index too.
+
 - `ALTER TABLE ... ADD KEY` adds a secondary index on MySQL and MariaDB, in
   every spelling the engines take: `ADD KEY`, `ADD INDEX`, `ADD SPATIAL KEY` and
   `ADD FULLTEXT KEY`, with a key part's prefix length and direction. A
