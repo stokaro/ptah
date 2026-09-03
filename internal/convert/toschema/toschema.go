@@ -964,6 +964,17 @@ func appendAlterTableConstraints(database *schemamodel.Database, node *ast.Alter
 			if ok {
 				database.Constraints = append(database.Constraints, constraintSchema)
 			}
+		case *ast.AddIndexOperation:
+			// MySQL and MariaDB add a secondary index with ALTER TABLE, and the
+			// statement carries the whole index. Dropped here it would parse
+			// and then vanish, which is the shape a render that exits 0 cannot
+			// show (stokaro/ptah#2778).
+			if typed.Index != nil {
+				index := ToIndex(typed.Index)
+				index.StructName = structName
+				index.TableName = qualifiedTableName
+				database.Indexes = append(database.Indexes, index)
+			}
 		case *ast.AddSkippingIndexOperation:
 			// ClickHouse's data-skipping index arrives as an ALTER because that
 			// is how the ClickHouse renderer writes one. Dropping it here left
