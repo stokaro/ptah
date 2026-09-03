@@ -196,7 +196,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
 | `MY101` | this ALTER TABLE form usually rebuilds the table and blocks writes for the duration | both | Ptah |
-| `MY102` | MySQL ignores an inline REFERENCES clause in ADD COLUMN | both | Atlas |
+| `MY102` | an inline REFERENCES clause on a column is ignored by MySQL and enforced by MariaDB | both | Atlas |
 | `MY131` | adding a foreign key can copy or lock the table and block writes | both | Atlas |
 | `MY132` | adding a primary key rebuilds the table and blocks DML | both | Atlas |
 | `MY134` | adding a FULLTEXT index can rebuild the table and block writes | both | Atlas |

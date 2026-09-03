@@ -1386,14 +1386,30 @@ func mysqlRules() []Rule {
 		},
 		{
 			Code:     "MY102",
-			Title:    "inline reference ignored on added column",
+			Title:    "inline reference ignored on a column",
 			Severity: SeverityWarning,
+			// The family, and the message says why rather than claiming the
+			// clause does nothing everywhere. Measured 2026-09-03, both
+			// spellings: on MySQL 8.4.11 each leaves
+			// information_schema.referential_constraints empty and adds no
+			// index, while on MariaDB 11.8.9 each is ENFORCED and the ADD
+			// COLUMN form builds the foreign key plus a backing index `b`.
+			//
+			// So the finding is a portability hazard rather than a defect on
+			// one engine: the same migration applied to the other server
+			// silently means something else. Naming one dialect would say it
+			// more precisely and would also be the first rule to split the
+			// family, which internal/lintdialect treats as making the two
+			// interchangeable in a policy; the message carries the split
+			// instead (stokaro/ptah#2831).
 			Dialects: []string{"mysql", "mariadb"},
 			CheckStatement: func(stmt *Statement) (bool, string) {
-				if !isAlterTable(stmt.Words) || !scanAddColumnInlineReference(stmt.Words) {
+				if !scanInlineColumnReference(stmt.Words) {
 					return false, ""
 				}
-				return true, "MySQL ignores inline REFERENCES in ADD COLUMN; add an explicit FOREIGN KEY constraint instead"
+				return true, "an inline REFERENCES clause on a column means different things on the " +
+					"two engines: MySQL ignores it and creates no foreign key, MariaDB enforces it; " +
+					"write an explicit FOREIGN KEY constraint so both build the same relationship"
 			},
 		},
 		{
@@ -1877,6 +1893,75 @@ func scanAddColumnWithVolatileDefault(w []string) bool {
 		}
 	}
 	return false
+}
+
+// scanInlineColumnReference reports a column-level REFERENCES clause in either
+// statement that can carry one.
+//
+// The ALTER TABLE half is the original rule. The CREATE TABLE half is the same
+// defect in the spelling a schema is usually written in, and it was not
+// reported: measured, a migration body creating a table with an inline
+// REFERENCES passed `ptah migrations lint --dialect mysql` with no finding
+// while the ADD COLUMN form warned (stokaro/ptah#2831).
+func scanInlineColumnReference(w []string) bool {
+	if isAlterTable(w) {
+		return scanAddColumnInlineReference(w)
+	}
+	return isCreateTable(w) && scanCreateTableInlineReference(w)
+}
+
+func isCreateTable(w []string) bool {
+	return hasWordPrefix(w, "CREATE", "TABLE")
+}
+
+// scanCreateTableInlineReference reports a REFERENCES clause inside a column
+// definition rather than inside a table constraint.
+//
+// A table-level `FOREIGN KEY (a) REFERENCES p (id)` is enforced and must not be
+// reported, so an element opening with a constraint keyword is skipped --
+// including `CONSTRAINT f REFERENCES p (id)`, which MySQL refuses outright with
+// error 1064 rather than ignoring.
+func scanCreateTableInlineReference(w []string) bool {
+	depth := 0
+	elementStart := -1
+	for i, word := range w {
+		switch word {
+		case "(":
+			depth++
+			if depth == 1 {
+				elementStart = i + 1
+			}
+			continue
+		case ")":
+			depth--
+			if depth == 0 {
+				return inlineReferenceElement(w, elementStart, i)
+			}
+			continue
+		case ",":
+			if depth != 1 {
+				continue
+			}
+			if inlineReferenceElement(w, elementStart, i) {
+				return true
+			}
+			elementStart = i + 1
+			continue
+		}
+	}
+	return false
+}
+
+// inlineReferenceElement reports whether one element of a table body is a
+// column definition carrying REFERENCES.
+func inlineReferenceElement(w []string, start, end int) bool {
+	if start < 0 || start >= end || end > len(w) {
+		return false
+	}
+	if addConstraintTargets[w[start]] {
+		return false
+	}
+	return slices.Contains(w[start:end], "REFERENCES")
 }
 
 func scanAddColumnInlineReference(w []string) bool {
