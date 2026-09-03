@@ -2,6 +2,7 @@
 package parser
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/internal/dialectlexer"
 	"go.5x5.cz/ptah/internal/lexer"
+	"go.5x5.cz/ptah/internal/mysqlindex"
 	"go.5x5.cz/ptah/internal/nullsdistinct"
 	"go.5x5.cz/ptah/internal/tableref"
 )
@@ -33,12 +35,15 @@ type Parser struct {
 	// same reason lastGuard does: the keyword handler reads it, and the node it
 	// belongs to is not built until the column list has been read too.
 	foreignKeyIndexName string
-	lexer               *lexer.Lexer
-	input               string
-	current             lexer.Token
-	previous            lexer.Token
-	startTime           time.Time
-	timeout             time.Duration
+	// indexAccessMethod is the USING clause the element being read asked for,
+	// and it lives here for the same reason.
+	indexAccessMethod string
+	lexer             *lexer.Lexer
+	input             string
+	current           lexer.Token
+	previous          lexer.Token
+	startTime         time.Time
+	timeout           time.Duration
 
 	dialect      string
 	capabilities capability.Capabilities
@@ -3359,7 +3364,7 @@ func (p *Parser) handleTableConstraintUnique(constraint *ast.ConstraintNode) err
 		p.advance()
 		p.skipWhitespace()
 	}
-	p.skipIndexAccessMethod()
+	p.indexAccessMethod = p.readIndexAccessMethod()
 	constraint.Type = ast.UniqueConstraint
 
 	return nil
@@ -3404,36 +3409,48 @@ func (p *Parser) currentIsUniqueName() bool {
 	return true
 }
 
-// skipIndexAccessMethod steps over MySQL's optional `USING {BTREE|HASH}`.
+// readIndexAccessMethod reads the MySQL family's optional `USING {BTREE|HASH}`
+// and answers the method it asked for, empty where the clause is absent or
+// asks for the default.
 //
-// Read and discarded, which is the least wrong of three answers rather than a
-// free one. Refusing the clause would refuse ordinary DDL both engines accept;
-// carrying it needs somewhere to put it, and a table-body UNIQUE that stays a
-// constraint has none.
+// It used to step over the clause and discard it, which was the least wrong of
+// three answers while nothing could hold the value: refusing would refuse
+// ordinary DDL both engines accept, and a table-body UNIQUE that stays a
+// schemamodel.Constraint has nowhere to put a method. It is carried now for
+// the same reason a prefix length is (stokaro/ptah#2770): the element becomes
+// the unique INDEX the server builds, and an index has somewhere to keep it.
 //
-// The engines do not agree on whether the discard is observable, so this is not
-// the harmless skip an earlier version of this comment claimed. Measured, both
-// on InnoDB:
+// The discard was observable. Measured 2026-09-03 on InnoDB,
+// `KEY k USING HASH (a)`:
 //
-//	UNIQUE KEY uq USING HASH (a)    MySQL 26.7   INDEX_TYPE BTREE
-//	                                MariaDB 12.3 INDEX_TYPE HASH
+//	MySQL 8.4.11    INDEX_TYPE BTREE, and SHOW CREATE TABLE drops the clause
+//	MariaDB 11.8.9  INDEX_TYPE HASH, and SHOW CREATE TABLE prints it back
 //
-// MySQL discards it itself, so there nothing downstream could compare against.
-// MariaDB keeps it, and prints it back from SHOW CREATE TABLE, so a read-back
-// there reports HASH against a desired model that dropped it -- a difference no
-// apply converges. `USING BTREE` is invisible on both, being the default.
-// stokaro/ptah#2825 carries that gap; skipping is what this reader does until
-// there is a field to keep it in.
-func (p *Parser) skipIndexAccessMethod() {
+// [mysqlindex.Method] holds the rest of that measurement, including why BTREE
+// is not carried and why the answer belongs to the storage engine rather than
+// to the dialect. See stokaro/ptah#2825.
+//
+// The result outlives this call on p.indexAccessMethod, and what keeps it from
+// outliving its element is that both element kinds able to carry the clause --
+// UNIQUE, and a plain KEY or INDEX -- assign the answer unconditionally,
+// including the empty one. The remaining kinds that become an index, SPATIAL
+// and FULLTEXT, take no USING clause and supply their own prefix, which wins.
+// A guard clearing the field between elements was written first and removed:
+// no input reaches a stale read, so nothing could measure it, and an
+// unmeasurable guard is a second answer to a question that already has one.
+func (p *Parser) readIndexAccessMethod() string {
 	if p.current.Type != lexer.TokenIdentifier || !strings.EqualFold(p.current.Value, "USING") {
-		return
+		return ""
 	}
 	p.advance()
 	p.skipWhitespace()
-	if p.current.Type == lexer.TokenIdentifier {
-		p.advance()
-		p.skipWhitespace()
+	if p.current.Type != lexer.TokenIdentifier {
+		return ""
 	}
+	method := mysqlindex.Method(p.current.Value)
+	p.advance()
+	p.skipWhitespace()
+	return method
 }
 
 func (p *Parser) handleTableConstraintForeignKey(constraint *ast.ConstraintNode) error {
@@ -3762,6 +3779,11 @@ func (p *Parser) handleTableConstraintIndex(constraint *ast.ConstraintNode) {
 		p.advance()
 		p.skipWhitespace()
 	}
+	// A plain KEY takes the same optional clause a UNIQUE one does, and reading
+	// it here is what stops `KEY k USING HASH (a)` from being a parse error --
+	// it reached the column list with USING still in front of it and answered
+	// `expected '(' ... got Identifier` for DDL both engines accept.
+	p.indexAccessMethod = p.readIndexAccessMethod()
 }
 
 func (p *Parser) parseTableColumnList(constraint *ast.ConstraintNode) error {
@@ -3912,6 +3934,18 @@ func (p *Parser) readTableElementKind(constraint *ast.ConstraintNode) (bool, str
 		return false, "", fmt.Errorf(
 			"unsupported constraint type: %s at position %d", constraintType, p.current.Start)
 	}
+}
+
+// uniqueCarriesAccessMethod reports whether a table-body UNIQUE asked for an
+// access method, which is another thing a schemamodel.Constraint cannot hold.
+//
+// It is the same promotion a prefix length and a direction already take
+// (stokaro/ptah#2770): the element becomes the unique INDEX the server builds,
+// where ast.IndexNode.Type has somewhere to keep the method. Dropping it
+// instead was visible on MariaDB, which records and prints back the HASH a
+// constraint had nowhere to carry (stokaro/ptah#2825).
+func (p *Parser) uniqueCarriesAccessMethod(constraint *ast.ConstraintNode) bool {
+	return constraint.Type == ast.UniqueConstraint && p.indexAccessMethod != ""
 }
 
 // isFunctionalUnique reports whether a table element is a UNIQUE KEY carrying a
@@ -4233,7 +4267,7 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 	// were a primary one.
 	uniqueIndex := false
 	if !isIndex {
-		if isFunctionalUnique(constraint) {
+		if isFunctionalUnique(constraint) || p.uniqueCarriesAccessMethod(constraint) {
 			isIndex, uniqueIndex = true, true
 		} else if err := refuseFunctionalConstraintPart(constraint); err != nil {
 			return nil, nil, err
@@ -4277,8 +4311,12 @@ func (p *Parser) parseTableConstraint() (*ast.ConstraintNode, *ast.IndexNode, er
 			// ast.ConstraintColumn, and dropping them here would keep the index
 			// but silently flatten `KEY k (name(7) DESC)` into `KEY k (name)` --
 			// a different index that applies cleanly.
-			Parts:  indexPartsFromConstraintColumns(constraint.ColumnParts),
-			Type:   indexMethod,
+			Parts: indexPartsFromConstraintColumns(constraint.ColumnParts),
+			// A prefix kind and an access method never meet on one index --
+			// SPATIAL and FULLTEXT take no USING clause -- so one field holds
+			// whichever the element asked for. mysqlindex reads both questions
+			// out of it.
+			Type:   cmp.Or(indexMethod, p.indexAccessMethod),
 			Parser: parserName,
 			Unique: uniqueIndex,
 		}, nil

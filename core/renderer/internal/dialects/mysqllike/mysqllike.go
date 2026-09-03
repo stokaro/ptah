@@ -511,6 +511,15 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	}
 	parts = append(parts, columnSpec)
 
+	// After the column list, which is where both engines take it: measured
+	// 2026-09-03, MySQL 8.4.11 and MariaDB 11.8.9 each accept
+	// `CREATE INDEX k ON t (a) USING HASH`, the UNIQUE form of it, and the
+	// spelling that puts the clause before ON. Emitting it is what keeps a
+	// declared HASH from being dropped on the way out (stokaro/ptah#2825).
+	if method := mysqlindex.Method(node.Type); method != "" {
+		parts = append(parts, "USING", method)
+	}
+
 	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
 }
