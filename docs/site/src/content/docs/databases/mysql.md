@@ -51,6 +51,11 @@ SQL:
   INDEX` over a `POINT` column leaves `INDEX_TYPE=BTREE` on MariaDB 11.8 and
   `SPATIAL` on MySQL 8.4, so comparing an undeclared type would plan a rebuild
   on MySQL that MySQL immediately undoes.
+- Two constraints on one table may share a name, and both engines accept
+  `CONSTRAINT same UNIQUE (a)` beside `CONSTRAINT same FOREIGN KEY (a)`. Ptah
+  identifies a named constraint by its type as well as its table and name, so
+  both survive the read, the desired model, and the comparison. MySQL also lets
+  a `CHECK` share a name with a `UNIQUE`, where MariaDB answers `ERROR 1826`.
 - A key part's direction is read back from the catalog, so `KEY (a DESC)` and
   `KEY (a)` are told apart rather than both arriving ascending. It also decides
   which index a foreign key owns: MySQL will not back one with a descending

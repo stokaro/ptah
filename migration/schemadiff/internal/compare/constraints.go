@@ -99,7 +99,7 @@ func ConstraintsWithSemantics(
 	genConstraints := make(map[tableMemberKey]schemamodel.Constraint)
 	for _, constraint := range desired.Constraints {
 		constraint.Table = generatedConstraintTableName(constraint, desired.Tables)
-		key := newConstraintKey(constraint.Table, constraint.Name, semantics)
+		key := newConstraintKey(constraint.Table, constraint.Name, constraint.Type, semantics)
 		genConstraints[key] = constraint
 	}
 
@@ -137,7 +137,9 @@ func ConstraintsWithSemantics(
 	fieldLevelForeignKeys := synthesizeFieldLevelForeignKeyConstraints(desired, database, semantics)
 	synthesizedFKKeys := make(map[tableMemberKey]struct{}, len(fieldLevelForeignKeys))
 	for _, synthesized := range fieldLevelForeignKeys {
-		synthesizedFKKeys[newConstraintKey(synthesized.Table, synthesized.Name, semantics)] = struct{}{}
+		synthesizedFKKeys[newConstraintKey(
+			synthesized.Table, synthesized.Name, synthesized.Type, semantics,
+		)] = struct{}{}
 	}
 	recordSynthesized(genConstraints, fieldLevelForeignKeys, semantics)
 
@@ -230,7 +232,9 @@ func collectDatabaseConstraints(
 		if isFieldLevelConstraint(constraint, desired, synthesizedFKKeys, semantics) {
 			continue
 		}
-		key := newConstraintKey(constraint.QualifiedTableName(), constraint.Name, semantics)
+		key := newConstraintKey(
+			constraint.QualifiedTableName(), constraint.Name, constraint.Type, semantics,
+		)
 		if _, declaredAsConstraint := genConstraints[key]; !declaredAsConstraint &&
 			uniqueConstraintOwnedByDeclaredIndex(
 				constraint,

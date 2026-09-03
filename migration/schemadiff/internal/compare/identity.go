@@ -1,6 +1,8 @@
 package compare
 
 import (
+	"strings"
+
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/constraintscope"
@@ -33,6 +35,15 @@ import (
 type tableMemberKey struct {
 	table  tableIdentity
 	member string
+	// memberType separates two members of one table that share a name, and is
+	// empty for every member kind whose name is unique on its own.
+	//
+	// Constraints are the kind that needs it: MySQL and MariaDB accept
+	// `CONSTRAINT same UNIQUE (a)` beside `CONSTRAINT same FOREIGN KEY (a)`,
+	// and keyed by name alone the comparison read the two as one object --
+	// planning a DROP of the unique constraint and an ADD of the foreign key
+	// against a database that already had both (stokaro/ptah#2774).
+	memberType string
 }
 
 // newTableMemberKey builds a key from a table name that may or may not carry a
@@ -67,10 +78,14 @@ func newTableMemberKey(table, member string, semantics identifier.Semantics) tab
 // PostgreSQL is untouched by the change and correctly so: the two rules agree
 // there, and an upper-case name in a PostgreSQL catalog was created quoted, so
 // it really is a different object from the unquoted spelling.
-func newConstraintKey(table, constraint string, semantics identifier.Semantics) tableMemberKey {
+func newConstraintKey(
+	table, constraint, constraintType string,
+	semantics identifier.Semantics,
+) tableMemberKey {
 	return tableMemberKey{
-		table:  newQualifiedTableIdentity(table, semantics),
-		member: semantics.IndexIdentityKey(constraint),
+		table:      newQualifiedTableIdentity(table, semantics),
+		member:     semantics.IndexIdentityKey(constraint),
+		memberType: strings.ToUpper(strings.TrimSpace(constraintType)),
 	}
 }
 
@@ -88,7 +103,7 @@ func recordSynthesized(
 	semantics identifier.Semantics,
 ) {
 	for _, constraint := range synthesized {
-		key := newConstraintKey(constraint.Table, constraint.Name, semantics)
+		key := newConstraintKey(constraint.Table, constraint.Name, constraint.Type, semantics)
 		if _, declared := into[key]; declared {
 			continue
 		}
