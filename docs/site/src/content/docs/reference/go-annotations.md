@@ -265,7 +265,7 @@ Declares an index for a table.
 | `granularity` | No | ClickHouse data-skipping index granularity. |
 | `include` | No | Comma-separated INCLUDE columns for PostgreSQL, YugabyteDB, CockroachDB, or the Spanner PostgreSQL dialect. Order is preserved. |
 | `name` | No | Index name. |
-| `nulls_distinct` | No | Controls NULLS DISTINCT behavior where supported. `true`/`false`. |
+| `nulls_distinct` | No | Controls NULLS DISTINCT behavior on PostgreSQL. `true`/`false`. MySQL and MariaDB reject the clause, so rendering for them refuses rather than dropping it. |
 | `ops` | No | PostgreSQL operator class. |
 | `table` | No | Explicit target table. |
 | `type` | No | Index type or method. |
@@ -305,7 +305,7 @@ Declares a table constraint.
 | `foreign_table` | No | Referenced table for FOREIGN KEY constraints. |
 | `include` | No | Comma-separated INCLUDE columns for a covering UNIQUE or PRIMARY KEY constraint. Order is preserved. |
 | `name` | No | Constraint name. |
-| `nulls_distinct` | No | Controls NULLS DISTINCT behavior where supported. `true`/`false`. |
+| `nulls_distinct` | No | Controls NULLS DISTINCT behavior on PostgreSQL. `true`/`false`. MySQL and MariaDB reject the clause, so rendering for them refuses rather than dropping it. |
 | `on_delete` | No | Foreign key ON DELETE action. |
 | `on_update` | No | Foreign key ON UPDATE action. |
 | `table` | No | Explicit target table. |
