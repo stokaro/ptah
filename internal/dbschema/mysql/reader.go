@@ -863,7 +863,13 @@ const indexKeyPartsQuery = `
 			-- so a key that loses it produces a description the server refuses:
 			-- used in key specification without a key length
 			-- (stokaro/ptah#2112).
-			s.SUB_PART
+			s.SUB_PART,
+			-- The key part's direction: 'A' ascending, 'D' descending, NULL
+			-- for a part that is not sorted at all. KEY (a DESC) and KEY (a)
+			-- are different indexes on both engines, and a reader that reports
+			-- both as ascending cannot tell a declaration that changed
+			-- direction from one that did not (stokaro/ptah#2816).
+			s.COLLATION
 		FROM information_schema.STATISTICS s
 		WHERE s.TABLE_SCHEMA = ?
 		AND s.TABLE_NAME NOT IN ('schema_migrations')
@@ -890,8 +896,9 @@ func (r *Reader) readIndexes(ctx context.Context, dbName string) ([]catalog.Inde
 			nonUnique  int
 			indexType  string
 			subPart    sql.NullInt64
+			collation  sql.NullString
 		)
-		err := rows.Scan(&name, &tableName, &columnName, &nonUnique, &indexType, &subPart)
+		err := rows.Scan(&name, &tableName, &columnName, &nonUnique, &indexType, &subPart, &collation)
 		if err != nil {
 			return nil, err
 		}
@@ -908,7 +915,7 @@ func (r *Reader) readIndexes(ctx context.Context, dbName string) ([]catalog.Inde
 			})
 			indexTypes = append(indexTypes, indexType)
 		}
-		addIndexKeyPart(&indexes[position], columnName, subPart)
+		addIndexKeyPart(&indexes[position], columnName, subPart, collation)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -944,7 +951,9 @@ func (r *Reader) readIndexes(ctx context.Context, dbName string) ([]catalog.Inde
 // is missing from Columns rather than dropped silently: a comparison that read
 // Columns as the whole key would plan a rebuild of a key that never changed.
 // See [catalog.Index.KeyPartsIncomplete].
-func addIndexKeyPart(index *catalog.Index, columnName sql.NullString, subPart sql.NullInt64) {
+func addIndexKeyPart(
+	index *catalog.Index, columnName sql.NullString, subPart sql.NullInt64, collation sql.NullString,
+) {
 	if !columnName.Valid {
 		index.KeyPartsIncomplete = true
 		return
@@ -953,7 +962,17 @@ func addIndexKeyPart(index *catalog.Index, columnName sql.NullString, subPart sq
 	index.Parts = append(index.Parts, catalog.IndexPart{
 		Name:   columnName.String,
 		Prefix: indexKeyPrefix(subPart),
+		Desc:   indexKeyDescends(collation),
 	})
+}
+
+// indexKeyDescends reads STATISTICS.COLLATION as a direction.
+//
+// 'D' is the only descending answer; 'A' is ascending and NULL means the part
+// is not sorted, which a HASH key part reports. Both are the default direction
+// as far as a declaration goes, so both answer false and neither is carried.
+func indexKeyDescends(collation sql.NullString) bool {
+	return collation.Valid && collation.String == "D"
 }
 
 // dropUninformativeParts clears Parts for a key whose parts say nothing Columns
@@ -967,7 +986,7 @@ func addIndexKeyPart(index *catalog.Index, columnName sql.NullString, subPart sq
 // is dropped, which leaves every ordinary index reported exactly as it was.
 func dropUninformativeParts(index *catalog.Index) {
 	for _, part := range index.Parts {
-		if part.Prefix != "" {
+		if part.Prefix != "" || part.Desc {
 			return
 		}
 	}
