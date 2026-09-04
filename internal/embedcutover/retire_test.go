@@ -128,7 +128,30 @@ func TestDecideRetirement_APlanThatDestroysNothingIsRefused(t *testing.T) {
 	c.Assert(decision.Allowed, qt.IsFalse)
 	c.Assert(decision.Blockers, qt.Contains,
 		"the plan destroys nothing, so it would record a retirement that did not happen; "+
-			"a retirement has to drop the generation's index, its column, or both")
+			"a retirement has to drop the generation's index, and its column or the "+
+			"table its vectors are in")
+}
+
+// TestDecideRetirement_DroppingTheTableIsDestroyingSomething is the other side
+// of the refusal above, and it is the case the rule was written without.
+//
+// A generation whose vectors live in a relation of its own commonly has no
+// index and never has a column of its own to drop: the storage is the
+// relation. Judged by the two objects the rule originally named, every such
+// retirement destroyed nothing and was refused with a blocker listing two
+// things that layout does not have. Measured through the CLI first, on a
+// generation prepared and backfilled into a table Ptah created
+// (stokaro/ptah#2624).
+func TestDecideRetirement_DroppingTheTableIsDestroyingSomething(t *testing.T) {
+	c := qt.New(t)
+	plan, state, observed, _, policy := retirable()
+	plan.DropsIndex = false
+	plan.DropsColumn = false
+	plan.DropsTable = true
+
+	decision := embedcutover.DecideRetirement(plan, state, observed, approvalForRetirement(plan), policy)
+
+	c.Assert(decision.Allowed, qt.IsTrue, qt.Commentf("%v", decision.Blockers))
 }
 
 // TestDecideRetirement_TheApprovalBindsToWhatIsDestroyed is why the digest

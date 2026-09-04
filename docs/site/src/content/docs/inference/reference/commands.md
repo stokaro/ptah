@@ -455,7 +455,7 @@ Destroys a generation. This cannot be undone.
 | Flag | Meaning |
 | --- | --- |
 | `--generation` | Identity of the generation to destroy (required) |
-| `--drop-column` | Drop the vector column as well as the index. Default `true`; `false` keeps the vectors and drops only the index |
+| `--drop-column` | Drop the storage the vectors are in as well as the index: the vector column, or the whole table under `layout: own_table`. Default `true`; `false` keeps the vectors and drops only the index |
 | `--approve` | Plan digest this retirement is approved for |
 | `--approver` | Who approved it |
 | `--plan-file` | Path to write the refused plan to, so it can be signed |

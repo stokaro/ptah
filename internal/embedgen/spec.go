@@ -261,6 +261,66 @@ type Target struct {
 	// generation.
 	IndexMethod  string
 	IndexOptions map[string]string
+
+	// Layout is where those columns live: beside the rows they were computed
+	// from, or in a relation of the generation's own that Ptah creates and
+	// destroys.
+	//
+	// It is outside the identity, and [excludedFromIdentity] carries the
+	// reason.
+	Layout TargetLayout
+}
+
+// TargetLayout is how a generation's storage comes to exist.
+//
+// The two values differ in what Ptah is permitted to create and destroy, which
+// is why the layout is declared rather than inferred from whether the target
+// table happens to be the source table. Inferring it would make Ptah's
+// authority over a relation a consequence of two names being unequal, and an
+// operator pointing a generation at a table they maintain would have handed it
+// over without saying so.
+type TargetLayout string
+
+const (
+	// LayoutSourceColumns puts the vector column and its four metadata columns
+	// on the relation Target.Table names, beside rows that are already there.
+	// Retiring such a generation drops those columns and leaves the relation.
+	//
+	// It is the empty string because it is what a specification that says
+	// nothing about layout gets, and a specification that says nothing must
+	// land on the arrangement in which Ptah creates no relation and drops
+	// none. The zero value of a field deciding what may be destroyed is the
+	// one place a default is not a convenience.
+	LayoutSourceColumns TargetLayout = ""
+	// LayoutOwnTable puts them in a relation of the generation's own, which
+	// Ptah creates when the generation is prepared and drops when it is
+	// retired.
+	//
+	// Its rows are keyed by the source key and reference it, so the
+	// application deleting a source row takes that row's vectors with it. This
+	// is the layout one source row to many chunk vectors needs, because a set
+	// of chunks cannot live in the row it was split from (ADR 0017).
+	LayoutOwnTable TargetLayout = "own_table"
+)
+
+// OwnsTable reports whether Ptah creates and destroys the target relation
+// under this layout.
+//
+// A predicate rather than a comparison at each site, because the two questions
+// "may I create this" and "may I drop this" are the same question and answering
+// them separately is how one of them comes to be answered differently.
+func (l TargetLayout) OwnsTable() bool {
+	return l == LayoutOwnTable
+}
+
+// KnownLayout reports whether a layout is one this package defines.
+//
+// A specification carrying anything else is refused rather than treated as the
+// zero value: a misspelled layout that folded to LayoutSourceColumns would
+// silently give an operator who asked for their own table the arrangement that
+// writes into their application's rows.
+func KnownLayout(layout TargetLayout) bool {
+	return layout == LayoutSourceColumns || layout == LayoutOwnTable
 }
 
 // DistanceMetric is how two vectors are compared.

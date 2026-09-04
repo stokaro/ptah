@@ -13,6 +13,44 @@ import (
 	"go.5x5.cz/ptah/internal/embedstore"
 )
 
+// RetirementDestruction is what an approved retirement destroys.
+//
+// One value rather than three booleans in a parameter list, because they are
+// one decision: which storage a generation's vectors are in decides whether
+// removing them is a DROP COLUMN or a DROP TABLE, and a caller that could pass
+// both has a state to get wrong. The approval binds to these facts through
+// [embedcutover.RetirementPlan], so what an operator signed and what the store
+// executes are the same three answers.
+type RetirementDestruction struct {
+	// IndexExists is the index state the retirement was approved against, and
+	// is re-measured under the lifecycle lock before any DDL runs.
+	IndexExists bool
+	// DropColumns removes the vector column and its metadata columns from a
+	// relation the application keeps, which is what retiring a
+	// LayoutSourceColumns generation destroys.
+	DropColumns bool
+	// DropTable removes the relation itself, which is what retiring a
+	// LayoutOwnTable generation destroys. [RetireTable] refuses unless Ptah
+	// created that relation for this generation.
+	DropTable bool
+}
+
+// validate refuses a destruction that names both removals.
+//
+// They are alternatives rather than options: a generation's vectors live in
+// one place, and a caller asking for both has decided the layout twice. The
+// second answer would run against a relation the first one had already
+// dropped, so the failure would surface as a missing relation rather than as
+// the contradiction it is.
+func (d RetirementDestruction) validate() error {
+	if d.DropColumns && d.DropTable {
+		return fmt.Errorf(
+			"%w: a retirement drops the generation's columns or its table, not both",
+			embedstore.ErrConflict)
+	}
+	return nil
+}
+
 // RetireGenerationObjects destroys one generation and records that outcome in
 // the registry and every run in the same PostgreSQL transaction.
 //
@@ -26,15 +64,16 @@ import (
 // Every run is fenced and completed because its generation no longer exists.
 // A phase that directly leads to PhaseRetired records that phase; an earlier
 // run keeps its truthful high-water phase while becoming terminal.
-//
-//revive:disable-next-line:flag-parameter The Store contract passes the two independently approved boolean facts directly.
 func (s *Store) RetireGenerationObjects(
 	ctx context.Context,
 	identity string,
 	expectedPointer embedstore.Pointer,
 	expectedRows int,
-	expectedIndexExists, dropColumns bool,
+	destruction RetirementDestruction,
 ) (OutboxRelease, error) {
+	if err := destruction.validate(); err != nil {
+		return OutboxRelease{}, err
+	}
 	initial, err := s.Generation(ctx, identity)
 	if err != nil {
 		return OutboxRelease{}, err
@@ -63,7 +102,7 @@ func (s *Store) RetireGenerationObjects(
 	if err := lockGenerationRelations(ctx, tx, generation); err != nil {
 		return OutboxRelease{}, err
 	}
-	facts := retirementFacts{rows: expectedRows, indexExists: expectedIndexExists}
+	facts := retirementFacts{rows: expectedRows, indexExists: destruction.IndexExists}
 	if err := validateRetirementArtifacts(ctx, tx, generation, facts); err != nil {
 		return OutboxRelease{}, err
 	}
@@ -74,7 +113,12 @@ func (s *Store) RetireGenerationObjects(
 	if err := RetireIndex(ctx, tx, generation); err != nil {
 		return OutboxRelease{}, err
 	}
-	if dropColumns {
+	if destruction.DropTable {
+		if err := RetireTable(ctx, tx, generation); err != nil {
+			return OutboxRelease{}, err
+		}
+	}
+	if destruction.DropColumns {
 		if err := RetireColumns(ctx, tx, generation); err != nil {
 			return OutboxRelease{}, err
 		}

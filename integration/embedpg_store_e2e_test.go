@@ -759,17 +759,17 @@ func assertRetirementIsTerminal(
 		VALUES ('public', 'wrong_retire_articles', $1, $2)`, "gen-retire", liveAt)
 	c.Assert(err, qt.IsNil)
 	_, err = store.RetireGenerationObjects(
-		ctx, "gen-retire", embedstore.Pointer{}, 0, false, false)
+		ctx, "gen-retire", embedstore.Pointer{}, 0, embedpg.RetirementDestruction{})
 	c.Assert(err, qt.ErrorIs, embedstore.ErrConflict)
 	_, err = db.ExecContext(ctx, `DELETE FROM `+embedstore.PointerTable+`
 		WHERE target_schema = 'public' AND target_table = 'wrong_retire_articles'`)
 	c.Assert(err, qt.IsNil)
 	release, err := store.RetireGenerationObjects(
-		ctx, "gen-retire", embedstore.Pointer{}, 0, false, false)
+		ctx, "gen-retire", embedstore.Pointer{}, 0, embedpg.RetirementDestruction{})
 	c.Assert(err, qt.IsNil)
 
 	_, err = store.RetireGenerationObjects(
-		ctx, "gen-retire", embedstore.Pointer{}, 0, false, false)
+		ctx, "gen-retire", embedstore.Pointer{}, 0, embedpg.RetirementDestruction{})
 
 	c.Assert(err, qt.ErrorIs, embedstore.ErrRetired)
 	generation, readErr := store.Generation(ctx, "gen-retire")
@@ -821,7 +821,7 @@ func assertRetirementUsesDatabaseTime(
 	// The database samples time only after acquiring lifecycle locks and still
 	// sees the maintenance window open.
 	_, err = store.RetireGenerationObjects(ctx, generation.Identity,
-		embedstore.Pointer{}, 0, false, false)
+		embedstore.Pointer{}, 0, embedpg.RetirementDestruction{})
 	c.Assert(err, qt.ErrorIs, embedstore.ErrConflict)
 	registered, readErr := store.Generation(ctx, generation.Identity)
 	c.Assert(readErr, qt.IsNil)
@@ -829,7 +829,7 @@ func assertRetirementUsesDatabaseTime(
 
 	c.Assert(store.Maintain(ctx, generation.Identity, time.Time{}), qt.IsNil)
 	release, err := store.RetireGenerationObjects(ctx, generation.Identity,
-		embedstore.Pointer{}, 0, false, false)
+		embedstore.Pointer{}, 0, embedpg.RetirementDestruction{})
 	c.Assert(err, qt.IsNil)
 	registered, readErr = store.Generation(ctx, generation.Identity)
 	c.Assert(readErr, qt.IsNil)
@@ -870,7 +870,8 @@ func assertRetirementRollsBackDDLAndRunState(
 	c.Assert(store.CreateRun(ctx, run), qt.IsNil)
 
 	_, err = store.RetireGenerationObjects(
-		ctx, generation.Identity, embedstore.Pointer{}, 0, true, true)
+		ctx, generation.Identity, embedstore.Pointer{}, 0,
+		embedpg.RetirementDestruction{IndexExists: true, DropColumns: true})
 	c.Assert(err, qt.IsNotNil)
 	registered, readErr := store.Generation(ctx, generation.Identity)
 	c.Assert(readErr, qt.IsNil)
@@ -920,7 +921,7 @@ func assertRetirementRecountsAfterAnInFlightTargetWrite(
 	retireResult := make(chan error, 1)
 	go func() {
 		_, callErr := store.RetireGenerationObjects(
-			ctx, generation.Identity, embedstore.Pointer{}, 0, false, false)
+			ctx, generation.Identity, embedstore.Pointer{}, 0, embedpg.RetirementDestruction{})
 		retireResult <- callErr
 	}()
 	waitForBlockedQuery(c, ctx, db, "LOCK TABLE")
@@ -975,7 +976,7 @@ func assertRetirementKeepsAnOutboxForAnOrphanReader(
 	c.Assert(err, qt.IsNil)
 
 	release, err := store.RetireGenerationObjects(
-		ctx, generation.Identity, embedstore.Pointer{}, 0, false, false)
+		ctx, generation.Identity, embedstore.Pointer{}, 0, embedpg.RetirementDestruction{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(release.Watched, qt.IsTrue)
 	c.Assert(release.Removed, qt.IsFalse)
@@ -1033,13 +1034,13 @@ func assertCrossedRetirementsLockPhysicalRelationsInOneOrder(
 	results := make(chan error, 2)
 	go func() {
 		_, callErr := store.RetireGenerationObjects(
-			ctx, first.Identity, embedstore.Pointer{}, 0, false, false)
+			ctx, first.Identity, embedstore.Pointer{}, 0, embedpg.RetirementDestruction{})
 		results <- callErr
 	}()
 	waitForBlockedQuery(c, ctx, db, `LOCK TABLE "public"."cross_retire_a"`)
 	go func() {
 		_, callErr := store.RetireGenerationObjects(
-			ctx, second.Identity, embedstore.Pointer{}, 0, false, false)
+			ctx, second.Identity, embedstore.Pointer{}, 0, embedpg.RetirementDestruction{})
 		results <- callErr
 	}()
 	// Both fixed transactions resolve the omitted and explicit spellings to
@@ -1092,7 +1093,7 @@ func assertPointerMoveAndRetirementCannotCross(
 	waitForBlockedQuery(c, ctx, db, "INSERT INTO "+embedstore.PointerTable)
 	go func() {
 		_, callErr := store.RetireGenerationObjects(
-			ctx, newIdentity, initial, 0, false, false)
+			ctx, newIdentity, initial, 0, embedpg.RetirementDestruction{})
 		retireResult <- callErr
 	}()
 	waitForBlockedQuery(c, ctx, db, "pg_advisory_xact_lock")
@@ -1406,8 +1407,21 @@ func assertAbsenceIsNotEmptiness(
 	_, err = store.AbandonRun(ctx, protected.ID, "obsolete")
 	c.Assert(err, qt.ErrorIs, embedstore.ErrNoLiveRun)
 	_, retireErr := store.RetireGenerationObjects(
-		ctx, "nothing", embedstore.Pointer{}, 0, false, false)
+		ctx, "nothing", embedstore.Pointer{}, 0, embedpg.RetirementDestruction{})
 	c.Assert(retireErr, qt.ErrorIs, embedstore.ErrNotFound)
+
+	// A destruction naming both removals is refused before the generation is
+	// even looked up, which is why this asks about a generation that does not
+	// exist: the answer is the contradiction rather than the absence, so the
+	// check demonstrably runs first. Reaching the DDL with both would drop the
+	// relation and then ask to drop columns from it, and the operator would
+	// read a missing-relation error for a plan that contradicted itself.
+	_, bothErr := store.RetireGenerationObjects(
+		ctx, "nothing", embedstore.Pointer{}, 0,
+		embedpg.RetirementDestruction{DropColumns: true, DropTable: true})
+	c.Assert(bothErr, qt.ErrorIs, embedstore.ErrConflict)
+	c.Assert(bothErr, qt.ErrorMatches,
+		`.*a retirement drops the generation's columns or its table, not both`)
 }
 
 // detailsOfEvents lists what a trail said.

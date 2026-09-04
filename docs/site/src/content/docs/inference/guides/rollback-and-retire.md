@@ -113,12 +113,23 @@ For that, use [`inference abandon`](../resume-and-recover/#end-a-superseded-run-
 it permanently closes one run and releases its outbox position, but preserves
 the generation and vectors. Retirement destroys them.
 
-Retirement drops the generation's index, and by default its column and the four
-bookkeeping columns beside it. `--drop-column` defaults to **true**, and the
-column is where the vectors are: `--drop-column=false` keeps every vector in the
-table and reduces the run to dropping the index. For a generation whose
+Retirement drops the generation's index, and by default the storage its vectors
+are in. `--drop-column` defaults to **true**, and what it removes follows the
+specification's `target.layout`: the vector column and the four bookkeeping
+columns beside it, or — under `layout: own_table` — the relation Ptah created
+for the generation, with every row in it. `--drop-column=false` keeps every
+vector and reduces the run to dropping the index. For a generation whose
 specification declares no index method there is then nothing left to destroy,
 and the retirement is refused rather than recorded.
+
+Dropping the relation is the one step that removes rows nothing else can put
+back, so it is guarded by more than the approval. Ptah comments a relation it
+creates, reads that comment back under the retirement's lock, and refuses the
+`DROP TABLE` unless the comment names the generation being retired. A
+specification edited to point an own-table generation at a relation you
+maintain, or a restore that rebuilt the table without its comment, is refused
+there with the generation left unretired — rather than in a state where the
+registry says the corpus is gone and the relation says it is not.
 
 ```bash
 ptah inference retire --spec spec.yaml --db-url "$DB" \

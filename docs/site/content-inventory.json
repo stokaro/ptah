@@ -2335,8 +2335,8 @@
         "/inference/strategies/production-rollout/",
         "/inference/troubleshooting/"
       ],
-      "visibleWords": 751,
-      "sourceBytes": 5965
+      "visibleWords": 878,
+      "sourceBytes": 6718
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/run-in-kubernetes.md",
@@ -2525,8 +2525,8 @@
       "inboundLinks": [
         "/inference/concepts/embeddings-and-inference-state/"
       ],
-      "visibleWords": 2917,
-      "sourceBytes": 21263
+      "visibleWords": 2932,
+      "sourceBytes": 21341
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/evaluation-corpus.md",
@@ -2629,14 +2629,15 @@
       "overlaps": [],
       "disposition": "keep",
       "outboundLinks": [
-        "/inference/concepts/consistency/"
+        "/inference/concepts/consistency/",
+        "/inference/strategies/choose-a-target-layout/"
       ],
       "inboundLinks": [
         "/inference/strategies/plan-provider-capacity/",
         "/inference/troubleshooting/"
       ],
-      "visibleWords": 1385,
-      "sourceBytes": 10639
+      "visibleWords": 1519,
+      "sourceBytes": 11494
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/support-and-limitations.md",
@@ -2747,10 +2748,11 @@
       "disposition": "keep",
       "outboundLinks": [],
       "inboundLinks": [
-        "/inference/guides/create-first-generation/"
+        "/inference/guides/create-first-generation/",
+        "/inference/reference/specification/"
       ],
-      "visibleWords": 572,
-      "sourceBytes": 4179
+      "visibleWords": 811,
+      "sourceBytes": 5676
     },
     {
       "path": "docs/site/src/content/docs/inference/strategies/plan-provider-capacity.md",

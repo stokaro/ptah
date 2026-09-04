@@ -213,23 +213,25 @@ func (t *Target) applyWrite(ctx context.Context, transaction *sql.Tx, write embe
 	return nil
 }
 
-// upsertStatement renders one row's write.
+// upsertStatement renders one row's write, in the shape the generation's
+// layout needs.
 //
-// It is an UPDATE rather than an INSERT: a generation adds a column to rows
-// that already exist, so the row is there and the vector is what is missing.
-// Inserting would create a second row for a key the source has once.
+// Under LayoutSourceColumns it is an UPDATE and not an INSERT: a generation
+// adds a column to rows that already exist, so the row is there and the vector
+// is what is missing, and inserting would create a second row for a key the
+// source has once.
+//
+// Under LayoutOwnTable there is no row yet. Ptah creates that relation empty
+// and the rows arrive as the generation is backfilled, so an UPDATE there
+// would match nothing and a backfill would report success having written no
+// vectors at all.
 func (t *Target) upsertStatement(write embedrun.TargetWrite) (string, []any) {
-	column := t.spec.Target.Column
 	arguments := []any{
 		vectorLiteral(write.Vector), write.Generation, write.InputHash,
 		nullable(write.Version), string(write.Kind),
 	}
-	assignments := []string{
-		fmt.Sprintf("%s = $1::vector", quoteIdentifier(column)),
-		fmt.Sprintf("%s = $2", quoteIdentifier(column+GenerationSuffix)),
-		fmt.Sprintf("%s = $3", quoteIdentifier(column+InputHashSuffix)),
-		fmt.Sprintf("%s = $4", quoteIdentifier(column+VersionSuffix)),
-		fmt.Sprintf("%s = $5", quoteIdentifier(column+StateSuffix)),
+	if t.spec.Target.Layout.OwnsTable() {
+		return t.insertStatement(write, arguments)
 	}
 	conditions := make([]string, 0, len(t.spec.Source.KeyFields))
 	for index, key := range t.spec.Source.KeyFields {
@@ -237,8 +239,79 @@ func (t *Target) upsertStatement(write embedrun.TargetWrite) (string, []any) {
 		conditions = append(conditions, fmt.Sprintf("%s::text = $%d", quoteIdentifier(key), len(arguments)))
 	}
 	query := fmt.Sprintf("UPDATE %s SET %s WHERE %s",
-		t.qualifiedTable(), strings.Join(assignments, ", "), strings.Join(conditions, " AND "))
+		t.qualifiedTable(), strings.Join(t.stateAssignments(), ", "),
+		strings.Join(conditions, " AND "))
 	return query, arguments
+}
+
+// insertStatement renders one row's write into a relation of the generation's
+// own.
+//
+// The key is SELECTed out of the source rather than bound as a parameter. A
+// write carries its key as text, because that is the one rendering every key
+// type has, and inserting it into a column the application declared BIGINT, as
+// a domain, or with a collation would need Ptah to know how to cast text into
+// whichever of those it is. The source column already holds the value in its
+// own type, so the row's key is taken from there and no mapping exists to be
+// wrong. The same `::text` comparison the UPDATE above uses is what finds it,
+// so the two paths address a row identically.
+//
+// A source row that is gone inserts nothing, which is the right answer twice
+// over: the foreign key would refuse the row anyway, and a write arriving for
+// a key the source no longer has must not create storage for it. That includes
+// a tombstone -- under this layout the deletion already took the target row
+// with it, and the foreign key is what stops a late write from putting it
+// back, so there is nothing for a tombstone to hold open.
+func (t *Target) insertStatement(write embedrun.TargetWrite, arguments []any) (string, []any) {
+	keys := t.spec.Source.KeyFields
+	columns := make([]string, 0, len(keys)+5)
+	selected := make([]string, 0, len(keys)+5)
+	for _, key := range keys {
+		columns = append(columns, quoteIdentifier(key))
+		selected = append(selected, "source."+quoteIdentifier(key))
+	}
+	column := t.spec.Target.Column
+	columns = append(columns,
+		quoteIdentifier(column), quoteIdentifier(column+GenerationSuffix),
+		quoteIdentifier(column+InputHashSuffix), quoteIdentifier(column+VersionSuffix),
+		quoteIdentifier(column+StateSuffix))
+	selected = append(selected, "$1::vector", "$2", "$3", "$4", "$5")
+
+	conditions := make([]string, 0, len(keys))
+	for index, key := range keys {
+		arguments = append(arguments, write.Key[index])
+		conditions = append(conditions,
+			fmt.Sprintf("source.%s::text = $%d", quoteIdentifier(key), len(arguments)))
+	}
+	keyList := make([]string, 0, len(keys))
+	for _, key := range keys {
+		keyList = append(keyList, quoteIdentifier(key))
+	}
+	assignments := make([]string, 0, 5)
+	for _, suffix := range append([]string{""}, MetadataSuffixes()...) {
+		name := quoteIdentifier(column + suffix)
+		assignments = append(assignments, name+" = EXCLUDED."+name)
+	}
+	// #nosec G201 -- identifiers from the specification, through quoteIdentifier.
+	query := fmt.Sprintf(
+		"INSERT INTO %s (%s) SELECT %s FROM %s AS source WHERE %s "+
+			"ON CONFLICT (%s) DO UPDATE SET %s",
+		t.qualifiedTable(), strings.Join(columns, ", "), strings.Join(selected, ", "),
+		qualify(t.spec.Source.Schema, t.spec.Source.Table), strings.Join(conditions, " AND "),
+		strings.Join(keyList, ", "), strings.Join(assignments, ", "))
+	return query, arguments
+}
+
+// stateAssignments is what a write sets, for the UPDATE path.
+func (t *Target) stateAssignments() []string {
+	column := t.spec.Target.Column
+	return []string{
+		fmt.Sprintf("%s = $1::vector", quoteIdentifier(column)),
+		fmt.Sprintf("%s = $2", quoteIdentifier(column+GenerationSuffix)),
+		fmt.Sprintf("%s = $3", quoteIdentifier(column+InputHashSuffix)),
+		fmt.Sprintf("%s = $4", quoteIdentifier(column+VersionSuffix)),
+		fmt.Sprintf("%s = $5", quoteIdentifier(column+StateSuffix)),
+	}
 }
 
 // qualifiedTable renders the target table with its schema when it has one.

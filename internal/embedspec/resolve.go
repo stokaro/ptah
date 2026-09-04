@@ -107,6 +107,10 @@ func (d Document) spec(path string) (embedgen.Spec, error) {
 	if err != nil {
 		return embedgen.Spec{}, err
 	}
+	layout, err := resolveTargetLayout(d.Target.Layout, path)
+	if err != nil {
+		return embedgen.Spec{}, err
+	}
 
 	return embedgen.Spec{
 		Name:        d.Name,
@@ -134,8 +138,42 @@ func (d Document) spec(path string) (embedgen.Spec, error) {
 			Schema: d.Target.Schema, Table: d.Target.Table, Column: d.Target.Column,
 			Representation: d.Target.Representation, Metric: metric,
 			IndexMethod: d.Target.IndexMethod, IndexOptions: d.indexOptions(),
+			Layout: layout,
 		},
 	}, nil
+}
+
+// resolveTargetLayout reads target.layout.
+//
+// "source_columns" is a document spelling of the zero value rather than a
+// second value: an author who wants to say which layout they chose can write
+// it, and one who says nothing gets the same arrangement. Anything else is
+// refused rather than folded to the default, because a misspelled "own-table"
+// falling through to the default would put a generation's columns on the
+// application's own rows after its author asked for a relation of its own.
+//
+// It does not go through resolveEnum, which compares against the Go values:
+// the zero value's Go spelling is the empty string, and a refusal listing ""
+// among the layouts a build acts on tells an author nothing they can write.
+//
+// An absent key and a `layout:` with nothing after it are different answers,
+// which is why the field is a pointer. The first is an author who did not use
+// this feature; the second is a template that filled in nothing, and it is
+// refused for the reason every other enumerated field here refuses an empty
+// value.
+func resolveTargetLayout(raw *string, path string) (embedgen.TargetLayout, error) {
+	if raw == nil {
+		return embedgen.LayoutSourceColumns, nil
+	}
+	switch strings.TrimSpace(*raw) {
+	case "source_columns":
+		return embedgen.LayoutSourceColumns, nil
+	case string(embedgen.LayoutOwnTable):
+		return embedgen.LayoutOwnTable, nil
+	default:
+		return "", fmt.Errorf("%s: target.layout %q is not one this build acts on; it has %s",
+			path, *raw, "source_columns, "+string(embedgen.LayoutOwnTable))
+	}
 }
 
 // indexOptions reads the index options, which are recall tuning and are
