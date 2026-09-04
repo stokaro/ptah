@@ -230,6 +230,28 @@ What was accepted, and what was left blocking, are both in the plan digest. So
 an approval given for a plan that accepted one finding does not authorize a plan
 that accepted another.
 
+### A generation that covers nothing
+
+A report over an empty corpus passes every layer, because there is nothing for
+any of them to disagree about. It says so:
+
+```text
+generation 04e7dbf7...: 0 source rows, 0 target rows
+  - [coverage/advisory] this generation covers no source rows, so every layer
+    below passed over nothing: check the specification's source filter and
+    schema before cutting over to it
+```
+
+Advisory rather than blocking, because an empty generation is not wrong. A table
+backfilled before its first rows arrive, and a `source.filter` that legitimately
+selects nothing yet, are both a specification doing what it says.
+
+What the finding separates is those from the reachable mistake: a filter with a
+typo in it. The backfill embeds nothing, the verification reads the same nothing
+through the same predicate, and the two agree perfectly — so the counts in the
+header are the only thing that would have told you, and a pipeline reads the
+findings.
+
 ### What was not measured
 
 `verify` reports what it did not check, not only what it did. A report saying

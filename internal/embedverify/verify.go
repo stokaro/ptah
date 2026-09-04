@@ -561,6 +561,22 @@ func (w *corpusWalk) report(report *Report) {
 			"%d source keys hold rows their chunk set does not declare", w.malformedSets.total)
 	}
 	reportCoverage(report, w.missing, w.stale, w.wrongGeneration)
+	if w.sourceRows == 0 {
+		// Every layer passed over nothing, and that reads exactly like every
+		// layer passing. The counts are in the header, but the findings list is
+		// what a pipeline reads, and a readiness answer taken from an empty
+		// findings list would move queries onto a corpus with no vectors.
+		//
+		// Advisory rather than blocking, because an empty generation is not
+		// wrong: a table being backfilled before its first rows arrive, or a
+		// filter that legitimately selects nothing yet, is a specification
+		// doing what it says. What is wrong is the same output for that and for
+		// a filter with a typo in it, and saying so is the part that needs no
+		// decision about which (stokaro/ptah#2870).
+		report.addf(LayerCoverage, Advisory, 0, nil,
+			"this generation covers no source rows, so every layer below passed over nothing: "+
+				"check the specification's source filter and schema before cutting over to it")
+	}
 	if w.skipped > 0 {
 		// Not a failure -- the specification asked for this. It is still worth
 		// saying, because a policy that skips nine rows in ten produces a
