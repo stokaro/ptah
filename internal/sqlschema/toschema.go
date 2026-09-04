@@ -1,45 +1,22 @@
-// Package toschema provides converters for transforming AST nodes back into goschema types.
+// Package sqlschema reads a SQL desired schema into the canonical model.
 //
-// This package serves as the reverse bridge from low-level AST nodes that represent SQL DDL
-// statements back to high-level schema definitions (schemamodel.Field, schemamodel.Table, etc.).
-// The converters handle the extraction of schema metadata from concrete SQL structures and
-// can reconstruct platform-specific overrides when multiple platform variants are provided.
+// [Read] is the whole of it: parse the source, convert the statements, and
+// finalize the result. Both SQL schema sources -- core/schemasource and
+// internal/schemafile -- used to spell those three steps themselves against a
+// general-purpose AST-to-model package that sat beside its own inverse, which
+// is the shape stokaro/ptah#2725 retired.
 //
-// # Core Functionality
+// The per-node conversions below are the decomposition Read is built from, not
+// a conversion service. Nothing outside this package uses them, and a test
+// asserts that: see TestPackageContract_OutsideCallersUseReadOnly. A caller
+// that wants SQL turned into the model wants Read; there is no other question
+// this package answers.
 //
-// The package provides converter functions for all major AST elements:
-//   - ToField: Converts column AST nodes to field definitions
-//   - ToTable: Converts CREATE TABLE AST nodes to table definitions
-//   - ToIndex: Converts index AST nodes to index definitions
-//   - ToEnum: Converts enum AST nodes to enum definitions
-//   - ToDatabase: Converts statement list to complete database schema
-//
-// # Example Usage
-//
-// Converting a simple column definition:
-//
-//	column := ast.NewColumn("email", "VARCHAR(255)").
-//		SetNotNull().
-//		SetUnique().
-//		SetComment("User email address")
-//	field := toschema.ToField(column, "User", "")
-//
-// Converting a complete statement list:
-//
-//	statements := &ast.StatementList{
-//		Statements: []ast.Node{...},
-//	}
-//	database := toschema.ToDatabase(statements)
-//
-// Platform-specific reconstruction:
-//
-//	// Convert multiple platform variants to reconstruct overrides
-//	mysqlField := toschema.ToField(mysqlColumn, "User", "mysql")
-//	postgresField := toschema.ToField(postgresColumn, "User", "postgres")
-//	mergedField := toschema.MergeFieldOverrides(postgresField, map[string]schemamodel.Field{
-//		"mysql": mysqlField,
-//	})
-package toschema
+// Read returns the parsed statements beside the model because a source fact can
+// outlive the conversion -- the model records no IF NOT EXISTS for a table, and
+// a schema directory needs that to tell a guarded redeclaration from a
+// conflicting one.
+package sqlschema
 
 import (
 	"errors"

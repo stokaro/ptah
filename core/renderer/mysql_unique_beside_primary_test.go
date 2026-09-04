@@ -7,8 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/internal/convert/toschema"
-	"go.5x5.cz/ptah/internal/parser"
+	"go.5x5.cz/ptah/internal/sqlschema"
 )
 
 // renderedFromSQL parses one CREATE TABLE and renders it back for a dialect.
@@ -19,9 +18,7 @@ import (
 // hand would be the test author choosing the answer.
 func renderedFromSQL(c *qt.C, dialect, sql string) string {
 	c.Helper()
-	statements, err := parser.NewParser(sql, parser.WithDialect(dialect)).Parse()
-	c.Assert(err, qt.IsNil)
-	database, err := toschema.ToDatabase(statements, dialect)
+	database, _, err := sqlschema.Read([]byte(sql), dialect)
 	c.Assert(err, qt.IsNil)
 	rendered, err := renderer.GetOrderedCreateStatements(&database, dialect)
 	c.Assert(err, qt.IsNil)

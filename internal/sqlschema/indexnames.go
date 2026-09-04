@@ -1,4 +1,4 @@
-package toschema
+package sqlschema
 
 import (
 	"errors"

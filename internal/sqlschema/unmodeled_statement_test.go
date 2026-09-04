@@ -1,4 +1,4 @@
-package toschema_test
+package sqlschema_test
 
 import (
 	"testing"
@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/toschema"
 	"go.5x5.cz/ptah/internal/parser"
+	"go.5x5.cz/ptah/internal/sqlschema"
 )
 
 // TestToDatabase_RefusesARoutineWhoseBodyNothingParsed is stokaro/ptah#2435.
@@ -28,9 +28,9 @@ func TestToDatabase_RefusesARoutineWhoseBodyNothingParsed(t *testing.T) {
 		parser.WithDialect("mysql")).Parse()
 	c.Assert(err, qt.IsNil)
 
-	_, err = toschema.ToDatabase(statements, "mysql")
+	_, err = sqlschema.ToDatabase(statements, "mysql")
 
-	c.Assert(err, qt.ErrorIs, toschema.ErrUnmodeledStatement)
+	c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
 	// Named in the author's terms, and quoting the statement, because "*ast.
 	// OpaqueRoutineNode" sends a reader to this repository rather than to their
 	// own file.
@@ -50,7 +50,7 @@ func TestToDatabase_AModeledRoutineStillReachesTheModel(t *testing.T) {
 		parser.WithDialect("mysql")).Parse()
 	c.Assert(err, qt.IsNil)
 
-	database, err := toschema.ToDatabase(statements, "mysql")
+	database, err := sqlschema.ToDatabase(statements, "mysql")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Functions, qt.HasLen, 1)
@@ -82,7 +82,7 @@ func TestToDatabase_AStatementThatNamesNoObjectIsNotRefused(t *testing.T) {
 			statements, err := parser.NewParser(test.sql, parser.WithDialect(test.dialect)).Parse()
 			c.Assert(err, qt.IsNil)
 
-			database, err := toschema.ToDatabase(statements, test.dialect)
+			database, err := sqlschema.ToDatabase(statements, test.dialect)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(database.Tables, qt.HasLen, 0)
@@ -106,8 +106,8 @@ func TestToDatabase_TheRefusalCarriesNothingHalfBuilt(t *testing.T) {
 		parser.WithDialect("mysql")).Parse()
 	c.Assert(err, qt.IsNil)
 
-	database, err := toschema.ToDatabase(statements, "mysql")
+	database, err := sqlschema.ToDatabase(statements, "mysql")
 
-	c.Assert(err, qt.ErrorIs, toschema.ErrUnmodeledStatement)
+	c.Assert(err, qt.ErrorIs, sqlschema.ErrUnmodeledStatement)
 	c.Assert(database, qt.DeepEquals, schemamodel.Database{})
 }

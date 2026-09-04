@@ -1,4 +1,4 @@
-package toschema_test
+package sqlschema_test
 
 import (
 	"testing"
@@ -7,8 +7,8 @@ import (
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/toschema"
 	"go.5x5.cz/ptah/internal/parser"
+	"go.5x5.cz/ptah/internal/sqlschema"
 )
 
 // mysqlSchema parses one MySQL document the way every SQL schema source does.
@@ -16,7 +16,7 @@ func mysqlSchema(c *qt.C, sql string) schemamodel.Database {
 	c.Helper()
 	statements, err := parser.NewParser(sql, parser.WithDialect(platform.MySQL)).Parse()
 	c.Assert(err, qt.IsNil)
-	database, err := toschema.ToDatabase(statements, platform.MySQL)
+	database, err := sqlschema.ToDatabase(statements, platform.MySQL)
 	c.Assert(err, qt.IsNil)
 	return database
 }
@@ -166,7 +166,7 @@ func TestToDatabase_UnnamedIndexNamesAreDialectSpecific(t *testing.T) {
 	sql := "CREATE TABLE u (id BIGINT NOT NULL PRIMARY KEY, email VARCHAR(255) NOT NULL, UNIQUE (email));"
 	statements, err := parser.NewParser(sql, parser.WithDialect(platform.Postgres)).Parse()
 	c.Assert(err, qt.IsNil)
-	database, err := toschema.ToDatabase(statements, platform.Postgres)
+	database, err := sqlschema.ToDatabase(statements, platform.Postgres)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Constraints, qt.HasLen, 1)
@@ -208,9 +208,9 @@ func TestToDatabase_UnnamedMySQLIndexNames_FailurePath(t *testing.T) {
 			statements, err := parser.NewParser(test.sql, parser.WithDialect(platform.MySQL)).Parse()
 			c.Assert(err, qt.IsNil)
 
-			_, err = toschema.ToDatabase(statements, platform.MySQL)
+			_, err = sqlschema.ToDatabase(statements, platform.MySQL)
 
-			c.Assert(err, qt.ErrorIs, toschema.ErrDuplicateIndexName)
+			c.Assert(err, qt.ErrorIs, sqlschema.ErrDuplicateIndexName)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}

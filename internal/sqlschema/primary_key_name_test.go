@@ -1,4 +1,4 @@
-package toschema_test
+package sqlschema_test
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/internal/convert/toschema"
+	"go.5x5.cz/ptah/internal/sqlschema"
 )
 
 // TestConvertTable_CarriesThePrimaryKeyName is the hop where the name was lost.
@@ -52,7 +52,7 @@ func TestConvertTable_CarriesThePrimaryKeyName(t *testing.T) {
 				Constraints: []*ast.ConstraintNode{test.constraint},
 			}
 
-			converted := toschema.ToTable(table, "")
+			converted := sqlschema.ToTable(table, "")
 
 			c.Assert(converted.PrimaryKeyName, qt.Equals, test.want)
 			// The columns still come across, so a conversion that carried the

@@ -1,4 +1,4 @@
-package toschema_test
+package sqlschema_test
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/convert/toschema"
+	"go.5x5.cz/ptah/internal/sqlschema"
 )
 
 // The two engines fold non-ASCII index names differently, and not in a way any
@@ -66,7 +66,7 @@ func TestToDatabase_NonASCIIIndexNameFailurePath(t *testing.T) {
 
 				_, err := dialectSchema(c, dialect, test.sql)
 
-				c.Assert(err, qt.ErrorIs, toschema.ErrNonASCIIIndexName)
+				c.Assert(err, qt.ErrorIs, sqlschema.ErrNonASCIIIndexName)
 			})
 		}
 	}
@@ -106,7 +106,7 @@ func TestToDatabase_NonASCIIKeyColumnFailurePath(t *testing.T) {
 
 				_, err := dialectSchema(c, dialect, test.sql)
 
-				c.Assert(err, qt.ErrorIs, toschema.ErrNonASCIIColumnName)
+				c.Assert(err, qt.ErrorIs, sqlschema.ErrNonASCIIColumnName)
 			})
 		}
 	}
@@ -152,8 +152,8 @@ func TestToDatabase_ASCIIIndexNamesAreUnaffected(t *testing.T) {
 			_, err := dialectSchema(c, dialect,
 				"CREATE TABLE nz (a INT, b INT, KEY `Foo` (a), KEY `foo` (b));")
 
-			c.Assert(err, qt.ErrorIs, toschema.ErrDuplicateIndexName)
-			c.Assert(err, qt.Not(qt.ErrorIs), toschema.ErrNonASCIIIndexName)
+			c.Assert(err, qt.ErrorIs, sqlschema.ErrDuplicateIndexName)
+			c.Assert(err, qt.Not(qt.ErrorIs), sqlschema.ErrNonASCIIIndexName)
 		})
 	}
 }

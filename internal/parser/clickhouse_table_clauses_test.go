@@ -8,9 +8,8 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/toschema"
 	"go.5x5.cz/ptah/internal/parser"
+	"go.5x5.cz/ptah/internal/sqlschema"
 )
 
 // Every MergeTree table carries clauses after its column list -- ORDER BY is
@@ -177,11 +176,8 @@ func TestParserRefusesAClauseWithNoExpression(t *testing.T) {
 func renderClickHouse(c *qt.C, sqlText string) string {
 	c.Helper()
 
-	statements, err := parser.NewParser(sqlText, parser.WithDialect(platform.ClickHouse)).Parse()
+	database, _, err := sqlschema.Read([]byte(sqlText), platform.ClickHouse)
 	c.Assert(err, qt.IsNil)
-	database, err := toschema.ToDatabase(statements, platform.ClickHouse)
-	c.Assert(err, qt.IsNil)
-	schemamodel.Finalize(&database)
 
 	rendered, err := renderer.GetOrderedCreateStatements(&database, platform.ClickHouse)
 	c.Assert(err, qt.IsNil)

@@ -7,10 +7,8 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/toschema"
 	"go.5x5.cz/ptah/internal/modelast"
-	"go.5x5.cz/ptah/internal/parser"
+	"go.5x5.cz/ptah/internal/sqlschema"
 )
 
 // renderedSQL reads a schema source and renders its routines back.
@@ -21,11 +19,8 @@ import (
 func renderedSQL(c *qt.C, dialect, sql string) string {
 	c.Helper()
 
-	statements, err := parser.NewParser(sql, parser.WithDialect(dialect)).Parse()
+	database, _, err := sqlschema.Read([]byte(sql), dialect)
 	c.Assert(err, qt.IsNil)
-	database, err := toschema.ToDatabase(statements, dialect)
-	c.Assert(err, qt.IsNil)
-	schemamodel.Finalize(&database)
 	c.Assert(database.Functions, qt.Not(qt.HasLen), 0)
 
 	nodes := make([]ast.Node, 0, len(database.Functions))

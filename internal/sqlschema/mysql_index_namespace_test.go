@@ -1,4 +1,4 @@
-package toschema_test
+package sqlschema_test
 
 import (
 	"strings"
@@ -8,8 +8,8 @@ import (
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/toschema"
 	"go.5x5.cz/ptah/internal/parser"
+	"go.5x5.cz/ptah/internal/sqlschema"
 )
 
 // dialectSchema parses one document as a named dialect.
@@ -21,7 +21,7 @@ func dialectSchema(c *qt.C, dialect, sql string) (schemamodel.Database, error) {
 	c.Helper()
 	statements, err := parser.NewParser(sql, parser.WithDialect(dialect)).Parse()
 	c.Assert(err, qt.IsNil)
-	return toschema.ToDatabase(statements, dialect)
+	return sqlschema.ToDatabase(statements, dialect)
 }
 
 // TestToDatabase_TheIndexNamespaceFoldsCaseFailurePath covers stokaro/ptah#2757.
@@ -46,7 +46,7 @@ func TestToDatabase_TheIndexNamespaceFoldsCaseFailurePath(t *testing.T) {
 			_, err := dialectSchema(c, test.dialect,
 				"CREATE TABLE case_names (a INT, b INT, KEY Foo (a), KEY foo (b));")
 
-			c.Assert(err, qt.ErrorIs, toschema.ErrDuplicateIndexName)
+			c.Assert(err, qt.ErrorIs, sqlschema.ErrDuplicateIndexName)
 		})
 	}
 }
@@ -96,7 +96,7 @@ func TestToDatabase_AnIndexNamedPrimaryIsRefusedFailurePath(t *testing.T) {
 	_, err := dialectSchema(c, platform.MySQL,
 		"CREATE TABLE explicit_primary (a INT, KEY `PRIMARY` (a));")
 
-	c.Assert(err, qt.ErrorIs, toschema.ErrReservedIndexName)
+	c.Assert(err, qt.ErrorIs, sqlschema.ErrReservedIndexName)
 }
 
 // TestToDatabase_SuffixingHonorsTheIdentifierLimit covers stokaro/ptah#2759.
@@ -144,7 +144,7 @@ func TestToDatabase_SuffixingHonorsTheIdentifierLimit(t *testing.T) {
 		_, err := dialectSchema(c, platform.MariaDB,
 			"CREATE TABLE wide_names ("+wide+" INT, KEY ("+wide+"), KEY ("+wide+"));")
 
-		c.Assert(err, qt.ErrorIs, toschema.ErrIndexNameTooLong)
+		c.Assert(err, qt.ErrorIs, sqlschema.ErrIndexNameTooLong)
 	})
 
 	t.Run("mariadb accepts one that fits", func(t *testing.T) {

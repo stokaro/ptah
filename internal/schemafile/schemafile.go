@@ -15,11 +15,10 @@ import (
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/yamlschema"
 	"go.5x5.cz/ptah/internal/atlashcl"
-	"go.5x5.cz/ptah/internal/convert/toschema"
 	"go.5x5.cz/ptah/internal/dbmlparse"
-	"go.5x5.cz/ptah/internal/parser"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/schemaselection"
+	"go.5x5.cz/ptah/internal/sqlschema"
 )
 
 // Options configures schema file loading.
@@ -669,15 +668,10 @@ func loadSQLFileWithStatements(path string, opts Options) (*schemamodel.Database
 		return nil, nil, fmt.Errorf("read SQL schema file: %w", err)
 	}
 
-	statements, err := parser.NewParser(string(data), parser.WithDialect(opts.Dialect)).Parse()
-	if err != nil {
-		return nil, nil, fmt.Errorf("parse SQL schema file: %w", err)
-	}
-	db, err := toschema.ToDatabase(statements, opts.Dialect)
+	db, statements, err := sqlschema.Read(data, opts.Dialect)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read SQL schema file %s: %w", path, err)
 	}
-	schemamodel.Finalize(&db)
 	// The same directive grammar the HCL loader reads, spelled with SQL's
 	// comment marker. No Ptah surface writes one into SQL today -- only the HCL
 	// rendering omits blocks -- but the contract is the document's, not one

@@ -1,12 +1,12 @@
-package toschema_test
+package sqlschema_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/convert/toschema"
 	"go.5x5.cz/ptah/internal/parser"
+	"go.5x5.cz/ptah/internal/sqlschema"
 )
 
 // TestToDatabase_AlterTableAddIndexReachesTheModel is the second half of
@@ -43,7 +43,7 @@ func TestToDatabase_AlterTableAddIndexReachesTheModel(t *testing.T) {
 			).Parse()
 			c.Assert(err, qt.IsNil)
 
-			database, err := toschema.ToDatabase(statements, test.dialect)
+			database, err := sqlschema.ToDatabase(statements, test.dialect)
 			c.Assert(err, qt.IsNil)
 
 			c.Assert(database.Indexes, qt.HasLen, 1)

@@ -47,7 +47,7 @@ number would let the debt return to it with the gate green the whole way.
 The two `model-imports-pipeline` edges:
 
 - `core/renderer` → `internal/modelast`
-- `core/schemasource` → `internal/convert/toschema`
+- `core/schemasource` → `internal/sqlschema`
 
 The renderer edge is an abstract syntax tree (AST) lowering boundary, not a
 whole-schema conversion. Model-to-model preparation lives in
@@ -56,10 +56,19 @@ then visits one AST node at a time, and `core/renderer` renders each node before
 the next one is lowered. The stable `atlascompat.SchemaToAST` API is the one
 caller that uses `internal/modelast.CollectDatabase` to retain a complete AST.
 
-The SQL schema-source path still parses into AST before
-`internal/convert/toschema` constructs the model. Issue
-[#2725](https://github.com/stokaro/ptah/issues/2725) owns removing that remaining
-edge. The `pipeline-builds-source-description` rule is enforced at zero: the
+The SQL schema-source path still parses into AST before `internal/sqlschema`
+constructs the model, and that edge is still recorded.
+[#2725](https://github.com/stokaro/ptah/issues/2725) retired the general-purpose
+conversion package it used to be -- one purpose, one entry point, and nothing
+outside it reaching past `Read` -- but it did not remove the dependency, and the
+rule names `internal/sqlschema` so that the rename could not report otherwise.
+
+Removing the edge is a separate decision about where a SQL reader belongs.
+`core/goschema` and `core/yamlschema` are already readers that produce a
+`core/schemamodel.Database`, so a SQL reader beside them would end this edge by
+being core rather than by being hidden from the rule -- at the cost of a new
+entry in the public API ledger, which is a commitment this refactor did not make
+on its own. The `pipeline-builds-source-description` rule is enforced at zero: the
 four dialect planners no longer construct `schemamodel.Database` values.
 
 ## Information-loss boundaries

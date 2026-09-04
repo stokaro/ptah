@@ -15,9 +15,8 @@ import (
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/internal/convert/toschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/internal/parser"
+	"go.5x5.cz/ptah/internal/sqlschema"
 )
 
 // TestMySQLUniqueBesidePrimaryConvergesLive is stokaro/ptah#2787 asked of the
@@ -94,9 +93,7 @@ func assertUniqueBesidePrimaryConverges(
 	sourceTable := "src_" + label
 	renderedTable := "ren_" + label
 
-	statements, err := parser.NewParser(source, parser.WithDialect(dialect)).Parse()
-	c.Assert(err, qt.IsNil)
-	database, err := toschema.ToDatabase(statements, dialect)
+	database, _, err := sqlschema.Read([]byte(source), dialect)
 	c.Assert(err, qt.IsNil)
 	rendered, err := renderer.GetOrderedCreateStatements(&database, dialect)
 	c.Assert(err, qt.IsNil)
