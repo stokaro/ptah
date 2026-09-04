@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	"go.5x5.cz/ptah/cmd/internal/banner"
 	"go.5x5.cz/ptah/internal/buildinfo"
 	"go.5x5.cz/ptah/internal/ptahls"
 )
@@ -60,6 +61,18 @@ func main() {
 		buildinfo.Write(os.Stdout, info)
 		return
 	}
+
+	// The banner goes to stderr, never to stdout, and this is the one binary
+	// where that is structural rather than a preference: stdout IS the
+	// language-server protocol stream, and a client reading a framed message
+	// off it would be handed ASCII art. Stderr is where this binary already
+	// writes everything a person reads -- flags.SetOutput above, and every
+	// diagnostic below -- so it is also the consistent choice.
+	//
+	// A client pipes stderr into its log, so the writer gate keeps it out of
+	// there too; what is left is a person who started the server by hand and
+	// is now looking at a process that appears to do nothing.
+	banner.Print(os.Stderr, "ptah-ls", info.Version)
 
 	opts := ptahls.ServerOptions{Version: info.Version}
 	if err := ptahls.RunWithOptions(context.Background(), os.Stdin, os.Stdout, opts); err != nil {
