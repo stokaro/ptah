@@ -79,27 +79,21 @@ func (c *Client) Attach(
 	ctx, cancel := c.operationContext(ctx)
 	defer cancel()
 
-	ref, err := ParseRef(subjectRef)
-	if err != nil {
-		return PushResult{}, err
-	}
-	repository, err := c.repository(ref)
-	if err != nil {
-		return PushResult{}, err
-	}
-	target, err := c.attachmentTarget(ref)
+	endpoint, err := c.attachEndpointFor(subjectRef)
 	if err != nil {
 		return PushResult{}, err
 	}
 	opts.Limits = mergeLimits(opts.Limits, c.options.Limits)
-	subject, err := repository.Resolve(ctx, ref.Selector())
+	subject, err := endpoint.repository.Resolve(ctx, endpoint.selector)
 	if err != nil {
-		return PushResult{}, fmt.Errorf("resolve attachment subject %s: %w", ref, err)
+		return PushResult{}, fmt.Errorf("resolve attachment subject %s: %w", endpoint.display, err)
 	}
 	opts.Policy = c.effectiveReferrerPolicy(opts.Policy)
-	result, err := attachResolved(ctx, target, repository, ref, subject, fsys, opts, c.indexProbe(subjectRef))
+	result, err := attachResolved(
+		ctx, endpoint.target, endpoint.repository, endpoint.reference,
+		subject, fsys, opts, endpoint.probe)
 	if err != nil {
-		return result, fmt.Errorf("attach to %s: %w", ref, err)
+		return result, fmt.Errorf("attach to %s: %w", endpoint.display, err)
 	}
 	return result, nil
 }
@@ -116,23 +110,17 @@ func (c *Client) AttachResolved(
 	ctx, cancel := c.operationContext(ctx)
 	defer cancel()
 
-	ref, err := ParseRef(subjectRef)
-	if err != nil {
-		return PushResult{}, err
-	}
-	repository, err := c.repository(ref)
-	if err != nil {
-		return PushResult{}, err
-	}
-	target, err := c.attachmentTarget(ref)
+	endpoint, err := c.attachEndpointFor(subjectRef)
 	if err != nil {
 		return PushResult{}, err
 	}
 	opts.Limits = mergeLimits(opts.Limits, c.options.Limits)
 	opts.Policy = c.effectiveReferrerPolicy(opts.Policy)
-	result, err := attachResolved(ctx, target, repository, ref, subject, fsys, opts, c.indexProbe(subjectRef))
+	result, err := attachResolved(
+		ctx, endpoint.target, endpoint.repository, endpoint.reference,
+		subject, fsys, opts, endpoint.probe)
 	if err != nil {
-		return result, fmt.Errorf("attach to resolved subject %s: %w", ref, err)
+		return result, fmt.Errorf("attach to resolved subject %s: %w", endpoint.display, err)
 	}
 	return result, nil
 }
@@ -310,27 +298,27 @@ func (c *Client) Referrers(
 	ctx, cancel := c.operationContext(ctx)
 	defer cancel()
 
-	ref, err := ParseRef(subjectRef)
+	// The same resolution the attachment uses. Listing what is attached to a
+	// subject and attaching to it are one question about one target, and a
+	// layout that could be written to and not read back would be half a
+	// feature (stokaro/ptah#2839).
+	endpoint, err := c.attachEndpointFor(subjectRef)
 	if err != nil {
 		return nil, err
 	}
-	repository, err := c.repository(ref)
+	subject, err := endpoint.repository.Resolve(ctx, endpoint.selector)
 	if err != nil {
-		return nil, err
-	}
-	subject, err := repository.Resolve(ctx, ref.Selector())
-	if err != nil {
-		return nil, fmt.Errorf("resolve referrer subject %s: %w", ref, err)
+		return nil, fmt.Errorf("resolve referrer subject %s: %w", endpoint.display, err)
 	}
 	referrers, err := listDiscoverableReferrers(
 		ctx,
-		repository,
+		endpoint.repository,
 		subject,
 		artifactType,
 		c.options.Limits,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("list referrers for %s: %w", ref, err)
+		return nil, fmt.Errorf("list referrers for %s: %w", endpoint.display, err)
 	}
 	return referrers, nil
 }

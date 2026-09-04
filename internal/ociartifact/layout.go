@@ -55,6 +55,15 @@ func LayoutPath(raw string) (path, tag string, err error) {
 // first thing anyone runs, and refusing to create the directory would make the
 // operator do by hand what the command is about to do anyway.
 func OpenLayout(raw string) (oras.Target, string, error) {
+	return openLayoutStore(raw)
+}
+
+// openLayoutStore is OpenLayout with the concrete store kept.
+//
+// Attachment needs the type rather than the interface: an *oci.Store carries
+// the reverse graph that [layoutRepository] turns into a referrer listing, and
+// an oras.Target does not expose it.
+func openLayoutStore(raw string) (*oci.Store, string, error) {
 	path, tag, err := LayoutPath(raw)
 	if err != nil {
 		return nil, "", err
