@@ -298,27 +298,30 @@ func (c *Client) Referrers(
 	ctx, cancel := c.operationContext(ctx)
 	defer cancel()
 
-	ref, err := ParseRef(subjectRef)
+	// The resolution Attach uses, because listing what is attached to a subject
+	// and attaching to it are one question about one target. Writing through a
+	// layout and reading through ParseRef left a directory that could be
+	// attached to and not read back: the only caller able to ask what an
+	// attachment was were the call that made it, while the air-gapped consumer
+	// the layout exists for carried the directory across and could list
+	// nothing (stokaro/ptah#2852).
+	endpoint, err := c.attachmentEndpoint(subjectRef)
 	if err != nil {
 		return nil, err
 	}
-	repository, err := c.repository(ref)
+	subject, err := endpoint.repository.Resolve(ctx, endpoint.selector)
 	if err != nil {
-		return nil, err
-	}
-	subject, err := repository.Resolve(ctx, ref.Selector())
-	if err != nil {
-		return nil, fmt.Errorf("resolve referrer subject %s: %w", ref, err)
+		return nil, fmt.Errorf("resolve referrer subject %s: %w", endpoint.display, err)
 	}
 	referrers, err := listDiscoverableReferrers(
 		ctx,
-		repository,
+		endpoint.repository,
 		subject,
 		artifactType,
 		c.options.Limits,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("list referrers for %s: %w", ref, err)
+		return nil, fmt.Errorf("list referrers for %s: %w", endpoint.display, err)
 	}
 	return referrers, nil
 }

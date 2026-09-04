@@ -161,7 +161,10 @@ type attachmentEndpoint struct {
 	probe      indexProbe
 }
 
-// attachmentEndpoint opens the side an attachment writes to.
+// attachmentEndpoint opens the side an attachment writes to, and the side a
+// referrer listing reads from -- they are one target, and resolving them
+// apart is what let a layout be written to and not read back
+// (stokaro/ptah#2852).
 func (c *Client) attachmentEndpoint(raw string) (attachmentEndpoint, error) {
 	if IsLayoutRef(raw) {
 		target, tag, err := OpenLayout(raw)
