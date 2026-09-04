@@ -21,10 +21,9 @@ import (
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/yamlschema"
 	"go.5x5.cz/ptah/internal/atlashcl"
-	"go.5x5.cz/ptah/internal/convert/toschema"
-	"go.5x5.cz/ptah/internal/parser"
 	"go.5x5.cz/ptah/internal/processcapture"
 	"go.5x5.cz/ptah/internal/secretdisplay"
+	"go.5x5.cz/ptah/internal/sqlschema"
 )
 
 // DefaultTimeout bounds how long an external schema command may run when the
@@ -225,14 +224,9 @@ func stderrSuffix(s string) string {
 }
 
 func parseSQL(data []byte, dialect string) (*schemamodel.Database, error) {
-	statements, err := parser.NewParser(string(data), parser.WithDialect(dialect)).Parse()
+	db, _, err := sqlschema.Read(data, dialect)
 	if err != nil {
 		return nil, err
 	}
-	db, err := toschema.ToDatabase(statements, dialect)
-	if err != nil {
-		return nil, err
-	}
-	schemamodel.Finalize(&db)
 	return &db, nil
 }

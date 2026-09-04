@@ -14,9 +14,8 @@ import (
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/convert/toschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/internal/parser"
+	"go.5x5.cz/ptah/internal/sqlschema"
 )
 
 // TestSQLServerLiveRefusesPrimaryKeyBesideUniqueOnOneColumn is stokaro/ptah#2812
@@ -103,9 +102,7 @@ func TestSQLServerLiveAcceptsTheTableLevelSpellingPtahWrites(t *testing.T) {
 // the renderer answered so a caller can assert either outcome.
 func renderSQLServer(c *qt.C, sql string) (string, error) {
 	c.Helper()
-	statements, err := parser.NewParser(sql, parser.WithDialect(platform.SQLServer)).Parse()
-	c.Assert(err, qt.IsNil)
-	database, err := toschema.ToDatabase(statements, platform.SQLServer)
+	database, _, err := sqlschema.Read([]byte(sql), platform.SQLServer)
 	c.Assert(err, qt.IsNil)
 	ordered, err := renderer.GetOrderedCreateStatements(&database, platform.SQLServer)
 	if err != nil {

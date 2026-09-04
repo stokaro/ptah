@@ -1,4 +1,4 @@
-package toschema_test
+package sqlschema_test
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/toschema"
+	"go.5x5.cz/ptah/internal/sqlschema"
 )
 
 func TestToField_BasicProperties(t *testing.T) {
@@ -111,7 +111,7 @@ func TestToField_BasicProperties(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := toschema.ToField(test.column, test.structName, "")
+			result := sqlschema.ToField(test.column, test.structName, "")
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
 	}
@@ -161,7 +161,7 @@ func TestToField_DefaultValues(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := toschema.ToField(test.column, test.structName, "")
+			result := sqlschema.ToField(test.column, test.structName, "")
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
 	}
@@ -211,7 +211,7 @@ func TestToField_ForeignKeys(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := toschema.ToField(test.column, test.structName, "")
+			result := sqlschema.ToField(test.column, test.structName, "")
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
 	}
@@ -255,7 +255,7 @@ func TestToField_CheckAndComment(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := toschema.ToField(test.column, test.structName, "")
+			result := sqlschema.ToField(test.column, test.structName, "")
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
 	}
@@ -265,7 +265,7 @@ func TestToField_PlatformSource(t *testing.T) {
 	c := qt.New(t)
 
 	column := ast.NewColumn("data", "JSON")
-	result := toschema.ToField(column, "Product", "mysql")
+	result := sqlschema.ToField(column, "Product", "mysql")
 
 	c.Assert(result.Name, qt.Equals, "data")
 	c.Assert(result.Type, qt.Equals, "JSON")
@@ -379,7 +379,7 @@ func TestToTable_BasicTable(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := toschema.ToTable(test.table, test.sourcePlatform)
+			result := sqlschema.ToTable(test.table, test.sourcePlatform)
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
 	}
@@ -391,7 +391,7 @@ func TestToTable_CompositePrimaryKey(t *testing.T) {
 	table := ast.NewCreateTable("user_roles").
 		AddConstraint(ast.NewPrimaryKeyConstraint("user_id", "role_id"))
 
-	result := toschema.ToTable(table, "")
+	result := sqlschema.ToTable(table, "")
 
 	c.Assert(result.Name, qt.Equals, "user_roles")
 	c.Assert(result.StructName, qt.Equals, "UserRole")
@@ -414,7 +414,7 @@ func TestToTable_PrimaryKeyParts(t *testing.T) {
 			}},
 		})
 
-	result := toschema.ToTable(table, "")
+	result := sqlschema.ToTable(table, "")
 
 	c.Assert(result.PrimaryKey, qt.DeepEquals, []string{"id"})
 	c.Assert(result.PrimaryKeyParts, qt.DeepEquals, []schemamodel.PrimaryKeyPart{{
@@ -435,7 +435,7 @@ func TestToTable_PrimaryKeyInclude(t *testing.T) {
 			IncludeColumns: []string{"covering"},
 		})
 
-	result := toschema.ToTable(table, "")
+	result := sqlschema.ToTable(table, "")
 
 	c.Assert(result.PrimaryKey, qt.DeepEquals, []string{"id"})
 	c.Assert(result.PrimaryKeyParts, qt.DeepEquals, []schemamodel.PrimaryKeyPart{{Name: "id"}})
@@ -450,7 +450,7 @@ func TestToTable_PlatformSource(t *testing.T) {
 		SetOption("CHARSET", "utf8mb4")
 	table.Comment = "Product catalog"
 
-	result := toschema.ToTable(table, "mysql")
+	result := sqlschema.ToTable(table, "mysql")
 
 	c.Assert(result.Name, qt.Equals, "products")
 	c.Assert(result.Engine, qt.Equals, "InnoDB")
@@ -592,7 +592,7 @@ func TestToIndex_BasicIndex(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := toschema.ToIndex(test.index)
+			result := sqlschema.ToIndex(test.index)
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
 	}
@@ -638,7 +638,7 @@ func TestToEnum_BasicEnum(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			result := toschema.ToEnum(test.enum)
+			result := sqlschema.ToEnum(test.enum)
 			c.Assert(test.expected(result), qt.IsTrue)
 		})
 	}
@@ -664,7 +664,7 @@ func TestToDatabase_CompleteSchema(t *testing.T) {
 		},
 	}
 
-	result, err := toschema.ToDatabase(statements, "")
+	result, err := sqlschema.ToDatabase(statements, "")
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(result.Enums, qt.HasLen, 1)
@@ -707,7 +707,7 @@ func TestToDatabase_UniqueConstraintNullsNotDistinct(t *testing.T) {
 			NullsDistinct:  &nullsDistinct,
 		})
 
-	result, err := toschema.ToDatabase(&ast.StatementList{Statements: []ast.Node{usersTable}}, "")
+	result, err := sqlschema.ToDatabase(&ast.StatementList{Statements: []ast.Node{usersTable}}, "")
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(result.Constraints, qt.HasLen, 1)
@@ -725,7 +725,7 @@ func TestToDatabase_EmptySchema(t *testing.T) {
 		Statements: make([]ast.Node, 0),
 	}
 
-	result, err := toschema.ToDatabase(statements, "")
+	result, err := sqlschema.ToDatabase(statements, "")
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(result.Enums, qt.HasLen, 0)
@@ -757,7 +757,7 @@ func TestMergeFieldOverrides_BasicMerging(t *testing.T) {
 		},
 	}
 
-	result := toschema.MergeFieldOverrides(baseField, platformFields)
+	result := sqlschema.MergeFieldOverrides(baseField, platformFields)
 
 	c.Assert(result.Name, qt.Equals, "data")
 	c.Assert(result.Type, qt.Equals, "JSONB") // Base type unchanged
@@ -790,7 +790,7 @@ func TestMergeFieldOverrides_CharsetCollate(t *testing.T) {
 		},
 	}
 
-	result := toschema.MergeFieldOverrides(baseField, platformFields)
+	result := sqlschema.MergeFieldOverrides(baseField, platformFields)
 
 	c.Assert(result.Overrides["mysql"]["charset"], qt.Equals, "hebrew")
 	c.Assert(result.Overrides["mysql"]["collate"], qt.Equals, "hebrew_general_ci")
@@ -818,7 +818,7 @@ func TestMergeFieldOverrides_DefaultValues(t *testing.T) {
 		},
 	}
 
-	result := toschema.MergeFieldOverrides(baseField, platformFields)
+	result := sqlschema.MergeFieldOverrides(baseField, platformFields)
 
 	c.Assert(result.Overrides["mysql"]["default_expr"], qt.Equals, "NOW()")
 	c.Assert(result.Overrides["postgres"]["default"], qt.Equals, "NOW()")
@@ -832,7 +832,7 @@ func TestMergeFieldOverrides_EmptyPlatforms(t *testing.T) {
 		Type: "JSONB",
 	}
 
-	result := toschema.MergeFieldOverrides(baseField, make(map[string]schemamodel.Field))
+	result := sqlschema.MergeFieldOverrides(baseField, make(map[string]schemamodel.Field))
 
 	c.Assert(result.Name, qt.Equals, "data")
 	c.Assert(result.Type, qt.Equals, "JSONB")
@@ -868,7 +868,7 @@ func TestMergeTableOverrides_BasicMerging(t *testing.T) {
 		},
 	}
 
-	result := toschema.MergeTableOverrides(baseTable, platformTables)
+	result := sqlschema.MergeTableOverrides(baseTable, platformTables)
 
 	c.Assert(result.Name, qt.Equals, "products")
 	c.Assert(result.Engine, qt.Equals, "InnoDB") // Base engine unchanged
@@ -911,7 +911,7 @@ func TestGenerateStructName_BasicConversions(t *testing.T) {
 			// We need to test the generateStructName function, but it's not exported
 			// So we'll test it indirectly through ToTable
 			table := ast.NewCreateTable(test.tableName)
-			result := toschema.ToTable(table, "")
+			result := sqlschema.ToTable(table, "")
 			c.Assert(result.StructName, qt.Equals, test.structName)
 		})
 	}

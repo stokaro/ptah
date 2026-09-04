@@ -1,4 +1,4 @@
-package toschema_test
+package sqlschema_test
 
 import (
 	"testing"
@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/toschema"
 	"go.5x5.cz/ptah/internal/parser"
+	"go.5x5.cz/ptah/internal/sqlschema"
 )
 
 // fieldNamed resolves one field of the parsed schema by column name.
@@ -16,7 +16,7 @@ func fieldNamed(c *qt.C, sql, column string) schemamodel.Field {
 
 	statements, err := parser.NewParser(sql, parser.WithDialect("postgres")).Parse()
 	c.Assert(err, qt.IsNil)
-	database, err := toschema.ToDatabase(statements, "postgres")
+	database, err := sqlschema.ToDatabase(statements, "postgres")
 	c.Assert(err, qt.IsNil)
 	schemamodel.Finalize(&database)
 

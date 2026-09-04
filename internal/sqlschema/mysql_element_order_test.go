@@ -1,4 +1,4 @@
-package toschema_test
+package sqlschema_test
 
 import (
 	"testing"
@@ -8,7 +8,7 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/astbuilder"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/convert/toschema"
+	"go.5x5.cz/ptah/internal/sqlschema"
 )
 
 // The two documents stokaro/ptah#2773 was filed about, and the four that say
@@ -108,7 +108,7 @@ func TestToDatabase_TheDeclaredOrderDecidesTheNames_FailurePath(t *testing.T) {
 
 			_, err := dialectSchema(c, test.dialect, orderIndexFirst)
 
-			c.Assert(err, qt.ErrorIs, toschema.ErrDuplicateIndexName)
+			c.Assert(err, qt.ErrorIs, sqlschema.ErrDuplicateIndexName)
 			c.Assert(err, qt.ErrorMatches,
 				`two indexes on one table claim the same name: b on c`)
 		})
@@ -235,7 +235,7 @@ func TestToDatabase_AForeignKeyNoKeyCoversClaimsItsOwnName_FailurePath(t *testin
 
 			_, err := dialectSchema(c, test.dialect, test.sql)
 
-			c.Assert(err, qt.ErrorIs, toschema.ErrDuplicateIndexName)
+			c.Assert(err, qt.ErrorIs, sqlschema.ErrDuplicateIndexName)
 			c.Assert(err, qt.ErrorMatches,
 				`two indexes on one table claim the same name: fk1 on c`)
 		})
@@ -270,7 +270,7 @@ func TestToDatabase_ATableWithNoRecordedOrderIsNamedConstraintsThenIndexes(t *te
 	}
 	c.Assert(table.Elements, qt.HasLen, 0)
 
-	database, err := toschema.ToDatabase(
+	database, err := sqlschema.ToDatabase(
 		&ast.StatementList{Statements: []ast.Node{table}}, platform.MySQL)
 
 	c.Assert(err, qt.IsNil)
@@ -306,7 +306,7 @@ func TestToDatabase_ABuilderBuiltTableStillNamesItsUniqueConstraint(t *testing.T
 	c.Assert(table.Elements, qt.HasLen, 1)
 	c.Assert(table.Elements[0].Constraint, qt.Equals, table.Constraints[0])
 
-	database, err := toschema.ToDatabase(
+	database, err := sqlschema.ToDatabase(
 		&ast.StatementList{Statements: []ast.Node{table}}, platform.MySQL)
 
 	c.Assert(err, qt.IsNil)

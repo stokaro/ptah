@@ -16,7 +16,7 @@ import (
 // silently -- and on a table large enough for the request to be worth making,
 // that is the difference between a migration and an outage (stokaro/ptah#1663).
 //
-// It is the same loss internal/convert/toschema records for ClickHouse's
+// It is the same loss internal/sqlschema records for ClickHouse's
 // GRANULARITY: a field the parser read and the conversion did not copy, found
 // only by asking what came out the other end.
 func TestAConcurrentIndexSurvivesTheConversion(t *testing.T) {

@@ -1,4 +1,4 @@
-package toschema_test
+package sqlschema_test
 
 import (
 	"testing"
@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/toschema"
 	"go.5x5.cz/ptah/internal/parser"
+	"go.5x5.cz/ptah/internal/sqlschema"
 )
 
 // functionalIndexDatabase reads one MySQL document and returns the model.
@@ -19,7 +19,7 @@ func functionalIndexDatabase(c *qt.C, sql string) schemamodel.Database {
 	c.Helper()
 	statements, err := parser.NewParser(sql, parser.WithDialect("mysql")).Parse()
 	c.Assert(err, qt.IsNil)
-	database, err := toschema.ToDatabase(statements, "mysql")
+	database, err := sqlschema.ToDatabase(statements, "mysql")
 	c.Assert(err, qt.IsNil)
 	return database
 }

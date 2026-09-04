@@ -1,4 +1,4 @@
-package toschema_test
+package sqlschema_test
 
 import (
 	"testing"
@@ -9,9 +9,9 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/toschema"
 	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/internal/parser"
+	"go.5x5.cz/ptah/internal/sqlschema"
 )
 
 // parseOneIndex parses a document holding exactly one CREATE INDEX and converts
@@ -23,7 +23,7 @@ func parseOneIndex(c *qt.C, sql string) schemamodel.Index {
 	c.Assert(statements.Statements, qt.HasLen, 1)
 	node, ok := statements.Statements[0].(*ast.IndexNode)
 	c.Assert(ok, qt.IsTrue)
-	return toschema.ToIndex(node)
+	return sqlschema.ToIndex(node)
 }
 
 // TestToIndex_KeySuffixes pins the index key suffixes the SQL surface has to
@@ -157,7 +157,7 @@ func TestToIndex_StructuredPartsKeepTheirNullsOrdering(t *testing.T) {
 		{Name: "score", NullsOrder: ast.NullsOrderFirst},
 	})
 
-	c.Assert(toschema.ToIndex(node).Parts, qt.DeepEquals, []schemamodel.IndexPart{
+	c.Assert(sqlschema.ToIndex(node).Parts, qt.DeepEquals, []schemamodel.IndexPart{
 		{Name: "created_at", Desc: true, NullsOrder: schemamodel.NullsOrderLast},
 		{Name: "score", NullsOrder: schemamodel.NullsOrderFirst},
 	})

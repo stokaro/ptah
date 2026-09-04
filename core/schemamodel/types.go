@@ -410,7 +410,7 @@ type Index struct {
 	// locking one, silently. On a table large enough for the request to be
 	// worth making, that is the difference between a migration and an outage
 	// (stokaro/ptah#1663). It is the same loss the Granularity comment in
-	// internal/convert/toschema records for ClickHouse.
+	// internal/sqlschema records for ClickHouse.
 	Concurrently bool
 	// Operator is the operator class (PostgreSQL only, e.g. "gin_trgm_ops").
 	Operator string
@@ -781,7 +781,7 @@ type Enum struct {
 //
 // Name is returned VERBATIM when Schema is empty, rather than through
 // QualifyTableName, because Name is not always a bare identifier here. A SQL
-// schema file loaded through internal/convert/toschema parks the qualifier in
+// schema file loaded through internal/sqlschema parks the qualifier in
 // Name -- `public.e1` -- and an enum may legitimately be named with a literal
 // dot, which QualifyTableName canonicalizes by quoting. Running either through
 // it changes the identifier: `public.e1` becomes the single quoted name

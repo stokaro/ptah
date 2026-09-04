@@ -66,7 +66,7 @@ target="$tree/core/goschema/boundaries_selftest_defect.go"
 cat >"$target" <<'GO'
 package goschema
 
-import _ "go.5x5.cz/ptah/internal/convert/toschema"
+import _ "go.5x5.cz/ptah/internal/sqlschema"
 GO
 require_refusal "the canonical model taking one more pipeline import"
 rm -f "$target"

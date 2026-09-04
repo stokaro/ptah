@@ -8,8 +8,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/internal/convert/toschema"
-	"go.5x5.cz/ptah/internal/parser"
+	"go.5x5.cz/ptah/internal/sqlschema"
 )
 
 // renderErrorFromSQL is the error rendering one CREATE TABLE for a dialect.
@@ -20,9 +19,7 @@ import (
 // choosing which one is under test.
 func renderErrorFromSQL(c *qt.C, dialect, sql string) error {
 	c.Helper()
-	statements, err := parser.NewParser(sql, parser.WithDialect(dialect)).Parse()
-	c.Assert(err, qt.IsNil)
-	database, err := toschema.ToDatabase(statements, dialect)
+	database, _, err := sqlschema.Read([]byte(sql), dialect)
 	c.Assert(err, qt.IsNil)
 	_, err = renderer.GetOrderedCreateStatements(&database, dialect)
 	return err

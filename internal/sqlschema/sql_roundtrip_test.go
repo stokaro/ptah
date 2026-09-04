@@ -1,4 +1,4 @@
-package toschema_test
+package sqlschema_test
 
 import (
 	"strings"
@@ -9,9 +9,9 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/toschema"
 	"go.5x5.cz/ptah/internal/modelast"
 	"go.5x5.cz/ptah/internal/parser"
+	"go.5x5.cz/ptah/internal/sqlschema"
 )
 
 // These tests exercise the SQL -> schemamodel.Database path used by the
@@ -21,7 +21,7 @@ import (
 func parseToDatabase(c *qt.C, sql string) schemamodel.Database {
 	statements, err := parser.NewParser(sql).Parse()
 	c.Assert(err, qt.IsNil)
-	database, err := toschema.ToDatabase(statements, "")
+	database, err := sqlschema.ToDatabase(statements, "")
 	c.Assert(err, qt.IsNil)
 	return database
 }
@@ -200,7 +200,7 @@ func TestToDatabase_SQLServerBracketIdentifiersStayAtomic(t *testing.T) {
 	statements, err := parser.NewParser(sql, parser.WithDialect("sqlserver")).Parse()
 	c.Assert(err, qt.IsNil)
 
-	db, err := toschema.ToDatabase(statements, "")
+	db, err := sqlschema.ToDatabase(statements, "")
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(db.Tables, qt.HasLen, 1)
@@ -292,7 +292,7 @@ func TestToDatabase_DialectQuotedIdentifiersAreCanonicalized(t *testing.T) {
 	extension := ast.NewExtension(`"uuid-ossp"`).SetSchema(`"Extension Store"`)
 	enum := ast.NewEnum(`"audit"."event""kind"`, "created")
 
-	db, err := toschema.ToDatabase(&ast.StatementList{Statements: []ast.Node{
+	db, err := sqlschema.ToDatabase(&ast.StatementList{Statements: []ast.Node{
 		table,
 		index,
 		enum,
@@ -312,7 +312,7 @@ func TestToDatabase_DialectQuotedIdentifiersAreCanonicalized(t *testing.T) {
 	c.Assert(db.Indexes[0].Name, qt.Equals, "event`lookup")
 	c.Assert(db.Indexes[0].TableName, qt.Equals, `audit."user""events"`)
 	c.Assert(db.Indexes[0].Fields, qt.DeepEquals, []string{"event]id"})
-	c.Assert(toschema.ToExtension(extension), qt.DeepEquals, schemamodel.Extension{
+	c.Assert(sqlschema.ToExtension(extension), qt.DeepEquals, schemamodel.Extension{
 		Name:   "uuid-ossp",
 		Schema: "Extension Store",
 	})
@@ -348,7 +348,7 @@ func TestToDatabase_PostgresExtensionIdentifiersUseCatalogIdentity(t *testing.T)
 func TestToConstraint_DialectQuotedIdentifiersAreCanonicalized(t *testing.T) {
 	c := qt.New(t)
 
-	constraint, ok := toschema.ToConstraint(
+	constraint, ok := sqlschema.ToConstraint(
 		ast.NewForeignKeyConstraint(
 			`"events_actor_fk"`,
 			[]string{"`tenant``id`", "[actor]]id]"},
@@ -372,7 +372,7 @@ func TestToConstraint_DialectQuotedIdentifiersAreCanonicalized(t *testing.T) {
 func TestToConstraint_LiteralDotForeignTableIsCanonicalized(t *testing.T) {
 	c := qt.New(t)
 
-	constraint, ok := toschema.ToConstraint(
+	constraint, ok := sqlschema.ToConstraint(
 		ast.NewForeignKeyConstraint(
 			"events_owner_fk",
 			[]string{"owner_id"},
@@ -389,7 +389,7 @@ func TestToConstraint_LiteralDotForeignTableIsCanonicalized(t *testing.T) {
 func TestToConstraint_LiteralDotOwnerIsCanonicalized(t *testing.T) {
 	c := qt.New(t)
 
-	constraint, ok := toschema.ToConstraint(
+	constraint, ok := sqlschema.ToConstraint(
 		ast.NewUniqueConstraint("tenant_data_key", "id"),
 		"Literal",
 		`"tenant.data"`,
@@ -408,7 +408,7 @@ func TestToIndex_ExpressionIsPreserved(t *testing.T) {
 		}},
 	)
 
-	got := toschema.ToIndex(index)
+	got := sqlschema.ToIndex(index)
 
 	c.Assert(got.Name, qt.Equals, "events_payload_idx")
 	c.Assert(got.TableName, qt.Equals, "events")

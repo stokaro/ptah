@@ -1,4 +1,4 @@
-package toschema_test
+package sqlschema_test
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/internal/convert/toschema"
+	"go.5x5.cz/ptah/internal/sqlschema"
 )
 
 // TestToConstraint_CarriesEveryKindTheParserProduces is the defect, measured
@@ -67,7 +67,7 @@ func TestToConstraint_CarriesEveryKindTheParserProduces(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			constraint, ok := toschema.ToConstraint(test.node, "T", "t")
+			constraint, ok := sqlschema.ToConstraint(test.node, "T", "t")
 
 			c.Assert(ok, qt.Equals, test.wantCarry)
 			c.Assert(constraint.Type, qt.Equals, test.wantType)
@@ -84,7 +84,7 @@ func TestToConstraint_CarriesEveryKindTheParserProduces(t *testing.T) {
 func TestToConstraint_ACheckKeepsItsCondition(t *testing.T) {
 	c := qt.New(t)
 
-	constraint, ok := toschema.ToConstraint(&ast.ConstraintNode{
+	constraint, ok := sqlschema.ToConstraint(&ast.ConstraintNode{
 		Type: ast.CheckConstraint, Name: `"t_a_positive"`, Expression: "a > 0",
 	}, "T", "t")
 
@@ -98,7 +98,7 @@ func TestToConstraint_ACheckKeepsItsCondition(t *testing.T) {
 func TestToConstraint_AnExcludeKeepsItsThreeParts(t *testing.T) {
 	c := qt.New(t)
 
-	constraint, ok := toschema.ToConstraint(&ast.ConstraintNode{
+	constraint, ok := sqlschema.ToConstraint(&ast.ConstraintNode{
 		Type: ast.ExcludeConstraint, Name: "w_room_excl", UsingMethod: "gist",
 		ExcludeElements: `"room" WITH =`, WhereCondition: "room IS NOT NULL",
 	}, "W", "w")
@@ -119,7 +119,7 @@ func TestToConstraint_AnExcludeKeepsItsThreeParts(t *testing.T) {
 func TestToConstraint_APrimaryKeyIsStillDeclined(t *testing.T) {
 	c := qt.New(t)
 
-	_, ok := toschema.ToConstraint(ast.NewPrimaryKeyConstraint("id"), "T", "t")
+	_, ok := sqlschema.ToConstraint(ast.NewPrimaryKeyConstraint("id"), "T", "t")
 
 	c.Assert(ok, qt.IsFalse)
 }
