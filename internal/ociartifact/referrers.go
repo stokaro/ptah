@@ -79,27 +79,21 @@ func (c *Client) Attach(
 	ctx, cancel := c.operationContext(ctx)
 	defer cancel()
 
-	ref, err := ParseRef(subjectRef)
-	if err != nil {
-		return PushResult{}, err
-	}
-	repository, err := c.repository(ref)
-	if err != nil {
-		return PushResult{}, err
-	}
-	target, err := c.attachmentTarget(ref)
+	endpoint, err := c.attachmentEndpoint(subjectRef)
 	if err != nil {
 		return PushResult{}, err
 	}
 	opts.Limits = mergeLimits(opts.Limits, c.options.Limits)
-	subject, err := repository.Resolve(ctx, ref.Selector())
+	subject, err := endpoint.repository.Resolve(ctx, endpoint.selector)
 	if err != nil {
-		return PushResult{}, fmt.Errorf("resolve attachment subject %s: %w", ref, err)
+		return PushResult{}, fmt.Errorf("resolve attachment subject %s: %w", endpoint.display, err)
 	}
 	opts.Policy = c.effectiveReferrerPolicy(opts.Policy)
-	result, err := attachResolved(ctx, target, repository, ref, subject, fsys, opts, c.indexProbe(subjectRef))
+	result, err := attachResolved(
+		ctx, endpoint.target, endpoint.repository, endpoint.reference,
+		subject, fsys, opts, endpoint.probe)
 	if err != nil {
-		return result, fmt.Errorf("attach to %s: %w", ref, err)
+		return result, fmt.Errorf("attach to %s: %w", endpoint.display, err)
 	}
 	return result, nil
 }
@@ -116,23 +110,17 @@ func (c *Client) AttachResolved(
 	ctx, cancel := c.operationContext(ctx)
 	defer cancel()
 
-	ref, err := ParseRef(subjectRef)
-	if err != nil {
-		return PushResult{}, err
-	}
-	repository, err := c.repository(ref)
-	if err != nil {
-		return PushResult{}, err
-	}
-	target, err := c.attachmentTarget(ref)
+	endpoint, err := c.attachmentEndpoint(subjectRef)
 	if err != nil {
 		return PushResult{}, err
 	}
 	opts.Limits = mergeLimits(opts.Limits, c.options.Limits)
 	opts.Policy = c.effectiveReferrerPolicy(opts.Policy)
-	result, err := attachResolved(ctx, target, repository, ref, subject, fsys, opts, c.indexProbe(subjectRef))
+	result, err := attachResolved(
+		ctx, endpoint.target, endpoint.repository, endpoint.reference,
+		subject, fsys, opts, endpoint.probe)
 	if err != nil {
-		return result, fmt.Errorf("attach to resolved subject %s: %w", ref, err)
+		return result, fmt.Errorf("attach to resolved subject %s: %w", endpoint.display, err)
 	}
 	return result, nil
 }

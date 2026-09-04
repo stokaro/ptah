@@ -151,17 +151,19 @@ func (c *Client) DiscoverReferrers(
 	ctx, cancel := c.operationContext(ctx)
 	defer cancel()
 
-	ref, err := ParseRef(subjectRef)
+	// An attachment that can be written into a layout and not listed back out
+	// of one is half a capability, so discovery resolves a layout the same way
+	// the attachment does (stokaro/ptah#2839).
+	endpoint, err := c.attachmentEndpoint(subjectRef)
 	if err != nil {
 		return ocispec.Descriptor{}, nil, err
 	}
-	repository, err := c.repository(ref)
+	repository := endpoint.repository
+	ref := endpoint.reference
+	subject, err := repository.Resolve(ctx, endpoint.selector)
 	if err != nil {
-		return ocispec.Descriptor{}, nil, err
-	}
-	subject, err := repository.Resolve(ctx, ref.Selector())
-	if err != nil {
-		return ocispec.Descriptor{}, nil, fmt.Errorf("resolve referrer subject %s: %w", ref, err)
+		return ocispec.Descriptor{}, nil, fmt.Errorf(
+			"resolve referrer subject %s: %w", endpoint.display, err)
 	}
 	limits := c.options.Limits.normalized()
 	standard, err := listReferrersFrom(ctx, repository, subject, artifactType, limits.Referrers)

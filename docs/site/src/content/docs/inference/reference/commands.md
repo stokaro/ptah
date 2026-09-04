@@ -242,6 +242,12 @@ referrer of it. That is where a referrer lands, so a run naming
 twice. A verification with no release to attach to is still publishable, and is
 addressed by its own digest.
 
+An `oci-layout://` directory is accepted, so a release carried across an air gap
+can be verified where it lies rather than only after it reaches a registry. A
+layout records referrers in its own `index.json`, which is what a reader of the
+directory discovers the record through, so a policy demanding the referrers
+index is satisfied by a directory rather than refused by one.
+
 Exits non-zero when any finding is blocking. The record is kept either way — a
 verification that found something is the evidence somebody will want.
 
