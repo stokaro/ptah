@@ -104,7 +104,10 @@ Three kinds exist, and each is loaded by one command:
 
 | Step | Attributes | Behavior |
 | --- | --- | --- |
-| `exec` | `sql`, optional `output` | Runs the statement. With `output`, the statement's first result is compared as text, so the step is an assertion rather than a bare statement -- which is what `output` means in Atlas. |
+| `exec` | `sql`, optional `output` or `match` | Runs the statement. With `output`, the statement's first result is compared as text; with `match`, it is tested against an unanchored regular expression. Either one turns the step into an assertion rather than a bare statement, and writing both is refused rather than resolved, so a typo in one cannot leave the other unchecked. |
+| `catch` | `sql`, optional `error` | Expects the statement to fail. Without `error` the expectation is only that something failed; with it, the message must match that unanchored regular expression. A statement that succeeds fails the case either way. |
+| `assert` | `sql`, optional `error_message` | Expects the statement to answer a single true value. A false answer is a failing test rather than an invalid case, and `error_message` is appended to the failure so the report says what the question meant. |
+| `log` | `message` | Records the message where it stands among the steps. It reaches no database and cannot fail, so it never decides whether a case passed. |
 | `migrate` | `to` | Migrates to that version, as `migrate_to` does in YAML. |
 | `schema` | `url` | Establishes the starting state. Plan cases only. |
 | `apply` | `url` | Applies the saved plan file that URL names. Plan cases only. |
