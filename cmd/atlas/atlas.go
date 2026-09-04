@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"go.5x5.cz/ptah/cmd/internal/banner"
 	"go.5x5.cz/ptah/cmd/internal/cmdadapter"
 	"go.5x5.cz/ptah/cmd/internal/cmdflags"
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
@@ -149,6 +150,23 @@ expect commands such as migrate apply or schema inspect. Commands that have an
 existing Ptah equivalent forward to that native command.`, policy)
 	if !policy.IsStrictCE() {
 		cmdflags.InstallEnvBinding("PTAH", cmd)
+		// The banner is an extension this surface has and the pinned community
+		// binary does not, so it is outside the strict CE profile entirely --
+		// the profile the conformance measurement runs under, where anything
+		// Ptah adds reads as a divergence Ptah introduced. Outside it, the
+		// writer gate is what keeps it off a captured stream: a run whose
+		// stdout is a pipe prints exactly what it printed before, which is the
+		// contract stokaro/ptah#967 established for this binary's streams.
+		//
+		// It names the binary the way the rest of this tree does, by the name
+		// it was invoked as, so a drop-in installed as atlas says atlas.
+		groupHelp := cmd.RunE
+		name := bannerName(use, policy)
+		cmd.RunE = func(cmd *cobra.Command, args []string) error {
+			out := cmd.OutOrStdout()
+			banner.PrintIf(out, name != "" && banner.Wanted(out), name, buildinfo.Resolve().Version)
+			return groupHelp(cmd, args)
+		}
 	}
 	cmdutil.SetErrorCodePolicy(cmd, atlasErrorExitCode)
 	// The prefix is a property of the surface, exactly like the exit code
@@ -158,6 +176,27 @@ existing Ptah equivalent forward to that native command.`, policy)
 	// happened to override a printer.
 	cmdutil.SetErrorPrefixPolicy(cmd, atlasErrorPrefix)
 	return cmd
+}
+
+// bannerName is the name this profile's entry screen carries, and empty when
+// it carries no banner at all.
+//
+// A named decision rather than a condition around the wiring, because the two
+// answers are not distinguishable from the command's captured output: the
+// writer gate suppresses the banner for every buffer and pipe, so a test
+// asserting on one would pass whether this profile were checked or not. That
+// is the vacuous control this repository has paid for before, and the function
+// is what makes the strict profile's answer something a test can ask for.
+//
+// The strict profile carries none because it is where the conformance
+// measurement runs, and anything Ptah adds there reads as a divergence Ptah
+// introduced rather than one it found -- the same reasoning that keeps the
+// `script` command outside it.
+func bannerName(use string, policy atlascompatpolicy.Policy) string {
+	if policy.IsStrictCE() {
+		return ""
+	}
+	return use
 }
 
 // ValidateStrictCompatFlagEnvironment refuses environment twins that the full

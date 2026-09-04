@@ -12,6 +12,7 @@ import (
 	assistcmd "go.5x5.cz/ptah/cmd/assist"
 	"go.5x5.cz/ptah/cmd/db"
 	"go.5x5.cz/ptah/cmd/inference"
+	"go.5x5.cz/ptah/cmd/internal/banner"
 	"go.5x5.cz/ptah/cmd/internal/cmdflags"
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
@@ -42,7 +43,13 @@ func NewRootCommand() *cobra.Command {
 		// template below is what makes those spellings answer with the same
 		// bytes as the `version` subcommand (stokaro/ptah#1064).
 		Version: info.Version,
+		// The banner goes above the help this returns, and only when a
+		// person is reading it -- see banner.Print. Here rather than in a
+		// help function because `--help` and `help` are explicit requests
+		// whose output scripts already parse, while a bare `ptah` is the
+		// entry screen and the one place the identity belongs.
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			banner.Print(cmd.OutOrStdout(), "ptah", info.Version)
 			return cmd.Help()
 		},
 	}

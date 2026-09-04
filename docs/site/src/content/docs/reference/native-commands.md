@@ -348,6 +348,25 @@ The distinction a caller needs is the exit code, not the stream: `0` success,
 `1` an expected negative result, `2` a command or usage error. A parser reading
 stdout therefore gets a document in every case except `2`.
 
+## The banner, and where it is not
+
+Run `ptah` with no arguments in a terminal and it prints the Ptah wordmark, the
+build version and `https://ptah.run` above the command list. `ptah-compat` and
+`ptah-ls` print the same wordmark under their own names.
+
+It appears only when the stream it would be written to is a terminal. Redirect
+stdout, pipe it, capture it in CI, or read it from a program, and the output is
+what it was: the entry screen alone, byte for byte. A `--help`, a `help`, and a
+`--version` never carry it either — those are explicit requests whose output is
+already parsed.
+
+Two of the binaries take that further. `ptah-ls` writes its banner to **stderr**,
+never to stdout, because stdout is the language-server protocol stream and a
+client reads framed messages off it. `ptah-compat` under
+`PTAH_ATLAS_STRICT_COMPAT=1` carries no banner at all, whatever the stream is:
+the strict profile is the Atlas Community Edition surface, and the community
+binary prints no banner.
+
 ## What an inference verb does not imply
 
 No `ptah inference` verb implies another. A backfill finishing does not mean
