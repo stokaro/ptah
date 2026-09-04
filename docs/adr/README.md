@@ -26,6 +26,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0014](0014-the-outbox-boundary-is-a-transaction-and-the-order-is-a-sequence.md) | The outbox boundary is a transaction, the order is a sequence, and the trigger does not watch itself | Proposed |
 | [0015](0015-a-declared-fact-has-a-disposition-and-a-physical-object-has-one-emitter.md) | A declared fact carries a disposition, and a physical object has one emitter | Proposed |
 | [0016](0016-an-outbox-event-lives-until-every-live-generation-has-passed-it.md) | An outbox event lives until every usable live feeder has passed it | Proposed |
+| [0017](0017-a-chunked-corpus-is-a-set-per-source-row.md) | A chunked corpus is a set per source row, and the set is the unit of identity, correctness and replacement | Proposed |
 
 ## Writing one
 
