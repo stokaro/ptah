@@ -12,8 +12,10 @@ corresponding testing framework outside its open-source core. On the
 Atlas-compatible surface, the `ptah-compat` binary's `migrate test` and
 `schema test` verbs forward to these
 native runners: `--dir` / `-u --url` select the migration directory or desired
-schema, `--dev-url` the throwaway database, and `--run` the case filter, with
-Ptah-native YAML test files as the executable payload.
+schema, `--dev-url` the throwaway database, and `--run` the case filter. The
+executable payload is either a Ptah-native YAML file or an Atlas `.test.hcl`
+file; the two live side by side in one directory and the section below says
+what each `.test.hcl` may contain.
 
 ## Test Case Format
 
@@ -74,9 +76,45 @@ so `--run dup` selects both `dup` and `dup ` — write it expecting one case and
 you silently run two. It selects only the first of `dup` and `DUP`, so those
 stay two distinct cases.
 
+## Atlas `.test.hcl` Files
+
 Both commands also read Atlas-format `*.test.hcl` files from `--dir` alongside
-the YAML above. Each `test` block there is labeled with the kind it belongs to,
-and a run loads only blocks of its own kind, so uniqueness is checked over what
+the YAML above. A file is a sequence of `test` blocks, each labeled with its
+kind and its name, whose body is an ordered list of step blocks:
+
+```hcl
+test "schema" "users_insert_select" {
+  exec {
+    sql = "INSERT INTO users (id, name) VALUES (1, 'ada')"
+  }
+  exec {
+    sql    = "SELECT name FROM users WHERE id = 1"
+    output = "ada"
+  }
+}
+```
+
+Three kinds exist, and each is loaded by one command:
+
+| Kind | Loaded by |
+| --- | --- |
+| `test "migrate" "..."` | `ptah migrations test` |
+| `test "schema" "..."` | `ptah schema test` |
+| `test "plan" "..."` | `ptah-compat schema plan test` |
+
+| Step | Attributes | Behavior |
+| --- | --- | --- |
+| `exec` | `sql`, optional `output` | Runs the statement. With `output`, the statement's first result is compared as text, so the step is an assertion rather than a bare statement -- which is what `output` means in Atlas. |
+| `migrate` | `to` | Migrates to that version, as `migrate_to` does in YAML. |
+| `schema` | `url` | Establishes the starting state. Plan cases only. |
+| `apply` | `url` | Applies the saved plan file that URL names. Plan cases only. |
+
+An unknown step, an unknown attribute, a `test` block without exactly two
+labels, and a `schema` or `apply` step outside a plan case are each refused by
+name rather than ignored. Step order is significant and is preserved, so an
+`exec` that writes a row runs before the `exec` that reads it back.
+
+A run loads only blocks of its own kind, so uniqueness is checked over what
 that run actually loads rather than over everything on disk. A directory pairing
 `dup` in `a.yaml` with a `test "migrate" "dup"` block therefore loads clean
 under `ptah schema test`, which never sees the migrate case, and is rejected by
