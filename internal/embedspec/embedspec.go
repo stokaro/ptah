@@ -104,6 +104,17 @@ type TargetDocument struct {
 	Metric         string            `yaml:"metric"`
 	IndexMethod    string            `yaml:"index_method"`
 	IndexOptions   map[string]string `yaml:"index_options"`
+	// Layout is where the vectors are stored: omitted, or "source_columns",
+	// puts them on the relation named above; "own_table" makes that relation
+	// the generation's own, created and dropped by Ptah.
+	//
+	// A pointer so that "not stated" is distinguishable from "stated as
+	// nothing", which is the reason source.mutable is one: `layout:` with an
+	// empty value is a template that filled in nothing, and it is the one
+	// spelling of this key that means an author tried to choose and did not.
+	// Every other enumerated field here refuses an empty value, and this one
+	// would silently be the default.
+	Layout *string `yaml:"layout"`
 }
 
 // ConsistencyDocument is the mode and what it needs.

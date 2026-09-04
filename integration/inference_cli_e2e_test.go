@@ -839,6 +839,15 @@ func writeCLISpecTables(c *qt.C, endpoint, source, target string) string {
 	return writeCLISpecFrom(c, spec)
 }
 
+// writeCLISpecOwningItsTable writes one whose vectors go in a relation Ptah
+// creates and, at retirement, drops.
+func writeCLISpecOwningItsTable(c *qt.C, endpoint, target string) string {
+	c.Helper()
+	spec := defaultCLISpec(endpoint)
+	spec.targetTable, spec.layout = target, "own_table"
+	return writeCLISpecFrom(c, spec)
+}
+
 // writeCLISpecFull writes one with both chosen.
 func writeCLISpecFull(c *qt.C, endpoint, mode, metric, column string) string {
 	c.Helper()
@@ -870,6 +879,7 @@ type cliSpec struct {
 	filter         string
 	nullPolicy     string
 	emptyPolicy    string
+	layout         string
 }
 
 // defaultCLISpec is the specification every lifecycle fixture here uses.
@@ -900,6 +910,20 @@ func indexMethodLine(method string) string {
 		return ""
 	}
 	return "  index_method: " + method + "\n"
+}
+
+// layoutLine renders the target's layout key, or nothing at all.
+//
+// Absent by default, which is not a shortcut: absent is the shape every
+// fixture here had before the key existed, and it is the one that means Ptah
+// creates no relation and drops none. A template writing `layout:
+// source_columns` into every specification would say the same thing while
+// making the omitted case, which is what most operators will have, untested.
+func layoutLine(layout string) string {
+	if layout == "" {
+		return ""
+	}
+	return "  layout: " + layout + "\n"
 }
 
 // filterLine renders the source's filter key, or nothing at all.
@@ -953,7 +977,7 @@ target:
   column: %s
   representation: %s
   metric: %s
-%sconsistency:
+%s%sconsistency:
   mode: %s
 policy:
   require_exact_approval: true
@@ -961,7 +985,7 @@ policy:
 `, spec.sourceTable, yamlList(spec.keyFields), yamlList(spec.inputFields),
 		filterLine(spec.filter), spec.nullPolicy, spec.emptyPolicy, spec.endpoint,
 		spec.targetTable, spec.column, spec.representation, spec.metric,
-		indexMethodLine(spec.indexMethod), spec.mode)
+		indexMethodLine(spec.indexMethod), layoutLine(spec.layout), spec.mode)
 	path := filepath.Join(c.TempDir(), "spec.yaml")
 	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)
 	return path

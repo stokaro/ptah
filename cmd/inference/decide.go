@@ -550,7 +550,8 @@ a shell history.`,
 	// verb into an index drop, and refuse outright for a specification that
 	// declares no index method.
 	cmd.Flags().BoolVar(&dropColumn, "drop-column", true,
-		"Drop the vector column as well as the index")
+		"Drop the storage the vectors are in as well as the index: the vector column, "+
+			"or the whole table under the own_table layout")
 	addEvidenceFlags(cmd.Flags(), &evidence)
 	addSubjectFlag(cmd, &evidence)
 	return cmd
@@ -612,10 +613,24 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 	// It was the one part read off the invocation's file, so the plan an
 	// approval is bound to could name a schema other than the one
 	// RetireColumns and RetireIndex actually destroy in.
+	// Which storage the vectors are in is read from the generation's OWN
+	// recorded specification rather than from whichever file this invocation
+	// was handed. The recorded one is the only document that describes the
+	// generation being destroyed; the invocation's may have been edited since,
+	// and reading the layout from it would decide DROP TABLE against DROP
+	// COLUMN from a file the generation was never built under -- the shape
+	// stokaro/ptah#2630 already paid for on the rollback path.
+	ownsTable, err := retirementOwnsTable(registered)
+	if err != nil {
+		return err
+	}
 	plan := embedcutover.RetirementPlan{
 		Generation: options.generation, Schema: registered.TargetSchema,
 		Table: registered.TargetTable, Column: registered.TargetColumn,
-		DropsIndex: hasIndex, DropsColumn: options.dropColumn, RowCount: rows,
+		DropsIndex:  hasIndex,
+		DropsColumn: options.dropColumn && !ownsTable,
+		DropsTable:  options.dropColumn && ownsTable,
+		RowCount:    rows,
 	}
 	facts, err := retirementFacts(
 		ctx, opened, registered, options.generation)
@@ -637,7 +652,11 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 
 	release, err := opened.store.RetireGenerationObjects(
 		ctx, options.generation, facts.pointer, plan.RowCount,
-		plan.DropsIndex, plan.DropsColumn)
+		embedpg.RetirementDestruction{
+			IndexExists: plan.DropsIndex,
+			DropColumns: plan.DropsColumn,
+			DropTable:   plan.DropsTable,
+		})
 	if err != nil {
 		return err
 	}
@@ -661,6 +680,10 @@ func runRetire(ctx context.Context, out io.Writer, options retireOptions) error 
 // sentence an operator reads to decide whether storage was reclaimed
 // (stokaro/ptah#2743).
 func retirementSummary(generation string, rows int, plan embedcutover.RetirementPlan) string {
+	if plan.DropsTable {
+		return fmt.Sprintf("generation %s is gone, with %d vectors and the table %s.%s they were in",
+			generation, rows, plan.Schema, plan.Table)
+	}
 	if plan.DropsColumn {
 		return fmt.Sprintf("generation %s is gone, with %d vectors", generation, rows)
 	}
@@ -668,6 +691,23 @@ func retirementSummary(generation string, rows int, plan embedcutover.Retirement
 		"generation %s is retired, and its %d vectors are still in column %s: "+
 			"the run kept the column, so it dropped the index and nothing else",
 		generation, rows, plan.Column)
+}
+
+// retirementOwnsTable reads the layout out of the generation's recorded
+// specification.
+//
+// A generation with no recorded specification is refused rather than assumed to
+// be the common layout. The assumption would be right most of the time and
+// wrong exactly where it costs the most: a LayoutOwnTable generation read as
+// LayoutSourceColumns retires by dropping five columns out of Ptah's own table
+// and leaving the relation, with every row still in it, credited to a
+// generation the registry now calls retired.
+func retirementOwnsTable(registered embedstore.Generation) (bool, error) {
+	recorded, err := embedpg.RecordedSpec(registered, "stored in a table of its own")
+	if err != nil {
+		return false, err
+	}
+	return recorded.Spec.Target.Layout.OwnsTable(), nil
 }
 
 // publishRetirement records what was destroyed, where a destination was named.
@@ -710,6 +750,9 @@ func retiredObjects(plan embedcutover.RetirementPlan) []string {
 	}
 	if plan.DropsColumn {
 		objects = append(objects, "column "+plan.Schema+"."+plan.Table+"."+plan.Column)
+	}
+	if plan.DropsTable {
+		objects = append(objects, "table "+plan.Schema+"."+plan.Table)
 	}
 	return objects
 }
@@ -844,6 +887,7 @@ func retirementPlanIdentity(plan embedcutover.RetirementPlan) planIdentity {
 			"target: " + plan.Schema + "." + plan.Table + "." + plan.Column,
 			fmt.Sprintf("drops index: %t", plan.DropsIndex),
 			fmt.Sprintf("drops column: %t", plan.DropsColumn),
+			fmt.Sprintf("drops table: %t", plan.DropsTable),
 			fmt.Sprintf("rows destroyed: %d", plan.RowCount),
 		},
 	}

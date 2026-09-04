@@ -29,6 +29,14 @@ func TestRetirementSummary_SaysWhatWasDestroyed(t *testing.T) {
 			want: "generation g1 is gone, with 7 vectors",
 		},
 		{
+			name: "the table goes, and it was the generation's own",
+			plan: embedcutover.RetirementPlan{
+				Schema: "public", Table: "article_vectors", Column: "embedding",
+				DropsIndex: true, DropsTable: true,
+			},
+			want: "generation g1 is gone, with 7 vectors and the table public.article_vectors they were in",
+		},
+		{
 			name: "the column stays, so the vectors stay",
 			plan: embedcutover.RetirementPlan{Column: "embedding", DropsIndex: true, DropsColumn: false},
 			want: "generation g1 is retired, and its 7 vectors are still in column embedding: " +
@@ -45,6 +53,26 @@ func TestRetirementSummary_SaysWhatWasDestroyed(t *testing.T) {
 			c.Assert(got, qt.Equals, test.want)
 		})
 	}
+}
+
+// TestRetirementSummary_ATableRetirementNamesTheTable is why the two
+// destructions do not share a sentence.
+//
+// "is gone, with 7 vectors" is true of both, and it is the sentence an operator
+// reads to decide whether storage was reclaimed. Under the own-table layout a
+// whole relation went with them, and the name of that relation is the thing
+// they would have to look up afterwards -- from a registry row the retirement
+// has just marked retired.
+func TestRetirementSummary_ATableRetirementNamesTheTable(t *testing.T) {
+	c := qt.New(t)
+
+	got := retirementSummary("g1", 7, embedcutover.RetirementPlan{
+		Schema: "public", Table: "article_vectors", Column: "embedding",
+		DropsIndex: true, DropsTable: true,
+	})
+
+	c.Assert(got, qt.Contains, "public.article_vectors")
+	c.Assert(got, qt.Contains, "is gone")
 }
 
 // The column-kept sentence must not claim the generation is gone, because that

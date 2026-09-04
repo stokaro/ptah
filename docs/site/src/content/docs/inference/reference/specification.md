@@ -165,9 +165,22 @@ not another copy of it.
 | `metric` | yes | **yes** | `cosine`, `l2`, or `inner_product`. |
 | `index_method` | yes | | `hnsw` or `ivfflat`. Omit for no index. |
 | `index_options` | **no** | | Build options such as `m` and `ef_construction`. |
+| `layout` | **no** | | `source_columns`, or `own_table` to have Ptah create the target table. Omit for `source_columns`. |
 
 `index_options` is excluded deliberately: retuning an index trades build cost
 against recall over the *same* vectors, so it does not make a different corpus.
+
+`layout` is excluded for a different reason: `schema`, `table` and `column`
+already say where a vector went, and the layout says how that relation came to
+exist. Two specifications naming one relation under two layouts are refused
+when the generation is prepared rather than admitted as two generations, so the
+layout discriminates nothing those three fields do not.
+
+Omitting `layout` and writing `layout: source_columns` are the same
+specification. Writing `layout:` with nothing after it is not: it is refused,
+because a template that filled in nothing is the one spelling of this key that
+means an author tried to choose and did not. Which layout to pick is
+[Choose a target layout](../../strategies/choose-a-target-layout/).
 
 Option values must be whole numbers, and option names lower-case identifiers.
 PostgreSQL takes no parameter in a `WITH` clause, so anything else is refused by

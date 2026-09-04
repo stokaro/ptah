@@ -29,6 +29,21 @@ type TargetObjects struct {
 	// RequiredExtensions names what the target needs installed before any of
 	// this can be created.
 	RequiredExtensions []string
+	// OwnsTable reports whether the target relation is one Ptah creates for
+	// this generation and drops when it is retired, rather than one the
+	// application maintains and Ptah adds columns to.
+	//
+	// Carried here rather than read from the layout at each site because
+	// creation and destruction have to agree, and the failure this repository
+	// already paid for was two derivations of one name disagreeing
+	// (stokaro/ptah#2642).
+	OwnsTable bool
+	// ForeignKeyName is the constraint tying an owned target relation to the
+	// source rows its keys name, and is empty when OwnsTable is false.
+	ForeignKeyName string
+	// TableComment is what Ptah writes on an owned target relation, and what it
+	// reads back before dropping one. It is empty when OwnsTable is false.
+	TableComment string
 }
 
 // TargetObjects derives the schema objects this generation needs.
@@ -56,6 +71,11 @@ func (s Spec) TargetObjects() (TargetObjects, error) {
 				s.Identity().Short(), s.Model.Identifier, s.Target.Metric),
 		},
 		RequiredExtensions: []string{"vector"},
+		OwnsTable:          s.Target.Layout.OwnsTable(),
+	}
+	if objects.OwnsTable {
+		objects.ForeignKeyName = ForeignKeyName(s.Target.Table, s.Target.Column, s.Identity().Digest)
+		objects.TableComment = TableComment(s.Identity().Digest)
 	}
 	if strings.TrimSpace(s.Target.IndexMethod) == "" {
 		return objects, nil
@@ -85,6 +105,21 @@ func (s Spec) validateTarget() error {
 		return fmt.Errorf("target objects: the specification names no target column")
 	case strings.TrimSpace(s.Target.Representation) == "":
 		return fmt.Errorf("target objects: the specification names no target representation")
+	case !KnownLayout(s.Target.Layout):
+		return fmt.Errorf("target objects: %q is not a target layout", string(s.Target.Layout))
+	case s.Target.Layout.OwnsTable() && sameRelation(
+		s.Target.Schema, s.Target.Table, s.Source.Schema, s.Source.Table):
+		// Under this layout Ptah creates the relation and, at retirement,
+		// drops it. Named at the source, that is Ptah being asked to create
+		// the application's own table and later to destroy it with every row
+		// in it. The refusal is here, offline, because the alternative place
+		// to notice is a CREATE TABLE that finds the relation already there.
+		return fmt.Errorf(
+			"target objects: layout %q names the source relation %s as its target, "+
+				"and under this layout Ptah creates that relation and drops it when the "+
+				"generation is retired. Name a relation of the generation's own, or use "+
+				"the default layout to put the columns on the source",
+			string(LayoutOwnTable), qualifiedName(s.Target.Schema, s.Target.Table))
 	case s.Model.ReportedDimension <= 0:
 		// The dimension comes from the PROVIDER, so a specification that has
 		// not asked one yet cannot describe its column. Guessing it from the
@@ -124,6 +159,57 @@ func (s Spec) indexName() string {
 // risk of repeating it.
 func IndexName(table, column, identity string) string {
 	return fmt.Sprintf("%s_%s_%s_idx", table, column, embeddigest.Short(identity))
+}
+
+// ForeignKeyName is the name of the constraint tying an owned target relation
+// to the source rows its keys address.
+//
+// It takes the same three facts [IndexName] takes, and for the same reason: a
+// constraint that is created under one derivation and looked for under another
+// is a constraint nothing can find. The generation's short identity is in it
+// because two generations over one source each own a relation.
+func ForeignKeyName(table, column, identity string) string {
+	return fmt.Sprintf("%s_%s_%s_fkey", table, column, embeddigest.Short(identity))
+}
+
+// TableComment is what Ptah writes on a target relation it created, and reads
+// back before dropping one.
+//
+// It is the record of ownership, and it is a comment because a comment is what
+// a person reading the table in psql sees too: a relation nobody remembers
+// creating says whose it is without a registry lookup. Retirement requires it
+// to name the generation being retired before it issues DROP TABLE, so a
+// relation Ptah did not create is never destroyed by a retirement that merely
+// pointed at it.
+//
+// One function for the writing and the reading, which is [IndexName]'s lesson
+// applied to the one object whose removal takes every row with it.
+func TableComment(identity string) string {
+	return "ptah embedding target for generation " + identity
+}
+
+// sameRelation reports whether two authored names refer to one relation.
+//
+// An empty schema means the specification named none, so it is the same
+// authored spelling as another empty one and different from an explicit one.
+// This is a comparison of what was WRITTEN rather than of what search_path
+// resolves: the resolved answer needs a server, and this refusal is one a
+// specification can fail before a connection exists. A specification that
+// spells its source `public.documents` and its target `documents` is not
+// caught here; the creation path meets it with the relation already existing
+// and no comment of Ptah's on it, which is the refusal that needs the catalog
+// anyway.
+func sameRelation(schemaA, tableA, schemaB, tableB string) bool {
+	return strings.TrimSpace(schemaA) == strings.TrimSpace(schemaB) &&
+		strings.TrimSpace(tableA) == strings.TrimSpace(tableB)
+}
+
+// qualifiedName renders an authored relation name for a diagnostic.
+func qualifiedName(schema, table string) string {
+	if strings.TrimSpace(schema) == "" {
+		return table
+	}
+	return schema + "." + table
 }
 
 // OperatorClass is the pgvector operator class for this representation and

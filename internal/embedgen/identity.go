@@ -150,6 +150,12 @@ var excludedFromIdentity = map[string]string{
 	"Target.IndexOptions": "recall tuning trades build cost against recall over the SAME vectors, and ADR 0010 " +
 		"measured a 26.5%-100% recall span on one unchanged index from a session setting alone, which makes it a " +
 		"property of the query rather than of the generation",
+	"Target.Layout": "the layout decides how the storage comes to exist, and target.schema, target.table and " +
+		"target.column already say where a vector went. It adds no discrimination those three lack: under " +
+		"LayoutOwnTable the relation is the generation's own and under LayoutSourceColumns it is the " +
+		"application's, and two specifications naming one relation under two layouts are refused at creation " +
+		"rather than admitted as two generations. Including it would move every existing generation's digest " +
+		"for a field whose zero value is what they all already have",
 }
 
 // sortedKeys is used by the classification test and by diagnostics that list

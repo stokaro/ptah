@@ -941,6 +941,60 @@ func RetireIndex(
 }
 
 // RetireColumns drops a generation's vector column and its metadata.
+// relationInspector is the SQL surface dropping an owned relation needs: the
+// DROP, and the question that has to be answered before it.
+type relationInspector interface {
+	contextExecer
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+// RetireTable drops the relation a generation stored its vectors in, and
+// refuses unless Ptah created that relation for this generation.
+//
+// The proof is the comment [embedgen.TableComment] writes, read back here. It
+// is a real refusal rather than a formality: RetireColumns removes columns from
+// a relation the application keeps, and this removes the relation and every row
+// in it, so the two are not the same operation made general. A registry row
+// naming a target Ptah never created reaches this function exactly as a
+// well-formed one does -- through a specification whose layout was changed
+// after the generation was prepared, or through a target pointed at an
+// application table -- and the comment is what separates them.
+//
+// A relation that is already gone is not an error. Retirement is idempotent for
+// the same reason preparation is, and a DROP that finds nothing has reached the
+// state it was asked for.
+func RetireTable(
+	ctx context.Context, db relationInspector, generation embedstore.Generation,
+) error {
+	table := qualify(generation.TargetSchema, generation.TargetTable)
+	want := embedgen.TableComment(generation.Identity)
+	const query = `SELECT to_regclass($1) IS NOT NULL,
+		COALESCE(obj_description(to_regclass($1), 'pg_class'), '')`
+	var exists bool
+	var found string
+	if err := db.QueryRowContext(ctx, query, table).Scan(&exists, &found); err != nil {
+		return fmt.Errorf("read the target table %s of generation %s: %w",
+			table, generation.Identity, err)
+	}
+	if !exists {
+		return nil
+	}
+	if found != want {
+		return fmt.Errorf(
+			"%w: relation %s is not Ptah's to drop: retiring generation %s would remove it "+
+				"and every row in it, and it carries the comment %q rather than %q. Drop it "+
+				"by hand if it really is this generation's storage",
+			embedstore.ErrConflict, table, generation.Identity, found, want)
+	}
+	// #nosec G201 -- relation name from the registry, through qualify.
+	drop := fmt.Sprintf("DROP TABLE %s", table)
+	if _, err := db.ExecContext(ctx, drop); err != nil {
+		return fmt.Errorf("drop the target table %s of generation %s: %w",
+			table, generation.Identity, err)
+	}
+	return nil
+}
+
 func RetireColumns(
 	ctx context.Context, db contextExecer, generation embedstore.Generation,
 ) error {
