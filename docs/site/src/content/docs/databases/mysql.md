@@ -119,10 +119,27 @@ SQL:
   non-ASCII names together would still miss it. Measured, the alternative was a
   half-applied migration: rendering `CREATE INDEX İ` and `CREATE INDEX i`
   against MySQL 8.4.11 creates the first and answers `ERROR 1061` on the
-  second. The rule is deliberately conservative and says so: `a` beside `ä` is
-  accepted by both engines and is still reported as a possible conflict, and
-  the way to make it exact is to resolve the names against the target rather
-  than to guess a folding rule offline.
+  second.
+- **A comparison that reaches the target asks it instead of guessing.** The
+  conservative rule above is what an offline run still does, and it was the
+  only answer until the names could be resolved against the server: `a` beside
+  `ä` is accepted by both engines and was reported as a possible conflict for
+  want of anything better. A comparison holding a connection now asks, and gets
+  the engine's own answer for each pair.
+  What is asked is the collision rather than a fold to imitate, because neither
+  engine exposes the fold its identifier comparison uses -- measured, none of
+  `LOWER()`, `utf8mb4_general_ci`, `utf8mb4_unicode_ci`, `utf8mb4_uca1400_ai_ci`
+  or `utf8mb4_bin` reproduces MariaDB's. A temporary table carrying the names as
+  keys either creates or answers `ERROR 1061`, which is exactly the question,
+  and a temporary table is this session's alone and gives the per-table
+  namespace an index name actually lives in.
+  Only names Ptah cannot fold are asked about, so a schema whose index names are
+  all ASCII reaches no server and pays nothing. Sixty-four keys is the per-table
+  ceiling on both engines, so a larger set is asked in several statements, each
+  carrying every non-ASCII name so no pairing is missed. A refusal that is not
+  the duplicate-name answer -- a lost connection, or an account without
+  `CREATE TEMPORARY TABLES`, which answers `ERROR 1044` -- is reported rather
+  than read as an equivalence.
 - Column names are compared ASCII-case-insensitively, and a non-ASCII one is
   treated as a possible conflict with every column in its table. Both engines
   fold ASCII case: a table declaring `A` and `a` answers `ERROR 1060`, and a
