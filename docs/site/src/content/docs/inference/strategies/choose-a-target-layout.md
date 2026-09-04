@@ -68,7 +68,40 @@ retirement.
 **What it costs.** A join on every search.
 
 Choose it when the source table is one you would rather not add columns to — a
-table owned by another team, or one with a `SELECT *` you cannot audit.
+table owned by another team, or one with a `SELECT *` you cannot audit. Choose
+it also when a source row produces more than one vector, which is the next
+section.
+
+## One source row, many vectors
+
+A long document embedded as one vector retrieves badly: the model averages the
+whole of it, and a query matching one paragraph competes with everything else in
+the row. Splitting it is what `truncate: chunk` does, and it is why this layout
+exists rather than being a preference:
+
+```yaml
+preprocessing:
+  max_input_bytes: 2000
+  truncate: chunk
+  overlap_bytes: 200
+target:
+  table: article_chunks
+  column: embedding
+  layout: own_table
+```
+
+The relation is keyed by the source key **and** a chunk ordinal, so one article
+holds as many rows as its text produces. A specification that asks for chunking
+without this layout is refused: the columns beside a source row hold one vector,
+and writing four chunks there would leave the last one and report a covered
+corpus.
+
+The ordinal orders the chunks; it does not identify them. Text that gains a
+sentence moves every boundary after it, so a re-embedding replaces the row's
+**whole set** rather than matching chunk against chunk — including removing the
+rows a shorter text no longer produces. Verification follows the same unit: a
+source row is covered when its stored rows are exactly the set its current text
+implies, and a key holding rows its set does not declare is a blocking finding.
 
 ## A table of its own, maintained by you
 

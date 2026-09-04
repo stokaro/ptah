@@ -132,6 +132,21 @@ func (s Spec) identityComponents() []string {
 	// that pair. With it, everything after the second label is the second list
 	// and a count there would be a rule no fixture could ever separate from
 	// the one above it.
+	// The overlap joins the digest only for a specification that chunks, and
+	// that is a deliberate conditional rather than an oversight. Appending it
+	// unconditionally would move the identity of every generation already
+	// published, for a field whose zero value is what all of them already have
+	// -- ADR 0017 recorded that cost and chose against paying it.
+	//
+	// It stays injective because the branch is selected by `pre.truncate`,
+	// which is unconditional: a chunking specification and an unchunked one
+	// always differ there, so no pair of specifications can reach the same
+	// component list by taking different branches.
+	if s.Chunks() {
+		components = append(components,
+			"pre.overlap_bytes", strconv.Itoa(s.Preprocessing.OverlapBytes))
+	}
+
 	components = append(components, "source.key_fields", strconv.Itoa(len(s.Source.KeyFields)))
 	components = append(components, s.Source.KeyFields...)
 	components = append(components, "source.input_fields")

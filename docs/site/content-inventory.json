@@ -2636,8 +2636,8 @@
         "/inference/strategies/plan-provider-capacity/",
         "/inference/troubleshooting/"
       ],
-      "visibleWords": 1519,
-      "sourceBytes": 11494
+      "visibleWords": 1765,
+      "sourceBytes": 12834
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/support-and-limitations.md",
@@ -2751,8 +2751,8 @@
         "/inference/guides/create-first-generation/",
         "/inference/reference/specification/"
       ],
-      "visibleWords": 811,
-      "sourceBytes": 5676
+      "visibleWords": 1020,
+      "sourceBytes": 7043
     },
     {
       "path": "docs/site/src/content/docs/inference/strategies/plan-provider-capacity.md",

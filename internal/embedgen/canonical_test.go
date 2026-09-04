@@ -47,12 +47,12 @@ func TestCanonicalize_TheOrderAndSeparatorAreTheText(t *testing.T) {
 			spec.Preprocessing.CollapseWhitespace = false
 			spec.Source.InputFields = fieldNames(len(test.fields))
 
-			input, err := spec.Canonicalize(row(test.fields...))
+			set, err := spec.CanonicalInputs(row(test.fields...))
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(input.Text, qt.Equals, test.want)
-			c.Assert(input.Truncated, qt.IsFalse)
-			c.Assert(input.Skipped, qt.IsFalse)
+			c.Assert(set.Whole.Text, qt.Equals, test.want)
+			c.Assert(set.Whole.Truncated, qt.IsFalse)
+			c.Assert(set.Whole.Skipped, qt.IsFalse)
 		})
 	}
 }
@@ -80,10 +80,10 @@ func TestCanonicalize_TheNullPolicyDecidesWhatANullContributes(t *testing.T) {
 			spec.Preprocessing.CollapseWhitespace = false
 			spec.Source.InputFields = []string{"title", "middle", "body"}
 
-			input, err := spec.Canonicalize(row(new("Title"), nil, new("Body")))
+			set, err := spec.CanonicalInputs(row(new("Title"), nil, new("Body")))
 
 			c.Assert(err != nil, qt.Equals, test.wantError)
-			c.Assert(input.Text, qt.Equals, test.want)
+			c.Assert(set.Whole.Text, qt.Equals, test.want)
 		})
 	}
 }
@@ -96,7 +96,7 @@ func TestCanonicalize_ARefusalIsItsOwnClass(t *testing.T) {
 	spec.Preprocessing.NullPolicy = embedgen.NullRefuseRow
 	spec.Source.InputFields = []string{"title", "body"}
 
-	_, err := spec.Canonicalize(row(new("Title"), nil))
+	_, err := spec.CanonicalInputs(row(new("Title"), nil))
 
 	c.Assert(err, qt.ErrorIs, embedgen.ErrRefused)
 }
@@ -125,11 +125,11 @@ func TestCanonicalize_TruncationIsNeverSilent(t *testing.T) {
 			spec.Preprocessing.CollapseWhitespace = false
 			spec.Source.InputFields = []string{"body"}
 
-			input, err := spec.Canonicalize(row(new("abcdefghij")))
+			set, err := spec.CanonicalInputs(row(new("abcdefghij")))
 
 			c.Assert(err != nil, qt.Equals, test.wantError)
-			c.Assert(input.Text, qt.Equals, test.wantText)
-			c.Assert(input.Truncated, qt.Equals, test.wantTruncated)
+			c.Assert(set.Whole.Text, qt.Equals, test.wantText)
+			c.Assert(set.Whole.Truncated, qt.Equals, test.wantTruncated)
 		})
 	}
 }
@@ -149,11 +149,11 @@ func TestCanonicalize_TruncationDoesNotSplitARune(t *testing.T) {
 	spec.Preprocessing.UnicodeNormalization = embedgen.UnicodeNone
 	spec.Source.InputFields = []string{"body"}
 
-	input, err := spec.Canonicalize(row(new("日本語")))
+	set, err := spec.CanonicalInputs(row(new("日本語")))
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(input.Text, qt.Equals, "日")
-	c.Assert(input.Truncated, qt.IsTrue)
+	c.Assert(set.Whole.Text, qt.Equals, "日")
+	c.Assert(set.Whole.Truncated, qt.IsTrue)
 }
 
 // TestCanonicalize_AnEmptyInputIsAnswered pins the two policies. A model asked
@@ -176,11 +176,11 @@ func TestCanonicalize_AnEmptyInputIsAnswered(t *testing.T) {
 			spec.Preprocessing.EmptyPolicy = test.policy
 			spec.Source.InputFields = []string{"body"}
 
-			input, err := spec.Canonicalize(row(new("   ")))
+			set, err := spec.CanonicalInputs(row(new("   ")))
 
 			c.Assert(err != nil, qt.Equals, test.wantError)
-			c.Assert(input.Skipped, qt.Equals, test.wantSkipped)
-			c.Assert(input.SkipReason != "", qt.Equals, test.wantSkipped)
+			c.Assert(set.Whole.Skipped, qt.Equals, test.wantSkipped)
+			c.Assert(set.Whole.SkipReason != "", qt.Equals, test.wantSkipped)
 		})
 	}
 }
@@ -217,10 +217,10 @@ func TestCanonicalize_UnicodeAndWhitespaceFollowTheSpecification(t *testing.T) {
 			spec.Preprocessing.CollapseWhitespace = test.collapse
 			spec.Source.InputFields = []string{"body"}
 
-			input, err := spec.Canonicalize(row(new(test.input)))
+			set, err := spec.CanonicalInputs(row(new(test.input)))
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(input.Text, qt.Equals, test.want)
+			c.Assert(set.Whole.Text, qt.Equals, test.want)
 		})
 	}
 }
@@ -232,7 +232,7 @@ func TestCanonicalize_RefusesARowOfTheWrongShape(t *testing.T) {
 	spec := baseSpec()
 	spec.Source.InputFields = []string{"title", "body"}
 
-	_, err := spec.Canonicalize(row(new("only one")))
+	_, err := spec.CanonicalInputs(row(new("only one")))
 
 	c.Assert(err, qt.ErrorMatches, `canonicalize: the specification names 2 input fields and the row carries 1`)
 }

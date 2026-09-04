@@ -302,6 +302,13 @@ func generationFreshness(
 // Equal keys arrive adjacent, which is what `embedverify.Corpus` requires. The
 // ORDER BY is over the key COLUMNS, so equal keys are neighbors whatever the
 // encoded key strings would sort like.
+//
+// It is over the chunk ordinal too, and that is not a tidiness: the walk folds
+// a source key's stored rows into a set and requires their ordinals to be
+// 0, 1, 2 ... in order. PostgreSQL returns a key's rows in whatever order the
+// scan produced them, so without this a perfectly formed set arrives shuffled
+// and every chunked key is reported as holding rows its set does not declare.
+// Measured: 3 source keys, 30 well-formed stored rows, 3 blocking findings.
 func VerificationCorpus(
 	ctx context.Context, db *sql.DB, spec embedgen.Spec,
 ) (embedverify.Corpus, error) {
@@ -364,6 +371,35 @@ func storedWidthExpression(representation, column string) string {
 		return "NULLIF(split_part(" + quoted + "::text, '/', 2), '')::int"
 	}
 	return "vector_dims(" + quoted + ")"
+}
+
+// verificationOrder is what the corpus is sorted by.
+//
+// The chunk ordinal joins the key columns only where the layout has one. Under
+// the other layout [storedOrdinalExpression] answers with the literal zero,
+// and a bare integer in an ORDER BY is a COLUMN POSITION to PostgreSQL: the
+// query was refused with `ORDER BY position 0 is not in select list`, on every
+// verification of every unchunked generation. There is also nothing to order:
+// that layout stores one row per source key.
+func verificationOrder(spec embedgen.Spec, keys []string) []string {
+	order := append([]string(nil), keys...)
+	if spec.Target.Layout.OwnsTable() {
+		order = append(order, storedOrdinalExpression(spec))
+	}
+	return order
+}
+
+// storedOrdinalExpression is a stored row's position in its source key's set.
+//
+// A literal zero where the layout stores one vector per source row, because
+// that relation has no ordinal column and every one of its rows is the whole of
+// its key's set. Selecting it anyway is what lets both query builders hand the
+// scanner one shape, the same reason the presence literal is selected there.
+func storedOrdinalExpression(spec embedgen.Spec) string {
+	if !spec.Target.Layout.OwnsTable() {
+		return "0"
+	}
+	return quoteIdentifier(spec.Target.Column + OrdinalSuffix)
 }
 
 // verificationQuery renders the one walk over both sides.
@@ -439,7 +475,8 @@ func oneRelationVerificationQuery(spec embedgen.Spec, source *Source) string {
 		quoteIdentifier(column+InputHashSuffix),
 		quoteIdentifier(column+VersionSuffix),
 		quoteIdentifier(column+StateSuffix),
-		storedWidthExpression(spec.Target.Representation, column))
+		storedWidthExpression(spec.Target.Representation, column),
+		storedOrdinalExpression(spec))
 
 	// Whether the row is one the specification asks for, computed by the server
 	// from the same predicate that used to be the only thing in the WHERE.
@@ -476,7 +513,7 @@ func oneRelationVerificationQuery(spec embedgen.Spec, source *Source) string {
 	if filter != "" {
 		query += " WHERE (" + filter + ") OR " + generationColumn + " IS NOT NULL"
 	}
-	return query + " ORDER BY " + strings.Join(keys, ", ")
+	return query + " ORDER BY " + strings.Join(verificationOrder(spec, keys), ", ")
 }
 
 // The column names the joined walk gives itself.
@@ -495,6 +532,7 @@ const (
 	targetVersionAlias  = "ptah_target_version"
 	stateAlias          = "ptah_state"
 	storedWidthAlias    = "ptah_stored_width"
+	storedOrdinalAlias  = "ptah_stored_ordinal"
 	keyAliasPrefix      = "ptah_key_"
 	inputFieldPrefix    = "ptah_input_"
 	sourceVersionPrefix = "ptah_source_version_"
@@ -550,6 +588,11 @@ func joinedVerificationQuery(spec embedgen.Spec, source *Source) string {
 		targetSide+"."+generationAlias, targetSide+"."+inputHashAlias,
 		targetSide+"."+targetVersionAlias, targetSide+"."+stateAlias,
 		targetSide+"."+storedWidthAlias,
+		// COALESCE, because a source row with no stored row leaves the whole
+		// target side NULL and the scanner reads the ordinal as an integer. A
+		// position with no row is the start of an empty set, which is ordinal
+		// zero.
+		fmt.Sprintf("COALESCE(%s.%s, 0)", targetSide, storedOrdinalAlias),
 		// A row only the target has is not one the specification asked for: its
 		// source columns are absent, so a literal TRUE here would hand the
 		// scanner a source row made of nulls and the verification would demand
@@ -597,7 +640,14 @@ func joinedVerificationQuery(spec embedgen.Spec, source *Source) string {
 	// to no generation, so no generation's verification is the place it is
 	// reported.
 	query += fmt.Sprintf(" WHERE %s OR %s.%s IS NOT NULL", scope, targetSide, generationAlias)
-	return query + " ORDER BY " + strings.Join(keys, ", ")
+	order := append([]string(nil), keys...)
+	if spec.Target.Layout.OwnsTable() {
+		// COALESCE, because a source row with no stored row leaves the whole
+		// target side NULL, and a set that does not exist yet begins at zero.
+		order = append(order,
+			fmt.Sprintf("COALESCE(%s.%s, 0)", targetSide, storedOrdinalAlias))
+	}
+	return query + " ORDER BY " + strings.Join(order, ", ")
 }
 
 // verificationSourceSide is the source half of the join, as a derived table.
@@ -650,6 +700,7 @@ func verificationTargetSide(spec embedgen.Spec) string {
 		quoteIdentifier(column+VersionSuffix)+" AS "+targetVersionAlias,
 		quoteIdentifier(column+StateSuffix)+" AS "+stateAlias,
 		storedWidthExpression(spec.Target.Representation, column)+" AS "+storedWidthAlias,
+		storedOrdinalExpression(spec)+" AS "+storedOrdinalAlias,
 		// What says a row stands here at all. Every other column this side
 		// selects can be NULL in a row that exists -- a target row is created
 		// before anything writes a vector into it -- so none of them can answer
@@ -679,6 +730,7 @@ type verificationScanner struct {
 
 	values    []sql.NullString
 	dimension sql.NullInt64
+	ordinal   sql.NullInt64
 	inScope   sql.NullBool
 	present   sql.NullBool
 	into      []any
@@ -696,11 +748,12 @@ func newVerificationScanner(spec embedgen.Spec) *verificationScanner {
 	}
 	width := scanner.keyCount + scanner.inputCount + len(versionColumnsOf(spec)) + 4
 	scanner.values = make([]sql.NullString, width)
-	scanner.into = make([]any, 0, width+3)
+	scanner.into = make([]any, 0, width+4)
 	for index := range scanner.values {
 		scanner.into = append(scanner.into, &scanner.values[index])
 	}
-	scanner.into = append(scanner.into, &scanner.dimension, &scanner.inScope, &scanner.present)
+	scanner.into = append(scanner.into,
+		&scanner.dimension, &scanner.ordinal, &scanner.inScope, &scanner.present)
 	return scanner
 }
 
@@ -724,7 +777,8 @@ func (s *verificationScanner) pair(rows *sql.Rows) (embedverify.Pair, error) {
 	inScope := s.inScope.Valid && s.inScope.Bool
 	present := s.present.Valid && s.present.Bool
 
-	s.target = targetVerificationRow(s.values, s.dimension, s.spec, s.keyCount, s.inputCount)
+	s.target = targetVerificationRow(
+		s.values, s.dimension, s.ordinal, s.spec, s.keyCount, s.inputCount)
 	pair := embedverify.Pair{}
 	if present {
 		pair.Target = &s.target
@@ -768,7 +822,8 @@ func targetStateOffset(spec embedgen.Spec, keyCount, inputCount int) int {
 // the caller decides whether to hand it over, and a value nobody points at
 // costs nothing because the scanner reuses one.
 func targetVerificationRow(
-	values []sql.NullString, dimension sql.NullInt64, spec embedgen.Spec, keyCount, inputCount int,
+	values []sql.NullString, dimension, ordinal sql.NullInt64,
+	spec embedgen.Spec, keyCount, inputCount int,
 ) embedverify.TargetRow {
 	offset := targetStateOffset(spec, keyCount, inputCount)
 	state := values[offset+3].String
@@ -780,6 +835,7 @@ func targetVerificationRow(
 		Tombstone:  state == "tombstone",
 		Skipped:    state == "skip",
 		Dimension:  storedDimension(dimension),
+		Ordinal:    int(ordinal.Int64),
 	}
 }
 
@@ -802,7 +858,11 @@ func sourceVerificationRow(
 		version = values[keyCount+inputCount].String
 	}
 
-	input, err := spec.Canonicalize(embedgen.Row{Key: key, Fields: fields})
+	// The WHOLE canonical input, not a chunk: a stored row's hash is taken over
+	// the source row it came from, so freshness is recomputed the same way for
+	// a chunked corpus as for an unchunked one.
+	set, err := spec.CanonicalInputs(embedgen.Row{Key: key, Fields: fields})
+	input := set.Whole
 	if err != nil {
 		return embedverify.SourceRow{},
 			fmt.Errorf("canonicalize %v for verification: %w", key, err)

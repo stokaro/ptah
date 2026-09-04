@@ -26,11 +26,11 @@ func BenchmarkCanonicalizeAndHash_PerRow(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		input, err := spec.Canonicalize(row)
+		set, err := spec.CanonicalInputs(row)
 		if err != nil {
 			b.Fatal(err)
 		}
-		if spec.SourceInputHash(input) == "" {
+		if spec.SourceInputHash(set.Whole) == "" {
 			b.Fatal("the hash is empty")
 		}
 	}
@@ -50,11 +50,11 @@ func BenchmarkCanonicalizeAndHash_ByInputSize(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 			for b.Loop() {
-				input, err := spec.Canonicalize(row)
+				set, err := spec.CanonicalInputs(row)
 				if err != nil {
 					b.Fatal(err)
 				}
-				_ = spec.SourceInputHash(input)
+				_ = spec.SourceInputHash(set.Whole)
 			}
 		})
 	}

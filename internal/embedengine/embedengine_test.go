@@ -275,9 +275,9 @@ func TestBackfill_EachWriteCarriesWhatItWasComputedFrom(t *testing.T) {
 	write := h.target.commits[0].writes[0]
 	c.Assert(write.Generation, qt.Equals, spec().Identity().Digest)
 	c.Assert(write.Version, qt.Equals, "7")
-	input, err := spec().Canonicalize(sourceRows()[0])
+	set, err := spec().CanonicalInputs(sourceRows()[0])
 	c.Assert(err, qt.IsNil)
-	c.Assert(write.InputHash, qt.Equals, spec().SourceInputHash(input))
+	c.Assert(write.InputHash, qt.Equals, spec().SourceInputHash(set.Whole))
 }
 
 // TestBackfill_AProviderThatAnsweredShortIsRefused keeps a partial answer from

@@ -27,6 +27,20 @@ type TargetWrite struct {
 	Kind WriteKind
 	// SkipReason is why a skip has no vector, and is empty otherwise.
 	SkipReason string
+	// Ordinal is this write's position in its source key's set, and is zero
+	// for a specification that does not chunk.
+	//
+	// It is deliberately absent from [ResolveWrite]. The rules that function
+	// carries -- a write never crosses generations, a stale answer does not
+	// win, a tombstone survives a late update -- have the SOURCE KEY as their
+	// subject, and comparing a chunk to whatever held its ordinal before would
+	// be comparing two pieces of text that a re-split moved past each other
+	// (ADR 0017 section 3.2).
+	//
+	// InputHash is the source row's whole canonical input for the same reason:
+	// a set whose first chunk is unchanged and whose fourth is not must not
+	// read as the same work arriving again.
+	Ordinal int
 }
 
 // WriteKind is what a target write does to the row.

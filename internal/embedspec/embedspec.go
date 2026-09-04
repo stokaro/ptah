@@ -74,6 +74,9 @@ type PreprocessingDocument struct {
 	CollapseWhitespace   bool   `yaml:"collapse_whitespace"`
 	MaxInputBytes        int    `yaml:"max_input_bytes"`
 	Truncate             string `yaml:"truncate"`
+	// OverlapBytes is how much of the previous chunk each chunk repeats, and
+	// it is read only under `truncate: chunk`.
+	OverlapBytes int `yaml:"overlap_bytes"`
 }
 
 // ModelDocument is the provider half.

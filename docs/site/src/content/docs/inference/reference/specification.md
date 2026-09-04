@@ -97,8 +97,8 @@ worth checking when you write the specification.
 ## `preprocessing`
 
 Every field here is **identity**: each one changes the text that is sent. Four
-of the eight are also required, including `truncate` even where
-`max_input_bytes` names no cap for it to act at.
+of them are also required, including `truncate` even where `max_input_bytes`
+names no cap for it to act at.
 
 | Field | Required | Meaning |
 | --- | --- | --- |
@@ -108,12 +108,36 @@ of the eight are also required, including `truncate` even where
 | `empty_policy` | **yes** | What an empty input means: `skip` or `refuse`. |
 | `unicode_normalization` | **yes** | `none`, `nfc`, `nfd`, `nfkc`, or `nfkd`. |
 | `collapse_whitespace` | | Whether runs of whitespace become one space. |
-| `max_input_bytes` | | The cap on one input's size. |
-| `truncate` | **yes** | What happens at the cap: `refuse` or `bytes`. |
+| `max_input_bytes` | | The cap on one input's size, and the size of one chunk. |
+| `truncate` | **yes** | What happens at the cap: `refuse`, `bytes`, or `chunk`. |
+| `overlap_bytes` | | How much of the previous chunk each chunk repeats. Read only under `chunk`. |
 
 `null_policy: skip` leaves the field out of the joined text. `refuse` stops the
 run on that row. `empty_policy: skip` records the row as a deliberate skip, which
 coverage verification counts as accounted for.
+
+### `truncate: chunk`
+
+The other two policies decide what to lose when an input is over the cap.
+`chunk` decides not to lose any of it: the input is split into pieces of at most
+`max_input_bytes`, every piece is embedded, and the source row holds a **set** of
+vectors instead of one.
+
+`max_input_bytes` is the chunk size — there is no second key for it, because a
+chunk is what a provider is asked to embed and that is what the cap already
+names. It must be at least 16 bytes. `overlap_bytes` repeats the tail of each
+chunk at the head of the next, so a passage that straddles a boundary is in one
+chunk's meaning rather than half of two; it must be smaller than the cap, and an
+overlap at or above it is refused rather than clamped, because it describes a
+split that never reaches the end of the input.
+
+Every piece begins and ends on a rune boundary, so a chunk is never handed to a
+provider as invalid UTF-8.
+
+A set of vectors cannot live in the row it was split from, so a chunking
+specification needs `target.layout: own_table` and is refused without it. See
+[Choose a target layout](../../strategies/choose-a-target-layout/), and ADR 0017
+for the identity and cardinality model the storage follows.
 
 ## `model`
 

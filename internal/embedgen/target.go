@@ -105,6 +105,26 @@ func (s Spec) validateTarget() error {
 		return fmt.Errorf("target objects: the specification names no target column")
 	case strings.TrimSpace(s.Target.Representation) == "":
 		return fmt.Errorf("target objects: the specification names no target representation")
+	case !s.Chunks() && s.Preprocessing.OverlapBytes != 0:
+		// An overlap is read only by the split, and the split runs only under
+		// TruncateChunk. Accepting it elsewhere would take a number an author
+		// wrote, do nothing with it, and leave it out of the identity too --
+		// so two specifications differing only in it would be one generation.
+		return fmt.Errorf(
+			"target objects: overlap_bytes is %d and the truncation policy is %q, which does "+
+				"not split anything. It is read only under %q",
+			s.Preprocessing.OverlapBytes, string(s.Preprocessing.Truncate), string(TruncateChunk))
+	case s.Chunks() && !s.Target.Layout.OwnsTable():
+		// A source row that produces a set of chunks has nowhere to put it in
+		// the row it was split from: the columns beside that row hold one
+		// vector. Accepting this would embed the row, write the first chunk
+		// over the second, and report a covered corpus holding one piece of
+		// each row (ADR 0017).
+		return fmt.Errorf(
+			"target objects: the specification splits a row into a set of chunks, and layout %q "+
+				"stores one vector per source row. A set needs a relation of its own: set "+
+				"target.layout to %q",
+			string(LayoutSourceColumns), string(LayoutOwnTable))
 	case !KnownLayout(s.Target.Layout):
 		return fmt.Errorf("target objects: %q is not a target layout", string(s.Target.Layout))
 	case s.Target.Layout.OwnsTable() && sameRelation(

@@ -49,6 +49,13 @@ type BatchRow struct {
 	Skipped bool
 	// SkipReason says why.
 	SkipReason string
+	// Ordinal is this row's position in its source key's chunk set, and is
+	// zero for a specification that does not chunk.
+	//
+	// A batch therefore carries several rows with one key, and that is the
+	// point: a batch is a unit of provider work, and each chunk is one call's
+	// worth of it.
+	Ordinal int
 }
 
 // Assemble packs rows into batches that respect every bound at once.
