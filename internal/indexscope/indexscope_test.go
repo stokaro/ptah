@@ -325,6 +325,29 @@ func TestConflictSet_DialectMatching(t *testing.T) {
 	}
 }
 
+// The MySQL family folds index names with a collation table Ptah has no
+// offline copy of, and the two engines disagree about which non-ASCII names
+// they fold. Measured on mysql:8.4.11 and mariadb:11.8.9, index names in a
+// fresh table, verified through HEX(INDEX_NAME):
+//
+//	pair              MySQL 8.4.11    MariaDB 11.8.9
+//	I / ı             distinct        duplicate
+//	İ / i             duplicate       distinct
+//	Σ / ς             distinct        duplicate
+//	K(U+212A) / K     duplicate       distinct
+//	Ä / ä             duplicate       duplicate
+//	a / ä             distinct        distinct
+//
+// So neither ASCII folding nor Unicode folding describes either engine. A name
+// carrying a non-ASCII rune has an equivalence class Ptah cannot compute, and
+// it is reported as a possible conflict with every name in its namespace --
+// including ASCII ones, because `İ` collides with ASCII `i` on MySQL.
+//
+// That is deliberately conservative rather than exact: the a/ä row is a pair
+// both engines accept and this reports as a possible conflict. Failing closed
+// is the sanctioned answer while the equivalence is unknown, and the way to
+// make it exact is to resolve the names against the target rather than to
+// guess a folding rule here. See stokaro/ptah#2768.
 func TestConflictSet_NonASCIICaseSemantics(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -334,35 +357,65 @@ func TestConflictSet_NonASCIICaseSemantics(t *testing.T) {
 		want    bool
 	}{
 		{
-			name:    "mysql preserves non-ASCII case",
+			name:    "mysql reports a non-ASCII pair it really does fold",
 			dialect: "mysql",
 			stored:  "Ä",
 			lookup:  "ä",
-			want:    false,
+			want:    true,
 		},
 		{
-			name:    "mariadb folds Unicode case",
+			name:    "mariadb reports a non-ASCII pair it really does fold",
 			dialect: "mariadb",
 			stored:  "Ä",
 			lookup:  "ä",
 			want:    true,
 		},
 		{
-			name:    "mariadb folds dotted capital I",
-			dialect: "mariadb",
+			name:    "mysql reports a dotted capital I beside ASCII i",
+			dialect: "mysql",
 			stored:  "İ",
 			lookup:  "i",
 			want:    true,
 		},
 		{
-			name:    "mariadb preserves accents",
+			name:    "mariadb reports ASCII I beside a dotless i",
 			dialect: "mariadb",
-			stored:  "a",
-			lookup:  "ä",
+			stored:  "I",
+			lookup:  "ı",
+			want:    true,
+		},
+		{
+			// Escaped, because a Kelvin sign pasted through a shell arrives as
+			// ASCII K and the row would compare a name with itself.
+			name:    "mysql reports a Kelvin sign beside ASCII K",
+			dialect: "mysql",
+			stored:  "\u212A",
+			lookup:  "K",
+			want:    true,
+		},
+		{
+			name:    "mariadb reports a capital sigma beside a final sigma",
+			dialect: "mariadb",
+			stored:  "Σ",
+			lookup:  "ς",
+			want:    true,
+		},
+		{
+			name:    "mysql keeps two ASCII names apart",
+			dialect: "mysql",
+			stored:  "alpha",
+			lookup:  "beta",
 			want:    false,
 		},
 		{
-			name:    "sqlite preserves non-ASCII case",
+			name:    "mariadb still folds ASCII case exactly",
+			dialect: "mariadb",
+			stored:  "Alpha",
+			lookup:  "alpha",
+			want:    true,
+		},
+		{
+			name:    "sqlite is untouched by the MySQL-family rule",
 			dialect: "sqlite",
 			stored:  "Ä",
 			lookup:  "ä",

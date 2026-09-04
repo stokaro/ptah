@@ -39,6 +39,19 @@ const (
 	ComparisonASCIIInsensitive Comparison = "ascii_case_insensitive"
 	// ComparisonUnicodeInsensitive folds Unicode letters before comparison.
 	ComparisonUnicodeInsensitive Comparison = "unicode_case_insensitive"
+	// ComparisonASCIIFoldedNonASCIIUnknown folds ASCII letters for identity and
+	// treats any name carrying a non-ASCII rune as an unresolved catalog
+	// identifier for conflict purposes.
+	//
+	// It exists because the MySQL family folds identifiers with a collation
+	// table Ptah has no offline copy of, and the two engines disagree. Measured
+	// on mysql:8.4.11 and mariadb:11.8.9, on the same four index-name pairs:
+	// MySQL refuses `İ`/`i` and `K`(U+212A)/`K` as duplicates while accepting
+	// `I`/`ı` and `Σ`/`ς`; MariaDB does exactly the opposite. So neither ASCII
+	// folding nor Unicode folding is right for either engine, and the honest
+	// offline answer is that a non-ASCII name's equivalence class is unknown
+	// (stokaro/ptah#2768).
+	ComparisonASCIIFoldedNonASCIIUnknown Comparison = "ascii_folded_non_ascii_unknown"
 	// ComparisonCatalogUnknown preserves spelling for identity while treating
 	// every distinct unresolved name as a potential catalog conflict.
 	ComparisonCatalogUnknown Comparison = "catalog_unknown"
@@ -103,17 +116,22 @@ func ForDialect(dialect string) Semantics {
 			TableNames:     ComparisonASCIIInsensitive,
 			ColumnNames:    ComparisonASCIIInsensitive,
 		}
+	// Both engines fold index names with a collation table Ptah has no offline
+	// copy of, and they disagree about every non-ASCII pair measured. ASCII
+	// folding is shared and exact, so it is kept; beyond ASCII the equivalence
+	// class is unknown and is reported as a possible conflict rather than
+	// guessed at in either direction (stokaro/ptah#2768).
 	case platform.MySQL:
 		return Semantics{
 			IndexNamespace: IndexNamespaceTable,
-			IndexNames:     ComparisonASCIIInsensitive,
+			IndexNames:     ComparisonASCIIFoldedNonASCIIUnknown,
 			TableNames:     ComparisonExact,
 			ColumnNames:    ComparisonExact,
 		}
 	case platform.MariaDB:
 		return Semantics{
 			IndexNamespace: IndexNamespaceTable,
-			IndexNames:     ComparisonUnicodeInsensitive,
+			IndexNames:     ComparisonASCIIFoldedNonASCIIUnknown,
 			TableNames:     ComparisonExact,
 			ColumnNames:    ComparisonExact,
 		}
@@ -243,6 +261,20 @@ func (s Semantics) IndexConflictKey(value string) string {
 	return s.conflictKey(s.IndexNames, value)
 }
 
+// IndexConflictUnresolved reports whether an index name's conflict key stands
+// for an equivalence class this target cannot resolve.
+//
+// A caller grouping names by conflict key needs this, because such a key is
+// not one more bucket: it may collide with every other name in the namespace,
+// ASCII ones included. It is asked of the [Semantics] rather than of the
+// [Comparison] on purpose -- a catalog-resolved target answers false for a
+// name its ResolvedNames cover, and asking the bare comparison would report
+// every name unresolved and collapse a resolved namespace into one bucket
+// (stokaro/ptah#2768).
+func (s Semantics) IndexConflictUnresolved(value string) bool {
+	return s.IndexConflictKey(value) == unresolvedCatalogKey
+}
+
 // TableIdentityKey returns the confirmed comparison key for a schema or table
 // name.
 func (s Semantics) TableIdentityKey(value string) string {
@@ -319,7 +351,7 @@ func (s Semantics) ResolvesQualifiedTable(value string) bool {
 // name's spelling as its identity (stokaro/ptah#1290).
 func (c Comparison) IdentityKey(value string) string {
 	switch c {
-	case ComparisonASCIIInsensitive:
+	case ComparisonASCIIInsensitive, ComparisonASCIIFoldedNonASCIIUnknown:
 		return foldASCII(value)
 	case ComparisonUnicodeInsensitive:
 		return strings.ToLower(value)
@@ -341,9 +373,25 @@ func (c Comparison) ConflictKey(value string) string {
 		return unresolvedCatalogKey
 	case ComparisonCatalogResolved:
 		return unresolvedCatalogKey
+	case ComparisonASCIIFoldedNonASCIIUnknown:
+		if isASCII(value) {
+			return foldASCII(value)
+		}
+		return unresolvedCatalogKey
 	default:
 		return c.IdentityKey(value)
 	}
+}
+
+// isASCII reports whether every byte is ASCII, which for UTF-8 is the same
+// question as whether every rune is.
+func isASCII(value string) bool {
+	for index := range len(value) {
+		if value[index] >= 0x80 {
+			return false
+		}
+	}
+	return true
 }
 
 const unresolvedCatalogKey = "\x00ptah:unresolved-catalog-identifier"
@@ -487,6 +535,7 @@ func validComparison(comparison Comparison) bool {
 	switch comparison {
 	case ComparisonExact,
 		ComparisonASCIIInsensitive,
+		ComparisonASCIIFoldedNonASCIIUnknown,
 		ComparisonUnicodeInsensitive,
 		ComparisonCatalogUnknown,
 		ComparisonCatalogResolved:
