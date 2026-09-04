@@ -144,7 +144,16 @@ func TestSameColumnNames_ComparesUnderTheDialectsRule(t *testing.T) {
 		{name: "oracle folds", dialect: platform.Oracle, wantEqual: true},
 		{name: "sqlite folds", dialect: platform.SQLite, wantEqual: true},
 		{name: "postgres does not", dialect: platform.Postgres},
-		{name: "mysql does not", dialect: platform.MySQL},
+		// MySQL folds ASCII column case, which this row used to deny.
+		// Measured on mysql:8.4.11 and mariadb:11.8.9: a table declaring `A`
+		// and `a` answers ERROR 1060 Duplicate column name 'a', and a foreign
+		// key on `a` binds to a column declared `A` and reuses its key. So a
+		// desired `author_id` and a catalog AUTHOR_ID are one column, and
+		// comparing the spellings reported drift on every run
+		// (stokaro/ptah#2771). PostgreSQL above is the row that keeps the fold
+		// from spreading.
+		{name: "mysql folds ASCII case", dialect: platform.MySQL, wantEqual: true},
+		{name: "mariadb folds ASCII case", dialect: platform.MariaDB, wantEqual: true},
 	}
 
 	for _, test := range tests {
