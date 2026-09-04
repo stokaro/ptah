@@ -13,4 +13,12 @@
 // It measures whether a field is READ, not whether what it produces is right.
 // An ablation that changes the SQL proves the renderer consulted the field; the
 // SQL being correct is what the per-dialect tests are for.
+//
+// [MeasureEmissions] is the second thing the corpus is for, and it asks a
+// different question of the same renders: not whether a declaration was read,
+// but whether a physical object was created more than once. That is ADR 0015's
+// second invariant -- one semantic owner and one DDL emission path per object --
+// and its observable form is that no render creates the same named object
+// twice. It reports what it could not classify beside what it found, because a
+// statement shape it cannot read is a hole a clean report would cover.
 package schemacensus

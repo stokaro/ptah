@@ -95,17 +95,30 @@ func everyCell(
 
 // renderOne is the shipping render path for one cell.
 func renderOne(schema schemamodel.Database, cell capabilityprobe.Cell) string {
-	finalized := deepCopyDatabase(schema)
-	schemamodel.Finalize(&finalized)
-	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(
-		&finalized,
-		cell.Dialect,
-		cell.Preset(),
-	)
+	statements, err := RenderStatements(schema, cell)
 	if err != nil {
 		return "refused: " + err.Error()
 	}
 	return strings.Join(statements, "\n")
+}
+
+// RenderStatements is the same render, answering with the statements rather
+// than with their text.
+//
+// Exported because the emission guard reasons about statements and the
+// observability census reasons about bytes, and they have to be the same
+// render: two call sites building their own would let the guard measure a
+// schema the census never renders.
+func RenderStatements(
+	schema schemamodel.Database, cell capabilityprobe.Cell,
+) ([]string, error) {
+	finalized := deepCopyDatabase(schema)
+	schemamodel.Finalize(&finalized)
+	return renderer.GetOrderedCreateStatementsWithCapabilities(
+		&finalized,
+		cell.Dialect,
+		cell.Preset(),
+	)
 }
 
 // CellName is how an observation names one declared release line.
