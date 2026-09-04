@@ -117,8 +117,11 @@ Each workflow below states the native Ptah command, the Atlas-compatible
 surface, what Atlas CE does, and the evidence.
 
 These rows record product workflow parity, not full Atlas Pro compatibility.
-The Atlas-compatible test verbs run Ptah-native YAML/Go test cases; Atlas
-`.test.hcl` files are not ingested.
+The test verbs read Ptah-native YAML/Go cases and Atlas `.test.hcl` files
+alike. This paragraph said `.test.hcl` files were not ingested until that
+sentence was measured against the code: #1036 added the reader on 2026-08-02
+and #1816 added `schema plan test` on 2026-08-20, and two editorial sweeps
+reformatted the claim afterwards without rereading it.
 
 ### Declarative migration and schema tests
 
@@ -161,7 +164,7 @@ The Atlas-compatible test verbs run Ptah-native YAML/Go test cases; Atlas
 
 `--edit` rebuilds the plan from valid UTF-8 operator-edited SQL, preserves statement text and comments, and reclassifies safety metadata with the plan dialect, including MySQL/MariaDB executable comments. `--name-format` templates the plan name over `.FromHash` and `.ToHash` in Atlas's measured untagged standard-Base64 representation. `--skip-lint` is accepted as a no-op because this command runs no lint step; linting a saved plan file is the separate `schema plan lint` sub-verb. `--auto-approve` is accepted for CLI compatibility — a locally saved plan file is approved by operator review, so there is no prompt to skip. Registry planning flags (`--push`, `--pending`, `--repo`) are recorded waivers, `--format` and `--directive` fail loudly because Atlas's shapes for them are unmeasured, and the registry sub-verbs (`approve`, `list`, `pull`, `push`, `rm`) stay unsupported-boundary stubs.
 
-`ptah-compat schema plan new` creates a plan file for the transition. `ptah-compat schema plan validate` runs the same two verifications without touching the target, and its dev-database replay is unconditional because verification is the verb's only effect. A sanitized standard Atlas v1.3.0 help bundle with exact binary and artifact hashes confirms both command and flag surfaces, while their runtime behavior remains documentation-derived and tracked in [#1037](https://github.com/stokaro/ptah/issues/1037). Successful Ptah runs keep stderr free of development provenance. `test` stays a stub — nothing in Ptah reads `.test.hcl` yet.
+`ptah-compat schema plan new` creates a plan file for the transition. `ptah-compat schema plan validate` runs the same two verifications without touching the target, and its dev-database replay is unconditional because verification is the verb's only effect. A sanitized standard Atlas v1.3.0 help bundle with exact binary and artifact hashes confirms both command and flag surfaces, while their runtime behavior remains documentation-derived and tracked in [#1037](https://github.com/stokaro/ptah/issues/1037). Successful Ptah runs keep stderr free of development provenance. `test` runs `test "plan"` cases from `.test.hcl` files: a case establishes a starting state with `schema { url = … }`, applies a saved plan with `apply { url = … }`, and asserts with `exec`. This sentence called the verb a stub that read nothing until #1816 implemented it on 2026-08-20.
 
 `ptah-compat schema plan lint` runs those same verifications and then reports what Ptah's migration lint rules find in the plan's SQL. Findings do not change the exit code; `PTAH_ATLAS_PLAN_LINT_FAIL_ON_ERROR=1` makes an error-severity finding exit 1. Every run states on stderr that a report without findings describes the rules rather than the plan.
 
