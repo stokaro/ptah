@@ -115,6 +115,8 @@ func Fixtures() []Fixture {
 		{Name: "column-unique-expr", Schema: columnUniqueExprFixture()},
 		{Name: "fk-field-deferrable-only", Schema: foreignKeyDeferrableOnlyFixture()},
 		{Name: "fk-field-initially-only", Schema: foreignKeyInitiallyOnlyFixture()},
+		{Name: "foreign-key-self-field", Schema: selfReferencingForeignKeyFieldFixture()},
+		{Name: "foreign-key-self-constraint", Schema: selfReferencingForeignKeyConstraintFixture()},
 		{Name: "constraint-deferrable-only", Schema: constraintDeferrableOnlyFixture()},
 		{Name: "constraint-initially-only", Schema: constraintInitiallyOnlyFixture()},
 		{Name: "constraint-host-table-only", Schema: constraintHostTableOnlyFixture()},
@@ -687,6 +689,48 @@ func foreignKeyFieldFixture() schemamodel.Database {
 		Foreign: "parents(id)", ForeignKeyName: "fk_children_parent",
 		OnDelete: "CASCADE", OnUpdate: "RESTRICT",
 	})
+	return db
+}
+
+// selfReferencingForeignKeyFieldFixture declares a foreign key from a table to
+// itself, in the field-level spelling.
+//
+// The corpus had no such shape and could therefore not exhibit the defect
+// #2583 reported -- a self-reference emitted twice, once by the constraint path
+// and once by internal/deporder. Every foreign key here pointed at another
+// table, so `SelfReferencingForeignKeys` was empty on every fixture and a sweep
+// for duplicate emission answered zero for a reason that had nothing to do with
+// the invariant.
+//
+// One table, because a self-reference is what makes the dependency graph name
+// the table as its own predecessor, and a second table would give the ordering
+// somewhere else to put the edge.
+func selfReferencingForeignKeyFieldFixture() schemamodel.Database {
+	db := oneTable("Node", schemamodel.Table{Name: "nodes"})
+	db.Fields = append(db.Fields, schemamodel.Field{
+		StructName: "Node", FieldName: "ParentID", Name: "parent_id", Type: "BIGINT", Nullable: true,
+		Foreign: "nodes(id)", ForeignKeyName: "fk_nodes_parent", OnDelete: "CASCADE",
+	})
+	return db
+}
+
+// selfReferencingForeignKeyConstraintFixture is the same reference in the
+// table-level spelling.
+//
+// Both spellings are in the corpus because they reach the renderer through
+// different paths: a field's Foreign is read by analyzeFieldForeignKeys, and a
+// Constraint whose Table equals its ForeignTable by the constraint path. A
+// duplicate emission that only one of them produced would be invisible to a
+// corpus carrying the other.
+func selfReferencingForeignKeyConstraintFixture() schemamodel.Database {
+	db := oneTable("Node", schemamodel.Table{Name: "nodes"})
+	db.Fields = append(db.Fields, schemamodel.Field{
+		StructName: "Node", FieldName: "ParentID", Name: "parent_id", Type: "BIGINT", Nullable: true,
+	})
+	db.Constraints = []schemamodel.Constraint{{
+		StructName: "Node", Table: "nodes", Name: "fk_nodes_parent", Type: "FOREIGN KEY",
+		Columns: []string{"parent_id"}, ForeignTable: "nodes", ForeignColumn: "id",
+	}}
 	return db
 }
 
