@@ -40,6 +40,14 @@ func (dc *DatabaseConnection) ResolveIdentifierSemantics(
 		return identifier.Semantics{}, fmt.Errorf("resolve identifier semantics: database connection is nil")
 	}
 	info := dc.Info()
+	// The MySQL family is the second dialect whose index-name equivalence the
+	// server is the only authority on, and it is asked a different question:
+	// SQL Server can partition a set under a collation, while neither MySQL nor
+	// MariaDB exposes the fold its identifier comparison uses, so what is asked
+	// is the collision itself (stokaro/ptah#2768).
+	if isMySQLFamilyDialect(info.Dialect) {
+		return dc.resolveMySQLFamilyIndexNames(ctx, names)
+	}
 	if platform.NormalizeDialect(info.Dialect) != platform.SQLServer {
 		return info.IdentifierSemantics.Normalize(info.Dialect), nil
 	}

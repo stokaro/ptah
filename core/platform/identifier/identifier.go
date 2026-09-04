@@ -52,6 +52,27 @@ const (
 	// offline answer is that a non-ASCII name's equivalence class is unknown
 	// (stokaro/ptah#2768).
 	ComparisonASCIIFoldedNonASCIIUnknown Comparison = "ascii_folded_non_ascii_unknown"
+	// ComparisonASCIIFoldedNonASCIIResolved folds ASCII letters and takes a
+	// non-ASCII name's equivalence class from a live target that was asked.
+	//
+	// It is [ComparisonASCIIFoldedNonASCIIUnknown] with the unknown half
+	// answered. ASCII folding is kept because it is shared by both engines and
+	// exact; only the names Ptah cannot fold offline are asked about, so a
+	// schema carrying none asks the server nothing.
+	//
+	// The question put to the server is the collision itself rather than a fold
+	// to imitate: a temporary table carrying every name as a KEY either creates
+	// or answers `Duplicate key name`. Measured on mysql:8.4.11 and
+	// mariadb:11.8.9, that reproduces every pair the two engines disagree on --
+	// MySQL collides `İ`/`i` and `K`(U+212A)/`K` while MariaDB collides `I`/`ı`
+	// and `Σ`/`ς` -- and it accepts `a`/`ä`, which both engines keep distinct
+	// and which the unknown answer had to report as a possible conflict
+	// (stokaro/ptah#2768).
+	//
+	// Keys share one space with the ASCII folds, so a non-ASCII name the server
+	// puts in an ASCII name's class carries that name's folded key. That is what
+	// makes `İ` collide with `i` on MySQL rather than merely being unresolved.
+	ComparisonASCIIFoldedNonASCIIResolved Comparison = "ascii_folded_non_ascii_resolved"
 	// ComparisonCatalogUnknown preserves spelling for identity while treating
 	// every distinct unresolved name as a potential catalog conflict.
 	ComparisonCatalogUnknown Comparison = "catalog_unknown"
@@ -185,6 +206,26 @@ func ForSQLServerCatalog(catalogCollation string) Semantics {
 		ColumnNames:      ComparisonCatalogResolved,
 		CatalogCollation: catalogCollation,
 	}
+}
+
+// ForMySQLFamilyResolvedIndexNames returns MySQL-family semantics whose index
+// names carry equivalence classes a live server answered for.
+//
+// It is [ForDialect] with the index-name comparison upgraded, so table and
+// column names keep the exact comparison measured for them and only the
+// question the engines disagree about is asked of the server. The names must
+// cover every non-ASCII index name the comparison will see; an uncovered one
+// falls back to the conservative unknown answer rather than to a guess.
+//
+// A dialect outside the MySQL family is returned unchanged, because the
+// question this answers is that family's.
+func ForMySQLFamilyResolvedIndexNames(dialect string, names []ResolvedName) Semantics {
+	semantics := ForDialect(dialect)
+	if semantics.IndexNames != ComparisonASCIIFoldedNonASCIIUnknown {
+		return semantics
+	}
+	semantics.IndexNames = ComparisonASCIIFoldedNonASCIIResolved
+	return semantics.WithResolvedNames(names)
 }
 
 // WithResolvedNames returns a copy with deterministic catalog-equivalence
@@ -363,7 +404,9 @@ func (s Semantics) ResolvesQualifiedTable(value string) bool {
 // name's spelling as its identity (stokaro/ptah#1290).
 func (c Comparison) IdentityKey(value string) string {
 	switch c {
-	case ComparisonASCIIInsensitive, ComparisonASCIIFoldedNonASCIIUnknown:
+	case ComparisonASCIIInsensitive,
+		ComparisonASCIIFoldedNonASCIIUnknown,
+		ComparisonASCIIFoldedNonASCIIResolved:
 		return foldASCII(value)
 	case ComparisonUnicodeInsensitive:
 		return strings.ToLower(value)
@@ -385,7 +428,7 @@ func (c Comparison) ConflictKey(value string) string {
 		return unresolvedCatalogKey
 	case ComparisonCatalogResolved:
 		return unresolvedCatalogKey
-	case ComparisonASCIIFoldedNonASCIIUnknown:
+	case ComparisonASCIIFoldedNonASCIIUnknown, ComparisonASCIIFoldedNonASCIIResolved:
 		if isASCII(value) {
 			return foldASCII(value)
 		}
@@ -438,6 +481,12 @@ func (s Semantics) resolvedKey(value string) (string, bool) {
 // desired name the target does not have is a name it does not have, so keeping
 // such names distinct is also the answer that describes the target truthfully.
 func (s Semantics) identityKey(comparison Comparison, value string) string {
+	if comparison == ComparisonASCIIFoldedNonASCIIResolved {
+		if key, ok := s.resolvedKey(value); ok {
+			return key
+		}
+		return comparison.IdentityKey(value)
+	}
 	if comparison != ComparisonCatalogResolved {
 		return comparison.IdentityKey(value)
 	}
@@ -458,6 +507,12 @@ func (s Semantics) identityKey(comparison Comparison, value string) string {
 // [ComparisonCatalogResolved] is in the same position: nothing is known about
 // its equivalence class.
 func (s Semantics) conflictKey(comparison Comparison, value string) string {
+	if comparison == ComparisonASCIIFoldedNonASCIIResolved {
+		if key, ok := s.resolvedKey(value); ok {
+			return key
+		}
+		return comparison.ConflictKey(value)
+	}
 	if comparison != ComparisonCatalogResolved {
 		return comparison.ConflictKey(value)
 	}
@@ -485,16 +540,16 @@ func (s Semantics) qualifiedTableKey(
 	return tableref.Canonical(key(schema), key(ref.Name))
 }
 
-func (s Semantics) valid() bool {
-	if s.IndexNamespace != IndexNamespaceTable &&
-		s.IndexNamespace != IndexNamespaceSchema {
-		return false
-	}
-	if !validComparison(s.IndexNames) ||
-		!validComparison(s.TableNames) ||
-		!validComparison(s.ColumnNames) {
-		return false
-	}
+// validResolutionShape holds the rules about which modes may carry a resolved
+// name table, and what else each of them requires.
+//
+// Two modes carry one, for different reasons. [ComparisonCatalogResolved] is
+// all-or-nothing across the three name kinds and always records the collation
+// that decided, because SQL Server resolves every kind under one catalog
+// collation. [ComparisonASCIIFoldedNonASCIIResolved] is per-field and records
+// no collation: what the MySQL family was asked is which index names collide,
+// and there is no collation to name (stokaro/ptah#2768).
+func (s Semantics) validResolutionShape() bool {
 	catalogResolved := s.IndexNames == ComparisonCatalogResolved ||
 		s.TableNames == ComparisonCatalogResolved ||
 		s.ColumnNames == ComparisonCatalogResolved
@@ -507,10 +562,23 @@ func (s Semantics) valid() bool {
 			s.ColumnNames != ComparisonCatalogResolved) {
 		return false
 	}
-	if catalogResolved && len(s.ResolvedNames) == 0 {
+	asciiResolved := s.IndexNames == ComparisonASCIIFoldedNonASCIIResolved ||
+		s.TableNames == ComparisonASCIIFoldedNonASCIIResolved ||
+		s.ColumnNames == ComparisonASCIIFoldedNonASCIIResolved
+	return (catalogResolved || asciiResolved) == (len(s.ResolvedNames) > 0)
+}
+
+func (s Semantics) valid() bool {
+	if s.IndexNamespace != IndexNamespaceTable &&
+		s.IndexNamespace != IndexNamespaceSchema {
 		return false
 	}
-	if !catalogResolved && len(s.ResolvedNames) > 0 {
+	if !validComparison(s.IndexNames) ||
+		!validComparison(s.TableNames) ||
+		!validComparison(s.ColumnNames) {
+		return false
+	}
+	if !s.validResolutionShape() {
 		return false
 	}
 	return validResolvedNames(s.ResolvedNames)
@@ -548,6 +616,7 @@ func validComparison(comparison Comparison) bool {
 	case ComparisonExact,
 		ComparisonASCIIInsensitive,
 		ComparisonASCIIFoldedNonASCIIUnknown,
+		ComparisonASCIIFoldedNonASCIIResolved,
 		ComparisonUnicodeInsensitive,
 		ComparisonCatalogUnknown,
 		ComparisonCatalogResolved:
