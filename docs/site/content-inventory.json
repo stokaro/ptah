@@ -4574,8 +4574,8 @@
         "/direct/compare-and-drift/",
         "/reference/native-commands/"
       ],
-      "visibleWords": 1866,
-      "sourceBytes": 16316
+      "visibleWords": 1923,
+      "sourceBytes": 16775
     },
     {
       "path": "docs/site/src/content/docs/schema/orm-and-external.md",

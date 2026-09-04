@@ -215,6 +215,9 @@ try {
   writeSample(join(samplesRoot, 'schema-lineage.json'), run([
     'schema', 'lineage', '--schema-file', join(fixtureRoot, 'lineage.sql'), '--dialect', 'sqlite', '--format', 'json',
   ], workRoot));
+  writeSample(join(samplesRoot, 'schema-lineage.dot'), run([
+    'schema', 'lineage', '--schema-file', join(fixtureRoot, 'lineage.sql'), '--dialect', 'sqlite', '--format', 'dot',
+  ], workRoot));
 
   const statsDB = join(workRoot, 'stats.db');
   run([

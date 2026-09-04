@@ -161,6 +161,11 @@ func TestSchemaLineageJSONCarriesRoutinesUnderTheirOwnKey(t *testing.T) {
 
 // TestSchemaLineageRefusesAnUnknownFormat keeps a typo from silently selecting
 // the default rendering.
+//
+// It is also what keeps the validation and the dispatch in step: a format this
+// check accepted and the writer did not handle would fall through to the
+// table, which is the quiet way a new format ships as a synonym for the old
+// one (stokaro/ptah#2576).
 func TestSchemaLineageRefusesAnUnknownFormat(t *testing.T) {
 	c := qt.New(t)
 	path := writeSchemaSQLFile(c, c.TempDir(), "schema.sql", lineageSchemaSQL)
@@ -168,7 +173,7 @@ func TestSchemaLineageRefusesAnUnknownFormat(t *testing.T) {
 	out, err := runSchema("", "lineage", "--schema-file", path, "--format", "yaml")
 
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(out+err.Error(), qt.Contains, "must be table or json")
+	c.Assert(out+err.Error(), qt.Contains, "must be table, json or dot")
 }
 
 // jsonPortion trims the loader's progress lines, which precede the document on

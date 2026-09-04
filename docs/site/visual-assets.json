@@ -228,7 +228,7 @@
     },
     {
       "route": "/schema/lineage/", "primaryVisualId": "schema-lineage-explanatory", "selector": "[data-visual-id=\"schema-lineage-explanatory\"]",
-      "expectedCaption": "Explanatory diagram—not output from `ptah schema lineage`—of the real text and JSON fixture above.", "expectedArtifact": "docs/site/src/assets/schema-lineage-explanatory.svg",
+      "expectedCaption": "Explanatory diagram—not output from `ptah schema lineage`—of the same fixture.", "expectedArtifact": "docs/site/src/assets/schema-lineage-explanatory.svg",
       "maxVisibleWordsBeforeVisual": 250, "minimumRenderedWidth": 280, "minimumRenderedHeight": 110,
       "fullSizeAction": true, "sourceAction": true, "downloadAction": true, "requiredVariants": [], "themes": ["light", "dark"], "enforced": true
     },

@@ -22,6 +22,7 @@ import lineageExplanation from '../../../assets/schema-lineage-explanatory.svg';
 
 export const lineageText = `${import.meta.env.BASE_URL}samples/schema-lineage.txt`;
 export const lineageJSON = `${import.meta.env.BASE_URL}samples/schema-lineage.json`;
+export const lineageDOT = `${import.meta.env.BASE_URL}samples/schema-lineage.dot`;
 
 `ptah schema lineage` derives column-to-column dependencies from the view and
 materialized-view bodies a schema declares, the columns each routine body
@@ -33,17 +34,22 @@ The analysis reads a schema source and contacts no database, so it answers
 before a change is applied. What it cannot attribute it reports as undecided
 instead of dropping, which is the part of the output a reader has to look at.
 
-Ptah currently exports lineage as text or JSON, not as a graph. The committed
-fixture produces two resolved view edges and one explicitly undecided view;
-download the <a href={lineageText} download>real text output</a> or
-<a href={lineageJSON} download>real JSON output</a>. Graph export is tracked in
-[issue #2576](https://github.com/stokaro/ptah/issues/2576).
+Ptah exports lineage as text, JSON, or a Graphviz digraph with `--format dot`.
+The committed fixture produces two resolved view edges and one explicitly
+undecided view; download the <a href={lineageText} download>real text
+output</a>, <a href={lineageJSON} download>real JSON output</a>, or
+<a href={lineageDOT} download>real DOT output</a>.
+
+The graph draws an unresolved view dashed and carries its reason as a tooltip
+rather than leaving it out, and it sorts every node and edge so the same schema
+renders byte-identically twice — which is what makes it a review artifact a
+repository can commit and diff.
 
 <ProductPreview
   id="schema-lineage-explanatory"
   src={lineageExplanation}
   alt="An explanatory dependency diagram where orders.customer_id feeds order_totals.buyer, orders.total_cents feeds order_totals.cents, and customer_orders remains undecided because its columns come from a join."
-  caption="Explanatory diagram—not output from `ptah schema lineage`—of the real text and JSON fixture above."
+  caption="Explanatory diagram—not output from `ptah schema lineage`—of the same fixture. The DOT download above is the real graph; this drawing is here because a rendered picture needs a Graphviz the documentation build does not carry."
   notice="Resolved edges remain separate from the undecided view, because treating an unresolved join as no dependency would make a destructive change look safe."
   fullSizeHref={lineageExplanation.src}
   downloadHref={lineageExplanation.src}
