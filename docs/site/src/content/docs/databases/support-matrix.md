@@ -77,7 +77,7 @@ the declared set cannot say one thing here and another in a workflow file.
 | `postgres` | 17 | certified | `Postgres17` | yes |
 | `postgres` | 16 | certified | `Postgres16` | yes |
 | `postgres` | 15 | certified | `Postgres16` | yes |
-| `postgres` | 14 | certified | `Postgres16` | yes |
+| `postgres` | 14 | certified | `Postgres14` | yes |
 | `postgres` | 13 | legacy-tested | `Postgres13` | yes |
 | `mysql` | 26.7 | certified | `MySQL84` | yes |
 | `mysql` | 9.7 | certified | `MySQL84` | yes |

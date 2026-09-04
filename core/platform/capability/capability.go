@@ -1417,6 +1417,21 @@ func Postgres18() Capabilities {
 	return Postgres17().With(NamedNotNullConstraints, true)
 }
 
+// Postgres14 is the preset for the PostgreSQL 14 line.
+//
+// It has everything Postgres16 has except the one clause that arrived after
+// it: PostgreSQL grew UNIQUE ... NULLS [NOT] DISTINCT in 15. CREATE OR REPLACE
+// TRIGGER and SP-GiST INCLUDE columns are the two Postgres13 lacks and 14 has,
+// which is why 14 cannot simply take that preset either.
+//
+// The line existed without a preset of its own until the capability probe
+// measured it: postgres-14 answered `preset says true, server does false` for
+// unique_nulls_distinct_clause, on master, because the ladder sent every major
+// at or above 14 to Postgres16 (stokaro/ptah#2820).
+func Postgres14() Capabilities {
+	return Postgres16().With(UniqueNullsDistinctClause, false)
+}
+
 // Postgres13 is the preset for PostgreSQL 12–13: unlike Postgres16 it lacks
 // CREATE OR REPLACE TRIGGER and SP-GiST INCLUDE columns, which both arrived in
 // PostgreSQL 14.
@@ -2410,6 +2425,7 @@ func NamedPresets() []NamedPreset {
 		{"MariaDBLegacy", MariaDBLegacy()},
 		{"MariaDB1011", MariaDB1011()},
 		{"Postgres13", Postgres13()},
+		{"Postgres14", Postgres14()},
 		{"Postgres16", Postgres16()},
 		{"Postgres17", Postgres17()},
 		{"Postgres18", Postgres18()},
@@ -3178,8 +3194,10 @@ func postgresForVersion(v serverVersion) Capabilities {
 		return Postgres18()
 	case v.major >= 17:
 		return Postgres17()
-	case v.major >= 14:
+	case v.major >= 15:
 		return Postgres16()
+	case v.major >= 14:
+		return Postgres14()
 	default:
 		return Postgres13()
 	}
