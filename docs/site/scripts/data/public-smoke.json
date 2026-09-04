@@ -83,7 +83,8 @@
       ],
       "artifacts": [
         { "selector": "a[download][href$=\"schema-lineage.txt\"]" },
-        { "selector": "a[download][href$=\"schema-lineage.json\"]" }
+        { "selector": "a[download][href$=\"schema-lineage.json\"]" },
+        { "selector": "a[download][href$=\"schema-lineage.dot\"]" }
       ]
     },
     {

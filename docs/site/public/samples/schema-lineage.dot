@@ -1,0 +1,10 @@
+digraph lineage {
+  rankdir=LR;
+  node [fontname="sans-serif"];
+  edge [fontname="sans-serif"];
+  "customer_orders" [shape=ellipse, style=dashed, label="customer_orders\n(view, unresolved)", tooltip="the FROM clause names more than one source, so an unqualified column cannot be attributed"];
+  "order_totals" [shape=ellipse, label="order_totals\n(view)"];
+  "orders" [shape=box, label="orders"];
+  "orders" -> "order_totals" [label="customer_id → buyer"];
+  "orders" -> "order_totals" [label="total_cents → cents"];
+}

@@ -89,7 +89,7 @@ read as one that reads nothing.`,
 	dbcli.RegisterSchemasFlag(flags, &opts.schemas)
 	serverversion.Register(flags, &opts.serverVersion)
 	flags.StringVar(&opts.format, lineageFormatFlag, "table",
-		"Output format: table or json")
+		"Output format: table, json, or dot for a Graphviz digraph")
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
@@ -98,8 +98,8 @@ read as one that reads nothing.`,
 }
 
 func runSchemaLineage(cmd *cobra.Command, opts schemaLineageOptions) error {
-	if opts.format != "table" && opts.format != "json" {
-		return cmdutil.Fail(cmd, fmt.Errorf("--%s must be table or json, got %q",
+	if !lineageFormatIsKnown(opts.format) {
+		return cmdutil.Fail(cmd, fmt.Errorf("--%s must be table, json or dot, got %q",
 			lineageFormatFlag, opts.format))
 	}
 	if opts.dbURL != "" {
@@ -128,10 +128,40 @@ func runSchemaLineage(cmd *cobra.Command, opts schemaLineageOptions) error {
 		Result:   schemalineage.Derive(database),
 		Routines: schemalineage.DeriveRoutines(database, opts.dialect),
 	}
-	if opts.format == "json" {
-		return writeLineageJSON(cmd.OutOrStdout(), document)
+	return writeLineage(cmd.OutOrStdout(), opts.format, document)
+}
+
+// lineageFormatIsKnown reports whether the flag names a format this command
+// writes.
+//
+// It is a list rather than a chain of comparisons because the validation and
+// the dispatch below must agree: a format accepted here and unhandled there
+// would fall through to the table, which is the quiet way a new format ships
+// as a synonym for the old one.
+func lineageFormatIsKnown(format string) bool {
+	switch format {
+	case "table", "json", "dot":
+		return true
+	default:
+		return false
 	}
-	return writeLineageTable(cmd.OutOrStdout(), document)
+}
+
+// writeLineage renders the document in the format the operator named.
+//
+// One dispatcher for both the file-backed and the live path. They used to
+// branch on the format separately, which is how a third format reaches one of
+// them and not the other -- the same shape as a fix landing on only the branch
+// an issue happened to name.
+func writeLineage(w io.Writer, format string, document lineageDocument) error {
+	switch format {
+	case "json":
+		return writeLineageJSON(w, document)
+	case "dot":
+		return writeLineageDOT(w, document)
+	default:
+		return writeLineageTable(w, document)
+	}
 }
 
 // lineageDocument is what the command writes.
@@ -172,10 +202,7 @@ func runSchemaLineageLive(cmd *cobra.Command, opts schemaLineageOptions) error {
 		Result:   schemalineage.Derive(database),
 		Routines: schemalineage.DeriveRoutines(database, dialect),
 	}
-	if opts.format == "json" {
-		return writeLineageJSON(cmd.OutOrStdout(), document)
-	}
-	return writeLineageTable(cmd.OutOrStdout(), document)
+	return writeLineage(cmd.OutOrStdout(), opts.format, document)
 }
 
 func writeLineageJSON(w io.Writer, document lineageDocument) error {
