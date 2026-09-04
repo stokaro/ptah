@@ -38,7 +38,11 @@ func TestTableMemberKey_FoldsTheMemberWhereTheEngineDoes(t *testing.T) {
 		{name: "oracle folds", dialect: platform.Oracle, wantEqual: true},
 		{name: "sqlite folds", dialect: platform.SQLite, wantEqual: true},
 		{name: "postgres does not", dialect: platform.Postgres, wantEqual: false},
-		{name: "mysql does not", dialect: platform.MySQL, wantEqual: false},
+		// Measured, MySQL and MariaDB fold ASCII case for the members named by
+		// a column list too; see the note on the foreign-key half in
+		// oracle_column_identity_internal_test.go (stokaro/ptah#2771).
+		{name: "mysql folds ASCII case", dialect: platform.MySQL, wantEqual: true},
+		{name: "mariadb folds ASCII case", dialect: platform.MariaDB, wantEqual: true},
 	}
 
 	for _, test := range tests {

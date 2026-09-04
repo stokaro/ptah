@@ -110,22 +110,55 @@ func validateTablesAndColumns(
 	}
 
 	for _, table := range desired.Tables {
-		columns := make(map[string]string)
-		for _, field := range generatedschema.FieldsForTable(desired, table) {
-			conflictKey := semantics.ColumnConflictKey(field.Name)
-			if previous, exists := columns[conflictKey]; exists &&
-				previous != field.Name {
-				return fmt.Errorf(
-					"%w: target columns %s.%s and %s.%s may have the same catalog identity",
-					ptaherr.ErrInvalidSchemaDiff,
-					table.QualifiedName(),
-					previous,
-					table.QualifiedName(),
-					field.Name,
-				)
-			}
-			columns[conflictKey] = field.Name
+		if previous, current, conflict := conflictingColumn(semantics, desired, table); conflict {
+			return fmt.Errorf(
+				"%w: target columns %s.%s and %s.%s may have the same catalog identity",
+				ptaherr.ErrInvalidSchemaDiff,
+				table.QualifiedName(),
+				previous,
+				table.QualifiedName(),
+				current,
+			)
 		}
 	}
 	return nil
+}
+
+// conflictingColumn returns the first pair of column names one table cannot
+// keep apart, in declaration order.
+//
+// A name whose equivalence class the target cannot resolve is compared against
+// every column already seen rather than against its own conflict bucket. That
+// is not a refinement: MySQL treats `İ` and ASCII `i` as one column, and one
+// side of that pair is ASCII, so bucketing the unresolved names together
+// leaves the two in different buckets and misses the collision the server
+// actually reports (stokaro/ptah#2771).
+func conflictingColumn(
+	semantics identifier.Semantics,
+	desired *schemamodel.Database,
+	table schemamodel.Table,
+) (previous, current string, conflict bool) {
+	columns := make(map[string]string)
+	seen := make([]string, 0, len(desired.Fields))
+	unresolved := ""
+	for _, field := range generatedschema.FieldsForTable(desired, table) {
+		if semantics.ColumnConflictUnresolved(field.Name) {
+			if len(seen) > 0 {
+				return seen[0], field.Name, true
+			}
+			unresolved = field.Name
+			seen = append(seen, field.Name)
+			continue
+		}
+		if unresolved != "" {
+			return unresolved, field.Name, true
+		}
+		conflictKey := semantics.ColumnConflictKey(field.Name)
+		if earlier, exists := columns[conflictKey]; exists && earlier != field.Name {
+			return earlier, field.Name, true
+		}
+		columns[conflictKey] = field.Name
+		seen = append(seen, field.Name)
+	}
+	return "", "", false
 }

@@ -123,6 +123,18 @@ SQL:
   accepted by both engines and is still reported as a possible conflict, and
   the way to make it exact is to resolve the names against the target rather
   than to guess a folding rule offline.
+- Column names are compared ASCII-case-insensitively, and a non-ASCII one is
+  treated as a possible conflict with every column in its table. Both engines
+  fold ASCII case: a table declaring `A` and `a` answers `ERROR 1060`, and a
+  foreign key written `a` binds to a column declared `A` and reuses its key --
+  so modeling these names as exact reported drift on every run and missed a
+  duplicate the server refuses. Beyond ASCII the two disagree, and the same
+  fold decides both questions: MySQL calls `İ`/`i` and the Kelvin sign/`K` one
+  column and MariaDB calls `I`/`ı` and `σ`/`ς` one column, each engine
+  accepting a foreign key written with either spelling of a pair it folds and
+  reporting a missing key column for a pair it does not. The ASCII half of a
+  pair is why the conflict is table-wide rather than per name: `İ` collides
+  with plain `i` on MySQL.
 - A non-ASCII column named by a key, a constraint, or its own `UNIQUE` is
   refused for the same reason, and the disagreement runs deeper there. Asked
   whether two columns differing only by the pair are one name, MySQL folds

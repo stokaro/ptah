@@ -126,14 +126,14 @@ func ForDialect(dialect string) Semantics {
 			IndexNamespace: IndexNamespaceTable,
 			IndexNames:     ComparisonASCIIFoldedNonASCIIUnknown,
 			TableNames:     ComparisonExact,
-			ColumnNames:    ComparisonExact,
+			ColumnNames:    ComparisonASCIIFoldedNonASCIIUnknown,
 		}
 	case platform.MariaDB:
 		return Semantics{
 			IndexNamespace: IndexNamespaceTable,
 			IndexNames:     ComparisonASCIIFoldedNonASCIIUnknown,
 			TableNames:     ComparisonExact,
-			ColumnNames:    ComparisonExact,
+			ColumnNames:    ComparisonASCIIFoldedNonASCIIUnknown,
 		}
 	case platform.Oracle:
 		// Case-insensitive because the renderer writes a plain name bare and
@@ -302,6 +302,18 @@ func (s Semantics) QualifiedTableConflictKey(value string) string {
 // ColumnIdentityKey returns the confirmed comparison key for a column name.
 func (s Semantics) ColumnIdentityKey(value string) string {
 	return s.identityKey(s.ColumnNames, value)
+}
+
+// ColumnConflictUnresolved reports whether a column name's conflict key stands
+// for an equivalence class this target cannot resolve.
+//
+// The index counterpart states the reasoning; the column case is the same
+// shape and the same measurement. MySQL treats `İ` and ASCII `i` as one column
+// and MariaDB does not, so a name carrying a non-ASCII rune has to be compared
+// against every column in its table rather than against the bucket it hashes
+// into -- one side of that pair is ASCII (stokaro/ptah#2771).
+func (s Semantics) ColumnConflictUnresolved(value string) bool {
+	return s.ColumnConflictKey(value) == unresolvedCatalogKey
 }
 
 // ColumnConflictKey returns the conservative collision key for a column name.
