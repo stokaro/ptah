@@ -1,0 +1,44 @@
+name: Release Snapshot Validation
+
+# Keep release publication in release.yml tag-only. This separate workflow
+# proves that the current default branch can still produce the release payload
+# without making an ordinary master push eligible to publish anything.
+on:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  goreleaser-check:
+    name: goreleaser-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Check GoReleaser config
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: v2.15.4
+          args: check
+
+      - uses: anchore/sbom-action/download-syft@v0.24.2
+
+      - name: Build snapshot artifacts
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: v2.15.4
+          args: release --snapshot --clean --skip=sign,docker

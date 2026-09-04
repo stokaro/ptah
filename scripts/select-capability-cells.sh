@@ -46,8 +46,8 @@ workflow_dispatch | repository_dispatch)
 	reason="requested by hand: ${request}"
 	;;
 push)
-	request="none"
-	reason="the probe fan-out does not run on a push; it runs nightly, and on request from the workflow's Run button"
+	request="all"
+	reason="a push to the default branch probes every declared cell"
 	;;
 pull_request | pull_request_target)
 	# A pull request probes only what a `/capability-matrix` comment asked for.

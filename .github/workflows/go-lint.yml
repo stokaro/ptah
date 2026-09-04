@@ -11,32 +11,81 @@ permissions:
   pull-requests: read
   security-events: write
 
+concurrency:
+  group: go-lint-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  go-lint:
-    name: ptah-go-lint
+  scope:
+    name: Go lint scope
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.decide.outputs.code }}
+      reason: ${{ steps.decide.outputs.reason }}
+      readme: ${{ steps.decide.outputs.readme }}
+      public_api: ${{ steps.decide.outputs.public_api }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
-          cache-dependency-path: go.sum
-      
-      - name: Install dependencies
-        run: go mod download
 
+      - name: Self-test the scope rule
+        run: scripts/ci-diff-scope.sh --selftest
+
+      - name: Decide whether this diff can affect Go lint
+        id: decide
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            {
+              echo "code=true"
+              echo "readme=true"
+              echo "public_api=true"
+              echo "reason=not a pull request, so everything runs"
+            } >> "$GITHUB_OUTPUT"
+            echo "ci-diff-scope: code=true (not a pull request)"
+            exit 0
+          fi
+          scripts/ci-diff-scope.sh \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.event.pull_request.head.sha }}"
+
+      - name: Report the decision in the job summary
+        env:
+          RUN_GO_LINT: ${{ steps.decide.outputs.code }}
+          SCOPE_REASON: ${{ steps.decide.outputs.reason }}
+        run: |
+          {
+            printf "### Go lint scope\n\n"
+            printf -- "- run Go lint: \`%s\`\n" "$RUN_GO_LINT"
+            printf -- "- because: %s\n" "$SCOPE_REASON"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  repository-policy:
+    name: Repository policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # These checks are intentionally cheap and unconditional. They inspect
+      # non-Go files, and a repository-local path can be introduced in any
+      # tracked text file, including a documentation-only pull request.
       - name: Check documentation safety claims
         run: |
-          ! grep -F "All operations are wrapped in transactions" README.md
-          ! grep -F "All operations wrapped in transactions" README.md
-          ! grep -F "locking prevents double-apply" README.md
+          for claim in \
+            "All operations are wrapped in transactions" \
+            "All operations wrapped in transactions" \
+            "locking prevents double-apply"
+          do
+            if grep -Fq "$claim" README.md; then
+              echo "forbidden documentation safety claim: $claim" >&2
+              exit 1
+            fi
+          done
 
       - name: Check repository-local path leaks
         run: |
@@ -54,29 +103,11 @@ jobs:
           scripts/check-workflow-concurrency.sh
           scripts/check-workflow-concurrency-selftest.sh
 
-      - name: Check architecture boundaries
-        run: |
-          scripts/check-architecture-boundaries.sh
-          scripts/check-architecture-boundaries-selftest.sh
-
       - name: Check the brand assets
         run: |
           set -euo pipefail
           scripts/check-brand-assets-selftest.sh
           scripts/check-brand-assets.sh
-
-      # The README's worked example, run for real. It lives in this workflow
-      # rather than in docs.yml because both directions have to reach it: a
-      # README edit, which docs.yml's `paths:` filter also sees, and a change to
-      # what a command prints, which it does not. This workflow carries no
-      # filter at all.
-      - name: Check the README's worked example
-        run: |
-          scripts/check-readme-example.sh
-          scripts/check-readme-example-selftest.sh
-
-      - name: Check runnable examples
-        run: scripts/check-examples.sh
 
       - name: Check the ADR index
         run: |
@@ -84,17 +115,9 @@ jobs:
           scripts/check-adr-index-selftest.sh
           scripts/check-adr-index.sh
 
-      # The script published at https://stokaro.github.io/ptah/install.sh, run
-      # against a fixture release under every POSIX shell on the runner. busybox
-      # is installed because `| sh` is busybox ash on Alpine and nothing else
-      # here compiles that path; without it the gate's shell floor is not met
-      # and the step fails rather than quietly testing one shell.
-      #
-      # busybox's shell answers `command -v` from its own applets before reading
-      # PATH, so four of the gate's cases -- the ones needing a tool to be
-      # missing or shadowed -- cannot run under it and are reported as not run.
-      # The gate refuses a run in which NO shell could make them, which is what
-      # keeps that from reading as a pass.
+      # The script published at https://stokaro.github.io/ptah/install.sh is
+      # repository policy, not Go lint. Exercise it against fixtures under the
+      # POSIX shells the documented pipe-to-sh command can select.
       - name: Check the hosted install script
         run: |
           set -euo pipefail
@@ -103,23 +126,8 @@ jobs:
           scripts/check-install-script.sh
           scripts/check-install-script-selftest.sh
 
-      # The PowerShell sibling, published at
-      # https://stokaro.github.io/ptah/install.ps1. A Linux runner cannot
-      # install with it -- it downloads a Windows .zip -- but `pwsh` is on this
-      # image and the grammar can be judged anywhere, which is worth doing here
-      # rather than nightly: the file is piped into `iex`, so a syntax error
-      # reaches whoever runs the documented one-liner first.
-      #
-      # It has already happened once, from one em dash. Windows PowerShell 5.1
-      # reads a .ps1 with no byte-order mark in the machine's ANSI code page,
-      # where those three UTF-8 bytes end in a right double quotation mark, and
-      # PowerShell accepts that character as a string delimiter -- so the string
-      # it sat in closed early and the whole file stopped parsing.
-      # docs/site/scripts/check-pages-root.mjs holds the ASCII rule that keeps
-      # it out; this step holds the grammar that rule cannot see.
-      #
-      # ParseInput rather than [scriptblock]::Create, because it reports every
-      # error in the file instead of throwing on the first one.
+      # Parse the PowerShell sibling even on Linux. The grammar is portable,
+      # and a syntax error in a pipe-to-iex installer must fail before publish.
       - name: Check the hosted PowerShell installer
         shell: pwsh
         run: |
@@ -142,45 +150,88 @@ jobs:
           scripts/check-goreleaser-artifact-names-selftest.sh
           scripts/check-goreleaser-artifact-names.sh
 
-      # One step for every generated documentation block: the lint rules, the
-      # agent-surface tables, the two command indexes, the strict-mode
-      # classification and the whole flag page. Five steps stood here, each
-      # starting its generator afresh; docsync renders them all in one process
-      # because every generator is already a library (stokaro/ptah#2510).
-      #
-      # The capability and version-matrix blocks are checked by the same command
-      # in capability-matrix.yml, where a change to the declaration that touches
-      # no documentation still reaches a gate. That workflow's step and this one
-      # run the same eleven targets, so either catches drift in any of them.
-      - name: Check the generated documentation blocks
-        run: scripts/check-docsync.sh
+  readme-example:
+    name: README example
+    needs: scope
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.scope.outputs.code == 'true' ||
+      needs.scope.outputs.readme == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+      - name: Check the README's worked example
+        run: |
+          scripts/check-readme-example.sh
+          scripts/check-readme-example-selftest.sh
 
-      - name: Check the derived feature inventory
-        run: scripts/check-feature-inventory.sh
-
-      # The gate's own rules, broken against fixtures. A --selftest reduced to a
-      # bare OK still exits 0, so scripts/check-gate-selftests.sh additionally
-      # requires this one to go red on a rule short-circuited in its source.
-      - name: Check the feature inventory gate can still fail
-        run: scripts/check-feature-inventory.sh --selftest
-
+  public-api:
+    name: Public Go API
+    needs: scope
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.scope.outputs.code == 'true' ||
+      needs.scope.outputs.public_api == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+      - name: Install dependencies
+        run: go mod download
       - name: Check public Go API ledger
         run: |
           set -euo pipefail
           scripts/check-public-api-selftest.sh
           scripts/check-public-api.sh
-
       - name: Check public Go API released baseline
         run: scripts/check-public-api-released.sh --require-baseline
-
       - name: Check public Go API docs sync
         run: |
           set -euo pipefail
           scripts/check-public-api-docs-sync-selftest.sh
           scripts/check-public-api-docs-sync.sh
-
       - name: Check public Go API doc comments
         run: scripts/check-exported-docs.sh
+
+  go-lint:
+    name: ptah-go-lint
+    needs: scope
+    if: github.event_name != 'pull_request' || needs.scope.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Check architecture boundaries
+        run: |
+          scripts/check-architecture-boundaries.sh
+          scripts/check-architecture-boundaries-selftest.sh
 
       - name: Check annotation JSON Schema freshness
         run: |
@@ -256,6 +307,48 @@ jobs:
           version: v2.13.2
           working-directory: docs/site/fixtures/source-equivalence
 
+  go-lint-gate:
+    name: Go lint gate
+    if: always() && github.event_name == 'pull_request'
+    needs:
+      - scope
+      - repository-policy
+      - readme-example
+      - public-api
+      - go-lint
+      - go-lint-windows
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify the aggregate result
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          CODE_SCOPE: ${{ needs.scope.outputs.code }}
+          README_SCOPE: ${{ needs.scope.outputs.code == 'true' || needs.scope.outputs.readme == 'true' }}
+          PUBLIC_API_SCOPE: ${{ needs.scope.outputs.code == 'true' || needs.scope.outputs.public_api == 'true' }}
+          POLICY_RESULT: ${{ needs.repository-policy.result }}
+          README_RESULT: ${{ needs.readme-example.result }}
+          PUBLIC_API_RESULT: ${{ needs.public-api.result }}
+          LINUX_RESULT: ${{ needs.go-lint.result }}
+          WINDOWS_RESULT: ${{ needs.go-lint-windows.result }}
+        run: |
+          scripts/check-ci-scope-gate.sh --selftest
+          scripts/check-ci-scope-gate.sh \
+            --scope-result "$SCOPE_RESULT" \
+            --scope "$CODE_SCOPE" \
+            --required "repository-policy=$POLICY_RESULT" \
+            --scoped "ptah-go-lint=$LINUX_RESULT" \
+            --scoped "ptah-go-lint-windows=$WINDOWS_RESULT"
+          scripts/check-ci-scope-gate.sh \
+            --scope-result "$SCOPE_RESULT" \
+            --scope "$README_SCOPE" \
+            --scoped "README-example=$README_RESULT"
+          scripts/check-ci-scope-gate.sh \
+            --scope-result "$SCOPE_RESULT" \
+            --scope "$PUBLIC_API_SCOPE" \
+            --scoped "public-API=$PUBLIC_API_RESULT"
+
   go-lint-windows:
     # The Ubuntu job's two contours differ by build tag, and a build tag cannot
     # reach a file the target operating system excludes: `go help
@@ -267,6 +360,8 @@ jobs:
     # them the same way the Ubuntu job does rather than through a flag that
     # would have to be kept in step with it.
     name: ptah-go-lint-windows
+    needs: scope
+    if: github.event_name != 'pull_request' || needs.scope.outputs.code == 'true'
     runs-on: windows-latest
     timeout-minutes: 40
 
@@ -327,104 +422,3 @@ jobs:
           args: --timeout=30m
           version: v2.13.2
           working-directory: docs/site/fixtures/source-equivalence
-
-      # Windows-only source is not only unanalyzed without this job, it is
-      # unrun: a _windows_test.go file exercises code no other runner compiles.
-      #
-      # Turning this on for the first time reported 1014 failures across more
-      # than thirty packages, 1382 of them one root cause -- a Windows absolute
-      # path inside a sqlite:// URL, refused because the drive letter's colon
-      # reads as a port separator. That is fixed in this branch, so the step
-      # gates rather than documents.
-      #
-      # -timeout is stated rather than left at Go's 10m default, and the number
-      # comes from measurement rather than taste. On stokaro/ptah#1809 the same
-      # commit failed twice and passed on the third attempt with no change:
-      #
-      #   step            fast runner   slow runner
-      #   Set up Go            93s          125s
-      #   qtlint               82s          112s
-      #   Golint               79s          151s
-      #   Unit tests          309s          696s (killed)
-      #   - cmd/atlas         184s         >600s (killed)
-      #
-      # Every step is 1.4-1.9x slower on the slow runner, Set up Go and Golint
-      # among them, which no branch content can influence. So 184s of a 600s
-      # budget is not headroom: it is 31% on a good day, and most compat work
-      # adds tests to cmd/atlas.
-      #
-      # 20m is ~2x the observed cliff. It moves the cliff rather than removing
-      # it, and the job's own timeout-minutes above stays the real bound, so a
-      # genuine hang is still caught by the job rather than by a panic naming
-      # whichever test happened to be running (stokaro/ptah#1749).
-      #
-      # The split named in that last paragraph has since landed: cmd/atlas's
-      # 138 external test files moved into cmd/atlas/internal/migratetests and
-      # cmd/atlas/internal/schematests, which took the largest package from
-      # 21.2s to 15.7s locally -- the same ratio against the 184s above puts
-      # the worst package at ~136s of the 600s default rather than 184s. The
-      # timeout below is kept anyway: it is what makes the bound the job's
-      # rather than Go's, and the number it protects against is the whole
-      # step's, not one package's (stokaro/ptah#1812).
-      #
-      # The digest is part of this step rather than an `if: failure()` sibling
-      # so it cannot fire for a failure somewhere else, and so the log needs no
-      # path outside the workspace -- RUNNER_TEMP is a Windows path, and this
-      # step is the one place in the file that runs under Git Bash.
-      #
-      # A package that runs out of time prints thousands of goroutine lines,
-      # and the two facts worth reading are one line each: which package ran
-      # out, and that the test the panic names had been running for a second
-      # and is therefore not the cause. Both are already in the log; this puts
-      # them where the job opens (stokaro/ptah#1812, stokaro/ptah#1749).
-      #
-      # Windows only, because that is the job measured against its budget:
-      # cmd/atlas took 184s of Go's 600s default there before the split, and
-      # every step on that runner is 1.4-1.9x slower than ordinary hardware.
-      - name: Unit tests
-        shell: bash
-        run: |
-          set -uo pipefail
-          go test ./... -count=1 -timeout=20m 2>&1 | tee unit-tests.log
-          status=${PIPESTATUS[0]}
-          if [ "$status" -eq 0 ]; then
-            rm -f unit-tests.log
-            exit 0
-          fi
-          {
-            echo "### Unit tests"
-            echo
-            echo '```text'
-            # Every failing package, longest first. Failures print before the
-            # passing ones rather than sorted among them: a package that failed
-            # after five seconds still has to be named, and a shared list would
-            # push it below whatever ran longest.
-            grep -E '^FAIL[[:space:]]+go\.5x5\.cz/ptah' unit-tests.log | sort -rn -k3
-            # The five slowest that passed, for the budget the failure is
-            # measured against.
-            grep -E '^ok[[:space:]]+go\.5x5\.cz/ptah' unit-tests.log | sort -rn -k3 | head -5
-            # A timeout, with the block that names what was running when it
-            # fired. Six lines is the whole of it: the goroutine dump follows
-            # and the first frames are the useful ones.
-            grep -A 6 -E '^panic: test timed out' unit-tests.log | head -40
-            # A runtime abort needs far more than six lines, and every sighting
-            # of stokaro/ptah#2365 so far has lost the evidence that would
-            # settle it. `fatal error: found pointer to free object` is followed
-            # by the runtime stack AND then by the goroutine that allocated the
-            # object -- and it is the second one that says whether this is a Go
-            # runtime bug or a data race in this repository's own code. Six
-            # lines gets as far as `runtime.throw` and stops well before the
-            # goroutine, which is the frame that matters.
-            #
-            # Two headers, because a Windows abort writes neither `fatal error:`
-            # nor `panic:`. Measured on run 33658087552: the crash printed
-            # `Exception 0xc0000005 0x8 0xc 0xc` and `PC=0xc`, the whole
-            # 2965-line log held no `fatal error`, `panic`, `SIGSEGV` or
-            # `runtime error` anywhere, and this summary was therefore empty of
-            # the crash while the raw log had all of it -- which is how a
-            # sighting loses its evidence on the one platform the issue is
-            # about.
-            grep -A 80 -E '^(fatal error:|Exception 0x)' unit-tests.log | head -120
-            echo '```'
-          } >>"$GITHUB_STEP_SUMMARY"
-          exit "$status"

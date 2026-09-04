@@ -50,7 +50,7 @@ expect() {
 # A pull request probes nothing, and a schedule probes everything. These two are
 # the policy the issue asked for; if they ever agree, the tier is either always
 # on or always off and nothing below distinguishes the cases.
-expect "a push selects no cells" push "" "[]"
+expect "a default-branch push selects every cell" push "" "$cells"
 expect "the nightly run selects every cell" schedule "" "$cells"
 expect "dispatch with no argument selects every cell" workflow_dispatch "" "$cells"
 expect "dispatch can ask for nothing" workflow_dispatch none "[]"

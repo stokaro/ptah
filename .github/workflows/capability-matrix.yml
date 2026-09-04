@@ -30,8 +30,8 @@ name: Capability Matrix
 # for on that change (stokaro/ptah#2185).
 #
 #	cells, preset coverage, documented matrix   every pull request and push
-#	probe *, tier 2 report                      schedule, dispatch, or a
-#	                                            comment on the pull request
+#	probe *, tier 2 report                      every master push, schedule,
+#	                                            dispatch, or a comment on the PR
 #
 # `documented matrix` in particular STAYS on every pull request, for the reason
 # given in its own job below: it lives here rather than in docs.yml precisely
@@ -79,8 +79,8 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: capability-matrix-${{ github.ref }}
-  cancel-in-progress: true
+  group: capability-matrix-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   cells:
@@ -540,3 +540,29 @@ jobs:
           cat "${RUNNER_TEMP}/tier2.md"
           cat "${RUNNER_TEMP}/tier2.md" >>"${GITHUB_STEP_SUMMARY}"
           exit "${code}"
+
+  capability-gate:
+    name: Capability gate
+    if: always() && github.event_name == 'pull_request'
+    needs: [cells, presets, documentation, probe, report]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify the aggregate result
+        env:
+          CELLS_RESULT: ${{ needs.cells.result }}
+          PRESETS_RESULT: ${{ needs.presets.result }}
+          DOCUMENTATION_RESULT: ${{ needs.documentation.result }}
+          PROBES_SELECTED: ${{ needs.cells.outputs.selected != '[]' }}
+          PROBE_RESULT: ${{ needs.probe.result }}
+          REPORT_RESULT: ${{ needs.report.result }}
+        run: |
+          scripts/check-ci-scope-gate.sh --selftest
+          scripts/check-ci-scope-gate.sh \
+            --scope-result "$CELLS_RESULT" \
+            --scope "$PROBES_SELECTED" \
+            --required "preset-coverage=$PRESETS_RESULT" \
+            --required "documented-matrix=$DOCUMENTATION_RESULT" \
+            --scoped "probe-fanout=$PROBE_RESULT" \
+            --scoped "tier-2-report=$REPORT_RESULT"

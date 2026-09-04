@@ -11,6 +11,10 @@ permissions:
   contents: read
   pull-requests: read
 
+concurrency:
+  group: integration-tests-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   scope:
     name: scope
@@ -51,11 +55,14 @@ jobs:
             "${{ github.event.pull_request.head.sha }}"
 
       - name: Report the decision in the job summary
+        env:
+          RUN_CONTOUR: ${{ steps.decide.outputs.code }}
+          SCOPE_REASON: ${{ steps.decide.outputs.reason }}
         run: |
           {
-            printf '### Contour scope\n\n'
-            printf -- '- run the contour: `%s`\n' "${{ steps.decide.outputs.code }}"
-            printf -- '- because: %s\n' "${{ steps.decide.outputs.reason }}"
+            printf "### Contour scope\n\n"
+            printf -- "- run the contour: \`%s\`\n" "$RUN_CONTOUR"
+            printf -- "- because: %s\n" "$SCOPE_REASON"
           } >> "$GITHUB_STEP_SUMMARY"
 
   integration-tests:
@@ -588,3 +595,23 @@ jobs:
           path: |
             reports/
           retention-days: 7
+
+  integration-gate:
+    name: Integration gate
+    if: always() && github.event_name == 'pull_request'
+    needs: [scope, integration-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify the aggregate result
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          CODE_SCOPE: ${{ needs.scope.outputs.code }}
+          INTEGRATION_RESULT: ${{ needs.integration-tests.result }}
+        run: |
+          scripts/check-ci-scope-gate.sh --selftest
+          scripts/check-ci-scope-gate.sh \
+            --scope-result "$SCOPE_RESULT" \
+            --scope "$CODE_SCOPE" \
+            --scoped "integration-tests=$INTEGRATION_RESULT"

@@ -24,9 +24,51 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: export-acceptance-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  scope:
+    name: scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.decide.outputs.code }}
+      reason: ${{ steps.decide.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Self-test the scope rule
+        run: scripts/ci-diff-scope.sh --selftest
+
+      - name: Decide whether this diff can affect Go validation
+        id: decide
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo "reason=not a pull request, so everything runs" >> "$GITHUB_OUTPUT"
+            echo "ci-diff-scope: code=true (not a pull request)"
+            exit 0
+          fi
+          scripts/ci-diff-scope.sh \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.event.pull_request.head.sha }}"
+
+      - name: Report the decision in the job summary
+        run: |
+          {
+            printf '### Go validation scope\n\n'
+            printf -- "- run Go validation: \`%s\`\n" "${{ steps.decide.outputs.code }}"
+            printf -- '- because: %s\n' "${{ steps.decide.outputs.reason }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   export-acceptance:
     name: export-acceptance
+    needs: scope
+    if: github.event_name != 'pull_request' || needs.scope.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -66,3 +108,23 @@ jobs:
 
       - name: Go annotation to HCL acceptance
         run: bash scripts/check-hcl-export-acceptance.sh
+
+  export-acceptance-gate:
+    name: Export acceptance gate
+    if: always() && github.event_name == 'pull_request'
+    needs: [scope, export-acceptance]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Verify the aggregate result
+        env:
+          SCOPE_RESULT: ${{ needs.scope.result }}
+          CODE_SCOPE: ${{ needs.scope.outputs.code }}
+          EXPORT_RESULT: ${{ needs.export-acceptance.result }}
+        run: |
+          scripts/check-ci-scope-gate.sh --selftest
+          scripts/check-ci-scope-gate.sh \
+            --scope-result "$SCOPE_RESULT" \
+            --scope "$CODE_SCOPE" \
+            --scoped "export-acceptance=$EXPORT_RESULT"
