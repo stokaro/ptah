@@ -417,6 +417,63 @@ func TestVerify_AWellFormedSetIsNotAFinding(t *testing.T) {
 	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", summaries(report)))
 }
 
+// TestVerify_AnEmptyCorpusSaysSo is the finding a clean report over nothing
+// otherwise does not carry.
+//
+// Every layer passes over an empty corpus, and that reads exactly like every
+// layer passing. The counts are in the header; the findings list is what a
+// pipeline reads, and a readiness answer taken from an empty one would move
+// queries onto a corpus with no vectors. The reachable cause is a
+// `source.filter` with a typo in it, where the backfill embeds nothing and the
+// verification reads the same nothing through the same predicate, so the two
+// agree perfectly (stokaro/ptah#2870).
+func TestVerify_AnEmptyCorpusSaysSo(t *testing.T) {
+	c := qt.New(t)
+	expectation, structure, _, _, state := healthy()
+
+	report := verify(c, expectation, structure,
+		make([]embedverify.SourceRow, 0), make([]embedverify.TargetRow, 0), state)
+
+	c.Assert(report.SourceRows, qt.Equals, 0)
+	c.Assert(summaries(report), qt.Contains,
+		"this generation covers no source rows, so every layer below passed over nothing: "+
+			"check the specification's source filter and schema before cutting over to it")
+}
+
+// TestVerify_AnEmptyCorpusStillPasses is the other half, and it is the half
+// that says what this change is NOT.
+//
+// An empty generation is not wrong: a table being backfilled before its first
+// rows arrive is a specification doing what it says. Turning the observation
+// into a refusal would be a gate an environment cannot turn off, and whether
+// one should exist is a policy question this does not answer.
+func TestVerify_AnEmptyCorpusStillPasses(t *testing.T) {
+	c := qt.New(t)
+	expectation, structure, _, _, state := healthy()
+
+	report := verify(c, expectation, structure,
+		make([]embedverify.SourceRow, 0), make([]embedverify.TargetRow, 0), state)
+
+	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", summaries(report)))
+	c.Assert(report.Blocking(), qt.HasLen, 0)
+}
+
+// TestVerify_APopulatedCorpusDoesNotSaySo is the control both need.
+//
+// Without it, an advisory added unconditionally would satisfy the first test
+// and appear on every healthy run, which is how a finding stops being read.
+func TestVerify_APopulatedCorpusDoesNotSaySo(t *testing.T) {
+	c := qt.New(t)
+	expectation, structure, source, target, state := healthy()
+
+	report := verify(c, expectation, structure, source, target, state)
+
+	c.Assert(report.SourceRows > 0, qt.IsTrue)
+	c.Assert(summaries(report), qt.Not(qt.Contains),
+		"this generation covers no source rows, so every layer below passed over nothing: "+
+			"check the specification's source filter and schema before cutting over to it")
+}
+
 // TestVerify_ASourceRowIsCountedOncePerKey is the count a chunked corpus makes
 // wrong in a way nothing else notices.
 //
