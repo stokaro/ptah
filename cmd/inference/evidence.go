@@ -50,7 +50,9 @@ func addSubjectFlag(cmd *cobra.Command, options *evidenceOptions) {
 	cmd.Flags().StringVar(&options.attachTo, "attach-to", "",
 		"OCI reference of the release this record is about; the record is "+
 			"published into that release's repository as a referrer of it, "+
-			"which is how it is found without remembering a tag")
+			"which is how it is found without remembering a tag. An "+
+			"oci-layout:// directory is accepted, so a release carried across "+
+			"an air gap can still be verified where it lies")
 	// A referrer lands in its subject's repository, so a run naming both would
 	// have said where the record went twice and the registry would have obeyed
 	// one of them.
