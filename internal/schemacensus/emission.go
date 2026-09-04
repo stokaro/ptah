@@ -250,16 +250,28 @@ func leadingClause(statement string) string {
 
 // CorpusEmissions is what the whole corpus creates on every declared cell.
 //
-// The three fields answer three different questions and none of them stands in
+// The four fields answer four different questions and none of them stands in
 // for another. Duplicates is the invariant. Unclassified is the guard's own
 // blind spot, reported so it is asserted against a written list rather than
 // growing in silence. Objects is the floor: a corpus that rendered nothing, or
 // an extractor that recognized nothing, produces no duplicates either, and
 // without a count that answer is indistinguishable from the invariant holding.
+//
+// Dark is the floor one level down, and the total cannot stand in for it.
+// Measured on the corpus this was written against: PostgreSQL contributes 1068
+// of 3986 objects, and every other dialect contributes fewer than the total's
+// slack -- so eight of the ten could stop rendering ENTIRELY with the total
+// still above any floor worth writing, and with no duplicate reported because
+// nothing was measured.
+//
+// It carries names rather than a count because the question is which target
+// went quiet, and because a count would be one more number to edit when a
+// dialect is added.
 type CorpusEmissions struct {
 	Objects      int
 	Duplicates   []string
 	Unclassified []string
+	Dark         []string
 }
 
 // MeasureEmissions renders every fixture on every declared cell and reports
@@ -270,8 +282,16 @@ type CorpusEmissions struct {
 // and counting it would make the floor below depend on which targets happen to
 // accept which fixture.
 func MeasureEmissions() CorpusEmissions {
-	measured := CorpusEmissions{Duplicates: make([]string, 0), Unclassified: make([]string, 0)}
+	measured := CorpusEmissions{
+		Duplicates: make([]string, 0), Unclassified: make([]string, 0), Dark: make([]string, 0),
+	}
 	shapes := make(map[string]bool)
+	// Seeded from the declared cells rather than from a list, so a dialect is
+	// watched by being declared and a dialect that leaves takes no edit here.
+	byDialect := make(map[string]int, len(capabilityprobe.Cells))
+	for _, cell := range capabilityprobe.Cells {
+		byDialect[cell.Dialect] += 0
+	}
 	for _, fixture := range Fixtures() {
 		for _, cell := range capabilityprobe.Cells {
 			statements, err := RenderStatements(fixture.Schema, cell)
@@ -280,6 +300,7 @@ func MeasureEmissions() CorpusEmissions {
 			}
 			emitted := EmissionsOf(statements)
 			measured.Objects += len(emitted.Objects)
+			byDialect[cell.Dialect] += len(emitted.Objects)
 			for _, duplicate := range emitted.Duplicates() {
 				measured.Duplicates = append(measured.Duplicates,
 					fixture.Name+" / "+CellName(cell)+": "+duplicate)
@@ -289,10 +310,16 @@ func MeasureEmissions() CorpusEmissions {
 			}
 		}
 	}
+	for dialect, objects := range byDialect {
+		if objects == 0 {
+			measured.Dark = append(measured.Dark, dialect)
+		}
+	}
 	for shape := range shapes {
 		measured.Unclassified = append(measured.Unclassified, shape)
 	}
 	sort.Strings(measured.Unclassified)
 	sort.Strings(measured.Duplicates)
+	sort.Strings(measured.Dark)
 	return measured
 }

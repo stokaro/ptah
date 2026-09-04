@@ -44,6 +44,34 @@ func TestMeasureEmissions_TheCorpusActuallyRenders(t *testing.T) {
 		measured.Objects))
 }
 
+// TestMeasureEmissions_EveryDialectContributes is the floor one level down,
+// and the total cannot stand in for it.
+//
+// A cell whose render errors contributes nothing, deliberately: a refusal
+// creates no object, so there is nothing for the invariant to be about. What
+// that also does is make a dialect that stops rendering ENTIRELY
+// indistinguishable from one that has nothing to say -- the duplicate check
+// reports zero because nothing was measured, and the total floor reports
+// success because the other dialects carried it.
+//
+// Measured on the corpus this was written against: PostgreSQL contributes 1068
+// objects of 3986, and every other dialect fewer than the slack above any
+// floor worth writing, so eight of the ten could go dark with both existing
+// assertions green. A renderer refusal introduced for one dialect is an
+// ordinary change -- #2586 was exactly that.
+//
+// The assertion needs no number and no list of dialects. It is derived from
+// the declared cells, so adding a fixture, a release line or an engine changes
+// nothing here.
+func TestMeasureEmissions_EveryDialectContributes(t *testing.T) {
+	c := qt.New(t)
+
+	measured := schemacensus.MeasureEmissions()
+
+	c.Assert(measured.Dark, qt.HasLen, 0, qt.Commentf(
+		"these dialects rendered no object at all, so nothing about them was measured"))
+}
+
 // TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown is the half that keeps
 // the guard from reporting over statements it cannot read.
 //
