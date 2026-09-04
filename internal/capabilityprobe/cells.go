@@ -288,7 +288,8 @@ func (c Cell) String() string {
 var Cells = []Cell{
 	// PostgreSQL: five supported majors (postgresql.org/support/versioning,
 	// read 2026-08-09 — 18.4, 17.10, 16.14, 15.18, 14.23; the project does not
-	// use the term LTS). Postgres16's own doc covers 14 through 16.
+	// use the term LTS). Postgres16's own doc covers 15 and 16; 14 has its own
+	// preset because UNIQUE ... NULLS [NOT] DISTINCT arrived in 15.
 	//
 	// Re-read 2026-08-16: the release table's Supported column still reads Yes
 	// for 18, 17, 16, 15 and 14, and No for 13. Note 14's final release is
@@ -319,9 +320,12 @@ var Cells = []Cell{
 	},
 	{
 		Dialect: platform.Postgres, Line: "14",
-		Preset: capability.Postgres16, PresetName: "Postgres16",
+		Preset: capability.Postgres14, PresetName: "Postgres14",
 		Refinement: RefinedByVersion, Support: capability.Certified, Image: "postgres:14",
-		Note: "final PostgreSQL 14 release is November 2026",
+		Note: "final PostgreSQL 14 release is November 2026. The line took Postgres16 until the " +
+			"probe measured unique_nulls_distinct_clause: the clause arrived in PostgreSQL 15, " +
+			"so 14 answered `preset says true, server does false` and now has a preset of its " +
+			"own that differs from Postgres16 in that one key (stokaro/ptah#2820)",
 	},
 	{
 		Dialect: platform.Postgres, Line: "13",
