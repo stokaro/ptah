@@ -373,24 +373,91 @@ func TestVerify_ASkippedRowIsNotACoverageGap(t *testing.T) {
 	c.Assert(report.Findings[0].Severity, qt.Equals, embedverify.Advisory)
 }
 
-// TestVerify_ADuplicateTargetKeyBlocks is the case a per-key walk finds and a
-// count does not: two rows for one key, where a query gets whichever the index
-// reaches first.
-func TestVerify_ADuplicateTargetKeyBlocks(t *testing.T) {
+// TestVerify_ASetWhoseOrdinalsAreWrongBlocks is the restated finding.
+//
+// A key holding several rows used to be a duplicate and nothing else. With a
+// chunked corpus that is the normal shape, so what is left to report is a set
+// whose stored rows are not 0, 1, 2 ... in order -- the shape a half-completed
+// set write leaves behind (ADR 0017 section 3.5).
+//
+// Next to its twin rather than appended, because that is the only shape the
+// reader can produce: `verificationQuery` orders by the key columns, so the
+// rows of one key arrive adjacent. Verifying a corpus without holding it means
+// the set is folded by that adjacency instead of by a map, and a fixture that
+// scattered the rows would be asserting against a walk no server hands back
+// (stokaro/ptah#2621).
+func TestVerify_ASetWhoseOrdinalsAreWrongBlocks(t *testing.T) {
 	c := qt.New(t)
 	expectation, structure, source, target, state := healthy()
-	// Next to its twin rather than appended, because that is the only shape the
-	// reader can produce: `verificationQuery` orders by the key columns, so two
-	// rows for one key arrive adjacent. Verifying a corpus without holding it
-	// means the duplicate is found by that adjacency instead of by a map, and a
-	// fixture that scattered the pair would be asserting against a walk no
-	// server hands back (stokaro/ptah#2621).
 	target = slices.Insert(target, 1, target[0])
 
 	report := verify(c, expectation, structure, source, target, state)
 
 	c.Assert(report.Passed(), qt.IsFalse)
-	c.Assert(summaries(report), qt.Contains, "1 target keys appear more than once")
+	c.Assert(summaries(report), qt.Contains,
+		"1 source keys hold rows their chunk set does not declare")
+}
+
+// TestVerify_AWellFormedSetIsNotAFinding is the discrimination the test above
+// cannot make on its own.
+//
+// Two rows at one key satisfy both the old rule and the new one's failure case,
+// so a walk that had simply kept reporting every repeated key would pass that
+// test and block every chunked corpus. This is the shape that separates them:
+// the same key, two rows, ordinals 0 and 1, and nothing wrong with it.
+func TestVerify_AWellFormedSetIsNotAFinding(t *testing.T) {
+	c := qt.New(t)
+	expectation, structure, source, target, state := healthy()
+	second := target[0]
+	second.Ordinal = 1
+	target = slices.Insert(target, 1, second)
+
+	report := verify(c, expectation, structure, source, target, state)
+
+	c.Assert(report.Passed(), qt.IsTrue, qt.Commentf("%v", summaries(report)))
+}
+
+// TestVerify_ASourceRowIsCountedOncePerKey is the count a chunked corpus makes
+// wrong in a way nothing else notices.
+//
+// A joined verification over a set repeats the SOURCE row once per stored
+// chunk, because that is what a join does. Counting each would report a corpus
+// several times its own size -- and every one of those repeats would also
+// decide the key's coverage again, so a source row with three chunks would be
+// judged three times and appear three times in whatever finding it produced.
+//
+// Two rows for one key, both well formed, and one source row: that is the whole
+// shape, and the count is the only place it shows.
+func TestVerify_ASourceRowIsCountedOncePerKey(t *testing.T) {
+	c := qt.New(t)
+	expectation, structure, source, target, state := healthy()
+	second := target[0]
+	second.Ordinal = 1
+	target = slices.Insert(target, 1, second)
+
+	report := verify(c, expectation, structure, source, target, state)
+
+	c.Assert(report.SourceRows, qt.Equals, len(source))
+	c.Assert(report.TargetRows, qt.Equals, len(target))
+}
+
+// TestVerify_ASetWithAGapBlocks is the other half of malformed.
+//
+// Ordinals 0 and 2 is what a set write that stored its members and died before
+// removing the surplus can leave, and it is invisible to a check that only
+// looked for repeats.
+func TestVerify_ASetWithAGapBlocks(t *testing.T) {
+	c := qt.New(t)
+	expectation, structure, source, target, state := healthy()
+	third := target[0]
+	third.Ordinal = 2
+	target = slices.Insert(target, 1, third)
+
+	report := verify(c, expectation, structure, source, target, state)
+
+	c.Assert(report.Passed(), qt.IsFalse)
+	c.Assert(summaries(report), qt.Contains,
+		"1 source keys hold rows their chunk set does not declare")
 }
 
 // TestVerify_ARowFromAnotherGenerationBlocks is Decision 6 at verification

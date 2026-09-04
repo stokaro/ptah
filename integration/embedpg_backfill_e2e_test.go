@@ -359,12 +359,12 @@ func readVerificationCorpus(
 		c.Assert(rows.Scan(&key, &title, &body, &version,
 			&generation, &inputHash, &storedVersion, &state), qt.IsNil)
 
-		input, canonicalErr := spec.Canonicalize(embedgen.Row{
+		set, canonicalErr := spec.CanonicalInputs(embedgen.Row{
 			Key: []string{key}, Fields: []*string{nullableOf(title), nullableOf(body)},
 		})
 		c.Assert(canonicalErr, qt.IsNil)
 		source := embedverify.SourceRow{
-			Key: key, Version: version, InputHash: spec.SourceInputHash(input), Skipped: input.Skipped,
+			Key: key, Version: version, InputHash: spec.SourceInputHash(set.Whole), Skipped: set.Whole.Skipped,
 		}
 		target := embedverify.TargetRow{
 			Key: key, Generation: generation.String, Version: storedVersion.String,

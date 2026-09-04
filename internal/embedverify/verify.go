@@ -50,6 +50,14 @@ type TargetRow struct {
 	Tombstone bool
 	// Skipped marks a row deliberately without a vector.
 	Skipped bool
+	// Ordinal is the row's position in its source key's chunk set, and is zero
+	// for a corpus that stores one vector per source row.
+	//
+	// It is what a key holding several rows means. Before it, a second row at
+	// one key could only be a duplicate; with it, a set of chunks is the normal
+	// shape and the finding is a set whose ordinals are not 0, 1, 2 ... in
+	// order (ADR 0017 section 3.5).
+	Ordinal int
 }
 
 // Pair is one position in the walk over the corpus: what the specification
@@ -321,6 +329,10 @@ func walkCorpus(report *Report, expectation Expectation, corpus Corpus) error {
 		}
 		walk.take(pair)
 	}
+	// The last set has no following key to end it, so the fold is closed here.
+	// Without this the final source key's coverage is never decided, and a
+	// corpus whose last row is missing its vector verifies clean.
+	walk.closeSet()
 	walk.report(report)
 	return nil
 }
@@ -339,13 +351,25 @@ type corpusWalk struct {
 	tombstones     int
 	skippedTargets int
 	skipped        int
-	// lastKey is the previous STORED row's key, and haveLast says whether there
-	// was one. A source-only position leaves both alone, so a key stored twice
-	// is still adjacent across one.
-	lastKey  string
-	haveLast bool
+	// The walk's unit is one SOURCE KEY, not one position. A key holding a set
+	// of chunks arrives as several positions, and every question below is
+	// asked once about the key: whether it is covered, whether its source row
+	// was counted, whether its stored rows form a set.
+	//
+	// currentKey is the key being folded and haveKey says whether there is
+	// one. countedSource and pendingSource hold the key's source row, seen at
+	// most once however many stored rows stand beside it. firstTarget is the
+	// stored row coverage is decided against, and nextOrdinal is what the next
+	// stored row of this key must carry.
+	currentKey    string
+	haveKey       bool
+	countedSource bool
+	pendingSource SourceRow
+	firstTarget   *TargetRow
+	nextOrdinal   int
+	brokenSet     bool
 
-	duplicates      keySample
+	malformedSets   keySample
 	missing         keySample
 	stale           keySample
 	wrongGeneration keySample
@@ -355,28 +379,96 @@ type corpusWalk struct {
 }
 
 // take folds one position of the walk in.
+//
+// A position belongs to a source key, and the key is what the walk folds over.
+// The corpus arrives with equal keys adjacent -- both verification queries
+// order by the key -- so a change of key is where one set ends and the next
+// begins, and it is where the questions about the finished set are answered.
 func (w *corpusWalk) take(pair Pair) {
 	if pair.Source == nil && pair.Target == nil {
 		return
 	}
-	if pair.Source != nil {
+	key := pair.key()
+	if !w.haveKey || key != w.currentKey {
+		w.closeSet()
+		w.currentKey, w.haveKey = key, true
+	}
+
+	if pair.Source != nil && !w.countedSource {
+		// Once per key, however many stored rows stand beside it. A joined
+		// verification over a chunked corpus repeats the source row once per
+		// chunk, and counting each would report a corpus several times its own
+		// size and decide its coverage as many times.
 		w.sourceRows++
 		if pair.Source.Skipped {
 			w.skipped++
 		}
+		w.countedSource, w.pendingSource = true, *pair.Source
 	}
 	if pair.Target != nil {
 		w.targetRows++
 		w.takeTargetShape(*pair.Target)
-		w.takeDuplicate(*pair.Target)
+		w.takeOrdinal(*pair.Target)
 		w.takeVector(*pair.Target)
 		if pair.Source == nil {
 			w.takeOutOfScope(*pair.Target)
 		}
+		if w.firstTarget == nil {
+			stored := *pair.Target
+			w.firstTarget = &stored
+		}
 	}
-	if pair.Source != nil {
-		w.takeCoverage(*pair.Source, pair.Target)
+}
+
+// key is the source key a position belongs to.
+//
+// Either side carries it, and they agree wherever both are present: the corpus
+// is a join on exactly this value.
+func (p Pair) key() string {
+	if p.Source != nil {
+		return p.Source.Key
 	}
+	return p.Target.Key
+}
+
+// closeSet answers the questions that are about a whole set, and resets.
+//
+// Coverage is one of them, and it is decided against the set's FIRST stored
+// row. Every member of a set carries the same generation, version and input
+// hash -- they are facts about the source row -- so the first is the set's
+// answer rather than a sample of it.
+func (w *corpusWalk) closeSet() {
+	if w.countedSource {
+		w.takeCoverage(w.pendingSource, w.firstTarget)
+	}
+	w.countedSource, w.firstTarget = false, nil
+	w.nextOrdinal, w.brokenSet = 0, false
+}
+
+// takeOrdinal reports a source key whose stored rows are not a set.
+//
+// A set is ordinals 0, 1, 2 ... in order and each exactly once. A repeat, a
+// gap, or a row beyond the set's length is the shape a half-completed set
+// write leaves, which is the failure this cardinality introduces: the write
+// stores the new members and removes the surplus, and something that stopped
+// between them leaves a key holding rows its source text does not produce.
+//
+// Reported rather than resolved, for the reason the duplicate finding it
+// replaces was: which of two rows at one ordinal is the answer is not a
+// question this layer can settle, and picking one would verify a corpus
+// against a row somebody's query may not read.
+//
+// One finding per key however many of its rows are wrong, because the set is
+// the thing that is malformed.
+func (w *corpusWalk) takeOrdinal(row TargetRow) {
+	if row.Ordinal != w.nextOrdinal {
+		if !w.brokenSet {
+			w.malformedSets.add(row.Key)
+			w.brokenSet = true
+		}
+		return
+	}
+	w.nextOrdinal++
 }
 
 // takeTargetShape counts what one stored row actually holds.
@@ -394,21 +486,6 @@ func (w *corpusWalk) takeTargetShape(row TargetRow) {
 	if row.Skipped {
 		w.skippedTargets++
 	}
-}
-
-// takeDuplicate reports a key the column holds twice.
-//
-// A duplicate is reported rather than resolved: which of two rows for one key
-// is the answer is not a question this layer can settle, and picking one would
-// verify a corpus against a row somebody's query may not read. Each of the two
-// is then judged on its own merits, which is the one thing that changed when
-// this stopped being a map -- the second row used to be judged against the
-// first, silently.
-func (w *corpusWalk) takeDuplicate(row TargetRow) {
-	if w.haveLast && row.Key == w.lastKey {
-		w.duplicates.add(row.Key)
-	}
-	w.lastKey, w.haveLast = row.Key, true
 }
 
 // takeCoverage decides what one in-scope source row's stored row says.
@@ -479,9 +556,9 @@ func (w *corpusWalk) report(report *Report) {
 	report.TargetVectors = w.targetVectors
 	report.Tombstones = w.tombstones
 	report.SkippedTargets = w.skippedTargets
-	if w.duplicates.total > 0 {
-		report.addf(LayerCoverage, Blocking, w.duplicates.total, w.duplicates.kept,
-			"%d target keys appear more than once", w.duplicates.total)
+	if w.malformedSets.total > 0 {
+		report.addf(LayerCoverage, Blocking, w.malformedSets.total, w.malformedSets.kept,
+			"%d source keys hold rows their chunk set does not declare", w.malformedSets.total)
 	}
 	reportCoverage(report, w.missing, w.stale, w.wrongGeneration)
 	if w.skipped > 0 {

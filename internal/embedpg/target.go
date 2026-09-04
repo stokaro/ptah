@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -29,6 +30,14 @@ const (
 	VersionSuffix = "_source_version"
 	// StateSuffix holds whether the row is a vector, a skip or a tombstone.
 	StateSuffix = "_state"
+	// OrdinalSuffix holds a chunk's position in its source row's set.
+	//
+	// It is not in [MetadataSuffixes] and it is not TEXT: it is an integer, it
+	// is NOT NULL, and it is part of the target relation's primary key, which
+	// is what makes a source row able to hold more than one vector. The three
+	// facts are why it is created explicitly rather than in the loop that
+	// creates the others.
+	OrdinalSuffix = "_chunk_ordinal"
 )
 
 // MetadataSuffixes returns them in one list.
@@ -96,23 +105,118 @@ func (t *Target) Commit(ctx context.Context, writes []embedrun.TargetWrite, run 
 	if err != nil {
 		return err
 	}
-	for _, write := range writes {
+	for _, set := range setsByKey(writes) {
 		// The strategy's own ordering. Reading a rendered timestamp as an
 		// opaque string discarded fresh answers as stale (stokaro/ptah#2635).
-		resolved, changed, err := embedrun.ResolveWrite(
-			existing[writeKey(write.Key)], write, t.spec.Source.VersionStrategy.VersionOrder())
+		//
+		// One decision per SOURCE KEY, taken against the set's first member.
+		// The rules ResolveWrite carries are about the source row -- its
+		// generation, its version, whether it was deleted -- and every member
+		// of a set shares those, so asking once is asking the question the
+		// rules are about. Asking per chunk would compare a chunk to whatever
+		// held its ordinal before, which a re-split moves (ADR 0017).
+		_, changed, err := embedrun.ResolveWrite(
+			existing[writeKey(set[0].Key)], set[0], t.spec.Source.VersionStrategy.VersionOrder())
 		if err != nil {
-			return fmt.Errorf("write %v: %w", write.Key, err)
+			return fmt.Errorf("write %v: %w", set[0].Key, err)
 		}
 		if !changed {
 			continue
 		}
-		if err := t.applyWrite(ctx, transaction, resolved); err != nil {
+		if err := t.applySet(ctx, transaction, set); err != nil {
 			return err
 		}
 	}
 	if err := transaction.Commit(); err != nil {
 		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
+}
+
+// setsByKey groups a batch's writes into one set per source key, in the order
+// the keys first appear and each set in ordinal order.
+//
+// The order is the batch's own rather than a sort of the keys, so a run's write
+// order is what the caller produced and two runs over one batch contend on
+// their rows in the same order. Within a set the ordinal decides, because the
+// rows are written in that order and a set arriving shuffled would still be
+// stored in the order the source implies.
+func setsByKey(writes []embedrun.TargetWrite) [][]embedrun.TargetWrite {
+	order := make([]string, 0, len(writes))
+	byKey := make(map[string][]embedrun.TargetWrite, len(writes))
+	for _, write := range writes {
+		key := writeKey(write.Key)
+		if _, seen := byKey[key]; !seen {
+			order = append(order, key)
+		}
+		byKey[key] = append(byKey[key], write)
+	}
+	sets := make([][]embedrun.TargetWrite, 0, len(order))
+	for _, key := range order {
+		set := byKey[key]
+		slices.SortStableFunc(set, func(a, b embedrun.TargetWrite) int {
+			return a.Ordinal - b.Ordinal
+		})
+		sets = append(sets, set)
+	}
+	return sets
+}
+
+// applySet makes one source key's stored rows equal to the set it produced.
+//
+// Two statements and not one: the members are written, and the rows the new set
+// does not have are removed. Going from four chunks to three and going from
+// four to none are the same operation with different arguments, which is why
+// there is no separate delete path (ADR 0017 section 3.4).
+//
+// It takes the set rather than the resolution's answer, and that is safe for
+// one reason worth naming: ResolveWrite reports a change only when the incoming
+// write wins, and the incoming write it was asked about is this set's first
+// member. Every answer it gives that is NOT the incoming one -- a tombstone
+// surviving a late update, the same work arriving again, a version the row has
+// moved past -- reports no change, and the caller does not reach here.
+func (t *Target) applySet(
+	ctx context.Context, transaction *sql.Tx, set []embedrun.TargetWrite,
+) error {
+	for _, member := range set {
+		if err := t.applyWrite(ctx, transaction, member); err != nil {
+			return err
+		}
+	}
+	return t.removeSurplus(ctx, transaction, set[0].Key, len(set))
+}
+
+// removeSurplus deletes the rows of a source key's set beyond its new length.
+//
+// Only under a layout whose relation is the generation's own: the other layout
+// stores one vector in the source row's own columns, so there is no surplus row
+// to delete and a DELETE there would remove the application's data.
+//
+// A set that shrank from four chunks to three leaves a fourth row that no
+// source text produces any more, and verification reports it as a target row
+// outside the generation's scope -- forever, because nothing else would ever
+// visit it.
+func (t *Target) removeSurplus(
+	ctx context.Context, transaction *sql.Tx, key []string, length int,
+) error {
+	if !t.spec.Target.Layout.OwnsTable() {
+		return nil
+	}
+	arguments := make([]any, 0, len(key)+1)
+	conditions := make([]string, 0, len(t.spec.Source.KeyFields)+1)
+	for index, field := range t.spec.Source.KeyFields {
+		arguments = append(arguments, key[index])
+		conditions = append(conditions,
+			fmt.Sprintf("%s::text = $%d", quoteIdentifier(field), len(arguments)))
+	}
+	arguments = append(arguments, length)
+	conditions = append(conditions, fmt.Sprintf("%s >= $%d",
+		quoteIdentifier(t.spec.Target.Column+OrdinalSuffix), len(arguments)))
+	// #nosec G201 -- identifiers from the specification, through quoteIdentifier.
+	statement := fmt.Sprintf("DELETE FROM %s WHERE %s",
+		t.qualifiedTable(), strings.Join(conditions, " AND "))
+	if _, err := transaction.ExecContext(ctx, statement, arguments...); err != nil {
+		return fmt.Errorf("remove the surplus chunks of %v: %w", key, err)
 	}
 	return nil
 }
@@ -160,10 +264,20 @@ func (t *Target) existingWrites(
 	for _, key := range keys {
 		casted = append(casted, quoteIdentifier(key)+"::text")
 	}
+	// Under a layout that can hold a set, only its first member is read. The
+	// rules the resolution applies are about the source row, and every member
+	// carries the same generation, version and hash -- so reading the rest
+	// would be reading the same answer several times and then having to decide
+	// which copy to believe.
+	representative := ""
+	if t.spec.Target.Layout.OwnsTable() {
+		representative = fmt.Sprintf(" AND %s = 0",
+			quoteIdentifier(column+OrdinalSuffix))
+	}
 	// #nosec G201 -- identifiers from the specification, through quoteIdentifier.
-	query := fmt.Sprintf("SELECT %s FROM %s WHERE (%s) IN (%s) FOR UPDATE",
+	query := fmt.Sprintf("SELECT %s FROM %s WHERE (%s) IN (%s)%s FOR UPDATE",
 		strings.Join(selected, ", "), t.qualifiedTable(),
-		strings.Join(casted, ", "), strings.Join(tuples, ", "))
+		strings.Join(casted, ", "), strings.Join(tuples, ", "), representative)
 
 	rows, err := transaction.QueryContext(ctx, query, arguments...)
 	if err != nil {
@@ -283,10 +397,18 @@ func (t *Target) insertStatement(write embedrun.TargetWrite, arguments []any) (s
 		conditions = append(conditions,
 			fmt.Sprintf("source.%s::text = $%d", quoteIdentifier(key), len(arguments)))
 	}
-	keyList := make([]string, 0, len(keys))
+	// The ordinal is a written column and part of the conflict target, which is
+	// the whole of what lets one source row hold several vectors: without it in
+	// the conflict target, the second chunk of a row updates the first.
+	arguments = append(arguments, write.Ordinal)
+	ordinal := quoteIdentifier(column + OrdinalSuffix)
+	columns = append(columns, ordinal)
+	selected = append(selected, fmt.Sprintf("$%d", len(arguments)))
+	keyList := make([]string, 0, len(keys)+1)
 	for _, key := range keys {
 		keyList = append(keyList, quoteIdentifier(key))
 	}
+	keyList = append(keyList, ordinal)
 	assignments := make([]string, 0, 5)
 	for _, suffix := range append([]string{""}, MetadataSuffixes()...) {
 		name := quoteIdentifier(column + suffix)

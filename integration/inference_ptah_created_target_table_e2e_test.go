@@ -62,7 +62,13 @@ func TestInferencePreparesBackfillsAndRetiresATableItCreatedE2E(t *testing.T) {
 	runInference(c, ctx, "prepare", "--spec", spec, "--db-url", dbName, "--run-id", "owned")
 
 	c.Assert(relationExists(c, ctx, db, ownedTargetTable), qt.IsTrue)
-	c.Assert(primaryKeyColumnsOf(c, ctx, db, ownedTargetTable), qt.DeepEquals, []string{"id"})
+	// The source key AND the chunk ordinal. The ordinal is in the key even for
+	// a generation that does not chunk, so the relation has one shape rather
+	// than two: an unchunked generation is a set of one at ordinal zero. What
+	// the key must not be is the source key alone, which can hold one vector
+	// per source row and is the shape a set cannot use.
+	c.Assert(primaryKeyColumnsOf(c, ctx, db, ownedTargetTable), qt.DeepEquals,
+		[]string{"id", "embedding_chunk_ordinal"})
 	c.Assert(referencedRelationOf(c, ctx, db, ownedTargetTable), qt.Equals, "articles")
 	// Empty, which is the state that made the UPDATE-only write path a defect
 	// rather than a detail.

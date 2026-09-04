@@ -155,7 +155,20 @@ func ensureOwnedTable(
 	if _, err := transaction.ExecContext(ctx, comment); err != nil {
 		return fmt.Errorf("mark the target table %s as Ptah's: %w", table, err)
 	}
-	if err := ensureOwnedTableKey(ctx, transaction, table, keyList); err != nil {
+	// The ordinal before the key, because the key covers it. A relation whose
+	// primary key is the source key alone can hold one vector per source row,
+	// which is the shape a set of chunks cannot use -- and adding the column
+	// after the key would leave the relation briefly in exactly that state
+	// were this not one transaction.
+	ordinal := quoteIdentifier(spec.Target.Column + OrdinalSuffix)
+	// #nosec G201 -- relation and column names from the specification, through
+	// qualify and quoteIdentifier.
+	addOrdinal := fmt.Sprintf(
+		"ALTER TABLE %s ADD COLUMN IF NOT EXISTS %s INTEGER NOT NULL DEFAULT 0", table, ordinal)
+	if _, err := transaction.ExecContext(ctx, addOrdinal); err != nil {
+		return fmt.Errorf("add the chunk ordinal to %s: %w", table, err)
+	}
+	if err := ensureOwnedTableKey(ctx, transaction, table, keyList+", "+ordinal); err != nil {
 		return err
 	}
 	if err := ensureOwnedTableReference(

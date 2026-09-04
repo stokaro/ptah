@@ -69,9 +69,20 @@ func unclassifiedFields() []string {
 // ordered field lists whose label is followed by a count rather than a value.
 func includedComponentKeys() map[string]bool {
 	keys := make(map[string]bool)
-	for _, component := range (Spec{}).identityComponents() {
-		if strings.Contains(component, ".") || component == "spec" || component == "contract" {
-			keys[component] = true
+	// Both branches, because one component is conditional: the overlap joins
+	// the digest only for a specification that chunks, so a zero Spec's list
+	// does not contain it and the field would read as unclassified. Reading
+	// one branch would make the gate report a decision that was made as an
+	// omission.
+	branches := [][]string{
+		(Spec{}).identityComponents(),
+		Spec{Preprocessing: Preprocessing{Truncate: TruncateChunk}}.identityComponents(),
+	}
+	for _, branch := range branches {
+		for _, component := range branch {
+			if strings.Contains(component, ".") || component == "spec" || component == "contract" {
+				keys[component] = true
+			}
 		}
 	}
 	return keys

@@ -331,21 +331,32 @@ func (e *Engine) processPage(
 }
 
 // prepare canonicalizes a page's rows and hashes their inputs.
+//
+// One source row can produce several batch rows, one per chunk, and they all
+// carry the SAME input hash -- the hash of the whole canonical input rather
+// than of the piece. That is what makes "this row's work has already been
+// done" a question about the row, which is the only level the write path
+// decides at (ADR 0017 section 3.2).
 func (e *Engine) prepare(page Page) ([]embedrun.BatchRow, error) {
 	rows := make([]embedrun.BatchRow, 0, len(page.Rows))
 	for index, row := range page.Rows {
-		input, err := e.Spec.Canonicalize(row)
+		set, err := e.Spec.CanonicalInputs(row)
 		if err != nil {
 			return nil, fmt.Errorf("canonicalize row %v: %w", row.Key, err)
 		}
-		rows = append(rows, embedrun.BatchRow{
-			Key:        row.Key,
-			Input:      input.Text,
-			Version:    versionAt(page.Versions, index),
-			InputHash:  e.Spec.SourceInputHash(input),
-			Skipped:    input.Skipped,
-			SkipReason: input.SkipReason,
-		})
+		hash := e.Spec.SourceInputHash(set.Whole)
+		version := versionAt(page.Versions, index)
+		for _, chunk := range set.Chunks {
+			rows = append(rows, embedrun.BatchRow{
+				Key:        row.Key,
+				Input:      chunk.Text,
+				Ordinal:    chunk.Ordinal,
+				Version:    version,
+				InputHash:  hash,
+				Skipped:    set.Whole.Skipped,
+				SkipReason: set.Whole.SkipReason,
+			})
+		}
 	}
 	return rows, nil
 }
@@ -437,6 +448,7 @@ func (e *Engine) embed(
 	for _, row := range batch.Rows {
 		write := embedrun.TargetWrite{
 			Key: row.Key, Generation: generation, InputHash: row.InputHash, Version: row.Version,
+			Ordinal: row.Ordinal,
 		}
 		if row.Skipped {
 			write.Kind = embedrun.WriteSkip

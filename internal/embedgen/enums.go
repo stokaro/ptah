@@ -35,7 +35,7 @@ func UnicodeForms() []UnicodeForm {
 
 // TruncatePolicies are the ways an over-long input is treated.
 func TruncatePolicies() []TruncatePolicy {
-	return []TruncatePolicy{TruncateRefuse, TruncateBytes}
+	return []TruncatePolicy{TruncateRefuse, TruncateBytes, TruncateChunk}
 }
 
 // EndpointClasses separate a local endpoint from a hosted one.

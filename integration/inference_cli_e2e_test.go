@@ -880,6 +880,9 @@ type cliSpec struct {
 	nullPolicy     string
 	emptyPolicy    string
 	layout         string
+	truncate       string
+	maxInputBytes  int
+	overlapBytes   int
 }
 
 // defaultCLISpec is the specification every lifecycle fixture here uses.
@@ -896,6 +899,7 @@ func defaultCLISpec(endpoint string) cliSpec {
 		inputFields:    []string{"title", "body"},
 		nullPolicy:     "empty",
 		emptyPolicy:    "skip",
+		truncate:       "refuse",
 	}
 }
 
@@ -924,6 +928,43 @@ func layoutLine(layout string) string {
 		return ""
 	}
 	return "  layout: " + layout + "\n"
+}
+
+// chunkingLines renders the two keys a chunking specification adds, or nothing
+// at all.
+//
+// Nothing by default, because a bound written into the shared template would
+// change what every fixture here embeds: `max_input_bytes` refuses a row over
+// it under the default truncation policy, and the lifecycle tests would start
+// refusing rows for a reason none of them is about.
+func chunkingLines(spec cliSpec) string {
+	if spec.maxInputBytes == 0 {
+		return ""
+	}
+	return fmt.Sprintf("  max_input_bytes: %d\n  overlap_bytes: %d\n",
+		spec.maxInputBytes, spec.overlapBytes)
+}
+
+// writeCLISpecChunking writes one that splits a source row into a set of
+// chunks stored in a relation of the generation's own.
+func writeCLISpecChunking(c *qt.C, endpoint, target string, bound, overlap int) string {
+	c.Helper()
+	spec := defaultCLISpec(endpoint)
+	spec.targetTable, spec.layout = target, "own_table"
+	spec.truncate = "chunk"
+	spec.maxInputBytes, spec.overlapBytes = bound, overlap
+	return writeCLISpecFrom(c, spec)
+}
+
+// writeCLISpecChunkingIntoTheSource writes a chunking specification whose
+// vectors would go in the source row's own columns, which is the configuration
+// that has to be refused.
+func writeCLISpecChunkingIntoTheSource(c *qt.C, endpoint string, bound, overlap int) string {
+	c.Helper()
+	spec := defaultCLISpec(endpoint)
+	spec.truncate = "chunk"
+	spec.maxInputBytes, spec.overlapBytes = bound, overlap
+	return writeCLISpecFrom(c, spec)
 }
 
 // filterLine renders the source's filter key, or nothing at all.
@@ -962,7 +1003,8 @@ preprocessing:
   null_policy: %s
   empty_policy: %s
   unicode_normalization: none
-  truncate: refuse
+  truncate: %s
+%s
 model:
   provider: openai-compatible
   endpoint_class: local
@@ -983,7 +1025,8 @@ policy:
   require_exact_approval: true
   require_consistency_mode: true
 `, spec.sourceTable, yamlList(spec.keyFields), yamlList(spec.inputFields),
-		filterLine(spec.filter), spec.nullPolicy, spec.emptyPolicy, spec.endpoint,
+		filterLine(spec.filter), spec.nullPolicy, spec.emptyPolicy,
+		spec.truncate, chunkingLines(spec), spec.endpoint,
 		spec.targetTable, spec.column, spec.representation, spec.metric,
 		indexMethodLine(spec.indexMethod), layoutLine(spec.layout), spec.mode)
 	path := filepath.Join(c.TempDir(), "spec.yaml")

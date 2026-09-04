@@ -121,10 +121,23 @@ type Preprocessing struct {
 	MaxInputBytes int
 	// Truncate decides what happens when the input exceeds MaxInputBytes.
 	//
-	// Silent truncation is not available: the two values are "refuse" and
-	// "truncate", and truncating is part of the identity because a truncated
-	// input produces a different vector than the whole one.
+	// Silent truncation is not available: the three values are "refuse",
+	// "bytes" and "chunk", and every one of them is part of the identity
+	// because a truncated input and a chunked one both produce different
+	// vectors than the whole input does.
 	Truncate TruncatePolicy
+	// OverlapBytes is how much of the previous chunk each chunk repeats, and
+	// it is read only under [TruncateChunk].
+	//
+	// Overlap exists because a split cuts through sentences: a passage
+	// straddling a boundary is in neither chunk's meaning without it. It is
+	// part of the identity, because two overlaps produce different chunks and
+	// therefore different vectors.
+	//
+	// It must be smaller than MaxInputBytes. Equal or larger is not a wide
+	// overlap, it is a split that never advances, and it is refused rather
+	// than clamped.
+	OverlapBytes int
 }
 
 // NullPolicy is what a NULL input field contributes to the canonical input.
@@ -179,6 +192,19 @@ const (
 	TruncateRefuse TruncatePolicy = "refuse"
 	// TruncateBytes cuts the canonical input at the bound, on a rune boundary.
 	TruncateBytes TruncatePolicy = "bytes"
+	// TruncateChunk splits the canonical input into a set of chunks, each
+	// within the bound, and embeds every one of them.
+	//
+	// It is spelled as a truncation policy rather than as a switch of its own
+	// because it answers the same question the other two answer -- what
+	// happens to an input larger than the bound -- and MaxInputBytes is
+	// already the size a provider is asked to embed. A separate chunk size
+	// would be a second name for that bound, and the two would disagree.
+	//
+	// A source row under this policy produces a SET of vectors rather than
+	// one, which is a different storage shape: see ADR 0017, and
+	// [TargetLayout] for the relation that can hold it.
+	TruncateChunk TruncatePolicy = "chunk"
 )
 
 // Model is the provider and what it was asked for.

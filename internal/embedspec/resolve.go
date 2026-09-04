@@ -126,6 +126,7 @@ func (d Document) spec(path string) (embedgen.Spec, error) {
 			UnicodeNormalization: unicodeForm,
 			CollapseWhitespace:   d.Preprocessing.CollapseWhitespace,
 			MaxInputBytes:        d.Preprocessing.MaxInputBytes, Truncate: truncate,
+			OverlapBytes: d.Preprocessing.OverlapBytes,
 		},
 		Model: embedgen.Model{
 			Provider: d.Model.Provider, EndpointClass: endpointClass,
