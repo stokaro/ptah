@@ -114,6 +114,13 @@ func IdentityKeyWithSemantics(
 type ConflictSet struct {
 	semantics identifier.Semantics
 	matches   map[namespaceKey][]difftypes.IndexRef
+	// namespaces holds every reference by namespace, and unresolved holds the
+	// ones whose equivalence class the comparison cannot compute. A name in
+	// the second set collides with everything in its namespace rather than
+	// with the other members of its own bucket, which is what an unknown
+	// folding rule actually means (stokaro/ptah#2768).
+	namespaces map[string][]difftypes.IndexRef
+	unresolved map[string][]difftypes.IndexRef
 }
 
 // NewConflictSet builds a dialect-aware conflict index for refs.
@@ -128,8 +135,10 @@ func NewConflictSetWithSemantics(
 	refs []difftypes.IndexRef,
 ) *ConflictSet {
 	set := &ConflictSet{
-		semantics: semantics,
-		matches:   make(map[namespaceKey][]difftypes.IndexRef, len(refs)),
+		semantics:  semantics,
+		matches:    make(map[namespaceKey][]difftypes.IndexRef, len(refs)),
+		namespaces: make(map[string][]difftypes.IndexRef, len(refs)),
+		unresolved: make(map[string][]difftypes.IndexRef),
 	}
 	for _, ref := range refs {
 		set.add(ref)
@@ -142,8 +151,10 @@ func (s *ConflictSet) Contains(ref difftypes.IndexRef) bool {
 	if s == nil {
 		return false
 	}
-	key := conflictKey(s.semantics, ref)
-	return len(s.matches[key]) > 0
+	for range s.Matches(ref) {
+		return true
+	}
+	return false
 }
 
 // Matches returns conflicting references. Validated diff references retain
@@ -154,13 +165,36 @@ func (s *ConflictSet) Matches(ref difftypes.IndexRef) iter.Seq[difftypes.IndexRe
 			return
 		}
 		key := conflictKey(s.semantics, ref)
-		yieldRefs(s.matches[key], yield)
+		// A name whose equivalence class is unknown may be any name in its
+		// namespace, so it is compared against all of them rather than against
+		// the bucket it happens to hash into.
+		if s.unresolvedName(ref) {
+			yieldRefs(s.namespaces[key.namespace], yield)
+			return
+		}
+		if !yieldRefs(s.matches[key], yield) {
+			return
+		}
+		// The reverse direction, which is the one a per-value rule misses: an
+		// ASCII name collides with an already-recorded unresolved name in the
+		// same namespace. Measured, MySQL refuses `İ` beside ASCII `i`.
+		yieldRefs(s.unresolved[key.namespace], yield)
 	}
 }
 
 func (s *ConflictSet) add(ref difftypes.IndexRef) {
 	key := conflictKey(s.semantics, ref)
 	s.matches[key] = append(s.matches[key], ref)
+	s.namespaces[key.namespace] = append(s.namespaces[key.namespace], ref)
+	if s.unresolvedName(ref) {
+		s.unresolved[key.namespace] = append(s.unresolved[key.namespace], ref)
+	}
+}
+
+// unresolvedName reports whether this reference's name has an equivalence
+// class the target's comparison cannot compute offline.
+func (s *ConflictSet) unresolvedName(ref difftypes.IndexRef) bool {
+	return s.semantics.IndexConflictUnresolved(ref.Name)
 }
 
 func (s *ConflictSet) firstMatch(ref difftypes.IndexRef) (difftypes.IndexRef, bool) {

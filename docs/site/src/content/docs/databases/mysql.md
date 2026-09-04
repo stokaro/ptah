@@ -111,6 +111,18 @@ SQL:
   `PRIMARY`. ASCII folding is shared and deterministic and is unchanged; a name
   derived from a non-ASCII column is refused for the same reason an explicit
   one is.
+- Migration planning refuses a plan whose index names may collide, rather than
+  emitting one the server rejects halfway. A name carrying a non-ASCII rune has
+  an equivalence class Ptah cannot compute offline, so it is treated as a
+  possible conflict with every other index name on that table, ASCII ones
+  included -- `İ` collides with plain `i` on MySQL, so grouping only the
+  non-ASCII names together would still miss it. Measured, the alternative was a
+  half-applied migration: rendering `CREATE INDEX İ` and `CREATE INDEX i`
+  against MySQL 8.4.11 creates the first and answers `ERROR 1061` on the
+  second. The rule is deliberately conservative and says so: `a` beside `ä` is
+  accepted by both engines and is still reported as a possible conflict, and
+  the way to make it exact is to resolve the names against the target rather
+  than to guess a folding rule offline.
 - A non-ASCII column named by a key, a constraint, or its own `UNIQUE` is
   refused for the same reason, and the disagreement runs deeper there. Asked
   whether two columns differing only by the pair are one name, MySQL folds
