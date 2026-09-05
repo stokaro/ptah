@@ -13,17 +13,25 @@ import (
 //
 // It is an addition rather than a second stylesheet: the schema sections below
 // the status panel are rendered by internal/schemadoc and styled by its tokens,
-// so this defines no color of its own and only arranges what the panel needs.
+// so this defines no color of its own except the three severities and only
+// arranges what the panel needs.
+//
+// Every var() here has to name a token internal/schemadoc still declares. A
+// custom property that resolves to nothing invalidates the declaration it sits
+// in and reports nothing -- no console message, no failing test, no visibly
+// broken page -- so this moves when that stylesheet's tokens move.
+// TestHandler_ResolvesEveryCustomPropertyItUses is what makes that true rather
+// than remembered.
 const dashboardCSS = `
 .status { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 22px 0 6px; }
-.status .stat { border-left: 3px solid var(--border-strong); }
+.status .stat { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: var(--radius); padding: 14px 18px; }
 .status .stat.safe { border-left-color: #2e9e63; }
 .status .stat.warning { border-left-color: #c98a12; }
 .status .stat.destructive { border-left-color: #d9483b; }
-.banner { border: 1px solid var(--border); border-left: 3px solid #d9483b; background: var(--surface); border-radius: var(--radius); padding: 14px 18px; margin: 18px 0; box-shadow: var(--shadow); }
+.banner { border: 1px solid var(--border); border-left: 3px solid #d9483b; background: var(--surface); border-radius: var(--radius); padding: 14px 18px; margin: 18px 0; }
 .banner-title { font-weight: 600; margin-bottom: 4px; }
 .banner-body { color: var(--text-dim); font-size: 13.5px; font-family: var(--mono); word-break: break-word; }
-.stamp { color: var(--text-dim); font-size: 12.5px; margin-top: 6px; }
+.stamp { color: var(--text-mute); font-size: 12.5px; margin-top: 6px; }
 `
 
 // render writes the whole page: the live panel this view adds, then the schema

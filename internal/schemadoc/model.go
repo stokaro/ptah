@@ -26,6 +26,7 @@ import (
 // the diagram read the same schema rather than each walking it their own way.
 type document struct {
 	Title     string
+	Source    string
 	Tables    []tableDoc
 	Enums     []enumDoc
 	Relations []relation
@@ -95,7 +96,7 @@ func build(db *schemamodel.Database, opts Options) document {
 		}
 	}
 
-	doc := document{Title: opts.Title, Relations: dedupeRelations(relations)}
+	doc := document{Title: opts.Title, Source: opts.Source, Relations: dedupeRelations(relations)}
 	for _, table := range selected {
 		doc.Tables = append(doc.Tables, tableDoc{
 			Name:    table.Name,

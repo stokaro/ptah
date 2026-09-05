@@ -1,7 +1,9 @@
 package schemadoc_test
 
 import (
+	"maps"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -81,9 +83,14 @@ func TestRender_SaysEverythingTheSchemaDeclares(t *testing.T) {
 		{name: "a column name", want: "book_id"},
 		{name: "a column type", want: "BIGINT"},
 		{name: "a primary key", want: `class="tag key">primary`},
-		{name: "a unique column", want: `class="tag key">unique`},
+		{name: "a unique column", want: `class="tag">unique`},
 		{name: "a nullable column", want: `class="tag null">null`},
 		{name: "a foreign key, linked to its target", want: `href="#authors"`},
+		{name: "a foreign key, rendered as a reference", want: `class="ref" href="#authors">→ authors(id)`},
+		{name: "a NOT NULL column, left untagged", want: `class="none">—`},
+		{name: "what the document is and is not", want: `class="lede">Declared schema · not a live database`},
+		{name: "how to read the diagram", want: "Left to right by dependency"},
+		{name: "the binary that wrote the file", want: `class="footer-mark"`},
 		{name: "an index", want: "idx_books_author"},
 		{name: "an enum value", want: "pending"},
 	}
@@ -171,6 +178,78 @@ func TestRender_DefinesEveryColorInEveryTheme(t *testing.T) {
 func tokensIn(block string) map[string]bool {
 	found := make(map[string]bool)
 	for _, match := range regexp.MustCompile(`(--[a-z-]+):`).FindAllStringSubmatch(block, -1) {
+		found[match[1]] = true
+	}
+	return found
+}
+
+// TestRender_NamesItsSourceWithoutItsPath keeps a shared document from carrying
+// the exporting machine's filesystem layout.
+//
+// The caller supplies the name, so this pins the rendering rather than the
+// basename; cmd/schema is where the path is reduced to a name.
+func TestRender_NamesItsSourceWithoutItsPath(t *testing.T) {
+	c := qt.New(t)
+
+	page := render(c, bookshop(), schemadoc.Options{Source: "schema.yaml"})
+
+	c.Assert(page, qt.Contains, `class="lede">Declared schema · schema.yaml · not a live database`)
+}
+
+// TestRender_ResolvesEveryCustomPropertyItUses is the assertion the appearance
+// cannot make about itself by looking correct.
+//
+// A var() naming a token nothing declares does not fail: the browser discards
+// the declaration it appears in and reports nothing. The element keeps whatever
+// it inherited, so a retired token leaves a page that renders, renders wrongly,
+// and passes every other test here.
+func TestRender_ResolvesEveryCustomPropertyItUses(t *testing.T) {
+	c := qt.New(t)
+	page := render(c, bookshop(), schemadoc.Options{})
+
+	declared := declaredTokens(page)
+	used := usedTokens(page)
+	c.Assert(len(used) > 0, qt.IsTrue, qt.Commentf("the stylesheet uses no tokens at all"))
+	for _, token := range slices.Sorted(maps.Keys(used)) {
+		c.Assert(declared[token], qt.IsTrue,
+			qt.Commentf("var(%s) resolves to nothing: no block declares it", token))
+	}
+}
+
+// TestPage_LeavesTheDocumentToTheDocument pins what the live dashboard gets.
+//
+// Page returns the schema's own parts for a caller that supplies the page
+// around them. Three things must not come with them: the rail, because the
+// caller writes its own and nesting one inside it draws two; the provenance
+// line, because a dashboard reads a live database and "not a live database"
+// would be false there; and the footer, because the caller's page ends its own
+// way.
+func TestPage_LeavesTheDocumentToTheDocument(t *testing.T) {
+	c := qt.New(t)
+
+	sidebar, content, err := schemadoc.Page(bookshop(), schemadoc.Options{})
+
+	c.Assert(err, qt.IsNil)
+	page := sidebar + content
+	c.Assert(sidebar, qt.Contains, `<nav class="nav">`)
+	c.Assert(page, qt.Not(qt.Contains), "<aside")
+	c.Assert(page, qt.Not(qt.Contains), "not a live database")
+	c.Assert(page, qt.Not(qt.Contains), `class="footer`)
+}
+
+// declaredTokens is every custom property the page's stylesheet defines.
+func declaredTokens(page string) map[string]bool {
+	found := make(map[string]bool)
+	for _, match := range regexp.MustCompile(`(--[a-z0-9-]+)\s*:`).FindAllStringSubmatch(page, -1) {
+		found[match[1]] = true
+	}
+	return found
+}
+
+// usedTokens is every custom property the page reads back.
+func usedTokens(page string) map[string]bool {
+	found := make(map[string]bool)
+	for _, match := range regexp.MustCompile(`var\((--[a-z0-9-]+)`).FindAllStringSubmatch(page, -1) {
 		found[match[1]] = true
 	}
 	return found

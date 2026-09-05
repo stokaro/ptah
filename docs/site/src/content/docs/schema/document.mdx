@@ -196,23 +196,30 @@ Exported schema documentation to .../schema.html
 Found 2 table(s), 6 field(s), 1 enum(s)
 ```
 
-For the two tables and six columns above, that file is about 10 KB.
+For the two tables and six columns above, that file is about 11 KB.
 
 ### What the page contains
 
-- A sidebar holding the document title, the table count, a link to each table's
-  section, and an `Enums` group listing each enum by name.
+- A sidebar holding the document title, how many tables and enums it covers, a
+  link to each table's section, and an `Enums` group listing each enum by name.
+- Under the title, a line reading `Declared schema · <source> · not a live
+  database`, naming the schema file by its base name. It says in the file what
+  this page says above: the document describes what your sources declare.
 - A count panel: tables, columns, references, enums.
 - A `Diagram` section holding one inline `<svg>` element, laid out left to
   right by dependency, so reading it in that direction reads an order the
-  tables can be created in.
+  tables can be created in, and a caption saying so.
 - A `Tables` section holding one card per table. Each card carries a column
   table with the headers `Column`, `Type`, `Null`, `Key`, `Default`,
   `References` and `Comment`, and, where the table has indexes, a second table
   with `Index`, `Columns` and `Unique`. A `References` cell is a link to the
-  referenced table's card.
+  referenced table's card, and a `Type` cell naming a declared enum links to
+  that enum's section.
+- A `Null` cell marked `null` where the column accepts it and `—` where it does
+  not, so a nullable column is the one that carries a marker.
 - A footer reading `Rendered by Ptah from the declared schema. This file is
-  self-contained: opening it fetches nothing.`
+  self-contained: opening it fetches nothing.`, beside the Ptah mark and the
+  version of the binary that wrote the file.
 
 The diagram element names itself, so a reader using a screen reader is told
 what it is rather than meeting an unlabeled graphic:
@@ -222,7 +229,9 @@ what it is rather than meeting an unlabeled graphic:
 ```
 
 The styling is defined inside the file and follows the reader's light or dark
-preference through a `prefers-color-scheme` block, rather than picking one.
+preference through a `prefers-color-scheme` block, rather than picking one. It
+uses the fonts the reader's own system provides, so no web font is fetched, and
+the mark in the footer is inlined SVG for the same reason.
 
 ### Confirm that it fetches nothing
 
