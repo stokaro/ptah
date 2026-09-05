@@ -308,8 +308,9 @@ func TestReport_RepresentsASkippedCaseInEveryFormat(t *testing.T) {
 
 	page, err := report.HTML()
 	c.Assert(err, qt.IsNil)
-	c.Assert(page, qt.Contains, `<strong class="skip">SKIP</strong>`)
-	c.Assert(page, qt.Contains, "1 skipped")
+	c.Assert(page, qt.Contains, `<strong class="tag skip">SKIP</strong>`)
+	c.Assert(page, qt.Contains,
+		`<div class="stat"><div class="stat-n">1</div><div class="stat-l">skipped</div></div>`)
 }
 
 // TestParseAtlasTestCases_EvaluationRefusals_FailurePath keeps every new

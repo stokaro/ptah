@@ -17,6 +17,7 @@ import (
 
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/htmlstyle"
 	"go.5x5.cz/ptah/migration/internal/scratchdb"
 	"go.5x5.cz/ptah/migration/internal/shadowdb"
 	"go.5x5.cz/ptah/migration/migrationfile"
@@ -359,9 +360,16 @@ func (r *Report) JSON() (string, error) {
 }
 
 // HTML renders the report as a self-contained HTML document.
+//
+// The document fetches nothing: its appearance is inlined from
+// internal/htmlstyle, the same declaration the exported schema document and
+// the migration safety report read, so a pass is the same green on all three.
+//
+// The shell is written directly and only the cases go through a template, so
+// nothing trusted has to be handed to html/template as pre-escaped markup.
 func (r *Report) HTML() (string, error) {
 	tally := r.counts()
-	data := struct {
+	body := struct {
 		Kind    string
 		Total   int
 		Passed  int
@@ -371,50 +379,64 @@ func (r *Report) HTML() (string, error) {
 	}{r.reportKind(), tally.total, tally.passed, tally.failed, tally.skipped, r.Cases}
 
 	var b strings.Builder
-	if err := reportHTMLTemplate.Execute(&b, data); err != nil {
+	b.WriteString(htmlstyle.Head(body.Kind+" test report", reportCSS))
+	if err := reportHTMLTemplate.Execute(&b, body); err != nil {
 		return "", fmt.Errorf("render HTML report: %w", err)
 	}
+	b.WriteString(htmlstyle.Footer("Rendered by Ptah from the test run. " +
+		"This file is self-contained: opening it fetches nothing."))
+	b.WriteString("</div></body>\n</html>\n")
 	return b.String(), nil
 }
 
-var reportHTMLTemplate = template.Must(template.New("dbtest-report").Parse(`<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>{{.Kind}} test report</title>
-<style>
-body { font-family: system-ui, sans-serif; margin: 2rem; }
-.pass { color: #157f3b; }
-.fail { color: #b3261e; }
-.skip { color: #6b6b6b; }
-.noun { color: #6b6b6b; font-size: 0.85em; }
-.log { color: #5f6368; }
-.caught { color: #8a6d1f; }
-.case { margin: 0.75rem 0; }
-.steps { margin: 0.25rem 0 0 1.5rem; padding: 0; list-style: none; }
-.detail { color: #555; }
-</style>
-</head>
-<body>
+// reportCSS is what this report adds to the shared appearance: the case and
+// step list, which nothing else here has.
+const reportCSS = `
+.tag.pass { background: var(--ok-soft); border-color: transparent; color: var(--ok); }
+.tag.fail { background: var(--danger-soft); border-color: transparent; color: var(--danger); }
+.tag.caught { background: var(--warn-soft); border-color: transparent; color: var(--warn); }
+.tag.skip, .tag.log { color: var(--text-mute); font-weight: 400; }
+.case { border-top: 1px solid var(--border); padding: 12px 18px; }
+.case:first-child { border-top: 0; }
+.case-head { display: flex; align-items: baseline; gap: 10px; }
+.case-name { font: 500 14px var(--mono); }
+.steps { list-style: none; margin: 8px 0 0; padding: 0 0 0 2px; display: grid; gap: 5px; }
+.steps li { display: flex; align-items: baseline; gap: 8px; font-size: 13.5px; }
+.step-name { font-family: var(--mono); font-size: 13px; }
+.noun { font: 500 10.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--text-mute); }
+.detail { color: var(--text-mute); font-family: var(--mono); font-size: 12.5px; }
+`
+
+var reportHTMLTemplate = template.Must(template.New("dbtest-report").Parse(`<body><div class="page">
 <h1>{{.Kind}} test report</h1>
-<p>{{.Total}} cases, {{.Passed}} passed, {{.Failed}} failed, {{.Skipped}} skipped</p>
+<div class="lede">Declarative cases, run against a database</div>
+<div class="stats">
+<div class="stat"><div class="stat-n">{{.Total}}</div><div class="stat-l">cases</div></div>
+<div class="stat"><div class="stat-n">{{.Passed}}</div><div class="stat-l">passed</div></div>
+<div class="stat"><div class="stat-n">{{.Failed}}</div><div class="stat-l">failed</div></div>
+<div class="stat"><div class="stat-n">{{.Skipped}}</div><div class="stat-l">skipped</div></div>
+</div>
+<h2>Cases</h2>
+<div class="card">
 {{range .Cases}}
 <div class="case">
-  <strong class="{{.StatusClass}}">{{.StatusLabel}}</strong>
-  case &ldquo;{{.Name}}&rdquo;
+  <div class="case-head">
+    <strong class="tag {{.StatusClass}}">{{.StatusLabel}}</strong>
+    <span class="case-name">{{.Name}}</span>
+  </div>
   <ul class="steps">
     {{range .Steps}}
     <li>
-      <span class="{{.StatusClass}}">{{.StatusLabel}}</span>
+      <span class="tag {{.StatusClass}}">{{.StatusLabel}}</span>
       <span class="noun">{{.Noun}}</span>
-      step &ldquo;{{.Name}}&rdquo;{{if .Detail}} <span class="detail">&mdash; {{.Detail}}</span>{{end}}
+      <span class="step-name">{{.Name}}</span>
+      {{if .Detail}}<span class="detail">{{.Detail}}</span>{{end}}
     </li>
     {{end}}
   </ul>
 </div>
 {{end}}
-</body>
-</html>
+</div>
 `))
 
 // RunMigrationTest runs the test cases in opts against a database and returns a
