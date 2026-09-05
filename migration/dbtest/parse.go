@@ -137,7 +137,11 @@ func LoadCasesOfKind(dir string, kind AtlasTestKind) ([]Case, error) {
 		}
 		var parsed []Case
 		if isAtlasCaseFile(name) {
-			parsed, err = ParseAtlasTestCases(data, name, kind)
+			// The directory is supplied explicitly: `name` is the basename,
+			// because that is what a diagnostic should print, and deriving the
+			// read directory from it resolved `file()` against the process's
+			// working directory instead of the suite's.
+			parsed, err = ParseAtlasTestCases(data, name, kind, WithAtlasTestDir(dir))
 		} else {
 			parsed, err = ParseCases(data)
 		}

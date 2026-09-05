@@ -158,9 +158,11 @@ a case written against a mapping and later pointed at a list changes what its
 key means. And a mapping iterates in **sorted key order** rather than the order
 its keys were written, which is what makes a report reproducible.
 
-`file()` reads only inside the directory that holds the test file. An absolute
-path, a parent traversal, and a symbolic link pointing outward are each refused,
-because a test file is repository-controlled and evaluated before anything runs.
+`file()` reads only inside the directory that holds the test file, which is the
+directory `--dir` names rather than wherever the command was run from. An
+absolute path, a parent traversal, and a symbolic link pointing outward are each
+refused, because a test file is repository-controlled and evaluated before
+anything runs.
 
 ### When a case may run in parallel
 
@@ -201,8 +203,11 @@ promise rather than an implementation detail:
 - **It runs against the case's own database**, the one the body used.
 
 A cleanup failure fails the case without displacing the body's failure. Both
-appear as steps, in the order they happened, so a reader sees the check that
-failed and the teardown that failed as the two separate problems they are: a
+appear as steps, in the order they happened, and each report marks which is
+which: the text report writes `cleanup step`, the JSON document carries
+`"kind": "cleanup"` on the step and `cleanup_failed` on the case, and the HTML
+page labels the step. A reader sees the check that failed and the teardown that
+failed as the two separate problems they are: a
 failed check is a defect in what the case asserts, and a failed teardown is a
 database left dirty. The JSON document carries `cleanup_failed` on the case for
 a consumer that needs to tell them apart without reading the steps.

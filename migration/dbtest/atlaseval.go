@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
@@ -37,6 +38,7 @@ type atlasIteration struct {
 // atlasEvalOptions carries what a caller knows and the file does not.
 type atlasEvalOptions struct {
 	devURL string
+	dir    string
 }
 
 // AtlasTestOption configures how an Atlas `.test.hcl` document is read.
@@ -50,6 +52,21 @@ type AtlasTestOption func(*atlasEvalOptions)
 // neither the test nor the omission that produced it.
 func WithAtlasTestDevURL(devURL string) AtlasTestOption {
 	return func(o *atlasEvalOptions) { o.devURL = devURL }
+}
+
+// WithAtlasTestDir names the directory `file()` reads from.
+//
+// It is supplied rather than derived from the document's name, because the name
+// a diagnostic should print and the directory a read should resolve against are
+// different facts. Deriving one from the other tied them together, and the tie
+// broke silently the moment a caller passed a bare file name for its
+// diagnostics: `filepath.Dir` answered ".", and `file()` resolved against
+// whatever directory the process happened to be started in.
+//
+// Omitting it does not fall back to the working directory. See
+// [atlasTestFileFunc].
+func WithAtlasTestDir(dir string) AtlasTestOption {
+	return func(o *atlasEvalOptions) { o.dir = dir }
 }
 
 // atlasVariables reads the top-level `variable` blocks into the values `var.*`
@@ -99,7 +116,6 @@ func atlasEvalContext(
 	name string,
 	iteration atlasIteration,
 	options atlasEvalOptions,
-	dir string,
 ) *hcl.EvalContext {
 	self := map[string]cty.Value{"name": cty.StringVal(name)}
 	if options.devURL != "" {
@@ -119,7 +135,7 @@ func atlasEvalContext(
 
 	return &hcl.EvalContext{
 		Variables: values,
-		Functions: map[string]function.Function{"file": atlasTestFileFunc(dir)},
+		Functions: map[string]function.Function{"file": atlasTestFileFunc(options.dir)},
 	}
 }
 
@@ -148,6 +164,15 @@ func atlasTestFileFunc(dir string) function.Function {
 		Params: []function.Parameter{{Name: "path", Type: cty.String}},
 		Type:   function.StaticReturnType(cty.String),
 		Impl: func(args []cty.Value, _ cty.Type) (cty.Value, error) {
+			// No directory means no read. Falling back to the process's own
+			// working directory would resolve a relative name against whatever
+			// happened to be current, so a document asking for "payload.txt"
+			// could be handed a different file entirely and never say so.
+			if strings.TrimSpace(dir) == "" {
+				return cty.NilVal, fmt.Errorf(
+					"file(): this reader was given no directory to read from, so the call is refused " +
+						"rather than resolved against the process's working directory")
+			}
 			root, err := os.OpenRoot(dir)
 			if err != nil {
 				return cty.NilVal, fmt.Errorf("file(): open %s: %w", dir, err)
@@ -285,7 +310,6 @@ var atlasCaseAttributes = map[string]bool{"for_each": true, "skip": true, "paral
 type atlasCaseContext struct {
 	variables map[string]cty.Value
 	options   atlasEvalOptions
-	dir       string
 	filename  string
 }
 
@@ -306,7 +330,7 @@ func atlasExpandCase(
 	// `for_each` is resolved before any instance exists, so it sees `var` and
 	// the file's functions but neither `each` nor an instance's `self`.
 	base := atlasEvalContext(
-		caseContext.variables, name, atlasIteration{}, caseContext.options, caseContext.dir)
+		caseContext.variables, name, atlasIteration{}, caseContext.options)
 	iterations, err := atlasIterations(
 		block.Body.Attributes["for_each"], base, caseContext.filename)
 	if err != nil {
@@ -317,7 +341,7 @@ func atlasExpandCase(
 	for _, iteration := range iterations {
 		instance := atlasInstanceName(name, iteration)
 		ctx := atlasEvalContext(
-			caseContext.variables, instance, iteration, caseContext.options, caseContext.dir)
+			caseContext.variables, instance, iteration, caseContext.options)
 
 		skip, err := atlasCaseBool(block.Body.Attributes["skip"], "skip", ctx, caseContext.filename)
 		if err != nil {

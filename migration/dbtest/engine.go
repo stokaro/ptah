@@ -296,6 +296,17 @@ func (s StepResult) StatusClass() string {
 // column on the distinction would cost the outcome, which is the fact a reader
 // scans for.
 func (s StepResult) noun() string {
+	return s.Noun()
+}
+
+// Noun is what a report calls this step: a cleanup step or an ordinary one.
+//
+// It is exported because the HTML template needs it. Without it that report
+// classified a step by outcome alone, so a failed cleanup and a failed check
+// rendered identically -- and the word "cleanup" appeared there only when the
+// step happened to be NAMED that, which is an accident of the `.test.hcl`
+// translation rather than something the report says.
+func (s StepResult) Noun() string {
 	if s.Kind == StepKindCleanup {
 		return "cleanup step"
 	}
@@ -375,6 +386,7 @@ body { font-family: system-ui, sans-serif; margin: 2rem; }
 .pass { color: #157f3b; }
 .fail { color: #b3261e; }
 .skip { color: #6b6b6b; }
+.noun { color: #6b6b6b; font-size: 0.85em; }
 .log { color: #5f6368; }
 .caught { color: #8a6d1f; }
 .case { margin: 0.75rem 0; }
@@ -393,6 +405,7 @@ body { font-family: system-ui, sans-serif; margin: 2rem; }
     {{range .Steps}}
     <li>
       <span class="{{.StatusClass}}">{{.StatusLabel}}</span>
+      <span class="noun">{{.Noun}}</span>
       step &ldquo;{{.Name}}&rdquo;{{if .Detail}} <span class="detail">&mdash; {{.Detail}}</span>{{end}}
     </li>
     {{end}}
