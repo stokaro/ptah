@@ -11,13 +11,20 @@ import (
 	"go.5x5.cz/ptah/internal/annotationmeta"
 )
 
-const SchemaPath = "schemas/ptah-annotations.schema.json"
+// SchemaPath is where the generated document is committed.
+//
+// It sits under docs/site/public/ because that is what publishes it: the
+// deploy copies the declared root assets to the site root, and
+// .github/workflows/docs.yml filters on docs/** and docs/site/**. A copy kept
+// anywhere else changes without rebuilding the site, so the published schema
+// would go stale while the committed one looked current (stokaro/ptah#2889).
+const SchemaPath = "docs/site/public/ptah-annotations.schema.json"
 
 // Generate renders the JSON Schema document.
 func Generate() ([]byte, error) {
 	doc := map[string]any{
 		"$schema":     "https://json-schema.org/draft/2020-12/schema",
-		"$id":         "https://docs.ptah.run/schemas/ptah-annotations.schema.json",
+		"$id":         "https://docs.ptah.run/ptah-annotations.schema.json",
 		"title":       "Ptah Go Annotation Directives",
 		"description": "Schema for parsed //ptah Go annotation directives.",
 		"oneOf":       directiveRefs(),

@@ -57,6 +57,20 @@ export const ROOT_ASSETS = [
     url: RootURL('install.ps1'),
     published: `irm ${RootURL('install.ps1')} | iex`,
   },
+  {
+    // The annotation JSON Schema, published at the address it declares as its
+    // own `$id`. An identifier need not resolve to be valid, but a URL-shaped
+    // one is what an editor fetches, and this one answered 404 under both the
+    // current host and the retired one (stokaro/ptah#2889).
+    //
+    // Flat, at the root, rather than under a `schemas/` path: the documentation
+    // cross-check below collects only root paths with no slash, so a nested
+    // asset would be published without that rule covering it.
+    name: 'ptah-annotations.schema.json',
+    source: 'docs/site/public/ptah-annotations.schema.json',
+    url: RootURL('ptah-annotations.schema.json'),
+    published: RootURL('ptah-annotations.schema.json'),
+  },
 ];
 
 // GENERATED_ROOT_FILES names what gen-versions.mjs writes into the same

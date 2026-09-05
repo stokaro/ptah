@@ -1666,7 +1666,7 @@
       "type": "object"
     }
   },
-  "$id": "https://docs.ptah.run/schemas/ptah-annotations.schema.json",
+  "$id": "https://docs.ptah.run/ptah-annotations.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "description": "Schema for parsed //ptah Go annotation directives.",
   "oneOf": [

@@ -8,7 +8,7 @@ readerQuestion: "Which Go annotation directives and attributes does Ptah accept?
 goal: "Look up every accepted Go annotation directive and attribute."
 sourceOfTruth:
   - "internal/annotationmeta"
-  - "schemas/ptah-annotations.schema.json"
+  - "docs/site/public/ptah-annotations.schema.json"
 generated: false
 searchAliases:
   - "Go annotations"
@@ -20,8 +20,12 @@ owns:
 
 Every `//ptah` comment directive and attribute accepted by Ptah's Go annotation
 parser is listed below. The same metadata is exported as a JSON Schema
-document by `ptah schema annotations`, and the committed copy lives at
-[`schemas/ptah-annotations.schema.json` in the latest development source](https://github.com/stokaro/ptah/blob/master/schemas/ptah-annotations.schema.json).
+document by `ptah schema annotations`, and that document is published at
+<https://docs.ptah.run/ptah-annotations.schema.json>, which is the address it
+declares as its own `$id`. Point an editor's JSON Schema setting at that URL to
+get completion and validation for `//ptah` directives. Each published version
+also serves its own copy, so `/edge/ptah-annotations.schema.json` is the one
+built from the development source.
 For the workflow — modeling, rendering, and generating migrations from
 annotated structs — see [Go annotations](../../schema/go-annotations/).
 
