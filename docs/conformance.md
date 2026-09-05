@@ -117,11 +117,25 @@ Each workflow below states the native Ptah command, the Atlas-compatible
 surface, what Atlas CE does, and the evidence.
 
 These rows record product workflow parity, not full Atlas Pro compatibility.
-The test verbs read Ptah-native YAML/Go cases and Atlas `.test.hcl` files
-alike. This paragraph said `.test.hcl` files were not ingested until that
+
+Three claims about `.test.hcl` are separate, and this document keeps them
+apart, because the first was read as the third for two releases. Ptah parses
+the file; Ptah executes the constructs the file holds; Ptah is complete against
+the pinned testing-language contract. A reader that accepts a file establishes
+only the first, and a subset that runs establishes only the second for the
+constructs it covers.
+
+All three hold today. The test verbs read Ptah-native YAML/Go cases and Atlas
+`.test.hcl` files alike, and the surface they execute is the documented one:
+case attributes and iteration, a restricted evaluation context behind `var`,
+`each`, `self` and `file()`, `exec` assertions in each documented result
+format, expected failures, boolean assertions, logging, finally-style cleanup,
+authorized external steps, and parallel cases that hold a database each.
+This paragraph said `.test.hcl` files were not ingested until that
 sentence was measured against the code: #1036 added the reader on 2026-08-02
-and #1816 added `schema plan test` on 2026-08-20, and two editorial sweeps
-reformatted the claim afterwards without rereading it.
+and #1816 added `schema plan test` on 2026-08-20, two editorial sweeps
+reformatted the claim afterwards without rereading it, and #2866 completed the
+language surface the first two claims had been standing in for.
 
 ### Declarative migration and schema tests
 

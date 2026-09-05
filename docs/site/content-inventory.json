@@ -178,8 +178,8 @@
         "/atlas/overview/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 4907,
-      "sourceBytes": 44905
+      "visibleWords": 4943,
+      "sourceBytes": 45183
     },
     {
       "path": "docs/site/src/content/docs/atlas/feature-matrix.md",
@@ -231,8 +231,8 @@
         "/atlas/strict-ce-mode/",
         "/operate/troubleshooting/"
       ],
-      "visibleWords": 8340,
-      "sourceBytes": 58693
+      "visibleWords": 8343,
+      "sourceBytes": 58692
     },
     {
       "path": "docs/site/src/content/docs/atlas/license-boundary.md",
