@@ -1,0 +1,42 @@
+{
+  "packages": [
+    "./migration/dbtest/"
+  ],
+  "mutations": [
+    {
+      "name": "a skipped case is reported as passed",
+      "file": "migration/dbtest/engine.go",
+      "old": "\treturn CaseResult{Name: c.Name, Skipped: true}",
+      "new": "\treturn CaseResult{Name: c.Name, Passed: true}",
+      "comment": "Silent skipping, the anti-goal #2866 names first. The run stays green and the counts line still totals, so only a test asserting the SKIPPED state separates a case that was declined from one that passed."
+    },
+    {
+      "name": "cleanup runs in written order instead of reverse",
+      "file": "migration/dbtest/engine.go",
+      "old": "\tfor _, step := range slices.Backward(c.Cleanup) {",
+      "new": "\tfor _, step := range slices.All(c.Cleanup) {",
+      "comment": "Step reordering. A teardown written beside the setup it undoes stops being correct, and a fixture whose cleanups are independent passes either way -- the committed one drops two tables with a foreign key between them. slices.All rather than a bare range: it iterates forward with the same two-value shape, so the mutation changes the ORDER and nothing else -- dropping the call would leave the import unused and measure nothing."
+    },
+    {
+      "name": "cleanup is omitted when the case body failed",
+      "file": "migration/dbtest/engine.go",
+      "old": "\tr.runCaseCleanup(ctx, c, &result)",
+      "new": "\tif bodyErr == nil && result.Passed {\n\t\tr.runCaseCleanup(ctx, c, &result)\n\t}",
+      "comment": "Cleanup omission. The case still fails for its own reason, so the verdict is unchanged; only asserting that the cleanup step APPEARS on a failing case catches it."
+    },
+    {
+      "name": "an expanded case evaluates against the base context, losing each and self",
+      "file": "migration/dbtest/atlaseval.go",
+      "old": "\t\tctx := atlasEvalContext(\n\t\t\tcaseContext.variables, instance, iteration, caseContext.options)",
+      "new": "\t\tctx := base",
+      "comment": "Expression-context loss. The case still expands, the instances are still named correctly and the count is right -- every per-instance assertion short of comparing the STATEMENTS passes."
+    },
+    {
+      "name": "an external step in a cleanup bypasses the authorization",
+      "file": "migration/dbtest/external.go",
+      "old": "\t\tif err := refuseExternalIn(cases[caseIndex].Name, \"cleanup step\", cases[caseIndex].Cleanup); err != nil {\n\t\t\treturn err\n\t\t}",
+      "new": "",
+      "comment": "External opt-in bypass, and this one shipped: a case holds its steps in two slices and the guard walked one, so an unauthorized program ran from a teardown. The test asserts the program's SIDE EFFECT, because an error alone does not say it was never started."
+    }
+  ]
+}
