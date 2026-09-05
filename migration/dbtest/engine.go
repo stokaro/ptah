@@ -989,6 +989,9 @@ func (r *runner) assertErrorContains(ctx context.Context, query, want string) (p
 	if err == nil {
 		return false, fmt.Sprintf("expected an error containing %q, but the query succeeded", want)
 	}
+	if interruptedRatherThanRefused(err) {
+		return false, fmt.Sprintf("the run was interrupted rather than the statement refused: %v", err)
+	}
 	if !strings.Contains(err.Error(), want) {
 		return false, fmt.Sprintf("expected error to contain %q, got %q", want, err.Error())
 	}
@@ -1158,6 +1161,9 @@ func (r *runner) assertErrorMatches(ctx context.Context, query, pattern string) 
 	if runErr == nil {
 		return false, fmt.Sprintf("expected an error matching %q, but the query succeeded", pattern)
 	}
+	if interruptedRatherThanRefused(runErr) {
+		return false, fmt.Sprintf("the run was interrupted rather than the statement refused: %v", runErr)
+	}
 	if !expression.MatchString(runErr.Error()) {
 		return false, fmt.Sprintf("expected error %q to match %q", runErr.Error(), pattern)
 	}
@@ -1173,6 +1179,9 @@ func (r *runner) assertAnyError(ctx context.Context, query string) (passed bool,
 	err := r.runExpectingError(ctx, query)
 	if err == nil {
 		return false, "expected an error, but the query succeeded"
+	}
+	if interruptedRatherThanRefused(err) {
+		return false, fmt.Sprintf("the run was interrupted rather than the statement refused: %v", err)
 	}
 	return true, fmt.Sprintf("error occurred: %v", err)
 }
@@ -1310,4 +1319,18 @@ func openScratch(ctx context.Context, baseURL string) (*scratchdb.Scratch, error
 		return nil, fmt.Errorf("provision a database for this case: %w", err)
 	}
 	return scratch, nil
+}
+
+// interruptedRatherThanRefused reports whether err is the run being stopped
+// rather than the statement being refused.
+//
+// A caught step passes because the DATABASE rejected what it was asked to do.
+// A canceled context and an expired deadline are neither: the statement may
+// never have reached the server, and counting them as the expected failure
+// makes an interrupted suite report that its refusals all occurred. That is the
+// one misclassification #2866 names, and it is the one the runtime can identify
+// exactly -- a dropped connection surfaces as a driver-specific error with no
+// portable sentinel, so it is not claimed here.
+func interruptedRatherThanRefused(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }

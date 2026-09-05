@@ -33,5 +33,14 @@ func TestRunnerRunCase_ContextCancellation(t *testing.T) {
 
 	c.Assert(err, qt.ErrorIs, context.Canceled)
 	c.Assert(result.Steps, qt.HasLen, 1)
-	c.Assert(result.Steps[0].Passed, qt.IsTrue)
+
+	// The step does NOT pass, and this assertion was the other way round until
+	// #2866: an `error_contains` naming the cancellation was counted as the
+	// expected failure occurring. A caught step passes because the DATABASE
+	// refused what it was asked, and a canceled context is not that -- the
+	// statement may never have reached the server. Counting it made an
+	// interrupted suite report that all of its refusals occurred, which the
+	// issue's fail-closed list names as a defect in its own right.
+	c.Assert(result.Steps[0].Passed, qt.IsFalse)
+	c.Assert(result.Steps[0].Detail, qt.Contains, "interrupted rather than the statement refused")
 }
