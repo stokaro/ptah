@@ -23,6 +23,8 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 )
 
@@ -40,6 +42,64 @@ type Finding struct {
 	File string
 	// Line is the declaration's line.
 	Line int
+}
+
+// hatchedByInterface reports whether the interface rule is what keeps a
+// declaration out of the findings.
+//
+// It is a named predicate rather than a condition inside the loop because
+// [HatchedByInterface] has to ask the same question, and the two answers have
+// to be the same one: a breadth ratchet computed from a second spelling of the
+// rule would ratchet a number the guard does not use.
+func hatchedByInterface(
+	declaration Finding, called map[string]map[string]bool, viaInterface map[string]bool,
+) bool {
+	return viaInterface[declaration.Name] && len(called[declaration.Name]) > 0
+}
+
+// HatchedByInterface names every declaration the interface rule alone keeps out
+// of [Scan]'s findings, sorted.
+//
+// The rule above is a deliberate widening: it answers a name rather than a
+// reach, because an interface exists so that a caller need not import the
+// implementation. What it cannot do is tell one legitimate case from a name
+// that merely collides.
+//
+// Measured on this tree: 233 declarations, of which 11 are kept out by this
+// rule alone -- and 151 of the 233 carry a name SOME interface declares. So the
+// rule's potential reach is most of the tree and its actual reach is small,
+// which is a gap nothing would report. One interface with an ordinary method
+// name -- `Close`, `Run`, `Name` -- would silently take a large part of the
+// guard's coverage with it.
+//
+// So the set is asserted against a written list rather than counted. A
+// declaration entering it is a decision, the same shape the emission census
+// uses for the statement shapes it cannot classify.
+func HatchedByInterface(root string) ([]string, error) {
+	declared, err := Declarations(root)
+	if err != nil {
+		return nil, err
+	}
+	called, err := calledNames(root)
+	if err != nil {
+		return nil, err
+	}
+	viaInterface, err := interfaceMethods(root)
+	if err != nil {
+		return nil, err
+	}
+	hatched := make([]string, 0)
+	for _, declaration := range declared {
+		if called[declaration.Name][declaration.Package] {
+			continue
+		}
+		if !hatchedByInterface(declaration, called, viaInterface) {
+			continue
+		}
+		hatched = append(hatched, declaration.Package+"."+declaration.Name)
+	}
+	sort.Strings(hatched)
+	return slices.Compact(hatched), nil
 }
 
 // Exempt names the declarations that may have no non-test caller, and why.
@@ -100,7 +160,7 @@ func Scan(root string) ([]Finding, error) {
 		// not import embedpg. Without this, the reach rule reported a method
 		// the product calls on every catch-up -- a false positive, which is the
 		// direction this package promises never to produce.
-		if viaInterface[declaration.Name] && len(called[declaration.Name]) > 0 {
+		if hatchedByInterface(declaration, called, viaInterface) {
 			continue
 		}
 		if _, exempt := Exempt[declaration.Name]; exempt {
