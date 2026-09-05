@@ -1,9 +1,29 @@
 ---
+/**
+ * The heading block: the breadcrumb row with the page-type badge, the title,
+ * and the description as a lede. The concept puts no actions above the title;
+ * the split button lives above the contents rail (TableOfContents.astro) and
+ * the source links in the footer (Footer.astro), with the "Evidence verified"
+ * fact.
+ *
+ * One exception, for the documentation of released versions. The release
+ * overlay (scripts/apply-release-ui-overlay.mjs) copies this file, PageActions
+ * and the two lib modules into the checkout of a released tag, whose own
+ * astro.config.mjs registers neither the contents-rail nor the footer
+ * override. There the heading carries the page actions itself, with the
+ * source links beside them, as it did before the redesign. The signal is the
+ * site configuration: when TableOfContents is overridden, the rail has them.
+ *
+ * The styles are scoped here for the same reason: a release checkout has its
+ * own stylesheets, so the heading has to bring its look along, and every token
+ * it reads falls back to a Starlight variable. The lede's type is content.css's
+ * on this site (.ptah-lede); a release renders it as a plain paragraph.
+ */
+import config from 'virtual:starlight/user-config';
 import { getCollection } from 'astro:content';
 import PageActions from './PageActions.astro';
 import { breadcrumbTrail, sidebarOverviewHrefs } from '../lib/page-context.mjs';
-import { pageActionsForSource, resolveSourceContext, sourceCommitForBuild } from '../lib/source-context.mjs';
-import releaseUiOverlay from '../../scripts/data/release-ui-overlay.json';
+import { pageSourceActions, pageTypeBadge, publishesLlmsTxt } from '../lib/page-furniture.mjs';
 
 // Starlight's table of contents targets this id for the page title. Its
 // constants module is internal and is intentionally not part of package
@@ -16,102 +36,92 @@ const landingHrefs = new Set([
   ...sidebarOverviewHrefs(sidebar),
 ]);
 const breadcrumbs = breadcrumbTrail(sidebar, landingHrefs);
-const hasAncestors = breadcrumbs.some((crumb) => !crumb.current);
-const hasSource = Boolean(entry.filePath) && entry.id !== '404' && !entry.id.endsWith('/404');
-const markdownUrl = `${import.meta.env.BASE_URL}page-source/${entry.id}.md`;
-const repositoryPath = `docs/site/${entry.filePath}`;
-const legacyGeneratedPages = releaseUiOverlay.legacyGeneratedPages as Record<
-  string,
-  { generator: string; editSource: string }
->;
-const legacyGeneratedPage = legacyGeneratedPages[entry.id];
-const sourceContext = resolveSourceContext({
-  documentationVersion: process.env.DOCS_VERSION?.trim() || 'edge',
-  sourceCommit: sourceCommitForBuild(),
-  renderedSourcePath: repositoryPath,
-  generated: entry.data.generated ?? Boolean(legacyGeneratedPage),
-  generator: entry.data.generator ?? legacyGeneratedPage?.generator,
-  editSource: entry.data.editSource ?? legacyGeneratedPage?.editSource,
-});
-const pageActions = pageActionsForSource(sourceContext, {
-  pageUrl: Astro.url.href,
-  title: entry.data.title,
-});
+const ancestors = breadcrumbs.filter((crumb) => !crumb.current);
+const badge = pageTypeBadge(entry);
 const searchAliases = entry.data.searchAliases ?? [];
-const verifiedDate = entry.data.lastVerified
-  ? new Date(`${entry.data.lastVerified}T00:00:00Z`).toLocaleDateString('en-US', {
-      dateStyle: 'medium',
-      timeZone: 'UTC',
-    })
-  : undefined;
+const description = entry.data.description?.trim();
+/* A description may quote a command or a file in backticks (Markdown's inline
+ * code); the lede renders those as inline code, the way the concept draws
+ * `ptah schema export` in its lede. The frontmatter value itself stays as it
+ * is for the description meta tag. */
+const ledeParts = description ? description.split(/`([^`]+)`/) : [];
+// Starlight fills every component slot with its own path, so "overridden"
+// means "not Starlight's": on this site the slot names src/components/
+// TableOfContents.astro, in a release checkout it still names Starlight's.
+const actionsInRail = !String(config.components?.TableOfContents ?? '').startsWith('@astrojs/starlight/');
+const source = actionsInRail
+  ? { hasSource: false }
+  : pageSourceActions(entry, { pageUrl: Astro.url.href, baseUrl: import.meta.env.BASE_URL });
 ---
 
 <div class="page-heading">
-  <div class="page-context">
-    <nav class="breadcrumbs" aria-label="Breadcrumb">
-      <ol>
-        <li>
-          <a class="home-crumb" href={siteTitleHref} aria-label="Ptah documentation home">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="m4 10 8-6 8 6"></path>
-              <path d="M6.5 9v10h11V9M10 19v-5h4v5"></path>
-            </svg>
-          </a>
-        </li>
-        {
-          /*
-           * Stands in for the ancestors below 40rem, where they are taken out
-           * of the visual trail. It is `aria-hidden` because it says nothing a
-           * reader of the trail does not already get: the ancestors themselves
-           * stay in the accessibility tree at that width.
-           */
-          hasAncestors && (
-            <li class="collapsed-item" aria-hidden="true">
-              <svg class="separator" viewBox="0 0 16 16" aria-hidden="true">
-                <path d="m6 3 5 5-5 5"></path>
-              </svg>
-              <span class="collapsed-crumb">…</span>
-            </li>
-          )
-        }
-        {
-          breadcrumbs.map((crumb) => (
-            <li class:list={{ 'group-item': !crumb.current }}>
-              <svg class="separator" viewBox="0 0 16 16" aria-hidden="true">
-                <path d="m6 3 5 5-5 5"></path>
-              </svg>
-              {crumb.current ? (
-                <span class="current-crumb" aria-current="page">{crumb.label}</span>
-              ) : crumb.href ? (
-                <a class="group-crumb" href={crumb.href}>{crumb.label}</a>
-              ) : (
-                <span class="group-crumb">{crumb.label}</span>
-              )}
-            </li>
-          ))
-        }
-      </ol>
-    </nav>
-
-    {hasSource && (
-      <PageActions
-        markdownUrl={markdownUrl}
-        markdownLabel={pageActions.markdownLabel}
-        actions={pageActions.actions}
-        sourceContext={sourceContext}
-      />
-    )}
-  </div>
+  {(ancestors.length > 0 || badge || source.hasSource) && (
+    <div class="ptah-page-context">
+      {ancestors.length > 0 && (
+        <nav class="breadcrumbs" aria-label="Breadcrumb">
+          <ol>
+            {
+              /*
+               * Stands in for the ancestors a phone does not show: below 40rem
+               * only the nearest one stays visible, after this marker. It is
+               * `aria-hidden` because the ancestors themselves stay in the
+               * accessibility tree at that width; the marker only records
+               * that something was folded.
+               */
+              ancestors.length > 1 && (
+                <li class="collapsed-item" aria-hidden="true">
+                  <span class="collapsed-crumb">…</span>
+                </li>
+              )
+            }
+            {
+              breadcrumbs.map((crumb, index) => (
+                <li class:list={{ 'group-item': !crumb.current, 'current-item': crumb.current }}>
+                  {index > 0 && (
+                    <span class="ptah-crumb-separator" aria-hidden="true">
+                      /
+                    </span>
+                  )}
+                  {crumb.current ? (
+                    <span class="current-crumb" aria-current="page">{crumb.label}</span>
+                  ) : crumb.href ? (
+                    <a class="group-crumb" href={crumb.href}>{crumb.label}</a>
+                  ) : (
+                    <span class="group-crumb">{crumb.label}</span>
+                  )}
+                </li>
+              ))
+            }
+          </ol>
+        </nav>
+      )}
+      {badge && (
+        <span class="ptah-page-type">
+          <span class="sr-only">Page type: </span>{badge}
+        </span>
+      )}
+      {source.hasSource && (
+        <div class="ptah-heading-actions">
+          <PageActions
+            markdownUrl={source.markdownUrl}
+            markdownLabel={source.markdownLabel}
+            actions={source.actions}
+            sourceContext={source.sourceContext}
+            llmsEntry={publishesLlmsTxt}
+            sourceLinks
+          />
+        </div>
+      )}
+    </div>
+  )}
 
   <h1
     id={PAGE_TITLE_ID}
     data-search-aliases={searchAliases.length > 0 ? searchAliases.join(' · ') : undefined}
     data-pagefind-meta={searchAliases.length > 0 ? 'searchAliases[data-search-aliases]' : undefined}
   >{entry.data.title}</h1>
-  {verifiedDate && (
-    <p class="verified-date">
-      Evidence verified <time datetime={entry.data.lastVerified}>{verifiedDate}</time>
-    </p>
+  {description && (
+    <p class="ptah-lede">{ledeParts.map((part, index) => (index % 2 ? <code>{part}</code> : part))}</p>
   )}
 </div>
 
@@ -190,22 +200,37 @@ const verifiedDate = entry.data.lastVerified
 </script>
 
 <style>
+  /* Breadcrumb row, title, lede: 14px apart, as the concept stacks them. The
+   * lede's type is content.css's (.ptah-lede); only the spacing is decided
+   * here, so the lede carries no margin of its own. */
   .page-heading {
+    display: grid;
+    gap: 14px;
     min-width: 0;
   }
+  .page-heading > .ptah-lede {
+    margin: 0;
+  }
 
-  .page-context {
+  /* 13px sans in gray-3: orientation, not a control. The badge sits on the
+   * same line as the trail and wraps under it when the trail is long. */
+  .ptah-page-context {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 1rem;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    color: var(--sl-color-gray-3);
+    font-size: 0.8125rem;
+    line-height: 1.4;
+  }
+  /* A release checkout's page actions take the row's right end. */
+  .ptah-heading-actions {
+    margin-inline-start: auto;
   }
 
   .breadcrumbs {
     min-width: 0;
-    padding-block: 0.3rem;
   }
-
   .breadcrumbs ol,
   .breadcrumbs li {
     display: flex;
@@ -214,180 +239,114 @@ const verifiedDate = entry.data.lastVerified
     padding: 0;
     list-style: none;
   }
-
-  /*
-   * The trail wraps. It never truncates, and that is a property of the layout
-   * rather than a threshold someone has to keep tuned.
-   *
-   * Flexbox fills a line with items at their max-content size, starts a new
-   * line for the item that does not fit, and only then flexes what is on each
-   * line. Every line therefore already holds whole crumbs, and the only crumb
-   * that can be shortened at all is one sitting alone on a line still too
-   * narrow for it. That one wraps its own text rather than losing characters:
-   * `overflow-wrap: anywhere` covers a token with no break in it, and nothing
-   * here sets `text-overflow`, so there is no ellipsis left to draw.
-   *
-   * What it replaces, measured across every built page at 375, 640, 768, 900,
-   * 1024, 1280, 1440 and 1920: 133 clipped crumbs out of 816 measurements,
-   * against none now. Two independent causes, and reading only the first one
-   * fixes half the complaint.
-   *
-   * `min-width: 0` on the items let a shortfall be shared out among them all.
-   * The deepest trail this sidebar produces -- Workflows > Inference migrations
-   * > Concepts > Verification, cutover, and rollback -- measures 573px, and a
-   * 900px window offers it a 435px row beside the page actions. That deficit
-   * came out of all four crumbs at once, rendering "Concepts" as "Conc…", and
-   * at 1280 a 6px deficit was enough to do the same thing. Proportional
-   * shrinking has no way to say "this one matters most".
-   *
-   * The 13rem ceiling on the label was the other cause, and it needed no
-   * deficit at all: it cut the current page's own name at all eight widths,
-   * 1920 included, where the row is 943px wide and the whole trail wants 573.
-   * A ceiling written in rem is a guess about text nobody measured.
-   *
-   * Two other degradations were available. Dropping the oldest ancestors from
-   * the left is what a reader expects, but a trail that silently loses its head
-   * reads as a shallower trail, and marking the loss means knowing what was
-   * dropped -- content-aware, so JavaScript, running before the fonts settle
-   * and again on every resize, for a line of gray text. Scrolling the trail
-   * keeps every crumb but puts the current page off-screen unless the scroller
-   * is anchored to its end, which is the same problem wearing a scrollbar.
-   * Wrapping costs one line of vertical space, on the pages and at the widths
-   * where the alternative was cutting words in half.
-   */
+  /* The trail wraps whole crumbs rather than truncating any of them (measured
+   * in an earlier pass: a 13rem ceiling and shrinking items cut 133 of 816
+   * crumbs across eight widths; wrapping cut none). A crumb alone on a line
+   * too narrow for it breaks inside its own text instead of losing characters. */
   .breadcrumbs ol {
     flex-wrap: wrap;
-    gap: 0.35rem 0.25rem;
-    color: var(--sl-color-gray-3);
-    font-size: var(--sl-text-xs);
-    line-height: 1.4;
+    gap: 4px 8px;
   }
-
-  .home-crumb {
-    display: grid;
-    place-items: center;
-    width: 1.7rem;
-    height: 1.7rem;
-    border-radius: 0.4rem;
-    color: var(--sl-color-gray-2);
+  .breadcrumbs li {
+    gap: 8px;
   }
-
-  .home-crumb:hover {
-    color: var(--sl-color-white);
-    background: var(--sl-color-gray-6);
-  }
-
-  .home-crumb:focus-visible {
-    outline: 2px solid var(--sl-color-accent);
-    outline-offset: 2px;
-  }
-
-  .home-crumb svg,
-  .separator {
-    fill: none;
-    stroke: currentColor;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
-  .home-crumb svg {
-    width: 1rem;
-    height: 1rem;
-    stroke-width: 1.8;
-  }
-
-  .separator {
-    flex: none;
-    width: 0.75rem;
-    height: 0.75rem;
-    margin-inline: 0.05rem;
-    color: var(--sl-color-gray-4);
-    stroke-width: 1.6;
-  }
-
   .group-crumb,
-  .current-crumb,
-  .collapsed-crumb {
+  .current-crumb {
     overflow-wrap: anywhere;
   }
-
+  .ptah-crumb-separator {
+    color: var(--sl-color-gray-3);
+  }
   a.group-crumb {
-    color: var(--sl-color-gray-2);
+    color: var(--sl-color-gray-3);
     text-decoration: none;
   }
-
   a.group-crumb:hover {
-    color: var(--sl-color-white);
-    text-decoration: underline;
-    text-underline-offset: 0.2em;
-  }
-
-  a.group-crumb:focus-visible {
-    border-radius: 0.2rem;
-    outline: 2px solid var(--sl-color-accent);
-    outline-offset: 2px;
-  }
-
-  .current-crumb {
-    padding: 0.25rem 0.5rem;
-    border: 1px solid color-mix(in srgb, var(--sl-color-accent) 28%, transparent);
-    border-radius: 999px;
     color: var(--sl-color-text-accent);
-    background: color-mix(in srgb, var(--sl-color-accent-low) 58%, transparent);
-    font-weight: 600;
   }
-
+  /* The current page stays in the list for its `aria-current`, but the title
+   * right below says the same thing to a sighted reader; the concept's trail
+   * ends at the parent group. */
+  .breadcrumbs .current-item {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
   .breadcrumbs .collapsed-item {
     display: none;
   }
 
-  h1 {
-    margin-top: 1rem;
+  /* The page-type badge: mono uppercase in a hairline box, gray-2 so the 11px
+   * text keeps 4.5:1 with room (gray-3 would pass at 4.97 dark / 5.05 light,
+   * but small capitals read best a step stronger, and the concept draws the
+   * badge in its secondary text color). */
+  .ptah-page-type {
+    padding: 1px 7px;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 2px;
+    color: var(--sl-color-gray-2);
+    font-family: var(--sl-font-mono, var(--__sl-font-mono));
+    font-size: 0.6875rem; /* 11px */
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    line-height: 1.5;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  /* The title: 500 at the token size (34px; tokens.css narrows it on phones),
+   * tight tracking, balanced lines. */
+  .page-heading h1 {
+    margin: 0;
     color: var(--sl-color-white);
     font-size: var(--sl-text-h1);
-    font-weight: 600;
-    line-height: var(--sl-line-height-headings);
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    text-wrap: balance;
   }
 
-  .verified-date {
-    margin-top: 0.65rem;
-    color: var(--sl-color-gray-3);
-    font-size: var(--sl-text-sm);
-  }
-
+  /* On a phone the trail folds to "… / <nearest group>": the deepest trail
+   * this sidebar produces takes three lines in the row a 375px window leaves,
+   * and the nearest group is the one the reader came through. The folded
+   * groups stay in the accessibility tree (hidden the accessible way, not with
+   * display: none); the marker records that they were folded. The row is
+   * 12.5px and the badge 10.5px, as the concept draws them at 390. */
   @media (max-width: 40rem) {
-    .page-context {
-      align-items: center;
-      gap: 0.6rem;
+    .ptah-page-context {
+      font-size: 0.78125rem;
     }
-
-    /*
-     * A phone is the one width where wrapping the whole trail is the wrong
-     * trade. In the 257px row a 375px window leaves, the deepest trail takes
-     * three lines and 94px above the title; collapsed to the marker it takes
-     * two and 71px, and the current page's name is still whole. The ancestors
-     * can go because they are plain text rather than links -- the sidebar is
-     * how a reader moves between them -- but the fact that the page is nested
-     * cannot, which is what the marker keeps.
-     *
-     * They are hidden the accessible way rather than with `display: none`: a
-     * screen reader has no layout to run out of, and keeps the full linked
-     * hierarchy at 375px. The visual marker only records that hidden depth.
-     */
-    .breadcrumbs .group-item {
+    .breadcrumbs .group-item:not(:nth-last-child(2)) {
       position: absolute;
       width: 1px;
       height: 1px;
       overflow: hidden;
       clip-path: inset(50%);
+      white-space: nowrap;
     }
-
+    /* A folded crumb is still a link in the tab order; while it has focus it
+     * takes its place in the row again, so the focus ring and the text are
+     * there to see (the skip-link technique), and the marker steps aside. */
+    .breadcrumbs .group-item:not(:nth-last-child(2)):focus-within {
+      position: static;
+      width: auto;
+      height: auto;
+      overflow: visible;
+      clip-path: none;
+      white-space: normal;
+    }
     .breadcrumbs .collapsed-item {
       display: flex;
     }
-
-    h1 {
-      margin-top: 1.25rem;
+    .breadcrumbs ol:has(.group-item:focus-within) .collapsed-item {
+      display: none;
+    }
+    .ptah-page-type {
+      padding: 1px 6px;
+      font-size: 0.65625rem;
     }
   }
 </style>

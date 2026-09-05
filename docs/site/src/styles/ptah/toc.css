@@ -1,0 +1,173 @@
+/* The table of contents: the rail from 80rem and the "On this page" strip
+ * below it (see ../ptah.css). The markup is src/components/TableOfContents.astro
+ * and MobileTableOfContents.astro; the split button above the rail carries its
+ * own styles in src/components/PageActions.astro, because the release overlay
+ * copies that file. */
+
+/* ---------- Contents rail ---------- */
+
+/* The concept's rail: the split button, then a 22px pause, then the list. The
+ * rail's outer padding is Starlight's (PageSidebar) and the layout's. */
+.ptah-contents-rail {
+	display: grid;
+	gap: 22px;
+	align-content: start;
+	min-width: 0;
+}
+
+/* "On this page" 600 13px in ink; the list 13.5px/1.5 in gray-2 with a 5px
+ * gap, nested levels indented 12px, the current heading in the accent at 500.
+ * Starlight's PageSidebar styles the same h2 and links in @layer starlight.core
+ * (bigger heading, gray-3 links, 0.25rem radius); these unlayered rules win. */
+starlight-toc h2 {
+	margin: 0 0 9px;
+	color: var(--sl-color-white);
+	font-size: 0.8125rem;
+	font-weight: 600;
+	line-height: 1.4;
+}
+starlight-toc ul {
+	display: grid;
+	gap: 5px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+starlight-toc ul ul {
+	margin-top: 5px;
+	padding-inline-start: 12px;
+}
+starlight-toc a {
+	display: block;
+	border-radius: 2px;
+	color: var(--sl-color-gray-2);
+	font-size: 0.84375rem; /* 13.5px */
+	line-height: 1.5;
+	text-decoration: none;
+	overflow-wrap: anywhere;
+}
+starlight-toc a:hover {
+	color: var(--sl-color-white);
+}
+starlight-toc a[aria-current='true'] {
+	color: var(--sl-color-text-accent);
+	font-weight: 500;
+}
+
+/* ---------- "On this page" strip ---------- */
+
+/* Fixed under the header, the way Starlight fixes its disclosure: PageFrame
+ * pads the page by --sl-mobile-toc-height and Page.astro adds it to the anchor
+ * offset, so the bar's height has to be that variable and nothing else. The
+ * 1px overlap with the header lets the header's bottom hairline and the bar's
+ * top edge share one line. From 50rem the bar starts after the navigation rail
+ * (--sl-content-inline-start), as Starlight's does. */
+mobile-starlight-toc nav {
+	position: fixed;
+	z-index: var(--sl-z-index-toc);
+	top: calc(var(--sl-nav-height) - 1px);
+	inset-inline: 0;
+	border-top: 1px solid var(--sl-color-hairline);
+	background: var(--ptah-surface);
+}
+@media (min-width: 50rem) {
+	mobile-starlight-toc nav {
+		inset-inline-start: var(--sl-content-inline-start, 0);
+	}
+}
+
+/* The bar: surface background, bottom hairline, 13px sans. Its inline padding
+ * is the content pane's, so "On this page" starts on the prose's left edge
+ * (16px on a phone, 24px above 50rem). */
+mobile-starlight-toc summary {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	height: var(--sl-mobile-toc-height);
+	padding: 0 var(--sl-content-pad-x);
+	border-bottom: 1px solid var(--sl-color-hairline);
+	color: var(--sl-color-gray-2);
+	font-size: 0.8125rem;
+	line-height: 1.3;
+	list-style: none;
+	cursor: pointer;
+	user-select: none;
+}
+mobile-starlight-toc summary::marker,
+mobile-starlight-toc summary::-webkit-details-marker {
+	display: none;
+}
+.ptah-toc-strip-text {
+	display: flex;
+	align-items: baseline;
+	min-width: 0;
+	white-space: nowrap;
+}
+.ptah-toc-strip-label {
+	flex: none;
+	color: var(--sl-color-white);
+	font-weight: 600;
+}
+/* The current heading, truncated when the bar is too narrow for it. The
+ * separator belongs to the heading, so it disappears with it until the
+ * tracking script has written a first heading. */
+mobile-starlight-toc .display-current {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+mobile-starlight-toc .display-current:not(:empty)::before {
+	content: ' · ';
+	white-space: pre;
+}
+.ptah-toc-strip-caret {
+	flex: none;
+	color: var(--sl-color-gray-3);
+}
+mobile-starlight-toc details[open] .ptah-toc-strip-caret {
+	transform: rotate(180deg);
+}
+
+/* The dropdown: the list on the same surface, closed by a hairline, scrolling
+ * inside itself when the page is long. Rows 14px with a light rule between
+ * them, nested levels indented 12px more each; the current row in the accent. */
+mobile-starlight-toc .dropdown {
+	max-height: calc(85vh - var(--sl-nav-height) - var(--sl-mobile-toc-height));
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	border-bottom: 1px solid var(--sl-color-hairline);
+	background: var(--ptah-surface);
+}
+mobile-starlight-toc .dropdown ul {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+mobile-starlight-toc .dropdown a {
+	display: block;
+	padding: 9px var(--sl-content-pad-x);
+	border-top: 1px solid var(--sl-color-hairline-light);
+	color: var(--sl-color-gray-2);
+	font-size: 0.875rem;
+	line-height: 1.4;
+	text-decoration: none;
+	overflow-wrap: anywhere;
+}
+mobile-starlight-toc .dropdown > ul > li:first-child > a {
+	border-top: 0;
+}
+mobile-starlight-toc .dropdown ul ul a {
+	padding-inline-start: calc(var(--sl-content-pad-x) + 12px);
+}
+mobile-starlight-toc .dropdown ul ul ul a {
+	padding-inline-start: calc(var(--sl-content-pad-x) + 24px);
+}
+mobile-starlight-toc .dropdown a:hover {
+	color: var(--sl-color-white);
+	background: var(--sl-color-bg-inline-code);
+}
+mobile-starlight-toc .dropdown a[aria-current='true'] {
+	color: var(--sl-color-text-accent);
+	font-weight: 500;
+}

@@ -1,0 +1,95 @@
+---
+/**
+ * The article footer: a meta row (last updated, the source commit, the
+ * evidence date; "Edit this page" and "Report an issue" as plain links), then
+ * previous / next as two cards. Registered in astro.config.mjs as the override
+ * of Starlight's Footer, whose EditLink, LastUpdated and Pagination it
+ * replaces; the route data they read (lastUpdated, pagination) is the same.
+ *
+ * The meta row also carries the "Copy as Markdown" split button below 80rem,
+ * where there is no contents rail to hold it. It is rendered here whenever a
+ * rail exists, as the fallback instance PageActions.astro's own styles show
+ * only below 80rem;
+ * on a page with no table of contents (so no rail at any width) it is the
+ * primary instance instead. See PageActions.astro for why the two tags.
+ *
+ * Styles live in src/styles/ptah/furniture.css ("Footer").
+ */
+import PageActions from './PageActions.astro';
+import { formatDate, pageSourceActions, publishesLlmsTxt, verifiedDate } from '../lib/page-furniture.mjs';
+
+const { entry, lang, lastUpdated, pagination, toc } = Astro.locals.starlightRoute;
+const { prev, next } = pagination;
+const source = pageSourceActions(entry, { pageUrl: Astro.url.href, baseUrl: import.meta.env.BASE_URL });
+const verified = verifiedDate(entry, lang);
+const hasFacts = Boolean(lastUpdated || (source.hasSource && source.shortCommit) || verified);
+const hasLinks = source.hasSource;
+---
+
+<footer class="ptah-footer">
+  {(hasFacts || hasLinks) && (
+    <div class="ptah-footer-meta">
+      <div class="ptah-footer-facts">
+        {lastUpdated && (
+          <span class="ptah-footer-fact">
+            {Astro.locals.t('page.lastUpdated')}{' '}
+            <time datetime={lastUpdated.toISOString()}>{formatDate(lastUpdated, lang)}</time>
+          </span>
+        )}
+        {source.hasSource && source.shortCommit && (
+          <span class="ptah-footer-fact">
+            source{' '}
+            <a class="ptah-footer-commit" href={source.sourceUrl} target="_blank" rel="noreferrer">
+              {source.shortCommit}
+            </a>
+          </span>
+        )}
+        {verified && (
+          <span class="ptah-footer-fact">
+            Evidence verified <time datetime={verified.datetime}>{verified.label}</time>
+          </span>
+        )}
+      </div>
+
+      {hasLinks && (
+        <div class="ptah-footer-links">
+          <PageActions
+            markdownUrl={source.markdownUrl}
+            markdownLabel={source.markdownLabel}
+            actions={source.actions}
+            sourceContext={source.sourceContext}
+            llmsEntry={publishesLlmsTxt}
+            primary={!toc}
+          />
+          {source.edit && (
+            <a class="ptah-footer-link" href={source.edit.url} target="_blank" rel="noreferrer" data-footer-action="edit">
+              {source.edit.label} <span aria-hidden="true">↗</span>
+            </a>
+          )}
+          {source.report && (
+            <a class="ptah-footer-link" href={source.report.url} target="_blank" rel="noreferrer" data-footer-action="report">
+              Report an issue <span aria-hidden="true">↗</span>
+            </a>
+          )}
+        </div>
+      )}
+    </div>
+  )}
+
+  {(prev || next) && (
+    <nav class="ptah-pagination" aria-label="Previous and next pages">
+      {prev && (
+        <a class="ptah-pagination-card ptah-pagination-prev" href={prev.href} rel="prev">
+          <span class="ptah-pagination-label">← {Astro.locals.t('page.previousLink')}</span>
+          <span class="ptah-pagination-title">{prev.label}</span>
+        </a>
+      )}
+      {next && (
+        <a class="ptah-pagination-card ptah-pagination-next" href={next.href} rel="next">
+          <span class="ptah-pagination-label">{Astro.locals.t('page.nextLink')} →</span>
+          <span class="ptah-pagination-title">{next.label}</span>
+        </a>
+      )}
+    </nav>
+  )}
+</footer>

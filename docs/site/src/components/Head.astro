@@ -1,0 +1,43 @@
+---
+/**
+ * The document head. Registered in astro.config.mjs as the override of
+ * Starlight's Head; it renders the default head and one inline script that
+ * applies the reader's article layout before the first paint
+ * (stokaro/ptah#2893).
+ *
+ * global.css defines two layouts: the "envelope" the site renders by default
+ * and the docs concept's "column", under `:root[data-ptah-layout='column']`.
+ * While the choice between them is open, the header carries a toggle
+ * (LayoutToggle.astro) that stores the choice under the localStorage key
+ * `ptah-layout`; `?layout=column` or `?layout=envelope` in the URL sets it as
+ * well. This script reads that and sets the attribute inline, the way
+ * Starlight's ThemeProvider sets the theme, so a page never flashes the other
+ * layout. Without a stored choice or a query the page renders the envelope
+ * and no attribute is set, which is also what every build-time gate measures.
+ */
+import Default from '@astrojs/starlight/components/Head.astro';
+---
+
+<Default {...Astro.props} />
+
+<script is:inline>
+	(function () {
+		var KEY = 'ptah-layout';
+		var LAYOUTS = ['envelope', 'column'];
+		var root = document.documentElement;
+		var stored = null;
+		try {
+			stored = localStorage.getItem(KEY);
+		} catch (_) {}
+		var fromQuery = new URLSearchParams(location.search).get('layout');
+		var layout = LAYOUTS.indexOf(fromQuery) !== -1 ? fromQuery : stored;
+		if (LAYOUTS.indexOf(layout) === -1) layout = 'envelope';
+		if (fromQuery === layout) {
+			try {
+				localStorage.setItem(KEY, layout);
+			} catch (_) {}
+		}
+		if (layout === 'column') root.dataset.ptahLayout = 'column';
+		else delete root.dataset.ptahLayout;
+	})();
+</script>

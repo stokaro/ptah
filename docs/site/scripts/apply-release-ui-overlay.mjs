@@ -23,6 +23,7 @@ const requiredFiles = new Set([
   'docs/site/src/components/PageActions.astro',
   'docs/site/src/components/PageTitle.astro',
   'docs/site/src/lib/page-context.mjs',
+  'docs/site/src/lib/page-furniture.mjs',
   'docs/site/src/lib/source-context.mjs',
   'docs/site/src/lib/source-ref.mjs',
 ]);

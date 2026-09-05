@@ -1,0 +1,84 @@
+---
+/**
+ * A light/dark toggle in place of Starlight's three-way select, so the control
+ * is the one ptah.run has: one bordered square, a half-filled circle, a fixed
+ * name plus a pressed state. Until a reader chooses, the system preference
+ * applies, which Starlight's ThemeProvider already resolves before paint.
+ *
+ * It writes the same `starlight-theme` storage key ThemeProvider reads, so a
+ * choice made here is what the next page loads with (stokaro/ptah#2893).
+ * Styles live in src/styles/ptah/header.css ("Toggles").
+ */
+---
+
+<starlight-theme-toggle>
+  <button type="button" class="ptah-header-toggle ptah-theme-toggle" aria-label="Dark theme" aria-pressed="false">
+    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"></circle>
+      <path d="M8 1.75a6.25 6.25 0 0 0 0 12.5z" fill="currentColor"></path>
+    </svg>
+  </button>
+</starlight-theme-toggle>
+
+<style>
+  /* Dark: the half-filled circle turns over. The square itself is styled in
+   * src/styles/ptah/header.css ("Toggles"), together with the layout toggle. */
+  :global([data-theme='dark']) .ptah-theme-toggle svg {
+    transform: scaleX(-1);
+  }
+</style>
+
+<script>
+  const storageKey = 'starlight-theme';
+
+  function currentTheme(): 'light' | 'dark' {
+    return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light';
+  }
+
+  function reflect() {
+    const pressed = currentTheme() === 'dark' ? 'true' : 'false';
+    document
+      .querySelectorAll<HTMLButtonElement>('starlight-theme-toggle button')
+      .forEach((button) => button.setAttribute('aria-pressed', pressed));
+  }
+
+  class PtahThemeToggle extends HTMLElement {
+    constructor() {
+      super();
+      const button = this.querySelector('button');
+      if (!button) return;
+      reflect();
+      button.addEventListener('click', () => {
+        const next = currentTheme() === 'dark' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = next;
+        try {
+          localStorage.setItem(storageKey, next);
+        } catch {
+          /* storage unavailable: the choice lasts for this page only */
+        }
+        reflect();
+      });
+    }
+  }
+
+  // Until a reader has chosen, the page follows the system. ThemeProvider
+  // resolves that once, before paint; a change of system preference while the
+  // page is open is followed here, so the toggle never shows a state the page
+  // is not in.
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (event) => {
+    let stored: string | null = null;
+    try {
+      stored = localStorage.getItem(storageKey);
+    } catch {
+      /* storage unavailable: nothing was chosen, so the system decides */
+    }
+    if (stored !== 'dark' && stored !== 'light') {
+      document.documentElement.dataset.theme = event.matches ? 'dark' : 'light';
+    }
+    reflect();
+  });
+
+  if (!customElements.get('starlight-theme-toggle')) {
+    customElements.define('starlight-theme-toggle', PtahThemeToggle);
+  }
+</script>

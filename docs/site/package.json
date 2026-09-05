@@ -1,5 +1,5 @@
 {
-  "name":  "ptah-docs",
+  "name": "ptah-docs",
   "type": "module",
   "version": "0.0.1",
   "private": true,
@@ -82,6 +82,7 @@
     "tailwindcss": "4.3.3"
   },
   "devDependencies": {
+    "@astrojs/markdown-satteri": "0.4.0",
     "@axe-core/playwright": "^4.13.0",
     "mermaid": "^11.17.2",
     "playwright": "^1.62.1"

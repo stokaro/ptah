@@ -1,0 +1,403 @@
+/* The components the site draws itself: ProductPreview figures, the output
+ * gallery, wide tables, the reference filter (see ../ptah.css). Moved here from
+ * global.css, which keeps the layout measures alone. Measurements are the docs
+ * concept's figure (1a, "Product output") and its wide table (1e). */
+
+/* ---------- ProductPreview ---------- */
+
+/*
+ * ProductPreview keeps real product output inspectable without giving every
+ * page a bespoke figure/action implementation. The image is a normal link, so
+ * full-size access still works when JavaScript is disabled.
+ *
+ * The figure (1a): a hairline frame with 2px corners on the raised surface; a
+ * bar with a "PRODUCT OUTPUT" label left and the actions right; the media on
+ * the code surface with 20px around it; a caption in 14px/1.5; "Reproduce this
+ * output" as a 13px disclosure with a bordered command inside. The class names
+ * and `data-*` attributes are read by scripts/check-public-docs.mjs and
+ * scripts/check-visual-snapshots.mjs (the figure by `data-visual-id`, each
+ * action by `data-preview-action`, the caption as the figcaption's text) and
+ * do not change with the design.
+ */
+.ptah-product-preview {
+	/* 28px above (1a), 32px below, to the next section's own top margin. */
+	margin-block: 1.75rem 2rem;
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 2px;
+	background: var(--ptah-surface);
+	overflow: hidden;
+}
+
+/* Starlight's sibling rule inside the article would space the figure's own
+ * parts 18px apart, as if they were paragraphs. */
+.ptah-product-preview :is(.ptah-product-preview__bar, .ptah-product-preview__media, figcaption, figcaption > *, article > *) {
+	margin: 0;
+}
+
+/* The bar: 8px 14px, a hairline below, 12.5px sans in gray-3 (4.75:1 on the
+ * dark surface, 5.23:1 on the light one). */
+.ptah-product-preview__bar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.25rem 1rem;
+	padding: 0.5rem 0.875rem; /* 8px 14px */
+	border-bottom: 1px solid var(--sl-color-hairline);
+	color: var(--sl-color-gray-3);
+	font-size: 0.78125rem; /* 12.5px */
+	line-height: 1.5;
+}
+
+/* The label is the same mono uppercase as a table's column labels and an
+ * aside's type: 500 11px, 0.08em tracking. */
+.ptah-product-preview__label {
+	font-family: var(--sl-font-mono);
+	font-size: 0.6875rem; /* 11px */
+	font-weight: 500;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+}
+
+/* Actions: plain 500 12.5px links in the accent, 16px apart, no underline
+ * until hover -- three words in a bar, not prose. */
+.ptah-product-preview__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem 1rem; /* 16px between */
+	font-size: 0.78125rem; /* 12.5px */
+	font-weight: 500;
+}
+.ptah-product-preview__actions a {
+	color: var(--sl-color-text-accent);
+	text-decoration: none;
+}
+.ptah-product-preview__actions a:hover {
+	color: var(--sl-color-accent-high);
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+
+/* The media sits on the code surface with 20px around it at desktop widths;
+ * the clamp brings that down to 12px on a 390px phone, where 20px each side
+ * would take a tenth of the screen from the image. */
+.ptah-product-preview__media {
+	display: grid;
+	place-items: center;
+	padding: clamp(0.75rem, 2vw, 1.25rem);
+	background: var(--sl-color-bg-inline-code);
+	overflow: auto;
+}
+
+/* The preview leaves room under it for the caption and the actions
+ * (check-visual-snapshots.mjs allows it 72% of the viewport); a reader who
+ * needs every pixel has "Full size". */
+.ptah-product-preview__media img {
+	display: block;
+	max-width: 100%;
+	max-height: min(70vh, 44rem);
+	height: auto;
+	margin-inline: auto;
+	object-fit: contain;
+}
+
+.ptah-product-preview__media:focus-visible,
+.ptah-product-preview__actions a:focus-visible,
+.ptah-product-preview__reproduce summary:focus-visible {
+	outline: 2px solid var(--sl-color-accent);
+	outline-offset: 2px;
+}
+
+/* The caption: 12px 14px, 14px/1.5. The caption sentence is ink at 500 so it
+ * reads as the figure's title; "What to notice" is gray-2. */
+.ptah-product-preview figcaption {
+	display: grid;
+	gap: 0.5rem;
+	padding: 0.75rem 0.875rem 0.875rem; /* 12px 14px 14px */
+	color: var(--sl-color-gray-2);
+	font-size: 0.875rem; /* 14px */
+	line-height: 1.5;
+}
+
+.ptah-product-preview__caption {
+	color: var(--sl-color-white);
+	font-weight: 500;
+}
+
+.ptah-product-preview__notice {
+	max-inline-size: var(--ptah-prose-width);
+}
+.ptah-product-preview__notice strong {
+	color: var(--sl-color-white);
+	font-weight: 600;
+}
+
+/* "Reproduce this output": a 13px disclosure. Starlight gives every <details>
+ * in an article a left rule and 1rem of indent; inside a framed figure that
+ * would be a second frame, so both go. The marker shrinks to the text size. */
+.ptah-product-preview__reproduce,
+.sl-markdown-content .ptah-product-preview__reproduce {
+	--sl-details-marker-size: 1rem;
+	max-inline-size: var(--ptah-prose-width);
+	border-inline-start: 0;
+	padding-inline-start: 0;
+	font-size: 0.8125rem; /* 13px */
+}
+
+.ptah-product-preview__reproduce summary {
+	cursor: pointer;
+	color: var(--sl-color-white);
+	font-weight: 500;
+}
+.sl-markdown-content .ptah-product-preview__reproduce[open] > summary {
+	margin-bottom: 0;
+}
+
+/* The command: 8px below the summary, 10px 12px inside, a `--line2` edge on
+ * the code surface, 13px/1.6 mono in ink, scrolling sideways when long. */
+.sl-markdown-content .ptah-product-preview__reproduce pre {
+	margin: 0.5rem 0 0;
+	padding: 0.625rem 0.75rem; /* 10px 12px */
+	border: 1px solid var(--sl-color-hairline-light);
+	border-radius: 2px;
+	background: var(--sl-color-bg-inline-code);
+	color: var(--sl-color-white);
+	font-size: 0.8125rem; /* 13px */
+	line-height: 1.6;
+	overflow: auto;
+}
+
+/* Variants: further renderings of the same output, side by side at 16rem or
+ * wider, each with its own small label and actions. */
+.ptah-product-preview__variants {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+	gap: 1rem;
+	margin-block-start: 0.25rem;
+}
+
+.ptah-product-preview__variants article {
+	display: grid;
+	gap: 0.5rem;
+	align-content: start;
+}
+
+.ptah-product-preview__variants img {
+	display: block;
+	max-width: 100%;
+	max-height: min(55vh, 32rem);
+	height: auto;
+	margin-inline: auto;
+	padding: 0.75rem;
+	border: 1px solid var(--sl-color-hairline-light);
+	border-radius: 2px;
+	background: var(--sl-color-bg-inline-code);
+	object-fit: contain;
+}
+
+.ptah-product-preview__variants p {
+	margin: 0;
+	color: var(--sl-color-white);
+	font-weight: 500;
+}
+
+.ptah-product-preview__variant-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem 1rem;
+	font-size: 0.78125rem; /* 12.5px */
+	font-weight: 500;
+}
+.ptah-product-preview__variant-actions a {
+	color: var(--sl-color-text-accent);
+	text-decoration: none;
+}
+.ptah-product-preview__variant-actions a:hover {
+	color: var(--sl-color-accent-high);
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+
+/* ---------- OutputGallery ---------- */
+
+/* Cards in the figure's vocabulary: a hairline frame on the raised surface,
+ * the screenshot on the code surface, a 500 15px title and a 13.5px/1.5
+ * description (the previous / next cards of 1a). Two across from 50rem, 12px
+ * apart. */
+.ptah-output-gallery {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.75rem; /* 12px */
+	margin-block: 1.25rem 2rem;
+}
+
+.ptah-output-gallery__item {
+	color: inherit;
+	text-decoration: none;
+}
+
+.ptah-output-gallery__item figure {
+	height: 100%;
+	margin: 0;
+	overflow: hidden;
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 2px;
+	background: var(--ptah-surface);
+}
+
+/* The image is letterboxed to a fixed 12rem so the four cards line up; the
+ * space around it is the code surface, as in the figure, with 12px of it kept
+ * clear by the padding. A hairline separates it from the caption. */
+.ptah-output-gallery__item img {
+	display: block;
+	width: 100%;
+	height: 12rem;
+	padding: 0.75rem;
+	border-bottom: 1px solid var(--sl-color-hairline);
+	background: var(--sl-color-bg-inline-code);
+	object-fit: contain;
+	object-position: top center;
+}
+
+.ptah-output-gallery__item figcaption {
+	display: grid;
+	gap: 0.25rem;
+	padding: 0.75rem 0.875rem 0.875rem; /* 12px 14px 14px */
+}
+
+.ptah-output-gallery__item figcaption strong {
+	color: var(--sl-color-white);
+	font-size: 0.9375rem; /* 15px */
+	font-weight: 500;
+	line-height: 1.4;
+}
+
+.ptah-output-gallery__item figcaption span {
+	color: var(--sl-color-gray-2);
+	font-size: 0.84375rem; /* 13.5px */
+	line-height: 1.5;
+}
+
+.ptah-output-gallery__item:hover figure {
+	border-color: var(--sl-color-accent);
+}
+.ptah-output-gallery__item:hover figcaption strong {
+	color: var(--sl-color-text-accent);
+}
+
+.ptah-output-gallery__item:focus-visible {
+	border-radius: 2px;
+	outline: 2px solid var(--sl-color-accent);
+	outline-offset: 2px;
+}
+
+@media (max-width: 50rem) {
+	.ptah-output-gallery {
+		grid-template-columns: 1fr;
+	}
+
+	.ptah-output-gallery__item img {
+		height: 10rem;
+	}
+}
+
+/* ---------- Wide tables ---------- */
+
+/*
+ * A wide table scrolls inside its own container and keeps its desktop column
+ * widths, which is the assumption scripts/check-responsive.mjs states when it
+ * measures cell height at 1280px only.
+ *
+ * The feature matrix did not satisfy it. Starlight already makes every table
+ * its own scroller (`display: block; overflow-x: auto`), so the matrix did
+ * scroll at 390px -- but auto table layout still shrank it toward the viewport,
+ * to as little as 437px against a desktop 632px, and the difference column then
+ * stacked into cells of up to fifteen rendered lines. Measured: 505 cells over
+ * the eight-line cap at 390px, none at 1280px.
+ *
+ * The width has to sit on the table while the scrolling sits on something else.
+ * A `min-width` on Starlight's table-as-scroller widens the scroller itself, so
+ * the page scrolls sideways instead of the table -- measured at 648px against a
+ * 390px viewport, which is the other defect that check refuses
+ * (stokaro/ptah#946).
+ *
+ * Here the wrapper is the scroller, so the wrapper carries the frame the
+ * table carries elsewhere (content.css), and the table inside it none. The
+ * matrix is a dense reference table: 14px rather than the 15px of a table in
+ * prose (1e).
+ */
+.sl-markdown-content .ptah-wide-table {
+	max-width: 100%;
+	overflow-x: auto;
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 2px;
+}
+
+.sl-markdown-content .ptah-wide-table > table {
+	display: table;
+	width: 100%;
+	max-width: none;
+	/* The width the same table takes in the desktop content column, so the
+	 * columns divide as they do there rather than by what fits a phone. */
+	min-width: 632px;
+	border: 0;
+	border-radius: 0;
+	overflow-x: visible;
+	font-size: 0.875rem; /* 14px */
+}
+
+/* ---------- Reference filter ---------- */
+
+/* The search box above a reference table: a 36px field in the frame's
+ * vocabulary (hairline, 2px corners, the raised surface), 14px text, with the
+ * entry count as 13px meta beside it. */
+.ptah-reference-filter {
+	display: grid;
+	grid-template-columns: minmax(12rem, 28rem) auto;
+	align-items: end;
+	gap: 0.5rem 1rem;
+	margin-block: 1.25rem;
+}
+
+.ptah-reference-filter label {
+	display: grid;
+	gap: 0.35rem;
+	color: var(--sl-color-gray-2);
+	font-size: 0.875rem; /* 14px */
+	font-weight: 500;
+}
+
+.ptah-reference-filter input {
+	width: 100%;
+	min-height: 2.25rem; /* 36px */
+	padding-inline: 0.625rem;
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 2px;
+	background: var(--ptah-surface);
+	color: var(--sl-color-text);
+	font: inherit;
+	font-size: 0.875rem;
+	font-weight: 400;
+}
+
+.ptah-reference-filter input:focus-visible {
+	outline: 2px solid var(--sl-color-accent);
+	outline-offset: 2px;
+}
+
+.ptah-reference-filter [data-ptah-filter-status] {
+	margin: 0 0 0.55rem;
+	color: var(--sl-color-gray-3);
+	font-size: 0.8125rem; /* 13px */
+	white-space: nowrap;
+}
+
+@media (max-width: 30rem) {
+	.ptah-reference-filter {
+		grid-template-columns: 1fr;
+	}
+
+	.ptah-reference-filter [data-ptah-filter-status] {
+		margin: 0;
+	}
+}

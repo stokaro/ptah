@@ -1,0 +1,130 @@
+/* Page furniture (see ../ptah.css): the article footer with its meta row, the
+ * source links and the previous / next cards (src/components/Footer.astro).
+ * The heading block and the "Copy as Markdown" control carry their own styles
+ * inside PageTitle.astro and PageActions.astro: the release overlay copies
+ * those two components into the checkouts of released versions, which never
+ * load this file. */
+
+/* ---------- Footer ---------- */
+
+/* 48px after the last block of content, a hairline, then the meta row and,
+ * 16px under it, the previous / next cards. ContentPanel gives every child
+ * after the first 1.5rem in @layer starlight.core; the footer's own margin
+ * replaces that rather than adding to it. */
+.ptah-footer {
+	display: grid;
+	gap: 16px;
+	margin-top: 48px;
+	min-width: 0;
+}
+.ptah-footer-meta {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px 16px;
+	padding-top: 16px;
+	border-top: 1px solid var(--sl-color-hairline);
+	color: var(--sl-color-gray-3);
+	font-size: 0.8125rem;
+	line-height: 1.5;
+}
+/* Facts read as one line separated by middots; the commit is 12.5px mono. */
+.ptah-footer-facts {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	min-width: 0;
+}
+.ptah-footer-fact + .ptah-footer-fact::before {
+	content: ' · ';
+	white-space: pre;
+}
+.ptah-footer-commit {
+	color: inherit;
+	font-family: var(--sl-font-mono);
+	font-size: 0.78125rem;
+	text-decoration: none;
+}
+.ptah-footer-commit:hover {
+	color: var(--sl-color-text-accent);
+}
+/* The links, and below 80rem the split button before them, at weight 500. */
+.ptah-footer-links {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 12px 18px;
+	font-weight: 500;
+}
+.ptah-footer-link {
+	color: var(--sl-color-gray-3);
+	text-decoration: none;
+}
+.ptah-footer-link:hover {
+	color: var(--sl-color-text-accent);
+}
+
+/* Previous / next: two hairline cards in a two-column grid, the next one
+ * right-aligned; a card alone keeps its own column so "next" never slides
+ * left. Label 12px gray-3, title 500 15px ink. */
+.ptah-pagination {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 12px;
+}
+.ptah-pagination-card {
+	display: grid;
+	gap: 2px;
+	min-width: 0;
+	padding: 14px 16px;
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 2px;
+	color: var(--sl-color-white);
+	text-decoration: none;
+	overflow-wrap: anywhere;
+}
+.ptah-pagination-prev {
+	grid-column: 1;
+}
+.ptah-pagination-next {
+	grid-column: 2;
+	text-align: end;
+}
+.ptah-pagination-card:hover {
+	border-color: var(--sl-color-gray-4);
+}
+.ptah-pagination-card:hover .ptah-pagination-title {
+	color: var(--sl-color-text-accent);
+}
+.ptah-pagination-label {
+	color: var(--sl-color-gray-3);
+	font-size: 0.75rem;
+	line-height: 1.4;
+}
+.ptah-pagination-title {
+	font-size: 0.9375rem;
+	font-weight: 500;
+	line-height: 1.4;
+}
+/* Two cards side by side leave 173px each in a 390px window; a long title
+ * wraps to three lines there, so the cards stack. */
+@media (max-width: 30rem) {
+	.ptah-pagination {
+		grid-template-columns: 1fr;
+	}
+	.ptah-pagination-prev,
+	.ptah-pagination-next {
+		grid-column: auto;
+	}
+}
+
+/* Controls and navigation between pages have no place on paper. */
+@media print {
+	ptah-page-actions,
+	ptah-page-actions-fallback,
+	.ptah-footer-links,
+	.ptah-pagination {
+		display: none;
+	}
+}

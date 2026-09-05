@@ -1,0 +1,510 @@
+/* Running text and the components inside it: headings, the lede, links,
+ * inline code, lists, tables, asides, badges, buttons, cards, the landing hero
+ * (see ../ptah.css). Measurements are the docs concept's component sheet (1e)
+ * and article (1a); the phone values are its 390 screen (1d). */
+
+/* ---------- Running text ---------- */
+
+/* Starlight leaves <body> at the browser's 16px and never sizes the article,
+ * so the 16.5px of the design is applied here and nowhere higher: the rem the
+ * layout is measured in stays 16px. The block gap is Starlight's own variable,
+ * read by its sibling rule (`* + *` inside the content) for paragraphs, lists,
+ * tables and code; 18px is the paragraph gap of the concept. */
+.sl-markdown-content {
+	--sl-content-gap-y: 1.125rem; /* 18px */
+	font-size: var(--sl-text-body);
+	line-height: var(--sl-line-height);
+}
+.sl-markdown-content :is(p, li, dd, blockquote):not(:where(.not-content *)) {
+	text-wrap: pretty;
+}
+
+/* Instrument Sans is served at 400 to 600 (fonts.css). A 700 would be a
+ * synthesized bold, so everything that reads as bold is 600. */
+.sl-markdown-content :is(strong, b, dt):not(:where(.not-content *)) {
+	font-weight: 600;
+}
+
+/* Lists: 22px indent as the concept draws it (the browser's 40px opens a
+ * gutter wider than the text's own margin), and 8px between items so a list of
+ * one-line items reads as a list and a list of sentences does not run
+ * together. */
+.sl-markdown-content :is(ul, ol):not(:where(.not-content *)) {
+	padding-inline-start: 1.375rem; /* 22px */
+}
+.sl-markdown-content li + li:not(:where(.not-content *)) {
+	margin-top: 0.5rem; /* 8px */
+}
+
+/* ---------- Headings ---------- */
+
+/* Weight 500 for the display sizes, as on ptah.run; 600 only at h3, where 18px
+ * needs the weight to stand out from 16.5px body copy (1e: "H3 18 semibold").
+ * The h1 is set by PageTitle.astro outside the content; the size and tracking
+ * here cover an h1 written into a page body. */
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6):not(:where(.not-content *)) {
+	font-weight: 500;
+	letter-spacing: -0.01em;
+}
+.sl-markdown-content h1:not(:where(.not-content *)) {
+	letter-spacing: -0.02em;
+	line-height: 1.2;
+}
+.sl-markdown-content h2:not(:where(.not-content *)) {
+	letter-spacing: -0.015em;
+	line-height: 1.3;
+}
+.sl-markdown-content h3:not(:where(.not-content *)) {
+	font-weight: 600;
+	letter-spacing: 0;
+	line-height: 1.4;
+}
+.sl-markdown-content :is(h2, h3):not(:where(.not-content *)) {
+	text-wrap: balance;
+}
+
+/* An h2 opens a section with a rule above it: 44px from the previous block,
+ * a 1px hairline, 20px to the heading (1a). Starlight wraps each heading with
+ * its anchor link in `.sl-heading-wrapper` and makes the heading itself
+ * `display: inline`, so the margin, padding and rule have to sit on the
+ * wrapper -- an inline h2 has no vertical margin. The wrapper carries the
+ * heading's font size (anchor-links.css), so its line-height is set to match
+ * the h2's own. The bare `h2` selector covers a build with heading links
+ * turned off. */
+.sl-markdown-content .sl-heading-wrapper.level-h2,
+.sl-markdown-content > h2:not(:where(.not-content *)) {
+	margin-top: 2.75rem; /* 44px */
+	padding-top: 1.25rem; /* 20px */
+	border-top: 1px solid var(--sl-color-hairline);
+	line-height: 1.3;
+}
+.sl-markdown-content .sl-heading-wrapper.level-h3 {
+	line-height: 1.4;
+}
+/* The first block of an article is already 1.5rem below the lede (Starlight's
+ * `.sl-container > * + *`); a full 44px on top of that would open a hole. The
+ * rule stays: it is what says "the body starts here". */
+.sl-markdown-content > .sl-heading-wrapper.level-h2:first-child,
+.sl-markdown-content > h2:first-child:not(:where(.not-content *)) {
+	margin-top: 0.5rem;
+}
+/* Phones (1d): 36px above the rule, 16px below it. */
+@media (width < 50rem) {
+	.sl-markdown-content .sl-heading-wrapper.level-h2,
+	.sl-markdown-content > h2:not(:where(.not-content *)) {
+		margin-top: 2.25rem; /* 36px */
+		padding-top: 1rem; /* 16px */
+	}
+}
+
+/* ---------- Lede ---------- */
+
+/* The page description under the title, rendered by PageTitle.astro: 18px/1.5
+ * in gray-2, one step down from the title and one up from the body, so the
+ * page reads title, summary, text (1a). Inline code in it is 16px, the body's
+ * 14.5px would look like a typo at this size. */
+.ptah-lede {
+	color: var(--sl-color-gray-2);
+	font-size: 1.125rem; /* 18px */
+	line-height: 1.5;
+	text-wrap: pretty;
+}
+.ptah-lede code {
+	border: 1px solid var(--sl-color-hairline-light);
+	border-radius: 2px;
+	padding: 0 0.25rem;
+	background: var(--sl-color-bg-inline-code);
+	font-size: 1rem; /* 16px */
+}
+@media (width < 72rem) {
+	.ptah-lede {
+		font-size: 1.09375rem; /* 17.5px (1c, 1024) */
+	}
+}
+@media (width < 50rem) {
+	.ptah-lede {
+		font-size: 1.03125rem; /* 16.5px (1d, 390) */
+	}
+}
+
+/* ---------- Links ---------- */
+
+/* A link in prose is the accent AND underlined, in the rule color, 3px under
+ * the baseline: color alone does not carry in a long paragraph (1e), and a
+ * hairline underline keeps the paragraph quiet. Hover lifts to accent-high
+ * and the underline takes the text color. `:where()` keeps the specificity at
+ * one class so a component's own link style (figures.css, cards) wins by
+ * source order without a fight; heading anchor links and cards are excluded
+ * outright because the underline would land under an icon or a title. */
+.sl-markdown-content
+	a:where(
+		:not(.sl-anchor-link, .sl-link-card *, .not-content *, .ptah-product-preview *, .ptah-output-gallery *)
+	) {
+	color: var(--sl-color-text-accent);
+	text-decoration: underline;
+	text-decoration-color: var(--sl-color-hairline);
+	text-decoration-thickness: 1px;
+	text-underline-offset: 3px;
+}
+.sl-markdown-content
+	a:hover:where(
+		:not(.sl-anchor-link, .sl-link-card *, .not-content *, .ptah-product-preview *, .ptah-output-gallery *)
+	) {
+	color: var(--sl-color-accent-high);
+	text-decoration-color: currentColor;
+}
+
+/* ---------- Inline code ---------- */
+
+/* A neutral chip, never colored: Plex Mono a size down (0.88em: 14.5px in the
+ * 16.5px body, 13.2px in a 15px aside, 15.8px in the 18px lede), on the code
+ * surface, with a 1px `--line2` edge and 4px of side padding (1e). Starlight's
+ * negative block margin is dropped: a bordered chip pulled into the line above
+ * clips its own edge. */
+.sl-markdown-content :not(pre) > code:not(:where(.not-content *)) {
+	border: 1px solid var(--sl-color-hairline-light);
+	border-radius: 2px;
+	margin-block: 0;
+	padding: 0 0.25rem; /* 0 4px */
+	font-size: 0.88em;
+}
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6) code:not(:where(.not-content *)) {
+	font-size: 0.875em;
+}
+/* In a table cell a flag name decides the column width, and
+ * check-responsive.mjs measures the result (cells at most eight lines at
+ * 1280), so cell code is the fixed 13px step rather than a share of the cell's
+ * text. */
+.sl-markdown-content :is(td, th) code:not(:where(.not-content *)) {
+	font-size: var(--sl-text-code-sm);
+}
+/* Plain <pre> blocks (outside Expressive Code): the shape of a code frame
+ * with no bar. 13.5px/1.65 and 14px 18px padding are the frame's own (1e). */
+.sl-markdown-content pre:not(:where(.not-content *, .expressive-code *)) {
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 2px;
+	padding: 0.875rem 1.125rem; /* 14px 18px */
+	background: var(--sl-color-bg-inline-code);
+	font-size: var(--sl-text-code);
+	line-height: 1.65;
+}
+
+/* ---------- Tables ---------- */
+
+/* One 1px frame with 2px corners, a surface-colored head, mono uppercase
+ * column labels, cells in gray-2 separated by hairlines (1a "Choose a target",
+ * 1e "Wide table").
+ *
+ * Starlight makes the <table> itself the scroller (`display: block;
+ * overflow: auto`), so the frame goes on the table. A block-level table lays
+ * its rows out in an anonymous table box that is shrink-to-fit, and a frame
+ * on a 100%-wide block would stand clear of the rows of any table narrower
+ * than the column. `width: fit-content` closes that: the frame hugs the rows
+ * when they are narrower, and stops at the column (`max-width: 100%`) and
+ * scrolls when they are wider, which is the contract check-responsive.mjs
+ * measures (table.scrollWidth against its parent's clientWidth). */
+.sl-markdown-content table:not(:where(.not-content *)) {
+	width: fit-content;
+	max-width: 100%;
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 2px;
+	font-size: 0.9375rem; /* 15px */
+	line-height: 1.5;
+}
+.sl-markdown-content thead:not(:where(.not-content *)) {
+	background: var(--ptah-surface);
+}
+.sl-markdown-content th:not(:where(.not-content *)) {
+	padding: 0.625rem 1rem; /* 10px 16px */
+	border-bottom: 1px solid var(--sl-color-hairline);
+	color: var(--sl-color-gray-3);
+	font-family: var(--sl-font-mono);
+	font-size: 0.6875rem; /* 11px */
+	font-weight: 500;
+	letter-spacing: 0.08em;
+	line-height: 1.5;
+	text-transform: uppercase;
+	vertical-align: bottom;
+}
+/* A flag or a file name in a column label is pasteable text; it keeps its case. */
+.sl-markdown-content th code:not(:where(.not-content *)) {
+	font-size: 0.75rem;
+	letter-spacing: normal;
+	text-transform: none;
+}
+.sl-markdown-content td:not(:where(.not-content *)) {
+	padding: 0.75rem 1rem; /* 12px 16px */
+	border-bottom: 1px solid var(--sl-color-hairline);
+	color: var(--sl-color-gray-2);
+	vertical-align: top;
+}
+/* Starlight drops the outer cells' side padding because its tables have no
+ * frame; these do. The frame is also the last row's bottom edge. */
+.sl-markdown-content :is(th, td):first-child:not(:where(.not-content *)) {
+	padding-inline-start: 1rem;
+}
+.sl-markdown-content :is(th, td):last-child:not(:where(.not-content *)) {
+	padding-inline-end: 1rem;
+}
+.sl-markdown-content tbody tr:last-child td:not(:where(.not-content *)) {
+	border-bottom: 0;
+}
+.sl-markdown-content td :is(strong, b):not(:where(.not-content *)) {
+	color: var(--sl-color-white);
+}
+
+/* ---------- Details ---------- */
+
+.sl-markdown-content details:not(:where(.not-content *)) {
+	--sl-details-border-color: var(--sl-color-hairline);
+	border-inline-start-width: 1px;
+}
+.sl-markdown-content summary:not(:where(.not-content *)) {
+	font-weight: 500;
+}
+
+/* ---------- Asides ---------- */
+
+/* Two columns: the TYPE as a small mono label on the left, the text on the
+ * right; one 1px border all round, 2px corners, no fill, no icon (1e). The
+ * severity is the border color: note and tip keep the hairline and put the
+ * accent in the label; caution is amber, border and label; danger is ink.
+ * Grid 6px 18px, padding 12px 16px, text 15px/1.55 in gray-2 with `strong`
+ * in ink.
+ *
+ * The label is drawn from the variant class with generated content and the
+ * alternative-text form (`'Note' / ''`), so a screen reader does not read it
+ * a second time: the aside already carries the title in its `aria-label`. The
+ * plain `content` before it is the fallback where the slash form is not
+ * parsed. Starlight's own title paragraph is what src/lib/markdown-asides.mjs
+ * sorts: a default title (the type name) would repeat the label and is hidden;
+ * an author's title (`:::caution[Tags are not immutable]`) is the bold ink
+ * first line of the text column. */
+.starlight-aside {
+	--sl-color-asides-text-accent: var(--sl-color-white);
+	--sl-color-asides-border: var(--sl-color-hairline);
+	/* Paragraphs inside an aside sit 12px apart, not the body's 18px: the text
+	 * is 15px and the box is small. Read by Starlight's sibling rule. */
+	--sl-content-gap-y: 0.75rem;
+	display: grid;
+	/* The text column is minmax(0, 1fr), not 1fr: a table or a code block inside
+	 * an aside has a wide min-content, and 1fr alone would let it push the
+	 * column past the viewport (measured: 1369px on a 1280 viewport on
+	 * /versioned/integrity-and-safety/). With a 0 floor the wide thing scrolls
+	 * inside its own frame, as it does in the running text. */
+	grid-template-columns: auto minmax(0, 1fr);
+	gap: 0.375rem 1.125rem; /* 6px 18px */
+	padding: 0.75rem 1rem; /* 12px 16px */
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 2px;
+	background: transparent;
+	color: var(--sl-color-gray-2);
+	font-size: 0.9375rem; /* 15px */
+	line-height: 1.55;
+}
+.starlight-aside::before {
+	content: 'Note';
+	grid-column: 1;
+	grid-row: 1;
+	/* 4px down puts the 11px capitals on the first line of the 15px text. */
+	padding-top: 0.25rem;
+	color: var(--sl-color-accent);
+	font-family: var(--sl-font-mono);
+	font-size: 0.6875rem; /* 11px */
+	font-weight: 500;
+	letter-spacing: 0.08em;
+	line-height: 1.5;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+.starlight-aside--note::before {
+	content: 'Note';
+	content: 'Note' / '';
+}
+.starlight-aside--tip::before {
+	content: 'Tip';
+	content: 'Tip' / '';
+}
+.starlight-aside--caution {
+	border-color: var(--ptah-amber);
+}
+.starlight-aside--caution::before {
+	content: 'Caution';
+	content: 'Caution' / '';
+	color: var(--ptah-amber);
+}
+.starlight-aside--danger {
+	border-color: var(--sl-color-white);
+}
+.starlight-aside--danger::before {
+	content: 'Danger';
+	content: 'Danger' / '';
+	color: var(--sl-color-white);
+}
+.starlight-aside__title {
+	display: block;
+	grid-column: 2;
+	min-width: 0;
+	margin: 0;
+	color: var(--sl-color-white);
+	font-size: inherit;
+	font-weight: 600;
+	line-height: inherit;
+}
+.starlight-aside[data-ptah-title='default'] > .starlight-aside__title,
+.starlight-aside__icon {
+	display: none;
+}
+.starlight-aside__content {
+	grid-column: 2;
+	min-width: 0;
+}
+.starlight-aside__title + .starlight-aside__content {
+	margin-top: 0;
+}
+.starlight-aside :is(strong, b) {
+	color: var(--sl-color-white);
+	font-weight: 600;
+}
+.starlight-aside__content a {
+	color: var(--sl-color-text-accent);
+}
+.sl-markdown-content .starlight-aside code:not(:where(.not-content *)) {
+	background: var(--sl-color-bg-inline-code);
+}
+/* Phones (1d): 12px 14px padding, 14.5px/1.55 text, a 10.5px label, and the
+ * label column 14px from the text. */
+@media (width < 50rem) {
+	.starlight-aside {
+		gap: 0.375rem 0.875rem; /* 6px 14px */
+		padding: 0.75rem 0.875rem; /* 12px 14px */
+		font-size: 0.90625rem; /* 14.5px */
+	}
+	.starlight-aside::before {
+		font-size: 0.65625rem; /* 10.5px */
+	}
+}
+
+/* ---------- Badges, buttons, cards ---------- */
+
+/* A badge is the page-type chip of the concept (1e "Page type badges"): a
+ * 1px hairline box, 2px corners, 500 11px mono uppercase with 0.06em tracking,
+ * gray-2 text, no fill. Starlight's color variants set these three variables
+ * per class in its layer; one unlayered declaration replaces all of them. */
+.sl-badge {
+	--sl-color-bg-badge: transparent;
+	--sl-color-border-badge: var(--sl-color-hairline);
+	--sl-color-text-badge: var(--sl-color-gray-2);
+	border-radius: 2px;
+	padding: 0.125rem 0.5rem; /* 2px 8px */
+	font-family: var(--sl-font-mono);
+	font-size: 0.6875rem; /* 11px */
+	font-weight: 500;
+	letter-spacing: 0.06em;
+	line-height: 1.4;
+	text-transform: uppercase;
+	vertical-align: middle;
+}
+
+/* Buttons: 500 13.5px, 8px 16px, 2px corners. The primary is ink on the page
+ * (15.05:1 dark, 17.85:1 light), its hover gray-2 (8.34 / 8.25). */
+.sl-link-button {
+	border-radius: 2px;
+	padding: 0.5rem 1rem; /* 8px 16px */
+	font-size: 0.84375rem; /* 13.5px */
+	font-weight: 500;
+	line-height: 1.2;
+	gap: 0.5em;
+}
+.sl-link-button.primary {
+	background: var(--sl-color-white);
+	border-color: var(--sl-color-white);
+	color: var(--sl-color-black);
+}
+.sl-link-button.primary:hover {
+	background: var(--sl-color-gray-2);
+	border-color: var(--sl-color-gray-2);
+	color: var(--sl-color-black);
+}
+.sl-link-button.secondary {
+	border-color: var(--sl-color-hairline);
+	color: var(--sl-color-white);
+}
+.sl-link-button.secondary:hover {
+	border-color: var(--sl-color-gray-4);
+}
+.sl-link-button.minimal {
+	color: var(--sl-color-white);
+}
+.sl-link-button.minimal:hover {
+	color: var(--sl-color-text-accent);
+}
+.sl-link-button svg {
+	width: 1rem;
+	height: 1rem;
+}
+
+/* Cards take the previous / next cards' measure (1a): 14px 16px padding, a
+ * hairline, 2px corners, title 500 15px in ink, body 14px/1.5 in gray-2. */
+.card {
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 2px;
+	padding: 0.875rem 1rem; /* 14px 16px */
+	gap: 0.5rem;
+	background: transparent;
+}
+.card .title {
+	font-size: 0.9375rem; /* 15px */
+	font-weight: 500;
+	gap: 0.625rem;
+}
+.card .body {
+	color: var(--sl-color-gray-2);
+	font-size: 0.875rem; /* 14px */
+	line-height: 1.5;
+}
+.card .icon {
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 2px;
+	background: transparent;
+	color: var(--sl-color-gray-2);
+}
+
+.sl-link-card {
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 2px;
+	padding: 0.875rem 1rem; /* 14px 16px */
+	box-shadow: none;
+}
+.sl-link-card .stack {
+	gap: 0.25rem;
+}
+.sl-link-card:hover {
+	border-color: var(--sl-color-gray-4);
+	background: var(--sl-color-bg-inline-code);
+}
+.sl-link-card .title {
+	font-size: 0.9375rem; /* 15px */
+	font-weight: 500;
+}
+.sl-link-card .description {
+	color: var(--sl-color-gray-2);
+	font-size: 0.84375rem; /* 13.5px */
+	line-height: 1.5;
+}
+
+/* ---------- Hero (landing page) ---------- */
+
+.hero h1 {
+	font-weight: 500;
+	letter-spacing: -0.02em;
+	line-height: 1.12;
+	text-wrap: balance;
+}
+/* The tagline is the landing page's lede: the same 18px/1.5 gray-2. */
+.hero .tagline {
+	color: var(--sl-color-gray-2);
+	font-size: 1.125rem; /* 18px */
+	line-height: 1.5;
+	text-wrap: pretty;
+}

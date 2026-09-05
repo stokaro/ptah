@@ -1,0 +1,216 @@
+/* The navigation rail and the mobile drawer (see ../ptah.css).
+ *
+ * The markup is the site's own (src/components/SidebarSublist.astro), so none
+ * of Starlight's scoped sidebar styles reach it: every rule the rail needs,
+ * down to removing list bullets, is written here. The rules are scoped to the
+ * lists (`.top-level`, `.sublist`) because the mobile menu footer sits in the
+ * same pane with links of its own.
+ *
+ * Measurements come from the docs concept, 1a (rail) and 1d (drawer). */
+
+/* ---------- The pane ---------- */
+
+/* 20px above the first row and on the left, 12px on the right where the pane's
+ * scrollbar gutter already adds room, 40px below so the last row does not sit
+ * on the viewport's edge. Starlight pads 1rem on all sides. */
+@media (min-width: 50rem) {
+	.sidebar-content {
+		padding: 20px 12px 40px 20px;
+	}
+}
+
+/* ---------- Lists ---------- */
+
+.sidebar-content .top-level,
+.sidebar-content .sublist {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+/* Sans, not mono: 130 mono links do not scan. 14px/1.45 on the rail; 2px
+ * between rows is the rhythm of the whole rail, so it is a grid gap and not a
+ * margin on each kind of row. */
+.sidebar-content .top-level {
+	display: grid;
+	gap: 2px;
+	align-content: start;
+	font-size: 14px;
+	line-height: 1.45;
+	color: var(--sl-color-gray-2);
+}
+.sidebar-content .sublist {
+	display: grid;
+	gap: 2px;
+}
+.sidebar-content .top-level li {
+	overflow-wrap: anywhere;
+}
+/* An open group ends 6px before the next group row, so the closed rows below
+ * it read as a separate stack and not as the last pages of the group. */
+.sidebar-content .top-level > li > details[open] > .sublist {
+	padding-bottom: 6px;
+}
+
+/* ---------- Group rows ---------- */
+
+/* The row is the disclosure control: label left, chevron right. Ink at 500,
+ * one step above the pages in both weight and color. */
+.sidebar-content summary.group {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 6px 8px;
+	border-radius: 2px;
+	font-weight: 500;
+	color: var(--sl-color-white);
+	cursor: pointer;
+	user-select: none;
+}
+.sidebar-content summary.group::marker,
+.sidebar-content summary.group::-webkit-details-marker {
+	display: none;
+	content: '';
+}
+.sidebar-content summary.group:hover {
+	background: var(--sl-color-bg-inline-code);
+}
+.sidebar-content .group-label > * + * {
+	margin-inline-start: 0.25em;
+}
+/* The chevron is text, so it takes the muted color like any other glyph and
+ * needs no icon: ▸ closed, turned a quarter to point down when open, as the
+ * concept draws the two states. One glyph turning, rather than two glyphs
+ * swapped, is what lets it move with the group. */
+.sidebar-content summary.group .caret {
+	flex-shrink: 0;
+	color: var(--sl-color-gray-3);
+}
+.sidebar-content summary.group .caret::before {
+	content: '\25B8';
+	display: inline-block;
+	transition: transform 200ms ease;
+}
+.sidebar-content details[open] > summary.group .caret::before {
+	transform: rotate(90deg);
+}
+
+/* A group opens and closes by sliding, 200ms, instead of appearing whole.
+ * `::details-content` is the box a browser puts the pages in, and
+ * `interpolate-size: allow-keywords` lets its height run between 0 and auto
+ * (Chrome 129, Edge 129; elsewhere the group still opens, at once). The
+ * transition is armed only after the first frame (Sidebar.astro sets the
+ * class): SidebarPersister restores the remembered open groups while the page
+ * loads, and a restored group must not slide open on every navigation. */
+.sidebar-content .top-level > li > details::details-content {
+	block-size: 0;
+	overflow-y: clip;
+}
+.sidebar-content .top-level > li > details[open]::details-content {
+	block-size: auto;
+}
+.sidebar-content.is-animated .top-level > li > details::details-content {
+	interpolate-size: allow-keywords;
+	transition:
+		block-size 200ms ease,
+		content-visibility 200ms allow-discrete;
+}
+@media (prefers-reduced-motion: reduce) {
+	.sidebar-content.is-animated .top-level > li > details::details-content,
+	.sidebar-content summary.group .caret::before {
+		transition: none;
+	}
+}
+.sidebar-content sl-sidebar-restore {
+	display: none;
+}
+
+/* ---------- Pages ---------- */
+
+/* 20px of indent puts a page under its group's label, not under the row's
+ * padding; 4px vertical keeps eight pages inside a laptop's viewport. */
+.sidebar-content .top-level a.page {
+	display: block;
+	padding: 4px 8px 4px 20px;
+	border-radius: 2px;
+	color: var(--sl-color-gray-2);
+	text-decoration: none;
+}
+.sidebar-content .top-level a.page:hover,
+.sidebar-content .top-level a.page:focus-visible {
+	background: var(--sl-color-bg-inline-code);
+}
+.sidebar-content .top-level a.page > * + * {
+	margin-inline-start: 0.25em;
+}
+/* The current page: a 2px accent edge on the left, where the eye starts a row,
+ * accent text and the accent tint behind it. The edge takes 2px of the 20px
+ * indent so the label keeps its column. The radius opens on the left so the
+ * edge meets the tint square, as a tab meets its page. */
+.sidebar-content .top-level a.page[aria-current='page'],
+.sidebar-content .top-level a.page[aria-current='page']:hover,
+.sidebar-content .top-level a.page[aria-current='page']:focus-visible {
+	padding-left: 18px;
+	border-left: 2px solid var(--sl-color-accent);
+	border-radius: 0 2px 2px 0;
+	font-weight: 500;
+	color: var(--sl-color-accent);
+	background: var(--sl-color-accent-low);
+}
+
+/* ---------- Subgroup labels ---------- */
+
+/* A subgroup is a heading inside an open group, not another disclosure: mono
+ * uppercase at 11px with .08em tracking, muted, and its pages always shown.
+ * 10px above and 3px below separate it from the page before it more than from
+ * the pages it names. Indented like the pages so it reads as one of the
+ * group's column, one step smaller. */
+.sidebar-content .subgroup-label {
+	margin: 0;
+	padding: 10px 8px 3px 20px;
+	font-family: var(--sl-font-mono);
+	font-size: 11px;
+	font-weight: 500;
+	line-height: 1.45;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--sl-color-gray-3);
+}
+.sidebar-content .subgroup-label > * + * {
+	margin-inline-start: 0.25em;
+}
+
+/* ---------- The drawer (phones) ---------- */
+
+/* Below 50rem the rail is a popover under the header, operated by thumb: group
+ * rows grow to a 44px target at 15px type, pages to 9px of vertical padding
+ * (about 38px per row, the concept's measure; they are the denser list under
+ * a row that already clears the target). The pane's own 16px padding is
+ * Starlight's and matches the concept's drawer. */
+@media (width < 50rem) {
+	.sidebar-content .top-level {
+		font-size: 15px;
+	}
+	.sidebar-content summary.group {
+		min-height: 44px;
+		padding: 10px 8px;
+	}
+	.sidebar-content .top-level a.page {
+		padding: 9px 8px 9px 20px;
+	}
+	.sidebar-content .subgroup-label {
+		padding: 10px 8px 2px 20px;
+	}
+}
+
+/* The mobile menu footer: the header's links and the toggle, one row. */
+.mobile-preferences {
+	border-top: 1px solid var(--sl-color-hairline);
+}
+
+/* The phone header carries the theme and layout toggles (header.css), so the
+ * drawer's footer does not show a second pair; they are the same elements
+ * and stay in step, these are just not drawn. */
+.mobile-preferences .ptah-header-toggles {
+	display: none;
+}

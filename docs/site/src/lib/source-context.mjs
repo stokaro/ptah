@@ -145,7 +145,7 @@ export function pageActionsForSource(context, {
   };
 
   return {
-    markdownLabel: 'Copy page as Markdown',
+    markdownLabel: 'Copy as Markdown',
     actions: edge ? [edit, source, report] : [source, edit, report],
     sourceUrl,
     editUrl,

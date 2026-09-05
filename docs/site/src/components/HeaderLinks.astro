@@ -1,0 +1,47 @@
+---
+/**
+ * The right-hand links of the header, as text rather than icons: the project
+ * site, Install and the repository, the way ptah.run's own header reads them.
+ * Replaces Starlight's SocialIcons, so it also renders inside the mobile menu
+ * footer (stokaro/ptah#2893).
+ */
+import config from 'virtual:starlight/user-config';
+import { SiteOrigin } from '../lib/docs-origin.mjs';
+
+const { siteTitleHref } = Astro.locals.starlightRoute;
+const social = config.social ?? [];
+const siteHost = new URL(SiteOrigin).host;
+---
+
+{/* The project site is named by its host, the way the concept's header reads
+    it, and the address comes from the one module that declares it. */}
+<a class="ptah-nav-link" href={`${SiteOrigin}/`} translate="no">{siteHost}</a>
+{/* The install page is start/install, the first page after the Overview of
+    the "Start" group in src/sidebar.mjs; the header names it by its route so
+    it stays a plain link, the way ptah.run's header links here. */}
+<a class="ptah-nav-link" href={`${siteTitleHref}start/install/`}>Install</a>
+{
+  social.map(({ href, label }) => (
+    <a class="ptah-nav-link" href={href} rel="me">
+      {label}<span aria-hidden="true">&nbsp;↗</span>
+    </a>
+  ))
+}
+
+<style>
+  /* 500 13.5px sans in ink; the accent on hover. The gap between links is the
+   * header's (header.css), 22px. The block padding is invisible in a centered
+   * 52px row and lifts a 13.5px line to a 25px pointer target. */
+  .ptah-nav-link {
+    color: var(--sl-color-white);
+    font-size: 0.84375rem;
+    font-weight: 500;
+    line-height: 1;
+    padding-block: 0.375rem;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .ptah-nav-link:hover {
+    color: var(--sl-color-text-accent);
+  }
+</style>

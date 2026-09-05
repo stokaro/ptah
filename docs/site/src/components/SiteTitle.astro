@@ -1,5 +1,14 @@
 ---
-import Default from '@astrojs/starlight/components/SiteTitle.astro';
+/**
+ * The brand row of the header: the mark and "Ptah" link to the project site,
+ * "Docs" links to the documentation root, and the version pill switches
+ * documentation versions. It replaces Starlight's SiteTitle so the row reads
+ * the same as the header of ptah.run (stokaro/ptah#2893).
+ */
+import logo from '../assets/logo.svg';
+import { SiteOrigin } from '../lib/docs-origin.mjs';
+
+const { siteTitleHref } = Astro.locals.starlightRoute;
 
 const base = import.meta.env.BASE_URL;
 const segments = base.split('/').filter(Boolean);
@@ -11,53 +20,132 @@ const versionsRoot = base.endsWith(versionSuffix)
 const versionsJsonUrl = `${versionsRoot}versions.json`;
 ---
 
-<div class="site-title-with-versions">
-  <Default><slot /></Default>
+<div class="ptah-brand">
+  <a class="ptah-brand__site" href={`${SiteOrigin}/`} translate="no">
+    <img src={logo.src} alt="" width="20" height="20" />
+    Ptah
+  </a>
+  <a class="ptah-brand__docs" href={siteTitleHref}>Docs</a>
 
   <div class="version-switcher" data-current={currentVersion} data-versions-url={versionsJsonUrl}>
     <label class="sr-only" for="docs-version-switcher">Select documentation version</label>
-    <select id="docs-version-switcher" aria-label="Select documentation version">
+    <select id="docs-version-switcher">
       <option value={currentVersion} selected>{currentVersion}</option>
     </select>
+    <span class="version-switcher__caret" aria-hidden="true">&#9662;</span>
   </div>
 </div>
 
 <style>
-  .site-title-with-versions {
+  /* The brand cell of the concept: mark 20px, "Ptah" 600 14.5px, "Docs" 400
+   * 14.5px in gray-3, and the version pill at the cell's right edge. The row
+   * fills the header's title-wrapper (header.css makes that wrapper the 16rem
+   * cell) so the pill's auto margin reaches the cell's inner edge. */
+  .ptah-brand {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.625rem;
+    flex: 1 1 auto;
     min-width: 0;
+    white-space: nowrap;
   }
 
-  .version-switcher select {
-    appearance: auto;
-    font-size: var(--sl-text-xs);
-    line-height: 1.2;
-    padding: 0.15rem 0.3rem;
-    border-radius: 0.375rem;
-    border: 1px solid var(--sl-color-gray-5);
-    background-color: var(--sl-color-black);
+  .ptah-brand__site {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
     color: var(--sl-color-white);
+    font-size: 0.90625rem;
+    font-weight: 600;
+    line-height: 1;
+    /* Invisible in the centered cell; lifts the 15px line to a 25px target. */
+    padding-block: 0.3125rem;
+    text-decoration: none;
+  }
+  .ptah-brand__site:hover {
+    color: var(--sl-color-white);
+  }
+  .ptah-brand__site img {
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 5px;
+    /* The mark is a dark square; on the dark page tokens.css gives the ring a
+     * hairline color, on the light page it is transparent. */
+    outline: 1px solid var(--ptah-logo-ring, transparent);
+  }
+
+  .ptah-brand__docs {
+    color: var(--sl-color-gray-3);
+    font-size: 0.90625rem;
+    font-weight: 400;
+    line-height: 1;
+    padding-block: 0.3125rem;
+    text-decoration: none;
+  }
+  .ptah-brand__docs:hover {
+    color: var(--sl-color-text-accent);
+  }
+
+  /* The version pill: `padding: 2px 7px; border 1px hairline; radius 2px; font
+   * 12px mono; color gray-2`, reading "edge" with a small triangle after it.
+   * It is a native select with its own arrow removed, so the triangle is a
+   * glyph laid over the pill's end padding, in the pill's color and size. */
+  .version-switcher {
+    position: relative;
+    display: flex;
+    align-items: center;
+    margin-inline-start: auto;
+  }
+  .version-switcher select {
+    appearance: none;
+    padding: 2px 1.25rem 2px 7px;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 2px;
+    background: transparent;
+    color: var(--sl-color-gray-2);
+    font-family: var(--sl-font-mono);
+    font-size: 0.75rem;
+    line-height: 1.3;
     cursor: pointer;
     max-width: 9rem;
   }
-
   .version-switcher select:hover {
     border-color: var(--sl-color-gray-4);
+    color: var(--sl-color-white);
+  }
+  .version-switcher select:focus-visible {
+    outline: 2px solid var(--sl-color-accent);
+    outline-offset: 2px;
+  }
+  .version-switcher__caret {
+    position: absolute;
+    inset-inline-end: 7px;
+    color: var(--sl-color-gray-2);
+    font-family: var(--sl-font-mono);
+    font-size: 0.75rem;
+    line-height: 1;
+    pointer-events: none;
+  }
+  .version-switcher select:hover + .version-switcher__caret {
+    color: var(--sl-color-white);
   }
 
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
+  /* Phone: mark, "Ptah" and the pill at 11.5px mono, `padding: 1px 6px`; no
+   * "Docs", the header has three 44px controls to fit at the right. */
+  @media (width < 50rem) {
+    .ptah-brand__docs {
+      display: none;
+    }
+    .version-switcher select {
+      padding: 1px 1.125rem 1px 6px;
+      font-size: 0.71875rem;
+    }
+    .version-switcher__caret {
+      inset-inline-end: 6px;
+      font-size: 0.6875rem;
+    }
   }
+
 </style>
 
 <script>

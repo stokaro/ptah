@@ -1,4 +1,17 @@
 ---
+/**
+ * A figure of real product output: the image on the code surface, a bar with
+ * a "Product output" label and the actions, a caption, and the command that
+ * reproduces the image (stokaro/ptah#2893, concept 1a). The styles are in
+ * src/styles/ptah/figures.css.
+ *
+ * The class names and `data-*` attributes are a contract with the gates:
+ * scripts/check-public-docs.mjs finds the figure by `data-visual-id`, requires
+ * exactly one link per `data-preview-action` (full-size, download, source) and
+ * follows every `href` inside the figure; scripts/check-visual-snapshots.mjs
+ * reads the figcaption's text for the expected caption and each variant by
+ * `data-preview-variant`. Rename nothing here without changing them.
+ */
 import { Image } from 'astro:assets';
 
 interface Props {
@@ -40,6 +53,15 @@ const {
 ---
 
 <figure class="ptah-product-preview" data-product-preview data-visual-id={id}>
+  <div class="ptah-product-preview__bar">
+    <span class="ptah-product-preview__label">Product output</span>
+    <nav class="ptah-product-preview__actions" aria-label={`${caption} actions`}>
+      <a href={fullSizeHref} data-preview-action="full-size">Full size</a>
+      {downloadHref && <a href={downloadHref} download data-preview-action="download">Download</a>}
+      {sourceHref && <a href={sourceHref} data-preview-action="source">Source</a>}
+    </nav>
+  </div>
+
   <a
     class="ptah-product-preview__media"
     href={fullSizeHref}
@@ -59,12 +81,6 @@ const {
   <figcaption>
     <p class="ptah-product-preview__caption">{caption}</p>
     <p class="ptah-product-preview__notice"><strong>What to notice:</strong> {notice}</p>
-
-    <nav class="ptah-product-preview__actions" aria-label={`${caption} actions`}>
-      <a href={fullSizeHref} data-preview-action="full-size">Open full size</a>
-      {downloadHref && <a href={downloadHref} download data-preview-action="download">Download</a>}
-      {sourceHref && <a href={sourceHref} data-preview-action="source">View source</a>}
-    </nav>
 
     {reproduce && (
       <details class="ptah-product-preview__reproduce">

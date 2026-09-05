@@ -1,0 +1,77 @@
+---
+/**
+ * The switch between the two article layouts global.css defines: the
+ * "envelope" the site ships by default and the docs concept's "column". One
+ * bordered square beside the theme toggle, the same shape and size, a pressed
+ * state for the column layout. It exists while the choice between the two
+ * layouts is open (stokaro/ptah#2893) and goes when it is made.
+ *
+ * The choice travels in the localStorage key `ptah-layout`, which Head.astro
+ * reads before the first paint, so the next page opens in the chosen layout
+ * without flashing the other one; `?layout=column` or `?layout=envelope` in
+ * the URL sets it too. Styles live in src/styles/ptah/header.css with the
+ * theme toggle's ("Toggles").
+ */
+---
+
+<ptah-layout-toggle>
+  <button
+    type="button"
+    class="ptah-header-toggle ptah-layout-toggle"
+    aria-label="Narrow reading column"
+    aria-pressed="false"
+    title="Switch the article layout"
+  >
+    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <rect x="1.75" y="2.25" width="12.5" height="11.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.5"></rect>
+      <rect class="ptah-layout-toggle__column" x="4.5" y="5" width="7" height="6" fill="currentColor"></rect>
+    </svg>
+  </button>
+</ptah-layout-toggle>
+
+<style>
+  /* Pressed, the filled column narrows: the glyph shows the layout it is in. */
+  :global([data-ptah-layout='column']) .ptah-layout-toggle__column {
+    x: 5.5;
+    width: 5;
+  }
+</style>
+
+<script>
+  const storageKey = 'ptah-layout';
+
+  function currentLayout(): 'column' | 'envelope' {
+    return document.documentElement.dataset.ptahLayout === 'column' ? 'column' : 'envelope';
+  }
+
+  function reflect() {
+    const pressed = currentLayout() === 'column' ? 'true' : 'false';
+    document
+      .querySelectorAll<HTMLButtonElement>('ptah-layout-toggle button')
+      .forEach((button) => button.setAttribute('aria-pressed', pressed));
+  }
+
+  class PtahLayoutToggle extends HTMLElement {
+    constructor() {
+      super();
+      const button = this.querySelector('button');
+      if (!button) return;
+      reflect();
+      button.addEventListener('click', () => {
+        const next = currentLayout() === 'column' ? 'envelope' : 'column';
+        if (next === 'column') document.documentElement.dataset.ptahLayout = 'column';
+        else delete document.documentElement.dataset.ptahLayout;
+        try {
+          localStorage.setItem(storageKey, next);
+        } catch {
+          /* storage unavailable: the choice lasts for this page only */
+        }
+        reflect();
+      });
+    }
+  }
+
+  if (!customElements.get('ptah-layout-toggle')) {
+    customElements.define('ptah-layout-toggle', PtahLayoutToggle);
+  }
+</script>

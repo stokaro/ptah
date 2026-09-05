@@ -1,0 +1,32 @@
+/*
+ * The design the documentation shares with ptah.run (stokaro/ptah#2893).
+ *
+ * Two layers of work. The first block sets Starlight's own variables to the
+ * site's tokens -- the same surfaces, text colors, rules and accent in both
+ * themes -- so everything Starlight draws from them follows without a rule of
+ * its own. The rest restyles the surfaces whose shape Starlight decides in its
+ * components: pill navigation, rounded cards, shadows, colored asides.
+ *
+ * The rules are unlayered on purpose. Starlight's component styles live in
+ * `@layer starlight.*` and the Tailwind plugin's variable mapping in
+ * `@layer utilities`; an unlayered declaration wins over both regardless of
+ * specificity or source order, which is what lets this file stay readable
+ * instead of out-specifying scoped selectors.
+ *
+ * The vocabulary, from the design: Instrument Sans for prose and chrome, IBM
+ * Plex Mono only for what can be pasted into a terminal, one accent (the brand
+ * blue) reserved for links and the current item, 2px radii, 1px rules, no
+ * shadows.
+ */
+
+/* One file per surface, so that work on one surface does not touch another;
+ * the order matters only where a later file relies on a variable an earlier
+ * one sets, which is tokens.css alone. */
+@import './ptah/tokens.css';
+@import './ptah/header.css';
+@import './ptah/sidebar.css';
+@import './ptah/toc.css';
+@import './ptah/content.css';
+@import './ptah/code.css';
+@import './ptah/figures.css';
+@import './ptah/furniture.css';

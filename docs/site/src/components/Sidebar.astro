@@ -1,0 +1,42 @@
+---
+/**
+ * The navigation rail. Registered in astro.config.mjs as the override of
+ * Starlight's Sidebar (stokaro/ptah#2893).
+ *
+ * The same three parts as Starlight's own component, in the same order:
+ * SidebarPersister (session storage for the open groups and the scroll
+ * position), the list of groups, and the mobile menu footer below it. The one
+ * part that differs is the list: the site's SidebarSublist renders a nested
+ * group as a label above its pages instead of a second disclosure, which is
+ * why the whole component is overridden rather than restyled.
+ *
+ * SidebarPersister and MobileMenuFooter come from the package's public
+ * `components/*` export; nothing here reaches into Starlight's internals. If
+ * the site ever overrides MobileMenuFooter in astro.config.mjs, import it from
+ * `virtual:starlight/components/MobileMenuFooter` here instead, the way
+ * Starlight's own Sidebar does, or the override will not show in the drawer.
+ */
+import MobileMenuFooter from '@astrojs/starlight/components/MobileMenuFooter.astro';
+import SidebarPersister from '@astrojs/starlight/components/SidebarPersister.astro';
+import SidebarSublist from './SidebarSublist.astro';
+
+const { sidebar } = Astro.locals.starlightRoute;
+---
+
+<SidebarPersister>
+  <SidebarSublist sublist={sidebar} />
+</SidebarPersister>
+
+<div class="md:sl-hidden">
+  <MobileMenuFooter />
+</div>
+
+<script>
+  /* The groups' open-and-close transition (sidebar.css) is armed one frame
+   * after load, so the groups SidebarPersister restores from session storage
+   * while the page loads take their place at once instead of sliding open on
+   * every navigation. The same class arms the caret's turn. */
+  requestAnimationFrame(() => {
+    document.querySelectorAll('.sidebar-content').forEach((pane) => pane.classList.add('is-animated'));
+  });
+</script>

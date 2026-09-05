@@ -5,6 +5,9 @@
 @import 'tailwindcss/utilities.css' layer(utilities);
 
 @theme {
+  /* The two faces the documentation shares with ptah.run; see fonts.css. */
+  --font-sans: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --color-accent-50: oklch(0.97 0.025 230);
   --color-accent-100: oklch(0.93 0.05 230);
   --color-accent-200: oklch(0.88 0.075 230);
@@ -37,12 +40,22 @@
  * Starlight uses one 18.75rem value for both desktop side rails. That leaves
  * the navigation room it does not need and lets the table of contents claim a
  * large share of a laptop viewport. Ptah keeps the two jobs independent: a
- * 16rem navigation rail and a narrower 14.5rem context rail.
+ * 16rem navigation rail and a narrower 14.5rem context rail. The Ptah design
+ * draws the context rail at 220px; the 14.5rem measured here stays, as the
+ * reading measures below do (stokaro/ptah#2893).
  *
  * These rules are unlayered so they can override Starlight's layered component
  * styles without depending on selector weight. Below 80rem the page has no
  * context rail at all -- the band below says why -- so only the left rail
  * width applies there.
+ *
+ * Two layouts share this file. The default, "envelope", is the one measured
+ * here and pinned by scripts/check-responsive.mjs. The docs concept's
+ * "column" layout is opt-in under `:root[data-ptah-layout='column']`; the
+ * block after this one sets its measures and the `>= 80rem` block at the end
+ * of the file places its frame. In development Head.astro offers a switch
+ * between the two on any page; production builds render the envelope and
+ * nothing sets the attribute.
  */
 :root {
 	--sl-sidebar-width: 16rem;
@@ -63,11 +76,56 @@
 }
 
 /*
+ * The concept's layout: a reading column with a wide gutter (Docs Concept,
+ * notes and implementation notes; screens 1a, 1b, 1c).
+ *
+ * The 60rem prose column above is about 120 characters per line at 16px;
+ * comfortable reading is 65 to 80. Prose therefore drops to 44rem (704px, about
+ * 72 characters at the concept's 16.5px), and the things that are wide because
+ * their content is wide -- code, tables, figures, .ptah-wide-content -- keep a
+ * 60rem (960px) shell on the same left edge. The 70rem shell of the envelope
+ * existed to hold a 60rem prose column with room to spare; with prose at 44rem
+ * the shell can come in by 10rem and still give wide content 256px more than
+ * the prose gets. The contents rail narrows from 14.5rem to 13rem (208px): its
+ * links are 13.5px sans, and the concept draws the rail at 208 in screen 1a.
+ *
+ * The frame that holds the article and the contents rail is capped at 80rem
+ * (1280px). That figure is the width of screen 1a, where the frame fills the
+ * pane beside the rail exactly: 256 (rail) + 48 + 720 (article column) + 48 +
+ * 208 (contents) = 1280. On wider screens the frame stops at 1280 and the pane
+ * splits the surplus 0.6 : 1 around it -- see the `>= 80rem` block at the end
+ * of the file for the arithmetic.
+ */
+:root[data-ptah-layout='column'] {
+	--ptah-prose-width: 44rem;
+	--sl-content-width: 60rem;
+	/* The contents rail grows with the frame: 13rem (208px) beside a 64rem
+	 * pane at 1280 (screen 1a), 18.75rem (300px) once the frame reaches its
+	 * 80rem cap (screen 1b, drawn at 2560). The pane is the viewport less the
+	 * 16rem navigation rail, so the rail widens by 92px over the 256px between
+	 * those two panes, 0.359375 of each pixel, and stops with the frame. A rail
+	 * fixed at 13rem left a 176px column for the "Copy as Markdown" control and
+	 * the headings while the frame's far gutter stood empty beside it. */
+	--ptah-toc-width: clamp(13rem, calc(13rem + (100vw - 80rem) * 0.359375), 18.75rem);
+	/* Screen 1b's grid, `minmax(64px, 0.6fr) minmax(0, 1280px) 1fr`, gives the
+	 * gutter on the navigation side 0.6 of a unit and the far gutter 1. Of the
+	 * surplus, the left share is therefore 0.6 / 1.6 = 0.375 and the right
+	 * 1 / 1.6 = 0.625. */
+	--ptah-doc-frame-max-width: 80rem;
+	--ptah-doc-frame-left-share: 0.375;
+}
+
+/*
  * The outer article shell keeps 70rem available for code, diagrams, and wide
  * tables. Ordinary prose and headings use a 60rem reading column with the same
  * left edge. The article-and-TOC frame below centers while its outer gutters
  * fit below the cap. On wider screens it grows toward the TOC instead of
  * pushing the reading column farther away from navigation.
+ *
+ * The column layout changes the two measures (60rem shell, 44rem prose), not
+ * these rules: prose narrows by `max-inline-size`, which can never make a
+ * child wider than its shell, so the same selectors serve both layouts and
+ * neither can scroll the page sideways.
  */
 .sl-markdown-content > :where(
 	p,
@@ -94,177 +152,24 @@
 }
 
 /*
- * ProductPreview keeps real product output inspectable without giving every
- * page a bespoke figure/action implementation. The image is a normal link, so
- * full-size access still works when JavaScript is disabled.
+ * The "On this page" strip that stands in for the contents rail is 40px tall,
+ * as the concept draws it on the phone (1d) and in the 72-80rem band (1c);
+ * Starlight's props.css makes it 3rem (48px). PageFrame pads the page top by
+ * this variable, MobileTableOfContents sizes the strip's summary by it, and
+ * Page.astro adds it to `scroll-padding-top`, so the one value keeps all three
+ * in step and toc.css only has to draw the strip.
+ *
+ * Starlight zeroes the variable from 72rem in a layered rule, and an unlayered
+ * `:root` value would beat that at every width, leaving 40px of dead padding
+ * above the article once the rail is back. So the value is set only below
+ * 80rem: on the phone and in the band, where the strip is drawn. Above 80rem
+ * Starlight's own 0rem applies. Pages without a table of contents keep 0 at
+ * every width: Page.astro's `html:not([data-has-toc])` outweighs `:root`.
  */
-.ptah-product-preview {
-	margin-block: 1.5rem 2rem;
-	border: 1px solid var(--sl-color-gray-5);
-	border-radius: 0.75rem;
-	background: var(--sl-color-bg-nav);
-	overflow: hidden;
-}
-
-.ptah-product-preview__media {
-	display: grid;
-	place-items: center;
-	padding: clamp(0.5rem, 2vw, 1.25rem);
-	background: var(--sl-color-bg);
-	overflow: auto;
-}
-
-.ptah-product-preview__media img {
-	display: block;
-	max-width: 100%;
-	max-height: min(70vh, 44rem);
-	height: auto;
-	margin-inline: auto;
-	object-fit: contain;
-}
-
-.ptah-product-preview__media:focus-visible,
-.ptah-product-preview__actions a:focus-visible,
-.ptah-product-preview__reproduce summary:focus-visible {
-	outline: 3px solid var(--sl-color-accent-high);
-	outline-offset: 3px;
-}
-
-.ptah-product-preview figcaption {
-	display: grid;
-	gap: 0.65rem;
-	padding: 1rem 1.25rem 1.25rem;
-}
-
-.ptah-product-preview figcaption > * {
-	margin: 0;
-}
-
-.ptah-product-preview__caption {
-	font-weight: 700;
-}
-
-.ptah-product-preview__notice {
-	max-inline-size: var(--ptah-prose-width);
-	color: var(--sl-color-gray-2);
-}
-
-.ptah-product-preview__actions {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 0.5rem 1rem;
-}
-
-.ptah-product-preview__actions a {
-	font-weight: 650;
-}
-
-.ptah-product-preview__reproduce {
-	max-inline-size: var(--ptah-prose-width);
-}
-
-.ptah-product-preview__reproduce summary {
-	cursor: pointer;
-	font-weight: 650;
-}
-
-.ptah-product-preview__reproduce pre {
-	margin-block-start: 0.75rem;
-}
-
-.ptah-product-preview__variants {
-	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
-	gap: 1rem;
-	margin-block-start: 0.5rem;
-}
-
-.ptah-product-preview__variants article {
-	display: grid;
-	gap: 0.5rem;
-}
-
-.ptah-product-preview__variants img {
-	display: block;
-	max-width: 100%;
-	max-height: min(55vh, 32rem);
-	height: auto;
-	margin-inline: auto;
-	object-fit: contain;
-}
-
-.ptah-product-preview__variants p {
-	margin: 0;
-	font-weight: 650;
-}
-
-.ptah-product-preview__variant-actions {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 0.5rem 1rem;
-	font-size: var(--sl-text-sm);
-}
-
-.ptah-output-gallery {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-  margin-block: 1.25rem 2rem;
-}
-
-.ptah-output-gallery__item {
-  color: inherit;
-  text-decoration: none;
-}
-
-.ptah-output-gallery__item figure {
-  height: 100%;
-  margin: 0;
-  overflow: hidden;
-  border: 1px solid var(--sl-color-gray-5);
-  border-radius: 0.75rem;
-  background: var(--sl-color-gray-7);
-}
-
-.ptah-output-gallery__item img {
-  display: block;
-  width: 100%;
-  height: 12rem;
-  object-fit: contain;
-  object-position: top center;
-  background: #fff;
-}
-
-.ptah-output-gallery__item figcaption {
-  display: grid;
-  gap: 0.25rem;
-  padding: 0.875rem 1rem 1rem;
-}
-
-.ptah-output-gallery__item figcaption span {
-  color: var(--sl-color-gray-2);
-  font-size: var(--sl-text-sm);
-  line-height: 1.45;
-}
-
-.ptah-output-gallery__item:hover figure {
-  border-color: var(--sl-color-accent);
-}
-
-.ptah-output-gallery__item:focus-visible {
-  border-radius: 0.75rem;
-  outline: 3px solid var(--sl-color-accent-high);
-  outline-offset: 3px;
-}
-
-@media (max-width: 50rem) {
-  .ptah-output-gallery {
-    grid-template-columns: 1fr;
-  }
-
-  .ptah-output-gallery__item img {
-    height: 10rem;
-  }
+@media (width < 80rem) {
+	:root {
+		--sl-mobile-toc-height: 2.5rem;
+	}
 }
 
 /*
@@ -280,6 +185,10 @@
  * before this change. Between 72rem and 80rem the page keeps its single column
  * and Starlight's mobile disclosure, exactly as it does at 71rem.
  *
+ * The column layout behaves the same way in this band: its 44rem prose fits the
+ * single column at 1024 with room to spare (768px pane, 24px padding a side,
+ * 720px shell), so nothing in this block needs to know which layout is on.
+ *
  * A media query cannot read a custom property, so 80rem is spelled out in both
  * blocks and the two have to move together. The upper bound is exclusive
  * (`width < 80rem`) rather than a `max-width` a hair below it: a `max-width` of
@@ -289,11 +198,10 @@
  */
 @media (min-width: 72rem) and (width < 80rem) {
 	:root {
-		--sl-mobile-toc-height: 3rem;
-
 		/* Page.astro drops the disclosure from the anchor offset at 72em and is
 		 * bundled after this file, so an `html` selector here would lose on source
-		 * order. `:root` outweighs it instead. */
+		 * order. `:root` outweighs it instead. The strip height itself comes from
+		 * the `width < 80rem` block above. */
 		scroll-padding-top: calc(1.5rem + var(--sl-nav-height) + var(--sl-mobile-toc-height));
 	}
 
@@ -323,7 +231,7 @@
 		 * rail to leave room for: measured with this rule deleted, its `min()`
 		 * gives the pane 640px of an available 896px at 1152, and the column
 		 * 592px. */
-		--sl-content-margin-inline: auto;
+		--sl-content-margin-inline: 0 auto;
 		width: 100%;
 	}
 
@@ -378,112 +286,67 @@
 		width: calc(var(--ptah-toc-width) - 2 * var(--sl-sidebar-pad-x));
 		max-width: none;
 	}
-}
 
-/*
- * A wide table scrolls inside its own container and keeps its desktop column
- * widths, which is the assumption scripts/check-responsive.mjs states when it
- * measures cell height at 1280px only.
- *
- * The feature matrix did not satisfy it. Starlight already makes every table
- * its own scroller (`display: block; overflow-x: auto`), so the matrix did
- * scroll at 390px -- but auto table layout still shrank it toward the viewport,
- * to as little as 437px against a desktop 632px, and the difference column then
- * stacked into cells of up to fifteen rendered lines. Measured: 505 cells over
- * the eight-line cap at 390px, none at 1280px.
- *
- * The width has to sit on the table while the scrolling sits on something else.
- * A `min-width` on Starlight's table-as-scroller widens the scroller itself, so
- * the page scrolls sideways instead of the table -- measured at 648px against a
- * 390px viewport, which is the other defect that check refuses
- * (stokaro/ptah#946).
- */
-.sl-markdown-content .ptah-wide-table {
-	max-width: 100%;
-	overflow-x: auto;
-}
-
-.ptah-reference-filter {
-	display: grid;
-	grid-template-columns: minmax(12rem, 28rem) auto;
-	align-items: end;
-	gap: 0.5rem 1rem;
-	margin-block: 1.25rem;
-}
-
-.ptah-reference-filter label {
-	display: grid;
-	gap: 0.35rem;
-	color: var(--sl-color-gray-2);
-	font-weight: 600;
-}
-
-.ptah-reference-filter input {
-	width: 100%;
-	min-height: 2.5rem;
-	padding-inline: 0.75rem;
-	border: 1px solid var(--sl-color-gray-4);
-	border-radius: 0.5rem;
-	background: var(--sl-color-bg-nav);
-	color: var(--sl-color-text);
-	font: inherit;
-}
-
-.ptah-reference-filter input:focus-visible {
-	outline: 3px solid var(--sl-color-accent-high);
-	outline-offset: 2px;
-}
-
-.ptah-reference-filter [data-ptah-filter-status] {
-	margin: 0 0 0.55rem;
-	color: var(--sl-color-gray-2);
-	white-space: nowrap;
-}
-
-@media (max-width: 30rem) {
-	.ptah-reference-filter {
-		grid-template-columns: 1fr;
+	/*
+	 * The column layout's frame. The rail, the TOC column and the article pane
+	 * inside the frame are the same as above -- Starlight pins the navigation
+	 * to the left edge at full height through PageFrame (`.sidebar-pane` is
+	 * fixed, `.main-frame` is padded by `--sl-content-inline-start`), and the
+	 * TOC and pane rules read `--ptah-toc-width`. Only the frame's width and
+	 * position differ.
+	 *
+	 * Width: the whole pane beside the rail, up to 80rem. The 80rem frame holds
+	 * 48 + 960 (shell) + 48 + 208 (contents) = 1264px, so the shell keeps its
+	 * left edge and 16px of the frame stay between it and the contents. At the
+	 * rail's first width, 1280, the pane measures 1024 and the frame with it:
+	 * the pane is 816, the shell 720, and the 704px prose fits with 16px to
+	 * spare -- screen 1a's grid, 256 / 1fr / 208, with its 48px padding.
+	 *
+	 * Position, once the pane is wider than the frame (a viewport past 96rem =
+	 * 1536px; the concept's notes round this to "above 100rem"): the surplus is
+	 * split 0.375 : 0.625 so the gutter beside the navigation is 0.6 of the far
+	 * one and the text stays near its menu. At 1920 the pane is 1664, the
+	 * surplus 384, the gutters 144 and 240. At 2560 the pane is 2304, the
+	 * surplus 1024, the gutters 384 and 640; screen 1b draws 378 and 630 at the
+	 * same width because its rail is 272 rather than 256. Below the cap the
+	 * `calc()` goes negative and `max()` holds the margin at 0.
+	 *
+	 * Screen 1b also floors the near gutter at 64px (`minmax(64px, 0.6fr)`),
+	 * which would narrow the frame below 80rem for panes between 1280 and 1450.
+	 * Not carried over: the frame's own 48px padding already keeps the prose
+	 * off the rail, and a frame that shrinks as the window grows is the defect
+	 * the band comment above describes.
+	 */
+	:root[data-ptah-layout='column'][data-has-sidebar][data-has-toc] .lg\:sl-flex {
+		width: min(100%, var(--ptah-doc-frame-max-width));
+		margin-inline-start: max(
+			0px,
+			calc((100% - var(--ptah-doc-frame-max-width)) * var(--ptah-doc-frame-left-share))
+		);
+		margin-inline-end: 0;
 	}
 
-	.ptah-reference-filter [data-ptah-filter-status] {
-		margin: 0;
+	/* The article's padding inside the frame: 36px above the breadcrumb, 48px a
+	 * side, 72px under the footer (screen 1a; 1b pads the sides by 48 as well).
+	 * Starlight pads each ContentPanel by 24px a side and 24px top and bottom,
+	 * and pads `main` by a further 3vh at the foot; the panel paddings are set
+	 * directly rather than through `--sl-content-pad-x`, which Starlight's
+	 * Header also reads for its column gap. The title panel is the first child
+	 * of `main` on every page that has no banner; with a banner the title panel
+	 * keeps Starlight's 24px. */
+	:root[data-ptah-layout='column'] {
+		--sl-main-pad: 0;
 	}
-}
 
-.sl-markdown-content .ptah-wide-table > table {
-	display: table;
-	width: 100%;
-	/* The width the same table takes in the desktop content column, so the
-	 * columns divide as they do there rather than by what fits a phone. */
-	min-width: 632px;
-	overflow-x: visible;
-}
+	:root[data-ptah-layout='column'] .main-pane .content-panel {
+		padding-inline: 3rem;
+	}
 
-/*
- * A subgroup heading is a second level and has to look like one. Starlight
- * gives every group label at every depth the same `.large` type
- * (@astrojs/starlight/components/SidebarSublist.astro), so depth 1 and depth 2
- * would be separated only by the 0.5rem `ul ul li` indent and its hairline.
- * `.top-level` is on the outermost list alone, so `ul.top-level ul` is exactly
- * the nested lists.
- *
- * The size steps down once per level, at both breakpoints, because Starlight
- * itself steps down at 50rem: a group label is `--sl-text-lg` below it and
- * `--sl-text-base` above, and a page link is unset below it and
- * `--sl-text-sm` above. A single unconditional size would put the subgroup
- * heading below its own links on a phone, where the sidebar is the menu.
- *
- * Unlayered on purpose: Starlight's own rule lives in `@layer starlight.core`,
- * and an unlayered declaration wins over a layered one whatever its
- * specificity.
- */
-ul.top-level ul .group-label > .large {
-	font-size: var(--sl-text-base);
-	color: var(--sl-color-gray-2);
-}
+	:root[data-ptah-layout='column'] .main-pane main > .content-panel:first-child {
+		padding-top: 2.25rem;
+	}
 
-@media (min-width: 50rem) {
-	ul.top-level ul .group-label > .large {
-		font-size: var(--sl-text-sm);
+	:root[data-ptah-layout='column'] .main-pane main > .content-panel:last-child {
+		padding-bottom: 4.5rem;
 	}
 }

@@ -138,18 +138,21 @@ const anchorName = `--${id}`;
     outline-offset: 2px;
   }
 
+  /* The panel is a menu in the design's terms: the raised surface, one
+   * hairline, 2px corners, no shadow; 13px/1.5 text in ink
+   * (stokaro/ptah#2893). */
   .ptah-glossary-panel {
-    background: var(--sl-color-bg-nav);
+    background: var(--ptah-surface);
     border: 1px solid var(--sl-color-hairline);
-    border-radius: 0.25rem;
-    box-shadow: var(--sl-shadow-md);
+    border-radius: 2px;
+    box-shadow: none;
     color: var(--sl-color-white);
-    font-size: var(--sl-text-sm);
+    font-size: var(--sl-text-xs); /* 13px */
     inset: auto;
     line-height: 1.5;
     margin: 0;
     max-width: min(32ch, calc(100vw - 2rem));
-    padding: 0.6rem 0.75rem;
+    padding: 0.625rem 0.75rem; /* 10px 12px */
     position: fixed;
     /* position-anchor is set inline, per use site, beside the anchor-name it
      * refers to. */
@@ -163,12 +166,15 @@ const anchorName = `--${id}`;
     font-weight: 600;
   }
 
+  /* A file path, in mono at 12px and in gray-3: the meta tone, which clears
+   * 4.5:1 on the surface in both themes (4.75 dark, 5.23 light) where the
+   * ink at 80% opacity it replaces was not measured. */
   .ptah-glossary-source {
+    color: var(--sl-color-gray-3);
     display: block;
     font-family: var(--__sl-font-mono, monospace);
-    font-size: 0.85em;
+    font-size: 0.75rem; /* 12px */
     margin-top: 0.35rem;
-    opacity: 0.8;
     /* A source is a file path: one token, no spaces, and longer than the
      * panel's 32ch cap -- `core/platform/capability/capability_measured_lines_test.go`
      * is 52 characters. `white-space: normal` gives it nowhere to break, so it

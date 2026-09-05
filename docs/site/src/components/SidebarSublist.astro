@@ -1,0 +1,108 @@
+---
+/**
+ * One level of the navigation rail, recursing into itself for the levels below.
+ *
+ * A copy of Starlight's SidebarSublist with one structural change: a group
+ * nested inside a group (depth 1 and deeper) is a static label above its pages,
+ * not a second `<details>`. Two levels of chevrons made the rail a tree to be
+ * operated; a mono uppercase label reads as a heading inside an open group and
+ * its pages are always visible. Root groups keep `<details>` / `<summary>` so
+ * that a group opens for the current page, a reader can close and open it from
+ * the keyboard, and Starlight's SidebarPersister remembers the choice through
+ * SidebarRestorePoint (which counts `<details>` in render order, so only root
+ * groups place one). The chevron beside a root label is an empty span that
+ * sidebar.css fills from the open state; it is hidden from assistive tech
+ * because the disclosure already reports whether it is open.
+ *
+ * The visual rules live in src/styles/ptah/sidebar.css, unlayered, next to the
+ * rest of the design; this file carries no styles of its own. Starlight's
+ * `flattenSidebar` is not part of the package's exports, so the "does this
+ * group hold the current page" test is written out below.
+ */
+import { Badge } from '@astrojs/starlight/components';
+import SidebarRestorePoint from '@astrojs/starlight/components/SidebarRestorePoint.astro';
+import type { StarlightRouteData } from '@astrojs/starlight/route-data';
+
+type SidebarEntry = StarlightRouteData['sidebar'][number];
+
+interface Props {
+  sublist: SidebarEntry[];
+  /** 0 for the rail's root list; subgroups render as labels from 1 on. */
+  depth?: number;
+  /** The id of the label that names this list, set for a subgroup's pages. */
+  labelledBy?: string;
+}
+
+const { sublist, depth = 0, labelledBy } = Astro.props;
+
+/** Whether any link inside the entries, at any depth, is the current page. */
+function holdsCurrentPage(entries: SidebarEntry[]): boolean {
+  return entries.some((entry) =>
+    entry.type === 'link' ? entry.isCurrent : holdsCurrentPage(entry.entries),
+  );
+}
+
+// Each subgroup label names the list under it through `aria-labelledby`, so
+// the ids have to be unique across the whole rail. A running index kept in
+// `Astro.locals` for the request, the way SidebarRestorePoint numbers itself,
+// survives the recursion without a module-level counter that would leak
+// between pages of one build.
+const subgroupIndexSymbol = Symbol.for('ptah-sidebar-subgroup-index');
+const locals = Astro.locals as App.Locals & { [subgroupIndexSymbol]?: number };
+function nextSubgroupId(): string {
+  const index = locals[subgroupIndexSymbol] || 0;
+  locals[subgroupIndexSymbol] = index + 1;
+  return `ptah-sidebar-subgroup-${index}`;
+}
+
+const items = sublist.map((entry) => ({
+  entry,
+  labelId: entry.type === 'group' && depth > 0 ? nextSubgroupId() : undefined,
+}));
+---
+
+<ul class:list={[depth === 0 ? 'top-level' : 'sublist']} data-depth={depth} aria-labelledby={labelledBy}>
+  {
+    items.map(({ entry, labelId }) => (
+      <li>
+        {entry.type === 'link' ? (
+          <a
+            href={entry.href}
+            aria-current={entry.isCurrent ? 'page' : undefined}
+            class:list={['page', entry.attrs.class]}
+            {...entry.attrs}
+          >
+            <span>{entry.label}</span>
+            {entry.badge && (
+              <Badge variant={entry.badge.variant} class={entry.badge.class} text={entry.badge.text} />
+            )}
+          </a>
+        ) : depth === 0 ? (
+          <details open={holdsCurrentPage(entry.entries) || !entry.collapsed}>
+            <summary class="group">
+              <span class="group-label">
+                <span>{entry.label}</span>
+                {entry.badge && (
+                  <Badge variant={entry.badge.variant} class={entry.badge.class} text={entry.badge.text} />
+                )}
+              </span>
+              <span class="caret" aria-hidden="true"></span>
+            </summary>
+            <SidebarRestorePoint />
+            <Astro.self sublist={entry.entries} depth={depth + 1} />
+          </details>
+        ) : (
+          <div class="subgroup">
+            <p class="subgroup-label" id={labelId}>
+              <span>{entry.label}</span>
+              {entry.badge && (
+                <Badge variant={entry.badge.variant} class={entry.badge.class} text={entry.badge.text} />
+              )}
+            </p>
+            <Astro.self sublist={entry.entries} depth={depth + 1} labelledBy={labelId} />
+          </div>
+        )}
+      </li>
+    ))
+  }
+</ul>

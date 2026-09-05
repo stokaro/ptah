@@ -1,4 +1,30 @@
 ---
+/**
+ * The "Copy as Markdown" split button: the left segment copies the page's
+ * Markdown, the right one opens a menu with the other ways to use the source.
+ * It sits above the contents rail from 80rem and in the footer's meta row
+ * below that (see TableOfContents.astro and Footer.astro).
+ *
+ * The menu holds the ways to use the page's Markdown and nothing else: the
+ * edit, source and report links are about the page's source and sit after the
+ * article, in the footer (Footer.astro), where a reader who has finished looks
+ * for them.
+ *
+ * The rail and the footer each render one instance because a stylesheet
+ * cannot move an element and the rail does not exist below 80rem. Only one of
+ * them may be the `ptah-page-actions` element: check-navigation.mjs and
+ * check-release-page-actions.mjs locate that tag and expect exactly one, with
+ * the source attributes, one `[data-copy-page]` button named "Copy page as
+ * Markdown" and one `summary`. The other instance is
+ * `ptah-page-actions-fallback`, the same markup under a tag the gates do not
+ * read; the styles below show one or the other.
+ *
+ * The styles are scoped to this file on purpose: the release overlay
+ * (scripts/apply-release-ui-overlay.mjs) copies this component into the
+ * checkout of a released version, whose stylesheets are its own, so the
+ * control has to bring its look along. Every token it reads has a fallback
+ * to a Starlight variable for the same reason.
+ */
 interface Props {
   markdownUrl: string;
   markdownLabel: string;
@@ -16,12 +42,35 @@ interface Props {
     editSourcePath: string;
     generated: boolean;
   };
+  /** True for the instance the gates read; false for the footer's stand-in. */
+  primary?: boolean;
+  /** Whether the menu offers the llms.txt row; see page-furniture.mjs. */
+  llmsEntry?: boolean;
+  /** Render the edit / source / report links beside the control (the heading
+   * of a release checkout, which has no footer to hold them). */
+  sourceLinks?: boolean;
 }
 
-const { markdownUrl, markdownLabel, actions, sourceContext } = Astro.props;
+const {
+  markdownUrl,
+  markdownLabel,
+  actions,
+  sourceContext,
+  primary = true,
+  llmsEntry = false,
+  sourceLinks = false,
+} = Astro.props;
+const Root = primary ? 'ptah-page-actions' : 'ptah-page-actions-fallback';
+const icons = {
+  copy: `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/></svg>`,
+  file: `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 2.5h5.5l3.5 3.5v7.5a1 1 0 0 1-1 1h-8a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1z"/><path d="M9 2.5V6h3.5"/></svg>`,
+  external: `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 3.5h-3a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-3"/><path d="M9.5 2.5h4v4M13.5 2.5 7.5 8.5"/></svg>`,
+  caret: `<svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M4.5 6.5h7L8 10.5z"/></svg>`,
+};
 ---
 
-<ptah-page-actions
+<Root
+  class="ptah-page-actions"
   data-markdown-url={markdownUrl}
   data-documentation-version={sourceContext.documentationVersion}
   data-view-ref={sourceContext.viewRef}
@@ -30,260 +79,91 @@ const { markdownUrl, markdownLabel, actions, sourceContext } = Astro.props;
   data-edit-source={sourceContext.editSourcePath}
   data-generated={String(sourceContext.generated)}
 >
-  <div class="page-actions-control">
-    <button
-      class="copy-page-button"
-      type="button"
-      data-copy-page
-      aria-label={markdownLabel}
-      disabled
-    >
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <rect x="7" y="5" width="11" height="15" rx="2"></rect>
-        <path d="M9 5V3.75C9 2.78 9.78 2 10.75 2h3.5C15.22 2 16 2.78 16 3.75V5"></path>
-      </svg>
-      <span data-copy-label>{markdownLabel}</span>
+  <div class="ptah-split">
+    <button class="ptah-split-copy" type="button" data-copy-page aria-label={markdownLabel} disabled>
+      <span class="ptah-split-glyph" set:html={icons.copy} />
+      <span>Copy as Markdown</span>
     </button>
 
-    <details>
-      <summary aria-label="More page actions">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="m8 10 4 4 4-4"></path>
-        </svg>
+    <details class="ptah-split-details">
+      <summary class="ptah-split-more" aria-label="More ways to use this page">
+        <span class="ptah-split-caret" set:html={icons.caret} />
       </summary>
 
       <div class="page-actions-menu">
-        {actions.map((action) => (
-            <a
-              class="page-action"
-              href={action.url}
-              target="_blank"
-              rel="noreferrer"
-              data-page-action={action.kind}
-            >
-              <span class="page-action-icon" aria-hidden="true">
-                {action.kind === 'edit' ? (
-                  <svg viewBox="0 0 24 24">
-                    <path d="m4 16-.8 4 4-.8L18.4 8 16 5.6 4 16Z"></path>
-                    <path d="m13.8 7.8 2.4 2.4"></path>
-                  </svg>
-                ) : action.kind === 'source' ? (
-                  <svg viewBox="0 0 24 24">
-                    <path d="m9 7-5 5 5 5M15 7l5 5-5 5"></path>
-                  </svg>
-                ) : (
-                  <svg viewBox="0 0 24 24">
-                    <circle cx="12" cy="12" r="9"></circle>
-                    <path d="M12 7v6M12 17h.01"></path>
-                  </svg>
-                )}
-              </span>
-              <span>
-                <strong>{action.label}</strong>
-                <small>{action.description}</small>
-              </span>
-              <svg class="external-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M14 5h5v5M19 5l-8 8"></path>
-                <path d="M18 13v5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"></path>
-              </svg>
-            </a>
-        ))}
+        <div class="page-actions-group">
+          <button class="page-action" type="button" data-copy-page-row>
+            <span class="page-action-glyph" set:html={icons.copy} />
+            <span class="page-action-title">Copy as Markdown</span>
+            <span class="page-action-description">For an LLM, an issue, a wiki</span>
+          </button>
+          <a class="page-action" href={markdownUrl} target="_blank" rel="noreferrer" data-view-markdown>
+            <span class="page-action-glyph" set:html={icons.file} />
+            <span class="page-action-title">View as Markdown</span>
+            <span class="page-action-trailing" set:html={icons.external} />
+            <span class="page-action-description">The .md this page is built from</span>
+          </a>
+          {llmsEntry && (
+            <button class="page-action" type="button" data-copy-llms-entry>
+              <span class="page-action-glyph" aria-hidden="true">{'{}'}</span>
+              <span class="page-action-title">Copy page URL as llms.txt entry</span>
+              <span class="page-action-description">Title, description, canonical link</span>
+            </button>
+          )}
+        </div>
       </div>
     </details>
   </div>
 
+  {
+    /*
+     * The source links, only where the heading has to carry them: a release
+     * checkout that received this file through the overlay (see PageTitle.astro)
+     * has no footer override to put them in. On this site the footer has them
+     * and this row does not render.
+     */
+    sourceLinks && (
+      <div class="ptah-actions-source">
+        {actions.map((action) => (
+          <a class="ptah-actions-source-link" href={action.url} target="_blank" rel="noreferrer" data-page-action={action.kind}>
+            <strong>{action.label}</strong> <span aria-hidden="true">↗</span>
+          </a>
+        ))}
+      </div>
+    )
+  }
+
   <span class="copy-status" role="status" aria-live="polite"></span>
-</ptah-page-actions>
-
-<style>
-  ptah-page-actions {
-    position: relative;
-    display: block;
-    flex: none;
-  }
-
-  .page-actions-control {
-    display: flex;
-    min-height: 2.5rem;
-    border: 1px solid var(--sl-color-gray-5);
-    border-radius: 0.6rem;
-    background: var(--sl-color-black);
-    box-shadow: var(--sl-shadow-sm);
-  }
-
-  .copy-page-button,
-  summary {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--sl-color-gray-1);
-    background: transparent;
-    cursor: pointer;
-  }
-
-  .copy-page-button {
-    gap: 0.45rem;
-    border: 0;
-    padding: 0.45rem 0.75rem;
-    border-radius: 0.55rem 0 0 0.55rem;
-    font: inherit;
-    font-size: var(--sl-text-sm);
-    font-weight: 600;
-  }
-
-  .copy-page-button svg,
-  summary svg {
-    width: 1rem;
-    height: 1rem;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.8;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
-  details {
-    position: relative;
-    border-inline-start: 1px solid var(--sl-color-gray-5);
-  }
-
-  summary {
-    width: 2.4rem;
-    height: 100%;
-    border-radius: 0 0.55rem 0.55rem 0;
-    list-style: none;
-  }
-
-  summary::-webkit-details-marker {
-    display: none;
-  }
-
-  .copy-page-button:hover,
-  summary:hover,
-  details[open] summary {
-    color: var(--sl-color-white);
-    background: var(--sl-color-gray-6);
-  }
-
-  .copy-page-button:focus-visible,
-  summary:focus-visible,
-  .page-action:focus-visible {
-    outline: 2px solid var(--sl-color-accent);
-    outline-offset: 2px;
-  }
-
-  .page-actions-menu {
-    position: absolute;
-    z-index: calc(var(--sl-z-index-navbar) + 1);
-    inset-block-start: calc(100% + 0.5rem);
-    inset-inline-end: 0;
-    width: min(22rem, calc(100vw - 2rem));
-    padding: 0.4rem;
-    border: 1px solid var(--sl-color-gray-5);
-    border-radius: 0.75rem;
-    background: var(--sl-color-black);
-    box-shadow: var(--sl-shadow-lg);
-  }
-
-  .page-action {
-    display: grid;
-    grid-template-columns: 2rem minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 0.65rem;
-    width: 100%;
-    padding: 0.7rem;
-    border-radius: 0.5rem;
-    color: var(--sl-color-gray-1);
-    text-align: start;
-    text-decoration: none;
-  }
-
-  .page-action:hover {
-    color: var(--sl-color-white);
-    background: var(--sl-color-gray-6);
-  }
-
-  .page-action-icon {
-    display: grid;
-    place-items: center;
-    width: 2rem;
-    height: 2rem;
-    border-radius: 0.45rem;
-    color: var(--sl-color-text-accent);
-    background: var(--sl-color-accent-low);
-  }
-
-  .page-action-icon svg,
-  .external-icon {
-    width: 1.1rem;
-    height: 1.1rem;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.7;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
-  .page-action strong,
-  .page-action small {
-    display: block;
-  }
-
-  .page-action strong {
-    font-size: var(--sl-text-sm);
-    line-height: 1.35;
-  }
-
-  .page-action small {
-    margin-top: 0.1rem;
-    color: var(--sl-color-gray-3);
-    font-size: var(--sl-text-xs);
-    line-height: 1.35;
-  }
-
-  .external-icon {
-    color: var(--sl-color-gray-3);
-  }
-
-  .copy-page-button:disabled {
-    color: var(--sl-color-gray-3);
-    cursor: wait;
-  }
-
-  .copy-status {
-    position: absolute;
-    inset-block-start: calc(100% + 0.35rem);
-    inset-inline-end: 0;
-    width: max-content;
-    max-width: 16rem;
-    color: var(--sl-color-gray-2);
-    font-size: var(--sl-text-xs);
-    line-height: 1.3;
-  }
-
-  @media (max-width: 30rem) {
-    .copy-page-button {
-      padding-inline: 0.6rem;
-    }
-
-    .copy-page-button span {
-      display: none;
-    }
-  }
-</style>
+</Root>
 
 <script>
+  /* One fetch per Markdown URL, however many instances a page renders. */
+  const markdownCache = new Map<string, Promise<string>>();
+
+  function loadMarkdown(url: string): Promise<string> {
+    let loading = markdownCache.get(url);
+    if (!loading) {
+      loading = fetch(url, { headers: { Accept: 'text/markdown' } }).then((response) => {
+        if (!response.ok) throw new Error(`Markdown request failed: ${response.status}`);
+        return response.text();
+      });
+      loading.catch(() => markdownCache.delete(url));
+      markdownCache.set(url, loading);
+    }
+    return loading;
+  }
+
   class PtahPageActions extends HTMLElement {
     private statusTimer?: number;
-    private markdown = '';
-    private loading?: Promise<string>;
 
     connectedCallback() {
       if (this.dataset.initialized === 'true') return;
       this.dataset.initialized = 'true';
 
       const details = this.querySelector<HTMLDetailsElement>('details');
+      const summary = details?.querySelector<HTMLElement>('summary');
       const status = this.querySelector<HTMLElement>('.copy-status');
+      const url = this.dataset.markdownUrl;
 
       const announce = (message: string) => {
         if (!status) return;
@@ -294,9 +174,13 @@ const { markdownUrl, markdownLabel, actions, sourceContext } = Astro.props;
         }, 3000);
       };
 
-      const fallbackCopy = () => {
+      const writeClipboard = async (text: string) => {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+          return;
+        }
         const textarea = document.createElement('textarea');
-        textarea.value = this.markdown;
+        textarea.value = text;
         textarea.setAttribute('readonly', '');
         textarea.style.position = 'fixed';
         textarea.style.opacity = '0';
@@ -307,69 +191,451 @@ const { markdownUrl, markdownLabel, actions, sourceContext } = Astro.props;
         if (!copied) throw new Error('copy command failed');
       };
 
-      const copy = async () => {
+      const copyMarkdown = async () => {
         try {
-          const markdown = await this.loadMarkdown();
-          if (navigator.clipboard?.writeText) {
-            await navigator.clipboard.writeText(markdown);
-          } else {
-            fallbackCopy();
-          }
+          if (!url) throw new Error('missing Markdown URL');
+          await writeClipboard(await loadMarkdown(url));
           announce('Page copied as Markdown.');
         } catch {
           announce('Copy failed. Select the page text instead.');
         }
       };
 
-      void this.loadMarkdown().then(() => {
-        this.querySelectorAll<HTMLButtonElement>('[data-copy-page]').forEach((button) => {
-          button.disabled = false;
+      const copyLlmsEntry = async () => {
+        const title = document.title;
+        const description = document.querySelector<HTMLMetaElement>('meta[name="description"]')?.content ?? '';
+        const canonical = document.querySelector<HTMLLinkElement>('link[rel="canonical"]')?.href ?? location.href;
+        try {
+          await writeClipboard(`- [${title}](${canonical})${description ? `: ${description}` : ''}\n`);
+          announce('llms.txt entry copied.');
+        } catch {
+          announce('Copy failed.');
+        }
+      };
+
+      if (url) {
+        void loadMarkdown(url)
+          .then(() => {
+            this.querySelectorAll<HTMLButtonElement>('[data-copy-page]').forEach((button) => {
+              button.disabled = false;
+            });
+          })
+          .catch(() => {
+            announce('The Markdown source could not be loaded.');
+          });
+      }
+
+      /* Every way of closing goes through here. A row chosen from the keyboard
+       * sits inside content the browser hides on close, so focus would fall to
+       * the document and a keyboard reader would start over from the top of
+       * the page; the caret takes it instead, as it does after Escape. A close
+       * by a click elsewhere leaves focus where the click put it. */
+      const close = ({ refocus = true } = {}) => {
+        if (!details?.open) return;
+        details.open = false;
+        if (refocus) summary?.focus();
+      };
+
+      this.querySelectorAll<HTMLElement>('[data-copy-page], [data-copy-page-row]').forEach((button) => {
+        button.addEventListener('click', () => {
+          void copyMarkdown();
+          close();
         });
-      }).catch(() => {
-        announce('The Markdown source could not be loaded.');
+      });
+      this.querySelectorAll<HTMLElement>('[data-copy-llms-entry]').forEach((button) => {
+        button.addEventListener('click', () => {
+          void copyLlmsEntry();
+          close();
+        });
       });
 
-      this.querySelectorAll<HTMLElement>('[data-copy-page]').forEach((button) => {
-        button.addEventListener('click', () => {
-          void copy();
-          details?.removeAttribute('open');
-        });
+      /* The open menu is fixed to the viewport (see the styles): its right
+       * edge on the caret's right edge (the caret's own box, so the two agree
+       * even where the control is squeezed), 4px below the control, and above
+       * the control instead when the viewport has no room below. It follows the
+       * control through scrolling and resizing while it is open.
+       *
+       * Opening is done from the caret's click, not from the details' toggle
+       * event: `toggle` is dispatched in a later task, so the browser could
+       * paint one frame with the menu in its resting place inside the rail
+       * before the script moved it, and the menu appeared to jump. Here the
+       * class, the position and the entrance are set in the same task as the
+       * click, before the next paint. Keyboard activation of a summary fires
+       * the same click event. The toggle handler only cleans up after a close
+       * (Escape, outside click, or a change made some other way). */
+      const menu = details?.querySelector<HTMLElement>('.page-actions-menu');
+      const control = this.querySelector<HTMLElement>('.ptah-split');
+      let frame = 0;
+      const place = () => {
+        frame = 0;
+        if (!details?.open || !menu || !control) return;
+        const anchor = (summary ?? control).getBoundingClientRect();
+        const width = Math.min(280, window.innerWidth - 16);
+        const height = menu.offsetHeight;
+        const left = Math.min(Math.max(8, anchor.right - width), window.innerWidth - width - 8);
+        const below = anchor.bottom + 4;
+        const top = below + height + 8 > window.innerHeight && anchor.top - height - 4 >= 8
+          ? anchor.top - height - 4
+          : below;
+        menu.style.left = `${Math.round(left)}px`;
+        menu.style.top = `${Math.round(top)}px`;
+      };
+      const schedule = () => {
+        if (!frame) frame = window.requestAnimationFrame(place);
+      };
+      const openMenu = () => {
+        if (!details || !menu) return;
+        menu.classList.add('is-floating');
+        details.open = true;
+        place();
+        /* Restart the entrance: the element stays in the tree while closed
+         * (Chrome hides a closed details' content with content-visibility),
+         * so a class left in place would animate once per page. Removing the
+         * class, forcing a layout, and adding it again replays it. */
+        menu.classList.remove('is-entering');
+        void menu.offsetWidth;
+        menu.classList.add('is-entering');
+        /* Capture phase: scroll events do not bubble, and the contents rail is
+         * its own scroller (Starlight fixes it with overflow-y: auto), so a
+         * listener on the window only hears it in the capture phase. */
+        window.addEventListener('scroll', schedule, { passive: true, capture: true });
+        window.addEventListener('resize', schedule);
+      };
+      const settleClosed = () => {
+        if (!menu) return;
+        menu.classList.remove('is-floating', 'is-entering');
+        menu.style.removeProperty('left');
+        menu.style.removeProperty('top');
+        window.removeEventListener('scroll', schedule, { capture: true });
+        window.removeEventListener('resize', schedule);
+      };
+      summary?.addEventListener('click', (event) => {
+        if (!details) return;
+        event.preventDefault();
+        if (details.open) {
+          close({ refocus: false });
+        } else {
+          openMenu();
+        }
+      });
+      details?.addEventListener('toggle', () => {
+        if (!details.open) settleClosed();
+        else if (!menu?.classList.contains('is-floating')) openMenu();
       });
 
       document.addEventListener('click', (event) => {
         if (details?.open && event.target instanceof Node && !this.contains(event.target)) {
-          details.removeAttribute('open');
+          close({ refocus: false });
+        }
+      });
+      /* Tabbing past the last row leaves the component; the menu should not
+       * stay hanging over the article. */
+      this.addEventListener('focusout', (event) => {
+        const next = event.relatedTarget;
+        if (details?.open && (!(next instanceof Node) || !this.contains(next))) {
+          close({ refocus: false });
         }
       });
 
-      this.addEventListener('keydown', (event) => {
-        if (event.key !== 'Escape' || !details?.open) return;
-        details.removeAttribute('open');
-        details.querySelector<HTMLElement>('summary')?.focus();
+      /* The caret remembers how it was reached: a pointer press marks it, a
+       * key press or losing focus clears the mark. The styles hide the focus
+       * ring while the mark is set. */
+      summary?.addEventListener('pointerdown', () => {
+        summary.dataset.pointer = '';
       });
-    }
+      summary?.addEventListener('blur', () => {
+        delete summary.dataset.pointer;
+      });
+      this.addEventListener('keydown', () => {
+        if (summary) delete summary.dataset.pointer;
+      });
 
-    private loadMarkdown(): Promise<string> {
-      if (this.markdown) return Promise.resolve(this.markdown);
-      if (this.loading) return this.loading;
-
-      const url = this.dataset.markdownUrl;
-      if (!url) return Promise.reject(new Error('missing Markdown URL'));
-
-      this.loading = fetch(url, { headers: { Accept: 'text/markdown' } })
-        .then((response) => {
-          if (!response.ok) throw new Error(`Markdown request failed: ${response.status}`);
-          return response.text();
-        })
-        .then((markdown) => {
-          this.markdown = markdown;
-          return markdown;
-        });
-      return this.loading;
+      /* Escape is heard from the whole document while the menu is open: a
+       * click that opened it need not have left focus inside the component
+       * (Safari does not focus a clicked summary). */
+      document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape' || !details?.open) return;
+        close();
+      });
     }
   }
 
   if (!customElements.get('ptah-page-actions')) {
     customElements.define('ptah-page-actions', PtahPageActions);
   }
+  if (!customElements.get('ptah-page-actions-fallback')) {
+    customElements.define('ptah-page-actions-fallback', class extends PtahPageActions {});
+  }
 </script>
+
+<style>
+  /* The element fills the contents rail (so the menu can measure the rail's
+   * width) and shrinks to its content as a flex item in the footer's link row.
+   * The menu and the status message are positioned against it. */
+  ptah-page-actions,
+  ptah-page-actions-fallback {
+    position: relative;
+    display: block;
+    min-width: 0;
+  }
+
+  /* The footer renders a second copy for the widths without a rail; from 80rem
+   * the rail's copy is the one on screen. global.css spells the same 80rem in
+   * the rules that show the rail. */
+  @media (min-width: 80rem) {
+    ptah-page-actions-fallback {
+      display: none;
+    }
+  }
+
+  /* One control, two segments: 500 12.5px sans in ink on the raised surface,
+   * inside one hairline box. The left segment carries a ⧉ in 11px mono gray-3
+   * and the label; the right one, split off by a hairline, is the ▾ in gray-2.
+   * Hover fills a segment with the code surface, on which gray-3 still
+   * measures 4.69:1 dark and 4.75:1 light. */
+  /* The control has to fit the narrowest contents rail, 176px inside the
+   * 13rem rail of the column layout at 1280: 12px type, 9px of side padding, a
+   * 14px icon and a 7px caret cell measure 174.7px. Should a font render it
+   * wider, the label gives way with an ellipsis rather than the caret leaving
+   * the box: a caret pushed past the border was what the box looked like
+   * before (the copy segment can shrink, the caret cannot). */
+  .ptah-split {
+    display: flex;
+    width: max-content;
+    max-width: 100%;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 2px;
+    background: var(--ptah-surface, var(--sl-color-bg-nav));
+    color: var(--sl-color-white);
+    font-size: 0.75rem; /* 12px */
+    font-weight: 500;
+    line-height: 1.2;
+  }
+  .ptah-split-copy {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 6px 9px;
+    border: 0;
+    border-radius: 2px 0 0 2px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .ptah-split-copy > span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .ptah-split-glyph,
+  .ptah-split-caret,
+  .page-action-glyph,
+  .page-action-trailing {
+    display: inline-flex;
+    color: var(--sl-color-gray-3);
+  }
+  .page-action-glyph :global(svg),
+  .page-action-trailing :global(svg) {
+    width: 16px;
+    height: 16px;
+  }
+  .ptah-split-glyph :global(svg) {
+    width: 14px;
+    height: 14px;
+  }
+  .ptah-split-glyph {
+    color: var(--sl-color-gray-2);
+  }
+  .ptah-split-caret :global(svg) {
+    width: 14px;
+    height: 14px;
+  }
+  .ptah-split-details {
+    display: flex;
+    flex: none;
+  }
+  .ptah-split-more {
+    display: flex;
+    align-items: center;
+    flex: none;
+    height: 100%;
+    padding: 6px 7px;
+    border-inline-start: 1px solid var(--sl-color-hairline);
+    border-radius: 0 2px 2px 0;
+    color: var(--sl-color-gray-2);
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+  }
+  .ptah-split-more::marker,
+  .ptah-split-more::-webkit-details-marker {
+    display: none;
+  }
+  .ptah-split-copy:hover,
+  .ptah-split-more:hover,
+  .ptah-split-details[open] .ptah-split-more {
+    color: var(--sl-color-white);
+    background: var(--sl-color-bg-inline-code);
+  }
+  /* Until the Markdown has loaded there is nothing to copy. */
+  .ptah-split-copy:disabled {
+    color: var(--sl-color-gray-3);
+    cursor: wait;
+  }
+
+  /* The menu: 280px on the raised surface, 4px of padding around rows laid out
+   * as glyph | title | trailing mark, with the description under the title.
+   * In the rail it is capped at the rail's inner width, because the rail is a
+   * scroll container (global.css) and would clip or scroll anything wider; in
+   * the footer it hangs from the control's right edge and never exceeds the
+   * viewport less the page padding. */
+  .page-actions-menu {
+    position: absolute;
+    z-index: calc(var(--sl-z-index-navbar) + 1);
+    inset-block-start: calc(100% + 4px);
+    inset-inline-start: 0;
+    display: grid;
+    width: min(280px, 100%);
+    padding: 4px;
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 2px;
+    background: var(--ptah-surface, var(--sl-color-bg-nav));
+    color: var(--sl-color-white);
+    font-size: 0.8125rem;
+    font-weight: 400;
+    line-height: 1.4;
+    text-align: start;
+  }
+  :global(.ptah-footer-links) .page-actions-menu {
+    inset-inline-start: auto;
+    inset-inline-end: 0;
+    width: min(280px, calc(100vw - 2rem));
+  }
+  /* With the script running, the menu leaves the flow of its container: the
+   * contents rail is a scroll container that would clip a 280px menu to its
+   * 200px, so the menu is fixed to the viewport, its right edge on the
+   * caret's, and hangs over the article the way GitHub's hangs over its
+   * contents list. The script sets top and left; the class only frees the
+   * element from the container. Without the script the menu stays absolute
+   * inside the rail, narrower but reachable. */
+  .page-actions-menu.is-floating {
+    position: fixed;
+    inset: auto;
+    width: min(280px, calc(100vw - 16px));
+  }
+  /* The menu arrives rather than appears: 160ms from six pixels up and
+   * transparent, the way GitHub's does, on every opening. Readers who asked
+   * for less motion get it in place at once. */
+  @keyframes ptah-menu-in {
+    from {
+      opacity: 0;
+      transform: translateY(-6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .page-actions-menu.is-entering {
+    animation: ptah-menu-in 160ms ease-out;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .page-actions-menu.is-entering {
+      animation: none;
+    }
+  }
+  /* A caret opened or closed with the pointer shows no focus ring: the ring is
+   * for a reader who arrived by keyboard (Tab, or Escape putting focus back
+   * here). Browsers differ on whether a clicked summary matches
+   * :focus-visible, so the script records the pointer and this rule reads it. */
+  .ptah-split-more[data-pointer]:focus-visible {
+    outline: none;
+  }
+  .page-actions-group {
+    display: grid;
+  }
+  .page-action {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    gap: 2px 10px;
+    width: 100%;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 2px;
+    background: transparent;
+    color: var(--sl-color-white);
+    font: inherit;
+    text-align: start;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .page-action:hover,
+  .page-action:focus-visible {
+    background: var(--sl-color-bg-inline-code);
+  }
+  .page-action-glyph {
+    padding-top: 1px;
+  }
+  .page-action-title {
+    grid-column: 2;
+    color: var(--sl-color-white);
+    font-weight: 500;
+    overflow-wrap: anywhere;
+  }
+  .page-action-trailing {
+    grid-column: 3;
+    padding-top: 1px;
+  }
+  .page-action-description {
+    grid-column: 2;
+    color: var(--sl-color-gray-3);
+    font-size: 0.78125rem;
+  }
+
+  /* The source links of a release checkout's heading: one row of 500 12.5px
+   * links after the control, the way the footer writes them on this site. */
+  .ptah-actions-source {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    margin-top: 8px;
+    font-size: 0.78125rem;
+    font-weight: 500;
+    line-height: 1.3;
+  }
+  .ptah-actions-source-link {
+    color: var(--sl-color-gray-2);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .ptah-actions-source-link strong {
+    font-weight: inherit;
+  }
+  .ptah-actions-source-link:hover {
+    color: var(--sl-color-text-accent);
+  }
+
+  /* The result of a copy, spoken by the live region and shown under the control
+   * for three seconds; the empty span takes no room. */
+  .copy-status {
+    position: absolute;
+    inset-block-start: calc(100% + 4px);
+    inset-inline-start: 0;
+    width: max-content;
+    max-width: 16rem;
+    color: var(--sl-color-gray-2);
+    font-size: 0.78125rem;
+    font-weight: 400;
+    line-height: 1.3;
+  }
+  .copy-status:empty {
+    display: none;
+  }
+  :global(.ptah-footer-links) .copy-status {
+    inset-inline-start: auto;
+    inset-inline-end: 0;
+    text-align: end;
+  }
+</style>
