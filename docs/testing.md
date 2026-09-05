@@ -114,6 +114,26 @@ Three kinds exist, and each is loaded by one command:
 | `schema` | `url` | Establishes the starting state. Plan cases only. |
 | `apply` | `url` | Applies the saved plan file that URL names. Plan cases only. |
 
+Everything above is available in a `test "plan"` case too, and `for_each` earns
+its place there: an instance can select the plan file it applies, so one case
+covers several plans.
+
+```hcl
+test "plan" "each_plan" {
+  for_each = { email = "add_email", nickname = "add_nickname" }
+  parallel = true
+
+  schema { url = "file://snapshots/v1.sql" }
+  catch  { sql = "SELECT ${each.key} FROM users" }
+  apply  { url = "file://plans/${each.value}.plan.hcl" }
+  exec   { sql = "SELECT ${each.key} FROM users" }
+}
+```
+
+The `catch` before the `apply` is what makes the case measure anything: it
+establishes that the column is absent, so the `exec` after the plan can only
+pass because the plan added it.
+
 ### What a case takes
 
 A `test` block carries two attributes of its own, beside the step blocks in its

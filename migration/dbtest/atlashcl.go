@@ -124,17 +124,23 @@ func ParseAtlasTestCases(
 
 // atlasTestSteps translates one `test` block body into ordered native steps.
 func atlasTestSteps(block *hclsyntax.Block, scope atlasScope, kind AtlasTestKind) (*atlasCaseBody, error) {
-	if len(block.Body.Attributes) > len(atlasCaseAttributes) {
-		names := make([]string, 0, len(block.Body.Attributes))
-		for attrName := range block.Body.Attributes {
-			if atlasCaseAttributes[attrName] {
-				continue
-			}
-			names = append(names, attrName)
+	// Every attribute is examined, never counted. Comparing the count against
+	// the size of the allowed set was correct only while nothing was allowed:
+	// once `for_each`, `skip` and `parallel` joined it, a body carrying fewer
+	// attributes than that never reached the loop at all, so a misspelled
+	// `paralel = true` was accepted and ignored and the case ran serially
+	// without saying so.
+	names := make([]string, 0, len(block.Body.Attributes))
+	for attrName := range block.Body.Attributes {
+		if atlasCaseAttributes[attrName] {
+			continue
 		}
+		names = append(names, attrName)
+	}
+	if len(names) > 0 {
 		sort.Strings(names)
-		return nil, fmt.Errorf("%s:%d: `test` body takes step blocks, not attributes: %v",
-			scope.filename, block.TypeRange.Start.Line, names)
+		return nil, fmt.Errorf("%s:%d: `test` takes step blocks and %v, not %v",
+			scope.filename, block.TypeRange.Start.Line, atlasCaseAttributeNames(), names)
 	}
 
 	steps := make([]Step, 0, len(block.Body.Blocks))

@@ -305,6 +305,17 @@ func atlasCaseBool(
 // opposed to the step blocks in its body.
 var atlasCaseAttributes = map[string]bool{"for_each": true, "skip": true, "parallel": true}
 
+// atlasCaseAttributeNames is what a refusal lists as the accepted set, sorted
+// so the message does not depend on map iteration order.
+func atlasCaseAttributeNames() []string {
+	names := make([]string, 0, len(atlasCaseAttributes))
+	for name := range atlasCaseAttributes {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // atlasCaseContext is what expanding one `test` block needs from the document
 // around it.
 type atlasCaseContext struct {

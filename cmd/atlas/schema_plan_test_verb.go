@@ -10,6 +10,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/cmd/internal/testexternal"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasschema"
@@ -146,12 +147,22 @@ func runAtlasSchemaPlanTest(cmd *cobra.Command, opts atlasSchemaPlanTestOptions)
 	}
 	defer releaseDev()
 
+	// Resolved here rather than inside the engine, and resolved on every
+	// invocation: a malformed value is a configuration error the operator
+	// already changed, and letting it wait until a run happens to reach an
+	// external step hides it behind every healthy run.
+	allowExternal, err := testexternal.Allowed()
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+
 	report, err := dbtest.RunSchemaTest(cmd.Context(), dbtest.SchemaOptions{
-		Cases:         cases,
-		DBURL:         devURL,
-		ReportKind:    "PLAN",
-		ResolveSchema: atlasPlanTestSchemaResolver(dir),
-		ApplyPlan:     atlasPlanTestPlanApplier(dir),
+		Cases:                 cases,
+		DBURL:                 devURL,
+		ReportKind:            "PLAN",
+		ResolveSchema:         atlasPlanTestSchemaResolver(dir),
+		ApplyPlan:             atlasPlanTestPlanApplier(dir),
+		AllowExternalCommands: allowExternal,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
