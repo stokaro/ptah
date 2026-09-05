@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+
+	"go.5x5.cz/ptah/migration/internal/scratchdb"
 )
 
 // ErrParallelNeedsIsolation is returned when a case asks to run in parallel and
@@ -31,6 +33,7 @@ func runParallelCases(
 	ctx context.Context,
 	kind string,
 	cases []Case,
+	baseURL string,
 	limit int,
 	provision provisionFunc,
 	run caseRunner,
@@ -48,7 +51,7 @@ func runParallelCases(
 			continue
 		}
 		if !cases[i].Parallel {
-			results[i], errs[i] = runEphemeralCase(ctx, cases[i], provision, run)
+			results[i], errs[i] = runEphemeralCase(ctx, cases[i], baseURL, provision, run)
 			filled[i] = errs[i] == nil
 			continue
 		}
@@ -59,7 +62,7 @@ func runParallelCases(
 			slots <- struct{}{}
 			defer func() { <-slots }()
 
-			results[index], errs[index] = runEphemeralCase(ctx, cases[index], provision, run)
+			results[index], errs[index] = runEphemeralCase(ctx, cases[index], baseURL, provision, run)
 			filled[index] = errs[index] == nil
 		}(i)
 	}
@@ -102,23 +105,20 @@ func parallelSlots(limit int) int {
 	return slots
 }
 
-// refuseParallelWithoutIsolation reports the first parallel case.
+// refuseParallelWithoutIsolation refuses a parallel run this cannot isolate.
 //
-// It is called only for a run against a caller-owned database, where every case
-// shares one connection. Running concurrent mutating cases there would let one
-// case's DDL decide another's result, and a suite that passes because two cases
-// happened not to collide is worse than one that refuses.
-func refuseParallelWithoutIsolation(cases []Case) error {
-	for i := range cases {
-		if !cases[i].Parallel {
-			continue
-		}
-		return fmt.Errorf(
-			"%w: test case %q asks to run in parallel, but this run shares one database; "+
-				"omit the database URL so each case gets its own",
-			ErrParallelNeedsIsolation,
-			cases[i].Name,
-		)
+// A parallel case gets a database of its own on the server the URL names, and
+// some dialects have no way to make one here. Refusing is checked before any
+// case runs, so a suite whose third case cannot be isolated does not first
+// create two databases and apply a schema to each -- and it is a refusal rather
+// than a downgrade to sharing, because a suite that passes when two cases
+// happen not to collide is worse than one that declines.
+func refuseParallelWithoutIsolation(cases []Case, baseURL string) error {
+	if !anyParallel(cases) {
+		return nil
+	}
+	if err := scratchdb.CanIsolate(baseURL); err != nil {
+		return fmt.Errorf("%w: %w", ErrParallelNeedsIsolation, err)
 	}
 	return nil
 }

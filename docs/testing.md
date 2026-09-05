@@ -171,10 +171,17 @@ what `ptah schema test` and `ptah migrations test` do when no database URL is
 given: a case is provisioned a throwaway database, runs against it, and it is
 removed afterwards.
 
-Pointed at a database you own, every case shares one connection. Concurrency
-there would let one case's statements decide another's result, so a parallel
-case is **refused** rather than approximated, before anything runs. Omit the
-database URL to get the isolation the attribute needs.
+Naming a database URL does not take that away. A file that asks for `parallel`
+opts into per-case isolation, so each case gets a database of its own **on the
+server that URL names**, created for it and dropped afterwards -- which is what
+lets `ptah-compat schema test` and `ptah-compat migrate test` run a parallel
+file at all, since an Atlas-shaped invocation always supplies `--dev-url`.
+
+A file that never says `parallel` is unaffected: an explicit URL keeps its
+documented behavior of one shared database for every case.
+
+Where a dialect has no way to give a case its own database, a parallel case is
+**refused** before anything runs rather than quietly sharing one.
 
 Two properties hold whatever the schedule was. The report lists cases in
 document order, so two runs of one file are comparable; and every case
