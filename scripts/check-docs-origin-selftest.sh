@@ -101,6 +101,14 @@ printf "export const url = 'https://%s/install.sh';\n" "$live_host" \
 	>"$work_dir/repo/docs/site/scripts/gate1.mjs"
 assert_rejected "the live origin spelled again" "spelled again instead of imported"
 
+# 3b. The project site's origin spelled again. The installers are advertised
+#     there, and the declaration holds that address too; a literal copy in a
+#     docs/site script is the same second-spelling defect as case 3.
+write_repo
+printf "export const install = 'https://ptah%srun/install.sh';\n" "$(printf '\056')" \
+	>"$work_dir/repo/docs/site/scripts/gate1.mjs"
+assert_rejected "the site origin spelled again" "spelled again instead of imported"
+
 # 4. The declaration is gone. Renaming or deleting it must fail here rather than
 #    leave rule 2 comparing every file against a file that is not there.
 write_repo
@@ -150,4 +158,4 @@ if ! grep -qF "is not reporting on it" "$work_dir/err"; then
 fi
 printf '  %-44s rejected\n' "a corpus too small to be this repository"
 
-echo "check-docs-origin-selftest: OK (6 broken rules each noticed, control accepted)"
+echo "check-docs-origin-selftest: OK (7 broken rules each noticed, control accepted)"

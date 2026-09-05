@@ -66,13 +66,13 @@ its checksum, and installs `ptah`, `ptah-compat`, and `ptah-ls` under your home
 directory.
 
 ```bash
-curl -fsSL https://docs.ptah.run/install.sh | sh
+curl -fsSL https://ptah.run/install.sh | sh
 ```
 
 In PowerShell:
 
 ```powershell
-irm https://docs.ptah.run/install.ps1 | iex
+irm https://ptah.run/install.ps1 | iex
 ```
 
 The [installation guide](https://docs.ptah.run/edge/start/install/)

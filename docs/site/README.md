@@ -227,15 +227,20 @@ at the root itself and address the site as a whole:
 | `install.sh` | `scripts/publish-root-assets.mjs` | The shell installer, from `public/install.sh` |
 | `install.ps1` | `scripts/publish-root-assets.mjs` | The PowerShell installer, from `public/install.ps1` |
 
-The installers have to answer at the root because the commands a reader is
-given carry no version:
+The installers have to answer at the root because the commands published
+before the site had its own address carry no version, and the retired host's
+redirect lands here: `https://docs.ptah.run/install.sh` and
+`https://docs.ptah.run/install.ps1` stay live for them. The commands a reader
+is given today name the project site instead, which fetches the same two files
+from this repository's master branch on every deploy (`SiteOrigin` and
+`InstallURL` in `src/lib/docs-origin.mjs`):
 
 ```bash
-curl -fsSL https://docs.ptah.run/install.sh | sh
+curl -fsSL https://ptah.run/install.sh | sh
 ```
 
 ```powershell
-irm https://docs.ptah.run/install.ps1 | iex
+irm https://ptah.run/install.ps1 | iex
 ```
 
 `.github/workflows/docs.yml` assembles `_site/` from scratch on every deploying
@@ -262,8 +267,9 @@ the directory about to be uploaded is missing a file.
 
 Both halves above read this repository: one reads the tree, the other reads the
 directory a run of this workflow assembled. Neither asks whether
-`https://docs.ptah.run/install.sh` answers, and there are ways for it
-to stop answering that leave no trace here at all:
+`https://docs.ptah.run/install.sh` answers, nor whether the advertised
+`https://ptah.run/install.sh` does, and there are ways for either to stop
+answering that leave no trace here at all:
 
 - A Pages settings change, or a repository rename that moves the whole site.
 - A deploy triggered by a **tag**. A tag push runs the workflow file as it

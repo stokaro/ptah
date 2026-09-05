@@ -5295,7 +5295,7 @@
         "/start/install/"
       ],
       "visibleWords": 995,
-      "sourceBytes": 9180
+      "sourceBytes": 9160
     },
     {
       "path": "docs/site/src/content/docs/start/install.mdx",
@@ -5360,7 +5360,7 @@
         "/start/quick-start/"
       ],
       "visibleWords": 414,
-      "sourceBytes": 4124
+      "sourceBytes": 4109
     },
     {
       "path": "docs/site/src/content/docs/start/overview.mdx",
