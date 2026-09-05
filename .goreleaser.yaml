@@ -156,6 +156,22 @@ release:
   # and only on a collision, which is exactly the case that is broken today.
   replace_existing_artifacts: true
 
+# Two registries carry the same images, and GHCR is the documented default.
+#
+# Docker Hub is a MIRROR rather than a move: every tag below names both hosts,
+# so one buildx build is tagged twice and pushed to each. The digests match
+# because the content does, which is what makes the pair verifiable after the
+# fact rather than merely intended -- `.github/workflows/release.yml` resolves
+# both manifests anonymously and fails when they differ.
+#
+# GHCR stays first in the documentation because Docker Hub rate-limits
+# anonymous pulls and GHCR does not (stokaro/ptah#2362).
+#
+# Both or neither: a tag that lands in one registry and not the other is worse
+# than a single registry, because a reader cannot tell which one is behind. The
+# credential for each host is proven by a login step BEFORE anything is pushed,
+# so the ordinary failure -- a bad or expired token -- stops the run before the
+# first registry has the tag.
 dockers:
   - id: ptah-linux-amd64
     ids:
@@ -166,6 +182,7 @@ dockers:
     use: buildx
     image_templates:
       - "ghcr.io/stokaro/ptah:{{ .Version }}-amd64"
+      - "docker.io/stokaro/ptah:{{ .Version }}-amd64"
     build_flag_templates:
       - "--platform=linux/amd64"
   - id: ptah-linux-arm64
@@ -177,9 +194,14 @@ dockers:
     use: buildx
     image_templates:
       - "ghcr.io/stokaro/ptah:{{ .Version }}-arm64"
+      - "docker.io/stokaro/ptah:{{ .Version }}-arm64"
     build_flag_templates:
       - "--platform=linux/arm64"
 
+# One manifest list per tag per registry, and each is built from that
+# registry's own per-architecture images. Pointing Docker Hub's manifest at
+# GHCR's images would publish a list whose members a Docker Hub pull cannot
+# resolve.
 docker_manifests:
   - name_template: "ghcr.io/stokaro/ptah:{{ .Version }}"
     image_templates:
@@ -189,6 +211,14 @@ docker_manifests:
     image_templates:
       - "ghcr.io/stokaro/ptah:{{ .Version }}-amd64"
       - "ghcr.io/stokaro/ptah:{{ .Version }}-arm64"
+  - name_template: "docker.io/stokaro/ptah:{{ .Version }}"
+    image_templates:
+      - "docker.io/stokaro/ptah:{{ .Version }}-amd64"
+      - "docker.io/stokaro/ptah:{{ .Version }}-arm64"
+  - name_template: "docker.io/stokaro/ptah:latest"
+    image_templates:
+      - "docker.io/stokaro/ptah:{{ .Version }}-amd64"
+      - "docker.io/stokaro/ptah:{{ .Version }}-arm64"
 
 # Issue #174 requires `brew install stokaro/ptah/ptah`, which is still a
 # Homebrew formula flow. GoReleaser's newer homebrew_casks replacement does not

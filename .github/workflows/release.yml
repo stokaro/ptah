@@ -158,6 +158,25 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Docker Hub is a mirror of GHCR rather than a move, and both logins run
+      # BEFORE GoReleaser pushes anything. That ordering is the cheap half of
+      # "both registries or neither": the ordinary failure is a bad or expired
+      # credential, and proving both here stops the run before either registry
+      # has the tag (stokaro/ptah#2362).
+      #
+      # The account is a secret rather than `github.repository_owner`, because
+      # the two are different things that happen to look alike. `stokaro` on
+      # Docker Hub is an ORGANIZATION, and a `dckr_pat_` token belongs to a
+      # person who is a member of it -- logging in as the organization answers
+      # `unauthorized: incorrect username or password`, measured before this
+      # line was written. The image namespace stays `stokaro/ptah`; only the
+      # identity presenting the credential differs.
+      - uses: docker/login-action@v4
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKER_HUB_USER }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
       - uses: sigstore/cosign-installer@v4.1.2
 
       - uses: anchore/sbom-action/download-syft@v0.24.2
@@ -171,3 +190,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      # The mirror, verified rather than assumed.
+      #
+      # "Both registries or neither" is a property of what a READER can pull,
+      # so it is checked the way a reader would: anonymously, over the registry
+      # API, resolving each tag to the digest of its manifest list. Equal
+      # digests mean the same image, and an absent tag on one host is the state
+      # this exists to refuse -- a reader following the install page cannot tell
+      # which registry is behind, which is what made #2362 three faults instead
+      # of one.
+      #
+      # Anonymous on purpose. The job holds a push credential for both hosts,
+      # and a check that used it would pass for an image the public cannot
+      # reach -- the exact fault this issue opened with.
+      - name: Both registries carry this release
+        run: scripts/check-release-image-mirror.sh "${GITHUB_REF_NAME#v}"
