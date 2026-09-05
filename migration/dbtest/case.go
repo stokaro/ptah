@@ -260,6 +260,25 @@ const (
 	ResultLayoutTable ResultLayout = "table"
 )
 
+// validResultLayout reports whether a layout is one this package renders.
+//
+// It is one predicate rather than two because the two callers sit at opposite
+// ends of the same pipeline: the Atlas `.test.hcl` adapter reads an authored
+// `format`, and [Assertion] validation refuses a layout nothing renders. A
+// second list here is not a style question -- an adapter that folds an
+// unrecognized value onto the default normalizes away the very value this
+// refuses, and the validator then never sees one. Measured before the adapter
+// stopped folding: `format = "tabel"` compared against CSV and the case passed.
+//
+// The empty layout is not valid here, and neither caller passes it: [Assertion]
+// validation asks only about a layout that was set, and the adapter asks only
+// about an attribute that was written. An author who names no layout still gets
+// CSV, because that is [Assertion.ResultLayout]'s documented zero value rather
+// than an answer this predicate gives.
+func validResultLayout(layout ResultLayout) bool {
+	return layout == ResultLayoutCSV || layout == ResultLayoutTable
+}
+
 // stepKind classifies which action a [Step] performs.
 type stepKind int
 
@@ -559,7 +578,7 @@ func (a *Assertion) validate() error {
 		if a.ResultSet == nil {
 			return fmt.Errorf("result_layout applies to result_set, which is not set")
 		}
-		if a.ResultLayout != ResultLayoutCSV && a.ResultLayout != ResultLayoutTable {
+		if !validResultLayout(a.ResultLayout) {
 			return fmt.Errorf("result_layout must be %q or %q, got %q",
 				ResultLayoutCSV, ResultLayoutTable, a.ResultLayout)
 		}

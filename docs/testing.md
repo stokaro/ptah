@@ -275,10 +275,18 @@ on the first one it finds. `format` selects the rendering: `csv`, the default,
 puts one row per line with values separated by commas; `table` draws a header, a
 rule beneath it, and one padded cell per value.
 
+`csv` and `table` are the whole set, and a `format` naming anything else is
+refused with its file and line rather than rendered as the default. The two
+renderings genuinely differ, so an author who wrote `tabel` and was given CSV
+would have their assertion checked against a layout they did not ask for and be
+told it held.
+
 `match` tests the first value against an unanchored regular expression. Writing
 `output` and `match` together is refused rather than resolved, so a typo in one
 cannot leave the other unchecked, and `format` without `output` is refused for
-the same reason: it would be an instruction nothing reads.
+the same reason: it would be an instruction nothing reads. An empty
+`format = ""` is refused too — naming no `format` selects the default, but
+writing the attribute says the author expected it to decide something.
 
 ### What a report marks
 
