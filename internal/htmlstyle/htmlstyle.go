@@ -27,7 +27,7 @@ import (
 // other: a color defined only under prefers-color-scheme is missing for a
 // reader who chose light explicitly, and the element it paints falls back to
 // whatever the browser decides.
-func Tokens() string { return tokensCSS }
+func Tokens() string { return rootVariablesCSS }
 
 // Base is the appearance of the parts these documents share: text, links,
 // tables, cards, count strips, tags and the footer.
@@ -72,7 +72,7 @@ func Head(title, extraCSS string) string {
 	out.WriteString(`<meta charset="utf-8">`)
 	out.WriteString(`<meta name="viewport" content="width=device-width, initial-scale=1">`)
 	out.WriteString(`<title>` + title + `</title>`)
-	out.WriteString(`<style>` + tokensCSS + baseCSS + extraCSS + `</style>`)
+	out.WriteString(`<style>` + rootVariablesCSS + baseCSS + extraCSS + `</style>`)
 	out.WriteString("\n</head>\n")
 	return out.String()
 }

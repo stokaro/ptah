@@ -1,7 +1,11 @@
 package htmlstyle
 
-// tokensCSS is the declaration Tokens returns. See that function for why it is
-// three blocks and why the theme blocks introduce nothing.
+// rootVariablesCSS is the declaration Tokens returns. See that function for why
+// it is three blocks and why the theme blocks introduce nothing.
+//
+// It is named for the CSS mechanism rather than for the design vocabulary the
+// exported Tokens uses, because gosec's G101 heuristic reads "tokens" in an
+// identifier bound to a long literal as a credential.
 //
 // The severity trio is here rather than in the pages that show it because
 // "safe", "warning" and "destructive" mean the same thing on all of them, and
@@ -11,7 +15,7 @@ package htmlstyle
 // --amber is the mark's capstone and marks a primary key. It is deliberately
 // not --warn: they sit near each other today, and a key is not a warning, so
 // folding them would make one of the two impossible to change.
-const tokensCSS = `
+const rootVariablesCSS = `
 :root {
   color-scheme: light dark;
   --bg: #fbfbfa;

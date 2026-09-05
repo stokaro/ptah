@@ -46,7 +46,7 @@ func TestTokens_DefinesEveryColorInEveryTheme(t *testing.T) {
 	c := qt.New(t)
 
 	blocks := blockPattern.FindAllStringSubmatch(htmlstyle.Tokens(), -1)
-	c.Assert(len(blocks), qt.Equals, 3, qt.Commentf("expected a base block and two theme blocks"))
+	c.Assert(blocks, qt.HasLen, 3, qt.Commentf("expected a base block and two theme blocks"))
 
 	base := tokensIn(blocks[0][1])
 	for _, block := range blocks[1:] {
