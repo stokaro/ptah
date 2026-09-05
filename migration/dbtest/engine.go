@@ -78,6 +78,10 @@ type CaseResult struct {
 	Name   string       `json:"name"`
 	Steps  []StepResult `json:"steps"`
 	Passed bool         `json:"passed"`
+	// Skipped marks a case the run did not execute. Passed is false for such a
+	// case and [Report.Failed] ignores it, so a skip neither claims a proof that
+	// was never attempted nor reddens a suite for declining to attempt it.
+	Skipped bool `json:"skipped,omitempty"`
 }
 
 // StepResult is the outcome of a single [Step]. Detail carries a short
@@ -114,7 +118,7 @@ const (
 // Failed reports whether any case failed.
 func (r *Report) Failed() bool {
 	for i := range r.Cases {
-		if !r.Cases[i].Passed {
+		if !r.Cases[i].Passed && !r.Cases[i].Skipped {
 			return true
 		}
 	}
@@ -134,15 +138,9 @@ func (r *Report) Text() string {
 	}
 	fmt.Fprintf(&b, "=== %s TEST ===\n", kind)
 
-	passed := 0
 	for i := range r.Cases {
 		c := r.Cases[i]
-		caseStatus := "FAIL"
-		if c.Passed {
-			caseStatus = "PASS"
-			passed++
-		}
-		fmt.Fprintf(&b, "%s  case %q\n", caseStatus, c.Name)
+		fmt.Fprintf(&b, "%s  case %q\n", c.StatusLabel(), c.Name)
 		for j := range c.Steps {
 			s := c.Steps[j]
 			stepStatus := stepStatusLabel(s)
@@ -158,7 +156,8 @@ func (r *Report) Text() string {
 		}
 	}
 
-	fmt.Fprintf(&b, "\n%d cases, %d passed, %d failed\n", len(r.Cases), passed, len(r.Cases)-passed)
+	total, passed, failed, skipped := r.counts()
+	fmt.Fprintf(&b, "\n%d cases, %d passed, %d failed, %d skipped\n", total, passed, failed, skipped)
 	return b.String()
 }
 
@@ -188,18 +187,42 @@ func (r *Report) reportKind() string {
 }
 
 // counts returns the total, passed, and failed case counts.
-func (r *Report) counts() (total, passed, failed int) {
+func (r *Report) counts() (total, passed, failed, skipped int) {
 	total = len(r.Cases)
 	for i := range r.Cases {
+		if r.Cases[i].Skipped {
+			skipped++
+			continue
+		}
 		if r.Cases[i].Passed {
 			passed++
 		}
 	}
-	return total, passed, total - passed
+	return total, passed, total - passed - skipped, skipped
 }
 
 // JSON renders the report as indented JSON: the kind, summary counts, and every
 // case and step. It is stable enough to consume from CI tooling.
+// StatusLabel is the word a report puts in front of this case.
+//
+// SKIP is its own answer rather than a decorated PASS: a skipped case proved
+// nothing, and calling it passed is the report telling a reader that a check
+// they are relying on ran.
+func (c CaseResult) StatusLabel() string {
+	if c.Skipped {
+		return "SKIP"
+	}
+	if c.Passed {
+		return "PASS"
+	}
+	return "FAIL"
+}
+
+// StatusClass is the CSS class the HTML report gives this case.
+func (c CaseResult) StatusClass() string {
+	return strings.ToLower(c.StatusLabel())
+}
+
 // StatusLabel is the word a report puts in front of this step. It is a method
 // so the text renderer and the HTML template answer from one place rather than
 // each deciding what a logged or caught step is called.
@@ -241,7 +264,7 @@ func stepStatusLabel(step StepResult) string {
 }
 
 func (r *Report) JSON() (string, error) {
-	total, passed, failed := r.counts()
+	total, passed, failed, skipped := r.counts()
 	// Normalize a nil case slice to an empty one so the JSON is always
 	// "cases": [] rather than "cases": null, even for a zero-value Report built
 	// directly by a library caller.
@@ -250,17 +273,19 @@ func (r *Report) JSON() (string, error) {
 		cases = make([]CaseResult, 0)
 	}
 	doc := struct {
-		Kind   string       `json:"kind"`
-		Total  int          `json:"total"`
-		Passed int          `json:"passed"`
-		Failed int          `json:"failed"`
-		Cases  []CaseResult `json:"cases"`
+		Kind    string       `json:"kind"`
+		Total   int          `json:"total"`
+		Passed  int          `json:"passed"`
+		Failed  int          `json:"failed"`
+		Skipped int          `json:"skipped"`
+		Cases   []CaseResult `json:"cases"`
 	}{
-		Kind:   r.reportKind(),
-		Total:  total,
-		Passed: passed,
-		Failed: failed,
-		Cases:  cases,
+		Kind:    r.reportKind(),
+		Total:   total,
+		Passed:  passed,
+		Failed:  failed,
+		Skipped: skipped,
+		Cases:   cases,
 	}
 	out, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
@@ -271,14 +296,15 @@ func (r *Report) JSON() (string, error) {
 
 // HTML renders the report as a self-contained HTML document.
 func (r *Report) HTML() (string, error) {
-	total, passed, failed := r.counts()
+	total, passed, failed, skipped := r.counts()
 	data := struct {
-		Kind   string
-		Total  int
-		Passed int
-		Failed int
-		Cases  []CaseResult
-	}{r.reportKind(), total, passed, failed, r.Cases}
+		Kind    string
+		Total   int
+		Passed  int
+		Failed  int
+		Skipped int
+		Cases   []CaseResult
+	}{r.reportKind(), total, passed, failed, skipped, r.Cases}
 
 	var b strings.Builder
 	if err := reportHTMLTemplate.Execute(&b, data); err != nil {
@@ -296,6 +322,7 @@ var reportHTMLTemplate = template.Must(template.New("dbtest-report").Parse(`<!do
 body { font-family: system-ui, sans-serif; margin: 2rem; }
 .pass { color: #157f3b; }
 .fail { color: #b3261e; }
+.skip { color: #6b6b6b; }
 .log { color: #5f6368; }
 .caught { color: #8a6d1f; }
 .case { margin: 0.75rem 0; }
@@ -305,10 +332,10 @@ body { font-family: system-ui, sans-serif; margin: 2rem; }
 </head>
 <body>
 <h1>{{.Kind}} test report</h1>
-<p>{{.Total}} cases, {{.Passed}} passed, {{.Failed}} failed</p>
+<p>{{.Total}} cases, {{.Passed}} passed, {{.Failed}} failed, {{.Skipped}} skipped</p>
 {{range .Cases}}
 <div class="case">
-  <strong class="{{if .Passed}}pass{{else}}fail{{end}}">{{if .Passed}}PASS{{else}}FAIL{{end}}</strong>
+  <strong class="{{.StatusClass}}">{{.StatusLabel}}</strong>
   case &ldquo;{{.Name}}&rdquo;
   <ul class="steps">
     {{range .Steps}}
@@ -398,6 +425,10 @@ func runCases(ctx context.Context, dbURL, kind string, cases []Case, provision p
 
 	report := &Report{Cases: make([]CaseResult, 0, len(cases)), kind: kind}
 	for i := range cases {
+		if cases[i].Skip {
+			report.Cases = append(report.Cases, skippedCaseResult(cases[i]))
+			continue
+		}
 		result, err := runEphemeralCase(ctx, cases[i], provision, run)
 		if err != nil {
 			return nil, err
@@ -447,6 +478,10 @@ func runConnectedCases(
 
 	report := &Report{Cases: make([]CaseResult, 0, len(cases)), kind: kind}
 	for i := range cases {
+		if cases[i].Skip {
+			report.Cases = append(report.Cases, skippedCaseResult(cases[i]))
+			continue
+		}
 		result, err := run(ctx, conn, cases[i])
 		if err != nil {
 			return nil, err
@@ -454,6 +489,15 @@ func runConnectedCases(
 		report.Cases = append(report.Cases, result)
 	}
 	return report, nil
+}
+
+// skippedCaseResult is what a skipped case contributes to a report.
+//
+// It carries no steps, because none ran. A result that listed them as passed
+// would put a proof in the report for statements the database never saw, which
+// is worse than the case being absent.
+func skippedCaseResult(c Case) CaseResult {
+	return CaseResult{Name: c.Name, Skipped: true}
 }
 
 // runEphemeralCase runs one case against a fresh SQLite database that exists

@@ -96,6 +96,11 @@ import (
 type Case struct {
 	Name  string `yaml:"name"`
 	Steps []Step `yaml:"steps"`
+	// Skip reports the case without running any of its steps. It is neither a
+	// pass nor a failure: a run that skips three cases says so, because a case
+	// that quietly disappeared from a report is indistinguishable from one that
+	// was never written.
+	Skip bool `yaml:"skip"`
 }
 
 // Step performs exactly one action against the test database.

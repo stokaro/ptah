@@ -125,7 +125,7 @@ func TestRunMigrationTest_FailureDetailAndShortCircuit(t *testing.T) {
 	text := report.Text()
 	c.Assert(text, qt.Contains, "=== MIGRATION TEST ===")
 	c.Assert(text, qt.Contains, "FAIL  case \"stops after first failure\"")
-	c.Assert(text, qt.Contains, "1 cases, 0 passed, 1 failed")
+	c.Assert(text, qt.Contains, "1 cases, 0 passed, 1 failed, 0 skipped")
 }
 
 func TestRunMigrationTest_InvalidCasesError(t *testing.T) {
