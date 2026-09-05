@@ -1,7 +1,21 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ptah migration safety report</title><style>
+package htmlstyle
+
+// rootVariablesCSS is the declaration Tokens returns. See that function for why
+// it is three blocks and why the theme blocks introduce nothing.
+//
+// It is named for the CSS mechanism rather than for the design vocabulary the
+// exported Tokens uses, because gosec's G101 heuristic reads "tokens" in an
+// identifier bound to a long literal as a credential.
+//
+// The severity trio is here rather than in the pages that show it because
+// "safe", "warning" and "destructive" mean the same thing on all of them, and
+// while each page named its own they meant it in three different greens and
+// three different reds.
+//
+// --amber is the mark's capstone and marks a primary key. It is deliberately
+// not --warn: they sit near each other today, and a key is not a warning, so
+// folding them would make one of the two impossible to change.
+const rootVariablesCSS = `
 :root {
   color-scheme: light dark;
   --bg: #fbfbfa;
@@ -62,7 +76,10 @@
   --danger: oklch(0.72 0.17 25);
   --danger-soft: oklch(0.28 0.08 25);
 }
+`
 
+// baseCSS is what Base returns: the parts these documents genuinely share.
+const baseCSS = `
 * { box-sizing: border-box; }
 body {
   margin: 0;
@@ -127,114 +144,4 @@ td.num { font-family: var(--mono); color: var(--text-mute); text-align: right; w
 @media print {
   .card { break-inside: avoid; }
 }
-
-.tag.safe { background: var(--ok-soft); border-color: transparent; color: var(--ok); }
-.tag.warning { background: var(--warn-soft); border-color: transparent; color: var(--warn); }
-.tag.destructive { background: var(--danger-soft); border-color: transparent; color: var(--danger); }
-td.stmt pre { color: var(--text-dim); }
-</style>
-</head>
-<body><div class="page">
-<h1>Migration safety report</h1>
-<div class="lede">Planned statements, classified by what they remove or tighten</div>
-<div class="stats">
-<div class="stat"><div class="stat-n">10</div><div class="stat-l">statements</div></div>
-<div class="stat"><div class="stat-n">7</div><div class="stat-l">safe</div></div>
-<div class="stat"><div class="stat-n">1</div><div class="stat-l">warning</div></div>
-<div class="stat"><div class="stat-n">2</div><div class="stat-l">destructive</div></div>
-</div>
-<h2>Statements</h2>
-<div class="card"><div class="scroller"><table>
-<thead><tr><th>#</th><th>Severity</th><th>Subject</th><th>Reason</th><th>Statement</th></tr></thead>
-<tbody>
-
-<tr>
-<td class="num">1</td>
-<td><span class="tag safe">safe</span></td>
-<td class="name">*ast.CommentNode</td>
-<td class="comment">does not remove data or tighten constraints</td>
-<td class="stmt"><pre>-- Disable foreign-key enforcement for the table rebuild below</pre></td>
-</tr>
-
-<tr>
-<td class="num">2</td>
-<td><span class="tag safe">safe</span></td>
-<td class="name">*ast.RawSQLNode</td>
-<td class="comment">does not remove data or tighten constraints</td>
-<td class="stmt"><pre>PRAGMA foreign_keys = off</pre></td>
-</tr>
-
-<tr>
-<td class="num">3</td>
-<td><span class="tag safe">safe</span></td>
-<td class="name">*ast.CommentNode</td>
-<td class="comment">does not remove data or tighten constraints</td>
-<td class="stmt"><pre>-- SQLite table rebuild for changes ALTER TABLE cannot express on products</pre></td>
-</tr>
-
-<tr>
-<td class="num">4</td>
-<td><span class="tag safe">safe</span></td>
-<td class="name">*ast.CreateTableNode</td>
-<td class="comment">does not remove data or tighten constraints</td>
-<td class="stmt"><pre>CREATE TABLE &#34;__ptah_rebuild_products&#34; (
-  &#34;id&#34; INTEGER PRIMARY KEY AUTOINCREMENT,
-  &#34;sku&#34; TEXT NOT NULL UNIQUE,
-  &#34;name&#34; TEXT NOT NULL,
-  &#34;price_cents&#34; INTEGER NOT NULL
-)</pre></td>
-</tr>
-
-<tr>
-<td class="num">5</td>
-<td><span class="tag safe">safe</span></td>
-<td class="name">*ast.RawSQLNode</td>
-<td class="comment">does not remove data or tighten constraints</td>
-<td class="stmt"><pre>INSERT INTO &#34;__ptah_rebuild_products&#34; (&#34;id&#34;, &#34;sku&#34;, &#34;name&#34;, &#34;price_cents&#34;) SELECT &#34;id&#34;, &#34;sku&#34;, &#34;name&#34;, &#34;price_cents&#34; FROM &#34;products&#34;</pre></td>
-</tr>
-
-<tr>
-<td class="num">6</td>
-<td><span class="tag destructive">destructive</span></td>
-<td class="name">products</td>
-<td class="comment">DROP TABLE removes the table and all rows</td>
-<td class="stmt"><pre>DROP TABLE &#34;products&#34;</pre></td>
-</tr>
-
-<tr>
-<td class="num">7</td>
-<td><span class="tag warning">warning</span></td>
-<td class="name">*ast.RawSQLNode</td>
-<td class="comment">rename can break deployed readers and writers</td>
-<td class="stmt"><pre>ALTER TABLE &#34;__ptah_rebuild_products&#34; RENAME TO &#34;products&#34;</pre></td>
-</tr>
-
-<tr>
-<td class="num">8</td>
-<td><span class="tag destructive">destructive</span></td>
-<td class="name">legacy_inventory</td>
-<td class="comment">DROP TABLE removes the table and all rows</td>
-<td class="stmt"><pre>-- WARNING: This will delete all data!
-DROP TABLE IF EXISTS &#34;legacy_inventory&#34;</pre></td>
-</tr>
-
-<tr>
-<td class="num">9</td>
-<td><span class="tag safe">safe</span></td>
-<td class="name">*ast.CommentNode</td>
-<td class="comment">does not remove data or tighten constraints</td>
-<td class="stmt"><pre>-- Restore foreign-key enforcement after the table rebuild</pre></td>
-</tr>
-
-<tr>
-<td class="num">10</td>
-<td><span class="tag safe">safe</span></td>
-<td class="name">*ast.RawSQLNode</td>
-<td class="comment">does not remove data or tighten constraints</td>
-<td class="stmt"><pre>PRAGMA foreign_keys = on</pre></td>
-</tr>
-
-</tbody>
-</table></div></div>
-<div class="footer"><span>Rendered by Ptah from the planned migration. This file is self-contained: opening it fetches nothing.</span><span class="footer-mark"><svg viewBox="0 0 64 64" width="14" height="14" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#0f172a"/><rect x="23" y="13" width="18" height="11" rx="2" fill="#f59e0b"/><rect x="17" y="27" width="30" height="11" rx="2" fill="#38bdf8"/><rect x="11" y="41" width="42" height="11" rx="2" fill="#38bdf8"/></svg>ptah dev</span></div></div></body>
-</html>
+`

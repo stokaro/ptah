@@ -28,8 +28,9 @@ PTAH_BIN=../../bin/ptah node scripts/generate-schema-ui-assets.mjs
 The generator creates one matching SQLite database and one database built from
 the base model without `orders.placed_at`. The latter produces the documented
 warning drift state. It replaces the comparison time and temporary database
-path in the rendered DOM before capture, so the committed pixels contain no
-machine-specific path or volatile timestamp.
+path in the rendered DOM before capture, and pins the version in the exported
+document's footer, so the committed pixels and samples contain no
+machine-specific path, volatile timestamp, or per-build version.
 
 Review owner: documentation maintainers. Re-run the generator when
 `internal/schemadoc`, `cmd/internal/schemaserve`, or either named fixture

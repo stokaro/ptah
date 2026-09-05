@@ -147,8 +147,11 @@ values. A source selected through `data.hcl_schema` uses only that block's
 ## Read migration test reports
 
 The HTML format keeps summary counts, each case, and every step result in one
-portable artifact. The passing and failing reports below come from the same
-migration directory; only the selected assertion changes.
+portable artifact. It is self-contained: opening it fetches no stylesheet, font
+or script, so it reads the same attached to a review as it does on a machine
+with no network, and it follows the reader's light or dark preference. The
+passing and failing reports below come from the same migration directory; only
+the selected assertion changes.
 
 <ProductPreview
   id="migration-test-report"

@@ -19,6 +19,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/internal/htmlstyle"
 	"go.5x5.cz/ptah/internal/typechange"
 	"go.5x5.cz/ptah/migration/risk"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -317,47 +318,100 @@ func RenderText(w io.Writer, assessments []StatementAssessment) error {
 }
 
 // RenderHTML writes a standalone HTML safety report.
+//
+// The document fetches nothing: its appearance is inlined from
+// internal/htmlstyle, the same declaration the exported schema document and
+// the database test report read, so "destructive" is the same red on all
+// three.
+//
+// The shell is written directly and only the rows go through a template, so
+// nothing trusted has to be handed to html/template as pre-escaped markup.
 func RenderHTML(w io.Writer, assessments []StatementAssessment) error {
-	const report = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>Ptah migration safety report</title>
-<style>
-body { font-family: system-ui, sans-serif; margin: 2rem; color: #1f2937; }
-table { border-collapse: collapse; width: 100%; }
-th, td { border: 1px solid #d1d5db; padding: 0.5rem; text-align: left; vertical-align: top; }
-th { background: #f3f4f6; }
-.safe { color: #047857; font-weight: 700; }
-.warning { color: #b45309; font-weight: 700; }
-.destructive { color: #b91c1c; font-weight: 700; }
-pre { margin: 0; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-</style>
-</head>
-<body>
-<h1>Ptah migration safety report</h1>
-<table>
-<thead><tr><th>#</th><th>Severity</th><th>Subject</th><th>Reason</th><th>Statement</th></tr></thead>
-<tbody>
-{{range .}}
-<tr>
-<td>{{.Index}}</td>
-<td class="{{.Severity}}">{{.Severity}}</td>
-<td>{{if .Subject}}{{.Subject}}{{else}}{{.NodeType}}{{end}}</td>
-<td>{{.Reason}}</td>
-<td><pre>{{.Statement}}</pre></td>
-</tr>
-{{end}}
-</tbody>
-</table>
-</body>
-</html>`
-	tmpl, err := template.New("safety-report").Parse(report)
+	if _, err := io.WriteString(w, htmlstyle.Head("Ptah migration safety report", reportCSS)); err != nil {
+		return err
+	}
+	tmpl, err := template.New("safety-report").Parse(reportBodyHTML)
 	if err != nil {
 		return err
 	}
-	return tmpl.Execute(w, assessments)
+	body := struct {
+		Assessments []StatementAssessment
+		Counts      severityCounts
+	}{assessments, countBySeverity(assessments)}
+	if err := tmpl.Execute(w, body); err != nil {
+		return err
+	}
+	footer := htmlstyle.Footer("Rendered by Ptah from the planned migration. " +
+		"This file is self-contained: opening it fetches nothing.")
+	_, err = io.WriteString(w, footer+"</div></body>\n</html>\n")
+	return err
 }
+
+// reportCSS is what this report adds to the shared appearance: the three
+// severity words mapped onto the shared severity colors, and the statement
+// column.
+//
+// The mapping lives here rather than as a method on the assessment because
+// Severity is a fact about the change and the color is a fact about this page.
+const reportCSS = `
+.tag.safe { background: var(--ok-soft); border-color: transparent; color: var(--ok); }
+.tag.warning { background: var(--warn-soft); border-color: transparent; color: var(--warn); }
+.tag.destructive { background: var(--danger-soft); border-color: transparent; color: var(--danger); }
+td.stmt pre { color: var(--text-dim); }
+`
+
+// severityCounts is how many statements fall in each level, for the strip above
+// the table.
+//
+// A reader opens a safety report to find out whether anything is destructive,
+// and the old report made them read every row to answer that.
+type severityCounts struct {
+	Total       int
+	Safe        int
+	Warning     int
+	Destructive int
+}
+
+func countBySeverity(assessments []StatementAssessment) severityCounts {
+	counts := severityCounts{Total: len(assessments)}
+	for _, assessment := range assessments {
+		switch assessment.Severity {
+		case Destructive:
+			counts.Destructive++
+		case Warning:
+			counts.Warning++
+		default:
+			counts.Safe++
+		}
+	}
+	return counts
+}
+
+const reportBodyHTML = `<body><div class="page">
+<h1>Migration safety report</h1>
+<div class="lede">Planned statements, classified by what they remove or tighten</div>
+<div class="stats">
+<div class="stat"><div class="stat-n">{{.Counts.Total}}</div><div class="stat-l">statements</div></div>
+<div class="stat"><div class="stat-n">{{.Counts.Safe}}</div><div class="stat-l">safe</div></div>
+<div class="stat"><div class="stat-n">{{.Counts.Warning}}</div><div class="stat-l">warning</div></div>
+<div class="stat"><div class="stat-n">{{.Counts.Destructive}}</div><div class="stat-l">destructive</div></div>
+</div>
+<h2>Statements</h2>
+<div class="card"><div class="scroller"><table>
+<thead><tr><th>#</th><th>Severity</th><th>Subject</th><th>Reason</th><th>Statement</th></tr></thead>
+<tbody>
+{{range .Assessments}}
+<tr>
+<td class="num">{{.Index}}</td>
+<td><span class="tag {{.Severity}}">{{.Severity}}</span></td>
+<td class="name">{{if .Subject}}{{.Subject}}{{else}}{{.NodeType}}{{end}}</td>
+<td class="comment">{{.Reason}}</td>
+<td class="stmt"><pre>{{.Statement}}</pre></td>
+</tr>
+{{end}}
+</tbody>
+</table></div></div>
+`
 
 func assessNode(node ast.Node) StatementAssessment {
 	assessment := StatementAssessment{

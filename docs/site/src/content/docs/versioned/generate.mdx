@@ -173,14 +173,17 @@ suffix.
 The deterministic fixture starts with a SQLite table that has a legacy column,
 then asks Ptah to remove that column. SQLite performs the change as a physical
 table rebuild, so the report retains the destructive verdict, affected
-statement, and reason beside the generated migration pair.
+statement, and reason beside the generated migration pair. It opens with how
+many statements fall in each severity, which is the question a reviewer opens a
+safety report to answer, and it is self-contained: opening it fetches nothing
+and it follows the reader's light or dark preference.
 
 <ProductPreview
   id="migration-safety-report"
   src={migrationSafetyReport}
   alt="A Ptah migration safety HTML report showing a destructive SQLite table rebuild, its affected statement, and the reason for the classification."
   caption="A real `migrations generate --report html` artifact for a destructive SQLite table rebuild."
-  notice="The highest severity, affected statement, and reason are visible together, so a reviewer does not need to infer risk from generated SQL alone."
+  notice="The severity counts sit above the table, and the affected statement and reason are visible beside each verdict, so a reviewer does not need to infer risk from generated SQL alone."
   fullSizeHref={migrationSafetySample}
   downloadHref={migrationSafetySample}
   sourceHref={migrationSafetySample}

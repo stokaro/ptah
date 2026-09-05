@@ -190,9 +190,9 @@ func TestReport_DistinguishesALogAndACaughtFailureFromAPassingStep(t *testing.T)
 
 	page, err := report.HTML()
 	c.Assert(err, qt.IsNil)
-	c.Assert(page, qt.Contains, `<span class="log">LOG</span>`)
-	c.Assert(page, qt.Contains, `<span class="caught">CAUGHT</span>`)
-	c.Assert(strings.Count(page, `<span class="pass">PASS</span>`), qt.Equals, 1)
+	c.Assert(page, qt.Contains, `<span class="tag log">LOG</span>`)
+	c.Assert(page, qt.Contains, `<span class="tag caught">CAUGHT</span>`)
+	c.Assert(strings.Count(page, `<span class="tag pass">PASS</span>`), qt.Equals, 1)
 }
 
 // TestReport_AFailedExpectedFailureIsNotCaught puts the label where it is true.
