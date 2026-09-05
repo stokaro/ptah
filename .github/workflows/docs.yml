@@ -246,6 +246,7 @@ jobs:
           node docs/site/scripts/write-build-info.mjs --selftest
           node docs/site/scripts/check-public-docs.mjs --selftest
           node docs/site/scripts/apply-release-ui-overlay.mjs --selftest
+          node docs/site/scripts/apply-docs-address.mjs --selftest
           node docs/site/scripts/check-release-page-actions.mjs --selftest
           node docs/site/scripts/check-mutable-source-links.mjs --selftest
           node docs/site/scripts/check-mutable-source-links.mjs
@@ -395,6 +396,11 @@ jobs:
           node docs/site/scripts/apply-release-ui-overlay.mjs \
             --target "$workdir" \
             --version "$RELEASE_VERSION"
+          # Unconditional, and after the overlay rather than inside it: the
+          # overlay is version-gated and four of the five released tags fall
+          # below its floor, while an address that resolves to nothing is not
+          # something a historical build may keep (stokaro/ptah#2884).
+          node docs/site/scripts/apply-docs-address.mjs --target "$workdir"
           (
             cd "$workdir/docs/site"
             export DOCS_SOURCE_COMMIT="$release_commit"
@@ -473,6 +479,7 @@ jobs:
             tag_source_commit="$(git rev-list -n 1 "$tag")"
             git worktree add --force "$workdir" "refs/tags/$tag"
             release_ui_overlay=false
+            node docs/site/scripts/apply-docs-address.mjs --target "$workdir"
             if node docs/site/scripts/apply-release-ui-overlay.mjs --target "$workdir" --version "$tag"; then
               release_ui_overlay=true
             else
