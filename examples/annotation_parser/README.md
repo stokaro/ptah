@@ -48,7 +48,7 @@ The example writes only to stdout and creates no database or generated file.
 
 ## Learn more
 
-Use the [Go annotations guide](https://stokaro.github.io/ptah/edge/schema/go-annotations/)
+Use the [Go annotations guide](https://docs.ptah.run/edge/schema/go-annotations/)
 for the authoring workflow and the
-[annotation reference](https://stokaro.github.io/ptah/edge/reference/go-annotations/)
+[annotation reference](https://docs.ptah.run/edge/reference/go-annotations/)
 for every accepted directive and attribute.

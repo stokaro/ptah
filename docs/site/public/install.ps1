@@ -7,17 +7,17 @@ Detects the processor architecture, resolves a release tag, downloads the
 matching .zip from the Ptah releases, verifies it against the published
 checksums.txt, extracts it, and copies the binaries into a per-user directory.
 
-    irm https://stokaro.github.io/ptah/install.ps1 | iex
+    irm https://docs.ptah.run/install.ps1 | iex
 
 `iex` evaluates the script text with no arguments, so the parameters below are
 reachable only through the script-block form:
 
-    &([scriptblock]::Create((irm https://stokaro.github.io/ptah/install.ps1))) -Version v0.2.0
+    &([scriptblock]::Create((irm https://docs.ptah.run/install.ps1))) -Version v0.2.0
 
 Every parameter therefore has an environment twin, and the twin is the form to
 use in the piped command:
 
-    $env:PTAH_INSTALL_VERSION = 'v0.2.0'; irm https://stokaro.github.io/ptah/install.ps1 | iex
+    $env:PTAH_INSTALL_VERSION = 'v0.2.0'; irm https://docs.ptah.run/install.ps1 | iex
 
 .PARAMETER Version
 Release tag to install, with or without the leading `v`. Default: the newest
@@ -357,11 +357,11 @@ function Write-PtahHelp {
     $text = @'
 ptah installer
 
-    irm https://stokaro.github.io/ptah/install.ps1 | iex
+    irm https://docs.ptah.run/install.ps1 | iex
 
 Options, reachable through the script-block form:
 
-    &([scriptblock]::Create((irm https://stokaro.github.io/ptah/install.ps1))) -Version v0.2.0
+    &([scriptblock]::Create((irm https://docs.ptah.run/install.ps1))) -Version v0.2.0
 
   -Version <tag>      release to install, v0.2.0 or 0.2.0   [env: PTAH_INSTALL_VERSION]
   -BinDir <dir>       where the binaries go                 [env: PTAH_INSTALL_DIR]

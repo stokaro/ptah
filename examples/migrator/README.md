@@ -41,7 +41,7 @@ The test opens no database and writes no files.
 
 ## Learn more
 
-Use [Reusable components](https://stokaro.github.io/ptah/edge/extend/components/)
+Use [Reusable components](https://docs.ptah.run/edge/extend/components/)
 for the registration pattern and
-[Migration directory](https://stokaro.github.io/ptah/edge/concepts/migration-directory/)
+[Migration directory](https://docs.ptah.run/edge/concepts/migration-directory/)
 for file naming, checksums, and revision state.

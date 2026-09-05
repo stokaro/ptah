@@ -42,7 +42,7 @@ remove.
 
 ## Learn more
 
-Use [Extend Ptah with Go](https://stokaro.github.io/ptah/edge/extend/overview/)
+Use [Extend Ptah with Go](https://docs.ptah.run/edge/extend/overview/)
 to choose a supported package, or open the
-[public API ledger](https://stokaro.github.io/ptah/edge/extend/public-api/)
+[public API ledger](https://docs.ptah.run/edge/extend/public-api/)
 before adding an import.

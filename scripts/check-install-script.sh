@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Exercises docs/site/public/install.sh, the script published at
-# https://stokaro.github.io/ptah/install.sh and read by `curl ... | sh`.
+# https://docs.ptah.run/install.sh and read by `curl ... | sh`.
 #
 # The subject is a program people run with one line and no review, so the
 # properties worth holding are the ones a reader cannot check for themselves:

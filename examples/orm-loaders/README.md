@@ -52,5 +52,5 @@ created by either path.
 
 ## Learn more
 
-Use [ORM and external schema sources](https://stokaro.github.io/ptah/edge/schema/orm-and-external/)
+Use [ORM and external schema sources](https://docs.ptah.run/edge/schema/orm-and-external/)
 for the execution boundary, opt-in flag, source precedence, and failure modes.

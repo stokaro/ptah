@@ -12,19 +12,19 @@
   <a href="https://github.com/stokaro/ptah/blob/master/LICENSE"><img src="https://img.shields.io/github/license/stokaro/ptah?label=license&color=blue" alt="The license badge, reading MIT"></a>
 </p>
 
-<p align="center"><a href="#install">Install</a> · <a href="https://stokaro.github.io/ptah/edge/start/quick-start/">Quick start</a> · <a href="https://stokaro.github.io/ptah/edge/inference/overview/">Inference migrations</a> · <a href="https://stokaro.github.io/ptah/edge/">Documentation</a> · <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">Database support</a></p>
+<p align="center"><a href="#install">Install</a> · <a href="https://docs.ptah.run/edge/start/quick-start/">Quick start</a> · <a href="https://docs.ptah.run/edge/inference/overview/">Inference migrations</a> · <a href="https://docs.ptah.run/edge/">Documentation</a> · <a href="https://docs.ptah.run/edge/databases/support-matrix/">Database support</a></p>
 
 <p align="center">
-  <a href="https://stokaro.github.io/ptah/edge/databases/postgresql/">PostgreSQL</a> ·
-  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">MySQL</a> ·
-  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">MariaDB</a> ·
-  <a href="https://stokaro.github.io/ptah/edge/databases/sqlite/">SQLite</a> ·
-  <a href="https://stokaro.github.io/ptah/edge/databases/sqlserver/">SQL Server</a> ·
-  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">ClickHouse</a> ·
-  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">CockroachDB</a> ·
-  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">YugabyteDB</a> ·
-  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">Oracle</a> ·
-  <a href="https://stokaro.github.io/ptah/edge/databases/support-matrix/">Spanner</a>
+  <a href="https://docs.ptah.run/edge/databases/postgresql/">PostgreSQL</a> ·
+  <a href="https://docs.ptah.run/edge/databases/support-matrix/">MySQL</a> ·
+  <a href="https://docs.ptah.run/edge/databases/support-matrix/">MariaDB</a> ·
+  <a href="https://docs.ptah.run/edge/databases/sqlite/">SQLite</a> ·
+  <a href="https://docs.ptah.run/edge/databases/sqlserver/">SQL Server</a> ·
+  <a href="https://docs.ptah.run/edge/databases/support-matrix/">ClickHouse</a> ·
+  <a href="https://docs.ptah.run/edge/databases/support-matrix/">CockroachDB</a> ·
+  <a href="https://docs.ptah.run/edge/databases/support-matrix/">YugabyteDB</a> ·
+  <a href="https://docs.ptah.run/edge/databases/support-matrix/">Oracle</a> ·
+  <a href="https://docs.ptah.run/edge/databases/support-matrix/">Spanner</a>
 </p>
 
 Ptah manages database change across schemas and persistent inference state. For
@@ -52,7 +52,7 @@ leaving the active generation untouched until verification and cutover.
 
 <p align="center"><img src="docs/site/src/assets/inference-generation-lifecycle.svg" alt="The active inference generation continues serving queries while Ptah prepares, backfills, catches up, indexes, and verifies a candidate. Cutover makes the verified candidate active; rollback can restore the retained previous generation, and retirement is separate and destructive." width="1000"></p>
 
-The [inference migrations guide](https://stokaro.github.io/ptah/edge/inference/overview/)
+The [inference migrations guide](https://docs.ptah.run/edge/inference/overview/)
 covers the specification, concurrent-change catch-up, evaluation, approvals,
 rollback, and retirement.
 
@@ -66,16 +66,16 @@ its checksum, and installs `ptah`, `ptah-compat`, and `ptah-ls` under your home
 directory.
 
 ```bash
-curl -fsSL https://stokaro.github.io/ptah/install.sh | sh
+curl -fsSL https://docs.ptah.run/install.sh | sh
 ```
 
 In PowerShell:
 
 ```powershell
-irm https://stokaro.github.io/ptah/install.ps1 | iex
+irm https://docs.ptah.run/install.ps1 | iex
 ```
 
-The [installation guide](https://stokaro.github.io/ptah/edge/start/install/)
+The [installation guide](https://docs.ptah.run/edge/start/install/)
 covers version pinning, signature verification, download-without-execution,
 and building from source.
 
@@ -127,9 +127,9 @@ it usable as a CI gate. Remove `app.db` and `schema.sql` when you are done.
 > because `app.db` is disposable.
 
 For a complete workflow with expected output and verification, use the
-[direct schema changes tutorial](https://stokaro.github.io/ptah/edge/start/quick-start-direct/)
+[direct schema changes tutorial](https://docs.ptah.run/edge/start/quick-start-direct/)
 or the
-[versioned migrations tutorial](https://stokaro.github.io/ptah/edge/start/quick-start-migrations/).
+[versioned migrations tutorial](https://docs.ptah.run/edge/start/quick-start-migrations/).
 
 ## Choose how schema changes land
 
@@ -140,23 +140,23 @@ or the
 
 Schema sources can come from SQL, YAML, HCL, DBML, Go annotations, external
 loaders, or a live database. Database and feature coverage vary by engine; use
-the [support matrix](https://stokaro.github.io/ptah/edge/databases/support-matrix/)
+the [support matrix](https://docs.ptah.run/edge/databases/support-matrix/)
 and `ptah db capabilities --db-url <url>` for the concrete target.
 
 ## Explore the documentation
 
-- [Choose a workflow](https://stokaro.github.io/ptah/edge/start/choose-a-workflow/)
+- [Choose a workflow](https://docs.ptah.run/edge/start/choose-a-workflow/)
   to compare versioned migrations with direct schema changes.
-- [Inspect a live database](https://stokaro.github.io/ptah/edge/direct/inspect/)
-  or [compare and detect drift](https://stokaro.github.io/ptah/edge/direct/compare-and-drift/).
-- [Validate migration integrity](https://stokaro.github.io/ptah/edge/versioned/integrity-and-safety/)
-  or [test migrations and schemas](https://stokaro.github.io/ptah/edge/testing/migrations-and-schema/).
-- [Visualize](https://stokaro.github.io/ptah/edge/schema/visualize/)
-  or [export](https://stokaro.github.io/ptah/edge/schema/export/) a schema.
-- [Migrate persistent inference state](https://stokaro.github.io/ptah/edge/inference/overview/)
+- [Inspect a live database](https://docs.ptah.run/edge/direct/inspect/)
+  or [compare and detect drift](https://docs.ptah.run/edge/direct/compare-and-drift/).
+- [Validate migration integrity](https://docs.ptah.run/edge/versioned/integrity-and-safety/)
+  or [test migrations and schemas](https://docs.ptah.run/edge/testing/migrations-and-schema/).
+- [Visualize](https://docs.ptah.run/edge/schema/visualize/)
+  or [export](https://docs.ptah.run/edge/schema/export/) a schema.
+- [Migrate persistent inference state](https://docs.ptah.run/edge/inference/overview/)
   while an external endpoint computes embeddings.
-- [Look up native commands](https://stokaro.github.io/ptah/edge/reference/native-commands/)
-  or [diagnose a failure](https://stokaro.github.io/ptah/edge/operate/troubleshooting/).
+- [Look up native commands](https://docs.ptah.run/edge/reference/native-commands/)
+  or [diagnose a failure](https://docs.ptah.run/edge/operate/troubleshooting/).
 
 The site source lives in [`docs/site`](docs/site). [`docs/README.md`](docs/README.md)
 indexes contributor and implementation documents outside the reader site.
@@ -165,15 +165,15 @@ indexes contributor and implementation documents outside the reader site.
 
 Go projects can embed the documented packages, use annotated structs as schema
 sources, and run `ptah-ls` for editor support. Start with the
-[public API ledger](https://stokaro.github.io/ptah/edge/extend/public-api/),
-[reusable components](https://stokaro.github.io/ptah/edge/extend/components/),
-or [Go annotations](https://stokaro.github.io/ptah/edge/schema/go-annotations/).
+[public API ledger](https://docs.ptah.run/edge/extend/public-api/),
+[reusable components](https://docs.ptah.run/edge/extend/components/),
+or [Go annotations](https://docs.ptah.run/edge/schema/go-annotations/).
 
 The separate `ptah-compat` binary exposes an Atlas-compatible command surface;
 the native `ptah` command tree does not use Atlas command paths. Ptah does not
 claim full Atlas parity. The
-[compatibility overview](https://stokaro.github.io/ptah/edge/atlas/overview/)
-and [conformance results](https://stokaro.github.io/ptah/edge/atlas/conformance/)
+[compatibility overview](https://docs.ptah.run/edge/atlas/overview/)
+and [conformance results](https://docs.ptah.run/edge/atlas/conformance/)
 state the measured coverage and differences.
 
 ## License and help
@@ -181,7 +181,7 @@ state the measured coverage and differences.
 Ptah is an independent clean-room implementation published under the
 [MIT license](LICENSE). It does not use Atlas source code and is not affiliated
 with or endorsed by Ariga. The
-[license boundary](https://stokaro.github.io/ptah/edge/atlas/license-boundary/)
+[license boundary](https://docs.ptah.run/edge/atlas/license-boundary/)
 records the provenance policy.
 
 For questions and bug reports, open an issue in

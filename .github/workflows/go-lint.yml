@@ -115,7 +115,17 @@ jobs:
           scripts/check-adr-index-selftest.sh
           scripts/check-adr-index.sh
 
-      # The script published at https://stokaro.github.io/ptah/install.sh is
+      # The documentation site's address. It was written down in five places
+      # with three different shapes, so the move to the apex domain updated
+      # some of them and published a site whose every asset href pointed at a
+      # path that no longer existed (stokaro/ptah#2884).
+      - name: Check the documentation origin
+        run: |
+          set -euo pipefail
+          scripts/check-docs-origin-selftest.sh
+          scripts/check-docs-origin.sh
+
+      # The script published at https://docs.ptah.run/install.sh is
       # repository policy, not Go lint. Exercise it against fixtures under the
       # POSIX shells the documented pipe-to-sh command can select.
       - name: Check the hosted install script
