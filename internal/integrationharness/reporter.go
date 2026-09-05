@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"go.5x5.cz/ptah/internal/htmlstyle"
 )
 
 // ReportFormat represents the output format for reports
@@ -167,184 +169,123 @@ func (r *Reporter) generateHTMLReport(fpath string) error {
 			}
 			return float64(r.report.PassedTests) / float64(executedTests) * 100
 		},
-		"statusIcon": func(result TestResult) string {
+		"statusLabel": func(result TestResult) string {
 			if result.Skipped {
-				return "⏭️"
+				return "SKIP"
 			}
 			if result.Success {
-				return "✅"
+				return "PASS"
 			}
-			return "❌"
+			return "FAIL"
 		},
 		"statusClass": func(result TestResult) string {
 			if result.Skipped {
-				return "skipped"
+				return "skip"
 			}
 			if result.Success {
-				return "success"
+				return "pass"
 			}
-			return "failure"
+			return "fail"
+		},
+		"stepClass": func(step TestStep) string {
+			if step.Success {
+				return "pass"
+			}
+			return "fail"
+		},
+		"stepLabel": func(step TestStep) string {
+			if step.Success {
+				return "PASS"
+			}
+			return "FAIL"
 		},
 	}).Parse(htmlTemplate))
 
-	return tmpl.Execute(file, r.report)
+	if _, err := io.WriteString(file, htmlstyle.Head("Ptah integration test report", reportCSS)); err != nil {
+		return err
+	}
+	if err := tmpl.Execute(file, r.report); err != nil {
+		return err
+	}
+	footer := htmlstyle.Footer("Rendered by Ptah from the integration suite. " +
+		"This file is self-contained: opening it fetches nothing.")
+	_, err = io.WriteString(file, footer+"</div></body>\n</html>\n")
+	return err
 }
 
-const htmlTemplate = `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ptah Migration Library Integration Test Report</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
-        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        h1 { color: #333; border-bottom: 2px solid #007acc; padding-bottom: 10px; }
-        h2 { color: #555; margin-top: 30px; }
-        .summary { background: #e8f4fd; padding: 15px; border-radius: 5px; margin: 20px 0; }
-        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }
-        .stat-card { background: #f8f9fa; padding: 15px; border-radius: 5px; text-align: center; border-left: 4px solid #007acc; }
-        .stat-value { font-size: 2em; font-weight: bold; color: #007acc; }
-        .stat-label { color: #666; margin-top: 5px; }
-        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
-        th { background-color: #f8f9fa; font-weight: bold; }
-        .success { color: #28a745; }
-        .failure { color: #dc3545; }
-        .skipped { color: #6c757d; }
-        .error-details { background: #f8d7da; padding: 10px; border-radius: 3px; margin-top: 5px; font-family: monospace; font-size: 0.9em; }
-        .duration { color: #666; font-size: 0.9em; }
-        .database-badge { background: #007acc; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.8em; }
-        .progress-bar { width: 100%; height: 20px; background: #e9ecef; border-radius: 10px; overflow: hidden; }
-        .progress-fill { height: 100%; background: linear-gradient(90deg, #28a745, #20c997); transition: width 0.3s ease; }
-        .steps-container { margin-top: 10px; }
-        .step-item { margin-left: 20px; padding: 5px 0; border-left: 2px solid #e9ecef; padding-left: 10px; }
-        .step-header { display: flex; align-items: center; gap: 8px; }
-        .step-name { font-weight: bold; }
-        .step-duration { color: #666; font-size: 0.9em; }
-        .step-description { color: #666; font-size: 0.9em; margin-top: 2px; }
-        .step-error { background: #f8d7da; padding: 5px; border-radius: 3px; margin-top: 5px; font-family: monospace; font-size: 0.8em; }
-        .expandable { cursor: pointer; user-select: none; }
-        .expandable:hover { background-color: #f8f9fa; }
-        .expand-icon { transition: transform 0.2s; }
-        .expanded .expand-icon { transform: rotate(90deg); }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>🏛️ Ptah Migration Library Integration Test Report</h1>
-        
-        <div class="summary">
-            <h2>📊 Summary</h2>
-            <p><strong>{{.Summary}}</strong></p>
-            <p><strong>Test Period:</strong> {{formatTime .StartTime}} - {{formatTime .EndTime}}</p>
-            <p><strong>Total Duration:</strong> {{formatDuration (.EndTime.Sub .StartTime)}}</p>
-        </div>
+// reportCSS is what this report adds to the shared appearance: the status
+// classes and the expandable step list.
+//
+// The mapping from a result's status to a color lives here rather than on the
+// result, for the same reason it does in migration/dbtest: the status is a fact
+// about the run and the color is a fact about the page.
+const reportCSS = `
+.tag.pass { background: var(--ok-soft); border-color: transparent; color: var(--ok); }
+.tag.fail { background: var(--danger-soft); border-color: transparent; color: var(--danger); }
+.tag.skip { color: var(--text-mute); font-weight: 400; }
+td.status { width: 1%; }
+details { margin-top: 6px; }
+summary { cursor: pointer; font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--text-mute); }
+summary:hover { color: var(--text); }
+.steps { list-style: none; margin: 8px 0 0; padding: 0 0 0 2px; display: grid; gap: 6px; }
+.steps li { display: grid; gap: 2px; }
+.step-head { display: flex; align-items: baseline; gap: 8px; }
+.step-name { font-family: var(--mono); font-size: 13px; }
+.step-duration { color: var(--text-mute); font-family: var(--mono); font-size: 12px; }
+.note { color: var(--text-mute); font-size: 12.5px; }
+.error { color: var(--danger); font-family: var(--mono); font-size: 12.5px; word-break: break-word; }
+`
 
-        <div class="stats">
-            <div class="stat-card">
-                <div class="stat-value">{{.TotalTests}}</div>
-                <div class="stat-label">Total Tests</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value success">{{.PassedTests}}</div>
-                <div class="stat-label">Passed</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value failure">{{.FailedTests}}</div>
-                <div class="stat-label">Failed</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value skipped">{{.SkippedTests}}</div>
-                <div class="stat-label">Skipped</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">{{printf "%.1f%%" successRate}}</div>
-                <div class="stat-label">Success Rate</div>
-            </div>
-        </div>
-
-        <div class="progress-bar">
-            <div class="progress-fill" style="width: {{successRate}}%"></div>
-        </div>
-
-        <h2>📋 Detailed Results</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Status</th>
-                    <th>Test Name</th>
-                    <th>Database</th>
-                    <th>Duration</th>
-                    <th>Description</th>
-                </tr>
-            </thead>
-            <tbody>
-                {{range .Results}}
-                <tr class="{{if .Steps}}expandable{{end}}" onclick="{{if .Steps}}toggleSteps('{{.Name}}_{{.Database}}'){{end}}">
-                    <td class="{{statusClass .}}">
-                        {{if .Steps}}<span class="expand-icon">▶</span>{{end}}
-                        {{statusIcon .}}
-                    </td>
-                    <td>{{.Name}}</td>
-                    <td><span class="database-badge">{{.Database}}</span></td>
-                    <td class="duration">{{formatDuration .Duration}}</td>
-                    <td>
-                        {{.Description}}
-						{{if and (not .Success) (not .Skipped)}}
-							<div class="error-details">{{.Error}}</div>
-						{{end}}
-                        {{if .Skipped}}
-                            <div class="step-description">{{.SkipReason}}</div>
-                        {{end}}
-                    </td>
-                </tr>
-                {{if .Steps}}
-                <tr id="steps_{{.Name}}_{{.Database}}" style="display: none;">
-                    <td colspan="5">
-                        <div class="steps-container">
-                            {{range .Steps}}
-                            <div class="step-item">
-                                <div class="step-header">
-                                    <span class="{{if .Success}}success{{else}}failure{{end}}">{{if .Success}}✅{{else}}❌{{end}}</span>
-                                    <span class="step-name">{{.Name}}</span>
-                                    <span class="step-duration">({{formatDuration .Duration}})</span>
-                                </div>
-                                <div class="step-description">{{.Description}}</div>
-                                {{if not .Success}}
-                                    <div class="step-error">{{.Error}}</div>
-                                {{end}}
-                            </div>
-                            {{end}}
-                        </div>
-                    </td>
-                </tr>
-                {{end}}
-                {{end}}
-            </tbody>
-        </table>
-
-        <footer style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; text-align: center;">
-            <p>Generated by Ptah Migration Library Integration Test Suite</p>
-            <p>Report generated at {{formatTime .EndTime}}</p>
-        </footer>
-    </div>
-
-    <script>
-        function toggleSteps(testId) {
-            const stepsRow = document.getElementById('steps_' + testId);
-            const expandIcon = event.currentTarget.querySelector('.expand-icon');
-
-            if (stepsRow.style.display === 'none') {
-                stepsRow.style.display = 'table-row';
-                expandIcon.style.transform = 'rotate(90deg)';
-                event.currentTarget.classList.add('expanded');
-            } else {
-                stepsRow.style.display = 'none';
-                expandIcon.style.transform = 'rotate(0deg)';
-                event.currentTarget.classList.remove('expanded');
-            }
-        }
-    </script>
-</body>
-</html>`
+// htmlTemplate is the body between the shared head and the shared footer.
+//
+// The step list is a <details> element rather than a row toggled by an inline
+// onclick handler. It needs no script, it works with the keyboard and with
+// find-in-page, and it removes the one place a scenario name was interpolated
+// into JavaScript.
+const htmlTemplate = `<body><div class="page">
+<h1>Integration test report</h1>
+<div class="lede">{{printf "%.1f%%" successRate}} of executed tests passed {{"\u00b7"}} finished {{formatTime .EndTime}}</div>
+<div class="stats">
+<div class="stat"><div class="stat-n">{{.TotalTests}}</div><div class="stat-l">tests</div></div>
+<div class="stat"><div class="stat-n">{{.PassedTests}}</div><div class="stat-l">passed</div></div>
+<div class="stat"><div class="stat-n">{{.FailedTests}}</div><div class="stat-l">failed</div></div>
+<div class="stat"><div class="stat-n">{{.SkippedTests}}</div><div class="stat-l">skipped</div></div>
+</div>
+<h2>Results</h2>
+<div class="card"><div class="scroller"><table>
+<thead><tr><th>Status</th><th>Test</th><th>Database</th><th>Duration</th><th>Detail</th></tr></thead>
+<tbody>
+{{range .Results}}
+<tr>
+<td class="status"><span class="tag {{statusClass .}}">{{statusLabel .}}</span></td>
+<td class="name">{{.Name}}</td>
+<td><span class="tag">{{.Database}}</span></td>
+<td class="type">{{formatDuration .Duration}}</td>
+<td class="comment">
+{{.Description}}
+{{if and (not .Success) (not .Skipped)}}<div class="error">{{.Error}}</div>{{end}}
+{{if .Skipped}}<div class="note">{{.SkipReason}}</div>{{end}}
+{{if .Steps}}
+<details>
+<summary>{{len .Steps}} steps</summary>
+<ul class="steps">
+{{range .Steps}}
+<li>
+<div class="step-head">
+<span class="tag {{stepClass .}}">{{stepLabel .}}</span>
+<span class="step-name">{{.Name}}</span>
+<span class="step-duration">{{formatDuration .Duration}}</span>
+</div>
+{{if .Description}}<div class="note">{{.Description}}</div>{{end}}
+{{if not .Success}}<div class="error">{{.Error}}</div>{{end}}
+</li>
+{{end}}
+</ul>
+</details>
+{{end}}
+</td>
+</tr>
+{{end}}
+</tbody>
+</table></div></div>
+`
