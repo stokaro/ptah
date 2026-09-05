@@ -209,6 +209,11 @@ documented behavior of one shared database for every case.
 Where a dialect has no way to give a case its own database, a parallel case is
 **refused** before anything runs rather than quietly sharing one.
 
+A disposable database provisioned by `--dev-url docker://...` is released when
+the command returns, including the return an interrupt causes, because the
+release is deferred at the point the container is provisioned. Nothing else in
+the test path starts a container.
+
 Two properties hold whatever the schedule was. The report lists cases in
 document order, so two runs of one file are comparable; and every case
 contributes a result: a suite that reported success while some of its cases
@@ -300,6 +305,16 @@ The marker appears in the text report's status column, as
 `kind` in the JSON document -- absent for an ordinary step, so a report of
 nothing else is byte-identical to one from before the field existed -- and as
 the label and CSS class in the HTML page.
+
+A YAML case's `error_contains` step is marked `CAUGHT` for the same reason an
+HCL `catch` is: it passed *because* something went wrong. The step's verdict,
+its detail and the run's exit code are unchanged -- only the word in the status
+column is, and the JSON gained `kind` alongside the fields it already had.
+
+An interruption is never one of these. A caught step passes because the database
+refused what it was asked, so a canceled context or an expired deadline fails
+the step rather than satisfying it -- otherwise an interrupted run would report
+that all of its expected failures occurred.
 
 A **case** has a fourth state beside passed and failed. A skipped case is marked
 `SKIP`, carries no steps because none ran, counts in its own column of the
