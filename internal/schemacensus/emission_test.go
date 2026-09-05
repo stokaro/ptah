@@ -44,32 +44,55 @@ func TestMeasureEmissions_TheCorpusActuallyRenders(t *testing.T) {
 		measured.Objects))
 }
 
-// TestMeasureEmissions_EveryDialectContributes is the floor one level down,
-// and the total cannot stand in for it.
+// TestMeasureEmissions_EveryCellContributes is the floor one level down, and
+// the total cannot stand in for it.
 //
 // A cell whose render errors contributes nothing, deliberately: a refusal
 // creates no object, so there is nothing for the invariant to be about. What
-// that also does is make a dialect that stops rendering ENTIRELY
+// that also does is make a target that stops rendering ENTIRELY
 // indistinguishable from one that has nothing to say -- the duplicate check
-// reports zero because nothing was measured, and the total floor reports
-// success because the other dialects carried it.
+// reports zero because nothing was measured, and the total reports success
+// because the others carried it.
 //
-// Measured on the corpus this was written against: PostgreSQL contributes 1068
-// objects of 3986, and every other dialect fewer than the slack above any
-// floor worth writing, so eight of the ten could go dark with both existing
-// assertions green. A renderer refusal introduced for one dialect is an
-// ordinary change -- #2586 was exactly that.
+// Measured on the corpus this was written against: 3986 objects over 31 cells,
+// of which the largest is 181. Five could go dark and the total would still be
+// above any floor worth writing. A renderer refusal introduced for one release
+// line is an ordinary change -- #2586 was exactly that for one dialect.
 //
-// The assertion needs no number and no list of dialects. It is derived from
-// the declared cells, so adding a fixture, a release line or an engine changes
-// nothing here.
-func TestMeasureEmissions_EveryDialectContributes(t *testing.T) {
+// Per cell rather than per dialect, because a dialect is dark exactly when all
+// of its cells are: a dialect check would report nothing this does not, and
+// could not be made to fail on its own.
+func TestMeasureEmissions_EveryCellContributes(t *testing.T) {
 	c := qt.New(t)
 
 	measured := schemacensus.MeasureEmissions()
 
-	c.Assert(measured.Dark, qt.HasLen, 0, qt.Commentf(
-		"these dialects rendered no object at all, so nothing about them was measured"))
+	c.Assert(measured.DarkCells, qt.HasLen, 0, qt.Commentf(
+		"these declared cells rendered no object at all, so nothing about them was measured"))
+}
+
+// TestMeasureEmissions_EveryFixtureContributes is the same floor on the other
+// axis, and neither can be derived from the other.
+//
+// A fixture that renders nowhere still leaves every cell contributing, because
+// the other fixtures do -- so the cell floor above passes over it. Measured:
+// 97 fixtures, the largest contributing 93 of 3986, so any ten could stop
+// contributing with every other assertion here green.
+//
+// Dark here means neither rendered nor refused, which is weaker than the cell
+// rule on purpose. A fixture every target refuses is deliberate --
+// `column-unique-expr` is refused on all 31 cells, because uniqueness over an
+// expression is not implemented -- and a refusal is a measurement in this
+// package rather than an absence of one. Requiring an OBJECT from every
+// fixture would have made that fixture a permanent failure, which is how a
+// gate gets an exemption list and then a stale one.
+func TestMeasureEmissions_EveryFixtureContributes(t *testing.T) {
+	c := qt.New(t)
+
+	measured := schemacensus.MeasureEmissions()
+
+	c.Assert(measured.DarkFixtures, qt.HasLen, 0, qt.Commentf(
+		"these fixtures rendered no object on any declared cell"))
 }
 
 // TestMeasureEmissions_TheGuardsBlindSpotsAreWrittenDown is the half that keeps
