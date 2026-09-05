@@ -13,7 +13,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
 
@@ -28,7 +28,12 @@ const samplesRoot = join(siteRoot, 'public', 'samples');
 const vizSamples = join(samplesRoot, 'visualize');
 const reportSamples = join(samplesRoot, 'reports');
 const contractSamples = join(samplesRoot, 'contracts');
-const ptah = process.env.PTAH_BIN || join(repositoryRoot, 'bin', 'ptah');
+// Resolved, because spawnSync runs with cwd set elsewhere and a relative
+// PTAH_BIN then fails as status null with no message worth reading. The
+// schema-UI generator beside this one already resolves it.
+const ptah = process.env.PTAH_BIN
+  ? resolve(process.env.PTAH_BIN)
+  : join(repositoryRoot, 'bin', 'ptah');
 const viewport = { width: 1200, height: 720 };
 
 function execute(args, cwd, allowedStatuses = [0]) {
