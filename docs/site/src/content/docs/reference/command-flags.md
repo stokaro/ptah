@@ -834,7 +834,7 @@ Read the columns as follows.
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
-| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--db-url` | `string` | — | — | — |
 | `--dir` | `string` | `./tests` | `PTAH_DIR` | — |
 | `--dir-format` | `string` | `ptah` | `PTAH_DIR_FORMAT` | — |
 | `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
@@ -1250,7 +1250,7 @@ Read the columns as follows.
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
-| `--db-url` | `string` | — | `PTAH_DB_URL` | — |
+| `--db-url` | `string` | — | — | — |
 | `--dir` | `string` | `./tests` | `PTAH_DIR` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--report` | `string` | `text` | `PTAH_REPORT` | — |
