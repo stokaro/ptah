@@ -202,11 +202,35 @@ type Assertion struct {
 	// than an invalid test case, so a query returning 0 fails the case and a
 	// query returning nothing at all is an error.
 	True bool `yaml:"true"`
+	// ResultSet asserts that the WHOLE result of Query, rendered in the named
+	// layout, equals this value. It is the multi-row, multi-column sibling of
+	// Scalar, which reads one value out of the first row.
+	//
+	// Values are formatted the way Scalar formats one, and the layout decides
+	// what surrounds them; see ResultLayout.
+	ResultSet *string `yaml:"result_set"`
+	// ResultLayout selects how ResultSet renders a result. The zero value is
+	// [ResultLayoutCSV].
+	ResultLayout ResultLayout `yaml:"result_layout"`
 	// Message is appended to the failure detail of a True assertion, so an
 	// author can say what the boolean meant. It is ignored by every other
 	// condition.
 	Message string `yaml:"message"`
 }
+
+// ResultLayout names how a whole result set is rendered for comparison.
+type ResultLayout string
+
+const (
+	// ResultLayoutCSV renders one row per line, values separated by commas and
+	// nothing else -- no header, no quoting. It is the zero value, so an
+	// assertion that names no layout compares against it.
+	ResultLayoutCSV ResultLayout = "csv"
+	// ResultLayoutTable renders a header row, a rule beneath it, and one line
+	// per row, each cell padded to its column's width. It is for a result a
+	// person reads in a diff rather than one a program parses.
+	ResultLayoutTable ResultLayout = "table"
+)
 
 // stepKind classifies which action a [Step] performs.
 type stepKind int
@@ -485,9 +509,23 @@ func (a *Assertion) validate() error {
 	if a.True {
 		setCount++
 	}
+	if a.ResultSet != nil {
+		setCount++
+	}
+	// A layout beside any other condition is an instruction nothing reads, and
+	// a reader who wrote one expects it to have decided something.
+	if a.ResultLayout != "" {
+		if a.ResultSet == nil {
+			return fmt.Errorf("result_layout applies to result_set, which is not set")
+		}
+		if a.ResultLayout != ResultLayoutCSV && a.ResultLayout != ResultLayoutTable {
+			return fmt.Errorf("result_layout must be %q or %q, got %q",
+				ResultLayoutCSV, ResultLayoutTable, a.ResultLayout)
+		}
+	}
 	// The list is spelled out rather than derived so the message names what an
 	// author may write, in the order this function checks it.
-	const conditions = "row_count, scalar, error_contains, error_matches, expect_any_error, match, or true"
+	const conditions = "row_count, scalar, result_set, error_contains, error_matches, expect_any_error, match, or true"
 	if setCount == 0 {
 		return fmt.Errorf("assert must set exactly one of %s, but none is set", conditions)
 	}

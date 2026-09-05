@@ -58,7 +58,7 @@ func TestParseAtlasTestCases_PlanKindPreservesStepOrder(t *testing.T) {
 	c.Assert(steps[2].ApplyPlan, qt.IsNotNil)
 	c.Assert(steps[2].ApplyPlan.URL, qt.Equals, "file://plans/add_email.plan.hcl")
 	c.Assert(steps[3].Assert, qt.IsNotNil)
-	c.Assert(*steps[3].Assert.Scalar, qt.Equals, "Ada")
+	c.Assert(*steps[3].Assert.ResultSet, qt.Equals, "Ada")
 }
 
 // TestParseAtlasTestCases_KindsStaySeparate is the rule the loader has always

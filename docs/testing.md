@@ -104,13 +104,37 @@ Three kinds exist, and each is loaded by one command:
 
 | Step | Attributes | Behavior |
 | --- | --- | --- |
-| `exec` | `sql`, optional `output` or `match` | Runs the statement. With `output`, the statement's first result is compared as text; with `match`, it is tested against an unanchored regular expression. Either one turns the step into an assertion rather than a bare statement, and writing both is refused rather than resolved, so a typo in one cannot leave the other unchecked. |
+| `exec` | `sql`, optional `output` or `match`, optional `format` | Runs the statement, and compares its result when either assertion attribute is present. See below. |
 | `catch` | `sql`, optional `error` | Expects the statement to fail. Without `error` the expectation is only that something failed; with it, the message must match that unanchored regular expression. A statement that succeeds fails the case either way. |
 | `assert` | `sql`, optional `error_message` | Expects the statement to answer a single true value. A false answer is a failing test rather than an invalid case, and `error_message` is appended to the failure so the report says what the question meant. |
 | `log` | `message` | Records the message where it stands among the steps. It reaches no database and cannot fail, so it never decides whether a case passed. |
 | `migrate` | `to` | Migrates to that version, as `migrate_to` does in YAML. |
 | `schema` | `url` | Establishes the starting state. Plan cases only. |
 | `apply` | `url` | Applies the saved plan file that URL names. Plan cases only. |
+
+### What an `exec` compares
+
+`output` compares the **whole** result rather than its first value, so a query
+answering more rows or columns than the author expected fails instead of passing
+on the first one it finds. `format` selects the rendering: `csv`, the default,
+puts one row per line with values separated by commas; `table` draws a header, a
+rule beneath it, and one padded cell per value.
+
+`match` tests the first value against an unanchored regular expression. Writing
+`output` and `match` together is refused rather than resolved, so a typo in one
+cannot leave the other unchecked, and `format` without `output` is refused for
+the same reason: it would be an instruction nothing reads.
+
+### What a report marks
+
+A report tells three passing outcomes apart, because `passed` alone describes
+two of them wrongly. An ordinary step carries no marker; a `log` is marked
+`LOG`, since it reached no database and checked nothing; and a `catch` whose
+statement failed as expected is marked `CAUGHT`, since it passed *because*
+something went wrong. The marker appears in the text report's status column, as
+`kind` in the JSON document -- absent for an ordinary step, so a report of
+nothing else is byte-identical to one from before the field existed -- and as
+the label and CSS class in the HTML page.
 
 An unknown step, an unknown attribute, a `test` block without exactly two
 labels, and a `schema` or `apply` step outside a plan case are each refused by

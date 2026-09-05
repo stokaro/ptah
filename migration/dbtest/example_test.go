@@ -57,10 +57,10 @@ func ExampleRunMigrationTest() {
 	// Output:
 	// === MIGRATION TEST ===
 	// PASS  case "products table accepts rows"
-	//     PASS  step "migrate to latest" — migrated to latest
-	//     PASS  step "insert a product" — exec ok
-	//     PASS  step "exactly one product exists" — row_count 1
-	//     PASS  step "the product is named widget" — scalar "widget"
+	//     PASS    step "migrate to latest" — migrated to latest
+	//     PASS    step "insert a product" — exec ok
+	//     PASS    step "exactly one product exists" — row_count 1
+	//     PASS    step "the product is named widget" — scalar "widget"
 	//
 	// 1 cases, 1 passed, 0 failed
 }
@@ -110,8 +110,8 @@ type User struct {
 	// Output:
 	// === SCHEMA TEST ===
 	// PASS  case "users accepts a row"
-	//     PASS  step "insert a user" — exec ok
-	//     PASS  step "the user is retrievable" — scalar "ada"
+	//     PASS    step "insert a user" — exec ok
+	//     PASS    step "the user is retrievable" — scalar "ada"
 	//
 	// 1 cases, 1 passed, 0 failed
 }
@@ -214,7 +214,7 @@ test "schema" "users_insert_select" {
 			case step.Exec != "":
 				fmt.Println("  exec:", step.Exec)
 			case step.Assert != nil:
-				fmt.Printf("  assert scalar %q for: %s\n", *step.Assert.Scalar, step.Assert.Query)
+				fmt.Printf("  assert result set %q for: %s\n", *step.Assert.ResultSet, step.Assert.Query)
 			}
 		}
 	}
@@ -222,5 +222,5 @@ test "schema" "users_insert_select" {
 	// Output:
 	// case: users_insert_select
 	//   exec: INSERT INTO users (id, name) VALUES (1, 'ada')
-	//   assert scalar "ada" for: SELECT name FROM users WHERE id = 1
+	//   assert result set "ada" for: SELECT name FROM users WHERE id = 1
 }

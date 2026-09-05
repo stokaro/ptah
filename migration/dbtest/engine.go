@@ -86,7 +86,30 @@ type StepResult struct {
 	Name   string `json:"name"`
 	Passed bool   `json:"passed"`
 	Detail string `json:"detail,omitempty"`
+	// Kind names an outcome a reader cannot infer from Passed and Detail.
+	//
+	// It is empty for an ordinary step, so a report of nothing but ordinary
+	// steps is byte-identical to one from before the field existed. Two
+	// outcomes are not ordinary and were indistinguishable without it: a
+	// logged message, which reached no database and decided nothing, and a
+	// failure a case expected, which passed BECAUSE something went wrong
+	// (stokaro/ptah#2866).
+	Kind StepKind `json:"kind,omitempty"`
 }
+
+// StepKind labels a step outcome that Passed alone describes wrongly.
+type StepKind string
+
+const (
+	// StepKindLog marks a message recorded among the steps. It touched no
+	// database and could not have failed, so counting it as a passing check
+	// overstates what ran.
+	StepKindLog StepKind = "log"
+	// StepKindCaught marks an expected failure that occurred. The step passed
+	// and the statement did not, and a reader scanning for what a case proved
+	// needs to see which of the two happened.
+	StepKindCaught StepKind = "caught"
+)
 
 // Failed reports whether any case failed.
 func (r *Report) Failed() bool {
@@ -122,10 +145,7 @@ func (r *Report) Text() string {
 		fmt.Fprintf(&b, "%s  case %q\n", caseStatus, c.Name)
 		for j := range c.Steps {
 			s := c.Steps[j]
-			stepStatus := "FAIL"
-			if s.Passed {
-				stepStatus = "PASS"
-			}
+			stepStatus := stepStatusLabel(s)
 			label := s.Name
 			if label == "" {
 				label = "(unnamed step)"
@@ -180,6 +200,46 @@ func (r *Report) counts() (total, passed, failed int) {
 
 // JSON renders the report as indented JSON: the kind, summary counts, and every
 // case and step. It is stable enough to consume from CI tooling.
+// StatusLabel is the word a report puts in front of this step. It is a method
+// so the text renderer and the HTML template answer from one place rather than
+// each deciding what a logged or caught step is called.
+func (s StepResult) StatusLabel() string {
+	return strings.TrimSpace(stepStatusLabel(s))
+}
+
+// StatusClass is the CSS class the HTML report gives this step, matching the
+// label so a reader scanning colors and a reader scanning words agree.
+func (s StepResult) StatusClass() string {
+	switch {
+	case s.Kind == StepKindLog:
+		return "log"
+	case s.Kind == StepKindCaught:
+		return "caught"
+	case s.Passed:
+		return "pass"
+	default:
+		return "fail"
+	}
+}
+
+// stepStatusLabel is the word a text report puts in front of a step.
+//
+// A logged message is not a check that passed and a caught failure is not an
+// ordinary success, so neither wears PASS: a reader counting PASS lines to see
+// what a case proved would be counting a message among them.
+func stepStatusLabel(step StepResult) string {
+	switch {
+	case step.Kind == StepKindLog:
+		return "LOG   "
+	case step.Kind == StepKindCaught:
+		return "CAUGHT"
+	case step.Passed:
+		return "PASS  "
+	default:
+		return "FAIL  "
+	}
+}
+
 func (r *Report) JSON() (string, error) {
 	total, passed, failed := r.counts()
 	// Normalize a nil case slice to an empty one so the JSON is always
@@ -236,6 +296,8 @@ var reportHTMLTemplate = template.Must(template.New("dbtest-report").Parse(`<!do
 body { font-family: system-ui, sans-serif; margin: 2rem; }
 .pass { color: #157f3b; }
 .fail { color: #b3261e; }
+.log { color: #5f6368; }
+.caught { color: #8a6d1f; }
 .case { margin: 0.75rem 0; }
 .steps { margin: 0.25rem 0 0 1.5rem; padding: 0; list-style: none; }
 .detail { color: #555; }
@@ -251,7 +313,7 @@ body { font-family: system-ui, sans-serif; margin: 2rem; }
   <ul class="steps">
     {{range .Steps}}
     <li>
-      <span class="{{if .Passed}}pass{{else}}fail{{end}}">{{if .Passed}}PASS{{else}}FAIL{{end}}</span>
+      <span class="{{.StatusClass}}">{{.StatusLabel}}</span>
       step &ldquo;{{.Name}}&rdquo;{{if .Detail}} <span class="detail">&mdash; {{.Detail}}</span>{{end}}
     </li>
     {{end}}
@@ -449,7 +511,9 @@ func (r *runner) runCase(ctx context.Context, c Case) (CaseResult, error) {
 	for i := range c.Steps {
 		step := c.Steps[i]
 		passed, detail := r.execStep(ctx, step)
-		result.Steps = append(result.Steps, StepResult{Name: step.Name, Passed: passed, Detail: detail})
+		outcome := StepResult{Name: step.Name, Passed: passed, Detail: detail}
+		outcome.Kind = stepOutcomeKind(step, outcome)
+		result.Steps = append(result.Steps, outcome)
 		if err := ctx.Err(); err != nil {
 			return result, fmt.Errorf("run test case %q: %w", c.Name, err)
 		}
@@ -585,12 +649,34 @@ func (r *runner) runSeed(ctx context.Context, seed *SeedStep) (passed bool, deta
 	return true, fmt.Sprintf("seeded %d file(s)", len(result.Applied))
 }
 
+// stepOutcomeKind labels an outcome the pass flag describes wrongly.
+//
+// It reads the step rather than the detail string, because a detail is prose a
+// renderer may reword and a reader may not parse. A failed expected-failure is
+// deliberately unlabeled: it did not catch anything, and calling it caught
+// would put the label on the case where it is least true.
+func stepOutcomeKind(step Step, outcome StepResult) StepKind {
+	kind, _ := step.kind()
+	if kind == stepKindLog {
+		return StepKindLog
+	}
+	if !outcome.Passed || kind != stepKindAssert {
+		return ""
+	}
+	if step.Assert.ExpectAnyError || step.Assert.ErrorMatches != "" || step.Assert.ErrorContains != "" {
+		return StepKindCaught
+	}
+	return ""
+}
+
 func (r *runner) runAssert(ctx context.Context, a *Assertion) (passed bool, detail string) {
 	switch {
 	case a.RowCount != nil:
 		return r.assertRowCount(ctx, a.Query, *a.RowCount)
 	case a.Scalar != nil:
 		return r.assertScalar(ctx, a.Query, *a.Scalar)
+	case a.ResultSet != nil:
+		return r.assertResultSet(ctx, a.Query, *a.ResultSet, a.ResultLayout)
 	case a.Match != "":
 		return r.assertMatch(ctx, a.Query, a.Match)
 	case a.True:
@@ -669,6 +755,116 @@ func (r *runner) assertErrorContains(ctx context.Context, query, want string) (p
 		return false, fmt.Sprintf("expected error to contain %q, got %q", want, err.Error())
 	}
 	return true, fmt.Sprintf("error contained %q", want)
+}
+
+// assertResultSet compares a whole result against the rendering the layout
+// names.
+//
+// It reads every row rather than the first, so a query returning more than the
+// author expected fails rather than passing on its first row -- which is the
+// difference between this and Scalar, and the reason both exist.
+func (r *runner) assertResultSet(
+	ctx context.Context,
+	query, want string,
+	layout ResultLayout,
+) (passed bool, detail string) {
+	columns, rows, err := r.scanResultSet(ctx, query)
+	if err != nil {
+		return false, fmt.Sprintf("result_set query failed: %v", err)
+	}
+	got := renderResultSet(columns, rows, layout)
+	if got != want {
+		return false, fmt.Sprintf("expected result set %q, got %q", want, got)
+	}
+	return true, fmt.Sprintf("result set matched (%d row(s))", len(rows))
+}
+
+// scanResultSet reads the whole result, formatting each value the way every
+// other comparison in this package formats one.
+func (r *runner) scanResultSet(ctx context.Context, query string) ([]string, [][]string, error) {
+	queried, err := r.conn.QueryContext(ctx, query)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { _ = queried.Close() }()
+
+	columns, err := queried.Columns()
+	if err != nil {
+		return nil, nil, err
+	}
+	var rows [][]string
+	for queried.Next() {
+		dests := make([]any, len(columns))
+		for i := range dests {
+			dests[i] = new(any)
+		}
+		if err := queried.Scan(dests...); err != nil {
+			return nil, nil, err
+		}
+		row := make([]string, len(columns))
+		for i := range dests {
+			row[i] = normalizeScalar(*(dests[i].(*any)))
+		}
+		rows = append(rows, row)
+	}
+	if err := queried.Err(); err != nil {
+		return nil, nil, err
+	}
+	return columns, rows, nil
+}
+
+// renderResultSet lays a result out for comparison.
+func renderResultSet(columns []string, rows [][]string, layout ResultLayout) string {
+	if layout == ResultLayoutTable {
+		return renderResultTable(columns, rows)
+	}
+	lines := make([]string, 0, len(rows))
+	for _, row := range rows {
+		lines = append(lines, strings.Join(row, ","))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// renderResultTable lays a result out as a header, a rule, and padded cells.
+//
+// Every column is as wide as its widest cell including the header, so the rule
+// lines up with the separators above and below it and a diff of two results
+// stays readable rather than shifting every column when one value grows.
+func renderResultTable(columns []string, rows [][]string) string {
+	widths := make([]int, len(columns))
+	for i, column := range columns {
+		widths[i] = len(column)
+	}
+	for _, row := range rows {
+		for i, cell := range row {
+			widths[i] = max(widths[i], len(cell))
+		}
+	}
+
+	var b strings.Builder
+	for i, column := range columns {
+		if i > 0 {
+			b.WriteString("|")
+		}
+		fmt.Fprintf(&b, " %-*s ", widths[i], column)
+	}
+	b.WriteString("\n")
+	for i := range columns {
+		if i > 0 {
+			b.WriteString("+")
+		}
+		b.WriteString(strings.Repeat("-", widths[i]+2))
+	}
+	for _, row := range rows {
+		b.WriteString("\n")
+		for i, cell := range row {
+			if i > 0 {
+				b.WriteString("|")
+			}
+			fmt.Fprintf(&b, " %-*s ", widths[i], cell)
+		}
+	}
+	return b.String()
 }
 
 // assertMatch is the regexp-shaped sibling of assertScalar: the same scanned
