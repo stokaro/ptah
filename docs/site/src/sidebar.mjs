@@ -34,9 +34,10 @@
 //
 // A group carries a `label` and `items` and nothing else that navigates: the
 // schema has no `link` or `slug`, and the heading renders as a disclosure
-// control rather than as a link. A landing page is therefore an ordinary first
-// item inside its group. Label it `Overview` when the page title would only
-// repeat the group label; use a more specific label when the page has one.
+// control (a root row) or as a static label (a subgroup, see below) rather than
+// as a link. A landing page is therefore an ordinary first item inside its
+// group. Label it `Overview` when the page title would only repeat the group
+// label; use a more specific label when the page has one.
 //
 // Only four entry shapes are safe here, because `scripts/lib/docroutes.mjs`
 // tests `items` before `link`: a bare slug string, `{ slug }`, `{ slug, label }`
@@ -45,13 +46,21 @@
 // Starlight's schema at build time, which is the one way to be green here and
 // red in CI.
 //
-// `collapsed: true` hides a subgroup's items until the reader opens it, and
-// still opens the group whenever the current page is inside it, at any depth.
+// `collapsed: true` on every root row is the rail's resting state: a reader
+// arrives to one open group, the one holding the current page, and nine closed
+// rows, instead of ~130 links at once. Starlight opens a collapsed group when
+// any link inside it, at any depth, is the current page
+// (SidebarSublist.astro: `open={... some(isCurrent) || !entry.collapsed}`),
+// and remembers the rows a reader opened or closed for the rest of the browser
+// session (SidebarPersister). A subgroup never carries `collapsed`: the site's
+// SidebarSublist.astro renders it as a static label above its pages, not as a
+// second level of disclosure, so the flag would have nothing to act on.
 
 /** @type {import('@astrojs/starlight/types').StarlightUserConfig['sidebar']} */
 export const sidebar = [
   {
     label: 'Start',
+    collapsed: true,
     items: [
       { slug: 'start/overview', label: 'Overview' },
       { slug: 'start/install' },
@@ -65,6 +74,7 @@ export const sidebar = [
   },
   {
     label: 'Versioned migrations',
+    collapsed: true,
     items: [
       { slug: 'versioned/overview', label: 'Overview' },
       { slug: 'versioned/generate' },
@@ -79,6 +89,7 @@ export const sidebar = [
   },
   {
     label: 'Direct schema changes',
+    collapsed: true,
     items: [
       { slug: 'direct/overview', label: 'Overview' },
       { slug: 'direct/inspect' },
@@ -89,6 +100,7 @@ export const sidebar = [
   },
   {
     label: 'Inference migrations',
+    collapsed: true,
     items: [
       { slug: 'inference/overview', label: 'Overview' },
       { slug: 'inference/quick-start' },
@@ -118,7 +130,6 @@ export const sidebar = [
       },
       {
         label: 'Strategies',
-        collapsed: true,
         items: [
           { slug: 'inference/strategies/choose-a-consistency-mode' },
           { slug: 'inference/strategies/choose-a-target-layout' },
@@ -129,7 +140,6 @@ export const sidebar = [
       },
       {
         label: 'Reference',
-        collapsed: true,
         items: [
           { slug: 'inference/reference/specification' },
           { slug: 'inference/reference/commands' },
@@ -143,6 +153,7 @@ export const sidebar = [
   },
   {
     label: 'Define and understand schemas',
+    collapsed: true,
     items: [
       { slug: 'schema/overview', label: 'Overview' },
       {
@@ -181,6 +192,7 @@ export const sidebar = [
   },
   {
     label: 'Databases',
+    collapsed: true,
     items: [
       { slug: 'databases/overview', label: 'Overview' },
       { slug: 'databases/support-matrix' },
@@ -197,6 +209,7 @@ export const sidebar = [
   },
   {
     label: 'Test, automate, and operate',
+    collapsed: true,
     items: [
       { slug: 'operate/overview', label: 'Overview' },
       { slug: 'testing/migrations-and-schema' },
@@ -209,6 +222,7 @@ export const sidebar = [
   },
   {
     label: 'Extend and integrate',
+    collapsed: true,
     items: [
       { slug: 'extend/overview', label: 'Overview' },
       {
@@ -236,11 +250,11 @@ export const sidebar = [
   },
   {
     label: 'Reference',
+    collapsed: true,
     items: [
       { slug: 'reference/overview', label: 'Overview' },
       {
         label: 'Concepts',
-        collapsed: true,
         items: [
           { slug: 'concepts/desired-schema-and-sources' },
           { slug: 'concepts/migration-directory' },
@@ -250,7 +264,6 @@ export const sidebar = [
       },
       {
         label: 'Command reference',
-        collapsed: true,
         items: [
           { slug: 'reference/native-commands' },
           { slug: 'reference/atlas-commands' },
@@ -261,7 +274,6 @@ export const sidebar = [
       },
       {
         label: 'Format reference',
-        collapsed: true,
         items: [
           { slug: 'reference/configuration' },
           { slug: 'reference/go-annotations' },
@@ -271,7 +283,6 @@ export const sidebar = [
       },
       {
         label: 'Rules and diagnostics',
-        collapsed: true,
         items: [
           { slug: 'reference/capabilities' },
           { slug: 'reference/lint-rules' },
@@ -284,13 +295,13 @@ export const sidebar = [
   },
   {
     label: 'Atlas compatibility',
+    collapsed: true,
     items: [
       { slug: 'atlas/overview', label: 'Overview' },
       { slug: 'atlas/adoption' },
       { slug: 'atlas/strict-ce-mode' },
       {
         label: 'Commands and configuration',
-        collapsed: true,
         items: [
           { slug: 'atlas/migrate-commands' },
           { slug: 'atlas/schema-commands' },
@@ -300,7 +311,6 @@ export const sidebar = [
       },
       {
         label: 'Differences and evidence',
-        collapsed: true,
         items: [
           { slug: 'atlas/feature-matrix' },
           { slug: 'atlas/retained-divergences' },

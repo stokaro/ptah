@@ -273,25 +273,51 @@ async function checkPageActionContract(page, built, buildInfo, entry, problems, 
     }
   }
 
+  // The menu is about the page's Markdown: a copy row and a view link, no
+  // more. The source links (edit, source, report) are about the page's source
+  // and belong after the article, in the footer, where a reader who has
+  // finished looks for them; a copy menu that also opened GitHub was the
+  // unrelated location the redesign took them out of (stokaro/ptah#2893).
   const more = root.locator('summary');
   await more.focus();
   await page.keyboard.press('Enter');
-  const labels = await root.locator('.page-actions-menu strong').allTextContents();
-  const expectedLabels = expected.actions.map(({ label }) => label);
-  if (JSON.stringify(labels) !== JSON.stringify(expectedLabels)) {
-    problems.push(`${entry.route}: page action order is Copy, ${labels.join(', ') || '(none)'}`);
+  const menu = root.locator('.page-actions-menu');
+  if (!(await menu.locator('[data-copy-page-row]').count())) {
+    problems.push(`${entry.route}: the copy menu has no Copy as Markdown row`);
   }
+  const viewHref = await menu.locator('[data-view-markdown]').getAttribute('href');
+  const expectedMarkdownUrl = `${built.base.replace(/\/$/, '')}/page-source/${entry.route.replace(/^\/|\/$/g, '')}.md`;
+  if (viewHref !== expectedMarkdownUrl) {
+    problems.push(`${entry.route}: View as Markdown links to ${viewHref}, want ${expectedMarkdownUrl}`);
+  }
+  const menuSourceLinks = await root.locator('[data-page-action]').count();
+  if (menuSourceLinks !== 0) {
+    problems.push(`${entry.route}: the copy menu carries ${menuSourceLinks} source link(s); they belong in the footer`);
+  }
+
+  const footer = page.locator('footer.ptah-footer');
+  const footerLinks = {
+    edit: footer.locator('[data-footer-action="edit"]'),
+    source: footer.locator('.ptah-footer-commit'),
+    report: footer.locator('[data-footer-action="report"]'),
+  };
   for (const action of expected.actions) {
-    const link = root.locator(`[data-page-action="${action.kind}"]`);
-    if (await link.count() !== 1) {
-      problems.push(`${entry.route}: ${action.kind} action is missing`);
+    const link = footerLinks[action.kind];
+    if (!link || (await link.count()) !== 1) {
+      problems.push(`${entry.route}: ${action.kind} link is missing from the footer`);
       continue;
     }
     const href = await link.getAttribute('href');
-    if (href !== action.url) problems.push(`${entry.route}: ${action.kind} links to ${href}, want ${action.url}`);
+    if (href !== action.url) problems.push(`${entry.route}: footer ${action.kind} links to ${href}, want ${action.url}`);
+    if (action.kind === 'edit') {
+      const text = (await link.textContent())?.trim() ?? '';
+      if (!text.startsWith(action.label)) {
+        problems.push(`${entry.route}: footer edit link reads ${JSON.stringify(text)}, want ${JSON.stringify(action.label)}`);
+      }
+    }
   }
 
-  const reportHref = await root.locator('[data-page-action="report"]').getAttribute('href');
+  const reportHref = await footerLinks.report.getAttribute('href');
   const reportBody = reportHref ? new URL(reportHref).searchParams.get('body') ?? '' : '';
   for (const expectedLine of [
     `Page: ${canonicalPageUrl}`,
@@ -306,7 +332,7 @@ async function checkPageActionContract(page, built, buildInfo, entry, problems, 
     if (!reportBody.includes(expectedLine)) problems.push(`${entry.route}: issue body omitted ${expectedLine}`);
   }
   if (source.generated) {
-    const editHref = await root.locator('[data-page-action="edit"]').getAttribute('href');
+    const editHref = await footerLinks.edit.getAttribute('href');
     if (editHref?.endsWith(source.renderedSourcePath)) {
       problems.push(`${entry.route}: generated Markdown has a direct edit action`);
     }
@@ -423,7 +449,7 @@ async function main() {
     await checkVersionedInferenceDownloads(page, built, problems);
 
     await page.goto(`http://127.0.0.1:${built.port}${built.base}/versioned/generate/`, { waitUntil: 'load' });
-    if (!(await page.locator('footer').getByText('Last updated:', { exact: false }).count())) {
+    if (!(await page.locator('footer').getByText('Last updated', { exact: false }).count())) {
       problems.push('/versioned/generate/: Git-derived last-updated information is absent');
     }
 

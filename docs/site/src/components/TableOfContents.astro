@@ -1,0 +1,53 @@
+---
+/**
+ * The contents rail, shown from 80rem (global.css decides the breakpoint):
+ * the "Copy as Markdown" split button first, then "On this page" and the
+ * heading list. Registered in astro.config.mjs as the override of Starlight's
+ * TableOfContents.
+ *
+ * The list keeps the shape of Starlight's TableOfContentsList and the
+ * `<starlight-toc>` element keeps Starlight's script, so the current heading
+ * follows the scroll position exactly as it does by default. The split button
+ * renders outside `<starlight-toc>`: the script collects every `a` inside it
+ * as a heading link, and the menu's links are not headings.
+ *
+ * Styles live in src/styles/ptah/toc.css ("Contents rail").
+ */
+import PageActions from './PageActions.astro';
+import { pageSourceActions, publishesLlmsTxt, tableOfContentsHtml } from '../lib/page-furniture.mjs';
+
+const { entry, toc } = Astro.locals.starlightRoute;
+const source = pageSourceActions(entry, { pageUrl: Astro.url.href, baseUrl: import.meta.env.BASE_URL });
+---
+
+{
+  toc && (
+    <div class="ptah-contents-rail">
+      {source.hasSource && (
+        <PageActions
+          markdownUrl={source.markdownUrl}
+          markdownLabel={source.markdownLabel}
+          actions={source.actions}
+          sourceContext={source.sourceContext}
+          llmsEntry={publishesLlmsTxt}
+        />
+      )}
+      <starlight-toc data-min-h={toc.minHeadingLevel} data-max-h={toc.maxHeadingLevel}>
+        <nav aria-labelledby="starlight__on-this-page">
+          <h2 id="starlight__on-this-page">{Astro.locals.t('tableOfContents.onThisPage')}</h2>
+          <Fragment set:html={tableOfContentsHtml(toc.items)} />
+        </nav>
+      </starlight-toc>
+    </div>
+  )
+}
+
+<script>
+  /*
+   * Starlight's own tracking script, which also defines <starlight-toc>. The
+   * package exports `components/*` only, so the internal module is reached by
+   * its file path; a moved file fails the build rather than silently losing
+   * the current-heading highlight.
+   */
+  import '../../node_modules/@astrojs/starlight/dist/components-internals/TableOfContents/starlight-toc.js';
+</script>

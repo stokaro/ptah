@@ -1,0 +1,248 @@
+/* The header: the brand cell, the search field, the text links, the theme
+ * toggle and the phone controls (see ../ptah.css).
+ *
+ * Two elements carry the class `header`. PageFrame renders the outer
+ * `<header class="header">`: fixed, 52px tall, the bottom hairline, padded by
+ * --sl-nav-pad-x. Header.astro renders the inner `<div class="header">`: a
+ * flex row on phones and, from 50rem, a three-column grid of title-wrapper,
+ * search wrapper and right-group. The rules below tell them apart by element
+ * name so the cell measurements land on the right box. */
+
+/* ---------- Brand cell (>= 50rem) ---------- */
+
+/* The concept draws the header as `grid-template-columns: 256px 1fr` and the
+ * brand cell with its own right hairline, so the cell reads as the top of the
+ * navigation rail. The rail (PageFrame's .sidebar-pane) is fixed at
+ * inset-inline-start 0 with `width: var(--sl-sidebar-width)` and a 1px
+ * border-inline-end drawn inside that width (border-box), so its rule sits on
+ * the last pixel of the 16rem. For the cell's rule to land on the same pixel
+ * the cell has to start at x = 0, which means the outer header gives up its
+ * inline-start padding, and the cell has to be exactly 16rem wide with the
+ * rule inside its box. Starlight's own grid sizes the title column against the
+ * main content column instead (14.5rem plus a share of the free width, 42rem
+ * at 2560), so the grid is replaced rather than adjusted. */
+@media (min-width: 50rem) {
+	header.header {
+		padding-block: 0;
+		padding-inline-start: 0;
+	}
+	div.header {
+		display: grid;
+		/* Cell, search (all free width), links and toggle (their own width). The
+		 * 24px gap is the concept's right part `padding: 0 24px`: the search field
+		 * starts 24px after the cell's rule, and the links end 24px before the
+		 * viewport edge, which is the outer header's inline-end padding. */
+		grid-template-columns: var(--sl-sidebar-width) minmax(0, 1fr) auto;
+		column-gap: 1.5rem;
+		height: 100%;
+		align-items: center;
+	}
+	div.header > .title-wrapper {
+		/* Starlight pads the wrapper 0.25rem and pulls it back with a negative
+		 * margin to keep focus rings out of its clip. The cell's own 20px padding
+		 * gives the rings room, so both go. */
+		margin: 0;
+		padding: 0 1.25rem;
+		height: 100%;
+		align-items: center;
+	}
+	:root[data-has-sidebar] div.header > .title-wrapper {
+		border-inline-end: 1px solid var(--sl-color-hairline);
+	}
+}
+
+/* ---------- Links and toggle ---------- */
+
+/* Text links replace the icon row; the divider between icons and the theme
+ * control goes with it. 22px between the links and the toggle, as the concept's
+ * nav gap. */
+.header .social-icons::after {
+	display: none;
+}
+.header .right-group,
+.header .social-icons {
+	gap: 1.375rem;
+}
+
+/* ---------- Search ---------- */
+
+/* The search field: a 320px bordered box, 13px sans in gray-3, the shortcut in
+ * its own 1px box. 32px tall is the concept's 6px padding around a 13px line
+ * and the shortcut's 11px box. The magnifier is the button's only content on a
+ * phone; from 50rem the placeholder text does its job and the icon goes. */
+site-search button[data-open-modal] {
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 2px;
+	background: transparent;
+	color: var(--sl-color-gray-3);
+	font-size: 0.8125rem;
+}
+site-search button[data-open-modal]:hover {
+	border-color: var(--sl-color-gray-4);
+	color: var(--sl-color-white);
+}
+@media (min-width: 50rem) {
+	site-search button[data-open-modal] {
+		height: 2rem;
+		padding-inline: 0.625rem;
+		width: 100%;
+		max-width: 20rem;
+	}
+	site-search button[data-open-modal] > svg {
+		display: none;
+	}
+}
+/* Starlight renders <kbd><kbd>Ctrl</kbd><kbd>K</kbd></kbd> and swaps "Ctrl"
+ * for the Command sign on Apple platforms. The outer kbd is the box; the inner
+ * ones stay plain text, so the pair reads "Ctrl K" in one frame. */
+site-search button[data-open-modal] > kbd {
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 2px;
+	padding: 1px 0.3125rem;
+	background: transparent;
+	font-family: var(--sl-font-mono);
+	font-size: 0.6875rem;
+	line-height: 1.3;
+	color: var(--sl-color-gray-3);
+}
+site-search button[data-open-modal] kbd {
+	font-family: var(--sl-font-mono);
+}
+site-search dialog {
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 2px;
+	background: var(--sl-color-bg);
+	box-shadow: none;
+}
+site-search dialog::backdrop {
+	backdrop-filter: none;
+	-webkit-backdrop-filter: none;
+}
+#starlight__search {
+	--sl-search-corners: 2px;
+	--pagefind-ui-border-radius: 2px;
+	--pagefind-ui-image-border-radius: 2px;
+	--pagefind-ui-background: var(--sl-color-bg);
+	--pagefind-ui-border: var(--sl-color-hairline);
+}
+
+/* ---------- Phone (< 50rem) ---------- */
+
+/* The concept's phone header: `padding: 0 8px 0 16px`, the brand at the left,
+ * and three 44px targets flush at the right: search, theme, menu. Starlight
+ * hides the whole right-group on a phone and moves the theme control into the
+ * drawer footer; here the group stays visible with the links hidden, so the
+ * toggle keeps its place in the header. The menu button is Starlight's fixed
+ * disc, so the outer header's inline-end padding reserves its 44px plus the
+ * 8px edge (52px) and the search and toggle line up against it. */
+@media (width < 50rem) {
+	header.header {
+		padding-block: 0;
+		padding-inline: 1rem 0.5rem;
+	}
+	/* Starlight renders the menu button only where there is a rail to open;
+	 * the landing and 404 pages have none, and there the search and toggle end
+	 * 8px from the edge like the brand does on the left. */
+	:root[data-has-sidebar] header.header {
+		padding-inline-end: 3.25rem;
+	}
+	div.header {
+		gap: 0;
+	}
+	div.header > .title-wrapper {
+		margin-inline-end: auto;
+	}
+	div.header > .right-group {
+		display: flex;
+	}
+	div.header > .right-group > .social-icons {
+		display: none;
+	}
+	/* The search button: a 44px square around the magnifier. */
+	site-search button[data-open-modal] {
+		width: 2.75rem;
+		height: 2.75rem;
+		padding: 0;
+		justify-content: center;
+		border-color: transparent;
+		font-size: 1rem;
+	}
+	site-search button[data-open-modal]:hover {
+		border-color: transparent;
+	}
+}
+
+/* The menu button: a 44px square, no shadow, no fill until the drawer is open.
+ * Starlight sizes it by --sl-menu-button-size (2rem) and insets it by
+ * --sl-nav-pad-x; both are spelled out here so the token keeps its other
+ * consumers (the header's own padding above 50rem) unchanged. The open state
+ * takes the code-surface fill, the same hover fill the sidebar uses. */
+.sl-menu-button {
+	top: calc((var(--sl-nav-height) - 2.75rem) / 2);
+	inset-inline-end: 0.5rem;
+	width: 2.75rem;
+	height: 2.75rem;
+	padding: 0;
+	justify-content: center;
+	align-items: center;
+	border: 0;
+	border-radius: 2px;
+	background: transparent;
+	color: var(--sl-color-white);
+	box-shadow: none;
+	font-size: 1.125rem;
+}
+.sl-menu-button:has(~ :popover-open) {
+	background: var(--sl-color-bg-inline-code);
+	color: var(--sl-color-white);
+}
+
+/* ---------- Toggles ---------- */
+
+/* The theme and layout toggles: two 26px bordered squares, 8px apart, the
+ * glyph at 12px in gray-2, ink on hover, as the concept draws the theme
+ * control beside the header links. */
+.ptah-header-toggles {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+.ptah-header-toggle {
+	display: grid;
+	place-items: center;
+	width: 1.625rem;
+	height: 1.625rem;
+	padding: 0;
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 2px;
+	background: transparent;
+	color: var(--sl-color-gray-2);
+	cursor: pointer;
+}
+.ptah-header-toggle:hover {
+	color: var(--sl-color-white);
+	border-color: var(--sl-color-gray-4);
+}
+.ptah-header-toggle:focus-visible {
+	outline: 2px solid var(--sl-color-accent);
+	outline-offset: 2px;
+}
+.ptah-header-toggle svg {
+	width: 0.75rem;
+	height: 0.75rem;
+}
+/* Phone: 44px targets, bare glyphs like the search and menu buttons beside
+ * them (concept 1d), and no gap between them. */
+@media (width < 50rem) {
+	.ptah-header-toggles {
+		gap: 0;
+	}
+	.ptah-header-toggle {
+		width: 2.75rem;
+		height: 2.75rem;
+		border-color: transparent;
+	}
+	.ptah-header-toggle:hover {
+		border-color: transparent;
+	}
+}

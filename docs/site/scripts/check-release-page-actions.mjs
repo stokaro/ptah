@@ -39,8 +39,8 @@ export function releaseActionProblems({ version, sourceCommit, authored, generat
   ];
   for (const actionCase of cases) {
     const value = actionCase.value ?? {};
-    if (value.markdownLabel !== 'Copy page as Markdown') {
-      problems.push(`${actionCase.label}: Copy page as Markdown action is missing`);
+    if (value.markdownLabel !== 'Copy as Markdown') {
+      problems.push(`${actionCase.label}: Copy as Markdown action is missing`);
     }
     if (value.documentationVersion !== version) problems.push(`${actionCase.label}: wrong documentation version`);
     if (value.viewRef !== version) problems.push(`${actionCase.label}: source view does not use ${version}`);
@@ -96,7 +96,7 @@ function fixture({ version, commit, generated }) {
     viewRef: version,
     editRef: 'master',
     generated,
-    markdownLabel: 'Copy page as Markdown',
+    markdownLabel: 'Copy as Markdown',
     renderedSource,
     editSource,
     labels: generated

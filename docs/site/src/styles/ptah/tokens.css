@@ -1,0 +1,197 @@
+/* Tokens, base and site-wide details of the design (see ../ptah.css). The
+ * variables Starlight reads, set to the shared palette for both themes; the
+ * type scale; the focus ring. */
+
+/* ---------- Tokens ---------- */
+
+:root {
+	/* Dark, Starlight's default theme. Warm near-black, as on ptah.run. */
+	--sl-color-white: #ede7de;
+	--sl-color-gray-1: #d8d1c6;
+	--sl-color-gray-2: #b6ada0;
+	--sl-color-gray-3: #8d8377;
+	--sl-color-gray-4: #5c554d;
+	--sl-color-gray-5: #2e2823;
+	--sl-color-gray-6: #26211d;
+	--sl-color-gray-7: #1d1916;
+	--sl-color-black: #161311;
+
+	--sl-color-accent-low: oklch(0.27 0.05 235);
+	--sl-color-accent: oklch(0.78 0.11 225);
+	--sl-color-accent-high: oklch(0.86 0.08 225);
+
+	/* Running text in ink, the same tone as the headings: the design sets body
+	 * copy at 16.5px in `--fg`, and reserves gray-2 for what is read beside the
+	 * text (ledes, captions, table cells, aside bodies) and gray-3 for what is
+	 * read after it (meta, labels). Measured on the page background: ink 15.05:1
+	 * dark, 17.85:1 light; gray-2 8.34 / 8.25; gray-3 4.97 / 5.05. Gray-4 fails
+	 * (2.52) and is never used for text. */
+	--sl-color-text: var(--sl-color-white);
+	--sl-color-text-accent: var(--sl-color-accent);
+	--sl-color-text-invert: var(--sl-color-black);
+	--sl-color-bg: var(--sl-color-black);
+	--sl-color-bg-nav: var(--sl-color-black);
+	--sl-color-bg-sidebar: var(--sl-color-black);
+	--sl-color-bg-inline-code: var(--sl-color-gray-7);
+	--sl-color-bg-accent: var(--sl-color-accent);
+	--sl-color-hairline-light: var(--sl-color-gray-6);
+	--sl-color-hairline: var(--sl-color-gray-5);
+	--sl-color-hairline-shade: var(--sl-color-gray-5);
+	--sl-color-backdrop-overlay: rgba(0, 0, 0, 0.55);
+
+	/* The mark is a dark square; on a dark page it needs an edge. */
+	--ptah-logo-ring: var(--sl-color-gray-5);
+
+	/* No shadows anywhere. */
+	--sl-shadow-sm: none;
+	--sl-shadow-md: none;
+	--sl-shadow-lg: none;
+
+	/* Type scale, from the component sheet of the docs concept.
+	 *
+	 * Starlight never sets a font size on <body>, so the browser's 16px stands
+	 * and every rem here is 16px. `--sl-text-body` is Starlight's name for the
+	 * running-text size; Starlight itself only reads it in Card, so content.css
+	 * applies it to .sl-markdown-content. It is a rem and not a change to the
+	 * root size on purpose: the layout measures in global.css (60rem prose,
+	 * 70rem shell) and Starlight's breakpoints are in rem and must not move
+	 * with the body copy.
+	 *
+	 *   body   16.5px / 1.65   about 72 characters per line at 704px
+	 *   h1     34px   / 1.2    weight 500, tracking -0.02em (content.css)
+	 *   h2     24px   / 1.3    weight 500, tracking -0.015em, a rule above
+	 *   h3     18px   / 1.4    weight 600
+	 *   small  13px            meta, captions, breadcrumbs: Starlight's --sl-text-xs
+	 *   code   13.5px          the size of a code block's text (Expressive Code
+	 *                          reads its own; plain <pre> reads this)
+	 *   code-sm 13px           inline code inside table cells, where a flag name
+	 *                          per cell decides the column width
+	 */
+	--sl-text-body: 1.03125rem; /* 16.5px */
+	--sl-text-h1: 2.125rem; /* 34px */
+	--sl-text-h2: 1.5rem; /* 24px */
+	--sl-text-h3: 1.125rem; /* 18px */
+	--sl-text-h4: 1rem;
+	--sl-text-h5: 0.9375rem;
+	--sl-text-code: 0.84375rem; /* 13.5px */
+	--sl-text-code-sm: 0.8125rem; /* 13px */
+	--sl-line-height: 1.65;
+	--sl-line-height-headings: 1.2;
+
+	/* The header is 52px at every width, as the docs concept draws it. */
+	--sl-nav-height: 3.25rem;
+	--sl-nav-pad-x: 1.25rem;
+
+	/* Surfaces and colors the concept names beyond Starlight's set: the raised
+	 * surface of a title bar, a table head or a menu; the amber of a prompt and
+	 * a caution; the green of a string in code. Amber is read as text (the
+	 * "Caution" label, the `$` of a prompt): 9.65:1 on the dark page, 4.87:1 on
+	 * the light one; 5.05:1 on the light surface, 4.58:1 on the light code
+	 * surface. */
+	--ptah-surface: #1b1815;
+	--ptah-amber: oklch(0.8 0.15 70);
+	--ptah-green: oklch(0.72 0.12 150);
+}
+
+:root[data-theme='light'] {
+	--sl-color-white: #111417;
+	--sl-color-gray-1: #262b30;
+	--sl-color-gray-2: #474d54;
+	--sl-color-gray-3: #666d76;
+	--sl-color-gray-4: #9aa1a8;
+	--sl-color-gray-5: #d9dcdf;
+	--sl-color-gray-6: #ebedef;
+	--sl-color-gray-7: #f3f4f4;
+	--sl-color-black: #fbfbfa;
+
+	--sl-color-accent-low: oklch(0.955 0.025 238);
+	--sl-color-accent: oklch(0.47 0.16 238);
+	--sl-color-accent-high: oklch(0.39 0.13 240);
+
+	--sl-color-text: var(--sl-color-white);
+	--sl-color-text-accent: var(--sl-color-accent);
+	--sl-color-text-invert: var(--sl-color-black);
+	--sl-color-bg: var(--sl-color-black);
+	--sl-color-bg-nav: var(--sl-color-black);
+	--sl-color-bg-sidebar: var(--sl-color-black);
+	--sl-color-bg-inline-code: var(--sl-color-gray-7);
+	--sl-color-bg-accent: var(--sl-color-accent);
+	--sl-color-hairline-light: var(--sl-color-gray-6);
+	--sl-color-hairline: var(--sl-color-gray-5);
+	--sl-color-hairline-shade: var(--sl-color-gray-5);
+	--sl-color-backdrop-overlay: rgba(17, 20, 23, 0.4);
+
+	--ptah-logo-ring: transparent;
+
+	--ptah-surface: #ffffff;
+	--ptah-amber: oklch(0.55 0.15 62);
+	--ptah-green: oklch(0.52 0.12 150);
+}
+
+@media (min-width: 50rem) {
+	:root {
+		--sl-nav-pad-x: 1.5rem;
+	}
+}
+
+/* Below 72rem the page has no contents rail and the column narrows (1c, 1024):
+ * the title comes down to 32px so a long one still fits in two lines. */
+@media (width < 72rem) {
+	:root {
+		--sl-text-h1: 2rem; /* 32px */
+	}
+}
+
+/* Phones (1d, 390): title 27px, h2 21px, body 16px. 50rem is where Starlight
+ * folds the navigation into a drawer; the type follows the same line so the
+ * page changes shape once, not twice. */
+@media (width < 50rem) {
+	:root {
+		--sl-text-body: 1rem; /* 16px */
+		--sl-text-h1: 1.6875rem; /* 27px */
+		--sl-text-h2: 1.3125rem; /* 21px */
+	}
+}
+
+/* ---------- Base ---------- */
+
+body {
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+}
+
+/* A contents link scrolls the page to its heading rather than jumping, so a
+ * reader keeps their place; the offset for the fixed header comes from
+ * Starlight's scroll-padding-top. Readers who asked their system for less
+ * motion get the jump. */
+html {
+	scroll-behavior: smooth;
+}
+@media (prefers-reduced-motion: reduce) {
+	html {
+		scroll-behavior: auto;
+	}
+}
+
+/* ---------- Site-wide details ---------- */
+
+.sl-banner,
+.sl-skip-link:focus {
+	box-shadow: none;
+}
+.sl-skip-link:focus {
+	border-radius: 2px;
+}
+
+/* Focus rings in the accent, everywhere the browser default would show. Where
+ * Starlight draws the ring inside the control -- a tab in its list, the
+ * mobile table of contents in its bar -- an outset ring would be clipped by
+ * the neighbor, so those keep Starlight's inside offset. */
+:where(a, button, summary, select, input):focus-visible {
+	outline: 2px solid var(--sl-color-accent);
+	outline-offset: 2px;
+}
+starlight-tabs [role='tab']:focus-visible,
+mobile-starlight-toc :is(summary, a):focus-visible {
+	outline-offset: var(--sl-outline-offset-inside);
+}

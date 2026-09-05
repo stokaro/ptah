@@ -1,0 +1,402 @@
+/* Code blocks (Expressive Code) and tabbed blocks (see ../ptah.css). */
+
+/* ---------- Code blocks (Expressive Code) ---------- */
+
+/* Three kinds of block, as the docs concept draws them (stokaro/ptah#2893):
+ *
+ *   COMMAND  bash, sh, console, powershell. A solid hairline frame with a
+ *            title bar reading "$ terminal" (the $ in amber), Copy at the
+ *            bar's right, the code on the code surface in the strongest text
+ *            color. A command fence with a title shows the title instead.
+ *   OUTPUT   `text` fences. A dashed frame with no fill and no Copy, the
+ *            text one step down in gray-2: what comes back is read, never
+ *            pasted. When the fence follows a paragraph announcing output,
+ *            the mdast plugin in src/lib/markdown-expected-output.mjs titles
+ *            it "expected output includes" (or "expected output") and that
+ *            title is the bar, with a dashed rule under it. A `text` fence
+ *            without a title has no bar.
+ *   FILE     Every other language, and any fence with title="...". A solid
+ *            frame whose bar carries the filename left and Copy right, with
+ *            nothing of an editor tab about it: no tab background, no
+ *            indicator. A file fence without a title shows its language in
+ *            the bar, so Copy has a bar to sit in and the block still says
+ *            what it holds. No fence in the content carries a title today;
+ *            the label rule covers every language the content uses.
+ *
+ * Token colors come from the two themes in src/lib/code-theme.mjs. The frame's
+ * shape is set here, through Expressive Code's own CSS variables and a few
+ * rules on its markup, rather than through the integration's `styleOverrides`
+ * option: a change to that option renames the code stylesheet (see the
+ * `expressiveCode` comment in astro.config.mjs for what a rename costs a
+ * working tree). Expressive Code emits its stylesheet inside
+ * `@layer starlight.components`, so every unlayered rule in this file wins
+ * over it whatever the specificity; the selectors are only as long as they
+ * need to be to name the frame they mean.
+ *
+ * The markup these rules address, as Expressive Code renders it:
+ *
+ *   <div class="expressive-code">
+ *     <figure class="frame [is-terminal] [has-title]">
+ *       <figcaption class="header"><span class="title">…</span></figcaption>
+ *       <pre data-language="bash"><code>…</code></pre>
+ *       <div class="copy"><div aria-live="polite"/><button>…</button></div>
+ *     </figure>
+ *   </div>
+ *
+ * `is-terminal` marks a command frame, `has-title` a titled one; a frame with
+ * neither class (an untitled yaml or text fence) has an empty header and no
+ * `.title` span at all. */
+.sl-markdown-content .expressive-code {
+	/* A 2px corner on the frame; Expressive Code adds the border width to its
+	 * radius, so the setting is 1px. */
+	--ec-brdRad: 1px;
+	--ec-brdWd: 1px;
+	--ec-brdCol: var(--sl-color-hairline);
+	--ec-codeBg: var(--sl-color-bg-inline-code);
+	--ec-codeFg: var(--sl-color-white);
+	/* The concept's `pre`: 13.5px/1.65 mono, 14px by 18px of padding. */
+	--ec-codeFontSize: 0.84375rem;
+	--ec-codeLineHt: 1.65;
+	--ec-codePadBlk: 0.875rem;
+	--ec-codePadInl: 1.125rem;
+	/* The bar's type: 12px mono on an 18px line; with 6px above and below,
+	 * the bar is 30px tall plus its rule. Copy, in sans, sits on the same
+	 * 18px line. */
+	--ec-uiFontFml: var(--sl-font-mono);
+	--ec-uiFontSize: 0.75rem;
+	--ec-uiLineHt: 1.5;
+	--ec-uiFontWg: 400;
+	--ec-frm-shdCol: transparent;
+	--ec-frm-frameBoxShdCssVal: none;
+	--ec-frm-trmBg: var(--sl-color-bg-inline-code);
+	--ec-frm-trmTtbBg: var(--ptah-surface);
+	--ec-frm-trmTtbBrdBtmCol: var(--sl-color-hairline);
+	--ec-frm-trmTtbFg: var(--sl-color-gray-3);
+	--ec-frm-edBg: var(--sl-color-bg-inline-code);
+	--ec-frm-edTabBarBg: var(--ptah-surface);
+	--ec-frm-edTabBarBrdCol: var(--sl-color-hairline);
+	--ec-frm-edTabBarBrdBtmCol: var(--sl-color-hairline);
+	--ec-frm-edActTabBg: transparent;
+	--ec-frm-edActTabFg: var(--sl-color-gray-3);
+	--ec-frm-edActTabIndTopCol: transparent;
+	--ec-frm-edActTabIndBtmCol: transparent;
+	--ec-frm-tooltipSuccessBg: var(--ptah-surface);
+	--ec-frm-tooltipSuccessFg: var(--sl-color-white);
+}
+
+/* The title bar, one shape for all three kinds: `padding 6px 14px`, the
+ * raised surface, a hairline all round with the frame's corners on top, the
+ * label in 12px mono gray-3 (5.23:1 on the light surface, 4.75:1 on the
+ * dark). The right padding keeps a long filename from running under Copy.
+ * Expressive Code centers a terminal's title and draws its bottom rule with a
+ * pseudo-element; the bar here is left-aligned and draws its own rule. */
+.expressive-code .frame .header {
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+	gap: 0.75rem;
+	min-width: 0;
+	padding: 6px 4.5rem 6px 14px;
+	border: var(--ec-brdWd) solid var(--ec-brdCol);
+	border-radius: calc(var(--ec-brdRad) + var(--ec-brdWd)) calc(var(--ec-brdRad) + var(--ec-brdWd)) 0 0;
+	background: var(--ptah-surface);
+	color: var(--sl-color-gray-3);
+	font-weight: 400;
+	letter-spacing: normal;
+	white-space: nowrap;
+}
+.expressive-code .frame .title {
+	position: static;
+	min-width: 0;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	border-radius: 0;
+	background: none;
+	color: inherit;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+/* Chrome from another product, all of it pseudo-elements: the three window
+ * dots and the bottom rule of a terminal bar, the border overlay and the
+ * active-tab indicator of an editor's tab bar. */
+.expressive-code .frame.is-terminal .header::before,
+.expressive-code .frame.is-terminal .header::after,
+.expressive-code .frame.has-title:not(.is-terminal) .header::before,
+.expressive-code .frame.has-title:not(.is-terminal) .title::after {
+	display: none;
+}
+
+/* COMMAND. An untitled terminal's title span is empty; the label is drawn
+ * into it: an amber `$` (5.03:1 on the light surface, 9.23:1 on the dark)
+ * and the word "terminal". The alternative-text form (`'$' / ''`) keeps the
+ * label out of the accessibility tree: Expressive Code's own "Terminal window"
+ * text stays in the bar visually hidden and is what a screen reader hears,
+ * once. The plain `content` before it is the fallback where the slash form is
+ * not parsed. */
+.expressive-code .frame.is-terminal .title:empty::before {
+	content: '$';
+	content: '$' / '';
+	color: var(--ptah-amber);
+}
+.expressive-code .frame.is-terminal .title:empty::after {
+	content: '\00a0terminal';
+	content: '\00a0terminal' / '';
+}
+
+/* OUTPUT. A `text` fence: no fill, so the text sits on the page background
+ * in gray-2 (8.25:1 light, 8.34:1 dark); dashed hairlines; no Copy. The theme
+ * colors every token of a `text` block in the code foreground, so the step
+ * down is taken here, on the tokens. A titled output frame is an editor frame
+ * to Expressive Code; the bar rules above already strip the tab look, and
+ * here the bar loses its surface and goes dashed with the frame. An untitled
+ * one has no bar at all. */
+.sl-markdown-content .expressive-code:has(pre[data-language='text']) {
+	--ec-codeBg: transparent;
+	--ec-codeFg: var(--sl-color-gray-2);
+	--ec-frm-edBg: transparent;
+	--ec-frm-trmBg: transparent;
+}
+.expressive-code:has(pre[data-language='text']) pre {
+	border-style: dashed;
+}
+/* Under a bar the pre has no top edge of its own (the bar's rule is the
+ * edge). Expressive Code takes it off with `border-top: none`, which leaves
+ * the width at its initial 3px and the color at currentColor; the dashed
+ * style above would bring both back as a thick ink rule. Measured: 3px
+ * dashed rgb(17, 20, 23) under every titled output bar. */
+.expressive-code:has(pre[data-language='text']) .frame.has-title pre {
+	border-top: 0;
+}
+.expressive-code:has(pre[data-language='text']) .frame .header {
+	border-style: dashed;
+	background: transparent;
+}
+.expressive-code:has(pre[data-language='text']) .frame:not(.has-title) .header,
+.expressive-code:has(pre[data-language='text']) .copy {
+	display: none;
+}
+.expressive-code:has(pre[data-language='text']) .ec-line span[style^='--'] {
+	color: var(--sl-color-gray-2);
+}
+
+/* FILE, untitled. Expressive Code hides the empty header of a frame with no
+ * title; it comes back as the bar, the `pre` under it gives up its top edge
+ * the way a titled frame's does, and the language is written into the bar
+ * from the `pre`'s `data-language`. The list is the census of the content:
+ * every non-shell, non-text language in use. An unlisted language gets an
+ * empty bar of the same height rather than a collapsed one. */
+.expressive-code:not(:has(pre[data-language='text'])) .frame:not(.is-terminal):not(.has-title) .header {
+	display: flex;
+}
+.expressive-code:not(:has(pre[data-language='text'])) .frame:not(.is-terminal):not(.has-title) pre {
+	border-top: none;
+	border-top-left-radius: 0;
+	border-top-right-radius: 0;
+}
+.expressive-code .frame:not(.is-terminal):not(.has-title) .header::before {
+	content: '\00a0';
+	content: '\00a0' / '';
+}
+.expressive-code .frame:not(.is-terminal):not(.has-title):has(pre[data-language='yaml']) .header::before { content: 'yaml'; content: 'yaml' / ''; }
+.expressive-code .frame:not(.is-terminal):not(.has-title):has(pre[data-language='sql']) .header::before { content: 'sql'; content: 'sql' / ''; }
+.expressive-code .frame:not(.is-terminal):not(.has-title):has(pre[data-language='go']) .header::before { content: 'go'; content: 'go' / ''; }
+.expressive-code .frame:not(.is-terminal):not(.has-title):has(pre[data-language='hcl']) .header::before { content: 'hcl'; content: 'hcl' / ''; }
+.expressive-code .frame:not(.is-terminal):not(.has-title):has(pre[data-language='json']) .header::before { content: 'json'; content: 'json' / ''; }
+.expressive-code .frame:not(.is-terminal):not(.has-title):has(pre[data-language='proto']) .header::before { content: 'proto'; content: 'proto' / ''; }
+.expressive-code .frame:not(.is-terminal):not(.has-title):has(pre[data-language='graphql']) .header::before { content: 'graphql'; content: 'graphql' / ''; }
+.expressive-code .frame:not(.is-terminal):not(.has-title):has(pre[data-language='markdown']) .header::before { content: 'markdown'; content: 'markdown' / ''; }
+.expressive-code .frame:not(.is-terminal):not(.has-title):has(pre[data-language='html']) .header::before { content: 'html'; content: 'html' / ''; }
+
+/* Copy. Expressive Code floats a 2rem icon button over the code's first line
+ * and shows it on hover; the design writes "Copy" in the bar, 500 12px sans,
+ * always visible, at the bar's right. The same button, restyled: its ::after,
+ * which carried the icon as a mask, carries the word; the overlay div and the
+ * border pseudo-element go; the position moves up into the bar (the bar's
+ * top border plus its 6px of padding). Gray-3 at rest, ink on hover and
+ * focus; the focus ring is the site-wide one from tokens.css. Every one of
+ * Expressive Code's opacity states, hover-reveal included, is overridden by
+ * the single `opacity: 1` here because its rules sit in a cascade layer. */
+.expressive-code .copy {
+	inset-block-start: calc(var(--ec-brdWd) + 6px);
+	inset-inline-end: 14px;
+	gap: 0.5rem;
+	align-items: center;
+}
+.expressive-code .copy button {
+	width: auto;
+	height: auto;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	border-radius: 0;
+	background: none;
+	opacity: 1;
+	transition: none;
+	font: 500 0.75rem/1.5 var(--sl-font);
+	color: var(--sl-color-gray-3);
+}
+.expressive-code .copy button:hover,
+.expressive-code .copy button:focus-visible {
+	color: var(--sl-color-white);
+}
+.expressive-code .copy button > div,
+.expressive-code .copy button::before {
+	display: none;
+}
+.expressive-code .copy button::after {
+	content: 'Copy';
+	position: static;
+	inset: auto;
+	margin: 0;
+	line-height: inherit;
+	background: none;
+	-webkit-mask-image: none;
+	mask-image: none;
+}
+/* "Copied!" is a plain bordered chip on the bar, not a green speech bubble. */
+.expressive-code .copy .feedback {
+	margin: 0;
+	padding: 0 0.5rem;
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 2px;
+	font: 500 0.75rem/1.375 var(--sl-font);
+	transform: none;
+}
+.expressive-code .copy .feedback::after {
+	display: none;
+}
+/* With the button out of the code, the first line needs no room for it. */
+.expressive-code :nth-child(1 of .ec-line) .code {
+	padding-inline-end: var(--ec-codePadInl);
+}
+
+/* ---------- Tabs ---------- */
+
+/* Tabs over prose: an underlined tab list, the selected tab marked in the
+ * accent, the rest gray-3. */
+starlight-tabs [role='tablist'] {
+	border-bottom: 1px solid var(--sl-color-hairline);
+	gap: 0.125rem;
+}
+starlight-tabs .tab > [role='tab'] {
+	--sl-tab-color-border: transparent;
+	padding: 0.625rem 1rem;
+	font-size: 0.84375rem;
+	font-weight: 500;
+	line-height: 1.2;
+	color: var(--sl-color-gray-3);
+	box-shadow: 0 1px 0 var(--sl-tab-color-border);
+}
+starlight-tabs .tab > [role='tab']:hover {
+	color: var(--sl-color-white);
+}
+starlight-tabs .tab [role='tab'][aria-selected='true'] {
+	--sl-tab-color-border: var(--sl-color-text-accent);
+	color: var(--sl-color-white);
+	font-weight: 500;
+	box-shadow: 0 2px 0 var(--sl-tab-color-border);
+}
+
+/* Tabs over code (the shell, schema-source, install-platform and
+ * project-config groups, one code block per panel): the tab list IS the
+ * block's title bar. Bar: the raised surface, a hairline on three sides with
+ * 2px top corners, 500 13px sans; tab `padding 8px 14px`; the selected tab
+ * has a 2px accent rule and ink text, the others gray-3. The tab overlaps the
+ * bar's bottom hairline by 1px so the rule sits on the bar's edge. The
+ * panel's code frame gives up its top edge, corners and header, and the
+ * frame's Copy is positioned against the tab group instead of the frame, so
+ * it lands at the bar's right on the tabs' line; the tab list keeps 4rem of
+ * right padding for it. Starlight's tab semantics, keyboard handling, focus
+ * ring (inside offset, from tokens.css) and syncKey persistence are untouched:
+ * nothing here changes the markup or the script.
+ *
+ * `:has()` picks the groups whose panels start with a code block; tabs over
+ * prose keep the underline style above. */
+starlight-tabs:has(> [role='tabpanel'] > .expressive-code:first-child) {
+	position: relative;
+}
+starlight-tabs:has(> [role='tabpanel'] > .expressive-code:first-child) [role='tablist'] {
+	gap: 0;
+	padding: 0 4rem 0 0;
+	border: 1px solid var(--sl-color-hairline);
+	border-radius: 2px 2px 0 0;
+	background: var(--ptah-surface);
+}
+starlight-tabs:has(> [role='tabpanel'] > .expressive-code:first-child) .tab > [role='tab'] {
+	margin-bottom: -1px;
+	padding: 0.5rem 0.875rem;
+	border-bottom: 2px solid transparent;
+	font-size: 0.8125rem;
+	line-height: 1rem;
+	box-shadow: none;
+}
+starlight-tabs:has(> [role='tabpanel'] > .expressive-code:first-child) .tab [role='tab'][aria-selected='true'] {
+	border-bottom-color: var(--sl-color-accent);
+}
+starlight-tabs:has(> [role='tabpanel'] > .expressive-code:first-child) .tablist-wrapper ~ [role='tabpanel'] {
+	margin-top: 0;
+}
+starlight-tabs:has(> [role='tabpanel'] > .expressive-code:first-child) > [role='tabpanel'] > .expressive-code:first-child .frame {
+	position: static;
+}
+starlight-tabs:has(> [role='tabpanel'] > .expressive-code:first-child) > [role='tabpanel'] > .expressive-code:first-child .frame .header {
+	display: none;
+}
+starlight-tabs:has(> [role='tabpanel'] > .expressive-code:first-child) > [role='tabpanel'] > .expressive-code:first-child pre {
+	border-top: none;
+	border-top-left-radius: 0;
+	border-top-right-radius: 0;
+}
+starlight-tabs:has(> [role='tabpanel'] > .expressive-code:first-child) > [role='tabpanel'] > .expressive-code:first-child .copy {
+	inset-block-start: 0.5rem;
+	inset-inline-end: 0.875rem;
+}
+starlight-tabs:has(> [role='tabpanel'] > .expressive-code:first-child) > [role='tabpanel'] > .expressive-code:first-child .copy button {
+	line-height: 1rem;
+}
+/* A `text` fence that opens a tab panel is a file the reader pastes (the DBML
+ * tab of start/adopt-an-existing-database, for which Shiki has no grammar),
+ * not output: it keeps the filled frame and Copy its sibling tabs have. */
+starlight-tabs:has(> [role='tabpanel'] > .expressive-code:first-child) > [role='tabpanel'] > .expressive-code:first-child:has(pre[data-language='text']) {
+	--ec-codeBg: var(--sl-color-bg-inline-code);
+	--ec-codeFg: var(--sl-color-white);
+	--ec-frm-edBg: var(--sl-color-bg-inline-code);
+	--ec-frm-trmBg: var(--sl-color-bg-inline-code);
+}
+starlight-tabs:has(> [role='tabpanel'] > .expressive-code:first-child) > [role='tabpanel'] > .expressive-code:first-child:has(pre[data-language='text']) pre {
+	border-style: solid;
+}
+starlight-tabs:has(> [role='tabpanel'] > .expressive-code:first-child) > [role='tabpanel'] > .expressive-code:first-child:has(pre[data-language='text']) .copy {
+	display: flex;
+}
+starlight-tabs:has(> [role='tabpanel'] > .expressive-code:first-child) > [role='tabpanel'] > .expressive-code:first-child:has(pre[data-language='text']) .ec-line span[style^='--'] {
+	color: var(--sl-color-white);
+}
+
+/* ---------- Phones ---------- */
+
+/* Under 50rem (Starlight's own breakpoint): the bar's side padding drops to
+ * 12px, the code to 12.5px/1.6 in 12px by 14px. Expressive Code's `pre`
+ * scrolls horizontally on its own (`overflow-x: auto` in its base styles),
+ * which is what keeps the page from scrolling sideways at 390px. */
+@media (width < 50rem) {
+	.sl-markdown-content .expressive-code {
+		--ec-codeFontSize: 0.78125rem;
+		--ec-codeLineHt: 1.6;
+		--ec-codePadBlk: 0.75rem;
+		--ec-codePadInl: 0.875rem;
+	}
+	.expressive-code .frame .header {
+		padding: 6px 4rem 6px 12px;
+	}
+	.expressive-code .copy {
+		inset-inline-end: 12px;
+	}
+	starlight-tabs:has(> [role='tabpanel'] > .expressive-code:first-child) .tab > [role='tab'] {
+		padding: 0.5rem 0.75rem;
+	}
+	starlight-tabs:has(> [role='tabpanel'] > .expressive-code:first-child) > [role='tabpanel'] > .expressive-code:first-child .copy {
+		inset-inline-end: 0.75rem;
+	}
+}

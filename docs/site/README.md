@@ -57,6 +57,76 @@ before building `edge` and before building released tags that include the
 relevant checker scripts. Older historical tags without those checkers are still
 built with a warning.
 
+## Design
+
+The documentation and https://ptah.run are one product and read as one:
+Instrument Sans for prose and interface chrome, IBM Plex Mono only for what can
+be pasted into a terminal, the brand blue as the single accent, 2px radii, 1px
+rules, no shadows, and the same light and dark surfaces. The documentation
+follows the docs concept in the design handoff: a reading column with a wide
+gutter, commands and their output as two different blocks, a navigation rail
+that opens to the current group, and page actions out of the reader's way. The
+design lives in these places, each holding one part:
+
+- `src/styles/ptah.css` imports one file per surface from `src/styles/ptah/`:
+  `tokens.css` (Starlight's variables set to the palette for both themes, the
+  type scale, the focus ring, smooth scrolling), `header.css`, `sidebar.css`,
+  `toc.css`, `content.css` (running text, headings, links, tables, asides,
+  badges, cards), `code.css` (the three kinds of code frame and tabbed blocks),
+  `figures.css` (product previews, the gallery, wide tables, the reference
+  filter) and `furniture.css` (the article footer and previous / next).
+- `src/styles/fonts.css` declares the two faces, self-hosted from `src/fonts/`
+  with their licenses beside them.
+- `src/lib/code-theme.mjs` holds the two syntax themes: keywords and flags in
+  the accent, strings green, numbers, types and booleans amber, comments and a
+  prompt's prefix muted, a shell prompt's `$` amber, a transcript's output one
+  step down, everything else ink. Its colors are the hex forms of the tokens
+  in `tokens.css`, because Expressive Code writes them into the page inline.
+- `src/lib/markdown-expected-output.mjs` and `src/lib/markdown-asides.mjs`
+  are Sätteri plugins on `markdown.processor` in `astro.config.mjs` (Astro 7
+  renders Markdown and MDX through Sätteri; the remark and rehype options are
+  gone). The first titles a `text` fence that follows a paragraph announcing
+  output, so the page draws it as an output block; the second tells an aside's
+  default title from an author's own, so the type is a label and the title a
+  heading.
+- Component overrides carry what Starlight decides in markup: `SiteTitle`,
+  `HeaderLinks`, `ThemeToggle` and `LayoutToggle` under `HeaderToggles` (the
+  header), `Sidebar` with its own
+  `SidebarSublist` (collapsed groups, subgroup labels), `PageTitle` (breadcrumb
+  row, page-type badge, lede), `PageActions` (the "Copy as Markdown" split
+  button), `TableOfContents` and `MobileTableOfContents` (the contents rail
+  and the "On this page" strip), `Footer` (the meta row, the source links,
+  previous / next) and `Head` (applies the stored layout before paint).
+
+The article frame has two layouts. The default keeps the measures documented
+in `src/styles/global.css`: a 60rem prose column, a 70rem shell for wide
+content, the article-and-contents frame centered until its gutters reach a
+cap. The concept's layout, a 44rem prose column with a 60rem shell and the
+frame weighted toward the navigation on wide screens, is under
+`:root[data-ptah-layout='column']`. While the choice between them is open,
+the header carries a toggle beside the theme toggle (`LayoutToggle.astro`);
+the choice is stored in the browser and `Head.astro` applies it before the
+first paint, and `?layout=column` or `?layout=envelope` in the URL sets it
+too. A page without a stored choice renders the envelope, which is what
+`scripts/check-responsive.mjs` measures and pins.
+
+When a token changes on ptah.run, change it in `tokens.css` and, for the
+colors it repeats, in `code-theme.mjs`; there is no second source for it
+here. Either change needs the cache cleared: Astro caches each rendered `.md`
+page, token colors and the code stylesheet's link included, and only a change
+to the page's source or to `astro.config.mjs` outside `integrations`
+invalidates it. The stylesheet's name is a hash of its content, so a theme
+change renames it while cached pages keep the old link. Delete
+`node_modules/.astro` and `.astro` before the next build or dev server after
+editing `code-theme.mjs` or the `expressiveCode` option.
+
+`PageTitle.astro` and `PageActions.astro` carry their own styles rather than
+a file under `src/styles/ptah/`, because `scripts/apply-release-ui-overlay.mjs`
+copies them into the checkout of a released version, whose stylesheets are its
+own. There
+the heading also carries the page actions and the source links, since that
+checkout registers neither the contents-rail nor the footer override.
+
 ## Content metadata and inventory
 
 Every published page declares its page type, audience, reader question,
@@ -312,7 +382,7 @@ request and without deploying on merge.
 
 Two files carry the Ptah mark, and they hold the same artwork:
 
-- `src/assets/logo.svg` — the site header, referenced from `astro.config.mjs`.
+- `src/assets/logo.svg` — the site header, imported by `src/components/SiteTitle.astro`.
 - `public/favicon.svg` — the browser tab.
 
 `logo.svg` additionally carries `role="img"` and a `<title>` for screen readers.

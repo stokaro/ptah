@@ -1,0 +1,17 @@
+---
+/**
+ * The two toggles at the header's right end: light/dark, and the article
+ * layout. Registered in astro.config.mjs as the override of Starlight's
+ * ThemeSelect, which is the slot the header (and the drawer footer) gives the
+ * theme control; the layout toggle rides in the same slot so the two stand
+ * side by side as two of the same square (stokaro/ptah#2893). Styles live in
+ * src/styles/ptah/header.css ("Toggles").
+ */
+import LayoutToggle from './LayoutToggle.astro';
+import ThemeToggle from './ThemeToggle.astro';
+---
+
+<div class="ptah-header-toggles">
+  <ThemeToggle />
+  <LayoutToggle />
+</div>
