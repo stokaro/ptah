@@ -47,6 +47,15 @@ type Options struct {
 	// SeedDir is the default directory of seed files for seed steps that omit
 	// their own [SeedStep.Dir].
 	SeedDir string
+	// AllowExternalCommands authorizes [ExternalStep]. It is false by default:
+	// an external step names a program on the machine running the suite, which
+	// is a larger authority than the rest of a test file has, so the run is
+	// refused with [ErrExternalNotAuthorized] before any database is
+	// provisioned unless the caller grants it.
+	AllowExternalCommands bool
+	// ExternalTimeout bounds each external step. Zero selects
+	// [DefaultExternalTimeout]; a test file cannot change it.
+	ExternalTimeout time.Duration
 	// DBURL is an optional database URL to run the tests against. It must point
 	// at a throwaway database, because tests mutate schema and data. When empty,
 	// an ephemeral SQLite database is provisioned in a temporary directory and
@@ -399,6 +408,11 @@ func RunMigrationTest(ctx context.Context, opts Options) (*Report, error) {
 	if err := validateCasesForRun(opts.Cases, opts.SeedDir); err != nil {
 		return nil, fmt.Errorf("invalid test cases: %w", err)
 	}
+	if !opts.AllowExternalCommands {
+		if err := refuseExternalSteps(opts.Cases); err != nil {
+			return nil, err
+		}
+	}
 	if casesUseStepKind(opts.Cases, stepKindMigrateTo) && strings.TrimSpace(opts.MigrationsDir) == "" {
 		return nil, fmt.Errorf("migrate_to requires a migrations directory")
 	}
@@ -422,6 +436,7 @@ func RunMigrationTest(ctx context.Context, opts Options) (*Report, error) {
 			desiredSchema:   desiredSchema,
 			seedDir:         opts.SeedDir,
 			revisionsSchema: opts.RevisionsSchema,
+			externalTimeout: opts.ExternalTimeout,
 		}
 		r.migrateTo = r.runMigrateTo
 		r.applySchema = r.runApplySchema
@@ -570,6 +585,9 @@ type runner struct {
 	dirFormat     migrationfile.DirFormat
 	desiredSchema *schemamodel.Database
 	seedDir       string
+	// externalTimeout bounds one external step. Zero selects
+	// [DefaultExternalTimeout].
+	externalTimeout time.Duration
 	// revisionsSchema is the schema the migrate_to migrator records revisions
 	// in. Empty keeps the connection default.
 	revisionsSchema string
@@ -684,6 +702,8 @@ func (r *runner) execStep(ctx context.Context, step Step) (passed bool, detail s
 		return r.runSeed(ctx, step.Seed)
 	case stepKindAssert:
 		return r.runAssert(ctx, step.Assert)
+	case stepKindExternal:
+		return r.runExternal(ctx, step.External)
 	case stepKindEstablishSchema:
 		return r.runEstablishSchema(ctx, step.EstablishSchema)
 	case stepKindApplyPlan:

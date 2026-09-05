@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
@@ -20,6 +21,13 @@ import (
 type SchemaOptions struct {
 	// Cases are the test cases to run, in order.
 	Cases []Case
+	// AllowExternalCommands authorizes [ExternalStep]. See
+	// [Options.AllowExternalCommands]: the default refuses the run before any
+	// database is provisioned.
+	AllowExternalCommands bool
+	// ExternalTimeout bounds each external step. Zero selects
+	// [DefaultExternalTimeout].
+	ExternalTimeout time.Duration
 	// RootDir is a directory of Go entity annotations describing the desired
 	// schema. It is parsed with goschema.ParseDir and converged through the live
 	// diff and planner path before any case runs (once per ephemeral per-case
@@ -80,6 +88,11 @@ func RunSchemaTest(ctx context.Context, opts SchemaOptions) (*Report, error) {
 	if err := validateCasesForRun(opts.Cases, opts.SeedDir); err != nil {
 		return nil, fmt.Errorf("invalid test cases: %w", err)
 	}
+	if !opts.AllowExternalCommands {
+		if err := refuseExternalSteps(opts.Cases); err != nil {
+			return nil, err
+		}
+	}
 
 	// A run with no desired schema at all is legitimate: a plan case builds its
 	// own starting state from the source its `schema` block names, so there is
@@ -118,6 +131,8 @@ func RunSchemaTest(ctx context.Context, opts SchemaOptions) (*Report, error) {
 			seedDir:       opts.SeedDir,
 			resolveSchema: opts.ResolveSchema,
 			applyPlan:     opts.ApplyPlan,
+
+			externalTimeout: opts.ExternalTimeout,
 		}
 		r.migrateTo = rejectMigrateToInSchemaTest
 		r.applySchema = r.runApplySchema

@@ -157,10 +157,21 @@ added without stating anything is refused rather than ignored, and there is no
 second list to forget.
 
 These opt-in correctness controls remain available because they do not add an
-Atlas capability: `PTAH_ALLOW_NONINTERACTIVE_EDIT`,
+Atlas capability: `PTAH_ALLOW_EXTERNAL_TEST_COMMAND`,
+`PTAH_ALLOW_NONINTERACTIVE_EDIT`,
 `PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE`, `PTAH_HCL_STRICT_REDECLARATIONS`,
 `PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE`,
 `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP` and `PTAH_STRICT_DIR_QUERY`.
+
+`PTAH_ALLOW_EXTERNAL_TEST_COMMAND` authorizes an `external` step in a
+`.test.hcl` case, which runs a program on the machine executing the suite.
+
+Ptah refuses one by default and this variable restores it, so it adds no
+capability the pinned community binary does not already have; gating it would
+leave a conformance run unable to exercise the step at all.
+
+The program is executed as an argument vector with no shell, and the run is
+refused before any database is provisioned when the variable is absent.
 
 `PTAH_ALLOW_NONINTERACTIVE_EDIT` permits a scripted editor in a non-interactive
 process; it does not add an editor or migration capability.
