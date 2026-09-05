@@ -257,21 +257,45 @@ func leadingClause(statement string) string {
 // an extractor that recognized nothing, produces no duplicates either, and
 // without a count that answer is indistinguishable from the invariant holding.
 //
-// Dark is the floor one level down, and the total cannot stand in for it.
-// Measured on the corpus this was written against: PostgreSQL contributes 1068
-// of 3986 objects, and every other dialect contributes fewer than the total's
-// slack -- so eight of the ten could stop rendering ENTIRELY with the total
-// still above any floor worth writing, and with no duplicate reported because
+// DarkCells and DarkFixtures are the floor one level down, on the two axes the
+// corpus has, and the total cannot stand in for either.
+//
+// Measured on the corpus this was written against: 3986 objects over 31 cells
+// and 97 fixtures, of which the largest single cell is 181 and the largest
+// single fixture is 93. Any cell and any fixture is far below the slack above
+// any total floor worth writing, so either could stop contributing ENTIRELY
+// with the total still passing -- and with no duplicate reported, because
 // nothing was measured.
 //
-// It carries names rather than a count because the question is which target
-// went quiet, and because a count would be one more number to edit when a
-// dialect is added.
+// The two axes are independent, which is why there are two lists rather than
+// one. A fixture that renders nowhere still leaves every cell contributing,
+// because the other fixtures do; a cell that renders nothing still leaves
+// every fixture contributing, for the mirror reason. Neither list can be
+// derived from the other.
+//
+// They also ask slightly different questions, and the difference is not an
+// oversight. A CELL is dark when it emitted nothing: the corpus holds 97
+// fixtures, so a target that renders none of them is broken rather than
+// reticent. A FIXTURE is dark only when it was neither rendered nor refused
+// anywhere, because a fixture every target refuses is a legitimate and
+// deliberate thing to have -- `column-unique-expr` is refused on all 31 cells
+// today, since uniqueness over an expression is not implemented, and a refusal
+// is a measurement in this package rather than an absence of one.
+//
+// A per-DIALECT list would be a third, and it is deliberately absent: a
+// dialect is dark exactly when all of its cells are, so it would report
+// nothing DarkCells does not and its own check could not be made to fail on
+// its own. One guard per question that can be asked separately.
+//
+// Both carry names rather than counts, because the question is which target or
+// which fixture went quiet, and because a count is one more number to edit when
+// either is added.
 type CorpusEmissions struct {
 	Objects      int
 	Duplicates   []string
 	Unclassified []string
-	Dark         []string
+	DarkCells    []string
+	DarkFixtures []string
 }
 
 // MeasureEmissions renders every fixture on every declared cell and reports
@@ -283,24 +307,34 @@ type CorpusEmissions struct {
 // accept which fixture.
 func MeasureEmissions() CorpusEmissions {
 	measured := CorpusEmissions{
-		Duplicates: make([]string, 0), Unclassified: make([]string, 0), Dark: make([]string, 0),
+		Duplicates: make([]string, 0), Unclassified: make([]string, 0),
+		DarkCells: make([]string, 0), DarkFixtures: make([]string, 0),
 	}
 	shapes := make(map[string]bool)
-	// Seeded from the declared cells rather than from a list, so a dialect is
-	// watched by being declared and a dialect that leaves takes no edit here.
-	byDialect := make(map[string]int, len(capabilityprobe.Cells))
+	// Both tallies are seeded from the declarations rather than from a list, so
+	// a cell or a fixture is watched by being declared and one that leaves
+	// takes no edit here.
+	byCell := make(map[string]int, len(capabilityprobe.Cells))
 	for _, cell := range capabilityprobe.Cells {
-		byDialect[cell.Dialect] += 0
+		byCell[CellName(cell)] = 0
+	}
+	// Objects OR refusals for the fixture axis, which is what makes a fixture
+	// that every target refuses measured rather than dark.
+	byFixture := make(map[string]int, len(Fixtures()))
+	for _, fixture := range Fixtures() {
+		byFixture[fixture.Name] = 0
 	}
 	for _, fixture := range Fixtures() {
 		for _, cell := range capabilityprobe.Cells {
 			statements, err := RenderStatements(fixture.Schema, cell)
 			if err != nil {
+				byFixture[fixture.Name]++
 				continue
 			}
 			emitted := EmissionsOf(statements)
 			measured.Objects += len(emitted.Objects)
-			byDialect[cell.Dialect] += len(emitted.Objects)
+			byCell[CellName(cell)] += len(emitted.Objects)
+			byFixture[fixture.Name] += len(emitted.Objects)
 			for _, duplicate := range emitted.Duplicates() {
 				measured.Duplicates = append(measured.Duplicates,
 					fixture.Name+" / "+CellName(cell)+": "+duplicate)
@@ -310,16 +344,24 @@ func MeasureEmissions() CorpusEmissions {
 			}
 		}
 	}
-	for dialect, objects := range byDialect {
-		if objects == 0 {
-			measured.Dark = append(measured.Dark, dialect)
-		}
-	}
+	measured.DarkCells = silent(byCell)
+	measured.DarkFixtures = silent(byFixture)
 	for shape := range shapes {
 		measured.Unclassified = append(measured.Unclassified, shape)
 	}
 	sort.Strings(measured.Unclassified)
 	sort.Strings(measured.Duplicates)
-	sort.Strings(measured.Dark)
 	return measured
+}
+
+// silent names the tallies that stayed at zero, sorted.
+func silent(tally map[string]int) []string {
+	quiet := make([]string, 0)
+	for name, objects := range tally {
+		if objects == 0 {
+			quiet = append(quiet, name)
+		}
+	}
+	sort.Strings(quiet)
+	return quiet
 }
