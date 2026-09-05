@@ -102,6 +102,19 @@ func ParseAtlasTestCases(
 				AtlasTestKindSchema, AtlasTestKindMigrate, AtlasTestKindPlan)
 		}
 		if blockKind != kind {
+			// Its NAMES are still checked. A malformed document is malformed
+			// whichever verb reads it, and skipping the block outright meant a
+			// misspelled `paralel` or an invented step block in a
+			// `test "migrate"` case loaded clean under `schema test`, exit 0,
+			// green report -- so the author saw success from one verb and the
+			// refusal only from the other, or never.
+			//
+			// Names only: its expressions are not evaluated, because a case
+			// this run does not execute must not fail the run for a value it
+			// alone needs.
+			if err := atlasCheckCaseNames(block, blockKind, filename); err != nil {
+				return nil, err
+			}
 			continue
 		}
 
@@ -508,4 +521,48 @@ func atlasPlanStep(step *hclsyntax.Block, scope atlasScope) (Step, error) {
 		return Step{Name: "schema " + url, EstablishSchema: &SchemaSourceStep{URL: url}}, nil
 	}
 	return Step{Name: "apply " + url, ApplyPlan: &ApplyPlanStep{URL: url}}, nil
+}
+
+// atlasCheckCaseNames validates a case's attribute and step-block names without
+// evaluating anything.
+//
+// It is what a run applies to the cases of the OTHER kinds, so a typo is
+// reported by every verb that reads the file rather than only by the one that
+// executes the case. The block's own kind decides which steps are allowed, not
+// the kind the run asked for: a `schema` step is correct in a plan case and
+// wrong in a migrate one, whichever verb happens to be reading.
+func atlasCheckCaseNames(block *hclsyntax.Block, blockKind AtlasTestKind, filename string) error {
+	names := make([]string, 0, len(block.Body.Attributes))
+	for attrName := range block.Body.Attributes {
+		if atlasCaseAttributes[attrName] {
+			continue
+		}
+		names = append(names, attrName)
+	}
+	if len(names) > 0 {
+		sort.Strings(names)
+		return fmt.Errorf("%s:%d: `test` takes step blocks and %v, not %v",
+			filename, block.TypeRange.Start.Line, atlasCaseAttributeNames(), names)
+	}
+
+	for _, step := range block.Body.Blocks {
+		if !atlasStepKinds[step.Type] {
+			return fmt.Errorf("%s:%d: unsupported step %q: want %s",
+				filename, step.TypeRange.Start.Line, step.Type, atlasStepsFor(blockKind))
+		}
+		if (step.Type == "schema" || step.Type == "apply") && blockKind != AtlasTestKindPlan {
+			return atlasRequirePlanKind(blockKind, step.Type, filename, step.TypeRange.Start.Line)
+		}
+	}
+	return nil
+}
+
+// atlasStepKinds is every step block name a `test` body may hold, in any kind.
+// The per-kind narrowing is applied beside it; this set answers only "is this a
+// step at all", which is the question a case of another kind can be asked
+// without evaluating it.
+var atlasStepKinds = map[string]bool{
+	"exec": true, "catch": true, "assert": true, "log": true,
+	"cleanup": true, "external": true, "migrate": true,
+	"schema": true, "apply": true,
 }
