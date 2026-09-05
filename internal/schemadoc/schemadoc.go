@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/buildinfo"
+	"go.5x5.cz/ptah/internal/htmlstyle"
 )
 
 // Options selects what the document covers and what it is called.
@@ -81,7 +81,7 @@ func Render(db *schemamodel.Database, opts Options) (Result, error) {
 // It is exported so the dashboard in stokaro/ptah#1863 shares one design rather
 // than growing a second one that drifts from this. A copy would look the same
 // on the day it was made and not the day after.
-func Stylesheet() string { return documentCSS }
+func Stylesheet() string { return stylesheet() }
 
 // Page is the schema's own sections -- navigation, overview, diagram, tables
 // and enums -- without the document that wraps them.
@@ -116,7 +116,7 @@ func writeHead(out *strings.Builder, doc document) {
 	out.WriteString(`<meta charset="utf-8">`)
 	out.WriteString(`<meta name="viewport" content="width=device-width, initial-scale=1">`)
 	fmt.Fprintf(out, "<title>%s</title>", escapeText(doc.Title))
-	fmt.Fprintf(out, "<style>%s</style>", documentCSS)
+	fmt.Fprintf(out, "<style>%s</style>", stylesheet())
 	out.WriteString("\n</head>\n")
 }
 
@@ -355,27 +355,10 @@ func foreignTag(foreign string) string {
 }
 
 // writeFooter closes the document with what produced it.
-//
-// The mark is inlined rather than linked, for the same reason nothing else on
-// this page is fetched, and it keeps its own colors in both themes because a
-// mark recolored to match its surroundings is a different mark. The version is
-// there because this file is shared and archived, and "which Ptah wrote this"
-// is a question its reader cannot otherwise answer.
 func writeFooter(out *strings.Builder) {
-	out.WriteString(`<div class="footer">`)
-	out.WriteString(`<span>Rendered by Ptah from the declared schema. ` +
-		`This file is self-contained: opening it fetches nothing.</span>`)
-	out.WriteString(`<span class="footer-mark">` + markSVG)
-	fmt.Fprintf(out, `ptah %s</span></div>`, escapeText(buildinfo.Resolve().Version))
+	out.WriteString(htmlstyle.Footer("Rendered by Ptah from the declared schema. " +
+		"This file is self-contained: opening it fetches nothing."))
 }
-
-// markSVG is docs/site/src/assets/logo.svg, inlined and stripped of the title
-// the document does not need: the footer already names Ptah in words beside it.
-const markSVG = `<svg viewBox="0 0 64 64" width="14" height="14" aria-hidden="true">` +
-	`<rect width="64" height="64" rx="14" fill="#0f172a"/>` +
-	`<rect x="23" y="13" width="18" height="11" rx="2" fill="#f59e0b"/>` +
-	`<rect x="17" y="27" width="30" height="11" rx="2" fill="#38bdf8"/>` +
-	`<rect x="11" y="41" width="42" height="11" rx="2" fill="#38bdf8"/></svg>`
 
 func countColumns(doc document) int {
 	total := 0
