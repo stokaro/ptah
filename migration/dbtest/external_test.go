@@ -2,6 +2,8 @@ package dbtest_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -166,4 +168,42 @@ func TestParseAtlasTestCases_ExternalRefusals_FailurePath(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, test.want)
 		})
 	}
+}
+
+// TestRunTest_AnExternalStepInCleanupIsRefusedWithoutAuthorization is the hole
+// the first version of this guard left open.
+//
+// A case holds its steps in two slices, and the guard walked one. Measured on
+// the shipped code: with AllowExternalCommands false, a program named in
+// Cleanup RAN -- the run returned no error and the program's side effect was
+// present on disk afterwards. The authorization promised something it did not
+// deliver, and a teardown is not a lesser place to run a program from.
+//
+// The assertion is on the side effect rather than only on the error, because an
+// error alone does not say the program was never started.
+func TestRunTest_AnExternalStepInCleanupIsRefusedWithoutAuthorization(t *testing.T) {
+	c := qt.New(t)
+
+	marker := filepath.Join(t.TempDir(), "ran")
+
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+		Cases: []dbtest.Case{{
+			Name:  "teardown runs a program",
+			Steps: []dbtest.Step{{Exec: "SELECT 1"}},
+			Cleanup: []dbtest.Step{{External: &dbtest.ExternalStep{
+				Program: []string{"/usr/bin/touch", marker},
+			}}},
+		}},
+	})
+
+	c.Assert(err, qt.ErrorIs, dbtest.ErrExternalNotAuthorized)
+	c.Assert(report, qt.IsNil)
+
+	// The refusal names which half of the case the step is in: an author told
+	// only "step 1" would go looking at the body.
+	c.Assert(err.Error(), qt.Contains, "cleanup step 1")
+
+	_, statErr := os.Stat(marker)
+	c.Assert(os.IsNotExist(statErr), qt.IsTrue,
+		qt.Commentf("the program left a marker, so it ran"))
 }

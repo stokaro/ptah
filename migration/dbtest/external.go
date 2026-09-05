@@ -137,20 +137,39 @@ func checkExternalOutput(step *ExternalStep, output string) (passed bool, detail
 // database, apply a schema, and then refuse.
 func refuseExternalSteps(cases []Case) error {
 	for caseIndex := range cases {
-		steps := cases[caseIndex].Steps
-		for stepIndex := range steps {
-			if steps[stepIndex].External == nil {
-				continue
-			}
-			return fmt.Errorf(
-				"%w: test case %q, step %d runs %v; set %s to authorize it",
-				ErrExternalNotAuthorized,
-				cases[caseIndex].Name,
-				stepIndex+1,
-				steps[stepIndex].External.Program,
-				AllowExternalCommandsEnvVar,
-			)
+		// Both slices, because a case holds its steps in two of them. The guard
+		// walked only the body, so an external step in Cleanup ran a program
+		// with no authorization at all -- measured, `AllowExternalCommands`
+		// false and the program's side effect present afterwards. A case's
+		// teardown is not a lesser place to run one from.
+		if err := refuseExternalIn(cases[caseIndex].Name, "step", cases[caseIndex].Steps); err != nil {
+			return err
 		}
+		if err := refuseExternalIn(cases[caseIndex].Name, "cleanup step", cases[caseIndex].Cleanup); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// refuseExternalIn reports the first external step among steps.
+//
+// The noun is a parameter so the refusal names which half of the case the step
+// is in: an author told only "step 1" would go looking at the body.
+func refuseExternalIn(caseName, noun string, steps []Step) error {
+	for stepIndex := range steps {
+		if steps[stepIndex].External == nil {
+			continue
+		}
+		return fmt.Errorf(
+			"%w: test case %q, %s %d runs %v; set %s to authorize it",
+			ErrExternalNotAuthorized,
+			caseName,
+			noun,
+			stepIndex+1,
+			steps[stepIndex].External.Program,
+			AllowExternalCommandsEnvVar,
+		)
 	}
 	return nil
 }

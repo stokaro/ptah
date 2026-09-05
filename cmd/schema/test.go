@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"go.5x5.cz/ptah/cmd/internal/cmdflags"
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
@@ -180,6 +181,15 @@ The command exits non-zero if any case fails.`,
 		"Database URL whose live schema is the desired schema; must share the dialect of the throwaway database")
 	flags.StringVar(&opts.seedDir, testSeedDirFlag, "", "Default directory for seed steps that omit dir")
 	flags.StringVar(&opts.dbURL, testDBURLFlag, "", "Throwaway database URL (optional). An ephemeral SQLite database is used when empty.")
+	// Explicit-only. PTAH_DB_URL is the variable `migrations up`, `schema apply`
+	// and `db drop-all` take their PRODUCTION target from, and this flag names a
+	// database the run MUTATES and treats as disposable. Bound to the
+	// environment, an operator with that variable exported for ordinary work ran
+	// their test suite against production by omitting a flag -- measured: the
+	// suite reported success and its CREATE TABLE landed in the named database.
+	// Nothing is lost by requiring the flag: a throwaway target is a decision,
+	// not a default.
+	_ = cmdflags.DisableEnvBinding(flags, testDBURLFlag)
 	flags.StringVar(&opts.report, testReportFlag, testReportFormatText, "Report format: text, json, or html")
 	flags.StringVar(&opts.run, testRunFlag, "", "Run only case names matching this Go regular expression")
 	flags.StringArrayVar(&opts.schemas, testSchemaFlag, nil, "Restrict the desired schema to these schema names")
