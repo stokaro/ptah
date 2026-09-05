@@ -883,6 +883,7 @@ type cliSpec struct {
 	truncate       string
 	maxInputBytes  int
 	overlapBytes   int
+	minSourceRows  int
 }
 
 // defaultCLISpec is the specification every lifecycle fixture here uses.
@@ -967,6 +968,18 @@ func writeCLISpecChunkingIntoTheSource(c *qt.C, endpoint string, bound, overlap 
 	return writeCLISpecFrom(c, spec)
 }
 
+// minSourceRowsLine renders the policy's corpus floor, or nothing at all.
+//
+// Absent by default, because zero means no requirement and that is what every
+// fixture here means: a floor written into the shared template would refuse
+// the cutover in every test whose corpus is smaller than it.
+func minSourceRowsLine(rows int) string {
+	if rows == 0 {
+		return ""
+	}
+	return fmt.Sprintf("  min_source_rows: %d\n", rows)
+}
+
 // filterLine renders the source's filter key, or nothing at all.
 //
 // Absent by default for the same reason the index method is: a filter narrows
@@ -1024,11 +1037,12 @@ target:
 policy:
   require_exact_approval: true
   require_consistency_mode: true
-`, spec.sourceTable, yamlList(spec.keyFields), yamlList(spec.inputFields),
+%s`, spec.sourceTable, yamlList(spec.keyFields), yamlList(spec.inputFields),
 		filterLine(spec.filter), spec.nullPolicy, spec.emptyPolicy,
 		spec.truncate, chunkingLines(spec), spec.endpoint,
 		spec.targetTable, spec.column, spec.representation, spec.metric,
-		indexMethodLine(spec.indexMethod), layoutLine(spec.layout), spec.mode)
+		indexMethodLine(spec.indexMethod), layoutLine(spec.layout), spec.mode,
+		minSourceRowsLine(spec.minSourceRows))
 	path := filepath.Join(c.TempDir(), "spec.yaml")
 	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)
 	return path

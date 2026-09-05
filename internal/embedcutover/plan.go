@@ -66,6 +66,15 @@ type Evidence struct {
 	IndexReady bool
 	// SourceMutable reports whether the source can change under the run.
 	SourceMutable bool
+	// SourceRows is how many in-scope source rows the verification counted.
+	//
+	// The measurement rather than a judgement about it: whether a corpus is
+	// large enough to cut over to is an environment's question, and
+	// [Policy.MinSourceRows] is where the answer lives. It is here because a
+	// plan carries what justified it, and "how much was there" is part of
+	// that -- an approval given for a plan over 48000 rows should not carry to
+	// one over none.
+	SourceRows int
 }
 
 // Plan is a proposal to make one generation the one queries read.
@@ -110,6 +119,7 @@ func (p Plan) digestComponents() []string {
 		"column", p.Column,
 		"evidence.verification_digest", p.Evidence.VerificationDigest,
 		"evidence.verification_passed", strconv.FormatBool(p.Evidence.VerificationPassed),
+		"evidence.source_rows", strconv.Itoa(p.Evidence.SourceRows),
 		"evidence.consistency_mode", p.Evidence.ConsistencyMode,
 		"evidence.consistency_watermark", p.Evidence.ConsistencyWatermark,
 		"evidence.index_ready", strconv.FormatBool(p.Evidence.IndexReady),
@@ -172,6 +182,12 @@ func (p Plan) IdentityLines() []string {
 		"prepared at: " + p.PreparedAt.UTC().Format(time.RFC3339Nano),
 		"verification report: " + p.Evidence.VerificationDigest,
 		"verification passed: " + strconv.FormatBool(p.Evidence.VerificationPassed),
+		// Beside "passed", because passing says nothing about what was passed
+		// over: an empty corpus passes every layer. An approver reading this
+		// file is being asked to authorize a pointer move, and how many rows
+		// it moves onto is the fact that separates one from a filter typo
+		// (stokaro/ptah#2870).
+		"source rows: " + strconv.Itoa(p.Evidence.SourceRows),
 		"consistency mode: " + p.Evidence.ConsistencyMode,
 		"consistency watermark: " + p.Evidence.ConsistencyWatermark,
 		"index ready: " + strconv.FormatBool(p.Evidence.IndexReady),
@@ -219,7 +235,13 @@ func identityList(label string, values []string) []string {
 // NOT accepted (stokaro/ptah#2649). A version-2 plan recorded which findings an
 // operator accepted and nothing about the ones they did not, so an approval
 // given under it says nothing about what the cutover would proceed over.
-const PlanVersion = 3
+//
+// It moved to 4 when the plan started binding how many source rows the
+// verification counted (stokaro/ptah#2870). A version-3 plan carried whether
+// verification passed and not what it passed over, and an empty corpus passes
+// every layer -- so an approval given for a plan over the whole corpus would
+// have been honored by a build over none of it.
+const PlanVersion = 4
 
 // Short is the plan digest a person quotes in an approval.
 func (p Plan) Short() string {
@@ -277,6 +299,20 @@ type Policy struct {
 	// operator accepted. With it false, an acceptance changes nothing and
 	// verification has to pass on its own.
 	AllowAcceptedFindings bool
+	// MinSourceRows is the smallest corpus this environment will cut over to,
+	// zero for no requirement.
+	//
+	// A verification over an empty corpus passes every layer, because there is
+	// nothing for any of them to disagree about, and the reachable cause is a
+	// `source.filter` with a typo in it rather than an empty table
+	// (stokaro/ptah#2870). The report says so as an advisory, because an empty
+	// generation is not wrong -- a table backfilled before its first rows
+	// arrive is a specification doing what it says -- so the refusal is
+	// something an environment asks for rather than something Ptah assumes.
+	//
+	// Zero means no requirement, which is the default and what every existing
+	// specification means.
+	MinSourceRows int
 }
 
 // Observed is what is true at the moment the cutover would execute, read back

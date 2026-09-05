@@ -321,6 +321,7 @@ func BuildCutoverPlan(
 			ConsistencyWatermark: run.CatchUpWatermark,
 			IndexReady:           ready,
 			SourceMutable:        loaded.Source.Mutable,
+			SourceRows:           report.SourceRows,
 		},
 		// When the EVIDENCE was last established, not when this process
 		// started. Two things follow, and both are the point.

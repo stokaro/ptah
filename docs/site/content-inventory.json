@@ -2595,10 +2595,12 @@
       "sourceMode": null,
       "overlaps": [],
       "disposition": "keep",
-      "outboundLinks": [],
+      "outboundLinks": [
+        "/inference/reference/specification/"
+      ],
       "inboundLinks": [],
-      "visibleWords": 2144,
-      "sourceBytes": 15323
+      "visibleWords": 2211,
+      "sourceBytes": 15816
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/specification.md",
@@ -2633,11 +2635,12 @@
         "/inference/strategies/choose-a-target-layout/"
       ],
       "inboundLinks": [
+        "/inference/reference/run-status-and-findings/",
         "/inference/strategies/plan-provider-capacity/",
         "/inference/troubleshooting/"
       ],
-      "visibleWords": 1765,
-      "sourceBytes": 12834
+      "visibleWords": 1930,
+      "sourceBytes": 13769
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/support-and-limitations.md",

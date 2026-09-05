@@ -66,6 +66,7 @@ func (d Document) Resolve(path string) (Loaded, error) {
 			RequireSignedApproval:  d.Policy.RequireSignedApproval,
 			RequireConsistencyMode: d.Policy.RequireConsistencyMode,
 			AllowAcceptedFindings:  d.Policy.AllowAcceptedFindings,
+			MinSourceRows:          d.Policy.MinSourceRows,
 			MaxPlanAge:             maxPlanAge,
 		},
 		Credential: d.Model.Credential,
