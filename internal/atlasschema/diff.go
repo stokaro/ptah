@@ -514,7 +514,7 @@ func scopeDiffState(
 	// conversion. Positive matches need no catalog compensation because every
 	// independently selectable identity survives conversion.
 	if emptySelection(databaseErr) {
-		desired = dbschematogo.ConvertDBSchemaToGoSchema(filteredDatabase)
+		desired = dbschematogo.ConvertDBSchemaToGoSchema(filteredDatabase, "")
 	}
 
 	return scopedDiffState{

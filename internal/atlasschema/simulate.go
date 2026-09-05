@@ -357,7 +357,7 @@ func recreateCurrentSchema(
 	if current == nil {
 		return nil
 	}
-	baseline := dbschematogo.ConvertDBSchemaToGoSchema(current)
+	baseline := dbschematogo.ConvertDBSchemaToGoSchema(current, devConn.Info().Dialect)
 	normalizeBaselineSerialColumns(baseline, devConn.Info().Dialect)
 	devCurrent, err := dbschema.ReadSchemaWithSchemasContext(ctx, devConn, nil)
 	if err != nil {

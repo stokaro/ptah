@@ -233,7 +233,7 @@ func planBidirectionalSchemaDiffWithRefs(
 	// forward diff; a reversal has no comparison of its own, so the assertion
 	// would otherwise be made for one direction only (stokaro/ptah#2315).
 	if err := validateRollbackTarget(
-		dbschematogo.ConvertDBSchemaToGoSchema(opts.CurrentSchema), reverseDiff, dialect, caps,
+		dbschematogo.ConvertDBSchemaToGoSchema(opts.CurrentSchema, dialect), reverseDiff, dialect, caps,
 	); err != nil {
 		return nil, fmt.Errorf("error planning reverse migration: %w", err)
 	}

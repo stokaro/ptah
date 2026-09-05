@@ -102,7 +102,7 @@ func run(cmd *cobra.Command, opts options) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("read database schema: %w", err))
 	}
-	goSchema := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	goSchema := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, conn.Info().Dialect)
 	files, err := goschematogo.Render(goSchema, goschematogo.Options{
 		PackageName:     opts.packageName,
 		PerTable:        opts.perTable,

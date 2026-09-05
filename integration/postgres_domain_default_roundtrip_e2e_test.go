@@ -70,7 +70,7 @@ func TestPostgresDomainDefaultConvergesE2E(t *testing.T) {
 
 	// The description of the database compared against the database it
 	// describes. Nothing about it should differ.
-	described := dbschematogo.ConvertDBSchemaToGoSchema(read)
+	described := dbschematogo.ConvertDBSchemaToGoSchema(read, "postgres")
 	diff, err := schemadiff.CompareWithDatabase(
 		ctx, conn, described, read, config.DefaultCompareOptions())
 

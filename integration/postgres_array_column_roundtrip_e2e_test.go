@@ -98,7 +98,7 @@ func TestPostgresArrayColumnSurvivesAReadE2E(t *testing.T) {
 			// The type as the converter hands it onward is the value every
 			// renderer downstream writes, so recreating the column from it is
 			// what proves the read is usable and not merely non-empty.
-			converted := dbschematogo.ConvertDBSchemaToGoSchema(read)
+			converted := dbschematogo.ConvertDBSchemaToGoSchema(read, "postgres")
 			c.Assert(converted.Fields, qt.Not(qt.HasLen), 0)
 			_, err = setupDB.ExecContext(ctx,
 				"CREATE TABLE logs_again (records "+converted.Fields[0].Type+" NOT NULL)")

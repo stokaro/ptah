@@ -99,7 +99,7 @@ func TestPostgresTypeSpellingsConvergeE2E(t *testing.T) {
 	// against nothing would report no changes and pass.
 	c.Assert(readColumnCount(read, "spellings"), qt.Equals, len(postgresSpellings)+1)
 
-	described := dbschematogo.ConvertDBSchemaToGoSchema(read)
+	described := dbschematogo.ConvertDBSchemaToGoSchema(read, "postgres")
 	diff, err := schemadiff.CompareWithDatabase(
 		ctx, conn, described, read, config.DefaultCompareOptions())
 

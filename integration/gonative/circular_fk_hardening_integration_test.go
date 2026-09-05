@@ -142,7 +142,7 @@ ALTER TABLE ptah_cycle_read_137.right_nodes
 	// schema-local objects from the structured snapshot.
 	liveSchema.Roles = nil
 	liveSchema.Grants = nil
-	database := dbschematogo.ConvertDBSchemaToGoSchema(liveSchema)
+	database := dbschematogo.ConvertDBSchemaToGoSchema(liveSchema, "")
 	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(
 		database,
 		conn.Info().Dialect,

@@ -157,7 +157,7 @@ func TestReadDescribesCoveringIndex_Live(t *testing.T) {
 			info := conn.Info()
 
 			statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(
-				dbschematogo.ConvertDBSchemaToGoSchema(schema),
+				dbschematogo.ConvertDBSchemaToGoSchema(schema, "postgres"),
 				info.Dialect,
 				info.Capabilities,
 			)

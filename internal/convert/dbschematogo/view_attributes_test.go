@@ -33,7 +33,7 @@ func TestConvertViews_CarriesTheAttributes(t *testing.T) {
 				Body:   "SELECT id FROM dbo.orders",
 			},
 		},
-	})
+	}, "")
 
 	c.Assert(converted.Views, qt.HasLen, 2)
 	c.Assert(converted.Views[0].Attributes, qt.DeepEquals, []string{"SCHEMABINDING"})

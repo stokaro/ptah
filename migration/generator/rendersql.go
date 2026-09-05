@@ -155,7 +155,7 @@ func generateDownMigrationSQLQualified(
 	directiveOpts := opts.directives
 	// For down migrations, we need to use the current database schema as the "generated" schema
 	// since we're reverting back to the current state
-	dbAsGoSchema := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	dbAsGoSchema := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, dialect)
 
 	// Create a reverse diff to generate down migration. We pass the original
 	// generated schema to resolve table names for RLS policies, and the

@@ -283,7 +283,7 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions) (State, e
 	}
 	return State{
 		Kind:          s.Kind,
-		Schema:        dbschematogo.ConvertDBSchemaToGoSchema(schema),
+		Schema:        dbschematogo.ConvertDBSchemaToGoSchema(schema, conn.Info().Dialect),
 		DB:            schema,
 		DefaultSchema: conn.Info().Schema,
 		RealmScoped:   schemaselection.Realm(conn.Info().Dialect, conn.Info().URL, conn.Info().Schema),
@@ -378,7 +378,7 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 			}
 			state = State{
 				Kind:          s.Kind,
-				Schema:        dbschematogo.ConvertDBSchemaToGoSchema(schema),
+				Schema:        dbschematogo.ConvertDBSchemaToGoSchema(schema, replayConn.Info().Dialect),
 				DB:            schema,
 				DefaultSchema: replayConn.Info().Schema,
 				RealmScoped: schemaselection.Realm(

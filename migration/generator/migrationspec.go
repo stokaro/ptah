@@ -268,7 +268,7 @@ func renderGeneratedDownMigrationSQL(
 	plan *BidirectionalSchemaPlan,
 	qualifier atlasmigrate.Qualifier,
 ) (string, error) {
-	priorSchema := dbschematogo.ConvertDBSchemaToGoSchema(plan.CurrentSchema)
+	priorSchema := dbschematogo.ConvertDBSchemaToGoSchema(plan.CurrentSchema, plan.Dialect)
 	nodes := plan.Reverse.Nodes
 	if err := qualifier.ApplyToPlan(plan.Dialect, priorSchema, nodes); err != nil {
 		return "", err

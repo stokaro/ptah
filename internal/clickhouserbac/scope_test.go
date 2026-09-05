@@ -316,6 +316,7 @@ func TestScopeOfLive_AgreesWithScopeOfAcrossTheBoundary(t *testing.T) {
 			// it while both assertions above still passed.
 			described := dbschematogo.ConvertDBSchemaToGoSchema(
 				&catalog.Database{Grants: []catalog.Grant{test.live}},
+				"clickhouse",
 			)
 			c.Assert(described.Grants, qt.HasLen, 1)
 			redeclared, err := clickhouserbac.ScopeOf(described.Grants[0], "")
