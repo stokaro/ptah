@@ -125,6 +125,15 @@ jobs:
           scripts/check-docs-origin-selftest.sh
           scripts/check-docs-origin.sh
 
+      # The release image mirror's RULE, on every pull request. The gate itself
+      # reads two live registries and only means something after a release, so
+      # what runs here is the decision it makes, driven through every branch
+      # with no network (stokaro/ptah#2362).
+      - name: Check the release image mirror rule
+        run: |
+          set -euo pipefail
+          scripts/check-release-image-mirror-selftest.sh
+
       # The script published at https://ptah.run/install.sh is
       # repository policy, not Go lint. Exercise it against fixtures under the
       # POSIX shells the documented pipe-to-sh command can select.

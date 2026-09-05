@@ -18,6 +18,12 @@ Ptah releases are produced by GoReleaser from annotated version tags.
   resetting the secret.
 - GitHub Actions package permissions enabled for publishing
   `ghcr.io/stokaro/ptah`.
+- `DOCKER_HUB_USER` and `DOCKER_HUB_TOKEN` as repository secrets, for the
+  Docker Hub mirror. The account is a secret rather than the repository owner's
+  name because the two are different things that look alike: `stokaro` on
+  Docker Hub is an organization, and a `dckr_pat_` token belongs to a person
+  who is a member of it. The token needs write access to `stokaro/ptah`;
+  delete is not used.
 - GoReleaser `v2.15.4`. The GitHub Actions workflow pins this version because
   issue #174 requires a Homebrew formula install command
   (`brew install stokaro/ptah/ptah`), while newer GoReleaser releases treat
@@ -56,11 +62,25 @@ Ptah releases are produced by GoReleaser from annotated version tags.
      --certificate-oidc-issuer https://token.actions.githubusercontent.com
    ```
 
-6. Verify the container images exist:
+6. Verify the container images exist. GHCR is the address the documentation
+   gives a reader, because Docker Hub rate-limits anonymous pulls and GHCR does
+   not; Docker Hub carries the same images as a mirror:
 
    ```bash
    docker pull ghcr.io/stokaro/ptah:0.1.2
    docker pull ghcr.io/stokaro/ptah:latest
+
+   docker pull docker.io/stokaro/ptah:0.1.2
+   docker pull docker.io/stokaro/ptah:latest
+   ```
+
+   The release workflow already asserts this, anonymously and by digest, in its
+   `Both registries carry this release` step. A tag that reached one registry
+   and not the other fails the release rather than leaving a reader unable to
+   tell which host is behind:
+
+   ```bash
+   scripts/check-release-image-mirror.sh 0.1.2
    ```
 
 7. Verify the Homebrew install:
