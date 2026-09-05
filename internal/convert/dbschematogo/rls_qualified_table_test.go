@@ -56,7 +56,7 @@ func rlsSchema(schemaName string) *catalog.Database {
 func TestConvert_EnablesRLSOnTheSchemaQualifiedTable(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(rlsSchema("app"))
+	database := dbschematogo.ConvertDBSchemaToGoSchema(rlsSchema("app"), "")
 
 	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
 	c.Assert(database.RLSEnabledTables[0].Table, qt.Equals, "app.users")
@@ -75,7 +75,7 @@ func TestConvert_EnablesRLSOnTheSchemaQualifiedTable(t *testing.T) {
 func TestConvert_LeavesAnUnqualifiedRLSTableAlone(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(rlsSchema(""))
+	database := dbschematogo.ConvertDBSchemaToGoSchema(rlsSchema(""), "")
 
 	c.Assert(database.RLSEnabledTables, qt.HasLen, 1)
 	c.Assert(database.RLSEnabledTables[0].Table, qt.Equals, "users")

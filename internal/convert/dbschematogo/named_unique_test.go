@@ -56,7 +56,7 @@ func emailField(c *qt.C, database *schemamodel.Database) schemamodel.Field {
 func TestConvert_KeepsAUniqueConstraintNameSomebodyChose(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(uniqueSchema("customers_email_uq"))
+	database := dbschematogo.ConvertDBSchemaToGoSchema(uniqueSchema("customers_email_uq"), "")
 
 	c.Assert(database.Constraints, qt.HasLen, 1)
 	c.Assert(database.Constraints[0].Name, qt.Equals, "customers_email_uq")
@@ -85,7 +85,7 @@ func TestConvert_LeavesAGeneratedUniqueNameToTheColumn(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database := dbschematogo.ConvertDBSchemaToGoSchema(uniqueSchema(tt.constraintName))
+			database := dbschematogo.ConvertDBSchemaToGoSchema(uniqueSchema(tt.constraintName), "")
 
 			c.Assert(database.Constraints, qt.HasLen, 0)
 			c.Assert(emailField(c, database).Unique, qt.IsTrue)

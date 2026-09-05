@@ -61,7 +61,7 @@ func renderERD(doc document) string {
 		out.WriteString(edgePath(from, to))
 	}
 	for _, n := range nodes {
-		fmt.Fprintf(&out, `<rect class="node" x="%.1f" y="%.1f" width="%.1f" height="%.1f" rx="7"/>`, n.X, n.Y, n.W, n.H)
+		fmt.Fprintf(&out, `<rect class="node" x="%.1f" y="%.1f" width="%.1f" height="%.1f" rx="2"/>`, n.X, n.Y, n.W, n.H)
 		fmt.Fprintf(&out, `<text class="label" x="%.1f" y="%.1f" text-anchor="middle" dominant-baseline="middle">%s</text>`,
 			n.X+n.W/2, n.Y+n.H/2, escapeText(n.Name))
 	}

@@ -1,8 +1,11 @@
 package schemaserve_test
 
 import (
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -118,4 +121,37 @@ func TestHandler_KeepsCredentialsOffThePage(t *testing.T) {
 	built.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	c.Assert(recorder.Body.String(), qt.Not(qt.Contains), "hunter2")
+}
+
+// TestHandler_ResolvesEveryCustomPropertyItUses is what keeps this view's
+// stylesheet honest about the one it is added to.
+//
+// The page's appearance is internal/schemadoc's tokens plus the arrangement
+// this view needs, and only the second half lives here. A var() naming a token
+// that stylesheet stopped declaring does not fail: the browser discards the
+// whole declaration and says nothing, so a retired token leaves a dashboard
+// that renders, renders wrongly, and passes every other test in this file.
+func TestHandler_ResolvesEveryCustomPropertyItUses(t *testing.T) {
+	c := qt.New(t)
+	recorder := httptest.NewRecorder()
+
+	handler(c).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+
+	c.Assert(recorder.Code, qt.Equals, http.StatusOK)
+	styles := regexp.MustCompile(`(?s)<style>(.*?)</style>`).FindStringSubmatch(recorder.Body.String())
+	c.Assert(styles, qt.HasLen, 2, qt.Commentf("the page carries exactly one stylesheet"))
+
+	declared := make(map[string]bool)
+	for _, match := range regexp.MustCompile(`(--[a-z0-9-]+)\s*:`).FindAllStringSubmatch(styles[1], -1) {
+		declared[match[1]] = true
+	}
+	used := make(map[string]bool)
+	for _, match := range regexp.MustCompile(`var\((--[a-z0-9-]+)`).FindAllStringSubmatch(styles[1], -1) {
+		used[match[1]] = true
+	}
+	c.Assert(len(used) > 0, qt.IsTrue, qt.Commentf("the stylesheet uses no tokens at all"))
+	for _, token := range slices.Sorted(maps.Keys(used)) {
+		c.Assert(declared[token], qt.IsTrue,
+			qt.Commentf("var(%s) resolves to nothing: no block declares it", token))
+	}
 }

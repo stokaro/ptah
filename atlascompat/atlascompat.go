@@ -112,7 +112,10 @@ func SchemaToAST(database schemamodel.Database, targetPlatform string) *ast.Stat
 // dbSchema must be non-nil: there is no error return, so a nil argument is a
 // programming error rather than a case this function reports.
 func DBSchemaToGoSchema(dbSchema *catalog.Database) *schemamodel.Database {
-	return dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	// No dialect: this signature is the stable one and takes none. The shared
+	// evidence answers only what every server does for an empty dialect, which
+	// is what this entry point has always produced.
+	return dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
 }
 
 // SumEntry is one migration file and its content hash.

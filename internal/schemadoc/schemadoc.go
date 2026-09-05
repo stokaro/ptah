@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/schemamodel"
+	"go.5x5.cz/ptah/internal/buildinfo"
 )
 
 // Options selects what the document covers and what it is called.
@@ -15,6 +16,13 @@ type Options struct {
 	// Title heads the document. Empty uses a neutral default rather than
 	// inventing a project name.
 	Title string
+	// Source names where the schema was read from, for the line under the
+	// title. It is a name rather than a path: the document is meant to be
+	// shareable by copying, and a copied file that carries the exporter's
+	// filesystem layout says more about the machine than about the schema.
+	// Empty leaves the line saying what it must, that this is a declared
+	// schema and not a database.
+	Source string
 }
 
 // Result is the rendered document and anything worth telling the caller.
@@ -24,6 +32,15 @@ type Result struct {
 }
 
 const defaultTitle = "Schema reference"
+
+// The three characters the document sets in text rather than in markup. They
+// are named because a raw string literal does not process \u escapes, and a
+// backtick-quoted `\u2014` reaches the page as those six characters.
+const (
+	emDash     = "\u2014"
+	rightArrow = "\u2192"
+	middleDot  = "\u00b7"
+)
 
 // Render writes one self-contained HTML document.
 //
@@ -53,7 +70,7 @@ func Render(db *schemamodel.Database, opts Options) (Result, error) {
 	out.WriteString(`<main class="content">`)
 	writeOverview(&out, doc)
 	writeBody(&out, doc)
-	out.WriteString(`<div class="footer">Rendered by Ptah from the declared schema. This file is self-contained: opening it fetches nothing.</div>`)
+	writeFooter(&out)
 	out.WriteString(`</main></div></body></html>`)
 	return Result{Data: []byte(out.String()), Diagnostics: diagnostics}, nil
 }
@@ -82,7 +99,7 @@ func Page(db *schemamodel.Database, opts Options) (sidebar, content string, err 
 		doc.Title = defaultTitle
 	}
 	var nav, body strings.Builder
-	writeSidebar(&nav, doc)
+	writeNav(&nav, doc)
 	writeBody(&body, doc)
 	return nav.String(), body.String(), nil
 }
@@ -106,7 +123,18 @@ func writeHead(out *strings.Builder, doc document) {
 func writeSidebar(out *strings.Builder, doc document) {
 	out.WriteString(`<aside class="sidebar">`)
 	fmt.Fprintf(out, `<div class="brand">%s</div>`, escapeText(doc.Title))
-	fmt.Fprintf(out, `<div class="brand-sub">%s</div>`, plural(len(doc.Tables), "table", "tables"))
+	fmt.Fprintf(out, `<div class="brand-sub">%s</div>`, escapeText(counts(doc)))
+	writeNav(out, doc)
+	out.WriteString(`</aside>`)
+}
+
+// writeNav is the navigation alone, without the rail that holds it.
+//
+// A caller that supplies its own rail -- the live dashboard does, with its own
+// title and database address above this -- takes this and not writeSidebar. The
+// two used to be one function, which is how the dashboard came to nest an
+// <aside class="sidebar"> inside its own and print the title twice.
+func writeNav(out *strings.Builder, doc document) {
 	out.WriteString(`<nav class="nav">`)
 	if len(doc.Tables) > 0 {
 		out.WriteString(`<div class="nav-group"><div class="nav-title">Tables</div>`)
@@ -122,11 +150,21 @@ func writeSidebar(out *strings.Builder, doc document) {
 		}
 		out.WriteString(`</div>`)
 	}
-	out.WriteString(`</nav></aside>`)
+	out.WriteString(`</nav>`)
+}
+
+// counts is the sidebar's one-line summary of what the document holds.
+func counts(doc document) string {
+	summary := plural(len(doc.Tables), "table", "tables")
+	if len(doc.Enums) == 0 {
+		return summary
+	}
+	return summary + " " + middleDot + " " + plural(len(doc.Enums), "enum", "enums")
 }
 
 func writeOverview(out *strings.Builder, doc document) {
 	fmt.Fprintf(out, `<h1>%s</h1>`, escapeText(doc.Title))
+	fmt.Fprintf(out, `<div class="lede">%s</div>`, provenance(doc.Source))
 	out.WriteString(`<div class="stats">`)
 	writeStat(out, len(doc.Tables), "tables")
 	writeStat(out, countColumns(doc), "columns")
@@ -136,6 +174,19 @@ func writeOverview(out *strings.Builder, doc document) {
 	if len(doc.Tables) == 0 {
 		out.WriteString(`<div class="card"><div class="empty">No tables are selected.</div></div>`)
 	}
+}
+
+// provenance is the line under the title.
+//
+// It says what the document is not, because that is the mistake a reader of a
+// schema reference makes: this describes what the sources declare, and a
+// database may hold something else entirely. The page it is documented on warns
+// about exactly this, and the page does not travel with the file.
+func provenance(source string) string {
+	if source == "" {
+		return "Declared schema " + middleDot + " not a live database"
+	}
+	return "Declared schema " + middleDot + " " + escapeText(source) + " " + middleDot + " not a live database"
 }
 
 func writeStat(out *strings.Builder, value int, label string) {
@@ -149,7 +200,9 @@ func writeDiagram(out *strings.Builder, doc document) {
 		return
 	}
 	out.WriteString(`<h2 id="diagram">Diagram</h2>`)
-	out.WriteString(`<div class="card"><div class="erd">` + svg + `</div></div>`)
+	out.WriteString(`<div class="card"><div class="erd">` + svg +
+		`<div class="erd-note">Left to right by dependency: a table sits right of everything it references, ` +
+		`so this order is one the tables can be created in.</div></div></div>`)
 }
 
 func writeTables(out *strings.Builder, doc document) {
@@ -157,12 +210,25 @@ func writeTables(out *strings.Builder, doc document) {
 		return
 	}
 	out.WriteString(`<h2 id="tables">Tables</h2>`)
+	declared := declaredEnums(doc)
 	for _, table := range doc.Tables {
-		writeTableCard(out, table)
+		writeTableCard(out, table, declared)
 	}
 }
 
-func writeTableCard(out *strings.Builder, table tableDoc) {
+// declaredEnums is the set of enum names this document defines a section for.
+//
+// A column whose type names one links to it; a column whose type does not is
+// left alone, so a link is never offered to a section that is not there.
+func declaredEnums(doc document) map[string]bool {
+	declared := make(map[string]bool, len(doc.Enums))
+	for _, enum := range doc.Enums {
+		declared[enum.Name] = true
+	}
+	return declared
+}
+
+func writeTableCard(out *strings.Builder, table tableDoc, declared map[string]bool) {
 	fmt.Fprintf(out, `<section id="%s" class="card">`, anchor(table.Name))
 	out.WriteString(`<div class="card-head">`)
 	fmt.Fprintf(out, `<h3>%s</h3>`, escapeText(table.Name))
@@ -170,12 +236,12 @@ func writeTableCard(out *strings.Builder, table tableDoc) {
 		fmt.Fprintf(out, `<span class="card-note">%s</span>`, escapeText(table.Comment))
 	}
 	out.WriteString(`</div>`)
-	writeColumns(out, table)
+	writeColumns(out, table, declared)
 	writeIndexes(out, table)
 	out.WriteString(`</section>`)
 }
 
-func writeColumns(out *strings.Builder, table tableDoc) {
+func writeColumns(out *strings.Builder, table tableDoc, declared map[string]bool) {
 	if len(table.Columns) == 0 {
 		out.WriteString(`<div class="empty">This table declares no columns.</div>`)
 		return
@@ -188,12 +254,12 @@ func writeColumns(out *strings.Builder, table tableDoc) {
 	for _, column := range table.Columns {
 		out.WriteString(`<tr>`)
 		fmt.Fprintf(out, `<td class="name">%s</td>`, escapeText(column.Name))
-		fmt.Fprintf(out, `<td class="type">%s</td>`, escapeText(column.Type))
+		fmt.Fprintf(out, `<td class="type">%s</td>`, typeCell(column.Type, declared))
 		fmt.Fprintf(out, `<td>%s</td>`, nullTag(column))
 		fmt.Fprintf(out, `<td>%s</td>`, keyTag(column.Key))
 		fmt.Fprintf(out, `<td class="type">%s</td>`, escapeText(column.Default))
 		fmt.Fprintf(out, `<td>%s</td>`, foreignTag(column.Foreign))
-		fmt.Fprintf(out, `<td>%s</td>`, escapeText(column.Comment))
+		fmt.Fprintf(out, `<td class="comment">%s</td>`, escapeText(column.Comment))
 		out.WriteString(`</tr>`)
 	}
 	out.WriteString(`</tbody></table></div>`)
@@ -223,48 +289,93 @@ func writeEnums(out *strings.Builder, doc document) {
 		fmt.Fprintf(out, `<section id="%s" class="card"><div class="card-head"><h3>%s</h3>`,
 			anchor("enum-"+enum.Name), escapeText(enum.Name))
 		fmt.Fprintf(out, `<span class="card-note">%s</span></div>`, plural(len(enum.Values), "value", "values"))
-		out.WriteString(`<div class="scroller"><table><tbody>`)
+		out.WriteString(`<div class="values">`)
 		for _, value := range enum.Values {
-			fmt.Fprintf(out, `<tr><td class="name">%s</td></tr>`, escapeText(value))
+			fmt.Fprintf(out, `<span>%s</span>`, escapeText(value))
 		}
-		out.WriteString(`</tbody></table></div></section>`)
+		out.WriteString(`</div></section>`)
 	}
 }
 
 // The tag helpers keep the conditionals out of the writers, so a row renders as
 // one expression per cell.
 
+// nullTag tags the exception and not the rule.
+//
+// Most columns are NOT NULL, so tagging every one of them puts a pill on nearly
+// every row and leaves the reader scanning for the absence of one. The dash is
+// what a reader's eye passes over; the tag is what it stops on.
 func nullTag(column columnDoc) string {
 	if column.Nullable {
 		return `<span class="tag null">null</span>`
 	}
-	return `<span class="tag">not null</span>`
+	return `<span class="none">` + emDash + `</span>`
 }
 
+// keyTag fills the primary key and outlines everything else, because a table
+// has one primary key and a reader looking for it should not have to read the
+// word.
 func keyTag(key string) string {
-	if key == "" {
+	switch key {
+	case "":
 		return ""
+	case "primary":
+		return `<span class="tag key">primary</span>`
+	default:
+		return `<span class="tag">` + escapeText(key) + `</span>`
 	}
-	return `<span class="tag key">` + escapeText(key) + `</span>`
 }
 
 func uniqueTag(index indexDoc) string {
 	if !index.Unique {
 		return ""
 	}
-	return `<span class="tag key">unique</span>`
+	return `<span class="tag">unique</span>`
 }
 
+// typeCell links a column typed by a declared enum to that enum's section.
+func typeCell(columnType string, declared map[string]bool) string {
+	if !declared[columnType] {
+		return escapeText(columnType)
+	}
+	return fmt.Sprintf(`<a href="#%s">%s</a>`, anchor("enum-"+columnType), escapeText(columnType))
+}
+
+// foreignTag renders a reference as the reference it is rather than as a chip:
+// an arrow, the target, and a link to it when the target is in this document.
 func foreignTag(foreign string) string {
 	if foreign == "" {
 		return ""
 	}
 	target, ok := foreignTarget(foreign)
 	if !ok {
-		return `<span class="tag fk">` + escapeText(foreign) + `</span>`
+		return `<span class="ref">` + rightArrow + ` ` + escapeText(foreign) + `</span>`
 	}
-	return fmt.Sprintf(`<a class="tag fk" href="#%s">%s</a>`, anchor(target), escapeText(foreign))
+	return fmt.Sprintf(`<a class="ref" href="#%s">%s %s</a>`, anchor(target), rightArrow, escapeText(foreign))
 }
+
+// writeFooter closes the document with what produced it.
+//
+// The mark is inlined rather than linked, for the same reason nothing else on
+// this page is fetched, and it keeps its own colors in both themes because a
+// mark recolored to match its surroundings is a different mark. The version is
+// there because this file is shared and archived, and "which Ptah wrote this"
+// is a question its reader cannot otherwise answer.
+func writeFooter(out *strings.Builder) {
+	out.WriteString(`<div class="footer">`)
+	out.WriteString(`<span>Rendered by Ptah from the declared schema. ` +
+		`This file is self-contained: opening it fetches nothing.</span>`)
+	out.WriteString(`<span class="footer-mark">` + markSVG)
+	fmt.Fprintf(out, `ptah %s</span></div>`, escapeText(buildinfo.Resolve().Version))
+}
+
+// markSVG is docs/site/src/assets/logo.svg, inlined and stripped of the title
+// the document does not need: the footer already names Ptah in words beside it.
+const markSVG = `<svg viewBox="0 0 64 64" width="14" height="14" aria-hidden="true">` +
+	`<rect width="64" height="64" rx="14" fill="#0f172a"/>` +
+	`<rect x="23" y="13" width="18" height="11" rx="2" fill="#f59e0b"/>` +
+	`<rect x="17" y="27" width="30" height="11" rx="2" fill="#38bdf8"/>` +
+	`<rect x="11" y="41" width="42" height="11" rx="2" fill="#38bdf8"/></svg>`
 
 func countColumns(doc document) int {
 	total := 0

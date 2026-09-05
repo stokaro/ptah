@@ -75,7 +75,7 @@ func TestConvert_CarriesTheWidthIntoTheDescription(t *testing.T) {
 				Tables: []catalog.Table{{
 					Name: "probe", Schema: "public", Columns: []catalog.Column{test.column},
 				}},
-			})
+			}, "")
 
 			c.Assert(convertedFieldTypes(converted.Fields), qt.DeepEquals, []string{test.wantType})
 		})

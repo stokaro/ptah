@@ -93,7 +93,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 	// read pass one, and the conversion dereferences it.
 	var prior *schemamodel.Database
 	if dbSchema != nil {
-		prior = dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+		prior = dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, dialect)
 	}
 	reversed := &difftypes.SchemaDiff{
 		IdentifierSemantics: cloneIdentifierSemantics(diff.IdentifierSemantics),
@@ -301,7 +301,7 @@ func reverseSchemaDiffWithSchemaForDialect(
 	// how a rollback of a DROP TABLE became unexecutable. This runs before the
 	// index-removal restorations are appended purely for readability: those are
 	// UNIQUE constraints, which the rule deliberately never drops.
-	dropReverseConstraintsRestoredByTableCreation(reversed, diff.ConstraintsRemoved, dbSchema)
+	dropReverseConstraintsRestoredByTableCreation(reversed, diff.ConstraintsRemoved, dbSchema, dialect)
 	indexAdditions, constraintRestorations := reverseIndexRemovals(diff, dbSchema)
 	// The definitions come from the PRE-CHANGE database: this direction
 	// re-creates the indexes the change dropped, and an index the declaration

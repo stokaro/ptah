@@ -154,7 +154,7 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 	// session resolved, so a rule gated on a capability this server refines is
 	// gated on what this server answered (stokaro/ptah#1230).
 	report := schemasecurity.Analyze(
-		dbschematogo.ConvertDBSchemaToGoSchema(live),
+		dbschematogo.ConvertDBSchemaToGoSchema(live, conn.Info().Dialect),
 		schemasecurity.Options{
 			Capabilities: conn.Info().Capabilities,
 			// Non-nil even when the server has no memberships: this caller DID

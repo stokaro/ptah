@@ -300,7 +300,7 @@ func readAndRenderSQLite(t *testing.T, db *sql.DB) []string {
 	if err != nil {
 		t.Fatalf("read schema: %v", err)
 	}
-	statements, err := renderer.GetOrderedCreateStatements(dbschematogo.ConvertDBSchemaToGoSchema(schema), "sqlite")
+	statements, err := renderer.GetOrderedCreateStatements(dbschematogo.ConvertDBSchemaToGoSchema(schema, "sqlite"), "sqlite")
 	if err != nil {
 		t.Fatalf("render schema: %v", err)
 	}

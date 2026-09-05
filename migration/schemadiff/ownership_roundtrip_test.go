@@ -193,7 +193,12 @@ func TestOwnershipRoundTrip_ACatalogComparedWithItselfPlansNoObject(t *testing.T
 		t.Run(cell.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			desired := dbschematogo.ConvertDBSchemaToGoSchema(ownershipCatalog(cell.shape))
+			// The dialect reaches BOTH sides. Until the two ownership answers
+			// became one, this converter took none, so the control compared a
+			// dialect-aware comparator against a dialect-blind description --
+			// agreement between a pairing the product does not ship
+			// (stokaro/ptah#2606).
+			desired := dbschematogo.ConvertDBSchemaToGoSchema(ownershipCatalog(cell.shape), cell.dialect)
 			diff := schemadiff.CompareWithDialect(desired, ownershipCatalog(cell.shape), cell.dialect)
 
 			changes := objectChanges(diff)
@@ -230,7 +235,7 @@ func TestOwnershipRoundTrip_ADroppedObjectIsStillReported(t *testing.T) {
 		t.Run(shape.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			desired := dbschematogo.ConvertDBSchemaToGoSchema(ownershipCatalog(shape))
+			desired := dbschematogo.ConvertDBSchemaToGoSchema(ownershipCatalog(shape), "")
 			desired.Indexes = nil
 			desired.Constraints = nil
 			for index := range desired.Tables {

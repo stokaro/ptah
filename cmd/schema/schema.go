@@ -468,6 +468,7 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 			IncludeTables: opts.includeTables,
 			ExcludeTables: opts.excludeTables,
 			Title:         opts.title,
+			Source:        exportSourceLabel(opts),
 		})
 		if err != nil {
 			return cmdutil.Fail(cmd, err)

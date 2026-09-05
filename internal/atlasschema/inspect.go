@@ -148,7 +148,10 @@ func validateInspectSchema(schema *catalog.Database, validate func(*schemamodel.
 	if validate == nil {
 		return nil
 	}
-	return validate(dbschematogo.ConvertDBSchemaToGoSchema(schema))
+	// The dialect is not in scope here and threading it would reach five
+	// callers; an empty one answers what every server does, which is this
+	// path's existing behavior.
+	return validate(dbschematogo.ConvertDBSchemaToGoSchema(schema, ""))
 }
 
 // renderInspectSchema is the shared inspect tail for every source kind:
@@ -198,7 +201,7 @@ func renderInspectSchema(
 	// those have no hypertables in them, so the note is silent there rather
 	// than suppressed.
 	timescale.ReportUndescribed(opts.Diagnostics, schema)
-	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema)
+	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema, "")
 	output, err := atlasreport.RenderSchemaInspect(format, atlasreport.NewSchemaInspectReport(
 		dbsch,
 		schema,

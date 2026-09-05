@@ -2,7 +2,7 @@
 // Regenerates the real product screenshots used by the schema documentation.
 // The fixture has no network dependency, personal data, or credentials.
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -76,6 +76,21 @@ async function stopServer(server) {
   if (code !== 130) throw new Error(`schema serve exited ${code}; expected 130\n${server.stderr()}`);
 }
 
+// The exported document's footer names the binary that wrote it, and a binary
+// built from a working tree reports a pseudo-version that changes with every
+// commit. Pinning it here is the same normalization the dashboard's timestamps
+// and database path already get: the fixture is declared volatileDataNormalized
+// in visual-assets.json, and a committed sample that churns on every commit is
+// a sample nobody can review.
+function stabilizeDocument(path) {
+  const original = readFileSync(path, 'utf8');
+  const stabilized = original.replace(/(<\/svg>)ptah [^<]+(<\/span>)/, '$1ptah dev$2');
+  if (stabilized === original) {
+    throw new Error(`${path}: no footer version to normalize; has the footer changed?`);
+  }
+  writeFileSync(path, stabilized);
+}
+
 async function stabilizeDashboard(page) {
   await page.evaluate(() => {
     for (const element of document.querySelectorAll('time')) {
@@ -121,6 +136,7 @@ let browser;
 try {
   const sample = join(samplesRoot, 'schema-document.html');
   run(['schema', 'export', '--to', 'html', '--schema-file', documentSchema, '--out', sample], workRoot);
+  stabilizeDocument(sample);
 
   browser = await chromium.launch();
   const documentPage = await browser.newPage({ viewport });

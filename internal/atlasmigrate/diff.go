@@ -577,7 +577,7 @@ func planDiffFileContents(
 		}
 		return contents, nil
 	}
-	priorSchema := dbschematogo.ConvertDBSchemaToGoSchema(current)
+	priorSchema := dbschematogo.ConvertDBSchemaToGoSchema(current, info.Dialect)
 	if err := opts.Qualifier.ApplyToPlan(info.Dialect, priorSchema, planned.ReverseNodes); err != nil {
 		return nil, err
 	}

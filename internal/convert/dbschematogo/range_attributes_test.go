@@ -44,7 +44,7 @@ func TestConvert_CarriesEveryRangeAttribute(t *testing.T) {
 		Collation:      "en_US",
 		Canonical:      "fancy_canonical",
 		SubtypeDiff:    "f8diff",
-	}))
+	}), "")
 
 	converted := onlyRange(c, database)
 	c.Assert(converted.Name, qt.Equals, "fancy")
@@ -69,7 +69,7 @@ func TestConvert_LeavesARangeWithNoAttributesBare(t *testing.T) {
 		Name:    "plainrange",
 		Schema:  "public",
 		Subtype: "double precision",
-	}))
+	}), "")
 
 	converted := onlyRange(c, database)
 	c.Assert(converted.Subtype, qt.Equals, "double precision")

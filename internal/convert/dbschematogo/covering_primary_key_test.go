@@ -86,7 +86,7 @@ func TestConvert_KeepsTheIncludePayloadOfACoveringPrimaryKey(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database := dbschematogo.ConvertDBSchemaToGoSchema(coveringSchema(tt.keyColumns, []string{"payload"}))
+			database := dbschematogo.ConvertDBSchemaToGoSchema(coveringSchema(tt.keyColumns, []string{"payload"}), "")
 
 			table := coveringTable(c, database)
 			c.Assert(table.PrimaryKey, qt.DeepEquals, tt.keyColumns)
@@ -120,7 +120,7 @@ func TestConvert_LeavesAPlainPrimaryKeyAsItWas(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			database := dbschematogo.ConvertDBSchemaToGoSchema(coveringSchema(tt.keyColumns, nil))
+			database := dbschematogo.ConvertDBSchemaToGoSchema(coveringSchema(tt.keyColumns, nil), "")
 
 			table := coveringTable(c, database)
 			c.Assert(table.PrimaryKey, qt.DeepEquals, tt.wantTableLevel)

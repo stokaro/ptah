@@ -113,7 +113,7 @@ func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			result := dbschematogo.ConvertDBSchemaToGoSchema(tt.dbSchema)
+			result := dbschematogo.ConvertDBSchemaToGoSchema(tt.dbSchema, "")
 
 			c.Assert(result.Extensions, qt.HasLen, len(tt.expected))
 			for i, expectedExt := range tt.expected {
@@ -159,7 +159,7 @@ func TestConvertDBSchemaToGoSchema_ExtensionsWithOtherElements(t *testing.T) {
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
 
 	// Verify extensions are converted
 	c.Assert(result.Extensions, qt.HasLen, 1)
@@ -183,7 +183,7 @@ func TestConvertDBSchemaToGoSchema_Schemas(t *testing.T) {
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
 
 	c.Assert(result.Schemas, qt.DeepEquals, []schemamodel.Schema{
 		{Name: "auth", Comment: "Authentication objects"},
@@ -210,7 +210,7 @@ func TestConvertDBSchemaToGoSchema_GeneratedColumns(t *testing.T) {
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
 
 	c.Assert(result.Fields, qt.HasLen, 1)
 	c.Assert(result.Fields[0].GeneratedExpression, qt.Equals, "lower(name)")
@@ -234,7 +234,7 @@ func TestConvertDBSchemaToGoSchema_PostgresUserDefinedColumnUsesUDTName(t *testi
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
 
 	c.Assert(result.Fields, qt.HasLen, 1)
 	c.Assert(result.Fields[0].Type, qt.Equals, "enum_product_status")
@@ -303,7 +303,7 @@ func TestConvertDBSchemaToGoSchema_PostgresArrayColumnUsesTheServerSpelling(t *t
 				Tables: []catalog.Table{{Name: "logs", Columns: []catalog.Column{test.column}}},
 			}
 
-			result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+			result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
 
 			c.Assert(result.Fields, qt.HasLen, 1)
 			c.Assert(result.Fields[0].Type, qt.Equals, test.wantType)
@@ -383,7 +383,7 @@ func TestConvertDBSchemaToGoSchema_PostgresDomainColumnKeepsTheDomain(t *testing
 				Tables: []catalog.Table{{Name: "scalars", Columns: []catalog.Column{test.column}}},
 			}
 
-			result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+			result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
 
 			c.Assert(result.Fields, qt.HasLen, 1)
 			c.Assert(result.Fields[0].Type, qt.Equals, test.wantType)
@@ -515,7 +515,7 @@ func TestConvertDBSchemaToGoSchema_PostgresDomainColumnKeepsItsDomain(t *testing
 				Tables: []catalog.Table{{Name: "t", Columns: []catalog.Column{test.column}}},
 			}
 
-			result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+			result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
 
 			c.Assert(result.Fields, qt.HasLen, 1)
 			c.Assert(result.Fields[0].Type, qt.Equals, test.wantType)
@@ -542,7 +542,7 @@ func TestConvertDBSchemaToGoSchema_SerialDetectionSurvivesTheDomainRule(t *testi
 		}}}},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
 
 	c.Assert(result.Fields, qt.HasLen, 1)
 	c.Assert(result.Fields[0].Type, qt.Equals, "SERIAL")
@@ -614,7 +614,7 @@ func TestConvertDBSchemaToGoSchema_SchemaQualifiedObjectOwnersUseTableStructName
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
 
 	c.Assert(result.Tables, qt.HasLen, 1)
 	c.Assert(result.Tables[0].StructName, qt.Equals, "Orders")
@@ -663,7 +663,7 @@ func TestConvertDBSchemaToGoSchema_DuplicateTableNamesUseSchemaQualifiedStructNa
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
 
 	c.Assert(result.Tables, qt.DeepEquals, []schemamodel.Table{
 		{StructName: "AuthUsers", Schema: "auth", Name: "users"},
@@ -701,7 +701,7 @@ func TestConvertDBSchemaToGoSchema_PreservesIndexPartDirection(t *testing.T) {
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
 
 	c.Assert(result.Indexes, qt.HasLen, 1)
 	c.Assert(result.Indexes[0].Fields, qt.DeepEquals, []string{"email", "status"})
@@ -735,7 +735,7 @@ func TestConvertDBSchemaToGoSchema_PreservesIndexPartExpression(t *testing.T) {
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
 
 	c.Assert(result.Indexes, qt.HasLen, 1)
 	c.Assert(result.Indexes[0].Parts, qt.DeepEquals, []schemamodel.IndexPart{
@@ -791,7 +791,7 @@ func TestConvertDBSchemaToGoSchema_PreservesImplicitExtensionRequirements(t *tes
 		}},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
 
 	c.Assert(result.Indexes, qt.HasLen, 1)
 	c.Assert(result.Indexes[0].Name, qt.Equals, "booking_room_gin")
@@ -826,7 +826,7 @@ func TestConvertDBSchemaToGoSchema_DBDefaultExpression(t *testing.T) {
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
 
 	c.Assert(result.Fields, qt.HasLen, 2)
 	c.Assert(result.Fields[0].Default, qt.Equals, "")
@@ -865,7 +865,7 @@ func TestConvertDBSchemaToGoSchema_PostgresSequenceSemantics(t *testing.T) {
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
 
 	c.Assert(result.Fields, qt.HasLen, 3)
 	c.Assert(result.Fields[0].Type, qt.Equals, "BIGSERIAL")
@@ -904,7 +904,7 @@ func TestConvertDBSchemaToGoSchema_CompositeForeignKeyBecomesTableConstraint(t *
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
 
 	c.Assert(result.Fields, qt.HasLen, 2)
 	for _, field := range result.Fields {
@@ -964,7 +964,7 @@ func TestConvertDBSchemaToGoSchema_TableLevelConstraintsAndSizedTypes(t *testing
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
 
 	c.Assert(result.Tables, qt.HasLen, 1)
 	c.Assert(result.Tables[0].PrimaryKey, qt.DeepEquals, []string{"tenant_id", "order_id"})
@@ -1010,7 +1010,7 @@ func TestConvertDBSchemaToGoSchema_ColumnCharsetCollate(t *testing.T) {
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
 
 	c.Assert(result.Fields, qt.HasLen, 1)
 	c.Assert(result.Fields[0].Charset, qt.Equals, "hebrew")
@@ -1032,7 +1032,7 @@ func TestConvertDBSchemaToGoSchema_SQLiteTableOptions(t *testing.T) {
 		}},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
 
 	c.Assert(result.Tables, qt.HasLen, 1)
 	c.Assert(result.Tables[0].Strict, qt.IsTrue)
@@ -1097,7 +1097,7 @@ func TestConvertDBSchemaToGoSchema_PreservesStructuralMemberIdentity(t *testing.
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
 
 	c.Assert(result.Fields, qt.HasLen, 2)
 	c.Assert(result.Fields[0].ForeignKeyName, qt.Equals, "fk_literal")
@@ -1122,7 +1122,7 @@ func TestConvertDBSchemaToGoSchema_ExtensionDefaultValues(t *testing.T) {
 		},
 	}
 
-	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema)
+	result := dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, "")
 
 	c.Assert(result.Extensions, qt.HasLen, 1)
 	ext := result.Extensions[0]
@@ -1167,6 +1167,7 @@ func TestConvertDBSchemaToGoSchema_GrantsDescribeTheTargetTheSharedContractNames
 
 			converted := dbschematogo.ConvertDBSchemaToGoSchema(
 				&catalog.Database{Grants: []catalog.Grant{test.grant}},
+				"",
 			)
 
 			c.Assert(converted.Grants, qt.HasLen, 1)
@@ -1196,7 +1197,7 @@ func TestConvertDBSchemaToGoSchema_PartialRevokeIsNotDescribedAsAGrant(t *testin
 				Schema: "shop", ObjectName: "orders", IsPartialRevoke: true,
 			},
 		},
-	})
+	}, "")
 
 	c.Assert(converted.Grants, qt.HasLen, 1)
 	c.Assert(converted.Grants[0].OnSchema, qt.Equals, "shop")

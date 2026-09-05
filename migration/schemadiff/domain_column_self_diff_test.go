@@ -116,7 +116,7 @@ func TestCompare_DomainColumnSelfDiffPlansNothing(t *testing.T) {
 			}
 
 			diff := schemadiff.CompareWithDialect(
-				dbschematogo.ConvertDBSchemaToGoSchema(database), database, "postgres",
+				dbschematogo.ConvertDBSchemaToGoSchema(database, ""), database, "postgres",
 			)
 
 			c.Assert(diff.TablesModified, qt.HasLen, 0)
@@ -176,7 +176,7 @@ func TestCompare_NonDomainColumnSelfDiffPlansNothing(t *testing.T) {
 			}
 
 			diff := schemadiff.CompareWithDialect(
-				dbschematogo.ConvertDBSchemaToGoSchema(database), database, "postgres",
+				dbschematogo.ConvertDBSchemaToGoSchema(database, ""), database, "postgres",
 			)
 
 			c.Assert(diff.TablesModified, qt.HasLen, 0)

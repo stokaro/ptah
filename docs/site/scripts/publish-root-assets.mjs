@@ -42,16 +42,29 @@ const defaultRepoRoot = join(scriptDir, '..', '..', '..');
 
 // ROOT_ASSETS is the declaration both this script and check-pages-root.mjs
 // read. `url` is where this deploy serves the file, at the documentation root;
-// `advertised` is the address a reader is given, on the project site, which
-// fetches the same source from master; `published` is the command built from
-// it. The gate requires the documentation to name each asset at one address or
-// the other, so an asset nobody can reach and a command nothing serves are
-// both findings.
+// `advertised` is the address a reader is given; `published` is the command
+// built from it. The gate requires the documentation to name each asset at one
+// address or the other, so an asset nobody can reach and a command nothing
+// serves are both findings.
+//
+// `onProjectSite` says which of two addresses a reader is given, and it is a
+// property of the asset rather than a rule about all of them. The project site
+// fetches `install.sh` and `install.ps1` from master by name, so those two are
+// advertised there; a third root file is not on that site, and advertising it
+// at an address nothing serves is the failure this whole file exists to
+// refuse. Everything else is advertised where this deploy serves it.
+//
+// Stated as a field rather than inferred, because the two assets that are on
+// that site and the one that is not are indistinguishable from here otherwise
+// -- and a rule that assumed all of them were is what made the trunk red when
+// the schema and the project site landed in the same week
+// (stokaro/ptah#2889, stokaro/ptah#2887).
 export const ROOT_ASSETS = [
   {
     name: 'install.sh',
     source: 'docs/site/public/install.sh',
     url: RootURL('install.sh'),
+    onProjectSite: true,
     advertised: InstallURL('install.sh'),
     published: `curl -fsSL ${InstallURL('install.sh')} | sh`,
   },
@@ -59,6 +72,7 @@ export const ROOT_ASSETS = [
     name: 'install.ps1',
     source: 'docs/site/public/install.ps1',
     url: RootURL('install.ps1'),
+    onProjectSite: true,
     advertised: InstallURL('install.ps1'),
     published: `irm ${InstallURL('install.ps1')} | iex`,
   },
@@ -74,6 +88,8 @@ export const ROOT_ASSETS = [
     name: 'ptah-annotations.schema.json',
     source: 'docs/site/public/ptah-annotations.schema.json',
     url: RootURL('ptah-annotations.schema.json'),
+    onProjectSite: false,
+    advertised: RootURL('ptah-annotations.schema.json'),
     published: RootURL('ptah-annotations.schema.json'),
   },
 ];
@@ -83,6 +99,14 @@ export const ROOT_ASSETS = [
 // lists together are the whole Pages root: check-pages-root.mjs compares that
 // union against what an assembly actually produces.
 export const GENERATED_ROOT_FILES = ['versions.json', 'index.html'];
+
+// advertisedAddress is where a reader is told to find one root asset. It is
+// derived from the asset's own declaration so that the table and the check
+// cannot disagree: writing the address twice is what let a third asset carry
+// none at all.
+export function advertisedAddress(asset) {
+	return asset.onProjectSite ? InstallURL(asset.name) : RootURL(asset.name);
+}
 
 export function sourcePath(asset, repoRoot = defaultRepoRoot) {
   return join(repoRoot, asset.source);
@@ -148,7 +172,10 @@ function selftest() {
       assert(asset.source.startsWith('docs/site/public/'), `${asset.name} is sourced from ${asset.source}`);
       assert(asset.source.endsWith(`/${asset.name}`), `${asset.name} does not match its source path`);
       assert(asset.url === RootURL(asset.name), `${asset.name} has an unexpected URL`);
-      assert(asset.advertised === InstallURL(asset.name), `${asset.name} has an unexpected advertised address`);
+      assert(
+        asset.advertised === advertisedAddress(asset),
+        `${asset.name} has an unexpected advertised address`,
+      );
       assert(
         asset.published.includes(asset.advertised),
         `${asset.name}'s published command does not use its advertised address`,

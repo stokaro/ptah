@@ -302,7 +302,7 @@ func inspectAtlasSchemaCleanPlan(
 				conn.Info().Dialect,
 				conn.Info().Schema,
 			)
-			return policy.ValidateSchemaCleanSnapshot(dbschematogo.ConvertDBSchemaToGoSchema(owned))
+			return policy.ValidateSchemaCleanSnapshot(dbschematogo.ConvertDBSchemaToGoSchema(owned, conn.Info().Dialect))
 		}
 	}
 	plan, err := schemaclean.InspectWithOptions(ctx, conn, inspectOpts)
