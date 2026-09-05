@@ -1,54 +1,45 @@
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Shop schema</title><style>
 :root {
   color-scheme: light dark;
-  --bg: #fbfcfd;
+  --bg: #fbfbfa;
   --surface: #ffffff;
-  --surface-2: #f4f6f8;
-  --border: #dfe4ea;
-  --border-strong: #c3cbd4;
-  --text: #16202b;
-  --text-dim: #5b6b7c;
-  --accent: #2f6fed;
-  --accent-soft: #e8f0fe;
-  --key: #8a5cf6;
-  --key-soft: #f1e9fe;
-  --link: #2f6fed;
-  --shadow: 0 1px 2px rgba(16, 32, 48, .06), 0 8px 24px rgba(16, 32, 48, .05);
-  --radius: 10px;
+  --surface-2: #f3f4f4;
+  --border: #d9dcdf;
+  --text: #111417;
+  --text-dim: #474d54;
+  --text-mute: #7c838b;
+  --accent: oklch(0.47 0.16 238);
+  --amber: oklch(0.62 0.16 60);
+  --amber-soft: oklch(0.96 0.04 75);
+  --radius: 2px;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0f1319;
-    --surface: #151b23;
-    --surface-2: #1b232d;
-    --border: #27313d;
-    --border-strong: #3a4756;
-    --text: #e6edf5;
-    --text-dim: #9aa9b9;
-    --accent: #6f9dff;
-    --accent-soft: #1b2740;
-    --key: #b48bff;
-    --key-soft: #241d3a;
-    --link: #6f9dff;
-    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .3);
+    --bg: #161311;
+    --surface: #1b1815;
+    --surface-2: #221e1a;
+    --border: #2e2823;
+    --text: #ede7de;
+    --text-dim: #b6ada0;
+    --text-mute: #83796d;
+    --accent: oklch(0.78 0.11 225);
+    --amber: oklch(0.8 0.15 70);
+    --amber-soft: oklch(0.28 0.06 65);
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0f1319;
-  --surface: #151b23;
-  --surface-2: #1b232d;
-  --border: #27313d;
-  --border-strong: #3a4756;
-  --text: #e6edf5;
-  --text-dim: #9aa9b9;
-  --accent: #6f9dff;
-  --accent-soft: #1b2740;
-  --key: #b48bff;
-  --key-soft: #241d3a;
-  --link: #6f9dff;
-  --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 8px 24px rgba(0, 0, 0, .3);
+  --bg: #161311;
+  --surface: #1b1815;
+  --surface-2: #221e1a;
+  --border: #2e2823;
+  --text: #ede7de;
+  --text-dim: #b6ada0;
+  --text-mute: #83796d;
+  --accent: oklch(0.78 0.11 225);
+  --amber: oklch(0.8 0.15 70);
+  --amber-soft: oklch(0.28 0.06 65);
 }
 
 * { box-sizing: border-box; }
@@ -61,79 +52,95 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
-a { color: var(--link); text-decoration: none; }
+a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 code, .mono { font-family: var(--mono); font-size: .9em; }
 
-.layout { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 32px; max-width: 1400px; margin: 0 auto; padding: 0 24px; }
-.sidebar { position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto; padding: 28px 0 40px; }
-.content { min-width: 0; padding: 28px 0 96px; }
+.layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 40px; max-width: 1240px; margin: 0 auto; padding: 0 24px; }
+.sidebar { position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto; padding: 32px 24px 48px 0; border-right: 1px solid var(--border); }
+.content { min-width: 0; padding: 32px 0 80px; }
 
-.brand { font-weight: 600; letter-spacing: -.01em; margin-bottom: 4px; }
-.brand-sub { color: var(--text-dim); font-size: 13px; margin-bottom: 20px; }
+.brand { font-weight: 600; letter-spacing: -.01em; margin-bottom: 2px; }
+.brand-sub { color: var(--text-mute); font-family: var(--mono); font-size: 13px; margin-bottom: 22px; }
 
 .nav-group { margin-bottom: 18px; }
-.nav-title { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px; }
-.nav a { display: block; padding: 3px 8px; border-radius: 6px; color: var(--text-dim); font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-title { font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--text-mute); margin-bottom: 6px; }
+.nav a { display: block; padding: 3px 8px; margin-left: -8px; border-radius: var(--radius); color: var(--text-dim); font-family: var(--mono); font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav a:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
 
-h1 { font-size: 30px; letter-spacing: -.02em; margin: 0 0 6px; }
-h2 { font-size: 20px; letter-spacing: -.01em; margin: 44px 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+h1 { font-size: 30px; font-weight: 600; letter-spacing: -.02em; line-height: 1.2; margin: 0 0 6px; }
+h2 { font-size: 18px; font-weight: 600; letter-spacing: -.01em; margin: 44px 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 h3 { font-size: 15px; margin: 22px 0 8px; color: var(--text-dim); font-weight: 600; }
 section[id] { scroll-margin-top: 20px; }
 
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin: 22px 0 8px; }
-.stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
-.stat-n { font-size: 24px; font-weight: 600; letter-spacing: -.02em; }
-.stat-l { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .06em; }
+.lede { font-family: var(--mono); font-size: 13px; color: var(--text-mute); }
 
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); margin: 14px 0 28px; overflow: hidden; }
-.card-head { display: flex; align-items: baseline; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
-.card-head h3 { margin: 0; color: var(--text); font-size: 16px; font-family: var(--mono); }
-.card-note { color: var(--text-dim); font-size: 13px; }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: var(--radius); margin: 28px 0 0; }
+.stats .stat { padding: 14px 18px; border-right: 1px solid var(--border); }
+.stats .stat:last-child { border-right: 0; }
+.stat-n { font-size: 24px; font-weight: 600; line-height: 1.2; letter-spacing: -.02em; }
+.stat-l { font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--text-mute); }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin: 0 0 20px; overflow: hidden; }
+.card-head { display: flex; align-items: baseline; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--border); }
+.card-head h3 { margin: 0; color: var(--text); font: 600 15px var(--mono); }
+.card-note { color: var(--text-mute); font-size: 13px; }
 .scroller { overflow-x: auto; }
+.scroller + .scroller { border-top: 1px solid var(--border); }
 
 table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
-th { text-align: left; font-weight: 600; font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-dim); padding: 10px 18px; background: var(--surface-2); white-space: nowrap; }
-td { padding: 9px 18px; border-top: 1px solid var(--border); vertical-align: top; }
-tbody tr:hover td { background: var(--surface-2); }
+th { text-align: left; font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--text-mute); padding: 9px 18px; background: var(--surface-2); white-space: nowrap; }
+td { padding: 8px 18px; border-top: 1px solid var(--border); vertical-align: top; }
 td.name { font-family: var(--mono); font-weight: 500; white-space: nowrap; }
 td.type { font-family: var(--mono); color: var(--text-dim); white-space: nowrap; }
+td.comment { color: var(--text-dim); }
 
-.tag { display: inline-block; font-size: 11px; line-height: 1.5; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border-strong); color: var(--text-dim); white-space: nowrap; }
-.tag.key { background: var(--key-soft); border-color: transparent; color: var(--key); font-weight: 600; }
-.tag.fk { background: var(--accent-soft); border-color: transparent; color: var(--accent); font-family: var(--mono); }
-.tag.null { opacity: .75; }
+.tag { display: inline-block; font: 600 11px var(--mono); line-height: 1.6; padding: 1px 6px; border-radius: var(--radius); border: 1px solid var(--border); color: var(--text-dim); white-space: nowrap; }
+.tag.key { background: var(--amber-soft); border-color: transparent; color: var(--amber); }
+.tag.null { font-weight: 400; color: var(--text-mute); }
+.none { color: var(--text-mute); }
+.ref { font-family: var(--mono); font-size: 13px; color: var(--accent); white-space: nowrap; }
+
+.values { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px 18px; font-family: var(--mono); font-size: 13.5px; }
+.values span { padding: 3px 10px; border: 1px solid var(--border); border-radius: var(--radius); }
 
 .erd { padding: 18px; overflow-x: auto; }
 .erd svg { display: block; max-width: 100%; height: auto; }
-.erd .node { fill: var(--surface-2); stroke: var(--border-strong); }
+.erd .node { fill: var(--surface-2); stroke: var(--border); }
 .erd .label { fill: var(--text); font-family: var(--mono); font-size: 12px; }
-.erd .edge { stroke: var(--border-strong); fill: none; }
-.erd .arrow { fill: var(--border-strong); }
+.erd .edge { stroke: var(--text-mute); fill: none; }
+.erd .arrow { fill: var(--text-mute); }
+.erd-note { font-family: var(--mono); font-size: 12.5px; color: var(--text-mute); margin-top: 12px; }
 
-.empty { color: var(--text-dim); font-style: italic; padding: 18px; }
-.footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--text-dim); font-size: 12.5px; }
+.empty { color: var(--text-mute); font-style: italic; padding: 18px; }
+.footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 16px; color: var(--text-mute); font-size: 12.5px; }
+.footer-mark { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 12.5px; flex-shrink: 0; }
 
 @media (max-width: 900px) {
   .layout { grid-template-columns: minmax(0, 1fr); gap: 0; }
-  .sidebar { position: static; max-height: none; padding-bottom: 12px; }
-  .nav { display: flex; flex-wrap: wrap; gap: 4px; }
-  .nav a { padding: 3px 10px; background: var(--surface-2); }
+  .sidebar { position: static; max-height: none; padding: 24px 0 12px; border-right: 0; }
+  .nav { display: flex; flex-wrap: wrap; gap: 6px; }
+  .nav-group { margin-bottom: 0; display: contents; }
+  .nav-title { display: none; }
+  .nav a { margin-left: 0; padding: 5px 10px; border: 1px solid var(--border); }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stats .stat:nth-child(2n) { border-right: 0; }
+  .stats .stat:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
+  .footer { flex-direction: column; align-items: flex-start; gap: 8px; }
 }
 @media print {
   .sidebar { display: none; }
-  .card { break-inside: avoid; box-shadow: none; }
+  .card { break-inside: avoid; }
 }
 
 .status { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 22px 0 6px; }
-.status .stat { border-left: 3px solid var(--border-strong); }
+.status .stat { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: var(--radius); padding: 14px 18px; }
 .status .stat.safe { border-left-color: #2e9e63; }
 .status .stat.warning { border-left-color: #c98a12; }
 .status .stat.destructive { border-left-color: #d9483b; }
-.banner { border: 1px solid var(--border); border-left: 3px solid #d9483b; background: var(--surface); border-radius: var(--radius); padding: 14px 18px; margin: 18px 0; box-shadow: var(--shadow); }
+.banner { border: 1px solid var(--border); border-left: 3px solid #d9483b; background: var(--surface); border-radius: var(--radius); padding: 14px 18px; margin: 18px 0; }
 .banner-title { font-weight: 600; margin-bottom: 4px; }
 .banner-body { color: var(--text-dim); font-size: 13.5px; font-family: var(--mono); word-break: break-word; }
-.stamp { color: var(--text-dim); font-size: 12.5px; margin-top: 6px; }
+.stamp { color: var(--text-mute); font-size: 12.5px; margin-top: 6px; }
 </style></head>
-<body><div class="layout"><aside class="sidebar"><div class="brand">Shop schema</div><div class="brand-sub">sqlite:///tmp/shop.db</div><aside class="sidebar"><div class="brand">Shop schema</div><div class="brand-sub">4 tables</div><nav class="nav"><div class="nav-group"><div class="nav-title">Tables</div><a href="#customers">customers</a><a href="#order-items">order_items</a><a href="#orders">orders</a><a href="#products">products</a></div></nav></aside></aside><main class="content"><h1>Shop schema</h1><div class="status"><div class="stat warning"><div class="stat-n">1</div><div class="stat-l">differing categories</div></div><div class="stat destructive"><div class="stat-n">0</div><div class="stat-l">destructive</div></div><div class="stat warning"><div class="stat-n">1</div><div class="stat-l">warning</div></div><div class="stat safe"><div class="stat-n">0</div><div class="stat-l">safe</div></div></div><div class="card"><div class="card-head"><h3>Drift</h3></div><div class="scroller"><table><thead><tr><th>Category</th><th>Objects</th><th>Severity</th></tr></thead><tbody><tr><td class="name">columns_added</td><td>1</td><td><span class="tag">warning</span></td></tr></tbody></table></div></div><div class="stamp">compared 2026-08-30T12:00:00Z</div><h2 id="diagram">Diagram</h2><div class="card"><div class="erd"><svg viewBox="0 0 556 118" width="556" height="118" role="img" aria-label="Entity relationship diagram"><defs><marker id="a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="arrow" d="M0 0 L8 4 L0 8 z"></path></marker></defs><path class="edge" d="M414.6 33.0 C366.6 33.0 366.6 33.0 324.6 33.0" marker-end="url(#a)"></path><path class="edge" d="M414.6 33.0 C270.6 33.0 270.6 85.0 132.6 85.0" marker-end="url(#a)"></path><path class="edge" d="M222.6 33.0 C174.6 33.0 174.6 33.0 132.6 33.0" marker-end="url(#a)"></path><rect class="node" x="16.0" y="16.0" width="110.6" height="34.0" rx="7"></rect><text class="label" x="71.3" y="33.0" text-anchor="middle" dominant-baseline="middle">customers</text><rect class="node" x="16.0" y="68.0" width="110.6" height="34.0" rx="7"></rect><text class="label" x="71.3" y="85.0" text-anchor="middle" dominant-baseline="middle">products</text><rect class="node" x="222.6" y="16.0" width="96.0" height="34.0" rx="7"></rect><text class="label" x="270.6" y="33.0" text-anchor="middle" dominant-baseline="middle">orders</text><rect class="node" x="414.6" y="16.0" width="125.4" height="34.0" rx="7"></rect><text class="label" x="477.3" y="33.0" text-anchor="middle" dominant-baseline="middle">order_items</text></svg></div></div><h2 id="tables">Tables</h2><section id="customers" class="card"><div class="card-head"><h3>customers</h3><span class="card-note">Customers who can place orders</span></div><div class="scroller"><table><thead><tr><th>Column</th><th>Type</th><th>Null</th><th>Key</th><th>Default</th><th>References</th><th>Comment</th></tr></thead><tbody><tr><td class="name">id</td><td class="type">INTEGER</td><td><span class="tag">not null</span></td><td><span class="tag key">primary</span></td><td class="type"></td><td></td><td></td></tr><tr><td class="name">email</td><td class="type">TEXT</td><td><span class="tag">not null</span></td><td><span class="tag key">unique</span></td><td class="type"></td><td></td><td></td></tr><tr><td class="name">country</td><td class="type">TEXT</td><td><span class="tag">not null</span></td><td></td><td class="type"></td><td></td><td></td></tr></tbody></table></div><div class="scroller"><table><thead><tr><th>Index</th><th>Columns</th><th>Unique</th></tr></thead><tbody><tr><td class="name">idx_customers_country</td><td class="type">country</td><td></td></tr></tbody></table></div></section><section id="order-items" class="card"><div class="card-head"><h3>order_items</h3><span class="card-note">Products and quantities attached to an order</span></div><div class="scroller"><table><thead><tr><th>Column</th><th>Type</th><th>Null</th><th>Key</th><th>Default</th><th>References</th><th>Comment</th></tr></thead><tbody><tr><td class="name">id</td><td class="type">INTEGER</td><td><span class="tag">not null</span></td><td><span class="tag key">primary</span></td><td class="type"></td><td></td><td></td></tr><tr><td class="name">order_id</td><td class="type">INTEGER</td><td><span class="tag">not null</span></td><td></td><td class="type"></td><td><a class="tag fk" href="#orders">orders(id)</a></td><td></td></tr><tr><td class="name">product_id</td><td class="type">INTEGER</td><td><span class="tag">not null</span></td><td></td><td class="type"></td><td><a class="tag fk" href="#products">products(id)</a></td><td></td></tr><tr><td class="name">quantity</td><td class="type">INTEGER</td><td><span class="tag">not null</span></td><td></td><td class="type">1</td><td></td><td></td></tr></tbody></table></div></section><section id="orders" class="card"><div class="card-head"><h3>orders</h3><span class="card-note">Orders placed by customers</span></div><div class="scroller"><table><thead><tr><th>Column</th><th>Type</th><th>Null</th><th>Key</th><th>Default</th><th>References</th><th>Comment</th></tr></thead><tbody><tr><td class="name">id</td><td class="type">INTEGER</td><td><span class="tag">not null</span></td><td><span class="tag key">primary</span></td><td class="type"></td><td></td><td></td></tr><tr><td class="name">customer_id</td><td class="type">INTEGER</td><td><span class="tag">not null</span></td><td></td><td class="type"></td><td><a class="tag fk" href="#customers">customers(id)</a></td><td></td></tr><tr><td class="name">status</td><td class="type">TEXT</td><td><span class="tag">not null</span></td><td></td><td class="type">pending</td><td></td><td></td></tr><tr><td class="name">placed_at</td><td class="type">TEXT</td><td><span class="tag null">null</span></td><td></td><td class="type"></td><td></td><td></td></tr></tbody></table></div></section><section id="products" class="card"><div class="card-head"><h3>products</h3><span class="card-note">Products available for ordering</span></div><div class="scroller"><table><thead><tr><th>Column</th><th>Type</th><th>Null</th><th>Key</th><th>Default</th><th>References</th><th>Comment</th></tr></thead><tbody><tr><td class="name">id</td><td class="type">INTEGER</td><td><span class="tag">not null</span></td><td><span class="tag key">primary</span></td><td class="type"></td><td></td><td></td></tr><tr><td class="name">sku</td><td class="type">TEXT</td><td><span class="tag">not null</span></td><td><span class="tag key">unique</span></td><td class="type"></td><td></td><td></td></tr><tr><td class="name">name</td><td class="type">TEXT</td><td><span class="tag">not null</span></td><td></td><td class="type"></td><td></td><td></td></tr></tbody></table></div></section><div class="footer">Read-only. This view compares the declared schema with the live database and changes neither.</div></main></div></body></html>
+<body><div class="layout"><aside class="sidebar"><div class="brand">Shop schema</div><div class="brand-sub">sqlite:///tmp/shop.db</div><nav class="nav"><div class="nav-group"><div class="nav-title">Tables</div><a href="#customers">customers</a><a href="#order-items">order_items</a><a href="#orders">orders</a><a href="#products">products</a></div></nav></aside><main class="content"><h1>Shop schema</h1><div class="status"><div class="stat warning"><div class="stat-n">1</div><div class="stat-l">differing categories</div></div><div class="stat destructive"><div class="stat-n">0</div><div class="stat-l">destructive</div></div><div class="stat warning"><div class="stat-n">1</div><div class="stat-l">warning</div></div><div class="stat safe"><div class="stat-n">0</div><div class="stat-l">safe</div></div></div><div class="card"><div class="card-head"><h3>Drift</h3></div><div class="scroller"><table><thead><tr><th>Category</th><th>Objects</th><th>Severity</th></tr></thead><tbody><tr><td class="name">columns_added</td><td>1</td><td><span class="tag">warning</span></td></tr></tbody></table></div></div><div class="stamp">compared 2026-08-30T12:00:00Z</div><h2 id="diagram">Diagram</h2><div class="card"><div class="erd"><svg viewBox="0 0 556 118" width="556" height="118" role="img" aria-label="Entity relationship diagram"><defs><marker id="a" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto"><path class="arrow" d="M0 0 L8 4 L0 8 z"></path></marker></defs><path class="edge" d="M414.6 33.0 C366.6 33.0 366.6 33.0 324.6 33.0" marker-end="url(#a)"></path><path class="edge" d="M414.6 33.0 C270.6 33.0 270.6 85.0 132.6 85.0" marker-end="url(#a)"></path><path class="edge" d="M222.6 33.0 C174.6 33.0 174.6 33.0 132.6 33.0" marker-end="url(#a)"></path><rect class="node" x="16.0" y="16.0" width="110.6" height="34.0" rx="2"></rect><text class="label" x="71.3" y="33.0" text-anchor="middle" dominant-baseline="middle">customers</text><rect class="node" x="16.0" y="68.0" width="110.6" height="34.0" rx="2"></rect><text class="label" x="71.3" y="85.0" text-anchor="middle" dominant-baseline="middle">products</text><rect class="node" x="222.6" y="16.0" width="96.0" height="34.0" rx="2"></rect><text class="label" x="270.6" y="33.0" text-anchor="middle" dominant-baseline="middle">orders</text><rect class="node" x="414.6" y="16.0" width="125.4" height="34.0" rx="2"></rect><text class="label" x="477.3" y="33.0" text-anchor="middle" dominant-baseline="middle">order_items</text></svg><div class="erd-note">Left to right by dependency: a table sits right of everything it references, so this order is one the tables can be created in.</div></div></div><h2 id="tables">Tables</h2><section id="customers" class="card"><div class="card-head"><h3>customers</h3><span class="card-note">Customers who can place orders</span></div><div class="scroller"><table><thead><tr><th>Column</th><th>Type</th><th>Null</th><th>Key</th><th>Default</th><th>References</th><th>Comment</th></tr></thead><tbody><tr><td class="name">id</td><td class="type">INTEGER</td><td><span class="none">—</span></td><td><span class="tag key">primary</span></td><td class="type"></td><td></td><td class="comment"></td></tr><tr><td class="name">email</td><td class="type">TEXT</td><td><span class="none">—</span></td><td><span class="tag">unique</span></td><td class="type"></td><td></td><td class="comment"></td></tr><tr><td class="name">country</td><td class="type">TEXT</td><td><span class="none">—</span></td><td></td><td class="type"></td><td></td><td class="comment"></td></tr></tbody></table></div><div class="scroller"><table><thead><tr><th>Index</th><th>Columns</th><th>Unique</th></tr></thead><tbody><tr><td class="name">idx_customers_country</td><td class="type">country</td><td></td></tr></tbody></table></div></section><section id="order-items" class="card"><div class="card-head"><h3>order_items</h3><span class="card-note">Products and quantities attached to an order</span></div><div class="scroller"><table><thead><tr><th>Column</th><th>Type</th><th>Null</th><th>Key</th><th>Default</th><th>References</th><th>Comment</th></tr></thead><tbody><tr><td class="name">id</td><td class="type">INTEGER</td><td><span class="none">—</span></td><td><span class="tag key">primary</span></td><td class="type"></td><td></td><td class="comment"></td></tr><tr><td class="name">order_id</td><td class="type">INTEGER</td><td><span class="none">—</span></td><td></td><td class="type"></td><td><a class="ref" href="#orders">→ orders(id)</a></td><td class="comment"></td></tr><tr><td class="name">product_id</td><td class="type">INTEGER</td><td><span class="none">—</span></td><td></td><td class="type"></td><td><a class="ref" href="#products">→ products(id)</a></td><td class="comment"></td></tr><tr><td class="name">quantity</td><td class="type">INTEGER</td><td><span class="none">—</span></td><td></td><td class="type">1</td><td></td><td class="comment"></td></tr></tbody></table></div></section><section id="orders" class="card"><div class="card-head"><h3>orders</h3><span class="card-note">Orders placed by customers</span></div><div class="scroller"><table><thead><tr><th>Column</th><th>Type</th><th>Null</th><th>Key</th><th>Default</th><th>References</th><th>Comment</th></tr></thead><tbody><tr><td class="name">id</td><td class="type">INTEGER</td><td><span class="none">—</span></td><td><span class="tag key">primary</span></td><td class="type"></td><td></td><td class="comment"></td></tr><tr><td class="name">customer_id</td><td class="type">INTEGER</td><td><span class="none">—</span></td><td></td><td class="type"></td><td><a class="ref" href="#customers">→ customers(id)</a></td><td class="comment"></td></tr><tr><td class="name">status</td><td class="type">TEXT</td><td><span class="none">—</span></td><td></td><td class="type">pending</td><td></td><td class="comment"></td></tr><tr><td class="name">placed_at</td><td class="type">TEXT</td><td><span class="tag null">null</span></td><td></td><td class="type"></td><td></td><td class="comment"></td></tr></tbody></table></div></section><section id="products" class="card"><div class="card-head"><h3>products</h3><span class="card-note">Products available for ordering</span></div><div class="scroller"><table><thead><tr><th>Column</th><th>Type</th><th>Null</th><th>Key</th><th>Default</th><th>References</th><th>Comment</th></tr></thead><tbody><tr><td class="name">id</td><td class="type">INTEGER</td><td><span class="none">—</span></td><td><span class="tag key">primary</span></td><td class="type"></td><td></td><td class="comment"></td></tr><tr><td class="name">sku</td><td class="type">TEXT</td><td><span class="none">—</span></td><td><span class="tag">unique</span></td><td class="type"></td><td></td><td class="comment"></td></tr><tr><td class="name">name</td><td class="type">TEXT</td><td><span class="none">—</span></td><td></td><td class="type"></td><td></td><td class="comment"></td></tr></tbody></table></div></section><div class="footer">Read-only. This view compares the declared schema with the live database and changes neither.</div></main></div></body></html>
