@@ -1,0 +1,124 @@
+name: Site redeploy
+
+# https://ptah.run serves the two installers under docs/site/public/ and the
+# release version, and it learns about both from this repository only when its
+# own deploy runs. That deploy runs on a six-hour schedule, so a change here
+# reached a reader up to six hours late. This asks for the deploy at the two
+# moments the pages depend on it (stokaro/ptah#2891):
+#
+#   - a push to master that changes install.sh or install.ps1, because the
+#     site fetches those two files from master and the one-liner a reader runs
+#     is whatever the site last fetched;
+#   - a tag push, once the Release workflow it starts has finished. The site
+#     stamps the version it shows from the latest release, and that release
+#     exists only when GoReleaser has published it with its assets -- eleven
+#     minutes of build after the tag. The tag push itself is too early, and a
+#     `release: published` trigger would never fire here at all: GoReleaser
+#     creates the release with the Release workflow's own GITHUB_TOKEN, and an
+#     event created with that token starts no workflow. The completion of the
+#     Release run for the tag is the moment the release is there.
+#
+# The default GITHUB_TOKEN cannot reach another repository, so the dispatch
+# uses PTAH_RUN_DISPATCH_TOKEN, a fine-grained token whose only permission is
+# contents:write on stokaro/ptah.run. Its absence fails the run rather than
+# skipping it: a dispatch that quietly did not happen is a stale site that
+# nothing red points at.
+#
+# workflow_dispatch is the by-hand form, for a redeploy nobody wants to wait
+# six hours for and for proving the token still works.
+on:
+  push:
+    branches: [master]
+    paths:
+      - docs/site/public/install.sh
+      - docs/site/public/install.ps1
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      event_type:
+        description: Which deploy to ask for
+        type: choice
+        options: [ptah-release, installers-updated]
+        default: ptah-release
+
+permissions:
+  contents: read
+
+# One slot, no cancellation. Two dispatches in a row are both wanted, and a
+# workflow with no pull_request trigger has nobody to starve.
+concurrency:
+  group: site-redeploy
+  cancel-in-progress: false
+
+jobs:
+  redeploy:
+    name: Ask ptah.run to redeploy
+    # The Release workflow also runs on pull requests, where it only checks the
+    # GoReleaser configuration, and it can fail. Only a successful run that a
+    # push started has published a release, and Release runs on push for tags
+    # alone, so the ref it ran for is the tag.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: The dispatch token must be present
+        env:
+          PTAH_RUN_DISPATCH_TOKEN: ${{ secrets.PTAH_RUN_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "${PTAH_RUN_DISPATCH_TOKEN}" ]; then
+            echo "::error::PTAH_RUN_DISPATCH_TOKEN is empty or unset. ptah.run would not learn about this change until its next scheduled deploy. Set the secret (a fine-grained token with contents:write on stokaro/ptah.run), then re-run this job." >&2
+            exit 1
+          fi
+          echo "PTAH_RUN_DISPATCH_TOKEN is present"
+
+      # A Release run that succeeded is expected to have left a release behind.
+      # Asking for it here, before the dispatch, turns "the site kept showing
+      # the old version" into a red step that names the tag.
+      - name: The release for this tag exists
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+          if ! gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq '.tag_name + " " + (.draft | tostring)' >"$RUNNER_TEMP/release"; then
+            echo "::error::the Release run for ${TAG} succeeded but no release carries that tag; the site would stamp the previous version" >&2
+            exit 1
+          fi
+          echo "release $(cat "$RUNNER_TEMP/release" | cut -d' ' -f1) is published (draft: $(cut -d' ' -f2 <"$RUNNER_TEMP/release"))"
+
+      # The event name is the site's: `ptah-release` re-stamps the version,
+      # `installers-updated` refreshes the two scripts. Both run the same deploy;
+      # the name is what tells them apart in the site's run list. The payload is
+      # for the reader of that list, not for the deploy, which reads master and
+      # the latest release for itself.
+      - name: Send the dispatch
+        env:
+          GH_TOKEN: ${{ secrets.PTAH_RUN_DISPATCH_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          CHOSEN_EVENT_TYPE: ${{ inputs.event_type }}
+          RELEASE_TAG: ${{ github.event.workflow_run.head_branch }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          case "$EVENT_NAME" in
+            workflow_run) event_type=ptah-release ;;
+            push) event_type=installers-updated ;;
+            workflow_dispatch) event_type="$CHOSEN_EVENT_TYPE" ;;
+            *)
+              echo "::error::no dispatch is defined for the ${EVENT_NAME} event" >&2
+              exit 1
+              ;;
+          esac
+          gh api --method POST repos/stokaro/ptah.run/dispatches \
+            --field event_type="$event_type" \
+            --field "client_payload[event]=$EVENT_NAME" \
+            --field "client_payload[sha]=$SOURCE_SHA" \
+            --field "client_payload[tag]=${RELEASE_TAG:-}"
+          echo "asked stokaro/ptah.run to redeploy: ${event_type} for ${SOURCE_SHA}${RELEASE_TAG:+ (${RELEASE_TAG})}"
