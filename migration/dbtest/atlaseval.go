@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/hashicorp/hcl/v2"
@@ -27,10 +28,16 @@ type atlasScope struct {
 }
 
 // atlasIteration is one expansion of a `for_each` case: the key and value
-// `each` resolves to, and the ordinal that names the instance.
+// `each` resolves to, and the label that names the instance.
+//
+// The label is not the ordinal. Over a mapping it is the mapping's own key, so
+// that an instance keeps its name when an unrelated key is added; over a
+// collection it is the 1-based position, which is the only identity a
+// collection element has.
 type atlasIteration struct {
 	key      cty.Value
 	value    cty.Value
+	label    string
 	ordinal  int
 	expanded bool
 }
@@ -239,6 +246,7 @@ func atlasMappingIterations(value cty.Value) []atlasIteration {
 		iterations = append(iterations, atlasIteration{
 			key:      cty.StringVal(key),
 			value:    entries[key],
+			label:    key,
 			ordinal:  i + 1,
 			expanded: true,
 		})
@@ -254,6 +262,7 @@ func atlasCollectionIterations(value cty.Value) []atlasIteration {
 		iterations = append(iterations, atlasIteration{
 			key:      cty.NumberIntVal(int64(i)),
 			value:    element,
+			label:    strconv.Itoa(i + 1),
 			ordinal:  i + 1,
 			expanded: true,
 		})
@@ -263,16 +272,24 @@ func atlasCollectionIterations(value cty.Value) []atlasIteration {
 
 // atlasInstanceName is what an expanded case is called.
 //
-// The ordinal is 1-based and the separator is a slash, so one instance of a
-// table-driven case reads as `users/2` wherever a case name appears. An
-// unexpanded case keeps the name it was written with, because appending an
-// ordinal to a case that has exactly one would make every existing name change
-// for no information.
+// The separator is a slash, so one instance of a table-driven case reads as
+// `users/2` over a collection and `users/beta` over a mapping wherever a case
+// name appears. An unexpanded case keeps the name it was written with, because
+// appending a label to a case that has exactly one would make every existing
+// name change for no information.
+//
+// A mapping is named by its key rather than by position, and that is the point
+// rather than a nicety. A mapping iterates in sorted key order, so a positional
+// name moves whenever a key sorting earlier is added: measured before this,
+// `for_each = { alpha = "a", beta = "b" }` named its first instance `row/1`,
+// and adding an unrelated `aaa` left `row/1` naming a different case. A `--run`
+// pinned in continuous integration went on passing against something else, and
+// a report naming `row/2` could not be traced back to the key that failed.
 func atlasInstanceName(base string, iteration atlasIteration) string {
 	if !iteration.expanded {
 		return base
 	}
-	return fmt.Sprintf("%s/%d", base, iteration.ordinal)
+	return base + "/" + iteration.label
 }
 
 // atlasCaseBool evaluates one of a case's boolean attributes.

@@ -136,14 +136,20 @@ pass because the plan added it.
 
 ### What a case takes
 
-A `test` block carries two attributes of its own, beside the step blocks in its
-body:
+A `test` block carries three attributes of its own, beside the step blocks in
+its body:
 
 | Attribute | Behavior |
 | --- | --- |
-| `for_each` | Expands the case into one instance per element, named `<case>/1`, `<case>/2` and so on. |
+| `for_each` | Expands the case into one instance per element. A mapping names its instances by key, `<case>/<key>`; a collection names them by position, `<case>/1` and so on. |
 | `skip` | An expression. When it is true the instance is reported as skipped and none of its steps run. |
 | `parallel` | An expression. When it is true the case may run at the same time as other parallel cases. |
+
+A mapping is named by its key rather than by its position because a mapping
+iterates in sorted key order, so a position moves whenever a key sorting earlier
+is added. A `--run` naming an instance would then select a different case
+without saying so, and a report would name an instance nothing could be traced
+back to. A collection has no such identity, so there position is the name.
 
 A file may also declare top-level `variable` blocks. Each needs a `default`, and
 a variable without one is refused rather than resolved to nothing.
