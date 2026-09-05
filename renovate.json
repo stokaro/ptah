@@ -73,6 +73,16 @@
       ],
       "matchCurrentValue": "24.10",
       "enabled": false
+    },
+    {
+      "description": "Update indirect Go dependencies",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchDepTypes": [
+        "indirect"
+      ],
+      "enabled": true
     }
   ]
 }
