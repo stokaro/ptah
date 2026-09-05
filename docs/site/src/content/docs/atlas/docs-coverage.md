@@ -515,7 +515,7 @@ Checkpoint output covers both conventions. `--dir-format=atlas` — the default 
 
 **Implementation status.** Implemented natively and free. `ptah migrations test` and `ptah schema test` run declarative test cases against a throwaway database — a workflow Atlas keeps in its Pro build.
 
-The Atlas-compatible `ptah-compat migrate test` and `ptah-compat schema test` verbs forward to the native runners with Atlas-shaped flags (`--dir`/`-u --url`, `--dev-url`, `--run`, project flags) and the native exit-code contract; either a Ptah-native YAML/Go file or an Atlas `.test.hcl` file is the executable payload; this sentence recorded `.test.hcl` ingestion as a separate gap until #1036 closed it on 2026-08-02.
+The Atlas-compatible `ptah-compat migrate test` and `ptah-compat schema test` verbs forward to the native runners with Atlas-shaped flags (`--dir`/`-u --url`, `--dev-url`, `--run`, project flags) and the native exit-code contract; either a Ptah-native YAML/Go file or an Atlas `.test.hcl` file is the executable payload; this sentence recorded `.test.hcl` ingestion as a separate gap until #1036 closed it on 2026-08-02, and recorded ingestion alone as the whole of the testing contract until #2866 implemented the remaining language surface — iteration, the restricted evaluation context, expected failures, boolean assertions, logging, cleanup, authorized external steps and parallel isolation.
 
 **Conformance status.** Measured by native command tests and Atlas-compatibility tests that exercise these forwards.
 

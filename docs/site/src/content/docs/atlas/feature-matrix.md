@@ -289,7 +289,7 @@ seven of them as open capabilities regardless.
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
-| Atlas `.test.hcl` ingestion | ✅ | ❌ | ✅ | Implemented: `.test.hcl` is read alongside native YAML by `schema test` and `migrate test`. Adding `output` to an `exec` makes it an assertion; step order is preserved and cases are selected by kind. |
+| Atlas `.test.hcl` ingestion | ✅ | ❌ | ✅ | Implemented: `.test.hcl` runs beside YAML on `schema test`, `migrate test` and `schema plan test`, with `for_each`, `var`, `self`, `catch`, `assert`, `log`, cleanup, gated `external` and `parallel`. |
 | Atlas CE strict oracle profile | ✅ | ➖ | ➖ | Strict mode builds the CE tree and refuses unsafe sources, migration extensions, and catalog-only live objects before output, comparison, or mutation. Default retains the full surface. |
 | Atlas-shaped migrate test / schema test verbs | ✅ | ❌ | ✅ | Reports and seed directories are exposed. schema test accepts `-s/--schema`, Go, SQL/HCL, database or `env://` sources; `--var` reaches HCL files. |
 | Dev / shadow database verification | ✅ | ✅ | ✅ | `--shadow-db` on generate, checkpoint, baseline and down; `schema apply --dry-run` runs the real rehearsal. All four resolve a `docker://` shadow value. |
