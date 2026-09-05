@@ -250,30 +250,35 @@ func atlasInstanceName(base string, iteration atlasIteration) string {
 	return fmt.Sprintf("%s/%d", base, iteration.ordinal)
 }
 
-// atlasSkip evaluates a case's `skip` expression.
+// atlasCaseBool evaluates one of a case's boolean attributes.
 //
 // A skipped case is reported as skipped rather than silently dropped, which is
 // what makes the attribute readable from the outside: a run whose count of
 // cases fell by three says which three, and a `skip` that was true when nobody
 // meant it to be shows up as a report line rather than as an absence.
-func atlasSkip(attr *hclsyntax.Attribute, ctx *hcl.EvalContext, filename string) (bool, error) {
+func atlasCaseBool(
+	attr *hclsyntax.Attribute,
+	name string,
+	ctx *hcl.EvalContext,
+	filename string,
+) (bool, error) {
 	if attr == nil {
 		return false, nil
 	}
 	value, diags := attr.Expr.Value(ctx)
 	if diags.HasErrors() {
-		return false, fmt.Errorf("%s:%d: `skip`: %s", filename, attr.SrcRange.Start.Line, diags.Error())
+		return false, fmt.Errorf("%s:%d: `%s`: %s", filename, attr.SrcRange.Start.Line, name, diags.Error())
 	}
 	if value.IsNull() || !value.IsKnown() || value.Type() != cty.Bool {
-		return false, fmt.Errorf("%s:%d: `skip` must be a boolean, got %s",
-			filename, attr.SrcRange.Start.Line, value.Type().FriendlyName())
+		return false, fmt.Errorf("%s:%d: `%s` must be a boolean, got %s",
+			filename, attr.SrcRange.Start.Line, name, value.Type().FriendlyName())
 	}
 	return value.True(), nil
 }
 
 // atlasCaseAttributes are the attributes a `test` block itself takes, as
 // opposed to the step blocks in its body.
-var atlasCaseAttributes = map[string]bool{"for_each": true, "skip": true}
+var atlasCaseAttributes = map[string]bool{"for_each": true, "skip": true, "parallel": true}
 
 // atlasCaseContext is what expanding one `test` block needs from the document
 // around it.
@@ -314,7 +319,12 @@ func atlasExpandCase(
 		ctx := atlasEvalContext(
 			caseContext.variables, instance, iteration, caseContext.options, caseContext.dir)
 
-		skip, err := atlasSkip(block.Body.Attributes["skip"], ctx, caseContext.filename)
+		skip, err := atlasCaseBool(block.Body.Attributes["skip"], "skip", ctx, caseContext.filename)
+		if err != nil {
+			return nil, err
+		}
+		parallel, err := atlasCaseBool(
+			block.Body.Attributes["parallel"], "parallel", ctx, caseContext.filename)
 		if err != nil {
 			return nil, err
 		}
@@ -324,10 +334,11 @@ func atlasExpandCase(
 			return nil, err
 		}
 		cases = append(cases, Case{
-			Name:    instance,
-			Steps:   body.steps,
-			Cleanup: body.cleanup,
-			Skip:    skip,
+			Name:     instance,
+			Steps:    body.steps,
+			Cleanup:  body.cleanup,
+			Skip:     skip,
+			Parallel: parallel,
 		})
 	}
 	return cases, nil
