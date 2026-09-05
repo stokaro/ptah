@@ -488,3 +488,30 @@ func dialectFromDockerURL(parsed *url.URL) (string, error) {
 	}
 	return dialect, nil
 }
+
+// WithDatabaseName returns rawURL addressing the database name instead of the
+// one it names now.
+//
+// It is for a server URL -- one whose path is the database -- and it replaces
+// that path rather than appending to it, so a base URL already naming a
+// database yields a sibling rather than a nested path. Everything else the URL
+// carries, credentials, host, port and query, is preserved: dropping a
+// `sslmode` or a `parseTime` while renaming the database would change how the
+// connection behaves for a reason the caller never asked about.
+//
+// SQLite is refused. Its URL names a file rather than a server, so swapping the
+// path would name a database in another directory rather than another database
+// on the same server, and the caller that wants a disposable SQLite database
+// wants a new file instead.
+func WithDatabaseName(rawURL, name string) (string, error) {
+	parsed, err := Parse(rawURL)
+	if err != nil {
+		return "", err
+	}
+	if parsed.Scheme == "sqlite" || parsed.Scheme == "sqlite3" || parsed.Scheme == "file" {
+		return "", fmt.Errorf("a %s URL names a file rather than a server, so it has no database name to replace", parsed.Scheme)
+	}
+	parsed.Path = "/" + name
+	parsed.Opaque = ""
+	return parsed.String(), nil
+}

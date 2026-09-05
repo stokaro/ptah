@@ -3,6 +3,7 @@ package dbtest_test
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -126,17 +127,43 @@ func TestRunTest_ParallelAndSerialCasesMix(t *testing.T) {
 	c.Assert(report.Cases[3].Steps, qt.HasLen, 0)
 }
 
-// TestRunTest_ParallelIsRefusedAgainstASharedDatabase is the isolation rule.
+// TestRunTest_ParallelAgainstANamedServerIsolatesEachCase is what `parallel`
+// buys against a throwaway server the caller named.
 //
-// A caller-owned database is one connection for every case, so concurrency
-// there would let one case's statements decide another's result. Refusing is a
-// LOAD failure -- no report comes back -- because the alternative is a suite
-// that passes when two cases happen not to collide.
-func TestRunTest_ParallelIsRefusedAgainstASharedDatabase(t *testing.T) {
+// Every case creates a table of the SAME name, so sharing the named database
+// would fail the second case on "table already exists". Passing means each case
+// really did get a database of its own on that server, created and removed
+// around it.
+//
+// A file that never says `parallel` keeps the documented behavior of one shared
+// database; that contract is pinned by
+// TestRunSchemaTest_ExplicitDBURLPreservesStateBetweenCases and is deliberately
+// not changed here.
+func TestRunTest_ParallelAgainstANamedServerIsolatesEachCase(t *testing.T) {
 	c := qt.New(t)
 
 	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
-		DBURL: "sqlite://" + t.TempDir() + "/shared.db",
+		DBURL: "sqlite://" + filepath.Join(t.TempDir(), "server.db"),
+		Cases: parallelCases(6),
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(report.Failed(), qt.IsFalse, qt.Commentf("report: %s", report.Text()))
+	c.Assert(report.Cases, qt.HasLen, 6)
+}
+
+// TestRunTest_ParallelIsRefusedWhereItCannotBeIsolated_FailurePath keeps the
+// refusal for a dialect that has no way to give a case its own database.
+//
+// It is a LOAD failure -- no report comes back -- so a suite whose third case
+// cannot be isolated does not first create two databases and apply a schema to
+// each. Sharing instead would make a run pass when two cases happened not to
+// collide.
+func TestRunTest_ParallelIsRefusedWhereItCannotBeIsolated_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+		DBURL: "clickhouse://localhost:9000/dev",
 		Cases: []dbtest.Case{
 			{Name: "ordinary", Steps: []dbtest.Step{{Exec: "SELECT 1"}}},
 			{Name: "wants concurrency", Parallel: true, Steps: []dbtest.Step{{Exec: "SELECT 1"}}},
@@ -145,7 +172,7 @@ func TestRunTest_ParallelIsRefusedAgainstASharedDatabase(t *testing.T) {
 
 	c.Assert(err, qt.ErrorIs, dbtest.ErrParallelNeedsIsolation)
 	c.Assert(report, qt.IsNil)
-	c.Assert(err.Error(), qt.Contains, `test case "wants concurrency"`)
+	c.Assert(err.Error(), qt.Contains, "clickhouse")
 }
 
 // TestRunTest_ASharedDatabaseStillRunsSerialCases is the control on that

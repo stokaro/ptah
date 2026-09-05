@@ -2,7 +2,6 @@ package dbtest
 
 import (
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -80,7 +79,6 @@ func ParseAtlasTestCases(
 	for _, option := range options {
 		option(&evalOptions)
 	}
-	dir := filepath.Dir(filename)
 
 	var cases []Case
 	for _, block := range body.Blocks {
@@ -110,7 +108,6 @@ func ParseAtlasTestCases(
 		expanded, err := atlasExpandCase(block, name, blockKind, atlasCaseContext{
 			variables: variables,
 			options:   evalOptions,
-			dir:       dir,
 			filename:  filename,
 		})
 		if err != nil {

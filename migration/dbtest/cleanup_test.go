@@ -3,6 +3,7 @@ package dbtest_test
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -242,4 +243,34 @@ func TestParseAtlasTestCases_CleanupRefusals_FailurePath(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, test.want)
 		})
 	}
+}
+
+// TestReport_TheHTMLReportMarksACleanupStepStructurally closes the gap the
+// end-to-end check found.
+//
+// The HTML report classified a step by outcome alone, so a failed cleanup and a
+// failed check rendered identically. The word "cleanup" did appear in the page
+// -- but only because the `.test.hcl` translation happens to NAME the step
+// that, which is an accident of one authoring format rather than something the
+// report says. A Go-authored cleanup with any other name showed nothing, which
+// is the fixture here.
+func TestReport_TheHTMLReportMarksACleanupStepStructurally(t *testing.T) {
+	c := qt.New(t)
+
+	report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{
+		Cases: []dbtest.Case{{
+			Name:    "named anything",
+			Steps:   []dbtest.Step{{Name: "body", Exec: "SELECT 1"}},
+			Cleanup: []dbtest.Step{{Name: "tear it down", Exec: "SELECT 1"}},
+		}},
+	})
+	c.Assert(err, qt.IsNil)
+
+	page, err := report.HTML()
+	c.Assert(err, qt.IsNil)
+
+	// The marker is the report's own, not the step's name.
+	c.Assert(page, qt.Contains, `<span class="noun">cleanup step</span>`)
+	c.Assert(page, qt.Contains, `<span class="noun">step</span>`)
+	c.Assert(strings.Count(page, `<span class="noun">cleanup step</span>`), qt.Equals, 1)
 }

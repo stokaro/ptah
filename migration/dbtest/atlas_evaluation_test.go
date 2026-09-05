@@ -164,7 +164,7 @@ test "schema" "reads" {
 `
 
 	cases, err := dbtest.ParseAtlasTestCases(
-		[]byte(document), filepath.Join(dir, "s.test.hcl"), dbtest.AtlasTestKindSchema)
+		[]byte(document), "s.test.hcl", dbtest.AtlasTestKindSchema, dbtest.WithAtlasTestDir(dir))
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(cases[0].Steps[0].Exec, qt.Equals, "SELECT 'hello-from-file'")
@@ -194,7 +194,7 @@ test "schema" "escapes" {
 `
 
 	_, err := dbtest.ParseAtlasTestCases(
-		[]byte(document), filepath.Join(inside, "s.test.hcl"), dbtest.AtlasTestKindSchema)
+		[]byte(document), "s.test.hcl", dbtest.AtlasTestKindSchema, dbtest.WithAtlasTestDir(inside))
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "reads only inside the directory that holds it")
@@ -371,4 +371,55 @@ func TestParseAtlasTestCases_EvaluationRefusals_FailurePath(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, test.want)
 		})
 	}
+}
+
+// TestLoadCasesOfKind_FileReadsBesideTheTest drives the loader rather than the
+// parser, and it is the test the parser's own coverage did not amount to.
+//
+// `file()` was bound to a directory derived from the document's name. The
+// parser's tests passed a full path and so derived the right one; the loader
+// passes the BASENAME, because that is what its diagnostics print, and
+// `filepath.Dir` answered "." -- the process's working directory. Every unit
+// test passed and `ptah schema test` could not read a file sitting beside the
+// suite. Worse than the failure: a working directory that happened to hold the
+// same name would have been read instead, silently.
+//
+// So the assertion has to come through LoadCasesOfKind. Running it from a
+// working directory that is NOT the suite is what makes the two directories
+// distinguishable at all.
+func TestLoadCasesOfKind_FileReadsBesideTheTest(t *testing.T) {
+	c := qt.New(t)
+
+	dir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "payload.txt"), []byte("beside-the-suite"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "a.test.hcl"), []byte(`
+test "schema" "reads" {
+  exec { sql = "SELECT '${file("payload.txt")}'" }
+}
+`), 0o600), qt.IsNil)
+
+	cases, err := dbtest.LoadCasesOfKind(dir, dbtest.AtlasTestKindSchema)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cases, qt.HasLen, 1)
+	c.Assert(cases[0].Steps[0].Exec, qt.Equals, "SELECT 'beside-the-suite'")
+}
+
+// TestParseAtlasTestCases_FileRefusesWithoutADirectory_FailurePath is the
+// fail-closed half.
+//
+// A reader given no directory refuses the call rather than resolving it against
+// the process's working directory. The refusal is what keeps the defect above
+// from coming back as a wrong file instead of an error: a caller that forgets
+// the directory is told so, and nothing is read.
+func TestParseAtlasTestCases_FileRefusesWithoutADirectory_FailurePath(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := dbtest.ParseAtlasTestCases([]byte(`
+test "schema" "reads" {
+  exec { sql = "SELECT '${file("payload.txt")}'" }
+}
+`), "s.test.hcl", dbtest.AtlasTestKindSchema)
+
+	c.Assert(err, qt.ErrorMatches, "(?s).*no directory to read from.*")
 }

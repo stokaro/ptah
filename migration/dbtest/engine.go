@@ -17,6 +17,7 @@ import (
 
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/migration/internal/scratchdb"
 	"go.5x5.cz/ptah/migration/internal/shadowdb"
 	"go.5x5.cz/ptah/migration/migrationfile"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -296,6 +297,17 @@ func (s StepResult) StatusClass() string {
 // column on the distinction would cost the outcome, which is the fact a reader
 // scans for.
 func (s StepResult) noun() string {
+	return s.Noun()
+}
+
+// Noun is what a report calls this step: a cleanup step or an ordinary one.
+//
+// It is exported because the HTML template needs it. Without it that report
+// classified a step by outcome alone, so a failed cleanup and a failed check
+// rendered identically -- and the word "cleanup" appeared there only when the
+// step happened to be NAMED that, which is an accident of the `.test.hcl`
+// translation rather than something the report says.
+func (s StepResult) Noun() string {
 	if s.Kind == StepKindCleanup {
 		return "cleanup step"
 	}
@@ -375,6 +387,7 @@ body { font-family: system-ui, sans-serif; margin: 2rem; }
 .pass { color: #157f3b; }
 .fail { color: #b3261e; }
 .skip { color: #6b6b6b; }
+.noun { color: #6b6b6b; font-size: 0.85em; }
 .log { color: #5f6368; }
 .caught { color: #8a6d1f; }
 .case { margin: 0.75rem 0; }
@@ -393,6 +406,7 @@ body { font-family: system-ui, sans-serif; margin: 2rem; }
     {{range .Steps}}
     <li>
       <span class="{{.StatusClass}}">{{.StatusLabel}}</span>
+      <span class="noun">{{.Noun}}</span>
       step &ldquo;{{.Name}}&rdquo;{{if .Detail}} <span class="detail">&mdash; {{.Detail}}</span>{{end}}
     </li>
     {{end}}
@@ -484,16 +498,20 @@ func runCases(
 	provision provisionFunc,
 	run caseRunner,
 ) (*Report, error) {
-	if dbURL != "" {
-		// One caller-owned database, shared by every case. Concurrency has no
-		// isolation to stand on here, so it is refused rather than approximated.
-		if err := refuseParallelWithoutIsolation(cases); err != nil {
-			return nil, err
-		}
-		return runExplicitCases(ctx, dbURL, kind, cases, provision, run)
+	// A file that asks for parallel opts into per-case isolation, and that is
+	// the whole of what `parallel` buys: each case gets a database of its own
+	// on the server the URL names, created now and removed afterwards. Without
+	// it an explicit URL keeps its documented behavior of one shared database,
+	// a contract this does not change -- a file that never says `parallel`
+	// never reaches that branch.
+	if err := refuseParallelWithoutIsolation(cases, dbURL); err != nil {
+		return nil, err
 	}
 	if anyParallel(cases) {
-		return runParallelCases(ctx, kind, cases, parallelism, provision, run)
+		return runParallelCases(ctx, kind, cases, dbURL, parallelism, provision, run)
+	}
+	if dbURL != "" {
+		return runExplicitCases(ctx, dbURL, kind, cases, provision, run)
 	}
 
 	report := &Report{Cases: make([]CaseResult, 0, len(cases)), kind: kind}
@@ -502,7 +520,7 @@ func runCases(
 			report.Cases = append(report.Cases, skippedCaseResult(cases[i]))
 			continue
 		}
-		result, err := runEphemeralCase(ctx, cases[i], provision, run)
+		result, err := runEphemeralCase(ctx, cases[i], dbURL, provision, run)
 		if err != nil {
 			return nil, err
 		}
@@ -575,8 +593,23 @@ func skippedCaseResult(c Case) CaseResult {
 
 // runEphemeralCase runs one case against a fresh SQLite database that exists
 // only for that case, so state created by one case is never visible to another.
-func runEphemeralCase(ctx context.Context, c Case, provision provisionFunc, run caseRunner) (CaseResult, error) {
-	database, err := shadowdb.Open(ctx, "", "ptah-dbtest-*")
+func runEphemeralCase(
+	ctx context.Context,
+	c Case,
+	baseURL string,
+	provision provisionFunc,
+	run caseRunner,
+) (CaseResult, error) {
+	// A base URL names a server rather than the database this case runs
+	// against: the case gets one of its own there, created now and removed
+	// afterwards.
+	scratch, err := openScratch(ctx, baseURL)
+	if err != nil {
+		return CaseResult{}, err
+	}
+	defer func() { _ = scratch.Close(ctx) }()
+
+	database, err := shadowdb.Open(ctx, scratch.URL(), "ptah-dbtest-*")
 	if err != nil {
 		return CaseResult{}, fmt.Errorf("connect to ephemeral test database: %w", err)
 	}
@@ -1237,4 +1270,22 @@ func (r *runner) runApplyPlan(ctx context.Context, step *ApplyPlanStep) (passed 
 		return false, fmt.Sprintf("apply %s failed: %v", step.URL, err)
 	}
 	return true, ""
+}
+
+// openScratch provisions the database one case runs against.
+//
+// An empty base URL keeps the historical behavior: shadowdb creates a SQLite
+// file in a temporary directory. A base URL names a server, and the case gets a
+// database of its own on it, because that is what a caller asking for a
+// throwaway target means and what keeps two cases from deciding each other's
+// results.
+func openScratch(ctx context.Context, baseURL string) (*scratchdb.Scratch, error) {
+	if baseURL == "" {
+		return nil, nil
+	}
+	scratch, err := scratchdb.Provision(ctx, baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("provision a database for this case: %w", err)
+	}
+	return scratch, nil
 }
