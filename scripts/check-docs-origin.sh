@@ -39,10 +39,27 @@ retired_host="stokaro.github$(printf '\056')io"
 declaration="docs/site/src/lib/docs-origin.mjs"
 live_host="docs.ptah$(printf '\056')run"
 
+# corpus is every file this gate reads, and it asks git rather than walking the
+# filesystem for the reason scripts/check-test-style.sh documents: a walk
+# descends into the linked worktrees parked under this repository and reports a
+# different checkout's files as this one's.
+#
+# `--others --exclude-standard` is what makes it the working tree rather than
+# the index. A file added in this change is untracked until it is staged, so a
+# gate reading `git ls-files` alone cannot see the one file most likely to be
+# wrong -- and it does not fail, it reports success. Measured: this gate ran
+# green over its own declaration while that declaration still spelled the
+# retired host, and CI, which reads a committed tree, was the first thing to
+# disagree. `--exclude-standard` is also what keeps the sibling worktrees out,
+# since the directories holding them are ignored.
+corpus() {
+	git ls-files --cached --others --exclude-standard "$@"
+}
+
 status=0
 
 # Rule 1. The retired host, anywhere.
-retired_hits="$(git ls-files -z | xargs -0 grep -nF -- "$retired_host" 2>/dev/null || true)"
+retired_hits="$(corpus -z | xargs -0 grep -nF -- "$retired_host" 2>/dev/null || true)"
 if [ -n "$retired_hits" ]; then
 	echo "check-docs-origin: the retired documentation host is still spelled here:" >&2
 	echo "$retired_hits" | sed 's/^/  /' >&2
@@ -62,7 +79,7 @@ js_hits=""
 while IFS= read -r path; do
 	[ "$path" = "$declaration" ] || js_hits="${js_hits}$(grep -nF -- "$live_host" "$path" /dev/null || true)
 "
-done < <(git ls-files -- 'docs/site/*.mjs' 'docs/site/*.js' 'docs/site/*.ts')
+done < <(corpus -- 'docs/site/*.mjs' 'docs/site/*.js' 'docs/site/*.ts')
 js_hits="$(printf '%s' "$js_hits" | grep -v '^$' || true)"
 
 if [ -n "$js_hits" ]; then
@@ -77,10 +94,10 @@ fi
 # A scan that matches nothing reports success at exactly the moment it stopped
 # reading. Both rules are negative, so neither can count its own findings as
 # evidence of having run -- what proves the corpus was non-empty is the corpus.
-tracked_js="$(git ls-files -- 'docs/site/*.mjs' 'docs/site/*.js' 'docs/site/*.ts' | wc -l | tr -d ' ')"
-tracked_all="$(git ls-files | wc -l | tr -d ' ')"
+tracked_js="$(corpus -- 'docs/site/*.mjs' 'docs/site/*.js' 'docs/site/*.ts' | wc -l | tr -d ' ')"
+tracked_all="$(corpus | wc -l | tr -d ' ')"
 if [ "$tracked_js" -lt 10 ] || [ "$tracked_all" -lt 100 ]; then
-	echo "check-docs-origin: read ${tracked_all} tracked files and ${tracked_js} docs/site scripts;" >&2
+	echo "check-docs-origin: read ${tracked_all} working-tree files and ${tracked_js} docs/site scripts;" >&2
 	echo "  that is too few to be this repository, so the scan is not reporting on it" >&2
 	exit 1
 fi
@@ -89,5 +106,5 @@ if [ "$status" -ne 0 ]; then
 	exit 1
 fi
 
-echo "check-docs-origin: OK (${tracked_all} tracked files carry no retired host;" \
+echo "check-docs-origin: OK (${tracked_all} working-tree files carry no retired host;" \
 	"${tracked_js} docs/site scripts read the address from ${declaration})"

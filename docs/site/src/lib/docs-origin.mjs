@@ -1,18 +1,18 @@
 // Where the documentation is published, declared once.
 //
-// Two facts used to be spelled in many places and in two shapes: an origin
-// (`https://stokaro.github.io`) and a path prefix (`/ptah`), the second because
-// the site was a GitHub project page and every URL it built carried the
-// repository name. It is served from its own domain now, so the prefix is gone
-// -- and the move left the constants behind, because there was no one place to
-// change. `docs.ptah.run/` redirected to `/ptah/v0.3.0/`, which 404s, and the
-// page a reader reached by hand asked for its stylesheets under `/ptah/`
-// (stokaro/ptah#2884).
+// The site is served at the apex of its own domain, so a page's address is the
+// origin and the version -- there is no path segment between them. Both halves
+// live here and everything else derives from them: `astro.config.mjs` builds
+// `site` and `base`, the version generator builds the apex stub, and the gates
+// build the addresses they fetch and the pattern they extract with.
 //
-// So the origin lives here and everything else is derived from it. A gate
-// refuses the old host anywhere in the tree, because 96 occurrences is what
-// made a partial move possible in the first place: see
-// scripts/check-docs-origin.sh.
+// Deriving them is the point. The address is reachable from a shell script, a
+// workflow and a Markdown page too, and each of those spells it literally
+// because none of them can import a module. That is the whole reason a partial
+// move is possible at all, and it is what
+// `scripts/check-docs-origin.sh` exists to refuse: it holds every
+// spelling in the tree against this file. See stokaro/ptah#2884 for what a
+// half-moved address published.
 //
 // This module is plain ESM with no imports, so astro.config.mjs, the .mjs gates
 // and the version generator can all read it. Anything that cannot -- a shell

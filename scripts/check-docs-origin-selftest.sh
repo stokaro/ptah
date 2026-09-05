@@ -107,7 +107,29 @@ write_repo
 rm "$work_dir/repo/docs/site/src/lib/docs-origin.mjs"
 assert_rejected "the declaration missing" "nothing declares the site's address"
 
-# 5. The corpus itself. A repository the gate can see almost nothing of must
+# 5. The retired host in a file that is not staged yet. This is the case the
+#    gate was blind to when it was written: `git ls-files` answers the index, so
+#    a file added by the very change under review is invisible, and the gate
+#    reports success over a tree it has not read. It ran green over its own
+#    declaration this way, and CI -- which reads a committed tree -- was what
+#    disagreed. Nothing here stages the fixture, which is the whole point.
+write_repo
+git -C "$work_dir/repo" add -A >/dev/null 2>&1
+printf "export const legacy = 'https://%s/ptah/';\n" "$retired_host" \
+	>"$work_dir/repo/docs/site/scripts/brand-new.mjs"
+if (cd "$work_dir/repo" && bash scripts/check-docs-origin.sh) \
+	>"$work_dir/out" 2>"$work_dir/err"; then
+	echo 'docs origin self-test: an unstaged file carrying the retired host passed' >&2
+	exit 1
+fi
+if ! grep -qF "the retired documentation host" "$work_dir/err"; then
+	echo 'docs origin self-test: the unstaged file failed for the wrong reason:' >&2
+	sed 's/^/  /' "$work_dir/err" >&2
+	exit 1
+fi
+printf '  %-44s rejected\n' "the retired host, not staged yet"
+
+# 6. The corpus itself. A repository the gate can see almost nothing of must
 #    refuse rather than report the success that an absent string always earns.
 rm -rf "$work_dir/small"
 mkdir -p "$work_dir/small/docs/site/src/lib" "$work_dir/small/scripts"
@@ -128,4 +150,4 @@ if ! grep -qF "is not reporting on it" "$work_dir/err"; then
 fi
 printf '  %-44s rejected\n' "a corpus too small to be this repository"
 
-echo "check-docs-origin-selftest: OK (5 broken rules each noticed, control accepted)"
+echo "check-docs-origin-selftest: OK (6 broken rules each noticed, control accepted)"
