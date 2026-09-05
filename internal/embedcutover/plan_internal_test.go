@@ -189,6 +189,8 @@ func mutateLeaf(plan *Plan, path string) {
 		field.SetString(value + "-mutated")
 	case bool:
 		field.SetBool(!value)
+	case int:
+		field.SetInt(int64(value) + 1)
 	case []string:
 		field.Set(reflect.ValueOf(append(append([]string(nil), value...), "a finding nobody named")))
 	case time.Time:

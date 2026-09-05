@@ -135,6 +135,9 @@ type PolicyDocument struct {
 	RequireConsistencyMode bool   `yaml:"require_consistency_mode"`
 	AllowAcceptedFindings  bool   `yaml:"allow_accepted_findings"`
 	MaxPlanAge             string `yaml:"max_plan_age"`
+	// MinSourceRows is the smallest corpus this environment cuts over to, zero
+	// or omitted for no requirement.
+	MinSourceRows int `yaml:"min_source_rows"`
 }
 
 // Loaded is a specification and everything read alongside it.

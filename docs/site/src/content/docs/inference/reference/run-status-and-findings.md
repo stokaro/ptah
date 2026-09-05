@@ -252,6 +252,18 @@ through the same predicate, and the two agree perfectly — so the counts in the
 header are the only thing that would have told you, and a pipeline reads the
 findings.
 
+An environment that knows its corpus is never empty can refuse rather than read.
+`policy.min_source_rows` is the floor, and the cutover names what it found:
+
+```text
+cutover refused:
+  - this generation covers 3 source rows and this policy requires at least 5
+```
+
+The count is in the plan digest and on the line an approver reads, so an
+approval given for a plan over the whole corpus does not carry to one built over
+none of it. See [the specification's `policy` block](../specification/).
+
 ### What was not measured
 
 `verify` reports what it did not check, not only what it did. A report saying

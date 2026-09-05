@@ -11,8 +11,8 @@ import (
 )
 
 // goldenPlanDigest is what the plan in TestPlanDigest_IsTheEncodingPlanVersionNames
-// encodes to under PlanVersion 1.
-const goldenPlanDigest = "9f73c64eafced495e8dfc2856050370222c3eb523685ce8459dc274e2859675e"
+// encodes to under the current PlanVersion, which that test also pins.
+const goldenPlanDigest = "2103bbdf2126a8d93fd3f620925c861c98ca280ddf52f4a3ff6b64b58b2bf6dc"
 
 // preparedAt is when every plan below was built.
 var preparedAt = time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC)
@@ -400,11 +400,12 @@ func TestPlanDigest_IsTheEncodingPlanVersionNames(t *testing.T) {
 			ConsistencyWatermark: "lsn-42",
 			IndexReady:           true,
 			SourceMutable:        true,
+			SourceRows:           48231,
 		},
 		PreparedAt: time.Date(2026, 8, 27, 10, 0, 0, 0, time.UTC),
 	}
 
-	c.Assert(embedcutover.PlanVersion, qt.Equals, 3)
+	c.Assert(embedcutover.PlanVersion, qt.Equals, 4)
 	c.Assert(plan.Digest(), qt.Equals, goldenPlanDigest)
 	c.Assert(plan.Short(), qt.Equals, goldenPlanDigest[:12])
 }

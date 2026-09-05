@@ -229,6 +229,26 @@ vectors are. See [Consistency modes](../../concepts/consistency/).
 | `require_consistency_mode` | A cutover is refused when no mode is selected. |
 | `allow_accepted_findings` | Whether `cutover --accept-finding` may name a blocking finding to proceed over. |
 | `max_plan_age` | How old a plan may be when it is approved. |
+| `min_source_rows` | The smallest corpus this environment cuts over to. Omitted or zero is no requirement. |
+
+`min_source_rows` is the one refusal here that is about the data rather than
+about authority. A verification over an empty corpus passes every layer, because
+there is nothing for any of them to disagree about — and the reachable cause is
+a `source.filter` with a typo in it rather than an empty table. The report says
+so as an advisory whether or not this is set, because an empty generation is not
+wrong: a table backfilled before its first rows arrive is a specification doing
+what it says. This is how an environment that knows its corpus is never empty
+says so.
+
+The count the floor is compared against is in the plan, so it is in the plan
+digest and on the line an approver reads:
+
+```text
+source rows: 48231
+```
+
+An approval given for a plan over the whole corpus therefore stops matching one
+built over none of it.
 
 ## A complete example
 

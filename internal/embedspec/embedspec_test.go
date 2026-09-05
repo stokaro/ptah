@@ -60,6 +60,7 @@ policy:
   require_exact_approval: true
   require_consistency_mode: true
   max_plan_age: 30m
+  min_source_rows: 48000
 `
 
 // TestParse_ReadsACompleteSpecification is the control.
@@ -79,6 +80,7 @@ func TestParse_ReadsACompleteSpecification(t *testing.T) {
 	c.Assert(loaded.Mode, qt.Equals, embedcatchup.ModeOutbox)
 	c.Assert(loaded.Source.Mutable, qt.IsTrue)
 	c.Assert(loaded.Policy.MaxPlanAge, qt.Equals, 30*time.Minute)
+	c.Assert(loaded.Policy.MinSourceRows, qt.Equals, 48000)
 	c.Assert(loaded.Credential, qt.Equals, "env:PTAH_EMBED_TOKEN")
 	c.Assert(loaded.Spec.Identity().Digest, qt.Not(qt.Equals), "")
 }

@@ -123,6 +123,19 @@ func decideEvidence(decision *Decision, plan Plan, policy Policy) {
 	// findings were accepted, so an approval given here does not carry over to
 	// a plan that accepted others.
 
+	// No `MinSourceRows > 0` beside this. A count is never negative, so a floor
+	// of zero refuses nothing on its own and the guard would be a branch no
+	// input can take -- unmeasurable by construction, and one more thing to
+	// keep in step with the comparison.
+	if evidence.SourceRows < policy.MinSourceRows {
+		// Not a statement about the data being wrong. The generation is
+		// consistent with its own specification; what this environment says is
+		// that a corpus this small is not one it moves queries onto, which is
+		// a thing only the environment knows (stokaro/ptah#2870).
+		decision.refusef(
+			"this generation covers %d source rows and this policy requires at least %d",
+			evidence.SourceRows, policy.MinSourceRows)
+	}
 	if !evidence.IndexReady {
 		decision.refusef("the required index is absent, invalid or still building")
 	}
