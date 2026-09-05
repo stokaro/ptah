@@ -45,6 +45,54 @@ function run(args, cwd) {
   return execute(args, cwd).stdout;
 }
 
+// The image that renders every committed SVG, and the one place it is named.
+//
+// Graphviz draws these files, not Ptah, and their bytes are decided by two
+// independent variables: the Graphviz build and the fonts installed beside it.
+// Measured at one Graphviz version, the same DOT rendered 928pt wide with no
+// font package and 1002pt with font-dejavu present -- so pinning the package is
+// not enough and the environment has to be pinned whole (stokaro/ptah#2931).
+//
+// `docs/site/graphviz/Dockerfile` is that environment, and its base is pinned
+// by digest. Measured: two from-scratch builds of it produce byte-identical
+// SVGs, and its output differs from the host's -- 1002pt against 895pt on
+// Graphviz 14.1.5 -- so the pin decides the answer rather than agreeing with
+// whatever is installed.
+const GRAPHVIZ_IMAGE = process.env.PTAH_GRAPHVIZ_IMAGE || 'ghcr.io/stokaro/ptah-graphviz:1';
+
+// PTAH_DOCKER_CONTEXT follows check-inference-quick-start.sh, which is the
+// precedent for a generator that needs a daemon: a remote context is how this
+// runs on a machine with no local Docker.
+const DOCKER_CONTEXT = process.env.PTAH_DOCKER_CONTEXT || '';
+
+// renderSVG draws one DOT document in the pinned environment.
+//
+// `ptah viz --format svg` is exactly `dot -Tsvg` of `ptah viz --format dot` --
+// measured byte-identical on the schema-ui fixture -- so this substitutes the
+// renderer without changing what Ptah is asked for. The DOT beside each SVG is
+// still what Ptah wrote, which is what makes a change to the arguments Ptah
+// passes visible in both files rather than in neither.
+function renderSVG(dot) {
+  const args = DOCKER_CONTEXT ? ['--context', DOCKER_CONTEXT] : [];
+  args.push('run', '--rm', '--interactive', GRAPHVIZ_IMAGE, 'dot', '-Tsvg');
+  const result = spawnSync('docker', args, { input: dot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  if (result.error) {
+    throw new Error(`docker ${args.join(' ')} could not run: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error(
+      `docker ${args.join(' ')} failed with ${result.status}\n${result.stdout}${result.stderr}`,
+    );
+  }
+  // An empty rendering is a failure this would otherwise write to disk. Graphviz
+  // exits 0 for an empty input, so the status alone does not say a diagram was
+  // drawn.
+  if (!result.stdout.includes('<svg')) {
+    throw new Error(`docker ${args.join(' ')} produced no SVG document`);
+  }
+  return result.stdout;
+}
+
 function writeSample(path, value) {
   writeFileSync(path, value.endsWith('\n') ? value : `${value}\n`);
 }
@@ -168,18 +216,18 @@ try {
 
   const dot = run(['viz', '--root-dir', vizFixture, '--format', 'dot', '--include-columns'], repositoryRoot);
   writeSample(join(vizSamples, 'schema.dot'), dot);
-  const dotSVG = run(['viz', '--root-dir', vizFixture, '--format', 'svg', '--include-columns'], repositoryRoot);
+  const dotSVG = renderSVG(dot);
   writeSample(join(vizSamples, 'schema-dot.svg'), dotSVG);
   const securityDOT = run([
     'viz', '--root-dir', vizFixture, '--format', 'dot', '--include-columns', '--security', '--dialect', 'postgres',
   ], repositoryRoot);
   writeSample(join(vizSamples, 'schema-security.dot'), securityDOT);
-  const securityLight = run([
-    'viz', '--root-dir', vizFixture, '--format', 'svg', '--include-columns', '--security', '--dialect', 'postgres', '--theme', 'light',
-  ], repositoryRoot);
-  const securityDark = run([
-    'viz', '--root-dir', vizFixture, '--format', 'svg', '--include-columns', '--security', '--dialect', 'postgres', '--theme', 'dark',
-  ], repositoryRoot);
+  const securityLight = renderSVG(run([
+    'viz', '--root-dir', vizFixture, '--format', 'dot', '--include-columns', '--security', '--dialect', 'postgres', '--theme', 'light',
+  ], repositoryRoot));
+  const securityDark = renderSVG(run([
+    'viz', '--root-dir', vizFixture, '--format', 'dot', '--include-columns', '--security', '--dialect', 'postgres', '--theme', 'dark',
+  ], repositoryRoot));
   writeSample(join(assetsRoot, 'schema-viz-security-light.svg'), securityLight);
   writeSample(join(assetsRoot, 'schema-viz-security-dark.svg'), securityDark);
   copyFileSync(join(assetsRoot, 'schema-viz-security-light.svg'), join(vizSamples, 'schema-security.svg'));

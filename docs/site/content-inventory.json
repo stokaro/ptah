@@ -5022,8 +5022,8 @@
         "/schema/security/",
         "/schema/stats/"
       ],
-      "visibleWords": 908,
-      "sourceBytes": 11145
+      "visibleWords": 1088,
+      "sourceBytes": 12222
     },
     {
       "path": "docs/site/src/content/docs/schema/work-with-a-source.mdx",
