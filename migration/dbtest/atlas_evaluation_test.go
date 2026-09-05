@@ -423,3 +423,87 @@ test "schema" "reads" {
 
 	c.Assert(err, qt.ErrorMatches, "(?s).*no directory to read from.*")
 }
+
+// TestParseAtlasTestCases_AMisspelledCaseAttributeIsRefused is the defect this
+// closes, not merely a rule it states.
+//
+// The guard compared the COUNT of a block's attributes against the size of the
+// allowed set, which was correct only while nothing was allowed. Once
+// `for_each`, `skip` and `parallel` joined it, a body carrying fewer attributes
+// than that never reached the check: measured, `paralel = true` loaded clean
+// and the case ran serially, with the report saying nothing.
+//
+// A misspelling of a real attribute is the fixture rather than an invented
+// name, because that is the mistake an author actually makes and the one whose
+// silent acceptance costs them the behavior they asked for.
+func TestParseAtlasTestCases_AMisspelledCaseAttributeIsRefused(t *testing.T) {
+	tests := []struct {
+		name     string
+		document string
+		want     string
+	}{
+		{
+			name:     "one attribute, fewer than the allowed set",
+			document: "test \"schema\" \"a\" {\n  paralel = true\n  exec { sql = \"SELECT 1\" }\n}\n",
+			want:     `.*` + "`test` takes step blocks and \\[for_each parallel skip\\], not \\[paralel\\]" + `.*`,
+		},
+		{
+			name:     "beside a real one",
+			document: "test \"schema\" \"a\" {\n  parallel = true\n  skp      = true\n  exec { sql = \"SELECT 1\" }\n}\n",
+			want:     ".*not \\[skp\\].*",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := dbtest.ParseAtlasTestCases(
+				[]byte(test.document), "s.test.hcl", dbtest.AtlasTestKindSchema)
+
+			c.Assert(err, qt.ErrorMatches, test.want)
+		})
+	}
+}
+
+// TestParseAtlasTestCases_AMisspelledCaseAttributeIsRefusedInAPlanCase is the
+// same rule for the third kind, and it needs its own test rather than a row.
+//
+// A parse scoped to one kind drops the blocks of the others before their
+// attributes are read, so a plan block examined under AtlasTestKindSchema is
+// never checked at all -- which is what the first version of this assertion
+// did, and it passed by not looking.
+func TestParseAtlasTestCases_AMisspelledCaseAttributeIsRefusedInAPlanCase(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := dbtest.ParseAtlasTestCases([]byte(`
+test "plan" "a" {
+  nope = 1
+  apply { url = "file://x" }
+}
+`), "s.test.hcl", dbtest.AtlasTestKindPlan)
+
+	c.Assert(err, qt.ErrorMatches, ".*not \\[nope\\].*")
+}
+
+// TestParseAtlasTestCases_TheRealCaseAttributesStillLoad is the control.
+//
+// Refusing every attribute would satisfy the table above and delete the feature
+// the attributes exist for, so a case using all three has to keep loading.
+func TestParseAtlasTestCases_TheRealCaseAttributesStillLoad(t *testing.T) {
+	c := qt.New(t)
+
+	cases, err := dbtest.ParseAtlasTestCases([]byte(`
+test "schema" "a" {
+  for_each = ["one"]
+  skip     = false
+  parallel = true
+  exec { sql = "SELECT 1" }
+}
+`), "s.test.hcl", dbtest.AtlasTestKindSchema)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cases, qt.HasLen, 1)
+	c.Assert(cases[0].Parallel, qt.IsTrue)
+	c.Assert(cases[0].Skip, qt.IsFalse)
+}
