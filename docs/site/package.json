@@ -43,6 +43,8 @@
     "check:limitations:selftest": "node scripts/check-limitations.mjs --selftest",
     "check:responsive": "node scripts/check-responsive.mjs",
     "check:responsive:selftest": "node scripts/check-responsive.mjs --selftest",
+    "check:generated-assets": "node scripts/check-generated-assets.mjs",
+    "check:generated-assets:selftest": "node scripts/check-generated-assets.mjs --selftest",
     "check:glossary": "node scripts/check-glossary.mjs",
     "check:navigation": "node scripts/check-navigation.mjs",
     "check:navigation:selftest": "node scripts/check-navigation.mjs --selftest",

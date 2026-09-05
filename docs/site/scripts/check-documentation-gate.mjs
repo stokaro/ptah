@@ -15,6 +15,7 @@ const jobContracts = [
   { changed: 'EXAMPLES_CHANGED', result: 'EXAMPLES_RESULT', label: 'example acceptance' },
   { changed: 'INFERENCE_CHANGED', result: 'INFERENCE_RESULT', label: 'inference quick start' },
   { changed: 'QUICKSTART_CHANGED', result: 'QUICKSTART_RESULT', label: 'quick-start acceptance' },
+  { changed: 'ASSETS_CHANGED', result: 'ASSETS_RESULT', label: 'generated assets' },
 ];
 
 export function changeFilters(workflow, stepId = 'filter') {
@@ -137,7 +138,7 @@ function selftest() {
     {
       label: 'unrelated Go-only change',
       paths: ['internal/retry/backoff.go'],
-      groups: ['examples', 'generated', 'inventory'],
+      groups: ['assets', 'examples', 'generated', 'inventory'],
     },
     {
       label: 'docs-site package-only bump',
@@ -167,7 +168,7 @@ function selftest() {
     {
       label: 'inference quick-start change',
       paths: ['docs/site/fixtures/inference-quick-start/compose.yaml'],
-      groups: ['inference', 'site', 'style'],
+      groups: ['assets', 'inference', 'site', 'style'],
     },
     {
       label: 'default quick-start change',
@@ -182,12 +183,17 @@ function selftest() {
     {
       label: 'nested documentation module source',
       paths: ['docs/site/fixtures/source-equivalence/models/schema.go'],
-      groups: ['examples', 'generated', 'inventory', 'site', 'style'],
+      groups: ['assets', 'examples', 'generated', 'inventory', 'site', 'style'],
+    },
+    {
+      label: 'committed sample edited by hand',
+      paths: ['docs/site/public/samples/schema-document.html'],
+      groups: ['assets', 'site', 'style'],
     },
     {
       label: 'Protobuf export fixture',
       paths: ['docs/site/fixtures/protobuf-export/schema.yaml'],
-      groups: ['generated', 'site', 'style'],
+      groups: ['assets', 'generated', 'site', 'style'],
     },
   ];
   for (const pathCase of pathCases) {
