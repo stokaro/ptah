@@ -5669,8 +5669,8 @@
         "/testing/ci/",
         "/versioned/integrity-and-safety/"
       ],
-      "visibleWords": 1124,
-      "sourceBytes": 11388
+      "visibleWords": 1162,
+      "sourceBytes": 11597
     },
     {
       "path": "docs/site/src/content/docs/versioned/apply.md",
@@ -5839,8 +5839,8 @@
         "/versioned/lint/",
         "/versioned/overview/"
       ],
-      "visibleWords": 1452,
-      "sourceBytes": 14703
+      "visibleWords": 1491,
+      "sourceBytes": 14970
     },
     {
       "path": "docs/site/src/content/docs/versioned/import.md",
