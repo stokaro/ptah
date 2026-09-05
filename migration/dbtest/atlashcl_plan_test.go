@@ -168,7 +168,7 @@ func TestParseAtlasTestCases_PlanStepRefusals(t *testing.T) {
 		{
 			name: "a step no kind has",
 			body: `frobnicate {}`,
-			want: ".*unsupported step \"frobnicate\": want `exec`, `catch`, `assert`, `log`, `migrate`, `schema` or `apply`.*",
+			want: ".*unsupported step \"frobnicate\": want `exec`, `catch`, `assert`, `log`, `cleanup`, `migrate`, `schema` or `apply`.*",
 		},
 	}
 

@@ -125,7 +125,7 @@ func ParseAtlasTestCases(
 }
 
 // atlasTestSteps translates one `test` block body into ordered native steps.
-func atlasTestSteps(block *hclsyntax.Block, scope atlasScope, kind AtlasTestKind) ([]Step, error) {
+func atlasTestSteps(block *hclsyntax.Block, scope atlasScope, kind AtlasTestKind) (*atlasCaseBody, error) {
 	if len(block.Body.Attributes) > len(atlasCaseAttributes) {
 		names := make([]string, 0, len(block.Body.Attributes))
 		for attrName := range block.Body.Attributes {
@@ -140,14 +140,28 @@ func atlasTestSteps(block *hclsyntax.Block, scope atlasScope, kind AtlasTestKind
 	}
 
 	steps := make([]Step, 0, len(block.Body.Blocks))
+	var cleanup []Step
 	for _, step := range block.Body.Blocks {
 		translated, err := atlasTestStep(step, scope, kind)
 		if err != nil {
 			return nil, err
 		}
+		if step.Type == "cleanup" {
+			cleanup = append(cleanup, translated)
+			continue
+		}
 		steps = append(steps, translated)
 	}
-	return steps, nil
+	return &atlasCaseBody{steps: steps, cleanup: cleanup}, nil
+}
+
+// atlasCaseBody separates the steps a case runs from the steps it runs
+// afterwards. They are collected in one walk because their order relative to
+// each other is not meaningful -- cleanup runs after the body wherever it was
+// written -- while the order within each is.
+type atlasCaseBody struct {
+	steps   []Step
+	cleanup []Step
 }
 
 func atlasRequiredString(block *hclsyntax.Block, name string, scope atlasScope) (string, error) {
@@ -216,9 +230,9 @@ func atlasRequirePlanKind(kind AtlasTestKind, stepType, filename string, line in
 // what this case may contain rather than what some case may contain.
 func atlasStepsFor(kind AtlasTestKind) string {
 	if kind == AtlasTestKindPlan {
-		return "`exec`, `catch`, `assert`, `log`, `migrate`, `schema` or `apply`"
+		return "`exec`, `catch`, `assert`, `log`, `cleanup`, `migrate`, `schema` or `apply`"
 	}
-	return "`exec`, `catch`, `assert`, `log` or `migrate`"
+	return "`exec`, `catch`, `assert`, `log`, `cleanup` or `migrate`"
 }
 
 // atlasTestStep translates one step block.
@@ -238,6 +252,8 @@ func atlasTestStep(step *hclsyntax.Block, scope atlasScope, kind AtlasTestKind) 
 		return atlasAssertStep(step, scope)
 	case "log":
 		return atlasLogStep(step, scope)
+	case "cleanup":
+		return atlasCleanupStep(step, scope)
 	case "migrate":
 		return atlasMigrateStep(step, scope)
 	case "schema", "apply":
@@ -369,6 +385,22 @@ func atlasLogStep(step *hclsyntax.Block, scope atlasScope) (Step, error) {
 		return Step{}, err
 	}
 	return Step{Log: message}, nil
+}
+
+// atlasCleanupStep translates `cleanup`, which is a statement the case runs
+// after its body rather than a step in it.
+//
+// It takes only `sql`: a cleanup that could assert would be a check running
+// after the case reported, and a check nobody reads is worse than no check.
+func atlasCleanupStep(step *hclsyntax.Block, scope atlasScope) (Step, error) {
+	if err := atlasRejectUnknownAttrs(step, scope.filename, "sql"); err != nil {
+		return Step{}, err
+	}
+	sql, err := atlasRequiredString(step, "sql", scope)
+	if err != nil {
+		return Step{}, err
+	}
+	return Step{Name: "cleanup", Exec: sql}, nil
 }
 
 // atlasMigrateStep translates `migrate`.

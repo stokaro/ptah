@@ -96,6 +96,17 @@ import (
 type Case struct {
 	Name  string `yaml:"name"`
 	Steps []Step `yaml:"steps"`
+	// Cleanup runs after the case body, always: after it passes, after a step
+	// fails, and after the run is canceled. The steps run in REVERSE written
+	// order, so a cleanup written beside the setup it undoes reads the way a
+	// deferred call does, and a later cleanup cannot depend on an earlier one
+	// having already run.
+	//
+	// A cleanup failure fails the case without displacing the body's failure:
+	// both appear as steps, in the order they happened, and [CaseResult]
+	// records which kind of failure occurred. A skipped case runs no cleanup,
+	// because nothing was set up.
+	Cleanup []Step `yaml:"cleanup"`
 	// Skip reports the case without running any of its steps. It is neither a
 	// pass nor a failure: a run that skips three cases says so, because a case
 	// that quietly disappeared from a report is indistinguishable from one that
@@ -404,6 +415,11 @@ func (c Case) validate() error {
 	for i := range c.Steps {
 		if err := c.Steps[i].validate(); err != nil {
 			return fmt.Errorf("test case %q, step %d: %w", c.Name, i+1, err)
+		}
+	}
+	for i := range c.Cleanup {
+		if err := c.Cleanup[i].validate(); err != nil {
+			return fmt.Errorf("test case %q, cleanup step %d: %w", c.Name, i+1, err)
 		}
 	}
 	return nil

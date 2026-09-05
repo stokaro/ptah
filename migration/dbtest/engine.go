@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -78,6 +79,11 @@ type CaseResult struct {
 	Name   string       `json:"name"`
 	Steps  []StepResult `json:"steps"`
 	Passed bool         `json:"passed"`
+	// CleanupFailed marks a case whose cleanup did not complete. It is
+	// independent of Passed: a case can fail its body, its cleanup, or both,
+	// and a reader deciding whether the database was left dirty needs the
+	// second answer rather than the conjunction.
+	CleanupFailed bool `json:"cleanup_failed,omitempty"`
 	// Skipped marks a case the run did not execute. Passed is false for such a
 	// case and [Report.Failed] ignores it, so a skip neither claims a proof that
 	// was never attempted nor reddens a suite for declining to attempt it.
@@ -113,6 +119,11 @@ const (
 	// and the statement did not, and a reader scanning for what a case proved
 	// needs to see which of the two happened.
 	StepKindCaught StepKind = "caught"
+	// StepKindCleanup marks a step that ran as part of the case's cleanup
+	// rather than its body. The distinction is what lets a reader tell a case
+	// that failed its check from one whose check passed and whose teardown did
+	// not, which are different problems with different owners.
+	StepKindCleanup StepKind = "cleanup"
 )
 
 // Failed reports whether any case failed.
@@ -149,10 +160,10 @@ func (r *Report) Text() string {
 				label = "(unnamed step)"
 			}
 			if s.Detail != "" {
-				fmt.Fprintf(&b, "    %s  step %q — %s\n", stepStatus, label, s.Detail)
+				fmt.Fprintf(&b, "    %s  %s %q — %s\n", stepStatus, s.noun(), label, s.Detail)
 				continue
 			}
-			fmt.Fprintf(&b, "    %s  step %q\n", stepStatus, label)
+			fmt.Fprintf(&b, "    %s  %s %q\n", stepStatus, s.noun(), label)
 		}
 	}
 
@@ -263,6 +274,20 @@ func (s StepResult) StatusClass() string {
 // A logged message is not a check that passed and a caught failure is not an
 // ordinary success, so neither wears PASS: a reader counting PASS lines to see
 // what a case proved would be counting a message among them.
+// noun is what a report calls this step.
+//
+// A cleanup step keeps the ordinary PASS/FAIL word in the status column,
+// because whether it worked is the same question as for any other step, and
+// says which half of the case it belongs to here instead. Spending the status
+// column on the distinction would cost the outcome, which is the fact a reader
+// scans for.
+func (s StepResult) noun() string {
+	if s.Kind == StepKindCleanup {
+		return "cleanup step"
+	}
+	return "step"
+}
+
 func stepStatusLabel(step StepResult) string {
 	switch {
 	case step.Kind == StepKindLog:
@@ -565,6 +590,20 @@ type runner struct {
 
 func (r *runner) runCase(ctx context.Context, c Case) (CaseResult, error) {
 	result := CaseResult{Name: c.Name, Passed: true, Steps: make([]StepResult, 0, len(c.Steps))}
+	bodyErr := r.runCaseBody(ctx, c, &result)
+	r.runCaseCleanup(ctx, c, &result)
+	if bodyErr != nil {
+		return result, bodyErr
+	}
+	return result, nil
+}
+
+// runCaseBody runs the steps the author wrote, stopping at the first failure.
+//
+// A returned error is the run aborting rather than the case failing, and the
+// caller still runs cleanup before propagating it -- which is the whole reason
+// this is a separate function rather than an early return.
+func (r *runner) runCaseBody(ctx context.Context, c Case, result *CaseResult) error {
 	for i := range c.Steps {
 		step := c.Steps[i]
 		passed, detail := r.execStep(ctx, step)
@@ -572,17 +611,64 @@ func (r *runner) runCase(ctx context.Context, c Case) (CaseResult, error) {
 		outcome.Kind = stepOutcomeKind(step, outcome)
 		result.Steps = append(result.Steps, outcome)
 		if err := ctx.Err(); err != nil {
-			return result, fmt.Errorf("run test case %q: %w", c.Name, err)
+			result.Passed = false
+			return fmt.Errorf("run test case %q: %w", c.Name, err)
 		}
 		if !passed {
 			// Stop at the first failure: later steps almost always depend on the
 			// state the failed step was supposed to establish, so running them
 			// would produce noise rather than signal.
 			result.Passed = false
-			break
+			return nil
 		}
 	}
-	return result, nil
+	return nil
+}
+
+// cleanupGrace bounds a cleanup that runs after the caller has already given
+// up. It is short because the work is a handful of statements against a
+// database the run is holding open, and unbounded teardown on a canceled run is
+// how a test suite stops being interruptible.
+const cleanupGrace = 30 * time.Second
+
+// runCaseCleanup runs the case's cleanup steps in reverse written order.
+//
+// Reverse order is what makes a cleanup written beside the setup it undoes
+// correct without the author thinking about it: the last thing created is the
+// first thing removed.
+//
+// Every step runs even when an earlier one failed, which is the opposite of the
+// body's rule and deliberately so. A cleanup exists to release something, and
+// stopping at the first failure would leave everything after it held -- a
+// dropped table is not a reason to skip dropping the next one.
+//
+// A canceled run still cleans up, against a context detached from the
+// cancellation and bounded by [cleanupGrace]. Running teardown on the canceled
+// context instead would make every statement fail instantly, which reports as a
+// cleanup that ran and failed rather than as one that never had a chance.
+func (r *runner) runCaseCleanup(ctx context.Context, c Case, result *CaseResult) {
+	if len(c.Cleanup) == 0 {
+		return
+	}
+	if ctx.Err() != nil {
+		detached, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupGrace)
+		defer cancel()
+		ctx = detached
+	}
+
+	for _, step := range slices.Backward(c.Cleanup) {
+		passed, detail := r.execStep(ctx, step)
+		result.Steps = append(result.Steps, StepResult{
+			Name:   step.Name,
+			Passed: passed,
+			Detail: detail,
+			Kind:   StepKindCleanup,
+		})
+		if !passed {
+			result.Passed = false
+			result.CleanupFailed = true
+		}
+	}
 }
 
 func (r *runner) execStep(ctx context.Context, step Step) (passed bool, detail string) {
