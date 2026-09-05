@@ -35,6 +35,22 @@ func loadExportSchema(cmd *cobra.Command, opts exportOptions) (*schemamodel.Data
 	})
 }
 
+// exportSourceLabel names the schema file an exported document was rendered
+// from, for the line under its title.
+//
+// It is a basename and not the path the flag carried. An exported document is
+// meant to be shareable by copying, and --schema-file
+// /home/someone/acme-secret/schema.yaml would put that directory in every copy
+// of it. A Go annotation root is left unnamed: the line still says the thing it
+// exists to say, that this is a declared schema and not a database.
+func exportSourceLabel(opts exportOptions) string {
+	names := make([]string, 0, len(opts.schemaFiles))
+	for _, file := range opts.schemaFiles {
+		names = append(names, filepath.Base(file))
+	}
+	return strings.Join(names, ", ")
+}
+
 // exportRootDirs returns the Go entity roots to scan, or none when the desired
 // schema comes from --schema-file alone. The "." default applies only when no
 // schema file was named, so --schema-file never silently merges whatever
