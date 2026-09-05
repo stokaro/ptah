@@ -3627,8 +3627,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8706,
-      "sourceBytes": 80746
+      "visibleWords": 8702,
+      "sourceBytes": 80726
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",
