@@ -242,8 +242,18 @@ func atlasExecStep(step *hclsyntax.Block, filename string) (Step, error) {
 	if err != nil {
 		return Step{}, err
 	}
-	if err := atlasRejectUnknownAttrs(step, filename, "sql", "output", "match"); err != nil {
+	layout, hasLayout, err := atlasOptionalString(step, "format", filename)
+	if err != nil {
 		return Step{}, err
+	}
+	if err := atlasRejectUnknownAttrs(step, filename, "sql", "output", "match", "format"); err != nil {
+		return Step{}, err
+	}
+	if hasLayout && !hasOutput {
+		// A layout decides how a result is rendered for comparison, so without
+		// something to compare it against it is an instruction nothing reads.
+		return Step{}, fmt.Errorf("%s:%d: `exec` takes `format` with `output`",
+			filename, step.TypeRange.Start.Line)
 	}
 	// Both would be two assertions on one statement, and silently honoring one
 	// of them is how a typo in the other becomes an unchecked statement.
@@ -252,12 +262,28 @@ func atlasExecStep(step *hclsyntax.Block, filename string) (Step, error) {
 			filename, step.TypeRange.Start.Line)
 	}
 	if hasOutput {
-		return Step{Assert: &Assertion{Query: sql, Scalar: &output}}, nil
+		// An output is the whole result rather than its first value: a query
+		// answering two rows where one was expected has to fail, and a scalar
+		// comparison would read the first and pass.
+		return Step{Assert: &Assertion{
+			Query:        sql,
+			ResultSet:    &output,
+			ResultLayout: atlasResultLayout(layout),
+		}}, nil
 	}
 	if hasMatch {
 		return Step{Assert: &Assertion{Query: sql, Match: match}}, nil
 	}
 	return Step{Exec: sql}, nil
+}
+
+// atlasResultLayout reads the layout an `exec` named, defaulting to the one an
+// author gets by naming none.
+func atlasResultLayout(layout string) ResultLayout {
+	if ResultLayout(layout) == ResultLayoutTable {
+		return ResultLayoutTable
+	}
+	return ResultLayoutCSV
 }
 
 // atlasCatchStep translates `catch`, which expects its statement to fail.

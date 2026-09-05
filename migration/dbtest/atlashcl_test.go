@@ -51,8 +51,8 @@ func TestParseAtlasTestCasesTranslatesExecAndOutput(t *testing.T) {
 	c.Assert(cases[0].Steps[1].Exec, qt.Equals, "")
 	c.Assert(cases[0].Steps[1].Assert, qt.IsNotNil)
 	c.Assert(cases[0].Steps[1].Assert.Query, qt.Equals, "SELECT name FROM users WHERE id = 1")
-	c.Assert(cases[0].Steps[1].Assert.Scalar, qt.IsNotNil)
-	c.Assert(*cases[0].Steps[1].Assert.Scalar, qt.Equals, "ada")
+	c.Assert(cases[0].Steps[1].Assert.ResultSet, qt.IsNotNil)
+	c.Assert(*cases[0].Steps[1].Assert.ResultSet, qt.Equals, "ada")
 }
 
 // TestParseAtlasTestCasesPreservesStepOrder is the discriminator for the

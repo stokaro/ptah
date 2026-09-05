@@ -147,7 +147,7 @@ func TestSchemaPlanTest_AFailedAssertionFailsTheRun(t *testing.T) {
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-	c.Assert(out, qt.Contains, `expected scalar "grace@example.com", got "ada@example.com"`)
+	c.Assert(out, qt.Contains, `expected result set "grace@example.com", got "ada@example.com"`)
 	c.Assert(out, qt.Contains, "1 cases, 0 passed, 1 failed")
 }
 
