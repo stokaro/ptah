@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -480,6 +481,11 @@ func (r *runner) execStep(ctx context.Context, step Step) (passed bool, detail s
 		return r.runEstablishSchema(ctx, step.EstablishSchema)
 	case stepKindApplyPlan:
 		return r.runApplyPlan(ctx, step.ApplyPlan)
+	case stepKindLog:
+		// Reaches no database and has no way to fail, so it never decides
+		// whether a case passed. It is executed rather than skipped so its
+		// position among the steps is what the report shows.
+		return true, step.Log
 	default:
 		return false, "step performs no action"
 	}
@@ -585,6 +591,14 @@ func (r *runner) runAssert(ctx context.Context, a *Assertion) (passed bool, deta
 		return r.assertRowCount(ctx, a.Query, *a.RowCount)
 	case a.Scalar != nil:
 		return r.assertScalar(ctx, a.Query, *a.Scalar)
+	case a.Match != "":
+		return r.assertMatch(ctx, a.Query, a.Match)
+	case a.True:
+		return r.assertTrue(ctx, a.Query, a.Message)
+	case a.ErrorMatches != "":
+		return r.assertErrorMatches(ctx, a.Query, a.ErrorMatches)
+	case a.ExpectAnyError:
+		return r.assertAnyError(ctx, a.Query)
 	default:
 		return r.assertErrorContains(ctx, a.Query, a.ErrorContains)
 	}
@@ -655,6 +669,127 @@ func (r *runner) assertErrorContains(ctx context.Context, query, want string) (p
 		return false, fmt.Sprintf("expected error to contain %q, got %q", want, err.Error())
 	}
 	return true, fmt.Sprintf("error contained %q", want)
+}
+
+// assertMatch is the regexp-shaped sibling of assertScalar: the same scanned
+// first value, formatted the same way, tested against a pattern rather than
+// compared for equality.
+//
+// The pattern is unanchored, so it is a search rather than a full match. It is
+// compiled here rather than carried on the assertion because a [Case] is a
+// plain value an embedder may build directly, and a compiled regexp on it would
+// be a field nothing could set meaningfully.
+func (r *runner) assertMatch(ctx context.Context, query, pattern string) (passed bool, detail string) {
+	expression, err := regexp.Compile(pattern)
+	if err != nil {
+		return false, fmt.Sprintf("match is not a valid regular expression: %v", err)
+	}
+	got, err := r.scanFirstValue(ctx, query)
+	if err != nil {
+		return false, fmt.Sprintf("match query failed: %v", err)
+	}
+	if !expression.MatchString(got) {
+		return false, fmt.Sprintf("expected %q to match %q", got, pattern)
+	}
+	return true, fmt.Sprintf("matched %q", pattern)
+}
+
+// assertTrue requires the query to answer one value the driver reports as true.
+//
+// A false value is a test failure rather than an invalid case: the author asked
+// a question and the database answered no. A query that returns no row at all
+// is a different thing — nothing answered — and is reported as such.
+func (r *runner) assertTrue(ctx context.Context, query, message string) (passed bool, detail string) {
+	got, err := r.scanFirstValue(ctx, query)
+	if err != nil {
+		return false, fmt.Sprintf("true query failed: %v", err)
+	}
+	if isTruthyValue(got) {
+		return true, "true"
+	}
+	if message == "" {
+		return false, fmt.Sprintf("expected a true value, got %q", got)
+	}
+	return false, fmt.Sprintf("expected a true value, got %q: %s", got, message)
+}
+
+// assertErrorMatches is assertErrorContains with a pattern instead of a
+// substring.
+func (r *runner) assertErrorMatches(ctx context.Context, query, pattern string) (passed bool, detail string) {
+	expression, err := regexp.Compile(pattern)
+	if err != nil {
+		return false, fmt.Sprintf("error_matches is not a valid regular expression: %v", err)
+	}
+	runErr := r.runExpectingError(ctx, query)
+	if runErr == nil {
+		return false, fmt.Sprintf("expected an error matching %q, but the query succeeded", pattern)
+	}
+	if !expression.MatchString(runErr.Error()) {
+		return false, fmt.Sprintf("expected error %q to match %q", runErr.Error(), pattern)
+	}
+	return true, fmt.Sprintf("error matched %q", pattern)
+}
+
+// assertAnyError requires the query to fail without constraining the message.
+//
+// It is the weakest expectation of the three, and it is deliberately still an
+// expectation: a statement that succeeds fails the case, because the author
+// said it should not.
+func (r *runner) assertAnyError(ctx context.Context, query string) (passed bool, detail string) {
+	err := r.runExpectingError(ctx, query)
+	if err == nil {
+		return false, "expected an error, but the query succeeded"
+	}
+	return true, fmt.Sprintf("error occurred: %v", err)
+}
+
+// scanFirstValue runs query and returns its first column of its first row,
+// formatted the way every value comparison in this package formats one.
+func (r *runner) scanFirstValue(ctx context.Context, query string) (string, error) {
+	rows, err := r.conn.QueryContext(ctx, query)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = rows.Close() }()
+
+	columns, err := rows.Columns()
+	if err != nil {
+		return "", err
+	}
+	if len(columns) == 0 {
+		return "", fmt.Errorf("query returned no columns")
+	}
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return "", err
+		}
+		return "", fmt.Errorf("query returned no rows")
+	}
+	dests := make([]any, len(columns))
+	for i := range dests {
+		dests[i] = new(any)
+	}
+	if err := rows.Scan(dests...); err != nil {
+		return "", err
+	}
+	if err := rows.Close(); err != nil {
+		return "", err
+	}
+	return normalizeScalar(*(dests[0].(*any))), nil
+}
+
+// isTruthyValue reads a formatted scalar as a boolean.
+//
+// Engines answer a boolean expression differently -- PostgreSQL prints `true`,
+// SQLite and MySQL answer 1 -- so the set is spelled out rather than derived
+// from a single driver's behavior.
+func isTruthyValue(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true", "t", "1":
+		return true
+	default:
+		return false
+	}
 }
 
 // runExpectingError runs query and returns any error it produces, draining the

@@ -189,9 +189,9 @@ func atlasRequirePlanKind(kind AtlasTestKind, stepType, filename string, line in
 // what this case may contain rather than what some case may contain.
 func atlasStepsFor(kind AtlasTestKind) string {
 	if kind == AtlasTestKindPlan {
-		return "`exec`, `migrate`, `schema` or `apply`"
+		return "`exec`, `catch`, `assert`, `log`, `migrate`, `schema` or `apply`"
 	}
-	return "`exec` or `migrate`"
+	return "`exec`, `catch`, `assert`, `log` or `migrate`"
 }
 
 // atlasTestStep translates one step block.
@@ -205,6 +205,12 @@ func atlasTestStep(step *hclsyntax.Block, filename string, kind AtlasTestKind) (
 	switch step.Type {
 	case "exec":
 		return atlasExecStep(step, filename)
+	case "catch":
+		return atlasCatchStep(step, filename)
+	case "assert":
+		return atlasAssertStep(step, filename)
+	case "log":
+		return atlasLogStep(step, filename)
 	case "migrate":
 		return atlasMigrateStep(step, filename)
 	case "schema", "apply":
@@ -232,13 +238,84 @@ func atlasExecStep(step *hclsyntax.Block, filename string) (Step, error) {
 	if err != nil {
 		return Step{}, err
 	}
-	if err := atlasRejectUnknownAttrs(step, filename, "sql", "output"); err != nil {
+	match, hasMatch, err := atlasOptionalString(step, "match", filename)
+	if err != nil {
 		return Step{}, err
+	}
+	if err := atlasRejectUnknownAttrs(step, filename, "sql", "output", "match"); err != nil {
+		return Step{}, err
+	}
+	// Both would be two assertions on one statement, and silently honoring one
+	// of them is how a typo in the other becomes an unchecked statement.
+	if hasOutput && hasMatch {
+		return Step{}, fmt.Errorf("%s:%d: `exec` takes `output` or `match`, not both",
+			filename, step.TypeRange.Start.Line)
 	}
 	if hasOutput {
 		return Step{Assert: &Assertion{Query: sql, Scalar: &output}}, nil
 	}
+	if hasMatch {
+		return Step{Assert: &Assertion{Query: sql, Match: match}}, nil
+	}
 	return Step{Exec: sql}, nil
+}
+
+// atlasCatchStep translates `catch`, which expects its statement to fail.
+//
+// The optional `error` is a regular expression rather than a substring, so it
+// reaches [Assertion.ErrorMatches] rather than the substring sibling the native
+// YAML format offers. With no `error` the expectation is only that something
+// failed, which is a weaker assertion and still an assertion: a statement that
+// succeeds fails the case.
+func atlasCatchStep(step *hclsyntax.Block, filename string) (Step, error) {
+	sql, err := atlasRequiredString(step, "sql", filename)
+	if err != nil {
+		return Step{}, err
+	}
+	pattern, hasPattern, err := atlasOptionalString(step, "error", filename)
+	if err != nil {
+		return Step{}, err
+	}
+	if err := atlasRejectUnknownAttrs(step, filename, "sql", "error"); err != nil {
+		return Step{}, err
+	}
+	if hasPattern {
+		return Step{Assert: &Assertion{Query: sql, ErrorMatches: pattern}}, nil
+	}
+	return Step{Assert: &Assertion{Query: sql, ExpectAnyError: true}}, nil
+}
+
+// atlasAssertStep translates `assert`, which runs a statement and requires its
+// single value to be true.
+//
+// It carries SQL rather than an expression: what is asserted is the database's
+// answer, so a false value is a failing test rather than a malformed case, and
+// the optional message says what the author meant by the question.
+func atlasAssertStep(step *hclsyntax.Block, filename string) (Step, error) {
+	sql, err := atlasRequiredString(step, "sql", filename)
+	if err != nil {
+		return Step{}, err
+	}
+	message, _, err := atlasOptionalString(step, "error_message", filename)
+	if err != nil {
+		return Step{}, err
+	}
+	if err := atlasRejectUnknownAttrs(step, filename, "sql", "error_message"); err != nil {
+		return Step{}, err
+	}
+	return Step{Assert: &Assertion{Query: sql, True: true, Message: message}}, nil
+}
+
+// atlasLogStep translates `log`, which records a message where it stands.
+func atlasLogStep(step *hclsyntax.Block, filename string) (Step, error) {
+	message, err := atlasRequiredString(step, "message", filename)
+	if err != nil {
+		return Step{}, err
+	}
+	if err := atlasRejectUnknownAttrs(step, filename, "message"); err != nil {
+		return Step{}, err
+	}
+	return Step{Log: message}, nil
 }
 
 // atlasMigrateStep translates `migrate`.

@@ -86,6 +86,7 @@ package dbtest
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -119,6 +120,13 @@ type Step struct {
 	// ApplyPlan executes a saved plan file against the database. It is the
 	// `apply` block of an Atlas `test "plan"` case.
 	ApplyPlan *ApplyPlanStep `yaml:"apply_plan"`
+	// Log records a message in the report at this position among the steps.
+	//
+	// It touches no database and cannot fail, so it never changes whether a
+	// case passed. It is a step rather than a case-level field because its
+	// position is what makes it useful: a message between two statements says
+	// which one is about to run.
+	Log string `yaml:"log"`
 }
 
 // SchemaSourceStep establishes the database state a schema source describes.
@@ -177,6 +185,27 @@ type Assertion struct {
 	// ErrorContains asserts that running Query fails with an error message that
 	// contains this substring.
 	ErrorContains string `yaml:"error_contains"`
+	// ErrorMatches asserts that running Query fails with an error message the
+	// regular expression matches. It is the regexp-shaped sibling of
+	// ErrorContains: an unanchored pattern, matched against the whole message.
+	ErrorMatches string `yaml:"error_matches"`
+	// ExpectAnyError asserts only that running Query fails, without constraining
+	// the message. It is what an expected-failure step means when the author
+	// named no expectation for the text.
+	ExpectAnyError bool `yaml:"expect_any_error"`
+	// Match asserts that the first column of the first row of Query, formatted
+	// the way Scalar formats it, is matched by this regular expression. The
+	// pattern is unanchored.
+	Match string `yaml:"match"`
+	// True asserts that Query returns a single value the driver reports as
+	// true. It is the boolean assertion: a false value is a test failure rather
+	// than an invalid test case, so a query returning 0 fails the case and a
+	// query returning nothing at all is an error.
+	True bool `yaml:"true"`
+	// Message is appended to the failure detail of a True assertion, so an
+	// author can say what the boolean meant. It is ignored by every other
+	// condition.
+	Message string `yaml:"message"`
 }
 
 // stepKind classifies which action a [Step] performs.
@@ -191,6 +220,7 @@ const (
 	stepKindAssert
 	stepKindEstablishSchema
 	stepKindApplyPlan
+	stepKindLog
 )
 
 // kind reports which single action the step performs and how many actions are
@@ -222,6 +252,10 @@ func (s Step) kind() (kind stepKind, setCount int) {
 	}
 	if s.ApplyPlan != nil {
 		kind = stepKindApplyPlan
+		setCount++
+	}
+	if strings.TrimSpace(s.Log) != "" {
+		kind = stepKindLog
 		setCount++
 	}
 	return kind, setCount
@@ -433,11 +467,32 @@ func (a *Assertion) validate() error {
 	if a.ErrorContains != "" {
 		setCount++
 	}
+	if a.ErrorMatches != "" {
+		setCount++
+		if _, err := regexp.Compile(a.ErrorMatches); err != nil {
+			return fmt.Errorf("error_matches is not a valid regular expression: %w", err)
+		}
+	}
+	if a.ExpectAnyError {
+		setCount++
+	}
+	if a.Match != "" {
+		setCount++
+		if _, err := regexp.Compile(a.Match); err != nil {
+			return fmt.Errorf("match is not a valid regular expression: %w", err)
+		}
+	}
+	if a.True {
+		setCount++
+	}
+	// The list is spelled out rather than derived so the message names what an
+	// author may write, in the order this function checks it.
+	const conditions = "row_count, scalar, error_contains, error_matches, expect_any_error, match, or true"
 	if setCount == 0 {
-		return fmt.Errorf("assert must set exactly one of row_count, scalar, or error_contains, but none is set")
+		return fmt.Errorf("assert must set exactly one of %s, but none is set", conditions)
 	}
 	if setCount > 1 {
-		return fmt.Errorf("assert must set exactly one of row_count, scalar, or error_contains, but %d are set", setCount)
+		return fmt.Errorf("assert must set exactly one of %s, but %d are set", conditions, setCount)
 	}
 	return nil
 }
