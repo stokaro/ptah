@@ -129,6 +129,10 @@ type Step struct {
 	Seed *SeedStep `yaml:"seed"`
 	// Assert runs a query and checks a single condition on the result.
 	Assert *Assertion `yaml:"assert"`
+	// External runs a program. It reaches no database, and it is refused
+	// unless the run authorizes it; see [ExternalStep] and
+	// [Options.AllowExternalCommands].
+	External *ExternalStep `yaml:"external"`
 	// EstablishSchema brings the database to the state a schema source
 	// describes, before anything else in the case runs. It is the `schema`
 	// block of an Atlas `test "plan"` case.
@@ -260,6 +264,7 @@ const (
 	stepKindAssert
 	stepKindEstablishSchema
 	stepKindApplyPlan
+	stepKindExternal
 	stepKindLog
 )
 
@@ -292,6 +297,10 @@ func (s Step) kind() (kind stepKind, setCount int) {
 	}
 	if s.ApplyPlan != nil {
 		kind = stepKindApplyPlan
+		setCount++
+	}
+	if s.External != nil {
+		kind = stepKindExternal
 		setCount++
 	}
 	if strings.TrimSpace(s.Log) != "" {
@@ -430,7 +439,7 @@ func (s Step) validate() error {
 	if setCount == 0 {
 		return fmt.Errorf(
 			"step must set exactly one of migrate_to, apply_schema, exec, seed, assert, " +
-				"establish_schema, or apply_plan, but none is set")
+				"external, establish_schema, or apply_plan, but none is set")
 	}
 	if setCount > 1 {
 		return fmt.Errorf(
@@ -445,6 +454,9 @@ func (s Step) validate() error {
 	}
 	if s.Assert != nil {
 		return s.Assert.validate()
+	}
+	if s.External != nil {
+		return s.External.validate()
 	}
 	if s.EstablishSchema != nil {
 		return s.EstablishSchema.validate()

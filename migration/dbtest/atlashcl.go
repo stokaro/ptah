@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
@@ -230,9 +231,9 @@ func atlasRequirePlanKind(kind AtlasTestKind, stepType, filename string, line in
 // what this case may contain rather than what some case may contain.
 func atlasStepsFor(kind AtlasTestKind) string {
 	if kind == AtlasTestKindPlan {
-		return "`exec`, `catch`, `assert`, `log`, `cleanup`, `migrate`, `schema` or `apply`"
+		return "`exec`, `catch`, `assert`, `log`, `cleanup`, `external`, `migrate`, `schema` or `apply`"
 	}
-	return "`exec`, `catch`, `assert`, `log`, `cleanup` or `migrate`"
+	return "`exec`, `catch`, `assert`, `log`, `cleanup`, `external` or `migrate`"
 }
 
 // atlasTestStep translates one step block.
@@ -254,6 +255,8 @@ func atlasTestStep(step *hclsyntax.Block, scope atlasScope, kind AtlasTestKind) 
 		return atlasLogStep(step, scope)
 	case "cleanup":
 		return atlasCleanupStep(step, scope)
+	case "external":
+		return atlasExternalStep(step, scope)
 	case "migrate":
 		return atlasMigrateStep(step, scope)
 	case "schema", "apply":
@@ -385,6 +388,79 @@ func atlasLogStep(step *hclsyntax.Block, scope atlasScope) (Step, error) {
 		return Step{}, err
 	}
 	return Step{Log: message}, nil
+}
+
+// atlasExternalStep translates `external`, which runs a program rather than a
+// statement.
+//
+// `program` is a list, and that is the security property rather than a spelling
+// convention: the elements become an argument vector, so nothing a test file
+// writes is interpreted as shell syntax. `timeout` is deliberately not an
+// attribute -- the bound belongs to the runner, and accepting one here would
+// let a document raise or remove it.
+func atlasExternalStep(step *hclsyntax.Block, scope atlasScope) (Step, error) {
+	if err := atlasRejectUnknownAttrs(step, scope.filename, "program", "working_dir", "output", "match"); err != nil {
+		return Step{}, err
+	}
+	program, err := atlasStringList(step, "program", scope)
+	if err != nil {
+		return Step{}, err
+	}
+	workingDir, _, err := atlasOptionalString(step, "working_dir", scope)
+	if err != nil {
+		return Step{}, err
+	}
+	output, hasOutput, err := atlasOptionalString(step, "output", scope)
+	if err != nil {
+		return Step{}, err
+	}
+	match, _, err := atlasOptionalString(step, "match", scope)
+	if err != nil {
+		return Step{}, err
+	}
+	if hasOutput && strings.TrimSpace(match) != "" {
+		return Step{}, fmt.Errorf("%s:%d: `external` takes `output` or `match`, not both",
+			scope.filename, step.TypeRange.Start.Line)
+	}
+
+	external := &ExternalStep{Program: program, WorkingDir: workingDir, Match: match}
+	if hasOutput {
+		external.Output = &output
+	}
+	return Step{Name: "external", External: external}, nil
+}
+
+// atlasStringList reads a required list-of-strings attribute.
+//
+// It is separate from the scalar reader because the failure it has to produce
+// is different: a value that is a string rather than a list has to be refused
+// by name, since accepting it and splitting on spaces is how an argument vector
+// silently becomes a command line.
+func atlasStringList(block *hclsyntax.Block, name string, scope atlasScope) ([]string, error) {
+	attr, ok := block.Body.Attributes[name]
+	if !ok {
+		return nil, fmt.Errorf("%s:%d: `%s` requires %s",
+			scope.filename, block.TypeRange.Start.Line, block.Type, name)
+	}
+	value, diags := attr.Expr.Value(scope.ctx)
+	if diags.HasErrors() {
+		return nil, fmt.Errorf("%s:%d: %s: %s", scope.filename, attr.NameRange.Start.Line, name, diags.Error())
+	}
+	valueType := value.Type()
+	if !valueType.IsTupleType() && !valueType.IsListType() {
+		return nil, fmt.Errorf("%s:%d: %s must be a list of strings, got %s",
+			scope.filename, attr.NameRange.Start.Line, name, valueType.FriendlyName())
+	}
+
+	var items []string
+	for _, element := range value.AsValueSlice() {
+		if element.Type() != cty.String {
+			return nil, fmt.Errorf("%s:%d: every %s element must be a string, got %s",
+				scope.filename, attr.NameRange.Start.Line, name, element.Type().FriendlyName())
+		}
+		items = append(items, element.AsString())
+	}
+	return items, nil
 }
 
 // atlasCleanupStep translates `cleanup`, which is a statement the case runs

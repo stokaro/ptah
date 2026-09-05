@@ -109,6 +109,7 @@ Three kinds exist, and each is loaded by one command:
 | `assert` | `sql`, optional `error_message` | Expects the statement to answer a single true value. A false answer is a failing test rather than an invalid case, and `error_message` is appended to the failure so the report says what the question meant. |
 | `log` | `message` | Records the message where it stands among the steps. It reaches no database and cannot fail, so it never decides whether a case passed. |
 | `cleanup` | `sql` | Runs after the case body rather than in it. See below. |
+| `external` | `program`, optional `working_dir`, optional `output` or `match` | Runs a program. Refused unless the run authorizes it. See below. |
 | `migrate` | `to` | Migrates to that version, as `migrate_to` does in YAML. |
 | `schema` | `url` | Establishes the starting state. Plan cases only. |
 | `apply` | `url` | Applies the saved plan file that URL names. Plan cases only. |
@@ -185,6 +186,32 @@ database left dirty. The JSON document carries `cleanup_failed` on the case for
 a consumer that needs to tell them apart without reading the steps.
 
 A skipped case runs no cleanup, because nothing was set up.
+
+### When an `external` step is allowed to run
+
+An `external` step runs a program on the machine executing the suite, which is a
+larger authority than the rest of a test file has. Ptah therefore refuses one by
+default and the refusal is a **load** failure: it happens before any database is
+provisioned, so a directory whose last case runs a program does not first create
+a database and apply a schema. Set `PTAH_ALLOW_EXTERNAL_TEST_COMMAND` to
+authorize it, and the refusal names that variable so an operator reading a
+report knows what the decision is.
+
+`program` is a list, and that is the security property rather than a spelling
+convention. Its elements become an argument vector, so the program is executed
+directly and nothing a test file writes is interpreted as shell syntax; a value
+holding spaces, quotes or semicolons is one argument. A `program` written as a
+string is refused rather than split, because splitting it is how an argument
+vector silently becomes a command line.
+
+The step passes when the program exits zero and whichever expectation it carries
+holds: `output` compares the combined output after surrounding whitespace is
+removed, and `match` tests it against an unanchored regular expression. Writing
+both is refused. A step with neither only asserts a successful exit, which is
+what a fixture whose job is a side effect wants.
+
+There is no `timeout` attribute. The bound belongs to the runner rather than the
+document, so a test file can neither raise nor remove it.
 
 ### What an `exec` compares
 

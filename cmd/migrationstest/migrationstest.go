@@ -15,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/cmd/internal/testexternal"
 	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
@@ -171,6 +172,11 @@ func run(ctx context.Context, out, notice io.Writer, opts options) error {
 	}
 	defer releaseDev()
 
+	allowExternal, err := testexternal.Allowed()
+	if err != nil {
+		return err
+	}
+
 	report, err := dbtest.RunMigrationTest(ctx, dbtest.Options{
 		Cases:           cases,
 		MigrationsDir:   opts.migrationsDir,
@@ -180,6 +186,8 @@ func run(ctx context.Context, out, notice io.Writer, opts options) error {
 		DBURL:           dbURL,
 		DirFormat:       dirFormat,
 		RevisionsSchema: opts.migrationsSchema,
+
+		AllowExternalCommands: allowExternal,
 	})
 	if err != nil {
 		return err

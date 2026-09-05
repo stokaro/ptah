@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/cmd/internal/testexternal"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
@@ -236,12 +237,19 @@ func runSchemaTest(ctx context.Context, out, diag io.Writer, opts testOptions) e
 	}
 	defer releaseDev()
 
+	allowExternal, err := testexternal.Allowed()
+	if err != nil {
+		return err
+	}
+
 	report, err := dbtest.RunSchemaTest(ctx, dbtest.SchemaOptions{
 		Cases:   cases,
 		RootDir: opts.rootDir,
 		Desired: desired,
 		SeedDir: opts.seedDir,
 		DBURL:   dbURL,
+
+		AllowExternalCommands: allowExternal,
 	})
 	if err != nil {
 		return err
