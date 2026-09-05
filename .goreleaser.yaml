@@ -238,7 +238,7 @@ brews:
     caveats: |-
       ptah-edge installs the same three binaries from master. Install only one of
       the two: brew uninstall ptah-edge before installing this one.
-    homepage: "https://github.com/stokaro/ptah"
+    homepage: "https://ptah.run"
     # The product sentence, not a Go-first framing: this is what `brew info
     # ptah` prints, and it is the first thing a reader meets. It is held to the
     # root command's own Short by TestFormulaDescription in cmd/root, so the two

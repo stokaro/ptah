@@ -40,21 +40,23 @@ jobs:
       - name: Run every documented install command
         run: scripts/check-documented-install.sh
 
-  # The published address itself. Every gate in docs.yml reads this tree or the
-  # directory the deploy assembles; none of them asks whether
-  # https://docs.ptah.run/install.sh answers. That difference is not
-  # theoretical: a Pages settings change, a repository rename, or a deploy
-  # triggered by a tag whose workflow file predates the publish step would each
-  # leave the documented one-liner answering 404 with every check green. A tag
-  # deploy replaces the whole site and runs the workflow AS IT EXISTS AT THAT
-  # TAG, and v0.2.0's has no publish step.
+  # The published addresses themselves. Every gate in docs.yml reads this tree
+  # or the directory the deploy assembles; none of them asks whether the
+  # documentation root still serves the installers, or whether the address a
+  # reader is given, https://ptah.run/install.sh, answers at all. That
+  # difference is not theoretical: a Pages settings change, a repository rename,
+  # or a deploy triggered by a tag whose workflow file predates the publish step
+  # would each leave a published one-liner answering 404 with every check green.
+  # A tag deploy replaces the whole site and runs the workflow AS IT EXISTS AT
+  # THAT TAG, and v0.2.0's has no publish step. The project site is another
+  # repository's deploy, which this tree cannot see except by asking.
   #
   # Not on `push`: a push to master starts this workflow and the Pages deploy at
   # the same time, so the probe would race the deploy it is meant to verify. The
   # schedule catches every one of the failures above within the day, which is
   # what they need.
   pages-root-urls:
-    name: The published Pages root serves the install scripts
+    name: The published root and the advertised address serve the install scripts
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 10

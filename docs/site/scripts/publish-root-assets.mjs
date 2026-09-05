@@ -21,7 +21,7 @@
 // without deploying on merge. Astro also copies public/ into each version's
 // dist/, so the same bytes appear at /<version>/install.sh; that copy is
 // harmless and is not the published address.
-import { RootURL } from '../src/lib/docs-origin.mjs';
+import { InstallURL, RootURL } from '../src/lib/docs-origin.mjs';
 
 import {
   copyFileSync,
@@ -41,21 +41,26 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultRepoRoot = join(scriptDir, '..', '..', '..');
 
 // ROOT_ASSETS is the declaration both this script and check-pages-root.mjs
-// read. `published` is the command the documentation gives a reader; the gate
-// requires the documentation to carry each one, so an asset nobody can reach
-// and a command nothing serves are both findings.
+// read. `url` is where this deploy serves the file, at the documentation root;
+// `advertised` is the address a reader is given, on the project site, which
+// fetches the same source from master; `published` is the command built from
+// it. The gate requires the documentation to name each asset at one address or
+// the other, so an asset nobody can reach and a command nothing serves are
+// both findings.
 export const ROOT_ASSETS = [
   {
     name: 'install.sh',
     source: 'docs/site/public/install.sh',
     url: RootURL('install.sh'),
-    published: `curl -fsSL ${RootURL('install.sh')} | sh`,
+    advertised: InstallURL('install.sh'),
+    published: `curl -fsSL ${InstallURL('install.sh')} | sh`,
   },
   {
     name: 'install.ps1',
     source: 'docs/site/public/install.ps1',
     url: RootURL('install.ps1'),
-    published: `irm ${RootURL('install.ps1')} | iex`,
+    advertised: InstallURL('install.ps1'),
+    published: `irm ${InstallURL('install.ps1')} | iex`,
   },
   {
     // The annotation JSON Schema, published at the address it declares as its
@@ -138,12 +143,16 @@ function selftest() {
     }
 
     // Every asset carries a name, a source under docs/site/public, a URL on the
-    // Pages root, and the command the documentation publishes.
+    // Pages root, the address a reader is given, and the command built from it.
     for (const asset of ROOT_ASSETS) {
       assert(asset.source.startsWith('docs/site/public/'), `${asset.name} is sourced from ${asset.source}`);
       assert(asset.source.endsWith(`/${asset.name}`), `${asset.name} does not match its source path`);
       assert(asset.url === RootURL(asset.name), `${asset.name} has an unexpected URL`);
-      assert(asset.published.includes(asset.url), `${asset.name}'s published command does not use its URL`);
+      assert(asset.advertised === InstallURL(asset.name), `${asset.name} has an unexpected advertised address`);
+      assert(
+        asset.published.includes(asset.advertised),
+        `${asset.name}'s published command does not use its advertised address`,
+      );
     }
 
     // An empty source is refused, not copied. A zero-byte install.sh would

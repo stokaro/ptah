@@ -26,8 +26,10 @@
 //      before the artifact is uploaded. Rule 2 passes on a tree whose workflow
 //      no longer calls either of them.
 //   4. Every root URL the documentation publishes is a file the assembly
-//      writes, and every declared asset is named by the documentation. The
-//      first direction is the 404; the second is an asset nobody can find.
+//      writes, and every declared asset is named by the documentation -- at
+//      the address a reader is given (the project site, InstallURL) or at the
+//      root itself. The first direction is the 404; the second is an asset
+//      nobody can find.
 //
 // `--site <dir>` is the third half, and the build job runs it on the real
 // `_site` after assembling it. Rules 1 to 4 read the tree; this reads what was
@@ -41,8 +43,14 @@
 // exists AT THAT TAG. None of those is a change to this tree, so nothing here
 // can see them. Only a request can, which is why `--live` exists and why it
 // runs on a schedule rather than on a pull request.
+//
+// `--live` also asks the advertised address, the project site, whether each
+// installer answers at all. That site is another repository's deploy, which
+// fetches these sources from master on its own schedule, so only the answer is
+// judged there -- a 200, a body, a shell script that begins like one -- and
+// not the bytes.
 import { execFileSync } from 'node:child_process';
-import { Origin, RootURL, PageURL } from '../src/lib/docs-origin.mjs';
+import { InstallURL, Origin, PageURL, RootURL, SiteOrigin } from '../src/lib/docs-origin.mjs';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -68,6 +76,10 @@ const PUSH_CONDITION = "github.event_name == 'push'";
 // written here it kept the tree honestly pointed at the host the site had left
 // (stokaro/ptah#2884).
 const PAGES_PREFIX = `${Origin}/`;
+// The project site, where the installers are advertised. A reference under
+// this prefix documents an asset as well as one under PAGES_PREFIX does, and
+// it is what the pages actually give a reader.
+const SITE_PREFIX = `${SiteOrigin}/`;
 
 // Discovery has to fail closed. A `git ls-files` that matches nothing would
 // make rule 4 report a clean run while reading no documentation at all, which
@@ -84,7 +96,7 @@ export function workflowSteps(workflow) {
 // analyze takes prepared inputs rather than reading the tree, so the self-test
 // can hand it a tree that does not exist and require each rule to fire.
 export function analyze(input) {
-  const { assets, generated, sources, assembled, workflow, documented, scanned } = input;
+  const { assets, generated, sources, assembled, workflow, documented, scanned, advertised = new Map() } = input;
   const problems = [];
 
   const expected = [...generated, ...assets.map((asset) => asset.name)];
@@ -165,8 +177,10 @@ export function analyze(input) {
     }
   }
   for (const asset of assets) {
-    if (!documented.has(asset.name)) {
-      problems.push(`no documentation page names ${asset.url}; it is served and unreachable`);
+    if (!documented.has(asset.name) && !advertised.has(asset.name)) {
+      problems.push(
+        `no documentation page names ${asset.advertised} or ${asset.url}; it is served and unreachable`,
+      );
     }
   }
 
@@ -235,6 +249,43 @@ export function analyzeLive(input) {
   return problems;
 }
 
+// analyzeAdvertised judges what the project site answered for each installer,
+// at the address the documentation gives a reader. `fetched` has the shape
+// analyzeLive reads.
+//
+// No byte comparison here, deliberately. That site fetches these sources from
+// master on its own schedule, so between a push here and its next deploy the
+// bytes differ without anything being wrong. What must hold at every moment is
+// that the address answers with a script: a 200, a body, and for the shell
+// installer a first line that a `| sh` can start on.
+export function analyzeAdvertised(input) {
+  const { assets, fetched } = input;
+  const problems = [];
+  for (const asset of assets) {
+    const answer = fetched.get(asset.name);
+    if (!answer) {
+      problems.push(`${asset.advertised} was not requested`);
+      continue;
+    }
+    if (answer.error) {
+      problems.push(`${asset.advertised} could not be requested: ${answer.error}`);
+      continue;
+    }
+    if (answer.status !== 200) {
+      problems.push(`${asset.advertised} answered ${answer.status}; the command the pages publish fails`);
+      continue;
+    }
+    if (answer.text.length === 0) {
+      problems.push(`${asset.advertised} answered 200 with an empty body`);
+      continue;
+    }
+    if (asset.name.endsWith('.sh') && !answer.text.startsWith('#!/bin/sh\n')) {
+      problems.push(`${asset.advertised} does not begin with #!/bin/sh; it is not the installer`);
+    }
+  }
+  return problems;
+}
+
 // rootFileReferences pulls the root-level file names out of one file's Pages
 // URLs. A URL with no path, or one whose path enters a version directory, names
 // no root file; neither does an extensionless route.
@@ -251,13 +302,14 @@ function escapeRegExp(literal) {
 	return literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-export function rootFileReferences(text) {
+export function rootFileReferences(text, prefix = PAGES_PREFIX) {
   const found = new Set();
   // Built from the one declaration rather than written out. This was a third
   // spelling of the site's address -- after the origin constant and the prose
   // it checks -- and a regexp is the spelling a search for the host finds last
-  // (stokaro/ptah#2884).
-  const pattern = new RegExp(`${escapeRegExp(PAGES_PREFIX)}([A-Za-z0-9._~%\\-/]*)`, 'g');
+  // (stokaro/ptah#2884). The same scan reads the project site's references when
+  // handed SITE_PREFIX.
+  const pattern = new RegExp(`${escapeRegExp(prefix)}([A-Za-z0-9._~%\\-/]*)`, 'g');
   let match = pattern.exec(text);
   while (match !== null) {
     const path = match[1].replace(/[.,;:!?)\]}'"]+$/, '');
@@ -346,6 +398,21 @@ async function fetchRoot(names) {
   return fetched;
 }
 
+// fetchAdvertised requests each installer from the address a reader is given,
+// recording a failed request the way fetchRoot does.
+async function fetchAdvertised(assets) {
+  const fetched = new Map();
+  for (const asset of assets) {
+    try {
+      const response = await fetch(asset.advertised, { redirect: 'follow' });
+      fetched.set(asset.name, { status: response.status, text: await response.text() });
+    } catch (error) {
+      fetched.set(asset.name, { error: error.message });
+    }
+  }
+  return fetched;
+}
+
 function selftest() {
   const assert = (condition, message) => {
     if (!condition) throw new Error(message);
@@ -356,13 +423,15 @@ function selftest() {
       name: 'install.sh',
       source: 'docs/site/public/install.sh',
       url: RootURL('install.sh'),
-      published: `curl -fsSL ${RootURL('install.sh')} | sh`,
+      advertised: InstallURL('install.sh'),
+      published: `curl -fsSL ${InstallURL('install.sh')} | sh`,
     },
     {
       name: 'install.ps1',
       source: 'docs/site/public/install.ps1',
       url: RootURL('install.ps1'),
-      published: `irm ${RootURL('install.ps1')} | iex`,
+      advertised: InstallURL('install.ps1'),
+      published: `irm ${InstallURL('install.ps1')} | iex`,
     },
   ];
   const generated = ['versions.json', 'index.html'];
@@ -538,6 +607,28 @@ function selftest() {
     'a documented root URL nothing writes must be reported',
   );
 
+  // An asset named only at the address a reader is given is documented. The
+  // pages moved the command to the project site; the root copy is what the
+  // addresses already in the wild resolve to, and a page need not name both.
+  const advertisedOnly = healthy();
+  advertisedOnly.documented.delete('install.ps1');
+  advertisedOnly.advertised = new Map([['install.ps1', ['README.md']]]);
+  assert(
+    analyze(advertisedOnly).length === 0,
+    `an asset named at the advertised address is documented: ${JSON.stringify(analyze(advertisedOnly))}`,
+  );
+
+  // And the finding for an asset named nowhere says both addresses, so the
+  // reader who adds one knows which is the one to give.
+  const namedNowhere = healthy();
+  namedNowhere.documented.delete('install.ps1');
+  assert(
+    analyze(namedNowhere).some(
+      (problem) => problem.includes(InstallURL('install.ps1')) && problem.includes(RootURL('install.ps1')),
+    ),
+    'an asset named nowhere is reported with both of its addresses',
+  );
+
   const readNothing = healthy();
   readNothing.scanned = 0;
   assert(
@@ -619,6 +710,58 @@ function selftest() {
     'a file nothing asked for must not read as a pass',
   );
 
+  // The advertised address. It belongs to another deploy, so only the answer
+  // is judged: each case below is a way the published one-liner fails.
+  const advertisedHealthy = () => ({
+    assets,
+    fetched: new Map([
+      ['install.sh', { status: 200, text: '#!/bin/sh\n# the installer\n' }],
+      ['install.ps1', { status: 200, text: "Write-Output 'ptah'\n" }],
+    ]),
+  });
+  assert(
+    analyzeAdvertised(advertisedHealthy()).length === 0,
+    `a site that serves both installers must pass: ${JSON.stringify(analyzeAdvertised(advertisedHealthy()))}`,
+  );
+
+  const advertisedGone = advertisedHealthy();
+  advertisedGone.fetched.set('install.sh', { status: 404, text: 'not found' });
+  assert(
+    analyzeAdvertised(advertisedGone).some((problem) => problem.includes(`${InstallURL('install.sh')} answered 404`)),
+    'a 404 at the advertised address must be reported',
+  );
+
+  const advertisedUnreachable = advertisedHealthy();
+  advertisedUnreachable.fetched.set('install.ps1', { error: 'getaddrinfo ENOTFOUND' });
+  assert(
+    analyzeAdvertised(advertisedUnreachable).some((problem) => problem.includes('could not be requested')),
+    'an advertised address that never answered must be reported',
+  );
+
+  const advertisedEmpty = advertisedHealthy();
+  advertisedEmpty.fetched.set('install.ps1', { status: 200, text: '' });
+  assert(
+    analyzeAdvertised(advertisedEmpty).some((problem) => problem.includes('empty body')),
+    'a 200 with nothing in it at the advertised address must be reported',
+  );
+
+  // A site that answers 200 with a page instead of the script -- a 404 page
+  // served with the wrong status, a placeholder -- is the failure a `| sh`
+  // turns into a shell parsing HTML.
+  const advertisedNotAScript = advertisedHealthy();
+  advertisedNotAScript.fetched.set('install.sh', { status: 200, text: '<!doctype html>\n' });
+  assert(
+    analyzeAdvertised(advertisedNotAScript).some((problem) => problem.includes('does not begin with #!/bin/sh')),
+    'a 200 that is not a shell script must be reported',
+  );
+
+  const advertisedNotRequested = advertisedHealthy();
+  advertisedNotRequested.fetched.delete('install.sh');
+  assert(
+    analyzeAdvertised(advertisedNotRequested).some((problem) => problem.includes('was not requested')),
+    'an advertised address nothing asked for must not read as a pass',
+  );
+
   // rootFileReferences reads root files and nothing else.
   const references = rootFileReferences(
     [
@@ -639,6 +782,26 @@ function selftest() {
   assert(!references.has('install.sh,'), 'a comma is not part of the file name either');
   assert(references.size === 3, `a versioned page URL names no root file: ${JSON.stringify([...references])}`);
 
+  // The same scan under the project site's prefix reads the advertised
+  // addresses and nothing under the documentation root. The root's host ends in
+  // the site's host, which is why the prefix carries the scheme.
+  const advertisedReferences = rootFileReferences(
+    [
+      `curl -fsSL ${InstallURL('install.sh')} | sh`,
+      `irm ${InstallURL('install.ps1')} | iex`,
+      `the site lives at ${SiteOrigin}/`,
+      `the picker reads ${RootURL('versions.json')}`,
+      `a page at ${PageURL('edge', 'start/install/')}`,
+    ].join('\n'),
+    SITE_PREFIX,
+  );
+  assert(advertisedReferences.has('install.sh'), 'the advertised shell installer is read');
+  assert(advertisedReferences.has('install.ps1'), 'the advertised PowerShell installer is read');
+  assert(
+    advertisedReferences.size === 2,
+    `a documentation-root URL is not an advertised one: ${JSON.stringify([...advertisedReferences])}`,
+  );
+
   console.log('check-pages-root.mjs --selftest: OK');
 }
 
@@ -656,19 +819,25 @@ async function main() {
       const path = sourcePath(asset);
       if (existsSync(path)) sources.set(asset.name, readFileSync(path, 'utf8'));
     }
-    const problems = analyzeLive({
-      assets: ROOT_ASSETS,
-      generated: GENERATED_ROOT_FILES,
-      fetched: await fetchRoot(names),
-      sources,
-    });
+    const problems = [
+      ...analyzeLive({
+        assets: ROOT_ASSETS,
+        generated: GENERATED_ROOT_FILES,
+        fetched: await fetchRoot(names),
+        sources,
+      }),
+      ...analyzeAdvertised({ assets: ROOT_ASSETS, fetched: await fetchAdvertised(ROOT_ASSETS) }),
+    ];
     if (problems.length > 0) {
-      console.error(`check-pages-root.mjs --live: ${problems.length} problem(s) at ${PAGES_PREFIX}:`);
+      console.error(`check-pages-root.mjs --live: ${problems.length} problem(s) at ${PAGES_PREFIX} or ${SITE_PREFIX}:`);
       for (const problem of problems) console.error(`- ${problem}`);
       process.exitCode = 1;
       return;
     }
-    console.log(`check-pages-root.mjs --live: OK (${PAGES_PREFIX} serves ${names.join(', ')})`);
+    console.log(
+      `check-pages-root.mjs --live: OK (${PAGES_PREFIX} serves ${names.join(', ')}; ` +
+        `${SITE_PREFIX} serves ${ROOT_ASSETS.map((asset) => asset.name).join(', ')})`,
+    );
     return;
   }
 
@@ -707,10 +876,16 @@ async function main() {
 
   const files = trackedDocumentationFiles();
   const documented = new Map();
+  const advertised = new Map();
   for (const file of files) {
-    for (const name of rootFileReferences(readFileSync(join(repoRoot, file), 'utf8'))) {
+    const text = readFileSync(join(repoRoot, file), 'utf8');
+    for (const name of rootFileReferences(text)) {
       if (!documented.has(name)) documented.set(name, []);
       documented.get(name).push(file);
+    }
+    for (const name of rootFileReferences(text, SITE_PREFIX)) {
+      if (!advertised.has(name)) advertised.set(name, []);
+      advertised.get(name).push(file);
     }
   }
 
@@ -721,6 +896,7 @@ async function main() {
     assembled: assembleFixture(),
     workflow: readFileSync(workflowPath, 'utf8'),
     documented,
+    advertised,
     scanned: files.length,
   });
 

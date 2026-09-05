@@ -39,6 +39,21 @@ export function RootURL(name) {
 	return `${Origin}/${name}`;
 }
 
+// SiteOrigin is the project's own site, and the address a reader is given for
+// the installers: `curl -fsSL https://ptah.run/install.sh | sh`. That site's
+// deploy fetches docs/site/public/install.sh and install.ps1 from the master
+// branch of this repository, so what a reader runs is what this tree holds.
+export const SiteOrigin = 'https://ptah.run';
+
+// InstallURL is the advertised address of one installer.
+//
+// The documentation root keeps serving the same files at RootURL: every command
+// published before the move names that address, and the retired host's redirect
+// lands there. What changed is which address the pages give a reader.
+export function InstallURL(name) {
+	return `${SiteOrigin}/${name}`;
+}
+
 // PageURL is the absolute URL of one page of one version.
 //
 // Route is written the way the site's own routes are, without a leading slash

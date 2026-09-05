@@ -21,7 +21,9 @@
 #      the declaration is always possible. Prose, the standalone installers and
 #      the workflows spell the address by necessity -- a Markdown page and a
 #      `curl | sh` one-liner cannot import an ES module -- so rule 2 does not
-#      reach them and rule 1 is what holds them.
+#      reach them and rule 1 is what holds them. The same rule holds the project
+#      site's origin, which the same file declares: the installers are
+#      advertised there, and a second spelling of it is the same defect.
 #
 # This gate contains no literal spelling of either host. The needle is assembled
 # from halves below, which is not obfuscation: a scanner that names what it
@@ -38,6 +40,9 @@ retired_host="stokaro.github$(printf '\056')io"
 # The declaration every JavaScript caller must read instead of spelling it.
 declaration="docs/site/src/lib/docs-origin.mjs"
 live_host="docs.ptah$(printf '\056')run"
+# The project site, scheme included: its host is a suffix of the live host, and
+# the scheme is what keeps this needle from matching every documentation URL.
+site_origin="https://ptah$(printf '\056')run"
 
 # corpus is every file this gate reads, and it asks git rather than walking the
 # filesystem for the reason scripts/check-test-style.sh documents: a walk
@@ -77,7 +82,7 @@ fi
 
 js_hits=""
 while IFS= read -r path; do
-	[ "$path" = "$declaration" ] || js_hits="${js_hits}$(grep -nF -- "$live_host" "$path" /dev/null || true)
+	[ "$path" = "$declaration" ] || js_hits="${js_hits}$(grep -nF -e "$live_host" -e "$site_origin" -- "$path" /dev/null || true)
 "
 done < <(corpus -- 'docs/site/*.mjs' 'docs/site/*.js' 'docs/site/*.ts')
 js_hits="$(printf '%s' "$js_hits" | grep -v '^$' || true)"
@@ -85,7 +90,7 @@ js_hits="$(printf '%s' "$js_hits" | grep -v '^$' || true)"
 if [ -n "$js_hits" ]; then
 	echo "check-docs-origin: the site's address is spelled again instead of imported:" >&2
 	echo "$js_hits" | sed 's/^/  /' >&2
-	echo "  import { Origin } from '<relative path>/src/lib/docs-origin.mjs' and build from it." >&2
+	echo "  import { Origin } or { SiteOrigin } from '<relative path>/src/lib/docs-origin.mjs' and build from it." >&2
 	echo "  Two literals of this address is what published a site nobody could style" >&2
 	echo "  (stokaro/ptah#2884)." >&2
 	status=1
