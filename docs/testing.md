@@ -112,6 +112,53 @@ Three kinds exist, and each is loaded by one command:
 | `schema` | `url` | Establishes the starting state. Plan cases only. |
 | `apply` | `url` | Applies the saved plan file that URL names. Plan cases only. |
 
+### What a case takes
+
+A `test` block carries two attributes of its own, beside the step blocks in its
+body:
+
+| Attribute | Behavior |
+| --- | --- |
+| `for_each` | Expands the case into one instance per element, named `<case>/1`, `<case>/2` and so on. |
+| `skip` | An expression. When it is true the instance is reported as skipped and none of its steps run. |
+
+A file may also declare top-level `variable` blocks. Each needs a `default`, and
+a variable without one is refused rather than resolved to nothing.
+
+```hcl
+variable "prefix" {
+  default = "acct"
+}
+
+test "schema" "accounts" {
+  for_each = { small = 1, large = 1000 }
+  skip     = each.key == "large"
+
+  exec {
+    sql = "INSERT INTO accounts (name, size) VALUES ('${var.prefix}-${each.key}', ${each.value})"
+  }
+}
+```
+
+Four values resolve inside a case, and `file()` reads beside the test:
+
+| Reference | Resolves to |
+| --- | --- |
+| `each.key` | The element's position over a collection, and the key itself over a mapping. |
+| `each.value` | The element. |
+| `self.name` | The instance's own name, `accounts/1` rather than `accounts`. |
+| `self.dev_url` | The disposable database's address. |
+| `file("payload.sql")` | The file's contents, read from the directory holding the test. |
+
+Two of those repay a second reading. `each.key` differs by what is iterated, so
+a case written against a mapping and later pointed at a list changes what its
+key means. And a mapping iterates in **sorted key order** rather than the order
+its keys were written, which is what makes a report reproducible.
+
+`file()` reads only inside the directory that holds the test file. An absolute
+path, a parent traversal, and a symbolic link pointing outward are each refused,
+because a test file is repository-controlled and evaluated before anything runs.
+
 ### What an `exec` compares
 
 `output` compares the **whole** result rather than its first value, so a query
@@ -135,6 +182,17 @@ something went wrong. The marker appears in the text report's status column, as
 `kind` in the JSON document -- absent for an ordinary step, so a report of
 nothing else is byte-identical to one from before the field existed -- and as
 the label and CSS class in the HTML page.
+
+A **case** has a fourth state beside passed and failed. A skipped case is marked
+`SKIP`, carries no steps because none ran, counts in its own column of the
+summary line, and is neither a pass nor a failure: folding it into the passes
+would tell a reader that a check they rely on ran, and dropping it from the
+report would make a skipped case indistinguishable from one nobody wrote. The
+summary line therefore always states four numbers:
+
+```text
+4 cases, 2 passed, 1 failed, 1 skipped
+```
 
 An unknown step, an unknown attribute, a `test` block without exactly two
 labels, and a `schema` or `apply` step outside a plan case are each refused by

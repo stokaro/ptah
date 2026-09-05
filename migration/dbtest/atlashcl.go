@@ -2,6 +2,7 @@ package dbtest
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 
 	"github.com/hashicorp/hcl/v2"
@@ -55,7 +56,12 @@ const (
 // The `output` attribute turns an `exec` into an assertion rather than a bare
 // statement, because that is what it means in Atlas: the statement runs and its
 // first result is compared. An `exec` without `output` is a plain statement.
-func ParseAtlasTestCases(data []byte, filename string, kind AtlasTestKind) ([]Case, error) {
+func ParseAtlasTestCases(
+	data []byte,
+	filename string,
+	kind AtlasTestKind,
+	options ...AtlasTestOption,
+) ([]Case, error) {
 	file, diags := hclsyntax.ParseConfig(data, filename, hcl.Pos{Line: 1, Column: 1})
 	if diags.HasErrors() {
 		return nil, fmt.Errorf("parse %s: %s", filename, diags.Error())
@@ -65,10 +71,23 @@ func ParseAtlasTestCases(data []byte, filename string, kind AtlasTestKind) ([]Ca
 		return nil, fmt.Errorf("parse %s: unexpected body type %T", filename, file.Body)
 	}
 
+	variables, err := atlasVariables(body, filename)
+	if err != nil {
+		return nil, err
+	}
+	evalOptions := atlasEvalOptions{}
+	for _, option := range options {
+		option(&evalOptions)
+	}
+	dir := filepath.Dir(filename)
+
 	var cases []Case
 	for _, block := range body.Blocks {
+		if block.Type == "variable" {
+			continue
+		}
 		if block.Type != "test" {
-			return nil, fmt.Errorf("%s:%d: unsupported block %q: only `test` blocks are supported",
+			return nil, fmt.Errorf("%s:%d: unsupported block %q: only `test` and `variable` blocks are supported",
 				filename, block.TypeRange.Start.Line, block.Type)
 		}
 		if len(block.Labels) != 2 {
@@ -87,11 +106,16 @@ func ParseAtlasTestCases(data []byte, filename string, kind AtlasTestKind) ([]Ca
 			continue
 		}
 
-		steps, err := atlasTestSteps(block, filename, blockKind)
+		expanded, err := atlasExpandCase(block, name, blockKind, atlasCaseContext{
+			variables: variables,
+			options:   evalOptions,
+			dir:       dir,
+			filename:  filename,
+		})
 		if err != nil {
 			return nil, err
 		}
-		cases = append(cases, Case{Name: name, Steps: steps})
+		cases = append(cases, expanded...)
 	}
 
 	if err := validateCases(cases); err != nil {
@@ -101,20 +125,23 @@ func ParseAtlasTestCases(data []byte, filename string, kind AtlasTestKind) ([]Ca
 }
 
 // atlasTestSteps translates one `test` block body into ordered native steps.
-func atlasTestSteps(block *hclsyntax.Block, filename string, kind AtlasTestKind) ([]Step, error) {
-	if len(block.Body.Attributes) > 0 {
+func atlasTestSteps(block *hclsyntax.Block, scope atlasScope, kind AtlasTestKind) ([]Step, error) {
+	if len(block.Body.Attributes) > len(atlasCaseAttributes) {
 		names := make([]string, 0, len(block.Body.Attributes))
 		for attrName := range block.Body.Attributes {
+			if atlasCaseAttributes[attrName] {
+				continue
+			}
 			names = append(names, attrName)
 		}
 		sort.Strings(names)
 		return nil, fmt.Errorf("%s:%d: `test` body takes step blocks, not attributes: %v",
-			filename, block.TypeRange.Start.Line, names)
+			scope.filename, block.TypeRange.Start.Line, names)
 	}
 
 	steps := make([]Step, 0, len(block.Body.Blocks))
 	for _, step := range block.Body.Blocks {
-		translated, err := atlasTestStep(step, filename, kind)
+		translated, err := atlasTestStep(step, scope, kind)
 		if err != nil {
 			return nil, err
 		}
@@ -123,31 +150,31 @@ func atlasTestSteps(block *hclsyntax.Block, filename string, kind AtlasTestKind)
 	return steps, nil
 }
 
-func atlasRequiredString(block *hclsyntax.Block, name, filename string) (string, error) {
-	value, ok, err := atlasOptionalString(block, name, filename)
+func atlasRequiredString(block *hclsyntax.Block, name string, scope atlasScope) (string, error) {
+	value, ok, err := atlasOptionalString(block, name, scope)
 	if err != nil {
 		return "", err
 	}
 	if !ok {
 		return "", fmt.Errorf("%s:%d: `%s` requires %s",
-			filename, block.TypeRange.Start.Line, block.Type, name)
+			scope.filename, block.TypeRange.Start.Line, block.Type, name)
 	}
 	return value, nil
 }
 
-func atlasOptionalString(block *hclsyntax.Block, name, filename string) (string, bool, error) {
+func atlasOptionalString(block *hclsyntax.Block, name string, scope atlasScope) (string, bool, error) {
 	attr, ok := block.Body.Attributes[name]
 	if !ok {
 		return "", false, nil
 	}
-	value, diags := attr.Expr.Value(nil)
+	value, diags := attr.Expr.Value(scope.ctx)
 	if diags.HasErrors() {
 		return "", false, fmt.Errorf("%s:%d: %s: %s",
-			filename, attr.NameRange.Start.Line, name, diags.Error())
+			scope.filename, attr.NameRange.Start.Line, name, diags.Error())
 	}
 	if value.Type() != cty.String {
 		return "", false, fmt.Errorf("%s:%d: %s must be a string",
-			filename, attr.NameRange.Start.Line, name)
+			scope.filename, attr.NameRange.Start.Line, name)
 	}
 	return value.AsString(), true, nil
 }
@@ -200,66 +227,66 @@ func atlasStepsFor(kind AtlasTestKind) string {
 // function rather than as another arm of one that grows every time a kind is
 // added -- which is how the third kind pushed the loop past the complexity the
 // linter allows (stokaro/ptah#1211).
-func atlasTestStep(step *hclsyntax.Block, filename string, kind AtlasTestKind) (Step, error) {
+func atlasTestStep(step *hclsyntax.Block, scope atlasScope, kind AtlasTestKind) (Step, error) {
 	line := step.TypeRange.Start.Line
 	switch step.Type {
 	case "exec":
-		return atlasExecStep(step, filename)
+		return atlasExecStep(step, scope)
 	case "catch":
-		return atlasCatchStep(step, filename)
+		return atlasCatchStep(step, scope)
 	case "assert":
-		return atlasAssertStep(step, filename)
+		return atlasAssertStep(step, scope)
 	case "log":
-		return atlasLogStep(step, filename)
+		return atlasLogStep(step, scope)
 	case "migrate":
-		return atlasMigrateStep(step, filename)
+		return atlasMigrateStep(step, scope)
 	case "schema", "apply":
 		// Both belong to a plan case. Accepting them elsewhere would run a plan
 		// the caller of that kind never asked for, which is the same reason
 		// kinds are not interchangeable in the first place.
-		if err := atlasRequirePlanKind(kind, step.Type, filename, line); err != nil {
+		if err := atlasRequirePlanKind(kind, step.Type, scope.filename, line); err != nil {
 			return Step{}, err
 		}
-		return atlasPlanStep(step, filename)
+		return atlasPlanStep(step, scope)
 	default:
 		return Step{}, fmt.Errorf("%s:%d: unsupported step %q: want %s",
-			filename, line, step.Type, atlasStepsFor(kind))
+			scope.filename, line, step.Type, atlasStepsFor(kind))
 	}
 }
 
 // atlasExecStep translates `exec`. The `output` attribute turns it into an
 // assertion, because that is what it means in Atlas.
-func atlasExecStep(step *hclsyntax.Block, filename string) (Step, error) {
-	sql, err := atlasRequiredString(step, "sql", filename)
+func atlasExecStep(step *hclsyntax.Block, scope atlasScope) (Step, error) {
+	sql, err := atlasRequiredString(step, "sql", scope)
 	if err != nil {
 		return Step{}, err
 	}
-	output, hasOutput, err := atlasOptionalString(step, "output", filename)
+	output, hasOutput, err := atlasOptionalString(step, "output", scope)
 	if err != nil {
 		return Step{}, err
 	}
-	match, hasMatch, err := atlasOptionalString(step, "match", filename)
+	match, hasMatch, err := atlasOptionalString(step, "match", scope)
 	if err != nil {
 		return Step{}, err
 	}
-	layout, hasLayout, err := atlasOptionalString(step, "format", filename)
+	layout, hasLayout, err := atlasOptionalString(step, "format", scope)
 	if err != nil {
 		return Step{}, err
 	}
-	if err := atlasRejectUnknownAttrs(step, filename, "sql", "output", "match", "format"); err != nil {
+	if err := atlasRejectUnknownAttrs(step, scope.filename, "sql", "output", "match", "format"); err != nil {
 		return Step{}, err
 	}
 	if hasLayout && !hasOutput {
 		// A layout decides how a result is rendered for comparison, so without
 		// something to compare it against it is an instruction nothing reads.
 		return Step{}, fmt.Errorf("%s:%d: `exec` takes `format` with `output`",
-			filename, step.TypeRange.Start.Line)
+			scope.filename, step.TypeRange.Start.Line)
 	}
 	// Both would be two assertions on one statement, and silently honoring one
 	// of them is how a typo in the other becomes an unchecked statement.
 	if hasOutput && hasMatch {
 		return Step{}, fmt.Errorf("%s:%d: `exec` takes `output` or `match`, not both",
-			filename, step.TypeRange.Start.Line)
+			scope.filename, step.TypeRange.Start.Line)
 	}
 	if hasOutput {
 		// An output is the whole result rather than its first value: a query
@@ -293,16 +320,16 @@ func atlasResultLayout(layout string) ResultLayout {
 // YAML format offers. With no `error` the expectation is only that something
 // failed, which is a weaker assertion and still an assertion: a statement that
 // succeeds fails the case.
-func atlasCatchStep(step *hclsyntax.Block, filename string) (Step, error) {
-	sql, err := atlasRequiredString(step, "sql", filename)
+func atlasCatchStep(step *hclsyntax.Block, scope atlasScope) (Step, error) {
+	sql, err := atlasRequiredString(step, "sql", scope)
 	if err != nil {
 		return Step{}, err
 	}
-	pattern, hasPattern, err := atlasOptionalString(step, "error", filename)
+	pattern, hasPattern, err := atlasOptionalString(step, "error", scope)
 	if err != nil {
 		return Step{}, err
 	}
-	if err := atlasRejectUnknownAttrs(step, filename, "sql", "error"); err != nil {
+	if err := atlasRejectUnknownAttrs(step, scope.filename, "sql", "error"); err != nil {
 		return Step{}, err
 	}
 	if hasPattern {
@@ -317,40 +344,40 @@ func atlasCatchStep(step *hclsyntax.Block, filename string) (Step, error) {
 // It carries SQL rather than an expression: what is asserted is the database's
 // answer, so a false value is a failing test rather than a malformed case, and
 // the optional message says what the author meant by the question.
-func atlasAssertStep(step *hclsyntax.Block, filename string) (Step, error) {
-	sql, err := atlasRequiredString(step, "sql", filename)
+func atlasAssertStep(step *hclsyntax.Block, scope atlasScope) (Step, error) {
+	sql, err := atlasRequiredString(step, "sql", scope)
 	if err != nil {
 		return Step{}, err
 	}
-	message, _, err := atlasOptionalString(step, "error_message", filename)
+	message, _, err := atlasOptionalString(step, "error_message", scope)
 	if err != nil {
 		return Step{}, err
 	}
-	if err := atlasRejectUnknownAttrs(step, filename, "sql", "error_message"); err != nil {
+	if err := atlasRejectUnknownAttrs(step, scope.filename, "sql", "error_message"); err != nil {
 		return Step{}, err
 	}
 	return Step{Assert: &Assertion{Query: sql, True: true, Message: message}}, nil
 }
 
 // atlasLogStep translates `log`, which records a message where it stands.
-func atlasLogStep(step *hclsyntax.Block, filename string) (Step, error) {
-	message, err := atlasRequiredString(step, "message", filename)
+func atlasLogStep(step *hclsyntax.Block, scope atlasScope) (Step, error) {
+	message, err := atlasRequiredString(step, "message", scope)
 	if err != nil {
 		return Step{}, err
 	}
-	if err := atlasRejectUnknownAttrs(step, filename, "message"); err != nil {
+	if err := atlasRejectUnknownAttrs(step, scope.filename, "message"); err != nil {
 		return Step{}, err
 	}
 	return Step{Log: message}, nil
 }
 
 // atlasMigrateStep translates `migrate`.
-func atlasMigrateStep(step *hclsyntax.Block, filename string) (Step, error) {
-	to, err := atlasRequiredString(step, "to", filename)
+func atlasMigrateStep(step *hclsyntax.Block, scope atlasScope) (Step, error) {
+	to, err := atlasRequiredString(step, "to", scope)
 	if err != nil {
 		return Step{}, err
 	}
-	if err := atlasRejectUnknownAttrs(step, filename, "to"); err != nil {
+	if err := atlasRejectUnknownAttrs(step, scope.filename, "to"); err != nil {
 		return Step{}, err
 	}
 	return Step{MigrateTo: to}, nil
@@ -358,12 +385,12 @@ func atlasMigrateStep(step *hclsyntax.Block, filename string) (Step, error) {
 
 // atlasPlanStep translates `schema` and `apply`, which differ only in what the
 // url they both require names.
-func atlasPlanStep(step *hclsyntax.Block, filename string) (Step, error) {
-	url, err := atlasRequiredString(step, "url", filename)
+func atlasPlanStep(step *hclsyntax.Block, scope atlasScope) (Step, error) {
+	url, err := atlasRequiredString(step, "url", scope)
 	if err != nil {
 		return Step{}, err
 	}
-	if err := atlasRejectUnknownAttrs(step, filename, "url"); err != nil {
+	if err := atlasRejectUnknownAttrs(step, scope.filename, "url"); err != nil {
 		return Step{}, err
 	}
 	if step.Type == "schema" {

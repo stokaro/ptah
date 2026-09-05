@@ -62,7 +62,7 @@ func ExampleRunMigrationTest() {
 	//     PASS    step "exactly one product exists" — row_count 1
 	//     PASS    step "the product is named widget" — scalar "widget"
 	//
-	// 1 cases, 1 passed, 0 failed
+	// 1 cases, 1 passed, 0 failed, 0 skipped
 }
 
 // ExampleRunSchemaTest exercises a desired schema without authoring
@@ -113,7 +113,7 @@ type User struct {
 	//     PASS    step "insert a user" — exec ok
 	//     PASS    step "the user is retrievable" — scalar "ada"
 	//
-	// 1 cases, 1 passed, 0 failed
+	// 1 cases, 1 passed, 0 failed, 0 skipped
 }
 
 // ExampleParseCases loads the YAML authoring format the package doc describes:
