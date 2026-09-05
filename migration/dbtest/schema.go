@@ -28,6 +28,9 @@ type SchemaOptions struct {
 	// ExternalTimeout bounds each external step. Zero selects
 	// [DefaultExternalTimeout].
 	ExternalTimeout time.Duration
+	// Parallelism bounds how many cases marked [Case.Parallel] run at once.
+	// See [Options.Parallelism].
+	Parallelism int
 	// RootDir is a directory of Go entity annotations describing the desired
 	// schema. It is parsed with goschema.ParseDir and converged through the live
 	// diff and planner path before any case runs (once per ephemeral per-case
@@ -142,7 +145,7 @@ func RunSchemaTest(ctx context.Context, opts SchemaOptions) (*Report, error) {
 	if kind == "" {
 		kind = "SCHEMA"
 	}
-	return runCases(ctx, opts.DBURL, kind, opts.Cases, provision, run)
+	return runCases(ctx, opts.DBURL, kind, opts.Cases, opts.Parallelism, provision, run)
 }
 
 func desiredSchemaForMigrationCases(rootDir string, cases []Case) (*schemamodel.Database, error) {

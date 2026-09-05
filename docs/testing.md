@@ -123,6 +123,7 @@ body:
 | --- | --- |
 | `for_each` | Expands the case into one instance per element, named `<case>/1`, `<case>/2` and so on. |
 | `skip` | An expression. When it is true the instance is reported as skipped and none of its steps run. |
+| `parallel` | An expression. When it is true the case may run at the same time as other parallel cases. |
 
 A file may also declare top-level `variable` blocks. Each needs a `default`, and
 a variable without one is refused rather than resolved to nothing.
@@ -160,6 +161,27 @@ its keys were written, which is what makes a report reproducible.
 `file()` reads only inside the directory that holds the test file. An absolute
 path, a parent traversal, and a symbolic link pointing outward are each refused,
 because a test file is repository-controlled and evaluated before anything runs.
+
+### When a case may run in parallel
+
+`parallel` is honored only where each case gets a database of its own, which is
+what `ptah schema test` and `ptah migrations test` do when no database URL is
+given: a case is provisioned a throwaway database, runs against it, and it is
+removed afterwards.
+
+Pointed at a database you own, every case shares one connection. Concurrency
+there would let one case's statements decide another's result, so a parallel
+case is **refused** rather than approximated, before anything runs. Omit the
+database URL to get the isolation the attribute needs.
+
+Two properties hold whatever the schedule was. The report lists cases in
+document order, so two runs of one file are comparable; and every case
+contributes a result: a suite that reported success while some of its cases
+never ran would be green, shorter by however many went missing, and silent about
+which ones.
+
+`parallel` is per case, so a file may mix parallel and ordinary cases, and a
+skipped case stays skipped either way.
 
 ### When a `cleanup` runs
 

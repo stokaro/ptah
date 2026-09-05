@@ -56,6 +56,11 @@ type Options struct {
 	// ExternalTimeout bounds each external step. Zero selects
 	// [DefaultExternalTimeout]; a test file cannot change it.
 	ExternalTimeout time.Duration
+	// Parallelism bounds how many cases marked [Case.Parallel] run at once.
+	// Zero reads the machine's GOMAXPROCS, which is the right default for a
+	// suite and the wrong basis for anything that has to know how much
+	// concurrency it got.
+	Parallelism int
 	// DBURL is an optional database URL to run the tests against. It must point
 	// at a throwaway database, because tests mutate schema and data. When empty,
 	// an ephemeral SQLite database is provisioned in a temporary directory and
@@ -444,7 +449,7 @@ func RunMigrationTest(ctx context.Context, opts Options) (*Report, error) {
 	}
 	// Migration tests need no per-database provisioning: each case applies its
 	// own migrations via migrate_to.
-	return runCases(ctx, opts.DBURL, "MIGRATION", opts.Cases, nil, run)
+	return runCases(ctx, opts.DBURL, "MIGRATION", opts.Cases, opts.Parallelism, nil, run)
 }
 
 // caseRunner runs a single case against a freshly provisioned connection.
@@ -471,9 +476,24 @@ type provisionFunc func(ctx context.Context, conn *dbschema.DatabaseConnection) 
 // ephemeral database. Schema tests use it to create the desired schema exactly
 // once per database; migration tests pass nil because each case applies its own
 // migrations.
-func runCases(ctx context.Context, dbURL, kind string, cases []Case, provision provisionFunc, run caseRunner) (*Report, error) {
+func runCases(
+	ctx context.Context,
+	dbURL, kind string,
+	cases []Case,
+	parallelism int,
+	provision provisionFunc,
+	run caseRunner,
+) (*Report, error) {
 	if dbURL != "" {
+		// One caller-owned database, shared by every case. Concurrency has no
+		// isolation to stand on here, so it is refused rather than approximated.
+		if err := refuseParallelWithoutIsolation(cases); err != nil {
+			return nil, err
+		}
 		return runExplicitCases(ctx, dbURL, kind, cases, provision, run)
+	}
+	if anyParallel(cases) {
+		return runParallelCases(ctx, kind, cases, parallelism, provision, run)
 	}
 
 	report := &Report{Cases: make([]CaseResult, 0, len(cases)), kind: kind}

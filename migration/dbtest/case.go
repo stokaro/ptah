@@ -107,6 +107,14 @@ type Case struct {
 	// records which kind of failure occurred. A skipped case runs no cleanup,
 	// because nothing was set up.
 	Cleanup []Step `yaml:"cleanup"`
+	// Parallel lets the case run at the same time as other parallel cases.
+	//
+	// It is honored only where each case gets a database of its own. A run
+	// against a caller-owned database refuses it with
+	// [ErrParallelNeedsIsolation] rather than sharing one connection between
+	// concurrent mutating cases, which would let one case's statements decide
+	// another's result.
+	Parallel bool `yaml:"parallel"`
 	// Skip reports the case without running any of its steps. It is neither a
 	// pass nor a failure: a run that skips three cases says so, because a case
 	// that quietly disappeared from a report is indistinguishable from one that
