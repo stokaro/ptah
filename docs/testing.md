@@ -108,6 +108,7 @@ Three kinds exist, and each is loaded by one command:
 | `catch` | `sql`, optional `error` | Expects the statement to fail. Without `error` the expectation is only that something failed; with it, the message must match that unanchored regular expression. A statement that succeeds fails the case either way. |
 | `assert` | `sql`, optional `error_message` | Expects the statement to answer a single true value. A false answer is a failing test rather than an invalid case, and `error_message` is appended to the failure so the report says what the question meant. |
 | `log` | `message` | Records the message where it stands among the steps. It reaches no database and cannot fail, so it never decides whether a case passed. |
+| `cleanup` | `sql` | Runs after the case body rather than in it. See below. |
 | `migrate` | `to` | Migrates to that version, as `migrate_to` does in YAML. |
 | `schema` | `url` | Establishes the starting state. Plan cases only. |
 | `apply` | `url` | Applies the saved plan file that URL names. Plan cases only. |
@@ -159,6 +160,32 @@ its keys were written, which is what makes a report reproducible.
 path, a parent traversal, and a symbolic link pointing outward are each refused,
 because a test file is repository-controlled and evaluated before anything runs.
 
+### When a `cleanup` runs
+
+A `cleanup` block leaves the case body and joins the case's teardown, wherever
+it is written among the steps. Four things decide its behavior, and each is a
+promise rather than an implementation detail:
+
+- **It runs in reverse written order.** A cleanup written beside the setup it
+  undoes is therefore correct without the author arranging anything: the last
+  thing created is the first thing removed.
+- **It runs whatever the body did** — after it passes, after a step fails, after
+  a `catch` handles an expected failure, and after the run is canceled. A
+  teardown that only ran on success would release nothing on exactly the runs
+  that left something behind.
+- **It does not stop at its own first failure.** A cleanup exists to release
+  something, and stopping would leave everything after the failure held.
+- **It runs against the case's own database**, the one the body used.
+
+A cleanup failure fails the case without displacing the body's failure. Both
+appear as steps, in the order they happened, so a reader sees the check that
+failed and the teardown that failed as the two separate problems they are: a
+failed check is a defect in what the case asserts, and a failed teardown is a
+database left dirty. The JSON document carries `cleanup_failed` on the case for
+a consumer that needs to tell them apart without reading the steps.
+
+A skipped case runs no cleanup, because nothing was set up.
+
 ### What an `exec` compares
 
 `output` compares the **whole** result rather than its first value, so a query
@@ -178,7 +205,11 @@ A report tells three passing outcomes apart, because `passed` alone describes
 two of them wrongly. An ordinary step carries no marker; a `log` is marked
 `LOG`, since it reached no database and checked nothing; and a `catch` whose
 statement failed as expected is marked `CAUGHT`, since it passed *because*
-something went wrong. The marker appears in the text report's status column, as
+something went wrong. A cleanup step keeps the ordinary `PASS` or `FAIL` word -- whether it worked is
+the same question as for any other step -- and says which half of the case it
+belongs to beside its name, as `cleanup step`.
+
+The marker appears in the text report's status column, as
 `kind` in the JSON document -- absent for an ordinary step, so a report of
 nothing else is byte-identical to one from before the field existed -- and as
 the label and CSS class in the HTML page.

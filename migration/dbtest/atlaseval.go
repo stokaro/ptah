@@ -319,11 +319,16 @@ func atlasExpandCase(
 			return nil, err
 		}
 
-		steps, err := atlasTestSteps(block, atlasScope{filename: caseContext.filename, ctx: ctx}, kind)
+		body, err := atlasTestSteps(block, atlasScope{filename: caseContext.filename, ctx: ctx}, kind)
 		if err != nil {
 			return nil, err
 		}
-		cases = append(cases, Case{Name: instance, Steps: steps, Skip: skip})
+		cases = append(cases, Case{
+			Name:    instance,
+			Steps:   body.steps,
+			Cleanup: body.cleanup,
+			Skip:    skip,
+		})
 	}
 	return cases, nil
 }
