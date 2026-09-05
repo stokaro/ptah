@@ -26,6 +26,7 @@ jobs:
       examples: ${{ steps.filter.outputs.examples }}
       inference: ${{ steps.filter.outputs.inference }}
       quickstart: ${{ steps.filter.outputs.quickstart }}
+      assets: ${{ steps.filter.outputs.assets }}
       embedded: ${{ steps.embedded-filter.outputs.embedded }}
     steps:
       - uses: actions/checkout@v7
@@ -45,6 +46,17 @@ jobs:
               - 'README.md'
               - '**/README.md'
               - 'AGENTS.md'
+              - '.github/workflows/docs.yml'
+            # What decides the bytes of a committed sample: the Go that writes
+            # it, the fixture it is written from, the generator that drives the
+            # binary, and the sample itself.
+            assets:
+              - '**/*.go'
+              - 'docs/site/fixtures/**'
+              - 'docs/site/scripts/generate-schema-ui-assets.mjs'
+              - 'docs/site/scripts/generate-product-output-assets.mjs'
+              - 'docs/site/scripts/check-generated-assets.mjs'
+              - 'docs/site/public/samples/**'
               - '.github/workflows/docs.yml'
             generated:
               - '**/*.go'
@@ -684,6 +696,48 @@ jobs:
           PTAH_BIN="$RUNNER_TEMP/ptah" scripts/check-source-workflows.sh
           go test ./internal/cmdref -count=1
 
+  asset-freshness:
+    name: Generated assets
+    needs: changes
+    # The assets classification covers both halves: the Go that writes these
+    # artifacts, and the fixtures and generators under docs/site that decide
+    # what is written. A change to either can leave a committed sample
+    # describing output nothing produces (stokaro/ptah#2905).
+    if: >-
+      ( github.event_name == 'pull_request' && needs.changes.outputs.assets == 'true' ) ||
+      ( github.event_name == 'push' && github.ref == 'refs/heads/master' )
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: docs/site/package-lock.json
+      # ptah viz --format svg shells out to Graphviz, and the visualize samples
+      # are part of what this compares. apt has been slow enough on these
+      # runners to be worth a ceiling of its own; go-integration-tests.yml
+      # carries the same note.
+      - name: Install Graphviz
+        timeout-minutes: 10
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes graphviz
+
+      - name: Verify the committed samples match what the binary writes
+        run: |
+          set -euo pipefail
+          go build -o "$RUNNER_TEMP/ptah" ./cmd/ptah
+          cd docs/site
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run check:generated-assets:selftest
+          PTAH_BIN="$RUNNER_TEMP/ptah" npm run check:generated-assets
+
   example-acceptance:
     name: Example acceptance
     needs: changes
@@ -718,6 +772,7 @@ jobs:
       - example-acceptance
       - inference-quick-start
       - quickstart-acceptance
+      - asset-freshness
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -731,6 +786,7 @@ jobs:
           EXAMPLES_CHANGED: ${{ needs.changes.outputs.examples }}
           INFERENCE_CHANGED: ${{ needs.changes.outputs.inference }}
           QUICKSTART_CHANGED: ${{ needs.changes.outputs.quickstart }}
+          ASSETS_CHANGED: ${{ needs.changes.outputs.assets }}
           CHANGES_RESULT: ${{ needs.changes.result }}
           SITE_RESULT: ${{ needs.build.result }}
           STYLE_RESULT: ${{ needs.style.result }}
@@ -739,6 +795,7 @@ jobs:
           EXAMPLES_RESULT: ${{ needs.example-acceptance.result }}
           INFERENCE_RESULT: ${{ needs.inference-quick-start.result }}
           QUICKSTART_RESULT: ${{ needs.quickstart-acceptance.result }}
+          ASSETS_RESULT: ${{ needs.asset-freshness.result }}
         run: |
           node docs/site/scripts/check-documentation-gate.mjs --selftest
           node docs/site/scripts/check-documentation-gate.mjs

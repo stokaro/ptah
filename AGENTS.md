@@ -1151,6 +1151,10 @@ npm run check:page-health:selftest && npm run check:page-health
 npm run check:content-inventory:selftest && npm run check:content-inventory
 npm run check:editorial-shape:selftest && npm run check:editorial-shape
 npm run check:exit-codes:selftest && npm run check:exit-codes
+# Needs a built bin/ptah, a Playwright browser and Graphviz; it regenerates as
+# it checks, so a failure leaves the new bytes in the working tree.
+npm run check:generated-assets:selftest
+PTAH_BIN=$(pwd)/../../bin/ptah npm run check:generated-assets
 npm run check:navigation:selftest
 npm run check:search-ranking:selftest
 DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run build
@@ -1258,10 +1262,34 @@ are regenerated from committed fixtures;
 contract. `check-accessibility.mjs` runs axe and keyboard controls at mobile
 and desktop widths, while `check-visual-snapshots.mjs` produces review
 artifacts without treating platform-dependent pixels as a stable baseline.
-Run `PTAH_BIN=../../bin/ptah npm run assets:write` from `docs/site` after
+Run `PTAH_BIN=<absolute path> npm run assets:write` from `docs/site` after
 building `bin/ptah` whenever a visual-output fixture, generator, or owning page
 changes. Record a missing graphical product output as explanatory rather than
 presenting an authored diagram as something Ptah emitted.
+
+**`assets:write` is two generators**, `assets:schema-ui` and
+`assets:product-output`, and running one leaves the other's artifacts describing
+output the binary no longer writes. Three consecutive changes shipped that way
+before anything compared them (stokaro/ptah#2905): #2866 left four report
+samples behind, #2899 found them, #2903 left seven more.
+`check-generated-assets.mjs` now regenerates and compares on every pull request
+that touches the Go, the fixtures, the generators, or the samples themselves.
+
+It governs the **text** samples under `docs/site/public/samples`, not the PNGs
+beside them, and that is not a gap: a Ptah HTML document carries its whole
+stylesheet inline, so every appearance change is a text change, and all three
+misses above were caught by it in reconstruction. A screenshot is a browser
+rendering whose pixels move with the platform's fonts, which is why
+`check-visual-snapshots.mjs` keeps no pixel baseline either. The screenshots
+remain a reading responsibility; the gate says so when it fails.
+
+Two properties are what make it a gate rather than a ceremony, and both are
+there because the obvious version has neither. A generator that crashes before
+writing anything leaves a working tree exactly as clean as one that confirmed
+every file, so the check requires both generators to exit 0 and reports the
+count it compared. And the governed corpus is held above a floor in the script,
+because a glob that stopped matching reports zero differences and reads as
+success.
 
 ### The quick starts run in CI
 
