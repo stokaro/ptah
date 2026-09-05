@@ -197,7 +197,13 @@ server that URL names**, created for it and dropped afterwards -- which is what
 lets `ptah-compat schema test` and `ptah-compat migrate test` run a parallel
 file at all, since an Atlas-shaped invocation always supplies `--dev-url`.
 
-A file that never says `parallel` is unaffected: an explicit URL keeps its
+The opt-in is per RUN rather than per case, and that is worth knowing before
+using it: one `parallel` case anywhere in `--dir` gives EVERY case in that run a
+database of its own, including the cases that never asked. A suite whose second
+case reads what its first case wrote will stop working the moment a third case
+is marked parallel.
+
+A run in which nothing says `parallel` is unaffected: an explicit URL keeps its
 documented behavior of one shared database for every case.
 
 Where a dialect has no way to give a case its own database, a parallel case is

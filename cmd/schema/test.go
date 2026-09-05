@@ -217,7 +217,15 @@ func runSchemaTest(ctx context.Context, out, diag io.Writer, opts testOptions) e
 		return fmt.Errorf("unsupported report format %q: want text, json, or html", opts.report)
 	}
 
-	cases, err := dbtest.LoadCasesOfKind(opts.dir, dbtest.AtlasTestKindSchema)
+	// Loaded twice, deliberately. This first read validates the documents
+	// before anything is provisioned, which is the property the ordering below
+	// exists to protect; it carries the flag's own value so a document naming
+	// `self.dev_url` is validated rather than refused. The second read, after
+	// the address is actually known, is what makes `self.dev_url` resolve to
+	// the database the cases run against -- a container provisioned here has an
+	// address the flag never held.
+	cases, err := dbtest.LoadCasesOfKind(
+		opts.dir, dbtest.AtlasTestKindSchema, dbtest.WithAtlasTestDevURL(opts.dbURL))
 	if err != nil {
 		return fmt.Errorf("failed to load test cases: %w", err)
 	}
@@ -246,6 +254,16 @@ func runSchemaTest(ctx context.Context, out, diag io.Writer, opts testOptions) e
 		return err
 	}
 	defer releaseDev()
+
+	cases, err = dbtest.LoadCasesOfKind(
+		opts.dir, dbtest.AtlasTestKindSchema, dbtest.WithAtlasTestDevURL(dbURL))
+	if err != nil {
+		return fmt.Errorf("failed to load test cases: %w", err)
+	}
+	cases, err = dbtest.FilterCases(cases, opts.run)
+	if err != nil {
+		return err
+	}
 
 	allowExternal, err := testexternal.Allowed()
 	if err != nil {

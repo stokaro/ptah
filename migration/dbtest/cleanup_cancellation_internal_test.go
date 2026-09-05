@@ -92,3 +92,63 @@ func TestRunCaseCleanup_LeavesAnUncanceledContextAlone(t *testing.T) {
 	c.Assert(result.Steps[0].Passed, qt.IsTrue)
 	c.Assert(ctx.Err(), qt.IsNil)
 }
+
+// TestExpectedFailure_AnInterruptionIsNotACaughtRefusal is the misclassification
+// #2866 names, and it cannot be reached through the public API for the reason
+// this file already gives: a context canceled before the run fails at connect,
+// and one canceled during a step needs a hook the public Step type must not
+// grow.
+//
+// A caught step passes because the DATABASE refused what it was asked. A
+// canceled context is not that -- the statement may never have reached the
+// server -- and counting it as the expected failure makes an interrupted suite
+// report that all its refusals occurred, which is the worst possible answer
+// from a run nobody watched.
+func TestExpectedFailure_AnInterruptionIsNotACaughtRefusal(t *testing.T) {
+	database, err := shadowdb.Open(context.Background(), "", "ptah-dbtest-interrupt-*")
+	qt.New(t).Assert(err, qt.IsNil)
+	defer database.Close()
+
+	r := &runner{conn: database.Connection()}
+
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tests := []struct {
+		name       string
+		wantDetail string
+	}{
+		{name: "expect any error", wantDetail: "interrupted rather than the statement refused"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			passed, detail := r.assertAnyError(canceled, "SELECT * FROM missing_table")
+
+			c.Assert(passed, qt.IsFalse)
+			c.Assert(detail, qt.Contains, test.wantDetail)
+		})
+	}
+
+	t.Run("error matches", func(t *testing.T) {
+		c := qt.New(t)
+
+		passed, detail := r.assertErrorMatches(canceled, "SELECT * FROM missing_table", "missing")
+
+		c.Assert(passed, qt.IsFalse)
+		c.Assert(detail, qt.Contains, "interrupted rather than the statement refused")
+	})
+
+	// The control: a real refusal on a healthy context still passes, so the
+	// rule was not achieved by making every expected failure fail.
+	t.Run("a real refusal still passes", func(t *testing.T) {
+		c := qt.New(t)
+
+		passed, detail := r.assertAnyError(context.Background(), "SELECT * FROM missing_table")
+
+		c.Assert(passed, qt.IsTrue, qt.Commentf("detail: %s", detail))
+		c.Assert(detail, qt.Contains, "error occurred")
+	})
+}

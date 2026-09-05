@@ -121,7 +121,9 @@ func runAtlasSchemaPlanTest(cmd *cobra.Command, opts atlasSchemaPlanTestOptions)
 			"%s takes at most one path, got %d", atlasSchemaPlanTestVerb, len(opts.paths)))
 	}
 
-	cases, err := dbtest.LoadCasesOfKind(dir, dbtest.AtlasTestKindPlan)
+	// Loaded twice; see the same shape and reason in cmd/schema.
+	cases, err := dbtest.LoadCasesOfKind(
+		dir, dbtest.AtlasTestKindPlan, dbtest.WithAtlasTestDevURL(opts.devURL))
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("load plan test cases: %w", err))
 	}
@@ -151,6 +153,12 @@ func runAtlasSchemaPlanTest(cmd *cobra.Command, opts atlasSchemaPlanTestOptions)
 	// invocation: a malformed value is a configuration error the operator
 	// already changed, and letting it wait until a run happens to reach an
 	// external step hides it behind every healthy run.
+	cases, err = dbtest.LoadCasesOfKind(
+		dir, dbtest.AtlasTestKindPlan, dbtest.WithAtlasTestDevURL(devURL))
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+
 	allowExternal, err := testexternal.Allowed()
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

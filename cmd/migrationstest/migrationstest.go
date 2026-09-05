@@ -145,7 +145,9 @@ func run(ctx context.Context, out, notice io.Writer, opts options) error {
 		return err
 	}
 
-	cases, err := dbtest.LoadCasesOfKind(opts.dir, dbtest.AtlasTestKindMigrate)
+	// Loaded twice; see the same shape and reason in cmd/schema.
+	cases, err := dbtest.LoadCasesOfKind(
+		opts.dir, dbtest.AtlasTestKindMigrate, dbtest.WithAtlasTestDevURL(opts.dbURL))
 	if err != nil {
 		return fmt.Errorf("failed to load test cases: %w", err)
 	}
@@ -183,6 +185,16 @@ func run(ctx context.Context, out, notice io.Writer, opts options) error {
 	defer releaseDev()
 
 	allowExternal, err := testexternal.Allowed()
+	if err != nil {
+		return err
+	}
+
+	cases, err = dbtest.LoadCasesOfKind(
+		opts.dir, dbtest.AtlasTestKindMigrate, dbtest.WithAtlasTestDevURL(dbURL))
+	if err != nil {
+		return fmt.Errorf("failed to load test cases: %w", err)
+	}
+	cases, err = dbtest.FilterCases(cases, opts.runPattern)
 	if err != nil {
 		return err
 	}

@@ -109,7 +109,12 @@ func isCaseFile(name string) bool {
 // it and the two are not interchangeable: a `test "migrate"` case drives the
 // migration directory to a version, which a schema test run must not do. Native
 // YAML cases carry no kind and are returned for either.
-func LoadCasesOfKind(dir string, kind AtlasTestKind) ([]Case, error) {
+// Options reach the Atlas reader, so a caller that knows the address the cases
+// will run against supplies it here and `self.dev_url` resolves. A caller that
+// does not is not penalized: a document referring to `self.dev_url` is refused
+// rather than resolved to an empty string, which is the same fail-closed rule
+// the option itself documents.
+func LoadCasesOfKind(dir string, kind AtlasTestKind, options ...AtlasTestOption) ([]Case, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("read test-case directory %s: %w", dir, err)
@@ -141,7 +146,8 @@ func LoadCasesOfKind(dir string, kind AtlasTestKind) ([]Case, error) {
 			// because that is what a diagnostic should print, and deriving the
 			// read directory from it resolved `file()` against the process's
 			// working directory instead of the suite's.
-			parsed, err = ParseAtlasTestCases(data, name, kind, WithAtlasTestDir(dir))
+			parsed, err = ParseAtlasTestCases(
+				data, name, kind, append([]AtlasTestOption{WithAtlasTestDir(dir)}, options...)...)
 		} else {
 			parsed, err = ParseCases(data)
 		}
