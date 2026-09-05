@@ -156,8 +156,9 @@ func (r *Report) Text() string {
 		}
 	}
 
-	total, passed, failed, skipped := r.counts()
-	fmt.Fprintf(&b, "\n%d cases, %d passed, %d failed, %d skipped\n", total, passed, failed, skipped)
+	tally := r.counts()
+	fmt.Fprintf(&b, "\n%d cases, %d passed, %d failed, %d skipped\n",
+		tally.total, tally.passed, tally.failed, tally.skipped)
 	return b.String()
 }
 
@@ -187,18 +188,30 @@ func (r *Report) reportKind() string {
 }
 
 // counts returns the total, passed, and failed case counts.
-func (r *Report) counts() (total, passed, failed, skipped int) {
-	total = len(r.Cases)
+// reportCounts is the case tally a summary line and both structured formats
+// render. It is a struct rather than four results so the four cannot be
+// swapped at a call site, which is the one mistake a reader of a summary line
+// has no way to notice.
+type reportCounts struct {
+	total   int
+	passed  int
+	failed  int
+	skipped int
+}
+
+func (r *Report) counts() reportCounts {
+	tally := reportCounts{total: len(r.Cases)}
 	for i := range r.Cases {
 		if r.Cases[i].Skipped {
-			skipped++
+			tally.skipped++
 			continue
 		}
 		if r.Cases[i].Passed {
-			passed++
+			tally.passed++
 		}
 	}
-	return total, passed, total - passed - skipped, skipped
+	tally.failed = tally.total - tally.passed - tally.skipped
+	return tally
 }
 
 // JSON renders the report as indented JSON: the kind, summary counts, and every
@@ -264,7 +277,7 @@ func stepStatusLabel(step StepResult) string {
 }
 
 func (r *Report) JSON() (string, error) {
-	total, passed, failed, skipped := r.counts()
+	tally := r.counts()
 	// Normalize a nil case slice to an empty one so the JSON is always
 	// "cases": [] rather than "cases": null, even for a zero-value Report built
 	// directly by a library caller.
@@ -281,10 +294,10 @@ func (r *Report) JSON() (string, error) {
 		Cases   []CaseResult `json:"cases"`
 	}{
 		Kind:    r.reportKind(),
-		Total:   total,
-		Passed:  passed,
-		Failed:  failed,
-		Skipped: skipped,
+		Total:   tally.total,
+		Passed:  tally.passed,
+		Failed:  tally.failed,
+		Skipped: tally.skipped,
 		Cases:   cases,
 	}
 	out, err := json.MarshalIndent(doc, "", "  ")
@@ -296,7 +309,7 @@ func (r *Report) JSON() (string, error) {
 
 // HTML renders the report as a self-contained HTML document.
 func (r *Report) HTML() (string, error) {
-	total, passed, failed, skipped := r.counts()
+	tally := r.counts()
 	data := struct {
 		Kind    string
 		Total   int
@@ -304,7 +317,7 @@ func (r *Report) HTML() (string, error) {
 		Failed  int
 		Skipped int
 		Cases   []CaseResult
-	}{r.reportKind(), total, passed, failed, skipped, r.Cases}
+	}{r.reportKind(), tally.total, tally.passed, tally.failed, tally.skipped, r.Cases}
 
 	var b strings.Builder
 	if err := reportHTMLTemplate.Execute(&b, data); err != nil {

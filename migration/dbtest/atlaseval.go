@@ -60,7 +60,7 @@ func WithAtlasTestDevURL(devURL string) AtlasTestOption {
 // statement as the string "null" -- a test that runs, passes, and asserts
 // against a value nobody wrote.
 func atlasVariables(body *hclsyntax.Body, filename string) (map[string]cty.Value, error) {
-	values := map[string]cty.Value{}
+	values := make(map[string]cty.Value)
 	for _, block := range body.Blocks {
 		if block.Type != "variable" {
 			continue
@@ -128,7 +128,7 @@ func atlasEvalContext(
 // attributes rather than to nothing at all.
 func orEmptyObject(values map[string]cty.Value) map[string]cty.Value {
 	if values == nil {
-		return map[string]cty.Value{}
+		return make(map[string]cty.Value)
 	}
 	return values
 }
