@@ -323,6 +323,14 @@ func atlasExecStep(step *hclsyntax.Block, scope atlasScope) (Step, error) {
 		return Step{}, fmt.Errorf("%s:%d: `exec` takes `output` or `match`, not both",
 			scope.filename, step.TypeRange.Start.Line)
 	}
+	var resultLayout ResultLayout
+	if hasLayout {
+		resolved, err := atlasResultLayout(step, layout, scope)
+		if err != nil {
+			return Step{}, err
+		}
+		resultLayout = resolved
+	}
 	if hasOutput {
 		// An output is the whole result rather than its first value: a query
 		// answering two rows where one was expected has to fail, and a scalar
@@ -330,7 +338,7 @@ func atlasExecStep(step *hclsyntax.Block, scope atlasScope) (Step, error) {
 		return Step{Assert: &Assertion{
 			Query:        sql,
 			ResultSet:    &output,
-			ResultLayout: atlasResultLayout(layout),
+			ResultLayout: resultLayout,
 		}}, nil
 	}
 	if hasMatch {
@@ -339,13 +347,28 @@ func atlasExecStep(step *hclsyntax.Block, scope atlasScope) (Step, error) {
 	return Step{Exec: sql}, nil
 }
 
-// atlasResultLayout reads the layout an `exec` named, defaulting to the one an
-// author gets by naming none.
-func atlasResultLayout(layout string) ResultLayout {
-	if ResultLayout(layout) == ResultLayoutTable {
-		return ResultLayoutTable
+// atlasResultLayout reads the layout an `exec` named.
+//
+// A value this package does not render is refused rather than folded onto the
+// default. Folding read as harmless -- the default is what an author gets by
+// naming nothing -- but the two cases are not the same: naming nothing is a
+// choice, and naming `tabel` is a typo whose author believes they asked for the
+// other layout. Measured before this refused: a case comparing against CSV
+// while its `format` said `tabel` passed, and so did one saying `json`.
+//
+// The set is [validResultLayout] rather than a list written here, because the
+// same set is what [Assertion] validation refuses. This end reports first and
+// carries the source location the other cannot know.
+//
+// It is called only for a `format` that was written. An author who names none
+// never reaches it and keeps [Assertion.ResultLayout]'s zero value, so this
+// takes no parameter saying which of the two happened.
+func atlasResultLayout(step *hclsyntax.Block, layout string, scope atlasScope) (ResultLayout, error) {
+	if resolved := ResultLayout(layout); validResultLayout(resolved) {
+		return resolved, nil
 	}
-	return ResultLayoutCSV
+	return "", fmt.Errorf("%s:%d: `exec` takes `format` %q or %q, got %q",
+		scope.filename, step.TypeRange.Start.Line, ResultLayoutCSV, ResultLayoutTable, layout)
 }
 
 // atlasCatchStep translates `catch`, which expects its statement to fail.
