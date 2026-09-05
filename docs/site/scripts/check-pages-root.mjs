@@ -34,7 +34,7 @@
 // actually produced, which is the only thing the deploy uploads.
 //
 // `--live` is the fourth, and it is the only one that asks the published
-// address. Everything above can pass while https://stokaro.github.io/ptah/
+// address. Everything above can pass while the published apex
 // answers 404 for a file: a Pages settings change, a repository rename, or a
 // deploy from an older tag whose workflow predates the publish step -- a tag
 // deploy replaces the whole site, and the workflow it runs is the one that
@@ -42,6 +42,7 @@
 // can see them. Only a request can, which is why `--live` exists and why it
 // runs on a schedule rather than on a pull request.
 import { execFileSync } from 'node:child_process';
+import { Origin, RootURL, PageURL } from '../src/lib/docs-origin.mjs';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -62,7 +63,11 @@ export const ROOT_PRODUCERS = [
 ];
 const UPLOAD_STEP = 'actions/upload-pages-artifact';
 const PUSH_CONDITION = "github.event_name == 'push'";
-const PAGES_PREFIX = 'https://stokaro.github.io/ptah/';
+// The site root, from the one declaration rather than a literal beside it.
+// This gate exists to keep the published root honest, and while the address was
+// written here it kept the tree honestly pointed at the host the site had left
+// (stokaro/ptah#2884).
+const PAGES_PREFIX = `${Origin}/`;
 
 // Discovery has to fail closed. A `git ls-files` that matches nothing would
 // make rule 4 report a clean run while reading no documentation at all, which
@@ -239,9 +244,20 @@ export function analyzeLive(input) {
 // end of the sentence. Reading it as part of the name reported install.ps1.
 // as a published address nothing serves, which is a gate crying wolf about its
 // own documentation.
+// escapeRegExp quotes a literal for use inside a pattern. The origin carries
+// dots and slashes, and an unescaped dot matches any character -- which would
+// make this accept a host that merely resembles the one it is looking for.
+function escapeRegExp(literal) {
+	return literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export function rootFileReferences(text) {
   const found = new Set();
-  const pattern = /https:\/\/stokaro\.github\.io\/ptah\/([A-Za-z0-9._~%\-/]*)/g;
+  // Built from the one declaration rather than written out. This was a third
+  // spelling of the site's address -- after the origin constant and the prose
+  // it checks -- and a regexp is the spelling a search for the host finds last
+  // (stokaro/ptah#2884).
+  const pattern = new RegExp(`${escapeRegExp(PAGES_PREFIX)}([A-Za-z0-9._~%\\-/]*)`, 'g');
   let match = pattern.exec(text);
   while (match !== null) {
     const path = match[1].replace(/[.,;:!?)\]}'"]+$/, '');
@@ -339,14 +355,14 @@ function selftest() {
     {
       name: 'install.sh',
       source: 'docs/site/public/install.sh',
-      url: 'https://stokaro.github.io/ptah/install.sh',
-      published: 'curl -fsSL https://stokaro.github.io/ptah/install.sh | sh',
+      url: RootURL('install.sh'),
+      published: `curl -fsSL ${RootURL('install.sh')} | sh`,
     },
     {
       name: 'install.ps1',
       source: 'docs/site/public/install.ps1',
-      url: 'https://stokaro.github.io/ptah/install.ps1',
-      published: 'irm https://stokaro.github.io/ptah/install.ps1 | iex',
+      url: RootURL('install.ps1'),
+      published: `irm ${RootURL('install.ps1')} | iex`,
     },
   ];
   const generated = ['versions.json', 'index.html'];
@@ -606,13 +622,13 @@ function selftest() {
   // rootFileReferences reads root files and nothing else.
   const references = rootFileReferences(
     [
-      'curl -fsSL https://stokaro.github.io/ptah/install.sh | sh',
-      'irm https://stokaro.github.io/ptah/install.ps1 | iex',
-      'the site lives at https://stokaro.github.io/ptah/',
-      'a page at https://stokaro.github.io/ptah/edge/start/install/',
-      'the picker reads https://stokaro.github.io/ptah/versions.json',
-      'published at https://stokaro.github.io/ptah/install.ps1.',
-      'see https://stokaro.github.io/ptah/install.sh, which verifies',
+      `curl -fsSL ${RootURL('install.sh')} | sh`,
+      `irm ${RootURL('install.ps1')} | iex`,
+      `the site lives at ${Origin}/`,
+      `a page at ${PageURL('edge', 'start/install/')}`,
+      `the picker reads ${RootURL('versions.json')}`,
+      `published at ${RootURL('install.ps1')}.`,
+      `see ${RootURL('install.sh')}, which verifies`,
     ].join('\n'),
   );
   assert(references.has('install.sh'), 'the shell installer URL is a root file');

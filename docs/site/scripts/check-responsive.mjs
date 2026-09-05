@@ -1218,7 +1218,7 @@ async function main() {
         failures.push('reading-measure detector required an article page heading from the splash home');
       }
 
-      const fixtureBase = '/ptah/edge';
+      const fixtureBase = '/edge';
       const distRoot = writeFixtureDist(fixtureBase);
       try {
         const detected = detectBase(distRoot);

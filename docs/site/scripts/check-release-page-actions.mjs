@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { existsSync, readFileSync } from 'node:fs';
+import { PageURL } from '../src/lib/docs-origin.mjs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateBuildInfo } from './check-build-info.mjs';
@@ -59,7 +60,7 @@ export function releaseActionProblems({ version, sourceCommit, authored, generat
       problems.push(`${actionCase.label}: generated Markdown has a direct edit action`);
     }
     for (const line of [
-      `Page: https://stokaro.github.io/ptah/${version}/${actionCase.route}`,
+      `Page: ${PageURL(version, actionCase.route)}`,
       `Documentation version: ${version}`,
       `Source ref: ${version}`,
       `Source commit: ${sourceCommit}`,
@@ -72,7 +73,7 @@ export function releaseActionProblems({ version, sourceCommit, authored, generat
       if (!value.issueBody?.includes(line)) problems.push(`${actionCase.label}: issue body omitted ${line}`);
     }
   }
-  const expectedBreadcrumb = `/ptah/${version}/versioned/overview/`;
+  const expectedBreadcrumb = `/${version}/versioned/overview/`;
   if (breadcrumb?.label !== 'Versioned migrations') {
     problems.push('authored release: Versioned migrations parent breadcrumb is not a link');
   }
@@ -104,7 +105,7 @@ function fixture({ version, commit, generated }) {
     sourceHref: `https://github.com/stokaro/ptah/blob/${version}/${renderedSource}`,
     editHref: `https://github.com/stokaro/ptah/edit/master/${editSource}`,
     issueBody: [
-      `Page: https://stokaro.github.io/ptah/${version}/${generated ? 'reference/command-flags/' : 'versioned/generate/'}`,
+      `Page: ${PageURL(version, generated ? 'reference/command-flags/' : 'versioned/generate/')}`,
       `Documentation version: ${version}`,
       `Source ref: ${version}`,
       `Source commit: ${commit}`,
@@ -131,8 +132,8 @@ function selftest() {
     generated: fixture({ version, commit, generated: true }),
     breadcrumb: {
       label: 'Versioned migrations',
-      href: `/ptah/${version}/versioned/overview/`,
-      arrived: `/ptah/${version}/versioned/overview/`,
+      href: `/${version}/versioned/overview/`,
+      arrived: `/${version}/versioned/overview/`,
     },
   };
   assert(releaseActionProblems(valid).length === 0, 'valid release actions failed');

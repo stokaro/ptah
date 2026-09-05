@@ -17,7 +17,7 @@ const SchemaPath = "schemas/ptah-annotations.schema.json"
 func Generate() ([]byte, error) {
 	doc := map[string]any{
 		"$schema":     "https://json-schema.org/draft/2020-12/schema",
-		"$id":         "https://stokaro.github.io/ptah/schemas/ptah-annotations.schema.json",
+		"$id":         "https://docs.ptah.run/schemas/ptah-annotations.schema.json",
 		"title":       "Ptah Go Annotation Directives",
 		"description": "Schema for parsed //ptah Go annotation directives.",
 		"oneOf":       directiveRefs(),

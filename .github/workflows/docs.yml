@@ -773,7 +773,7 @@ jobs:
           node docs/site/scripts/check-deployment-candidate.mjs \
             --candidate-commit "$CANDIDATE_COMMIT" \
             --candidate-versions "$CANDIDATE_VERSIONS" \
-            --base-url https://stokaro.github.io/ptah/edge/
+            --base-url https://docs.ptah.run/edge/
 
       - name: Deploy
         id: deployment
@@ -793,7 +793,7 @@ jobs:
           --wait-for-deployment
           --candidate-commit "$CANDIDATE_COMMIT"
           --candidate-versions "$CANDIDATE_VERSIONS"
-          --base-url https://stokaro.github.io/ptah/edge/
+          --base-url https://docs.ptah.run/edge/
 
   public-edge-smoke:
     name: Public edge smoke
@@ -819,5 +819,5 @@ jobs:
         working-directory: docs/site
         run: >-
           node scripts/check-public-docs.mjs
-          --base-url https://stokaro.github.io/ptah/edge/
+          --base-url https://docs.ptah.run/edge/
           --expected-commit "${{ github.sha }}"

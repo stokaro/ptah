@@ -215,9 +215,9 @@ function selftest() {
   );
   assert(
     artifactResponseProblems({
-      href: '/ptah/edge/samples/inference-quick-start.zip',
-      pageUrl: 'https://example.test/ptah/edge/inference/quick-start/',
-      baseUrl: 'https://example.test/ptah/edge/',
+      href: '/edge/samples/inference-quick-start.zip',
+      pageUrl: 'https://example.test/edge/inference/quick-start/',
+      baseUrl: 'https://example.test/edge/',
       expectedPath: 'samples/inference-quick-start.zip',
       format: 'zip',
       status: 200,
@@ -227,9 +227,9 @@ function selftest() {
   );
   assert(
     artifactResponseProblems({
-      href: '/ptah/edge/samples/inference-quick-start.zip.sha256',
-      pageUrl: 'https://example.test/ptah/edge/inference/quick-start/',
-      baseUrl: 'https://example.test/ptah/edge/',
+      href: '/edge/samples/inference-quick-start.zip.sha256',
+      pageUrl: 'https://example.test/edge/inference/quick-start/',
+      baseUrl: 'https://example.test/edge/',
       expectedPath: 'samples/inference-quick-start.zip.sha256',
       format: 'sha256',
       status: 200,

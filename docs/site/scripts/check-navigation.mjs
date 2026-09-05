@@ -3,6 +3,7 @@
 // their first child is the section landing, and the breadcrumb links to that
 // child. It also exercises the keyboard path through the page actions.
 import { existsSync, readFileSync } from 'node:fs';
+import { Origin, PageURL } from '../src/lib/docs-origin.mjs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sidebar } from '../src/sidebar.mjs';
@@ -169,7 +170,7 @@ function selftest() {
       } : {}),
     });
     const model = pageActionsForSource(source, {
-      pageUrl: `https://stokaro.github.io/ptah/${actionCase.version}/reference/generated/`,
+      pageUrl: PageURL(actionCase.version, 'reference/generated/'),
       title: 'Generated reference',
     });
     const labels = model.actions.map(({ label }) => label);
@@ -202,7 +203,7 @@ function selftest() {
       if (!reportBody.includes(expected)) throw new Error(`${actionCase.label} issue body omitted ${expected}`);
     }
   }
-  const downloadBase = '/ptah/edge';
+  const downloadBase = '/edge';
   const validDownloads = {
     'inference-quick-start.zip': {
       pathname: `${downloadBase}/samples/inference-quick-start.zip`,
@@ -235,7 +236,7 @@ function selftest() {
 async function checkPageActionContract(page, built, buildInfo, entry, problems, { copyHeading } = {}) {
   const routeUrl = `http://127.0.0.1:${built.port}${built.base}${entry.route}`;
   await page.goto(routeUrl, { waitUntil: 'load' });
-  const canonicalPageUrl = `https://stokaro.github.io${built.base}${entry.route}`;
+  const canonicalPageUrl = `${Origin}${built.base}${entry.route}`;
   const source = resolveSourceContext({
     documentationVersion: buildInfo.documentation_version,
     sourceCommit: buildInfo.source_commit,

@@ -46,5 +46,5 @@ The example uses in-memory values and creates no database or generated file.
 
 ## Learn more
 
-Use the [PostgreSQL guide](https://stokaro.github.io/ptah/edge/databases/postgresql/)
+Use the [PostgreSQL guide](https://docs.ptah.run/edge/databases/postgresql/)
 for extension inspection, configuration, and migration behavior.

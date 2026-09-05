@@ -86,5 +86,5 @@ temporary output.
 
 ## Learn more
 
-Use [Visualize the schema](https://stokaro.github.io/ptah/edge/schema/visualize/)
+Use [Visualize the schema](https://docs.ptah.run/edge/schema/visualize/)
 for format choices, filtering, security annotations, and failure modes.

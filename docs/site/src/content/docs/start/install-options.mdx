@@ -35,7 +35,7 @@ manual verification trail, or a binary built from source.
 <TabItem label="Linux and macOS">
 
 ```bash
-curl -fsSL https://stokaro.github.io/ptah/install.sh -o install.sh
+curl -fsSL https://docs.ptah.run/install.sh -o install.sh
 less install.sh
 sh ./install.sh
 ```
@@ -44,7 +44,7 @@ sh ./install.sh
 <TabItem label="Windows">
 
 ```powershell
-irm https://stokaro.github.io/ptah/install.ps1 -OutFile install.ps1
+irm https://docs.ptah.run/install.ps1 -OutFile install.ps1
 Get-Content install.ps1 | more
 & ./install.ps1
 ```
@@ -59,7 +59,7 @@ The downloaded files are the same scripts used by the one-line installer.
 Pin a release tag in automation:
 
 ```bash
-curl -fsSL https://stokaro.github.io/ptah/install.sh | sh -s -- --version vX.Y.Z
+curl -fsSL https://docs.ptah.run/install.sh | sh -s -- --version vX.Y.Z
 ```
 
 PowerShell can pass the same choice through the environment when the script is
@@ -67,7 +67,7 @@ piped into `iex`:
 
 ```powershell
 $env:PTAH_INSTALL_VERSION = 'vX.Y.Z'
-irm https://stokaro.github.io/ptah/install.ps1 | iex
+irm https://docs.ptah.run/install.ps1 | iex
 ```
 
 The shell installer options and their environment equivalents are:

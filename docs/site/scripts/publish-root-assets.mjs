@@ -19,8 +19,10 @@
 // `docs/site/**` for its build and deploy jobs. A file under scripts/ would
 // change the installer without running the workflow on the pull request and
 // without deploying on merge. Astro also copies public/ into each version's
-// dist/, so the same bytes appear at /ptah/<version>/install.sh; that copy is
+// dist/, so the same bytes appear at /<version>/install.sh; that copy is
 // harmless and is not the published address.
+import { RootURL } from '../src/lib/docs-origin.mjs';
+
 import {
   copyFileSync,
   existsSync,
@@ -46,14 +48,14 @@ export const ROOT_ASSETS = [
   {
     name: 'install.sh',
     source: 'docs/site/public/install.sh',
-    url: 'https://stokaro.github.io/ptah/install.sh',
-    published: 'curl -fsSL https://stokaro.github.io/ptah/install.sh | sh',
+    url: RootURL('install.sh'),
+    published: `curl -fsSL ${RootURL('install.sh')} | sh`,
   },
   {
     name: 'install.ps1',
     source: 'docs/site/public/install.ps1',
-    url: 'https://stokaro.github.io/ptah/install.ps1',
-    published: 'irm https://stokaro.github.io/ptah/install.ps1 | iex',
+    url: RootURL('install.ps1'),
+    published: `irm ${RootURL('install.ps1')} | iex`,
   },
 ];
 
@@ -126,7 +128,7 @@ function selftest() {
     for (const asset of ROOT_ASSETS) {
       assert(asset.source.startsWith('docs/site/public/'), `${asset.name} is sourced from ${asset.source}`);
       assert(asset.source.endsWith(`/${asset.name}`), `${asset.name} does not match its source path`);
-      assert(asset.url === `https://stokaro.github.io/ptah/${asset.name}`, `${asset.name} has an unexpected URL`);
+      assert(asset.url === RootURL(asset.name), `${asset.name} has an unexpected URL`);
       assert(asset.published.includes(asset.url), `${asset.name}'s published command does not use its URL`);
     }
 

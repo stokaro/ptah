@@ -10,15 +10,20 @@ import tailwindcss from '@tailwindcss/vite';
 // renders. See the header of src/sidebar.mjs.
 import { sidebar } from './src/sidebar.mjs';
 import { pagefindRanking } from './src/lib/search-ranking.mjs';
+import { Origin, BasePath } from './src/lib/docs-origin.mjs';
 
-const site = 'https://stokaro.github.io';
 const DOCS_VERSION = process.env.DOCS_VERSION || 'edge';
-const base = `/ptah/${DOCS_VERSION}/`;
+// Both from one declaration. They were literals written for a GitHub project
+// page, and the move to the apex domain left them behind: `base` is what every
+// relative URL on the site is built from, and `site` is what the canonical
+// links and the sitemap name (stokaro/ptah#2884).
+const site = Origin;
+const base = BasePath(DOCS_VERSION);
 
 // Moved page routes. Keys and values are docs routes with leading and trailing
 // slashes; scripts/check-redirects.mjs verifies that every source is retired
 // and every target resolves to a real page. Astro emits the destination
-// verbatim into the meta-refresh stub, so the `/ptah/<version>/` base is
+// verbatim into the meta-refresh stub, so the `/<version>/` base is
 // prepended below before the map reaches Astro.
 const redirectRoutes = {
   '/getting-started/': '/start/quick-start/',

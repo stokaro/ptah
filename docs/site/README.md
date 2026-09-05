@@ -216,7 +216,7 @@ it does not compare platform-dependent pixels.
 
 ## The Pages root
 
-The site is served from `https://stokaro.github.io/ptah/`, and everything a
+The site is served from `https://docs.ptah.run/`, and everything a
 reader browses lives one directory down, under a version slug. A few files sit
 at the root itself and address the site as a whole:
 
@@ -231,11 +231,11 @@ The installers have to answer at the root because the commands a reader is
 given carry no version:
 
 ```bash
-curl -fsSL https://stokaro.github.io/ptah/install.sh | sh
+curl -fsSL https://docs.ptah.run/install.sh | sh
 ```
 
 ```powershell
-irm https://stokaro.github.io/ptah/install.ps1 | iex
+irm https://docs.ptah.run/install.ps1 | iex
 ```
 
 `.github/workflows/docs.yml` assembles `_site/` from scratch on every deploying
@@ -262,7 +262,7 @@ the directory about to be uploaded is missing a file.
 
 Both halves above read this repository: one reads the tree, the other reads the
 directory a run of this workflow assembled. Neither asks whether
-`https://stokaro.github.io/ptah/install.sh` answers, and there are ways for it
+`https://docs.ptah.run/install.sh` answers, and there are ways for it
 to stop answering that leave no trace here at all:
 
 - A Pages settings change, or a repository rename that moves the whole site.

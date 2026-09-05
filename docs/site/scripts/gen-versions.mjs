@@ -3,7 +3,11 @@ import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-export const PAGES_PREFIX = '/ptah';
+// The site root, from the one declaration. It is empty because the site is
+// served at the apex of its own domain; it was `/ptah` while the site was a
+// GitHub project page, and this stub kept sending readers there after the move
+// (stokaro/ptah#2884).
+export const PAGES_PREFIX = '';
 
 const EDGE = 'edge';
 const VERSION_RE = /^v(\d+)\.(\d+)(?:\.(\d+))?$/;
@@ -106,7 +110,7 @@ function selftest() {
     generate(tmp);
     const json1 = readFileSync(join(tmp, 'versions.json'), 'utf8');
     const html1 = readFileSync(join(tmp, 'index.html'), 'utf8');
-    assert(html1.includes('/ptah/v1.2.0/'), 'redirect targets default');
+    assert(html1.includes('/v1.2.0/'), 'redirect targets default');
     assert(!json1.includes('_astro'), 'non-version folders are ignored');
     generate(tmp);
     assert(json1 === readFileSync(join(tmp, 'versions.json'), 'utf8'), 'versions json is idempotent');

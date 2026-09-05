@@ -2,9 +2,9 @@
 #
 # Install Ptah.
 #
-#   curl -fsSL https://stokaro.github.io/ptah/install.sh | sh
-#   curl -fsSL https://stokaro.github.io/ptah/install.sh | sh -s -- --version v0.2.0
-#   wget -qO- https://stokaro.github.io/ptah/install.sh | sh
+#   curl -fsSL https://docs.ptah.run/install.sh | sh
+#   curl -fsSL https://docs.ptah.run/install.sh | sh -s -- --version v0.2.0
+#   wget -qO- https://docs.ptah.run/install.sh | sh
 #
 # What happens, in order: resolve a release, prove the install directory is
 # writable, download the archive and checksums.txt into a temporary directory,
@@ -71,8 +71,8 @@ usage() {
 install.sh -- install the Ptah command-line binaries
 
 Usage:
-  curl -fsSL https://stokaro.github.io/ptah/install.sh | sh
-  curl -fsSL https://stokaro.github.io/ptah/install.sh | sh -s -- [options]
+  curl -fsSL https://docs.ptah.run/install.sh | sh
+  curl -fsSL https://docs.ptah.run/install.sh | sh -s -- [options]
 
 Options:
   --version <tag>    release to install, such as v0.2.0 (default: the latest)

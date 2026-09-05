@@ -56,7 +56,7 @@ var (
 )
 
 // databasesPrefix is the documentation area every engine link points into.
-const databasesPrefix = "https://stokaro.github.io/ptah/edge/databases/"
+const databasesPrefix = "https://docs.ptah.run/edge/databases/"
 
 // minimumEngineLinks separates the engine row from the other centered blocks in
 // the header, which carry badges and section links. It is a floor rather than

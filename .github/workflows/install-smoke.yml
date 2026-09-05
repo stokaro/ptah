@@ -42,7 +42,7 @@ jobs:
 
   # The published address itself. Every gate in docs.yml reads this tree or the
   # directory the deploy assembles; none of them asks whether
-  # https://stokaro.github.io/ptah/install.sh answers. That difference is not
+  # https://docs.ptah.run/install.sh answers. That difference is not
   # theoretical: a Pages settings change, a repository rename, or a deploy
   # triggered by a tag whose workflow file predates the publish step would each
   # leave the documented one-liner answering 404 with every check green. A tag
