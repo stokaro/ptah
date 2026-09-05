@@ -1151,7 +1151,8 @@ npm run check:page-health:selftest && npm run check:page-health
 npm run check:content-inventory:selftest && npm run check:content-inventory
 npm run check:editorial-shape:selftest && npm run check:editorial-shape
 npm run check:exit-codes:selftest && npm run check:exit-codes
-# Needs a built bin/ptah and a Playwright browser; regenerates as it checks.
+# Needs a built bin/ptah, a Playwright browser and Graphviz; it regenerates as
+# it checks, so a failure leaves the new bytes in the working tree.
 npm run check:generated-assets:selftest
 PTAH_BIN=$(pwd)/../../bin/ptah npm run check:generated-assets
 npm run check:navigation:selftest

@@ -718,6 +718,16 @@ jobs:
           node-version: '24'
           cache: 'npm'
           cache-dependency-path: docs/site/package-lock.json
+      # ptah viz --format svg shells out to Graphviz, and the visualize samples
+      # are part of what this compares. apt has been slow enough on these
+      # runners to be worth a ceiling of its own; go-integration-tests.yml
+      # carries the same note.
+      - name: Install Graphviz
+        timeout-minutes: 10
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes graphviz
+
       - name: Verify the committed samples match what the binary writes
         run: |
           set -euo pipefail

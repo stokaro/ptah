@@ -14,6 +14,11 @@
 // keeps no pixel baseline. That costs nothing here: every one of the three
 // misses changed a sample, because a Ptah HTML document carries its whole
 // stylesheet inline, so an appearance change is a text change.
+//
+// It needs what the generators need: a built binary in PTAH_BIN, a Playwright
+// browser, and Graphviz for the visualize samples. A missing one surfaces as
+// the generator's own refusal and a non-zero exit, which this reports rather
+// than reading as a clean tree.
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
