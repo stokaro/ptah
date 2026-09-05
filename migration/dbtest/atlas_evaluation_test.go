@@ -507,3 +507,81 @@ test "schema" "a" {
 	c.Assert(cases[0].Parallel, qt.IsTrue)
 	c.Assert(cases[0].Skip, qt.IsFalse)
 }
+
+// TestLoadCasesOfKind_ANameIsCheckedInEveryCaseWhateverItsKind closes the half
+// of the fail-closed rule the kind filter left open.
+//
+// A parse scoped to one kind dropped the other kinds' blocks BEFORE reading
+// their names, so a misspelled `paralel` or an invented step block in a
+// `test "migrate"` case loaded clean under `schema test` -- exit 0, green
+// report. The author saw success from one verb and the refusal only from the
+// other, or never, if that file is only ever run by the verb that ignores it.
+//
+// Names only, and the controls below are what keep that narrow: a case this run
+// does not execute must not fail the run for a value it alone needs.
+func TestLoadCasesOfKind_ANameIsCheckedInEveryCaseWhateverItsKind(t *testing.T) {
+	tests := []struct {
+		name     string
+		document string
+		want     string
+	}{
+		{
+			name:     "a misspelled attribute in an unselected case",
+			document: "test \"migrate\" \"other\" {\n  paralel = true\n  exec { sql = \"SELECT 1\" }\n}\n",
+			want:     ".*not \\[paralel\\].*",
+		},
+		{
+			name:     "an invented step block in an unselected case",
+			document: "test \"migrate\" \"other\" {\n  frobnicate { sql = \"SELECT 1\" }\n}\n",
+			want:     ".*unsupported step \"frobnicate\".*",
+		},
+		{
+			name:     "a plan-only step in an unselected migrate case",
+			document: "test \"migrate\" \"other\" {\n  schema { url = \"file://x\" }\n}\n",
+			want:     ".*belongs to a `test \"plan\"` case.*",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			dir := t.TempDir()
+			c.Assert(os.WriteFile(filepath.Join(dir, "a.test.hcl"), []byte(test.document), 0o600), qt.IsNil)
+
+			_, err := dbtest.LoadCasesOfKind(dir, dbtest.AtlasTestKindSchema)
+
+			c.Assert(err, qt.ErrorMatches, test.want)
+		})
+	}
+}
+
+// TestLoadCasesOfKind_AnUnselectedCaseIsNotEvaluated is the control that keeps
+// the check above from becoming a wider one.
+//
+// Only names are read. A case of another kind may legitimately need a value
+// this run has no way to supply -- `self.dev_url` with no database named, a
+// variable another verb's invocation would set -- and failing the run over it
+// would make one verb unable to read a directory another verb authored.
+func TestLoadCasesOfKind_AnUnselectedCaseIsNotEvaluated(t *testing.T) {
+	c := qt.New(t)
+
+	dir := t.TempDir()
+	c.Assert(os.WriteFile(filepath.Join(dir, "a.test.hcl"), []byte(`
+test "migrate" "other" {
+  for_each = ["a"]
+  exec { sql = "SELECT '${self.dev_url}'" }
+  cleanup { sql = "SELECT 1" }
+}
+
+test "schema" "selected" {
+  exec { sql = "SELECT 1" }
+}
+`), 0o600), qt.IsNil)
+
+	cases, err := dbtest.LoadCasesOfKind(dir, dbtest.AtlasTestKindSchema)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cases, qt.HasLen, 1)
+	c.Assert(cases[0].Name, qt.Equals, "selected")
+}
