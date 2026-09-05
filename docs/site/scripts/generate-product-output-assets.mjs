@@ -49,6 +49,24 @@ function writeSample(path, value) {
   writeFileSync(path, value.endsWith('\n') ? value : `${value}\n`);
 }
 
+// Every HTML report Ptah writes names the binary that produced it, and a binary
+// built from a working tree reports a pseudo-version that changes with every
+// commit. Pinning it is the same normalization the schema-UI generator applies:
+// these fixtures are declared volatileDataNormalized in visual-assets.json, and
+// a committed sample that churns on every commit is one nobody can review.
+//
+// It throws rather than passing a page through unchanged, because a footer this
+// cannot find is a footer that moved, and a silent no-op would put the real
+// version back into the samples without anything saying so.
+function pinReportVersion(path) {
+  const original = readFileSync(path, 'utf8');
+  const stabilized = original.replace(/(<\/svg>)ptah [^<]+(<\/span>)/, '$1ptah dev$2');
+  if (stabilized === original) {
+    throw new Error(`${path}: no footer version to normalize; has the report footer changed?`);
+  }
+  writeFileSync(path, stabilized);
+}
+
 async function renderMermaid(browser, source, output, theme, title, description) {
   const page = await browser.newPage({ viewport, colorScheme: theme });
   await page.setContent('<main id="diagram"></main>');
@@ -181,6 +199,7 @@ try {
   if (!safetyName) throw new Error('migrations generate wrote no .safety.html report');
   const safetySample = join(reportSamples, 'migration-safety-report.html');
   copyFileSync(join(generatedMigrations, safetyName), safetySample);
+  pinReportVersion(safetySample);
   await screenshotHTML(browser, safetySample, join(assetsRoot, 'migration-safety-report.png'), 560);
 
   const migrationArgs = [
@@ -193,6 +212,8 @@ try {
   const migrationFailSample = join(reportSamples, 'migration-test-fail.html');
   writeSample(migrationPassSample, migrationPass.stdout);
   writeSample(migrationFailSample, migrationFail.stdout);
+  pinReportVersion(migrationPassSample);
+  pinReportVersion(migrationFailSample);
   await screenshotHTML(browser, migrationPassSample, join(assetsRoot, 'migration-test-pass.png'), 500);
   await screenshotHTML(browser, migrationFailSample, join(assetsRoot, 'migration-test-fail.png'), 500);
 
@@ -206,6 +227,8 @@ try {
   const schemaFailSample = join(reportSamples, 'schema-test-fail.html');
   writeSample(schemaPassSample, schemaPass.stdout);
   writeSample(schemaFailSample, schemaFail.stdout);
+  pinReportVersion(schemaPassSample);
+  pinReportVersion(schemaFailSample);
   await screenshotHTML(browser, schemaPassSample, join(assetsRoot, 'schema-test-pass.png'), 500);
   await screenshotHTML(browser, schemaFailSample, join(assetsRoot, 'schema-test-fail.png'), 500);
 

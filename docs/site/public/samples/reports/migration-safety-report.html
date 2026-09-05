@@ -1,55 +1,183 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<title>Ptah migration safety report</title>
-<style>
-body { font-family: system-ui, sans-serif; margin: 2rem; color: #1f2937; }
-table { border-collapse: collapse; width: 100%; }
-th, td { border: 1px solid #d1d5db; padding: 0.5rem; text-align: left; vertical-align: top; }
-th { background: #f3f4f6; }
-.safe { color: #047857; font-weight: 700; }
-.warning { color: #b45309; font-weight: 700; }
-.destructive { color: #b91c1c; font-weight: 700; }
-pre { margin: 0; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ptah migration safety report</title><style>
+:root {
+  color-scheme: light dark;
+  --bg: #fbfbfa;
+  --surface: #ffffff;
+  --surface-2: #f3f4f4;
+  --border: #d9dcdf;
+  --text: #111417;
+  --text-dim: #474d54;
+  --text-mute: #7c838b;
+  --accent: oklch(0.47 0.16 238);
+  --amber: oklch(0.62 0.16 60);
+  --amber-soft: oklch(0.96 0.04 75);
+  --ok: oklch(0.52 0.13 155);
+  --ok-soft: oklch(0.95 0.04 155);
+  --warn: oklch(0.58 0.13 70);
+  --warn-soft: oklch(0.95 0.05 75);
+  --danger: oklch(0.53 0.19 27);
+  --danger-soft: oklch(0.95 0.04 27);
+  --radius: 2px;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161311;
+    --surface: #1b1815;
+    --surface-2: #221e1a;
+    --border: #2e2823;
+    --text: #ede7de;
+    --text-dim: #b6ada0;
+    --text-mute: #83796d;
+    --accent: oklch(0.78 0.11 225);
+    --amber: oklch(0.8 0.15 70);
+    --amber-soft: oklch(0.28 0.06 65);
+    --ok: oklch(0.78 0.14 155);
+    --ok-soft: oklch(0.27 0.05 155);
+    --warn: oklch(0.8 0.15 70);
+    --warn-soft: oklch(0.28 0.06 65);
+    --danger: oklch(0.72 0.17 25);
+    --danger-soft: oklch(0.28 0.08 25);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #161311;
+  --surface: #1b1815;
+  --surface-2: #221e1a;
+  --border: #2e2823;
+  --text: #ede7de;
+  --text-dim: #b6ada0;
+  --text-mute: #83796d;
+  --accent: oklch(0.78 0.11 225);
+  --amber: oklch(0.8 0.15 70);
+  --amber-soft: oklch(0.28 0.06 65);
+  --ok: oklch(0.78 0.14 155);
+  --ok-soft: oklch(0.27 0.05 155);
+  --warn: oklch(0.8 0.15 70);
+  --warn-soft: oklch(0.28 0.06 65);
+  --danger: oklch(0.72 0.17 25);
+  --danger-soft: oklch(0.28 0.08 25);
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, .mono { font-family: var(--mono); font-size: .9em; }
+pre { margin: 0; white-space: pre-wrap; font-family: var(--mono); font-size: 13px; }
+
+.page { max-width: 1240px; margin: 0 auto; padding: 32px 24px 80px; }
+
+h1 { font-size: 30px; font-weight: 600; letter-spacing: -.02em; line-height: 1.2; margin: 0 0 6px; }
+h2 { font-size: 18px; font-weight: 600; letter-spacing: -.01em; margin: 44px 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+h3 { font-size: 15px; margin: 22px 0 8px; color: var(--text-dim); font-weight: 600; }
+.lede { font-family: var(--mono); font-size: 13px; color: var(--text-mute); }
+
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--border); border-radius: var(--radius); margin: 28px 0 0; }
+.stats .stat { padding: 14px 18px; border-right: 1px solid var(--border); }
+.stats .stat:last-child { border-right: 0; }
+.stat-n { font-size: 24px; font-weight: 600; line-height: 1.2; letter-spacing: -.02em; }
+.stat-l { font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--text-mute); }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin: 0 0 20px; overflow: hidden; }
+.card-head { display: flex; align-items: baseline; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--border); }
+.card-head h3 { margin: 0; color: var(--text); font: 600 15px var(--mono); }
+.card-note { color: var(--text-mute); font-size: 13px; }
+.scroller { overflow-x: auto; }
+.scroller + .scroller { border-top: 1px solid var(--border); }
+
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+th { text-align: left; font: 500 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--text-mute); padding: 9px 18px; background: var(--surface-2); white-space: nowrap; }
+td { padding: 8px 18px; border-top: 1px solid var(--border); vertical-align: top; }
+td.name { font-family: var(--mono); font-weight: 500; white-space: nowrap; }
+td.type { font-family: var(--mono); color: var(--text-dim); white-space: nowrap; }
+td.comment { color: var(--text-dim); }
+td.num { font-family: var(--mono); color: var(--text-mute); text-align: right; width: 1%; }
+
+.tag { display: inline-block; font: 600 11px var(--mono); line-height: 1.6; padding: 1px 6px; border-radius: var(--radius); border: 1px solid var(--border); color: var(--text-dim); white-space: nowrap; }
+.tag.key { background: var(--amber-soft); border-color: transparent; color: var(--amber); }
+.tag.ok { background: var(--ok-soft); border-color: transparent; color: var(--ok); }
+.tag.warn { background: var(--warn-soft); border-color: transparent; color: var(--warn); }
+.tag.danger { background: var(--danger-soft); border-color: transparent; color: var(--danger); }
+.tag.null { font-weight: 400; color: var(--text-mute); }
+.none { color: var(--text-mute); }
+
+.empty { color: var(--text-mute); font-style: italic; padding: 18px; }
+.footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 16px; color: var(--text-mute); font-size: 12.5px; }
+.footer-mark { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 12.5px; flex-shrink: 0; }
+
+@media (max-width: 900px) {
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stats .stat:nth-child(2n) { border-right: 0; }
+  .stats .stat:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
+  .footer { flex-direction: column; align-items: flex-start; gap: 8px; }
+}
+@media print {
+  .card { break-inside: avoid; }
+}
+
+.tag.safe { background: var(--ok-soft); border-color: transparent; color: var(--ok); }
+.tag.warning { background: var(--warn-soft); border-color: transparent; color: var(--warn); }
+.tag.destructive { background: var(--danger-soft); border-color: transparent; color: var(--danger); }
+td.stmt pre { color: var(--text-dim); }
 </style>
 </head>
-<body>
-<h1>Ptah migration safety report</h1>
-<table>
+<body><div class="page">
+<h1>Migration safety report</h1>
+<div class="lede">Planned statements, classified by what they remove or tighten</div>
+<div class="stats">
+<div class="stat"><div class="stat-n">10</div><div class="stat-l">statements</div></div>
+<div class="stat"><div class="stat-n">7</div><div class="stat-l">safe</div></div>
+<div class="stat"><div class="stat-n">1</div><div class="stat-l">warning</div></div>
+<div class="stat"><div class="stat-n">2</div><div class="stat-l">destructive</div></div>
+</div>
+<h2>Statements</h2>
+<div class="card"><div class="scroller"><table>
 <thead><tr><th>#</th><th>Severity</th><th>Subject</th><th>Reason</th><th>Statement</th></tr></thead>
 <tbody>
 
 <tr>
-<td>1</td>
-<td class="safe">safe</td>
-<td>*ast.CommentNode</td>
-<td>does not remove data or tighten constraints</td>
-<td><pre>-- Disable foreign-key enforcement for the table rebuild below</pre></td>
+<td class="num">1</td>
+<td><span class="tag safe">safe</span></td>
+<td class="name">*ast.CommentNode</td>
+<td class="comment">does not remove data or tighten constraints</td>
+<td class="stmt"><pre>-- Disable foreign-key enforcement for the table rebuild below</pre></td>
 </tr>
 
 <tr>
-<td>2</td>
-<td class="safe">safe</td>
-<td>*ast.RawSQLNode</td>
-<td>does not remove data or tighten constraints</td>
-<td><pre>PRAGMA foreign_keys = off</pre></td>
+<td class="num">2</td>
+<td><span class="tag safe">safe</span></td>
+<td class="name">*ast.RawSQLNode</td>
+<td class="comment">does not remove data or tighten constraints</td>
+<td class="stmt"><pre>PRAGMA foreign_keys = off</pre></td>
 </tr>
 
 <tr>
-<td>3</td>
-<td class="safe">safe</td>
-<td>*ast.CommentNode</td>
-<td>does not remove data or tighten constraints</td>
-<td><pre>-- SQLite table rebuild for changes ALTER TABLE cannot express on products</pre></td>
+<td class="num">3</td>
+<td><span class="tag safe">safe</span></td>
+<td class="name">*ast.CommentNode</td>
+<td class="comment">does not remove data or tighten constraints</td>
+<td class="stmt"><pre>-- SQLite table rebuild for changes ALTER TABLE cannot express on products</pre></td>
 </tr>
 
 <tr>
-<td>4</td>
-<td class="safe">safe</td>
-<td>*ast.CreateTableNode</td>
-<td>does not remove data or tighten constraints</td>
-<td><pre>CREATE TABLE &#34;__ptah_rebuild_products&#34; (
+<td class="num">4</td>
+<td><span class="tag safe">safe</span></td>
+<td class="name">*ast.CreateTableNode</td>
+<td class="comment">does not remove data or tighten constraints</td>
+<td class="stmt"><pre>CREATE TABLE &#34;__ptah_rebuild_products&#34; (
   &#34;id&#34; INTEGER PRIMARY KEY AUTOINCREMENT,
   &#34;sku&#34; TEXT NOT NULL UNIQUE,
   &#34;name&#34; TEXT NOT NULL,
@@ -58,55 +186,55 @@ pre { margin: 0; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regula
 </tr>
 
 <tr>
-<td>5</td>
-<td class="safe">safe</td>
-<td>*ast.RawSQLNode</td>
-<td>does not remove data or tighten constraints</td>
-<td><pre>INSERT INTO &#34;__ptah_rebuild_products&#34; (&#34;id&#34;, &#34;sku&#34;, &#34;name&#34;, &#34;price_cents&#34;) SELECT &#34;id&#34;, &#34;sku&#34;, &#34;name&#34;, &#34;price_cents&#34; FROM &#34;products&#34;</pre></td>
+<td class="num">5</td>
+<td><span class="tag safe">safe</span></td>
+<td class="name">*ast.RawSQLNode</td>
+<td class="comment">does not remove data or tighten constraints</td>
+<td class="stmt"><pre>INSERT INTO &#34;__ptah_rebuild_products&#34; (&#34;id&#34;, &#34;sku&#34;, &#34;name&#34;, &#34;price_cents&#34;) SELECT &#34;id&#34;, &#34;sku&#34;, &#34;name&#34;, &#34;price_cents&#34; FROM &#34;products&#34;</pre></td>
 </tr>
 
 <tr>
-<td>6</td>
-<td class="destructive">destructive</td>
-<td>products</td>
-<td>DROP TABLE removes the table and all rows</td>
-<td><pre>DROP TABLE &#34;products&#34;</pre></td>
+<td class="num">6</td>
+<td><span class="tag destructive">destructive</span></td>
+<td class="name">products</td>
+<td class="comment">DROP TABLE removes the table and all rows</td>
+<td class="stmt"><pre>DROP TABLE &#34;products&#34;</pre></td>
 </tr>
 
 <tr>
-<td>7</td>
-<td class="warning">warning</td>
-<td>*ast.RawSQLNode</td>
-<td>rename can break deployed readers and writers</td>
-<td><pre>ALTER TABLE &#34;__ptah_rebuild_products&#34; RENAME TO &#34;products&#34;</pre></td>
+<td class="num">7</td>
+<td><span class="tag warning">warning</span></td>
+<td class="name">*ast.RawSQLNode</td>
+<td class="comment">rename can break deployed readers and writers</td>
+<td class="stmt"><pre>ALTER TABLE &#34;__ptah_rebuild_products&#34; RENAME TO &#34;products&#34;</pre></td>
 </tr>
 
 <tr>
-<td>8</td>
-<td class="destructive">destructive</td>
-<td>legacy_inventory</td>
-<td>DROP TABLE removes the table and all rows</td>
-<td><pre>-- WARNING: This will delete all data!
+<td class="num">8</td>
+<td><span class="tag destructive">destructive</span></td>
+<td class="name">legacy_inventory</td>
+<td class="comment">DROP TABLE removes the table and all rows</td>
+<td class="stmt"><pre>-- WARNING: This will delete all data!
 DROP TABLE IF EXISTS &#34;legacy_inventory&#34;</pre></td>
 </tr>
 
 <tr>
-<td>9</td>
-<td class="safe">safe</td>
-<td>*ast.CommentNode</td>
-<td>does not remove data or tighten constraints</td>
-<td><pre>-- Restore foreign-key enforcement after the table rebuild</pre></td>
+<td class="num">9</td>
+<td><span class="tag safe">safe</span></td>
+<td class="name">*ast.CommentNode</td>
+<td class="comment">does not remove data or tighten constraints</td>
+<td class="stmt"><pre>-- Restore foreign-key enforcement after the table rebuild</pre></td>
 </tr>
 
 <tr>
-<td>10</td>
-<td class="safe">safe</td>
-<td>*ast.RawSQLNode</td>
-<td>does not remove data or tighten constraints</td>
-<td><pre>PRAGMA foreign_keys = on</pre></td>
+<td class="num">10</td>
+<td><span class="tag safe">safe</span></td>
+<td class="name">*ast.RawSQLNode</td>
+<td class="comment">does not remove data or tighten constraints</td>
+<td class="stmt"><pre>PRAGMA foreign_keys = on</pre></td>
 </tr>
 
 </tbody>
-</table>
-</body>
+</table></div></div>
+<div class="footer"><span>Rendered by Ptah from the planned migration. This file is self-contained: opening it fetches nothing.</span><span class="footer-mark"><svg viewBox="0 0 64 64" width="14" height="14" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#0f172a"/><rect x="23" y="13" width="18" height="11" rx="2" fill="#f59e0b"/><rect x="17" y="27" width="30" height="11" rx="2" fill="#38bdf8"/><rect x="11" y="41" width="42" height="11" rx="2" fill="#38bdf8"/></svg>ptah dev</span></div></div></body>
 </html>
