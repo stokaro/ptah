@@ -123,7 +123,7 @@ require (
 	golang.org/x/mod v0.40.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/telemetry v0.0.0-20260811182544-a038080d80e5 // indirect
+	golang.org/x/telemetry v0.0.0-20260902144106-3ef544be8421 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/vuln v1.7.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
