@@ -176,7 +176,7 @@ func newSchemaAnnotationsCommand() *cobra.Command {
 The JSON Schema output describes the parsed representation of every supported
 //ptah directive and attribute:
 
-  ptah schema annotations --format json-schema --out schemas/ptah-annotations.schema.json`,
+  ptah schema annotations --format json-schema --out docs/site/public/ptah-annotations.schema.json`,
 		Args:          cmdutil.NoPositionalArgs,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {

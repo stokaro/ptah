@@ -245,8 +245,8 @@ jobs:
 
       - name: Check annotation JSON Schema freshness
         run: |
-          go run ./cmd/ptah schema annotations --out schemas/ptah-annotations.schema.json
-          git diff --exit-code -- schemas/ptah-annotations.schema.json
+          go run ./cmd/ptah schema annotations --out docs/site/public/ptah-annotations.schema.json
+          git diff --exit-code -- docs/site/public/ptah-annotations.schema.json
 
       - name: qtlint
         run: make lint-qtlint
