@@ -98,7 +98,7 @@ func TestPostgreSQLDomainColumn_ReaderKeepsTheDomain(t *testing.T) {
 
 	live, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), conn, nil)
 	c.Assert(err, qt.IsNil)
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(live)
+	converted := dbschematogo.ConvertDBSchemaToGoSchema(live, "postgres")
 
 	tests := []struct {
 		name   string
@@ -218,7 +218,7 @@ func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeKeepsTheDomain(t *testing
 
 	live, err := dbschema.ReadSchemaWithSchemasContext(t.Context(), conn, nil)
 	c.Assert(err, qt.IsNil)
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(live)
+	converted := dbschematogo.ConvertDBSchemaToGoSchema(live, "postgres")
 
 	tests := []struct {
 		name   string

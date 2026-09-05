@@ -115,7 +115,7 @@ func readBaselineDependents(ctx context.Context,
 	if err != nil {
 		return nil, fmt.Errorf("read dev database schema: %w", err)
 	}
-	desired := dbschematogo.ConvertDBSchemaToGoSchema(schema)
+	desired := dbschematogo.ConvertDBSchemaToGoSchema(schema, dialect)
 	tableSchemas := tableSchemasByName(schema)
 
 	dependents := make([]lint.BaselineDependent, 0)

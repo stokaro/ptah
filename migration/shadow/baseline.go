@@ -149,7 +149,7 @@ func VerifyBaseline(ctx context.Context, opts BaselineVerifyOptions) error {
 	diff, err := schemadiff.CompareWithDatabase(
 		ctx,
 		opts.TargetConn,
-		dbschematogo.ConvertDBSchemaToGoSchema(shadowSchema),
+		dbschematogo.ConvertDBSchemaToGoSchema(shadowSchema, opts.TargetConn.Info().Dialect),
 		targetSchema,
 		opts.CompareOptions,
 	)
@@ -210,7 +210,7 @@ func validateBaselineTargetIdentifierSemantics(
 	if err != nil {
 		return nil, baselineError("target-introspect", "target_introspection_error", "read target schema", err)
 	}
-	targetGenerated := dbschematogo.ConvertDBSchemaToGoSchema(targetSchema)
+	targetGenerated := dbschematogo.ConvertDBSchemaToGoSchema(targetSchema, opts.TargetConn.Info().Dialect)
 	targetDiff, err := schemadiff.CompareWithDatabase(
 		ctx,
 		opts.TargetConn,

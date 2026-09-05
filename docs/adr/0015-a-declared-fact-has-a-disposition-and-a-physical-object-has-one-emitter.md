@@ -77,21 +77,57 @@ D is a simulation of what MySQL does unasked. Collapsing those three into A
 would give four questions one answer, which is a worse defect than the
 duplication it would be trying to remove.
 
-Cross-tree duplication is confined to A, and there to one pair.
-`migration/schemadiff` decides it per dialect; `internal/convert/dbschematogo`
-decides it with no dialect at all, because `ConvertDBSchemaToGoSchema` takes
-none. The two compensate today, and
-`migration/generator/reverse_constraints.go` depends on the compensation in
+Cross-tree duplication was confined to A, and there to one pair.
+`migration/schemadiff` decided it per dialect; `internal/convert/dbschematogo`
+decided it with no dialect at all, because `ConvertDBSchemaToGoSchema` took
+none. `migration/generator/reverse_constraints.go` depends on their agreement in
 writing: the down path builds its target from that converter, and a
 constraint-backed index it did not omit would resolve into a plain unique index
 in place of the constraint.
+
+**That pair is now one answer.** `internal/indexbacking` holds the evidence --
+which constraint kinds a server enforces with an index the reader also reports,
+and which reported indexes have no standalone existence at all -- and both trees
+consult it. The two USES stay where they were, because they are not the same
+use: the comparator suppresses an index a constraint change already speaks for,
+the converter chooses which of the two representations describes the object.
+What was duplicated was never the use.
+
+The compensation was not complete, which is what the unification found. On a
+SQLite table whose UNIQUE constraint carries a name of its own, `pragma
+index_list` reports `sqlite_autoindex_<table>_N` while the constraint keeps the
+name the DDL gave it. The converter's name equality saw two objects and
+described both; the comparator, recognizing the shape structurally, did not.
+`ptah db read` therefore produced a description that could not be replayed --
+SQLite refuses to create a name reserved for its own use, and the render exited
+0 before it (stokaro/ptah#2894). An unnamed `UNIQUE` does not reproduce it: the
+reader then uses the autoindex name for the constraint too, and the names match.
+
+Both halves of the shared rule are load-bearing in both trees, measured by
+mutation rather than asserted. Removing the SQLite arm reddens two converter
+tests and six comparator ones; making `ServerBacks` refuse UNIQUE reddens four
+and nine. Before the unification no single edit could move both trees, which is
+the property that was missing.
 
 Nothing held the two together until the round-trip control gained a FOREIGN KEY
 shape. Measured by mutation: teaching the converter to suppress a foreign key's
 backing index reddens that cell on eight dialects and leaves MySQL and MariaDB
 green -- exactly the two for which `migration/schemadiff` carries an arm. The
-agreement is now a test rather than a coincidence, which is what makes unifying
-the pair a change that can be measured rather than argued.
+agreement was a test rather than a coincidence, which is what made unifying the
+pair a change that could be measured rather than argued.
+
+Two of the twelve are already gone: `isConstraintBasedUniqueIndex` and
+`isMySQLConstraintBasedUniqueIndex` were the two that answered from a name, and
+stokaro/ptah#2616 removed them. The count above is left as it was measured
+rather than edited down, because it is a statement about the tree on the day it
+was written; what the list is for is the four questions it separates, and that
+separation has not changed.
+
+`internal/indexbackingguard` refuses the removal of the shared decision, and
+says at its own declaration what it cannot see: a SECOND rule added beside the
+shared call. Nothing structural distinguishes one, so that half stays
+behavioral -- the ownership round trip fails when two decisions disagree. The
+two are a pair and neither is the other.
 
 ### 1.3 The host is named twice, and the second name is optional
 

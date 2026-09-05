@@ -38,7 +38,7 @@ func TestPrefixIndexReachesTheDocument(t *testing.T) {
 			Columns:   []string{"notes"},
 			Parts:     []catalog.IndexPart{{Name: "notes", Prefix: "20"}},
 		}},
-	})
+	}, "mysql")
 
 	rendered, err := atlashclrender.Render(database)
 
@@ -68,7 +68,7 @@ func TestWholeColumnIndexKeepsTheCompactSpelling(t *testing.T) {
 			TableName: "orders",
 			Columns:   []string{"customer_id"},
 		}},
-	})
+	}, "mysql")
 
 	rendered, err := atlashclrender.Render(database)
 

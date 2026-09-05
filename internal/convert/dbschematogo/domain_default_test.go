@@ -61,7 +61,7 @@ func TestConvert_ADomainDefaultKeepsItsKind(t *testing.T) {
 					Name: "email", Schema: "app", BaseType: "character varying(120)",
 					Default: test.catalog,
 				}},
-			})
+			}, "")
 
 			c.Assert(converted.Domains, qt.DeepEquals, []schemamodel.Domain{{
 				Name: "email", Schema: "app", BaseType: "character varying(120)",

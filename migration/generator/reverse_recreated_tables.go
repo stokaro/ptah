@@ -65,11 +65,12 @@ func dropReverseConstraintsRestoredByTableCreation(
 	reversed *difftypes.SchemaDiff,
 	removedWithTables difftypes.ConstraintRemovals,
 	dbSchema *catalog.Database,
+	dialect string,
 ) {
 	if reversed == nil || dbSchema == nil || len(reversed.TablesAdded) == 0 {
 		return
 	}
-	restored := tableCreationRestores(dbschematogo.ConvertDBSchemaToGoSchema(dbSchema), reversed.TablesAdded.Names())
+	restored := tableCreationRestores(dbschematogo.ConvertDBSchemaToGoSchema(dbSchema, dialect), reversed.TablesAdded.Names())
 	if len(restored) == 0 {
 		return
 	}

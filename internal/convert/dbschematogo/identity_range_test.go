@@ -48,7 +48,7 @@ func identityField(c *qt.C, database *schemamodel.Database) schemamodel.Field {
 func TestConvert_CarriesTheIdentityRange(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(identitySchema("1000", "5"))
+	database := dbschematogo.ConvertDBSchemaToGoSchema(identitySchema("1000", "5"), "")
 
 	field := identityField(c, database)
 	c.Assert(field.AutoInc, qt.IsTrue)
@@ -61,7 +61,7 @@ func TestConvert_CarriesTheIdentityRange(t *testing.T) {
 func TestConvert_LeavesAnIdentityColumnWithoutARangeAlone(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(identitySchema("", ""))
+	database := dbschematogo.ConvertDBSchemaToGoSchema(identitySchema("", ""), "")
 
 	field := identityField(c, database)
 	c.Assert(field.AutoInc, qt.IsTrue)

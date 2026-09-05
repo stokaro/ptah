@@ -48,7 +48,7 @@ func TestConvert_CarriesEveryClickHouseEngineClause(t *testing.T) {
 		ClickHouseSamplingKey:  "id",
 		ClickHouseTTL:          "day + toIntervalDay(90)",
 		ClickHouseSettings:     "index_granularity = 4096",
-	}))
+	}), "clickhouse")
 
 	c.Assert(clickHouseOverrides(c, database), qt.DeepEquals, map[string]string{
 		"engine":       "ReplacingMergeTree(ver)",
@@ -76,7 +76,7 @@ func TestConvert_EveryClickHouseTableFieldReachesTheOverrides(t *testing.T) {
 
 	c.Assert(len(carried) > 0, qt.IsTrue, qt.Commentf("the walk found no ClickHouse fields at all"))
 
-	overrides := clickHouseOverrides(c, dbschematogo.ConvertDBSchemaToGoSchema(engineTable(table)))
+	overrides := clickHouseOverrides(c, dbschematogo.ConvertDBSchemaToGoSchema(engineTable(table), "clickhouse"))
 
 	c.Assert(markedFields(overrides), qt.DeepEquals, carried,
 		qt.Commentf("a ClickHouse table field has no override key, so the clause is read and dropped"))
@@ -140,7 +140,7 @@ func TestConvert_CarriesTheOrderByEvenWhenItMatchesThePrimaryKey(t *testing.T) {
 		// is nothing beyond the primary key, which is the case that lost the
 		// order.
 		ClickHouseSortingKey: "",
-	}))
+	}), "clickhouse")
 
 	c.Assert(clickHouseOverrides(c, database)["order_by"], qt.Equals, "day, id")
 }
@@ -153,7 +153,7 @@ func TestConvert_CarriesTheOrderByEvenWhenItMatchesThePrimaryKey(t *testing.T) {
 func TestConvert_LeavesATableWithNoEngineFactsAlone(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(engineTable(catalog.Table{}))
+	database := dbschematogo.ConvertDBSchemaToGoSchema(engineTable(catalog.Table{}), "clickhouse")
 
 	c.Assert(database.Tables, qt.HasLen, 1)
 	c.Assert(database.Tables[0].Overrides, qt.HasLen, 0)

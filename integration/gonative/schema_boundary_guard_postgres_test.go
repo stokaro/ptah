@@ -424,7 +424,7 @@ func observeBoundaryCase(c *qt.C, dsn string, tc boundaryCase) boundaryObservati
 	compatDocument := boundaryInspect(c, dbURL, true)
 
 	return boundaryObservation{
-		live:          dbschematogo.ConvertDBSchemaToGoSchema(live),
+		live:          dbschematogo.ConvertDBSchemaToGoSchema(live, "postgres"),
 		document:      boundaryParseBack(c, nativeDocument, false),
 		defaultSchema: conn.Info().Schema,
 		role:          boundaryConnectedRole(c, dbURL),

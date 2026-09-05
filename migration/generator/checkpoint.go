@@ -404,7 +404,7 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 	return generateCheckpointWithDatabaseQualified(
 		ctx,
 		shadowConn,
-		dbschematogo.ConvertDBSchemaToGoSchema(shadowSchema),
+		dbschematogo.ConvertDBSchemaToGoSchema(shadowSchema, shadowConn.Info().Dialect),
 		opts.SchemaQualifier,
 	)
 }

@@ -9,6 +9,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/internal/exprkey"
+	"go.5x5.cz/ptah/internal/indexbacking"
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/internal/mysqlindex"
 	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
@@ -219,8 +220,15 @@ func constraintBackedIndexIdentities(
 			Name:      constraint.Name,
 			TableName: constraint.QualifiedTableName(),
 		})
-		switch constraint.Type {
-		case "FOREIGN KEY":
+		// Whether this server backs the kind at all is the shared answer;
+		// WHICH index backs it is structural and stays here, because the match
+		// is on the constraint's columns rather than on its name.
+		kind := indexbacking.KindOf(constraint.Type)
+		if !indexbacking.ServerBacks(normalizedDialect, kind) {
+			continue
+		}
+		switch kind {
+		case indexbacking.ForeignKey:
 			if normalizedDialect == platform.MySQL ||
 				normalizedDialect == platform.MariaDB {
 				for _, backing := range mysqlForeignKeyBackingIndexes(
@@ -236,12 +244,13 @@ func constraintBackedIndexIdentities(
 					owned.foreignKeys[backing] = struct{}{}
 				}
 			}
-		case "UNIQUE":
-			if normalizedDialect != platform.SQLServer {
-				owned.unique[ref] = struct{}{}
-			}
-		case "EXCLUDE":
+		case indexbacking.Unique:
+			owned.unique[ref] = struct{}{}
+		case indexbacking.Exclusion:
 			owned.exclusions[ref] = struct{}{}
+		case indexbacking.None, indexbacking.PrimaryKey:
+			// A primary key's index is recognized by its own mark rather than
+			// by attribution from the constraint; see unaddressableDatabaseIndex.
 		}
 	}
 	return owned
@@ -638,7 +647,7 @@ func uniqueConstraintEnforcesTheIndex(
 // no statement can refer to. Neither can be declared by a desired state, so
 // neither is narrowed by one.
 func unaddressableDatabaseIndex(index catalog.Index, dialect string) bool {
-	return index.IsPrimary || isSQLiteInternalAutoindex(index.Name, dialect)
+	return indexbacking.Unaddressable(index, dialect)
 }
 
 // constraintOwnedDatabaseIndex reports whether a database index is a
@@ -810,11 +819,6 @@ func appendIndexRemoval(diff *difftypes.SchemaDiff, entry databaseIndexEntry) {
 			entry.ref,
 		)
 	}
-}
-
-func isSQLiteInternalAutoindex(indexName, dialect string) bool {
-	return platform.NormalizeDialect(dialect) == platform.SQLite &&
-		strings.HasPrefix(indexName, "sqlite_autoindex_")
 }
 
 func indexReplacementRequired(

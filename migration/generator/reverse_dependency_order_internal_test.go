@@ -61,7 +61,7 @@ func TestGenerateDownMigration_RecreatesDroppedTablesInDependencyOrder(t *testin
 // is a decision rather than a tidy-up.
 func TestPriorTableCreation_CarriesTheEdgeAndNotTheSelfReference(t *testing.T) {
 	_, catalogPrior := dependencyOrderedDropFixtures()
-	prior := dbschematogo.ConvertDBSchemaToGoSchema(catalogPrior)
+	prior := dbschematogo.ConvertDBSchemaToGoSchema(catalogPrior, "")
 
 	t.Run("the edge to the referenced table is carried", func(t *testing.T) {
 		c := qt.New(t)

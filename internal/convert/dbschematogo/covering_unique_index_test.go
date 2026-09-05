@@ -59,7 +59,7 @@ func TestConvert_CoveringUniqueIndexKeepsItsPayload(t *testing.T) {
 	c := qt.New(t)
 
 	converted := dbschematogo.ConvertDBSchemaToGoSchema(
-		coveringUniqueSchema([]catalog.Constraint{bareUniqueConstraint()}))
+		coveringUniqueSchema([]catalog.Constraint{bareUniqueConstraint()}), "")
 
 	c.Assert(converted.Indexes, qt.HasLen, 1)
 	c.Assert(converted.Indexes[0].Name, qt.Equals, "i2")
@@ -84,7 +84,7 @@ func TestConvert_UniqueConstraintStillOwnsAnIndexWithNothingToLose(t *testing.T)
 	schema.Indexes[0].IncludeColumns = nil
 
 	c := qt.New(t)
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(schema)
+	converted := dbschematogo.ConvertDBSchemaToGoSchema(schema, "")
 
 	c.Assert(converted.Indexes, qt.HasLen, 0)
 	names := make([]string, 0, len(converted.Constraints))
@@ -107,7 +107,7 @@ func TestConvert_ConstraintCarryingItsOwnPayloadKeepsTheObject(t *testing.T) {
 
 	c := qt.New(t)
 	converted := dbschematogo.ConvertDBSchemaToGoSchema(
-		coveringUniqueSchema([]catalog.Constraint{constraint}))
+		coveringUniqueSchema([]catalog.Constraint{constraint}), "")
 
 	c.Assert(converted.Indexes, qt.HasLen, 0)
 	names := make([]string, 0, len(converted.Constraints))
@@ -123,7 +123,7 @@ func TestConvert_ConstraintCarryingItsOwnPayloadKeepsTheObject(t *testing.T) {
 func TestConvert_CoveringUniqueIndexWithNoConstraintRowIsUntouched(t *testing.T) {
 	c := qt.New(t)
 
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(coveringUniqueSchema(nil))
+	converted := dbschematogo.ConvertDBSchemaToGoSchema(coveringUniqueSchema(nil), "")
 
 	c.Assert(converted.Indexes, qt.HasLen, 1)
 	c.Assert(converted.Indexes[0].IncludeColumns, qt.DeepEquals, []string{"name"})
@@ -141,7 +141,7 @@ func TestConvert_ColumnUniqueIsClearedByTheOwningIndex(t *testing.T) {
 	schema.Tables[0].Columns[1].IsUnique = true
 
 	c := qt.New(t)
-	converted := dbschematogo.ConvertDBSchemaToGoSchema(schema)
+	converted := dbschematogo.ConvertDBSchemaToGoSchema(schema, "")
 
 	c.Assert(converted.Indexes, qt.HasLen, 1)
 	for _, field := range converted.Fields {

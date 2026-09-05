@@ -13,11 +13,21 @@ import (
 	"go.5x5.cz/ptah/core/schemamodel"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/internal/catalogfield"
+	"go.5x5.cz/ptah/internal/indexbacking"
 )
 
 // ConvertDBSchemaToGoSchema converts a database schema to goschema format
 // This is needed for down migrations where we use the current DB state as the target
-func ConvertDBSchemaToGoSchema(dbSchema *catalog.Database) *schemamodel.Database {
+//
+// dialect names the server the catalog was read from, and decides which
+// constraint kinds that server enforces with an index the reader also reports;
+// [go.5x5.cz/ptah/internal/indexbacking] holds that answer for this converter
+// and for migration/schemadiff alike. It may be empty, because
+// [catalog.Database] carries no dialect and the stable
+// atlascompat.DBSchemaToGoSchema takes none. An empty dialect answers only what
+// every server does, which is what this path has always produced -- stated at
+// the shared declaration rather than implied by an arm nobody wrote.
+func ConvertDBSchemaToGoSchema(dbSchema *catalog.Database, dialect string) *schemamodel.Database {
 	database := newDatabase()
 	convertSchemas(database, dbSchema.Schemas)
 	convertEnums(database, dbSchema.Enums)
@@ -36,7 +46,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *catalog.Database) *schemamodel.Database
 	// One decision, consulted by both pools below. A unique constraint and its
 	// backing index describe one object, so exactly one of them may be emitted.
 	indexDescribed := indexDescribedUniques(dbSchema)
-	database.Indexes = convertIndexes(dbSchema, tableStructNames, indexDescribed)
+	database.Indexes = convertIndexes(dbSchema, tableStructNames, indexDescribed, dialect)
 	database.Constraints = convertConstraints(dbSchema, tableStructNames, indexDescribed)
 	clearColumnUniqueForNamedConstraints(database)
 	convertExtensions(database, dbSchema.Extensions)
@@ -207,12 +217,21 @@ func convertIndexes(
 	dbSchema *catalog.Database,
 	tableStructNames map[string]string,
 	indexDescribed map[tableMemberKey]struct{},
+	dialect string,
 ) []schemamodel.Index {
-	constraintBackedIndexes := constraintBackedIndexesByTable(dbSchema, indexDescribed)
+	constraintBackedIndexes := constraintBackedIndexesByTable(dbSchema, indexDescribed, dialect)
 	indexes := make([]schemamodel.Index, 0, len(dbSchema.Indexes))
 	for _, dbIndex := range dbSchema.Indexes {
-		// Skip primary key indexes as they're handled by primary key fields
-		if dbIndex.IsPrimary {
+		// An index nothing can declare is not described as one. A primary
+		// key's index belongs to the key, and SQLite's sqlite_autoindex_* rows
+		// name an internal structure whose name the server refuses in a
+		// CREATE INDEX -- so describing one produced a schema that could not be
+		// replayed into the database it came from (stokaro/ptah#2894).
+		//
+		// The predicate is shared with migration/schemadiff rather than
+		// restated: the comparator recognized this shape and this converter did
+		// not, which is the duplication ADR 0015 D2 removes.
+		if indexbacking.Unaddressable(dbIndex, dialect) {
 			continue
 		}
 		if _, ok := constraintBackedIndexes[tableMemberKey{table: dbIndex.QualifiedTableName(), member: dbIndex.Name}]; ok {
@@ -808,6 +827,7 @@ func convertConstraint(dbConstraint catalog.Constraint, tableStructNames map[str
 func constraintBackedIndexesByTable(
 	dbSchema *catalog.Database,
 	indexDescribed map[tableMemberKey]struct{},
+	dialect string,
 ) map[tableMemberKey]struct{} {
 	result := make(map[tableMemberKey]struct{}, len(dbSchema.Constraints))
 	for _, constraint := range dbSchema.Constraints {
@@ -817,8 +837,12 @@ func constraintBackedIndexesByTable(
 			// suppressed and the constraint is dropped instead.
 			continue
 		}
-		switch strings.ToUpper(constraint.Type) {
-		case "PRIMARY KEY", "UNIQUE", "EXCLUDE":
+		// NamedAfterConstraint rather than ServerBacks: this pool matches on the
+		// constraint's name, and the name is only evidence about the object for
+		// the kinds named here. A foreign key's backing index shares the name on
+		// MySQL, MariaDB and Spanner and still needs the column match the
+		// comparator does, which this converter has no place to do.
+		if indexbacking.NamedAfterConstraint(dialect, indexbacking.KindOf(constraint.Type)) {
 			result[key] = struct{}{}
 		}
 	}

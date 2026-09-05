@@ -75,7 +75,7 @@ func TestCompareWithDialect_PostgresArrayAndDomainColumnsCompareEqualToThemselve
 		},
 	}
 
-	diff := schemadiff.CompareWithDialect(dbschematogo.ConvertDBSchemaToGoSchema(database), database, platform.Postgres)
+	diff := schemadiff.CompareWithDialect(dbschematogo.ConvertDBSchemaToGoSchema(database, "postgres"), database, platform.Postgres)
 
 	c.Assert(diff.TablesModified, qt.HasLen, 0, qt.Commentf("a database compared against itself reported %+v", diff.TablesModified))
 	c.Assert(diff.TablesAdded, qt.HasLen, 0)

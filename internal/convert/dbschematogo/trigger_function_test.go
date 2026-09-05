@@ -44,7 +44,7 @@ func onlyTrigger(c *qt.C, database *schemamodel.Database) schemamodel.Trigger {
 func TestConvert_KeepsATriggerBoundToSomebodyElsesFunction(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(triggerSchema("audit_fn"))
+	database := dbschematogo.ConvertDBSchemaToGoSchema(triggerSchema("audit_fn"), "")
 
 	trigger := onlyTrigger(c, database)
 	c.Assert(trigger.ExecuteFunction, qt.Equals, "audit_fn")
@@ -66,7 +66,7 @@ func TestConvert_KeepsATriggerBoundToSomebodyElsesFunction(t *testing.T) {
 func TestConvert_LeavesATriggerPtahOwnsInline(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(triggerSchema("ptah_trigger_a_trg_a"))
+	database := dbschematogo.ConvertDBSchemaToGoSchema(triggerSchema("ptah_trigger_a_trg_a"), "")
 
 	trigger := onlyTrigger(c, database)
 	c.Assert(trigger.ExecuteFunction, qt.Equals, "")
@@ -78,7 +78,7 @@ func TestConvert_LeavesATriggerPtahOwnsInline(t *testing.T) {
 func TestConvert_LeavesATriggerWithNoReportedFunctionInline(t *testing.T) {
 	c := qt.New(t)
 
-	database := dbschematogo.ConvertDBSchemaToGoSchema(triggerSchema(""))
+	database := dbschematogo.ConvertDBSchemaToGoSchema(triggerSchema(""), "")
 
 	trigger := onlyTrigger(c, database)
 	c.Assert(trigger.ExecuteFunction, qt.Equals, "")

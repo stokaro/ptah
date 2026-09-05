@@ -540,7 +540,7 @@ func TestValidateDiffSystemSchemaStatesAllowsOrdinaryObservedStates(t *testing.T
 
 func diffDatabaseState(current *catalog.Database) atlassource.State {
 	return atlassource.State{
-		Schema:        dbschematogo.ConvertDBSchemaToGoSchema(current),
+		Schema:        dbschematogo.ConvertDBSchemaToGoSchema(current, ""),
 		DB:            current,
 		DefaultSchema: "public",
 	}

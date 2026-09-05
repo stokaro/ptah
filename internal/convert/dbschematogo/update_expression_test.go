@@ -27,7 +27,7 @@ func TestConvert_TheUpdateExpressionSurvivesTheConversion(t *testing.T) {
 				UpdateExpression: "CURRENT_TIMESTAMP",
 			}},
 		}},
-	})
+	}, "")
 
 	c.Assert(converted.Fields, qt.HasLen, 1)
 	c.Assert(converted.Fields[0].Name, qt.Equals, "updated_at")
@@ -47,7 +47,7 @@ func TestConvert_AColumnWithoutTheClauseCarriesNothing(t *testing.T) {
 				Name: "created_at", DataType: "timestamp", IsNullable: "NO",
 			}},
 		}},
-	})
+	}, "")
 
 	c.Assert(converted.Fields, qt.HasLen, 1)
 	c.Assert(converted.Fields[0].UpdateExpression, qt.Equals, "")

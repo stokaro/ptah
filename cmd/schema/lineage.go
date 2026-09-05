@@ -197,7 +197,7 @@ func runSchemaLineageLive(cmd *cobra.Command, opts schemaLineageOptions) error {
 	// against a live database is about that database, and a routine body is
 	// read by its own engine's parser.
 	dialect := conn.Info().Dialect
-	database := dbschematogo.ConvertDBSchemaToGoSchema(live)
+	database := dbschematogo.ConvertDBSchemaToGoSchema(live, conn.Info().Dialect)
 	document := lineageDocument{
 		Result:   schemalineage.Derive(database),
 		Routines: schemalineage.DeriveRoutines(database, dialect),

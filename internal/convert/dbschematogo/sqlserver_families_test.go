@@ -76,7 +76,7 @@ func TestConvert_CarriesSynonyms(t *testing.T) {
 
 			converted := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
 				Synonyms: []catalog.Synonym{test.synonym},
-			})
+			}, "sqlserver")
 
 			c.Assert(converted.Synonyms, qt.HasLen, 1)
 			c.Assert(converted.Synonyms[0].Target, qt.Equals, test.wantTarget)
@@ -156,7 +156,7 @@ func TestConvert_CarriesEveryPropertyScopeExceptTheOneItCannotWrite(t *testing.T
 
 			converted := dbschematogo.ConvertDBSchemaToGoSchema(&catalog.Database{
 				ExtendedProperties: []catalog.ExtendedProperty{test.property},
-			})
+			}, "sqlserver")
 
 			c.Assert(converted.ExtendedProperties, qt.DeepEquals, test.want)
 		})
@@ -268,7 +268,7 @@ func TestConvert_CarriesTheContinuousAggregateBodyTheCatalogKept(t *testing.T) {
 			MaterializedOnly: true,
 			Definition:       "SELECT time_bucket('01:00:00'::interval, \"time\") FROM readings",
 		}},
-	})
+	}, "sqlserver")
 
 	c.Assert(converted.ContinuousAggregates, qt.DeepEquals, []schemamodel.ContinuousAggregate{{
 		Name: "hourly", Schema: "public", MaterializedOnly: new(true),

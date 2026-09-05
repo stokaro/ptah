@@ -102,7 +102,7 @@ func (p Policy) PrepareInspectedSchema(current *catalog.Database) (*catalog.Data
 		return current, nil
 	}
 	inspected := dbSchemaWithoutInspectedPostgresBaselines(current)
-	if err := p.validateSchemaObjects(dbschematogo.ConvertDBSchemaToGoSchema(inspected), "inspected"); err != nil {
+	if err := p.validateSchemaObjects(dbschematogo.ConvertDBSchemaToGoSchema(inspected, ""), "inspected"); err != nil {
 		return nil, err
 	}
 	return inspected, nil

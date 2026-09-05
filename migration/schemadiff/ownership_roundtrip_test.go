@@ -193,7 +193,7 @@ func TestOwnershipRoundTrip_ACatalogComparedWithItselfPlansNoObject(t *testing.T
 		t.Run(cell.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			desired := dbschematogo.ConvertDBSchemaToGoSchema(ownershipCatalog(cell.shape))
+			desired := dbschematogo.ConvertDBSchemaToGoSchema(ownershipCatalog(cell.shape), "")
 			diff := schemadiff.CompareWithDialect(desired, ownershipCatalog(cell.shape), cell.dialect)
 
 			changes := objectChanges(diff)
@@ -230,7 +230,7 @@ func TestOwnershipRoundTrip_ADroppedObjectIsStillReported(t *testing.T) {
 		t.Run(shape.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			desired := dbschematogo.ConvertDBSchemaToGoSchema(ownershipCatalog(shape))
+			desired := dbschematogo.ConvertDBSchemaToGoSchema(ownershipCatalog(shape), "")
 			desired.Indexes = nil
 			desired.Constraints = nil
 			for index := range desired.Tables {
