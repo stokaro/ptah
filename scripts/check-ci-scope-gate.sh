@@ -13,6 +13,7 @@ usage() {
 usage: check-ci-scope-gate.sh --scope-result RESULT --scope true|false \
   [--required NAME=RESULT]... [--scoped NAME=RESULT]...
        check-ci-scope-gate.sh --selftest
+       check-ci-scope-gate.sh --check-workflows
 EOF
 }
 
@@ -122,6 +123,83 @@ if [[ "${1:-}" == --selftest ]]; then
 	selftest
 	exit 0
 fi
+
+# check_workflows requires every gate job to carry `if: always()`.
+#
+# A gate aggregates other jobs through `needs`, and a job with `needs` runs only
+# when everything it needs succeeded. Without `always()` a gate is therefore
+# skipped the moment one of the jobs it judges fails or is scoped out -- the one
+# case it was written for -- and a skipped job reports success to branch
+# protection, so the gate stays green about that failure. A gate carrying no
+# `if:` at all is the same defect in an ordinary-looking job.
+#
+# Gates are discovered by the `-gate` job-id suffix rather than listed, so a
+# workflow added later is governed without an edit here. The check cannot see a
+# gate named something else; the naming convention is what makes the rule hold.
+check_workflows() {
+	local root found=0 failures=0
+	root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+	local file job condition
+	while IFS=: read -r file job condition; do
+		found=$((found + 1))
+		# Reported separately because a gate with no condition at all reads as an
+		# ordinary job, so the message has to name what is missing.
+		if [[ -z "$condition" ]]; then
+			printf 'CI scope gate: %s job %s has no `if:`, so it is skipped whenever a job it aggregates fails; use always()\n' \
+				"$file" "$job" >&2
+			failures=$((failures + 1))
+			continue
+		fi
+		if [[ "$condition" != *"always()"* ]]; then
+			printf 'CI scope gate: %s job %s must use always(); without it the gate is skipped when a job it judges fails, and a skip reads as success\n' \
+				"$file" "$job" >&2
+			failures=$((failures + 1))
+		fi
+	done < <(
+		cd "$root" && awk '
+			function flush() {
+				if (job != "") {
+					print f ":" job ":" condition
+					job = ""
+					condition = ""
+				}
+			}
+			FNR == 1 { flush(); f = FILENAME }
+			/^  [A-Za-z0-9_-]+-gate:[[:space:]]*$/ {
+				flush()
+				job = $1
+				sub(/:$/, "", job)
+				next
+			}
+			/^  [A-Za-z0-9_-]+:[[:space:]]*$/ { flush(); next }
+			job != "" && condition == "" && /^    if:/ {
+				condition = $0
+				sub(/^    if:[[:space:]]*/, "", condition)
+			}
+			END { flush() }
+		' .github/workflows/*.yml
+	)
+
+	# A pattern that matches nothing reports exactly what a clean tree reports.
+	# Eleven gate jobs were present when this was written; the floor sits well
+	# below that so removing a workflow does not fail the check, and well above
+	# zero so a broken pattern does.
+	if ((found < 5)); then
+		printf 'CI scope gate: found only %d gate job(s); the discovery pattern is broken\n' "$found" >&2
+		return 1
+	fi
+	if ((failures > 0)); then
+		return 1
+	fi
+	printf 'check-ci-scope-gate: OK (%d gate jobs cannot be skipped)\n' "$found"
+}
+
+if [[ "${1:-}" == --check-workflows ]]; then
+	check_workflows
+	exit 0
+fi
+
 
 scope_result=""
 scope=""
