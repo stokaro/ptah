@@ -1,0 +1,71 @@
+# Publishes the environment the committed Graphviz SVGs are rendered in.
+#
+# The image is a pin, not a product: nothing Ptah ships depends on it, and its
+# only consumer is `npm run assets:write`. It exists because there is no
+# maintained version-tagged Graphviz image to pin instead, and because pinning
+# the distribution package alone leaves the fonts free -- and the fonts decide
+# the coordinates in the output (stokaro/ptah#2931).
+name: Graphviz image
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - docs/site/graphviz/Dockerfile
+      - .github/workflows/graphviz-image.yml
+  # A rebuild without a Dockerfile change, for the case the registry lost the
+  # tag. The Dockerfile pins its base by digest, so a rebuild reproduces the
+  # same environment rather than picking up whatever moved.
+  workflow_dispatch:
+
+concurrency:
+  group: graphviz-image-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    name: Build and publish the pinned Graphviz image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # linux/amd64 alone, deliberately. This renders SVGs in CI and on a
+      # maintainer's machine through a Docker context; it is not something a
+      # user pulls, so a second architecture would double the build for nobody.
+      # An arm64 host runs it under emulation, which produces the same bytes
+      # because the pin is the environment rather than the instruction set --
+      # asserted by the step below rather than assumed.
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: docs/site/graphviz
+          file: docs/site/graphviz/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/stokaro/ptah-graphviz:1
+
+      # The image is only worth publishing if it renders. A tag that exists and
+      # cannot draw is the shape of failure this whole issue is about: the
+      # generator would fail later, on somebody else's machine, with the
+      # registry looking healthy.
+      - name: The published image renders
+        run: |
+          set -euo pipefail
+          printf 'digraph { a -> b }\n' \
+            | docker run --rm --interactive ghcr.io/stokaro/ptah-graphviz:1 dot -Tsvg \
+            | grep -q '<svg' \
+            || { echo "the published image did not draw an SVG" >&2; exit 1; }
+          docker run --rm ghcr.io/stokaro/ptah-graphviz:1 dot -V

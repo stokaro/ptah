@@ -54,6 +54,9 @@ stdout produced by the command below:
 
 Prerequisites: a built `ptah` binary. Graphviz `dot` is needed only when Ptah
 itself renders `--format svg`; Mermaid and DOT source need no extra tool.
+Regenerating this page's committed samples needs Docker instead, because the
+SVGs are drawn in a pinned environment rather than by whichever Graphviz the
+machine happens to carry.
 
 ## Render a diagram
 
@@ -127,12 +130,27 @@ ptah viz --root-dir ./models --format svg --include-columns --theme dark > schem
 
 For the exact compact fixture, download the generated
 <a href={`${visualizeSamples}schema.dot`} download>DOT source</a> or
-<a href={`${visualizeSamples}schema-dot.svg`} download>Ptah-rendered SVG</a>. The Mermaid sources
+<a href={`${visualizeSamples}schema-dot.svg`} download>rendered SVG</a>. The Mermaid sources
 and rendered SVGs are available from the preview actions above, so inspecting an
 artifact does not require browsing the repository.
 
 DOT output starts with `digraph ptah_schema`. SVG output shells out to
 Graphviz `dot`; `--theme` selects `light` (default) or `dark` colors.
+
+The DOT above is what Ptah writes, and running the command reproduces it
+exactly. **The committed SVG is a different kind of artifact**: Graphviz draws
+it, and its bytes depend on the Graphviz build and on the fonts installed beside
+it — at one Graphviz version, the same DOT lays out 928pt wide with no font
+package and 1002pt with DejaVu present. Running `--format svg` locally therefore
+gives a correct diagram with different bytes, which is the expected outcome
+rather than a fault.
+
+So the committed copy names its renderer rather than claiming to be
+reproducible by hand: it is drawn by `docs/site/graphviz/Dockerfile`, an image
+this repository builds and pins by digest, and `npm run assets:write` renders
+through it. `ptah viz --format svg` is exactly `dot -Tsvg` of
+`ptah viz --format dot`, so the command on this page and the committed file
+describe the same diagram from the same source.
 
 ## Shape the diagram
 
