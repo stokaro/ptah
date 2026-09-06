@@ -47,6 +47,23 @@ type Config struct {
 	// Naming is the naming convention the six NM rules enforce; absent, they
 	// stay silent. See [NamingConfig].
 	Naming *NamingConfig `yaml:"naming,omitempty"`
+	// Gate widens what the apply-time gate blocks on. See [GateConfig].
+	Gate *GateConfig `yaml:"gate,omitempty"`
+}
+
+// GateConfig is the `gate` section of .ptah-lint.yaml: the rule families
+// whose error-severity findings refuse `ptah migrations up`, beyond the DS
+// family the gate always blocks on.
+//
+// Lint and apply are deliberately separate: `ptah migrations lint` reports
+// every rule and exits at a threshold, while the apply gate stops only on
+// data-safety findings, because a locking hazard or a naming convention is
+// something to review, not something the migrator should refuse to run.
+// A project that wants a finding to stop the deploy says so here, by
+// family, and gives the rule an error severity under `rules`; the gate
+// then runs that family and refuses on it. The DS family needs no entry.
+type GateConfig struct {
+	Families []string `yaml:"families"`
 }
 
 // LoadConfig reads an explicit lint configuration file. Missing, unreadable,
@@ -120,7 +137,42 @@ func validateConfig(cfg *Config) error {
 	if _, err := compileNamingConfig(cfg.Naming); err != nil {
 		return err
 	}
+	if err := validateGateConfig(cfg.Gate); err != nil {
+		return err
+	}
 	return validateRuleConfigs(cfg.Rules)
+}
+
+// validateGateConfig refuses a gate that names no family and a family no
+// registered rule belongs to, so a typo cannot read as a widened gate.
+func validateGateConfig(gate *GateConfig) error {
+	if gate == nil {
+		return nil
+	}
+	if len(gate.Families) == 0 {
+		return fmt.Errorf("gate: families lists nothing, so the section would widen nothing")
+	}
+	for _, family := range gate.Families {
+		if !isCanonicalRuleCode(family) || !selectorMatchesRule(family, Rules()) {
+			return fmt.Errorf("gate: family %q matches no registered rule", family)
+		}
+	}
+	return nil
+}
+
+// GateFamilies returns the families a policy's gate section names, with the
+// DS family the gate always blocks on first and no family twice.
+func (c *Config) GateFamilies() []string {
+	families := []string{"DS"}
+	if c == nil || c.Gate == nil {
+		return families
+	}
+	for _, family := range c.Gate.Families {
+		if !slices.Contains(families, family) {
+			families = append(families, family)
+		}
+	}
+	return families
 }
 
 func validateRuleConfigs(configs map[string]RuleConfig) error {

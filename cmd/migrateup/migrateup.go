@@ -739,12 +739,25 @@ func lockedDestructiveLintHook(
 		}
 		if len(findings) > 0 {
 			return fmt.Errorf(
-				"pending migrations contain destructive statements; rerun with --allow-destructive after review:\n%s",
+				"%s; rerun with --allow-destructive after review:\n%s",
+				gateRefusal(findings),
 				formatDestructiveFindings(findings),
 			)
 		}
 		return nil
 	}
+}
+
+// gateRefusal names what the gate refused on: the data-safety wording the
+// default gate has always used, or the policy's own widening when a finding
+// outside the DS family is among them.
+func gateRefusal(findings []lint.Finding) string {
+	for _, finding := range findings {
+		if !strings.HasPrefix(finding.Rule, migrationlintgate.ReportedFamily) {
+			return "pending migrations carry lint findings the policy's gate section blocks on"
+		}
+	}
+	return "pending migrations contain destructive statements"
 }
 
 func formatDestructiveFindings(findings []lint.Finding) string {

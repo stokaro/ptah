@@ -107,11 +107,11 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 192 capabilities below:
+Across the 193 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 180 |
+| Ptah supports it fully | 181 |
 | Ptah supports it with a stated limitation | 1 |
 | Ptah does not implement it | 0 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 11 |
@@ -264,16 +264,17 @@ seven of them as open capabilities regardless.
 | `schema apply --skip-lint` | ✅ | ❌ | ✅ | With an atlas.hcl `lint` policy, the planned SQL is linted against the rules it names and an error-rated finding refuses the apply; `--skip-lint` applies anyway. No policy, no lint pass, as in CE. |
 | Analyzers that need a dev-database schema diff | ✅ | ✅ | ✅ | Rules declare whether they read migration SQL or the replayed dev schema; the versions read come from that declaration, and a rule that asks and gets nothing says so on stderr. |
 | Apply-time destructive-change gate | ✅ | ❌ | ➖ | migrations up refuses destructive pending files; .ptah-lint.yaml disabled-rules reopens the gate and ptah.sum does not hash that file. |
-| Atlas Pro analyzer code coverage | ✅ | ➖ | ✅ | OW101/OW102 are recorded waivers: both bind to an account model Ptah has none of. Every other Atlas code is accepted in a lint config, aliased where the rule is spelled differently. |
+| Atlas Pro analyzer code coverage | ✅ | ➖ | ✅ | OW101/OW102 are recorded waivers: both bind to an account model Ptah has none of. MF104 stays partial for four unmeasured dialects. Every other Atlas code is a Ptah rule of its own or an alias. |
 | Atlas web reports (`--web`) | 🔷 | ❌ | ✅ | The flag publishes a report into the hosted web UI and is rejected here as unknown. Ptah renders the same lint and diff findings locally through `--format`, including `{{ json . }}`. |
 | Check bypass on the compat surface | ✅ | ❌ | ❌ | No Atlas build registers `--skip-checks` on migrate apply, so the compat bypass is PTAH_SKIP_CHECKS. On migrate down the flag is registered and reads the same variable. |
 | CI integration (GitHub Action, annotations) | ✅ | 🟡 | ✅ | stokaro/ptah-action@v1 posts a sticky PR comment; `--format` github-actions emits annotations. The community binary has no annotation mode; its lint `--format` takes a Go template only. |
-| Custom lint rules and check-level policy | ✅ | ❌ | ✅ | A rule is declared in `.ptah-lint.yaml` or in an atlas.hcl `rule` block as an expression over the statement. Atlas review, naming, non_linear and force stay accepted and reported as having no effect. |
+| Custom lint rules and check-level policy | ✅ | ❌ | ✅ | A rule is declared in `.ptah-lint.yaml` or an atlas.hcl `rule` block as an expression over the statement; a `naming` block on either surface drives the NM rules. review, non_linear, force do nothing. |
 | Default-firing Atlas analyzer concern mapping | ✅ | ➖ | ➖ | lint-analyzer-catalog maps every default-firing Atlas concern to a covering Ptah rule, severity and line; 0 gap on the committed corpus. |
 | Dev-URL schema scope on `migrate lint` | ✅ | ✅ | ✅ | `ptah-compat migrate lint` reviews only the schema the dev URL's search_path names, matching the pinned CE binary. Native `ptah migrations lint` reads SQL text and deliberately does not scope. |
 | Generation-time destructive-change gate | ✅ | ❌ | ❌ | migrations generate and plan fail with `--check-destructive` when the generated SQL contains destructive statements; `--allow-destructive` reopens the gate. Distinct from the apply-time gate row. |
 | Inline nolint suppression | ✅ | ✅ | ✅ | Every code the compat surface prints is silenced by that code; analyzer names work on both surfaces; a blank line detaches a directive. Unknown selectors accepted silently, matching CE. |
-| Native migration lint rule set | ✅ | 🟡 | ✅ | 42 codes across 9 families, gated by `--dialect`. Atlas lists destructive and backward-incompatible rules Open; concurrent-index rules Pro. |
+| Lint enforcement per surface | ✅ | 🟡 | ✅ | The lint guide's enforcement table says, per surface, which rules run and whether a finding is reported, exits non-zero at a threshold, or refuses the apply; a `gate` section widens the apply gate. |
+| Native migration lint rule set | ✅ | 🟡 | ✅ | Every rule is on the generated lint-rules page, grouped by dialect and gated by `--dialect`. Atlas lists destructive and backward-incompatible rules Open; concurrent-index rules Pro. |
 | Per-rule severity policy | ✅ | ❌ | 🟡 | Severity vocabulary is info\|warning\|error; only error gates. The community binary carries no severity attribute: it accepts one and ignores it, exactly as it treats an invented attribute. |
 | Pre-migration assertion checks | ✅ | ❌ | ✅ | Scalar SELECTs in either direction; txtar checks.sql and checks/*.sql support all-of/oneof groups. One failure mode, abort, and no checks under `--tx-mode all`. |
 | SARIF 2.1.0 lint report | ✅ | ❌ | ➖ | Native `--format` sarif emits SARIF 2.1.0 with ruleId, level and file:line; Atlas documents Go-template `--format` output for migrate lint. |

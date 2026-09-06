@@ -158,6 +158,13 @@ rules:
   errors; Ptah reports the rule and pattern instead of silently weakening the
   policy.
 
+- `gate` names the rule families whose error-severity findings refuse
+  `ptah migrations up`, beyond the `DS` family the apply gate always blocks
+  on. `gate: { families: [MY, PG] }` with `rules: { MY130: { severity: error } }`
+  makes a MySQL table copy stop a deploy; without the section the same finding
+  is reported by `ptah migrations lint` and applies. A family no rule belongs
+  to, and an empty list, fail config parsing.
+
 Configuration decoding is strict. Unknown keys, misspelled keys such as
 `severty`, lowercase or whitespace-padded selectors, selectors that match no
 registered rule, unsupported dialects or severities, empty or malformed
@@ -347,6 +354,30 @@ rejects a selector matching no registered rule. Whole-file `atlas:nolint`
 headers take effect only on the Atlas-compatible surface — see
 [Atlas migrate commands](../../atlas/migrate-commands/).
 
+## Where each rule runs, and what a finding does there
+
+A rule being implemented, a rule running on a command, and a rule refusing to
+proceed are three different facts, and the page you are reading keeps them
+apart. The [lint rules reference](../../reference/lint-rules/) lists what is
+implemented. This table says where each of those rules runs and what a finding
+does on that surface:
+
+| Surface | Rules that run | What a finding does |
+| --- | --- | --- |
+| `ptah migrations lint` | every rule the registry holds, gated by `--dialect`; rules that need a dev database run when `--dev-url` is given and are named as unmet otherwise | reported; the run exits `1` when a finding reaches `--fail-on` (`error` by default, `any`, or `none`); nothing is applied |
+| `ptah migrations up` | every family except `MF`, `BC`, `PG` and `MY`, which the apply gate disables as advisory; a family named under `gate` in `.ptah-lint.yaml` runs too | an error-severity `DS` finding, or one from a family named under `gate`, refuses the apply with exit `2`; every other finding is dropped, not printed; `--allow-destructive` bypasses the refusal |
+| `ptah-compat migrate lint` | the same registry as `ptah migrations lint`, under the Atlas policy an `atlas.hcl` `lint` block declares | reported in Atlas's format; a version with an error-severity finding exits `1`, one with warnings alone exits `0` |
+| `ptah-compat schema apply` | only the rules the `atlas.hcl` `lint` block names; no block, no lint pass | an error-severity finding refuses the apply; `--skip-lint` applies anyway |
+| `ptah-compat schema plan lint` | the whole registry, over the plan's SQL | reported; the exit code stays `0` unless `PTAH_ATLAS_PLAN_LINT_FAIL_ON_ERROR=1`, which fails the command on an error-severity finding |
+| the `ptah` GitHub action | `ptah migrations lint` with `lint: "true"` | the job fails at `lint-fail-on`, `error` by default |
+
+Lint and apply are separate on purpose: a locking hazard, a naming convention,
+or a rewrite the operator has planned for is something to review, not
+something the migrator should refuse to run on its own. A project that wants a
+finding to stop a deploy has two explicit places to say so: the lint run in
+CI with `--fail-on`, and the `gate` section, which widens the apply-time gate
+by family for the rules the project has rated `error`.
+
 ## The destructive-change gate
 
 Destructive statements require explicit policy at two points:
@@ -367,9 +398,10 @@ rollback path is understood.
 
 `ptah migrations up` always loads and validates the conventional
 `<migrations-dir>/.ptah-lint.yaml`; when the apply-time gate is active, it
-blocks on error-severity `DS` data-safety findings. What the gate lints is
-always the dialect the connection reports, never the policy's — a policy
-`dialect` is a statement about the directory, not a scanner selector.
+blocks on error-severity `DS` data-safety findings, and on error-severity
+findings from any family the policy's `gate` section names. What the gate
+lints is always the dialect the connection reports, never the policy's — a
+policy `dialect` is a statement about the directory, not a scanner selector.
 
 A nonempty policy `dialect` must name the **same engine family** as the
 connected database, and a cross-family mismatch fails before migration analysis
