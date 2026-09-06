@@ -607,3 +607,25 @@ func TestSurfaceColumnMatchesWhatEachProfileReports(t *testing.T) {
 	c.Assert(nativeOnly, qt.Contains, "BC101=native only")
 	c.Assert(nativeOnly, qt.Contains, "DS101=both")
 }
+
+// TestAtlasCatalogCoverageHoldsItsFloor is the gate on the catalog's own
+// counts, so that a row cannot slip back to partial or absent without a
+// deliberate edit here. Every row that is not covered carries the reason in
+// its note, and the two waived rows are the account-bound ones and no other
+// (stokaro/ptah#2942).
+func TestAtlasCatalogCoverageHoldsItsFloor(t *testing.T) {
+	c := qt.New(t)
+
+	byStatus := make(map[lintcatalog.AtlasStatus][]string)
+	for _, check := range lintcatalog.AtlasChecks() {
+		byStatus[check.Status] = append(byStatus[check.Status], check.Code)
+		c.Assert(check.Status == lintcatalog.StatusCovered || check.Note != "", qt.IsTrue,
+			qt.Commentf("%s is %s and gives no reason", check.Code, check.Status))
+	}
+
+	c.Assert(byStatus[lintcatalog.StatusAbsent], qt.HasLen, 0)
+	c.Assert(byStatus[lintcatalog.StatusPartial], qt.DeepEquals, []string{"MF104"})
+	c.Assert(byStatus[lintcatalog.StatusWaived], qt.DeepEquals, []string{"OW101", "OW102"})
+	c.Assert(len(byStatus[lintcatalog.StatusCovered]) >= 55, qt.IsTrue,
+		qt.Commentf("covered rows fell to %d", len(byStatus[lintcatalog.StatusCovered])))
+}

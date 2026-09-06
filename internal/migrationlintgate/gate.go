@@ -13,7 +13,7 @@ import (
 	"ptah.run/migration/risk"
 )
 
-// ReportedFamily is the only identifier family this gate ever blocks on.
+// ReportedFamily is the identifier family this gate blocks on by itself.
 //
 // The apply gate is a data-safety stop, not the lint pass. A finding outside
 // this family is dropped even when the rule that produced it ran, so an
@@ -22,6 +22,12 @@ import (
 // renders this constant, and a test pins the one hand-written cell that names
 // it, so narrowing or widening the gate fails the documentation gate rather
 // than leaving a stale promise on the page.
+//
+// A policy widens the gate by family through its `gate` section
+// ([lint.GateConfig]): a family named there runs even when it is one the
+// gate disables by default, and its error-severity findings refuse the apply
+// the way DS findings do. The widening is the policy's, committed beside the
+// migrations, so the default stays a data-safety stop (stokaro/ptah#2942).
 const ReportedFamily = "DS"
 
 // disabledFamilies are the families the gate turns off before analysis.
@@ -43,6 +49,14 @@ type Policy struct {
 	dialect  string
 	disabled []string
 	rules    map[string]lint.RuleConfig
+	// families are the identifier families whose blocking findings refuse
+	// the apply: [ReportedFamily] and whatever the policy's gate section adds.
+	families []string
+}
+
+// BlockingFamilies returns the families this policy refuses an apply on.
+func (p Policy) BlockingFamilies() []string {
+	return slices.Clone(p.families)
 }
 
 // LoadPolicy loads the conventional lint policy and resolves it against the
@@ -74,10 +88,20 @@ func LoadPolicy(fsys fs.FS, databaseDialect string) (Policy, error) {
 	if canonical, ok := lintdialect.Canonical(databaseDialect); ok {
 		databaseDialect = canonical
 	}
+	families := cfg.GateFamilies()
+	// A family the policy gates on must run, so it leaves the gate's own
+	// disabled list; the policy's disabled-rules still apply to it.
+	var disabled []string
+	for _, family := range DisabledFamilies() {
+		if !slices.Contains(families, family) {
+			disabled = append(disabled, family)
+		}
+	}
 	policy := Policy{
 		dialect:  databaseDialect,
-		disabled: append(DisabledFamilies(), cfg.DisabledRules...),
+		disabled: append(disabled, cfg.DisabledRules...),
 		rules:    cfg.Rules,
+		families: families,
 	}
 	if err := lint.ValidateOptions(policy.options("")); err != nil {
 		return Policy{}, err
@@ -119,11 +143,21 @@ func AnalyzeWithPolicy(
 	}
 	blocking := make([]lint.Finding, 0, len(findings))
 	for _, finding := range findings {
-		if strings.HasPrefix(finding.Rule, ReportedFamily) && risk.IsBlocking(finding.Severity) {
+		if policy.gatesOn(finding.Rule) && risk.IsBlocking(finding.Severity) {
 			blocking = append(blocking, finding)
 		}
 	}
 	return blocking, nil
+}
+
+// gatesOn reports whether a rule belongs to a family the policy blocks on.
+func (p Policy) gatesOn(rule string) bool {
+	for _, family := range p.families {
+		if strings.HasPrefix(rule, family) {
+			return true
+		}
+	}
+	return false
 }
 
 func (p Policy) options(pathPrefix string) lint.Options {

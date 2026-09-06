@@ -72,7 +72,7 @@ func writeMigrationRules(w io.Writer, entries []Entry) error {
 			"registry%s. Neither apply gate reports even that much, so a rule listed below is "+
 			"not by itself a check that stands between an apply and a database: "+
 			"`ptah migrations up` disables the %s families and refuses only on blocking `%s` "+
-			"findings, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` "+
+			"findings unless the policy's `gate` section names more families, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` "+
 			"block names, which means a project without such a block gets no lint pass there at "+
 			"all. The tables are grouped by the dialects each rule applies to, which is why they "+
 			"carry no dialect column.\n\n",
