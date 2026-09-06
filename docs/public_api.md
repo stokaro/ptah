@@ -860,21 +860,56 @@ Its surface is one variable and it is listed here so the snapshot gate covers
 it. Embedders may read from it; the paths inside it are the repository's own
 layout and move when the documentation is reorganized.
 
+## Documentation-Only Packages
+
+These packages are importable and carry no compatibility guarantee at all:
+
+- `ptah.run/examples/annotation_parser/models`
+- `ptah.run/examples/migrator`
+- `ptah.run/examples/viz/models`
+
+They are sample entities and sample migration directories that documentation
+reaches. `migration/migrator/example_test.go` imports
+`ptah.run/examples/migrator` for the migration directory its published godoc
+examples run against, and an embedder who copies that example has to be able to
+import the same fixture. That is the whole reason the category exists: an
+example nobody outside this module can run is not documentation.
+
+Nothing here is designed, reviewed or versioned as an API. The contents change
+whenever the documentation they serve changes, `check-public-api-released.sh`
+does not compare them against a release baseline, `check-exported-docs.sh` does
+not require doc comments on them, and the site's stable-packages table does not
+list them. Depend on one and a documentation edit is free to break the build.
+
+The category is enumerated rather than pattern-matched. A new package under
+`examples/` fails `check-public-api.sh` until it is either listed here or moved
+behind an `internal/` boundary, because "it looks like an example" is the kind
+of recognition that quietly widens.
+
 ## Provisional Surface
 
-There is no provisional public surface. Packages that are not listed under
-Stable Embedder API are either command/example/fixture/test packages or are
-behind Go `internal/` boundaries. Promoting another package to public API must
-be an explicit design decision that updates this document in the same reviewed
-change.
+There is no provisional public surface. A package this document does not
+classify is a `main` package, a directory with no production source, or behind a
+Go `internal/` boundary. Promoting another package to public API must be an
+explicit design decision that updates this document in the same reviewed change.
+
+That invariant is being closed subtree by subtree under stokaro/ptah#2974, and
+until it is, `check-public-api.sh` still carries a named exemption for each
+subtree whose move has not landed. An exemption is not a boundary: it keeps a
+package out of this document while Go continues to publish it. Each one is
+deleted by the change that internalizes the subtree it names, and none may be
+added.
 
 ## Compatibility Guard
 
 CI runs four public API checks:
 
-- `scripts/check-public-api.sh` fails when `go list ./...` finds a
-  non-command, non-example, non-fixture package that is importable from outside
-  this module but not listed here.
+- `scripts/check-public-api.sh` fails when a library package is importable from
+  outside this module and neither category above lists it. A library package is
+  one `go list` reports with production source of its own, so a `main` package
+  and a directory holding only `_test.go` files are outside the surface for a
+  measured reason rather than by name. It reads both categories; every other
+  check below reads the stable one alone.
 - `scripts/check-public-api-released.sh` compares each stable package against
   the latest `v0.x` release tag with `apidiff -incompatible`. Until the first
   `v0.x` tag exists, the script reports that no released baseline is available

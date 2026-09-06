@@ -34,7 +34,14 @@ func TestSelfTest_HappyPath(t *testing.T) {
 	c.Assert(featureinventory.SelfTest(), qt.HasLen, 0)
 }
 
-func TestLedgerPackages_HappyPath(t *testing.T) {
+// stableSection prefixes a fixture with the heading that classifies its items
+// as the stable embedder API, so a case says what it is about rather than
+// repeating the heading in every literal.
+func stableSection(body string) string {
+	return "## Stable Embedder API\n\n" + body
+}
+
+func TestParseLedger_HappyPath(t *testing.T) {
 	tests := []struct {
 		name   string
 		ledger string
@@ -42,23 +49,36 @@ func TestLedgerPackages_HappyPath(t *testing.T) {
 	}{
 		{
 			name:   "a list item is a listing",
-			ledger: "- `ptah.run/core/renderer`\n",
+			ledger: stableSection("- `ptah.run/core/renderer`\n"),
 			want:   []string{"ptah.run/core/renderer"},
 		},
 		{
 			name:   "trailing prose after the closing backtick is not part of the path",
-			ledger: "- `ptah.run/dbschema` -- reads a live database\n",
+			ledger: stableSection("- `ptah.run/dbschema` -- reads a live database\n"),
 			want:   []string{"ptah.run/dbschema"},
 		},
 		{
 			name:   "the same package listed twice is one package",
-			ledger: "- `ptah.run/catalog`\n- `ptah.run/catalog`\n",
+			ledger: stableSection("- `ptah.run/catalog`\n- `ptah.run/catalog`\n"),
 			want:   []string{"ptah.run/catalog"},
 		},
 		{
 			name:   "the result is sorted regardless of file order",
-			ledger: "- `ptah.run/dbschema`\n- `ptah.run/catalog`\n",
+			ledger: stableSection("- `ptah.run/dbschema`\n- `ptah.run/catalog`\n"),
 			want:   []string{"ptah.run/catalog", "ptah.run/dbschema"},
+		},
+		{
+			name: "a shell comment inside a fenced block is not a heading",
+			ledger: stableSection("- `ptah.run/catalog`\n\n" +
+				"```bash\n# Stable Embedder API\n## not a heading either\n```\n\n" +
+				"- `ptah.run/dbschema`\n"),
+			want: []string{"ptah.run/catalog", "ptah.run/dbschema"},
+		},
+		{
+			name: "a deeper heading explains an entry rather than reclassifying it",
+			ledger: stableSection("- `ptah.run/docs`\n" +
+				"\n### `ptah.run/docs`\n\nOne variable.\n\n- `ptah.run/catalog`\n"),
+			want: []string{"ptah.run/catalog", "ptah.run/docs"},
 		},
 	}
 
@@ -66,9 +86,59 @@ func TestLedgerPackages_HappyPath(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(featureinventory.LedgerPackages([]byte(test.ledger), modulePath), qt.DeepEquals, test.want)
+			ledger, err := featureinventory.ParseLedger([]byte(test.ledger), modulePath)
+			c.Assert(err, qt.IsNil)
+			c.Assert(ledger.Stable, qt.DeepEquals, test.want)
+			c.Assert(ledger.DocumentationOnly, qt.HasLen, 0)
+			c.Assert(ledger.Boundary(), qt.DeepEquals, test.want)
 		})
 	}
+}
+
+// The two categories answer two different questions, so a package in one must
+// never appear in the other. Boundary is the union because the importability
+// gate asks whether a public import path may exist at all; every compatibility
+// check reads Stable, and a documentation-only package reaching it would
+// acquire a guarantee nobody wrote.
+func TestParseLedger_Categories(t *testing.T) {
+	c := qt.New(t)
+
+	ledger, err := featureinventory.ParseLedger([]byte(
+		"## Stable Embedder API\n\n- `ptah.run/catalog`\n\n"+
+			"## Documentation-Only Packages\n\n- `ptah.run/examples/models`\n"), modulePath)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(ledger.Stable, qt.DeepEquals, []string{"ptah.run/catalog"})
+	c.Assert(ledger.DocumentationOnly, qt.DeepEquals, []string{"ptah.run/examples/models"})
+	c.Assert(ledger.Boundary(), qt.DeepEquals, []string{"ptah.run/catalog", "ptah.run/examples/models"})
+}
+
+// A documentation-only package is not a feature: it carries no guarantee, so it
+// must not become a row a page can claim ownership of.
+func TestDerive_DocumentationOnlyPackagesAreNotFeatureRows(t *testing.T) {
+	c := qt.New(t)
+
+	doc, problems := featureinventory.Derive(featureinventory.Sources{
+		ModulePath:   modulePath,
+		NativeLeaves: []agentsurface.Leaf{{Name: "schema apply"}},
+		Ledger: []byte("## Stable Embedder API\n\n- `ptah.run/catalog`\n\n" +
+			"## Documentation-Only Packages\n\n- `ptah.run/examples/models`\n"),
+		Release:  []byte("builds:\n  - id: ptah\n    binary: ptah\n"),
+		Examples: []featureinventory.Example{runnableExample("docs/site/src/content/docs/q.mdx")},
+	})
+
+	c.Assert(featureinventory.RulesOf(problems), qt.HasLen, 0)
+	c.Assert(surfacesByKind(doc)[featureinventory.KindPublicPackage], qt.DeepEquals, []string{"ptah.run/catalog"})
+}
+
+// surfacesByKind groups a derived register's surfaces by the kind that
+// produced them, in row order.
+func surfacesByKind(doc *featureinventory.Document) map[featureinventory.Kind][]string {
+	surfaces := make(map[featureinventory.Kind][]string)
+	for _, row := range doc.Rows {
+		surfaces[row.Kind] = append(surfaces[row.Kind], row.Surface)
+	}
+	return surfaces
 }
 
 // A backticked path in a paragraph is a mention, not a listing. This is the
@@ -76,23 +146,61 @@ func TestLedgerPackages_HappyPath(t *testing.T) {
 // exists once -- every public-API gate reads the ledger through this function,
 // directly or through `list-public-api-packages.sh` -- so they can no longer
 // drift into different answers.
-func TestLedgerPackages_FailurePath(t *testing.T) {
+func TestParseLedger_FailurePath(t *testing.T) {
 	tests := []struct {
 		name   string
 		ledger string
 	}{
-		{name: "a prose paragraph", ledger: "A paragraph mentioning `ptah.run/gateselftest` is not a listing.\n"},
-		{name: "an indented list item", ledger: "  - `ptah.run/nested`\n"},
-		{name: "a bullet with no backticks", ledger: "- ptah.run/bare\n"},
-		{name: "a package outside this module", ledger: "- `github.com/spf13/cobra`\n"},
-		{name: "the module path with nothing after it", ledger: "- `ptah.run`\n"},
+		{name: "a prose paragraph", ledger: stableSection("A paragraph mentioning `ptah.run/gateselftest` is not a listing.\n")},
+		{name: "an indented list item", ledger: stableSection("  - `ptah.run/nested`\n")},
+		{name: "a bullet with no backticks", ledger: stableSection("- ptah.run/bare\n")},
+		{name: "a package outside this module", ledger: stableSection("- `github.com/spf13/cobra`\n")},
+		{name: "the module path with nothing after it", ledger: stableSection("- `ptah.run`\n")},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(featureinventory.LedgerPackages([]byte(test.ledger), modulePath), qt.HasLen, 0)
+			ledger, err := featureinventory.ParseLedger([]byte(test.ledger), modulePath)
+			c.Assert(err, qt.IsNil)
+			c.Assert(ledger.Boundary(), qt.HasLen, 0)
+		})
+	}
+}
+
+// A listing under a heading that classifies nothing is an error rather than a
+// skip. Skipping would take the package off the compatibility surface and out
+// of the importability boundary at once, in the permissive direction: the
+// released-baseline check would stop comparing it, and the gate would stop
+// requiring it to be listed, both without a word.
+func TestParseLedger_UnclassifiedListing(t *testing.T) {
+	tests := []struct {
+		name   string
+		ledger string
+	}{
+		{
+			name:   "no heading at all",
+			ledger: "- `ptah.run/core/renderer`\n",
+		},
+		{
+			name:   "a heading that classifies nothing",
+			ledger: "## Provisional Surface\n\n- `ptah.run/core/renderer`\n",
+		},
+		{
+			name: "after a classifying section has ended",
+			ledger: "## Stable Embedder API\n\n- `ptah.run/catalog`\n\n" +
+				"## Compatibility Guard\n\n- `ptah.run/core/renderer`\n",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := featureinventory.ParseLedger([]byte(test.ledger), modulePath)
+			c.Assert(err, qt.ErrorMatches,
+				`ptah\.run/core/renderer is listed under no classifying heading; move it under .*`)
 		})
 	}
 }
@@ -197,7 +305,7 @@ func TestDerive_HappyPath(t *testing.T) {
 		// would be credited to the same page; here it stays unclaimed, because
 		// the join is equality and there is no search step.
 		NativeLeaves: []agentsurface.Leaf{{Name: "schema apply"}, {Name: "schema apply-plan"}},
-		Ledger:       []byte("- `ptah.run/core/renderer`\n"),
+		Ledger:       []byte(stableSection("- `ptah.run/core/renderer`\n")),
 		Release:      []byte("builds:\n  - binary: ptah\n"),
 		Pages:        []featureinventory.PageClaim{{Path: page, Owns: []string{"cli-ptah-schema-apply"}}},
 		Examples:     []featureinventory.Example{runnableExample("docs/site/src/content/docs/start/q.mdx")},
@@ -220,7 +328,7 @@ func TestDerive_FailurePath(t *testing.T) {
 	_, problems := featureinventory.Derive(featureinventory.Sources{
 		ModulePath:   modulePath,
 		NativeLeaves: []agentsurface.Leaf{{Name: "schema apply"}},
-		Ledger:       []byte("- `ptah.run/core/renderer`\n"),
+		Ledger:       []byte(stableSection("- `ptah.run/core/renderer`\n")),
 		Release:      []byte("builds:\n  - binary: ptah\n"),
 		Pages:        []featureinventory.PageClaim{{Path: "a.md", Owns: []string{"cli-ptah-schema-aplly"}}},
 		Examples:     []featureinventory.Example{runnableExample("q.mdx")},
@@ -237,7 +345,7 @@ func TestRender_HappyPath(t *testing.T) {
 	doc, _ := featureinventory.Derive(featureinventory.Sources{
 		ModulePath:   modulePath,
 		NativeLeaves: []agentsurface.Leaf{{Name: "db read"}},
-		Ledger:       []byte("- `ptah.run/core/renderer`\n"),
+		Ledger:       []byte(stableSection("- `ptah.run/core/renderer`\n")),
 		Release:      []byte("builds:\n  - binary: ptah\n"),
 		Examples:     []featureinventory.Example{runnableExample("q.mdx")},
 	})
@@ -292,27 +400,32 @@ func unclaimed(doc *featureinventory.Document) []string {
 // The module path is a parameter, not a constant. A fixture that only ever used
 // this repository's module path would pass whether the parameter were read or
 // ignored.
-func TestLedgerPackages_ForeignModule(t *testing.T) {
+func TestParseLedger_ForeignModule(t *testing.T) {
 	c := qt.New(t)
 
-	ledger := []byte("- `apiguardfixture/pkg`\n- `ptah.run/core/renderer`\n")
+	source := []byte(stableSection("- `apiguardfixture/pkg`\n- `ptah.run/core/renderer`\n"))
 
-	c.Assert(featureinventory.LedgerPackages(ledger, "apiguardfixture"), qt.DeepEquals,
-		[]string{"apiguardfixture/pkg"})
-	c.Assert(featureinventory.LedgerPackages(ledger, modulePath), qt.DeepEquals,
-		[]string{"ptah.run/core/renderer"})
+	foreign, err := featureinventory.ParseLedger(source, "apiguardfixture")
+	c.Assert(err, qt.IsNil)
+	c.Assert(foreign.Stable, qt.DeepEquals, []string{"apiguardfixture/pkg"})
+
+	own, err := featureinventory.ParseLedger(source, modulePath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(own.Stable, qt.DeepEquals, []string{"ptah.run/core/renderer"})
 }
 
 // An empty module path recognizes nothing rather than every backticked list
 // item. The mistake has to fail closed: a pattern built from an empty prefix
 // would widen the set to third-party paths and to whatever else a bullet holds,
 // and a wider allowlist reports fewer undocumented packages, not an error.
-func TestLedgerPackages_NoModulePath(t *testing.T) {
+func TestParseLedger_NoModulePath(t *testing.T) {
 	c := qt.New(t)
 
-	ledger := []byte("- `ptah.run/core/renderer`\n- `github.com/spf13/cobra`\n")
+	source := []byte(stableSection("- `ptah.run/core/renderer`\n- `github.com/spf13/cobra`\n"))
 
-	c.Assert(featureinventory.LedgerPackages(ledger, ""), qt.HasLen, 0)
+	ledger, err := featureinventory.ParseLedger(source, "")
+	c.Assert(err, qt.IsNil)
+	c.Assert(ledger.Boundary(), qt.HasLen, 0)
 }
 
 func TestModulePathOf_HappyPath(t *testing.T) {
@@ -405,7 +518,7 @@ func TestDerive_ExampleRunsNothing(t *testing.T) {
 			_, problems := featureinventory.Derive(featureinventory.Sources{
 				ModulePath:   modulePath,
 				NativeLeaves: []agentsurface.Leaf{{Name: "db read"}},
-				Ledger:       []byte("- `ptah.run/core/renderer`\n"),
+				Ledger:       []byte(stableSection("- `ptah.run/core/renderer`\n")),
 				Release:      []byte("builds:\n  - binary: ptah\n"),
 				Examples:     []featureinventory.Example{test.example},
 			})
