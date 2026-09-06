@@ -75,6 +75,7 @@ func builtinRules() []Rule {
 	rules = append(rules, dataDependentRules()...)
 	rules = append(rules, migrationFormRules()...)
 	rules = append(rules, compatibilityRules()...)
+	rules = append(rules, uniqueRules()...)
 	rules = append(rules, postgresRules()...)
 	rules = append(rules, postgresCostRules()...)
 	rules = append(rules, mysqlRules()...)
@@ -1067,7 +1068,10 @@ func notNullWithoutDefaultFindingsFor(filePath string, line, statementIndex int,
 func migrationFormRules() []Rule {
 	return []Rule{
 		{
-			Code:     "MF101",
+			// MF101P, MF102P: Ptah's own rules inside the Atlas MF family, so
+			// the suffix the identifier convention asks for; the bare codes
+			// are the Atlas checks unique.go reports (stokaro/ptah#2942).
+			Code:     "MF101P",
 			Title:    "missing down migration",
 			Severity: SeverityWarning,
 			CheckFile: func(file *File) []Finding {
@@ -1075,7 +1079,7 @@ func migrationFormRules() []Rule {
 					return nil
 				}
 				return []Finding{{
-					Rule:     "MF101",
+					Rule:     "MF101P",
 					Title:    "missing down migration",
 					Severity: SeverityWarning,
 					File:     file.Path,
@@ -1084,7 +1088,7 @@ func migrationFormRules() []Rule {
 			},
 		},
 		{
-			Code:     "MF102",
+			Code:     "MF102P",
 			Title:    "empty migration",
 			Severity: SeverityWarning,
 			CheckFile: func(file *File) []Finding {
@@ -1092,7 +1096,7 @@ func migrationFormRules() []Rule {
 					return nil
 				}
 				return []Finding{{
-					Rule:     "MF102",
+					Rule:     "MF102P",
 					Title:    "empty migration",
 					Severity: SeverityWarning,
 					File:     file.Path,

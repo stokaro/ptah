@@ -311,7 +311,7 @@ func TestAnalyzeFS_SchemaScopeDecidesOncePerStatement(t *testing.T) {
 			sql:          "ALTER TABLE app.users ADD CONSTRAINT users_id_key UNIQUE (id);\n",
 			scope:        "",
 			wantChanges:  []changeProjection{{lint.SchemaChangeAdd, "users_id_key"}},
-			wantFindings: []string{"PG105"},
+			wantFindings: []string{"MF101", "PG105"},
 		},
 	}
 
@@ -378,9 +378,12 @@ func TestAnalyzeFS_SchemaScopeRemovesOnlyStatementsNamingNothingUnderReview(t *t
 			wantFindings: []string{"PG306"},
 		},
 		{
-			name:         "a foreign key written inline on an added column is the same reference",
-			sql:          "ALTER TABLE app.users ADD COLUMN pid int REFERENCES public.parent (id), ADD CONSTRAINT users_id_key UNIQUE (id);\n",
-			wantChanges:  make([]changeProjection, 0),
+			name:        "a foreign key written inline on an added column is the same reference",
+			sql:         "ALTER TABLE app.users ADD COLUMN pid int REFERENCES public.parent (id), ADD CONSTRAINT users_id_key UNIQUE (id);\n",
+			wantChanges: make([]changeProjection, 0),
+			// The unique key is on app.users, outside the reviewed schema, so
+			// its MF101 stays out while the statement itself is reviewed for
+			// the reference into public.
 			wantFindings: []string{"PG105"},
 		},
 		{
@@ -442,19 +445,19 @@ func TestAnalyzeFS_SchemaScopeExcludesOnlyTheScopedOutStatement(t *testing.T) {
 			name:         "the statement before a scoped-out one keeps its change and its finding",
 			sql:          inScope + scopedOut,
 			wantChanges:  []changeProjection{{lint.SchemaChangeAdd, "t_id_key"}},
-			wantFindings: []string{"PG105"},
+			wantFindings: []string{"MF101", "PG105"},
 		},
 		{
 			name:         "the statement after a scoped-out one keeps its change and its finding",
 			sql:          scopedOut + inScope,
 			wantChanges:  []changeProjection{{lint.SchemaChangeAdd, "t_id_key"}},
-			wantFindings: []string{"PG105"},
+			wantFindings: []string{"MF101", "PG105"},
 		},
 		{
 			name:         "a scoped-out statement between two in-scope ones removes only itself",
 			sql:          inScope + scopedOut + "ALTER TABLE public.t ADD CONSTRAINT t_id_check CHECK (id > 0);\n",
 			wantChanges:  []changeProjection{{lint.SchemaChangeAdd, "t_id_key"}, {lint.SchemaChangeAdd, "t_id_check"}},
-			wantFindings: []string{"PG105", "PG305"},
+			wantFindings: []string{"MF101", "PG105", "PG305"},
 		},
 		{
 			name:         "two scoped-out statements report neither",

@@ -130,7 +130,7 @@ func TestAnalyze_DropsEveryDisabledFamily(t *testing.T) {
 			dialect: "sqlite",
 			up:      "-- the DDL never got written\n",
 			down:    "-- and neither did its rollback\n",
-			code:    "MF102",
+			code:    "MF102P",
 		},
 		{
 			name:    "BC, a rename that retires a deployed name",
