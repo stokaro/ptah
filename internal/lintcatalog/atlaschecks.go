@@ -207,7 +207,17 @@ var atlasChecks = []AtlasCheck{
 	{Code: "NM105", Meaning: "a foreign-key constraint name violates the naming convention", PtahRules: []string{"NM105"}, Status: StatusCovered, Note: "needs a configured naming convention"},
 	{Code: "NM106", Meaning: "a check constraint name violates the naming convention", PtahRules: []string{"NM106"}, Status: StatusCovered, Note: "needs a configured naming convention"},
 
-	{Code: "SA101", Meaning: "a possible SQL injection vulnerability was detected", Status: StatusAbsent},
+	// What Atlas analyzes is dynamic SQL built by concatenation or
+	// interpolation in EXEC and EXECUTE statements; what Ptah observes is the
+	// tokenized body of a routine the migration defines, once a dialect names
+	// its language: PL/pgSQL EXECUTE, MySQL PREPARE FROM, T-SQL EXEC and
+	// sp_executesql (migration/lint/injection.go, stokaro/ptah#2942). A value
+	// that reaches the routine from outside is not visible and not claimed.
+	{
+		Code: "SA101", Meaning: "a possible SQL injection vulnerability was detected",
+		PtahRules: []string{"SA101"}, Status: StatusCovered,
+		Note: "reports a routine body that builds its statement from an unquoted value; a literal text, quote_ident/quote_literal, format's %I and %L, QUOTENAME, and parameters are the safe forms it leaves alone",
+	},
 
 	{
 		Code: "OW101", Meaning: "a user is not authorized to modify a resource", Pro: true, Status: StatusWaived,

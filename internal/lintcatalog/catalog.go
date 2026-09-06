@@ -79,7 +79,7 @@ var families = []Family{
 	{Prefix: "LT", Origin: OriginAtlas, Summary: "SQLite-specific hazards"},
 	{Prefix: "TX", Origin: OriginAtlas, Summary: "transaction shape of a migration"},
 	{Prefix: "NM", Origin: OriginAtlas, Summary: "naming conventions, checked against the patterns a project configures"},
-	{Prefix: "SA", Origin: OriginAtlas, Summary: "static analysis; Atlas documents these, Ptah emits none"},
+	{Prefix: "SA", Origin: OriginAtlas, Summary: "static analysis of routine bodies a migration defines"},
 	{Prefix: "OW", Origin: OriginAtlas, Summary: "ownership policy; Atlas documents these, Ptah emits none"},
 	{Prefix: "SQL", Origin: OriginPtah, Summary: "the SQL linter could not read or model the statement"},
 	{Prefix: "DDL", Origin: OriginPtah, Summary: "the shape of a DDL statement the SQL linter modeled"},
@@ -289,6 +289,10 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"PG311": {
 		Summary:   "changing a table's access method rewrites the table",
 		AtlasCode: "PG311",
+	},
+	"SA101": {
+		Summary:   "a routine builds and runs a statement from a value it does not quote",
+		AtlasCode: "SA101",
 	},
 	"NM101": {
 		Summary:   "a schema this migration creates or renames to violates the configured naming convention",
