@@ -64,3 +64,11 @@ cmd/atlas/dev
 # goreleaser writes its build output here. `docs/release_process.md` asks for a
 # local snapshot before every release, and that snapshot is 1.2 GB.
 /dist/
+
+# A dev-tool binary built from the repository root. `go build
+# ./internal/cmd/<name>` writes `<name>` here, and one such build --
+# `exporteddocs`, 7.7 MB of darwin/arm64 -- was committed with the gate that
+# introduced it and rebuilt into the tree again by the module-path rename.
+# The gates themselves use `go run`, which writes nothing, so nothing needed
+# the file. Build into `bin/`, which `/bin/*` above already ignores.
+/exporteddocs
