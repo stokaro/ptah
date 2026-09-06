@@ -91,13 +91,15 @@ func Valid(dialect string) bool {
 //     TestBuiltInRules_NoRuleSplitsTheMySQLFamily reddens if that stops holding.
 //   - The PostgreSQL family is grouped as a decision, not as a measurement. Its
 //     members do NOT select the same rule set: PG and TX rules name the literal
-//     "postgres" and no rule names cockroachdb, yugabytedb or spanner, so those
-//     databases run the dialect-independent families only. They are accepted
-//     because they share PostgreSQL's wire protocol and planner family, so
-//     "this directory targets PostgreSQL" is an honest description of the
-//     target rather than a mistake worth blocking a deployment over.
-//     TestBuiltInRules_PostgresFamilyRulesNameOnlyPostgres keeps that asymmetry
-//     visible.
+//     "postgres", and a rule names cockroachdb, yugabytedb or spanner only
+//     where it was measured on that engine -- PG303 is the one that has been
+//     (stokaro/ptah#2958) -- so those databases run the dialect-independent
+//     families plus that measured set. They are accepted because they share
+//     PostgreSQL's wire protocol and planner family, so "this directory
+//     targets PostgreSQL" is an honest description of the target rather than
+//     a mistake worth blocking a deployment over.
+//     TestBuiltInRules_PostgresFamilyMembersAreNamedOnlyWhereMeasured keeps
+//     that asymmetry visible and the measured set explicit.
 //
 // Note what the declaration does NOT do: what gets linted is always the dialect
 // the connection reports, never the policy's. Declaring "postgres" against

@@ -231,8 +231,8 @@
         "/atlas/strict-ce-mode/",
         "/operate/troubleshooting/"
       ],
-      "visibleWords": 8394,
-      "sourceBytes": 58993
+      "visibleWords": 8387,
+      "sourceBytes": 58943
     },
     {
       "path": "docs/site/src/content/docs/atlas/license-boundary.md",
@@ -3953,7 +3953,7 @@
         "/versioned/lint/"
       ],
       "visibleWords": 4634,
-      "sourceBytes": 30935
+      "sourceBytes": 30994
     },
     {
       "path": "docs/site/src/content/docs/reference/mcp-tools.md",
@@ -6003,8 +6003,8 @@
         "/versioned/integrity-and-safety/",
         "/versioned/overview/"
       ],
-      "visibleWords": 3417,
-      "sourceBytes": 24814
+      "visibleWords": 3435,
+      "sourceBytes": 24918
     },
     {
       "path": "docs/site/src/content/docs/versioned/maintain-history.md",

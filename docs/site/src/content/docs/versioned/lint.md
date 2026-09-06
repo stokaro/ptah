@@ -450,9 +450,10 @@ Naming a family member rather than the exact engine is accepted because it
 does not change the analysis: every built-in MySQL-family rule applies to both
 `mysql` and `mariadb`, and the scanner treats them identically. Note the one
 asymmetry inside the PostgreSQL family: the `PG` and `TX` rules apply to
-PostgreSQL only, so a CockroachDB, YugabyteDB or Spanner database runs the
-dialect-independent families alone — whether or not a policy file exists, and
-regardless of what it declares.
+PostgreSQL only, except where a rule was measured on the other engines, which
+today is `PG303` on CockroachDB, YugabyteDB and Spanner. So those databases
+run the dialect-independent families plus that measured set — whether or not
+a policy file exists, and regardless of what it declares.
 
 On the standalone lint command, an explicit `--dialect` still overrides the
 policy, and `--dev-url` is checked against the policy by exactly the same
