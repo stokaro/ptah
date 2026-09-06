@@ -553,19 +553,35 @@ func renamedColumnSubjects(names []renamedName) []Subject {
 	return subjects
 }
 
+// columnTypeChangedRule (DS103) reads the statement text and lets the schema
+// state the version starts from take away a finding it establishes to be
+// wrong: a clause that restates the column's current type; see
+// [typeUnchangedByState].
 func columnTypeChangedRule() Rule {
 	return Rule{
-		Code:     "DS103",
-		Title:    "column type changed",
-		Severity: SeverityWarning,
-		CheckStatement: func(stmt *Statement) (bool, string) {
-			if !isAlterTable(stmt.Words) {
-				return false, ""
+		Code:             "DS103",
+		Title:            "column type changed",
+		Severity:         SeverityWarning,
+		Input:            InputBaselineRefinement,
+		BaselineSubjects: typeChangeStatements,
+		CheckFile: func(file *File) []Finding {
+			var findings []Finding
+			for _, index := range typeChangeStatements(file) {
+				if typeUnchangedByState(file, index) {
+					continue
+				}
+				stmt := &file.Statements[index]
+				findings = append(findings, Finding{
+					Rule:     "DS103",
+					Title:    "column type changed",
+					Severity: SeverityWarning,
+					File:     file.Path,
+					Line:     stmt.Line,
+					Message:  "changing a column type can truncate or reject existing values and may rewrite the table under a lock; verify the old-to-new value mapping on production data first",
+					Context:  statementFindingContext(index),
+				})
 			}
-			if !scanModifyChange(stmt.Words) && !scanAlterColumnType(stmt.Words) {
-				return false, ""
-			}
-			return true, "changing a column type can truncate or reject existing values and may rewrite the table under a lock; verify the old-to-new value mapping on production data first"
+			return findings
 		},
 	}
 }

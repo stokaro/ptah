@@ -151,7 +151,7 @@ var migrationRuleMeta = map[string]ruleMeta{
 		AtlasCode: "DS103",
 	},
 	"DS103": {
-		Summary: "a column type change can truncate or reject existing values and may rewrite the table under a lock",
+		Summary: "a column type change can truncate or reject existing values and may rewrite the table under a lock; a clause that restates the column's current type, as the dev database records it, is not reported",
 	},
 	"DS104": {
 		Summary: "DROP NOT NULL removes a column-level data protection",
