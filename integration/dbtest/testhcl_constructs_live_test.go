@@ -87,10 +87,15 @@ test "migrate" "skipped" {
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Failed(), qt.IsFalse, qt.Commentf("report: %s", report.Text()))
 
-	// The mapping iterated sorted, so alpha is instance 1 and beta is 2, and
-	// each ran against a database of its own -- the `catch` in both proves the
+	// A mapping names each instance by its KEY, and the order is the sorted key
+	// order. The ordinal this used to assert was the defect stokaro/ptah#2933
+	// removed: it moved whenever a key sorting earlier was added, so a pinned
+	// `--run constructs/1` went on passing against a different case and a report
+	// naming an ordinal could not be traced back to the key that failed.
+	//
+	// Each ran against a database of its own -- the `catch` in both proves the
 	// table was absent when each began.
-	c.Assert(report.Cases[0].Name, qt.Equals, "constructs/1")
-	c.Assert(report.Cases[1].Name, qt.Equals, "constructs/2")
+	c.Assert(report.Cases[0].Name, qt.Equals, "constructs/alpha")
+	c.Assert(report.Cases[1].Name, qt.Equals, "constructs/beta")
 	c.Assert(report.Cases[2].Skipped, qt.IsTrue)
 }
