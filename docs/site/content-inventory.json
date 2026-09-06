@@ -3682,8 +3682,8 @@
         "/schema/orm-and-external/",
         "/versioned/apply/"
       ],
-      "visibleWords": 2938,
-      "sourceBytes": 21222
+      "visibleWords": 2940,
+      "sourceBytes": 21237
     },
     {
       "path": "docs/site/src/content/docs/reference/exit-codes.md",
@@ -3952,8 +3952,8 @@
         "/schema/security/",
         "/versioned/lint/"
       ],
-      "visibleWords": 4308,
-      "sourceBytes": 28843
+      "visibleWords": 4447,
+      "sourceBytes": 29843
     },
     {
       "path": "docs/site/src/content/docs/reference/mcp-tools.md",
@@ -6003,8 +6003,8 @@
         "/versioned/integrity-and-safety/",
         "/versioned/overview/"
       ],
-      "visibleWords": 2510,
-      "sourceBytes": 18808
+      "visibleWords": 2799,
+      "sourceBytes": 21024
     },
     {
       "path": "docs/site/src/content/docs/versioned/maintain-history.md",

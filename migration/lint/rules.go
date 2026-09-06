@@ -77,6 +77,7 @@ func builtinRules() []Rule {
 	rules = append(rules, compatibilityRules()...)
 	rules = append(rules, uniqueRules()...)
 	rules = append(rules, notNullRules()...)
+	rules = append(rules, namingRules()...)
 	rules = append(rules, postgresRules()...)
 	rules = append(rules, postgresCostRules()...)
 	rules = append(rules, mysqlRules()...)
