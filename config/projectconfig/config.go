@@ -271,6 +271,7 @@ const (
 	fieldLintDialect               configField = "lint.dialect"
 	fieldLintDisabledRules         configField = "lint.disabled_rules"
 	fieldLintRuleConfigs           configField = "lint.rules"
+	fieldLintNaming                configField = "lint.naming"
 	fieldLintLatest                configField = "lint.latest"
 	fieldLintGitBase               configField = "lint.git.base"
 	fieldLintGitDir                configField = "lint.git.dir"
@@ -689,6 +690,31 @@ type LintConfig struct {
 	Latest        *int
 	GitBase       string
 	GitDir        string
+	// Naming is the `lint { naming { } }` block: the naming convention the
+	// NM rules enforce, in the project-file spelling of the same model
+	// .ptah-lint.yaml carries under `naming`.
+	Naming *LintNamingConfig
+}
+
+// LintNamingConfig is the project-file spelling of a naming convention.
+// Error is Atlas's `error = true`, which reports the six findings at error
+// severity.
+type LintNamingConfig struct {
+	Match      string
+	Message    string
+	Error      bool
+	Schema     *LintNamingPattern
+	Table      *LintNamingPattern
+	Column     *LintNamingPattern
+	Index      *LintNamingPattern
+	ForeignKey *LintNamingPattern
+	Check      *LintNamingPattern
+}
+
+// LintNamingPattern is the convention for one kind of name.
+type LintNamingPattern struct {
+	Match   string
+	Message string
 }
 
 // LintRuleConfig holds project-level overrides for one lint rule code or
@@ -1223,6 +1249,22 @@ func mergeMigration(
 	return result
 }
 
+// cloneLintNaming copies a naming block so a merged config shares nothing
+// with its inputs.
+func cloneLintNaming(naming *LintNamingConfig) *LintNamingConfig {
+	if naming == nil {
+		return nil
+	}
+	cloned := *naming
+	cloned.Schema = clonePointer(naming.Schema)
+	cloned.Table = clonePointer(naming.Table)
+	cloned.Column = clonePointer(naming.Column)
+	cloned.Index = clonePointer(naming.Index)
+	cloned.ForeignKey = clonePointer(naming.ForeignKey)
+	cloned.Check = clonePointer(naming.Check)
+	return &cloned
+}
+
 func mergeLint(
 	base,
 	override LintConfig,
@@ -1251,6 +1293,12 @@ func mergeLint(
 		overridePresence,
 		resultPresence,
 	)
+	if overridePresence.has(fieldLintNaming) || override.Naming != nil {
+		result.Naming = cloneLintNaming(override.Naming)
+		resultPresence.mark(fieldLintNaming)
+	} else {
+		result.Naming = cloneLintNaming(base.Naming)
+	}
 	if overridePresence.has(fieldLintLatest) || override.Latest != nil {
 		result.Latest = clonePointer(override.Latest)
 		result.GitBase = ""

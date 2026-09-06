@@ -239,6 +239,7 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 		DirFormat:         prepared.dirFormat,
 		AtlasTemplateData: migrationfile.AtlasTemplateData{Env: opts.AtlasEnv},
 		RuleConfigs:       cfg.Rules,
+		Naming:            cfg.Naming,
 	})
 	findings := analysis.Findings()
 	report := Report{
@@ -382,6 +383,9 @@ func loadEffectiveConfig(
 		cfg.DisabledRules = append(make([]string, 0), projectCfg.Lint.DisabledRules...)
 	}
 	cfg.Rules = effectiveLintRuleConfigs(projectCfg.Lint.RuleConfigs, cfg.Rules)
+	if cfg.Naming == nil {
+		cfg.Naming = lintNamingFromProject(projectCfg.Lint.Naming)
+	}
 	// The policy file was canonicalized when it parsed, but a dialect taken
 	// from ptah.yaml above never passed through that reader, so it is resolved
 	// here. Both spellings reach the same exact-comparison engine.
@@ -618,6 +622,37 @@ func loadConfig(opts Options, fsys fs.FS) (*lint.Config, error) {
 		return lint.LoadConfig(opts.ConfigPath)
 	}
 	return lint.LoadConfigFS(fsys, lint.ConfigFileName)
+}
+
+// lintNamingFromProject spells a project file's naming block the way the
+// linter reads it. `error = true` is Atlas's one severity switch, so it
+// becomes the block's severity; a nil block stays nil, which leaves the
+// naming rules silent.
+func lintNamingFromProject(naming *projectconfig.LintNamingConfig) *lint.NamingConfig {
+	if naming == nil {
+		return nil
+	}
+	converted := &lint.NamingConfig{
+		Match:      naming.Match,
+		Message:    naming.Message,
+		Schema:     lintNamingPattern(naming.Schema),
+		Table:      lintNamingPattern(naming.Table),
+		Column:     lintNamingPattern(naming.Column),
+		Index:      lintNamingPattern(naming.Index),
+		ForeignKey: lintNamingPattern(naming.ForeignKey),
+		Check:      lintNamingPattern(naming.Check),
+	}
+	if naming.Error {
+		converted.Severity = lint.SeverityError
+	}
+	return converted
+}
+
+func lintNamingPattern(pattern *projectconfig.LintNamingPattern) *lint.NamingPattern {
+	if pattern == nil {
+		return nil
+	}
+	return &lint.NamingPattern{Match: pattern.Match, Message: pattern.Message}
 }
 
 func effectiveLintRuleConfigs(

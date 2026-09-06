@@ -1529,16 +1529,6 @@ func TestParseAtlasProjectConfigToleratesConstructsCEIgnores(t *testing.T) {
 			ignored: "non_linear",
 		},
 		{
-			name: "lint naming block",
-			raw: `lint {
-  naming {
-    error = true
-  }
-}
-`,
-			ignored: "naming",
-		},
-		{
 			name: "lint ownership block",
 			raw: `lint {
   ownership "github" {

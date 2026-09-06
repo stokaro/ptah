@@ -44,6 +44,9 @@ type Config struct {
 	DisabledRules []string `yaml:"disabled-rules"`
 	// Rules carries per-rule severity and path-scope overrides.
 	Rules map[string]RuleConfig `yaml:"rules"`
+	// Naming is the naming convention the six NM rules enforce; absent, they
+	// stay silent. See [NamingConfig].
+	Naming *NamingConfig `yaml:"naming,omitempty"`
 }
 
 // LoadConfig reads an explicit lint configuration file. Missing, unreadable,
@@ -112,6 +115,9 @@ func validateConfig(cfg *Config) error {
 	}
 	cfg.Dialect = canonical
 	if err := validateRuleSelectors(cfg.DisabledRules); err != nil {
+		return err
+	}
+	if _, err := compileNamingConfig(cfg.Naming); err != nil {
 		return err
 	}
 	return validateRuleConfigs(cfg.Rules)

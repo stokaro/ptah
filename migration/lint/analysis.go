@@ -232,6 +232,9 @@ type File struct {
 	// registered is the set of rule codes this run compares selectors
 	// against, so a selector that names one of them selects it alone.
 	registered map[string]struct{}
+	// naming is the project's naming convention, compiled, or nil when the
+	// run configured none.
+	naming *namingPolicy
 	// baseline is the schema state this file's version starts from, when the
 	// caller supplied one. Rules read it for facts the statement cannot carry.
 	baseline baselineColumns
@@ -382,6 +385,9 @@ func validateOptions(opts Options) (migrationfile.DirFormat, []Rule, error) {
 	if err := validateConfiguredRuleSelectors(rules, opts); err != nil {
 		return "", nil, err
 	}
+	if _, err := compileNamingConfig(opts.Naming); err != nil {
+		return "", nil, err
+	}
 	dirFormat, parseErr := migrationfile.ParseDirFormat(string(opts.DirFormat))
 	return dirFormat, rules, parseErr
 }
@@ -436,6 +442,9 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 	baseline := newBaselineIndex(normalizeBaselineColumns(opts.Baseline))
 	dependents := newBaselineDependentIndex(opts.BaselineDependents)
 	registered := registeredCodes(rules)
+	// Validated above, so a second compile cannot fail here.
+	naming, _ := compileNamingConfig(opts.Naming)
+	opts.RuleConfigs = withNamingSeverity(opts.RuleConfigs, opts.Naming)
 	files := make([]File, 0, len(names))
 	for _, name := range names {
 		file, err := prepareFile(
@@ -455,6 +464,7 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 			baseline,
 			dependents,
 			registered,
+			naming,
 		)
 		if err != nil {
 			return Analysis{}, err
@@ -602,6 +612,7 @@ func prepareFile(
 	baseline map[int64]baselineColumns,
 	dependents map[int64]baselineDependents,
 	registered map[string]struct{},
+	naming *namingPolicy,
 ) (File, error) {
 	raw := sources[name]
 	base := path.Base(name)
@@ -638,6 +649,7 @@ func prepareFile(
 		compatibility:  compatibility,
 		dialect:        dialect,
 		registered:     registered,
+		naming:         naming,
 		baseline:       baseline[version],
 		dependents:     dependents[version],
 	}
