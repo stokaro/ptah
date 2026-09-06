@@ -179,7 +179,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `DD102` | a routine declared immutable calls something whose result changes between two calls with the same arguments | both | Ptah |
 | `DS101` | DROP TABLE destroys the table and every row in it; a rename reports here on the compatibility surface, retiring the old name without moving the rows | both | Atlas |
 | `DS102` | DROP COLUMN destroys the column and every value stored in it | both | Atlas |
-| `DS103` | a column type change can truncate or reject existing values and may rewrite the table under a lock | both | Ptah |
+| `DS103` | a column type change can truncate or reject existing values and may rewrite the table under a lock; a clause that restates the column's current type, as the dev database records it, is not reported | both | Ptah |
 | `DS104` | DROP NOT NULL removes a column-level data protection | both | Ptah |
 | `DS105` | an untyped DROP CONSTRAINT removes a data protection the SQL does not name | both | Ptah |
 | `DS106` | removing an enum value can invalidate rows that still hold it | both | Ptah |
