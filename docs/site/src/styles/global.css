@@ -49,13 +49,17 @@
  * context rail at all -- the band below says why -- so only the left rail
  * width applies there.
  *
- * Two layouts share this file. The default, "envelope", is the one measured
- * here and pinned by scripts/check-responsive.mjs. The docs concept's
- * "column" layout is opt-in under `:root[data-ptah-layout='column']`; the
- * block after this one sets its measures and the `>= 80rem` block at the end
- * of the file places its frame. In development Head.astro offers a switch
- * between the two on any page; production builds render the envelope and
- * nothing sets the attribute.
+ * Two layouts share this file. The default, "envelope", is what a reader
+ * arrives to. The docs concept's "column" layout is opt-in under
+ * `:root[data-ptah-layout='column']`; the block after this one sets its
+ * measures and the `>= 80rem` block at the end of the file places its frame.
+ *
+ * Both ship. Head.astro's switch renders in production too, `?layout=column`
+ * selects the second, and Head.astro remembers the choice, so a reader who
+ * presses the control stays in that layout across pages. This comment said the
+ * opposite once, and the layout nothing claimed to ship was measured by
+ * nothing: scripts/check-responsive.mjs takes the layout as an axis now and
+ * runs its pass under each (stokaro/ptah#2930).
  */
 :root {
 	--sl-sidebar-width: 16rem;

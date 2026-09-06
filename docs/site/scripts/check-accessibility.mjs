@@ -22,10 +22,15 @@ const viewports = [
   { name: 'desktop', width: 1280, height: 900 },
 ];
 const wcagTags = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
+// Both, because the site ships both and the palettes are separate declarations.
+// This ran in the default context once, which resolves to the light theme, so
+// every dark color the design introduced was unmeasured while the code and the
+// README said otherwise (stokaro/ptah#2930).
+const colorSchemes = ['light', 'dark'];
 
-function formatViolation(route, viewport, violation) {
+function formatViolation(route, viewport, scheme, violation) {
   const targets = violation.nodes.slice(0, 3).map((node) => node.target.join(' ')).join(', ');
-  return `${route} [${viewport}] ${violation.id} (${violation.impact ?? 'unknown'}): ${targets}`;
+  return `${route} [${viewport}, ${scheme}] ${violation.id} (${violation.impact ?? 'unknown'}): ${targets}`;
 }
 
 async function axeViolations(page) {
@@ -136,15 +141,17 @@ async function main() {
   const browser = await chromium.launch();
   const problems = [];
   try {
-    for (const viewport of viewports) {
-      const context = await browser.newContext({ viewport });
-      const page = await context.newPage();
-      for (const route of routes) {
-        await page.goto(`${origin}${built.base}${route}`, { waitUntil: 'load' });
-        const violations = await axeViolations(page);
-        problems.push(...violations.map((violation) => formatViolation(route, viewport.name, violation)));
+    for (const scheme of colorSchemes) {
+      for (const viewport of viewports) {
+        const context = await browser.newContext({ viewport, colorScheme: scheme });
+        const page = await context.newPage();
+        for (const route of routes) {
+          await page.goto(`${origin}${built.base}${route}`, { waitUntil: 'load' });
+          const violations = await axeViolations(page);
+          problems.push(...violations.map((violation) => formatViolation(route, viewport.name, scheme, violation)));
+        }
+        await context.close();
       }
-      await context.close();
     }
 
     const keyboardPage = await browser.newPage({ viewport: viewports[1] });
@@ -161,7 +168,10 @@ async function main() {
     process.exitCode = 1;
     return;
   }
-  console.log(`check-accessibility.mjs: OK (${routes.length} routes x ${viewports.length} viewports plus keyboard controls)`);
+  console.log(
+    `check-accessibility.mjs: OK (${routes.length} routes x ${viewports.length} viewports x ` +
+    `${colorSchemes.join(' and ')} plus keyboard controls)`,
+  );
 }
 
 await main();

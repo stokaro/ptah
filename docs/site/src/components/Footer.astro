@@ -68,7 +68,7 @@ const hasLinks = source.hasSource;
           )}
           {source.report && (
             <a class="ptah-footer-link" href={source.report.url} target="_blank" rel="noreferrer" data-footer-action="report">
-              Report an issue <span aria-hidden="true">↗</span>
+              {source.report.label} <span aria-hidden="true">↗</span>
             </a>
           )}
         </div>

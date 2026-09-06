@@ -182,10 +182,11 @@
 
 /* FILE, untitled. Expressive Code hides the empty header of a frame with no
  * title; it comes back as the bar, the `pre` under it gives up its top edge
- * the way a titled frame's does, and the language is written into the bar
- * from the `pre`'s `data-language`. The list is the census of the content:
- * every non-shell, non-text language in use. An unlisted language gets an
- * empty bar of the same height rather than a collapsed one. */
+ * the way a titled frame's does, and the language is written into the bar from
+ * the header's own `data-language`, which
+ * src/lib/expressive-code-language-label.mjs copies up from the `pre`. Nine
+ * rules named nine languages here once; the tenth would have shipped a blank
+ * bar (stokaro/ptah#2930). */
 .expressive-code:not(:has(pre[data-language='text'])) .frame:not(.is-terminal):not(.has-title) .header {
 	display: flex;
 }
@@ -195,18 +196,12 @@
 	border-top-right-radius: 0;
 }
 .expressive-code .frame:not(.is-terminal):not(.has-title) .header::before {
-	content: '\00a0';
-	content: '\00a0' / '';
+	/* The fence's own language, copied onto the header by
+	 * src/lib/expressive-code-language-label.mjs. It was nine rules naming nine
+	 * languages, which shipped a blank bar the moment a page used a tenth. */
+	content: attr(data-language);
+	content: attr(data-language) / '';
 }
-.expressive-code .frame:not(.is-terminal):not(.has-title):has(pre[data-language='yaml']) .header::before { content: 'yaml'; content: 'yaml' / ''; }
-.expressive-code .frame:not(.is-terminal):not(.has-title):has(pre[data-language='sql']) .header::before { content: 'sql'; content: 'sql' / ''; }
-.expressive-code .frame:not(.is-terminal):not(.has-title):has(pre[data-language='go']) .header::before { content: 'go'; content: 'go' / ''; }
-.expressive-code .frame:not(.is-terminal):not(.has-title):has(pre[data-language='hcl']) .header::before { content: 'hcl'; content: 'hcl' / ''; }
-.expressive-code .frame:not(.is-terminal):not(.has-title):has(pre[data-language='json']) .header::before { content: 'json'; content: 'json' / ''; }
-.expressive-code .frame:not(.is-terminal):not(.has-title):has(pre[data-language='proto']) .header::before { content: 'proto'; content: 'proto' / ''; }
-.expressive-code .frame:not(.is-terminal):not(.has-title):has(pre[data-language='graphql']) .header::before { content: 'graphql'; content: 'graphql' / ''; }
-.expressive-code .frame:not(.is-terminal):not(.has-title):has(pre[data-language='markdown']) .header::before { content: 'markdown'; content: 'markdown' / ''; }
-.expressive-code .frame:not(.is-terminal):not(.has-title):has(pre[data-language='html']) .header::before { content: 'html'; content: 'html' / ''; }
 
 /* Copy. Expressive Code floats a 2rem icon button over the code's first line
  * and shows it on hover; the design writes "Copy" in the bar, 500 12px sans,

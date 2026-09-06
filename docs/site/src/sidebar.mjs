@@ -46,7 +46,10 @@
 // Starlight's schema at build time, which is the one way to be green here and
 // red in CI.
 //
-// `collapsed: true` on every root row is the rail's resting state: a reader
+// `collapsed: true` on every root row is a navigation decision, taken here on
+// purpose rather than arriving with the styling: it changes what a reader lands
+// on, it outlives the design work, and it is the kind of thing to have a
+// before and after on. It is the rail's resting state: a reader
 // arrives to one open group, the one holding the current page, and nine closed
 // rows, instead of ~130 links at once. Starlight opens a collapsed group when
 // any link inside it, at any depth, is the current page

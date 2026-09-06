@@ -1,12 +1,18 @@
 ---
 /**
- * The brand row of the header: the mark and "Ptah" link to the project site,
- * "Docs" links to the documentation root, and the version pill switches
+ * The brand row of the header: the mark and "Ptah" link to the documentation
+ * root, "Docs" names it beside them, and the version pill switches
  * documentation versions. It replaces Starlight's SiteTitle so the row reads
  * the same as the header of ptah.run (stokaro/ptah#2893).
+ *
+ * The mark is the control a reader reaches for to go home, so it goes to the
+ * documentation root rather than to ptah.run. It pointed outward once, and
+ * below 50rem the header hides both "Docs" and the links beside it, which left
+ * a phone with no way back to the documentation and one link that looked like
+ * the way back and was not (stokaro/ptah#2930). ptah.run stays a header link;
+ * HeaderLinks.astro renders it first.
  */
 import logo from '../assets/logo.svg';
-import { SiteOrigin } from '../lib/docs-origin.mjs';
 
 const { siteTitleHref } = Astro.locals.starlightRoute;
 
@@ -21,7 +27,7 @@ const versionsJsonUrl = `${versionsRoot}versions.json`;
 ---
 
 <div class="ptah-brand">
-  <a class="ptah-brand__site" href={`${SiteOrigin}/`} translate="no">
+  <a class="ptah-brand__site" href={siteTitleHref} translate="no">
     <img src={logo.src} alt="" width="20" height="20" />
     Ptah
   </a>

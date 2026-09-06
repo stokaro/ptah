@@ -14,7 +14,7 @@ import { pagefindRanking } from './src/lib/search-ranking.mjs';
 import { Origin, BasePath } from './src/lib/docs-origin.mjs';
 import { codeThemeDark, codeThemeLight } from './src/lib/code-theme.mjs';
 import { satteri } from '@astrojs/markdown-satteri';
-import markdownExpectedOutput from './src/lib/markdown-expected-output.mjs';
+import { pluginLanguageLabel } from './src/lib/expressive-code-language-label.mjs';
 import markdownAsides from './src/lib/markdown-asides.mjs';
 
 const DOCS_VERSION = process.env.DOCS_VERSION || 'edge';
@@ -81,7 +81,6 @@ export default defineConfig({
     // at setup, so an mdast plugin here runs before Starlight's asides plugin
     // and a hast plugin here sees the aside Starlight has already shaped.
     processor: satteri({
-      mdastPlugins: [markdownExpectedOutput()],
       hastPlugins: [markdownAsides()],
     }),
   },
@@ -136,6 +135,9 @@ export default defineConfig({
         // The themes' colors are the design's tokens, each measured above 4.5:1
         // in code-theme.mjs; Expressive Code's default of 5.5 would move them.
         minSyntaxHighlightingColorContrast: 0,
+        // Copies each fence's language onto its frame header so the bar names
+        // it from the fence rather than from a list of languages kept by hand.
+        plugins: [pluginLanguageLabel()],
       },
       social: [
         {
