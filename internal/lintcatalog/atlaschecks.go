@@ -61,18 +61,23 @@ var atlasChecks = []AtlasCheck{
 	// violation is not claimed, and the message carries the GROUP BY that
 	// proves or clears it. A table this migration creates, and a column it
 	// adds without a DEFAULT, meet no duplicates and are not reported
-	// (migration/lint/unique.go, stokaro/ptah#2942). The identifiers were
-	// Ptah's own missing-down and empty-file rules before the convention;
-	// those are MF101P and MF102P now, so the Atlas checks keep their codes.
+	// (migration/lint/unique.go, stokaro/ptah#2942). The schema state the
+	// version starts from refines both: a unique index or primary key that
+	// already covers the key's columns proves the rows unique and silences
+	// them, and a dropped index is known by its columns, so a unique rebuild
+	// under a new name is MF102's replacement too (stokaro/ptah#2957). The
+	// identifiers were Ptah's own missing-down and empty-file rules before
+	// the convention; those are MF101P and MF102P now, so the Atlas checks
+	// keep their codes.
 	{
 		Code: "MF101", Meaning: "adding a unique index to an existing column",
 		PtahRules: []string{"MF101"}, Status: StatusCovered,
-		Note: "structural: the build fails on the first duplicate; the message names the query that settles it and what a failed CONCURRENTLY build leaves behind",
+		Note: "structural: the build fails on the first duplicate; the message names the query that settles it and what a failed CONCURRENTLY build leaves behind, and a unique index the dev database already holds over the columns silences it",
 	},
 	{
 		Code: "MF102", Meaning: "modifying a non-unique index to unique",
 		PtahRules: []string{"MF102"}, Status: StatusCovered,
-		Note: "an index dropped earlier in the file and rebuilt as unique under the same name; the message adds that the failure leaves the table without the index it had",
+		Note: "an index dropped earlier in the file and rebuilt as unique under the same name, or under a new name over the columns the dev database records for it; the message adds that the failure leaves the table without the index it had",
 	},
 	{Code: "MF103", Meaning: "adding a non-nullable column to an existing table", PtahRules: []string{"DD101"}, Status: StatusCovered},
 	// DD103 reads the column's current nullability from the dev database,
@@ -120,16 +125,18 @@ var atlasChecks = []AtlasCheck{
 
 	// The three copies below were measured on MySQL 8.4 and MariaDB 11.8.9
 	// with ALGORITHM=INSTANT, INPLACE and LOCK=NONE (migration/lint/mysqlcost.go).
-	// MY130 and MY136 compare the column's current type and character set,
-	// read from the dev database, with what the clause assigns, so a VARCHAR
-	// widened within one length-prefix class or a utf8mb3 column converted to
-	// utf8mb4 is not reported as the copy it is not; without that state the
-	// statement is still reported by DS103 and MY101, and the run names these
-	// rules as unmet (stokaro/ptah#2942).
+	// MY130 and MY136 compare the column's current type, character set and
+	// collation, read from the dev database with the keys on the column, with
+	// what the clause assigns, so a VARCHAR widened within one length-prefix
+	// class or a utf8mb3 column converted to utf8mb4 is not reported as the
+	// copy it is not, while a collation change or that same conversion on a
+	// keyed column is reported as the copy MySQL makes of it; without that
+	// state the statement is still reported by DS103 and MY101, and the run
+	// names these rules as unmet (stokaro/ptah#2942, stokaro/ptah#2957).
 	{
 		Code: "MY130", Meaning: "changing a column type requires a table copy", Pro: true,
 		PtahRules: []string{"MY130"}, Status: StatusCovered,
-		Note: "fires only for a change InnoDB refuses to apply in place, with the old and new type and the boundary or character set that decides it",
+		Note: "fires only for a change InnoDB refuses to apply in place, with the old and new type and the boundary, character set, collation or key that decides it",
 	},
 	{Code: "MY131", Meaning: "adding a foreign key blocks DML", Pro: true, PtahRules: []string{"MY131"}, Status: StatusCovered},
 	{Code: "MY132", Meaning: "adding a primary key requires a table rebuild", Pro: true, PtahRules: []string{"MY132"}, Status: StatusCovered},
@@ -143,7 +150,7 @@ var atlasChecks = []AtlasCheck{
 	{
 		Code: "MY136", Meaning: "changing the table character set requires a table rebuild", Pro: true,
 		PtahRules: []string{"MY136"}, Status: StatusCovered,
-		Note: "names the columns whose re-encoding forces the copy; a conversion that touches no column, or only utf8mb3 to utf8mb4 on short VARCHAR and CHAR columns, is not reported",
+		Note: "names the columns whose re-encoding forces the copy; a conversion that touches no column, or only utf8mb3 to utf8mb4 on short VARCHAR and CHAR columns no key covers, is not reported",
 	},
 
 	{Code: "LT101", Meaning: "modifying a nullable column to non-nullable without a DEFAULT", PtahRules: []string{"LT101"}, Status: StatusCovered},
@@ -161,22 +168,25 @@ var atlasChecks = []AtlasCheck{
 
 	// Both rows below were measured on PostgreSQL 18.6 by relfilenode and the
 	// heap-scan counter (migration/lint/pgcost.go). PG301 compares the
-	// column's current type, read from the dev database, with the clause's,
-	// so a widening PostgreSQL applies as a catalog edit is not reported as a
-	// rewrite; PG304 reads the key columns' nullability the same way. Without
-	// that state DS103 and PG104 keep the statement and the run names these
-	// rules as unmet (stokaro/ptah#2942).
+	// column's current type and collation, read from the dev database with
+	// the indexes on the column, with the clause's, so a widening PostgreSQL
+	// applies as a catalog edit is not reported as a rewrite and a collation
+	// change is reported as the index rebuild it is; PG304 reads the key
+	// columns' nullability the same way, and for a USING INDEX form the key
+	// columns of the index it names. Without that state DS103 and PG104 keep
+	// the statement and the run names these rules as unmet (stokaro/ptah#2942,
+	// stokaro/ptah#2957).
 	{
 		Code: "PG301", Meaning: "a column type change requires a table and index rewrite", Pro: true,
 		PtahRules: []string{"PG301"}, Status: StatusCovered,
-		Note: "fires only for a change PostgreSQL rewrites for, naming the abort a stored value can cause; the timestamp and timestamptz pair says when the TimeZone decides",
+		Note: "fires for a change PostgreSQL rewrites for, naming the abort a value can cause, and for a collation change on an indexed column, naming the indexes it rebuilds; the timestamp to timestamptz pair says when the TimeZone decides",
 	},
 	{Code: "PG302", Meaning: "a volatile DEFAULT on an added column rewrites the table", Pro: true, PtahRules: []string{"PG302"}, Status: StatusCovered},
 	{Code: "PG303", Meaning: "SET NOT NULL scans existing rows", Pro: true, PtahRules: []string{"PG303"}, Status: StatusCovered},
 	{
 		Code: "PG304", Meaning: "PRIMARY KEY on nullable columns requires a full scan", Pro: true,
 		PtahRules: []string{"PG304", "PG104"}, Status: StatusCovered,
-		Note: "PG304 names the columns the key sets NOT NULL and the extra scan that costs; PG104 names the lock every ADD PRIMARY KEY takes",
+		Note: "PG304 names the columns the key sets NOT NULL and the extra scan that costs, for a column list and for USING INDEX alike; PG104 names the lock every ADD PRIMARY KEY takes",
 	},
 	{Code: "PG305", Meaning: "a CHECK constraint requires a full table scan", Pro: true, PtahRules: []string{"PG305"}, Status: StatusCovered},
 	{Code: "PG306", Meaning: "a FOREIGN KEY requires a full scan and blocks writes", Pro: true, PtahRules: []string{"PG306"}, Status: StatusCovered},

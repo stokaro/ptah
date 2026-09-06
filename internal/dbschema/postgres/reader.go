@@ -819,6 +819,12 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 			numeric_precision,
 			numeric_scale,
 			datetime_precision,
+			-- The collation the column was declared with, empty for one that
+			-- takes the database default. A migration linter compares it with
+			-- an ALTER COLUMN ... TYPE ... COLLATE clause: a restated collation
+			-- is a no-op and a changed one rebuilds every index on the column,
+			-- and only this value tells the two apart (stokaro/ptah#2957).
+			COALESCE(col.collation_name, '') AS collation_name,
 			ordinal_position,
 			` + r.generatedKindExpr() + `,
 			` + r.generatedExpressionExpr() + `,
@@ -869,6 +875,7 @@ func (r *Reader) readColumnsForSchema(ctx context.Context, schemaName string) (m
 			&col.NumericPrecision,
 			&col.NumericScale,
 			&col.DatetimePrecision,
+			&col.Collate,
 			&col.OrdinalPosition,
 			&generatedKind,
 			&generatedExpression,

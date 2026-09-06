@@ -23,7 +23,8 @@ var registeredRules = struct {
 // A rule must carry a Code of uppercase ASCII letters and digits beginning
 // with a letter, a non-empty Title, a supported Severity, exactly one of
 // CheckStatement and CheckFile, and a BaselineSubjects predicate if and only
-// if it declares [InputBaselineSchema]. Its Code must also be free: a code a
+// if it declares [InputBaselineSchema] or [InputBaselineRefinement]. Its Code
+// must also be free: a code a
 // built-in or an already registered rule holds is refused rather than
 // shadowing that rule. Register reports an invalid or colliding rule as an
 // error and registers nothing, so a failed call leaves the registry as it was.
@@ -111,7 +112,7 @@ func validateRule(rule Rule) error {
 	// the predicate, or a reader has to work out which of the two fields is the
 	// real answer (stokaro/ptah#1632).
 	switch rule.Input {
-	case InputBaselineSchema:
+	case InputBaselineSchema, InputBaselineRefinement:
 		if rule.BaselineSubjects == nil {
 			return fmt.Errorf(
 				"rule %s declares the %s input and must set BaselineSubjects to say which statements need it",

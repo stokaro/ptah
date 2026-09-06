@@ -13,41 +13,110 @@ import (
 	"ptah.run/migration/lint"
 )
 
-// readBaselineColumns records the schema state one migration version starts
-// from, in the form the linter can look columns up in.
+// baselineState is the schema state one migration version starts from, in
+// the three forms the linter looks things up in.
+type baselineState struct {
+	columns    []lint.BaselineColumn
+	indexes    []lint.BaselineIndex
+	dependents []lint.BaselineDependent
+}
+
+// readBaselineState records the schema state one migration version starts
+// from, in the form the linter can look columns, indexes and dependents up in.
 //
 // It is read from the dev database mid-replay, after every earlier migration has
 // been applied and before this one is. That is the only place the retired half
 // of a rename still exists: `ALTER TABLE users RENAME COLUMN id TO oid` says
 // nothing about what `id` was, and after the statement runs there is no `id`
-// left to ask about.
-func readBaselineColumns(ctx context.Context,
+// left to ask about. One catalog read answers all three forms: the columns and
+// the indexes are read off it directly, and the dependents are resolved from
+// the view and routine bodies it carries.
+func readBaselineState(ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	version int64,
 	schemas []string,
-) ([]lint.BaselineColumn, error) {
+	dialect string,
+) (baselineState, error) {
 	schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, schemas)
 	if err != nil {
-		return nil, fmt.Errorf("read dev database schema: %w", err)
+		return baselineState{}, fmt.Errorf("read dev database schema: %w", err)
 	}
+	return baselineState{
+		columns:    baselineColumnsOf(schema, version),
+		indexes:    baselineIndexesOf(schema, version),
+		dependents: baselineDependentsOf(schema, version, dialect),
+	}, nil
+}
+
+// baselineColumnsOf lists every column of the read schema as the state
+// version starts from.
+func baselineColumnsOf(schema *catalog.Database, version int64) []lint.BaselineColumn {
 	var columns []lint.BaselineColumn
 	for _, table := range schema.Tables {
 		for _, column := range table.Columns {
 			columns = append(columns, lint.BaselineColumn{
-				Version:      version,
-				Schema:       table.Schema,
-				Table:        table.Name,
-				Name:         column.Name,
-				DataType:     compatColumnDataType(column),
-				ColumnType:   baselineTypeSpelling(column),
-				Charset:      column.Charset,
-				TableCharset: table.Charset,
-				NotNull:      strings.EqualFold(strings.TrimSpace(column.IsNullable), "NO"),
-				HasDefault:   column.ColumnDefault != nil && strings.TrimSpace(*column.ColumnDefault) != "",
+				Version:        version,
+				Schema:         table.Schema,
+				Table:          table.Name,
+				Name:           column.Name,
+				DataType:       compatColumnDataType(column),
+				ColumnType:     baselineTypeSpelling(column),
+				Charset:        column.Charset,
+				TableCharset:   table.Charset,
+				Collation:      column.Collate,
+				TableCollation: table.Collate,
+				NotNull:        strings.EqualFold(strings.TrimSpace(column.IsNullable), "NO"),
+				HasDefault:     column.ColumnDefault != nil && strings.TrimSpace(*column.ColumnDefault) != "",
 			})
 		}
 	}
-	return columns, nil
+	return columns
+}
+
+// baselineIndexesOf lists every index of the read schema as the state
+// version starts from, key parts included.
+//
+// A reader that describes key parts reports them in Parts, with the
+// expression or prefix a part carries; one that reports only the legacy
+// column list is read through that list, whole columns every one. A part the
+// reader could not name is carried as the incompleteness it is, so no rule
+// reads a partial key as the whole one.
+func baselineIndexesOf(schema *catalog.Database, version int64) []lint.BaselineIndex {
+	var indexes []lint.BaselineIndex
+	for _, index := range schema.Indexes {
+		indexes = append(indexes, lint.BaselineIndex{
+			Version:    version,
+			Schema:     index.Schema,
+			Table:      index.TableName,
+			Name:       index.Name,
+			Parts:      baselineIndexParts(index),
+			Unique:     index.IsUnique || index.IsPrimary,
+			Primary:    index.IsPrimary,
+			Partial:    strings.TrimSpace(index.Condition) != "",
+			Incomplete: index.KeyPartsIncomplete,
+		})
+	}
+	return indexes
+}
+
+func baselineIndexParts(index catalog.Index) []lint.BaselineIndexPart {
+	if len(index.Parts) == 0 {
+		parts := make([]lint.BaselineIndexPart, 0, len(index.Columns))
+		for _, column := range index.Columns {
+			parts = append(parts, lint.BaselineIndexPart{Column: column})
+		}
+		return parts
+	}
+	parts := make([]lint.BaselineIndexPart, 0, len(index.Parts))
+	for _, part := range index.Parts {
+		prefix, _ := strconv.Atoi(strings.TrimSpace(part.Prefix))
+		column := part.Name
+		if part.Expr != "" {
+			column = ""
+		}
+		parts = append(parts, lint.BaselineIndexPart{Column: column, Prefix: prefix})
+	}
+	return parts
 }
 
 // baselineTypeSpelling is the column's type as the server spells it, for the
@@ -141,10 +210,10 @@ func numericDataType(column catalog.Column) string {
 	return precision + "," + strconv.Itoa(*column.NumericScale) + ")"
 }
 
-// readBaselineDependents records what reads each column in the state one
+// baselineDependentsOf records what reads each column in the state one
 // migration version starts from.
 //
-// It is the same read as [readBaselineColumns] answered a second way: the
+// It is the same read as [baselineColumnsOf] answered a second way: the
 // catalog gives the view and routine bodies, and schemalineage resolves which
 // columns they read. A drop can then say what it breaks instead of only that it
 // deletes data, which is what #1270's criterion 9 asked for.
@@ -153,16 +222,7 @@ func numericDataType(column catalog.Column) string {
 // contributes no dependent, so the rule stays silent about it rather than
 // naming a reader it did not establish -- the rule reports a fact, and the
 // analysis's own undecided list is where the gaps are stated.
-func readBaselineDependents(ctx context.Context,
-	conn *dbschema.DatabaseConnection,
-	version int64,
-	schemas []string,
-	dialect string,
-) ([]lint.BaselineDependent, error) {
-	schema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, schemas)
-	if err != nil {
-		return nil, fmt.Errorf("read dev database schema: %w", err)
-	}
+func baselineDependentsOf(schema *catalog.Database, version int64, dialect string) []lint.BaselineDependent {
 	desired := dbschematogo.ConvertDBSchemaToGoSchema(schema, dialect)
 	tableSchemas := tableSchemasByName(schema)
 
@@ -181,7 +241,7 @@ func readBaselineDependents(ctx context.Context,
 			Dependent: read.ByRoutine, Kind: routineKind(read.Kind),
 		})
 	}
-	return dependents, nil
+	return dependents
 }
 
 // tableSchemasByName maps each table to the schema the server spells it in, so

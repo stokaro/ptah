@@ -2,6 +2,7 @@ package lint
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 )
@@ -38,6 +39,14 @@ import (
 // What the file does not know is the data. The dev database a run replays
 // the directory on holds the schema and nothing else, so a proven violation
 // is not claimed; the message carries the GROUP BY that proves or clears it.
+// The schema does settle two things the text cannot (stokaro/ptah#2957): a
+// unique index or primary key already covering the key's columns, or a
+// subset of them, proves the rows unique, so the build cannot fail and
+// neither rule fires; and an index the file drops by name is known by its
+// columns, so a unique one rebuilt over the same columns under a new name
+// is the replacement MF102 describes. Both read the state through
+// [InputBaselineRefinement]: the rules report from the text alone and the
+// state refines the report, and a run without it is named as unmet.
 
 // uniqueIndexSite is one unique index or constraint a statement builds.
 type uniqueIndexSite struct {
@@ -55,6 +64,21 @@ type uniqueIndexSite struct {
 	// spelled is the clause head for the message: CREATE UNIQUE INDEX or
 	// ADD UNIQUE.
 	spelled string
+}
+
+// uniqueIndexStatements lists the statements that build a unique index, for
+// the baseline request.
+func uniqueIndexStatements(file *File) []int {
+	var indexes []int
+	seen := -1
+	for _, site := range uniqueIndexSites(file) {
+		if site.statement == seen {
+			continue
+		}
+		seen = site.statement
+		indexes = append(indexes, site.statement)
+	}
+	return indexes
 }
 
 // uniqueIndexSites finds every unique index a file builds, in file order.
@@ -301,11 +325,18 @@ const (
 	uniqueSameDefault
 	// uniqueUnknown: the rows are whatever the table holds.
 	uniqueUnknown
+	// uniqueProven: a unique index or primary key in the state the version
+	// starts from already covers the key's columns or a subset of them, so
+	// no two rows can collide on the new key.
+	uniqueProven
 )
 
 func classifyUniqueRisk(file *File, site uniqueIndexSite) uniqueRisk {
 	if refersToCreated(tablesCreatedBefore(file, site.statement), site.table.normalized) {
 		return uniqueNoRows
+	}
+	if provenUnique(file, site) {
+		return uniqueProven
 	}
 	added := columnsAddedBefore(file, site.statement, site.table)
 	allNull := !site.nullsNotDistinct
@@ -322,6 +353,55 @@ func classifyUniqueRisk(file *File, site uniqueIndexSite) uniqueRisk {
 		return uniqueAllNull
 	}
 	return uniqueUnknown
+}
+
+// provenUnique reports whether the baseline holds a unique index or primary
+// key over whole columns that are all among the new key's, which proves the
+// new key cannot meet a duplicate. Under NULLS NOT DISTINCT two NULLs
+// collide where the existing index let them pass, so the proof then needs
+// every covering column NOT NULL as well.
+func provenUnique(file *File, site uniqueIndexSite) bool {
+	columns := make([]string, 0, len(site.columns))
+	for _, column := range site.columns {
+		columns = append(columns, normalizeIdent(column))
+	}
+	covering, ok := file.baseline.uniqueCovering(site.table.normalized, columns)
+	if !ok {
+		return false
+	}
+	if !site.nullsNotDistinct {
+		return true
+	}
+	for _, name := range wholeKeyColumns(covering) {
+		column, known := file.baseline.column(site.table.normalized, name)
+		if !known || !column.NotNull {
+			return false
+		}
+	}
+	return true
+}
+
+// replacedIndex names the index a unique build replaces: one the file
+// dropped earlier under the same name, or one it dropped whose columns, as
+// the baseline records them, are exactly the new key's. The second result
+// reports the new-name form, for the message.
+func replacedIndex(file *File, site uniqueIndexSite) (name string, renamed, ok bool) {
+	dropped := droppedIndexNames(file, site.statement)
+	if site.name != "" && dropped[normalizeIdent(lastComponent(site.name))] {
+		return site.name, false, true
+	}
+	columns := make([]string, 0, len(site.columns))
+	for _, column := range site.columns {
+		columns = append(columns, normalizeIdent(column))
+	}
+	for _, droppedName := range slices.Sorted(maps.Keys(dropped)) {
+		idx, found := file.baseline.indexNamed(site.table.normalized, droppedName)
+		if !found || !sameColumnSet(wholeKeyColumns(idx), columns) {
+			continue
+		}
+		return idx.Name, true, true
+	}
+	return "", false, false
 }
 
 // duplicateQuery is the statement that proves or clears the risk.
@@ -368,11 +448,19 @@ func uniqueRules() []Rule {
 	return []Rule{uniqueIndexAddedRule(), indexMadeUniqueRule()}
 }
 
+// riskIsSettled reports the classifications under which no unique build
+// can fail, so neither rule reports it.
+func riskIsSettled(risk uniqueRisk) bool {
+	return risk == uniqueNoRows || risk == uniqueAllNull || risk == uniqueProven
+}
+
 func uniqueIndexAddedRule() Rule {
 	return Rule{
-		Code:     "MF101",
-		Title:    "unique index over existing rows may fail",
-		Severity: SeverityWarning,
+		Code:             "MF101",
+		Title:            "unique index over existing rows may fail",
+		Severity:         SeverityWarning,
+		Input:            InputBaselineRefinement,
+		BaselineSubjects: uniqueIndexStatements,
 		CheckFile: func(file *File) []Finding {
 			if !file.IsUp {
 				return nil
@@ -380,7 +468,7 @@ func uniqueIndexAddedRule() Rule {
 			var findings []Finding
 			for _, site := range uniqueIndexSites(file) {
 				risk := classifyUniqueRisk(file, site)
-				if risk == uniqueNoRows || risk == uniqueAllNull {
+				if riskIsSettled(risk) {
 					continue
 				}
 				message := fmt.Sprintf("%s builds over the rows %s already holds and %s. %s",
@@ -394,27 +482,34 @@ func uniqueIndexAddedRule() Rule {
 
 func indexMadeUniqueRule() Rule {
 	return Rule{
-		Code:     "MF102",
-		Title:    "index rebuilt as unique may fail",
-		Severity: SeverityWarning,
-		Subsumes: []string{"MF101"},
+		Code:             "MF102",
+		Title:            "index rebuilt as unique may fail",
+		Severity:         SeverityWarning,
+		Subsumes:         []string{"MF101"},
+		Input:            InputBaselineRefinement,
+		BaselineSubjects: uniqueIndexStatements,
 		CheckFile: func(file *File) []Finding {
 			if !file.IsUp {
 				return nil
 			}
 			var findings []Finding
 			for _, site := range uniqueIndexSites(file) {
-				if site.name == "" || !droppedIndexNames(file, site.statement)[normalizeIdent(lastComponent(site.name))] {
+				replaced, renamed, ok := replacedIndex(file, site)
+				if !ok {
 					continue
 				}
 				risk := classifyUniqueRisk(file, site)
-				if risk == uniqueNoRows || risk == uniqueAllNull {
+				if riskIsSettled(risk) {
 					continue
 				}
-				message := fmt.Sprintf("%s replaces the index %s dropped earlier with a unique one over the rows %s already holds: the drop succeeds and the unique build then %s, "+
+				replacement := " with a unique one"
+				if renamed {
+					replacement = ", which covered the same columns, with a unique one under a new name"
+				}
+				message := fmt.Sprintf("%s replaces the index %s dropped earlier%s over the rows %s already holds: the drop succeeds and the unique build then %s, "+
 					"which also leaves the table without the index it had. %s. On PostgreSQL build the unique index CONCURRENTLY under a new name first "+
 					"and drop the old one only once it exists, so a failure leaves the old index in place",
-					site.label(), site.name, site.table.name, uniqueFailure(site), uniqueAdvice(site, risk))
+					site.label(), replaced, replacement, site.table.name, uniqueFailure(site), uniqueAdvice(site, risk))
 				findings = append(findings, uniqueFinding(file, site, "MF102", "index rebuilt as unique may fail", message))
 			}
 			return findings

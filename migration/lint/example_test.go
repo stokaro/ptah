@@ -8,6 +8,7 @@ import (
 	"github.com/go-extras/go-kit/must"
 
 	"ptah.run/migration/lint"
+	"ptah.run/migration/migrationfile"
 )
 
 // ExampleLintFS is the compact first-touch path: lint an in-memory migration
@@ -169,4 +170,58 @@ func ExampleValidateOptions() {
 
 	// Output:
 	// rule selector "ZZ999" does not match any registered rule
+}
+
+// ExampleAnalyzeFS_baseline supplies the schema state a version starts from,
+// the way a caller that replays the directory on a dev database does through
+// [lint.Options.Baseline] and [lint.Options.BaselineIndexes]. The second
+// migration drops an index and builds a unique one under another name;
+// nothing in its text says the two cover the same column, and the state
+// does. Run twice, once without the state, the same directory reports the
+// build as a plain unique index and names the refinement it went without
+// through [lint.Analysis.UnmetInputs]; [lint.Analysis.BaselineVersions]
+// says which versions are worth reading. The dialect is SQLite so that the
+// PostgreSQL lock rules stay out of the output.
+func ExampleAnalyzeFS_baseline() {
+	fsys := fstest.MapFS{
+		"1_init.sql": &fstest.MapFile{Data: []byte(
+			"CREATE TABLE orders (id integer, email text);\nCREATE INDEX orders_email_idx ON orders (email);\n")},
+		"2_unique.sql": &fstest.MapFile{Data: []byte(
+			"DROP INDEX orders_email_idx;\nCREATE UNIQUE INDEX orders_email_uq ON orders (email);\n")},
+	}
+	opts := lint.Options{
+		Dialect:   "sqlite",
+		DirFormat: migrationfile.DirFormatAtlas,
+		Selection: lint.VersionSelection{Versions: []int64{2}, Restricted: true},
+	}
+
+	textOnly := must.Must(lint.AnalyzeFS(fsys, opts))
+	fmt.Println("versions worth reading:", textOnly.BaselineVersions())
+	for _, finding := range textOnly.Findings() {
+		fmt.Println("without the state:", finding.Rule)
+	}
+	for _, unmet := range textOnly.UnmetInputs() {
+		fmt.Printf("unmet: %s needs the %s\n", unmet.Rule, unmet.Input)
+	}
+
+	opts.Baseline = []lint.BaselineColumn{
+		{Version: 2, Table: "orders", Name: "id", ColumnType: "integer"},
+		{Version: 2, Table: "orders", Name: "email", ColumnType: "text"},
+	}
+	opts.BaselineIndexes = []lint.BaselineIndex{
+		{Version: 2, Table: "orders", Name: "orders_email_idx", Parts: []lint.BaselineIndexPart{{Column: "email"}}},
+	}
+	refined := must.Must(lint.AnalyzeFS(fsys, opts))
+	for _, finding := range refined.Findings() {
+		fmt.Println("with the state:", finding.Rule)
+	}
+	fmt.Println("unmet with the state:", len(refined.UnmetInputs()))
+
+	// Output:
+	// versions worth reading: [2]
+	// without the state: MF101
+	// unmet: MF101 needs the baseline schema that refines the statement text
+	// unmet: MF102 needs the baseline schema that refines the statement text
+	// with the state: MF102
+	// unmet with the state: 0
 }

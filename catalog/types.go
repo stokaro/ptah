@@ -421,7 +421,7 @@ type Column struct {
 	ColumnDefault      *string `json:"column_default"`           // Can be NULL
 	CharacterMaxLength *int    `json:"character_max_length"`     // For VARCHAR, etc.
 	Charset            string  `json:"charset,omitempty"`        // MySQL/MariaDB column character set
-	Collate            string  `json:"collate,omitempty"`        // MySQL/MariaDB column collation
+	Collate            string  `json:"collate,omitempty"`        // MySQL/MariaDB column collation; on PostgreSQL the declared collation, empty for the database default
 	// Comment is the column's own comment, where the target has one and the
 	// reader reads it. It is empty for a column nobody commented, which is why
 	// it is omitted from the encoding rather than written as "".

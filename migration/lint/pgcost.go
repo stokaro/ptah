@@ -56,20 +56,37 @@ import (
 //	USING INDEX, a nullable but a validated CHECK proves it    0
 //	(a) with a NULL in a                                       aborted: contains null values
 //
+// The collation half was measured again with the column's indexes and its
+// current collation in hand (stokaro/ptah#2957), by relfilenode on the
+// same server, an index on the column throughout:
+//
+//	ALTER COLUMN ... TYPE, collation only          table      index on the column
+//	"C" -> "C", the collation restated             kept       kept
+//	default -> COLLATE "default"                   kept       kept
+//	"C" -> "en-US-x-icu", default -> "C"           kept       rebuilt
+//	"C" -> no COLLATE clause (resets to default)   kept       rebuilt
+//	varchar(20) -> varchar(40) COLLATE "POSIX"     kept       rebuilt (the widening is in place)
+//	default -> "C" with no index on the column     kept       -
+//	text -> varchar(20) COLLATE "C", "C" before    rewritten  rebuilt (the narrowing decides)
+//
 // So a widening that keeps every stored byte valid -- a longer varchar, an
 // unlimited varchar or text, a higher numeric precision at the same scale,
 // a longer fractional-seconds precision, a longer bit varying -- is a
 // catalog edit, and everything else is the rewrite. A change of collation
-// keeps the heap and rebuilds the indexes on the column; the baseline does
-// not carry indexes or the column's current collation, so that case is left
-// to DS103 rather than claimed either way. So is a USING expression on a
-// change that would otherwise be in place, since only the expression decides.
+// keeps the heap and rebuilds every index on the column, reading the table
+// once per index; on a column no index covers it is a catalog edit, and a
+// collation restated, or "default" on a column with none, changes nothing.
+// A clause that names no COLLATE resets the column to the type's default
+// collation, so on a column declared with one it is a change too. A USING
+// expression on a change that would otherwise be in place is still left to
+// DS103, since only the expression decides.
 //
-// The rules read the column's current type and nullability from the schema
-// state the version starts from ([BaselineColumn.ColumnType] as the report
-// composes it from the catalog, and [BaselineColumn.NotNull]); without that
-// state PG301 leaves DS103 to report the statement, PG304 leaves PG104, and
-// [Analysis.UnmetInputs] names them.
+// The rules read the column's current type, collation and nullability, and
+// the indexes on it, from the schema state the version starts from
+// ([BaselineColumn.ColumnType] as the report composes it from the catalog,
+// [BaselineColumn.Collation], [BaselineColumn.NotNull] and [BaselineIndex]);
+// without that state PG301 leaves DS103 to report the statement, PG304
+// leaves PG104, and [Analysis.UnmetInputs] names them.
 
 // pgType is one column type as PostgreSQL's catalog holds it: the canonical
 // name format_type prints, the type modifier, and whether it is an array.
@@ -131,10 +148,59 @@ func parsePGTypeAt(words []string, i, end int) (pgType, bool) {
 	t.mods = mods
 	j = t.parsePGZone(words, next, end)
 	t.parsePGArray(words, j, end)
-	// What follows -- COLLATE, USING -- is read by nobody: a collation change
-	// costs an index rebuild only where an index exists, and a USING
-	// expression decides for itself, so neither is claimed either way.
+	// What follows is read elsewhere or by nobody: the COLLATE clause is
+	// judged against the column's current collation and indexes by
+	// [pgCollationChange], and a USING expression decides for itself, so it
+	// is not claimed either way.
 	return t.finish(), true
+}
+
+// pgClauseCollation reads the COLLATE clause of one ALTER COLUMN ... TYPE
+// clause, spelled as the source spells it: a quoted name keeps its case, an
+// unquoted one folds to lower case the way the server folds it, and a schema
+// qualifier is dropped, since pg_catalog."C" and "C" name one collation.
+// The second result reports whether the clause names one at all.
+func pgClauseCollation(w, sourceWords []string, start, end int) (string, bool) {
+	for k := start; k+1 < end; k++ {
+		if w[k] != "COLLATE" {
+			continue
+		}
+		name := k + 1
+		for name+2 < end && w[name+1] == "." {
+			name += 2
+		}
+		return pgCollationName(sourceWordAt(w, sourceWords, name)), true
+	}
+	return "", false
+}
+
+func pgCollationName(word string) string {
+	if strings.HasPrefix(word, `"`) {
+		return strings.Trim(word, `"`)
+	}
+	return strings.ToLower(word)
+}
+
+// pgCollationChange compares the collation a column has with the one the
+// clause leaves it with. A clause that names none resets the column to the
+// type's default collation, and "default" names that same default, so
+// either spelling on a column declared with the default changes nothing.
+// The two spellings returned are for the message.
+func pgCollationChange(current, clause string) (from, to string, changed bool) {
+	if clause == "default" {
+		clause = ""
+	}
+	if current == clause {
+		return "", "", false
+	}
+	return pgCollationLabel(current), pgCollationLabel(clause), true
+}
+
+func pgCollationLabel(name string) string {
+	if name == "" {
+		return "the database default"
+	}
+	return `"` + name + `"`
 }
 
 // parsePGBase reads the type name, folding the two-word spellings, and
@@ -282,6 +348,9 @@ const (
 	// rewrites unless the session TimeZone is UTC and rebuilds the column's
 	// indexes either way.
 	pgRewriteUnlessUTC
+	// pgIndexRebuild is a collation change on an indexed column: the heap
+	// is kept and every index on the column is rebuilt.
+	pgIndexRebuild
 )
 
 type pgTransition struct {
@@ -290,6 +359,23 @@ type pgTransition struct {
 	// abort names the error a stored value the new type cannot hold raises,
 	// where one was measured.
 	abort string
+	// indexes names the indexes a pgIndexRebuild rebuilds.
+	indexes []string
+}
+
+// pgCollationTransition judges a collation change on a column whose type
+// change, if any, is in place: with an index on the column the indexes are
+// rebuilt, without one the change is a catalog edit.
+func pgCollationTransition(from, to string, indexes []BaselineIndex) pgTransition {
+	change := fmt.Sprintf("changes the collation from %s to %s", from, to)
+	if len(indexes) == 0 {
+		return pgTransition{outcome: pgInPlace, why: change + " on a column no index reads, which is a catalog edit"}
+	}
+	names := make([]string, 0, len(indexes))
+	for _, idx := range indexes {
+		names = append(names, idx.Name)
+	}
+	return pgTransition{outcome: pgIndexRebuild, why: change, indexes: names}
 }
 
 // comparePGTypes decides the outcome for one column.
@@ -309,7 +395,7 @@ func comparePGKnownTypes(old, updated pgType) pgTransition {
 	case old.sameAs(updated):
 		return pgTransition{outcome: pgUnchanged}
 	case old.array || updated.array:
-		return pgTransition{pgRewrite, change + ", and PostgreSQL rewrites an array column for any change of its element type", ""}
+		return pgTransition{outcome: pgRewrite, why: change + ", and PostgreSQL rewrites an array column for any change of its element type"}
 	case old.base != updated.base:
 		return comparePGBases(old, updated, change)
 	}
@@ -320,38 +406,38 @@ func comparePGKnownTypes(old, updated pgType) pgTransition {
 		return compareNumeric(old, updated, change)
 	case "bit varying":
 		if len(old.mods) == 1 && (len(updated.mods) == 0 || updated.mods[0] >= old.mods[0]) {
-			return pgTransition{pgInPlace, "widens a bit varying", ""}
+			return pgTransition{outcome: pgInPlace, why: "widens a bit varying"}
 		}
-		return pgTransition{pgRewrite, change, "bit string too long for type"}
+		return pgTransition{outcome: pgRewrite, why: change, abort: "bit string too long for type"}
 	case "bit":
-		return pgTransition{pgRewrite, change, "bit string length does not match type"}
+		return pgTransition{outcome: pgRewrite, why: change, abort: "bit string length does not match type"}
 	}
 	if pgPrecisionBases[old.base] {
 		if updated.mods[0] >= old.mods[0] {
-			return pgTransition{pgInPlace, "lengthens a fractional-seconds precision", ""}
+			return pgTransition{outcome: pgInPlace, why: "lengthens a fractional-seconds precision"}
 		}
-		return pgTransition{pgRewrite, change + ", which rounds every stored value to the shorter precision", ""}
+		return pgTransition{outcome: pgRewrite, why: change + ", which rounds every stored value to the shorter precision"}
 	}
-	return pgTransition{pgRewrite, change, ""}
+	return pgTransition{outcome: pgRewrite, why: change}
 }
 
 // comparePGBases judges a change between two catalog types.
 func comparePGBases(old, updated pgType, change string) pgTransition {
 	switch {
 	case old.base == "character varying" && updated.base == "text":
-		return pgTransition{pgInPlace, "drops a varchar's limit", ""}
+		return pgTransition{outcome: pgInPlace, why: "drops a varchar's limit"}
 	case old.base == "text" && updated.base == "character varying" && len(updated.mods) == 0:
-		return pgTransition{pgInPlace, "renames text to an unlimited varchar", ""}
+		return pgTransition{outcome: pgInPlace, why: "renames text to an unlimited varchar"}
 	case old.base == "text" && updated.base == "character varying":
-		return pgTransition{pgRewrite, change + ", which checks every value against the new limit", "value too long for type"}
+		return pgTransition{outcome: pgRewrite, why: change + ", which checks every value against the new limit", abort: "value too long for type"}
 	case isTimestampFamily(old.base) && isTimestampFamily(updated.base):
-		return pgTransition{pgRewriteUnlessUTC, change, ""}
+		return pgTransition{outcome: pgRewriteUnlessUTC, why: change}
 	}
 	abort := ""
 	if strings.HasSuffix(updated.base, "int") {
 		abort = updated.base + " out of range"
 	}
-	return pgTransition{pgRewrite, change, abort}
+	return pgTransition{outcome: pgRewrite, why: change, abort: abort}
 }
 
 func isTimestampFamily(base string) bool {
@@ -363,13 +449,13 @@ func compareVarchar(old, updated pgType) pgTransition {
 	change := fmt.Sprintf("changes the type from %s to %s", old.spell(), updated.spell())
 	switch {
 	case len(updated.mods) == 0:
-		return pgTransition{pgInPlace, "drops a varchar's limit", ""}
+		return pgTransition{outcome: pgInPlace, why: "drops a varchar's limit"}
 	case len(old.mods) == 0:
-		return pgTransition{pgRewrite, change + ", which checks every value against the new limit", "value too long for type"}
+		return pgTransition{outcome: pgRewrite, why: change + ", which checks every value against the new limit", abort: "value too long for type"}
 	case updated.mods[0] >= old.mods[0]:
-		return pgTransition{pgInPlace, "widens a varchar", ""}
+		return pgTransition{outcome: pgInPlace, why: "widens a varchar"}
 	default:
-		return pgTransition{pgRewrite, change + ", which checks every value against the shorter limit", "value too long for type"}
+		return pgTransition{outcome: pgRewrite, why: change + ", which checks every value against the shorter limit", abort: "value too long for type"}
 	}
 }
 
@@ -377,15 +463,15 @@ func compareVarchar(old, updated pgType) pgTransition {
 func compareNumeric(old, updated pgType, change string) pgTransition {
 	switch {
 	case len(updated.mods) == 0:
-		return pgTransition{pgInPlace, "drops a numeric's precision", ""}
+		return pgTransition{outcome: pgInPlace, why: "drops a numeric's precision"}
 	case len(old.mods) == 0:
-		return pgTransition{pgRewrite, change + ", which checks and rounds every value to the new precision and scale", "numeric field overflow"}
+		return pgTransition{outcome: pgRewrite, why: change + ", which checks and rounds every value to the new precision and scale", abort: "numeric field overflow"}
 	case updated.mods[1] == old.mods[1] && updated.mods[0] >= old.mods[0]:
-		return pgTransition{pgInPlace, "raises a numeric's precision at the same scale", ""}
+		return pgTransition{outcome: pgInPlace, why: "raises a numeric's precision at the same scale"}
 	case updated.mods[1] != old.mods[1]:
-		return pgTransition{pgRewrite, change + ", and a change of scale rounds every stored value", "numeric field overflow"}
+		return pgTransition{outcome: pgRewrite, why: change + ", and a change of scale rounds every stored value", abort: "numeric field overflow"}
 	default:
-		return pgTransition{pgRewrite, change + ", which checks every value against the lower precision", "numeric field overflow"}
+		return pgTransition{outcome: pgRewrite, why: change + ", which checks every value against the lower precision", abort: "numeric field overflow"}
 	}
 }
 
@@ -478,12 +564,20 @@ func resolvePGTypeChanges(file *File) []resolvedPGTypeChange {
 		if !ok {
 			continue
 		}
-		resolved = append(resolved, resolvedPGTypeChange{
+		change := resolvedPGTypeChange{
 			site:       site,
 			old:        old,
 			updated:    updated,
 			transition: comparePGTypes(old, updated),
-		})
+		}
+		if change.transition.outcome == pgUnchanged || change.transition.outcome == pgInPlace {
+			clause, _ := pgClauseCollation(stmt.Words, stmt.sourceWords, site.typeStart, site.typeEnd)
+			if from, to, changed := pgCollationChange(column.Collation, clause); changed {
+				change.transition = pgCollationTransition(from, to,
+					file.baseline.columnIndexes(site.table.normalized, normalizeIdent(site.column)))
+			}
+		}
+		resolved = append(resolved, change)
 	}
 	return resolved
 }
@@ -538,16 +632,24 @@ func pgRewriteMessage(change resolvedPGTypeChange) (string, bool) {
 			"unless TimeZone is UTC when the statement runs, and rebuilds every index on the column either way, under the " +
 			"ACCESS EXCLUSIVE lock the statement holds. Run it with TimeZone set to UTC if the values are UTC, or add a new " +
 			"column, backfill it in batches, and swap the two", true
+	case pgIndexRebuild:
+		return head + fmt.Sprintf("PostgreSQL keeps the table but rebuilds every index on the column (%s), reading the table "+
+			"once per index, under the ACCESS EXCLUSIVE lock the statement holds; the same change on a column no index reads "+
+			"is a catalog edit. Where the table cannot be locked for that long, add a new column with the collation, backfill "+
+			"it in batches, index it CONCURRENTLY, and swap the two", strings.Join(change.transition.indexes, ", ")), true
 	default:
 		return "", false
 	}
 }
 
-// pgPrimaryKeySite is one ADD [CONSTRAINT name] PRIMARY KEY (columns).
+// pgPrimaryKeySite is one ADD [CONSTRAINT name] PRIMARY KEY (columns), or
+// ADD [CONSTRAINT name] PRIMARY KEY USING INDEX name, whose columns are the
+// index's and are resolved against the file and the baseline.
 type pgPrimaryKeySite struct {
-	statement int
-	table     tableReference
-	columns   []string
+	statement  int
+	table      tableReference
+	columns    []string
+	usingIndex string
 }
 
 func pgPrimaryKeySites(file *File) []pgPrimaryKeySite {
@@ -560,42 +662,77 @@ func pgPrimaryKeySites(file *File) []pgPrimaryKeySite {
 		}
 		table := alterTableReference(w, stmt.sourceWords)
 		for _, i := range clauseStarts(w) {
-			columns, ok := primaryKeyColumns(w, stmt.sourceWords, i)
+			columns, usingIndex, ok := primaryKeyClause(w, stmt.sourceWords, i)
 			if !ok {
 				continue
 			}
-			sites = append(sites, pgPrimaryKeySite{statement: index, table: table, columns: columns})
+			sites = append(sites, pgPrimaryKeySite{statement: index, table: table, columns: columns, usingIndex: usingIndex})
 		}
 	}
 	return sites
 }
 
-// primaryKeyColumns reads the column list of an ADD PRIMARY KEY clause. A
-// USING INDEX form names no columns, so it is not a site.
-func primaryKeyColumns(w, sourceWords []string, i int) ([]string, bool) {
+// primaryKeyClause reads an ADD PRIMARY KEY clause: the column list it
+// names, or the index a USING INDEX form attaches.
+func primaryKeyClause(w, sourceWords []string, i int) (columns []string, usingIndex string, ok bool) {
 	end := clauseEnd(w, i)
 	j := i
 	if j >= end || w[j] != "ADD" {
-		return nil, false
+		return nil, "", false
 	}
 	j++
 	if j+1 < end && w[j] == "CONSTRAINT" && identLike(w[j+1]) {
 		j += 2
 	}
-	if j+2 >= end || w[j] != "PRIMARY" || w[j+1] != "KEY" || w[j+2] != "(" {
-		return nil, false
+	if j+2 >= end || w[j] != "PRIMARY" || w[j+1] != "KEY" {
+		return nil, "", false
 	}
-	var columns []string
-	for k := j + 3; k < end && w[k] != ")"; k++ {
+	j += 2
+	if j+2 < end && w[j] == "USING" && w[j+1] == "INDEX" && identLike(w[j+2]) {
+		return nil, sourceWordAt(w, sourceWords, j+2), true
+	}
+	if w[j] != "(" {
+		return nil, "", false
+	}
+	for k := j + 1; k < end && w[k] != ")"; k++ {
 		if w[k] == "," {
 			continue
 		}
 		if !identLike(w[k]) {
-			return nil, false
+			return nil, "", false
 		}
 		columns = append(columns, sourceWordAt(w, sourceWords, k))
 	}
-	return columns, len(columns) > 0
+	return columns, "", len(columns) > 0
+}
+
+// primaryKeyColumns resolves the columns a site sets NOT NULL: the ones it
+// lists, or for a USING INDEX form the key columns of the index it names,
+// found among the unique indexes the file builds earlier or in the state
+// the version starts from. An index the file cannot find resolves nothing.
+func primaryKeyColumns(file *File, site pgPrimaryKeySite) []string {
+	if site.usingIndex == "" {
+		return site.columns
+	}
+	name := normalizeIdent(lastComponent(site.usingIndex))
+	for _, built := range uniqueIndexSites(file) {
+		if built.statement < site.statement && built.table.normalized == site.table.normalized &&
+			normalizeIdent(lastComponent(built.name)) == name {
+			return built.columns
+		}
+	}
+	idx, ok := file.baseline.indexNamed(site.table.normalized, name)
+	if !ok {
+		return nil
+	}
+	columns := make([]string, 0, len(idx.Parts))
+	for _, part := range idx.Parts {
+		if part.Column == "" {
+			return nil
+		}
+		columns = append(columns, part.Column)
+	}
+	return columns
 }
 
 func pgPrimaryKeyStatements(file *File) []int {
@@ -625,17 +762,12 @@ func postgresPrimaryKeyScanRule() Rule {
 			}
 			var findings []Finding
 			for _, site := range pgPrimaryKeySites(file) {
-				nullable := nullablePrimaryKeyColumns(file, site)
+				columns := primaryKeyColumns(file, site)
+				nullable := nullablePrimaryKeyColumns(file, site, columns)
 				if len(nullable) == 0 {
 					continue
 				}
-				list := strings.Join(nullable, ", ")
-				message := fmt.Sprintf("ADD PRIMARY KEY (%s) on %s sets %s NOT NULL, so besides building the unique index PostgreSQL "+
-					"scans every row to check %s, both under the ACCESS EXCLUSIVE lock the constraint takes, and a row holding NULL "+
-					"aborts the statement (column contains null values). Prove the NOT NULL first with a CHECK (%s IS NOT NULL) "+
-					"added NOT VALID and then validated, build the unique index CONCURRENTLY, and attach it with ADD PRIMARY KEY "+
-					"USING INDEX: measured, that path scans nothing while the lock is held",
-					strings.Join(site.columns, ", "), site.table.name, list, pluralColumns(nullable), nullable[0])
+				message := primaryKeyScanMessage(site, columns, nullable)
 				subjects := make([]Subject, 0, len(nullable))
 				for _, column := range nullable {
 					subjects = append(subjects, Subject{Kind: SubjectColumn, Name: column, Parent: site.table.name})
@@ -656,11 +788,32 @@ func postgresPrimaryKeyScanRule() Rule {
 	}
 }
 
+// primaryKeyScanMessage says what the scan costs for the form the clause
+// took. A key built over a column list builds the index and checks the NOT
+// NULL; one attached USING INDEX has the index already, so the check is the
+// only scan left, and a validated CHECK removes it.
+func primaryKeyScanMessage(site pgPrimaryKeySite, columns, nullable []string) string {
+	list := strings.Join(nullable, ", ")
+	if site.usingIndex != "" {
+		return fmt.Sprintf("ADD PRIMARY KEY USING INDEX %s on %s sets %s NOT NULL: the index is already built, so the scan "+
+			"PostgreSQL still runs is the one that checks %s, under the ACCESS EXCLUSIVE lock the constraint takes, and a row "+
+			"holding NULL aborts the statement (column contains null values). Prove the NOT NULL first with a CHECK "+
+			"(%s IS NOT NULL) added NOT VALID and then validated: measured, the attach then scans nothing while the lock is held",
+			site.usingIndex, site.table.name, list, pluralColumns(nullable), nullable[0])
+	}
+	return fmt.Sprintf("ADD PRIMARY KEY (%s) on %s sets %s NOT NULL, so besides building the unique index PostgreSQL "+
+		"scans every row to check %s, both under the ACCESS EXCLUSIVE lock the constraint takes, and a row holding NULL "+
+		"aborts the statement (column contains null values). Prove the NOT NULL first with a CHECK (%s IS NOT NULL) "+
+		"added NOT VALID and then validated, build the unique index CONCURRENTLY, and attach it with ADD PRIMARY KEY "+
+		"USING INDEX: measured, that path scans nothing while the lock is held",
+		strings.Join(columns, ", "), site.table.name, list, pluralColumns(nullable), nullable[0])
+}
+
 // nullablePrimaryKeyColumns are the key's columns the baseline knows and
 // reports as nullable, in key order.
-func nullablePrimaryKeyColumns(file *File, site pgPrimaryKeySite) []string {
+func nullablePrimaryKeyColumns(file *File, site pgPrimaryKeySite, columns []string) []string {
 	var nullable []string
-	for _, name := range site.columns {
+	for _, name := range columns {
 		column, ok := file.baseline.column(site.table.normalized, normalizeIdent(name))
 		if !ok || column.NotNull {
 			continue

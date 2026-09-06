@@ -116,7 +116,8 @@ type Rule struct {
 	// BaselineSubjects returns the indexes of the statements in this file whose
 	// analysis would say more with the schema state its version starts from.
 	//
-	// It is required for, and only meaningful to, [InputBaselineSchema].
+	// It is required for, and only meaningful to, [InputBaselineSchema] and
+	// [InputBaselineRefinement].
 	// Statement indexes rather than a yes/no answer, because the reviewed-schema
 	// filter works at that granularity: a rename in a schema the run does not
 	// review is neither worth a dev-database round trip nor worth reporting as
@@ -156,7 +157,26 @@ const (
 	// run exits 0. Declaring the input is what turns that into a named gap
 	// instead of a smaller report (stokaro/ptah#2357).
 	InputRoutineBody
+	// InputBaselineRefinement reads the migration SQL and, when the run
+	// supplies it, the schema state the version starts from as well. The
+	// rule reports from the text alone, and the state refines the report: an
+	// exemption the text cannot see, or a recognition the text cannot make.
+	// It is declared the way [InputBaselineSchema] is, with the statements
+	// it wants the state for in [Rule.BaselineSubjects], and a run that
+	// supplies none is named as unmet the same way, because a report that
+	// went without the refinement is thinner in a direction the reader
+	// cannot see from the findings (stokaro/ptah#2957).
+	InputBaselineRefinement
 )
+
+// readsBaseline reports whether an input kind reads the schema state a
+// version starts from, whether as its subject or as a refinement of the
+// text. One predicate for both, because the two are read from the same
+// place and requested the same way; only what a rule does without the state
+// differs.
+func (i RuleInput) readsBaseline() bool {
+	return i == InputBaselineSchema || i == InputBaselineRefinement
+}
 
 // String names the input for diagnostics.
 func (i RuleInput) String() string {
@@ -165,6 +185,8 @@ func (i RuleInput) String() string {
 		return "routine body"
 	case InputBaselineSchema:
 		return "baseline schema"
+	case InputBaselineRefinement:
+		return "baseline schema that refines the statement text"
 	case InputStatementText:
 		return "statement text"
 	default:
@@ -271,6 +293,13 @@ type Options struct {
 	// routine bodies, so a caller can supply one without the other and the
 	// unmet-input report says which is missing.
 	BaselineDependents []BaselineDependent
+
+	// BaselineIndexes carries the indexes of the state each version starts
+	// from, read in the same catalog read as Baseline, for the rules whose
+	// answer turns on whether a column is indexed, which index a statement
+	// names, or whether the rows are already proven unique. See
+	// [BaselineIndex].
+	BaselineIndexes []BaselineIndex
 
 	// Naming is the naming convention the NM rules enforce, normally the
 	// `naming` section of .ptah-lint.yaml or the `lint { naming { } }` block
