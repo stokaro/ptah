@@ -6,6 +6,7 @@ package postgres
 import (
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"slices"
 	"strings"
 
@@ -1752,20 +1753,23 @@ func (r *Renderer) renderExcludeConstraint(constraint *ast.ConstraintNode) (stri
 	return result, nil
 }
 
-// renderTableOptions renders PostgreSQL table options (PostgreSQL doesn't support ENGINE)
+// renderTableOptions renders the table options the node carries, in key
+// order, skipping MySQL's ENGINE.
+//
+// The order is sorted because the options are a map, and a render that
+// walked it in map order produced a different statement on every run for the
+// same schema. The census in internal/schemacensus compares two renders of one
+// fixture byte for byte, so that walk read as a field one surface loses
+// (stokaro/ptah#2968). The options that remain after ENGINE are MySQL's too,
+// and emitting them here is stokaro/ptah#2969.
 func (r *Renderer) renderTableOptions(options map[string]string) string {
-	// PostgreSQL doesn't support table options like MySQL's ENGINE
-	// We could support other PostgreSQL-specific options here if needed
-	var parts []string
-
-	for key, value := range options {
-		// Skip MySQL-specific options
+	parts := make([]string, 0, len(options))
+	for _, key := range slices.Sorted(maps.Keys(options)) {
 		if key == "ENGINE" {
 			continue
 		}
-		parts = append(parts, fmt.Sprintf("%s=%s", key, value))
+		parts = append(parts, fmt.Sprintf("%s=%s", key, options[key]))
 	}
-
 	return strings.Join(parts, " ")
 }
 

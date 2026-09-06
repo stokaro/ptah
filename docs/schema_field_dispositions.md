@@ -49,11 +49,11 @@ exactly one disposition.
 
 | Disposition | Fields | What it means |
 | --- | --- | --- |
-| `ddl` | 295 | reaches rendered SQL on at least one target |
+| `ddl` | 294 | reaches rendered SQL on at least one target |
 | `comparison` | 7 | read when two schemas are compared, and written into no statement |
 | `planning` | 4 | read while a change set is assembled or ordered |
 | `derived` | 10 | computed from other fields rather than authored |
-| `source` | 14 | identifies the source text the declaration was read from |
+| `source` | 15 | identifies the source text the declaration was read from |
 | `export` | 10 | what a generated document carries, or reports that it cannot |
 | `data` | 7 | reference or seed rows, which are not DDL |
 
@@ -210,7 +210,7 @@ None.
 | `schemamodel.Field.DefaultSet` | `ddl` | — |
 | `schemamodel.Field.Deferrable` | `ddl` | — |
 | `schemamodel.Field.Enum` | `ddl` | — |
-| `schemamodel.Field.FieldName` | `ddl` | — |
+| `schemamodel.Field.FieldName` | `source` | the Go struct field the column was read from; the column's own name is its identity. Recorded as DDL until stokaro/ptah#2968, when the only render that ever moved under its ablation turned out to be the PostgreSQL-family renderer walking table options in map order |
 | `schemamodel.Field.Foreign` | `ddl` | — |
 | `schemamodel.Field.ForeignKeyName` | `ddl` | — |
 | `schemamodel.Field.GeneratedExpression` | `ddl` | — |

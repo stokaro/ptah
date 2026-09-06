@@ -152,7 +152,11 @@ var registry = []Entry{
 	{Field: "schemamodel.Field.DefaultSet", Disposition: DDL},
 	{Field: "schemamodel.Field.Deferrable", Disposition: DDL},
 	{Field: "schemamodel.Field.Enum", Disposition: DDL},
-	{Field: "schemamodel.Field.FieldName", Disposition: DDL},
+	{
+		Field: "schemamodel.Field.FieldName", Disposition: SourceOrigin,
+		Reason: "the Go struct field the column was read from; the column's own name is its identity. Recorded as DDL until stokaro/ptah#2968, " +
+			"when the only render that ever moved under its ablation turned out to be the PostgreSQL-family renderer walking table options in map order",
+	},
 	{Field: "schemamodel.Field.Foreign", Disposition: DDL},
 	{Field: "schemamodel.Field.ForeignKeyName", Disposition: DDL},
 	{Field: "schemamodel.Field.GeneratedExpression", Disposition: DDL},
