@@ -170,6 +170,8 @@ The name in that message is the one the binary reports itself under rather than
 the file name it was installed as.
 
 <!-- BEGIN GENERATED STRICT COMPAT CLASSIFICATION -->
+<div class="ptah-wide-table">
+
 | Command | Under `PTAH_ATLAS_STRICT_COMPAT=1` | Exit | Stream | The answer names |
 | --- | --- | --- | --- | --- |
 | `ptah-compat migrate checkpoint` | refused | `1` | stderr | `ptah-compat migrate checkpoint` |
@@ -200,6 +202,9 @@ the file name it was installed as.
 | `ptah-compat script exec` | unknown command | `1` | stderr | `ptah-compat script` |
 | `ptah-compat script loop` | unknown command | `1` | stderr | `ptah-compat script` |
 | `ptah-compat script query` | unknown command | `1` | stderr | `ptah-compat script` |
+
+</div>
+
 <!-- END GENERATED STRICT COMPAT CLASSIFICATION -->
 
 ## Migrate commands
