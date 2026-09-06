@@ -35,6 +35,11 @@ const (
 	RuleExampleRunsNothing = "example-runs-nothing"
 	// RuleStaleArtifact fires when the committed file is not the regeneration.
 	RuleStaleArtifact = "stale-artifact"
+	// RuleUnclassifiedPackage fires when the ledger lists a package of this
+	// module under no classifying heading. Skipping it instead would drop the
+	// package from the compatibility surface and from the importability
+	// boundary at once, in the permissive direction and without a word.
+	RuleUnclassifiedPackage = "unclassified-package"
 )
 
 // Problem is one refusal: which rule, and what a reader has to fix.
@@ -86,8 +91,8 @@ func RulesOf(problems []Problem) []string {
 
 // fixtureModulePath is the module the self-test fixtures' ledger belongs to.
 //
-// It is deliberately not this repository's module path. LedgerPackages takes
-// the module as a parameter, and a fixture that reused the real path would pass
+// It is deliberately not this repository's module path. ParseLedger takes the
+// module as a parameter, and a fixture that reused the real path would pass
 // whether the parameter were read or ignored.
 const fixtureModulePath = "example.test/fixture"
 
@@ -107,7 +112,9 @@ func cleanSources() Sources {
 		NativeLeaves: []agentsurface.Leaf{{Name: "schema apply"}, {Name: "db read"}},
 		Ledger: []byte("## Stable Embedder API\n\n" +
 			"- `" + fixtureModulePath + "/core/renderer`\n" +
-			"- `" + fixtureModulePath + "/dbschema`\n"),
+			"- `" + fixtureModulePath + "/dbschema`\n\n" +
+			"## Documentation-Only Packages\n\n" +
+			"- `" + fixtureModulePath + "/examples/models`\n"),
 		Release: []byte("builds:\n  - id: ptah\n    binary: ptah\n"),
 		Pages:   []PageClaim{{Path: "docs/site/src/content/docs/a.md", Owns: []string{"program-ptah"}}},
 		Examples: []Example{{
@@ -159,6 +166,10 @@ func selfTestCases() []selfTestCase {
 		}},
 		{name: "the ledger's module is not the one its packages carry", rule: RuleEmptyKind, mutate: func(src *Sources) {
 			src.ModulePath = ""
+		}},
+		{name: "a package is listed under a heading that classifies nothing", rule: RuleUnclassifiedPackage, mutate: func(src *Sources) {
+			src.Ledger = append(src.Ledger, []byte(
+				"\n## Provisional Surface\n\n- `"+fixtureModulePath+"/core/stray`\n")...)
 		}},
 	}
 }
@@ -217,6 +228,6 @@ func declaredRules() []string {
 	return []string{
 		RuleEmptyKind, RuleIdentifierCollision, RuleUnknownClaim,
 		RuleDuplicateClaim, RuleClaimedBelowFloor, RuleNoExamples,
-		RuleExampleRunsNothing, RuleStaleArtifact,
+		RuleExampleRunsNothing, RuleStaleArtifact, RuleUnclassifiedPackage,
 	}
 }

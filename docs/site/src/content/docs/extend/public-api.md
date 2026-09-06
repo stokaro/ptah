@@ -16,10 +16,12 @@ disposition: keep
 
 Ptah is pre-GA, but embedders need a documented import surface. The packages on
 this page are the stable embedder API, and the table below is enforced: a
-ledger in the repository is the source of truth, a package the ledger does not
-list is a command package, an example, a fixture, a test, or an implementation
-detail, and `scripts/check-public-api-docs-sync.sh` keeps this page's table
-equal to it.
+ledger in the repository is the source of truth, and
+`scripts/check-public-api-docs-sync.sh` keeps this page's table equal to it.
+
+The ledger classifies every importable library package into one of two
+categories, and only the first is on this page. Anything it does not classify is
+a program, a directory holding only tests, or behind a Go `internal/` boundary.
 
 ## Stable packages
 
@@ -427,7 +429,7 @@ snapshot:
 
 | Check | Purpose |
 | --- | --- |
-| `scripts/check-public-api.sh` | Fails if a new importable package appears outside the stable list. |
+| `scripts/check-public-api.sh` | Fails if an importable library package is classified by neither ledger category. |
 | `scripts/check-public-api-released.sh` | Compares stable packages against the latest `v0.x` release tag with `apidiff`. |
 | `scripts/check-exported-docs.sh` | Requires documentation on exported functions and types. |
 | `scripts/check-public-api-docs-sync.sh` | Keeps this page's package table aligned with the canonical ledger. |
@@ -436,8 +438,21 @@ Additive API changes receive normal code review. An intentional incompatible
 change must update the relevant documentation and include an explicit approval
 entry for the current release baseline in the same PR.
 
+## Documentation-only packages
+
+The ledger's second category is a short list of sample packages that stay
+importable because published documentation reaches them. The migrator's godoc
+examples import the sample migration directory they run against, and an example
+nobody outside this module can import is not documentation.
+
+They carry no compatibility guarantee of any kind. Their contents change with
+the documentation they serve, `apidiff` does not compare them against a release
+baseline, and they are absent from the table above for that reason. Read them;
+do not build against them.
+
 ## Embedding guidance
 
 Use [Reusable components](../components/) for task-oriented examples.
 Use this page to decide whether a package is supported for embedding. Do not
-import `internal/...` packages from another module.
+import `internal/...` packages from another module, and do not import a
+documentation-only package from production code.

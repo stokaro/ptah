@@ -237,15 +237,24 @@ func exampleProblems(examples []Example) []Problem {
 // empty. A kind that derives nothing reports the same success as a kind that
 // derived everything, which is the failure this floor exists to prevent.
 func deriveRows(src Sources) ([]Row, []Problem) {
+	var problems []Problem
+
+	// A feature row is a compatibility claim, so only the stable category
+	// becomes one. A documentation-only package is importable and carries no
+	// guarantee, which is the opposite of what a claimed feature means.
+	ledger, err := ParseLedger(src.Ledger, src.ModulePath)
+	if err != nil {
+		problems = append(problems, Problem{RuleUnclassifiedPackage, err.Error()})
+	}
+
 	byKind := map[Kind][]Row{
 		KindNativeVerb:    verbRows(src.NativeLeaves),
-		KindPublicPackage: packageRows(LedgerPackages(src.Ledger, src.ModulePath), src.ModulePath),
+		KindPublicPackage: packageRows(ledger.Stable, src.ModulePath),
 		KindProgram:       programRows(ReleaseBinaries(src.Release)),
 		KindDialect:       dialectRows(),
 	}
 
 	var rows []Row
-	var problems []Problem
 	for _, kind := range kindOrder {
 		if len(byKind[kind]) == 0 {
 			problems = append(problems, Problem{RuleEmptyKind, fmt.Sprintf(

@@ -64,13 +64,22 @@ Most implementation sits under `internal/` and cannot be imported from another
 module, so check where a package lives before writing an import path.
 
 The public Go surface is the ledger [`docs/public_api.md`](docs/public_api.md),
-enforced by `scripts/check-public-api.sh` (an importable package is either
-listed or exempt), `scripts/check-public-api-released.sh` (`apidiff` against
-the newest tag; an intentional break needs a reviewed entry in
-`docs/public_api_approvals.txt`) and `scripts/check-exported-docs.sh` (every
-exported declaration documented). Test fixtures and support trees such as
-`stubs/`, `integration/*` and `examples/*` are outside the ledger.
-Additive API changes get normal code review: do not commit a generated
+enforced by `scripts/check-public-api.sh` (every importable library package is
+classified, under Stable Embedder API or Documentation-Only Packages),
+`scripts/check-public-api-released.sh` (`apidiff` against the newest tag; an
+intentional break needs a reviewed entry in `docs/public_api_approvals.txt`) and
+`scripts/check-exported-docs.sh` (every exported declaration documented). Only
+the first gate reads both categories; the rest read the stable one, because a
+sample package documentation reaches carries no guarantee.
+
+"Library package" is package metadata, not a path: a `main` package and a
+directory holding only `_test.go` files publish no import path and are outside
+the surface for that reason. What is left is behind an `internal/` boundary --
+matched as a whole path segment, so `core/internal` is a boundary and
+`internalized` is not. The gate still carries a named exemption per subtree
+whose move has not landed (`cmd`, `integration`, `stubs`); each is deleted by
+the change that internalizes its subtree under stokaro/ptah#2974, and none may
+be added. Additive API changes get normal code review: do not commit a generated
 snapshot of exported declarations to make them show up twice in a diff
 (`docs/public_api.snapshot` and its gate were removed in stokaro/ptah#2572 for
 that reason).
