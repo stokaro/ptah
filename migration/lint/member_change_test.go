@@ -331,11 +331,11 @@ func TestMemberRules_SubsumeTheGenericFindings(t *testing.T) {
 	c.Assert(findings[0].Severity, qt.Equals, lint.SeverityWarning)
 }
 
-// TestMemberRules_LeaveTypeChangesToTheGenericRule keeps the family to the
-// question it can answer. A column becoming a list, or a list becoming the
-// other kind of list, is a type change with no member transition to
-// describe, and DS103 already reports it.
-func TestMemberRules_LeaveTypeChangesToTheGenericRule(t *testing.T) {
+// TestMemberRules_LeaveTypeChangesToTheColumnTypeRule keeps the family to
+// the question it can answer. A column becoming a list, or a list becoming
+// the other kind of list, is a type change with no member transition to
+// describe, and MY130 reports it as the copy it is (mysqlcost.go).
+func TestMemberRules_LeaveTypeChangesToTheColumnTypeRule(t *testing.T) {
 	tests := []struct {
 		name       string
 		alter      string
@@ -363,7 +363,7 @@ func TestMemberRules_LeaveTypeChangesToTheGenericRule(t *testing.T) {
 			c := qt.New(t)
 			analysis := analyzeMemberChange(c, test.alter, test.columnType)
 
-			c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"DS103", "MY101"})
+			c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"MY130"})
 		})
 	}
 }

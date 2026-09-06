@@ -170,7 +170,7 @@ func TestMySQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 		if i == 0 {
 			comment = "customer accounts"
 		}
-		tableRows = append(tableRows, []driver.Value{tableName, "BASE TABLE", comment})
+		tableRows = append(tableRows, []driver.Value{tableName, "BASE TABLE", comment, "utf8mb4_0900_ai_ci"})
 		columnRows = append(columnRows,
 			[]driver.Value{tableName, "id", "int", "int", "NO", nil, nil, int64(10), int64(0), int64(1), nil, nil, "auto_increment", nil, ""},
 			[]driver.Value{tableName, "email", "varchar", "varchar(255)", "NO", nil, int64(255), nil, nil, int64(2), "utf8mb4", "utf8mb4_0900_ai_ci", "", nil, "login address"},
@@ -184,7 +184,7 @@ func TestMySQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 			return columnQueryResult(query, columnRows)
 		case strings.Contains(query, "FROM information_schema.TABLES"):
 			return dbtest.QueryResult{
-				Columns: []string{"TABLE_NAME", "TABLE_TYPE", "TABLE_COMMENT"},
+				Columns: []string{"TABLE_NAME", "TABLE_TYPE", "TABLE_COMMENT", "TABLE_COLLATION"},
 				Rows:    tableRows,
 			}, nil
 		default:
@@ -200,6 +200,10 @@ func TestMySQLReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	c.Assert(tables, qt.HasLen, 50)
 	c.Assert(tables[0].Name, qt.Equals, "table_00")
 	c.Assert(tables[0].Comment, qt.Equals, "customer accounts")
+	// The table default character set is what a column declared without one
+	// takes, so the read derives it from the collation the catalog carries.
+	c.Assert(tables[0].Collate, qt.Equals, "utf8mb4_0900_ai_ci")
+	c.Assert(tables[0].Charset, qt.Equals, "utf8mb4")
 	c.Assert(tables[0].Columns, qt.HasLen, 3)
 	// A column's comment is read, and a column without one carries none: the
 	// engines report the absence as an empty string, so a reader that assigned

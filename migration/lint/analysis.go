@@ -226,6 +226,9 @@ type File struct {
 	// when the two command surfaces model the same statement differently; see
 	// [renamedNames] for the one construct where they do.
 	compatibility CompatibilityProfile
+	// dialect is the target the run was started with, for the rules whose
+	// measured answer differs between the two engines of one family.
+	dialect string
 	// baseline is the schema state this file's version starts from, when the
 	// caller supplied one. Rules read it for facts the statement cannot carry.
 	baseline baselineColumns
@@ -627,6 +630,7 @@ func prepareFile(
 		IsDown:         direction == "down" || strings.HasSuffix(base, ".down.sql"),
 		WellFormedName: strictNameRe.MatchString(base) || atlasFormat,
 		compatibility:  compatibility,
+		dialect:        dialect,
 		baseline:       baseline[version],
 		dependents:     dependents[version],
 	}

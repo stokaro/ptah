@@ -310,13 +310,25 @@ var migrationRuleMeta = map[string]ruleMeta{
 		Summary:   "growing a SET across a multiple of eight members adds a byte to each value and copies the table",
 		AtlasCode: "MY123",
 	},
+	"MY130": {
+		Summary:   "a column type change InnoDB cannot apply in place copies the table and blocks writes",
+		AtlasCode: "MY130",
+	},
 	"MY131": {
 		Summary:   "adding a foreign key can copy or lock the table and block writes",
 		AtlasCode: "MY131",
 	},
 	"MY132": {
-		Summary:   "adding a primary key rebuilds the table and blocks DML",
+		Summary:   "adding a primary key rebuilds the table in place around the new clustered index",
 		AtlasCode: "MY132",
+	},
+	"MY133": {
+		Summary:   "dropping a primary key without adding one in the same statement copies the table",
+		AtlasCode: "MY133",
+	},
+	"MY136": {
+		Summary:   "converting a table's character set re-encodes its columns and copies the table",
+		AtlasCode: "MY136",
 	},
 	"MY134": {
 		Summary:   "adding a FULLTEXT index can rebuild the table and block writes",

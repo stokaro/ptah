@@ -184,7 +184,7 @@ func (r *Reader) readTables(ctx context.Context, dbName string) ([]catalog.Table
 	}
 
 	query := `
-		SELECT TABLE_NAME, TABLE_TYPE, COALESCE(TABLE_COMMENT, '')
+		SELECT TABLE_NAME, TABLE_TYPE, COALESCE(TABLE_COMMENT, ''), COALESCE(TABLE_COLLATION, '')
 		FROM information_schema.TABLES
 		WHERE TABLE_SCHEMA = ?
 		AND TABLE_TYPE = 'BASE TABLE'
@@ -200,9 +200,10 @@ func (r *Reader) readTables(ctx context.Context, dbName string) ([]catalog.Table
 	var tables []catalog.Table
 	for rows.Next() {
 		var table catalog.Table
-		if err := rows.Scan(&table.Name, &table.Type, &table.Comment); err != nil {
+		if err := rows.Scan(&table.Name, &table.Type, &table.Comment, &table.Collate); err != nil {
 			return nil, err
 		}
+		table.Charset = charsetOfCollation(table.Collate)
 		table.Columns = columnsByTable[table.Name]
 		tables = append(tables, table)
 	}
@@ -211,6 +212,15 @@ func (r *Reader) readTables(ctx context.Context, dbName string) ([]catalog.Table
 	}
 
 	return tables, nil
+}
+
+// charsetOfCollation names the character set a collation belongs to.
+// information_schema.TABLES carries only TABLE_COLLATION, and every
+// collation on both engines is spelled `<charset>_<rest>` except the one
+// named `binary`, whose character set is also `binary`.
+func charsetOfCollation(collation string) string {
+	charset, _, _ := strings.Cut(collation, "_")
+	return charset
 }
 
 func (r *Reader) readColumnsByTable(ctx context.Context, dbName string) (map[string][]catalog.Column, error) {

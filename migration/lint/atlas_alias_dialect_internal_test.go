@@ -36,21 +36,13 @@ func TestExpandAtlasCodeSelectorsScopesSuppressionToTheAliasDialect(t *testing.T
 		rule:     "DS103",
 		want:     false,
 	}, {
-		name:     "mysql code silences the generic rule on mysql",
-		dialect:  "mysql",
-		selector: "MY130",
-		rule:     "DS103",
-		want:     true,
-	}, {
-		name:     "mysql code also covers mariadb",
+		// Every MY code is a Ptah rule of its own name now, so the family's
+		// scoping is pinned from the PostgreSQL side: a MySQL run must not be
+		// weakened by a PostgreSQL entry, and the converse holds by the same
+		// code path.
+		name:     "postgres code leaves the generic rule alone on mariadb",
 		dialect:  "mariadb",
-		selector: "MY133",
-		rule:     "CD103",
-		want:     true,
-	}, {
-		name:     "mysql code leaves the generic rule alone on postgres",
-		dialect:  "postgres",
-		selector: "MY130",
+		selector: "PG301",
 		rule:     "DS103",
 		want:     false,
 	}, {
@@ -92,5 +84,5 @@ func TestExpandAtlasCodeSelectorsValidatesAcrossEveryDialect(t *testing.T) {
 	// names PG301 legitimately even while linting MySQL, and refusing it as
 	// unknown is the failure stokaro/ptah#1631 fixed.
 	c.Assert(selectorMatchesRule("PG301", Rules()), qt.IsTrue)
-	c.Assert(selectorMatchesRule("MY130", Rules()), qt.IsTrue)
+	c.Assert(selectorMatchesRule("PG304", Rules()), qt.IsTrue)
 }
