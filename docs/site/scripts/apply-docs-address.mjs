@@ -27,10 +27,17 @@ import { Origin, BasePath } from '../src/lib/docs-origin.mjs';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 
-// Both anchors are byte-identical across every released tag, measured on
-// v0.1.0, v0.1.1, v0.1.2, v0.2.0 and v0.3.0. They are matched exactly rather
-// than loosely: a rewrite whose anchor has moved must fail, because the same
-// edit applied to nothing leaves the file unchanged and reports success.
+// Both anchors are byte-identical across every tag released BEFORE the address
+// became derived: v0.1.0, v0.1.1, v0.1.2, v0.2.0 and v0.3.0. They are matched
+// exactly rather than loosely, because the same edit applied to nothing leaves
+// the file unchanged and reports success.
+//
+// A tag released AFTER stokaro/ptah#2884 carries no such literal at all -- its
+// config reads the address from `src/lib/docs-origin.mjs`, so it already builds
+// at the current one and there is nothing here to rewrite. That is a different
+// state from "the anchor moved", and conflating the two is what made the v0.4.0
+// documentation fail to build (stokaro/ptah#2947): the guard refused a tag whose
+// only fault was postdating the fix this script exists to backfill.
 const SITE_ANCHOR = /^const site = '[^']*';$/m;
 const BASE_ANCHOR = /^const base = `[^`]*`;$/m;
 
@@ -38,7 +45,22 @@ const BASE_ANCHOR = /^const base = `[^`]*`;$/m;
 // rewritten config still builds any version the deploy hands it.
 const VERSION_EXPRESSION = '${DOCS_VERSION}';
 
+// A config that imports the declaration derives both constants from it, so it
+// names the current address by construction. This is an exact marker rather
+// than a guess about the file's shape: the import either is there or it is not,
+// and no tag can carry it while still holding a literal, because the change
+// that added the import is the change that removed them.
+const DERIVES_THE_ADDRESS = /^import \{[^}]*\} from '\.\/src\/lib\/docs-origin\.mjs';$/m;
+
+// alreadyDerived reports whether a target needs no rewrite at all.
+export function alreadyDerived(source) {
+  return DERIVES_THE_ADDRESS.test(source);
+}
+
 export function rewriteConfig(source) {
+  if (alreadyDerived(source)) {
+    return source;
+  }
   const siteMatches = source.match(new RegExp(SITE_ANCHOR, 'gm')) ?? [];
   const baseMatches = source.match(new RegExp(BASE_ANCHOR, 'gm')) ?? [];
   if (siteMatches.length !== 1) {
@@ -80,6 +102,31 @@ function selftest() {
     'the version expression was disturbed',
   );
 
+  // A tag released after the address became derived. This is the shape that
+  // broke the v0.4.0 documentation build: the config carries no literal to
+  // anchor on, and refusing it treated "nothing to do" as "the anchor moved".
+  const derived = [
+    "import { defineConfig } from 'astro/config';",
+    "import { Origin, BasePath } from './src/lib/docs-origin.mjs';",
+    '',
+    'const site = Origin;',
+    "const DOCS_VERSION = process.env.DOCS_VERSION || 'edge';",
+    'const base = BasePath(DOCS_VERSION);',
+    '',
+    'export default defineConfig({ site, base });',
+  ].join('\n');
+  assert(alreadyDerived(derived), 'a config importing the declaration is not recognized');
+  assert(rewriteConfig(derived) === derived, 'a derived config was rewritten');
+
+  // The control for that: a config with neither the import nor the anchors is
+  // still refused, so the acceptance above is about the import rather than
+  // about giving up on files this cannot parse.
+  assertThrows(
+    () => rewriteConfig("const nothing = true;\n"),
+    'found 0',
+    'a config with neither the import nor the anchors',
+  );
+
   // Applying it twice is the same as applying it once. The deploy builds a
   // fresh worktree per tag, but a rewrite that drifted on a second pass would
   // be a rewrite nobody could safely re-run.
@@ -109,7 +156,8 @@ function selftest() {
   );
 
   console.log(
-    'apply-docs-address.mjs --selftest: OK (both anchors rewritten, idempotent, and three unmatched shapes refused)',
+    'apply-docs-address.mjs --selftest: OK (both anchors rewritten, a derived config left alone,\n' +
+      '  idempotent, and four unmatched shapes refused)',
   );
 }
 
