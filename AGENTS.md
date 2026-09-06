@@ -5,9 +5,7 @@ This file gives coding agents repository-local guidance for working in Ptah.
 It holds the rules no gate can enforce: decisions that have to be right before
 a check could run, and habits whose failure a green build does not show. Where
 a gate exists, this file names it instead of restating what it checks, because
-a restated list drifts the moment the gate moves -- the docs-gate list that used
-to live here was missing nineteen of the thirty-nine scripts `docs.yml` runs
-when it was measured.
+a restated list drifts the moment the gate moves.
 
 ## Where Work Happens
 
@@ -23,9 +21,8 @@ git worktree add .codex/worktrees/<name>  -b <branch> origin/master
 ```
 
 `<name>` describes the task -- `2538-constraint-include`, not `tmp`. Branch
-from `origin/master`, never from local `master`: it was once measured 148
-commits behind, which made every "measured against master" statement in that
-session wrong.
+from `origin/master`, never from local `master`, which is only as current as
+the last pull and makes every "measured against master" statement wrong.
 
 **Clean up when the work merges.** `git worktree remove <path>`, then delete
 the branch with `-D` -- a squash-merged branch is not "merged" to `git branch
@@ -300,8 +297,8 @@ catches it drives the public path that joins them.
 
 ### A path is not a string, and an assertion about one is not portable
 
-`windows-latest` found 336 failing unit tests on its first run, almost none of
-them about Windows. The habits, each of which reads as correct on Linux:
+Most tests that fail on `windows-latest` are not about Windows. The habits,
+each of which reads as correct on Linux:
 
 1. A path interpolated into HCL, YAML or a Go template: `\U` is an escape.
    Use `filepath.ToSlash` or `strconv.Quote`.
@@ -639,9 +636,12 @@ lint-only rerun must not spend a unit-test budget. The three rules:
 ### A table row carries data, not a checker
 
 Put the value that varies in the row (`wantErr: "..."`), not a closure that
-asserts; `-require-data-rows` reports the shape by field type. Rows whose
-assertions differ are two tests wearing one table -- split them. A field
-holding a function that asserts nothing is data and is not reported.
+asserts. Rows whose assertions differ are two tests wearing one table -- split
+them. Callbacks passed as inputs to production code are allowed; table rows
+must not contain assertion callbacks, checker factories, or comparators that
+select or implement the test's assertion strategy. `-require-data-rows`
+reports only a function field taking `*qt.C`, so a `func() qt.Checker` or a
+comparator without that parameter escapes it and is held by this sentence.
 
 Do not hide the conditional in a helper either: no `checkError(c, err, wantIs,
 wantLike)` choosing between `qt.ErrorIs`, `qt.ErrorMatches` and `qt.IsNil`.
