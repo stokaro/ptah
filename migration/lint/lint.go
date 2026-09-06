@@ -37,6 +37,7 @@ import (
 	"path"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"ptah.run/internal/atlaslint"
@@ -90,6 +91,19 @@ type Rule struct {
 	AppliesToDown bool
 	// CheckFile inspects file-level form and returns full findings.
 	CheckFile func(file *File) []Finding
+	// Subsumes names rules whose finding on the same statement this rule's
+	// finding replaces. A rule that can say which ENUM member a MODIFY removed
+	// and that the server copies the table for it leaves nothing for "a column
+	// type changed" and "this ALTER usually rebuilds the table" to add, and
+	// reporting all three reads as three hazards where there is one. The
+	// generic finding is dropped only when the specific one actually fired,
+	// so a run that could not resolve the specific one -- no baseline, say --
+	// still reports the statement under the generic rule.
+	//
+	// Every code named here must be a registered rule; [Register] refuses a
+	// rule that subsumes an unknown one, because a misspelled code would
+	// suppress nothing and say nothing.
+	Subsumes []string
 	// Input declares what this rule reads. The zero value,
 	// [InputStatementText], is the migration SQL and nothing else.
 	//
@@ -274,6 +288,53 @@ func parseKnownMigrationName(name string, dirFormat migrationfile.DirFormat) (*m
 
 // runRules applies every enabled rule to one prepared file.
 func runRules(file *File, opts Options, rules []Rule) []Finding {
+	return dropSubsumedFindings(collectFindings(file, opts, rules), rules)
+}
+
+// dropSubsumedFindings applies [Rule.Subsumes]: a finding is removed when
+// another finding on the same statement comes from a rule that names its
+// rule. The pass is a function of the collected findings alone, so it is
+// deterministic and independent of rule order.
+func dropSubsumedFindings(findings []Finding, rules []Rule) []Finding {
+	subsumedBy := make(map[string][]string, len(rules))
+	for _, rule := range rules {
+		for _, code := range rule.Subsumes {
+			subsumedBy[code] = append(subsumedBy[code], rule.Code)
+		}
+	}
+	if len(subsumedBy) == 0 {
+		return findings
+	}
+	fired := make(map[string]bool, len(findings))
+	for _, finding := range findings {
+		if finding.Context != nil {
+			fired[subsumptionKey(finding.Context.StatementIndex, finding.Rule)] = true
+		}
+	}
+	kept := findings[:0]
+	for _, finding := range findings {
+		subsumed := false
+		if finding.Context != nil {
+			for _, winner := range subsumedBy[finding.Rule] {
+				if fired[subsumptionKey(finding.Context.StatementIndex, winner)] {
+					subsumed = true
+					break
+				}
+			}
+		}
+		if !subsumed {
+			kept = append(kept, finding)
+		}
+	}
+	return kept
+}
+
+// subsumptionKey identifies one rule's finding on one statement.
+func subsumptionKey(statement int, code string) string {
+	return strconv.Itoa(statement) + "\x00" + code
+}
+
+func collectFindings(file *File, opts Options, rules []Rule) []Finding {
 	var findings []Finding
 	for _, rule := range rules {
 		if !ruleRunsOnFile(rule, file, opts) {

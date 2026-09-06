@@ -74,22 +74,27 @@ var atlasChecks = []AtlasCheck{
 	// MySQL removes an enum value by restating the whole member list in a
 	// MODIFY COLUMN, which is why DS106 does not answer for this check: its
 	// scan matches the PostgreSQL spellings, DROP VALUE and DELETE FROM
-	// pg_enum. Measured on `ALTER TABLE orders MODIFY COLUMN status
-	// ENUM('new','paid') NOT NULL;` with --dialect mysql, the rules that fire
-	// are DS103 and MY101.
-	{
-		Code: "MY110", Meaning: "removing enum values from a column requires a table copy",
-		PtahRules: []string{"DS103", "MY101"}, Status: StatusPartial,
-		Note: "the MODIFY COLUMN is reported as a column type change and a lock-heavy rebuild; the old and new member lists are not compared, so the removal itself has no code",
-	},
-	{Code: "MY111", Meaning: "reordering enum values requires a table copy", Status: StatusAbsent},
-	{Code: "MY112", Meaning: "inserting enum values other than at the end requires a table copy", Status: StatusAbsent},
-	{Code: "MY113", Meaning: "exceeding 256 enum values changes storage size and requires a table copy", Status: StatusAbsent},
+	// pg_enum. The list a column has is not in the statement either, so the
+	// eight rules below read it from the schema state the version starts from.
+	//
+	// Measured on MySQL 8.4 and MariaDB 11.8.9 by asking for ALGORITHM=INSTANT
+	// and INPLACE: removing, reordering and inserting a member are refused by
+	// both, appending at the end is applied in place, and an append that
+	// crosses 255 (ENUM) or a multiple of eight (SET) members is refused
+	// again. Each rule compares the list the dev database reports with the
+	// list the MODIFY or CHANGE assigns, and says which of those the
+	// migration did; without that state the statement is still reported by
+	// DS103 and MY101, and the run names these rules as unmet
+	// (stokaro/ptah#2942).
+	{Code: "MY110", Meaning: "removing enum values from a column requires a table copy", PtahRules: []string{"MY110"}, Status: StatusCovered},
+	{Code: "MY111", Meaning: "reordering enum values requires a table copy", PtahRules: []string{"MY111"}, Status: StatusCovered},
+	{Code: "MY112", Meaning: "inserting enum values other than at the end requires a table copy", PtahRules: []string{"MY112"}, Status: StatusCovered},
+	{Code: "MY113", Meaning: "exceeding 256 enum values changes storage size and requires a table copy", PtahRules: []string{"MY113"}, Status: StatusCovered},
 
-	{Code: "MY120", Meaning: "removing set values from a column requires a table copy", Status: StatusAbsent},
-	{Code: "MY121", Meaning: "reordering set values requires a table copy", Status: StatusAbsent},
-	{Code: "MY122", Meaning: "inserting set values other than at the end requires a table copy", Status: StatusAbsent},
-	{Code: "MY123", Meaning: "exceeding a set-size boundary changes storage size and requires a table copy", Status: StatusAbsent},
+	{Code: "MY120", Meaning: "removing set values from a column requires a table copy", PtahRules: []string{"MY120"}, Status: StatusCovered},
+	{Code: "MY121", Meaning: "reordering set values requires a table copy", PtahRules: []string{"MY121"}, Status: StatusCovered},
+	{Code: "MY122", Meaning: "inserting set values other than at the end requires a table copy", PtahRules: []string{"MY122"}, Status: StatusCovered},
+	{Code: "MY123", Meaning: "exceeding a set-size boundary changes storage size and requires a table copy", PtahRules: []string{"MY123"}, Status: StatusCovered},
 
 	{
 		Code: "MY130", Meaning: "changing a column type requires a table copy", Pro: true,

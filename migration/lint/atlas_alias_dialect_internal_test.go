@@ -38,7 +38,7 @@ func TestExpandAtlasCodeSelectorsScopesSuppressionToTheAliasDialect(t *testing.T
 	}, {
 		name:     "mysql code silences the generic rule on mysql",
 		dialect:  "mysql",
-		selector: "MY110",
+		selector: "MY130",
 		rule:     "DS103",
 		want:     true,
 	}, {
@@ -50,7 +50,7 @@ func TestExpandAtlasCodeSelectorsScopesSuppressionToTheAliasDialect(t *testing.T
 	}, {
 		name:     "mysql code leaves the generic rule alone on postgres",
 		dialect:  "postgres",
-		selector: "MY110",
+		selector: "MY130",
 		rule:     "DS103",
 		want:     false,
 	}, {
@@ -92,5 +92,5 @@ func TestExpandAtlasCodeSelectorsValidatesAcrossEveryDialect(t *testing.T) {
 	// names PG301 legitimately even while linting MySQL, and refusing it as
 	// unknown is the failure stokaro/ptah#1631 fixed.
 	c.Assert(selectorMatchesRule("PG301", Rules()), qt.IsTrue)
-	c.Assert(selectorMatchesRule("MY110", Rules()), qt.IsTrue)
+	c.Assert(selectorMatchesRule("MY130", Rules()), qt.IsTrue)
 }

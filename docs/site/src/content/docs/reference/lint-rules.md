@@ -164,7 +164,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Migration lint rules
 
-46 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
+54 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
 
 ### Every dialect
 
@@ -197,6 +197,14 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | --- | --- | --- | --- |
 | `MY101` | this ALTER TABLE form usually rebuilds the table and blocks writes for the duration | both | Ptah |
 | `MY102` | an inline REFERENCES clause on a column is ignored by MySQL and enforced by MariaDB | both | Atlas |
+| `MY110` | removing an ENUM member copies the table, and a row still holding it fails the copy in strict mode | both | Atlas |
+| `MY111` | reordering ENUM members renumbers every row and copies the table | both | Atlas |
+| `MY112` | inserting an ENUM member before the end renumbers the members after it and copies the table | both | Atlas |
+| `MY113` | growing an ENUM past 255 members widens each value to two bytes and copies the table | both | Atlas |
+| `MY120` | removing a SET member copies the table, and a row still holding it fails the copy in strict mode | both | Atlas |
+| `MY121` | reordering SET members renumbers every row and copies the table | both | Atlas |
+| `MY122` | inserting a SET member before the end renumbers the members after it and copies the table | both | Atlas |
+| `MY123` | growing a SET across a multiple of eight members adds a byte to each value and copies the table | both | Atlas |
 | `MY131` | adding a foreign key can copy or lock the table and block writes | both | Atlas |
 | `MY132` | adding a primary key rebuilds the table and blocks DML | both | Atlas |
 | `MY134` | adding a FULLTEXT index can rebuild the table and block writes | both | Atlas |
@@ -248,7 +256,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Default severities
 
-16 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `SQL001`, `SQL002`. The other 37 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
+16 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `SQL001`, `SQL002`. The other 45 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
 
 ## What ptah-compat prints
 
@@ -262,7 +270,7 @@ Every migration lint finding reports under an analyzer name and a code on the co
 
 ## Atlas analyzer checks
 
-Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/analyzers) carries, and what Ptah does about it: 33 covered, 7 partial, 16 not implemented, 2 waived, of 58. A code Atlas marks as an Atlas Pro feature is marked here too, and the ones Ptah implements are reported through both surfaces except `BC101` and `BC102`, whose Ptah rule the compatibility surface does not report.
+Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/analyzers) carries, and what Ptah does about it: 41 covered, 6 partial, 9 not implemented, 2 waived, of 58. A code Atlas marks as an Atlas Pro feature is marked here too, and the ones Ptah implements are reported through both surfaces except `BC101` and `BC102`, whose Ptah rule the compatibility surface does not report.
 
 <div class="ptah-wide-table">
 
@@ -279,14 +287,14 @@ Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/anal
 | `BC102` | renaming a column | no | `BC101` | covered — one rule reports both object kinds |
 | `MY101` | adding a non-nullable column without a DEFAULT to an existing table | no | `DD101` | covered — DD101 applies to every dialect |
 | `MY102` | an inline REFERENCES clause in ADD COLUMN has no effect | no | `MY102` | covered |
-| `MY110` | removing enum values from a column requires a table copy | no | `DS103`, `MY101` | partial — the MODIFY COLUMN is reported as a column type change and a lock-heavy rebuild; the old and new member lists are not compared, so the removal itself has no code |
-| `MY111` | reordering enum values requires a table copy | no | — | not implemented |
-| `MY112` | inserting enum values other than at the end requires a table copy | no | — | not implemented |
-| `MY113` | exceeding 256 enum values changes storage size and requires a table copy | no | — | not implemented |
-| `MY120` | removing set values from a column requires a table copy | no | — | not implemented |
-| `MY121` | reordering set values requires a table copy | no | — | not implemented |
-| `MY122` | inserting set values other than at the end requires a table copy | no | — | not implemented |
-| `MY123` | exceeding a set-size boundary changes storage size and requires a table copy | no | — | not implemented |
+| `MY110` | removing enum values from a column requires a table copy | no | `MY110` | covered |
+| `MY111` | reordering enum values requires a table copy | no | `MY111` | covered |
+| `MY112` | inserting enum values other than at the end requires a table copy | no | `MY112` | covered |
+| `MY113` | exceeding 256 enum values changes storage size and requires a table copy | no | `MY113` | covered |
+| `MY120` | removing set values from a column requires a table copy | no | `MY120` | covered |
+| `MY121` | reordering set values requires a table copy | no | `MY121` | covered |
+| `MY122` | inserting set values other than at the end requires a table copy | no | `MY122` | covered |
+| `MY123` | exceeding a set-size boundary changes storage size and requires a table copy | no | `MY123` | covered |
 | `MY130` | changing a column type requires a table copy | yes | `MY101`, `DS103` | partial — MODIFY and CHANGE are reported as lock-heavy DDL; the table-copy cost has no code |
 | `MY131` | adding a foreign key blocks DML | yes | `MY131` | covered |
 | `MY132` | adding a primary key requires a table rebuild | yes | `MY132` | covered |
@@ -358,7 +366,9 @@ Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/anal
 Where Ptah reports an Atlas hazard under a rule of its own name, the Atlas code
 is accepted anyway — in `disabled-rules`, in `--disable`, and as a key under
 `rules:` for a severity override. `PG301` reaches `DS103`, `PG304` reaches
-`PG104`, and so on for `BC102`, `MF104`, `MY110`, `MY130`, `MY133` and `MY136`.
+`PG104`, and so on for `BC102`, `MF104`, `MY130`, `MY133` and `MY136`. A code
+Ptah reports under the same name, `MY110` through `MY123` for one, needs no
+alias: it selects that rule directly.
 
 An alias reaches its Ptah rule only for the engine the Atlas code belongs to.
 `PG301` is a PostgreSQL code, so `--dialect mysql --disable PG301` disables
