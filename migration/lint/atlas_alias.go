@@ -39,7 +39,8 @@ type atlasAlias struct {
 var atlasCodeAliases = map[string]atlasAlias{
 	"BC102": {rules: []string{"BC101"}},
 	"MF104": {rules: []string{"PG303", "LT101"}},
-	"MY110": {dialects: mysqlFamily, rules: []string{"DS103", "MY101"}},
+	// MY110 through MY123 are not here: each is a Ptah rule of the same name
+	// now (members.go), so the code needs no alias to reach it.
 	"MY130": {dialects: mysqlFamily, rules: []string{"MY101", "DS103"}},
 	"MY133": {dialects: mysqlFamily, rules: []string{"CD103"}},
 	"MY136": {dialects: mysqlFamily, rules: []string{"MY101"}},

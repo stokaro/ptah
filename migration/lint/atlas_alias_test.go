@@ -19,9 +19,10 @@ func TestAtlasCodeAliases_CoverEveryMappedCodeThatCanBeAliased(t *testing.T) {
 
 	aliases := lint.AtlasCodeAliases()
 
-	// Fourteen Atlas codes report under a differently spelled Ptah rule; six of
+	// Thirteen Atlas codes report under a differently spelled Ptah rule; six of
 	// them are codes Ptah also uses for a rule of its own and are excluded.
-	c.Assert(aliases, qt.HasLen, 8)
+	// MY110 left this table when it became a Ptah rule of the same name.
+	c.Assert(aliases, qt.HasLen, 7)
 	c.Assert(aliases["PG301"], qt.DeepEquals, []string{"DS103"})
 	c.Assert(aliases["PG304"], qt.DeepEquals, []string{"PG104"})
 	c.Assert(aliases["MY136"], qt.DeepEquals, []string{"MY101"})
@@ -35,8 +36,8 @@ func TestAtlasCodeAliases_CoverEveryMappedCodeThatCanBeAliased(t *testing.T) {
 func TestAtlasCodeFor_AnswersEveryCodeARuleStandsFor(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(lint.AtlasCodeFor("DS103"), qt.DeepEquals, []string{"MY110", "MY130", "PG301"})
-	c.Assert(lint.AtlasCodeFor("MY101"), qt.DeepEquals, []string{"MY110", "MY130", "MY136"})
+	c.Assert(lint.AtlasCodeFor("DS103"), qt.DeepEquals, []string{"MY130", "PG301"})
+	c.Assert(lint.AtlasCodeFor("MY101"), qt.DeepEquals, []string{"MY130", "MY136"})
 	c.Assert(lint.AtlasCodeFor("PG104"), qt.DeepEquals, []string{"PG304"})
 	c.Assert(lint.AtlasCodeFor("PG302"), qt.HasLen, 0)
 }

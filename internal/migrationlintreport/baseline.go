@@ -39,6 +39,7 @@ func readBaselineColumns(ctx context.Context,
 				Table:      table.Name,
 				Name:       column.Name,
 				DataType:   compatColumnDataType(column),
+				ColumnType: column.ColumnType,
 				NotNull:    strings.EqualFold(strings.TrimSpace(column.IsNullable), "NO"),
 				HasDefault: column.ColumnDefault != nil && strings.TrimSpace(*column.ColumnDefault) != "",
 			})

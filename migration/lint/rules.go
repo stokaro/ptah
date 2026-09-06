@@ -77,6 +77,7 @@ func builtinRules() []Rule {
 	rules = append(rules, compatibilityRules()...)
 	rules = append(rules, postgresRules()...)
 	rules = append(rules, mysqlRules()...)
+	rules = append(rules, mysqlMemberRules()...)
 	rules = append(rules, sqliteRules()...)
 	rules = append(rules, transactionRules()...)
 	return rules
@@ -154,6 +155,18 @@ func validateRules(rules []Rule) error {
 			return fmt.Errorf("duplicate rule code %s", rule.Code)
 		}
 		seen[rule.Code] = struct{}{}
+	}
+	// A subsumption naming a rule nobody registers would suppress nothing and
+	// say nothing, so it is checked against the whole set rather than trusted.
+	for _, rule := range rules {
+		for _, code := range rule.Subsumes {
+			if code == rule.Code {
+				return fmt.Errorf("rule %s subsumes itself", rule.Code)
+			}
+			if _, ok := seen[code]; !ok {
+				return fmt.Errorf("rule %s subsumes %s, which no rule registers", rule.Code, code)
+			}
+		}
 	}
 	return nil
 }

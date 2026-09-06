@@ -2,6 +2,7 @@ package lintcatalog_test
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -89,14 +90,14 @@ func findingCodes(c *qt.C, files map[string]string, profile lint.CompatibilityPr
 // dialectFindingCodes lints a one-version migration directory under a dialect
 // and returns the identifiers reported, sorted. Unlike findingCodes it gates
 // dialect-specific rules, which is what an Atlas row about a MySQL check needs.
-func dialectFindingCodes(tb testing.TB, dialect, up, down string) []string {
+func dialectFindingCodes(tb testing.TB, dialect, up, down string, baseline ...lint.BaselineColumn) []string {
 	c := qt.New(tb)
 
 	fsys := fstest.MapFS{
 		"0000000001_change.up.sql":   &fstest.MapFile{Data: []byte(up)},
 		"0000000001_change.down.sql": &fstest.MapFile{Data: []byte(down)},
 	}
-	findings, err := lint.LintFS(fsys, lint.Options{Dialect: dialect})
+	findings, err := lint.LintFS(fsys, lint.Options{Dialect: dialect, Baseline: baseline})
 	c.Assert(err, qt.IsNil)
 
 	var codes []string
@@ -120,6 +121,27 @@ func atlasRuleList(tb testing.TB, code string) []string {
 	}
 	c.Fatalf("the Atlas analyzer list carries no check %s", code)
 	return nil
+}
+
+// statusColumn and flagsColumn are the schema state version 1 starts from in
+// the member-list rows above: one column, spelled the way the dev-database read
+// reports a MySQL type, with its member list.
+func statusColumn(columnType string) []lint.BaselineColumn {
+	return []lint.BaselineColumn{{Version: 1, Table: "orders", Name: "status", ColumnType: columnType}}
+}
+
+func flagsColumn(columnType string) []lint.BaselineColumn {
+	return []lint.BaselineColumn{{Version: 1, Table: "orders", Name: "flags", ColumnType: columnType}}
+}
+
+// memberLiterals spells n distinct members, for the rows that exercise a
+// storage boundary rather than a named value.
+func memberLiterals(n int) string {
+	values := make([]string, 0, n)
+	for i := range n {
+		values = append(values, fmt.Sprintf("'m%03d'", i))
+	}
+	return strings.Join(values, ",")
 }
 
 // messagesFor lints a directory under one compatibility profile and returns the
@@ -236,13 +258,79 @@ func TestAtlasRowsNameTheRulesThatFire(t *testing.T) {
 		dialect   string
 		up        string
 		down      string
+		// baseline is the state version 1 starts from, for the rows whose
+		// rule compares the statement with what the column is now. A row
+		// without one is judged on the statement text alone.
+		baseline []lint.BaselineColumn
 	}{
+		// The eight member-list rows each carry the column's current list,
+		// because the finding is a comparison and the statement holds only
+		// one side of it. Each row's fixture is the change its Atlas check
+		// describes and nothing else, so the finding set is exactly the
+		// rule: the generic DS103 and MY101 are subsumed by it.
 		{
 			name:      "MY110, an enum value removed by restating the member list",
 			atlasCode: "MY110",
 			dialect:   "mysql",
 			up:        "ALTER TABLE orders MODIFY COLUMN status ENUM('new','paid') NOT NULL;\n",
 			down:      "ALTER TABLE orders MODIFY COLUMN status ENUM('new','paid','refunded') NOT NULL;\n",
+			baseline:  statusColumn("enum('new','paid','refunded')"),
+		},
+		{
+			name:      "MY111, enum values reordered",
+			atlasCode: "MY111",
+			dialect:   "mysql",
+			up:        "ALTER TABLE orders MODIFY COLUMN status ENUM('paid','new','refunded');\n",
+			down:      "ALTER TABLE orders MODIFY COLUMN status ENUM('new','paid','refunded');\n",
+			baseline:  statusColumn("enum('new','paid','refunded')"),
+		},
+		{
+			name:      "MY112, an enum value inserted before the end",
+			atlasCode: "MY112",
+			dialect:   "mysql",
+			up:        "ALTER TABLE orders MODIFY COLUMN status ENUM('new','held','paid','refunded');\n",
+			down:      "ALTER TABLE orders MODIFY COLUMN status ENUM('new','paid','refunded');\n",
+			baseline:  statusColumn("enum('new','paid','refunded')"),
+		},
+		{
+			name:      "MY113, an enum grown past 255 values",
+			atlasCode: "MY113",
+			dialect:   "mysql",
+			up:        "ALTER TABLE orders MODIFY COLUMN status ENUM(" + memberLiterals(256) + ");\n",
+			down:      "ALTER TABLE orders MODIFY COLUMN status ENUM(" + memberLiterals(255) + ");\n",
+			baseline:  statusColumn("enum(" + memberLiterals(255) + ")"),
+		},
+		{
+			name:      "MY120, a set value removed",
+			atlasCode: "MY120",
+			dialect:   "mysql",
+			up:        "ALTER TABLE orders MODIFY COLUMN flags SET('a','b');\n",
+			down:      "ALTER TABLE orders MODIFY COLUMN flags SET('a','b','c');\n",
+			baseline:  flagsColumn("set('a','b','c')"),
+		},
+		{
+			name:      "MY121, set values reordered",
+			atlasCode: "MY121",
+			dialect:   "mysql",
+			up:        "ALTER TABLE orders MODIFY COLUMN flags SET('a','c','b');\n",
+			down:      "ALTER TABLE orders MODIFY COLUMN flags SET('a','b','c');\n",
+			baseline:  flagsColumn("set('a','b','c')"),
+		},
+		{
+			name:      "MY122, a set value inserted before the end",
+			atlasCode: "MY122",
+			dialect:   "mysql",
+			up:        "ALTER TABLE orders MODIFY COLUMN flags SET('a','x','b','c');\n",
+			down:      "ALTER TABLE orders MODIFY COLUMN flags SET('a','b','c');\n",
+			baseline:  flagsColumn("set('a','b','c')"),
+		},
+		{
+			name:      "MY123, a set grown across a storage boundary",
+			atlasCode: "MY123",
+			dialect:   "mysql",
+			up:        "ALTER TABLE orders MODIFY COLUMN flags SET(" + memberLiterals(9) + ");\n",
+			down:      "ALTER TABLE orders MODIFY COLUMN flags SET(" + memberLiterals(8) + ");\n",
+			baseline:  flagsColumn("set(" + memberLiterals(8) + ")"),
 		},
 		{
 			name:      "MY130, a column type change",
@@ -271,7 +359,7 @@ func TestAtlasRowsNameTheRulesThatFire(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(dialectFindingCodes(t, row.dialect, row.up, row.down),
+			c.Assert(dialectFindingCodes(t, row.dialect, row.up, row.down, row.baseline...),
 				qt.DeepEquals, atlasRuleList(t, row.atlasCode),
 				qt.Commentf("the %s row names rules the statement it describes does not produce", row.atlasCode))
 		})

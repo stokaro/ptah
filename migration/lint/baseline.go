@@ -32,6 +32,14 @@ type BaselineColumn struct {
 	// leaves the diagnostic reported under Ptah's own wording rather than
 	// inventing an Atlas sentence for a type nobody measured.
 	DataType string
+	// ColumnType is the type exactly as the server spells it, member lists
+	// included: MySQL's information_schema COLUMN_TYPE, `enum('a','b')` or
+	// `set('x','y')`. It is separate from DataType because DataType is a
+	// normalized spelling for one family of diagnostics and is empty for
+	// everything that spelling does not cover, which included every ENUM and
+	// SET column; the rules that compare member lists read this field and
+	// find nothing when it is empty (stokaro/ptah#2942).
+	ColumnType string
 	// NotNull reports whether the column rejects NULL.
 	NotNull bool
 	// HasDefault reports whether the column carries a DEFAULT expression.

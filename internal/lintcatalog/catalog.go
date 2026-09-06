@@ -278,6 +278,38 @@ var migrationRuleMeta = map[string]ruleMeta{
 		Summary:   "an inline REFERENCES clause on a column is ignored by MySQL and enforced by MariaDB",
 		AtlasCode: "MY102",
 	},
+	"MY110": {
+		Summary:   "removing an ENUM member copies the table, and a row still holding it fails the copy in strict mode",
+		AtlasCode: "MY110",
+	},
+	"MY111": {
+		Summary:   "reordering ENUM members renumbers every row and copies the table",
+		AtlasCode: "MY111",
+	},
+	"MY112": {
+		Summary:   "inserting an ENUM member before the end renumbers the members after it and copies the table",
+		AtlasCode: "MY112",
+	},
+	"MY113": {
+		Summary:   "growing an ENUM past 255 members widens each value to two bytes and copies the table",
+		AtlasCode: "MY113",
+	},
+	"MY120": {
+		Summary:   "removing a SET member copies the table, and a row still holding it fails the copy in strict mode",
+		AtlasCode: "MY120",
+	},
+	"MY121": {
+		Summary:   "reordering SET members renumbers every row and copies the table",
+		AtlasCode: "MY121",
+	},
+	"MY122": {
+		Summary:   "inserting a SET member before the end renumbers the members after it and copies the table",
+		AtlasCode: "MY122",
+	},
+	"MY123": {
+		Summary:   "growing a SET across a multiple of eight members adds a byte to each value and copies the table",
+		AtlasCode: "MY123",
+	},
 	"MY131": {
 		Summary:   "adding a foreign key can copy or lock the table and block writes",
 		AtlasCode: "MY131",
