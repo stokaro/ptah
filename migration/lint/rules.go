@@ -85,6 +85,7 @@ func builtinRules() []Rule {
 	rules = append(rules, mysqlRules()...)
 	rules = append(rules, mysqlMemberRules()...)
 	rules = append(rules, mysqlCostRules()...)
+	rules = append(rules, inPlaceRules()...)
 	rules = append(rules, sqliteRules()...)
 	rules = append(rules, transactionRules()...)
 	return rules

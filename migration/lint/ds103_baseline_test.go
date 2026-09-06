@@ -10,7 +10,10 @@ import (
 )
 
 // analyzeTypeChange lints one migration against the two-table fixture the
-// cost cases use, with whatever state the row supplies.
+// cost cases use, with whatever state the row supplies. The two in-place
+// info rules are disabled so that each row measures DS103's own judgment:
+// where a change is applied in place they subsume DS103, which
+// inplace_test.go pins on its own.
 func analyzeTypeChange(c *qt.C, dialect, alter string, columns ...lint.BaselineColumn) lint.Analysis {
 	c.Helper()
 	analysis, err := lint.AnalyzeFS(fixture(costFS(alter)), lint.Options{
@@ -18,6 +21,7 @@ func analyzeTypeChange(c *qt.C, dialect, alter string, columns ...lint.BaselineC
 		DirFormat: migrationfile.DirFormatAtlas,
 		Selection: lint.VersionSelection{Versions: []int64{2}, Restricted: true},
 		Baseline:  columns,
+		Disabled:  []string{"MY130P", "PG301P"},
 	})
 	c.Assert(err, qt.IsNil)
 	return analysis

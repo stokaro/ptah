@@ -136,7 +136,7 @@ var atlasChecks = []AtlasCheck{
 	{
 		Code: "MY130", Meaning: "changing a column type requires a table copy", Pro: true,
 		PtahRules: []string{"MY130"}, Status: StatusCovered,
-		Note: "fires only for a change InnoDB refuses to apply in place, with the old and new type and the boundary, character set, collation or key that decides it",
+		Note: "fires only for a change InnoDB refuses to apply in place, with the old and new type and the boundary, character set, collation or key that decides it; MY130P is the info finding for the change applied in place",
 	},
 	{Code: "MY131", Meaning: "adding a foreign key blocks DML", Pro: true, PtahRules: []string{"MY131"}, Status: StatusCovered},
 	{Code: "MY132", Meaning: "adding a primary key requires a table rebuild", Pro: true, PtahRules: []string{"MY132"}, Status: StatusCovered},
@@ -179,7 +179,7 @@ var atlasChecks = []AtlasCheck{
 	{
 		Code: "PG301", Meaning: "a column type change requires a table and index rewrite", Pro: true,
 		PtahRules: []string{"PG301"}, Status: StatusCovered,
-		Note: "fires for a change PostgreSQL rewrites for, naming the abort a value can cause, and for a collation change on an indexed column, naming the indexes it rebuilds; the timestamp to timestamptz pair says when the TimeZone decides",
+		Note: "fires for a change PostgreSQL rewrites for, naming the abort a value can cause, and for a collation change on an indexed column, naming the indexes it rebuilds; PG301P is the info finding for a catalog edit",
 	},
 	{Code: "PG302", Meaning: "a volatile DEFAULT on an added column rewrites the table", Pro: true, PtahRules: []string{"PG302"}, Status: StatusCovered},
 	{Code: "PG303", Meaning: "SET NOT NULL scans existing rows", Pro: true, PtahRules: []string{"PG303"}, Status: StatusCovered},

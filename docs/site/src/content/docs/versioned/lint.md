@@ -98,7 +98,10 @@ Useful controls, all designed for CI:
   and what reads each column. A rule that compares a statement with that
   state stays quiet without it, a rule the state only refines reports from
   the text alone, and the run names both kinds as unmet so the thinner
-  report is never mistaken for a clean one.
+  report is never mistaken for a clean one. Two info-severity rules, `MY130P`
+  and `PG301P`, say where the state shows a column change applied in place,
+  and by which algorithm, so quiet cost rules read as a judgment rather than
+  as a rule that did not look.
 - `--disable DS101` (or a family such as `MY`) skips rules ad hoc; a
   committed `.ptah-lint.yaml` does it persistently and adds per-rule
   severity and path scoping — see below.
