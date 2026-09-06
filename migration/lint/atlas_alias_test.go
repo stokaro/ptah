@@ -25,7 +25,7 @@ func TestAtlasCodeAliases_CoverEveryMappedCodeThatCanBeAliased(t *testing.T) {
 	// of the same name (members.go, mysqlcost.go, pgcost.go).
 	c.Assert(aliases, qt.HasLen, 2)
 	c.Assert(aliases["BC102"], qt.DeepEquals, []string{"BC101"})
-	c.Assert(aliases["MF104"], qt.DeepEquals, []string{"PG303", "LT101"})
+	c.Assert(aliases["MF104"], qt.DeepEquals, []string{"PG303", "LT101", "DD103"})
 }
 
 // TestAtlasCodeFor_AnswersEveryCodeARuleStandsFor holds the reverse direction,
@@ -36,6 +36,7 @@ func TestAtlasCodeFor_AnswersEveryCodeARuleStandsFor(t *testing.T) {
 
 	c.Assert(lint.AtlasCodeFor("BC101"), qt.DeepEquals, []string{"BC102"})
 	c.Assert(lint.AtlasCodeFor("LT101"), qt.DeepEquals, []string{"MF104"})
+	c.Assert(lint.AtlasCodeFor("DD103"), qt.DeepEquals, []string{"MF104"})
 	c.Assert(lint.AtlasCodeFor("PG303"), qt.DeepEquals, []string{"MF104"})
 	c.Assert(lint.AtlasCodeFor("DS103"), qt.HasLen, 0)
 	c.Assert(lint.AtlasCodeFor("PG302"), qt.HasLen, 0)

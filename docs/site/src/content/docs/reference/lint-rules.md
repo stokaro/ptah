@@ -164,7 +164,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Migration lint rules
 
-61 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
+62 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
 
 ### Every dialect
 
@@ -215,6 +215,12 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `MY135` | adding a SPATIAL index can rebuild the table and block writes | both | Atlas |
 | `MY136` | converting a table's character set re-encodes its columns and copies the table | both | Atlas |
 
+### mysql, mariadb, sqlserver
+
+| Rule | Meaning | Surface | Origin |
+| --- | --- | --- | --- |
+| `DD103` | a nullable column made NOT NULL fails on a row holding NULL, or rewrites it to the type's default | both | Ptah |
+
 ### postgres
 
 | Rule | Meaning | Surface | Origin |
@@ -263,7 +269,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Default severities
 
-16 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `SQL001`, `SQL002`. The other 52 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
+16 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `SQL001`, `SQL002`. The other 53 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
 
 ## What ptah-compat prints
 
@@ -289,7 +295,7 @@ Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/anal
 | `MF101` | adding a unique index to an existing column | no | `MF101` | covered — structural: the build fails on the first duplicate; the message names the query that settles it and what a failed CONCURRENTLY build leaves behind |
 | `MF102` | modifying a non-unique index to unique | no | `MF102` | covered — an index dropped earlier in the file and rebuilt as unique under the same name; the message adds that the failure leaves the table without the index it had |
 | `MF103` | adding a non-nullable column to an existing table | no | `DD101` | covered |
-| `MF104` | modifying a nullable column to non-nullable might fail | no | `PG303`, `LT101` | partial — reported on PostgreSQL and SQLite; the other dialects have no equivalent rule |
+| `MF104` | modifying a nullable column to non-nullable might fail | no | `PG303`, `LT101`, `DD103` | partial — PostgreSQL (PG303), SQLite (LT101), MySQL, MariaDB and SQL Server (DD103) are measured and covered; CockroachDB and YugabyteDB run no PostgreSQL rule under their own dialect names, and ClickHouse and Spanner are not measured, so those four are not |
 | `BC101` | renaming a table | no | `BC101` | covered |
 | `BC102` | renaming a column | no | `BC101` | covered — one rule reports both object kinds |
 | `MY101` | adding a non-nullable column without a DEFAULT to an existing table | no | `DD101` | covered — DD101 applies to every dialect |
@@ -371,8 +377,8 @@ Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/anal
 Where Ptah reports an Atlas hazard under a rule of its own name, the Atlas code
 is accepted anyway — in `disabled-rules`, in `--disable`, and as a key under
 `rules:` for a severity override. `BC102` reaches `BC101`, and `MF104` reaches
-`PG303` and `LT101`. A code Ptah reports under the same name, every `MY` and
-`PG3` code for one, needs no alias: it selects that rule directly.
+`PG303`, `LT101` and `DD103`. A code Ptah reports under the same name, every
+`MY` and `PG3` code for one, needs no alias: it selects that rule directly.
 
 An alias reaches its Ptah rule only for the engine the Atlas code belongs to,
 so a policy shared across engines cannot weaken one engine's run through an

@@ -133,6 +133,9 @@ type ruleMeta struct {
 // lint rule. Adding a rule to migration/lint without adding it here fails
 // [Entries]; removing one without removing the entry here fails it too.
 var migrationRuleMeta = map[string]ruleMeta{
+	"DD103": {
+		Summary: "a nullable column made NOT NULL fails on a row holding NULL, or rewrites it to the type's default",
+	},
 	"DD102": {
 		Summary: "a routine declared immutable calls something whose result changes between two calls with the same arguments",
 	},
