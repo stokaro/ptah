@@ -139,7 +139,7 @@ Each entry under `tables` declares one table.
 | `openapi_name` | Exact OpenAPI component key for this table. |
 | `graphql_name` | GraphQL type-name stem for this table. |
 | `proto_name` | Protobuf message-name stem for this table. |
-| `engine` | Table engine value for dialects that support it. |
+| `engine` | Table engine value for the MySQL family; a PostgreSQL-family target names it on a `skipped` comment instead. |
 | `comment` | Table comment. |
 | `primary_key` | Table-level primary key column list. |
 | `checks` | Table-level check expressions. |
