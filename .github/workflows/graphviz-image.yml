@@ -49,7 +49,7 @@ jobs:
       # because the pin is the environment rather than the instruction set --
       # asserted by the step below rather than assumed.
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: docs/site/graphviz
           file: docs/site/graphviz/Dockerfile
