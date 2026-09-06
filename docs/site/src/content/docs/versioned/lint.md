@@ -171,6 +171,68 @@ analyzer codes the same way as to built-in ones — see
 [Reusable components](../../extend/components/) for registering custom
 rules from Go.
 
+## Enforce a naming convention
+
+A `naming` section makes the six `NM` rules check every name a migration
+introduces against the patterns the project chooses: a schema or table it
+creates or renames to, a column it declares, adds or renames to, an index or
+unique key it names, and a foreign key or check constraint it names. Without
+the section the rules stay silent, because the convention is the project's to
+state.
+
+```yaml
+naming:
+  match: '^[a-z][a-z0-9_]*$'
+  message: use lower snake case
+  severity: error
+  index:
+    match: '^idx_[a-z0-9_]+$'
+    message: prefix an index with idx_
+  foreign-key:
+    match: '^fk_[a-z0-9_]+$'
+```
+
+- `match` is a Go regular expression every kind of name must satisfy. Anchor
+  it: `^[a-z_]+$` is a convention, `[a-z]` accepts any name with a letter in
+  it. Quoting is stripped before the match, so `"Users"` is judged as `Users`.
+- `schema`, `table`, `column`, `index`, `foreign-key` and `check` each take a
+  `match` and `message` of their own, which replace the shared ones for that
+  kind. A kind with no pattern from either place is not checked. A unique or
+  primary key constraint counts as an index, as it does for Atlas.
+- `message` is appended to each finding. `severity` is the level the six
+  findings report at, `warning` by default; a `rules` entry for one of the
+  codes still wins, so `rules: { NM103: { severity: info } }` softens columns
+  alone.
+- A pattern that does not compile, a kind block without a `match`, and a
+  section with no pattern at all fail config parsing, so a naming block never
+  reads as a convention enforced while checking nothing.
+
+The same convention in `atlas.hcl`, where it is the Atlas naming analyzer's
+block and reaches the same six rules; `error = true` is the block's severity
+switch:
+
+```hcl
+env "local" {
+  lint {
+    naming {
+      error   = true
+      match   = "^[a-z][a-z0-9_]*$"
+      message = "use lower snake case"
+      index {
+        match   = "^idx_[a-z0-9_]+$"
+        message = "prefix an index with idx_"
+      }
+      foreign_key {
+        match = "^fk_[a-z0-9_]+$"
+      }
+    }
+  }
+}
+```
+
+A `.ptah-lint.yaml` `naming` section takes precedence over the project file's
+block, the way `rules` entries do.
+
 ## Declare a rule of your own
 
 A `rules` entry that carries `match` **defines** a rule instead of configuring

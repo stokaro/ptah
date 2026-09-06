@@ -193,14 +193,31 @@ var atlasChecks = []AtlasCheck{
 	{Code: "TX101", Meaning: "statements cannot run in a single transaction", Pro: true, PtahRules: []string{"TX101"}, Status: StatusCovered},
 	{Code: "TX201", Meaning: "a nested transaction was detected", Pro: true, PtahRules: []string{"TX201"}, Status: StatusCovered},
 
-	{Code: "NM101", Meaning: "a schema name violates the naming convention", Status: StatusAbsent},
-	{Code: "NM102", Meaning: "a table name violates the naming convention", Status: StatusAbsent},
-	{Code: "NM103", Meaning: "a column name violates the naming convention", Status: StatusAbsent},
-	{Code: "NM104", Meaning: "an index name violates the naming convention", Status: StatusAbsent},
-	{Code: "NM105", Meaning: "a foreign-key constraint name violates the naming convention", Status: StatusAbsent},
-	{Code: "NM106", Meaning: "a check constraint name violates the naming convention", Status: StatusAbsent},
+	// The six naming rules read the convention a project configures, as the
+	// `naming` section of .ptah-lint.yaml or the `lint { naming { } }` block
+	// of a project file, and stay silent without one: the convention is the
+	// project's to state (migration/lint/naming.go, stokaro/ptah#2942).
+	{Code: "NM101", Meaning: "a schema name violates the naming convention", PtahRules: []string{"NM101"}, Status: StatusCovered, Note: "needs a configured naming convention"},
+	{Code: "NM102", Meaning: "a table name violates the naming convention", PtahRules: []string{"NM102"}, Status: StatusCovered, Note: "needs a configured naming convention"},
+	{Code: "NM103", Meaning: "a column name violates the naming convention", PtahRules: []string{"NM103"}, Status: StatusCovered, Note: "needs a configured naming convention"},
+	{
+		Code: "NM104", Meaning: "an index name violates the naming convention", PtahRules: []string{"NM104"}, Status: StatusCovered,
+		Note: "needs a configured naming convention; a unique or primary key constraint counts as an index, as it does for Atlas",
+	},
+	{Code: "NM105", Meaning: "a foreign-key constraint name violates the naming convention", PtahRules: []string{"NM105"}, Status: StatusCovered, Note: "needs a configured naming convention"},
+	{Code: "NM106", Meaning: "a check constraint name violates the naming convention", PtahRules: []string{"NM106"}, Status: StatusCovered, Note: "needs a configured naming convention"},
 
-	{Code: "SA101", Meaning: "a possible SQL injection vulnerability was detected", Status: StatusAbsent},
+	// What Atlas analyzes is dynamic SQL built by concatenation or
+	// interpolation in EXEC and EXECUTE statements; what Ptah observes is the
+	// tokenized body of a routine the migration defines, once a dialect names
+	// its language: PL/pgSQL EXECUTE, MySQL PREPARE FROM, T-SQL EXEC and
+	// sp_executesql (migration/lint/injection.go, stokaro/ptah#2942). A value
+	// that reaches the routine from outside is not visible and not claimed.
+	{
+		Code: "SA101", Meaning: "a possible SQL injection vulnerability was detected",
+		PtahRules: []string{"SA101"}, Status: StatusCovered,
+		Note: "reports a routine body that builds its statement from an unquoted value; a literal text, quote_ident/quote_literal, format's %I and %L, QUOTENAME, and parameters are the safe forms it leaves alone",
+	},
 
 	{
 		Code: "OW101", Meaning: "a user is not authorized to modify a resource", Pro: true, Status: StatusWaived,

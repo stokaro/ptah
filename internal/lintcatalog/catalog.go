@@ -78,8 +78,8 @@ var families = []Family{
 	{Prefix: "MY", Origin: OriginAtlas, Summary: "MySQL and MariaDB-specific rebuild and blocking-DDL hazards"},
 	{Prefix: "LT", Origin: OriginAtlas, Summary: "SQLite-specific hazards"},
 	{Prefix: "TX", Origin: OriginAtlas, Summary: "transaction shape of a migration"},
-	{Prefix: "NM", Origin: OriginAtlas, Summary: "naming conventions; Atlas documents these, Ptah emits none"},
-	{Prefix: "SA", Origin: OriginAtlas, Summary: "static analysis; Atlas documents these, Ptah emits none"},
+	{Prefix: "NM", Origin: OriginAtlas, Summary: "naming conventions, checked against the patterns a project configures"},
+	{Prefix: "SA", Origin: OriginAtlas, Summary: "static analysis of routine bodies a migration defines"},
 	{Prefix: "OW", Origin: OriginAtlas, Summary: "ownership policy; Atlas documents these, Ptah emits none"},
 	{Prefix: "SQL", Origin: OriginPtah, Summary: "the SQL linter could not read or model the statement"},
 	{Prefix: "DDL", Origin: OriginPtah, Summary: "the shape of a DDL statement the SQL linter modeled"},
@@ -289,6 +289,34 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"PG311": {
 		Summary:   "changing a table's access method rewrites the table",
 		AtlasCode: "PG311",
+	},
+	"SA101": {
+		Summary:   "a routine builds and runs a statement from a value it does not quote",
+		AtlasCode: "SA101",
+	},
+	"NM101": {
+		Summary:   "a schema this migration creates or renames to violates the configured naming convention",
+		AtlasCode: "NM101",
+	},
+	"NM102": {
+		Summary:   "a table this migration creates or renames to violates the configured naming convention",
+		AtlasCode: "NM102",
+	},
+	"NM103": {
+		Summary:   "a column this migration declares, adds, or renames to violates the configured naming convention",
+		AtlasCode: "NM103",
+	},
+	"NM104": {
+		Summary:   "an index or unique key this migration names violates the configured naming convention",
+		AtlasCode: "NM104",
+	},
+	"NM105": {
+		Summary:   "a foreign key this migration names violates the configured naming convention",
+		AtlasCode: "NM105",
+	},
+	"NM106": {
+		Summary:   "a check constraint this migration names violates the configured naming convention",
+		AtlasCode: "NM106",
 	},
 	"MY101": {
 		Summary: "this ALTER TABLE form usually rebuilds the table and blocks writes for the duration",

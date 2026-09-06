@@ -271,6 +271,12 @@ type Options struct {
 	// routine bodies, so a caller can supply one without the other and the
 	// unmet-input report says which is missing.
 	BaselineDependents []BaselineDependent
+
+	// Naming is the naming convention the NM rules enforce, normally the
+	// `naming` section of .ptah-lint.yaml or the `lint { naming { } }` block
+	// of a project file. Nil leaves the six rules silent: a convention is the
+	// project's to state, and the rules carry none of their own.
+	Naming *NamingConfig
 }
 
 func parseKnownMigrationName(name string, dirFormat migrationfile.DirFormat) (*migrationfile.File, error) {

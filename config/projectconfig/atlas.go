@@ -1348,71 +1348,60 @@ func (p atlasParser) parseLintAttr(attrName string, attr *hclsyntax.Attribute, c
 	return nil
 }
 
+// lintAnalyzerCodes maps each Atlas analyzer block that carries only an
+// `error` switch to the Ptah rules or families the switch sets.
+//
+// condrop: Atlas's condrop analyzer owns the constraint-deletion family, and
+// it is a distinct analyzer from data_depend despite CE's decode error naming
+// datadepend's option struct. Measured on the pinned community binary against
+// a migration that drops a foreign key:
+//
+//	no lint block          -> exit 0, "1 version with warnings"
+//	condrop     error=true -> exit 1, "1 version with errors"
+//	destructive error=true -> exit 0, "1 version with warnings"
+//
+// so condrop, not destructive, escalates the diagnostic CE reports as CD101.
+// Ptah's CD family (CD101 foreign key, CD102 check, CD103 primary key) is the
+// same family. DS105 rides with it because it is Ptah's untyped fallback for
+// the ANSI `DROP CONSTRAINT <name>` form whose type the SQL does not reveal --
+// and that is precisely the statement CE attributed to CD101 in the
+// measurement above, so leaving it out would let `condrop { error = false }`
+// be accepted and change nothing for the most common spelling.
+var lintAnalyzerCodes = map[string][]string{
+	"concurrent_index": {"PG101", "PG103"},
+	"condrop":          {"CD", "DS105"},
+	"data_depend":      {"DD"},
+	"destructive":      {"DS"},
+	"nestedtx":         {"TX201"},
+	"incompatible":     {"BC"},
+}
+
 func (p atlasParser) parseLintPolicyBlocks(block *hclsyntax.Block, cfg *Config) error {
 	seen := make(map[string]struct{})
 	for _, nested := range block.Body.Blocks {
+		if codes, ok := lintAnalyzerCodes[nested.Type]; ok {
+			if err := p.parseSingleLintBlock(nested, seen, func() error {
+				return p.parseLintAnalyzer(nested, cfg, codes...)
+			}); err != nil {
+				return err
+			}
+			continue
+		}
 		switch nested.Type {
-		case "concurrent_index":
-			if err := p.parseSingleLintBlock(nested, seen, func() error {
-				return p.parseLintAnalyzer(nested, cfg, "PG101", "PG103")
-			}); err != nil {
-				return err
-			}
-		case "condrop":
-			// Atlas's condrop analyzer owns the constraint-deletion family, and
-			// it is a distinct analyzer from data_depend despite CE's decode
-			// error naming datadepend's option struct. Measured on the pinned
-			// community binary against a migration that drops a foreign key:
-			//
-			//	no lint block          -> exit 0, "1 version with warnings"
-			//	condrop     error=true -> exit 1, "1 version with errors"
-			//	destructive error=true -> exit 0, "1 version with warnings"
-			//
-			// so condrop, not destructive, escalates the diagnostic CE reports
-			// as CD101. Ptah's CD family (CD101 foreign key, CD102 check, CD103
-			// primary key) is the same family. DS105 rides with it because it is
-			// Ptah's untyped fallback for the ANSI `DROP CONSTRAINT <name>` form
-			// whose type the SQL does not reveal -- and that is precisely the
-			// statement CE attributed to CD101 in the measurement above, so
-			// leaving it out would let `condrop { error = false }` be accepted
-			// and change nothing for the most common spelling.
-			if err := p.parseSingleLintBlock(nested, seen, func() error {
-				return p.parseLintAnalyzer(nested, cfg, "CD", "DS105")
-			}); err != nil {
-				return err
-			}
-		case "data_depend":
-			if err := p.parseSingleLintBlock(nested, seen, func() error {
-				return p.parseLintAnalyzer(nested, cfg, "DD")
-			}); err != nil {
-				return err
-			}
-		case "destructive":
-			if err := p.parseSingleLintBlock(nested, seen, func() error {
-				return p.parseLintAnalyzer(nested, cfg, "DS")
-			}); err != nil {
-				return err
-			}
 		case "git":
 			if err := p.parseSingleLintBlock(nested, seen, func() error {
 				return p.parseLintGit(nested, cfg)
 			}); err != nil {
 				return err
 			}
-		case "nestedtx":
-			if err := p.parseSingleLintBlock(nested, seen, func() error {
-				return p.parseLintAnalyzer(nested, cfg, "TX201")
-			}); err != nil {
-				return err
-			}
-		case "incompatible":
-			if err := p.parseSingleLintBlock(nested, seen, func() error {
-				return p.parseLintAnalyzer(nested, cfg, "BC")
-			}); err != nil {
-				return err
-			}
 		case "rule":
 			if err := p.parseLintRuleOrTolerate(nested, cfg); err != nil {
+				return err
+			}
+		case "naming":
+			if err := p.parseSingleLintBlock(nested, seen, func() error {
+				return p.parseLintNaming(nested, cfg)
+			}); err != nil {
 				return err
 			}
 		default:
@@ -1626,6 +1615,115 @@ func (p atlasParser) parseLintGit(block *hclsyntax.Block, cfg *Config) error {
 		return unsupportedBlock(block.Body.Blocks[0])
 	}
 	return nil
+}
+
+// parseLintNaming reads `lint { naming { ... } }`: the Atlas naming
+// analyzer's block, with `match`, `message` and `error` at the top and one
+// optional block per kind of name, each carrying its own `match` and
+// `message`. The block is the project-file spelling of the `naming` section
+// of .ptah-lint.yaml, so it reaches the same six rules (stokaro/ptah#2942).
+func (p atlasParser) parseLintNaming(block *hclsyntax.Block, cfg *Config) error {
+	if len(block.Labels) > 0 {
+		return unsupportedBlock(block)
+	}
+	naming := &LintNamingConfig{}
+	for _, attrName := range sortedAttributeNames(block.Body.Attributes) {
+		attr := block.Body.Attributes[attrName]
+		switch attrName {
+		case "match":
+			value, err := p.stringAttr(attrName, attr)
+			if err != nil {
+				return err
+			}
+			naming.Match = value
+		case "message":
+			value, err := p.stringAttr(attrName, attr)
+			if err != nil {
+				return err
+			}
+			naming.Message = value
+		case "error":
+			value, err := p.boolAttr(attrName, attr)
+			if err != nil {
+				return err
+			}
+			naming.Error = value
+		default:
+			if err := p.tolerateUnknownAttr("lint.naming", attrName, attr); err != nil {
+				return err
+			}
+		}
+	}
+	seen := make(map[string]struct{})
+	for _, nested := range block.Body.Blocks {
+		target, ok := namingPatternTarget(naming, nested.Type)
+		if !ok {
+			if err := p.tolerateUnknownBlock("lint.naming", nested); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, dup := seen[nested.Type]; dup || len(nested.Labels) > 0 {
+			return unsupportedBlock(nested)
+		}
+		seen[nested.Type] = struct{}{}
+		pattern, err := p.parseLintNamingPattern(nested)
+		if err != nil {
+			return err
+		}
+		*target = pattern
+	}
+	cfg.Lint.Naming = naming
+	cfg.presence.mark(fieldLintNaming)
+	return nil
+}
+
+// namingPatternTarget maps a block name to the kind it configures.
+func namingPatternTarget(naming *LintNamingConfig, blockType string) (**LintNamingPattern, bool) {
+	switch blockType {
+	case "schema":
+		return &naming.Schema, true
+	case "table":
+		return &naming.Table, true
+	case "column":
+		return &naming.Column, true
+	case "index":
+		return &naming.Index, true
+	case "foreign_key":
+		return &naming.ForeignKey, true
+	case "check":
+		return &naming.Check, true
+	}
+	return nil, false
+}
+
+func (p atlasParser) parseLintNamingPattern(block *hclsyntax.Block) (*LintNamingPattern, error) {
+	pattern := &LintNamingPattern{}
+	for _, attrName := range sortedAttributeNames(block.Body.Attributes) {
+		attr := block.Body.Attributes[attrName]
+		switch attrName {
+		case "match":
+			value, err := p.stringAttr(attrName, attr)
+			if err != nil {
+				return nil, err
+			}
+			pattern.Match = value
+		case "message":
+			value, err := p.stringAttr(attrName, attr)
+			if err != nil {
+				return nil, err
+			}
+			pattern.Message = value
+		default:
+			if err := p.tolerateUnknownAttr("lint.naming."+block.Type, attrName, attr); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if len(block.Body.Blocks) > 0 {
+		return nil, unsupportedBlock(block.Body.Blocks[0])
+	}
+	return pattern, nil
 }
 
 // atlasNestedParser parses one known child of a container block.

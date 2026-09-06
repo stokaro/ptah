@@ -155,16 +155,16 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `LT` | Atlas | SQLite-specific hazards |
 | `MF` | Atlas | Atlas: changes that may fail. Ptah: migration file form |
 | `MY` | Atlas | MySQL and MariaDB-specific rebuild and blocking-DDL hazards |
-| `NM` | Atlas | naming conventions; Atlas documents these, Ptah emits none |
+| `NM` | Atlas | naming conventions, checked against the patterns a project configures |
 | `OW` | Atlas | ownership policy; Atlas documents these, Ptah emits none |
 | `PG` | Atlas | PostgreSQL-specific locking, rewrite, and transaction hazards |
-| `SA` | Atlas | static analysis; Atlas documents these, Ptah emits none |
+| `SA` | Atlas | static analysis of routine bodies a migration defines |
 | `SQL` | Ptah | the SQL linter could not read or model the statement |
 | `TX` | Atlas | transaction shape of a migration |
 
 ## Migration lint rules
 
-62 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
+69 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
 
 ### Every dialect
 
@@ -192,6 +192,13 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `MF102` | an index dropped and rebuilt as unique fails on the first duplicate and leaves the table without it | both | Atlas |
 | `MF102P` | the migration carries no executable statements | both | Ptah |
 | `MF103` | the file name does not follow the migration file-name convention | both | Ptah |
+| `NM101` | a schema this migration creates or renames to violates the configured naming convention | both | Atlas |
+| `NM102` | a table this migration creates or renames to violates the configured naming convention | both | Atlas |
+| `NM103` | a column this migration declares, adds, or renames to violates the configured naming convention | both | Atlas |
+| `NM104` | an index or unique key this migration names violates the configured naming convention | both | Atlas |
+| `NM105` | a foreign key this migration names violates the configured naming convention | both | Atlas |
+| `NM106` | a check constraint this migration names violates the configured naming convention | both | Atlas |
+| `SA101` | a routine builds and runs a statement from a value it does not quote | both | Atlas |
 
 ### mysql, mariadb
 
@@ -269,7 +276,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Default severities
 
-16 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `SQL001`, `SQL002`. The other 53 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
+16 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `SQL001`, `SQL002`. The other 60 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
 
 ## What ptah-compat prints
 
@@ -283,7 +290,7 @@ Every migration lint finding reports under an analyzer name and a code on the co
 
 ## Atlas analyzer checks
 
-Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/analyzers) carries, and what Ptah does about it: 48 covered, 1 partial, 7 not implemented, 2 waived, of 58. A code Atlas marks as an Atlas Pro feature is marked here too, and the ones Ptah implements are reported through both surfaces except `BC101` and `BC102`, whose Ptah rule the compatibility surface does not report.
+Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/analyzers) carries, and what Ptah does about it: 55 covered, 1 partial, 0 not implemented, 2 waived, of 58. A code Atlas marks as an Atlas Pro feature is marked here too, and the ones Ptah implements are reported through both surfaces except `BC101` and `BC102`, whose Ptah rule the compatibility surface does not report.
 
 <div class="ptah-wide-table">
 
@@ -338,13 +345,13 @@ Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/anal
 | `CD103` | a primary-key constraint was dropped | yes | `CD103` | covered |
 | `TX101` | statements cannot run in a single transaction | yes | `TX101` | covered |
 | `TX201` | a nested transaction was detected | yes | `TX201` | covered |
-| `NM101` | a schema name violates the naming convention | no | — | not implemented |
-| `NM102` | a table name violates the naming convention | no | — | not implemented |
-| `NM103` | a column name violates the naming convention | no | — | not implemented |
-| `NM104` | an index name violates the naming convention | no | — | not implemented |
-| `NM105` | a foreign-key constraint name violates the naming convention | no | — | not implemented |
-| `NM106` | a check constraint name violates the naming convention | no | — | not implemented |
-| `SA101` | a possible SQL injection vulnerability was detected | no | — | not implemented |
+| `NM101` | a schema name violates the naming convention | no | `NM101` | covered — needs a configured naming convention |
+| `NM102` | a table name violates the naming convention | no | `NM102` | covered — needs a configured naming convention |
+| `NM103` | a column name violates the naming convention | no | `NM103` | covered — needs a configured naming convention |
+| `NM104` | an index name violates the naming convention | no | `NM104` | covered — needs a configured naming convention; a unique or primary key constraint counts as an index, as it does for Atlas |
+| `NM105` | a foreign-key constraint name violates the naming convention | no | `NM105` | covered — needs a configured naming convention |
+| `NM106` | a check constraint name violates the naming convention | no | `NM106` | covered — needs a configured naming convention |
+| `SA101` | a possible SQL injection vulnerability was detected | no | `SA101` | covered — reports a routine body that builds its statement from an unquoted value; a literal text, quote_ident/quote_literal, format's %I and %L, QUOTENAME, and parameters are the safe forms it leaves alone |
 | `OW101` | a user is not authorized to modify a resource | yes | — | waived — binds to a schema-ownership annotation set and an account model Ptah does not have |
 | `OW102` | a user is explicitly denied access to a resource | yes | — | waived — same reason as OW101 |
 
