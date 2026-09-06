@@ -110,7 +110,7 @@ ALTER TABLE accounts ALTER COLUMN note TYPE varchar(10);
 // MF103 is a file-form rule with no statement to sit under, so the fixture uses
 // the whole-file header form, which is the only directive that reaches it.
 // Reverting the change leaves MF103 in the suppressed row, printing
-// []string{"MF101", "MF103"} instead of []string{"MF101"}.
+// []string{"MF101P", "MF103"} instead of []string{"MF101P"}.
 func TestAnalyzeFS_AtlasMF103SelectorReachesBothProducers(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -120,12 +120,12 @@ func TestAnalyzeFS_AtlasMF103SelectorReachesBothProducers(t *testing.T) {
 		{
 			name:   "no directive reports both producers",
 			header: "",
-			want:   []string{"MF101", "MF103", "DD101"},
+			want:   []string{"MF101P", "MF103", "DD101"},
 		},
 		{
 			name:   "the printed code silences both",
 			header: "-- atlas:nolint MF103\n\n",
-			want:   []string{"MF101"},
+			want:   []string{"MF101P"},
 		},
 	}
 

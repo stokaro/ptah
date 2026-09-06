@@ -21,7 +21,7 @@ import (
 //
 // It is an Atlas-layout migration name because that is the layout whose files
 // carry no rollback half and no NNNNNNNNNN_description.(up|down).sql spelling:
-// the linter treats such a file as paired and well named, so MF101 and MF103
+// the linter treats such a file as paired and well named, so MF101P and MF103
 // stay silent rather than reporting a plan for not being a migration
 // directory. The version digits are inert -- nothing orders one plan against
 // another -- and they are fixed so two analyses of one plan produce identical

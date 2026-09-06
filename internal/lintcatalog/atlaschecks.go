@@ -56,8 +56,24 @@ var atlasChecks = []AtlasCheck{
 	{Code: "DS102", Meaning: "table was dropped", PtahRules: []string{"DS101"}, Status: StatusCovered},
 	{Code: "DS103", Meaning: "non-virtual column was dropped", PtahRules: []string{"DS102"}, Status: StatusCovered},
 
-	{Code: "MF101", Meaning: "adding a unique index to an existing column", Status: StatusAbsent},
-	{Code: "MF102", Meaning: "modifying a non-unique index to unique", Status: StatusAbsent},
+	// Both rows below report the structural risk: the dev database a run
+	// replays the directory on holds the schema and no rows, so a proven
+	// violation is not claimed, and the message carries the GROUP BY that
+	// proves or clears it. A table this migration creates, and a column it
+	// adds without a DEFAULT, meet no duplicates and are not reported
+	// (migration/lint/unique.go, stokaro/ptah#2942). The identifiers were
+	// Ptah's own missing-down and empty-file rules before the convention;
+	// those are MF101P and MF102P now, so the Atlas checks keep their codes.
+	{
+		Code: "MF101", Meaning: "adding a unique index to an existing column",
+		PtahRules: []string{"MF101"}, Status: StatusCovered,
+		Note: "structural: the build fails on the first duplicate; the message names the query that settles it and what a failed CONCURRENTLY build leaves behind",
+	},
+	{
+		Code: "MF102", Meaning: "modifying a non-unique index to unique",
+		PtahRules: []string{"MF102"}, Status: StatusCovered,
+		Note: "an index dropped earlier in the file and rebuilt as unique under the same name; the message adds that the failure leaves the table without the index it had",
+	},
 	{Code: "MF103", Meaning: "adding a non-nullable column to an existing table", PtahRules: []string{"DD101"}, Status: StatusCovered},
 	{
 		Code: "MF104", Meaning: "modifying a nullable column to non-nullable might fail",

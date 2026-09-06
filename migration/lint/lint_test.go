@@ -55,6 +55,7 @@ ALTER TYPE mood ADD VALUE 'ambivalent';
 		"BC101", // RENAME COLUMN
 		"DS103", // MODIFY COLUMN (lossy)
 		"MY101", // MODIFY COLUMN (lock-heavy)
+		"MF101", // CREATE UNIQUE INDEX over existing rows
 		"PG101", // CREATE UNIQUE INDEX without CONCURRENTLY
 		"PG102", // ALTER TYPE ADD VALUE
 	})
@@ -184,15 +185,15 @@ func TestLintFS_MigrationFormRules(t *testing.T) {
 	c := qt.New(t)
 
 	fsys := fixture(map[string]string{
-		"0000000001_orphan.up.sql":  "CREATE TABLE t (id INT);\n",         // MF101: no down
-		"0000000002_empty.up.sql":   "-- only comments; nothing to run\n", // MF102
+		"0000000001_orphan.up.sql":  "CREATE TABLE t (id INT);\n",         // MF101P: no down
+		"0000000002_empty.up.sql":   "-- only comments; nothing to run\n", // MF102P
 		"0000000002_empty.down.sql": "-- nothing\n",
 		"misnamed.sql":              "CREATE TABLE stray (id INT);\n", // MF103
 	})
 
 	findings, err := lint.LintFS(fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MF101", "MF102", "MF103"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MF101P", "MF102P", "MF103"})
 	for _, f := range findings {
 		c.Assert(f.Line, qt.Equals, 0, qt.Commentf("file-level findings carry no line: %v", f))
 	}
@@ -202,7 +203,7 @@ func TestLintFS_PairsByVersionLikeMigrator(t *testing.T) {
 	c := qt.New(t)
 
 	// The migrator pairs an up and a down by their shared version prefix,
-	// regardless of description, so lint must not raise MF101 (missing down)
+	// regardless of description, so lint must not raise MF101P (missing down)
 	// when the counterpart down exists for the same version under a
 	// different description.
 	fsys := fixture(map[string]string{
@@ -213,7 +214,7 @@ func TestLintFS_PairsByVersionLikeMigrator(t *testing.T) {
 	findings, err := lint.LintFS(fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
 	c.Assert(findings, qt.HasLen, 0,
-		qt.Commentf("version 1 has both an up and a down; no MF101 expected; got %v", findings))
+		qt.Commentf("version 1 has both an up and a down; no MF101P expected; got %v", findings))
 }
 
 func TestLintFS_AtlasImportedFlywayRepeatableIsContentLinted(t *testing.T) {
@@ -346,7 +347,7 @@ func TestLintFS_CommentsAndLiteralsDoNotHideOrFakeHazards(t *testing.T) {
 		{"comment inside alter clause", "ALTER TABLE users DROP/*hidden*/COLUMN email;", []string{"DS102"}},
 		{"hazard text inside a string literal", "ALTER TABLE t ADD COLUMN note TEXT DEFAULT 'use DROP COLUMN x';", nil},
 		{"concurrently in a literal is no guard", "CREATE INDEX i ON t (a) WHERE b = 'CONCURRENTLY';", []string{"PG101"}},
-		{"create index concurrently requires non-transactional migration", "CREATE UNIQUE INDEX CONCURRENTLY uq ON t (a);", []string{"PG103"}},
+		{"create index concurrently requires non-transactional migration", "CREATE UNIQUE INDEX CONCURRENTLY uq ON t (a);", []string{"MF101", "PG103"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -370,7 +371,7 @@ func TestLintFS_AtlasAnalyzerCatalogHazards(t *testing.T) {
 	}{
 		{"drop schema", "postgres", "DROP SCHEMA s;", []string{"DS107"}},
 		{"add non-nullable column without default", "postgres", "ALTER TABLE t ADD COLUMN c INT NOT NULL;", []string{"DD101"}},
-		{"add unique constraint", "postgres", "ALTER TABLE t ADD CONSTRAINT u UNIQUE (email);", []string{"PG105"}},
+		{"add unique constraint", "postgres", "ALTER TABLE t ADD CONSTRAINT u UNIQUE (email);", []string{"MF101", "PG105"}},
 		{"drop index without concurrently", "postgres", "DROP INDEX idx;", []string{"PG106"}},
 		// The discriminating partner for the row above: PG106 must stay silent
 		// on the spelling Ptah now generates for a concurrent-index rollback.

@@ -348,6 +348,20 @@ func TestAtlasRowsNameTheRulesThatFire(t *testing.T) {
 			down:      "ALTER TABLE orders ADD PRIMARY KEY (id);\n",
 		},
 		{
+			name:      "MF101, a unique index over an existing table",
+			atlasCode: "MF101",
+			dialect:   "mysql",
+			up:        "CREATE UNIQUE INDEX orders_email ON orders (email);\n",
+			down:      "DROP INDEX orders_email ON orders;\n",
+		},
+		{
+			name:      "MF102, an index dropped and rebuilt as unique",
+			atlasCode: "MF102",
+			dialect:   "mysql",
+			up:        "ALTER TABLE orders DROP INDEX orders_email, ADD UNIQUE INDEX orders_email (email);\n",
+			down:      "ALTER TABLE orders DROP INDEX orders_email, ADD INDEX orders_email (email);\n",
+		},
+		{
 			name:      "PG301, a column type change PostgreSQL rewrites for",
 			atlasCode: "PG301",
 			dialect:   "postgres",
