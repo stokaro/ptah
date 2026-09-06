@@ -42,10 +42,12 @@ func TestLintPlanEnabledCodesKeepsAnAliasedRuleRunning(t *testing.T) {
 		aliasedRule: "DS103",
 		wantRuns:    true,
 	}, {
-		name:        "mysql spelling enables its ptah rule on mysql",
+		// Every MY code is a Ptah rule of its own name, so the MySQL side of
+		// the family has no alias to expand; the code has to select its rule.
+		name:        "mysql spelling is its own ptah rule on mysql",
 		policyCode:  "MY133",
 		dialect:     "mysql",
-		aliasedRule: "CD103",
+		aliasedRule: "MY133",
 		wantRuns:    true,
 	}, {
 		// A PostgreSQL policy entry must not reach into a MySQL run.

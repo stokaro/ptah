@@ -338,6 +338,7 @@ func TestAtlasRowsNameTheRulesThatFire(t *testing.T) {
 			dialect:   "mysql",
 			up:        "ALTER TABLE orders MODIFY COLUMN total BIGINT NOT NULL;\n",
 			down:      "ALTER TABLE orders MODIFY COLUMN total INT NOT NULL;\n",
+			baseline:  []lint.BaselineColumn{{Version: 1, Table: "orders", Name: "total", ColumnType: "int", TableCharset: "utf8mb4"}},
 		},
 		{
 			name:      "MY133, a primary key dropped without a replacement",
@@ -352,6 +353,9 @@ func TestAtlasRowsNameTheRulesThatFire(t *testing.T) {
 			dialect:   "mysql",
 			up:        "ALTER TABLE orders CONVERT TO CHARACTER SET utf8mb4;\n",
 			down:      "ALTER TABLE orders CONVERT TO CHARACTER SET latin1;\n",
+			baseline: []lint.BaselineColumn{{
+				Version: 1, Table: "orders", Name: "note", ColumnType: "varchar(10)", Charset: "latin1", TableCharset: "latin1",
+			}},
 		},
 	}
 

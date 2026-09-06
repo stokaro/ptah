@@ -1,6 +1,7 @@
 package lintcatalog_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -61,8 +62,11 @@ func checksNeedingAnAlias() []lintcatalog.AtlasCheck {
 	for _, check := range lintcatalog.AtlasChecks() {
 		switch {
 		case len(check.PtahRules) == 0:
-		case len(check.PtahRules) == 1 && check.PtahRules[0] == check.Code:
-			// The code IS the Ptah rule, so there is nothing to alias.
+		case slices.Contains(check.PtahRules, check.Code):
+			// The code IS a Ptah rule, so a config naming it selects that
+			// rule; any other rule on the row is a second hazard the same
+			// statement carries (CD103 beside MY133), not a spelling of
+			// this one.
 		default:
 			if _, collides := collisions[check.Code]; !collides {
 				needing = append(needing, check)

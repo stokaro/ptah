@@ -284,7 +284,9 @@ func TestLintFS_OptionalKeywordForms(t *testing.T) {
 		// MySQL-family forms get their per-type CD codes without double-flagging.
 		{"drop named constraint", "ALTER TABLE users DROP CONSTRAINT uq_users_email;", []string{"DS105"}},
 		{"drop foreign key", "ALTER TABLE orders DROP FOREIGN KEY fk_orders_user;", []string{"CD101"}},
-		{"drop primary key", "ALTER TABLE users DROP PRIMARY KEY;", []string{"CD103"}},
+		// Without a dialect every family runs, so the MySQL copy rule reports
+		// the drop beside the lost guarantee.
+		{"drop primary key", "ALTER TABLE users DROP PRIMARY KEY;", []string{"CD103", "MY133"}},
 		{"drop index", "ALTER TABLE users DROP INDEX idx_users_email;", nil},
 		{"drop check", "ALTER TABLE users DROP CHECK chk_age;", []string{"CD102"}},
 		{"drop foreign key schema-qualified", "ALTER TABLE shop.orders DROP FOREIGN KEY fk_orders_user;", []string{"CD101"}},
@@ -1058,20 +1060,22 @@ ALTER TABLE users DROP CONSTRAINT uq_email;
 	})
 
 	// Each typed drop gets its own CD code; the untyped ANSI DROP CONSTRAINT
-	// stays DS105. No statement is flagged by both a CD code and DS105.
+	// stays DS105. No statement is flagged by both a CD code and DS105. The
+	// primary key drop is also the table copy MY133 names, a different
+	// hazard from the guarantee CD103 names, so both report it.
 	findings, err := lint.LintFS(fsys, lint.Options{})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"CD101", "CD102", "CD103", "DS105"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"CD101", "CD102", "CD103", "MY133", "DS105"})
 
 	// Disabling the CD family silences the typed codes but keeps the DS105 fallback.
 	findings, err = lint.LintFS(fsys, lint.Options{Disabled: []string{"CD"}})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"DS105"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"MY133", "DS105"})
 
 	// Disabling one CD code silences only that constraint type.
 	findings, err = lint.LintFS(fsys, lint.Options{Disabled: []string{"CD101"}})
 	c.Assert(err, qt.IsNil)
-	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"CD102", "CD103", "DS105"})
+	c.Assert(rulesOf(findings), qt.DeepEquals, []string{"CD102", "CD103", "MY133", "DS105"})
 
 	// A per-code RuleConfig.Severity override applies to a CD code.
 	fkOnly := fixture(map[string]string{

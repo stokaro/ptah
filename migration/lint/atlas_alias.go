@@ -39,17 +39,14 @@ type atlasAlias struct {
 var atlasCodeAliases = map[string]atlasAlias{
 	"BC102": {rules: []string{"BC101"}},
 	"MF104": {rules: []string{"PG303", "LT101"}},
-	// MY110 through MY123 are not here: each is a Ptah rule of the same name
-	// now (members.go), so the code needs no alias to reach it.
-	"MY130": {dialects: mysqlFamily, rules: []string{"MY101", "DS103"}},
-	"MY133": {dialects: mysqlFamily, rules: []string{"CD103"}},
-	"MY136": {dialects: mysqlFamily, rules: []string{"MY101"}},
+	// No MY code is here: MY110 through MY123 (members.go) and MY130, MY133
+	// and MY136 (mysqlcost.go) are each a Ptah rule of the same name, so the
+	// code needs no alias to reach it.
 	"PG301": {dialects: []string{"postgres"}, rules: []string{"DS103"}},
 	"PG304": {dialects: []string{"postgres"}, rules: []string{"PG104"}},
 }
 
-// mysqlFamily is the pair every MY-coded alias is defined for; Ptah's own MySQL
-// rules list the same two.
+// mysqlFamily is the pair Ptah's MySQL rules are defined for.
 var mysqlFamily = []string{"mysql", "mariadb"}
 
 // atlasCodesPtahAlsoUses are the Atlas codes that are ALSO Ptah rule codes,

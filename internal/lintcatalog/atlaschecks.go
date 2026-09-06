@@ -96,24 +96,32 @@ var atlasChecks = []AtlasCheck{
 	{Code: "MY122", Meaning: "inserting set values other than at the end requires a table copy", PtahRules: []string{"MY122"}, Status: StatusCovered},
 	{Code: "MY123", Meaning: "exceeding a set-size boundary changes storage size and requires a table copy", PtahRules: []string{"MY123"}, Status: StatusCovered},
 
+	// The three copies below were measured on MySQL 8.4 and MariaDB 11.8.9
+	// with ALGORITHM=INSTANT, INPLACE and LOCK=NONE (migration/lint/mysqlcost.go).
+	// MY130 and MY136 compare the column's current type and character set,
+	// read from the dev database, with what the clause assigns, so a VARCHAR
+	// widened within one length-prefix class or a utf8mb3 column converted to
+	// utf8mb4 is not reported as the copy it is not; without that state the
+	// statement is still reported by DS103 and MY101, and the run names these
+	// rules as unmet (stokaro/ptah#2942).
 	{
 		Code: "MY130", Meaning: "changing a column type requires a table copy", Pro: true,
-		PtahRules: []string{"MY101", "DS103"}, Status: StatusPartial,
-		Note: "MODIFY and CHANGE are reported as lock-heavy DDL; the table-copy cost has no code",
+		PtahRules: []string{"MY130"}, Status: StatusCovered,
+		Note: "fires only for a change InnoDB refuses to apply in place, with the old and new type and the boundary or character set that decides it",
 	},
 	{Code: "MY131", Meaning: "adding a foreign key blocks DML", Pro: true, PtahRules: []string{"MY131"}, Status: StatusCovered},
 	{Code: "MY132", Meaning: "adding a primary key requires a table rebuild", Pro: true, PtahRules: []string{"MY132"}, Status: StatusCovered},
 	{
 		Code: "MY133", Meaning: "dropping a primary key without adding one requires a table copy", Pro: true,
-		PtahRules: []string{"CD103"}, Status: StatusPartial,
-		Note: "the drop is reported; the table-copy cost has no code",
+		PtahRules: []string{"MY133", "CD103"}, Status: StatusCovered,
+		Note: "MY133 names the copy and CD103 the lost uniqueness guarantee; the message names the MariaDB case where another NOT NULL UNIQUE key keeps the change in place",
 	},
 	{Code: "MY134", Meaning: "adding a FULLTEXT index blocks DML", Pro: true, PtahRules: []string{"MY134"}, Status: StatusCovered},
 	{Code: "MY135", Meaning: "adding a SPATIAL index blocks DML", Pro: true, PtahRules: []string{"MY135"}, Status: StatusCovered},
 	{
 		Code: "MY136", Meaning: "changing the table character set requires a table rebuild", Pro: true,
-		PtahRules: []string{"MY101"}, Status: StatusPartial,
-		Note: "only the CONVERT TO CHARACTER SET and CONVERT TO CHARSET spellings are scanned",
+		PtahRules: []string{"MY136"}, Status: StatusCovered,
+		Note: "names the columns whose re-encoding forces the copy; a conversion that touches no column, or only utf8mb3 to utf8mb4 on short VARCHAR and CHAR columns, is not reported",
 	},
 
 	{Code: "LT101", Meaning: "modifying a nullable column to non-nullable without a DEFAULT", PtahRules: []string{"LT101"}, Status: StatusCovered},
