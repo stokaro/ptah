@@ -188,7 +188,7 @@ func TestRunLint_CuratedFixtureProducesExpectedRuleHits(t *testing.T) {
 	for _, f := range report.Findings {
 		rules[f.Rule]++
 	}
-	for _, want := range []string{"DS101", "DS102", "DS103", "BC101", "MF101", "MF102", "MF103", "PG101", "PG102", "MY101"} {
+	for _, want := range []string{"DS101", "DS102", "DS103", "BC101", "MF101P", "MF102P", "MF103", "PG101", "PG102", "MY101"} {
 		c.Assert(rules[want] >= 1, qt.IsTrue,
 			qt.Commentf("expected at least one %s hit; got rule tally %v", want, rules))
 	}
@@ -868,9 +868,9 @@ func TestRunLint_SeverityDecidesTheExitCode(t *testing.T) {
 			// a caller piping the report somewhere. The row still reads the
 			// report either way: "reported and not gated" needs both halves.
 			c.Assert(json.Unmarshal([]byte(reportStream(stdout, stderr)), &report), qt.IsNil)
-			// The fixture also trips MF101 (a migration with no down file), so
+			// The fixture also trips MF101P (a migration with no down file), so
 			// the DS101 finding is selected rather than assumed to be the only
-			// one. Adding a down file would silence MF101 and take DS101's
+			// one. Adding a down file would silence MF101P and take DS101's
 			// second statement with it.
 			dropped := findingForRule(c, report.Findings, "DS101")
 			c.Assert(dropped.Severity, qt.Equals, test.severity)

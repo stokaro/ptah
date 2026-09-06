@@ -229,6 +229,9 @@ type File struct {
 	// dialect is the target the run was started with, for the rules whose
 	// measured answer differs between the two engines of one family.
 	dialect string
+	// registered is the set of rule codes this run compares selectors
+	// against, so a selector that names one of them selects it alone.
+	registered map[string]struct{}
 	// baseline is the schema state this file's version starts from, when the
 	// caller supplied one. Rules read it for facts the statement cannot carry.
 	baseline baselineColumns
@@ -432,6 +435,7 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 	scope := newSchemaScope(opts.SchemaScope)
 	baseline := newBaselineIndex(normalizeBaselineColumns(opts.Baseline))
 	dependents := newBaselineDependentIndex(opts.BaselineDependents)
+	registered := registeredCodes(rules)
 	files := make([]File, 0, len(names))
 	for _, name := range names {
 		file, err := prepareFile(
@@ -450,6 +454,7 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 			scope,
 			baseline,
 			dependents,
+			registered,
 		)
 		if err != nil {
 			return Analysis{}, err
@@ -596,6 +601,7 @@ func prepareFile(
 	scope schemaScope,
 	baseline map[int64]baselineColumns,
 	dependents map[int64]baselineDependents,
+	registered map[string]struct{},
 ) (File, error) {
 	raw := sources[name]
 	base := path.Base(name)
@@ -631,6 +637,7 @@ func prepareFile(
 		WellFormedName: strictNameRe.MatchString(base) || atlasFormat,
 		compatibility:  compatibility,
 		dialect:        dialect,
+		registered:     registered,
 		baseline:       baseline[version],
 		dependents:     dependents[version],
 	}
@@ -673,7 +680,7 @@ func prepareFile(
 		}
 		file.SQL = up.SQL
 		file.NoTransaction = up.TxMode == migrationfile.FileTxModeNone
-		for index, rawStmt := range splitStatementsWithLines(up.SQL, mode, compatibility) {
+		for index, rawStmt := range splitStatementsWithLines(up.SQL, mode, compatibility, registered) {
 			file.Statements = append(file.Statements, Statement{
 				Index:           index,
 				Span:            SourceSpan{Start: rawStmt.start, End: rawStmt.end},

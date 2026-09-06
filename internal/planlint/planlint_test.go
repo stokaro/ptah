@@ -94,7 +94,7 @@ func TestAnalyzeIgnoresMigrationDirectoryForm(t *testing.T) {
 		name string
 		rule string
 	}{
-		{name: "no missing down migration", rule: "MF101"},
+		{name: "no missing down migration", rule: "MF101P"},
 		{name: "no file name complaint", rule: "MF103"},
 	}
 

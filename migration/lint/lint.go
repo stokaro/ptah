@@ -340,7 +340,7 @@ func collectFindings(file *File, opts Options, rules []Rule) []Finding {
 		if !ruleRunsOnFile(rule, file, opts) {
 			continue
 		}
-		severity := ruleSeverity(rule, opts.RuleConfigs)
+		severity := ruleSeverity(rule, opts.RuleConfigs, file.registered)
 		if rule.CheckFile != nil {
 			for _, finding := range rule.CheckFile(file) {
 				if fileFindingSuppressed(file, finding) {
@@ -387,8 +387,8 @@ func rulesForOptions(opts Options) ([]Rule, error) {
 	return append(rules, declared...), nil
 }
 
-func ruleSeverity(rule Rule, configs map[string]RuleConfig) Severity {
-	config, ok := ruleConfigForCode(rule.Code, configs)
+func ruleSeverity(rule Rule, configs map[string]RuleConfig, registered map[string]struct{}) Severity {
+	config, ok := ruleConfigForCode(rule.Code, configs, registered)
 	if !ok || config.Severity == "" {
 		return rule.Severity
 	}
@@ -396,7 +396,7 @@ func ruleSeverity(rule Rule, configs map[string]RuleConfig) Severity {
 }
 
 func ruleExcludedForFile(code string, file *File, configs map[string]RuleConfig) bool {
-	config, ok := ruleConfigForCode(code, configs)
+	config, ok := ruleConfigForCode(code, configs, file.registered)
 	if !ok {
 		return false
 	}
@@ -408,7 +408,7 @@ func ruleExcludedForFile(code string, file *File, configs map[string]RuleConfig)
 	return false
 }
 
-func ruleConfigForCode(code string, configs map[string]RuleConfig) (RuleConfig, bool) {
+func ruleConfigForCode(code string, configs map[string]RuleConfig, registered map[string]struct{}) (RuleConfig, bool) {
 	if len(configs) == 0 {
 		return RuleConfig{}, false
 	}
@@ -423,10 +423,12 @@ func ruleConfigForCode(code string, configs map[string]RuleConfig) (RuleConfig, 
 			return config, true
 		}
 	}
+	// A prefix key governs the codes it selects; a key that is itself a
+	// registered code governed that code alone above and reaches no other.
 	bestPrefix := ""
 	var best RuleConfig
 	for prefix, config := range configs {
-		if strings.HasPrefix(code, prefix) && len(prefix) > len(bestPrefix) {
+		if selectorSelects(prefix, code, registered) && len(prefix) > len(bestPrefix) {
 			bestPrefix = prefix
 			best = config
 		}
@@ -530,15 +532,58 @@ func matchGlobSegments(pattern, value []string) bool {
 	return matchGlobSegments(pattern[1:], value[1:])
 }
 
-// ruleDisabled reports whether code matches any disabled entry — exact code
-// or family prefix ("DS" disables every DS rule).
+// SelectorSelects reports whether a rule selector, as written in
+// `disabled-rules`, `--disable`, a `rules:` key or a `ptah:nolint`
+// directive, selects the rule with the given code.
+//
+// A selector that is itself the code of a registered rule selects that rule
+// alone. Any other selector is a prefix and selects every rule whose code
+// starts with it, which is how a family (`DS`) or a range (`PG3`) is named.
+// The first clause is what keeps a code from reaching its neighbors: MF101 is
+// the Atlas unique-index check and MF101P the missing-down rule, and a prefix
+// match would let `MF101` silence both with no spelling left that reaches
+// the check alone (stokaro/ptah#2942).
+//
+// The registered set is the built-in registry plus every rule added through
+// [Register]; a run's own [Options.ExtraRules] and declared rules are counted
+// by the analysis itself, which compares against the rules it runs.
+func SelectorSelects(selector, code string) bool {
+	return selectorSelects(selector, code, registeredCodes(Rules()))
+}
+
+func selectorSelects(selector, code string, registered map[string]struct{}) bool {
+	selector = strings.TrimSpace(selector)
+	if selector == "" {
+		return false
+	}
+	if selector == code {
+		return true
+	}
+	if _, exact := registered[selector]; exact {
+		return false
+	}
+	return strings.HasPrefix(code, selector)
+}
+
+// registeredCodes is the set a selector is compared against to tell a code
+// from a prefix.
+func registeredCodes(rules []Rule) map[string]struct{} {
+	codes := make(map[string]struct{}, len(rules))
+	for _, rule := range rules {
+		codes[rule.Code] = struct{}{}
+	}
+	return codes
+}
+
+// ruleDisabled reports whether code matches any disabled entry, by the
+// [SelectorSelects] rule: an exact code, or a prefix that is not itself a
+// code ("DS" disables every DS rule).
 //
 // dialect scopes the Atlas alias expansion: a PostgreSQL Atlas code must not
 // silence a generic Ptah rule while linting MySQL (stokaro/ptah#1631).
-func ruleDisabled(code string, disabled []string, dialect string) bool {
+func ruleDisabled(code string, disabled []string, dialect string, registered map[string]struct{}) bool {
 	for _, entry := range expandAtlasCodeSelectorsForDialect(disabled, dialect) {
-		entry = strings.TrimSpace(entry)
-		if entry != "" && strings.HasPrefix(code, entry) {
+		if selectorSelects(entry, code, registered) {
 			return true
 		}
 	}
@@ -586,6 +631,7 @@ func splitStatementsWithLines(
 	raw string,
 	mode scanMode,
 	compatibility CompatibilityProfile,
+	registered map[string]struct{},
 ) []rawStatement {
 	var statements []rawStatement
 	start := -1
@@ -646,7 +692,7 @@ func splitStatementsWithLines(
 			if start < 0 && tok.line != lastStatementEndLine {
 				pendingSuppressions = append(
 					pendingSuppressions,
-					parseNoLintDirective(tok.text, compatibility)...,
+					parseNoLintDirective(tok.text, compatibility, registered)...,
 				)
 			}
 		default:
@@ -674,12 +720,13 @@ func splitStatementsWithLines(
 func parseNoLintDirective(
 	comment string,
 	compatibility CompatibilityProfile,
+	registered map[string]struct{},
 ) []atlaslint.Target {
 	trimmed := strings.TrimSpace(comment)
 	if !strings.HasPrefix(trimmed, "--") && !strings.HasPrefix(trimmed, "#") {
 		return nil
 	}
-	if rules, ok := parseNoLintMarker(comment, "ptah:nolint", nativeNoLintTargets); ok {
+	if rules, ok := parseNoLintMarker(comment, "ptah:nolint", nativeNoLintTargets(registered)); ok {
 		return rules
 	}
 	rules, _ := parseNoLintMarker(comment, "atlas:nolint", atlasNoLintTargets(compatibility))
@@ -783,11 +830,19 @@ func parseNoLintRules(rest string, targets func(string) []atlaslint.Target) []at
 	return rules
 }
 
-// nativeNoLintTargets resolves a selector against the native code namespace,
-// where a code prefix names its family: `ptah:nolint DS` silences every
-// data-safety rule and `ptah:nolint DS102` silences one.
-func nativeNoLintTargets(entry string) []atlaslint.Target {
-	return []atlaslint.Target{atlaslint.FamilyTarget(entry)}
+// nativeNoLintTargets resolves a selector against the native code namespace
+// by the [SelectorSelects] rule, judged against the codes this run registers
+// (declared rules included): `ptah:nolint DS102` silences that rule and no
+// other, `ptah:nolint MF101` leaves MF101P reported, and a selector that is
+// not a code names its family, so `ptah:nolint DS` silences every
+// data-safety rule.
+func nativeNoLintTargets(registered map[string]struct{}) func(string) []atlaslint.Target {
+	return func(entry string) []atlaslint.Target {
+		if _, exact := registered[entry]; exact {
+			return []atlaslint.Target{atlaslint.CodeTarget(entry)}
+		}
+		return []atlaslint.Target{atlaslint.FamilyTarget(entry)}
+	}
 }
 
 func isNoLintSeparator(r rune) bool {
@@ -861,7 +916,7 @@ func tokenizeSourceWords(sql string, mode scanMode) []string {
 // be the same set, or a run reads a dev database for a rule it then skips, or
 // skips a read for a rule it then runs (stokaro/ptah#1632).
 func ruleRunsOnFile(rule Rule, file *File, opts Options) bool {
-	return !ruleDisabled(rule.Code, opts.Disabled, opts.Dialect) &&
+	return !ruleDisabled(rule.Code, opts.Disabled, opts.Dialect, file.registered) &&
 		!fileSuppressesRule(file, rule.Code) &&
 		ruleAppliesToDialect(rule, opts.Dialect) &&
 		!ruleExcludedForFile(rule.Code, file, opts.RuleConfigs)

@@ -63,6 +63,20 @@ func TestLintPlanEnabledCodesKeepsAnAliasedRuleRunning(t *testing.T) {
 		dialect:     "postgres",
 		aliasedRule: "DS103",
 		wantRuns:    true,
+	}, {
+		// A code selects itself alone: the missing-down rule MF101P is not
+		// enabled by a policy naming the unique-index check MF101.
+		name:        "a code does not reach its P-suffixed neighbor",
+		policyCode:  "MF101",
+		dialect:     "postgres",
+		aliasedRule: "MF101P",
+		wantRuns:    false,
+	}, {
+		name:        "a family prefix still reaches every rule in it",
+		policyCode:  "MF",
+		dialect:     "postgres",
+		aliasedRule: "MF101P",
+		wantRuns:    true,
 	}}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {

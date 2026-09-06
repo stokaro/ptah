@@ -191,11 +191,19 @@ var migrationRuleMeta = map[string]ruleMeta{
 		Summary:   "adding a NOT NULL column without a default fails or blocks on a populated table",
 		AtlasCode: "MF103",
 	},
-	"MF101": {
+	"MF101P": {
 		Summary: "no matching .down.sql exists, so a failed deploy cannot be rolled back mechanically",
 	},
-	"MF102": {
+	"MF102P": {
 		Summary: "the migration carries no executable statements",
+	},
+	"MF101": {
+		Summary:   "a unique index built over existing rows fails on the first duplicate",
+		AtlasCode: "MF101",
+	},
+	"MF102": {
+		Summary:   "an index dropped and rebuilt as unique fails on the first duplicate and leaves the table without it",
+		AtlasCode: "MF102",
 	},
 	"MF103": {
 		Summary: "the file name does not follow the migration file-name convention",
@@ -404,7 +412,10 @@ var sqlRuleMeta = map[string]ruleMeta{
 var preConventionCodes = []string{
 	"DS101", "DS102", "DS103", "DS104", "DS105", "DS106", "DS107", "DS108", "DS109",
 	"DD101",
-	"MF101", "MF102", "MF103",
+	// MF101 and MF102 left this list when the unique-index checks took the
+	// Atlas identifiers and the file-form rules became MF101P and MF102P
+	// (stokaro/ptah#2942).
+	"MF103",
 	"PG102", "PG106",
 	"MY101",
 }
