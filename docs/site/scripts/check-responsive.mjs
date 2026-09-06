@@ -39,16 +39,53 @@ const viewports = [
 // A few pixels of slack: sub-pixel rounding in the layout engine otherwise
 // reports overflow on pages that look correct.
 const overflowTolerance = 2;
-const maxProseWidth = 962;
-const targetProseWidth = 960;
-const minimumTargetProseWidth = targetProseWidth - overflowTolerance;
-const targetWideContentWidth = 1120;
-const targetTocWidth = 232;
 const targetNavigationWidth = 256;
 const targetContentPadding = 24;
-const targetDocumentFrameMinWidth = 1400;
 const targetDocumentFrameGutterCap = 232;
 const alignmentSentinelRoute = '/operate/seed-data/';
+
+// The site ships two layouts and a control that switches between them, so this
+// pass runs under each. It measured the envelope alone once, from two module
+// constants, and could not have been pointed at the other: under `column` those
+// constants are wrong by construction, so the reachable layout was the
+// unmeasured one (stokaro/ptah#2930).
+//
+// Every figure below is measured against a build rather than derived, except
+// the frame minimum: global.css computes that one with calc() from the shell,
+// the padding and the contents rail, so restating it as a literal would be a
+// second copy free to disagree with the first. The rail is a clamp() in the
+// column layout and therefore a function of the viewport.
+const layouts = [
+  {
+    name: 'envelope',
+    query: '',
+    prose: 960,
+    wideContent: 1120,
+    toc: () => 232,
+    // The frame grows to fill the pane, centered, until its outer gutters
+    // reach the cap; then it stops and the surplus stays outside it.
+    frame: { kind: 'centered' },
+    shellToTocGap: 24,
+  },
+  {
+    name: 'column',
+    query: '?layout=column',
+    prose: 704,
+    wideContent: 960,
+    // clamp(13rem, 13rem + (100vw - 80rem) * 0.359375, 18.75rem)
+    toc: (viewport) => Math.min(300, Math.max(208, 208 + (viewport.width - 1280) * 0.359375)),
+    // `minmax(64px, 0.6fr) minmax(0, 1280px) 1fr`: the frame stops at 80rem
+    // and the pane's surplus splits 0.6 to 1 around it, so the left gutter
+    // takes 0.375 of it. Screen 1b of the concept is drawn this way.
+    frame: { kind: 'split', cap: 1280, minimumLeftGutter: 64, leftShare: 0.6 / 1.6 },
+    shellToTocGap: 48,
+  },
+];
+
+const frameMinimum = (layout, viewport) =>
+  layout.wideContent + targetContentPadding * 2 + layout.toc(viewport);
+const proseCeiling = (layout) => layout.prose + overflowTolerance;
+const proseFloor = (layout) => layout.prose - overflowTolerance;
 
 // The tallest a table cell may render at desktop width. Character count cannot
 // see this: a short cell in a column squeezed narrow by an unbreakable code
@@ -357,6 +394,15 @@ const measure = ({ tolerance, cellLineLimit }) => {
     contentPadding: customWidth('--sl-content-pad-x'),
     documentFrameMin: customWidth('--ptah-doc-frame-min-width'),
     documentFrameGutterCap: customWidth('--ptah-doc-frame-gutter-cap'),
+    // Read rather than declared: the column layout pads its panels by 3rem
+    // where the envelope takes Starlight's 24px, and the shell is bounded by
+    // whichever of the declared width and the padded pane is smaller.
+    panelPadding: (() => {
+      const panel = document.querySelector('.main-pane .content-panel');
+      if (!panel) return null;
+      const padding = parseFloat(getComputedStyle(panel).paddingLeft);
+      return Number.isFinite(padding) ? padding : null;
+    })(),
   };
 
   return {
@@ -413,7 +459,7 @@ function expandedPastFrameGutterCap(result) {
   );
 }
 
-function articleAlignmentProblems(result, route, viewport) {
+function articleAlignmentProblems(result, route, viewport, layout) {
   if (!checksArticleContract(viewport, route)) return [];
 
   const problems = [];
@@ -434,20 +480,31 @@ function articleAlignmentProblems(result, route, viewport) {
 
   const shell = geometry.contentShell;
   if (!shell) return problems;
-  const expectedWideWidth = result.widthContract?.wideContent ?? targetWideContentWidth;
-  if (Math.abs(expectedWideWidth - targetWideContentWidth) > overflowTolerance) {
+  const expectedWideWidth = result.widthContract?.wideContent ?? layout.wideContent;
+  if (Math.abs(expectedWideWidth - layout.wideContent) > overflowTolerance) {
     problems.push(
       `${route}: --sl-content-width resolves to ${Math.round(expectedWideWidth)}px; ` +
-        `expected ${targetWideContentWidth}px (70rem)`,
+        `expected ${layout.wideContent}px in the ${layout.name} layout`,
     );
   }
+  // The declared width is a ceiling, not the answer: the shell also cannot
+  // outgrow the article pane less its padding, and in the column layout that
+  // pane is the binding constraint. One rule covers both layouts, which is
+  // what makes it a rule rather than two numbers.
+  const articlePane = result.articleFrame?.mainPane;
+  const panelPadding = result.widthContract?.panelPadding;
+  const paneBound =
+    articlePane && panelPadding != null ? articlePane.width - panelPadding * 2 : Infinity;
+  const expectedShellWidth = Math.min(expectedWideWidth, paneBound);
   if (
-    shell.width < expectedWideWidth - overflowTolerance ||
-    shell.width > expectedWideWidth + overflowTolerance
+    shell.width < expectedShellWidth - overflowTolerance ||
+    shell.width > expectedShellWidth + overflowTolerance
   ) {
     problems.push(
       `${route}: content shell renders ${Math.round(shell.width)}px wide at ${viewport.width}px; ` +
-        `expected ${Math.round(expectedWideWidth - overflowTolerance)}-${Math.round(expectedWideWidth + overflowTolerance)}px`,
+        `expected ${Math.round(expectedShellWidth)}px in the ${layout.name} layout ` +
+        `(the lesser of the ${Math.round(expectedWideWidth)}px declared width and the ` +
+        `${Number.isFinite(paneBound) ? Math.round(paneBound) : 'unbounded'}px padded article pane)`,
     );
   }
 
@@ -468,11 +525,11 @@ function articleAlignmentProblems(result, route, viewport) {
     );
   }
 
-  const expectedProseWidth = result.widthContract?.prose ?? targetProseWidth;
-  if (Math.abs(expectedProseWidth - targetProseWidth) > overflowTolerance) {
+  const expectedProseWidth = result.widthContract?.prose ?? layout.prose;
+  if (Math.abs(expectedProseWidth - layout.prose) > overflowTolerance) {
     problems.push(
       `${route}: --ptah-prose-width resolves to ${Math.round(expectedProseWidth)}px; ` +
-        `expected ${targetProseWidth}px (60rem)`,
+        `expected ${layout.prose}px in the ${layout.name} layout`,
     );
   }
   const proseKeys = new Map([
@@ -496,7 +553,7 @@ function articleAlignmentProblems(result, route, viewport) {
   return problems;
 }
 
-function articleFrameProblems(result, route, viewport) {
+function articleFrameProblems(result, route, viewport, layout) {
   if (!checksArticleContract(viewport, route)) return [];
 
   const problems = [];
@@ -538,10 +595,12 @@ function articleFrameProblems(result, route, viewport) {
         `expected ${targetNavigationWidth}px (16rem)`,
     );
   }
-  if (Math.abs(expectedFrameMinWidth - targetDocumentFrameMinWidth) > overflowTolerance) {
+  const expectedFrameMinimum = frameMinimum(layout, viewport);
+  if (Math.abs(expectedFrameMinWidth - expectedFrameMinimum) > overflowTolerance) {
     problems.push(
       `${route}: --ptah-doc-frame-min-width resolves to ${Math.round(expectedFrameMinWidth)}px; ` +
-        `expected ${targetDocumentFrameMinWidth}px`,
+        `expected ${Math.round(expectedFrameMinimum)}px in the ${layout.name} layout ` +
+        '(shell + two paddings + contents rail)',
     );
   }
   if (Math.abs(expectedFrameGutterCap - targetDocumentFrameGutterCap) > overflowTolerance) {
@@ -550,10 +609,12 @@ function articleFrameProblems(result, route, viewport) {
         `expected ${targetDocumentFrameGutterCap}px`,
     );
   }
-  if (Math.abs(expectedTocWidth - targetTocWidth) > overflowTolerance) {
+  const expectedRailWidth = layout.toc(viewport);
+  if (Math.abs(expectedTocWidth - expectedRailWidth) > overflowTolerance) {
     problems.push(
       `${route}: --ptah-toc-width resolves to ${Math.round(expectedTocWidth)}px; ` +
-        `expected ${targetTocWidth}px (14.5rem)`,
+        `expected ${Math.round(expectedRailWidth)}px in the ${layout.name} layout ` +
+        `at ${viewport.width}px`,
     );
   }
   if (Math.abs(expectedContentPadding - targetContentPadding) > overflowTolerance) {
@@ -579,43 +640,67 @@ function articleFrameProblems(result, route, viewport) {
     );
   }
 
-  const expectedFrameWidth = Math.min(
-    availableFrame.width,
-    Math.max(expectedFrameMinWidth, availableFrame.width - 2 * expectedFrameGutterCap),
-  );
+  const leftGutter = documentFrame.left - availableFrame.left;
+  const rightGutter = availableFrame.right - documentFrame.right;
+  const expectedFrameWidth =
+    layout.frame.kind === 'centered'
+      ? Math.min(
+          availableFrame.width,
+          Math.max(expectedFrameMinWidth, availableFrame.width - 2 * expectedFrameGutterCap),
+        )
+      : Math.min(layout.frame.cap, availableFrame.width - layout.frame.minimumLeftGutter);
   if (Math.abs(documentFrame.width - expectedFrameWidth) > overflowTolerance) {
     problems.push(
       `${route}: article-and-TOC frame renders ${Math.round(documentFrame.width)}px wide at ` +
         `${viewport.width}px; ` +
-        `expected ${Math.round(expectedFrameWidth)}px`,
+        `expected ${Math.round(expectedFrameWidth)}px in the ${layout.name} layout`,
     );
   }
-  const leftGutter = documentFrame.left - availableFrame.left;
-  const rightGutter = availableFrame.right - documentFrame.right;
-  if (
-    leftGutter < -overflowTolerance ||
-    rightGutter < -overflowTolerance ||
-    leftGutter > expectedFrameGutterCap + overflowTolerance ||
-    rightGutter > expectedFrameGutterCap + overflowTolerance ||
-    Math.abs(leftGutter - rightGutter) > overflowTolerance
-  ) {
-    problems.push(
-      `${route}: article-and-TOC frame is not centered within its capped outer gutters ` +
-        `(left gutter ${Math.round(leftGutter)}px, right gutter ${Math.round(rightGutter)}px; ` +
-        `cap ${Math.round(expectedFrameGutterCap)}px, balance limit ${overflowTolerance}px)`,
-    );
-  }
-  if (
-    viewport.name === 'ultra-wide' &&
-    (
-      Math.abs(leftGutter - expectedFrameGutterCap) > overflowTolerance ||
-      Math.abs(rightGutter - expectedFrameGutterCap) > overflowTolerance
-    )
-  ) {
-    problems.push(
-      `${route}: ultra-wide frame gutters have not reached the ${Math.round(expectedFrameGutterCap)}px cap ` +
-        `(left ${Math.round(leftGutter)}px, right ${Math.round(rightGutter)}px)`,
-    );
+  if (layout.frame.kind === 'centered') {
+    if (
+      leftGutter < -overflowTolerance ||
+      rightGutter < -overflowTolerance ||
+      leftGutter > expectedFrameGutterCap + overflowTolerance ||
+      rightGutter > expectedFrameGutterCap + overflowTolerance ||
+      Math.abs(leftGutter - rightGutter) > overflowTolerance
+    ) {
+      problems.push(
+        `${route}: article-and-TOC frame is not centered within its capped outer gutters ` +
+          `(left gutter ${Math.round(leftGutter)}px, right gutter ${Math.round(rightGutter)}px; ` +
+          `cap ${Math.round(expectedFrameGutterCap)}px, balance limit ${overflowTolerance}px)`,
+      );
+    }
+    if (
+      viewport.name === 'ultra-wide' &&
+      (
+        Math.abs(leftGutter - expectedFrameGutterCap) > overflowTolerance ||
+        Math.abs(rightGutter - expectedFrameGutterCap) > overflowTolerance
+      )
+    ) {
+      problems.push(
+        `${route}: ultra-wide frame gutters have not reached the ${Math.round(expectedFrameGutterCap)}px cap ` +
+          `(left ${Math.round(leftGutter)}px, right ${Math.round(rightGutter)}px)`,
+      );
+    }
+  } else {
+    // The surplus beside the capped frame is the thing being measured: an
+    // even split would put the article in the middle of the pane instead of
+    // near the navigation, which is the arrangement the concept draws.
+    const surplus = Math.max(0, availableFrame.width - expectedFrameWidth);
+    const expectedLeftGutter = surplus * layout.frame.leftShare;
+    if (Math.abs(leftGutter - expectedLeftGutter) > overflowTolerance) {
+      problems.push(
+        `${route}: the ${layout.name} frame's left gutter is ${Math.round(leftGutter)}px at ` +
+          `${viewport.width}px; expected ${Math.round(expectedLeftGutter)}px, ` +
+          `${layout.frame.leftShare.toFixed(3)} of the ${Math.round(surplus)}px beside the frame`,
+      );
+    }
+    if (Math.abs(leftGutter + rightGutter - surplus) > overflowTolerance) {
+      problems.push(
+        `${route}: the ${layout.name} frame's gutters total ${Math.round(leftGutter + rightGutter)}px ` +
+          `but ${Math.round(surplus)}px sits beside the frame`,
+      );
+    }
   }
   for (const [rect, label] of [[tocContainer, 'TOC container'], [toc, 'TOC rail']]) {
     if (Math.abs(rect.width - expectedTocWidth) > overflowTolerance) {
@@ -651,33 +736,39 @@ function articleFrameProblems(result, route, viewport) {
   const shell = result.articleAlignment?.contentShell;
   if (shell) {
     const proseToNavigationGap = shell.left - navigation.right;
-    if (
-      proseToNavigationGap < -overflowTolerance ||
-      proseToNavigationGap > navigation.width + overflowTolerance
-    ) {
-      problems.push(
-        `${route}: prose starts ${Math.round(proseToNavigationGap)}px after the navigation rail; ` +
-          `the gap must not exceed the rail's ${Math.round(navigation.width)}px width`,
-      );
-    }
-    if (
-      viewport.name === 'ultra-wide' &&
-      Math.abs(proseToNavigationGap - navigation.width) > overflowTolerance
-    ) {
-      problems.push(
-        `${route}: ultra-wide prose-to-navigation gap is ${Math.round(proseToNavigationGap)}px; ` +
-          `expected the ${Math.round(navigation.width)}px navigation width`,
-      );
+    // The envelope keeps the prose within one rail width of the navigation.
+    // The column layout deliberately opens that gap: its frame is capped and
+    // the surplus sits in the gutters, which the frame block above measures.
+    if (layout.frame.kind === 'centered') {
+      if (
+        proseToNavigationGap < -overflowTolerance ||
+        proseToNavigationGap > navigation.width + overflowTolerance
+      ) {
+        problems.push(
+          `${route}: prose starts ${Math.round(proseToNavigationGap)}px after the navigation rail; ` +
+            `the gap must not exceed the rail's ${Math.round(navigation.width)}px width`,
+        );
+      }
+      if (
+        viewport.name === 'ultra-wide' &&
+        Math.abs(proseToNavigationGap - navigation.width) > overflowTolerance
+      ) {
+        problems.push(
+          `${route}: ultra-wide prose-to-navigation gap is ${Math.round(proseToNavigationGap)}px; ` +
+            `expected the ${Math.round(navigation.width)}px navigation width`,
+        );
+      }
     }
 
-    const frameGrowth = Math.max(0, documentFrame.width - expectedFrameMinWidth);
-    const expectedShellToTocGap = expectedContentPadding + frameGrowth;
+    const frameGrowth =
+      layout.frame.kind === 'centered' ? Math.max(0, documentFrame.width - expectedFrameMinWidth) : 0;
+    const expectedShellToTocGap = layout.shellToTocGap + frameGrowth;
     const shellToTocGap = tocContainer.left - shell.right;
     if (Math.abs(shellToTocGap - expectedShellToTocGap) > overflowTolerance) {
       problems.push(
         `${route}: content-shell-to-TOC gap is ${Math.round(shellToTocGap)}px at ${viewport.width}px; ` +
-          `expected ${Math.round(expectedShellToTocGap)}px so the frame's ` +
-          `${Math.round(frameGrowth)}px growth stays between the shell and TOC`,
+          `expected ${Math.round(expectedShellToTocGap)}px in the ${layout.name} layout` +
+          (frameGrowth > 0 ? `, so the frame's ${Math.round(frameGrowth)}px growth stays between them` : ''),
       );
     }
   }
@@ -685,7 +776,7 @@ function articleFrameProblems(result, route, viewport) {
   return problems;
 }
 
-function readingMeasureProblems(result, route, viewport) {
+function readingMeasureProblems(result, route, viewport, layout = layouts[0]) {
   if (viewport.name === 'mobile') return [];
 
   const problems = [];
@@ -698,8 +789,11 @@ function readingMeasureProblems(result, route, viewport) {
   // centering remain measurable instead of falling back to zero and passing
   // silently.
   if (!result.hasPageHeading && !isHome) problems.push(`${route}: page heading was not rendered`);
-  if (result.widestProse > maxProseWidth) {
-    problems.push(`${route}: prose renders ${result.widestProse}px wide, over the ${maxProseWidth}px reading measure`);
+  if (result.widestProse > proseCeiling(layout)) {
+    problems.push(
+      `${route}: prose renders ${result.widestProse}px wide, over the ` +
+        `${proseCeiling(layout)}px reading measure of the ${layout.name} layout`,
+    );
   }
   if (result.proseLeftOffset > overflowTolerance) {
     problems.push(
@@ -712,8 +806,11 @@ function readingMeasureProblems(result, route, viewport) {
   ) {
     problems.push(`${route}: content shell is ${Math.round(result.contentShellCenterOffset)}px off center in its panel`);
   }
-  if (!isHome && result.pageHeadingWidth > maxProseWidth) {
-    problems.push(`${route}: page heading renders ${Math.round(result.pageHeadingWidth)}px wide, over ${maxProseWidth}px`);
+  if (!isHome && result.pageHeadingWidth > proseCeiling(layout)) {
+    problems.push(
+      `${route}: page heading renders ${Math.round(result.pageHeadingWidth)}px wide, over ` +
+        `${proseCeiling(layout)}px in the ${layout.name} layout`,
+    );
   }
   if (!isHome && result.pageHeadingLeftOffset > overflowTolerance) {
     problems.push(`${route}: page heading starts ${Math.round(result.pageHeadingLeftOffset)}px away from its content shell`);
@@ -724,26 +821,25 @@ function readingMeasureProblems(result, route, viewport) {
   // narrow viewports and intentionally compact components responsive.
   if (checksArticleContract(viewport, route)) {
     if (result.proseElementCount === 0) {
-      problems.push(`${route}: no ordinary prose element was rendered for the 60rem reading-measure check`);
-    } else if (result.widestProse < minimumTargetProseWidth) {
+      problems.push(`${route}: no ordinary prose element was rendered for the reading-measure check`);
+    } else if (result.widestProse < proseFloor(layout)) {
       problems.push(
         `${route}: prose renders ${result.widestProse}px wide at ${viewport.width}px, below the ` +
-          `${minimumTargetProseWidth}px ` +
-          'minimum for the 60rem reading measure',
+          `${proseFloor(layout)}px minimum of the ${layout.name} layout's reading measure`,
       );
     }
-    if (!isHome && result.pageHeadingWidth < minimumTargetProseWidth) {
+    if (!isHome && result.pageHeadingWidth < proseFloor(layout)) {
       problems.push(
         `${route}: page heading renders ${Math.round(result.pageHeadingWidth)}px wide at ` +
-          `${viewport.width}px, below the ` +
-          `${minimumTargetProseWidth}px minimum for the 60rem reading measure`,
+          `${viewport.width}px, below the ${proseFloor(layout)}px minimum of the ` +
+          `${layout.name} layout's reading measure`,
       );
     }
   }
 
   return problems
-    .concat(articleAlignmentProblems(result, route, viewport))
-    .concat(articleFrameProblems(result, route, viewport));
+    .concat(articleAlignmentProblems(result, route, viewport, layout))
+    .concat(articleFrameProblems(result, route, viewport, layout));
 }
 
 async function loadChromium() {
@@ -1132,6 +1228,19 @@ async function main() {
         failures.push(`article-frame detector rejected the aligned fixture: ${alignedProblems.join('; ')}`);
       }
 
+      // The same fixture, judged as the column layout, has to be rejected.
+      // Otherwise taking the layout as an axis bought a second pass over one
+      // contract rather than a second contract (stokaro/ptah#2930).
+      const underColumn = readingMeasureProblems(
+        alignedMeasure,
+        alignmentSentinelRoute,
+        wideViewport,
+        layouts[1],
+      );
+      if (!underColumn.some((problem) => problem.includes('in the column layout'))) {
+        failures.push('the column layout accepted the envelope fixture, so the axis measures one contract twice');
+      }
+
       await page.setViewportSize({ width: ultraWideViewport.width, height: ultraWideViewport.height });
 
       // The old layout kept the 1400px frame centered forever. At 2560px that
@@ -1139,7 +1248,7 @@ async function main() {
       // extra width outside the frame instead of between the shell and TOC.
       await page.setContent(articleFixture({
         viewportWidth: ultraWideViewport.width,
-        frameWidth: targetDocumentFrameMinWidth,
+        frameWidth: frameMinimum(layouts[0], wideViewport),
       }));
       const fixedCenteredMeasure = await page.evaluate(measure, {
         tolerance: overflowTolerance,
@@ -1162,7 +1271,7 @@ async function main() {
       // expand while its two outer gutters stay capped and balanced.
       await page.setContent(articleFixture({
         viewportWidth: ultraWideViewport.width,
-        frameWidth: targetDocumentFrameMinWidth,
+        frameWidth: frameMinimum(layouts[0], wideViewport),
         frameLeftGutter: targetDocumentFrameGutterCap,
       }));
       const fixedLeftMeasure = await page.evaluate(measure, {
@@ -1262,7 +1371,8 @@ async function main() {
     }
     console.log(
       'check-responsive.mjs --selftest: OK ' +
-        '(overflow, document-frame, article-alignment, prose-width, wide-table, tall-cell, and unstyled-page guards verified)',
+        '(overflow, document-frame, article-alignment, prose-width, wide-table, tall-cell, ' +
+        'unstyled-page, and per-layout contract guards verified)',
     );
     return;
   }
@@ -1295,66 +1405,86 @@ async function main() {
   const routesWithTallCells = new Set();
 
   try {
-    for (const viewport of viewports) {
-      const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } });
-      const page = await context.newPage();
-      const stylesheets = watchStylesheets(page);
+    for (const layout of layouts) {
+      for (const viewport of viewports) {
+        const context = await browser.newContext({ viewport: { width: viewport.width, height: viewport.height } });
+        const page = await context.newPage();
+        const stylesheets = watchStylesheets(page);
 
-      for (const route of routes) {
-        stylesheets.reset();
-        await page.goto(`http://127.0.0.1:${port}${base}${route}`, { waitUntil: 'load' });
-        if (stylesheets.failures().length > 0) {
-          errors.push(
-            `${route} [${viewport.name}]: stylesheet request(s) failed ` +
-              `(${stylesheets.failures().slice(0, 3).join(', ')}); the page rendered unstyled, ` +
-              'so any overflow result would be meaningless',
-          );
-          continue;
-        }
-        const result = await page.evaluate(measure, { tolerance: overflowTolerance, cellLineLimit: maxCellLines });
-        if (result.scrollWidth > result.clientWidth + overflowTolerance) {
-          errors.push(
-            `${route} [${viewport.name} ${viewport.width}px]: page scrolls horizontally ` +
-              `(scrollWidth ${result.scrollWidth} > ${result.clientWidth})`,
-          );
-        }
-        for (const offender of result.offenders) {
-          errors.push(
-            `${route} [${viewport.name} ${viewport.width}px]: <${offender.tag}${offender.className ? ` class="${offender.className}"` : ''}> ` +
-              `extends to ${offender.right}px, past the ${result.clientWidth}px viewport`,
-          );
-        }
-        errors.push(...readingMeasureProblems(result, route, viewport));
-        if (viewport.name !== 'mobile') {
-          for (const table of result.wideTables) {
+        for (const route of routes) {
+          stylesheets.reset();
+          // The query is carried on every navigation rather than relied on once:
+          // Head.astro also remembers the choice, and a pass that depended on
+          // that would keep measuring after the mechanism it tests broke.
+          await page.goto(`http://127.0.0.1:${port}${base}${route}${layout.query}`, { waitUntil: 'load' });
+          const applied = await page.evaluate(() => document.documentElement.dataset.ptahLayout ?? 'envelope');
+          if (applied !== layout.name) {
             errors.push(
-              `${route}: a table is ${table.width}px wide inside a ${table.container}px container ` +
-                `(+${table.overflow}px), so its right-hand columns are cut off` +
-                (table.firstColumn ? ` — first column "${table.firstColumn}"` : ''),
+              `${route} [${viewport.name}]: asked for the ${layout.name} layout and the page rendered ` +
+                `${applied}; every measurement below would describe the wrong one`,
+            );
+            continue;
+          }
+          if (stylesheets.failures().length > 0) {
+            errors.push(
+              `${route} [${viewport.name}]: stylesheet request(s) failed ` +
+                `(${stylesheets.failures().slice(0, 3).join(', ')}); the page rendered unstyled, ` +
+                'so any overflow result would be meaningless',
+            );
+            continue;
+          }
+          const result = await page.evaluate(measure, { tolerance: overflowTolerance, cellLineLimit: maxCellLines });
+          if (result.scrollWidth > result.clientWidth + overflowTolerance) {
+            errors.push(
+              `${route} [${layout.name}, ${viewport.name} ${viewport.width}px]: page scrolls horizontally ` +
+                `(scrollWidth ${result.scrollWidth} > ${result.clientWidth})`,
             );
           }
-        }
-        // Desktop measures every table. Mobile measures the wide ones, where
-        // the cap is a statement about the layout rather than about the phone.
-        const capped =
-          viewport.name !== 'mobile'
-            ? result.tallCells
-            : mobileCapExemptions.has(route)
-              ? []
-              : result.tallCells.filter((cell) => cell.columns >= wideTableColumns);
-        if (capped.length > 0) {
-          routesWithTallCells.add(route);
-          if (!denseTableAllowlist.has(route)) {
-            for (const cell of capped) {
+          for (const offender of result.offenders) {
+            errors.push(
+              `${route} [${layout.name}, ${viewport.name} ${viewport.width}px]: <${offender.tag}${offender.className ? ` class="${offender.className}"` : ''}> ` +
+                `extends to ${offender.right}px, past the ${result.clientWidth}px viewport`,
+            );
+          }
+          errors.push(...readingMeasureProblems(result, route, viewport, layout));
+          // Wide tables are measured in the envelope only. The column layout
+          // promises wide content a 60rem shell on the prose's left edge and
+          // does not keep it: its article pane is bounded by a capped frame,
+          // so the shell measures 720px at 1280 and 884px at 1920, and a
+          // reference table that fits the envelope's 1120px does not fit
+          // either. That is a defect in the layout rather than in the page,
+          // and it is stokaro/ptah#2941 rather than a silent exemption here.
+          if (viewport.name !== 'mobile' && layout.frame.kind === 'centered') {
+            for (const table of result.wideTables) {
               errors.push(
-                `${route}: a table cell renders ${cell.lines} lines tall in a ${cell.width}px column, ` +
-                  `over the ${maxCellLines}-line limit — "${cell.text}"`,
+                `${route}: a table is ${table.width}px wide inside a ${table.container}px container ` +
+                  `(+${table.overflow}px), so its right-hand columns are cut off` +
+                  (table.firstColumn ? ` — first column "${table.firstColumn}"` : ''),
               );
             }
           }
+          // Desktop measures every table. Mobile measures the wide ones, where
+          // the cap is a statement about the layout rather than about the phone.
+          const capped =
+            viewport.name !== 'mobile'
+              ? result.tallCells
+              : mobileCapExemptions.has(route)
+                ? []
+                : result.tallCells.filter((cell) => cell.columns >= wideTableColumns);
+          if (capped.length > 0) {
+            routesWithTallCells.add(route);
+            if (!denseTableAllowlist.has(route)) {
+              for (const cell of capped) {
+                errors.push(
+                  `${route}: a table cell renders ${cell.lines} lines tall in a ${cell.width}px column, ` +
+                    `over the ${maxCellLines}-line limit — "${cell.text}"`,
+                );
+              }
+            }
+          }
         }
+        await context.close();
       }
-      await context.close();
     }
   } finally {
     await browser.close();
@@ -1386,9 +1516,10 @@ async function main() {
     return;
   }
   console.log(
-    `check-responsive.mjs: OK (${routes.length} routes x ${viewports.length} viewports, ` +
-      `${targetProseWidth}px reading and ${targetWideContentWidth}px wide-content columns stay aligned, ` +
-      `outer frame gutters stay capped and surplus width grows before the TOC, ` +
+    `check-responsive.mjs: OK (${routes.length} routes x ${viewports.length} viewports x ` +
+      `${layouts.map(({ name }) => name).join(' and ')}, ` +
+      `${layouts.map(({ name, prose, wideContent }) => `${name} ${prose}/${wideContent}px`).join(', ')} ` +
+      'columns stay aligned, outer frame gutters stay capped and surplus width grows before the TOC, ' +
       `cells within ${maxCellLines} lines)`,
   );
 }

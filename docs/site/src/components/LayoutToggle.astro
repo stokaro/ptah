@@ -31,9 +31,12 @@
 
 <style>
   /* Pressed, the filled column narrows: the glyph shows the layout it is in. */
+  /* Both need units: an SVG geometry property takes a <length-percentage>, and
+     a bare number other than zero is not one. Unitless, Chromium keeps the x
+     and drops the width. */
   :global([data-ptah-layout='column']) .ptah-layout-toggle__column {
-    x: 5.5;
-    width: 5;
+    x: 5.5px;
+    width: 5px;
   }
 </style>
 
