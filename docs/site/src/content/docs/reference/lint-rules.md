@@ -223,7 +223,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `MY135` | adding a SPATIAL index can rebuild the table and block writes | both | Atlas |
 | `MY136` | converting a table's character set re-encodes its columns and copies the table | both | Atlas |
 
-### mysql, mariadb, sqlserver
+### mysql, mariadb, sqlserver, clickhouse
 
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
@@ -243,7 +243,6 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `PG301` | a column type change PostgreSQL cannot prove safe rewrites the table and its indexes | both | Atlas |
 | `PG301P` | an ALTER COLUMN TYPE the dev database shows PostgreSQL applies as a catalog edit, with no rewrite, rebuild or scan; info only | both | Ptah |
 | `PG302` | a volatile DEFAULT on an added column rewrites or evaluates every existing row | both | Atlas |
-| `PG303` | SET NOT NULL scans the table to validate existing rows | both | Atlas |
 | `PG304` | a primary key over nullable columns sets them NOT NULL and scans every row on top of the index build | both | Atlas |
 | `PG305` | adding a CHECK constraint validates existing rows and can hold locks | both | Atlas |
 | `PG306` | adding a foreign key validates existing rows and can block writes on both tables | both | Atlas |
@@ -255,6 +254,12 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `PG312P` | a SECURITY DEFINER routine that does not pin search_path resolves unqualified names through the caller's | both | Ptah |
 | `TX101` | the migration mixes statements that cannot share one transaction | both | Atlas |
 | `TX201` | an explicit BEGIN/COMMIT block fights the migrator's transaction management | both | Atlas |
+
+### postgres, cockroachdb, yugabytedb, spanner
+
+| Rule | Meaning | Surface | Origin |
+| --- | --- | --- | --- |
+| `PG303` | SET NOT NULL scans the table to validate existing rows | both | Atlas |
 
 ### sqlite
 
@@ -292,7 +297,7 @@ Every migration lint finding reports under an analyzer name and a code on the co
 
 ## Atlas analyzer checks
 
-Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/analyzers) carries, and what Ptah does about it: 55 covered, 1 partial, 0 not implemented, 2 waived, of 58. A code Atlas marks as an Atlas Pro feature is marked here too, and the ones Ptah implements are reported through both surfaces except `BC101` and `BC102`, whose Ptah rule the compatibility surface does not report.
+Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/analyzers) carries, and what Ptah does about it: 56 covered, 0 partial, 0 not implemented, 2 waived, of 58. A code Atlas marks as an Atlas Pro feature is marked here too, and the ones Ptah implements are reported through both surfaces except `BC101` and `BC102`, whose Ptah rule the compatibility surface does not report.
 
 <div class="ptah-wide-table">
 
@@ -304,7 +309,7 @@ Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/anal
 | `MF101` | adding a unique index to an existing column | no | `MF101` | covered — structural: the build fails on the first duplicate; the message names the query that settles it and what a failed CONCURRENTLY build leaves behind, and a unique index the dev database already holds over the columns silences it |
 | `MF102` | modifying a non-unique index to unique | no | `MF102` | covered — an index dropped earlier in the file and rebuilt as unique under the same name, or under a new name over the columns the dev database records for it; the message adds that the failure leaves the table without the index it had |
 | `MF103` | adding a non-nullable column to an existing table | no | `DD101` | covered |
-| `MF104` | modifying a nullable column to non-nullable might fail | no | `PG303`, `LT101`, `DD103` | partial — PostgreSQL (PG303), SQLite (LT101), MySQL, MariaDB and SQL Server (DD103) are measured and covered; CockroachDB and YugabyteDB run no PostgreSQL rule under their own dialect names, and ClickHouse and Spanner are not measured, so those four are not |
+| `MF104` | modifying a nullable column to non-nullable might fail | no | `PG303`, `LT101`, `DD103` | covered — PG303 on PostgreSQL, CockroachDB, YugabyteDB and Spanner, LT101 on SQLite, DD103 on MySQL, MariaDB, SQL Server and ClickHouse; every engine measured, each with its own failure named |
 | `BC101` | renaming a table | no | `BC101` | covered |
 | `BC102` | renaming a column | no | `BC101` | covered — one rule reports both object kinds |
 | `MY101` | adding a non-nullable column without a DEFAULT to an existing table | no | `DD101` | covered — DD101 applies to every dialect |

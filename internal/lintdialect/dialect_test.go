@@ -426,24 +426,34 @@ func TestBuiltInRules_NoRuleSplitsTheMySQLFamily(t *testing.T) {
 	c.Assert(split, qt.HasLen, 0, qt.Commentf("these rules name part of the MySQL family, so mysql and mariadb are no longer interchangeable"))
 }
 
-// TestBuiltInRules_PostgresFamilyRulesNameOnlyPostgres pins the asymmetry that
-// makes grouping the PostgreSQL family a policy decision rather than a
-// consequence of the rule table.
+// TestBuiltInRules_PostgresFamilyMembersAreNamedOnlyWhereMeasured pins the
+// asymmetry that makes grouping the PostgreSQL family a policy decision rather
+// than a consequence of the rule table.
 //
 // Unlike the MySQL family, the PostgreSQL family's members do NOT select the
-// same rule set: every PG and TX rule names the literal "postgres", and no rule
-// names cockroachdb, yugabytedb or spanner at all. So a CockroachDB database
-// runs the dialect-independent families only -- which is true whether or not a
-// policy file exists, because what gets linted is the dialect the wire reports.
+// same rule set: every PG and TX rule names the literal "postgres", and a rule
+// names cockroachdb, yugabytedb or spanner only where its behavior was
+// measured on that engine. The measured set is written down here, one rule at
+// a time, so a rule that widens to a wire-compatible engine without a
+// measurement reddens this test rather than inheriting PostgreSQL's claims.
+// So a CockroachDB database runs the dialect-independent families plus that
+// set -- which is true whether or not a policy file exists, because what gets
+// linted is the dialect the wire reports.
 //
 // lintdialect.Compatible still accepts `dialect: postgres` against those
 // databases, on the separate ground that they share PostgreSQL's wire protocol
 // and planner family and that the declaration is an honest description of the
-// target. This test exists so that ground stays visible: if a rule is ever
-// added for cockroachdb, yugabytedb or spanner specifically, the members stop
-// being describable by one name and the grouping has to be revisited.
-func TestBuiltInRules_PostgresFamilyRulesNameOnlyPostgres(t *testing.T) {
+// target.
+func TestBuiltInRules_PostgresFamilyMembersAreNamedOnlyWhereMeasured(t *testing.T) {
 	c := qt.New(t)
+
+	// The rules measured on the wire-compatible engines, and the engines each
+	// was measured on (stokaro/ptah#2958: SET NOT NULL fails on a NULL row on
+	// CockroachDB v25.2, YugabyteDB 2025.1 and the Spanner emulator's
+	// PostgreSQL interface alike).
+	measured := []string{
+		"PG303=" + strings.Join([]string{platform.CockroachDB, platform.Spanner, platform.YugabyteDB}, ","),
+	}
 
 	postgresFamily := slices.DeleteFunc(ruleFamilyCoverage(c), func(cov ruleDialectCoverage) bool {
 		return cov.family != platform.Postgres
@@ -456,12 +466,19 @@ func TestBuiltInRules_PostgresFamilyRulesNameOnlyPostgres(t *testing.T) {
 	})
 	c.Assert(namesPostgres, qt.IsTrue, qt.Commentf("no rule names postgres, so this guard compares nothing"))
 
-	beyondPostgres := slices.DeleteFunc(postgresFamily, func(cov ruleDialectCoverage) bool {
+	widened := slices.DeleteFunc(postgresFamily, func(cov ruleDialectCoverage) bool {
+		return len(cov.named) == 0 || slices.Equal(cov.named, []string{platform.Postgres})
+	})
+	beyondPostgres := make([]string, 0, len(widened))
+	for _, cov := range widened {
 		named := slices.DeleteFunc(slices.Clone(cov.named), func(member string) bool {
 			return member == platform.Postgres
 		})
-		return len(named) == 0
-	})
+		slices.Sort(named)
+		beyondPostgres = append(beyondPostgres, cov.rule+"="+strings.Join(named, ","))
+	}
+	slices.Sort(beyondPostgres)
 
-	c.Assert(beyondPostgres, qt.HasLen, 0, qt.Commentf("a rule now names a PostgreSQL-family member other than postgres; revisit lintdialect.Family"))
+	c.Assert(beyondPostgres, qt.DeepEquals, measured,
+		qt.Commentf("a rule names a PostgreSQL-family member other than postgres that this test does not record as measured"))
 }

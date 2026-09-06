@@ -1201,7 +1201,6 @@ func postgresRules() []Rule {
 		postgresDropIndexRule(),
 		postgresColumnAlignmentRule(),
 		postgresVolatileDefaultRule(),
-		postgresSetNotNullRule(),
 		postgresAddCheckRule(),
 		postgresAddForeignKeyRule(),
 		postgresSetPersistenceRule(),
@@ -1337,16 +1336,6 @@ func postgresColumnAlignmentRule() Rule {
 func postgresVolatileDefaultRule() Rule {
 	return postgresAlterRule("PG302", "volatile default rewrites existing rows", scanAddColumnWithVolatileDefault,
 		"adding a column with a volatile DEFAULT rewrites or evaluates every existing row; add the column first, backfill in batches, then set the default")
-}
-
-func postgresSetNotNullRule() Rule {
-	// Measured on PostgreSQL 18.6 (notnull.go and pgcost.go): one heap scan,
-	// an abort on the first NULL, and no scan at all once a validated CHECK
-	// (col IS NOT NULL) proves the column.
-	return postgresAlterRule("PG303", "not-null validation scans existing rows", scanSetNotNull,
-		"SET NOT NULL scans the whole table under an ACCESS EXCLUSIVE lock to check existing rows, and a row holding NULL aborts it "+
-			"(column contains null values); backfill first, then add CHECK (col IS NOT NULL) NOT VALID, validate it under a weaker lock, "+
-			"and SET NOT NULL afterwards, which then scans nothing")
 }
 
 func postgresAddCheckRule() Rule {
