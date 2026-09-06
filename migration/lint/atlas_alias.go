@@ -92,9 +92,9 @@ func AtlasCodeAliases() map[string][]string {
 // alias regardless of engine, which is what VALIDATION wants: a policy shared
 // across engines names PG301 legitimately even while linting MySQL.
 //
-// The original entry is kept as well. A selector is a PREFIX, so dropping it
-// would change what an entry like `PG3` selects, and an operator who wrote a
-// prefix meant the prefix.
+// The original entry is kept as well. A selector that is not a code is a
+// PREFIX ([SelectorSelects]), so dropping it would change what an entry like
+// `PG3` selects, and an operator who wrote a prefix meant the prefix.
 //
 // Use [expandAtlasCodeSelectorsForDialect] anywhere the expansion decides what
 // RUNS. Expanding unconditionally there lets a policy for one engine weaken

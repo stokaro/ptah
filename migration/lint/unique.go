@@ -13,8 +13,9 @@ import (
 // to an existing table (MF101) and an index that is dropped and rebuilt as
 // unique (MF102) -- and hand the operator the query that settles it before
 // the version runs. The missing-down and empty-file rules that carried these
-// two identifiers before the convention are MF101P and MF102P now; a
-// selector is a prefix, so a config naming MF101 still reaches MF101P.
+// two identifiers before the convention are MF101P and MF102P now, and a
+// selector that names a code selects that code alone, so a config naming
+// MF101 reaches the check and not the file-form rule ([SelectorSelects]).
 //
 // Measured on PostgreSQL 18.6 and on MySQL 8.4.11 and MariaDB 11.8.9
 // (stokaro/ptah#2942):

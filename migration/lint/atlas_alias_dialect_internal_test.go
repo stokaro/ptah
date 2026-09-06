@@ -95,9 +95,10 @@ func TestExpandAtlasCodeSelectorsScopesSuppressionToTheAliasDialect(t *testing.T
 func TestRuleDisabledGoesThroughTheBuiltInAliases(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(ruleDisabled("BC101", []string{"BC102"}, "mysql"), qt.IsTrue)
-	c.Assert(ruleDisabled("LT101", []string{"MF104"}, "sqlite"), qt.IsTrue)
-	c.Assert(ruleDisabled("DS103", []string{"PG301"}, "postgres"), qt.IsFalse)
+	registered := registeredCodes(Rules())
+	c.Assert(ruleDisabled("BC101", []string{"BC102"}, "mysql", registered), qt.IsTrue)
+	c.Assert(ruleDisabled("LT101", []string{"MF104"}, "sqlite", registered), qt.IsTrue)
+	c.Assert(ruleDisabled("DS103", []string{"PG301"}, "postgres", registered), qt.IsFalse)
 }
 
 func TestExpandAtlasCodeSelectorsKeepsTheOriginalSelector(t *testing.T) {

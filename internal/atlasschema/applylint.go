@@ -101,7 +101,7 @@ func lintPlanDisabledCodes(enabled []string) []string {
 
 func lintPlanRuleEnabled(code string, enabled []string) bool {
 	for _, selector := range enabled {
-		if strings.HasPrefix(code, selector) {
+		if lint.SelectorSelects(selector, code) {
 			return true
 		}
 	}
