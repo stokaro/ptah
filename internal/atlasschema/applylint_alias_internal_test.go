@@ -37,9 +37,9 @@ func TestLintPlanEnabledCodesKeepsAnAliasedRuleRunning(t *testing.T) {
 		// the policy asked for was placed in the disabled list and the unsafe
 		// plan applied clean.
 		name:        "atlas spelling enables the ptah rule it stands for",
-		policyCode:  "PG301",
+		policyCode:  "BC102",
 		dialect:     "postgres",
-		aliasedRule: "DS103",
+		aliasedRule: "BC101",
 		wantRuns:    true,
 	}, {
 		// Every MY code is a Ptah rule of its own name, so the MySQL side of
@@ -50,10 +50,11 @@ func TestLintPlanEnabledCodesKeepsAnAliasedRuleRunning(t *testing.T) {
 		aliasedRule: "MY133",
 		wantRuns:    true,
 	}, {
-		// A PostgreSQL policy entry must not reach into a MySQL run.
-		name:        "postgres spelling does not enable the generic rule on mysql",
+		// A code that became a Ptah rule of its own name no longer expands to
+		// the generic rule it once stood for, on any dialect.
+		name:        "postgres spelling no longer enables the generic rule",
 		policyCode:  "PG301",
-		dialect:     "mysql",
+		dialect:     "postgres",
 		aliasedRule: "DS103",
 		wantRuns:    false,
 	}, {
@@ -77,10 +78,10 @@ func TestLintPlanEnabledCodesLeavesUnrelatedRulesDisabled(t *testing.T) {
 
 	// The pass runs exactly the policy's rules; expanding an alias must widen
 	// the enabled set by the aliased rule only, not open the whole catalog.
-	enabled := lintPlanEnabledCodes(map[string]lint.RuleConfig{"PG301": {}}, "postgres")
+	enabled := lintPlanEnabledCodes(map[string]lint.RuleConfig{"BC102": {}}, "postgres")
 	disabled := lintPlanDisabledCodes(enabled)
 
-	c.Assert(enabled, qt.DeepEquals, []string{"PG301", "DS103"})
-	c.Assert(disabled, qt.Contains, "BC101")
-	c.Assert(disabled, qt.Not(qt.Contains), "DS103")
+	c.Assert(enabled, qt.DeepEquals, []string{"BC102", "BC101"})
+	c.Assert(disabled, qt.Contains, "DS103")
+	c.Assert(disabled, qt.Not(qt.Contains), "BC101")
 }

@@ -442,10 +442,16 @@ type Column struct {
 	NotNullConstraintName string `json:"not_null_constraint_name,omitempty"`
 	NumericPrecision      *int   `json:"numeric_precision"` // For DECIMAL, etc.
 	NumericScale          *int   `json:"numeric_scale"`     // For DECIMAL, etc.
-	OrdinalPosition       int    `json:"ordinal_position"`
-	IsAutoIncrement       bool   `json:"is_auto_increment"` // Derived field
-	IsPrimaryKey          bool   `json:"is_primary_key"`    // Derived field
-	IsUnique              bool   `json:"is_unique"`         // Derived field
+	// DatetimePrecision is the fractional-seconds precision of a timestamp,
+	// time, or interval column, as information_schema.datetime_precision
+	// reports it: the declared (p), or the type's default when none was
+	// declared. PostgreSQL rewrites a column whose precision shrinks and not
+	// one whose precision grows, which is why the lint baseline needs it.
+	DatetimePrecision *int `json:"datetime_precision,omitempty"`
+	OrdinalPosition   int  `json:"ordinal_position"`
+	IsAutoIncrement   bool `json:"is_auto_increment"` // Derived field
+	IsPrimaryKey      bool `json:"is_primary_key"`    // Derived field
+	IsUnique          bool `json:"is_unique"`         // Derived field
 
 	// TypeIsDeclaredText records that DataType must be written back as it
 	// stands, because canonicalizing it would describe a different column.

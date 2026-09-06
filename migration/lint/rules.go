@@ -76,6 +76,7 @@ func builtinRules() []Rule {
 	rules = append(rules, migrationFormRules()...)
 	rules = append(rules, compatibilityRules()...)
 	rules = append(rules, postgresRules()...)
+	rules = append(rules, postgresCostRules()...)
 	rules = append(rules, mysqlRules()...)
 	rules = append(rules, mysqlMemberRules()...)
 	rules = append(rules, mysqlCostRules()...)

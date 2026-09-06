@@ -19,15 +19,13 @@ func TestAtlasCodeAliases_CoverEveryMappedCodeThatCanBeAliased(t *testing.T) {
 
 	aliases := lint.AtlasCodeAliases()
 
-	// Ten Atlas codes report under a differently spelled Ptah rule; six of
+	// Eight Atlas codes report under a differently spelled Ptah rule; six of
 	// them are codes Ptah also uses for a rule of its own and are excluded.
-	// Every MY code left this table when it became a Ptah rule of the same
-	// name (members.go, mysqlcost.go).
-	c.Assert(aliases, qt.HasLen, 4)
+	// Every engine-specific code left this table when it became a Ptah rule
+	// of the same name (members.go, mysqlcost.go, pgcost.go).
+	c.Assert(aliases, qt.HasLen, 2)
 	c.Assert(aliases["BC102"], qt.DeepEquals, []string{"BC101"})
 	c.Assert(aliases["MF104"], qt.DeepEquals, []string{"PG303", "LT101"})
-	c.Assert(aliases["PG301"], qt.DeepEquals, []string{"DS103"})
-	c.Assert(aliases["PG304"], qt.DeepEquals, []string{"PG104"})
 }
 
 // TestAtlasCodeFor_AnswersEveryCodeARuleStandsFor holds the reverse direction,
@@ -36,10 +34,10 @@ func TestAtlasCodeAliases_CoverEveryMappedCodeThatCanBeAliased(t *testing.T) {
 func TestAtlasCodeFor_AnswersEveryCodeARuleStandsFor(t *testing.T) {
 	c := qt.New(t)
 
-	c.Assert(lint.AtlasCodeFor("DS103"), qt.DeepEquals, []string{"PG301"})
+	c.Assert(lint.AtlasCodeFor("BC101"), qt.DeepEquals, []string{"BC102"})
 	c.Assert(lint.AtlasCodeFor("LT101"), qt.DeepEquals, []string{"MF104"})
-	c.Assert(lint.AtlasCodeFor("MY101"), qt.HasLen, 0)
-	c.Assert(lint.AtlasCodeFor("PG104"), qt.DeepEquals, []string{"PG304"})
+	c.Assert(lint.AtlasCodeFor("PG303"), qt.DeepEquals, []string{"MF104"})
+	c.Assert(lint.AtlasCodeFor("DS103"), qt.HasLen, 0)
 	c.Assert(lint.AtlasCodeFor("PG302"), qt.HasLen, 0)
 }
 
@@ -59,24 +57,24 @@ func lintFS(c *qt.C, sql string, opts lint.Options) []lint.Finding {
 // asks for: the Atlas code is accepted where a Ptah code is.
 func TestAtlasCodeSelectorDisablesTheRuleThatReportsIt(t *testing.T) {
 	c := qt.New(t)
-	sql := "ALTER TABLE t ALTER COLUMN c TYPE bigint;\n"
+	sql := "ALTER TABLE t RENAME COLUMN c TO d;\n"
 
 	withRule := lintFS(c, sql, lint.Options{})
-	withoutRule := lintFS(c, sql, lint.Options{Disabled: []string{"PG301"}})
+	withoutRule := lintFS(c, sql, lint.Options{Disabled: []string{"BC102"}})
 
-	c.Assert(lintCodes(withRule), qt.Contains, "DS103")
-	c.Assert(lintCodes(withoutRule), qt.Not(qt.Contains), "DS103")
+	c.Assert(lintCodes(withRule), qt.Contains, "BC101")
+	c.Assert(lintCodes(withoutRule), qt.Not(qt.Contains), "BC101")
 }
 
 // TestAtlasCodeSelectorLeavesOtherRulesAlone is the control: an alias must
 // silence the rule it maps to and nothing else.
 func TestAtlasCodeSelectorLeavesOtherRulesAlone(t *testing.T) {
 	c := qt.New(t)
-	sql := "ALTER TABLE t ALTER COLUMN c TYPE bigint;\nDROP TABLE other;\n"
+	sql := "ALTER TABLE t RENAME COLUMN c TO d;\nDROP TABLE other;\n"
 
-	findings := lintFS(c, sql, lint.Options{Disabled: []string{"PG301"}})
+	findings := lintFS(c, sql, lint.Options{Disabled: []string{"BC102"}})
 
-	c.Assert(lintCodes(findings), qt.Not(qt.Contains), "DS103")
+	c.Assert(lintCodes(findings), qt.Not(qt.Contains), "BC101")
 	c.Assert(len(lintCodes(findings)) > 0, qt.IsTrue,
 		qt.Commentf("the DROP must still be reported: %v", lintCodes(findings)))
 }
@@ -85,13 +83,13 @@ func TestAtlasCodeSelectorLeavesOtherRulesAlone(t *testing.T) {
 // code is for: policy, not only suppression.
 func TestAtlasCodeSeverityOverrideReachesTheRule(t *testing.T) {
 	c := qt.New(t)
-	sql := "ALTER TABLE t ALTER COLUMN c TYPE bigint;\n"
+	sql := "ALTER TABLE t RENAME COLUMN c TO d;\n"
 
 	findings := lintFS(c, sql, lint.Options{
-		RuleConfigs: map[string]lint.RuleConfig{"PG301": {Severity: lint.SeverityWarning}},
+		RuleConfigs: map[string]lint.RuleConfig{"BC102": {Severity: lint.SeverityError}},
 	})
 
-	c.Assert(severityOf(c, findings, "DS103"), qt.Equals, string(lint.SeverityWarning))
+	c.Assert(severityOf(c, findings, "BC101"), qt.Equals, string(lint.SeverityError))
 }
 
 // severityOf returns the severity one rule was reported at, failing when it was

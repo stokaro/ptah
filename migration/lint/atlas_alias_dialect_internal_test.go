@@ -5,6 +5,7 @@ package lint
 // rules a selector silenced for a given dialect.
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -20,11 +21,22 @@ type aliasSuppressionRow struct {
 	want     bool
 }
 
+// scopedAliases is an alias table with one entry per shape the scoping has
+// to answer for. The built-in table holds no engine-specific alias any more
+// -- every such code became a Ptah rule of its own name -- so the hazard is
+// pinned against a table that has one, through the same expansion the
+// built-in table goes through.
+var scopedAliases = map[string]atlasAlias{
+	"PG9XX": {dialects: []string{"postgres"}, rules: []string{"DS103"}},
+	"MY9XX": {dialects: mysqlFamily, rules: []string{"CD103"}},
+	"XX9XX": {rules: []string{"BC101"}},
+}
+
 func TestExpandAtlasCodeSelectorsScopesSuppressionToTheAliasDialect(t *testing.T) {
 	rows := []aliasSuppressionRow{{
 		name:     "postgres code silences the generic rule on postgres",
 		dialect:  "postgres",
-		selector: "PG301",
+		selector: "PG9XX",
 		rule:     "DS103",
 		want:     true,
 	}, {
@@ -32,40 +44,60 @@ func TestExpandAtlasCodeSelectorsScopesSuppressionToTheAliasDialect(t *testing.T
 		// PostgreSQL entry must not weaken a MySQL run.
 		name:     "postgres code leaves the generic rule alone on mysql",
 		dialect:  "mysql",
-		selector: "PG301",
+		selector: "PG9XX",
 		rule:     "DS103",
 		want:     false,
 	}, {
-		// Every MY code is a Ptah rule of its own name now, so the family's
-		// scoping is pinned from the PostgreSQL side: a MySQL run must not be
-		// weakened by a PostgreSQL entry, and the converse holds by the same
-		// code path.
-		name:     "postgres code leaves the generic rule alone on mariadb",
+		name:     "mysql code silences the generic rule on mysql",
+		dialect:  "mysql",
+		selector: "MY9XX",
+		rule:     "CD103",
+		want:     true,
+	}, {
+		name:     "mysql code also covers mariadb",
 		dialect:  "mariadb",
-		selector: "PG301",
-		rule:     "DS103",
+		selector: "MY9XX",
+		rule:     "CD103",
+		want:     true,
+	}, {
+		name:     "mysql code leaves the generic rule alone on postgres",
+		dialect:  "postgres",
+		selector: "MY9XX",
+		rule:     "CD103",
 		want:     false,
 	}, {
 		// An alias with no engine of its own keeps applying everywhere.
 		name:     "engine-neutral alias applies on any dialect",
 		dialect:  "mysql",
-		selector: "BC102",
+		selector: "XX9XX",
 		rule:     "BC101",
 		want:     true,
 	}, {
 		// Matches the rule engine's own convention for an unset dialect.
 		name:     "no configured dialect expands every alias",
 		dialect:  "",
-		selector: "PG301",
+		selector: "PG9XX",
 		rule:     "DS103",
 		want:     true,
 	}}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(ruleDisabled(row.rule, []string{row.selector}, row.dialect), qt.Equals, row.want)
+			expanded := expandSelectorsWithAliases(scopedAliases, []string{row.selector}, row.dialect)
+			c.Assert(slices.Contains(expanded, row.rule), qt.Equals, row.want)
 		})
 	}
+}
+
+// TestRuleDisabledGoesThroughTheBuiltInAliases is the control that the
+// built-in table reaches the rule engine the same way: the one alias left
+// with rules of a different spelling disables them on every dialect.
+func TestRuleDisabledGoesThroughTheBuiltInAliases(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(ruleDisabled("BC101", []string{"BC102"}, "mysql"), qt.IsTrue)
+	c.Assert(ruleDisabled("LT101", []string{"MF104"}, "sqlite"), qt.IsTrue)
+	c.Assert(ruleDisabled("DS103", []string{"PG301"}, "postgres"), qt.IsFalse)
 }
 
 func TestExpandAtlasCodeSelectorsKeepsTheOriginalSelector(t *testing.T) {
@@ -83,6 +115,6 @@ func TestExpandAtlasCodeSelectorsValidatesAcrossEveryDialect(t *testing.T) {
 	// Validation is deliberately NOT scoped: a policy shared across engines
 	// names PG301 legitimately even while linting MySQL, and refusing it as
 	// unknown is the failure stokaro/ptah#1631 fixed.
-	c.Assert(selectorMatchesRule("PG301", Rules()), qt.IsTrue)
-	c.Assert(selectorMatchesRule("PG304", Rules()), qt.IsTrue)
+	c.Assert(selectorMatchesRule("BC102", Rules()), qt.IsTrue)
+	c.Assert(selectorMatchesRule("MF104", Rules()), qt.IsTrue)
 }
