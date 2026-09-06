@@ -2,2285 +2,663 @@
 
 This file gives coding agents repository-local guidance for working in Ptah.
 
+It holds the rules no gate can enforce: decisions that have to be right before
+a check could run, and habits whose failure a green build does not show. Where
+a gate exists, this file names it instead of restating what it checks, because
+a restated list drifts the moment the gate moves -- the docs-gate list that used
+to live here was missing nineteen of the thirty-nine scripts `docs.yml` runs
+when it was measured.
+
 ## Where Work Happens
 
 **Every change is made in a linked git worktree. Never work in the main
-worktree.** Not a branch created in place, not a stash, and not a single file
-edited where it sits: create a worktree, work there, and open the pull request
-from it.
-
-The worktree goes under one of two directories, at the first level of the
-repository root, named for the agent that made it:
+worktree.** Two agents work here at once, routinely; a branch checked out in
+the shared main worktree moves the other agent's work to a branch it did not
+ask for.
 
 ```bash
+git fetch origin
 git worktree add .claude/worktrees/<name> -b <branch> origin/master
 git worktree add .codex/worktrees/<name>  -b <branch> origin/master
 ```
 
-`<name>` describes the task -- `2538-constraint-include`, not `tmp` or `wt2`.
-Both directories are ignored, so a checkout parked there is invisible to
-`git status` and cannot be committed by a careless `git add -A`.
+`<name>` describes the task -- `2538-constraint-include`, not `tmp`. Branch
+from `origin/master`, never from local `master`: it was once measured 148
+commits behind, which made every "measured against master" statement in that
+session wrong.
 
-Four things this buys, and each of them is a failure somebody already had:
+**Clean up when the work merges.** `git worktree remove <path>`, then delete
+the branch with `-D` -- a squash-merged branch is not "merged" to `git branch
+-d`, so confirm the content reached master first. **Never remove a worktree you
+did not create**: an existing path is another agent's claim on that task, and
+`--force` on it destroys work that has no pull request yet.
 
-- **Two agents can work at once.** They do, constantly. A second agent that
-  checks out a branch in the shared main worktree moves the first one's work to
-  a branch it did not ask for, and the files it was editing appear to vanish.
-- **The main worktree stays a clean reference.** Measuring a claim against
-  master is the first step of most bug work here, and it needs a checkout that
-  is actually at master rather than one carrying half a fix.
-- **Abandoned work is deleted, not merged by accident.** `git worktree remove`
-  takes the whole attempt with it. A branch abandoned in place stays checked
-  out, and the next `git add -A` picks up whatever it left behind.
-- **The task's identity is in the path.** A directory named for one issue that
-  holds another issue's branch is a visible mistake; the same mistake in a
-  shared checkout is invisible.
-
-Branch from `origin/master`, not from the local `master` ref, and fetch first.
-A local `master` is whatever it was the last time somebody pulled -- measured
-once at 148 commits behind, which made every "measured against master" statement
-in that session wrong.
-
-**Clean up when the work merges.** `git worktree remove <path>`, then delete the
-local branch. A squash-merged branch is not "merged" as far as `git branch -d`
-is concerned, so confirm the content reached master and use `-D`. Never remove a
-worktree you did not create: a path that already exists is another agent's claim
-on that task, and `--force` on it destroys work that has no pull request yet.
-
-**A nested checkout is a hazard for any tool that walks the filesystem.** The
-root of a linked worktree is an ordinary directory whose `.git` is a regular
-file, so nothing prunes it by name and a walk descends into every checkout
-parked under the repository -- reporting another branch's files as this one's.
-`scripts/check-test-style.sh` and `scripts/list-go-modules.sh` both document
-this and both ask git instead, which cannot leave the working tree. **A new gate
-that enumerates files asks `git ls-files`.** One that walks is wrong here by
-construction, and it will be wrong quietly: it reports findings, they look real,
-and their paths point at a checkout the reader does not have.
+**A gate that enumerates files asks `git ls-files`, never the filesystem.** A
+linked worktree's root is an ordinary directory, so a walk descends into every
+checkout parked under the repository and reports another branch's files as this
+one's. `scripts/check-test-style.sh` and `scripts/list-go-modules.sh` are the
+shape. Two more properties make a check a gate rather than a ceremony: one
+that regenerates requires every generator to exit 0, since a generator that
+crashes before writing leaves the tree as clean as one that confirmed every
+file; and one that enumerates holds its corpus above a floor, since a glob
+that stopped matching reports zero findings and reads as success.
 
 ## What Ptah Is
 
 Ptah generates SQL DDL from annotated Go structs, compares a desired schema
 against a live database, and plans, generates and applies migrations. It ships
-two command-line binaries: the native `ptah`, and `ptah-compat`, a drop-in
-replacement for the Atlas CLI.
+two binaries: the native `ptah`, and `ptah-compat`, a drop-in replacement for
+the Atlas CLI.
 
-`--dialect` accepts every spelling `core/platform.NormalizeDialect` resolves:
-the canonical names declared in `core/platform/constants.go`, plus the aliases
-that fold onto them, and `core/platform/capability.DefaultDialects()` returns
-the canonical set itself. Read the answer out of those declarations rather than
-out of a count written down here — and not out of a `--dialect` help line
-either, because each verb registering the flag states its own range.
-`ptah schema render` prints the canonical names; `ptah migrations lint` and
-`ptah sql lint` print a shorter list that leaves Oracle out. That omission is
-deliberate, since no lint rule analyzes Oracle, and
-`internal/lintdialect/dialect.go` and `cmd/sql/sql.go` each say so where their
-list is declared.
+Read facts out of their declaration rather than out of a count written here:
 
-A dialect being accepted is not a promise that every construct renders on it.
-`SERIAL`, for one, is refused by name on ClickHouse, CockroachDB and Spanner
-rather than downgraded behind the author's back, which is the compatibility
-policy below applied to dialects.
-[`docs/capabilities.md`](docs/capabilities.md) explains how capability sets
-decide what a concrete target accepts.
-
-`dbschema.ConnectToDatabase` dispatches on the URL scheme, and
-`databaseDriverConfig` in `dbschema/connection.go` is the one place that names
-the driver each dialect takes. Read the driver list there rather than from a
-count written down here: the mapping is not one driver per dialect, and it is
-not decided by the dialect alone. `sqlite` covers a local file while `libsql`
-covers a remote Turso target, and which one a `sqlite` URL takes depends on the
-URL. A scheme outside that set is refused rather than guessed at.
+- Accepted dialects: `core/platform.NormalizeDialect` and
+  `core/platform/constants.go`. `migrations lint` and `sql lint` leave Oracle
+  out deliberately; `internal/lintdialect/dialect.go` says why.
+- Which driver a URL takes: `databaseDriverConfig` in `dbschema/connection.go`.
+  It is not one driver per dialect, and a `sqlite` URL may take `libsql`.
+- What a dialect renders: `docs/capabilities.md`. Acceptance is not a promise;
+  `SERIAL` is refused by name on ClickHouse, CockroachDB and Spanner rather than
+  downgraded silently.
 
 ## Repository Layout
 
-Ptah's public Go surface is a small part of the tree. Most implementation
-packages sit under `internal/` and cannot be imported from another module, so
-check where a package actually lives before writing an import path for it.
+Most implementation sits under `internal/` and cannot be imported from another
+module, so check where a package lives before writing an import path.
 
-The ledger of the public Go surface is
-[`docs/public_api.md`](docs/public_api.md): it lists the stable embedder
-packages. The ledger is the supported surface, not everything technically
-importable -- test fixtures and support trees such as `stubs/`,
-`integration/*`, and `examples/*` stay outside it, and
-`scripts/check-public-api.sh` names its exemptions explicitly.
+The public Go surface is the ledger [`docs/public_api.md`](docs/public_api.md),
+enforced by `scripts/check-public-api.sh` (an importable package is either
+listed or exempt), `scripts/check-public-api-released.sh` (`apidiff` against
+the newest tag; an intentional break needs a reviewed entry in
+`docs/public_api_approvals.txt`) and `scripts/check-exported-docs.sh` (every
+exported declaration documented). Test fixtures and support trees such as
+`stubs/`, `integration/*` and `examples/*` are outside the ledger.
+Additive API changes get normal code review: do not commit a generated
+snapshot of exported declarations to make them show up twice in a diff
+(`docs/public_api.snapshot` and its gate were removed in stokaro/ptah#2572 for
+that reason).
 
-That gate fails when `go list ./...` finds an importable package that is
-neither exempt nor in the ledger. `scripts/check-public-api-released.sh` runs
-`apidiff` against the newest `v0.*` release tag and requires a reviewed entry
-in `docs/public_api_approvals.txt` for an intentional incompatible change.
-`scripts/check-exported-docs.sh` separately requires documentation on exported
-declarations. Additive API changes rely on normal code review; the repository
-does not commit a generated copy of declarations merely to make those changes
-appear twice in a diff.
+Core packages a reader meets first: `core/ast`, `core/astbuilder`,
+`core/goschema` (annotation parser in `parser.go`), `core/renderer` (dialects
+under `internal/dialects/`), `core/platform`, `core/yamlschema`, `dbschema`,
+`migration/generator`, `migration/migrationfile`, `migration/shadow`,
+`migration/migrator`, `migration/planner`, `migration/schemadiff`.
 
-The list below is orientation, not the ledger: the core packages a reader
-meets first. `docs/public_api.md` is the authority on what is public.
+Internal packages worth knowing: `internal/lexer`, `internal/parser` and
+`internal/dialectlexer` (SQL tokenizer and DDL parser); `internal/convert/...`
+(remaining representation conversions; stokaro/ptah#2725 owns removing the SQL
+one); `internal/schemaprep` (model-to-model preparation shared by renderers and
+planners); `internal/modelast` (lowering to AST nodes); `internal/tablelookup`;
+`internal/dbschema/...` (per-dialect readers and writers); `internal/envbool`
+(the one grammar for boolean `PTAH_*` variables); `internal/capabilityprobe`,
+`internal/serverprofile` and `internal/capmatrix` (declared release lines, what
+a live server established, and the CI fan-out over them).
 
-- `core/ast` — dialect-agnostic AST for SQL DDL.
-- `core/astbuilder` — fluent builders that construct `core/ast` nodes without
-  hand-written struct literals.
-- `core/goschema` — Go source parsing and entity extraction; the annotation
-  parser is `core/goschema/parser.go`.
-- `core/renderer` — dialect-specific SQL generation from the AST. The entry
-  point is `core/renderer/renderer.go`; per-dialect code sits under
-  `core/renderer/internal/dialects/`.
-- `core/platform` — dialect names, normalization, and family predicates such as
-  `IsPostgresFamily`.
-- `core/yamlschema` — the YAML authoring format's reader; one of the readers
-  that produce a `core/schemamodel.Database`.
-- `dbschema` — connection management plus schema reading and writing against a
-  live database.
-- `migration/generator` — migration file generation from schema diffs.
-- `migration/migrationfile` — the migration file layout: names, directory
-  formats, directives, txtar archives, and templates; no database, no
-  execution.
+Command tree: `cmd/ptah/main.go` is the native binary and `cmd/root/root.go`
+assembles it from the namespaces `cmd/schema`, `cmd/db`, `cmd/migrations`,
+`cmd/oci`, `cmd/seed`, `cmd/sql`, `cmd/viz`, `cmd/introspect`, `cmd/version`
+and `cmd/license`; each leaf verb keeps its own package below them
+(`cmd/generate` backs `ptah schema render`). `cmd/atlas` is the Atlas-compatible
+tree shipped by `cmd/ptah-compat`. `cmd/integration-test` is the suite runner
+and `cmd/ptah-ls` the language server. Both command trees are adapters; see
+[Native And Compatibility Capability Ownership](#native-and-compatibility-capability-ownership).
 
-- `migration/shadow` — verification of a migration against a live disposable
-  database: the candidate check the generator runs before it writes files,
-  baseline and rollback verification, and dynamic rollback planning.
-- `migration/migrator` — migration execution with rollback.
-- `migration/planner` — migration planning and SQL generation.
-- `migration/schemadiff` — schema comparison; the entry point is
-  `migration/schemadiff/schemadiff.go`.
-
-Internal packages worth knowing, none of them importable from another module:
-
-- `internal/lexer`, `internal/parser` and `internal/dialectlexer` — SQL
-  tokenizer and DDL parser.
-- `internal/convert/...` — the remaining conversions between schema
-  representations. SQL schema sources still pass through
-  `internal/convert/toschema`; stokaro/ptah#2725 owns removing that boundary.
-- `internal/schemaprep` — model-to-model preparation shared by renderers and
-  planners: embedded fields, platform overrides, user-type qualification,
-  table checks, row-level security targets, and generated foreign-key names.
-- `internal/modelast` — lowering from a prepared `schemamodel.Database` to AST
-  nodes. Renderers use `WalkDatabase`; only the stable
-  `atlascompat.SchemaToAST` API uses the complete-AST compatibility collector.
-- `internal/tablelookup` — table-local field, index, and constraint lookup
-  shared by rendering and planning.
-- `internal/dbschema/...` — the per-dialect readers and writers `dbschema`
-  selects between.
-- `internal/envbool` — the one grammar for boolean `PTAH_*` variables.
-- `internal/capabilityprobe` — the declared database release lines, the support
-  level each one carries, and the probe that measures a live server against the
-  preset each line claims.
-- `internal/serverprofile` — what Ptah has established about one live server:
-  its identity, the capability preset that answered and how it was reached, the
-  support level of the release line it falls on, and the capability values that
-  follow. `ptah db capabilities` renders it.
-- `internal/capmatrix` — the tiered pipeline built on that declaration: the CI
-  fan-out, one cell's result, and the aggregation that fails when a declared
-  cell reports nothing.
-
-Command tree:
-
-- `cmd/ptah/main.go` — native binary entry point; `cmd/root/root.go` assembles
-  the tree.
-- `cmd/schema`, `cmd/db`, `cmd/migrations`, `cmd/oci`, `cmd/seed`, `cmd/sql`,
-  `cmd/viz`, `cmd/introspect`, `cmd/version` and `cmd/license` — the namespaces
-  the root command registers. Each leaf verb keeps its own package below them:
-  `cmd/generate` backs `ptah schema render`, `cmd/readdb` backs `ptah db read`,
-  `cmd/migrateup` backs `ptah migrations up`, and so on.
-- `cmd/atlas` — the Atlas-compatible tree, shipped by the separate
-  `cmd/ptah-compat` binary.
-- `cmd/integration-test` — the integration-suite runner binary.
-- `cmd/ptah-ls` — the language-server binary.
-
-Both command trees are adapters.
-[Native And Compatibility Capability Ownership](#native-and-compatibility-capability-ownership)
-is authoritative for the boundary between them and for the dependency direction
-it implies.
-
-Entities to test against: `stubs/` and `examples/` hold annotated Go entities,
-and `integration/fixtures/entities/` holds the numbered fixture series the
-integration suite migrates through.
+Entities to test against: `stubs/`, `examples/`, and the numbered fixture
+series in `integration/fixtures/entities/`.
 
 ## Schema Annotations
 
-Ptah reads structured comments from Go structs. The directive prefix is
-`//ptah:`:
+Directives are `//ptah:` comments on Go structs; `stubs/` holds worked
+examples. Two things the parser will not tell you:
 
-```go
-//ptah:schema:table name="products"
-type Product struct {
-	//ptah:schema:field name="id" type="SERIAL" primary="true"
-	ID int64
-
-	//ptah:schema:field name="name" type="VARCHAR(255)" not_null="true"
-	//ptah:schema:index name="idx_products_name" fields="name"
-	Name string
-}
-```
-
-An index annotation has to sit on a struct field, because the walker visits
-comments attached to fields. A `//ptah:schema:index` written at file level,
-after the closing brace and attached to no declaration, contributes no index and
-says nothing while doing it. To declare an index away from its column, give it a
-holder struct and name the table:
-
-```go
-type ProductIndexes struct {
-	//ptah:schema:index name="idx_products_name" fields="name" table="products"
-	_ int
-}
-```
-
-`fields=` is the modern spelling of the column list; `columns=` is accepted as a
-legacy synonym. Unknown attribute names are rejected at parse time, so a typo
-surfaces as an error rather than as a missing index.
+- **An index annotation has to sit on a struct field.** Written at file level,
+  after the closing brace, it contributes no index and says nothing. To declare
+  an index away from its column, give it a holder struct and name the table:
+  `//ptah:schema:index name="..." fields="name" table="products"` on a `_ int`
+  field.
+- `fields=` is the modern spelling of the column list; `columns=` is a legacy
+  synonym. Unknown attribute names are rejected at parse time.
 
 ## The Native CLI Surface
 
-`ptah` groups its verbs into namespaces. There is no `ptah generate`,
-`ptah compare`, `ptah read-db`, `ptah drop-all` or `ptah migrate`: each answers
-`error: unknown command` and exits 2. Atlas spellings live only in
-`ptah-compat`.
+`ptah` groups verbs into namespaces (`ptah schema render`, `ptah db read`,
+`ptah migrations up`); `--help` is the authority on flags. There is no `ptah
+generate`, `ptah compare`, `ptah read-db`, `ptah drop-all` or `ptah migrate`,
+and none may be added: Atlas spellings live only in `ptah-compat`.
 
-```bash
-# Render desired schema SQL from Go entities
-ptah schema render --root-dir ./models --dialect postgres
+`--dry-run` belongs to the commands that write, not to the CLI as a whole. A
+flag's `--help` line prints `[env: PTAH_...]` when it reads an environment
+variable; one without the marker has no binding. Boolean variables are strict
+-- see [below](#boolean-ptah_-environment-variables-are-strict).
 
-# Compare a desired schema with a live database
-ptah schema compare --root-dir ./models --db-url postgres://user:pass@localhost/db
-
-# Read the schema of a live database
-ptah db read --db-url postgres://user:pass@localhost/db
-
-# Report what Ptah can do against a live database, and why
-ptah db capabilities --db-url postgres://user:pass@localhost/db --format json
-
-# Drop every schema object (DANGEROUS — try --dry-run first)
-ptah db drop-all --db-url postgres://user:pass@localhost/db --dry-run
-
-# Generate migration files from schema differences
-ptah migrations generate --root-dir ./models \
-  --db-url postgres://user:pass@localhost/db \
-  --migrations-dir ./migrations --name create_products
-
-# Apply, inspect, and roll back
-ptah migrations up --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations
-ptah migrations status --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations
-ptah migrations down --db-url postgres://user:pass@localhost/db --migrations-dir ./migrations \
-  --target 0 --confirm
-
-# Build metadata
-ptah version
-```
-
-`--dry-run` belongs to the commands that write, not to the CLI as a whole:
-`migrations up`, `migrations down`, `db drop-all` and `schema apply` carry it,
-while `db read` and `version` do not. Check `--help` rather than assuming.
-
-Most flags also read a `PTAH_`-prefixed environment variable, printed as
-`[env: PTAH_...]` on the flag's `--help` line; a flag without that marker, such
-as `db drop-all --auto-approve`, has no environment binding. The boolean
-variables are strict; see
-[Boolean `PTAH_*` environment variables are strict](#boolean-ptah_-environment-variables-are-strict).
-
-`ptah migrations generate` writes a reversible, timestamped pair per migration:
-`<unix-seconds>_<name>.up.sql` and `<unix-seconds>_<name>.down.sql`. Schema
-rendering is deterministic and dependency-aware: the renderer prints the table
-creation order it derived from foreign keys, and two runs over the same entities
-produce byte-identical output.
+Schema rendering is deterministic and dependency-aware: two runs over the same
+entities produce byte-identical output, and a test may pin that.
 
 ## Building And Testing
 
 ```bash
-# Build the native CLI
-go build -o bin/ptah ./cmd/ptah
-
-# Build the integration-suite runner
-go build -o bin/ptah-integration-test ./cmd/integration-test
-
-# Build every binary: ptah, ptah-ls, ptah-compat, ptah-integration-test
-make build
-
-# Unit tests
-go test ./... -count=1
-make test
-
-# List integration scenarios without running any of them
-bin/ptah-integration-test list
+make build                       # ptah, ptah-ls, ptah-compat, ptah-integration-test
+go test ./... -count=1           # unit contour
+make lint                        # golangci-lint, qtlint, nolintguard -- three targets, all required
+scripts/check-test-style.sh      # declarative-test baseline
+make integration-test            # Docker Compose suite; binds fixed host ports
 ```
 
-The integration suite runs under Docker Compose through `make integration-test`
-and its per-database variants such as `make integration-test-postgres`. Those
-targets bind fixed host ports and `make docker-clean` prunes system-wide Docker
-state, so look at what is already running before invoking either.
+`make docker-clean` runs `docker system prune -f` against the whole daemon,
+not only the suite's resources, so look at what is already running before
+invoking it or `make integration-test`. These are the only test entry points:
+a convenience script may wrap them thinly but must not become a second
+discovery, orchestration and reporting implementation (stokaro/ptah#2507).
 
-Pull-request workflows classify the complete pull-request diff before skipping
-an expensive compiled contour. `scripts/ci-diff-scope.sh` is the shared
-authority: it fails open to running the contour for empty, unreadable, unknown,
-or newly introduced paths, compares from the pull request's merge base, and
-treats every nested Go module and testdata tree as compiled input even when a
-file there is Markdown. `.gitattributes` and the architecture-boundary baseline
-are compiled inputs too: they control the bytes tests see and a Go-backed
-ratchet respectively. Workflow-level
-`paths` filters are not a substitute, because a filtered workflow leaves no
-check on the pull request. Each scoped workflow keeps an always-visible scope
-job and an aggregate gate that fails when the decision and job conclusions do
-not agree.
+`make lint` is not the whole lint job: `.github/workflows/go-lint.yml` runs
+policy scripts beside it. Before finishing, run what the workflows run for the
+files you touched -- read the job, do not trust a list in prose.
 
-That classification applies only to pull requests. Every validation contour
-runs on a push to `master`; deployment and external monitoring remain governed
-by their own event contracts. Ordinary documentation changes still run the
-documentation workflow and the focused package tests that read those pages as
-contract inputs, while unrelated Go lint, fuzz, security, export, and database
-contours are skipped. A `docs/site/package.json` or lockfile-only bump runs the
-site and style checks without setting up Go. `release-master-check.yml` builds
-a release snapshot on every master push without making that push eligible for
-the tag-only publication job. Exercise both halves before changing the rule:
+### Pull-request scoping
 
-```bash
-scripts/ci-diff-scope.sh --selftest
-scripts/check-ci-scope-gate.sh --selftest
-```
+Pull-request workflows classify the whole diff before skipping an expensive
+contour. `scripts/ci-diff-scope.sh` is the one authority and fails open; a
+workflow-level `paths:` filter is not a substitute, because a filtered workflow
+leaves no check on the pull request at all, and an absent check reads exactly
+like a passing one. Each scoped workflow keeps an always-visible `scope` job and
+a `*-gate` job that fails when the decision and the job conclusions disagree.
+Every gate job carries `if: always()`, and
+`scripts/check-ci-scope-gate.sh --check-workflows` refuses one that does not: a
+gate skipped because a dependency failed reports success about the failure it
+exists to surface. Every contour runs on a push to `master`.
 
 ### The version matrix
 
-Which database release lines Ptah covers as matrix cells is declared in exactly
-one place, `internal/capabilityprobe/cells.go`. Exact measured-line identifiers
-shared with the version resolver live in `internal/capabilityline`; the cell
-slice references those identifiers instead of duplicating their spelling.
+Release lines are declared once, in `internal/capabilityprobe/cells.go`;
+adding one is a literal there plus `scripts/check-docsync.sh --write`.
+`go run ./internal/cmd/capmatrix matrix` says what the pipeline fans out over.
 
-```bash
-# What the pipeline fans out over, and which declared lines it cannot run
-go run ./internal/cmd/capmatrix matrix
+The probe fan-out does not run on a pull request by default
+(stokaro/ptah#2185). Request it from the pull request with a comment:
+`/capability-matrix`, `/capability-matrix postgres`, or a mix of prefixes and
+exact ids. The cheap jobs -- `cells`, `preset coverage`, `documented matrix` --
+run on every pull request regardless.
 
-# Fail when a declared line has no capability preset
-go run ./internal/cmd/capmatrix presets
+A cell's `Support` level describes **this repository's testing**, not the
+server, and nothing reads it to gate an operation. A line may claim certified
+or legacy-tested only if something actually runs against it -- the probe, a
+server `go-integration-tests.yml` starts, or for SQLite the compiled-in engine.
+`TestCells_CertificationMatchesWhatContinuousIntegrationRuns` measures that
+rather than trusting the literal. The generated support matrix is the only
+release-line census; authored pages must not repeat its counts
+(`check-support-matrix.mjs`).
 
-# Probe one cell against a server already listening for it
-go run ./internal/cmd/capmatrix probe --cell postgres-17
+### Lint rules
 
-# Keep the documented matrix tied to the declaration
-scripts/check-docsync.sh
-scripts/check-docsync.sh --write
-```
-
-`.github/workflows/capability-matrix.yml` runs the capability probe once per
-cell, and `capability-matrix-nightly.yml` runs the integration suite over the
-same cells on a schedule. Both read the declaration through `capmatrix matrix`,
-so adding a release line is a data change: one literal in `cells.go`, then
-`scripts/check-docsync.sh --write`.
-
-**The probe fan-out does not run on a pull request by default.** It is one job
-per cell with a container each, and it outnumbered every other check until the
-queue stopped keeping up (stokaro/ptah#2185). It runs nightly, from the
-workflow's Run button, and on request from the pull request itself:
-
-```text
-/capability-matrix                     every declared cell
-/capability-matrix postgres            every PostgreSQL line
-/capability-matrix mysql, oracle-21    a mix of prefixes and exact ids
-```
-
-The three cheap jobs beside it — `cells`, `preset coverage` and
-`documented matrix` — still run on every pull request and every push, so a
-change that adds a release line or a capability key is still caught by the gate
-that lives here rather than in `docs.yml`. A run that probed nothing says so in
-its own step summary: an absent check must not read like a passing one, which is
-the same reason this workflow carries no `paths:` filter.
-
-Every cell also declares a `Support` level from `capability.SupportLevel` —
-certified, legacy-tested, best-effort, or known-incompatible. It is a statement
-about **this repository's testing**, not about the server: nothing reads it to
-decide whether an operation may proceed, and an upstream end-of-life date moves
-a line from certified to legacy-tested rather than making it unusable.
-
-A cell may claim certified or legacy-tested only if something actually runs
-against the line. Three things can:
-
-- the capability probe, for a line the tiered workflows fan out over;
-- a server `.github/workflows/go-integration-tests.yml` starts;
-- for SQLite alone, the engine compiled into the binary, which every
-  `go test ./...` exercises.
-
-`TestCells_CertificationMatchesWhatContinuousIntegrationRuns` reads that answer
-out of the matrix and the workflow rather than believing the literal, so a line
-cannot claim certification by being written down. The generated support matrix
-is the only release-line census; authored documentation must not repeat its
-counts or classifications. `check-support-matrix.mjs` enforces that boundary,
-and `ptah db capabilities` is where an operator sees the resolved answer for
-their own server.
-
-### The lint rule enumeration
-
-Every rule identifier either linter can report is enumerated on one page,
-`docs/site/src/content/docs/reference/lint-rules.md`, and the page is generated
-from the registries rather than written by hand.
-
-```bash
-# What the page says, rendered from migration/lint and internal/sqllint
-go run ./internal/cmd/lintrules markdown
-
-# Fail when the catalog and the registries disagree, without rendering
-go run ./internal/cmd/lintrules check
-
-# Keep the page tied to the registries
-scripts/check-docsync.sh
-scripts/check-docsync.sh --write
-```
-
-Adding a lint rule is therefore two edits: the rule itself, and its one-line
-meaning in `internal/lintcatalog`. Skipping the second fails the check rather
-than shipping a rule no page names. `internal/lintcatalog` also holds the
-identifier convention — an Atlas check keeps the Atlas identifier, a rule of
-ours inside an Atlas family adds a trailing `P`, a rule inside a family of ours
-is left unmarked — and the identifiers that predate it, a list that may shrink
-and must not grow.
-
-`go test ./... -count=1` or `make test` is the local unit run, and
-`bin/ptah-integration-test` with the `make integration-test` targets is the
-integration one. There is no second entry point: a standalone runner bundle used
-to sit beside them and stopped receiving the repository's testing decisions --
-its `unit` mode exported three database DSNs before choosing a mode, its
-integration mode covered one of the twenty-odd package trees, and it rendered
-its own reports in shell while the supported runner already emitted four formats
-(stokaro/ptah#2507). A convenience entry point may come back as a thin wrapper
-over these commands; it must not be a second discovery, orchestration and
-reporting implementation.
+Every rule identifier is enumerated on one generated page. Adding a rule is
+two edits -- the rule, and its meaning in `internal/lintcatalog` -- and
+`scripts/check-docsync.sh` fails when they disagree. The identifier convention
+lives in `internal/lintcatalog` too, with the identifiers that predate it
+pinned in `preConventionCodes`; that list may shrink and must not grow, so a
+new rule that fails the convention check is renamed, never appended.
 
 ### The Go toolchain
 
-`go.mod` carries two Go versions and they are different facts with different
-lifecycles. Do not collapse them.
-
-- `go 1.26.5` is the published compatibility floor. `ptah.run` is a
-  released import path, so raising this forces every consumer onto the newer
-  language version. It moves on a human decision.
-- `toolchain go1.26.6` is what CI builds and scans with. It moves on every patch
-  release and Renovate's built-in gomod manager proposes those bumps without
-  configuration. A dependency's `toolchain` line does not propagate to its
-  consumers, so this one is free to move.
-
-Every `actions/setup-go` step reads `go-version-file: go.mod`, which honors the
-`toolchain` directive in preference to the `go` directive. Never write a
-`go-version:` literal into a workflow, never restate the version in
-`.golangci.yml` (its `run.go` already defaults to the go directive), and never
-raise the `go` directive to clear a standard-library advisory — that is a
-consumer contract break for a reason that has nothing to do with the language.
-Raise `toolchain` instead.
-
-A `${{ }}` expression is not an escape from that rule. It shows only that a
-value is derived, never from what, so `go-version: ${{ env.GO_VERSION }}` in a
-workflow is a literal declared a few lines higher. The single exemption is
-`.github/actions/ptah/action.yml`, which forwards its own `inputs.go-version`
-and `inputs.go-version-file` because a composite action runs in the **caller's**
-workspace and must not be pinned to this repository's `go.mod`. What that
-forwarding resolves to is pinned by the `go-version-file` input's default, which
-has to exist and to name `go.mod`: the forwarded value is opaque, so that
-default is the only place left where the module is named.
-
-Raising it is the root module's decision alone. `ptah.run/testkit` lives
-in [stokaro/ptah-testkit](https://github.com/stokaro/ptah-testkit) and consumes
-a published release rather than this working tree, so a floor raised here
-reaches it when it bumps its `require` line.
-
-```bash
-# Fail when the toolchain grows a second declaration
-scripts/check-go-toolchain-single-source.sh
-```
+`go.mod` carries two Go versions with different lifecycles. `go` is the
+published compatibility floor and moves on a human decision; `toolchain` is
+what CI builds with and moves on every patch release. Never write a
+`go-version:` literal into a workflow (every `setup-go` reads
+`go-version-file: go.mod`), never restate the version in `.golangci.yml`, and
+never raise `go` to clear a standard-library advisory -- raise `toolchain`.
+`scripts/check-go-toolchain-single-source.sh` enforces the single source; the
+one exemption, `.github/actions/ptah/action.yml`, forwards its caller's inputs
+and says why.
 
 ## Compatibility Policy
 
-Ptah aims to be a drop-in replacement for the Atlas CLI. That goal has two
-halves, and only stating the first one is how a capability gets thrown away.
+Ptah aims to be a drop-in replacement for the Atlas CLI. The goal has two
+halves, and stating only the first is how a capability gets thrown away.
 
-**Never be looser.** A configuration or invocation the community binary refuses
-must not succeed here. Accepting something it rejects means a user's mistake
-passes silently on Ptah and fails somewhere later, which is the worst outcome
-available. Where Ptah cannot yet implement a construct the community binary
-enforces, refuse loudly rather than accept and ignore.
+**Never be looser.** An invocation the community binary refuses must not
+succeed here; accepting it means a user's mistake passes silently and fails
+somewhere later. Where Ptah cannot yet implement a construct the community
+binary enforces, refuse loudly rather than accept and ignore.
 
 **Matching is the floor, not the ceiling. We do not copy defects.** Where the
 community binary's behavior is a defect -- it silently drops something the
-author wrote, corrupts state, or fails for a reason unrelated to what the user
-asked for -- reproducing it is a wrong answer. Be the same or better. A change
-whose only justification is "this is what the other implementation does" is not
-justified when what it does is broken.
+author wrote, corrupts state, or fails for a reason unrelated to the request --
+reproducing it is a wrong answer. Two measured examples: `-- atlas:txmode
+none` is honored with or without a blank line after it, where the community
+binary silently drops the directive without one; `file()` in `atlas.hcl` is
+confined to the project directory on both binaries, where the community binary
+reads `/etc/passwd` (stokaro/ptah#1042). When the halves pull apart, say so in
+the commit and the issue: "we are stricter here, deliberately, and here is the
+measurement" is a complete answer.
 
-When the two halves pull apart, say so in the commit and in the issue rather
-than picking silently. "We are stricter here, deliberately, and here is the
-measurement" is a complete answer; quietly matching is not.
+**Compatibility never removes a capability.** `ptah-compat` is the migration
+path for Atlas Pro pipelines too, so reaching CE compatibility must never mean
+deleting a capability Ptah models. The shape that satisfies both halves:
 
-**Compatibility never removes a capability. Constitute it, do not discard it.**
-Where Ptah models something the community binary does not -- an extension, a
-sequence, a policy, anything the Pro surface covers or that Ptah does better --
-reaching CE compatibility must never mean deleting that capability from the
-compatibility surface. `ptah-compat` is the migration path for Atlas
-**Pro** users' scripts too, not only CE users'; a capability reachable only
-through native `ptah` does not help someone porting a Pro pipeline.
+- the default compatibility surface keeps every implemented capability
+  reachable;
+- `PTAH_ATLAS_STRICT_COMPAT=1` selects a separate CE-only policy for reference
+  and conformance runs. It refuses extension values, and refuses Atlas txtar,
+  Ptah directives and SQL templates where a command executes, converts or
+  replays a migration body -- a checksum-only read (`migrate hash`, `migrate
+  status`, `migrate validate` without `--dev-url`) preserves the bytes, because
+  CE hashes them and `atlas.sum` parity depends on it. It refuses the known
+  `PTAH_*` feature toggles -- but never an arbitrary `PTAH_*` name by prefix, since
+  `atlas.hcl` reads ordinary user inputs through `getenv`;
+- the strict selector is an environment variable, never a flag: the
+  conformance `cli-surface` tier asserts flag parity with the pinned binary;
+- what the default leaves out is reported, not dropped in silence;
+- the capability is written down -- feature-matrix row, documentation, a test.
 
-The shape that satisfies both:
-
-- the normal compatibility surface keeps every implemented Atlas Pro-like and
-  best-effort capability reachable. This is the default, because
-  `ptah-compat` is also the migration path for those pipelines;
-- `PTAH_ATLAS_STRICT_COMPAT=1` selects a separate Atlas CE-only policy for
-  reference and conformance runs. It constructs the CE command and flag tree
-  before Cobra dispatch, refuses extension environment values, and rejects
-  authored or inspected content whose semantics CE cannot represent instead of
-  silently dropping it. A strict inspect, apply, or clean run refuses a live
-  Pro-only object before output or mutation. Strict schema workflows also
-  refuse YAML sources and an authored `schema apply` lint policy that their CE
-  execution path cannot enforce. Commands that execute, convert, or replay
-  migration bodies refuse Atlas txtar, Ptah directives, and SQL templates;
-  checksum-only migration reads preserve those bytes. The default profile
-  retains every extension;
-- strict mode rejects the known `PTAH_<FLAG>` twins and Ptah feature toggles
-  that would otherwise be ignored or restore an extension. It must not reject
-  an arbitrary `PTAH_*` name merely because of its prefix: `atlas.hcl` may read
-  ordinary user inputs through `getenv`, and those values are not product
-  feature switches;
-- the strict selector is an environment variable, never a new flag, because
-  the conformance `cli-surface` tier asserts flag parity with the pinned binary
-  and an environment variable is invisible to the help surface;
-- what the default leaves out is reported, not dropped in silence, so an
-  operator is never told less than the truth about their database;
-- the capability is written down -- feature matrix row, user documentation, and
-  a test -- so it is a product decision rather than an accident of which branch
-  of an `if` ran.
-
-"CE refuses it, so we stopped emitting it" is an incomplete answer. The complete
-one names where the capability still lives.
+**Deciding which you are doing.** Before matching a measured behavior, ask what
+it costs the user. "Nothing, it is a different spelling of the same outcome"
+-- match it; wording, exit codes, flag names and output shape are worth being
+identical on. "They lose something they asked for" -- do not.
 
 ### Boolean `PTAH_*` environment variables are strict
 
-Absence selects the documented default; a present value must parse as a boolean
-or the owning command refuses before doing work. **Never convert a boolean
-environment parse error into the default value.**
+Absence selects the default; a present value must parse as a boolean or the
+owning command refuses before doing work. **Never convert a parse error into
+the default**, and use `os.LookupEnv`, because `PTAH_X=` and an absent
+variable are different configuration states.
 
-The four states are distinguishable and stay that way. `os.Getenv` answers the
-empty string for an absent variable and for `PTAH_X=` alike, which is how a typo
-in a CI environment file, a container manifest or a systemd unit became a silent
-default; use `os.LookupEnv`, and treat an exported empty value as the
-configuration error it is.
+Declare each variable once with `envbool.New(name, default, class)` and
+resolve it through `Var.Resolve`; `cmd/internal/envboolguard` refuses a
+`strconv.ParseBool(os.Getenv(...))` call site. `class` is the strict-mode
+classification, stated at the declaration with a comment saying which
+capability the pinned binary has or lacks: `Gated` (adds behavior CE does not
+have; strict mode refuses it), `Retained` (restores something CE does; strict
+mode keeps it), `Selector` (reserved). An unclassified declaration fails closed.
 
-In practice that means: declare the variable once with
-`envbool.New(name, defaultValue, class)` in the package that owns it, resolve it
-through `Var.Resolve`, and never write `strconv.ParseBool(os.Getenv(...))` at a
-feature call site. `internal/envbool` holds the one grammar (exactly
-`strconv.ParseBool`'s spellings, nothing trimmed) and the one error shape
-(`invalid boolean value %q for %s`); `cmd/internal/envboolguard` refuses a new
-tree that reintroduces the pattern.
-
-`class` is the strict Atlas Community Edition classification, and it is stated
-at the declaration because that is the only place that cannot drift from the
-name:
-
-- `envbool.Gated` — the variable adds behavior the pinned community binary does
-  not have. Strict mode refuses an enabled value.
-- `envbool.Retained` — the variable restores or tightens something that binary
-  already does, so it adds no Atlas capability. Strict mode keeps it reachable.
-- `envbool.Selector` — reserved for `PTAH_ATLAS_STRICT_COMPAT` itself.
-
-Say in a comment at the declaration which capability the pinned binary does or
-does not have; the class alone is an answer without its reasoning.
-`internal/atlascompatpolicy` derives its refusals from `envbool.Registered()`, so
-a variable is validated by the act of declaring it and there is no second list to
-edit. A declaration that states no class fails closed — strict mode refuses it —
-and `cmd/internal/envboolguard` refuses the tree, so an unclassified variable
-cannot ship. Retained variables are also named in the configuration reference,
-and a test requires that prose to match the registry.
-
-Resolve the variables a command owns **before** its early returns. A malformed
+**Resolve the variables a command owns before its early returns.** A malformed
 value must not stay dormant because this invocation did not reach the branch
-where the value would have mattered -- that branch is the one the operator
-already knows they changed, and the runs that never reach it are the whole of a
-healthy pipeline. Validate on every invocation of the command or subsystem that
-recognizes the variable, and on no others: an invalid PostgreSQL-inspection
-variable must not break an unrelated SQLite command.
-
-Boolean feature toggles opt in to the more permissive side, so a typo lands on
-the strict default and fails closed. `PTAH_ATLAS_STRICT_COMPAT` is the one
-policy selector that intentionally opts in to a narrower surface; it still
-defaults to the complete compatibility surface and malformed values fail
-before help, version, argument handling, configuration, filesystem, or database
-work. Do not add another restrictive boolean without documenting why it cannot
-be expressed as a capability gate.
+that reads it. Validate on every invocation of the command that recognizes the
+variable, and on no others. Toggles opt in to the more permissive side, so a
+typo fails closed; do not add another restrictive boolean without documenting
+why it cannot be a capability gate.
 
 ### A `PTAH_*` value is consumed once, by the surface that decides with it
 
 The compatibility surface forwards to a native command, and
-`cmd/internal/cmdadapter` installs the same `PTAH_*` binding on the forwarded
-target that the adapter itself has. So a value-carrying variable is offered
-twice: once to the adapter, which reads it and decides what the native command
-should receive, and once to the target, which reads it again if nothing arrived
-explicitly.
+`cmd/internal/cmdadapter` installs the same `PTAH_*` binding on the target. So
+a variable is offered twice, and when the adapter's decision was *nothing* --
+a scope that emptied the forwarded values -- the target reads the variable
+itself and the decision is overwritten by its own input (stokaro/ptah#1535).
+**When an adapter resolves a native flag's whole value, disable the binding on
+the target with `cmdflags.DisableEnvBinding`.**
 
-That second read is invisible whenever the adapter's decision was *nothing*. It
-is not a fallback; it is the decision being overwritten by the input the
-decision was made from. **When an adapter resolves a native flag's whole value,
-disable the environment binding for that flag on the target** with
-`cmdflags.DisableEnvBinding` — the same opt-out `schema apply` uses for
-`--auto-approve`. Nothing is lost: a run the adapter did not narrow has already
-had the value forwarded explicitly.
-
-stokaro/ptah#1535 is the shape to recognize. An `atlas.hcl` `data` block scoping
-the desired schema owns the variables that reach it, and a block declaring none
-refuses the run's `--var`. Reached through `PTAH_VAR` the same run leaked: the
-scope emptied the forwarded values, no explicit `--var` marked the flag as set,
-and the target read the variable itself. Nothing errored. The suite passed,
-against a schema nobody asked for.
-
-Two tests, not one. The refusal proves the scope closes; a control proving the
-variable still reaches an unscoped run proves the closure was not achieved by
-dropping the variable outright. Without the second, deleting the feature reads
-as a fix.
+Two tests, not one: the refusal proves the scope closes, and a control proving
+the variable still reaches an unscoped run proves the closure was not achieved
+by dropping the variable outright.
 
 ### Recognition that spans two functions belongs to one of them
 
-`ConnectToDatabase` parses a database URL and then converts it to a driver DSN.
-Both ends have to know which spellings carry go-sql-driver's network wrapper,
-and each kept its own list. They agreed when the second was written and stopped
-agreeing the moment the first was extended, so a URL the parser accepted reached
-the driver with its scheme still attached — or, for a socket target, rebuilt
-around a host that was never one, failing as a DNS lookup of the socket path.
-
-**When two functions in a pipeline must recognize the same set, give them one
-predicate, and say at its declaration why it cannot become two.** The mismatch
-is not caught by testing either end: both are individually correct against their
-own list. It is caught by a control comparing their *behavior* — and a control
-that asks the shared helper twice will agree with itself while one end quietly
-stops calling it, which is the state stokaro/ptah#1540 reported. Drive the
-public path that joins them.
+When two functions in a pipeline must recognize the same set, give them one
+predicate and say at its declaration why it cannot become two. Two lists agree
+when the second is written and stop agreeing when the first is extended, and
+testing either end alone cannot see it (stokaro/ptah#1540). The control that
+catches it drives the public path that joins them.
 
 ### A path is not a string, and an assertion about one is not portable
 
-`windows-latest` found 336 failing unit tests the first time it ran, and after
-the repair almost none of them were about Windows. They were four habits, each
-of which reads as correct on a Linux runner:
+`windows-latest` found 336 failing unit tests on its first run, almost none of
+them about Windows. The habits, each of which reads as correct on Linux:
 
-1. **A path pasted into a language that escapes backslash.** `url =
-   "sqlite://` + dbPath + `"` inside HCL makes `\U` an invalid escape sequence
-   and the whole project file is refused; the same happens in a YAML scalar and
-   in a Go template's string literal. Wrap the interpolation in
-   `filepath.ToSlash`, or hand it over with `strconv.Quote` where the target
-   language wants a quoted literal.
-2. **A path put in a `url.URL`'s `Path` and rendered with `String()`.** That
-   escapes the separator into `%5C` and produces an address nothing reads back
-   — not even `atlasurl.Parse`, whose Windows rule looks for a separator and
-   finds a percent sign. Use `atlasurl.SQLiteURLFromPath`. The same call also
-   writes `//` before a `Path` with no leading slash, which turns a drive letter
-   into a URI authority: `file://C:/a/b.sql` names host `C:`.
-3. **An assertion on text the operating system wrote.** `no such file or
-   directory`, `connection refused` and `stat` are one platform's wording.
-   Assert with `errors.Is` where the error value is in hand, or match only the
-   Ptah-authored part of the sentence and leave the OS clause alone.
-4. **A program that has to exist to be run.** `go build -o dir/tool` writes a
-   file Windows will not execute, and a `/bin/sh` fixture has no interpreter
-   there. `internal/exeext` carries the extension for both ends — a test adds
-   it to build a runnable helper, and `ptah-compat` takes it back off so a
-   drop-in installed as `atlas.exe` still calls itself `atlas`, which is what
-   the pinned binary does regardless of its own filename.
+1. A path interpolated into HCL, YAML or a Go template: `\U` is an escape.
+   Use `filepath.ToSlash` or `strconv.Quote`.
+2. A path in `url.URL.Path` rendered with `String()`: `%5C`, and `//` before
+   a drive letter. Use `atlasurl.SQLiteURLFromPath`.
+3. An assertion on text the OS wrote: assert with `errors.Is`, or match only
+   the Ptah-authored part. `testutils.StatMissingText` and
+   `syscall.ENOENT.Error()` derive the OS clause where it must appear.
+4. A program that has to exist: `go build -o dir/tool` is not executable on
+   Windows; `internal/exeext` carries the extension for both ends.
+5. `os.PathError.Op` is `stat` on Unix and `GetFileAttributesEx` on Windows.
+6. A shell's grammar in a fixture: `internal/preflight` is portable, `echo m;
+   exit 9` is not. `testutils.FailingHookCommand` renders each spelling.
+7. Win32 refuses `< > : " / \ | ? *` in a file name. Split the test by
+   concern, not by platform: the filesystem round trip uses a name every
+   platform allows, and the escaping of the reserved character is asserted as
+   a string on every platform.
+8. `os/exec` does not set `PWD` on Windows; Ptah's contract does, so Ptah sets
+   it.
 
-Four more of the same kind, each found only because the job ran:
+Two rules follow. **A platform-conditional assertion tends to pass on the
+platform it cannot test** -- a file-mode check reduces to `0o200 == 0o200`
+there -- so take the varying part as a parameter or split by build tag; never
+write one assertion that becomes a tautology on the half you are not looking
+at. **A wildcard is not a wildcard across lines**: `qt.ErrorMatches` anchors
+the whole message and `.` does not match a newline, and Windows writes two
+lines often enough to matter; assert the sentinel with `qt.ErrorIs` and pin a
+prefix with `(?s)`.
 
-5. **A field name the platform chose.** `os.Stat` fills `os.PathError.Op` with
-   `stat` on Unix and `GetFileAttributesEx` on Windows. Comparing it to a
-   literal made the Atlas-compatible diagnostic adapt on one platform only, so
-   `ptah-compat` printed Go's wording instead of Atlas's — a compatibility
-   divergence on the surface that exists not to have one.
-6. **A shell's grammar in a fixture.** `internal/preflight` picks `/bin/sh -c`
-   or `cmd /C` per platform, so the feature is portable; `echo m; exit 9` is
-   not. Under `cmd` it neither separates on `;` nor exits 9, and a test
-   asserting a failed hook saw a successful one. `testutils.FailingHookCommand`
-   renders each spelling.
-7. **A character the filesystem reserves.** Win32 refuses `< > : " / \ | ? *`
-   in a file name, so a fixture named `a?b.sqlite` cannot exist there at all.
-   Split such a test: the filesystem round trip uses a name every platform
-   allows, and the escaping guarantee for the reserved character is asserted as
-   a string.
-8. **An environment variable one platform maintains.** `os/exec` sets `PWD` to
-   `Dir` on POSIX and documents that it does not on Windows. Ptah's own
-   contract promises `PWD` follows `Dir`, so Ptah sets it — a promise the
-   standard library does not keep for you is still yours.
-
-Two rules come out of this, and they matter beyond Windows.
-
-**A platform-conditional assertion tends to pass on the platform it cannot
-test.** A file-mode check reduces to `0o200 == 0o200` on Windows and asserts
-nothing while staying green — in one case asserting that a file holding a
-password *is* writable. A suffix-trimming check written against the
-build-tagged constant trims nothing on Unix, and would keep passing if the code
-stopped trimming at all. Where the answer differs per platform, either take the
-varying part as a **parameter** so every platform can exercise every answer, or
-split the test by build tag so each half is real where it runs. Never write one
-assertion that quietly becomes a tautology on the half you are not looking at.
-
-**A wildcard is not a wildcard across lines.** `qt.ErrorMatches` anchors the
-whole message and `.` does not match a newline, so `"doing the thing: .*"`
-passes wherever the platform writes one line and fails wherever it writes two.
-Windows writes two often enough to matter: `file already exists\nCannot create
-a file when that file already exists.` Assert the sentinel the caller can
-actually rely on — `qt.ErrorIs(err, fs.ErrExist)` — and pin the operation's own
-prefix with `(?s)` if it is worth pinning, so the platform's second line does
-not decide the result. A red job here reported a *fix working correctly*; the
-regexp was the only thing that disagreed.
-
-**Derive the expectation rather than restating it.** Where a diagnostic
-embeds text the platform wrote, do not spell one platform's wording and do not
-drop the clause either — the clause is what proves the failure was about that
-path. `testutils.StatMissingText` and `syscall.ENOENT.Error()` keep such an
-assertion byte-exact and portable at once, the way the DML placeholder matrix
-already derives its expected SQL from `sqlutil.Rebind` instead of restating it.
-
-One of these was not a portability question at all. The rule confining an
-`atlas.hcl` to its own directory asked `filepath.IsAbs`, which answers false on
-Windows for `/tmp/secret.txt` — a path that still resolves to `C:\tmp\...`,
-outside every project. **A rule about what a file is allowed to name must not
-depend on the machine reading the file.** It refuses a leading slash, a leading
-backslash and a drive letter on every platform now, including where that
-spelling is merely an odd directory name, because the alternative is a project
-that stays inside its directory where it was written and leaves it where it is
-deployed.
+A rule about what a file may name must not depend on the machine reading it:
+`filepath.IsAbs` answers false on Windows for `/tmp/x`, so the `atlas.hcl`
+confinement refuses a leading slash, a leading backslash and a drive letter on
+every platform.
 
 ### A handle is released by a caller, not by the collector
 
-`MigrationPlan` holds the migration directory open from the moment it is built
-until it publishes. Publication released the handle; abandonment did not, and
-the type said so out loud — a plan that is never published "still releases them
-when it is collected, because `os.Root` closes its descriptor from a
-finalizer." On Unix that reads as a harmless detail. On Windows an open
-directory handle blocks removing or renaming the directory, so the same
-sentence describes a directory an application cannot clean up until the
-collector happens to run. It surfaced as `TestPlanMigration_DoesNotWriteArtifacts`
-failing in `TempDir` cleanup, intermittently, because a finalizer is timing.
+A type that acquires an operating-system handle owes its caller a way to give
+it back. On Windows an open directory handle blocks removal, so "the finalizer
+closes it" describes a directory nothing can clean up until the collector
+happens to run. Add `Close`; make releasing twice and releasing after the handle
+is gone both no-ops, so `defer` beside the constructor is always correct; look
+for the abandonment path in production, not only in tests; and say which
+release happened. The check that a release released is a white-box assertion
+on the handle field, and the file says why the black-box version cannot exist.
 
-**A type that acquires an operating-system handle owes its caller a way to give
-it back.** Add the release call — here `Close` — and let publication remain one
-of the paths that reaches it. Two properties make such a call composable, and
-both are worth having on purpose: releasing twice is a no-op, and releasing
-after the handle is already gone is a no-op, so `defer` next to the constructor
-is always correct and never has to know which path ran.
+### Compatibility with older Ptah is not owed
 
-Two consequences to check whenever you add one:
-
-- **Look for the abandonment path in production, not only in tests.** The test
-  was the symptom; `ptah migrate generate --replay` had the same hole, where a
-  plan built successfully inside a replay whose later steps failed was returned
-  and dropped. A leak that only a test can reach is a test bug. This one was
-  not.
-- **Say which release happened.** Both an abandoned plan and a failed
-  publication leave the handle nil, and reporting the second for the first is a
-  diagnostic that sends the reader looking for a publication that never
-  occurred.
-
-Verifying this needs care, because the platform that exhibits the bug is not
-the one running the test. The check that a release actually released is a
-white-box assertion on the handle field: on Unix nothing observable at the
-package boundary distinguishes a release from a flag flip, since the directory
-can be removed either way. Assert the handle, and say in the file why the
-black-box version cannot exist.
-
-### Compatibility with older Ptah is a different axis, and it is not owed
-
-Everything above is about the community binary. Compatibility with **Ptah's own
-previous behavior is a separate question, and until Ptah ships v1 the answer is
-no.** There is no supported upgrade path to preserve, so:
-
-- Do not keep a fallback, an alias, a tolerated old spelling, or a second reader
-  for a retired format only because an earlier Ptah produced it.
-- Do not soften a refusal because it would break something an earlier Ptah
-  accepted.
-- Do not carry a default only because changing it would alter existing output.
-  Pick the default that is right for a reader meeting it for the first time.
-
-Changing behavior is the normal, cheap thing to do right now, and the cost of
-not changing it compounds. When a change alters behavior, say so plainly in the
-issue and the commit -- "this changes behavior; pre-v1, so no compatibility is
-owed" -- rather than quietly designing around it.
-
-This does **not** license breaking parity with the community binary, which is a
-contract with users of that CLI rather than with Ptah's own history, nor
-silently discarding user data. It licenses changing Ptah's defaults, spellings,
-internal formats, and error text without a migration path.
-
-The rule expires when Ptah reaches v1.
-
-### A worked example
-
-`-- atlas:txmode none` marks a migration that must run outside a transaction --
-`CREATE INDEX CONCURRENTLY`, for instance. Measured on PostgreSQL 18:
-
-| file shape | community binary | Ptah |
-| --- | --- | --- |
-| directive, blank line, statement | applies | applies |
-| directive, statement immediately below | **fails** | applies |
-
-The community binary requires a blank line after the directive and silently
-drops it otherwise, so the statement runs inside the transaction it asked to
-stay out of and the migration fails partway through. Ptah honored both forms.
-
-A change once "fixed" this by adopting the blank-line requirement, on the
-grounds that it matched. That traded a place where Ptah was better for a place
-where it was merely identical, and it was reverted. The directive is honored in
-both forms, and the divergence is documented rather than hidden.
-
-### A second worked example
-
-`file()` in an `atlas.hcl` inlines a file's contents into a config value.
-Measured on the pinned community v1.3.0 build:
-
-| argument | community binary | Ptah |
-| --- | --- | --- |
-| `file("local.txt")` | reads it, exit 0 | reads it, exit 0 |
-| `file("/etc/passwd")` | **reads it, exit 0** | refused, exit 1 |
-| `file("../../../../etc/passwd")` | **reads it, exit 0** | refused, exit 1 |
-| `file("link.txt")`, a link out of the directory | **reads it, exit 0** | refused, exit 1 |
-
-An `atlas.hcl` is repository-controlled and evaluated before anything is
-applied, and the value lands somewhere observable: put the read in `env.url` and
-the file's contents come back in `Error: sql/sqlclient: unknown driver "..."`.
-Matching would turn config authorship into an arbitrary-file read on the machine
-running the migration, which is the second half of the policy, not the first.
-Ptah keeps the confinement on both binaries and names the rule in the refusal.
-See [`stokaro/ptah#1042`](https://github.com/stokaro/ptah/issues/1042).
-
-### Deciding which you are doing
-
-Before matching a measured behavior, ask what it costs the user. If the answer
-is "nothing, it is a different spelling of the same outcome", match it -- wording, exit codes,
-flag names and output shape are worth being identical on, because tooling reads
-them. If the answer is "they lose something they asked for", do not match it.
+Until v1, compatibility with Ptah's own previous behavior is not a goal. Keep
+no fallback, alias, tolerated old spelling or second reader because an earlier
+Ptah produced it; do not soften a refusal or carry a default because changing
+it would alter existing output. Say so plainly in the issue and the commit --
+"this changes behavior; pre-v1, so no compatibility is owed." This does not
+license breaking parity with the community binary or discarding user data.
 
 ## Native And Compatibility Capability Ownership
 
-`ptah-compat` is an adapter over Ptah capabilities, not an independent product
-implementation.
+`ptah-compat` is an adapter over Ptah capabilities, not a second product.
 
-When implementing behavior for `ptah-compat`, distinguish between:
+A **general capability** means something without Atlas -- schema plan testing,
+migration testing, drift detection, schema security analysis, checkpoints,
+pre-apply checks, planning, validation, artifact publishing, directory import.
+Its semantics live in a shared package below the CLI layer and are reachable
+through the native surface too; never implement general behavior only inside
+`cmd/atlas`.
 
-1. a general semantic capability; and
-2. Atlas-specific interface or compatibility machinery.
+**Compatibility machinery** exists to interpret or reproduce an Atlas contract
+-- `atlas://` resolution, flag spelling and precedence, `atlas.hcl` evaluation,
+the `.plan.hcl` and `.test.hcl` codecs, revision-table and checksum
+representation, Atlas-shaped output, exit codes and diagnostics -- and may stay
+compat-only. A codec feeding a shared capability is the intended shape.
 
-A general semantic capability must live in a reusable Ptah package below the
-CLI layer and, where meaningful to a native Ptah user, must be reachable
-through the native Ptah surface as well.
+Where native Ptah already has the capability, adapt the compatibility surface
+to it; never narrow the native capability to what the Atlas contract can
+express. Where the two surfaces deliberately diverge, the divergence is a
+policy the caller selects in the shared package, not a second implementation.
+Exposing a capability natively means a native verb or flag; the compatibility
+surface takes no new flag and keeps fuller behavior behind a `PTAH_*` variable
+(precedent: `PTAH_ALLOW_EXTERNAL_SCHEMA`).
 
-Do not implement general product behavior exclusively inside `cmd/atlas` or
-another compatibility-only package.
+Native code must not depend on `cmd/atlas`, and shared packages must not
+either. **No gate checks this direction**: `scripts/check-architecture-boundaries.sh`
+enforces only the four ADR 0001 directions, none of which names `cmd/atlas`,
+so a new non-test importer is caught by review alone. One exists beside the
+binary `cmd/ptah-compat`: `internal/cmdrefviews`, which has to construct both
+trees in one process to say what strict mode takes out, and says so at the top
+of the file. A second needs the same kind of reason written beside it.
 
-The native surface does not need to reproduce Atlas command names, flags,
-configuration syntax, output shape, URI spelling, or other interface
-conventions. This is functional parity, not interface parity.
-
-Compatibility-only adapters, parsers, codecs, persistence bridges,
-diagnostics, and behavioral shims may remain compat-only when they exist
-solely because of an Atlas contract.
-
-Conversely, when native Ptah already implements a capability that has an
-Atlas-compatible spelling, prefer adapting the compatibility surface to the
-existing capability rather than implementing the behavior again.
-
-CLI and compatibility packages should translate inputs and outputs, resolve
-compatibility policy, and delegate semantic work to reusable
-application/core packages.
-
-The intended architecture:
-
-```text
-                         shared Ptah capabilities
-                        /                        \
-                       /                          \
-             native Ptah surface          compatibility surface
-                  `ptah`                    `ptah-compat`
-```
-
-### Which side of the boundary a change is on
-
-These are general capabilities. They mean something without Atlas, so their
-execution semantics belong in shared Ptah code with a native entry point, even
-when the work that produced them was Atlas compatibility work:
-
-```text
-schema plan testing
-migration testing
-drift detection
-schema security analysis
-migration checkpoints
-pre-apply checks
-schema planning
-schema validation
-artifact publishing/fetching
-migration-directory import
-```
-
-These are compatibility machinery. They exist to interpret, reproduce, or
-bridge an Atlas interface or persisted representation, and they imply no native
-user-facing spelling:
-
-```text
-atlas:// -> OCI resolution
-Atlas CLI flag spelling and precedence
-atlas.hcl compatibility parsing/evaluation
-Atlas .plan.hcl codec
-Atlas .test.hcl adapter
-Atlas revision-table representation compatibility
-Atlas checksum encoding compatibility
-Atlas-compatible stdout/stderr rendering
-Atlas exit-code compatibility
-Atlas-specific refusal diagnostics
-```
-
-A codec feeding a shared capability is the intended shape, not a violation of
-the rule:
-
-```text
-Atlas .test.hcl
-      |
-      v
-compatibility parser
-      |
-      v
-shared test model / runner
-      |
-      +--> ptah
-      |
-      +--> ptah-compat
-```
-
-### How this reads against the compatibility policy
-
-The [compatibility policy](#compatibility-policy) and this rule run in opposite
-directions, and neither one relaxes the other.
-
-- The compatibility policy forbids the compatibility surface from losing a
-  capability native Ptah models. A capability reachable only through `ptah` is
-  no migration path for someone porting an Atlas pipeline.
-- This rule forbids the native surface from losing a capability the
-  compatibility surface gained. A capability reachable only through
-  `ptah-compat` turns the compat tree into a second product.
-
-They are one invariant read from two ends: neither binary is where a generally
-useful capability lives, because both are adapters over the package that
-implements it.
-
-Three consequences are worth naming, because getting them backwards satisfies
-this rule while breaking the older one:
-
-- Exposing a capability natively means a **native** verb or flag. The
-  compatibility surface still takes no new flag: the conformance `cli-surface`
-  tier asserts flag parity with the pinned community binary, so the fuller
-  behavior there stays behind a `PTAH_*` environment variable. Precedent:
-  `PTAH_ALLOW_EXTERNAL_SCHEMA`.
-- Reusing an existing native capability means the compatibility surface adapts
-  to it. It never means narrowing the native capability to whatever the Atlas
-  contract can express.
-- One implementation does not force one behavior. Where the two surfaces
-  deliberately diverge -- Atlas revision bookkeeping on one, recoverable
-  failure state on the other -- the divergence belongs in the shared package as
-  a policy the caller selects, not as a second implementation.
-
-### Dependency direction
-
-```text
-cmd/ptah  --------------------\
-                               \
-                                > shared capability/application/core packages
-                               /
-cmd/atlas / ptah-compat ------/
-```
-
-- Native Ptah code must not depend on the compatibility command layer.
-- Shared semantic packages must not depend on `cmd/atlas`.
-- Atlas-specific codecs and adapters may depend on shared domain models and
-  capabilities.
-
-Conceptually:
-
-```text
-Atlas input/output contract
-          |
-          v
-compat adapter / codec
-          |
-          v
-shared Ptah capability
-          ^
-          |
-native Ptah adapter
-```
-
-Two non-test files outside `cmd/atlas` import `cmd/atlas`, and the second is an
-exception rather than a precedent. `cmd/ptah-compat/main.go` is the binary.
-`internal/cmd/cmdref/main.go` is the command-reference generator, which has to
-construct BOTH trees in one process to say what the compatibility surface holds
-and what `PTAH_ATLAS_STRICT_COMPAT=1` takes out of it; a generator that shelled
-out to a built binary would be measuring whatever was on `PATH`. It ships in no
-binary and no product code imports it, so the direction this rule protects --
-shared capability below, two adapters above -- is untouched. Native command
-packages still reference `cmd/atlas` from tests only. Keep it that way: a third
-importer needs the same kind of reason written down beside it.
-
-### Classify the change in the PR
-
-Every PR that adds or substantially extends behavior under the compatibility
-surface says which of the two it is:
-
-```text
-GENERAL CAPABILITY
-```
-
-or:
-
-```text
-COMPATIBILITY ADAPTER
-```
-
-A general capability answers three questions in the PR description:
-
-1. Where does the semantic implementation live?
-2. How can native Ptah consume it?
-3. If no native surface is added in the same PR, why is that reasonable, and
-   what issue records the exposure gap?
-
-A compatibility adapter names the external Atlas contract that makes it
-compatibility-specific.
-
-No GitHub PR template is required for this; `AGENTS.md` and normal PR
-self-review are enough. The requirement is that the decision is made
-deliberately rather than made for you by where a file happened to be placed.
-
-### Scope of this rule
-
-The rule is prospective. It governs work written from now on. It does not
-require auditing every capability already implemented on either surface, and it
-does not require refactoring packages that predate it. Add no further
-divergence from here; existing architectural debt may remain for now. The
-repository-wide audit belongs in a separate post-parity issue, and no such
-issue is open yet. See
-[`stokaro/ptah#1213`](https://github.com/stokaro/ptah/issues/1213).
+**Every PR that adds behavior under the compatibility surface says which it
+is**: `GENERAL CAPABILITY` (where the implementation lives, how native Ptah
+consumes it, and if no native surface is added, why and which issue records
+the gap) or `COMPATIBILITY ADAPTER` (naming the Atlas contract). The rule is
+prospective; the repository-wide audit is stokaro/ptah#1213.
 
 ## Language And Spelling
 
-Use American English spelling in code, comments, documentation, issue/PR text,
-and user-facing CLI output unless preserving an exact external quote or protocol
-token. Prefer spellings such as `behavior`, `color`, `canceled`, `initialize`,
-`normalize`, and `analyze`.
+American English in code, comments, documentation, issue and PR text, and CLI
+output, unless preserving an exact external quote or protocol token.
 
 ## Documentation Obligations
 
-All documentation work must follow the authoritative style guide at
-[`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md): classify the page type before
-writing, use the matching template, keep the canonical terminology, and run
-the style guide's review checklist. Every site page carries the editorial
-metadata `src/content.config.ts` validates. When a page or its navigation
-changes, regenerate `docs/site/content-inventory.json` with
-`npm run inventory:write` in `docs/site`; keep only non-derivable decisions and
-journey findings in
-[`docs/site/CONTENT_INVENTORY.md`](docs/site/CONTENT_INVENTORY.md).
+**Before finishing any change that affects external behavior, inspect and
+update the documentation.** It is a required verification step, not an
+opportunistic cleanup. External behavior includes:
 
-**Section 7 of the style guide is the terminology authority.** Before writing a
-name for a Ptah thing — a workflow, a file, a command tree — look it up there
-and use the canonical spelling; where a row says "never" or "do not", it means
-it. The table is generated from `docs/site/scripts/data/terminology.json`, and
-that file is what the checkers read, so grepping it answers "is this term
-governed, and how" without opening the guide. Add a new term there and render
-it with `node docs/site/scripts/check-terminology.mjs --write`; never edit the
-table by hand.
+- CLI names, flags, environment variables, help, output formats, exit codes;
+- config formats, accepted keys, validation and precedence;
+- generated and parsed SQL, migration files and directives, revision tables,
+  hash files;
+- public Go APIs and documented extension points;
+- `ptah-compat` behavior, conformance claims, documented limitations;
+- user-facing errors, warnings, diagnostics and safety checks.
 
-A row carrying a ban applies to `ptah --help` as much as to a page.
-`cmd/internal/terminologyguard` reads the same registry and walks the native
-command tree, because the rule that arrived in section 7 was already broken in
-fourteen pages *and* in the binary's opening sentence.
+Search for both old and new terms -- command names, flags, variables, issue
+numbers, exact error strings -- across `README.md`, `docs/`, the site content
+under `docs/site/src/content/docs/`, `examples/**/README.md`,
+`integration/*.md`, package READMEs, and this file when the rules change.
+Never document Atlas command paths inside the native binary, and never claim
+full Atlas parity unless the conformance evidence proves it.
 
-Most rows carry no ban, and the table's **Held by** column says which do. A row
-held by review is a name you are still held to, by a person reading rather
-than by a gate. The gate's corpus is derived from the tracked file list — every
-Markdown file, plus the site sources carrying reader-facing text that is not
-Markdown — so a page or a package README you add is governed without being
-listed anywhere.
+Follow [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md). Section 7 is the
+terminology authority; its table is generated from
+`docs/site/scripts/data/terminology.json`, which is what
+`check-terminology.mjs` and `cmd/internal/terminologyguard` read, so add a term
+there and render it with `--write`. Product definitions live once in
+`src/glossary.ts`.
 
-CI enforces the mechanical half of that guide. Section 16 of the guide lists
-exactly which rules fail a build and which stay a reading responsibility. Run
-`node docs/site/scripts/check-style.mjs` for any documentation change: it needs
-no npm install, and it governs this file, the repository docs, the examples,
-the integration docs, and every package README — not only the site.
+**Run the gates the workflows run.** `.github/workflows/docs.yml` is the
+authority; a subset is `node docs/site/scripts/check-style.mjs`, which needs no
+install and governs every Markdown file in the repository, and the `npm run
+check:*` scripts from `docs/site` after `npm ci`. `npm run build` is a gate
+too: a page every checker accepts can still fail to render.
 
-It is one of several commands in that job, and running the `scripts/check-*.sh`
-gates does not stand in for any of them. These need no npm install and are the
-ones a documentation change usually needs:
+What a page change needs, beyond passing the gates:
 
-```bash
-node docs/site/scripts/check-style.mjs --selftest
-node docs/site/scripts/check-style.mjs
-node docs/site/scripts/check-terminology.mjs --selftest
-node docs/site/scripts/check-terminology.mjs
-node docs/site/scripts/check-limitations.mjs --selftest
-node docs/site/scripts/check-limitations.mjs
-node docs/site/scripts/check-implementation-chronology.mjs --selftest
-node docs/site/scripts/check-implementation-chronology.mjs
-node docs/site/scripts/build-content-inventory.mjs --selftest
-node docs/site/scripts/build-content-inventory.mjs
-node docs/site/scripts/check-editorial-shape.mjs --selftest
-node docs/site/scripts/check-editorial-shape.mjs
-node docs/site/scripts/check-matrix-verdict-prose.mjs --selftest
-node docs/site/scripts/check-matrix-verdict-prose.mjs
-node docs/site/scripts/check-matrix-citations.mjs --selftest
-node docs/site/scripts/check-matrix-citations.mjs
-node docs/site/scripts/check-matrix-flag-names.mjs --selftest
-node docs/site/scripts/check-matrix-flag-names.mjs
-node docs/site/scripts/check-route-retirement.mjs
-node docs/site/scripts/build-feature-matrix.mjs --check
-node docs/site/scripts/publish-root-assets.mjs --selftest
-node docs/site/scripts/check-pages-root.mjs --selftest
-node docs/site/scripts/check-pages-root.mjs
-```
+- **A new page** joins `docs/site/src/sidebar.mjs` and the route ledger
+  (`node docs/site/scripts/check-route-retirement.mjs --write`) in the same
+  change; a retired route gets a `redirectRoutes` entry. A route this branch
+  added and renamed before it merged is dropped from the ledger with
+  `node docs/site/scripts/check-route-retirement.mjs --forget <route> --against origin/master`,
+  never with a redirect for a URL nobody was served and never by editing the
+  ledger by hand -- the gate's own finding says to add a redirect, and no gate
+  refuses one. A route is Astro's,
+  not the file path's -- `docs/site/scripts/lib/docroutes.mjs` is the one
+  answer to "which routes does this site publish."
+- **Any page or navigation change** regenerates the content inventory
+  (`npm run inventory:write` in `docs/site`).
+- **`docs/site/src/content/docs/atlas/feature-matrix.md` is generated** from
+  `docs/site/scripts/data/feature-matrix-rows.json`; edit the data and run
+  `node docs/site/scripts/build-feature-matrix.mjs`. A `note` is capped at 200
+  characters and is what the reader sees; `evidence` is recorded, not
+  rendered. When a row's verdict flips, re-tense the old reasoning as history
+  rather than deleting the measurement it carries
+  (`check-matrix-verdict-prose.mjs`). A note must not restate a count or list
+  the code or a generated table owns.
+- **A page declares what it owns** with `owns:` in its frontmatter, and
+  `scripts/check-feature-inventory.sh --write` regenerates the derived register
+  `docs/feature-inventory.json`. The gate compares by exact string, never
+  substring, and the claimed-row floor is a source constant rather than a field
+  in the file (stokaro/ptah#2402). A column is named for what the gate checks
+  -- `claimed_by`, `claimed`, `claimed_floor` -- never for what it suggests, and
+  the word canonical appears nowhere, because the gate proves a claim resolves
+  to a derived feature and no second page makes it, not that the page explains
+  anything. Program rows come from `.goreleaser.yaml` `builds[].binary`, never
+  from `go list`, which cannot know what ships.
+- **A quick start** opts in with `quickstart: true`, and every command it
+  publishes runs in CI on three platforms (`internal/quickstart` reads the page;
+  `scripts/check-quickstart.sh` runs it). Section 8 of the style guide is the
+  shape it reads; an output block naming no stream, or an `sql` block naming no
+  file, is refused rather than skipped. The inference quick start needs
+  PostgreSQL, pgvector and an HTTP provider, so it has its own Compose fixture
+  and `docs/site/scripts/check-inference-quick-start.sh`; against a remote
+  Docker context the CLI must reach that host, so run it as
+  `PTAH_DOCKER_CONTEXT=<context> PTAH_FIXTURE_HOST=<host> docs/site/scripts/check-inference-quick-start.sh`.
+- **Support pages stay separate**: `support-matrix.md` is generated,
+  `support-policy.md` is the promise, `support-evidence.md` is measurement.
+  Never move generated counts onto the latter two.
+- **Diagrams** are semantic SVG, Mermaid, D2 or Graphviz source; PNGs are
+  reserved for real browser UI regenerated from fixtures
+  (`check-visual-assets.mjs`). After a visual fixture or generator changes,
+  `PTAH_BIN=../../bin/ptah npm run assets:write` from `docs/site`.
+  `check-generated-assets.mjs` byte-compares only the text samples under
+  `docs/site/public/samples`; nothing compares the PNGs under
+  `docs/site/src/assets/`, so look at them after `assets:write` before
+  committing.
+- **Examples**: every top-level `examples/*` carries the style guide's
+  seven-section contract; `npm run examples:write` regenerates the index, and
+  `npm run check:examples` plus `scripts/check-examples.sh` verify it.
 
-`check-route-retirement.mjs` is the one on that list a new page trips, and it
-was added to it after a page shipped without its entry. A route this site has
-published stays reachable, so adding a page means adding it to
-`docs/site/scripts/data/published-routes.json` with
-`node docs/site/scripts/check-route-retirement.mjs --write`, and retiring one
-means a `redirectRoutes` entry pointing at its new home.
-
-**Those are not the whole job.** A second set runs from `docs/site` and needs
-`npm ci` first, and a change that passes everything above can still fail the
-site build:
-
-```bash
-cd docs/site
-npm ci
-npm run check:links:selftest && npm run check:links
-npm run check:redirects:selftest && npm run check:redirects
-npm run check:route-retirement:selftest && npm run check:route-retirement
-npm run check:core-doc-links:selftest && npm run check:core-doc-links
-npm run check:page-health:selftest && npm run check:page-health
-npm run check:content-inventory:selftest && npm run check:content-inventory
-npm run check:editorial-shape:selftest && npm run check:editorial-shape
-npm run check:exit-codes:selftest && npm run check:exit-codes
-# Needs a built bin/ptah, a Playwright browser and Graphviz; it regenerates as
-# it checks, so a failure leaves the new bytes in the working tree.
-npm run check:generated-assets:selftest
-PTAH_BIN=$(pwd)/../../bin/ptah npm run check:generated-assets
-npm run check:navigation:selftest
-npm run check:search-ranking:selftest
-DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run build
-npm run check:navigation
-npm run check:search-ranking
-```
-
-`npm run build` is the one most often skipped and it is a gate: a page that
-every checker accepts can still fail to render. `check:responsive` is the
-remaining step and it needs a Playwright browser and the built site, so CI is a
-reasonable place to leave that one.
-
-The reason for the whole list rather than a habit: `check:links` refuses a
-root-relative link, `check:core-doc-links` refuses a GitHub link from a site
-page, and `check:page-health` reads the sidebar — three failures a run of the
-node scripts above would not have produced.
-
-`check:route-retirement` is the gate that notices a URL going away. A page
-renamed with no redirect entry passes `check:redirects`, `check:links`,
-`check:page-health` and the site build alike -- measured, seven for seven --
-because every one of them reasons about what the tree holds now, and the defect
-is a route the tree no longer holds and a reader still follows. The record it compares against is
-`docs/site/scripts/data/published-routes.json`, and a page added in a PR joins
-it in that PR:
-
-```bash
-cd docs/site && node scripts/check-route-retirement.mjs --write
-```
-
-That regeneration only ever adds, and it adds to the ledger **on disk**. Both
-halves matter: a `--write` that seeded from nothing whenever the file was
-missing would rebuild the record from the tree, erase every retirement in it,
-and leave a diff that reads like the rename it is hiding. So a ledger git
-tracks but the working tree does not have is reported as the deletion it is,
-`--seed` is the separate flag for a repository that has never had one, and
-neither path can construct an empty ledger in memory.
-
-Two more modes, each closing a way a line could leave the ledger:
-
-```bash
-# The secondary assertion: nothing recorded at the merge base has been dropped.
-# Needs history, so it runs in the docs `build` job, the one with fetch-depth: 0.
-node scripts/check-route-retirement.mjs --against origin/master
-
-# The honest exit for a route this branch invented and renamed before it merged.
-# Refused for any route the ledger at the merge base already recorded.
-node scripts/check-route-retirement.mjs --forget /schema/newthing/ --against origin/master
-```
-
-`--against` is what makes hand-deleting a ledger line stop working: `analyze`
-iterates the ledger, so a route deleted from it is a route it never visits, and
-a retirement plus a one-line ledger edit leaves every other documentation gate
-green. An unresolvable base exits 2 rather than skipping, because a secondary
-assertion that quietly reports nothing is the gate that reports without running.
-
-**A route is Astro's, not the file path's.** `docs/site/scripts/lib/docroutes.mjs`
-is the one place that answers "which routes does this site publish", and it
-models what Astro does rather than what the directory looks like: a frontmatter
-`slug:` replaces the path, a basename starting with `_` publishes nothing, and
-two files that resolve to one route are refused rather than counted once.
-A path segment Astro would put through github-slugger -- anything outside
-`[a-z0-9_-]` -- is refused by name, because these gates carry no npm dependency
-and a guessed route is worse than a loud one. Measured: `reference/CLI.md`
-builds `/reference/cli/`, and a page carrying `slug: schema/dbml-renamed` leaves
-`/schema/dbml/` dead in the navigation of every other page.
-
-`check:page-health` reads the sidebar in both directions, so a navigation typo
-fails here rather than inside the site build. The sidebar it reads is
-`docs/site/src/sidebar.mjs`, a module `astro.config.mjs` imports: a gate cannot
-import the config, and reading the config as text is blind to a nested group, to
-a `link:` entry in either direction, and to a commented-out entry, which it
-counts as coverage while the page vanishes from every reader's navigation. Add a
-page and its entry in the same change; the gate reports an entry naming no page
-and a page named by no entry alike.
-
-A top-level sidebar label is a disclosure control, not a route. Its first child
-is the section landing, usually labeled `Overview`; `check:navigation` rejects a
-linked group heading, a missing landing type, or a breadcrumb that does not link
-back to that explicit child. The same browser check exercises the Copy, Edit,
-View source, and Report actions with the keyboard. `check:search-ranking` asks
-the built Pagefind index the recorded reader queries and requires each canonical
-page in the first three results.
-
-Keep three database-support jobs separate: `support-matrix.md` is the generated
-lookup, `support-policy.md` defines the testing promise, and
-`support-evidence.md` records measurement and dated external findings. Never
-move generated counts or release enumerations onto the latter two pages. Large
-command and flag inventories remain generator-owned and use the shared
-`.ptah-reference-filter` affordance for lookup; filtering must not remove rows
-from the source document. Product definitions live once in `src/glossary.ts`.
-
-The content shell stays `70rem` wide for code, diagrams, generated matrices,
-and wide tables. Ordinary prose stops at `40rem`; do not widen it to fit a
-reference artifact. `check:responsive` measures that separation.
-`check:editorial-shape` warns about page length, mixed-type signals, formulaic
-openings, and near-duplicate long paragraphs. A warning may be suppressed only
-by a current, reasoned entry in `scripts/data/editorial-waivers.json`; the check
-fails stale waivers and identical tab panels.
-
-Visual documentation has two different evidence paths. Authored explanatory
-diagrams are semantic SVG (or Mermaid, D2, or Graphviz source), never raster
-images containing generated text. PNGs are reserved for real browser UI and
-are regenerated from committed fixtures;
-`docs/site/scripts/check-visual-assets.mjs` holds that allowlist and source
-contract. `check-accessibility.mjs` runs axe and keyboard controls at mobile
-and desktop widths, while `check-visual-snapshots.mjs` produces review
-artifacts without treating platform-dependent pixels as a stable baseline.
-Run `PTAH_BIN=<absolute path> npm run assets:write` from `docs/site` after
-building `bin/ptah` whenever a visual-output fixture, generator, or owning page
-changes. Record a missing graphical product output as explanatory rather than
-presenting an authored diagram as something Ptah emitted.
-
-**`assets:write` is two generators**, `assets:schema-ui` and
-`assets:product-output`, and running one leaves the other's artifacts describing
-output the binary no longer writes. Three consecutive changes shipped that way
-before anything compared them (stokaro/ptah#2905): #2866 left four report
-samples behind, #2899 found them, #2903 left seven more.
-`check-generated-assets.mjs` now regenerates and compares on every pull request
-that touches the Go, the fixtures, the generators, or the samples themselves.
-
-It governs the **text** samples under `docs/site/public/samples`, not the PNGs
-beside them, and that is not a gap: a Ptah HTML document carries its whole
-stylesheet inline, so every appearance change is a text change, and all three
-misses above were caught by it in reconstruction. A screenshot is a browser
-rendering whose pixels move with the platform's fonts, which is why
-`check-visual-snapshots.mjs` keeps no pixel baseline either. The screenshots
-remain a reading responsibility; the gate says so when it fails.
-
-Two properties are what make it a gate rather than a ceremony, and both are
-there because the obvious version has neither. A generator that crashes before
-writing anything leaves a working tree exactly as clean as one that confirmed
-every file, so the check requires both generators to exit 0 and reports the
-count it compared. And the governed corpus is held above a floor in the script,
-because a glob that stopped matching reports zero differences and reads as
-success.
-
-### The quick starts run in CI
-
-The commands a quick-start page publishes are executed on every pull request by
-`.github/workflows/quickstart-acceptance.yml`, on Linux, macOS and Windows.
-`internal/quickstart` reads them out of the page, and nothing in this repository
-holds a second copy: a runner carrying its own transcript stays green while the
-page it claims to cover rots, which is the failure the check exists to prevent.
-Reword a step and that reworded step runs; delete one and it stops being covered
-by the same commit that deleted it.
-
-```bash
-# What a run would cover, without running any of it
-go run ./internal/cmd/quickstart list
-
-# Run every published quick start against a binary built from this tree
-scripts/check-quickstart.sh
-
-# Read one tree, or read the PowerShell tab from a machine that has pwsh
-go run ./internal/cmd/quickstart run --docs-dir docs/site/src/content/docs --shell powershell
-```
-
-The inference quick start needs PostgreSQL, pgvector, and an HTTP provider, so
-it has a separate acceptance path rather than pretending those services fit the
-cross-platform fenced-block runner. Its committed Compose fixture supplies a
-deterministic provider and seeded database; the docs workflow runs
-`docs/site/scripts/check-inference-quick-start.sh` with an explicit Docker
-context and proves the active pointer after approval. The script cleans up only
-its named Compose project, volume, network, and locally built images.
-
-When the Docker context is remote, the CLI must reach the ports on that remote
-host rather than on local loopback:
-
-```bash
-PTAH_DOCKER_CONTEXT=remote-dev-container PTAH_FIXTURE_HOST=remote-dev \
-  docs/site/scripts/check-inference-quick-start.sh
-```
-
-Every top-level `examples/*` directory carries the seven-section reader
-contract named in `docs/STYLE_GUIDE.md`. Regenerate `examples/README.md` with
-`npm run examples:write` from `docs/site`, then run both
-`npm run check:examples` and the repository-level
-`scripts/check-examples.sh`; the first checks navigation and contracts, and the
-second executes or mechanically verifies the artifacts.
-
-A page opts in with `quickstart: true` in its frontmatter. Everything else the
-runner needs it reads from the shape section 8 of
-[`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) already asks for, so the style rule
-and the machine check are one mechanism rather than two that can drift:
-
-| On the page | What the runner does with it |
-| --- | --- |
-| a `bash` or `powershell` block | a step, run in that shell, in page order |
-| an `sql` block whose introducing sentence names a path in a code span | a file written at that path before the next step |
-| a `text` block introduced by a sentence ending `on standard output:` or `on standard error:` | an expectation for the step above it, asserted by containment against that stream |
-| a `<TabItem>` whose label names Windows or PowerShell | its blocks belong to that shell alone; blocks outside any tab belong to both |
-
-Four page shapes are refused rather than skipped, because a skipped assertion
-reads exactly like a passing one: an output block whose introduction names no
-stream, an output block with no command block above it, an `sql` block that
-names no file, and a Bash block inside a Windows tab. Discovery also fails
-closed, in the shape `check-documented-install.sh` uses — fewer than two
-opted-in pages, six steps or four assertions per page per shell, and the run
-refuses to report success, naming the count it found.
-
-The workflow carries no `paths:` filter on purpose. A change under `cmd/` that
-alters what `ptah db read` prints has to redden this job, and a filtered
-workflow would make the check absent on exactly the pull requests that break it.
-
-**`docs/site/src/content/docs/atlas/feature-matrix.md` is generated.** Its
-source is `docs/site/scripts/data/feature-matrix-rows.json`; edit that and run
-`node docs/site/scripts/build-feature-matrix.mjs`. Editing the page by hand
-fails both this job and the site build, and leaves the counts above the tables
-describing the row total the page no longer has — the generator is what keeps
-them honest. A row's `note` is capped at 200 characters and its `evidence` is
-recorded in the data without being rendered, so anything a reader must see
-belongs in the note.
-
-A cell may not argue for a verdict its row does not carry.
-`check-matrix-verdict-prose.mjs` enforces that, because a verdict changes more
-often than the paragraph explaining it: when a row flips, the new reasoning gets
-appended and the old justification stays, and it is not wrong *about the past*,
-so nothing else flags it. Fifteen rows had accumulated one
-(stokaro/ptah#1873, #1874). Re-tense the sentence as history — "this row read
-partial until #1802 landed" — rather than deleting the measurement it carries.
-
-A row may not name a flag this tree does not register.
-`check-matrix-flag-names.mjs` enforces that over the `note` and the `evidence`
-both, and the direction it catches is a flag RENAMED in the code while the row
-keeps the old spelling. Three flags are exempt and listed in the script: several
-rows establish that a verb does not register a flag by showing it answers
-`unknown flag` byte-identically to a control that cannot exist —
-`--skip-chxxxx`, `--name-formxxxx`, `--totally-bogus-flag`. Measured, those are
-the only flags in either field the tree does not have. The gate's limits are
-stated in the script too: it compares against the whole tree's flag set, so it
-cannot tell that a flag belongs to another verb, and a plausible wrong name that
-happens to be a real flag elsewhere passes (stokaro/ptah#1924).
-
-The same issue's other rule has no mechanical check and is a reading
-responsibility: **a note should not restate a fact the code or a generated
-table already owns.** Counts, capability lists and flag inventories drift the
-moment the thing they copy moves — one row's release-line counts changed twice
-while they were being audited — so name the generated table instead of copying
-what it says.
-
-Before finishing any change that affects external behavior, inspect and update
-the relevant documentation. Do this as a required verification step, not as an
-opportunistic cleanup. Purely code-internal refactors that do not alter public
-behavior, user-facing output, generated artifacts, supported inputs, or
-operational workflows may skip documentation edits, but the self-review should
-still confirm that the change is internal-only.
-
-External behavior includes at least:
-
-- CLI command names, command grouping, flags, environment variables, help
-  output, output formats, and exit codes.
-- Config file formats, accepted keys, validation behavior, environment
-  selection, and precedence rules.
-- Generated SQL, parsed SQL, migration file formats, migration directives,
-  revision table behavior, hash files, and validation/repair semantics.
-- Public Go package APIs and any documented extension points.
-- Atlas-compatible behavior in the `ptah-compat` drop-in binary.
-- Conformance status, supported/unsupported feature claims, known gaps, and
-  documented limitations.
-- User-facing errors, warnings, diagnostics, logs, safety checks, and failure
-  behavior.
-
-When a change touches any of those areas, build a documentation impact map and
-search the relevant `.md` files before considering the task complete. Check at
-least:
-
-- `README.md`.
-- `docs/README.md`, `docs/*.md`, and the task-oriented docs under
-  `docs/site/src/content/docs/`.
-- `examples/**/README.md` and generated example artifacts when examples change.
-- `integration/*.md` and test-runner docs when test, fixture, or database
-  behavior changes.
-- Package-level READMEs such as `internal/parser/README.md`,
-  `migration/generator/README.md`, and `migration/migrator/README.md` when the
-  corresponding package behavior changes.
-- `AGENTS.md` itself when agent workflow or project rules change.
-
-Search for both old and new terms: command names, aliases, flag names,
-environment variables, config keys, issue numbers, dialect names, conformance
-gap names, generated labels, and exact error strings. Documentation must stay
-aligned with canonical Ptah command paths. Atlas OSS command parity lives only
-in the separate `ptah-compat <command> ...` drop-in binary at process root;
-the native `ptah` binary has no Atlas command paths. Do not document
-root-level Atlas aliases inside the native `ptah` binary such as
-`ptah migrate apply`. Do not claim full Atlas parity unless the current
-conformance evidence proves it.
-
-For deep documentation maintenance, use the repo-local skill at
-`.agents/skills/ptah-documentation-maintenance/SKILL.md`. It is Ptah-specific:
-it routes CLI, config, migration, parser/renderer, conformance, public API, and
-example changes to the right documentation surfaces and uses Inventario's docs
-site as the quality reference.
-
-### The feature register is derived, and a page declares what it owns
-
-`docs/feature-inventory.json` lists every native verb, stable-embedder package,
-released binary and dialect, with the documentation page that claims each one.
-It is **generated**, and adding a surface is not an edit to it: the row appears
-when the declaration does -- the walked command tree, `docs/public_api.md`,
-`.goreleaser.yaml`, and `renderer.SupportedDialects` folded through
-`platform.NormalizeDialect`.
-
-The one hand-written datum is an `owns:` list in a page's frontmatter, naming
-the identifiers that page documents. Claiming one is two steps:
-
-```yaml
-owns:
-  - cli-ptah-schema-apply
-```
-
-```bash
-scripts/check-feature-inventory.sh --write
-```
-
-Five rules are worth knowing before adding a column to it, because each is a
-false green a closed attempt or a review of this one shipped
-(stokaro/ptah#2402):
-
-- **A column exists only if the gate checks it exactly.** No comparison in that
-  file is a substring test. The canonical-page check that preceded it computed
-  identifying tokens and accepted a `strings.Contains` hit for any of them, so a
-  page passed without documenting the feature it was credited with. There is no
-  threshold that repairs that, which is why the direction is inverted: the page
-  declares, and the gate compares by string equality. A column that would need a
-  heuristic is dropped, or turned into a fact the product declares.
-- **A column is named for what is checked, not for what it suggests.** The
-  claiming page is `claimed_by`, the counts beside it are `claimed` and
-  `claimed_floor`, and the word canonical appears nowhere. What the gate proves
-  is that the claim resolves to a derived feature and that no second page makes
-  it; it cannot prove the page explains anything, and a name reading as the
-  stronger promise is the same false green in prose that the substring check was
-  in code. A page still writes `owns:`, because that half is an author saying
-  what their page is for -- the register's half is the one that had to stop
-  overstating.
-- **Runnable examples are marked, never inferred, and a marked page has to run
-  something.** The marking is `internal/quickstart`'s existing `quickstart: true`
-  frontmatter key, and the acceptance workflow is what proves the steps run. Do
-  not add a second marking: two lists of runnable pages can disagree, and the
-  older one is the one that actually executes. A deliberate marking is still a
-  claim, so a page publishing no step for any shell is refused rather than
-  listed -- otherwise a page of prose carrying the key ships under
-  `runnable_examples` and the gate reports success. No ROW claims an example:
-  knowing that an executed page exercises a named feature needs the argv the
-  shell produced, not the text of a fenced block.
-- **A floor does not live in the file it governs.** The claimed-row count is held
-  above `featureinventory.ClaimedFloor`, a source constant, because a ratchet read
-  out of the artifact and written back by `--write` is the one field a byte
-  comparison cannot police: editing that line lowered the floor, the gate
-  reported success, and a false claim raised the floor to lock itself in as
-  coverage. Raising it is a reviewed edit.
-- **A `package main` is a measurement, not a supported program.** `go list` can
-  find main packages; it cannot know which ones ship. The program rows come from
-  `.goreleaser.yaml` `builds[].binary`, which is the product declaring what it
-  releases, so `cmd/integration-test` is correctly absent rather than omitted.
-
-The file is `.json` under `docs/` because `docs/docs.go` embeds `*.md`,
-`adr/*.md` and the site content: a Markdown register there ships inside every
-binary and answers `search_docs`. `docs/docs_test.go` asserts its absence from
-`docs.FS` directly rather than through the Markdown-filtering helper, which
-would reduce the assertion to `0 == 0`.
+For deep documentation maintenance use
+`.agents/skills/ptah-documentation-maintenance/SKILL.md`.
 
 ### Label every issue you file
 
-An issue without labels is invisible to every filter anyone uses to plan, and
-nothing in this repository supplies one by default -- there are no issue
-templates, so a bare `gh issue create` produces a bare issue. That is how 157 of
-them accumulated before being classified in one pass.
+There are no issue templates, so a bare `gh issue create` produces an
+unlabeled issue invisible to every planning filter. One type label --
+`bug`, `enhancement`, `feature-request`, `documentation`, `question` -- and
+area labels only where clear: `cli`, `migration`, `schema-generation`,
+`postgresql`, `sql`, `rls`, `roles`, `security`, `foreign-key`,
+`constraints`, `field-ordering`; `post-ga` and `critical` when they apply.
+Engine names have no label; classify by what the issue is about. Milestones are
+not used. Prefer no label to a wrong one.
 
-Give each new issue **one type label**, and **area labels only where they are
-clear**:
-
-| | |
-| --- | --- |
-| type, exactly one | `bug`, `enhancement`, `feature-request`, `documentation`, `question` |
-| area, zero or more | `cli`, `migration`, `schema-generation`, `postgresql`, `sql`, `rls`, `roles`, `security`, `foreign-key`, `constraints`, `field-ordering` |
-| extra, when it applies | `post-ga` for work deferred past general availability, `critical` for data loss or a broken release |
-
-```bash
-gh issue create --title "..." --body-file /tmp/issue.md \
-  --label bug --label migration
-```
-
-Engine names have no label of their own. An issue about Spanner, ClickHouse,
-MySQL or SQL Server is classified by what it is about, usually
-`schema-generation` -- do not invent an engine label. Milestones are not used
-here at all; do not start.
-
-Two labels carry a meaning beyond classification and are worth knowing.
-
-`frozen` means work on the issue must not proceed, and the label does not say
-why -- the comments do. Read them before doing anything else with the issue.
-It is **not** a claim of ownership and says nothing about who is working on
-what; reading it that way turns an issue anybody could pick up into one nobody
-touches.
-
-A freeze is not permanent either. The reason is a fact about some moment, and
-facts expire: a dependency that has since shipped, a decision that has since
-been made, a release that has since happened. Where the comments name a
-condition that no longer holds, the label is stale rather than binding. Say so
-on the issue and let the freeze be lifted deliberately; do not decide alone
-that it has expired and start work under a label that still says stop.
-
-`hold-off-merge` means what it says.
-
-Prefer no label to a wrong one when you genuinely cannot tell. A wrong label
-pollutes every search that trusts it, and nobody re-checks an issue that already
-looks classified.
+`frozen` means work must not proceed and the comments say why; it is not
+ownership, and a reason that no longer holds makes the label stale rather than
+binding -- say so on the issue rather than deciding alone. `hold-off-merge`
+means what it says.
 
 ## Code Style And Linting
 
-Ptah treats `.golangci.yml` as a strict contract. Fix code to satisfy the configured linters instead of relaxing thresholds, disabling checks, or broadening exclusions. In particular, keep `revive` `error-strings` enabled and preserve the current "stricter wins" lint posture unless a maintainer explicitly asks for a config change.
+`.golangci.yml` is a strict contract: fix code rather than relaxing thresholds
+or broadening exclusions. Run both passes, `golangci-lint run --fix ./...` then
+`golangci-lint run ./...`, and clean the second-pass fallout by hand.
 
-Ptah is pre-GA. Do not preserve old command aliases, compatibility wrappers,
-fallback APIs, or backward-compatibility behavior only to keep an older internal
-shape. Prefer the cleaner architecture and update callers/tests/docs unless a
-maintainer explicitly asks for a compatibility layer. This paragraph is the
-[compatibility-with-older-Ptah rule](#compatibility-with-older-ptah-is-a-different-axis-and-it-is-not-owed)
-applied to code shape; the rule itself is broader and covers defaults, output,
-formats and error text as well.
+Ptah is pre-GA: prefer the cleaner architecture over an alias, wrapper or
+fallback kept for an older internal shape, and update callers, tests and docs.
+The `ptah` binary stays purely native.
 
-Atlas OSS command parity belongs in the separate `ptah-compat` binary, the
-Atlas-style root command surface for drop-in script migration. The `ptah`
-binary is purely native. Do not add Atlas command spellings or temporary
-aliases such as `ptah migrate apply` or a `ptah atlas` namespace to the `ptah`
-binary; remove or redesign old native paths instead of preserving them.
+`modernize` is enabled: `slices.Contains`, `maps.Copy`, `strings.CutPrefix`,
+`any`, `fmt.Fprintf(&b, ...)`, and `new(expr)` for an address rather than a
+named temporary. No pointer helper packages. `importas` requires quicktest as
+`qt`. A suppression names its rule -- `#nosec Gxxx -- reason` or
+`//revive:disable... reason`, never a bare `//nolint:gosec` -- and every one
+carries a justification; `nolintguard` runs through `go vet -vettool` in both
+build-tag contours.
 
-The `modernize` linter is enabled. Prefer current Go idioms when writing or editing code:
+**A closing parenthesis goes on its own line** when the arguments began on
+lines of their own. No linter reports the other shape; the cost is a diff that
+touches a line nobody meant to change. Re-read the diff after any `gofmt -r`
+rewrite, which re-wraps what it touches.
 
-- Use standard library helpers such as `slices.Contains`, `maps.Copy`, `strings.CutPrefix`, and `strings.SplitSeq` when they fit the code.
-- Use `any` instead of `interface{}`.
-- Take an address with `new(expr)` rather than the two-line variable dance. Go
-  1.26 allows any expression, so `return new(value.String)` replaces
-  `held := value.String; return &held`, and `return new(false)` replaces
-  `nullsDistinct := false; return &nullsDistinct`. The named temporary exists
-  only to be addressable, and naming it invites the next reader to look for a
-  reason it was named.
-- Do not add pointer helper packages or local `stringPtr`/`strPtr` helpers for new code; follow the idioms accepted by `modernize`.
-- Use `fmt.Fprintf(&builder, ...)` rather than `builder.WriteString(fmt.Sprintf(...))`.
-- Prefer clear early returns and simple control flow that satisfies `revive`, `gocognit`, `gocyclo`, `nestif`, and `funlen`.
-- Keep import aliases compliant with `importas`; for example, `github.com/frankban/quicktest` must be imported as `qt`.
-- Add `//nolint` only when necessary, always with a specific linter name and an explanation.
-  Never write `//nolint:gosec` or `//nolint:revive`: use gosec's native
-  `#nosec Gxxx -- reason` or revive's native `//revive:disable... reason`
-  directives. A `#nosec` directive must name every suppressed `Gxxx` rule;
-  never use a bare directive that suppresses all gosec findings on the line.
-  Every native suppression also needs a justification. The pinned
-  nolintguard analyzer is enforced through `go vet -vettool` across every Go
-  module in both the default and `integration` build-tag contours.
+**Discover the module list, never write it out.** `scripts/list-go-modules.sh`
+is the answer, from `git ls-files`; `make lint` consumes it, and
+`scripts/check-go-module-lint-coverage.sh` fails when a tracked module is
+missing from any workflow job that lints. Any "we do X for every module" claim
+needs discovery or a check.
 
-When applying automatic lint fixes, run both passes:
+Every package carries a `// Package <name>` comment that says what it does and
+where it sits, grounded in the code (`ST1000`); filler is not acceptable.
 
-```bash
-golangci-lint run --fix ./...
-golangci-lint run ./...
-```
+### Public API doc comments and examples
 
-The fix pass can leave second-pass fallout such as unused imports, removed helper functions, or staticcheck suggestions. Clean those manually before considering the lint run complete.
+The ledger packages are read through godoc by embedders who never open this
+repository, so the doc comment states what a caller must know: error semantics
+and sentinels, zero-value and nil behavior, ordering and determinism, mutation
+versus copy, accepted dialects. **Document stable caller-observable behavior,
+not incidental implementation behavior.** Before writing a sentence ask: if we
+changed the internals tomorrow while preserving the intended API, would this
+sentence stop us? If so, generalize it; where the guarantee is intended,
+state it precisely. `scripts/check-exported-docs.sh` measures presence only.
 
-### A closing parenthesis goes on its own line
-
-A call whose arguments begin on a line of their own closes on a line of its own:
-
-```go
-call(arg1, arg2)     // one line, nothing to place
-
-call(                // the shape this repository writes
-	arg1,
-	arg2,
-)
-
-call(                // the shape it refuses
-	arg1,
-	arg2)
-```
-
-Both are legal Go and `gofmt` keeps either, so no linter reports the second --
-measured against golangci-lint's registry rather than assumed. The cost is paid
-in review instead: adding an argument to the last line edits two lines rather
-than one, so the diff marks a line nobody meant to change and the reader has to
-work out that the parenthesis merely moved.
-
-Two shapes are not this rule. A call that merely wraps, `f(a,\n\tb)`, has its
-first argument on the opening line, so the parenthesis has nowhere else to go. A
-spread argument cannot take a trailing comma at all.
-
-**Re-read the diff after any mechanical call-site rewrite.** `gofmt -r` re-wraps
-what it rewrites: a rule dropping one argument collapsed forty-three calls into
-the refused shape in a single pass, and each one reached review as a line that
-had been touched for no reason.
-
-### A module is covered because it exists, not because someone listed it
-
-This repository holds two Go modules — the root and
-`examples/orm-loaders/gorm/` — and its repository-wide tools each answered
-"which modules do I visit" differently:
-
-- **qtlint** took `-multi-module` and discovered every one.
-- **nolintguard** named each by hand, in six `cd` lines across the
-  Makefile and the workflow.
-- **golangci-lint** ran from the repository root, so it linted the root module
-  and nothing else.
-
-The third is not a style difference, it is missing coverage, and it was
-invisible because a linter that visits nothing reports nothing. Measured: a
-file planted in a nested published module with two `unused` findings was
-reported by `golangci-lint run ./...` inside it and reported **not at all**
-from the root. Downstream code imports that module, and it was unlinted, as was
-the gorm example.
-
-**Discover the module list, never write it out.**
-[`scripts/list-go-modules.sh`](scripts/list-go-modules.sh) is the single answer,
-sourced from `git ls-files` rather than from a filesystem walk for the reason
-`scripts/check-test-style.sh` already documents: a walk descends into linked
-worktrees parked under this one and reports modules belonging to a different
-checkout. `make lint` consumes it, so a module is covered by existing, and a module
-that leaves the repository takes no edit here either.
-
-Where discovery is impossible the list has to be policed. The
-`golangci-lint-action` lints one directory per invocation, so the workflow
-names each module in a step of its own, and
-[`scripts/check-go-module-lint-coverage.sh`](scripts/check-go-module-lint-coverage.sh)
-fails when a tracked module is missing from **any** job that runs golangci-lint.
-It counts rather than searches: a module dropped from one job would otherwise
-stay green on the strength of the other, which is the same "somewhere in the
-file" reasoning that let the coverage go missing to begin with.
-
-The rule generalizes past linters. Any statement of the form "we do X for every
-module" is a claim that needs either discovery or a check — a hand-written list
-of modules is a claim that was true when it was written.
-
-### Package Documentation
-
-Every Go package must carry a package-level doc comment (`// Package <name>
-...`), either atop a central file of the package or in a dedicated `doc.go`.
-This is CI-enforced through staticcheck's `ST1000` in `.golangci.yml`; a PR
-that introduces a new package must ship the comment in the same PR. The rule
-applies to every module in the repository. `main`
-packages describe their binary; test-only packages (`package foo_test`) are
-exempt.
-
-The comment must say in one to three sentences what the package does and where
-it sits in the system, grounded in the package's actual code. Generic filler
-such as "Package x contains x utilities" is not acceptable — the anti-slop
-rules of [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) apply in spirit.
-
-### Public API Doc Comments And Examples
-
-The packages [`docs/public_api.md`](docs/public_api.md) lists are read through
-godoc by embedders who never open this repository, so their inline
-documentation carries the contract. Two obligations follow, beyond the
-`scripts/check-exported-docs.sh` gate that merely requires a comment to exist:
-
-- A doc comment on the stable surface states what a caller must know to hold
-  the value correctly: error semantics (which `ptaherr` sentinel,
-  `errors.Is`/`errors.As` support), zero-value and nil behavior, ordering and
-  determinism guarantees, mutation versus copy, and which dialects are
-  accepted. "Parse parses the input" is not documentation. Where
-  `docs/public_api.md` already explains a subtlety in prose, the doc comment
-  says it too — the godoc reader never sees the ledger.
-- **Document stable caller-observable behavior, not incidental implementation
-  behavior.** A statement in public godoc should be something we are prepared
-  to maintain as part of the API contract. Do not promote an implementation
-  detail into a compatibility guarantee merely because it can be observed in
-  the current implementation.
-- When a change adds an exported symbol to a ledger package, or substantially
-  changes how one is used, make sure the package's `example_test.go` still
-  shows the usage patterns an embedder needs, and extend it in the same change
-  where it does not. Judge "substantially" honestly: a new entry point,
-  option, or type usually needs one; a reworded error does not.
-
-The second rule is the one that takes judgment, and it cuts both ways. Writing
-down a detail we do not intend to keep hands an embedder a dependency we then
-have to honor or break; withholding one we do intend to keep leaves them
-guessing and reading our source. Before writing a sentence, ask which it is:
-
-> If we changed the internals tomorrow while preserving the intended public
-> API, would this sentence stop us?
-
-If it would, and we are not willing to call the change a compatibility break,
-generalize it — say that a refusal is an error rather than naming the exact
-message; say the plan is deterministic rather than transcribing the order; say
-which values are refused rather than which internal validator refuses first.
-Where we *do* intend the guarantee — a `ptaherr` sentinel a caller branches on,
-a documented zero value, a deliberate dialect divergence, a determinism promise
-a test pins — state it explicitly and precisely, because an unstated contract
-is one an embedder cannot use.
-
-**Every important public usage pattern should have an executable example.** Add
-symbol-attached examples where they materially improve discoverability or
-explain how that API is used; do not create redundant examples for symbols a
-broader workflow example already demonstrates naturally and clearly. The goal
-is executable documentation of the patterns an embedder actually needs, not one
-`ExampleFoo` per exported symbol — a package of near-identical examples is
-harder to read than the two that carry the information, and every one of them
-is a maintenance cost.
-
-Example tests follow the shape `core/astbuilder/example_test.go` and
-`core/yamlschema/example_test.go` establish:
-
-- Black-box: `package <name>_test`, exercising only exported API.
-- Named so godoc attaches them to the right symbol: `ExampleFoo`,
-  `ExampleFoo_variant`, `ExampleType_Method`, or `Example` for the package.
-- Deterministic `// Output:` wherever possible, so `go test` executes them and
-  drift fails the build. Offline fixtures only: an in-memory SQLite database
-  through `dbschema.ConnectToDatabase`, a `testing/fstest.MapFS`, or a
-  `t`-less temporary directory — never a network address or a live server. A
-  compile-only example (no `// Output:`) is the fallback when determinism is
-  impossible, and its doc comment says why it does not run.
-- Example functions are documentation first, so the
-  [declarative-tests rule](#declarative-tests-only) does not apply to them:
-  write the idiomatic `if err != nil` an embedder would write, especially
-  where the error handling is itself part of understanding the API. `must.Must`
-  from `github.com/go-extras/go-kit/must` is for fixture setup and other
-  boilerplate whose failure is not the point — not the default spelling for
-  brevity. `scripts/check-test-style.sh` passes `-skip-examples` to
-  `teststyle`, so a conditional in a parameterless `Example*` function produces
-  no finding and no baseline entry; for `Test*` functions the no-new-entries
-  rule stands.
-- Each example carries a doc comment saying what the example demonstrates and
-  why a reader would reach for that entry point, in the same grounded voice as
-  the rest of the documentation.
-
-`scripts/check-exported-docs.sh` is the gate here, and it measures only
-presence: it reads the ledger packages through
-`scripts/list-public-api-packages.sh` and fails on an exported declaration
-with no doc comment. Whether a comment states the contract or restates the
-identifier is a reading responsibility, which is what the rules above are for.
+Every important usage pattern has an executable example in `example_test.go`,
+in the shape `core/astbuilder/example_test.go` establishes: black-box,
+attached to its symbol by name, deterministic `// Output:` on offline fixtures,
+with a doc comment saying what it demonstrates. Not one `ExampleFoo` per
+symbol. A compile-only example (no `// Output:`) is the fallback when
+determinism is impossible, and its doc comment says why it does not run.
+Examples are documentation, so idiomatic `if err != nil` is right there and
+`scripts/check-test-style.sh` skips them; `must.Must` from
+`github.com/go-extras/go-kit/must` is for fixture setup whose failure is not
+the point, not the default spelling for brevity, and the call the example
+demonstrates keeps its `if err != nil`.
 
 ## Testing Standards
 
-### Where Tests Live
+### Where tests live
 
-- Unit tests are ordinary `*_test.go` files that need no server.
-  `go test ./... -count=1` runs the whole set.
-- Every integration test lives in its module's dedicated `integration/`
-  package or one of its subpackages. Do not place a
-  live-database or external-process test beside production code. A test that
-  does not cross a process, filesystem, network, or database boundary is a unit
-  or pipeline test and belongs beside the production package instead.
-- Every integration test file uses `//go:build integration`, without exception.
-  Build constraints apply to whole files, so split mixed unit/integration files.
-  Test-only helpers used by integration tests carry the same tag. There is no
-  `//go:build !integration` escape hatch: a test that does not require the tag
-  does not belong in an integration tree, and `internal/testcontour` refuses it.
-  An integration tree holds nothing but tagged test files — library code that
-  integration tests happen to use lives outside it, beside its own untagged unit
-  tests. `internal/integrationharness` and `internal/integrationfixture` are the
-  worked examples.
-- An integration test is never white-box. Every test file under
-  `integration/**` uses `package <name>_test` and
-  exercises only exported APIs. `*_internal_test.go` and same-package tests are
-  forbidden anywhere in those trees. If a behavior can only be reached through an
-  unexported symbol, move the deterministic logic behind a package boundary and
-  cover it with a black-box unit test outside the integration trees, or
-  introduce the real public/application boundary the integration test should
-  exercise. Never use white-box access as an integration shortcut.
-- **A live test asks for an engine, never for a variable.** `internal/dbtarget`
-  is the one declaration of which environment variable names which database.
-  Call `dbtarget.URL(c, dbtarget.PostgreSQL)` for the address ptah connects
-  with, or `dbtarget.DriverDSN(c, dbtarget.MySQL)` for the form a raw
-  `database/sql` driver parses; both skip with a message naming the canonical
-  variable when nothing is configured. Do not read `os.Getenv` for a database
-  address in a test, and do not invent a spelling — there is nowhere to invent
-  one, which is the point.
+A test that crosses no process, filesystem, network or database boundary is a
+unit or pipeline test and lives beside the production package. Every
+integration test lives under an `integration/` tree, carries `//go:build
+integration`, and is black-box: `package <name>_test`, exported API only,
+never `*_internal_test.go` there. An integration tree holds nothing but tagged
+test files; library code they use lives outside it, beside its own unit tests.
 
-  `TestNoIntegrationTestReadsARegistryVariableDirectly` enforces this over
-  `integration/`, deriving the names from the registry so a synonym added there
-  is covered without being listed twice. It exists because the rule was written
-  and seven PostgreSQL helpers still scanned variables themselves: a checkout
-  configured with `POSTGRES_TEST_URL`, a spelling the registry declares, ran
-  none of them and reported passing packages, because a skip reads as a pass
-  (stokaro/ptah#1541). Variables the registry does not own — the destructive
-  `MYSQL_CLEANUP_TEST_DSN` target, the oracle-specific ones — are deliberately
-  outside it and need no exemption.
+When a behavior is reachable only through an unexported symbol, move the
+deterministic logic behind a package boundary and cover it with a black-box
+unit test outside the integration trees, or introduce the real public boundary
+the integration test should exercise. Never export a test-only accessor or use
+white-box access as an integration shortcut.
 
-  The two accessors are not interchangeable. `go-sql-driver/mysql` reads a
-  `mysql://` prefix as part of the username and `pgx` does not parse
-  `cockroachdb://` at all, so anything handed to `mysqldriver.ParseDSN` or
-  opened directly needs `DriverDSN`; anything handed to
-  `dbschema.ConnectToDatabase` needs `URL`. Handing a URL to the driver parser
-  does not fail loudly — it connects as a different user and reports access
-  denied, which reads as a broken CI secret rather than as a wrong call.
+`internal/testcontour` refuses a tagged test outside those trees, and CI runs
+the whole contour through `go run ./internal/cmd/testcontour --tags
+integration`, which fails on any skipped test -- a skip reads as a pass to
+ordinary `go test`. Do not add build tags, package selectors or name patterns
+to select integration tests.
 
-  This exists because the alternative was measured. Before it, 129 test files
-  each decided where to look, PostgreSQL answered to three spellings and MySQL
-  to four, and one CI step set 34 variables so that whichever a test happened
-  to read would be present. A test written against a name that step did not set
-  skipped in silence, and a skip reads as a pass.
-- A missing database environment variable causes a test skip, and a skip reads
-  as a pass to ordinary `go test`. CI therefore runs the complete recursive
-  package contour through
-  `go run ./internal/cmd/testcontour --tags integration`.
-  The canonical root workflow also passes `--race`. The runner serializes
-  packages, derives expected top-level tests from Go source, and fails on an
-  empty contour, a missing or incomplete result, or any skipped test or
-  subtest. It also scans the repository and rejects an
-  integration-tagged test outside a dedicated integration tree. Do not add
-  domain-specific build tags, package loops, package selectors, test names, or
-  regular expressions to select integration tests. The CLI intentionally has
-  no package-selection flag.
-- **Name the file for what the test needs, not for the category it is in.**
-  Every file under an integration tree is an integration test, so spelling that
-  in the filename says nothing. Two suffixes carry a fact worth reading off the
-  name:
-  - `*_live_test.go` — the test needs a live server. It asks `dbtarget` for an
-    engine and skips when none is configured.
-  - `*_e2e_test.go` — the test drives the user-facing surface: a cobra command
-    built from `cmd/`, or a process it starts.
-  - `*_fs_test.go` — the test crosses the filesystem and nothing else: real
-    files, real directories, path resolution against them.
-    `integration/schemaload/path_containment_integration_test.go` is the shape,
-    and it fits neither name above.
+**A live test asks for an engine, never for a variable.** `internal/dbtarget`
+is the one declaration of which variable names which database:
+`dbtarget.URL(c, dbtarget.PostgreSQL)` for the address ptah connects with,
+`dbtarget.DriverDSN(c, dbtarget.MySQL)` for the form a raw driver parses. They
+are not interchangeable -- `go-sql-driver/mysql` reads a `mysql://` prefix as
+part of the username and reports access denied. Never read `os.Getenv` for a
+database address in a test;
+`TestNoIntegrationTestReadsARegistryVariableDirectly` enforces it
+(stokaro/ptah#1541).
 
-  A file that does both is `*_e2e_test.go`; the CLI is the larger claim.
-  `*_integration_test.go` is the third spelling and means neither — it is the
-  name reached for when no distinction was intended, and it should not be used
-  in new files.
+**Name the file for what the test needs**: `*_live_test.go` needs a server,
+`*_e2e_test.go` drives a command or process (the larger claim, when both),
+`*_fs_test.go` crosses only the filesystem. `*_integration_test.go` means
+neither and is not used in new files. Classify by reading, not by scanning
+imports: the helper that opens the database usually lives in a sibling file.
 
-  This is measured rather than asserted. Across the 200 files in `integration/`
-  today: of 64 `*_live_test.go`, **none** drives a command or a process and 48
-  connect to a database; of 38 `*_e2e_test.go`, 12 drive one — 12 of the 14 in
-  the whole tree. The 51 `*_integration_test.go` sit across both, which is what
-  makes the name uninformative rather than wrong. Renaming them is churn worth
-  doing on its own, once no branch is mid-flight over the same files.
+The Docker suite in `cmd/integration-test` covers apply, rollback, idempotency,
+parallel execution, partial-failure recovery and schema diff.
 
-  **Classify by reading, not by scanning imports.** A file's own import list
-  cannot answer which boundary its tests cross, because the helper that opens
-  the database usually lives in a sibling file of the same package.
-  `integration/planner/postgres/schema_scope_live_test.go` imports nothing but
-  `goschema`, `planner` and `types`, and creates a real PostgreSQL database
-  through `createRLSEnableDatabase` two files over. An import scan calls it
-  boundary-free and is wrong; the name is right. Every package in
-  `integration/` crosses a boundary somewhere, so a file that appears not to is
-  a question, never an answer.
-- The Docker suite in `cmd/integration-test` covers apply, rollback,
-  idempotency, parallel-execution smoke, partial-failure recovery, and schema
-  diff, and writes reports in stdout, text, JSON, or HTML form into the
-  directory `--output` names.
+### Declarative tests only
 
-### Declarative Tests Only
+No `if`, `switch` or `goto` in a test function. `for` over a static table is
+fine. `scripts/check-test-style.sh` holds a baseline of existing violations
+(stokaro/ptah#541); new tests add no entries, and a cleanup refreshes it with
+`--write-baseline` through the script, never the bare tool, which walks into
+linked worktrees. `Example*` functions are exempt.
 
-All tests MUST be purely declarative. The following are prohibited in test
-functions:
+Never use `testify`; `depguard` refuses the import. Use `quicktest` as `qt`.
 
-- `if` statements.
-- `switch` statements.
-- `goto` statements.
+### Checkers belong to the test they report against
 
-`Example*` functions are exempt: they are documentation rather than
-assertions, so `scripts/check-test-style.sh` runs `teststyle` with
-`-skip-examples` and
-[Public API Doc Comments And Examples](#public-api-doc-comments-and-examples)
-governs them instead.
+`QTLINT_RULES` in the Makefile enforces all three, in both build-tag contours
+and again on a Windows runner, since a `_windows_test.go` file is outside both
+Ubuntu contours. That job (`ptah-go-lint-windows`) runs `make lint-qtlint` and
+golangci-lint rather than restating their arguments, and stays separate from
+`windows-unit-tests`: a runtime failure must not hide the lint result, and a
+lint-only rerun must not spend a unit-test budget. The three rules:
 
-`for` loops are allowed in test functions for table-driven tests that iterate
-over a static list of cases, and are not considered conditional logic for this
-guideline. Keep loop bodies simple and do not use loops to encode branching
-logic.
+- Assert through a receiver: `c := qt.New(t)` then `c.Assert(...)`.
+- Enter a subtest with `t.Run(name, func(t *testing.T) { c := qt.New(t) ...
+  })`, never `c.Run`: a `c.Run` closure asserts through the parent's checker.
+  The parameter is named `t` and shadows the outer one on purpose.
+- A helper takes the checker: `func writeFixture(c *qt.C)`. `*qt.C` is a
+  `testing.TB`, so widening to `testing.TB` buys nothing and hides the escape
+  from `-require-testing-run`. A helper needing a concrete `*testing.T` takes
+  one; it never asserts `c.TB.(*testing.T)`.
 
-Go 1.22 and newer makes range variables per-iteration, so the historical
-`test := test` workaround is not needed when using `t.Run()` closures in
-table-driven tests unless intentionally taking the address of a loop variable.
+`make lint-qtlint-fix` applies the rewrites, one rule per pass.
 
-Always create the quicktest checker inside each `t.Run` closure:
+### A table row carries data, not a checker
 
-```go
-for _, test := range tests {
-	t.Run(test.name, func(t *testing.T) {
-		c := qt.New(t)
-		// Assertions for this case.
-	})
-}
-```
+Put the value that varies in the row (`wantErr: "..."`), not a closure that
+asserts; `-require-data-rows` reports the shape by field type. Rows whose
+assertions differ are two tests wearing one table -- split them. A field
+holding a function that asserts nothing is data and is not reported.
 
-Do not use `c.Run` or `qt.Run`. The standard-library `t.Run` boundary keeps the
-subtest lifecycle explicit, and `qt.New(t)` inside that boundary binds helpers,
-cleanup, failure location, and parallelism to the correct subtest.
-
-Run the test-style baseline before finishing test changes:
-
-```bash
-scripts/check-test-style.sh
-```
-
-The baseline records existing violations while issue #541 is being cleaned up.
-New tests must not add entries. Cleanup PRs that intentionally remove entries
-should refresh the baseline with:
-
-```bash
-scripts/check-test-style.sh --write-baseline
-```
-
-Regenerate through the script, not through `go tool teststyle -write-baseline`
-directly: the bare tool walks the filesystem and cannot tell a linked git
-worktree parked under the repository from the repository itself, so it records
-tests that are not in the working tree.
-
-Never use `testify` in Ptah code, tests, examples, or documentation snippets.
-Use `quicktest` imported as `qt`, the Go standard library `testing` package, or
-existing project-specific test helpers instead. Existing transitive dependency
-metadata from third-party packages is not permission to add direct
-`github.com/stretchr/testify` imports or `assert`/`require` examples.
-
-The prohibition is enforced by a `depguard` deny entry in `.golangci.yml`, so it
-fires on the import declaration and is reported by `golangci-lint run ./...`
-along with every other finding. It is not a text scan: a comment that ends a
-sentence with the word `assert` or `require` is not a violation, and `pkg`
-matches by prefix so every testify subpackage is covered by the one entry.
-
-### Checkers Belong To The Test They Report Against
-
-An assertion reports against whichever test its checker was built from, so the
-checker a test uses has to be the one for that test. Three rules follow, and
-all three are enforced: `QTLINT_RULES` in the Makefile carries
-`-require-qt-c-receiver`, `-require-data-rows` and `-require-testing-run`, and
-the tree is clean against every one of them in both contours. A rule joins that
-set when its own backlog reaches zero, because adding one before then turns
-every unrelated change red; the Makefile records what each cost to clear.
-
-- Assert through a receiver: `c := qt.New(t)` then `c.Assert(...)`, never
-  `qt.Assert(t, ...)`.
-- Enter a subtest with `t.Run(name, func(t *testing.T) { c := qt.New(t); ... })`,
-  never `c.Run`. A `c.Run` closure asserts through a checker bound to the
-  parent, so a failure is attributed to the parent and a `FailNow` stops the
-  parent instead of the subtest.
-- **A test helper takes the checker.** Write `func writeFixture(c *qt.C) string`
-  and call it `writeFixture(c)`. Do not widen the parameter to `testing.TB` and
-  rebuild a checker inside, and do not reach through the checker at the call
-  site for `c.TB`.
-
-The subtest parameter is named `t`, and it shadows the enclosing test's `t`
-when the closure refers to one. That is the point rather than a collision to
-dodge: the body is becoming a subtest, so a `t.TempDir()` inside it should name
-the subtest's directory and a `t.Fatal` inside it should fail the subtest.
-Naming the parameter around the reference still compiles, and leaves those
-calls addressing the parent, which is how one temporary directory comes to be
-shared by every row of a table. The one shape that cannot be converted is
-a closure whose body declares `t` in its own block — Go declares parameters in
-the body block, so such a declaration collides with the new parameter rather
-than being shadowed by it. `-require-testing-run` withholds the fix there and
-says so; convert it by hand.
-
-The third rule was the other way round for one release, and the reversal is
-worth writing down so it is not rediscovered. `*qt.C` **is** a `testing.TB` — `C`
-embeds it — so a helper declared to take `testing.TB` already accepted the
-checker, and widening the signature bought nothing but a line of ceremony per
-helper and a `.TB` selector per call site that reads as though the checker were
-the wrong type to pass. Measured on this repository: 1003 helpers and 5924 call
-sites, all of it noise.
-
-What the widening appeared to buy was `-require-testing-run`'s fix. That rule
-withholds a rewrite when the checker escapes into a function, because what such
-a function can do includes `(*qt.C).Defer`, which registers a cleanup that
-panics unless `Done()` ran — `C.Run` supplies that `defer c2.Done()` and a bare
-`qt.New(t)` does not. Passing `c.TB` did not remove the hazard; it removed the
-analyzer's ability to see it, because a selector is not the bare identifier the
-escape check looks for. Prefer the honest signature and accept the withheld fix.
-
-A helper that genuinely needs a concrete `*testing.T` should take one. What it
-must never do is take a handle and assert its way to the concrete type:
-`c.TB.(*testing.T)` inside a helper declared for `testing.TB` panics the moment
-it is called from a benchmark, and the signature promises otherwise.
-
-### A linter's reach is configuration, not a property of the linter
-
-`rowserrcheck` reports a `for rows.Next()` loop that never asks `rows.Err()`.
-A result set that ends early -- a dropped connection, a server-side
-cancellation, a statement killed mid-stream -- ends the loop exactly as an
-exhausted one does, so the reader returns the rows that arrived and reports
-success. `readEnumsForSchema` did that with eleven of its siblings, and the
-answer reached a schema fingerprint and a plan's `current_schema_digest` as
-complete catalog state (stokaro/ptah#2720).
-
-The linter's default `packages:` list is `database/sql` alone, and it tracks
-rows by where the `Query` that produced them was DECLARED. Ptah's schema readers
-hold a `sqlrunner.Runner`, so with the default list this linter ran over the
-PostgreSQL reader and reported nothing -- measured on the pre-fix tree, where it
-found the two MySQL sites and none of the eleven PostgreSQL ones. Enabling it
-would have looked like coverage and been silence.
-
-`.golangci.yml` therefore names every package in the tree that declares a
-`Query`/`QueryContext` returning `*sql.Rows`. Nothing about a missing entry
-fails on its own -- the linter stops seeing that package, which is the state the
-reported defect was already in -- so the list is not left as a claim.
-`internal/rowserrguard` compares it with what the tree declares, in both
-directions, and asserts that the linter is enabled: a list kept in perfect order
-under a linter nobody runs is the same silence with more evidence of care.
-
-Two limits are worth knowing before trusting a clean run:
-
-- **It does not follow rows into a closure.** `internal/embedpg/inspect.go`
-  returns an `iter.Seq2` and checks `Rows.Err` inside it; that is a false
-  positive and carries the tree's one `//nolint:rowserrcheck`.
-- **It does not follow rows through a parameter.** A helper taking `rows
-  *sql.Rows` is invisible to it, and `embedpg`'s `scanEvents` and `readPage`
-  are both of that shape. Both are already correct: a helper that did not open
-  the result set does not own it either, and all three of their callers check
-  `Rows.Err` themselves. That is the distinction to draw when a sweep turns one
-  up -- a function that runs its own `QueryContext` owns the terminal check,
-  because no caller is holding the rows to make it.
-
-An AST sweep for `for x.Next()` in a function that never calls `x.Err()` finds
-that second class and misses what the SSA analysis catches, so the two are
-complementary rather than redundant. **Neither is a finding on its own.** Six of
-the sites either sweep reported were correct -- the two above, plus three that
-close a result set without ever advancing it and one that checks inside a
-returned iterator. Verify each against what the code does before adding a check;
-`Rows.Err` returns a field `Rows.Next` is the only writer of, so on a result set
-nobody advanced it is nil however the statement fared, and a call to it there
-reads as handling and can never fire.
-
-Neither sweep is the reason the reader is correct.
-`TestReadSchemaContext_EveryReadRefusesATerminalRowErrorFailurePath` breaks each
-of the two dozen queries a full read asks, one at a time, and requires the whole
-read to fail. It killed twelve positions on the pre-fix reader, and a read added
-later without a terminal check reddens it without anyone having to remember this
-section.
-
-### A blank import says why
-
-`_ "github.com/jackc/pgx/v5/stdlib"` is the one import whose removal the
-compiler does not notice. It is there for a side effect -- a driver registering
-with `database/sql`, a package populating a registry from its `init` -- and the
-symbol that would break is never named, so deleting it leaves a green build and
-a different program.
-
-revive's `blank-imports` rule states this and `.golangci.yml` enables it, so
-non-test code is already held to it. It exempts main packages and `_test.go`
-files by design, and that exemption held every unjustified blank import in the
-tree: 135 of them, all in tests. Measured rather than read off the rule --
-a bare blank import planted in `internal/atlashclrender/render.go` is reported
-and the identical one in `dialect_scope_loss_test.go` is not.
-
-`internal/blankimportguard` applies the same rule to the files revive leaves
-out. **Each blank import carries its own comment**, on its line or directly
-above it; a comment heading a group does not count for the imports below it,
-because `gofmt` sorts a group alphabetically and interleaves non-blank imports
-through it, so the comment and the import it explains drift apart on the next
-`goimports` run with nothing to say they have. Both registry lists in the tree
-already show that shape.
-
-The exemption is worst exactly where the imports matter most.
-`cmd/internal/envboolguard` and `internal/atlascompatpolicy` blank-import Ptah
-packages to populate the registry they then read back, so a missing import does
-not break the test -- it shrinks what the test checks, and the assertion still
-passes. That is a gate reporting without running.
-
-### A rule with no caller is a rule that is not in effect
-
-`unused` counts a test as a use. So a function that carries a rule, carries its
-own tests, and is called from nothing else is green in every gate — and the
-behavior it describes is absent.
-
-Measured twice in one feature. `embedrun.ResolveWrite` held the row-level write
-rules — a write never crosses generations, a stale answer does not win, a
-tombstone survives a late update — with thirteen tests, while the write path
-rendered an unconditional `UPDATE` (stokaro/ptah#2391). `embedrun.Run.Advance`
-held the phase machine, with its own transition table and a fencing check, while
-`status` reported whatever `prepare` wrote, forever (stokaro/ptah#2441).
-
-The second is the instructive one: it had no caller because it **could not be
-obeyed**. One phase step per call, against verbs that complete several. A rule
-the surrounding code cannot follow does not get followed, and nothing says so.
-
-`internal/embedguard` reports the shape over `internal/embed...`: an exported
-function or method that no non-test file calls. Running it found five more
-(stokaro/ptah#2474).
-
-Two things this asks of a new rule, and neither is satisfied by adding a test:
-
-- **The test has to be one the production path fails without.** A test that
-  calls the decision function directly proves the function works, not that
-  anything uses it. Disable the rule and watch a test that drives the real
-  entry point redden.
-- **A finding is a decision, not a suppression.** Either the behavior is
-  missing and something should call it, or it exists elsewhere and the
-  declaration should go. `embedguard.Exempt` refuses a bare entry, and the
-  reason has to say which of the two it is.
-
-The rule generalizes past this package. Anywhere a decision is factored into a
-function so it can be tested, the factoring is what makes the test possible and
-also what makes the call site optional.
-
-### A Table Row Carries Data, Not A Checker
-
-A table-driven test that forbids conditionals in its body pushes the varying
-part into the rows. When the varying part is a value, the row carries a value.
-Reaching for a closure instead brings the branch back one row at a time:
-
-```go
-tests := []struct {
-	name   string
-	assert func(c *qt.C, err error)   // the branch, spelled out per row
-}{
-	{name: "duplicate table", assert: func(c *qt.C, err error) {
-		c.Assert(err, qt.ErrorMatches, `table "public.users" is declared more than once;.*`)
-	}},
-	// fifty more, each three lines carrying one string
-}
-```
-
-As data that row is `wantErr: "…"`, and the table reads as a table again.
-
-`-require-data-rows` reports the shape. It matches the field's TYPE, never its
-name, so a row carrying the means to assert is reported whatever it is called.
-The rule suggests no fix, because the repair is a decision:
-
-- Every row's assertions are the same shape — give the row **the value that
-  varies**. The closure was encoding data as code.
-- The shapes differ — **split the table** along the difference, then apply the
-  rule above to each half. Rows that assert differently are two tests wearing
-  one table, and the style rule that forbids the conditional already asks for
-  the happy path and the failure path to be separate tests.
-- A row field holding a function that asserts nothing — `args func(dir string)
-  []string` — is data the test builds with. It is not reported, deliberately.
+Do not hide the conditional in a helper either: no `checkError(c, err, wantIs,
+wantLike)` choosing between `qt.ErrorIs`, `qt.ErrorMatches` and `qt.IsNil`.
+Write the assertions per case.
 
 **A rewritten table that still passes proves nothing.** Disable the defect its
-rows exist to catch, once, and watch the table redden; then restore it. A
-conversion that quietly drops a row's discrimination is worse than the shape it
-replaced, because the shape was visible and the missing coverage is not.
+rows exist to catch, watch the table redden, then restore it. A conversion that
+drops a row's discrimination is worse than the shape it replaced.
 
-Both contours report 0, so `-require-data-rows` is in `QTLINT_RULES` and the
-shape cannot come back. Reintroducing a `func(c *qt.C)` field in a table row
-turns `make lint-qtlint` red.
+### Separate happy-path and failure-path tests
 
-Retiring this shape is what unblocks the other rule, and the chain is measured
-rather than argued. `-require-testing-run` withholds a fix when the checker
-escapes into a function, because what such a function can do includes
-`(*qt.C).Defer`. A checker handed into a table row's field escapes into
-something with no declaration to read and no statically known value, so the fix
-was withheld for almost every subtest in the untagged contour. Converting the
-rows took that rule from 70 sites to 27 there, and from 191 to 148 in the
-tagged one, without touching a single `c.Run`.
-
-The gate runs two invocations, and neither is redundant:
-
-```bash
-go tool qtlint -multi-module $(QTLINT_RULES) ./...
-go tool qtlint -multi-module $(QTLINT_RULES) -tags integration ./...
-```
-
-`-multi-module` is required because `go list` resolves patterns against the
-module holding the working directory, so a nested module's `./<dir>/...` from
-the root answers `directory prefix <dir> does not contain main module or its
-selected dependencies`. Both contours are required because a build tag selects a
-different build rather than a superset: satisfying `integration` also drops
-every file a constraint excludes from that contour.
-
-Those two run again on a Windows runner, as the `ptah-go-lint-windows` job. A
-build tag cannot reach a file the target operating system excludes -- `go help
-buildconstraint` puts that under `GOOS` -- so every `_windows_test.go` file in
-the repository is outside both Ubuntu contours. Measured: with
-`qt.Assert(t, ...)` introduced in `internal/fsdurable/root_replace_windows_test.go`,
-the Windows contour exits 3 and names it while the Linux contour exits 0. Two
-real violations were sitting in those files when the job was added.
-
-The Windows lint job runs `make lint-qtlint` rather than repeating its
-arguments, so a rule added to `QTLINT_RULES` reaches every contour without a
-second list to keep in step. It also runs `go vet` and `golangci-lint`, because
-qtlint is not the only gate a Linux runner cannot point at Windows-only code:
-four gosec G115 findings were sitting in Windows-only source when the job was
-added, every one of them an unchecked narrowing into a structure the Windows
-API reads.
-
-The full Windows unit contour is the `windows-unit-tests` job in
-`.github/workflows/go-unit-tests.yml`. Windows-only source is not merely
-unanalyzed without these two jobs, it is unrun without the second one -- a
-`_windows_test.go` file exercises code no other runner compiles. Keep lint and
-execution as separate jobs: a runtime failure must not make the lint result
-disappear, and a lint-only rerun must not spend another full unit-test budget.
-
-`make lint-qtlint-fix` applies the rewrites. Invoking the tool directly, run the
-rules in separate passes: applied together, one rule can delete a receiver
-declaration another rule's rewrite still references.
-
-Bad:
+`TestXxx_HappyPath` asserts `err, qt.IsNil` and the value; `TestXxx_FailurePath`
+asserts the error and the zero value. Never one table with a `wantErr` branch.
+Prefer `qt.ErrorIs` for a sentinel, `qt.ErrorAs` for a type, `qt.ErrorMatches`
+when no sentinel exists.
 
 ```go
-func TestDialectFromURL(t *testing.T) {
-	tests := []struct {
-		name    string
-		rawURL  string
-		want    string
-		wantErr string
-	}{
-		{name: "postgres", rawURL: "postgres://localhost/dev", want: "postgres"},
-		{name: "unsupported", rawURL: "spanner://localhost/dev", wantErr: `unsupported --dev-url dialect "spanner://localhost/dev"`},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			got, err := atlasurl.DialectFromURL(test.rawURL)
-			if test.wantErr != "" {
-				c.Assert(err, qt.ErrorMatches, test.wantErr)
-				return
-			}
-			c.Assert(err, qt.IsNil)
-			c.Assert(got, qt.Equals, test.want)
-		})
-	}
-}
-```
-
-Good:
-
-```go
-func TestDialectFromURL_HappyPath(t *testing.T) {
-	tests := []struct {
-		name   string
-		rawURL string
-		want   string
-	}{
-		{name: "postgres", rawURL: "postgres://localhost/dev", want: "postgres"},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			got, err := atlasurl.DialectFromURL(test.rawURL)
-			c.Assert(err, qt.IsNil)
-			c.Assert(got, qt.Equals, test.want)
-		})
-	}
-}
-
 func TestDialectFromURL_FailurePath(t *testing.T) {
 	t.Run("unsupported", func(t *testing.T) {
 		c := qt.New(t)
@@ -2291,258 +669,46 @@ func TestDialectFromURL_FailurePath(t *testing.T) {
 }
 ```
 
-### Do Not Hide Conditionals In Helpers Or Table Callbacks
+### Black-box by default, white-box as the exception
 
-Do not use helper functions that mask conditional logic, such as choosing between
-`qt.ErrorIs`, `qt.ErrorMatches`, and `qt.IsNil` based on fields in a test case.
-This makes tests harder to read and review.
+Tests are `package <name>_test` exercising exported API. A white-box unit test
+is permitted only for an unexported function critical to correctness or
+internal state unobservable otherwise; it is named `*_internal_test.go` and
+carries `// White-box testing required:` as the first non-empty line after
+`package`, stating the justification. Never in an integration tree.
 
-The same prohibition applies when the hidden branch is encoded as data. Do not
-put assertion callbacks, assertion factories, comparator callbacks, or fields
-such as `assertResult func(...)` in a test-case table to choose how a case is
-verified. That is an `if` statement made less visible. If cases have different
-success/error contracts or require different comparison fidelity, split them
-into separate test functions or separate tables whose loop bodies contain one
-direct, uniform assertion sequence. A callback may represent an actual input
-behavior supplied to production code; it must not select the test's assertion
-strategy.
+### A linter's reach is configuration, not a property of the linter
 
-Instead, write explicit assertions per case, even when it is a bit repetitive.
+`rowserrcheck` tracks rows by where the `Query` that produced them was
+declared, and its default list is `database/sql` alone -- so over Ptah's
+readers, which hold a `sqlrunner.Runner`, it reported nothing while eleven
+loops never asked `rows.Err()` (stokaro/ptah#2720). `.golangci.yml` names every
+package declaring a `Query` that returns `*sql.Rows`, and
+`internal/rowserrguard` compares that list with the tree in both directions.
+The linter does not follow rows into a closure or through a parameter; a
+function that runs its own `QueryContext` owns the terminal check.
 
-Bad:
+A sweep hit is not a finding: `Rows.Err` reads a field only `Rows.Next` writes, so on
+a result set nobody advanced it is nil however the statement fared, and a
+check added there reads as handling and can never fire -- verify each site
+against what the code does before adding one. Run a new linter against the
+pre-fix tree before trusting a clean result.
 
-```go
-func checkError(c *qt.C, err error, wantIs error, wantLike string) {
-	if wantIs != nil {
-		c.Check(err, qt.ErrorIs, wantIs)
-		return
-	}
-	if wantLike != "" {
-		c.Check(err, qt.ErrorMatches, wantLike)
-		return
-	}
-	c.Check(err, qt.IsNil)
-}
-```
+### A blank import says why
 
-Good:
+Each blank import carries its own comment on its line or directly above it;
+a comment heading a group does not count, because `gofmt` interleaves the
+group. revive's `blank-imports` covers non-test code and
+`internal/blankimportguard` covers the test files it exempts -- where the
+imports matter most, since a registry test with a missing import shrinks what
+it checks and still passes.
 
-```go
-t.Run("unsupported dev url dialect", func(t *testing.T) {
-	c := qt.New(t)
-	got, err := atlasurl.DialectFromURL("spanner://localhost/dev")
-	c.Assert(err, qt.ErrorMatches, `unsupported --dev-url dialect "spanner://localhost/dev"`)
-	c.Assert(got, qt.Equals, "")
-})
+### A rule with no caller is a rule that is not in effect
 
-t.Run("postgres dev url", func(t *testing.T) {
-	c := qt.New(t)
-	got, err := atlasurl.DialectFromURL("postgres://localhost/dev")
-	c.Assert(err, qt.IsNil)
-	c.Assert(got, qt.Equals, "postgres")
-})
-```
-
-### Separate Happy-Path And Failure-Path Tests
-
-Do not mix success and error cases in the same table. Prefer either:
-
-- `TestXxx_HappyPath` and `TestXxx_FailurePath`.
-- Separate `t.Run("happy ...")` and `t.Run("failure ...")` groups with distinct
-  tables.
-
-Bad:
-
-```go
-tests := []struct {
-	name    string
-	rawURL  string
-	want    string
-	wantErr string
-}{
-	{name: "postgres", rawURL: "postgres://localhost/dev", want: "postgres"},
-	{name: "unsupported", rawURL: "spanner://localhost/dev", wantErr: `unsupported --dev-url dialect "spanner://localhost/dev"`},
-}
-
-for _, test := range tests {
-	t.Run(test.name, func(t *testing.T) {
-		c := qt.New(t)
-		got, err := atlasurl.DialectFromURL(test.rawURL)
-		if test.wantErr != "" {
-			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			return
-		}
-		c.Assert(err, qt.IsNil)
-		c.Assert(got, qt.Equals, test.want)
-	})
-}
-```
-
-Good:
-
-Use table-driven tests with `t.Run()` for multiple test cases:
-
-```go
-func TestDialectFromURL_HappyPath(t *testing.T) {
-	tests := []struct {
-		name   string
-		rawURL string
-		want   string
-	}{
-		{name: "postgres", rawURL: "postgres://localhost/dev", want: "postgres"},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			got, err := atlasurl.DialectFromURL(test.rawURL)
-			c.Assert(err, qt.IsNil)
-			c.Assert(got, qt.Equals, test.want)
-		})
-	}
-}
-
-func TestDialectFromURL_FailurePath(t *testing.T) {
-	tests := []struct {
-		name    string
-		rawURL  string
-		wantErr string
-	}{
-		{
-			name:    "unsupported",
-			rawURL:  "spanner://localhost/dev",
-			wantErr: `unsupported --dev-url dialect "spanner://localhost/dev"`,
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			got, err := atlasurl.DialectFromURL(test.rawURL)
-			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(got, qt.Equals, "")
-		})
-	}
-}
-```
-
-Error checking patterns:
-
-```go
-// Success case.
-c.Assert(err, qt.IsNil)
-
-// Preferred for sentinel errors because it handles wrapped errors.
-c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidConfig)
-
-// Error type checks.
-var pathErr *os.PathError
-c.Assert(err, qt.ErrorAs, &pathErr)
-
-// Regex match when no sentinel is available.
-c.Assert(err, qt.ErrorMatches, "failed to load schema.*")
-
-// Substring check when matching part of the message is clearer.
-c.Assert(err, qt.IsNotNil)
-c.Assert(err.Error(), qt.Contains, "connection refused")
-```
-
-### Black-Box Testing By Default
-
-By default, all Go tests use black-box testing:
-
-- Test file: `*_test.go`.
-- Package name: `package atlasurl_test` with the `_test` suffix.
-- Test only exported API.
-
-Bad:
-
-```go
-package atlasurl
-
-import (
-	"testing"
-
-	qt "github.com/frankban/quicktest"
-)
-
-func TestDialectFromURL_HappyPath(t *testing.T) {
-	c := qt.New(t)
-	got, err := DialectFromURL("postgres://localhost/dev")
-	c.Assert(err, qt.IsNil)
-	c.Assert(got, qt.Equals, "postgres")
-}
-```
-
-Good:
-
-```go
-package atlasurl_test
-
-import (
-	"testing"
-
-	qt "github.com/frankban/quicktest"
-
-	"ptah.run/internal/atlasurl"
-)
-
-func TestDialectFromURL_HappyPath(t *testing.T) {
-	c := qt.New(t)
-	got, err := atlasurl.DialectFromURL("postgres://localhost/dev")
-	c.Assert(err, qt.IsNil)
-	c.Assert(got, qt.Equals, "postgres")
-}
-```
-
-### White-Box Testing As An Exception
-
-White-box testing, meaning same-package tests with access to unexported symbols,
-is permitted only for unit tests. An integration test is never white-box.
-
-For unit tests, white-box testing is permitted only when:
-
-1. Testing unexported functions critical for correctness.
-2. Testing internal state that cannot be observed through exported API.
-3. There is a clear technical justification.
-
-Requirements for white-box tests:
-
-- File naming: `*_internal_test.go`.
-- Package name: `package parser` without the `_test` suffix.
-- Include a `// White-box testing required:` comment as the first non-empty line
-  after the `package` line explaining the justification.
-
-Bad:
-
-```go
-package parser
-
-import (
-	"testing"
-
-	qt "github.com/frankban/quicktest"
-)
-
-func Test_cursor(t *testing.T) {
-	c := qt.New(t)
-	cursor := newCursor("CREATE TABLE users (id BIGINT);")
-	c.Assert(cursor.peek(), qt.Equals, "CREATE")
-}
-```
-
-Good:
-
-```go
-package parser
-
-// White-box testing required: this file verifies parser cursor invariants that
-// are not observable through the exported Parse API without making assertions
-// dependent on renderer output.
-
-import (
-	"testing"
-
-	qt "github.com/frankban/quicktest"
-)
-```
+`unused` counts a test as a use, so a function carrying a rule and its own
+tests, called from nothing else, is green everywhere while the behavior is
+absent (stokaro/ptah#2391, #2441). `internal/embedguard` reports the shape over
+`internal/embed...`. A new rule needs a test the production path fails without
+-- disable the rule and watch a test that drives the real entry point redden --
+and a guard finding is a decision, not a suppression: either something should
+call it, or the declaration should go.
