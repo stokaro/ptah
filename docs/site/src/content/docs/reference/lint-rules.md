@@ -299,8 +299,8 @@ Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/anal
 | `DS101` | schema was dropped | no | `DS107` | covered |
 | `DS102` | table was dropped | no | `DS101` | covered |
 | `DS103` | non-virtual column was dropped | no | `DS102` | covered |
-| `MF101` | adding a unique index to an existing column | no | `MF101` | covered — structural: the build fails on the first duplicate; the message names the query that settles it and what a failed CONCURRENTLY build leaves behind |
-| `MF102` | modifying a non-unique index to unique | no | `MF102` | covered — an index dropped earlier in the file and rebuilt as unique under the same name; the message adds that the failure leaves the table without the index it had |
+| `MF101` | adding a unique index to an existing column | no | `MF101` | covered — structural: the build fails on the first duplicate; the message names the query that settles it and what a failed CONCURRENTLY build leaves behind, and a unique index the dev database already holds over the columns silences it |
+| `MF102` | modifying a non-unique index to unique | no | `MF102` | covered — an index dropped earlier in the file and rebuilt as unique under the same name, or under a new name over the columns the dev database records for it; the message adds that the failure leaves the table without the index it had |
 | `MF103` | adding a non-nullable column to an existing table | no | `DD101` | covered |
 | `MF104` | modifying a nullable column to non-nullable might fail | no | `PG303`, `LT101`, `DD103` | partial — PostgreSQL (PG303), SQLite (LT101), MySQL, MariaDB and SQL Server (DD103) are measured and covered; CockroachDB and YugabyteDB run no PostgreSQL rule under their own dialect names, and ClickHouse and Spanner are not measured, so those four are not |
 | `BC101` | renaming a table | no | `BC101` | covered |
@@ -315,13 +315,13 @@ Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/anal
 | `MY121` | reordering set values requires a table copy | no | `MY121` | covered |
 | `MY122` | inserting set values other than at the end requires a table copy | no | `MY122` | covered |
 | `MY123` | exceeding a set-size boundary changes storage size and requires a table copy | no | `MY123` | covered |
-| `MY130` | changing a column type requires a table copy | yes | `MY130` | covered — fires only for a change InnoDB refuses to apply in place, with the old and new type and the boundary or character set that decides it |
+| `MY130` | changing a column type requires a table copy | yes | `MY130` | covered — fires only for a change InnoDB refuses to apply in place, with the old and new type and the boundary, character set, collation or key that decides it |
 | `MY131` | adding a foreign key blocks DML | yes | `MY131` | covered |
 | `MY132` | adding a primary key requires a table rebuild | yes | `MY132` | covered |
 | `MY133` | dropping a primary key without adding one requires a table copy | yes | `MY133`, `CD103` | covered — MY133 names the copy and CD103 the lost uniqueness guarantee; the message names the MariaDB case where another NOT NULL UNIQUE key keeps the change in place |
 | `MY134` | adding a FULLTEXT index blocks DML | yes | `MY134` | covered |
 | `MY135` | adding a SPATIAL index blocks DML | yes | `MY135` | covered |
-| `MY136` | changing the table character set requires a table rebuild | yes | `MY136` | covered — names the columns whose re-encoding forces the copy; a conversion that touches no column, or only utf8mb3 to utf8mb4 on short VARCHAR and CHAR columns, is not reported |
+| `MY136` | changing the table character set requires a table rebuild | yes | `MY136` | covered — names the columns whose re-encoding forces the copy; a conversion that touches no column, or only utf8mb3 to utf8mb4 on short VARCHAR and CHAR columns no key covers, is not reported |
 | `LT101` | modifying a nullable column to non-nullable without a DEFAULT | no | `LT101` | covered |
 | `PG101` | index created without CONCURRENTLY | yes | `PG101` | covered |
 | `PG102` | index dropped without CONCURRENTLY | yes | `PG106` | covered |
@@ -329,10 +329,10 @@ Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/anal
 | `PG104` | PRIMARY KEY creation acquires an ACCESS EXCLUSIVE lock | yes | `PG104` | covered |
 | `PG105` | UNIQUE constraint creation acquires an ACCESS EXCLUSIVE lock | yes | `PG105` | covered |
 | `PG110` | creating a table with non-optimal data alignment | no | `PG110` | covered |
-| `PG301` | a column type change requires a table and index rewrite | yes | `PG301` | covered — fires only for a change PostgreSQL rewrites for, naming the abort a stored value can cause; the timestamp and timestamptz pair says when the TimeZone decides |
+| `PG301` | a column type change requires a table and index rewrite | yes | `PG301` | covered — fires for a change PostgreSQL rewrites for, naming the abort a value can cause, and for a collation change on an indexed column, naming the indexes it rebuilds; the timestamp to timestamptz pair says when the TimeZone decides |
 | `PG302` | a volatile DEFAULT on an added column rewrites the table | yes | `PG302` | covered |
 | `PG303` | SET NOT NULL scans existing rows | yes | `PG303` | covered |
-| `PG304` | PRIMARY KEY on nullable columns requires a full scan | yes | `PG304`, `PG104` | covered — PG304 names the columns the key sets NOT NULL and the extra scan that costs; PG104 names the lock every ADD PRIMARY KEY takes |
+| `PG304` | PRIMARY KEY on nullable columns requires a full scan | yes | `PG304`, `PG104` | covered — PG304 names the columns the key sets NOT NULL and the extra scan that costs, for a column list and for USING INDEX alike; PG104 names the lock every ADD PRIMARY KEY takes |
 | `PG305` | a CHECK constraint requires a full table scan | yes | `PG305` | covered |
 | `PG306` | a FOREIGN KEY requires a full scan and blocks writes | yes | `PG306` | covered |
 | `PG307` | a logging-mode change rewrites the table | yes | `PG307` | covered |

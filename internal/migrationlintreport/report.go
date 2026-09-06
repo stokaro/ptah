@@ -456,6 +456,7 @@ func lintDirectory(
 		return analysis, schemas, nil
 	}
 	lintOptions.Baseline = baseline.columns
+	lintOptions.BaselineIndexes = baseline.indexes
 	lintOptions.BaselineDependents = baseline.dependents
 	// The second pass re-reads the same files with the baseline facts in hand;
 	// it does not replay, so the schema pair the replay captured is still the
@@ -542,6 +543,8 @@ type baselineCollector struct {
 	wanted  map[int64]bool
 	schemas []string
 	columns []lint.BaselineColumn
+	// indexes is what covers those columns, from the same read.
+	indexes []lint.BaselineIndex
 	// dependents is what reads each of those columns, resolved from the same
 	// read rather than a second round trip.
 	dependents []lint.BaselineDependent
@@ -585,17 +588,13 @@ func (c *baselineCollector) observe(
 	if c == nil || !c.wanted[version] {
 		return nil
 	}
-	columns, err := readBaselineColumns(ctx, conn, version, c.schemas)
+	state, err := readBaselineState(ctx, conn, version, c.schemas, c.dialect)
 	if err != nil {
 		return err
 	}
-	c.columns = append(c.columns, columns...)
-
-	dependents, err := readBaselineDependents(ctx, conn, version, c.schemas, c.dialect)
-	if err != nil {
-		return err
-	}
-	c.dependents = append(c.dependents, dependents...)
+	c.columns = append(c.columns, state.columns...)
+	c.indexes = append(c.indexes, state.indexes...)
+	c.dependents = append(c.dependents, state.dependents...)
 	return nil
 }
 

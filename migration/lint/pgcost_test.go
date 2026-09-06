@@ -278,7 +278,7 @@ func TestTypeRewriteRule_StaysQuietWhereTheCatalogEditSuffices(t *testing.T) {
 			column: pgColumn("note", "character(1)", false),
 		},
 		{
-			name:   "a collation alone, whose cost depends on indexes the baseline does not carry",
+			name:   "a collation alone on a column no index reads, which is a catalog edit",
 			alter:  `ALTER TABLE orders ALTER COLUMN body TYPE text COLLATE "C";`,
 			column: pgColumn("body", "text", false),
 		},

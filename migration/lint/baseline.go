@@ -46,6 +46,16 @@ type BaselineColumn struct {
 	// no character set gives the column (stokaro/ptah#2942).
 	Charset      string
 	TableCharset string
+	// Collation is the column's collation as the server names it: MySQL's
+	// COLLATION_NAME, which every character column carries, or the collation
+	// a PostgreSQL column was declared with, empty for one that takes the
+	// database default. TableCollation is the owning table's default
+	// collation, which is what a MODIFY that names no COLLATE gives a column
+	// of the table's character set. A statement that names a collation is
+	// judged against these: a restated collation is a no-op on every engine
+	// and a changed one costs an index rebuild or a copy (stokaro/ptah#2957).
+	Collation      string
+	TableCollation string
 	// NotNull reports whether the column rejects NULL.
 	NotNull bool
 	// HasDefault reports whether the column carries a DEFAULT expression.
@@ -77,6 +87,46 @@ type BaselineDependent struct {
 	Kind string
 }
 
+// BaselineIndex is one index of the schema state a migration version starts
+// from, read from the dev database beside [BaselineColumn].
+//
+// It settles the questions the columns alone leave open: whether a collation
+// or character-set change on a column takes a copy or an index rebuild,
+// whether a unique index that replaces a dropped one covers the same columns,
+// which columns a primary key attached USING INDEX sets NOT NULL, and whether
+// a unique index already proves the rows unique (stokaro/ptah#2957).
+type BaselineIndex struct {
+	// Version is the migration version whose starting state this index
+	// belongs to: the state read BEFORE that version is applied.
+	Version int64
+	// Schema and Table are the indexed table, as the server spells them.
+	Schema string
+	Table  string
+	// Name is the index name, as the server spells it.
+	Name string
+	// Parts are the key parts in key order.
+	Parts []BaselineIndexPart
+	// Unique reports a unique index or constraint, and Primary the primary
+	// key, which is unique as well.
+	Unique  bool
+	Primary bool
+	// Partial reports an index with a WHERE clause, which covers some rows
+	// and so proves nothing about the others.
+	Partial bool
+	// Incomplete reports a key part the reader could not name, so Parts
+	// lists fewer parts than the key has.
+	Incomplete bool
+}
+
+// BaselineIndexPart is one key part of a [BaselineIndex].
+type BaselineIndexPart struct {
+	// Column is the indexed column, empty for a part that is an expression.
+	Column string
+	// Prefix is the number of leading characters the part indexes, MySQL's
+	// `KEY (notes(20))`; zero indexes the whole value.
+	Prefix int
+}
+
 // baselineColumns is one version's starting state, indexed for lookup by the
 // source-spelled references the linter reads out of SQL.
 //
@@ -89,6 +139,9 @@ type baselineColumns struct {
 	// spellings byRef uses, in catalog order, for the rules whose subject is
 	// the whole table.
 	byTable map[string][]BaselineColumn
+	// byTableIndexes holds every index of a table under those spellings, in
+	// catalog order.
+	byTableIndexes map[string][]BaselineIndex
 	// schemaless reports that no column in this state names a schema. A reader
 	// scoped to one schema does not repeat that schema's name on every table, so
 	// a migration writing `ALTER TABLE public.users` has a qualifier the state
@@ -98,32 +151,47 @@ type baselineColumns struct {
 	schemaless bool
 }
 
-// newBaselineIndex groups baseline columns by the version whose starting state
-// they describe.
-func newBaselineIndex(columns []BaselineColumn) map[int64]baselineColumns {
-	if len(columns) == 0 {
+// newBaselineIndex groups baseline columns and indexes by the version whose
+// starting state they describe.
+func newBaselineIndex(columns []BaselineColumn, indexes []BaselineIndex) map[int64]baselineColumns {
+	if len(columns) == 0 && len(indexes) == 0 {
 		return nil
 	}
 	index := make(map[int64]baselineColumns)
-	for _, column := range columns {
-		state, ok := index[column.Version]
+	stateOf := func(version int64) baselineColumns {
+		state, ok := index[version]
 		if !ok {
 			state = baselineColumns{
-				byRef:      make(map[string][]BaselineColumn),
-				byTable:    make(map[string][]BaselineColumn),
-				schemaless: true,
+				byRef:          make(map[string][]BaselineColumn),
+				byTable:        make(map[string][]BaselineColumn),
+				byTableIndexes: make(map[string][]BaselineIndex),
+				schemaless:     true,
 			}
 		}
+		return state
+	}
+	for _, column := range columns {
+		state := stateOf(column.Version)
 		if column.Schema != "" {
 			state.schemaless = false
 		}
 		for _, key := range baselineKeys(column) {
 			state.byRef[key] = append(state.byRef[key], column)
 		}
-		for _, key := range baselineTableKeys(column) {
+		for _, key := range baselineTableKeys(column.Schema, column.Table) {
 			state.byTable[key] = append(state.byTable[key], column)
 		}
 		index[column.Version] = state
+	}
+	for _, idx := range indexes {
+		state := stateOf(idx.Version)
+		if idx.Schema != "" {
+			state.schemaless = false
+		}
+		for _, key := range baselineTableKeys(idx.Schema, idx.Table) {
+			state.byTableIndexes[key] = append(state.byTableIndexes[key], idx)
+		}
+		index[idx.Version] = state
 	}
 	return index
 }
@@ -150,12 +218,12 @@ func baselineKeys(column BaselineColumn) []string {
 
 // baselineTableKeys are the reference spellings that resolve to one table,
 // the same two forms [baselineKeys] indexes a column under.
-func baselineTableKeys(column BaselineColumn) []string {
-	table := normalizeIdent(column.Table)
-	if column.Schema == "" {
+func baselineTableKeys(schema, tableName string) []string {
+	table := normalizeIdent(tableName)
+	if schema == "" {
 		return []string{table}
 	}
-	return []string{table, normalizeIdent(column.Schema) + "." + table}
+	return []string{table, normalizeIdent(schema) + "." + table}
 }
 
 // tableColumns returns every baseline column of one table, in catalog order,
@@ -191,6 +259,119 @@ func (b baselineColumns) exactTable(tableRef string) []BaselineColumn {
 		}
 	}
 	return columns
+}
+
+// tableIndexes returns every baseline index of one table, in catalog order,
+// resolving the reference the way [baselineColumns.tableColumns] does and
+// failing closed on the same ambiguity.
+func (b baselineColumns) tableIndexes(tableRef string) []BaselineIndex {
+	if len(b.byTableIndexes) == 0 || tableRef == "" {
+		return nil
+	}
+	if indexes := b.exactTableIndexes(tableRef); indexes != nil {
+		return indexes
+	}
+	if !b.schemaless {
+		return nil
+	}
+	dot := strings.LastIndex(tableRef, ".")
+	if dot < 0 {
+		return nil
+	}
+	return b.exactTableIndexes(tableRef[dot+1:])
+}
+
+func (b baselineColumns) exactTableIndexes(tableRef string) []BaselineIndex {
+	indexes := b.byTableIndexes[tableRef]
+	if len(indexes) == 0 {
+		return nil
+	}
+	owner := indexes[0].Schema
+	for _, idx := range indexes[1:] {
+		if idx.Schema != owner {
+			return nil
+		}
+	}
+	return indexes
+}
+
+// columnIndexes returns the baseline indexes with a key part on one column
+// of one table, prefix parts included: an index that reads any part of the
+// value is rebuilt or copied with it. columnName is the linter's normalized
+// form.
+func (b baselineColumns) columnIndexes(tableRef, columnName string) []BaselineIndex {
+	var found []BaselineIndex
+	for _, idx := range b.tableIndexes(tableRef) {
+		for _, part := range idx.Parts {
+			if normalizeIdent(part.Column) == columnName {
+				found = append(found, idx)
+				break
+			}
+		}
+	}
+	return found
+}
+
+// indexNamed returns the baseline index of one table with the given name,
+// compared in the linter's normalized form.
+func (b baselineColumns) indexNamed(tableRef, name string) (BaselineIndex, bool) {
+	for _, idx := range b.tableIndexes(tableRef) {
+		if normalizeIdent(idx.Name) == name {
+			return idx, true
+		}
+	}
+	return BaselineIndex{}, false
+}
+
+// wholeKeyColumns returns the normalized columns an index keys, or nil when
+// the key is not a plain column list: a part that is an expression or a
+// prefix, or a part the reader could not name, keys something other than the
+// column values, so the index says nothing about them.
+func wholeKeyColumns(idx BaselineIndex) []string {
+	if idx.Incomplete || len(idx.Parts) == 0 {
+		return nil
+	}
+	columns := make([]string, 0, len(idx.Parts))
+	for _, part := range idx.Parts {
+		if part.Column == "" || part.Prefix > 0 {
+			return nil
+		}
+		columns = append(columns, normalizeIdent(part.Column))
+	}
+	return columns
+}
+
+// uniqueCovering returns a baseline index that already proves the given
+// columns hold no duplicate: a unique index or primary key over every row,
+// keyed by whole columns, each of which is one of the given columns. A key
+// over a subset proves the superset unique too. columns are normalized.
+func (b baselineColumns) uniqueCovering(tableRef string, columns []string) (BaselineIndex, bool) {
+	for _, idx := range b.tableIndexes(tableRef) {
+		if !idx.Unique || idx.Partial {
+			continue
+		}
+		key := wholeKeyColumns(idx)
+		if len(key) == 0 || !subsetOf(key, columns) {
+			continue
+		}
+		return idx, true
+	}
+	return BaselineIndex{}, false
+}
+
+// sameColumnSet reports whether two column lists name the same columns,
+// in any order.
+func sameColumnSet(a, b []string) bool {
+	return len(a) == len(b) && subsetOf(a, b) && subsetOf(b, a)
+}
+
+func subsetOf(inner, outer []string) bool {
+	for _, name := range inner {
+		if !slices.Contains(outer, name) {
+			return false
+		}
+	}
+	return true
 }
 
 // column returns the baseline state of one column of one table.
@@ -282,7 +463,7 @@ func baselineRequested(file *File, opts Options, rules []Rule) bool {
 // for it would be a round trip spent to learn nothing and reporting it as
 // unresolved would be a warning about work the operator excluded on purpose.
 func ruleWantsBaseline(rule Rule, file *File, opts Options) bool {
-	if rule.Input != InputBaselineSchema || rule.BaselineSubjects == nil {
+	if !rule.Input.readsBaseline() || rule.BaselineSubjects == nil {
 		return false
 	}
 	if !ruleRunsOnFile(rule, file, opts) {
@@ -330,7 +511,7 @@ func unmetInputs(files []File, opts Options, rules []Rule) []UnmetInput {
 // did not supply.
 func ruleInputUnmet(rule Rule, file *File, opts Options) bool {
 	switch rule.Input {
-	case InputBaselineSchema:
+	case InputBaselineSchema, InputBaselineRefinement:
 		return file.IsUp && file.baseline.empty() && ruleWantsBaseline(rule, file, opts)
 	case InputRoutineBody:
 		return ruleWantsRoutineBody(rule, file, opts)
@@ -387,6 +568,19 @@ func normalizeBaselineColumns(columns []BaselineColumn) []BaselineColumn {
 			continue
 		}
 		kept = append(kept, column)
+	}
+	return kept
+}
+
+// normalizeBaselineIndexes drops the entries no lookup can use, for the same
+// reason [normalizeBaselineColumns] does.
+func normalizeBaselineIndexes(indexes []BaselineIndex) []BaselineIndex {
+	kept := make([]BaselineIndex, 0, len(indexes))
+	for _, idx := range indexes {
+		if strings.TrimSpace(idx.Table) == "" || strings.TrimSpace(idx.Name) == "" {
+			continue
+		}
+		kept = append(kept, idx)
 	}
 	return kept
 }

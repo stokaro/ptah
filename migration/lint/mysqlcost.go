@@ -79,15 +79,36 @@ import (
 // clamped or truncated when strict mode is off (300 into TINYINT reads back
 // as 127, twenty characters into VARCHAR(5) as five).
 //
-// The two things the file does not know are indexes and the engine's
-// treatment of a compatible conversion on an indexed column, so a collation
-// change and a utf8mb3 to utf8mb4 conversion of a short VARCHAR are left
-// unreported rather than claimed either way. The type comparison reads the
-// column's current spelling and character set from the schema state the
-// version starts from ([BaselineColumn.ColumnType], [BaselineColumn.Charset]
-// and [BaselineColumn.TableCharset]); without that state MY130 and MY136
-// stay quiet, DS103 and MY101 still report the statement, and
-// [Analysis.UnmetInputs] names them.
+// The keyed cases were measured on the same two servers with the column's
+// keys and its current collation in hand (stokaro/ptah#2957), by asking for
+// ALGORITHM=INPLACE, LOCK=NONE; a refusal is the copy:
+//
+//	                                              MySQL       MariaDB
+//	collation restated, keyed or not               in place    in place
+//	collation changed, no key on the column        in place    in place
+//	collation changed, a key or a prefix key       copy        in place
+//	utf8mb3 -> utf8mb4, VARCHAR/CHAR, no key       in place    in place
+//	  the same with a whole-column key             copy        in place
+//	  the same with a prefix key                   copy        copy
+//	  the same on a keyed ENUM                     in place    copy
+//	CONVERT TO ... utf8mb3 -> utf8mb4, a keyed
+//	  VARCHAR among the columns                    copy        as above per key shape
+//	MODIFY with no COLLATE                         the column takes the table's
+//	                                               default collation, latin1_bin
+//	                                               to latin1_swedish_ci
+//	MODIFY with CHARACTER SET and no COLLATE       the set's own default, which
+//	                                               differs between engines
+//
+// The type comparison reads the column's current spelling, character set and
+// collation, and the keys on it, from the schema state the version starts
+// from ([BaselineColumn.ColumnType], [BaselineColumn.Charset],
+// [BaselineColumn.TableCharset], [BaselineColumn.Collation],
+// [BaselineColumn.TableCollation] and [BaselineIndex]); without that state
+// MY130 and MY136 stay quiet, DS103 and MY101 still report the statement,
+// and [Analysis.UnmetInputs] names them. A clause that names a character set
+// and no collation leaves the column on that set's default collation, which
+// the two engines spell differently, so such a change is judged unknown
+// rather than by a guess at the name.
 
 // mysqlType is one column type as InnoDB stores it, with the spellings that
 // name the same storage folded together so that INT(11) UNSIGNED ZEROFILL and
@@ -100,9 +121,12 @@ type mysqlType struct {
 	params   []int
 	unsigned bool
 	// charset is the resolved character set for a character type, empty
-	// otherwise; utf8 is folded to utf8mb3.
-	charset string
-	collate string
+	// otherwise; utf8 is folded to utf8mb3. explicitCharset reports that the
+	// spelling named it, as opposed to the table default filling it in, which
+	// decides which default collation a spelling without COLLATE takes.
+	charset         string
+	explicitCharset bool
+	collate         string
 	// members is the ENUM or SET list.
 	members memberList
 	// national records the NATIONAL prefix, which fixes the character set to
@@ -170,6 +194,39 @@ func normalizeCharset(name string) string {
 	return name
 }
 
+// normalizeCollation folds a collation name the way the server reports it.
+func normalizeCollation(name string) string {
+	return strings.ToLower(strings.Trim(strings.TrimSpace(name), "'\"`"))
+}
+
+// keyCoverage is what the keys on a column look like to InnoDB's online
+// DDL: none, whole-column parts only, or at least one prefix part.
+type keyCoverage int
+
+const (
+	keyNone keyCoverage = iota
+	keyWhole
+	keyPrefix
+)
+
+// keyCoverageOf classifies the keys on one column. columnName is the
+// linter's normalized form.
+func keyCoverageOf(indexes []BaselineIndex, columnName string) keyCoverage {
+	coverage := keyNone
+	for _, idx := range indexes {
+		for _, part := range idx.Parts {
+			if normalizeIdent(part.Column) != columnName {
+				continue
+			}
+			if part.Prefix > 0 {
+				return keyPrefix
+			}
+			coverage = keyWhole
+		}
+	}
+	return coverage
+}
+
 // parseMySQLTypeAt reads a column type from statement words starting at the
 // type keyword: the base, its parameters, and the modifiers that follow
 // (UNSIGNED, ZEROFILL, CHARACTER SET, COLLATE, BINARY, ASCII, UNICODE). It
@@ -200,6 +257,7 @@ func parseTypeBase(words []string, i int) (t mysqlType, next int, ok bool) {
 	switch words[j] {
 	case "NATIONAL":
 		t.national = true
+		t.explicitCharset = true
 		j++
 		if j < len(words) && (words[j] == "CHAR" || words[j] == "CHARACTER" || words[j] == "VARCHAR") {
 			t.base = mysqlBaseSynonyms[words[j]]
@@ -267,23 +325,27 @@ func (t *mysqlType) parseModifiers(words []string, j int) int {
 				return j
 			}
 			t.charset = normalizeCharset(words[j+2])
+			t.explicitCharset = true
 			j += 2
 		case "CHARSET":
 			if j+1 < len(words) {
 				t.charset = normalizeCharset(words[j+1])
+				t.explicitCharset = true
 				j++
 			}
 		case "COLLATE":
 			if j+1 < len(words) {
-				t.collate = strings.ToLower(strings.Trim(words[j+1], "'\"`"))
+				t.collate = normalizeCollation(words[j+1])
 				j++
 			}
 		case "BINARY":
 			t.collate = "binary"
 		case "ASCII":
 			t.charset = "latin1"
+			t.explicitCharset = true
 		case "UNICODE":
 			t.charset = "ucs2"
+			t.explicitCharset = true
 		default:
 			return j
 		}
@@ -471,16 +533,16 @@ type typeTransition struct {
 }
 
 // compareMySQLTypes decides the outcome for one column. dialect is the
-// engine the run targets, for the one conversion the two engines treat
-// differently.
-func compareMySQLTypes(old, updated mysqlType, dialect string) typeTransition {
+// engine the run targets and keys what covers the column, for the
+// conversions the two engines and the two key shapes treat differently.
+func compareMySQLTypes(old, updated mysqlType, dialect string, keys keyCoverage) typeTransition {
 	if old.base != updated.base {
 		return typeTransition{typeCopy, fmt.Sprintf("changes the type from %s to %s", old.spell(), updated.spell())}
 	}
 	if old.members.kind != 0 && old.charset == updated.charset {
 		return typeTransition{outcome: typeMemberList}
 	}
-	if charset := compareCharsets(old, updated, dialect); charset.outcome == typeCopy || charset.outcome == typeUnknown {
+	if charset := compareCharsets(old, updated, dialect, keys); charset.outcome == typeCopy || charset.outcome == typeUnknown {
 		return charset
 	}
 	if old.unsigned != updated.unsigned {
@@ -492,12 +554,34 @@ func compareMySQLTypes(old, updated mysqlType, dialect string) typeTransition {
 	if old.charset != updated.charset {
 		return typeTransition{typeInPlace, fmt.Sprintf("converts %s from %s to %s in place", old.spell(), old.charset, updated.charset)}
 	}
-	if old.collate != "" && updated.collate != "" && old.collate != updated.collate {
-		// In place on both engines for a column no index covers; MySQL
-		// copies when one does, and the baseline does not carry indexes.
+	return compareCollations(old, updated, dialect, keys)
+}
+
+// compareCollations judges a change of collation within one character set.
+// Restating the collation changes nothing on either engine. A changed one is
+// applied in place on a column no key covers and on MariaDB throughout;
+// MySQL rebuilds the key and copies the table for it.
+func compareCollations(old, updated mysqlType, dialect string, keys keyCoverage) typeTransition {
+	switch {
+	case old.collate == "" || old.collate == updated.collate:
+		return typeTransition{outcome: typeUnchanged}
+	case updated.collate == "":
+		// The clause named a character set and no collation, so the column
+		// takes that set's default, which the two engines spell differently.
 		return typeTransition{outcome: typeUnknown}
 	}
-	return typeTransition{outcome: typeUnchanged}
+	change := fmt.Sprintf("changes the collation of %s from %s to %s", old.spell(), old.collate, updated.collate)
+	switch {
+	case keys == keyNone:
+		return typeTransition{typeInPlace, change + " on a column no key covers, which both servers apply in place"}
+	case dialect == "mariadb":
+		return typeTransition{typeInPlace, change + ", which MariaDB applies in place"}
+	case dialect == "mysql":
+		return typeTransition{typeCopy, change + " on a column a key covers; MySQL rebuilds the key for it and refuses " +
+			"INSTANT and INPLACE, where the same change on a column no key covers is applied in place"}
+	default:
+		return typeTransition{outcome: typeUnknown}
+	}
 }
 
 // compareLengths judges a change of parameters within one base type.
@@ -531,8 +615,9 @@ func compareLengths(old, updated mysqlType) typeTransition {
 // column. The only pair either engine converts in place is utf8mb3 to
 // utf8mb4, and only for a shape whose bytes do not move: a TEXT, a VARCHAR
 // whose longest encoding crosses 255 bytes, and on MariaDB an ENUM or SET
-// are copied like any other conversion.
-func compareCharsets(old, updated mysqlType, dialect string) typeTransition {
+// are copied like any other conversion, and so is a VARCHAR or CHAR a key
+// covers, on MySQL for any key and on MariaDB for a prefix key.
+func compareCharsets(old, updated mysqlType, dialect string, keys keyCoverage) typeTransition {
 	if !mysqlCharacterBases[old.base] || old.charset == "" || updated.charset == "" || old.charset == updated.charset {
 		return typeTransition{outcome: typeUnchanged}
 	}
@@ -555,10 +640,31 @@ func compareCharsets(old, updated mysqlType, dialect string) typeTransition {
 	case old.members.kind != 0 && dialect != "mysql":
 		// Unknown engine: MySQL converts a list in place, MariaDB copies.
 		return typeTransition{outcome: typeUnknown}
-	default:
-		// In place on both, unless an index covers the column on MySQL,
-		// which the baseline cannot see.
+	case old.members.kind != 0:
+		// MySQL converts a list in place, keyed or not.
 		return typeTransition{typeInPlace, fmt.Sprintf(compatible, old.spell())}
+	default:
+		return compareKeyedConversion(old, dialect, keys, compatible)
+	}
+}
+
+// compareKeyedConversion judges the utf8mb3 to utf8mb4 conversion of a
+// short VARCHAR or CHAR by the keys on it: in place with none, copied on
+// MySQL with any and on both engines with a prefix key.
+func compareKeyedConversion(old mysqlType, dialect string, keys keyCoverage, compatible string) typeTransition {
+	inPlace := typeTransition{typeInPlace, fmt.Sprintf(compatible, old.spell())}
+	switch {
+	case keys == keyNone:
+		return inPlace
+	case keys == keyPrefix:
+		return typeTransition{typeCopy, fmt.Sprintf(compatible+" but not for one a prefix key covers, which both servers copy for", old.spell())}
+	case dialect == "mysql":
+		return typeTransition{typeCopy, fmt.Sprintf(compatible+" but not, on MySQL, for one a key covers", old.spell())}
+	case dialect == "mariadb":
+		return inPlace
+	default:
+		// Unknown engine: MySQL copies for the keyed column, MariaDB does not.
+		return typeTransition{outcome: typeUnknown}
 	}
 }
 
@@ -715,14 +821,37 @@ func resolveColumnChanges(file *File) []resolvedColumnChange {
 		if !ok {
 			continue
 		}
+		old.collate = normalizeCollation(column.Collation)
+		updated.collate = resolvedCollation(updated, column, tableCharset)
+		keys := keyCoverageOf(file.baseline.columnIndexes(site.table.normalized, normalizeIdent(site.oldName)), normalizeIdent(site.oldName))
 		resolved = append(resolved, resolvedColumnChange{
 			site:       site,
 			old:        old,
 			updated:    updated,
-			transition: compareMySQLTypes(old, updated, file.dialect),
+			transition: compareMySQLTypes(old, updated, file.dialect, keys),
 		})
 	}
 	return resolved
+}
+
+// resolvedCollation is the collation a MODIFY or CHANGE leaves the column
+// with: the one it names; the table's default when it names neither a
+// collation nor a character set and the table's default set is the one the
+// baseline recorded; and unknown otherwise, since a character set named
+// without a collation takes that set's own default, which the two engines
+// spell differently, and a table whose default set the file changed earlier
+// has a default collation the baseline did not see.
+func resolvedCollation(updated mysqlType, column BaselineColumn, tableCharset string) string {
+	switch {
+	case updated.collate != "":
+		return updated.collate
+	case !mysqlCharacterBases[updated.base] || updated.explicitCharset:
+		return ""
+	case normalizeCharset(tableCharset) != normalizeCharset(column.TableCharset):
+		return ""
+	default:
+		return normalizeCollation(column.TableCollation)
+	}
 }
 
 func (c resolvedColumnChange) clause() string {
@@ -855,9 +984,10 @@ func resolveCharsetConversions(file *File) []resolvedCharsetConversion {
 			}
 			updated := old
 			updated.charset = site.target
+			keys := keyCoverageOf(file.baseline.columnIndexes(site.table.normalized, normalizeIdent(column.Name)), normalizeIdent(column.Name))
 			conversion.columns = append(conversion.columns, convertedColumn{
 				name:       column.Name,
-				transition: compareCharsets(old, updated, file.dialect),
+				transition: compareCharsets(old, updated, file.dialect, keys),
 			})
 		}
 		resolved = append(resolved, conversion)

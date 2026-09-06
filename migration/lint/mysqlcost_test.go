@@ -365,7 +365,7 @@ func TestColumnTypeCopyRule_StaysQuietWhereTheServerDoesNotCopy(t *testing.T) {
 		},
 		{
 			dialect: "mysql",
-			name:    "a collation change alone, whose cost depends on indexes the baseline does not carry",
+			name:    "a collation change on a column whose current collation the state does not carry",
 			alter:   "ALTER TABLE orders MODIFY note VARCHAR(10) COLLATE latin1_bin;",
 			column:  costColumn("note", "varchar(10)", "latin1", "latin1"),
 		},

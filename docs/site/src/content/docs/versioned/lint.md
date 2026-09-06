@@ -91,7 +91,14 @@ Useful controls, all designed for CI:
   `--dialect postgresql` and `--dialect postgres` are the same request — see
   [Dialects and capabilities](../../concepts/dialects-and-capabilities/) for
   the full spelling table. `--dev-url` infers the dialect and additionally
-  replays the directory on the dev database.
+  replays the directory on the dev database. Before each analyzed version
+  the run reads the schema state that version starts from and hands it to
+  the rules that ask for it: the columns with their type, nullability,
+  default, character set and collation, the indexes with their key parts,
+  and what reads each column. A rule that compares a statement with that
+  state stays quiet without it, a rule the state only refines reports from
+  the text alone, and the run names both kinds as unmet so the thinner
+  report is never mistaken for a clean one.
 - `--disable DS101` (or a family such as `MY`) skips rules ad hoc; a
   committed `.ptah-lint.yaml` does it persistently and adds per-rule
   severity and path scoping — see below.

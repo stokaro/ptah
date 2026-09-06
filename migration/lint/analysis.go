@@ -439,7 +439,7 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 
 	mode := modeForDialect(opts.Dialect)
 	scope := newSchemaScope(opts.SchemaScope)
-	baseline := newBaselineIndex(normalizeBaselineColumns(opts.Baseline))
+	baseline := newBaselineIndex(normalizeBaselineColumns(opts.Baseline), normalizeBaselineIndexes(opts.BaselineIndexes))
 	dependents := newBaselineDependentIndex(opts.BaselineDependents)
 	registered := registeredCodes(rules)
 	// Validated above, so a second compile cannot fail here.
