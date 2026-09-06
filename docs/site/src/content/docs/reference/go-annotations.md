@@ -174,7 +174,7 @@ Maps a Go struct to a database table.
 | `checks` | No | Comma-separated table-level check expressions. |
 | `comment` | No | Table comment. |
 | `custom` | No | Raw custom CREATE TABLE SQL. |
-| `engine` | No | MySQL/MariaDB table engine shortcut. |
+| `engine` | No | MySQL/MariaDB table engine shortcut; see the note below the table. |
 | `name` | No | Table name. |
 | `primary_key` | No | Comma-separated primary key columns. |
 | `schema` | No | Database schema name. |
@@ -188,6 +188,11 @@ Maps a Go struct to a database table.
 | `ttl_pause` | No | CockroachDB row-level TTL: pauses the deletion job without removing the policy. `true`/`false`. |
 | `ttl_select_batch_size` | No | CockroachDB row-level TTL: rows selected per batch; at least 1. |
 | `ttl_select_rate_limit` | No | CockroachDB row-level TTL: rows selected per second; at least 1. |
+
+The table engine, character set, collation and `AUTO_INCREMENT` start are
+MySQL-family options. A PostgreSQL-family target renders none of them and
+names each one it was handed on a `skipped` comment above the statement;
+declare a key's start there with `identity_start` on the column.
 
 The `ttl_` attributes declare CockroachDB row-level TTL and are refused on every
 other dialect before anything is applied. Either `ttl_expiration_expression` or
