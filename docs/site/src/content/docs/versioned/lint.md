@@ -129,8 +129,14 @@ rules:
 - `disabled-rules` lists rule codes (`DS101`) or family prefixes (`MY`) to
   skip entirely; entries merge with `--disable` flags. Selectors and custom
   rule codes use uppercase ASCII letters and digits and start with a letter.
+  A selector that is a rule's own code selects that rule alone, and any other
+  selector is a prefix: `MF101` disables the unique-index check and leaves
+  the missing-down rule `MF101P` running, while `MF` disables both and `PG3`
+  disables every `PG3xx` rule. The same rule decides a `ptah:nolint`
+  selector.
 - `rules` keys name an exact code or a family prefix; the most specific key
-  wins, so a `DS102` entry beats a `DS` entry.
+  wins, so a `DS102` entry beats a `DS` entry, and a key that is a code
+  governs that code alone.
 - `severity` accepts `info`, `warning` or `error` and replaces the rule's
   default severity on its findings — the level that `--fail-on` and the
   apply-time destructive gate below evaluate. Only `error` gates: a rule set to
