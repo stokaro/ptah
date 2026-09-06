@@ -75,10 +75,16 @@ var atlasChecks = []AtlasCheck{
 		Note: "an index dropped earlier in the file and rebuilt as unique under the same name; the message adds that the failure leaves the table without the index it had",
 	},
 	{Code: "MF103", Meaning: "adding a non-nullable column to an existing table", PtahRules: []string{"DD101"}, Status: StatusCovered},
+	// DD103 reads the column's current nullability from the dev database,
+	// because MODIFY and SQL Server's ALTER COLUMN restate the whole column
+	// and the text cannot tell a change from a restatement
+	// (migration/lint/notnull.go, stokaro/ptah#2942). The row stays partial
+	// for the reason its note gives, not for the engines it covers.
 	{
 		Code: "MF104", Meaning: "modifying a nullable column to non-nullable might fail",
-		PtahRules: []string{"PG303", "LT101"}, Status: StatusPartial,
-		Note: "reported on PostgreSQL and SQLite; the other dialects have no equivalent rule",
+		PtahRules: []string{"PG303", "LT101", "DD103"}, Status: StatusPartial,
+		Note: "PostgreSQL (PG303), SQLite (LT101), MySQL, MariaDB and SQL Server (DD103) are measured and covered; " +
+			"CockroachDB and YugabyteDB run no PostgreSQL rule under their own dialect names, and ClickHouse and Spanner are not measured, so those four are not",
 	},
 
 	{Code: "BC101", Meaning: "renaming a table", PtahRules: []string{"BC101"}, Status: StatusCovered},

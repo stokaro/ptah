@@ -38,7 +38,7 @@ type atlasAlias struct {
 
 var atlasCodeAliases = map[string]atlasAlias{
 	"BC102": {rules: []string{"BC101"}},
-	"MF104": {rules: []string{"PG303", "LT101"}},
+	"MF104": {rules: []string{"PG303", "LT101", "DD103"}},
 	// No engine-specific code is here: MY110 through MY123 (members.go),
 	// MY130, MY133 and MY136 (mysqlcost.go), and PG301 and PG304 (pgcost.go)
 	// are each a Ptah rule of the same name, so the code needs no alias to
