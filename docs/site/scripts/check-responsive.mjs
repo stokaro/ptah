@@ -281,10 +281,19 @@ const measure = ({ tolerance, cellLineLimit }) => {
   // ninety-character error strings and pushed several tables past their
   // container. Nothing caught it, because scrolling inside a container is
   // normally correct.
+  //
+  // One holder is the sanctioned answer rather than the defect. A table inside
+  // `.ptah-wide-table` scrolls on purpose: the wrapper draws a hairline frame
+  // around the scroller, so the reader is told the rest exists, and the
+  // generators that emit five-column reference tables wrap them because the
+  // column layout's shell (720px at 1280) is narrower than a flag table needs
+  // (stokaro/ptah#2941). A bare `overflow-x: auto` holder is still a finding;
+  // the exemption is the class, not the scrolling.
   const wideTables = [];
   for (const table of document.querySelectorAll('main table')) {
     const holder = table.parentElement;
     if (!holder) continue;
+    if (holder.classList.contains('ptah-wide-table')) continue;
     const overflow = Math.round(table.scrollWidth - holder.clientWidth);
     if (overflow <= tolerance) continue;
     const heading = table.querySelector('th');
@@ -976,6 +985,19 @@ async function main() {
       }
       if (narrowTable.wideTables.length > 0) {
         failures.push('wide-table detector fired on a table that fits its container');
+      }
+      // The same overflowing table inside the sanctioned wrapper is not a
+      // finding; a bare scroller with the same content is (above). Both halves
+      // are needed: without the second, exempting every scroller would pass.
+      await page.setContent(
+        `<main><div class="ptah-wide-table" style="width:300px;overflow-x:auto">` +
+          `<table style="line-height:20px"><tbody><tr><td><code style="white-space:nowrap">` +
+          'x'.repeat(160) +
+          `</code></td></tr></tbody></table></div></main>`,
+      );
+      const wrappedTable = await page.evaluate(measure, { tolerance: overflowTolerance, cellLineLimit: maxCellLines });
+      if (wrappedTable.wideTables.length > 0) {
+        failures.push('wide-table detector fired on a table inside .ptah-wide-table, the sanctioned scroller');
       }
 
       await page.setContent(
