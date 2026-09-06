@@ -76,6 +76,7 @@ func builtinRules() []Rule {
 	rules = append(rules, migrationFormRules()...)
 	rules = append(rules, compatibilityRules()...)
 	rules = append(rules, uniqueRules()...)
+	rules = append(rules, notNullRules()...)
 	rules = append(rules, postgresRules()...)
 	rules = append(rules, postgresCostRules()...)
 	rules = append(rules, mysqlRules()...)
@@ -1319,8 +1320,13 @@ func postgresVolatileDefaultRule() Rule {
 }
 
 func postgresSetNotNullRule() Rule {
+	// Measured on PostgreSQL 18.6 (notnull.go and pgcost.go): one heap scan,
+	// an abort on the first NULL, and no scan at all once a validated CHECK
+	// (col IS NOT NULL) proves the column.
 	return postgresAlterRule("PG303", "not-null validation scans existing rows", scanSetNotNull,
-		"SET NOT NULL scans the table to validate existing rows; backfill first and consider a validated CHECK constraint path on large tables")
+		"SET NOT NULL scans the whole table under an ACCESS EXCLUSIVE lock to check existing rows, and a row holding NULL aborts it "+
+			"(column contains null values); backfill first, then add CHECK (col IS NOT NULL) NOT VALID, validate it under a weaker lock, "+
+			"and SET NOT NULL afterwards, which then scans nothing")
 }
 
 func postgresAddCheckRule() Rule {

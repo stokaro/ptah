@@ -126,12 +126,14 @@ func atlasRuleList(tb testing.TB, code string) []string {
 // statusColumn and flagsColumn are the schema state version 1 starts from in
 // the member-list rows above: one column, spelled the way the dev-database read
 // reports a MySQL type, with its member list.
+// Both columns are NOT NULL already, so the NOT NULL a row's MODIFY carries
+// restates what is there and DD103 stays out of the row's finding set.
 func statusColumn(columnType string) []lint.BaselineColumn {
-	return []lint.BaselineColumn{{Version: 1, Table: "orders", Name: "status", ColumnType: columnType}}
+	return []lint.BaselineColumn{{Version: 1, Table: "orders", Name: "status", ColumnType: columnType, NotNull: true}}
 }
 
 func flagsColumn(columnType string) []lint.BaselineColumn {
-	return []lint.BaselineColumn{{Version: 1, Table: "orders", Name: "flags", ColumnType: columnType}}
+	return []lint.BaselineColumn{{Version: 1, Table: "orders", Name: "flags", ColumnType: columnType, NotNull: true}}
 }
 
 // memberLiterals spells n distinct members, for the rows that exercise a
@@ -338,7 +340,7 @@ func TestAtlasRowsNameTheRulesThatFire(t *testing.T) {
 			dialect:   "mysql",
 			up:        "ALTER TABLE orders MODIFY COLUMN total BIGINT NOT NULL;\n",
 			down:      "ALTER TABLE orders MODIFY COLUMN total INT NOT NULL;\n",
-			baseline:  []lint.BaselineColumn{{Version: 1, Table: "orders", Name: "total", ColumnType: "int", TableCharset: "utf8mb4"}},
+			baseline:  []lint.BaselineColumn{{Version: 1, Table: "orders", Name: "total", ColumnType: "int", TableCharset: "utf8mb4", NotNull: true}},
 		},
 		{
 			name:      "MY133, a primary key dropped without a replacement",
