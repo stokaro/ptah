@@ -432,9 +432,15 @@ func TestPostgresCostRules_SubsumeAndKeepWhatTheyShould(t *testing.T) {
 		c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"PG104", "PG304"})
 	})
 
-	t.Run("a change PostgreSQL applies in place leaves DS103 to describe the statement", func(t *testing.T) {
+	t.Run("a change PostgreSQL applies in place is PG301P's, and DS103 goes with it", func(t *testing.T) {
 		c := qt.New(t)
 		analysis := analyzePG(c, "ALTER TABLE orders ALTER COLUMN note TYPE varchar(20);", pgColumn("note", "character varying(10)", false))
+		c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"PG301P"})
+	})
+
+	t.Run("a change the rules cannot judge leaves DS103 to describe the statement", func(t *testing.T) {
+		c := qt.New(t)
+		analysis := analyzePG(c, "ALTER TABLE orders ALTER COLUMN total TYPE posint;", pgColumn("total", "integer", false))
 		c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"DS103"})
 	})
 }

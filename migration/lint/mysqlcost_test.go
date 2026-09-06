@@ -625,9 +625,15 @@ func TestCostRules_SubsumeTheGenericFindings(t *testing.T) {
 		c.Assert(analysis.Findings()[0].Context.Subjects, qt.DeepEquals, []lint.Subject{{Kind: lint.SubjectTable, Name: "orders"}})
 	})
 
-	t.Run("a copy the rules cannot establish leaves the generic findings in place", func(t *testing.T) {
+	t.Run("a change applied in place is MY130P's, and the generic findings go with it", func(t *testing.T) {
 		c := qt.New(t)
 		analysis := analyzeCost(c, "mysql", "ALTER TABLE orders MODIFY note VARCHAR(20);", costColumn("note", "varchar(10)", "utf8mb4", "utf8mb4"))
+		c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"MY130P"})
+	})
+
+	t.Run("a change the rules cannot judge leaves the generic findings in place", func(t *testing.T) {
+		c := qt.New(t)
+		analysis := analyzeCost(c, "mysql", "ALTER TABLE orders MODIFY note VARCHAR(70);", costColumn("note", "varchar(60)", "", ""))
 		c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, []string{"DS103", "MY101"})
 	})
 }

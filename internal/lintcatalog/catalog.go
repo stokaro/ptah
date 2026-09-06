@@ -247,6 +247,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 		Summary:   "a column type change PostgreSQL cannot prove safe rewrites the table and its indexes",
 		AtlasCode: "PG301",
 	},
+	"PG301P": {
+		Summary: "an ALTER COLUMN TYPE the dev database shows PostgreSQL applies as a catalog edit, with no rewrite, rebuild or scan; info only",
+	},
 	"PG302": {
 		Summary:   "a volatile DEFAULT on an added column rewrites or evaluates every existing row",
 		AtlasCode: "PG302",
@@ -360,6 +363,9 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"MY130": {
 		Summary:   "a column type change InnoDB cannot apply in place copies the table and blocks writes",
 		AtlasCode: "MY130",
+	},
+	"MY130P": {
+		Summary: "a MODIFY, CHANGE or CONVERT the dev database shows InnoDB applies without copying the table, and by which algorithm; info only",
 	},
 	"MY131": {
 		Summary:   "adding a foreign key can copy or lock the table and block writes",

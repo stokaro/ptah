@@ -3952,8 +3952,8 @@
         "/schema/security/",
         "/versioned/lint/"
       ],
-      "visibleWords": 4575,
-      "sourceBytes": 30583
+      "visibleWords": 4634,
+      "sourceBytes": 30935
     },
     {
       "path": "docs/site/src/content/docs/reference/mcp-tools.md",
@@ -6003,8 +6003,8 @@
         "/versioned/integrity-and-safety/",
         "/versioned/overview/"
       ],
-      "visibleWords": 3378,
-      "sourceBytes": 24596
+      "visibleWords": 3417,
+      "sourceBytes": 24814
     },
     {
       "path": "docs/site/src/content/docs/versioned/maintain-history.md",
