@@ -364,12 +364,30 @@ does on that surface:
 
 | Surface | Rules that run | What a finding does |
 | --- | --- | --- |
-| `ptah migrations lint` | every rule the registry holds, gated by `--dialect`; rules that need a dev database run when `--dev-url` is given and are named as unmet otherwise | reported; the run exits `1` when a finding reaches `--fail-on` (`error` by default, `any`, or `none`); nothing is applied |
-| `ptah migrations up` | every family except `MF`, `BC`, `PG` and `MY`, which the apply gate disables as advisory; a family named under `gate` in `.ptah-lint.yaml` runs too | an error-severity `DS` finding, or one from a family named under `gate`, refuses the apply with exit `2`; every other finding is dropped, not printed; `--allow-destructive` bypasses the refusal |
-| `ptah-compat migrate lint` | the same registry as `ptah migrations lint`, under the Atlas policy an `atlas.hcl` `lint` block declares | reported in Atlas's format; a version with an error-severity finding exits `1`, one with warnings alone exits `0` |
-| `ptah-compat schema apply` | only the rules the `atlas.hcl` `lint` block names; no block, no lint pass | an error-severity finding refuses the apply; `--skip-lint` applies anyway |
-| `ptah-compat schema plan lint` | the whole registry, over the plan's SQL | reported; the exit code stays `0` unless `PTAH_ATLAS_PLAN_LINT_FAIL_ON_ERROR=1`, which fails the command on an error-severity finding |
-| the `ptah` GitHub action | `ptah migrations lint` with `lint: "true"` | the job fails at `lint-fail-on`, `error` by default |
+| `ptah migrations lint` | the whole registry, gated by `--dialect` | reported; exit `1` at `--fail-on` |
+| `ptah migrations up` | every family but `MF`, `BC`, `PG` and `MY` | an error-severity `DS` or gated finding refuses the apply, exit `2` |
+| `ptah-compat migrate lint` | the same registry, under the `atlas.hcl` policy | reported in Atlas's format; an error exits `1` |
+| `ptah-compat schema apply` | the rules the `atlas.hcl` `lint` block names | an error-severity finding refuses the apply |
+| `ptah-compat schema plan lint` | the whole registry, over the plan's SQL | reported; exit `0` unless told to fail |
+| the `ptah` GitHub action | `ptah migrations lint` | the job fails at `lint-fail-on` |
+
+What each row leaves out:
+
+- `ptah migrations lint` runs the rules that need a dev database when
+  `--dev-url` is given and names them as unmet otherwise. `--fail-on` takes
+  `error`, the default, `any`, or `none`. Nothing is applied.
+- `ptah migrations up` treats `MF`, `BC`, `PG` and `MY` as advisory and drops
+  their findings without printing them. A family named under `gate` in
+  `.ptah-lint.yaml` refuses on its error-severity findings the way `DS` does,
+  and `--allow-destructive` bypasses the refusal.
+- `ptah-compat migrate lint` exits `0` for a version whose findings are
+  warnings alone.
+- `ptah-compat schema apply` runs no lint pass without a `lint` block, and
+  `--skip-lint` applies anyway.
+- `ptah-compat schema plan lint` fails the command on an error-severity
+  finding only under `PTAH_ATLAS_PLAN_LINT_FAIL_ON_ERROR=1`.
+- The GitHub action runs the lint step with `lint: "true"`; `lint-fail-on`
+  is `error` by default.
 
 Lint and apply are separate on purpose: a locking hazard, a naming convention,
 or a rewrite the operator has planned for is something to review, not
