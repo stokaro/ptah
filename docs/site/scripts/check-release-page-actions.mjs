@@ -46,11 +46,29 @@ export function releaseActionProblems({ version, sourceCommit, authored, generat
     if (value.viewRef !== version) problems.push(`${actionCase.label}: source view does not use ${version}`);
     if (value.editRef !== 'master') problems.push(`${actionCase.label}: editable source does not use master`);
     if (value.generated !== actionCase.generated) problems.push(`${actionCase.label}: generated classification is wrong`);
-    if (JSON.stringify(value.labels) !== JSON.stringify(actionCase.labels)) {
-      problems.push(`${actionCase.label}: action labels or order are wrong`);
+    // Each shape has its own expected set, because they carry different links:
+    // the heading shows view/edit/report, the footer shows edit/report and no
+    // source link. One list covering both would assert neither, and a shape
+    // that dropped a link it should have would pass.
+    // One list for both shapes, now that they carry the same three actions in
+    // the same order.
+    const wantedLabels = actionCase.labels;
+    if (JSON.stringify(value.labels) !== JSON.stringify(wantedLabels)) {
+      problems.push(
+        `${actionCase.label}: action labels or order are wrong in the ${value.shape};` +
+        ` got ${JSON.stringify(value.labels)}, want ${JSON.stringify(wantedLabels)}`,
+      );
     }
+    // Required in BOTH shapes. The footer used to render edit and report only,
+    // so a released version had no link to its source as it was at that release
+    // -- and the first draft of this check skipped the property there rather
+    // than reporting the loss. The footer carries the link now, and this asserts
+    // it everywhere rather than describing where it happens to be
+    // (stokaro/ptah#2956).
     if (!value.sourceHref?.includes(`/blob/${version}/${value.renderedSource}`)) {
-      problems.push(`${actionCase.label}: source link does not identify the rendered tag file`);
+      problems.push(
+        `${actionCase.label}: source link does not identify the rendered tag file in the ${value.shape}`,
+      );
     }
     const wantedEditSource = actionCase.generated ? 'internal/cmdref/markdown.go' : value.renderedSource;
     if (value.editSource !== wantedEditSource || !value.editHref?.includes(`/edit/master/${wantedEditSource}`)) {
@@ -86,6 +104,10 @@ export function releaseActionProblems({ version, sourceCommit, authored, generat
   return problems;
 }
 
+// fixture builds the HEADING shape, which is what every tag released before the
+// current chrome renders. The footer shape has its own case below, because the
+// two carry different link sets and a fixture that stood for both would assert
+// neither.
 function fixture({ version, commit, generated }) {
   const renderedSource = generated
     ? 'docs/site/src/content/docs/reference/command-flags.md'
@@ -102,6 +124,7 @@ function fixture({ version, commit, generated }) {
     labels: generated
       ? [`View generated source at ${version}`, 'Edit generator source in latest documentation', 'Report a documentation issue']
       : [`View source at ${version}`, 'Edit latest documentation', 'Report a documentation issue'],
+    shape: 'heading',
     sourceHref: `https://github.com/stokaro/ptah/blob/${version}/${renderedSource}`,
     editHref: `https://github.com/stokaro/ptah/edit/master/${editSource}`,
     issueBody: [
@@ -177,12 +200,42 @@ function parseArguments(arguments_) {
   return { dist: resolve(siteRoot, dist), version, sourceCommit };
 }
 
+// The edit, source and report links are rendered in one of two places, and
+// which one is decided by the release itself rather than by this check.
+//
+// `PageActions.astro` says so at the row's own declaration: the heading carries
+// them "only where the heading has to carry them: a release checkout that
+// received this file through the overlay has no footer override to put them in.
+// On this site the footer has them and this row does not render."
+//
+// Every tag released before the current chrome takes the first path. v0.4.0 is
+// the first release that IS the current chrome, so it takes the second, and a
+// check that only knew the heading waited 30 seconds for an element that was
+// never going to appear (stokaro/ptah#2956).
+//
+// Both markings are declared by their own component -- `data-page-action` in
+// the heading row, `data-footer-action` in the footer -- so choosing between
+// them is exact rather than a guess about the page's shape. A page carries one
+// or the other, never both, which is what makes counting them the way to tell.
+async function locateActions(page) {
+  const heading = page.locator('ptah-page-actions [data-page-action]');
+  if (await heading.count() > 0) {
+    return { links: heading, attribute: 'data-page-action' };
+  }
+  const footer = page.locator('[data-footer-action]');
+  if (await footer.count() > 0) {
+    return { links: footer, attribute: 'data-footer-action' };
+  }
+  throw new Error('the page renders no edit/source/report links in either the heading or the footer');
+}
+
 async function readPageActions(page, built, route) {
   await page.goto(`http://127.0.0.1:${built.port}${built.base}${route}`, { waitUntil: 'load' });
   const root = page.locator('ptah-page-actions');
   await root.waitFor({ state: 'visible' });
-  const actionLinks = root.locator('[data-page-action]');
-  const reportHref = await root.locator('[data-page-action="report"]').getAttribute('href');
+  const { links: actionLinks, attribute } = await locateActions(page);
+  const named = (kind) => page.locator(`[${attribute}="${kind}"]`).first();
+  const reportHref = await named('report').getAttribute('href');
   return {
     documentationVersion: await root.getAttribute('data-documentation-version'),
     viewRef: await root.getAttribute('data-view-ref'),
@@ -191,9 +244,17 @@ async function readPageActions(page, built, route) {
     editSource: await root.getAttribute('data-edit-source'),
     generated: await root.getAttribute('data-generated') === 'true',
     markdownLabel: await root.locator('[data-copy-page]').getAttribute('aria-label'),
-    labels: await actionLinks.locator('strong').allTextContents(),
-    sourceHref: await root.locator('[data-page-action="source"]').getAttribute('href'),
-    editHref: await root.locator('[data-page-action="edit"]').getAttribute('href'),
+    // The heading wraps each label in <strong>; the footer does not, and reads
+    // its label from the link's own text. Taking the strong-only reading for
+    // both would report the footer as carrying no labels at all.
+    labels: attribute === 'data-page-action'
+      ? await actionLinks.locator('strong').allTextContents()
+      : (await actionLinks.allTextContents()).map((text) => text.replace(/\s*↗\s*$/, '').trim()),
+    // The footer shape declares no source link. Reported as absent rather than
+    // waited for, so the run says which property it could not measure.
+    sourceHref: await named('source').getAttribute('href'),
+    shape: attribute === 'data-page-action' ? 'heading' : 'footer',
+    editHref: await named('edit').getAttribute('href'),
     issueBody: reportHref ? new URL(reportHref).searchParams.get('body') ?? '' : '',
   };
 }

@@ -3,6 +3,7 @@
   "minimumRelease": "v0.3.0",
   "files": [
     "docs/site/scripts/data/release-ui-overlay.json",
+    "docs/site/src/components/Footer.astro",
     "docs/site/src/components/PageActions.astro",
     "docs/site/src/components/PageTitle.astro",
     "docs/site/src/lib/page-context.mjs",

@@ -61,6 +61,11 @@ const hasLinks = source.hasSource;
             llmsEntry={publishesLlmsTxt}
             primary={!toc}
           />
+          {source.view && (
+            <a class="ptah-footer-link" href={source.view.url} target="_blank" rel="noreferrer" data-footer-action="source">
+              {source.view.label} <span aria-hidden="true">↗</span>
+            </a>
+          )}
           {source.edit && (
             <a class="ptah-footer-link" href={source.edit.url} target="_blank" rel="noreferrer" data-footer-action="edit">
               {source.edit.label} <span aria-hidden="true">↗</span>

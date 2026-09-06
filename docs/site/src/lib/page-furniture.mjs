@@ -61,6 +61,11 @@ export function pageSourceActions(entry, { pageUrl, baseUrl }) {
     markdownUrl: `${baseUrl}page-source/${entry.id}.md`,
     markdownLabel: pageActions.markdownLabel,
     actions: pageActions.actions,
+    // All three, in the order the heading row uses. The footer picked only two
+    // of them, so a released version lost the link to its source AS IT WAS at
+    // that release -- `data-view-ref` still carried the tag, but nothing a
+    // reader could follow did (stokaro/ptah#2956).
+    view: pageActions.actions.find((action) => action.kind === 'source'),
     edit: pageActions.actions.find((action) => action.kind === 'edit'),
     report: pageActions.actions.find((action) => action.kind === 'report'),
     sourceUrl: pageActions.sourceUrl,
