@@ -690,9 +690,12 @@ a reader recognizes on sight and cannot reconstruct from a paragraph.
   their staggered left edges make the page look disconnected.
 - A Markdown table or code block already uses the wide page measure. Give a
   custom visual or component `.ptah-wide-content`; use `.ptah-wide-table` when
-  a table must preserve its desktop column widths and scroll locally on mobile.
-  `check:responsive` measures the prose cap, shared left edge, and two-rail
-  gutter behavior, and rejects document-level overflow.
+  a table must preserve its column widths and scroll locally wherever the
+  shell is narrower than it needs -- on a phone, and in the column layout at
+  desktop widths, whose shell is the article pane less its padding (720px at
+  1280). `check:responsive` measures the prose cap, shared left edge, and
+  two-rail gutter behavior, rejects document-level overflow, and reports a
+  table wider than its holder unless that holder is `.ptah-wide-table`.
 - Descriptive link text; never "here" or "this page".
 - Alt text on every image and diagram: section 11.3 states the rule and
   `check:style` enforces its presence.

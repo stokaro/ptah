@@ -85,13 +85,19 @@
  *
  * The 60rem prose column above is about 120 characters per line at 16px;
  * comfortable reading is 65 to 80. Prose therefore drops to 44rem (704px, about
- * 72 characters at the concept's 16.5px), and the things that are wide because
- * their content is wide -- code, tables, figures, .ptah-wide-content -- keep a
- * 60rem (960px) shell on the same left edge. The 70rem shell of the envelope
- * existed to hold a 60rem prose column with room to spare; with prose at 44rem
- * the shell can come in by 10rem and still give wide content 256px more than
- * the prose gets. The contents rail narrows from 14.5rem to 13rem (208px): its
- * links are 13.5px sans, and the concept draws the rail at 208 in screen 1a.
+ * 72 characters at the concept's 16.5px). The things that are wide because
+ * their content is wide -- code, tables, figures, .ptah-wide-content -- take
+ * the article pane less the panel's 48px padding a side, on the same left
+ * edge as the prose. That shell is a function of the viewport rather than a
+ * figure: 720px at 1280, where the pane beside the rail is 1024 and the
+ * contents rail 208; 884px once the frame reaches its 80rem cap, where the
+ * contents rail has grown to 300 (`--ptah-toc-width` above). The 60rem figure
+ * the envelope's shell suggests is not reached at any width this repository
+ * measures, and a table that needs more than the shell scrolls inside its own
+ * container (`.ptah-wide-table`, applied by the page or its generator) rather
+ * than losing its right-hand columns -- stokaro/ptah#2941. The contents rail
+ * narrows from 14.5rem to 13rem (208px) at 1280: its links are 13.5px sans,
+ * and the concept draws the rail at 208 in screen 1a.
  *
  * The frame that holds the article and the contents rail is capped at 80rem
  * (1280px). That figure is the width of screen 1a, where the frame fills the
@@ -299,12 +305,16 @@
 	 * TOC and pane rules read `--ptah-toc-width`. Only the frame's width and
 	 * position differ.
 	 *
-	 * Width: the whole pane beside the rail, up to 80rem. The 80rem frame holds
-	 * 48 + 960 (shell) + 48 + 208 (contents) = 1264px, so the shell keeps its
-	 * left edge and 16px of the frame stay between it and the contents. At the
-	 * rail's first width, 1280, the pane measures 1024 and the frame with it:
-	 * the pane is 816, the shell 720, and the 704px prose fits with 16px to
-	 * spare -- screen 1a's grid, 256 / 1fr / 208, with its 48px padding.
+	 * Width: the whole pane beside the rail, up to 80rem. At the rail's first
+	 * width, 1280, the pane measures 1024 and the frame with it: the contents
+	 * rail is 208, the article pane 816, the shell 720, and the 704px prose fits
+	 * with 16px to spare -- screen 1a's grid, 256 / 1fr / 208, with its 48px
+	 * padding. At the 80rem cap the contents rail has grown to 300, so the
+	 * article pane is 980 and the shell 884: the rail's growth is what the
+	 * frame's surplus buys, and it comes out of the shell rather than out of a
+	 * gutter. A wide-content shell of 960 would need a 1356px frame at that
+	 * rail width, or a rail held at 208, and the rail was widened deliberately
+	 * (see `--ptah-toc-width`).
 	 *
 	 * Position, once the pane is wider than the frame (a viewport past 96rem =
 	 * 1536px; the concept's notes round this to "above 100rem"): the surplus is

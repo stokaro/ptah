@@ -3533,7 +3533,7 @@
         "/reference/native-commands/"
       ],
       "visibleWords": 14286,
-      "sourceBytes": 99278
+      "sourceBytes": 99318
     },
     {
       "path": "docs/site/src/content/docs/reference/capabilities.mdx",
@@ -3628,7 +3628,7 @@
         "/reference/overview/"
       ],
       "visibleWords": 8702,
-      "sourceBytes": 80726
+      "sourceBytes": 85874
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",

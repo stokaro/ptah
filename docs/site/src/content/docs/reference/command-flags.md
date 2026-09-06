@@ -59,6 +59,8 @@ Read the columns as follows.
 
 **`ptah assist`**
 
+<div class="ptah-wide-table">
+
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--allow-database-inspect` | `string` | — | — | — |
@@ -82,7 +84,11 @@ Read the columns as follows.
 | `--trace` | `bool` | `false` | `PTAH_TRACE` | — |
 | `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
 
+</div>
+
 **`ptah assist context`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -105,7 +111,11 @@ Read the columns as follows.
 | `--tests-dir` | `string` | — | `PTAH_TESTS_DIR` | — |
 | `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
 
+</div>
+
 **`ptah assist explain`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -132,13 +142,21 @@ Read the columns as follows.
 | `--trace` | `bool` | `false` | `PTAH_TRACE` | — |
 | `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
 
+</div>
+
 **`ptah assist provider list`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
 
+</div>
+
 **`ptah assist provider test`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -146,21 +164,33 @@ Read the columns as follows.
 | `--model` | `string` | — | `PTAH_MODEL` | — |
 | `--provider-profile` | `string` | — | `PTAH_PROVIDER_PROFILE` | — |
 
+</div>
+
 **`ptah assist sessions delete`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
 | `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
+
+</div>
 
 **`ptah assist sessions list`**
 
+<div class="ptah-wide-table">
+
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
 | `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
 
+</div>
+
 **`ptah assist sessions prune`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -168,38 +198,62 @@ Read the columns as follows.
 | `--older-than` | `duration` | `720h0m0s` | `PTAH_OLDER_THAN` | — |
 | `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
 
+</div>
+
 **`ptah assist sessions show`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
 | `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
 
+</div>
+
 **`ptah completion bash`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--no-descriptions` | `bool` | `false` | — | — |
+
+</div>
 
 **`ptah completion fish`**
 
+<div class="ptah-wide-table">
+
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--no-descriptions` | `bool` | `false` | — | — |
+
+</div>
 
 **`ptah completion powershell`**
 
+<div class="ptah-wide-table">
+
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--no-descriptions` | `bool` | `false` | — | — |
+
+</div>
 
 **`ptah completion zsh`**
 
+<div class="ptah-wide-table">
+
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--no-descriptions` | `bool` | `false` | — | — |
 
+</div>
+
 **`ptah db capabilities`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -207,7 +261,11 @@ Read the columns as follows.
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
 
+</div>
+
 **`ptah db drop-all`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -216,7 +274,11 @@ Read the columns as follows.
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--dry-run` | `bool` | `false` | `PTAH_DRY_RUN` | — |
 
+</div>
+
 **`ptah db read`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -224,7 +286,11 @@ Read the columns as follows.
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 
+</div>
+
 **`ptah inference abandon`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -232,7 +298,11 @@ Read the columns as follows.
 | `--reason` | `string` | — | `PTAH_REASON` | — |
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
 
+</div>
+
 **`ptah inference backfill`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -245,7 +315,11 @@ Read the columns as follows.
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
+</div>
+
 **`ptah inference catchup`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -259,7 +333,11 @@ Read the columns as follows.
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
+</div>
+
 **`ptah inference cutover`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -280,7 +358,11 @@ Read the columns as follows.
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 | `--stabilize-for` | `duration` | `0s` | `PTAH_STABILIZE_FOR` | — |
 
+</div>
+
 **`ptah inference describe`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -289,7 +371,11 @@ Read the columns as follows.
 | `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
+</div>
+
 **`ptah inference evaluate`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -308,7 +394,11 @@ Read the columns as follows.
 | `--require-every-case` | `bool` | `true` | `PTAH_REQUIRE_EVERY_CASE` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
+</div>
+
 **`ptah inference index`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -318,7 +408,11 @@ Read the columns as follows.
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
+</div>
+
 **`ptah inference pause`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -330,7 +424,11 @@ Read the columns as follows.
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 | `--worker` | `string` | `ptah-cli` | `PTAH_WORKER` | — |
 
+</div>
+
 **`ptah inference plan`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -342,7 +440,11 @@ Read the columns as follows.
 | `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
+</div>
+
 **`ptah inference prepare`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -353,7 +455,11 @@ Read the columns as follows.
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 | `--worker` | `string` | `ptah-cli` | `PTAH_WORKER` | — |
 
+</div>
+
 **`ptah inference probe`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -363,7 +469,11 @@ Read the columns as follows.
 | `--release` | `string` | — | `PTAH_RELEASE` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
+</div>
+
 **`ptah inference resume`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -374,7 +484,11 @@ Read the columns as follows.
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 | `--worker` | `string` | `ptah-cli` | `PTAH_WORKER` | — |
 
+</div>
+
 **`ptah inference retire`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -394,7 +508,11 @@ Read the columns as follows.
 | `--signer` | `string` | — | `PTAH_SIGNER` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
+</div>
+
 **`ptah inference rollback`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -408,7 +526,11 @@ Read the columns as follows.
 | `--to` | `string` | — | `PTAH_TO` | — |
 | `--window` | `duration` | `0s` | `PTAH_WINDOW` | — |
 
+</div>
+
 **`ptah inference status`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -420,7 +542,11 @@ Read the columns as follows.
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
+</div>
+
 **`ptah inference verify`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -433,7 +559,11 @@ Read the columns as follows.
 | `--run-id` | `string` | — | `PTAH_RUN_ID` | — |
 | `--spec` | `string` | — | `PTAH_SPEC` | — |
 
+</div>
+
 **`ptah introspect`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -448,7 +578,11 @@ Read the columns as follows.
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--single-file` | `bool` | `false` | `PTAH_SINGLE_FILE` | — |
 
+</div>
+
 **`ptah mcp`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -467,7 +601,11 @@ Read the columns as follows.
 | `--tests-dir` | `string` | — | `PTAH_TESTS_DIR` | — |
 | `--workspace` | `string` | — | `PTAH_WORKSPACE` | — |
 
+</div>
+
 **`ptah migrations baseline`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -488,7 +626,11 @@ Read the columns as follows.
 | `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
 
+</div>
+
 **`ptah migrations checkpoint`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -506,7 +648,11 @@ Read the columns as follows.
 | `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
 
+</div>
+
 **`ptah migrations create`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -516,7 +662,11 @@ Read the columns as follows.
 | `--migrations-dir` | `string` | — | `PTAH_MIGRATIONS_DIR` | — |
 | `--name` | `string` | — | `PTAH_NAME` | — |
 
+</div>
+
 **`ptah migrations data`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -531,7 +681,11 @@ Read the columns as follows.
 | `--root-dir` | `string` | — | `PTAH_ROOT_DIR` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
 
+</div>
+
 **`ptah migrations down`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -571,7 +725,11 @@ Read the columns as follows.
 | `--verify-sum` | `bool` | `false` | `PTAH_VERIFY_SUM` | — |
 | `--webhook` | `string` | — | `PTAH_WEBHOOK` | — |
 
+</div>
+
 **`ptah migrations edit`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -590,7 +748,11 @@ Read the columns as follows.
 | `--up-file` | `string` | — | `PTAH_UP_FILE` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
 
+</div>
+
 **`ptah migrations generate`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -617,14 +779,22 @@ Read the columns as follows.
 | `--shadow-db` | `string` | — | `PTAH_SHADOW_DB` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
+</div>
+
 **`ptah migrations hash`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--dir` | `string` | `./migrations` | `PTAH_DIR` | — |
 | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
 
+</div>
+
 **`ptah migrations import`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -634,7 +804,11 @@ Read the columns as follows.
 | `--migrations-dir` | `string` | `./migrations` | `PTAH_MIGRATIONS_DIR` | — |
 | `--source-dir` | `string` | — | `PTAH_SOURCE_DIR` | — |
 
+</div>
+
 **`ptah migrations lint`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -657,7 +831,11 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
+</div>
+
 **`ptah migrations ls`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -668,7 +846,11 @@ Read the columns as follows.
 | `--short` | `bool` | `false` | `PTAH_SHORT` | — |
 | `--verify-sum` | `bool` | `false` | `PTAH_VERIFY_SUM` | — |
 
+</div>
+
 **`ptah migrations plan`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -689,14 +871,22 @@ Read the columns as follows.
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
+</div>
+
 **`ptah migrations pull`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--out` | `string` | — | `PTAH_OUT` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 
+</div>
+
 **`ptah migrations push`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -709,7 +899,11 @@ Read the columns as follows.
 | `--verify-sum` | `bool` | `false` | `PTAH_VERIFY_SUM` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
 
+</div>
+
 **`ptah migrations rebase`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -725,7 +919,11 @@ Read the columns as follows.
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
 
+</div>
+
 **`ptah migrations repair`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -742,7 +940,11 @@ Read the columns as follows.
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
 
+</div>
+
 **`ptah migrations rm`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -758,7 +960,11 @@ Read the columns as follows.
 | `--revision-format` | `string` | `ptah` | `PTAH_REVISION_FORMAT` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
 
+</div>
+
 **`ptah migrations set`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -776,7 +982,11 @@ Read the columns as follows.
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
 
+</div>
+
 **`ptah migrations show`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -787,7 +997,11 @@ Read the columns as follows.
 | `--verify-sum` | `bool` | `false` | `PTAH_VERIFY_SUM` | — |
 | `--version` | `stringArray` | `[]` | `PTAH_VERSION` | — |
 
+</div>
+
 **`ptah migrations status`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -814,7 +1028,11 @@ Read the columns as follows.
 | `--verbose` | `bool` | `false` | `PTAH_VERBOSE` | — |
 | `--verify-sum` | `bool` | `false` | `PTAH_VERIFY_SUM` | — |
 
+</div>
+
 **`ptah migrations tag`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -830,7 +1048,11 @@ Read the columns as follows.
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
 
+</div>
+
 **`ptah migrations test`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -844,7 +1066,11 @@ Read the columns as follows.
 | `--run` | `string` | — | `PTAH_RUN` | — |
 | `--seed-dir` | `string` | — | `PTAH_SEED_DIR` | — |
 
+</div>
+
 **`ptah migrations up`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -882,7 +1108,11 @@ Read the columns as follows.
 | `--verify-sum` | `bool` | `false` | `PTAH_VERIFY_SUM` | — |
 | `--webhook` | `string` | — | `PTAH_WEBHOOK` | — |
 
+</div>
+
 **`ptah migrations validate`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -891,14 +1121,22 @@ Read the columns as follows.
 | `--dir-format` | `string` | `auto` | `PTAH_DIR_FORMAT` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 
+</div>
+
 **`ptah oci capabilities`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 
+</div>
+
 **`ptah oci copy`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -906,7 +1144,11 @@ Read the columns as follows.
 | `--recursive` | `bool` | `false` | `PTAH_RECURSIVE` | — |
 | `--tag` | `stringArray` | `[]` | `PTAH_TAG` | — |
 
+</div>
+
 **`ptah oci fetch`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -916,7 +1158,11 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--type` | `string` | `all` | `PTAH_TYPE` | — |
 
+</div>
+
 **`ptah oci inspect`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -924,7 +1170,11 @@ Read the columns as follows.
 | `--no-referrers` | `bool` | `false` | `PTAH_NO_REFERRERS` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 
+</div>
+
 **`ptah oci login`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -932,7 +1182,11 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--username`, `-u` | `string` | — | `PTAH_USERNAME` | — |
 
+</div>
+
 **`ptah oci referrers`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -940,34 +1194,54 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--type` | `string` | `all` | `PTAH_TYPE` | — |
 
+</div>
+
 **`ptah oci reindex`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+
+</div>
 
 **`ptah oci resolve`**
 
+<div class="ptah-wide-table">
+
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
+
+</div>
 
 **`ptah oci tag`**
 
+<div class="ptah-wide-table">
+
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 
+</div>
+
 **`ptah oci tags`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 
+</div>
+
 **`ptah oci verify`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -975,7 +1249,11 @@ Read the columns as follows.
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--policy` | `string` | — | `PTAH_POLICY` | — |
 
+</div>
+
 **`ptah project adopt`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -986,7 +1264,11 @@ Read the columns as follows.
 | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
 | `--preflight` | `bool` | `false` | `PTAH_PREFLIGHT` | — |
 
+</div>
+
 **`ptah project inspect`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -995,14 +1277,22 @@ Read the columns as follows.
 | `--env` | `string` | — | `PTAH_ENV` | — |
 | `--format` | `string` | `text` | `PTAH_FORMAT` | — |
 
+</div>
+
 **`ptah schema annotations`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--format` | `string` | `json-schema` | `PTAH_FORMAT` | — |
 | `--out` | `string` | — | `PTAH_OUT` | — |
 
+</div>
+
 **`ptah schema apply`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1029,14 +1319,22 @@ Read the columns as follows.
 | `--tx-mode` | `string` | — | `PTAH_TX_MODE` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
+</div>
+
 **`ptah schema approve`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--key` | `string` | — | `PTAH_KEY` | — |
 | `--plan` | `string` | — | `PTAH_PLAN` | — |
 
+</div>
+
 **`ptah schema compare`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1055,7 +1353,11 @@ Read the columns as follows.
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
+</div>
+
 **`ptah schema diff`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1072,7 +1374,11 @@ Read the columns as follows.
 | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
+</div>
+
 **`ptah schema drift`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1093,7 +1399,11 @@ Read the columns as follows.
 | `--severity` | `string` | `all` | `PTAH_SEVERITY` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
+</div>
+
 **`ptah schema export`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1121,13 +1431,21 @@ Read the columns as follows.
 | `--title` | `string` | — | `PTAH_TITLE` | — |
 | `--to` | `string` | `hcl` | `PTAH_TO` | — |
 
+</div>
+
 **`ptah schema fmt`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--check` | `bool` | `false` | `PTAH_CHECK` | — |
 
+</div>
+
 **`ptah schema inspect`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1147,7 +1465,11 @@ Read the columns as follows.
 | `--split` | `string` | — | `PTAH_SPLIT` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
+</div>
+
 **`ptah schema lineage`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1163,7 +1485,11 @@ Read the columns as follows.
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
+</div>
+
 **`ptah schema plan`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1182,14 +1508,22 @@ Read the columns as follows.
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
+</div>
+
 **`ptah schema pull`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--out` | `string` | — | `PTAH_OUT` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 
+</div>
+
 **`ptah schema push`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1202,7 +1536,11 @@ Read the columns as follows.
 | `--tag` | `stringArray` | `[]` | `PTAH_TAG` | — |
 | `--version` | `string` | — | `PTAH_VERSION` | — |
 
+</div>
+
 **`ptah schema render`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1218,7 +1556,11 @@ Read the columns as follows.
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
+</div>
+
 **`ptah schema security`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1228,7 +1570,11 @@ Read the columns as follows.
 | `--role-usage` | `string` | — | `PTAH_ROLE_USAGE` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 
+</div>
+
 **`ptah schema serve`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1239,14 +1585,22 @@ Read the columns as follows.
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 | `--title` | `string` | — | `PTAH_TITLE` | — |
 
+</div>
+
 **`ptah schema stats`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 
+</div>
+
 **`ptah schema test`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1262,7 +1616,11 @@ Read the columns as follows.
 | `--source-db-url` | `string` | — | `PTAH_SOURCE_DB_URL` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
+</div>
+
 **`ptah schema validate`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1275,7 +1633,11 @@ Read the columns as follows.
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
 | `--var` | `stringArray` | `[]` | `PTAH_VAR` | — |
 
+</div>
+
 **`ptah schema verify-approval`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1283,7 +1645,11 @@ Read the columns as follows.
 | `--plan` | `string` | — | `PTAH_PLAN` | — |
 | `--signer` | `string` | — | `PTAH_SIGNER` | — |
 
+</div>
+
 **`ptah seed`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1298,7 +1664,11 @@ Read the columns as follows.
 | `--seeds-dir` | `string` | `seeds` | `PTAH_SEEDS_DIR` | — |
 | `--verbose` | `bool` | `false` | `PTAH_VERBOSE` | — |
 
+</div>
+
 **`ptah sql lint`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1308,7 +1678,11 @@ Read the columns as follows.
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
 | `--stdin` | `bool` | `false` | `PTAH_STDIN` | — |
 
+</div>
+
 **`ptah viz`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1321,33 +1695,53 @@ Read the columns as follows.
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
 | `--theme` | `string` | `light` | `PTAH_THEME` | — |
 
+</div>
+
 ## `ptah-compat`
 
 **`ptah-compat completion bash`**
 
+<div class="ptah-wide-table">
+
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--no-descriptions` | `bool` | `false` | `PTAH_NO_DESCRIPTIONS` | — |
+
+</div>
 
 **`ptah-compat completion fish`**
 
+<div class="ptah-wide-table">
+
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--no-descriptions` | `bool` | `false` | `PTAH_NO_DESCRIPTIONS` | — |
+
+</div>
 
 **`ptah-compat completion powershell`**
 
+<div class="ptah-wide-table">
+
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--no-descriptions` | `bool` | `false` | `PTAH_NO_DESCRIPTIONS` | — |
+
+</div>
 
 **`ptah-compat completion zsh`**
 
+<div class="ptah-wide-table">
+
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--no-descriptions` | `bool` | `false` | `PTAH_NO_DESCRIPTIONS` | — |
 
+</div>
+
 **`ptah-compat migrate`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1355,7 +1749,11 @@ Read the columns as follows.
 | `--env` | `string` | — | `PTAH_ENV` | inherited by subcommands |
 | `--var` | `<name>=<value>` | `[]` | `PTAH_VAR` | inherited by subcommands |
 
+</div>
+
 **`ptah-compat migrate apply`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1373,7 +1771,11 @@ Read the columns as follows.
 | `--tx-mode` | `string` | `file` | `PTAH_TX_MODE` | — |
 | `--url`, `-u` | `string` | — | `PTAH_URL` | — |
 
+</div>
+
 **`ptah-compat migrate checkpoint`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1385,7 +1787,11 @@ Read the columns as follows.
 | `--qualifier` | `string` | — | `PTAH_QUALIFIER` | — |
 | `--schema`, `-s` | `stringSlice` | `[]` | `PTAH_SCHEMA` | — |
 
+</div>
+
 **`ptah-compat migrate diff`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1400,7 +1806,11 @@ Read the columns as follows.
 | `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
 | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
 
+</div>
+
 **`ptah-compat migrate down`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1416,21 +1826,33 @@ Read the columns as follows.
 | `--to-version` | `string` | — | `PTAH_TO_VERSION` | — |
 | `--url`, `-u` | `string` | — | `PTAH_URL` | — |
 
+</div>
+
 **`ptah-compat migrate edit`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
 | `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
+
+</div>
 
 **`ptah-compat migrate hash`**
 
+<div class="ptah-wide-table">
+
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
 | `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
 
+</div>
+
 **`ptah-compat migrate import`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1438,7 +1860,11 @@ Read the columns as follows.
 | `--from` | `string` | `file://migrations` | `PTAH_FROM` | — |
 | `--to` | `string` | `file://migrations` | `PTAH_TO` | — |
 
+</div>
+
 **`ptah-compat migrate lint`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1450,7 +1876,11 @@ Read the columns as follows.
 | `--git-dir` | `string` | `.` | `PTAH_GIT_DIR` | — |
 | `--latest` | `uint` | `0` | `PTAH_LATEST` | — |
 
+</div>
+
 **`ptah-compat migrate ls`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1458,7 +1888,11 @@ Read the columns as follows.
 | `--latest`, `-l` | `bool` | `false` | `PTAH_LATEST` | — |
 | `--short`, `-s` | `bool` | `false` | `PTAH_SHORT` | — |
 
+</div>
+
 **`ptah-compat migrate new`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1466,21 +1900,33 @@ Read the columns as follows.
 | `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
 | `--edit` | `bool` | `false` | `PTAH_EDIT` | — |
 
+</div>
+
 **`ptah-compat migrate rebase`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
 | `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
+
+</div>
 
 **`ptah-compat migrate rm`**
 
+<div class="ptah-wide-table">
+
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
 | `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
 
+</div>
+
 **`ptah-compat migrate set`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1489,13 +1935,21 @@ Read the columns as follows.
 | `--revisions-schema` | `string` | — | `PTAH_REVISIONS_SCHEMA` | — |
 | `--url`, `-u` | `string` | — | `PTAH_URL` | — |
 
+</div>
+
 **`ptah-compat migrate show`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
 
+</div>
+
 **`ptah-compat migrate status`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1505,7 +1959,11 @@ Read the columns as follows.
 | `--revisions-schema` | `string` | — | `PTAH_REVISIONS_SCHEMA` | — |
 | `--url`, `-u` | `string` | — | `PTAH_URL` | — |
 
+</div>
+
 **`ptah-compat migrate test`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1517,7 +1975,11 @@ Read the columns as follows.
 | `--run` | `string` | — | `PTAH_RUN` | — |
 | `--seed-dir` | `string` | — | `PTAH_SEED_DIR` | — |
 
+</div>
+
 **`ptah-compat migrate validate`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1525,7 +1987,11 @@ Read the columns as follows.
 | `--dir` | `string` | `file://migrations` | `PTAH_DIR` | — |
 | `--dir-format` | `string` | `atlas` | `PTAH_DIR_FORMAT` | — |
 
+</div>
+
 **`ptah-compat schema`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1533,7 +1999,11 @@ Read the columns as follows.
 | `--env` | `string` | — | `PTAH_ENV` | inherited by subcommands |
 | `--var` | `<name>=<value>` | `[]` | `PTAH_VAR` | inherited by subcommands |
 
+</div>
+
 **`ptah-compat schema apply`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1555,7 +2025,11 @@ Read the columns as follows.
 | `--tx-mode` | `string` | — | `PTAH_TX_MODE` | — |
 | `--url`, `-u` | `string` | — | `PTAH_URL` | — |
 
+</div>
+
 **`ptah-compat schema clean`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1566,7 +2040,11 @@ Read the columns as follows.
 | `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
 | `--url`, `-u` | `string` | — | `PTAH_URL` | — |
 
+</div>
+
 **`ptah-compat schema diff`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1579,7 +2057,11 @@ Read the columns as follows.
 | `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
 | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
 
+</div>
+
 **`ptah-compat schema inspect`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1593,7 +2075,11 @@ Read the columns as follows.
 | `--url`, `-u` | `string` | — | `PTAH_URL` | — |
 | `--web`, `-w` | `bool` | `false` | `PTAH_WEB` | — |
 
+</div>
+
 **`ptah-compat schema plan`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1618,7 +2104,11 @@ Read the columns as follows.
 | `--skip-lint` | `bool` | `false` | `PTAH_SKIP_LINT` | — |
 | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
 
+</div>
+
 **`ptah-compat schema plan lint`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1634,7 +2124,11 @@ Read the columns as follows.
 | `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
 | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
 
+</div>
+
 **`ptah-compat schema plan new`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1653,14 +2147,22 @@ Read the columns as follows.
 | `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
 | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
 
+</div>
+
 **`ptah-compat schema plan test`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--dev-url` | `string` | — | `PTAH_DEV_URL` | — |
 | `--run` | `string` | — | `PTAH_RUN` | — |
 
+</div>
+
 **`ptah-compat schema plan validate`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1676,14 +2178,22 @@ Read the columns as follows.
 | `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
 | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
 
+</div>
+
 **`ptah-compat schema stats inspect`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--db-url` | `string` | — | `PTAH_DB_URL` | — |
 | `--schemas` | `string` | — | `PTAH_SCHEMAS` | — |
 
+</div>
+
 **`ptah-compat schema test`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1694,7 +2204,11 @@ Read the columns as follows.
 | `--seed-dir` | `string` | — | `PTAH_SEED_DIR` | — |
 | `--url`, `-u` | `string` | — | `PTAH_URL` | — |
 
+</div>
+
 **`ptah-compat schema validate`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1703,7 +2217,11 @@ Read the columns as follows.
 | `--schema-file` | `stringSlice` | `[]` | `PTAH_SCHEMA_FILE` | — |
 | `--server-version` | `string` | — | `PTAH_SERVER_VERSION` | — |
 
+</div>
+
 **`ptah-compat script exec`**
+
+<div class="ptah-wide-table">
 
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
@@ -1711,21 +2229,31 @@ Read the columns as follows.
 | `--quiet` | `bool` | `false` | `PTAH_QUIET` | — |
 | `--run` | `string` | — | `PTAH_RUN` | — |
 | `--url` | `string` | — | `PTAH_URL` | — |
+
+</div>
 
 **`ptah-compat script loop`**
 
+<div class="ptah-wide-table">
+
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--file` | `string` | — | `PTAH_FILE` | — |
 | `--quiet` | `bool` | `false` | `PTAH_QUIET` | — |
 | `--run` | `string` | — | `PTAH_RUN` | — |
 | `--url` | `string` | — | `PTAH_URL` | — |
+
+</div>
 
 **`ptah-compat script query`**
 
+<div class="ptah-wide-table">
+
 | Flag | Type | Default | Environment variable | Notes |
 | --- | --- | --- | --- | --- |
 | `--file` | `string` | — | `PTAH_FILE` | — |
 | `--quiet` | `bool` | `false` | `PTAH_QUIET` | — |
 | `--run` | `string` | — | `PTAH_RUN` | — |
 | `--url` | `string` | — | `PTAH_URL` | — |
+
+</div>

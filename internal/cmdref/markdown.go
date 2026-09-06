@@ -127,6 +127,23 @@ func capitalized(sentence string) string {
 // belongs in its own commit; the column becomes a five-line addition the day
 // it lands. Until then `ptah <command> --help` is where a flag's own words
 // are, and the page says so rather than pointing at a verb page for them.
+// wideTableOpen and wideTableClose give a five-column table its own scroller.
+//
+// The column layout's wide-content shell is the article pane less its padding:
+// 720px at a 1280 viewport, 884px once the frame reaches its 80rem cap. A flag
+// table with a code-span flag name, a type, a default and a variable in every
+// row measures 731px on the platform CI runs, so at 1280 its right-hand
+// columns were cut off (stokaro/ptah#2941). The class is styled in
+// docs/site/src/styles/ptah/figures.css; the scrolling lives on the wrapper
+// and the width on the table, because a width on the table alone scrolls the
+// page. `internal/lintcatalog` wraps its tables the same way, and the blank
+// line after the opening tag is what lets markdown parse the table inside a
+// div.
+const (
+	wideTableOpen  = "<div class=\"ptah-wide-table\">\n\n"
+	wideTableClose = "\n</div>\n\n"
+)
+
 func Flags(surfaces []Surface) (string, error) {
 	var out strings.Builder
 	for _, surface := range surfaces {
@@ -140,6 +157,7 @@ func Flags(surfaces []Surface) (string, error) {
 				continue
 			}
 			fmt.Fprintf(&out, "**`%s %s`**\n\n", surface.Program, node.Name)
+			out.WriteString(wideTableOpen)
 			out.WriteString("| Flag | Type | Default | Environment variable | Notes |\n")
 			out.WriteString("| --- | --- | --- | --- | --- |\n")
 			for _, flag := range node.Flags {
@@ -149,7 +167,7 @@ func Flags(surfaces []Surface) (string, error) {
 					notes(flagNotes(flag)))
 				rows++
 			}
-			out.WriteString("\n")
+			out.WriteString(wideTableClose)
 		}
 		if rows == 0 {
 			return "", errEmpty("the flag set of " + surface.Program)
@@ -264,6 +282,7 @@ func StrictCompat(program string, paths []Path) (string, error) {
 		return "", errEmpty("the set of paths strict compatibility mode removes")
 	}
 	var out strings.Builder
+	out.WriteString(wideTableOpen)
 	out.WriteString("| Command | Under `PTAH_ATLAS_STRICT_COMPAT=1` | Exit | Stream | The answer names |\n")
 	out.WriteString("| --- | --- | --- | --- | --- |\n")
 	for _, path := range removed {
@@ -271,6 +290,7 @@ func StrictCompat(program string, paths []Path) (string, error) {
 			program, path.Name, path.Availability, path.Availability.Exit(),
 			path.Availability.Stream(), program, path.Answers)
 	}
+	out.WriteString(wideTableClose)
 	return out.String(), nil
 }
 

@@ -114,7 +114,9 @@ func TestRendering_HappyPath(t *testing.T) {
 	// Only what strict mode removes has a row; a second listing of what stays
 	// could disagree with the command table.
 	c.Assert(table, qt.Not(qt.Contains), "migrate apply")
-	c.Assert(strings.Count(table, "\n"), qt.Equals, 8) // two header lines and six removed paths
+	// The wrapper's open tag and blank line (2), two header lines (2), six
+	// removed paths (6), and the close: blank line, tag, blank line (3).
+	c.Assert(strings.Count(table, "\n"), qt.Equals, 13)
 
 	flags, err := cmdref.Flags([]cmdref.Surface{{Program: "ptah", Nodes: []agentsurface.Node{{
 		Name:  "seed",
@@ -124,10 +126,13 @@ func TestRendering_HappyPath(t *testing.T) {
 	// The default carries the one character a table row cannot, and both notes
 	// are on at once.
 	c.Assert(flags, qt.Contains,
-		"**`ptah seed`**\n\n| Flag | Type | Default | Environment variable | Notes |\n")
+		"**`ptah seed`**\n\n<div class=\"ptah-wide-table\">\n\n| Flag | Type | Default | Environment variable | Notes |\n")
 	c.Assert(flags, qt.Contains,
 		"| `--env` | `string` | `a\\|b` | `PTAH_ENV` | inherited by subcommands, hidden |\n")
-	c.Assert(flags, qt.Matches, `(?s).*\|\n\z`)
+	// One trailing newline, and the last thing before it is the wrapper's
+	// close: a table left open here would render the rest of the page inside
+	// the scroller.
+	c.Assert(flags, qt.Matches, `(?s).*</div>\n\z`)
 }
 
 // TestRendering_FailurePath pins the refusal that keeps this gate from
@@ -271,11 +276,11 @@ func TestFlagsPage_SaysBothHalves(t *testing.T) {
 	c.Assert(page, qt.Contains, "no `--auto-approve` and no")
 	c.Assert(page, qt.Contains, "surface's `ptah-compat schema plan` verbs do bind one")
 	c.Assert(page, qt.Contains,
-		"**`ptah-compat schema plan`**\n\n| Flag | Type | Default | Environment variable | Notes |\n")
+		"**`ptah-compat schema plan`**\n\n<div class=\"ptah-wide-table\">\n\n| Flag | Type | Default | Environment variable | Notes |\n")
 	c.Assert(page, qt.Contains,
 		"| `--auto-approve` | `bool` | `false` | `PTAH_AUTO_APPROVE` | — |\n")
 	c.Assert(page, qt.Contains,
-		"**`ptah schema apply`**\n\n| Flag | Type | Default | Environment variable | Notes |\n")
+		"**`ptah schema apply`**\n\n<div class=\"ptah-wide-table\">\n\n| Flag | Type | Default | Environment variable | Notes |\n")
 	c.Assert(page, qt.Contains,
 		"| `--auto-approve` | `bool` | `false` | — | — |\n")
 }

@@ -71,6 +71,9 @@ const layouts = [
     name: 'column',
     query: '?layout=column',
     prose: 704,
+    // The declared `--sl-content-width`, a ceiling the shell never reaches in
+    // this layout: the shell is bounded by the article pane less its padding,
+    // which the shell assertion below takes as the lesser of the two.
     wideContent: 960,
     // clamp(13rem, 13rem + (100vw - 80rem) * 0.359375, 18.75rem)
     toc: (viewport) => Math.min(300, Math.max(208, 208 + (viewport.width - 1280) * 0.359375)),
@@ -278,10 +281,19 @@ const measure = ({ tolerance, cellLineLimit }) => {
   // ninety-character error strings and pushed several tables past their
   // container. Nothing caught it, because scrolling inside a container is
   // normally correct.
+  //
+  // One holder is the sanctioned answer rather than the defect. A table inside
+  // `.ptah-wide-table` scrolls on purpose: the wrapper draws a hairline frame
+  // around the scroller, so the reader is told the rest exists, and the
+  // generators that emit five-column reference tables wrap them because the
+  // column layout's shell (720px at 1280) is narrower than a flag table needs
+  // (stokaro/ptah#2941). A bare `overflow-x: auto` holder is still a finding;
+  // the exemption is the class, not the scrolling.
   const wideTables = [];
   for (const table of document.querySelectorAll('main table')) {
     const holder = table.parentElement;
     if (!holder) continue;
+    if (holder.classList.contains('ptah-wide-table')) continue;
     const overflow = Math.round(table.scrollWidth - holder.clientWidth);
     if (overflow <= tolerance) continue;
     const heading = table.querySelector('th');
@@ -974,6 +986,19 @@ async function main() {
       if (narrowTable.wideTables.length > 0) {
         failures.push('wide-table detector fired on a table that fits its container');
       }
+      // The same overflowing table inside the sanctioned wrapper is not a
+      // finding; a bare scroller with the same content is (above). Both halves
+      // are needed: without the second, exempting every scroller would pass.
+      await page.setContent(
+        `<main><div class="ptah-wide-table" style="width:300px;overflow-x:auto">` +
+          `<table style="line-height:20px"><tbody><tr><td><code style="white-space:nowrap">` +
+          'x'.repeat(160) +
+          `</code></td></tr></tbody></table></div></main>`,
+      );
+      const wrappedTable = await page.evaluate(measure, { tolerance: overflowTolerance, cellLineLimit: maxCellLines });
+      if (wrappedTable.wideTables.length > 0) {
+        failures.push('wide-table detector fired on a table inside .ptah-wide-table, the sanctioned scroller');
+      }
 
       await page.setContent(
         '<main><div class="sl-markdown-content">' +
@@ -1447,14 +1472,14 @@ async function main() {
             );
           }
           errors.push(...readingMeasureProblems(result, route, viewport, layout));
-          // Wide tables are measured in the envelope only. The column layout
-          // promises wide content a 60rem shell on the prose's left edge and
-          // does not keep it: its article pane is bounded by a capped frame,
-          // so the shell measures 720px at 1280 and 884px at 1920, and a
-          // reference table that fits the envelope's 1120px does not fit
-          // either. That is a defect in the layout rather than in the page,
-          // and it is stokaro/ptah#2941 rather than a silent exemption here.
-          if (viewport.name !== 'mobile' && layout.frame.kind === 'centered') {
+          // Wide tables are measured under both layouts. The column layout's
+          // shell is the article pane less its padding -- 720px at 1280, 884px
+          // at the frame's cap -- and a table that needs more scrolls inside
+          // `.ptah-wide-table` rather than losing its right-hand columns; the
+          // generators that emit five-column tables wrap them (stokaro/ptah#2941).
+          // This once measured the envelope only, while the column layout's
+          // shell was a recorded gap.
+          if (viewport.name !== 'mobile') {
             for (const table of result.wideTables) {
               errors.push(
                 `${route}: a table is ${table.width}px wide inside a ${table.container}px container ` +
