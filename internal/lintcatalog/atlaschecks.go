@@ -137,17 +137,24 @@ var atlasChecks = []AtlasCheck{
 	{Code: "PG105", Meaning: "UNIQUE constraint creation acquires an ACCESS EXCLUSIVE lock", Pro: true, PtahRules: []string{"PG105"}, Status: StatusCovered},
 	{Code: "PG110", Meaning: "creating a table with non-optimal data alignment", PtahRules: []string{"PG110"}, Status: StatusCovered},
 
+	// Both rows below were measured on PostgreSQL 18.6 by relfilenode and the
+	// heap-scan counter (migration/lint/pgcost.go). PG301 compares the
+	// column's current type, read from the dev database, with the clause's,
+	// so a widening PostgreSQL applies as a catalog edit is not reported as a
+	// rewrite; PG304 reads the key columns' nullability the same way. Without
+	// that state DS103 and PG104 keep the statement and the run names these
+	// rules as unmet (stokaro/ptah#2942).
 	{
 		Code: "PG301", Meaning: "a column type change requires a table and index rewrite", Pro: true,
-		PtahRules: []string{"DS103"}, Status: StatusPartial,
-		Note: "reported as a data-safety risk, without rewrite and lock analysis",
+		PtahRules: []string{"PG301"}, Status: StatusCovered,
+		Note: "fires only for a change PostgreSQL rewrites for, naming the abort a stored value can cause; the timestamp and timestamptz pair says when the TimeZone decides",
 	},
 	{Code: "PG302", Meaning: "a volatile DEFAULT on an added column rewrites the table", Pro: true, PtahRules: []string{"PG302"}, Status: StatusCovered},
 	{Code: "PG303", Meaning: "SET NOT NULL scans existing rows", Pro: true, PtahRules: []string{"PG303"}, Status: StatusCovered},
 	{
 		Code: "PG304", Meaning: "PRIMARY KEY on nullable columns requires a full scan", Pro: true,
-		PtahRules: []string{"PG104"}, Status: StatusPartial,
-		Note: "every ADD PRIMARY KEY is reported; the nullable-column refinement needs schema state",
+		PtahRules: []string{"PG304", "PG104"}, Status: StatusCovered,
+		Note: "PG304 names the columns the key sets NOT NULL and the extra scan that costs; PG104 names the lock every ADD PRIMARY KEY takes",
 	},
 	{Code: "PG305", Meaning: "a CHECK constraint requires a full table scan", Pro: true, PtahRules: []string{"PG305"}, Status: StatusCovered},
 	{Code: "PG306", Meaning: "a FOREIGN KEY requires a full scan and blocks writes", Pro: true, PtahRules: []string{"PG306"}, Status: StatusCovered},

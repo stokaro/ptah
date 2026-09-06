@@ -39,11 +39,12 @@ type atlasAlias struct {
 var atlasCodeAliases = map[string]atlasAlias{
 	"BC102": {rules: []string{"BC101"}},
 	"MF104": {rules: []string{"PG303", "LT101"}},
-	// No MY code is here: MY110 through MY123 (members.go) and MY130, MY133
-	// and MY136 (mysqlcost.go) are each a Ptah rule of the same name, so the
-	// code needs no alias to reach it.
-	"PG301": {dialects: []string{"postgres"}, rules: []string{"DS103"}},
-	"PG304": {dialects: []string{"postgres"}, rules: []string{"PG104"}},
+	// No engine-specific code is here: MY110 through MY123 (members.go),
+	// MY130, MY133 and MY136 (mysqlcost.go), and PG301 and PG304 (pgcost.go)
+	// are each a Ptah rule of the same name, so the code needs no alias to
+	// reach it. The dialects field stays, because an alias for one engine
+	// must not weaken another engine's run (stokaro/ptah#1631), and the next
+	// engine-specific alias inherits that scoping rather than reinventing it.
 }
 
 // mysqlFamily is the pair Ptah's MySQL rules are defined for.
@@ -108,10 +109,17 @@ func expandAtlasCodeSelectors(selectors []string) []string {
 // is defined for dialect. An empty dialect expands everything, matching the
 // rule engine's own "no configured dialect runs everything" convention.
 func expandAtlasCodeSelectorsForDialect(selectors []string, dialect string) []string {
+	return expandSelectorsWithAliases(atlasCodeAliases, selectors, dialect)
+}
+
+// expandSelectorsWithAliases is the expansion over one alias table, so the
+// scoping can be exercised against a table that has an engine-specific entry
+// when the built-in one does not.
+func expandSelectorsWithAliases(aliases map[string]atlasAlias, selectors []string, dialect string) []string {
 	expanded := make([]string, 0, len(selectors))
 	for _, selector := range selectors {
 		expanded = append(expanded, selector)
-		alias, found := atlasCodeAliases[strings.ToUpper(strings.TrimSpace(selector))]
+		alias, found := aliases[strings.ToUpper(strings.TrimSpace(selector))]
 		if !found || !aliasAppliesToDialect(alias, dialect) {
 			continue
 		}

@@ -164,7 +164,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Migration lint rules
 
-57 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
+59 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
 
 ### Every dialect
 
@@ -224,8 +224,10 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `PG105` | adding a unique constraint takes an ACCESS EXCLUSIVE lock and validates rows | both | Atlas |
 | `PG106` | DROP INDEX without CONCURRENTLY blocks writes while the index is removed | both | Atlas |
 | `PG110` | the declared column order can waste tuple padding | both | Atlas |
+| `PG301` | a column type change PostgreSQL cannot prove safe rewrites the table and its indexes | both | Atlas |
 | `PG302` | a volatile DEFAULT on an added column rewrites or evaluates every existing row | both | Atlas |
 | `PG303` | SET NOT NULL scans the table to validate existing rows | both | Atlas |
+| `PG304` | a primary key over nullable columns sets them NOT NULL and scans every row on top of the index build | both | Atlas |
 | `PG305` | adding a CHECK constraint validates existing rows and can hold locks | both | Atlas |
 | `PG306` | adding a foreign key validates existing rows and can block writes on both tables | both | Atlas |
 | `PG307` | changing LOGGED or UNLOGGED rewrites the table under heavyweight locks | both | Atlas |
@@ -259,7 +261,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Default severities
 
-16 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `SQL001`, `SQL002`. The other 48 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
+16 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `SQL001`, `SQL002`. The other 50 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
 
 ## What ptah-compat prints
 
@@ -273,7 +275,7 @@ Every migration lint finding reports under an analyzer name and a code on the co
 
 ## Atlas analyzer checks
 
-Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/analyzers) carries, and what Ptah does about it: 44 covered, 3 partial, 9 not implemented, 2 waived, of 58. A code Atlas marks as an Atlas Pro feature is marked here too, and the ones Ptah implements are reported through both surfaces except `BC101` and `BC102`, whose Ptah rule the compatibility surface does not report.
+Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/analyzers) carries, and what Ptah does about it: 46 covered, 1 partial, 9 not implemented, 2 waived, of 58. A code Atlas marks as an Atlas Pro feature is marked here too, and the ones Ptah implements are reported through both surfaces except `BC101` and `BC102`, whose Ptah rule the compatibility surface does not report.
 
 <div class="ptah-wide-table">
 
@@ -312,10 +314,10 @@ Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/anal
 | `PG104` | PRIMARY KEY creation acquires an ACCESS EXCLUSIVE lock | yes | `PG104` | covered |
 | `PG105` | UNIQUE constraint creation acquires an ACCESS EXCLUSIVE lock | yes | `PG105` | covered |
 | `PG110` | creating a table with non-optimal data alignment | no | `PG110` | covered |
-| `PG301` | a column type change requires a table and index rewrite | yes | `DS103` | partial — reported as a data-safety risk, without rewrite and lock analysis |
+| `PG301` | a column type change requires a table and index rewrite | yes | `PG301` | covered — fires only for a change PostgreSQL rewrites for, naming the abort a stored value can cause; the timestamp and timestamptz pair says when the TimeZone decides |
 | `PG302` | a volatile DEFAULT on an added column rewrites the table | yes | `PG302` | covered |
 | `PG303` | SET NOT NULL scans existing rows | yes | `PG303` | covered |
-| `PG304` | PRIMARY KEY on nullable columns requires a full scan | yes | `PG104` | partial — every ADD PRIMARY KEY is reported; the nullable-column refinement needs schema state |
+| `PG304` | PRIMARY KEY on nullable columns requires a full scan | yes | `PG304`, `PG104` | covered — PG304 names the columns the key sets NOT NULL and the extra scan that costs; PG104 names the lock every ADD PRIMARY KEY takes |
 | `PG305` | a CHECK constraint requires a full table scan | yes | `PG305` | covered |
 | `PG306` | a FOREIGN KEY requires a full scan and blocks writes | yes | `PG306` | covered |
 | `PG307` | a logging-mode change rewrites the table | yes | `PG307` | covered |
@@ -368,17 +370,15 @@ Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/anal
 
 Where Ptah reports an Atlas hazard under a rule of its own name, the Atlas code
 is accepted anyway — in `disabled-rules`, in `--disable`, and as a key under
-`rules:` for a severity override. `PG301` reaches `DS103`, `PG304` reaches
-`PG104`, and `BC102` and `MF104` reach the rules their rows name. A code Ptah
-reports under the same name, every `MY` code for one, needs no alias: it
-selects that rule directly.
+`rules:` for a severity override. `BC102` reaches `BC101`, and `MF104` reaches
+`PG303` and `LT101`. A code Ptah reports under the same name, every `MY` and
+`PG3` code for one, needs no alias: it selects that rule directly.
 
-An alias reaches its Ptah rule only for the engine the Atlas code belongs to.
-`PG301` is a PostgreSQL code, so `--dialect mysql --disable PG301` disables
-nothing: without that scoping it would expand to `DS103` and silence MySQL
-column-type-change findings that the policy never mentioned. `BC102` and
-`MF104` name no engine and apply everywhere. A selector is still *accepted* on
-every dialect, so one policy file can carry entries for several engines.
+An alias reaches its Ptah rule only for the engine the Atlas code belongs to,
+so a policy shared across engines cannot weaken one engine's run through an
+entry written for another. The two aliases above name no engine and apply
+everywhere. A selector is still *accepted* on every dialect, so one policy file
+can carry entries for several engines.
 
 Six Atlas codes are deliberately **not** aliased, because Ptah uses the same
 spelling for a rule of its own meaning something else: `DS101`, `DS102`,
