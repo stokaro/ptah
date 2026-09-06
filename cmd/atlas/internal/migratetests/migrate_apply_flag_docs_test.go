@@ -9,7 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/pflag"
 
-	"go.5x5.cz/ptah/cmd/atlas"
+	"ptah.run/cmd/atlas"
 )
 
 // These tests bind the published Atlas-compatibility pages to the flag surface

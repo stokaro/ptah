@@ -10,9 +10,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/migrationlintreport"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/migrationlintreport"
+	"ptah.run/migration/migrationfile"
 )
 
 func TestPrepareReportOptions_PresentEmptyDirSuppressesDefault(t *testing.T) {

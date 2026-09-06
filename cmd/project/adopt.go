@@ -9,10 +9,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/adoptpreflight"
-	"go.5x5.cz/ptah/internal/atlasregistry"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/adoptpreflight"
+	"ptah.run/internal/atlasregistry"
 )
 
 // The adoption classes.

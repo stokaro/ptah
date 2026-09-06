@@ -11,15 +11,15 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/cmd/internal/serverversion"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemaload"
-	"go.5x5.cz/ptah/internal/servertarget"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/cmd/internal/serverversion"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemaload"
+	"ptah.run/internal/servertarget"
 )
 
 const (

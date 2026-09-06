@@ -5,18 +5,18 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dbexprprobe"
-	"go.5x5.cz/ptah/internal/exprkey"
-	"go.5x5.cz/ptah/internal/sqlitevirtual"
-	"go.5x5.cz/ptah/internal/tableref"
-	"go.5x5.cz/ptah/migration/internal/generatedschema"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/catalog"
+	"ptah.run/config"
+	"ptah.run/core/coverage"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbexprprobe"
+	"ptah.run/internal/exprkey"
+	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/internal/tableref"
+	"ptah.run/migration/internal/generatedschema"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // CompareWithDatabase resolves live catalog identifier equivalence and compares
@@ -383,7 +383,7 @@ func resolveIndexExpressions(
 // plain columns, which is what decides how the probe writes its CREATE INDEX.
 //
 // Parts is preferred over Fields where it is filled, for the reason
-// [go.5x5.cz/ptah/core/schemamodel.Index] gives: the two spellings duplicate each
+// [ptah.run/core/schemamodel.Index] gives: the two spellings duplicate each
 // other and only Parts distinguishes an expression from a column.
 func declaredIndexExpression(index schemamodel.Index) (expression string, parts []string) {
 	for _, part := range index.Parts {

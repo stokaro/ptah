@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/ociartifact"
-	"go.5x5.cz/ptah/internal/ociverify"
+	"ptah.run/internal/ociartifact"
+	"ptah.run/internal/ociverify"
 )
 
 // TestVerify_RefusesATagBeforeReachingTheRegistry pins the one requirement that

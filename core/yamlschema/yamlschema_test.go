@@ -6,10 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/core/yamlschema"
+	"ptah.run/core/goschema"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
+	"ptah.run/core/yamlschema"
 )
 
 func renderStatements(c *qt.C, db *schemamodel.Database, dialect string) []string {

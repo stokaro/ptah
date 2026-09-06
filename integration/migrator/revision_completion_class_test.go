@@ -40,10 +40,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/internal/ddltx"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/ddltx"
+	"ptah.run/migration/migrator"
 )
 
 // revisionCompletionNames carries the per-run object names. Every live case

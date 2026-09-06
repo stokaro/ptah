@@ -11,10 +11,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/capabilityline"
-	"go.5x5.cz/ptah/internal/capabilityprobe"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/capabilityline"
+	"ptah.run/internal/capabilityprobe"
 )
 
 func TestCells_IsNotEmpty(t *testing.T) {

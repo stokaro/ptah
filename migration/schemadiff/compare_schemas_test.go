@@ -5,11 +5,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/goschematodb"
-	"go.5x5.cz/ptah/migration/schemadiff"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/convert/goschematodb"
+	"ptah.run/migration/schemadiff"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // usersV1 is the current side of the CompareSchemas fixtures: one table with a

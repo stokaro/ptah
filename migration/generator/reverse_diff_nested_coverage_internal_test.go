@@ -15,7 +15,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // nestedCoverageExempt names the element fields no reversal builder mentions,

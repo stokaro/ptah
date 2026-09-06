@@ -2,7 +2,7 @@
 package generatedschema
 
 import (
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/schemamodel"
 )
 
 // FieldsForTable returns direct and embedded columns for table.

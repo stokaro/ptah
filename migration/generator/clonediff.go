@@ -6,8 +6,8 @@ package generator
 import (
 	"slices"
 
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func cloneSchemaDiff(diff *difftypes.SchemaDiff) *difftypes.SchemaDiff {

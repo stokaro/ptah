@@ -9,10 +9,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/go-sql-driver/mysql" // registers the MySQL driver for database/sql
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	mysqlreader "go.5x5.cz/ptah/internal/dbschema/mysql"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	mysqlreader "ptah.run/internal/dbschema/mysql"
+	"ptah.run/migration/schemadiff"
 )
 
 func TestConstraintsActionsConformanceFixture_RoundTrip_MySQL(t *testing.T) {

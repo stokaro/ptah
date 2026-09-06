@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/migratedata"
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/cmd/migratedata"
+	"ptah.run/dbschema"
 )
 
 // seedLiveDB creates a file-backed SQLite database with a "regions" table

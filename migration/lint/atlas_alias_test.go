@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/lint"
+	"ptah.run/migration/lint"
 )
 
 // A code is the unit of suppression, of severity policy, and of "we accept this

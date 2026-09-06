@@ -10,8 +10,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dbexprprobe"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbexprprobe"
 )
 
 // sqliteConn opens a file-backed SQLite connection: a live server whose

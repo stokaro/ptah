@@ -1,10 +1,10 @@
 package clickhouse
 
 import (
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/modelast"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/modelast"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // planRowPolicies emits real row-policy DDL once the target hosts it.

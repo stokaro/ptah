@@ -10,8 +10,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbtarget"
 )
 
 // The pairs the two engines answer oppositely. Every non-ASCII rune is written

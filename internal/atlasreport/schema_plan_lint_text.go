@@ -5,7 +5,7 @@ import (
 	"io"
 	"time"
 
-	migrationlint "go.5x5.cz/ptah/migration/lint"
+	migrationlint "ptah.run/migration/lint"
 )
 
 // The prefixes of the plan-lint report. A plan is one block of SQL rather than

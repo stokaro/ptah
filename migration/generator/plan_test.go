@@ -9,12 +9,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/internal/migrationsnapshot"
-	"go.5x5.cz/ptah/migration/generator"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/migrationsnapshot"
+	"ptah.run/migration/generator"
 )
 
 func TestPlanMigration_DoesNotWriteArtifacts(t *testing.T) {

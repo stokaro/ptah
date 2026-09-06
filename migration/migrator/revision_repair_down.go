@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"go.5x5.cz/ptah/core/sqlutil"
+	"ptah.run/core/sqlutil"
 )
 
 // repairRolledBackMigration repairs a revision a rollback left dirty.

@@ -3,9 +3,9 @@ package main
 import (
 	"fmt"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/astbuilder"
-	"go.5x5.cz/ptah/core/renderer"
+	"ptah.run/core/ast"
+	"ptah.run/core/astbuilder"
+	"ptah.run/core/renderer"
 )
 
 // DemonstrateASTApproach shows how to use the new AST-based SQL generation

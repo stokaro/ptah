@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
+	"ptah.run/core/platform"
 )
 
 // modeledColumnTypes lists, per dialect, the column type names the Atlas HCL

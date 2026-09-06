@@ -11,41 +11,41 @@ guide.
 
 These packages are intended for application and tool embedders:
 
-- `go.5x5.cz/ptah/atlascompat`
-- `go.5x5.cz/ptah/config`
-- `go.5x5.cz/ptah/config/projectconfig`
-- `go.5x5.cz/ptah/core/ast`
-- `go.5x5.cz/ptah/core/astbuilder`
-- `go.5x5.cz/ptah/core/coverage`
-- `go.5x5.cz/ptah/core/goschema`
-- `go.5x5.cz/ptah/core/schemamodel`
-- `go.5x5.cz/ptah/core/platform`
-- `go.5x5.cz/ptah/core/platform/capability`
-- `go.5x5.cz/ptah/core/platform/identifier`
-- `go.5x5.cz/ptah/core/ptaherr`
-- `go.5x5.cz/ptah/core/query`
-- `go.5x5.cz/ptah/core/renderer`
-- `go.5x5.cz/ptah/core/schemasource`
-- `go.5x5.cz/ptah/core/sqlutil`
-- `go.5x5.cz/ptah/core/yamlschema`
-- `go.5x5.cz/ptah/dbschema`
-- `go.5x5.cz/ptah/catalog`
-- `go.5x5.cz/ptah/docs`
-- `go.5x5.cz/ptah/migration/datadiff`
-- `go.5x5.cz/ptah/migration/dbtest`
-- `go.5x5.cz/ptah/migration/diffpolicy`
-- `go.5x5.cz/ptah/migration/generator`
-- `go.5x5.cz/ptah/migration/importer`
-- `go.5x5.cz/ptah/migration/lint`
-- `go.5x5.cz/ptah/migration/migrationfile`
-- `go.5x5.cz/ptah/migration/migrator`
-- `go.5x5.cz/ptah/migration/planner`
-- `go.5x5.cz/ptah/migration/risk`
-- `go.5x5.cz/ptah/migration/safety`
-- `go.5x5.cz/ptah/migration/schemadiff`
-- `go.5x5.cz/ptah/migration/schemadiff/difftypes`
-- `go.5x5.cz/ptah/migration/seeder`
-- `go.5x5.cz/ptah/migration/shadow`
+- `ptah.run/atlascompat`
+- `ptah.run/config`
+- `ptah.run/config/projectconfig`
+- `ptah.run/core/ast`
+- `ptah.run/core/astbuilder`
+- `ptah.run/core/coverage`
+- `ptah.run/core/goschema`
+- `ptah.run/core/schemamodel`
+- `ptah.run/core/platform`
+- `ptah.run/core/platform/capability`
+- `ptah.run/core/platform/identifier`
+- `ptah.run/core/ptaherr`
+- `ptah.run/core/query`
+- `ptah.run/core/renderer`
+- `ptah.run/core/schemasource`
+- `ptah.run/core/sqlutil`
+- `ptah.run/core/yamlschema`
+- `ptah.run/dbschema`
+- `ptah.run/catalog`
+- `ptah.run/docs`
+- `ptah.run/migration/datadiff`
+- `ptah.run/migration/dbtest`
+- `ptah.run/migration/diffpolicy`
+- `ptah.run/migration/generator`
+- `ptah.run/migration/importer`
+- `ptah.run/migration/lint`
+- `ptah.run/migration/migrationfile`
+- `ptah.run/migration/migrator`
+- `ptah.run/migration/planner`
+- `ptah.run/migration/risk`
+- `ptah.run/migration/safety`
+- `ptah.run/migration/schemadiff`
+- `ptah.run/migration/schemadiff/difftypes`
+- `ptah.run/migration/seeder`
+- `ptah.run/migration/shadow`
 
 `atlascompat` is a narrow compatibility surface for external Atlas parity and
 conformance tooling. It intentionally wraps parser, HCL schema,
@@ -847,7 +847,7 @@ should support `errors.Is(err, ptaherr.ErrUnsupportedDialect)`. Invalid schema
 diffs rejected during planning support
 `errors.Is(err, ptaherr.ErrInvalidSchemaDiff)`.
 
-### `go.5x5.cz/ptah/docs`
+### `ptah.run/docs`
 
 This package holds Ptah's own documentation as an `embed.FS` and nothing else.
 It is public because `go:embed` patterns cannot leave their package's

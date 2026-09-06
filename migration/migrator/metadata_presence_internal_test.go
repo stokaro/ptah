@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
+	"ptah.run/core/platform"
 )
 
 func Test_migrationTablePresenceQuery_HappyPath(t *testing.T) {

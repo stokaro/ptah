@@ -3,9 +3,9 @@ package postgres
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/ast"
+	"ptah.run/core/schemamodel"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // alterableDomainChanges names the domain attributes PostgreSQL changes in

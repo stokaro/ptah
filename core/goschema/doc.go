@@ -2,7 +2,7 @@
 // schema model.
 //
 // Every entry point returns a
-// [go.5x5.cz/ptah/core/schemamodel.Database] holding the tables, fields,
+// [ptah.run/core/schemamodel.Database] holding the tables, fields,
 // indexes, constraints, enums, extensions, roles, grants, and RLS declarations
 // the annotations declare. They differ in what they read and in how far the
 // result is taken:
@@ -15,7 +15,7 @@
 //     reports conflicting ones as an error, and orders tables and functions by
 //     their dependencies.
 //   - ParseDirRaw walks one root and stops before that pipeline, so
-//     [go.5x5.cz/ptah/core/schemamodel.Merge] can compose it with schemas from
+//     [ptah.run/core/schemamodel.Merge] can compose it with schemas from
 //     other authoring sources under one collision policy.
 //
 // The model itself, and everything done to it after parsing, lives in

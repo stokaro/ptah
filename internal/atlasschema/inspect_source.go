@@ -10,19 +10,19 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasfilter"
-	"go.5x5.cz/ptah/internal/atlassource"
-	"go.5x5.cz/ptah/internal/devclean"
-	"go.5x5.cz/ptah/internal/devdocker"
-	"go.5x5.cz/ptah/internal/devlock"
-	"go.5x5.cz/ptah/internal/migrationreplay"
-	"go.5x5.cz/ptah/internal/rolescope"
-	"go.5x5.cz/ptah/internal/schemafile"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/catalog"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasfilter"
+	"ptah.run/internal/atlassource"
+	"ptah.run/internal/devclean"
+	"ptah.run/internal/devdocker"
+	"ptah.run/internal/devlock"
+	"ptah.run/internal/migrationreplay"
+	"ptah.run/internal/rolescope"
+	"ptah.run/internal/schemafile"
+	"ptah.run/migration/migrationfile"
 )
 
 const inspectDevCleanupTimeout = 30 * time.Second
@@ -57,10 +57,10 @@ type InspectSourceOptions struct {
 	// disables the bound.
 	ConnectTimeout time.Duration
 	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
-	// spells them; see [go.5x5.cz/ptah/internal/schemafile.Options].
+	// spells them; see [ptah.run/internal/schemafile.Options].
 	Vars []string
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
-	// policy; see [go.5x5.cz/ptah/internal/atlassource.ResolveOptions].
+	// policy; see [ptah.run/internal/atlassource.ResolveOptions].
 	IgnoreUnknownHCLNames bool
 	// ValidateDesiredSchema applies a caller-selected policy to authored local
 	// schema sources before the dev database is reset. Live database and

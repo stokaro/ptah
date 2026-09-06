@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/ast"
+	"ptah.run/core/schemamodel"
 )
 
 // A schema DIRECTORY is an ordered script, not a set of declarations.

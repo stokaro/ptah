@@ -13,9 +13,9 @@ import (
 	"oras.land/oras-go/v2/registry/remote/auth"
 	"oras.land/oras-go/v2/registry/remote/credentials"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/internal/ocicredentials"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/internal/ocicredentials"
 )
 
 type loginOptions struct {

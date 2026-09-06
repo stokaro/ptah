@@ -6,9 +6,9 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/lexer"
+	"ptah.run/core/platform"
+	"ptah.run/dbschema"
+	"ptah.run/internal/lexer"
 )
 
 type noTransactionPrefixAction uint8

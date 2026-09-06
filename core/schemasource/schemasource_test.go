@@ -11,10 +11,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemasource"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemasource"
+	"ptah.run/dbschema"
+	"ptah.run/migration/schemadiff"
 )
 
 // helperModes maps a mode name to the behavior the re-executed test binary

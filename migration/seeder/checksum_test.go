@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/seeder"
+	"ptah.run/dbschema"
+	"ptah.run/migration/seeder"
 )
 
 const (

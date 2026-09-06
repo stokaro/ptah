@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/schemaserve"
+	"ptah.run/cmd/internal/schemaserve"
 )
 
 // handler builds a handler against a database that does not exist, which is

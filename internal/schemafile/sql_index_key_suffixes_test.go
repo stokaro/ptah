@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/convert/goschematodb"
-	"go.5x5.cz/ptah/internal/schemafile"
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/internal/convert/goschematodb"
+	"ptah.run/internal/schemafile"
 )
 
 // postgresIndexSuffixSQL is what `ptah-compat schema inspect --format '{{ sql

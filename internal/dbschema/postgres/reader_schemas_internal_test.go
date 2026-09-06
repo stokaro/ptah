@@ -24,8 +24,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/dbschema/dbtest"
+	"ptah.run/catalog"
+	"ptah.run/internal/dbschema/dbtest"
 )
 
 // pgNamespaceFixture is pg_namespace as PostgreSQL 17.10 reports it for a

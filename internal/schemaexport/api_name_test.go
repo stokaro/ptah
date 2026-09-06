@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemaexport"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemaexport"
 )
 
 // A column's storage name and its published name are separate identities, and

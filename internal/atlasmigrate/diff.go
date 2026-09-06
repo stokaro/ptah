@@ -10,29 +10,29 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
-	"go.5x5.cz/ptah/internal/atlasreport"
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/internal/atlassource"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/fsnapshot"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/migrationreplay"
-	"go.5x5.cz/ptah/internal/migrationsnapshot"
-	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/internal/schemafile"
-	"go.5x5.cz/ptah/internal/schemascope"
-	"go.5x5.cz/ptah/internal/sqlitevirtual"
-	"go.5x5.cz/ptah/migration/migrationfile"
-	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/catalog"
+	"ptah.run/config"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/atlassource"
+	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/fsnapshot"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/migrationreplay"
+	"ptah.run/internal/migrationsnapshot"
+	"ptah.run/internal/pathguard"
+	"ptah.run/internal/schemafile"
+	"ptah.run/internal/schemascope"
+	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 const (
@@ -76,7 +76,7 @@ type DiffOptions struct {
 	// its pre-change state through one shared semantic capability.
 	//
 	// It is a hook rather than a call because of an import edge:
-	// [go.5x5.cz/ptah/migration/generator] owns bidirectional planning but
+	// [ptah.run/migration/generator] owns bidirectional planning but
 	// imports this package for migration-directory and qualifier primitives, so
 	// this package cannot import it back. The compatibility surface imports both
 	// and adapts the exported result into BidirectionalPlan.
@@ -94,10 +94,10 @@ type DiffOptions struct {
 	// creation cannot be planned safely from the replayed directory's coverage.
 	Diagnostics io.Writer
 	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
-	// spells them; see [go.5x5.cz/ptah/internal/schemafile.Options].
+	// spells them; see [ptah.run/internal/schemafile.Options].
 	Vars []string
 	// IgnoreUnknownHCLNames selects the desired-state HCL unknown-name policy;
-	// see [go.5x5.cz/ptah/internal/atlassource.ResolveOptions].
+	// see [ptah.run/internal/atlassource.ResolveOptions].
 	IgnoreUnknownHCLNames bool
 	// ValidateDesiredSchema applies a caller-selected policy after the desired
 	// source is resolved and before migration-directory planning. Nil accepts

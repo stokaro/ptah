@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/fsdurable"
+	"ptah.run/internal/fsdurable"
 )
 
 func TestReplaceFileAt_FailurePath(t *testing.T) {

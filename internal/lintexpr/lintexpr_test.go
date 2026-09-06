@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/lintexpr"
+	"ptah.run/internal/lintexpr"
 )
 
 // alterAddVarchar is one statement in the forms a rule sees it in.

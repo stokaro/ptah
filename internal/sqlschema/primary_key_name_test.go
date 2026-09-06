@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/internal/sqlschema"
+	"ptah.run/core/ast"
+	"ptah.run/internal/sqlschema"
 )
 
 // TestConvertTable_CarriesThePrimaryKeyName is the hop where the name was lost.

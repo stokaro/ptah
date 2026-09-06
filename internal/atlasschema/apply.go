@@ -9,25 +9,25 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasfilter"
-	"go.5x5.cz/ptah/internal/atlassource"
-	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/schemafile"
-	"go.5x5.cz/ptah/internal/schemascope"
-	"go.5x5.cz/ptah/internal/schemaselection"
-	"go.5x5.cz/ptah/internal/sqliterebuild"
-	"go.5x5.cz/ptah/internal/sqlitevirtual"
-	"go.5x5.cz/ptah/internal/systemschema"
-	"go.5x5.cz/ptah/migration/migrator"
-	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/catalog"
+	"ptah.run/config"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/core/sqlutil"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasfilter"
+	"ptah.run/internal/atlassource"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/schemafile"
+	"ptah.run/internal/schemascope"
+	"ptah.run/internal/schemaselection"
+	"ptah.run/internal/sqliterebuild"
+	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/internal/systemschema"
+	"ptah.run/migration/migrator"
+	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff"
 )
 
 type ApplyOptions struct {
@@ -63,10 +63,10 @@ type ApplyOptions struct {
 	// loader. The Atlas-compatible callers never set it.
 	Desired *schemamodel.Database
 	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
-	// spells them; see [go.5x5.cz/ptah/internal/schemafile.Options].
+	// spells them; see [ptah.run/internal/schemafile.Options].
 	Vars []string
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
-	// policy; see [go.5x5.cz/ptah/internal/atlassource.ResolveOptions].
+	// policy; see [ptah.run/internal/atlassource.ResolveOptions].
 	IgnoreUnknownHCLNames bool
 	// Diagnostics receives out-of-band notices, such as an --exclude selector
 	// that named no object. Nil discards them.
@@ -123,7 +123,7 @@ type ApplyRuntimeOptions struct {
 	// Diagnostics receives out-of-band notices; see [ApplyOptions.Diagnostics].
 	Diagnostics io.Writer
 	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
-	// spells them; see [go.5x5.cz/ptah/internal/schemafile.Options].
+	// spells them; see [ptah.run/internal/schemafile.Options].
 	Vars []string
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
 	// policy; see [ApplyOptions.IgnoreUnknownHCLNames].

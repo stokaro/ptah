@@ -9,12 +9,12 @@ import (
 	"os"
 	"path"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/generator"
-	"go.5x5.cz/ptah/migration/migrator"
-	"go.5x5.cz/ptah/migration/schemadiff"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/goschema"
+	"ptah.run/dbschema"
+	"ptah.run/migration/generator"
+	"ptah.run/migration/migrator"
+	"ptah.run/migration/schemadiff"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // testOperationPlanning tests generating detailed operation plans

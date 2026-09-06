@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/schemacensus"
+	"ptah.run/internal/schemacensus"
 )
 
 // TestMeasureEmissions_EveryPhysicalObjectIsEmittedOnce is #2606's second

@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	cmdlint "go.5x5.cz/ptah/cmd/lint"
+	"ptah.run/cmd/internal/exitcode"
+	cmdlint "ptah.run/cmd/lint"
 )
 
 func TestNewLintCommand_OCIFlags(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode"
 
-	"go.5x5.cz/ptah/internal/schemaexport"
+	"ptah.run/internal/schemaexport"
 )
 
 // sanitizeIdent maps an arbitrary source identifier to a legal Protobuf

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/txrequire"
+	"ptah.run/dbschema"
+	"ptah.run/internal/txrequire"
 )
 
 // preflightTransactionRequirements refuses a file that cannot run inside the

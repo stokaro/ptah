@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/catalog"
+	"ptah.run/dbschema"
 )
 
 // DirectiveTool is the per-migration directive key selecting the online-DDL

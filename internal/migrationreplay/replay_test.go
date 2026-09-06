@@ -11,9 +11,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/migrationreplay"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/dbschema"
+	"ptah.run/internal/migrationreplay"
+	"ptah.run/migration/migrationfile"
 )
 
 // TestReplayRoutesADockerDevURLToTheProvisioner replaced a test that asserted

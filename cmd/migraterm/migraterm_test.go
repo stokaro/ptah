@@ -8,10 +8,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/cmd/migraterm"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/cmd/migraterm"
+	"ptah.run/internal/migratesum"
+	"ptah.run/migration/migrationfile"
 )
 
 func fixture(t *testing.T) string {

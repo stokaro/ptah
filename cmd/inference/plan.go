@@ -9,10 +9,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/internal/embedrelease"
-	"go.5x5.cz/ptah/internal/embedreport"
-	"go.5x5.cz/ptah/internal/embedspec"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/internal/embedrelease"
+	"ptah.run/internal/embedreport"
+	"ptah.run/internal/embedspec"
 )
 
 // newPlanCommand returns "ptah inference plan".

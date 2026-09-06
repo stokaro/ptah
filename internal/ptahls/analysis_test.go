@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/annotationparse"
-	"go.5x5.cz/ptah/internal/ptahls"
+	"ptah.run/internal/annotationparse"
+	"ptah.run/internal/ptahls"
 )
 
 func TestAnalyzeReportsUnknownAttribute(t *testing.T) {

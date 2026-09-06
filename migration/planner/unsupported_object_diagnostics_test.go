@@ -6,12 +6,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
+	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // unhostableSchema declares one of every object kind a non-PostgreSQL target

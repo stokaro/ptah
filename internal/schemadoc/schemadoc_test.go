@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemadoc"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemadoc"
 )
 
 // bookshop is a schema with a dependency chain, a foreign key, an index and an

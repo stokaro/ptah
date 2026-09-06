@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"go.5x5.cz/ptah/internal/embedrun"
-	"go.5x5.cz/ptah/internal/embedstore"
+	"ptah.run/internal/embedrun"
+	"ptah.run/internal/embedstore"
 )
 
 // Runs is what can be done to a run without a source, a provider or a target:

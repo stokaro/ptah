@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform/capability"
+	"ptah.run/core/platform/capability"
 )
 
 func TestSupportLevel_Valid_HappyPath(t *testing.T) {

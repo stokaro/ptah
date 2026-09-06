@@ -13,15 +13,15 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/internal/sqlident"
-	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/sqlident"
+	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // The live half of stokaro/ptah#1025: ClickHouse roles and grants applied,

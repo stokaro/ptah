@@ -10,14 +10,14 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/modelast"
-	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/modelast"
+	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff"
 )
 
 // normalizeDialectSource is the file that decides which dialect spellings ptah

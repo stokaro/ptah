@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemalineage"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemalineage"
 )
 
 // Column lineage answers "what breaks if I drop this column", which Ptah could

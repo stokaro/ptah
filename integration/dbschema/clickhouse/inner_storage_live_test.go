@@ -13,10 +13,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform"
-	clickhousedb "go.5x5.cz/ptah/internal/dbschema/clickhouse"
-	"go.5x5.cz/ptah/internal/sqlident"
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	clickhousedb "ptah.run/internal/dbschema/clickhouse"
+	"ptah.run/internal/sqlident"
 )
 
 // TestInnerTableSubtractionKeepsADeclaredDotNameLive pins which spelling of a

@@ -34,8 +34,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/docs"
+	"ptah.run/core/platform/capability"
+	"ptah.run/docs"
 )
 
 const (

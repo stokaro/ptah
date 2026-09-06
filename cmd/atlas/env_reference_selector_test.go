@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
-	"go.5x5.cz/ptah/config/projectconfig"
+	"ptah.run/cmd/atlas/internal/atlastest"
+	"ptah.run/config/projectconfig"
 )
 
 // writeEnvSelectorAtlasHCL writes a project whose env carries its own exclude

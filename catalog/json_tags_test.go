@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
+	"ptah.run/catalog"
 )
 
 // TestDatabase_EveryFieldItSerializesNamesItselfHappyPath is the guard

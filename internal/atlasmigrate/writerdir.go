@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"go.5x5.cz/ptah/internal/pathguard"
+	"ptah.run/internal/pathguard"
 )
 
 // migrationWriterDir is the rooted migration-directory capability one

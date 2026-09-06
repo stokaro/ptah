@@ -78,7 +78,7 @@ import (
     "fmt"
     "log"
     
-    "go.5x5.cz/ptah/internal/parser"
+    "ptah.run/internal/parser"
 )
 
 func main() {

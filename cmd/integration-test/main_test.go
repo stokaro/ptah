@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/integrationharness"
+	"ptah.run/internal/integrationharness"
 )
 
 func TestGetStaticScenarios(t *testing.T) {

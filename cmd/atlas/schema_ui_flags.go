@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/atlasargs"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/atlasargs"
 )
 
 // The UI-bound schema flags, and why they are registered refusals rather than

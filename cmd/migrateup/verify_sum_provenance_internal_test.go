@@ -8,7 +8,7 @@ package migrateup
 // about what a tag resolves to.
 //
 // The provenance PREDICATE this file used to reach into is no longer private:
-// it is [go.5x5.cz/ptah/cmd/internal/migrationsource.MutableTagSumWarning],
+// it is [ptah.run/cmd/internal/migrationsource.MutableTagSumWarning],
 // exported when `migrations down` and `status` gained --verify-sum and needed
 // the same qualifier (stokaro/ptah#928 item 4). Its own rows moved with it, to
 // cmd/internal/migrationsource, because a predicate reachable through an
@@ -33,9 +33,9 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/errdef"
 
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/migrationartifact"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/migrationartifact"
+	"ptah.run/migration/migrationfile"
 )
 
 // ociStoredBlob is one content-addressed object the in-process registry serves.

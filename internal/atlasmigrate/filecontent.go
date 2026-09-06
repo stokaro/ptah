@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
-	"go.5x5.cz/ptah/internal/txrequire"
-	"go.5x5.cz/ptah/migration/planner"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer"
+	"ptah.run/core/sqlutil"
+	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/txrequire"
+	"ptah.run/migration/planner"
 )
 
 // AtlasTxModeNoneDirective is the Atlas file directive that keeps a migration

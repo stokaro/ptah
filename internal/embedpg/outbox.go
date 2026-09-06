@@ -9,10 +9,10 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/embedcatchup"
-	"go.5x5.cz/ptah/internal/embeddigest"
-	"go.5x5.cz/ptah/internal/embedgen"
-	"go.5x5.cz/ptah/internal/embedstore"
+	"ptah.run/internal/embedcatchup"
+	"ptah.run/internal/embeddigest"
+	"ptah.run/internal/embedgen"
+	"ptah.run/internal/embedstore"
 )
 
 // Outbox is the PostgreSQL transactional outbox for one source table.

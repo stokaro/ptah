@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/seed"
+	"ptah.run/cmd/seed"
 )
 
 func TestNewSeedCommand_Creation(t *testing.T) {

@@ -11,7 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/inference"
+	"ptah.run/cmd/inference"
 )
 
 // TestEveryVerbTakingASpecificationRefusesACredentialInTheEndpoint is

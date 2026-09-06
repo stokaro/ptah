@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/schemamodel"
 )
 
 // qualified renders an object's identity, schema-qualified when it has one.

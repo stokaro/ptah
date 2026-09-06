@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"ptah.run/internal/atlasmigrate"
 )
 
 // This file holds the ONE place the compatibility surface turns a rejected

@@ -12,8 +12,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
-	"go.5x5.cz/ptah/internal/migratesum"
+	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/migratesum"
 )
 
 // ceSumCorpusCases is the number of directory shapes in testdata/ce-sums the

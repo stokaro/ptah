@@ -10,9 +10,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/migrateread"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/migrateread"
+	"ptah.run/migration/migrationfile"
 )
 
 // options are the flags this command owns on top of the shared read surface.

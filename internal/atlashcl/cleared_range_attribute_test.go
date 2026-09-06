@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlashcl"
-	"go.5x5.cz/ptah/internal/atlashclrender"
+	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/atlashclrender"
 )
 
 // clearedRangeHCL is a range that writes one attribute empty on purpose and

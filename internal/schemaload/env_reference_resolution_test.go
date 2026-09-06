@@ -7,9 +7,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/atlassource"
-	"go.5x5.cz/ptah/internal/schemaload"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/atlassource"
+	"ptah.run/internal/schemaload"
 )
 
 // --schema-file refused every env:// reference while --to accepted it, and the

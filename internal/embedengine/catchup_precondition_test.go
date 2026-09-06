@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedcatchup"
-	"go.5x5.cz/ptah/internal/embedrun"
+	"ptah.run/internal/embedcatchup"
+	"ptah.run/internal/embedrun"
 )
 
 // pendingChange is one settled event waiting to be caught up, which is what

@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/config/projectconfig"
+	"ptah.run/config/projectconfig"
 )
 
 func TestParsePtahOnlineDDLBase(t *testing.T) {

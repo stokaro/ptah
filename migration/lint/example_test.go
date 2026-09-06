@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
-	"go.5x5.cz/ptah/migration/lint"
+	"ptah.run/migration/lint"
 )
 
 // ExampleLintFS is the compact first-touch path: lint an in-memory migration

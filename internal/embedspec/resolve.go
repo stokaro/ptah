@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/internal/embedcatchup"
-	"go.5x5.cz/ptah/internal/embedcutover"
-	"go.5x5.cz/ptah/internal/embedgen"
-	"go.5x5.cz/ptah/internal/embedprovider"
+	"ptah.run/internal/embedcatchup"
+	"ptah.run/internal/embedcutover"
+	"ptah.run/internal/embedgen"
+	"ptah.run/internal/embedprovider"
 )
 
 // Resolve turns a parsed document into the values the lifecycle works with.

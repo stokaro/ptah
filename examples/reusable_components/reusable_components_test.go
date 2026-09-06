@@ -7,17 +7,17 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/atlascompat"
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrationfile"
-	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/atlascompat"
+	"ptah.run/catalog"
+	"ptah.run/core/ast"
+	"ptah.run/core/goschema"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
+	"ptah.run/migration/lint"
+	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff"
 )
 
 func TestASTRender(t *testing.T) {

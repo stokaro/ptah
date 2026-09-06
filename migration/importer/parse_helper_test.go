@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/importer"
+	"ptah.run/migration/importer"
 )
 
 // parseMigrations reads a source directory and returns just the migrations.

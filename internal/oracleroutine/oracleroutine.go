@@ -2,7 +2,7 @@
 // PostgreSQL-shaped stored-function fields are encoded into Oracle's PL/SQL
 // routine model, and how they are recovered from its catalog.
 //
-// It exists for the reason [go.5x5.cz/ptah/internal/mysqlroutine] exists: the
+// It exists for the reason [ptah.run/internal/mysqlroutine] exists: the
 // renderer and the reader are two halves of one round trip, and every property
 // whose halves disagree produces the same failure -- the renderer writes a
 // value the reader cannot recover, the comparator compares the two spellings,
@@ -28,7 +28,7 @@ import (
 // is, and a declaration is the only place the language can come from.
 const Language = "plsql"
 
-// Volatility values, spelled as [go.5x5.cz/ptah/core/schemamodel.Function.Canonicalize] leaves them.
+// Volatility values, spelled as [ptah.run/core/schemamodel.Function.Canonicalize] leaves them.
 const (
 	Immutable = "IMMUTABLE"
 	Stable    = "STABLE"
@@ -39,7 +39,7 @@ const (
 // DDL on an Oracle target.
 //
 // Oracle runs exactly one routine language, PL/SQL. An empty value is accepted
-// because an [go.5x5.cz/ptah/core/ast.CreateFunctionNode] built directly
+// because an [ptah.run/core/ast.CreateFunctionNode] built directly
 // carries no language; a declaration parsed from an annotation never arrives
 // empty, because Canonicalize defaults an unset language to plpgsql.
 //

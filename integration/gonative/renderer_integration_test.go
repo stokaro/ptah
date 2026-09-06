@@ -12,9 +12,9 @@ import (
 	_ "github.com/go-sql-driver/mysql" // registers the MySQL driver for database/sql
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/core/ast"
+	"ptah.run/core/renderer"
+	"ptah.run/internal/dbtarget"
 )
 
 // skipIfNoPostgreSQLRenderer skips only when POSTGRES_TEST_DSN is absent; a bad configured DSN fails.

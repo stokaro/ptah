@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/schemaload"
+	"ptah.run/internal/schemaload"
 )
 
 // An env:// --schema-file used to be handed to filepath.Abs, so it failed on

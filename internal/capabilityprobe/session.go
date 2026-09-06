@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/core/platform"
+	"ptah.run/dbschema"
 )
 
 // Attempt is one statement and the server's answer to it.

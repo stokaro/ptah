@@ -15,9 +15,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/migration/migrator"
 )
 
 func TestPrepareApply_LockRequestReachesMigrator(t *testing.T) {

@@ -10,24 +10,24 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/core/schemasource"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasregistry"
-	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/devdocker"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/migrationreplay"
-	"go.5x5.cz/ptah/internal/migrationsnapshot"
-	"go.5x5.cz/ptah/internal/ociartifact"
-	"go.5x5.cz/ptah/internal/schemaartifact"
-	"go.5x5.cz/ptah/internal/schemafile"
-	"go.5x5.cz/ptah/internal/schemascope"
-	"go.5x5.cz/ptah/internal/schemaselection"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemasource"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasregistry"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/devdocker"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/migrationreplay"
+	"ptah.run/internal/migrationsnapshot"
+	"ptah.run/internal/ociartifact"
+	"ptah.run/internal/schemaartifact"
+	"ptah.run/internal/schemafile"
+	"ptah.run/internal/schemascope"
+	"ptah.run/internal/schemaselection"
+	"ptah.run/migration/migrationfile"
 )
 
 const (
@@ -49,7 +49,7 @@ type ResolveOptions struct {
 	// sources.
 	DevURL string
 	// SchemaScope and SchemaScopeFlag limit an HCL desired state to one schema;
-	// see [go.5x5.cz/ptah/internal/schemafile.Options]. They are passed in
+	// see [ptah.run/internal/schemafile.Options]. They are passed in
 	// rather than derived from DevURL here because a verb with a target URL --
 	// `schema apply` -- is limited by either one, and the caller is the only
 	// layer that knows which flags it has.
@@ -75,16 +75,16 @@ type ResolveOptions struct {
 	// model instead of refusing the file. Off by default: it belongs to the
 	// Atlas-compatible command tree, which reads files written for another
 	// tool, and not to Ptah's own commands, where an unmodeled name is a typo
-	// worth naming. See [go.5x5.cz/ptah/internal/schemafile.Options].
+	// worth naming. See [ptah.run/internal/schemafile.Options].
 	IgnoreUnknownHCLNames bool
 	// ReportIgnored receives a warning line per name dropped under
 	// IgnoreUnknownHCLNames. See
-	// [go.5x5.cz/ptah/internal/schemafile.Options.ReportIgnored]: the tolerance
+	// [ptah.run/internal/schemafile.Options.ReportIgnored]: the tolerance
 	// and the reporting travel together, because matching a documented
 	// tolerance in silence is the part stokaro/ptah#1709 named.
 	ReportIgnored io.Writer
 	// Vars supplies values for the `variable` blocks of an HCL schema file, as
-	// `--var` spells them. See [go.5x5.cz/ptah/internal/schemafile.Options].
+	// `--var` spells them. See [ptah.run/internal/schemafile.Options].
 	Vars []string
 	// ValidateSchema applies a caller-selected policy after any source kind is
 	// fully materialized and before the resolved state is returned. Nil accepts

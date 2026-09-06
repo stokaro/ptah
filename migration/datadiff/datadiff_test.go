@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/datadiff"
+	"ptah.run/migration/datadiff"
 )
 
 func TestCompute(t *testing.T) {

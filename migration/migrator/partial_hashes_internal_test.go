@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/sqlutil"
+	"ptah.run/core/sqlutil"
 )
 
 // TestAtlasPartialHashValues pins the `partial_hashes` column against the

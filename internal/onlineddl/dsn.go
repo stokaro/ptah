@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/atlasurl"
+	"ptah.run/internal/atlasurl"
 )
 
 // DSN carries the connection endpoints an external online-DDL tool needs.

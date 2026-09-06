@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
+	"ptah.run/cmd/atlas/internal/atlastest"
 )
 
 // These tests pin stokaro/ptah#1002 on `ptah-compat migrate status` and

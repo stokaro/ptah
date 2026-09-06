@@ -6,10 +6,10 @@ import (
 	"io/fs"
 	"strings"
 
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbtarget"
 )
 
 // testClickHouseMergeTreeEngine is the ClickHouse-only counterpart to the

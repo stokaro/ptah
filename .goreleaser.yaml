@@ -25,9 +25,9 @@ builds:
     ldflags:
       - >-
         -s -w
-        -X go.5x5.cz/ptah/internal/buildinfo.Version={{ .Version }}
-        -X go.5x5.cz/ptah/internal/buildinfo.Commit={{ .Commit }}
-        -X go.5x5.cz/ptah/internal/buildinfo.Date={{ .CommitDate }}
+        -X ptah.run/internal/buildinfo.Version={{ .Version }}
+        -X ptah.run/internal/buildinfo.Commit={{ .Commit }}
+        -X ptah.run/internal/buildinfo.Date={{ .CommitDate }}
   - id: ptah-ls
     main: ./cmd/ptah-ls
     binary: ptah-ls
@@ -46,9 +46,9 @@ builds:
     ldflags:
       - >-
         -s -w
-        -X go.5x5.cz/ptah/internal/buildinfo.Version={{ .Version }}
-        -X go.5x5.cz/ptah/internal/buildinfo.Commit={{ .Commit }}
-        -X go.5x5.cz/ptah/internal/buildinfo.Date={{ .CommitDate }}
+        -X ptah.run/internal/buildinfo.Version={{ .Version }}
+        -X ptah.run/internal/buildinfo.Commit={{ .Commit }}
+        -X ptah.run/internal/buildinfo.Date={{ .CommitDate }}
   - id: ptah-compat
     main: ./cmd/ptah-compat
     binary: ptah-compat
@@ -67,9 +67,9 @@ builds:
     ldflags:
       - >-
         -s -w
-        -X go.5x5.cz/ptah/internal/buildinfo.Version={{ .Version }}
-        -X go.5x5.cz/ptah/internal/buildinfo.Commit={{ .Commit }}
-        -X go.5x5.cz/ptah/internal/buildinfo.Date={{ .CommitDate }}
+        -X ptah.run/internal/buildinfo.Version={{ .Version }}
+        -X ptah.run/internal/buildinfo.Commit={{ .Commit }}
+        -X ptah.run/internal/buildinfo.Date={{ .CommitDate }}
 
 # A snapshot is not a release, and naming one after whatever tag happens to be
 # reachable ties every branch's build to a marker somebody pushed for reasons of

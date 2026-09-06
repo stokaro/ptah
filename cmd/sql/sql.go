@@ -12,13 +12,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/cmd/internal/serverversion"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/servertarget"
-	"go.5x5.cz/ptah/internal/sqllint"
-	migrationlint "go.5x5.cz/ptah/migration/lint"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/cmd/internal/serverversion"
+	"ptah.run/core/platform"
+	"ptah.run/internal/servertarget"
+	"ptah.run/internal/sqllint"
+	migrationlint "ptah.run/migration/lint"
 )
 
 const (

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/internal/testcontour"
+	"ptah.run/internal/testcontour"
 )
 
 func main() {

@@ -7,11 +7,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/cmd/internal/migrationsource"
-	"go.5x5.cz/ptah/internal/migrationartifact"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/cmd/internal/migrationsource"
+	"ptah.run/internal/migrationartifact"
+	"ptah.run/migration/migrationfile"
 )
 
 type options struct {

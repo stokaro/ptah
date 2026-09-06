@@ -30,12 +30,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/catalog"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/migration/migrator"
 )
 
 // domainColumnSeed is the fixture from the issue, plus a plain column of the

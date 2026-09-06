@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/migrationlintgate"
-	"go.5x5.cz/ptah/migration/lint"
+	"ptah.run/internal/migrationlintgate"
+	"ptah.run/migration/lint"
 )
 
 // This file measures how much of the rule registry `ptah migrations up` runs,

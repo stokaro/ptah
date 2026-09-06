@@ -7,10 +7,10 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemamodel"
+	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff"
 )
 
 // ExampleGenerateSchemaDiffSQL plans the migration from an empty database to a

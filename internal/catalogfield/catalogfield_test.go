@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/catalogfield"
+	"ptah.run/catalog"
+	"ptah.run/internal/catalogfield"
 )
 
 // TestField_LeavesTheGoSourceToItsCaller pins the split this package exists for.

@@ -7,12 +7,12 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib" // the driver the PostgreSQL vertical uses
 
-	"go.5x5.cz/ptah/internal/agentdiag"
-	"go.5x5.cz/ptah/internal/agentpolicy"
-	"go.5x5.cz/ptah/internal/agenttarget"
-	"go.5x5.cz/ptah/internal/embedpg"
-	"go.5x5.cz/ptah/internal/embedreport"
-	"go.5x5.cz/ptah/internal/embedspec"
+	"ptah.run/internal/agentdiag"
+	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/agenttarget"
+	"ptah.run/internal/embedpg"
+	"ptah.run/internal/embedreport"
+	"ptah.run/internal/embedspec"
 )
 
 // InferencePlanRequest asks what a generation change would do.

@@ -12,11 +12,11 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/fsnapshot"
-	"go.5x5.cz/ptah/internal/ociartifact"
-	"go.5x5.cz/ptah/migration/safety"
+	"ptah.run/catalog"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/fsnapshot"
+	"ptah.run/internal/ociartifact"
+	"ptah.run/migration/safety"
 )
 
 const (

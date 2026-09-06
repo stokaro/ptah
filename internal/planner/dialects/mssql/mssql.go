@@ -2,9 +2,9 @@
 package mssql
 
 import (
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	mysqlplanner "go.5x5.cz/ptah/internal/planner/dialects/mysql"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	mysqlplanner "ptah.run/internal/planner/dialects/mysql"
 )
 
 const DialectName = platform.SQLServer

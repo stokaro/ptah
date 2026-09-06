@@ -3,7 +3,7 @@ package chrefresh
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
+	"ptah.run/core/ast"
 )
 
 // ParseClause reads a schedule out of the text between REFRESH and the column

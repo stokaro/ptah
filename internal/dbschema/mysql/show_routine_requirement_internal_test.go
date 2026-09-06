@@ -10,8 +10,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 )
 
 // The SHOW_ROUTINE requirement gates a destructive operation: the privilege set

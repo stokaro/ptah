@@ -12,9 +12,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/go-sql-driver/mysql" // registers the MySQL driver for database/sql
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/catalog"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbtarget"
 )
 
 // TestMySQLIndexKeyPartDirectionLive is stokaro/ptah#2816 asked of the servers.

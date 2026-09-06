@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/planartifact"
+	"ptah.run/catalog"
+	"ptah.run/internal/planartifact"
 )
 
 func TestNewReportRolePasswordStatesProduceDistinctFingerprints(t *testing.T) {

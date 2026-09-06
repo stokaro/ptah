@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/testsummary"
+	"ptah.run/internal/testsummary"
 )
 
 func TestFormatExcludesSkippedTestsFromSuccessRate(t *testing.T) {

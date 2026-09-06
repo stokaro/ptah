@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
+	"ptah.run/core/goschema"
 )
 
 func TestParseSource_FailurePath_RejectsRemovedBarewordAttributes(t *testing.T) {

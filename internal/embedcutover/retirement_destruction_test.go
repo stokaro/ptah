@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedcutover"
+	"ptah.run/internal/embedcutover"
 )
 
 // baseRetirementPlan is a retirement that destroys nothing, so every case

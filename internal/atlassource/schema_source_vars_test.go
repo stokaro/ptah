@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/atlassource"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/atlassource"
 )
 
 // TestClassifySetCarriesTheProjectVariableScope pins the join stokaro/ptah#934

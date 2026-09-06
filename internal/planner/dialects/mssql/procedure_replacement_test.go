@@ -6,11 +6,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
-	mssqlplanner "go.5x5.cz/ptah/internal/planner/dialects/mssql"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/platform"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
+	mssqlplanner "ptah.run/internal/planner/dialects/mssql"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // A modified procedure is planned as a drop and a create. The drop half was

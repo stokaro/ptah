@@ -21,7 +21,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/dbtest"
+	"ptah.run/migration/dbtest"
 )
 
 // TestRunTest_AnAuthorizedExternalStepRunsOnWindows is the control on the

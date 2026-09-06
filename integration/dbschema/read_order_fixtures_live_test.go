@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbtarget"
 )
 
 // prepareEnumOrderFixture creates three enum types whose names do not arrive in

@@ -3,7 +3,7 @@ package atlas
 import (
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/schema"
+	"ptah.run/cmd/schema"
 )
 
 // newAtlasSchemaStatsCommand mirrors the native `schema stats` onto the

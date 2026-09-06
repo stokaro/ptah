@@ -11,9 +11,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/migratecheckpoint"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/cmd/migratecheckpoint"
+	"ptah.run/internal/migratesum"
+	"ptah.run/migration/migrationfile"
 )
 
 // ptahMigrationFiles is the two-migration history in the ptah convention, as

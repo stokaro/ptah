@@ -4,8 +4,8 @@ import (
 	"strings"
 	"unicode"
 
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemamodel"
 )
 
 func normalizeSQLIdentifier(value string) string {

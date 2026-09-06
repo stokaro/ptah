@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/config/projectconfig"
+	"ptah.run/config/projectconfig"
 )
 
 // TestParseAtlasHCLSchemaVars pins the decode half of stokaro/ptah#934 item 4:

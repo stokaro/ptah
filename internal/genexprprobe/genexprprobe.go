@@ -2,7 +2,7 @@
 // database how it spells each declared generated expression.
 //
 // It exists as its own package because the two halves it joins may not import
-// each other: [go.5x5.cz/ptah/internal/dbexprprobe] must stay free of the
+// each other: [ptah.run/internal/dbexprprobe] must stay free of the
 // renderer, and the renderer knows nothing about connections. What is left
 // over is this — a pure function from a declaration to a list of statements.
 package genexprprobe
@@ -11,13 +11,13 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/dbexprprobe"
-	"go.5x5.cz/ptah/internal/modelast"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/dbexprprobe"
+	"ptah.run/internal/modelast"
 )
 
 // For returns one probe per declared table that carries a generated column, and

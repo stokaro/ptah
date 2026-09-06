@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasfilter"
-	"go.5x5.cz/ptah/internal/atlasschema"
+	"ptah.run/internal/atlasfilter"
+	"ptah.run/internal/atlasschema"
 )
 
 func TestDiff_LocalFilesReturnsSchemaDiffReport(t *testing.T) {

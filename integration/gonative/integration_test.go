@@ -11,9 +11,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/internal/modelast"
+	"ptah.run/core/goschema"
+	"ptah.run/core/renderer"
+	"ptah.run/internal/modelast"
 )
 
 // TestGenerateCreateTableFromStubs tests SQL generation from the sample entity files in stubs directory

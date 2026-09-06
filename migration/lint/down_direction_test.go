@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/lint"
+	"ptah.run/migration/lint"
 )
 
 // lintPair lints one up/down pair and returns the rule code and file basename

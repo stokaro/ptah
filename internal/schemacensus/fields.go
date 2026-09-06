@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/schemamodel"
 )
 
 // Fields returns every exported struct field reachable from
@@ -68,7 +68,7 @@ func walkType(t reflect.Type, found map[string]bool, visiting map[reflect.Type]b
 
 // ptahModule scopes the descent to this module's own types. A time.Time reached
 // from the model is one field, not a census of the standard library.
-const ptahModule = "go.5x5.cz/ptah"
+const ptahModule = "ptah.run"
 
 // Populated reports whether any instance of the field named by path carries a
 // value other than its zero.

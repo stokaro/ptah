@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/project"
+	"ptah.run/cmd/project"
 )
 
 // projectFile writes an atlas.hcl and returns its path.

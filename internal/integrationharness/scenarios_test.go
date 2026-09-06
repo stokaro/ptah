@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/integrationharness"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/integrationharness"
 )
 
 // fixturesRoot is the repository's integration fixture tree, which stays under

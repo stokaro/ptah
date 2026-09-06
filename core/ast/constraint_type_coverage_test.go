@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
+	"ptah.run/core/ast"
 )
 
 // TestConstraintType_EveryKindHasItsKeyword pins the enumeration against the

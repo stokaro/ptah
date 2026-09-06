@@ -14,11 +14,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/internal/schemaload"
+	"ptah.run/cmd/atlas"
+	"ptah.run/core/renderer"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/schemaload"
 )
 
 // createRLSSpellingDatabases provisions an empty target database and a separate

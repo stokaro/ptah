@@ -9,10 +9,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/dbschema/dbtest"
-	"go.5x5.cz/ptah/internal/dbschema/postgres"
+	"ptah.run/catalog"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/dbschema/dbtest"
+	"ptah.run/internal/dbschema/postgres"
 )
 
 // errConnectionReset stands in for whatever the server or the driver reports

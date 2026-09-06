@@ -11,12 +11,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasreport"
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/internal/atlassource"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/atlassource"
 )
 
 type atlasSchemaPlanOptions struct {

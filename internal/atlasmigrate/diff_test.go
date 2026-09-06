@@ -11,13 +11,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/internal/atlassource"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/testutils"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/catalog"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/atlassource"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/testutils"
+	"ptah.run/migration/migrationfile"
 )
 
 func TestGenerateDiff_HappyPathCreatesAtlasMigrationFromLocalSchema(t *testing.T) {

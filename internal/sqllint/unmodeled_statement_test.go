@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/sqllint"
+	"ptah.run/internal/sqllint"
 )
 
 // TestLintSource_AFileOfUnanalyzedStatementsIsNotClean pins the gap #1270

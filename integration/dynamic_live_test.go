@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/dbtarget"
-	ptahintegration "go.5x5.cz/ptah/internal/integrationharness"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/dbtarget"
+	ptahintegration "ptah.run/internal/integrationharness"
 )
 
 //go:embed fixtures

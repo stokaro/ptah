@@ -13,7 +13,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/internal/dbtarget"
 )
 
 // planE2ESearchPath returns dbURL carrying a `search_path` query parameter,

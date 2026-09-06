@@ -3,7 +3,7 @@ package platform_test
 import (
 	"fmt"
 
-	"go.5x5.cz/ptah/core/platform"
+	"ptah.run/core/platform"
 )
 
 // ExampleNormalizeDialect folds several spellings of the same targets onto the

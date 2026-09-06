@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/assistconfig"
+	"ptah.run/internal/assistconfig"
 )
 
 // The permission checks live in their own file because they are real on one

@@ -56,9 +56,9 @@ documented=()
 while IFS= read -r line; do
 	documented+=("$line")
 done < <(
-	git grep -hoE 'go install go\.5x5\.cz/ptah/cmd/[A-Za-z0-9_-]+@' -- \
+	git grep -hoE 'go install ptah\.run/cmd/[A-Za-z0-9_-]+@' -- \
 		'*.md' '*.mdx' '*.yml' '*.yaml' '*.sh' |
-		sed -e 's|^go install go\.5x5\.cz/ptah/cmd/||' -e 's|@$||' |
+		sed -e 's|^go install ptah\.run/cmd/||' -e 's|@$||' |
 		sort -u
 )
 
@@ -101,7 +101,7 @@ fi
 # pinned page would get with their own tag substituted.
 commands=()
 for binary in "${documented[@]}"; do
-	commands+=("go install go.5x5.cz/ptah/cmd/$binary@latest")
+	commands+=("go install ptah.run/cmd/$binary@latest")
 done
 
 bindir="$(mktemp -d)"
@@ -111,7 +111,7 @@ echo "install-smoke: ${#commands[@]} documented command(s)"
 failed=0
 
 for command in "${commands[@]}"; do
-	binary="${command#go install go.5x5.cz/ptah/cmd/}"
+	binary="${command#go install ptah.run/cmd/}"
 	binary="${binary%@latest}"
 
 	echo "-- $command"

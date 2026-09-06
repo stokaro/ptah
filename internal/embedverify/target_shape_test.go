@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedverify"
+	"ptah.run/internal/embedverify"
 )
 
 // tombstonedThirdRow is the corpus stokaro/ptah#2742 reports, reachable through

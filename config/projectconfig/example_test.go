@@ -6,7 +6,7 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
-	"go.5x5.cz/ptah/config/projectconfig"
+	"ptah.run/config/projectconfig"
 )
 
 // ExampleParsePtah parses a ptah.yaml document from bytes, selecting one env

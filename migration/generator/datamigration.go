@@ -3,7 +3,7 @@ package generator
 import (
 	"io/fs"
 
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/migration/migrationfile"
 )
 
 // WriteDataMigrationFiles writes an ordinary migration pair

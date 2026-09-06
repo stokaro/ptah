@@ -31,16 +31,16 @@ import (
 	"path"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/internal/agentpolicy"
-	"go.5x5.cz/ptah/internal/agentworkspace"
-	"go.5x5.cz/ptah/internal/migrationvalidate"
-	"go.5x5.cz/ptah/internal/schemaload"
-	"go.5x5.cz/ptah/internal/schemavalidate"
-	"go.5x5.cz/ptah/internal/sqllint"
-	"go.5x5.cz/ptah/migration/dbtest"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer"
+	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/agentworkspace"
+	"ptah.run/internal/migrationvalidate"
+	"ptah.run/internal/schemaload"
+	"ptah.run/internal/schemavalidate"
+	"ptah.run/internal/sqllint"
+	"ptah.run/migration/dbtest"
+	"ptah.run/migration/migrationfile"
 )
 
 // Gate names. They are stable identifiers a report is keyed by, so a client can

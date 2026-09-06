@@ -8,13 +8,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/internal/atlasreport"
-	"go.5x5.cz/ptah/migration/migrationfile"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/atlasreport"
+	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/migrator"
 )
 
 func defaultMigrateDiffFormat() string {

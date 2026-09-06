@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/sqlident"
-	"go.5x5.cz/ptah/internal/sqlrunner"
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/internal/sqlident"
+	"ptah.run/internal/sqlrunner"
 )
 
 // Writer applies schema changes to an Oracle server.

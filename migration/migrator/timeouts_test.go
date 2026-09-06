@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/migration/migrationfile"
 )
 
 func TestMergeMigrationTimeouts(t *testing.T) {

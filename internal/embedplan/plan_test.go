@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedplan"
+	"ptah.run/internal/embedplan"
 )
 
 // resolved is a plan whose every question has an answer.

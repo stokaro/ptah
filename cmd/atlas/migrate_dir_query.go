@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
-	"go.5x5.cz/ptah/internal/envbool"
+	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/envbool"
 )
 
 // resolveWritingVerbDirFormat resolves the migration directory layout the one
@@ -81,7 +81,7 @@ func atlasDirFormatSpelling(query url.Values) string {
 //
 // stokaro/ptah#1013 closed that. The shared bidirectional generator plan is now
 // injected into the writer as
-// [go.5x5.cz/ptah/internal/atlasmigrate.DiffOptions.PlanBidirectional], the plan
+// [ptah.run/internal/atlasmigrate.DiffOptions.PlanBidirectional], the plan
 // carries both directions, and each layout composes its own files. The refusal
 // is gone because the capability it stood in for arrived, which is the only
 // reason to remove a refusal of this kind.
@@ -138,10 +138,10 @@ func atlasDirQueryStrictFromEnv() (bool, error) {
 }
 
 // dirQueryStrict is the declaration of the variable, made once, on the surface
-// that owns it. See [go.5x5.cz/ptah/internal/envbool]. An explicitly empty value
+// that owns it. See [ptah.run/internal/envbool]. An explicitly empty value
 // is now refused here too, which is stokaro/ptah#1334's one change to this
 // reader.
-// It is [go.5x5.cz/ptah/internal/envbool.Retained]: turning an ignored `--dir`
+// It is [ptah.run/internal/envbool.Retained]: turning an ignored `--dir`
 // query key into a refusal adds no Atlas capability, it only refuses earlier
 // than the pinned binary does, so strict compatibility keeps it reachable.
 var dirQueryStrict = envbool.New(dirQueryStrictEnvVar, false, envbool.Retained)

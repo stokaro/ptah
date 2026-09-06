@@ -21,18 +21,18 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/internal/lintdialect"
-	"go.5x5.cz/ptah/internal/migrationreplay"
-	"go.5x5.cz/ptah/internal/migrationsnapshot"
-	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/internal/schemaselection"
-	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrationfile"
-	"go.5x5.cz/ptah/migration/migrator"
-	"go.5x5.cz/ptah/migration/risk"
+	"ptah.run/config/projectconfig"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/lintdialect"
+	"ptah.run/internal/migrationreplay"
+	"ptah.run/internal/migrationsnapshot"
+	"ptah.run/internal/pathguard"
+	"ptah.run/internal/schemaselection"
+	"ptah.run/migration/lint"
+	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/migrator"
+	"ptah.run/migration/risk"
 )
 
 const (
@@ -487,7 +487,7 @@ func (c *schemaCapture) result() replayedSchemas {
 // replayedObserver closes over the run's context, because the hook the replay
 // takes carries none and the read behind it is a database round trip that has
 // to be cancelable with the rest of the run. It is the shape
-// [go.5x5.cz/ptah/internal/atlasschema] uses for the same callback.
+// [ptah.run/internal/atlasschema] uses for the same callback.
 func (c *schemaCapture) replayedObserver(ctx context.Context) func(*dbschema.DatabaseConnection) error {
 	if c == nil {
 		return nil

@@ -7,9 +7,9 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemamodel"
 )
 
 // AssignDefaultForeignKeyNames returns a clone whose unnamed foreign keys have

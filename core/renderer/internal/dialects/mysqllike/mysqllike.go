@@ -9,13 +9,13 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/bufwriter"
-	"go.5x5.cz/ptah/internal/mysqlindex"
-	"go.5x5.cz/ptah/internal/mysqlroutine"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer/internal/dialects/internal/bufwriter"
+	"ptah.run/internal/mysqlindex"
+	"ptah.run/internal/mysqlroutine"
+	"ptah.run/internal/tableref"
 )
 
 // Renderer provides MySQL-like-specific SQL rendering
@@ -461,7 +461,7 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 //
 // The text is emitted verbatim. Ptah does not parse it, so there is nothing to
 // validate it against and nothing to normalize -- see
-// [go.5x5.cz/ptah/core/ast.CreateTableNode.CustomSQL].
+// [ptah.run/core/ast.CreateTableNode.CustomSQL].
 func writeCustomSQL(w *bufwriter.Writer, node *ast.CreateTableNode) {
 	if custom := strings.TrimSpace(node.CustomSQL); custom != "" {
 		w.Write(" " + custom)

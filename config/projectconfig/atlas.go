@@ -21,9 +21,9 @@ import (
 	"github.com/zclconf/go-cty/cty/convert"
 	"github.com/zclconf/go-cty/cty/function"
 
-	"go.5x5.cz/ptah/internal/atlashcl"
-	"go.5x5.cz/ptah/internal/atlasprojectpath"
-	"go.5x5.cz/ptah/internal/atlasregistry"
+	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/atlasprojectpath"
+	"ptah.run/internal/atlasregistry"
 )
 
 // AtlasLoadOptions selects Atlas project config evaluation settings.

@@ -20,9 +20,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/cmd/root"
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/internal/embedrelease"
+	"ptah.run/cmd/root"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/embedrelease"
 )
 
 // TestInferenceSignedApprovalE2E is a cutover authorized by a signature rather

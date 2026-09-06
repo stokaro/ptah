@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/internal/schemaselection"
+	"ptah.run/core/platform"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/schemaselection"
 )
 
 // protocolViolationSQLState is what PostgreSQL's wire protocol reports for a

@@ -5,10 +5,10 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/dialectlexer"
-	"go.5x5.cz/ptah/internal/lexer"
-	"go.5x5.cz/ptah/internal/sqlcompound"
+	"ptah.run/core/platform"
+	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/lexer"
+	"ptah.run/internal/sqlcompound"
 )
 
 // StripComments removes all SQL comments from the input string, scanning it as

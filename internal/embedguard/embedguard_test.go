@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedguard"
+	"ptah.run/internal/embedguard"
 )
 
 // moduleRoot is where the scan starts, from this package's directory.

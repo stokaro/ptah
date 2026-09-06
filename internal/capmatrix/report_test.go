@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/capabilityprobe"
-	"go.5x5.cz/ptah/internal/capmatrix"
+	"ptah.run/internal/capabilityprobe"
+	"ptah.run/internal/capmatrix"
 )
 
 // twoCellMatrix is a matrix small enough to reason about: two runnable lines

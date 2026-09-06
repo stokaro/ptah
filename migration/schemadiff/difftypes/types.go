@@ -14,13 +14,13 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/deporder"
-	"go.5x5.cz/ptah/internal/planner/objectlookup"
-	"go.5x5.cz/ptah/internal/schemaprep"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/deporder"
+	"ptah.run/internal/planner/objectlookup"
+	"ptah.run/internal/schemaprep"
+	"ptah.run/internal/tableref"
 )
 
 // ViewChanges is a set of views one change applies to, carrying each one's
@@ -205,7 +205,7 @@ func (a ContinuousAggregateChanges) Names() []string {
 // dropped column reads its definition out of what the REMOVAL carried. A
 // removed column is absent from the desired schema by definition, so the
 // comparison describes it from the catalog through
-// [go.5x5.cz/ptah/internal/catalogfield.Field].
+// [ptah.run/internal/catalogfield.Field].
 //
 // A removal carries the column and NOT its keys. See [TableDiff.ColumnsRemoved].
 //
@@ -284,7 +284,7 @@ func (r RoleChanges) Names() []string {
 // rather than existence (stokaro/ptah#2296).
 //
 // A reader that had only the declaration would have to guess between them, and
-// [go.5x5.cz/ptah/catalog.Function.IdentityArguments] says why guessing is
+// [ptah.run/catalog.Function.IdentityArguments] says why guessing is
 // wrong: the two differ exactly where an author wrote a name or a default.
 type RoutineChange struct {
 	schemamodel.Function
@@ -840,7 +840,7 @@ type ConstraintAdditionInfo struct {
 	// It rides along with a constraint that is being ADDED. A comment changed
 	// on a constraint that already exists is a different change, and one this
 	// comparator cannot see: no catalog reader fills
-	// [go.5x5.cz/ptah/core/schemamodel.Constraint.Comment], so the observed
+	// [ptah.run/core/schemamodel.Constraint.Comment], so the observed
 	// side carries none and there is nothing to compare against.
 	Comment string `json:"comment,omitempty"`
 	// CheckExpression is the CHECK predicate body (CHECK only).
@@ -1241,7 +1241,7 @@ type SchemaDiff struct {
 	// character set, its collation -- has no other route to the planner
 	// (stokaro/ptah#2618).
 	//
-	// It is read by [go.5x5.cz/ptah/internal/planner/schemaprecondition.Node],
+	// It is read by [ptah.run/internal/planner/schemaprecondition.Node],
 	// which is the one place that turns a needed schema name into a creation.
 	DeclaredSchemas []schemamodel.Schema `json:"-"`
 
@@ -3327,7 +3327,7 @@ type TableChanges []TableCreation
 //
 // The edges are the ones the declaration finalized -- a field's `foreign=`, a
 // relation-mode embedded field, and a table-level FOREIGN KEY constraint all
-// reach [go.5x5.cz/ptah/core/schemamodel.Database.Dependencies] before a
+// reach [ptah.run/core/schemamodel.Database.Dependencies] before a
 // creation is assembled -- so ordering reads one list per creation rather than
 // re-deriving three kinds of edge from a schema.
 //

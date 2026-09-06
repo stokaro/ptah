@@ -4,9 +4,9 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/capabilityprobe"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/capabilityprobe"
 )
 
 // Observation is what the census established about one field.

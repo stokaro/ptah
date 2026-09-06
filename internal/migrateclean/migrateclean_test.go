@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/migrateclean"
+	"ptah.run/internal/migrateclean"
 )
 
 // The expected strings below are transcribed from runs of the pinned community

@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
+	"ptah.run/core/ast"
 )
 
 // uniqueKeyTable wraps one table-body declaration in a table with two string

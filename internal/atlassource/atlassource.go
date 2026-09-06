@@ -34,17 +34,17 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemasource"
-	"go.5x5.cz/ptah/internal/atlasprojectpath"
-	"go.5x5.cz/ptah/internal/atlasregistry"
-	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/internal/devdocker"
-	"go.5x5.cz/ptah/internal/envbool"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/internal/schemafile"
+	"ptah.run/config/projectconfig"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemasource"
+	"ptah.run/internal/atlasprojectpath"
+	"ptah.run/internal/atlasregistry"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/devdocker"
+	"ptah.run/internal/envbool"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/pathguard"
+	"ptah.run/internal/schemafile"
 )
 
 // Kind classifies one desired-state source URL. The values read naturally in
@@ -115,7 +115,7 @@ type Source struct {
 	Command schemasource.Command
 	// VarValues and VarsScoped carry the variable scope an atlas.hcl
 	// `data "hcl_schema"` block puts around the files it selects. See
-	// [go.5x5.cz/ptah/internal/schemafile.Source].
+	// [ptah.run/internal/schemafile.Source].
 	VarValues  map[string]string
 	VarsScoped bool
 }
@@ -658,13 +658,13 @@ func errExternalSchemaDisabled() error {
 }
 
 // allowExternalSchema is the declaration of the variable, made once, in the
-// package that owns it. See [go.5x5.cz/ptah/internal/envbool].
+// package that owns it. See [ptah.run/internal/envbool].
 //
 // The same name reaches the native surface as the --allow-external-schema
 // flag's environment twin, which cmd/internal/cmdflags already parses under the
 // same grammar and the same error, so one name means one thing on both
 // binaries.
-// It is [go.5x5.cz/ptah/internal/envbool.Gated]: evaluating
+// It is [ptah.run/internal/envbool.Gated]: evaluating
 // `data "external_schema"` runs a repository-controlled program, which the
 // pinned community binary reaches only behind its own opt-in flag that the
 // strict command tree does not register.

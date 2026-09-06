@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/revisiontable"
-	"go.5x5.cz/ptah/migration/migrationfile"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/dbschema"
+	"ptah.run/internal/revisiontable"
+	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/migrator"
 )
 
 type ApplyOptions struct {

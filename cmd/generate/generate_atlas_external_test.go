@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/generate"
+	"ptah.run/cmd/generate"
 )
 
 // writeExternalSchemaAtlasConfig writes an atlas.hcl declaring a

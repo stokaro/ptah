@@ -9,13 +9,13 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/bufwriter"
-	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/defaultlit"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer/internal/dialects/internal/bufwriter"
+	"ptah.run/core/renderer/internal/dialects/internal/defaultlit"
+	"ptah.run/core/schemamodel"
 )
 
 // Renderer provides PostgreSQL-specific SQL rendering
@@ -736,7 +736,7 @@ func constraintHasComment(constraint *ast.ConstraintNode) bool {
 //
 // The text is emitted verbatim. Ptah does not parse it, so there is nothing to
 // validate it against and nothing to normalize -- see
-// [go.5x5.cz/ptah/core/ast.CreateTableNode.CustomSQL].
+// [ptah.run/core/ast.CreateTableNode.CustomSQL].
 func (r *Renderer) writeCustomSQL(node *ast.CreateTableNode) {
 	if custom := strings.TrimSpace(node.CustomSQL); custom != "" {
 		r.w.Write(" " + custom)

@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/migrationsnapshot"
-	"go.5x5.cz/ptah/migration/generator"
+	"ptah.run/internal/migrationsnapshot"
+	"ptah.run/migration/generator"
 )
 
 func TestGenerateCheckpointFromShadow_ReplaysHistoryIntoCumulativeSnapshot(t *testing.T) {

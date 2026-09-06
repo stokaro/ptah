@@ -45,8 +45,8 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/capabilityline"
+	"ptah.run/core/platform"
+	"ptah.run/internal/capabilityline"
 )
 
 // Capability is a single named feature flag from the curated registry below.
@@ -446,7 +446,7 @@ const (
 	// the same distinction capability.MaterializedViews draws for MySQL, where
 	// CREATE MATERIALIZED VIEW is parsed and the word discarded.
 	//
-	// What the key promises is the surface [go.5x5.cz/ptah/internal/crdbttl]
+	// What the key promises is the surface [ptah.run/internal/crdbttl]
 	// models, not every parameter the engine spells. The two whose values the
 	// server rewrites on the way in are refused there, and that refusal is
 	// part of the capability rather than a gap in it.
@@ -1880,7 +1880,7 @@ func SQLServer2022() Capabilities {
 // `{ttl='on',ttl_expiration_expression='expires_at',...}`, while PostgreSQL
 // 18.4 answers `ERROR: unrecognized parameter`. It is set here rather than on
 // the per-line presets because both measured lines answered identically to
-// every probe in [go.5x5.cz/ptah/internal/crdbttl]'s measured table
+// every probe in [ptah.run/internal/crdbttl]'s measured table
 // (stokaro/ptah#1027).
 func CockroachDB23() Capabilities {
 	return Postgres16().

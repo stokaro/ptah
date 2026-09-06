@@ -8,16 +8,16 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlashcl"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/modelast"
-	"go.5x5.cz/ptah/internal/parser"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/catalog"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/modelast"
+	"ptah.run/internal/parser"
+	"ptah.run/migration/migrationfile"
 )
 
 // PtahSumFileName is the conventional Ptah migration-directory integrity file.

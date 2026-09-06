@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/migratevalidate"
+	"ptah.run/cmd/migratevalidate"
 )
 
 // TestAtlasDirectoryError_AdaptsWhicheverNameStatCarries pins that the Atlas

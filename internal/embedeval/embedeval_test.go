@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedeval"
+	"ptah.run/internal/embedeval"
 )
 
 // corpus is two cases with graded relevance and a hard requirement each.

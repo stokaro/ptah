@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/dbschema"
 )
 
 type databaseRealmCleaner interface {

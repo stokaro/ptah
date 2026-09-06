@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
+	"ptah.run/core/ast"
 )
 
 // extendedPropertyProcedures maps an operation onto the procedure that

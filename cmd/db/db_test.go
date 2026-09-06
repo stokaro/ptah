@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/db"
+	"ptah.run/cmd/db"
 )
 
 func TestNewDBCommand_RegistersNativePaths(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlashcl"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlashcl"
 )
 
 // A schema file's `variable` and `locals` blocks bind values that var. and

@@ -6,13 +6,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/migratehash"
-	"go.5x5.cz/ptah/internal/atlasargs"
-	"go.5x5.cz/ptah/internal/atlascompatpolicy"
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/migratehash"
+	"ptah.run/internal/atlasargs"
+	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/migratesum"
+	"ptah.run/migration/migrationfile"
 )
 
 // newAtlasMigrateHashCommand returns `atlas migrate hash`. A native Atlas

@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
+	"ptah.run/catalog"
 )
 
 // compositeQuery reads the object types this schema owns that Ptah's composite

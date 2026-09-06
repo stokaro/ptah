@@ -3,9 +3,9 @@ package diffpolicy_test
 import (
 	"fmt"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/migration/diffpolicy"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/schemamodel"
+	"ptah.run/migration/diffpolicy"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // ExampleApply filters a schema diff through a policy that skips table drops.

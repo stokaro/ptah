@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
+	"ptah.run/cmd/atlas/internal/atlastest"
 )
 
 // `migrate down` reads a NATIVE Atlas migration directory and executes rollback

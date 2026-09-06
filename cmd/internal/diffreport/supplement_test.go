@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/diffreport"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/cmd/internal/diffreport"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestCategoriesOmitsASupplementList is stokaro/ptah#2476: a list that

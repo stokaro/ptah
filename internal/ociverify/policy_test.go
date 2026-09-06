@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/ociverify"
+	"ptah.run/internal/ociverify"
 )
 
 func writePolicy(c *qt.C, contents string) string {

@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/migrationversion"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/migrationversion"
+	"ptah.run/migration/migrationfile"
 )
 
 // The two bounds are different numbers for different reasons, so every row below

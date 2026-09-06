@@ -47,7 +47,7 @@ func collectDatabaseCallers(c *qt.C) []string {
 			if err != nil {
 				return err
 			}
-			if importPath != "go.5x5.cz/ptah/internal/modelast" {
+			if importPath != "ptah.run/internal/modelast" {
 				continue
 			}
 			packageName = "modelast"

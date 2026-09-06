@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlashcl"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlashcl"
 )
 
 // Fixture sources shared by more than one test, so a kind's document is written

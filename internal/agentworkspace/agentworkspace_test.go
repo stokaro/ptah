@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/agentpolicy"
-	"go.5x5.cz/ptah/internal/agentworkspace"
+	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/agentworkspace"
 )
 
 // writeTree materializes a set of slash-separated paths under root.

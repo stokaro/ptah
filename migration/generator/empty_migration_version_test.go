@@ -12,8 +12,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/generator"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/migration/generator"
+	"ptah.run/migration/migrationfile"
 )
 
 // These rows pin stokaro/ptah#938 on the verb that creates a migration file:

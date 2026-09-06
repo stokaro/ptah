@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/schemalineage"
+	"ptah.run/internal/schemalineage"
 )
 
 // writeLineageDOT renders the lineage as a Graphviz digraph.

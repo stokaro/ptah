@@ -5,8 +5,8 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemamodel"
 )
 
 // hostedDeclaration is one table-owned declaration and the two spellings it can

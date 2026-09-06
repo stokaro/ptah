@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/capmatrix"
+	"ptah.run/internal/capmatrix"
 )
 
 // TestWriteAndReadResult_HappyPath checks the file the pipeline passes between

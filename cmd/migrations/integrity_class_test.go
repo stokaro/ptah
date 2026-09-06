@@ -9,15 +9,15 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/lint"
-	"go.5x5.cz/ptah/cmd/migratebaseline"
-	"go.5x5.cz/ptah/cmd/migratecheckpoint"
-	"go.5x5.cz/ptah/cmd/migratedown"
-	"go.5x5.cz/ptah/cmd/migraterepair"
-	"go.5x5.cz/ptah/cmd/migrateup"
-	"go.5x5.cz/ptah/cmd/migrationstest"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/cmd/lint"
+	"ptah.run/cmd/migratebaseline"
+	"ptah.run/cmd/migratecheckpoint"
+	"ptah.run/cmd/migratedown"
+	"ptah.run/cmd/migraterepair"
+	"ptah.run/cmd/migrateup"
+	"ptah.run/cmd/migrationstest"
+	"ptah.run/internal/migratesum"
+	"ptah.run/migration/migrationfile"
 )
 
 // This file is the CLASS test for the integrity gate.

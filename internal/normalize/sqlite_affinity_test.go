@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/normalize"
+	"ptah.run/internal/normalize"
 )
 
 // TestSQLiteAffinity_FollowsTheEnginesOwnRules pins the five rules SQLite

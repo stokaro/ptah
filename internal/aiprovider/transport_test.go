@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/aiprovider"
+	"ptah.run/internal/aiprovider"
 )
 
 // hello is the smallest request the classification tests send.

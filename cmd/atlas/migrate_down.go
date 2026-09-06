@@ -13,23 +13,23 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/cmd/internal/migrateflags"
-	"go.5x5.cz/ptah/cmd/internal/migrationsource"
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasargs"
-	"go.5x5.cz/ptah/internal/atlascompatpolicy"
-	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
-	"go.5x5.cz/ptah/internal/atlasreport"
-	"go.5x5.cz/ptah/internal/devdocker"
-	"go.5x5.cz/ptah/internal/envbool"
-	"go.5x5.cz/ptah/internal/migrationintegrity"
-	"go.5x5.cz/ptah/internal/revisiontable"
-	"go.5x5.cz/ptah/migration/migrationfile"
-	"go.5x5.cz/ptah/migration/migrator"
-	"go.5x5.cz/ptah/migration/shadow"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/cmd/internal/migrateflags"
+	"ptah.run/cmd/internal/migrationsource"
+	"ptah.run/config/projectconfig"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasargs"
+	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/devdocker"
+	"ptah.run/internal/envbool"
+	"ptah.run/internal/migrationintegrity"
+	"ptah.run/internal/revisiontable"
+	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/migrator"
+	"ptah.run/migration/shadow"
 )
 
 // newAtlasMigrateDownCommand wraps the table-driven `atlas migrate down`
@@ -406,7 +406,7 @@ func applyAtlasMigrateDownEnvFallback(flagSet *pflag.FlagSet) error {
 		if flag.Value.Type() == "bool" {
 			// One grammar and one error for every boolean PTAH_* variable, and an
 			// explicitly empty one is a configuration error rather than a silent
-			// "unset". See [go.5x5.cz/ptah/internal/envbool] and
+			// "unset". See [ptah.run/internal/envbool] and
 			// stokaro/ptah#1334.
 			parsed, err := envbool.Parse(atlasFlagEnvName(flag.Name), value)
 			if err != nil {

@@ -22,8 +22,8 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/errdef"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemaartifact"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemaartifact"
 )
 
 // StartSchemaArtifactRegistry publishes db as a schema artifact and serves it

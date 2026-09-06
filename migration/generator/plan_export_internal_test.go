@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 
-	"go.5x5.cz/ptah/migration/safety"
+	"ptah.run/migration/safety"
 )
 
 type pendingPublicationJournalForTest struct {

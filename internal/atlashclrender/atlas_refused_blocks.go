@@ -6,10 +6,10 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/envbool"
+	"ptah.run/core/coverage"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/envbool"
 )
 
 // Top-level HCL block spellings an inspected render can emit. Only the ones a
@@ -36,7 +36,7 @@ const (
 // cli-surface tier asserts that `ptah-compat` registers exactly the flags the
 // pinned binary registers, so a flag that binary does not have would break the
 // very promise this surface exists to keep. Precedent and spelling:
-// [go.5x5.cz/ptah/internal/atlassource.AllowExternalSchemaEnvVar].
+// [ptah.run/internal/atlassource.AllowExternalSchemaEnvVar].
 //
 // The variable exists because compatibility must not delete a capability
 // (AGENTS.md, "Compatibility never removes a capability"). Ptah models
@@ -47,8 +47,8 @@ const (
 const KeepAtlasRefusedBlocksEnvVar = "PTAH_ATLAS_INSPECT_ALL_BLOCKS"
 
 // keepAtlasRefusedBlocks is the declaration of the variable, made once, in the
-// package that owns it. See [go.5x5.cz/ptah/internal/envbool].
-// It is [go.5x5.cz/ptah/internal/envbool.Gated]: emitting every block Ptah
+// package that owns it. See [ptah.run/internal/envbool].
+// It is [ptah.run/internal/envbool.Gated]: emitting every block Ptah
 // models produces a document the pinned community binary refuses, which is
 // output that binary cannot produce.
 var keepAtlasRefusedBlocks = envbool.New(KeepAtlasRefusedBlocksEnvVar, false, envbool.Gated)

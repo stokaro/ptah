@@ -3,9 +3,9 @@ package mssql
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/mysqlroutine"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/mysqlroutine"
 )
 
 // SQL Server hosts scalar and table-valued functions, and the header it needs

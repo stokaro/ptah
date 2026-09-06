@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/ast"
+	"ptah.run/core/schemamodel"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // A table whose only difference is its comment produces a statement --

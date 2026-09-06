@@ -11,7 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/cmdutil"
 )
 
 // interruptSignals are the two ways a person or a supervisor asks a CLI to

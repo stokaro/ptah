@@ -10,9 +10,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/cmd/schema"
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/cmd/schema"
+	"ptah.run/dbschema"
 )
 
 var errTestWrite = errors.New("test writer failed")

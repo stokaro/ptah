@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/identifier"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 )
 
 // mysqlProbeKeyLimit is how many keys one table may carry, so it is how many

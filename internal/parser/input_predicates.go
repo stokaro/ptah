@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/lexer"
+	"ptah.run/internal/lexer"
 )
 
 // isSQLServerGoBatchSeparatorAt reports whether a GO token is a SQL Server

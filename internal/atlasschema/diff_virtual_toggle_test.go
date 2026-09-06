@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/internal/envbool/envbooltest"
-	"go.5x5.cz/ptah/internal/sqlitevirtual"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/envbool/envbooltest"
+	"ptah.run/internal/sqlitevirtual"
 )
 
 // TestDiffResolvesTheDropToggleBeforeSelectionCanReturn covers the run that

@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasargs"
+	"ptah.run/internal/atlasargs"
 )
 
 // checkpointSchemaFlags is the repeatable-flag half of `migrate checkpoint`:

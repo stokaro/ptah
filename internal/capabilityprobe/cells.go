@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/capabilityline"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/capabilityline"
 )
 
 // Refinement records whether a probe observation can be attributed to one

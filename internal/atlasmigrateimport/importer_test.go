@@ -11,9 +11,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/atlascompat"
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/atlascompat"
+	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/migration/migrationfile"
 )
 
 func TestLoadFS_RejectsUnsupportedSourceFiles(t *testing.T) {

@@ -13,13 +13,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/internal/sqlident"
-	"go.5x5.cz/ptah/migration/generator"
-	"go.5x5.cz/ptah/migration/migrator"
-	"go.5x5.cz/ptah/migration/shadow"
+	"ptah.run/core/platform"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/sqlident"
+	"ptah.run/migration/generator"
+	"ptah.run/migration/migrator"
+	"ptah.run/migration/shadow"
 )
 
 func TestVerifyBaseline_ReplayErrorWithRealPostgres(t *testing.T) {

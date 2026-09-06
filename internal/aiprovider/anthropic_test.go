@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/aiprovider"
+	"ptah.run/internal/aiprovider"
 )
 
 // anthropicConfig is the configuration every Messages-API test uses.

@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"go.5x5.cz/ptah/internal/capabilityprobe"
-	"go.5x5.cz/ptah/internal/integrationharness"
+	"ptah.run/internal/capabilityprobe"
+	"ptah.run/internal/integrationharness"
 )
 
 // RunProbe measures one matrix cell and returns its result.

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"text/template"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/envbool"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/envbool"
 )
 
 // SchemaDiffTemplateHelpersEnvVar opens the shared `--format` helper set on

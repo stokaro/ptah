@@ -13,11 +13,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/jackc/pgx/v5"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/catalog"
+	"ptah.run/core/renderer"
+	"ptah.run/dbschema"
+	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/dbtarget"
 )
 
 type observedIncludeIndex struct {

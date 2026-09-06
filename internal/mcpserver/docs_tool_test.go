@@ -6,10 +6,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"go.5x5.cz/ptah/internal/agentapi"
-	"go.5x5.cz/ptah/internal/agentgate"
-	"go.5x5.cz/ptah/internal/agentpolicy"
-	"go.5x5.cz/ptah/internal/mcpserver"
+	"ptah.run/internal/agentapi"
+	"ptah.run/internal/agentgate"
+	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/mcpserver"
 )
 
 // search_docs answers a question about Ptah from Ptah, over the served

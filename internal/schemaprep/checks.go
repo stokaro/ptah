@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/tableref"
 )
 
 // TableCheckConstraints returns the model constraints declared by a table's

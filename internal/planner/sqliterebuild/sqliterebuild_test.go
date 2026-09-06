@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/planner/sqliterebuild"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/internal/planner/sqliterebuild"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestNeedsTableRebuildReadsEveryChangeField pins the predicate one recorded

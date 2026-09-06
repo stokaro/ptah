@@ -18,7 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/microsoft/go-mssqldb/msdsn"
 
-	"go.5x5.cz/ptah/core/platform"
+	"ptah.run/core/platform"
 )
 
 var defaultPorts = map[string]string{
@@ -451,7 +451,7 @@ func sqliteDatabasePath(parsed *url.URL) (string, bool, error) {
 //
 // `maria` is the whole set today. It is a measured community spelling --
 // `docker://maria/11/dev` and `docker://mariadb/11/dev` both resolve to that
-// binary's MariaDB image -- and [go.5x5.cz/ptah/internal/devdocker] starts a
+// binary's MariaDB image -- and [ptah.run/internal/devdocker] starts a
 // container for either. [platform.NormalizeDialect] knows only `mariadb`,
 // because `maria` is not a dialect anyone writes as a URL scheme, so without
 // this the dialect preflight refused `docker://maria/11/dev` with `unsupported

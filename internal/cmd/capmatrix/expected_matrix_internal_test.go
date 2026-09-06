@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/capabilityprobe"
+	"ptah.run/internal/capabilityprobe"
 )
 
 // TestExpectedMatrix_APartialRequestStillValidates is the defect.

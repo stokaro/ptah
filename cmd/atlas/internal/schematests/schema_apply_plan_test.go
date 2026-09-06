@@ -11,9 +11,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"ptah.run/cmd/atlas"
+	"ptah.run/cmd/atlas/internal/atlastest"
+	"ptah.run/cmd/internal/exitcode"
 )
 
 // planFileFixture computes and saves a plan for dbPath -> desired schema SQL

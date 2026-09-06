@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/migrate"
-	"go.5x5.cz/ptah/migration/safety"
+	"ptah.run/cmd/migrate"
+	"ptah.run/migration/safety"
 )
 
 func TestMigratePlanTextOutputContainsSQLNotASTPointers(t *testing.T) {

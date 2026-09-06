@@ -10,8 +10,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/migration/dbtest"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/migration/dbtest"
 )
 
 // TestLoadCasesOfKind_TheConstructsRunAgainstPostgreSQL is the integration

@@ -14,8 +14,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/migration/safety"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/migration/safety"
 )
 
 // oraclePlanPath is the real `.plan.hcl` produced by Atlas for the

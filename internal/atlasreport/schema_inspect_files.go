@@ -11,8 +11,8 @@ import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/sqlutil"
+	"ptah.run/core/coverage"
+	"ptah.run/core/sqlutil"
 )
 
 // Split modes mirror the documented Atlas schema inspect split strategies:
@@ -94,7 +94,7 @@ func atlasSchemaInspectSplit(defaultSchema string, args ...any) (schemaInspectAr
 }
 
 // Comment spellings the split archive writes its coverage header with. HCL
-// accepts `//`, SQL accepts `--`, and [go.5x5.cz/ptah/core/coverage] reads both.
+// accepts `//`, SQL accepts `--`, and [ptah.run/core/coverage] reads both.
 const (
 	hclCommentPrefix = "//"
 	sqlCommentPrefix = "--"
@@ -108,7 +108,7 @@ const (
 // is handed one of them by path. `schema apply --to file://out/public.hcl`
 // reads that file and nothing else, so a record carried only by a sibling is a
 // record that is not there. Where several members ARE loaded together,
-// [go.5x5.cz/ptah/internal/schemafile.LoadAll] unions their records, so
+// [ptah.run/internal/schemafile.LoadAll] unions their records, so
 // repeating it costs nothing.
 //
 // Without this the split path recreates exactly the round trip

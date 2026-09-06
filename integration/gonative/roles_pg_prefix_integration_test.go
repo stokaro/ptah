@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/dbschema/postgres"
+	"ptah.run/internal/dbschema/postgres"
 )
 
 // pgPrefixRole is a role name PostgreSQL does NOT reserve and the reader's

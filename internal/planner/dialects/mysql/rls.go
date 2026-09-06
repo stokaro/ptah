@@ -1,13 +1,13 @@
 package mysql
 
 import (
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/modelast"
-	"go.5x5.cz/ptah/internal/mssqlpolicy"
-	"go.5x5.cz/ptah/internal/schemaprep"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/modelast"
+	"ptah.run/internal/mssqlpolicy"
+	"ptah.run/internal/schemaprep"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // planRLS emits real row-level-security DDL for a target in this family that

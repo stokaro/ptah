@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/catalog"
+	"ptah.run/core/coverage"
+	"ptah.run/core/schemamodel"
+	"ptah.run/migration/schemadiff"
 )
 
 // Withholding an addition is defensible. Withholding it without saying why is

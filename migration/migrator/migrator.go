@@ -14,12 +14,12 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/sqliterebuild"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/sqlutil"
+	"ptah.run/dbschema"
+	"ptah.run/internal/sqliterebuild"
+	"ptah.run/migration/migrationfile"
 )
 
 // MigrationStatus represents the current state of migrations: what the

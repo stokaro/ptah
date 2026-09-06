@@ -9,9 +9,9 @@ import (
 	"regexp"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/core/platform"
+	"ptah.run/dbschema"
+	"ptah.run/migration/migrator"
 )
 
 // LoadMigrations reads the migration history that a replay applies to a

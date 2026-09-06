@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedcutover"
+	"ptah.run/internal/embedcutover"
 )
 
 // The vectors live in the target column, so a retirement that keeps the column

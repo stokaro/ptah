@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/schemamodel"
 )
 
 // enums renders one block per enum type, sorted by (schema, name).

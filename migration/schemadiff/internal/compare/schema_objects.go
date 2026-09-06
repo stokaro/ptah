@@ -7,20 +7,20 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/internal/chrefresh"
-	"go.5x5.cz/ptah/internal/mysqlroutine"
-	"go.5x5.cz/ptah/internal/objectidentity"
-	"go.5x5.cz/ptah/internal/oracleroutine"
-	"go.5x5.cz/ptah/internal/routinesetting"
-	"go.5x5.cz/ptah/internal/tableref"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/catalog"
+	"ptah.run/core/ast"
+	"ptah.run/core/coverage"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemamodel"
+	"ptah.run/core/sqlutil"
+	"ptah.run/internal/chrefresh"
+	"ptah.run/internal/mysqlroutine"
+	"ptah.run/internal/objectidentity"
+	"ptah.run/internal/oracleroutine"
+	"ptah.run/internal/routinesetting"
+	"ptah.run/internal/tableref"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Functions performs PostgreSQL function comparison between generated and database schemas.
@@ -914,7 +914,7 @@ func MaterializedViewDefinitionsWithDialect(
 // read back, and returns the change to report or "" when they agree.
 //
 // The declaration is canonicalized first, and that is the whole reason
-// [go.5x5.cz/ptah/internal/chrefresh] exists: the server rewrites what it
+// [ptah.run/internal/chrefresh] exists: the server rewrites what it
 // stores, so `EVERY 60 MINUTE` reads back as `EVERY 1 HOUR`. Comparing the two
 // as written would report a change on every run and plan a drop and a create
 // for it -- on an object whose drop takes every row it accumulated

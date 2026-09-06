@@ -1,11 +1,11 @@
 package compare
 
 import (
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemaprep"
-	"go.5x5.cz/ptah/migration/internal/generatedschema"
+	"ptah.run/catalog"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemaprep"
+	"ptah.run/migration/internal/generatedschema"
 )
 
 // synthesizeFieldLevelCheckConstraints turns each field-level `check=`

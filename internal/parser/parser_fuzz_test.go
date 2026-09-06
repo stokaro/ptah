@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"go.5x5.cz/ptah/internal/parser"
+	"ptah.run/internal/parser"
 )
 
 func FuzzParseSQL(f *testing.F) {

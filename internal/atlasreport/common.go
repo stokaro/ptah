@@ -5,7 +5,7 @@ import (
 	"path"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/atlasurl"
+	"ptah.run/internal/atlasurl"
 )
 
 type atlasEnv struct {

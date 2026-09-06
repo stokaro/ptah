@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/agentaudit"
+	"ptah.run/internal/agentaudit"
 )
 
 // The mode assertion lives in its own file because it is real on one platform

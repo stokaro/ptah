@@ -53,8 +53,8 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
 )
 
 // reservedRoleNames are principals ClickHouse ships or reserves. Declaring one
@@ -208,7 +208,7 @@ func grantProblems(roles []schemamodel.Role, grants []schemamodel.Grant, default
 // The second is why this is refused offline rather than left to the server. A
 // declaration that names its own roles has neither outcome available: the role
 // is created before the grants are issued, in the same plan, by
-// [go.5x5.cz/ptah/internal/planner/dialects/clickhouse].
+// [ptah.run/internal/planner/dialects/clickhouse].
 //
 // One shape this cannot catch is a declared role whose name is ALSO a live
 // ClickHouse user, since resolution still prefers the user. Detecting that

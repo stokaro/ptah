@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedrelease"
+	"ptah.run/internal/embedrelease"
 )
 
 // at is a fixed instant, so a record says what a test means.
@@ -287,8 +287,8 @@ func TestNewVerificationRecord_AnnotatesTheVerdict(t *testing.T) {
 			record, err := embedrelease.NewVerificationRecord(verification)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(record.Annotations["cz.5x5.ptah.inference.passed"], qt.Equals, test.want)
-			c.Assert(record.Annotations["cz.5x5.ptah.inference.record"], qt.Equals, verification.Digest())
+			c.Assert(record.Annotations["run.ptah.inference.passed"], qt.Equals, test.want)
+			c.Assert(record.Annotations["run.ptah.inference.record"], qt.Equals, verification.Digest())
 			c.Assert(record.ArtifactType, qt.Equals, embedrelease.VerificationArtifactType)
 		})
 	}
@@ -483,6 +483,6 @@ func TestNewRetirementRecord_AnnotatesWhatWentWithIt(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(record.ArtifactType, qt.Equals, embedrelease.RetirementArtifactType)
 	c.Assert(record.FileName, qt.Equals, embedrelease.RetirementFileName)
-	c.Assert(record.Annotations["cz.5x5.ptah.inference.rows"], qt.Equals, "481204")
-	c.Assert(record.Annotations["cz.5x5.ptah.inference.generation"], qt.Equals, "gen-1")
+	c.Assert(record.Annotations["run.ptah.inference.rows"], qt.Equals, "481204")
+	c.Assert(record.Annotations["run.ptah.inference.generation"], qt.Equals, "gen-1")
 }

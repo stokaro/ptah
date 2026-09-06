@@ -26,10 +26,10 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/internal/systemschema"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/systemschema"
 )
 
 // searchPathParam is the PostgreSQL-family query parameter that restricts a

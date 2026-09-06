@@ -8,17 +8,17 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/devdocker"
-	"go.5x5.cz/ptah/internal/devlock"
-	"go.5x5.cz/ptah/migration/migrator"
-	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/devdocker"
+	"ptah.run/internal/devlock"
+	"ptah.run/migration/migrator"
+	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff"
 )
 
 // SimulationError reports that the generated apply plan failed to rehearse on

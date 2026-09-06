@@ -18,9 +18,9 @@ var purePaths = []struct {
 	name string
 	pkg  string
 }{
-	{name: "goschema parses the struct tags", pkg: "go.5x5.cz/ptah/core/goschema"},
-	{name: "renderer writes the DDL", pkg: "go.5x5.cz/ptah/core/renderer"},
-	{name: "planner orders it", pkg: "go.5x5.cz/ptah/migration/planner"},
+	{name: "goschema parses the struct tags", pkg: "ptah.run/core/goschema"},
+	{name: "renderer writes the DDL", pkg: "ptah.run/core/renderer"},
+	{name: "planner orders it", pkg: "ptah.run/migration/planner"},
 }
 
 // driverModules are the database drivers this module requires. Every one of
@@ -47,7 +47,7 @@ var driverModules = []string{
 // `core/renderer` reaches every embedder who renders SQL. If the new dependency
 // belongs to the connection layer, the import that pulled it in is the defect.
 var permittedModules = []string{
-	"go.5x5.cz/ptah",
+	"ptah.run",
 	"go.yaml.in/yaml/v3",
 	"golang.org/x/sys",
 }

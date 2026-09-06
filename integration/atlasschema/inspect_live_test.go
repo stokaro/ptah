@@ -15,9 +15,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/dbtarget"
 )
 
 // These cases pin the half of `schema inspect` a single-namespace fixture

@@ -8,14 +8,14 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/internal/lexer"
-	"go.5x5.cz/ptah/internal/parser"
-	"go.5x5.cz/ptah/internal/servertarget"
-	"go.5x5.cz/ptah/migration/risk"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemamodel"
+	"ptah.run/core/sqlutil"
+	"ptah.run/internal/lexer"
+	"ptah.run/internal/parser"
+	"ptah.run/internal/servertarget"
+	"ptah.run/migration/risk"
 )
 
 const (

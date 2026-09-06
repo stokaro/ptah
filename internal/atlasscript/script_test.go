@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasscript"
+	"ptah.run/internal/atlasscript"
 )
 
 // parse reads one document and requires it to be accepted.

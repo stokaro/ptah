@@ -14,8 +14,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/microsoft/go-mssqldb" // registers the SQL Server driver for database/sql
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/sqlident"
+	"ptah.run/core/platform"
+	"ptah.run/internal/sqlident"
 )
 
 func openLiveSQLServerRealmDatabase(t *testing.T) *sql.DB {

@@ -26,9 +26,9 @@ import (
 	"sync"
 	"time"
 
-	"go.5x5.cz/ptah/cmd/internal/schemaops"
-	"go.5x5.cz/ptah/internal/schemadoc"
-	"go.5x5.cz/ptah/migration/safety"
+	"ptah.run/cmd/internal/schemaops"
+	"ptah.run/internal/schemadoc"
+	"ptah.run/migration/safety"
 )
 
 // Options configures the served view.

@@ -11,10 +11,10 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/examples/migrator"
-	"go.5x5.cz/ptah/migration/migrationfile"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/dbschema"
+	"ptah.run/examples/migrator"
+	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/migrator"
 )
 
 // exampleSQLiteConnection opens a real SQLite database in a fresh temporary

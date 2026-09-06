@@ -9,7 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/internal/dbschema/postgres"
+	"ptah.run/internal/dbschema/postgres"
 )
 
 // TestPostgreSQLReader_ExtensionFunctionFiltering_Integration tests that extension-owned functions

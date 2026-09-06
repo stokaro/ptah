@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/atlashclrender"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"ptah.run/catalog"
+	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/convert/dbschematogo"
 )
 
 // TestPrefixIndexReachesTheDocument pins the path a prefix length takes from the

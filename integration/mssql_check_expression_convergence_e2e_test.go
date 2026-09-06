@@ -13,11 +13,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/microsoft/go-mssqldb" // registers the SQL Server driver for database/sql
 
-	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/config"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/migration/schemadiff"
 )
 
 // TestSQLServerCheckExpressionConvergesE2E is the SQL Server half of

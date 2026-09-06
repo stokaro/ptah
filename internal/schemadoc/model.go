@@ -17,9 +17,9 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemaexport"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemaexport"
+	"ptah.run/internal/tableref"
 )
 
 // document is everything the page renders, resolved once so the templates and

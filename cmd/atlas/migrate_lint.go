@@ -7,17 +7,17 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/atlasargs"
-	"go.5x5.cz/ptah/internal/atlascompatpolicy"
-	"go.5x5.cz/ptah/internal/atlasreport"
-	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/internal/envbool"
-	"go.5x5.cz/ptah/internal/migrationlintreport"
-	migrationlint "go.5x5.cz/ptah/migration/lint"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/atlasargs"
+	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/envbool"
+	"ptah.run/internal/migrationlintreport"
+	migrationlint "ptah.run/migration/lint"
 )
 
 const atlasMigrateLintFindingError = "lint findings exceed the failure threshold"
@@ -37,7 +37,7 @@ const atlasMigrateLintFindingError = "lint findings exceed the failure threshold
 // on this same surface rather than only through native `ptah migrations lint`.
 // It is an environment variable rather than a flag because the conformance
 // cli-surface tier asserts flag parity with that binary; precedent and spelling:
-// [go.5x5.cz/ptah/internal/atlashclrender.KeepAtlasRefusedBlocksEnvVar].
+// [ptah.run/internal/atlashclrender.KeepAtlasRefusedBlocksEnvVar].
 const atlasLintWithoutDevURLEnvVar = "PTAH_ATLAS_LINT_WITHOUT_DEV_URL"
 
 type atlasMigrateLintOptions struct {
@@ -411,12 +411,12 @@ func validateAtlasMigrateLintOptions(opts atlasMigrateLintOptions) error {
 // `ptah`. It is an environment variable and not a flag because the conformance
 // cli-surface tier asserts that ptah-compat registers exactly the flags the
 // pinned binary registers. Precedent and spelling:
-// [go.5x5.cz/ptah/internal/atlashclrender.KeepAtlasRefusedBlocksEnvVar].
+// [ptah.run/internal/atlashclrender.KeepAtlasRefusedBlocksEnvVar].
 const atlasMigrateLintAllVersionsEnvVar = "PTAH_ATLAS_LINT_ALL_VERSIONS"
 
 // atlasLintAllVersions is the declaration of the variable, made once, on the
-// verb that owns it. See [go.5x5.cz/ptah/internal/envbool].
-// It is [go.5x5.cz/ptah/internal/envbool.Gated]: linting a directory the pinned
+// verb that owns it. See [ptah.run/internal/envbool].
+// It is [ptah.run/internal/envbool.Gated]: linting a directory the pinned
 // binary refuses to lint at all is behavior that binary does not have.
 var atlasLintAllVersions = envbool.New(atlasMigrateLintAllVersionsEnvVar, false, envbool.Gated)
 
@@ -528,8 +528,8 @@ func requireAtlasMigrateLintDevURL(cmd *cobra.Command, devURL string) error {
 }
 
 // atlasLintWithoutDevURL is the declaration of the variable, made once, on the
-// verb that owns it. See [go.5x5.cz/ptah/internal/envbool].
-// It is [go.5x5.cz/ptah/internal/envbool.Gated]: the pinned binary marks
+// verb that owns it. See [ptah.run/internal/envbool].
+// It is [ptah.run/internal/envbool.Gated]: the pinned binary marks
 // `--dev-url` required and exits 1 without it, so running anyway is a
 // capability it does not have.
 var atlasLintWithoutDevURL = envbool.New(atlasLintWithoutDevURLEnvVar, false, envbool.Gated)

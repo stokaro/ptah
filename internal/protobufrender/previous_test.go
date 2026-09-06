@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/protobufrender"
+	"ptah.run/internal/protobufrender"
 )
 
 // pristine is a valid previous export for the single-column "things" table,

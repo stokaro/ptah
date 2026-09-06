@@ -7,12 +7,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
-	"go.5x5.cz/ptah/internal/atlasreport"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/migrationsnapshot"
-	migrationlint "go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/migrationsnapshot"
+	migrationlint "ptah.run/migration/lint"
+	"ptah.run/migration/migrationfile"
 )
 
 func TestWriteMigrateLintFormat_CustomTemplate(t *testing.T) {

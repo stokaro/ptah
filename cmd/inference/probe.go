@@ -9,9 +9,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/internal/embedprovider"
-	"go.5x5.cz/ptah/internal/embedspec"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/internal/embedprovider"
+	"ptah.run/internal/embedspec"
 )
 
 // absentModel is a model identifier no endpoint should recognize.

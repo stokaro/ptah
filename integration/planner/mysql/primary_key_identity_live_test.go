@@ -14,11 +14,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/internal/sqlident"
-	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/sqlident"
+	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // liveMySQLAdminURLForPrimaryKeyIdentity returns the server-administration URL.

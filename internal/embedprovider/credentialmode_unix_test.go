@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedprovider"
+	"ptah.run/internal/embedprovider"
 )
 
 // TestCredentialRef_AFileReadableByOthersIsRefused is the check that stops Ptah

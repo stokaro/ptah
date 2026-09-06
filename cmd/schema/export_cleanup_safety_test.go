@@ -10,8 +10,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/schema"
-	"go.5x5.cz/ptah/internal/goannotationcleanup"
+	"ptah.run/cmd/schema"
+	"ptah.run/internal/goannotationcleanup"
 )
 
 // cliSecret is the credential planted in the compiled-command tests. Assertions

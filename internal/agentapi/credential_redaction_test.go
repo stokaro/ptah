@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/agentapi"
-	"go.5x5.cz/ptah/internal/agentpolicy"
-	"go.5x5.cz/ptah/internal/agenttarget"
+	"ptah.run/internal/agentapi"
+	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/agenttarget"
 )
 
 // agentProbePassword is the secret the URLs below carry. It is a word that

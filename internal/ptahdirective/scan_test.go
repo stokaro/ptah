@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/lexer"
-	"go.5x5.cz/ptah/internal/ptahdirective"
+	"ptah.run/internal/lexer"
+	"ptah.run/internal/ptahdirective"
 )
 
 func TestHasMarkerDistinguishesDirectiveCommentsFromSQLLookalikes(t *testing.T) {

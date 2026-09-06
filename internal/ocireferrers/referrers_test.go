@@ -8,8 +8,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"go.5x5.cz/ptah/internal/ociartifact"
-	"go.5x5.cz/ptah/internal/ocireferrers"
+	"ptah.run/internal/ociartifact"
+	"ptah.run/internal/ocireferrers"
 )
 
 func TestArtifactType_HappyPath(t *testing.T) {

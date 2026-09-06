@@ -23,7 +23,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/pathguard"
+	"ptah.run/internal/pathguard"
 )
 
 // File is one planned output file. Path is slash-separated and relative to

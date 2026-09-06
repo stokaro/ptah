@@ -11,8 +11,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"oras.land/oras-go/v2/content/memory"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemaartifact"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemaartifact"
 )
 
 func TestPushToPullFrom_RoundTrip(t *testing.T) {

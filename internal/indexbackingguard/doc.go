@@ -3,12 +3,12 @@
 //
 // Whether a reported index is the physical backing of a constraint -- created
 // and dropped through that constraint rather than on its own -- is asked by two
-// trees for two different purposes. [go.5x5.cz/ptah/migration/schemadiff] asks
+// trees for two different purposes. [ptah.run/migration/schemadiff] asks
 // it to decide which reported index a comparison must ignore.
-// [go.5x5.cz/ptah/internal/convert/dbschematogo] asks it to decide which of the
+// [ptah.run/internal/convert/dbschematogo] asks it to decide which of the
 // two representations describes the object. Both uses are legitimate and both
 // stay where they are; what must not be duplicated is the EVIDENCE, and
-// [go.5x5.cz/ptah/internal/indexbacking] is where it now lives.
+// [ptah.run/internal/indexbacking] is where it now lives.
 //
 // It was duplicated, and the two copies had drifted. The comparator decided per
 // dialect and from the index's own structure; the converter decided from name

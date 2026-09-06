@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/internal/migratesum"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/internal/migratesum"
 )
 
 const refusalDigest = "sha256:" +

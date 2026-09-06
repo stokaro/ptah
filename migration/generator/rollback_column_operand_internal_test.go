@@ -9,11 +9,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemamodel"
+	"ptah.run/migration/schemadiff"
 )
 
 // TestGenerateDownMigrationSQL_RestoresTheColumnThePriorDatabaseHeld is the

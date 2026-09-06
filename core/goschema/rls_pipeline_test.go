@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
 )
 
 // writeTestFile writes a parseable Go source file into a directory this test

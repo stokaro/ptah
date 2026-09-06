@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedcatchup"
+	"ptah.run/internal/embedcatchup"
 )
 
 // now is a fixed instant.

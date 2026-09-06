@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"go.5x5.cz/ptah/internal/fsdurable"
+	"ptah.run/internal/fsdurable"
 )
 
 // writeAtlasPlanDocument stages a complete plan beside its destination before

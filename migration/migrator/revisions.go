@@ -16,11 +16,11 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasretry"
-	"go.5x5.cz/ptah/internal/revisiontable"
+	"ptah.run/core/platform"
+	"ptah.run/core/sqlutil"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasretry"
+	"ptah.run/internal/revisiontable"
 )
 
 const (

@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/dbschema"
 )
 
 // newRegionsConn opens an in-memory SQLite database, creates a "regions" table

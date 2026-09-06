@@ -46,8 +46,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/go-sql-driver/mysql" // registers the MySQL driver, which both engines here speak, for database/sql
 
-	cmdschema "go.5x5.cz/ptah/cmd/schema"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	cmdschema "ptah.run/cmd/schema"
+	"ptah.run/internal/dbtarget"
 )
 
 // elementOrderParent is the table the foreign key points at.

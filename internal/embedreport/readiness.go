@@ -8,14 +8,14 @@ import (
 	"strconv"
 	"time"
 
-	"go.5x5.cz/ptah/internal/embedcatchup"
-	"go.5x5.cz/ptah/internal/embedcutover"
-	"go.5x5.cz/ptah/internal/embedgen"
-	"go.5x5.cz/ptah/internal/embedpg"
-	"go.5x5.cz/ptah/internal/embedrelease"
-	"go.5x5.cz/ptah/internal/embedrun"
-	"go.5x5.cz/ptah/internal/embedspec"
-	"go.5x5.cz/ptah/internal/embedverify"
+	"ptah.run/internal/embedcatchup"
+	"ptah.run/internal/embedcutover"
+	"ptah.run/internal/embedgen"
+	"ptah.run/internal/embedpg"
+	"ptah.run/internal/embedrelease"
+	"ptah.run/internal/embedrun"
+	"ptah.run/internal/embedspec"
+	"ptah.run/internal/embedverify"
 )
 
 // Readiness is what is true of a generation now: whether the deterministic

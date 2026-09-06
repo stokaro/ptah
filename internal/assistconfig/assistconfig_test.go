@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/assistconfig"
+	"ptah.run/internal/assistconfig"
 )
 
 // writeConfig puts a configuration file in a temporary directory and returns

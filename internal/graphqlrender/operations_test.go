@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/graphqlrender"
+	"ptah.run/internal/graphqlrender"
 )
 
 func TestParseOperations_HappyPath(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
+	"ptah.run/catalog"
 )
 
 func number(value int64) sql.NullInt64 { return sql.NullInt64{Int64: value, Valid: true} }

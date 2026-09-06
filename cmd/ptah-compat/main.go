@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"os"
 
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/cmd/internal/cliobs"
-	"go.5x5.cz/ptah/cmd/root"
-	"go.5x5.cz/ptah/internal/atlascompatpolicy"
-	"go.5x5.cz/ptah/internal/exeext"
+	"ptah.run/cmd/atlas"
+	"ptah.run/cmd/internal/cliobs"
+	"ptah.run/cmd/root"
+	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/exeext"
 )
 
 func main() {

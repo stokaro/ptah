@@ -15,7 +15,7 @@ import (
 	"oras.land/oras-go/v2/registry/remote/credentials"
 	"oras.land/oras-go/v2/registry/remote/retry"
 
-	"go.5x5.cz/ptah/internal/ocicredentials"
+	"ptah.run/internal/ocicredentials"
 )
 
 const (

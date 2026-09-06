@@ -23,7 +23,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/dbtest"
+	"ptah.run/migration/dbtest"
 )
 
 // TestRunTest_AnAuthorizedExternalStepRuns is the control on the refusal.

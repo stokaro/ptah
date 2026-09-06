@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasscript"
+	"ptah.run/internal/atlasscript"
 )
 
 // countUsers is the state assertion every rollback test needs: the table, read

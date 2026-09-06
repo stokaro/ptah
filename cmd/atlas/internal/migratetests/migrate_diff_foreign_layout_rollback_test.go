@@ -10,11 +10,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasurl"
+	"ptah.run/catalog"
+	"ptah.run/cmd/atlas/internal/atlastest"
+	"ptah.run/core/sqlutil"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasurl"
 )
 
 // This file is the DROP half of stokaro/ptah#1013's coverage. Every other

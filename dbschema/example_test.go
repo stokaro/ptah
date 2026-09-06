@@ -9,7 +9,7 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/dbschema"
 )
 
 // ExampleConnectToDatabase is the loop every embedder starts with: open a

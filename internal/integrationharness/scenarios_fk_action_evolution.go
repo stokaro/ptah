@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/generator"
+	"ptah.run/dbschema"
+	"ptah.run/migration/generator"
 )
 
 // testDynamicFKActionEvolution is the live versioned-fixture coverage for

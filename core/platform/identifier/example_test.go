@@ -3,7 +3,7 @@ package identifier_test
 import (
 	"fmt"
 
-	"go.5x5.cz/ptah/core/platform/identifier"
+	"ptah.run/core/platform/identifier"
 )
 
 // ExampleForDialect contrasts two dialects' offline rules: SQLite folds ASCII

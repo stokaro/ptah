@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/mssqlpolicy"
+	"ptah.run/internal/mssqlpolicy"
 )
 
 // TestUnrenderableFor_AcceptsEveryClauseTSQLCanCarry pins the expressible side.

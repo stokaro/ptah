@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemafile"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemafile"
 )
 
 // writeSchemaDir materializes a directory fixture from a name -> contents map.

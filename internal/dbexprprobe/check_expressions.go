@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/config"
+	"ptah.run/core/platform"
+	"ptah.run/dbschema"
 )
 
 // CheckProbeColumn is one column the probe table needs so a declared CHECK can

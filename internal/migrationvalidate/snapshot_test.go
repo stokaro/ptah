@@ -9,9 +9,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/migrationvalidate"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/migrationvalidate"
+	"ptah.run/migration/migrationfile"
 )
 
 // This file covers [migrationvalidate.Options.FS]: validation of a migration

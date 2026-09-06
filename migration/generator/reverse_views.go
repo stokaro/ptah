@@ -6,10 +6,10 @@ package generator
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/planner/objectlookup"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/planner/objectlookup"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // reverseHypertableDiffs swaps the two sides of each partitioning change, so a

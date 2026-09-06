@@ -22,7 +22,7 @@ import (
 // a typo'd attribute name does nothing and looks fine. Nothing about the
 // parse result depends on whether a caller reports these, so drop-in fidelity
 // is unaffected either way. This mirrors what the atlas.hcl parser records in
-// [go.5x5.cz/ptah/config/projectconfig.Config.IgnoredConstructs], so both HCL
+// [ptah.run/config/projectconfig.Config.IgnoredConstructs], so both HCL
 // layers make the same choice.
 type IgnoredName struct {
 	// Name is the block type or attribute name as written.

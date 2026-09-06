@@ -8,13 +8,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/migratedown"
-	"go.5x5.cz/ptah/cmd/migratels"
-	"go.5x5.cz/ptah/cmd/migrateshow"
-	"go.5x5.cz/ptah/cmd/migratestatus"
-	"go.5x5.cz/ptah/cmd/migrateup"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/cmd/migratedown"
+	"ptah.run/cmd/migratels"
+	"ptah.run/cmd/migrateshow"
+	"ptah.run/cmd/migratestatus"
+	"ptah.run/cmd/migrateup"
+	"ptah.run/internal/migratesum"
+	"ptah.run/migration/migrationfile"
 )
 
 // This file is the CLASS test for --verify-sum, and it exists to answer one

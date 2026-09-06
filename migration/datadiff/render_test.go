@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/migration/datadiff"
+	"ptah.run/core/sqlutil"
+	"ptah.run/migration/datadiff"
 )
 
 // TestRender_SplitterRoundTrip proves the renderer and ptah's own dialect-aware

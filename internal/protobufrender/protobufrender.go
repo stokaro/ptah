@@ -23,8 +23,8 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemaexport"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemaexport"
 )
 
 // RemovalPolicy controls what happens when a whole message or enum disappears

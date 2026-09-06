@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform/capability"
+	"ptah.run/core/platform/capability"
 )
 
 // WritePresetMarkdown prints the capability-by-preset table docs/capabilities.md

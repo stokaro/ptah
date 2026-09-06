@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
+	"ptah.run/cmd/atlas/internal/atlastest"
 )
 
 // `migrate down`'s --skip-checks was explicit-only until stokaro/ptah#1621: it

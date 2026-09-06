@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/viz"
+	"ptah.run/cmd/viz"
 )
 
 func TestDOTParsesWithGraphviz(t *testing.T) {

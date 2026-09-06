@@ -9,16 +9,16 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/internal/embedcatchup"
-	"go.5x5.cz/ptah/internal/embedcutover"
-	"go.5x5.cz/ptah/internal/embeddigest"
-	"go.5x5.cz/ptah/internal/embedgen"
-	"go.5x5.cz/ptah/internal/embedpg"
-	"go.5x5.cz/ptah/internal/embedrelease"
-	"go.5x5.cz/ptah/internal/embedreport"
-	"go.5x5.cz/ptah/internal/embedrun"
-	"go.5x5.cz/ptah/internal/embedstore"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/internal/embedcatchup"
+	"ptah.run/internal/embedcutover"
+	"ptah.run/internal/embeddigest"
+	"ptah.run/internal/embedgen"
+	"ptah.run/internal/embedpg"
+	"ptah.run/internal/embedrelease"
+	"ptah.run/internal/embedreport"
+	"ptah.run/internal/embedrun"
+	"ptah.run/internal/embedstore"
 )
 
 // newPrepareCommand returns "ptah inference prepare".

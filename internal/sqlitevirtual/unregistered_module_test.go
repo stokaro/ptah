@@ -8,13 +8,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/envbool/envbooltest"
-	"go.5x5.cz/ptah/internal/sqlitevirtual"
-	"go.5x5.cz/ptah/migration/diffpolicy"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/catalog"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/envbool/envbooltest"
+	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/migration/diffpolicy"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestValidateComparisonRefusesAnUnregisteredModule is the guard on the second
@@ -1070,7 +1070,7 @@ func TestValidatePlannedChangesRefusesAChangeItCannotVouchFor(t *testing.T) {
 // file is planned from the reverse of the forward diff, and reversal turns a
 // change SQLite performs in place into one it does not: `reverseTableDiffs`
 // swaps ColumnsAdded into ColumnsRemoved, and
-// [go.5x5.cz/ptah/internal/planner/sqliterebuild.NeedsTableRebuild] reports a
+// [ptah.run/internal/planner/sqliterebuild.NeedsTableRebuild] reports a
 // rebuild for that -- drop, recreate, copy. So the add-column exemption
 // TestValidatePlannedChangesRefusesAChangeItCannotVouchFor pins, which is right
 // about the forward statement, said nothing about the file generated beside it.

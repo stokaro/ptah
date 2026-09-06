@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/atlasfilter"
-	"go.5x5.cz/ptah/internal/schemaclean"
+	"ptah.run/internal/atlasfilter"
+	"ptah.run/internal/schemaclean"
 )
 
 // scopeAtlasSchemaCleanPlan restricts a cleanup plan to the objects selected by

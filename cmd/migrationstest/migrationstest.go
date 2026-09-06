@@ -12,16 +12,16 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdflags"
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/cmd/internal/testexternal"
-	"go.5x5.cz/ptah/internal/devdocker"
-	"go.5x5.cz/ptah/internal/migrationintegrity"
-	"go.5x5.cz/ptah/internal/migrationsnapshot"
-	"go.5x5.cz/ptah/migration/dbtest"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/cmd/internal/cmdflags"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/cmd/internal/testexternal"
+	"ptah.run/internal/devdocker"
+	"ptah.run/internal/migrationintegrity"
+	"ptah.run/internal/migrationsnapshot"
+	"ptah.run/migration/dbtest"
+	"ptah.run/migration/migrationfile"
 )
 
 const (

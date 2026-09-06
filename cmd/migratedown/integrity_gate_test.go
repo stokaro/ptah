@@ -10,12 +10,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/migratedown"
-	"go.5x5.cz/ptah/cmd/migrateup"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/migrationintegrity"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/cmd/migratedown"
+	"ptah.run/cmd/migrateup"
+	"ptah.run/dbschema"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/migrationintegrity"
+	"ptah.run/migration/migrationfile"
 )
 
 // These tests pin the integrity gate on `ptah migrations down`.

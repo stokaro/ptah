@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/migrateup"
-	"go.5x5.cz/ptah/internal/atlasurl"
+	"ptah.run/cmd/migrateup"
+	"ptah.run/internal/atlasurl"
 )
 
 func TestMigrateUpCommandUsesNamedEnvOnlineDDLConfig(t *testing.T) {

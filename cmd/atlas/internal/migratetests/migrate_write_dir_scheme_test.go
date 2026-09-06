@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
+	"ptah.run/cmd/atlas/internal/atlastest"
 )
 
 // These tests close the half of stokaro/ptah#1186 that WRITES.

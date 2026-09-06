@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"slices"
 
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemamodel"
 )
 
 // ValidateDeclared refuses a schema declaring a domain, composite type or

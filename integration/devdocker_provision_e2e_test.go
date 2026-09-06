@@ -15,8 +15,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/devdocker"
+	"ptah.run/dbschema"
+	"ptah.run/internal/devdocker"
 )
 
 // These tests prove the two claims of stokaro/ptah#844 that an exit status

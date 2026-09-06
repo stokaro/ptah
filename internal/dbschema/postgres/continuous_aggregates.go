@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
+	"ptah.run/catalog"
 )
 
 // timescaleExtension is the extension whose presence decides whether the

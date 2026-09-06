@@ -17,10 +17,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/agentapi"
-	"go.5x5.cz/ptah/internal/agentpolicy"
-	"go.5x5.cz/ptah/internal/agenttarget"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/internal/agentapi"
+	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/agenttarget"
+	"ptah.run/internal/dbtarget"
 )
 
 // liveSession builds a session holding one configured PostgreSQL target.

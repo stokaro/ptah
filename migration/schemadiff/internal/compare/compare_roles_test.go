@@ -5,11 +5,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/reservedrole"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
-	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
+	"ptah.run/catalog"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/reservedrole"
+	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/migration/schemadiff/internal/compare"
 )
 
 func TestRolesComparison(t *testing.T) {
@@ -269,7 +269,7 @@ func TestRolesAnswerIsTheSameWhicheverListTheRoleWasReadInto(t *testing.T) {
 	c := qt.New(t)
 
 	// The opt-in that puts the removed capability back
-	// ([go.5x5.cz/ptah/internal/rolescope.DescribeAllEnvVar]) changes which
+	// ([ptah.run/internal/rolescope.DescribeAllEnvVar]) changes which
 	// list a role arrives in: with it set, the PostgreSQL reader describes
 	// every role it manages and RolesOutOfScope is empty. That must not change
 	// a single planned statement, and this is where the property is decided.

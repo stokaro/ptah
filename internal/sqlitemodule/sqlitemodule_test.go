@@ -9,11 +9,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "modernc.org/sqlite" // registers the SQLite driver for database/sql
 
-	"go.5x5.cz/ptah/internal/sqlitemodule"
+	"ptah.run/internal/sqlitemodule"
 )
 
 // TestRegisteredIsTheBuildsRealModuleSet pins the answer the refusal in
-// [go.5x5.cz/ptah/internal/sqlitevirtual] is built on.
+// [ptah.run/internal/sqlitevirtual] is built on.
 //
 // The list is written out rather than derived, because deriving it from the
 // same query it checks would assert nothing. It is the set measured with

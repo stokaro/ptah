@@ -9,10 +9,10 @@ package embedpg
 import (
 	"fmt"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/embedstore"
+	"ptah.run/core/ast"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/embedstore"
 )
 
 // Dialect is what this package renders for.

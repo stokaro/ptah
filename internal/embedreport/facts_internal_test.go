@@ -11,9 +11,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedgen"
-	"go.5x5.cz/ptah/internal/embedplan"
-	"go.5x5.cz/ptah/internal/embedspec"
+	"ptah.run/internal/embedgen"
+	"ptah.run/internal/embedplan"
+	"ptah.run/internal/embedspec"
 )
 
 // TestConfiguredFacts_EveryFactThatOwesAnExplanationGivesOne runs the plan's

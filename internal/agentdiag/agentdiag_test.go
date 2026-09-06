@@ -14,12 +14,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/agentapi"
-	"go.5x5.cz/ptah/internal/agentdiag"
-	"go.5x5.cz/ptah/internal/agentpatch"
-	"go.5x5.cz/ptah/internal/agentpolicy"
-	"go.5x5.cz/ptah/internal/agenttarget"
-	"go.5x5.cz/ptah/internal/agentworkspace"
+	"ptah.run/internal/agentapi"
+	"ptah.run/internal/agentdiag"
+	"ptah.run/internal/agentpatch"
+	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/agenttarget"
+	"ptah.run/internal/agentworkspace"
 )
 
 // TestOf_ReadsTheCodeThroughAWrappedChain pins the property the whole design

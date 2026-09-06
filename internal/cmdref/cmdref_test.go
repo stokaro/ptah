@@ -6,11 +6,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/cmd/root"
-	"go.5x5.cz/ptah/internal/agentsurface"
-	"go.5x5.cz/ptah/internal/atlascompatpolicy"
-	"go.5x5.cz/ptah/internal/cmdref"
+	"ptah.run/cmd/atlas"
+	"ptah.run/cmd/root"
+	"ptah.run/internal/agentsurface"
+	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/cmdref"
 )
 
 // full and strict are the shapes the two compatibility policies produce,

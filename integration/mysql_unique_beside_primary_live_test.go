@@ -13,10 +13,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/go-sql-driver/mysql" // registers the MySQL driver for database/sql
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/internal/sqlschema"
+	"ptah.run/core/platform"
+	"ptah.run/core/renderer"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/sqlschema"
 )
 
 // TestMySQLUniqueBesidePrimaryConvergesLive is stokaro/ptah#2787 asked of the

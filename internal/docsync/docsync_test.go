@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/docsync"
+	"ptah.run/internal/docsync"
 )
 
 // document is a page with one generated block and hand-written text on both

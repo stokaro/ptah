@@ -1,7 +1,7 @@
 package astbuilder
 
 import (
-	"go.5x5.cz/ptah/core/ast"
+	"ptah.run/core/ast"
 )
 
 // SchemaBuilder provides a fluent API for building complete database schemas.

@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/core/yamlschema"
+	"ptah.run/core/schemamodel"
+	"ptah.run/core/yamlschema"
 )
 
 func TestParseExportMetadata(t *testing.T) {

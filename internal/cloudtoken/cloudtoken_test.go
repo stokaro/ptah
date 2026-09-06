@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/cloudtoken"
+	"ptah.run/internal/cloudtoken"
 )
 
 // An RDS auth token is a SigV4 presigned request, so minting one is local

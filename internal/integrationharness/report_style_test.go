@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/integrationharness"
+	"ptah.run/internal/integrationharness"
 )
 
 // styledHTMLReport writes one report with a pass, a failure carrying steps, and

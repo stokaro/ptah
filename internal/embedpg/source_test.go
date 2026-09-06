@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedgen"
-	"go.5x5.cz/ptah/internal/embedpg"
+	"ptah.run/internal/embedgen"
+	"ptah.run/internal/embedpg"
 )
 
 // scannable is a specification a source can be built for.

@@ -16,7 +16,7 @@
 // Canonical must reproduce the stored spelling exactly, or such a declaration
 // can never converge.
 //
-// This is the same problem [go.5x5.cz/ptah/internal/crdbduration] solves for
+// This is the same problem [ptah.run/internal/crdbduration] solves for
 // CockroachDB, and it is solved the same way and for the same reason.
 //
 // # The two unit ladders

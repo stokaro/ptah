@@ -6,7 +6,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"go.5x5.cz/ptah/internal/agentsurface"
+	"ptah.run/internal/agentsurface"
 )
 
 // Surface is one binary's command tree with the name it ships under.

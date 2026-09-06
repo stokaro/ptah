@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/internal/planner/dialects/postgres"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestPlanner_RefusesWhatTimescaleDBCannotUndo pins the two divergences that

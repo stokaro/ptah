@@ -3,7 +3,7 @@ package devdocker
 import (
 	"context"
 
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/dbschema"
 )
 
 // Connectable is the default readiness probe: it opens the provisioned URL with

@@ -8,7 +8,7 @@
 //   - docs/site/scripts/check-terminology.mjs reads Markdown prose -- the site,
 //     the repository docs, the READMEs;
 //   - this package reads the help text a person sees when they run the binary:
-//     every Short, Long and Example in [go.5x5.cz/ptah/cmd/root.NewRootCommand]'s
+//     every Short, Long and Example in [ptah.run/cmd/root.NewRootCommand]'s
 //     tree, and every flag usage string under it.
 //
 // Neither reader covers the other's corpus, and the split is not tidiness. The

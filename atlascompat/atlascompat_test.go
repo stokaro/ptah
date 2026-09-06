@@ -9,11 +9,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/atlascompat"
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/atlascompat"
+	"ptah.run/catalog"
+	"ptah.run/core/ast"
+	"ptah.run/core/schemamodel"
+	"ptah.run/migration/migrationfile"
 )
 
 func TestParseAtlasHCL(t *testing.T) {

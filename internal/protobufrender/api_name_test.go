@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/protobufrender"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/protobufrender"
 )
 
 // aliasedColumn is a column published under a name of its own.

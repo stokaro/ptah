@@ -7,10 +7,10 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/internal/schemafile"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/schemafile"
 )
 
 // The Atlas command names these verbs answer to. They appear verbatim in
@@ -60,7 +60,7 @@ type atlasSchemaPlanTransitionFlags struct {
 // toSources when the project supplied the desired state, so each file sees its
 // own `data "hcl_schema" { vars }`; the plain URLs otherwise, which keep the
 // run's --var. Same rule, same reason as
-// [go.5x5.cz/ptah/internal/atlassource.ProjectEnv.SuppliedSource].
+// [ptah.run/internal/atlassource.ProjectEnv.SuppliedSource].
 func atlasSchemaPlanSources(in atlasSchemaPlanTransitionFlags) []schemafile.Source {
 	if len(in.toSources) > 0 {
 		return in.toSources

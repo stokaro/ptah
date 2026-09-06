@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/generator"
+	"ptah.run/migration/generator"
 )
 
 // A plan holds the migration directory open from the moment it is built, which

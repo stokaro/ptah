@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 
-	"go.5x5.cz/ptah/internal/embedcatchup"
-	"go.5x5.cz/ptah/internal/embedgen"
-	"go.5x5.cz/ptah/internal/embedrun"
-	"go.5x5.cz/ptah/internal/embedstore"
+	"ptah.run/internal/embedcatchup"
+	"ptah.run/internal/embedgen"
+	"ptah.run/internal/embedrun"
+	"ptah.run/internal/embedstore"
 )
 
 // Changes is where source changes come from.

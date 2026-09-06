@@ -8,12 +8,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/goannotationsource"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/goannotationsource"
 )
 
 // ParseDir walks one Go entity root on the host filesystem and returns the
-// finalized [go.5x5.cz/ptah/core/schemamodel.Database] its annotations declare.
+// finalized [ptah.run/core/schemamodel.Database] its annotations declare.
 //
 // The walk is recursive from rootDir and reads every .go file except _test.go
 // files, skipping hidden directories and directories named exactly "vendor".
@@ -31,7 +31,7 @@ import (
 // [ParseDirRaw]; to finalize several roots together, use [ParseDirs].
 //
 // Managed-data annotations record an absolute SourceDir anchored at rootDir,
-// so [go.5x5.cz/ptah/core/schemamodel.LoadManagedRows] resolves them from any
+// so [ptah.run/core/schemamodel.LoadManagedRows] resolves them from any
 // working directory.
 func ParseDir(rootDir string) (*schemamodel.Database, error) {
 	result, err := ParseDirRaw(rootDir)
@@ -42,7 +42,7 @@ func ParseDir(rootDir string) (*schemamodel.Database, error) {
 }
 
 // ParseFS walks one Go entity root inside fsys and returns the finalized
-// [go.5x5.cz/ptah/core/schemamodel.Database] its annotations declare. It is
+// [ptah.run/core/schemamodel.Database] its annotations declare. It is
 // [ParseDir] for a caller holding a filesystem — an embed.FS, a
 // testing/fstest.MapFS, a source snapshot — rather than a host directory:
 // file selection, the refusal of symlinked and non-regular sources, the
@@ -51,7 +51,7 @@ func ParseDir(rootDir string) (*schemamodel.Database, error) {
 // One thing differs by necessity: with no host root to anchor to,
 // managed-data annotations keep the filesystem-relative SourceDir they were
 // parsed with. Resolve them by passing the host location of fsys as the
-// rootDir argument of [go.5x5.cz/ptah/core/schemamodel.LoadManagedRows].
+// rootDir argument of [ptah.run/core/schemamodel.LoadManagedRows].
 func ParseFS(fsys fs.FS, rootDir string) (*schemamodel.Database, error) {
 	result := schemamodel.NewDatabase()
 	if err := accumulateGoFiles(result, fsys, rootDir); err != nil {

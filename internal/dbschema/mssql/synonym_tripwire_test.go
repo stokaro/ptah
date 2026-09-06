@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/catalog"
+	"ptah.run/core/schemamodel"
 )
 
 // TestSynonyms_ModelAndIntrospectionLandTogether is a tripwire, not a feature

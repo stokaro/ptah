@@ -9,14 +9,14 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
+	"ptah.run/core/sqlutil"
+	"ptah.run/dbschema"
+	"ptah.run/migration/migrator"
 )
 
 // GetDynamicScenarios returns all dynamic integration test scenarios that use versioned entities

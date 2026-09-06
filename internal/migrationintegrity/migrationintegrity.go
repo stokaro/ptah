@@ -77,12 +77,12 @@ import (
 	"path/filepath"
 	"slices"
 
-	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/internal/envbool"
-	"go.5x5.cz/ptah/internal/fsnapshot"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/migrationsnapshot"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/envbool"
+	"ptah.run/internal/fsnapshot"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/migrationsnapshot"
+	"ptah.run/migration/migrationfile"
 )
 
 // ErrAuthorizedHistoryChanged reports that migration history changed after a
@@ -114,7 +114,7 @@ type CheckpointEditAuthorization struct {
 // It is an environment variable and NOT a flag on purpose. The conformance
 // `cli-surface` tier asserts flag parity against the community binary, so a new
 // flag on any verb this gate guards would break it. Every boolean `PTAH_*` is
-// declared once through [go.5x5.cz/ptah/internal/envbool]; see
+// declared once through [ptah.run/internal/envbool]; see
 // cmd/internal/envboolguard for the guard that enforces it.
 //
 // Using it is never silent. A flag leaves a trace in the command line an
@@ -130,7 +130,7 @@ const AllowUnverifiedEnvVar = "PTAH_ALLOW_UNVERIFIED_MIGRATION_DIR"
 // this tree opts IN to the more permissive behavior, so a typo lands on the
 // strict default and fails closed.
 //
-// It is [go.5x5.cz/ptah/internal/envbool.Gated]. The pinned community binary
+// It is [ptah.run/internal/envbool.Gated]. The pinned community binary
 // has no spelling that executes a hashed directory whose integrity file does
 // not match: `atlas.sum` mismatch is a refusal there with `migrate hash` as the
 // only way out. A true value therefore runs migrations that binary would not

@@ -35,10 +35,10 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/schemaselection"
-	"go.5x5.cz/ptah/internal/systemschema"
+	"ptah.run/core/platform"
+	"ptah.run/dbschema"
+	"ptah.run/internal/schemaselection"
+	"ptah.run/internal/systemschema"
 )
 
 const (

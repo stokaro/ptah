@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/migration/migrationfile"
 )
 
 func TestParseAtlasTxtar(t *testing.T) {

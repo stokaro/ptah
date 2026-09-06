@@ -16,7 +16,7 @@ import (
 	"os"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/envbool"
+	"ptah.run/internal/envbool"
 )
 
 // Scheme is the vendor spelling this package resolves.

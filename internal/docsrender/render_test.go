@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/docsrender"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/docsrender"
 )
 
 func usersSchema() *schemamodel.Database {

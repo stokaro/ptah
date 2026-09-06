@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/onlineddl"
+	"ptah.run/internal/onlineddl"
 )
 
 func TestParseAlterTable(t *testing.T) {

@@ -9,14 +9,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/internal/atlassource"
-	"go.5x5.cz/ptah/internal/ociartifact"
-	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/internal/schemaartifact"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/atlassource"
+	"ptah.run/internal/ociartifact"
+	"ptah.run/internal/pathguard"
+	"ptah.run/internal/schemaartifact"
 )
 
 const (
@@ -241,14 +241,14 @@ func resolveInspectLocals(
 // # Why here, and not in the shared classifier
 //
 // Every sibling command that accepts an oci:// --schema-file resolves it
-// through [go.5x5.cz/ptah/internal/schemaload], which parses the artifact into
+// through [ptah.run/internal/schemaload], which parses the artifact into
 // a desired schema directly. `schema inspect` cannot: it does not parse its
 // source at all. It hands the source to
-// [go.5x5.cz/ptah/internal/atlasschema.InspectSource], which materializes it on
+// [ptah.run/internal/atlasschema.InspectSource], which materializes it on
 // a destructively reset --dev-url database and introspects the result, so the
 // output is normalized by a real database of the target dialect. That is the
 // whole point of the verb, and it is why the refusal was not an oversight: the
-// value goes to [go.5x5.cz/ptah/internal/atlassource.Classify], which names no
+// value goes to [ptah.run/internal/atlassource.Classify], which names no
 // oci source kind.
 //
 // Teaching Classify one would have been the smaller diff and the wrong change.

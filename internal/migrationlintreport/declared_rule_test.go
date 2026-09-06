@@ -6,10 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/migrationlintreport"
-	migrationlint "go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/migrationlintreport"
+	migrationlint "ptah.run/migration/lint"
+	"ptah.run/migration/migrationfile"
 )
 
 // buildWithProjectRules runs a lint report over one migration with the project

@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"go.5x5.cz/ptah/internal/fsdurable"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/fsdurable"
+	"ptah.run/migration/migrationfile"
 )
 
 // Write computes the sum of the migrations directory at dir and writes it to

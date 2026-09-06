@@ -12,9 +12,9 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/cmd/root"
-	"go.5x5.cz/ptah/internal/atlascompatpolicy"
+	"ptah.run/cmd/atlas"
+	"ptah.run/cmd/root"
+	"ptah.run/internal/atlascompatpolicy"
 )
 
 // matrixRowsPath is the row data the published feature matrix is generated

@@ -3,10 +3,10 @@ package schemalineage
 import (
 	"fmt"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/parser"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/parser"
 )
 
 // deriveMySQLWrites resolves the writes a MySQL routine body performs.

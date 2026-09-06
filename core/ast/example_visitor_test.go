@@ -3,7 +3,7 @@ package ast_test
 import (
 	"fmt"
 
-	"go.5x5.cz/ptah/core/ast"
+	"ptah.run/core/ast"
 )
 
 // tableAndIndexNames collects object names from a statement list. Embedding

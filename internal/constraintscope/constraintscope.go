@@ -7,17 +7,17 @@
 // for one question, and the answer has to be the same one or a down migration
 // pairs its drops differently from the up migration it undoes.
 //
-// It is the constraint counterpart of [go.5x5.cz/ptah/internal/indexscope], and
+// It is the constraint counterpart of [ptah.run/internal/indexscope], and
 // lives outside [difftypes] for the same reason that one does: the fold needs
 // the target's rules and the identity model, and the diff types are the surface
 // an embedder builds by hand.
 package constraintscope
 
 import (
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/internal/objectidentity"
-	"go.5x5.cz/ptah/internal/tableref"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/internal/objectidentity"
+	"ptah.run/internal/tableref"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Identity folds a constraint's owning table and its own name into the form two

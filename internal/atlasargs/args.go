@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/envbool"
+	"ptah.run/internal/envbool"
 )
 
 // LocalDir describes a parsed local Atlas migration directory URL.
@@ -538,7 +538,7 @@ func appendEnvArgs(flags []Flag, args []string) ([]string, error) {
 		if flag.Kind == BoolFlag {
 			// One grammar and one error for every boolean PTAH_* variable, and an
 			// explicitly empty one is a configuration error rather than a silent
-			// "unset". See [go.5x5.cz/ptah/internal/envbool] and
+			// "unset". See [ptah.run/internal/envbool] and
 			// stokaro/ptah#1334.
 			parsed, err := envbool.Parse(envName("PTAH", flag.Name), value)
 			if err != nil {

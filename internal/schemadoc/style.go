@@ -1,6 +1,6 @@
 package schemadoc
 
-import "go.5x5.cz/ptah/internal/htmlstyle"
+import "ptah.run/internal/htmlstyle"
 
 // documentCSS is this document's own appearance, on top of the one every Ptah
 // HTML page shares.

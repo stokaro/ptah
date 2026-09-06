@@ -10,7 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "modernc.org/sqlite" // registers the SQLite driver for database/sql
 
-	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
+	"ptah.run/cmd/atlas/internal/atlastest"
 )
 
 // These tests pin stokaro/ptah#1206 on `ptah-compat migrate set`: a migration

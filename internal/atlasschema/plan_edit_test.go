@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/migration/safety"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/migration/safety"
 )
 
 func TestPlanFileWithStatementsFromSQLReclassifiesStatements(t *testing.T) {

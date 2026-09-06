@@ -6,10 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlashcl"
-	"go.5x5.cz/ptah/internal/atlashclrender"
+	"ptah.run/core/goschema"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/atlashclrender"
 )
 
 func TestRenderColumnUniqueExprAndIdentityOptionsRoundTrip(t *testing.T) {

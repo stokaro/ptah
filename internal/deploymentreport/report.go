@@ -15,9 +15,9 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 
-	"go.5x5.cz/ptah/internal/fsnapshot"
-	"go.5x5.cz/ptah/internal/ociartifact"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/internal/fsnapshot"
+	"ptah.run/internal/ociartifact"
+	"ptah.run/migration/migrator"
 )
 
 const (

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/catalog"
+	"ptah.run/core/schemamodel"
 )
 
 // readFunctions recovers the functions the connected database declares.

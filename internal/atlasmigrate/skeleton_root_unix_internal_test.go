@@ -15,8 +15,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
-	"go.5x5.cz/ptah/internal/pathguard"
+	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/pathguard"
 )
 
 // These are the `migrate new` half of the rooted-writer regressions

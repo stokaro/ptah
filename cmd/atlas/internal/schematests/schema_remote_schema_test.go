@@ -7,10 +7,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlasregistry"
-	"go.5x5.cz/ptah/internal/schemaartifacttest"
+	"ptah.run/cmd/atlas/internal/atlastest"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlasregistry"
+	"ptah.run/internal/schemaartifacttest"
 )
 
 // remoteSchemaProject writes an atlas.hcl whose desired state is a registry

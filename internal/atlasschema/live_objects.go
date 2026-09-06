@@ -3,8 +3,8 @@ package atlasschema
 import (
 	"fmt"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/schemaclean"
+	"ptah.run/dbschema"
+	"ptah.run/internal/schemaclean"
 )
 
 // LiveSchemaObject is an object found by supplemental catalog inspection that

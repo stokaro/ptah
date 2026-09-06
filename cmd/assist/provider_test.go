@@ -11,8 +11,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/assist"
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"ptah.run/cmd/assist"
+	"ptah.run/cmd/internal/exitcode"
 )
 
 // execute runs the command with the configuration directory pointed at a

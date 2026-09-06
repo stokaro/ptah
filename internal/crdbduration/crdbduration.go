@@ -61,7 +61,7 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/internal/crdbinterval"
+	"ptah.run/internal/crdbinterval"
 )
 
 // The measured calendar constants. A month is thirty days and a year is 365.25

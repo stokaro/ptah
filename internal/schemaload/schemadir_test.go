@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/schemaload"
+	"ptah.run/internal/schemaload"
 )
 
 // TestLoad_SchemaDirectory is the regression test for stokaro/ptah#940 item B on

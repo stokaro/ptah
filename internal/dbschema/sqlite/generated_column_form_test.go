@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/dbschema/sqlite"
+	"ptah.run/internal/dbschema/sqlite"
 )
 
 // TestReader_ReadsBothSpellingsOfAGeneratedColumn pins that an optional keyword

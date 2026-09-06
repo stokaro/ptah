@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedrun"
+	"ptah.run/internal/embedrun"
 )
 
 func TestTerminalReadinessDoesNotMeasureACompletedEarlyPhaseRun(t *testing.T) {

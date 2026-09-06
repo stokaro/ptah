@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/indexbacking"
+	"ptah.run/catalog"
+	"ptah.run/internal/indexbacking"
 )
 
 func TestKindOf_HappyPath(t *testing.T) {

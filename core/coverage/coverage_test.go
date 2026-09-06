@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/coverage"
+	"ptah.run/core/coverage"
 )
 
 // TestZeroSetDescribesEverything is the floor the whole design rests on: a

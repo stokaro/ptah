@@ -14,7 +14,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/cliobs"
+	"ptah.run/cmd/internal/cliobs"
 )
 
 // The Atlas-compatible surface is quiet by construction: cmd/ptah-compat's main

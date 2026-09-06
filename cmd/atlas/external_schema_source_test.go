@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
-	"go.5x5.cz/ptah/internal/envbool/envbooltest"
+	"ptah.run/cmd/atlas/internal/atlastest"
+	"ptah.run/internal/envbool/envbooltest"
 )
 
 // externalSchemaHelperModes maps a mode name to the behavior the re-executed

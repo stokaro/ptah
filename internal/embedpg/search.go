@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/embedeval"
-	"go.5x5.cz/ptah/internal/embedgen"
-	"go.5x5.cz/ptah/internal/embedverify"
+	"ptah.run/internal/embedeval"
+	"ptah.run/internal/embedgen"
+	"ptah.run/internal/embedverify"
 )
 
 // Searcher runs an evaluation corpus against a live generation.

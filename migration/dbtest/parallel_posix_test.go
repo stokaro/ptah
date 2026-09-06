@@ -24,7 +24,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/dbtest"
+	"ptah.run/migration/dbtest"
 )
 
 // TestRunTest_ParallelCasesActuallyOverlap is the assertion the rest of this

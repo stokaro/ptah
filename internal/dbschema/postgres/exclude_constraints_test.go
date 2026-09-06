@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/dbschema/postgres"
+	"ptah.run/catalog"
+	"ptah.run/internal/dbschema/postgres"
 )
 
 func TestParseExcludeConstraintDefinition(t *testing.T) {

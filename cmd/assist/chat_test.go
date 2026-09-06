@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/assist"
+	"ptah.run/cmd/assist"
 )
 
 // converse runs the interactive surface over a scripted stdin and returns what

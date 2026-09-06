@@ -46,7 +46,7 @@ import (
 )
 
 // modulePath is the import path every package in this module shares.
-const modulePath = "go.5x5.cz/ptah"
+const modulePath = "ptah.run"
 
 // baselineName is the checked-in record of what each rule currently permits.
 const baselineName = "docs/architecture_boundaries.json"

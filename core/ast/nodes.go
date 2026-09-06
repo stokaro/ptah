@@ -149,7 +149,7 @@ type CreateTableNode struct {
 // PGAdapter 0.55.2, `INTERVAL '30 days'` reads back as
 // `INTERVAL '4 WEEKS 2 DAYS'`, so a declaration compared as text could never
 // converge. Comparison goes through
-// [go.5x5.cz/ptah/internal/crdbinterval], which reads both sides into the value
+// [ptah.run/internal/crdbinterval], which reads both sides into the value
 // they denote -- the same answer stokaro/ptah#1612 reached for the CockroachDB
 // policy, for the same reason.
 type RowDeletionPolicySpec struct {
@@ -186,7 +186,7 @@ func (s *RowDeletionPolicySpec) Clone() *RowDeletionPolicySpec {
 //
 // Fields are pointers wherever the parameter has a meaningful zero, so a
 // declared `ttl_pause = false` stays distinguishable from a parameter nobody
-// declared. [go.5x5.cz/ptah/internal/crdbttl] owns why that distinction has to
+// declared. [ptah.run/internal/crdbttl] owns why that distinction has to
 // survive this far down, and owns which parameters may appear here at all: the
 // two whose values the server rewrites on the way in are refused before a spec
 // is built, so every value reaching this struct is one that reads back as
@@ -201,7 +201,7 @@ type RowTTLSpec struct {
 	// It is the other enabler, and unlike every other field here its value is
 	// NOT compared as text: the server rewrites the interval it stores, so
 	// `72 hours` reads back as `72:00:00`. Comparison goes through
-	// [go.5x5.cz/ptah/internal/crdbinterval], which reads both sides into the
+	// [ptah.run/internal/crdbinterval], which reads both sides into the
 	// value they denote (stokaro/ptah#1605).
 	ExpireAfter string `json:"expire_after,omitempty"`
 	// RowStatsPollInterval is `ttl_row_stats_poll_interval`, how often the TTL
@@ -210,7 +210,7 @@ type RowTTLSpec struct {
 	// Like ExpireAfter its value is NOT compared as text: the server truncates
 	// the duration to whole seconds and stores it in Go's duration form, so
 	// `600s` reads back as `10m0s`. Comparison goes through
-	// [go.5x5.cz/ptah/internal/crdbduration] (stokaro/ptah#1721).
+	// [ptah.run/internal/crdbduration] (stokaro/ptah#1721).
 	RowStatsPollInterval string `json:"row_stats_poll_interval,omitempty"`
 	// JobCron is `ttl_job_cron`.
 	JobCron string `json:"job_cron,omitempty"`
@@ -2208,7 +2208,7 @@ type CreateMaterializedViewNode struct {
 // after that engine's feature, and absent everywhere else (stokaro/ptah#1802).
 //
 // The values are the ones the server stores, not the ones an operator wrote:
-// see go.5x5.cz/ptah/internal/chrefresh, which is where a declaration is
+// see ptah.run/internal/chrefresh, which is where a declaration is
 // normalized before it reaches here.
 type MatViewRefreshSpec struct {
 	// Mode is EVERY, which refreshes on a wall-clock schedule, or AFTER, which
@@ -3604,7 +3604,7 @@ func (sl *StatementList) Accept(visitor Visitor) error {
 // A nil spec and a spec with every field unset are the same answer, and both
 // mean "this table has no row-expiry policy". They are distinct from a spec
 // carrying only knobs, which is a declaration CockroachDB refuses and
-// [go.5x5.cz/ptah/internal/crdbttl] refuses earlier.
+// [ptah.run/internal/crdbttl] refuses earlier.
 func (s *RowTTLSpec) IsZero() bool {
 	if s == nil {
 		return true

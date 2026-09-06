@@ -9,11 +9,11 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/internal/catalogfield"
-	"go.5x5.cz/ptah/internal/indexbacking"
+	"ptah.run/catalog"
+	"ptah.run/core/schemamodel"
+	"ptah.run/core/sqlutil"
+	"ptah.run/internal/catalogfield"
+	"ptah.run/internal/indexbacking"
 )
 
 // ConvertDBSchemaToGoSchema converts a database schema to goschema format
@@ -21,7 +21,7 @@ import (
 //
 // dialect names the server the catalog was read from, and decides which
 // constraint kinds that server enforces with an index the reader also reports;
-// [go.5x5.cz/ptah/internal/indexbacking] holds that answer for this converter
+// [ptah.run/internal/indexbacking] holds that answer for this converter
 // and for migration/schemadiff alike. It may be empty, because
 // [catalog.Database] carries no dialect and the stable
 // atlascompat.DBSchemaToGoSchema takes none. An empty dialect answers only what
@@ -482,7 +482,7 @@ func convertContinuousAggregates(
 //
 // The target is rebuilt from the PARSED parts rather than copied. `Target` is
 // base_object_name exactly as the catalog records it, brackets included, and
-// [go.5x5.cz/ptah/core/schemamodel.Synonym.Target] is the spelling that will be
+// [ptah.run/core/schemamodel.Synonym.Target] is the spelling that will be
 // emitted: one to four dot-separated parts, unquoted. Copying the catalog's
 // form would put `[other].[dbo].[gauge]` in a document and render it again as
 // a name with brackets inside it.
@@ -966,7 +966,7 @@ func setDomainDefaultFromDB(domain *schemamodel.Domain, defaultSQL string) {
 // server survives, while dropping the broader grant as well would make the
 // comparison plan a GRANT that wipes the exception out. Ptah's grant model has
 // no shape for "this privilege except there", which is why
-// [go.5x5.cz/ptah/internal/clickhouserbac.ValidateLive] refuses to compare a
+// [ptah.run/internal/clickhouserbac.ValidateLive] refuses to compare a
 // managed role carrying one at all rather than leaving this function to
 // approximate it.
 func convertGrants(dbGrants []catalog.Grant) []schemamodel.Grant {

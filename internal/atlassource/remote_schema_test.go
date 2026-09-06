@@ -5,11 +5,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlasregistry"
-	"go.5x5.cz/ptah/internal/atlassource"
-	"go.5x5.cz/ptah/internal/schemaartifacttest"
+	"ptah.run/config/projectconfig"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlasregistry"
+	"ptah.run/internal/atlassource"
+	"ptah.run/internal/schemaartifacttest"
 )
 
 // remoteUsersSchema is the desired state the test registry serves.

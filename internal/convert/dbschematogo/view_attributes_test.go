@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"ptah.run/catalog"
+	"ptah.run/internal/convert/dbschematogo"
 )
 
 // TestConvertViews_CarriesTheAttributes pins the layer between the reader and

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/embeddigest"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/embeddigest"
 )
 
 // TargetObjects is the schema a generation needs in order to exist: the column

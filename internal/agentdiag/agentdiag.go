@@ -39,7 +39,7 @@ import (
 // list to be finite and needs an unrecognized value to mean "a Ptah newer than
 // the one I was written against", not "some other spelling of a code I already
 // handle". Codes are added to the end of the list and never renamed; renaming
-// one is a contract break and changes [go.5x5.cz/ptah/internal/agentapi.Version].
+// one is a contract break and changes [ptah.run/internal/agentapi.Version].
 type Code string
 
 // The taxonomy. Every code names a condition a caller can tell apart from every

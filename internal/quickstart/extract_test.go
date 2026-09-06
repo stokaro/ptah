@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/quickstart"
+	"ptah.run/internal/quickstart"
 )
 
 // optedInPage is the fixture both this file and the runner tests read. It

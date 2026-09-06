@@ -10,10 +10,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/sqlident"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/sqlident"
+	"ptah.run/internal/tableref"
 )
 
 // ViewLike is a view-like object that can reference other view-like objects in

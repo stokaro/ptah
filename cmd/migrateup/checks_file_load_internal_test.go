@@ -19,8 +19,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/migratehash"
-	"go.5x5.cz/ptah/internal/atlasurl"
+	"ptah.run/cmd/migratehash"
+	"ptah.run/internal/atlasurl"
 )
 
 // checkDirectiveDropUsersSQL is the exact documented directive syntax from

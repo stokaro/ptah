@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/parser"
+	"ptah.run/internal/parser"
 )
 
 // sqlSchemaPage is the page whose failure-mode entry this test holds to the

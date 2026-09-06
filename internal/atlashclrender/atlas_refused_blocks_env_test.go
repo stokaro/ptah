@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlashclrender"
-	"go.5x5.cz/ptah/internal/envbool/envbooltest"
+	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/envbool/envbooltest"
 )
 
 // TestKeepAtlasRefusedBlocksReadsTheOptIn pins how the opt-in is parsed.
@@ -14,7 +14,7 @@ import (
 // The variable is the whole reason the compatibility surface may default to a
 // narrower document at all: a capability that cannot be reached is a capability
 // that was removed (AGENTS.md, "Compatibility never removes a capability"). The
-// rows mirror [go.5x5.cz/ptah/internal/atlassource]'s own opt-in, so an
+// rows mirror [ptah.run/internal/atlassource]'s own opt-in, so an
 // operator who learned one spelling is not surprised by the other -- absence
 // and a valid false keep the default, and anything else is refused by name and
 // by value (stokaro/ptah#1334).

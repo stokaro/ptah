@@ -8,8 +8,8 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/yamlschema"
+	"ptah.run/core/renderer"
+	"ptah.run/core/yamlschema"
 )
 
 // ExampleParse reads a YAML document into the schema model and reports what the

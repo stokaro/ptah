@@ -14,9 +14,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "modernc.org/sqlite" // registers the SQLite driver for database/sql
 
-	"go.5x5.cz/ptah/cmd/dbcapabilities"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/serverprofile"
+	"ptah.run/cmd/dbcapabilities"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/serverprofile"
 )
 
 // sqliteURL is a database URL for a file this test owns. SQLite is the one

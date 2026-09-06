@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/schemamodel"
 )
 
 // setting is one entry of a bracketed list: a flag with no value, or a key and

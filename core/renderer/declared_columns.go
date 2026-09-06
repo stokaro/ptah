@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemamodel"
 )
 
 // validateDeclaredColumns refuses a column declaration whose meaning no target

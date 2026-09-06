@@ -6,8 +6,8 @@ import (
 	"io/fs"
 	"strings"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/dbschema"
+	"ptah.run/migration/schemadiff"
 )
 
 // testDynamicFunctionAttributeModification migrates from 014-rls-functions to

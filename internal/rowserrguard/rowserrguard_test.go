@@ -66,7 +66,7 @@ func TestConfiguredPackagesMatchTheDeclarationsHappyPath(t *testing.T) {
 
 // modulePrefix scopes the comparison to this repository. `database/sql` is
 // listed and is not ours to find.
-const modulePrefix = "go.5x5.cz/ptah"
+const modulePrefix = "ptah.run"
 
 // declaringPackages returns the sorted import paths of every package in the
 // repository that declares a Query or QueryContext returning (*sql.Rows,

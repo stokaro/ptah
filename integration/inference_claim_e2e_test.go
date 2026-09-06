@@ -22,7 +22,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/internal/dbtarget"
 )
 
 // TestInferenceClaimE2E walks the verbs and requires each one that works to

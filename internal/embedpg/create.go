@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/embeddigest"
-	"go.5x5.cz/ptah/internal/embedgen"
+	"ptah.run/internal/embeddigest"
+	"ptah.run/internal/embedgen"
 )
 
 // EnsureTarget creates the generation's vector column and the four metadata

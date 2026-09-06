@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/dbschema/dbtest"
+	"ptah.run/internal/dbschema/dbtest"
 )
 
 // A type read from ClickHouse's catalog is marked as the target's own --

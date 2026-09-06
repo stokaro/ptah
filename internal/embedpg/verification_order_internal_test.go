@@ -15,7 +15,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedgen"
+	"ptah.run/internal/embedgen"
 )
 
 // orderingSpec is the smallest specification either builder accepts.

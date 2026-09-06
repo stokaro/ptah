@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/embedgen"
+	"ptah.run/internal/embedgen"
 )
 
 // ColumnExists reports whether a column is there.

@@ -600,211 +600,211 @@
     {
       "id": "gopkg-atlascompat",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/atlascompat",
+      "surface": "ptah.run/atlascompat",
       "claimed_by": null
     },
     {
       "id": "gopkg-catalog",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/catalog",
+      "surface": "ptah.run/catalog",
       "claimed_by": null
     },
     {
       "id": "gopkg-config",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/config",
+      "surface": "ptah.run/config",
       "claimed_by": null
     },
     {
       "id": "gopkg-config-projectconfig",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/config/projectconfig",
+      "surface": "ptah.run/config/projectconfig",
       "claimed_by": null
     },
     {
       "id": "gopkg-core-ast",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/core/ast",
+      "surface": "ptah.run/core/ast",
       "claimed_by": null
     },
     {
       "id": "gopkg-core-astbuilder",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/core/astbuilder",
+      "surface": "ptah.run/core/astbuilder",
       "claimed_by": null
     },
     {
       "id": "gopkg-core-coverage",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/core/coverage",
+      "surface": "ptah.run/core/coverage",
       "claimed_by": null
     },
     {
       "id": "gopkg-core-goschema",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/core/goschema",
+      "surface": "ptah.run/core/goschema",
       "claimed_by": "docs/site/src/content/docs/schema/go-annotations.md"
     },
     {
       "id": "gopkg-core-platform",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/core/platform",
+      "surface": "ptah.run/core/platform",
       "claimed_by": "docs/site/src/content/docs/concepts/dialects-and-capabilities.md"
     },
     {
       "id": "gopkg-core-platform-capability",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/core/platform/capability",
+      "surface": "ptah.run/core/platform/capability",
       "claimed_by": "docs/site/src/content/docs/concepts/dialects-and-capabilities.md"
     },
     {
       "id": "gopkg-core-platform-identifier",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/core/platform/identifier",
+      "surface": "ptah.run/core/platform/identifier",
       "claimed_by": null
     },
     {
       "id": "gopkg-core-ptaherr",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/core/ptaherr",
+      "surface": "ptah.run/core/ptaherr",
       "claimed_by": "docs/site/src/content/docs/reference/exit-codes.md"
     },
     {
       "id": "gopkg-core-query",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/core/query",
+      "surface": "ptah.run/core/query",
       "claimed_by": "docs/site/src/content/docs/extend/query-builder.md"
     },
     {
       "id": "gopkg-core-renderer",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/core/renderer",
+      "surface": "ptah.run/core/renderer",
       "claimed_by": null
     },
     {
       "id": "gopkg-core-schemamodel",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/core/schemamodel",
+      "surface": "ptah.run/core/schemamodel",
       "claimed_by": null
     },
     {
       "id": "gopkg-core-schemasource",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/core/schemasource",
+      "surface": "ptah.run/core/schemasource",
       "claimed_by": null
     },
     {
       "id": "gopkg-core-sqlutil",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/core/sqlutil",
+      "surface": "ptah.run/core/sqlutil",
       "claimed_by": null
     },
     {
       "id": "gopkg-core-yamlschema",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/core/yamlschema",
+      "surface": "ptah.run/core/yamlschema",
       "claimed_by": "docs/site/src/content/docs/reference/yaml-schema.md"
     },
     {
       "id": "gopkg-dbschema",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/dbschema",
+      "surface": "ptah.run/dbschema",
       "claimed_by": null
     },
     {
       "id": "gopkg-docs",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/docs",
+      "surface": "ptah.run/docs",
       "claimed_by": null
     },
     {
       "id": "gopkg-migration-datadiff",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/migration/datadiff",
+      "surface": "ptah.run/migration/datadiff",
       "claimed_by": null
     },
     {
       "id": "gopkg-migration-dbtest",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/migration/dbtest",
+      "surface": "ptah.run/migration/dbtest",
       "claimed_by": null
     },
     {
       "id": "gopkg-migration-diffpolicy",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/migration/diffpolicy",
+      "surface": "ptah.run/migration/diffpolicy",
       "claimed_by": null
     },
     {
       "id": "gopkg-migration-generator",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/migration/generator",
+      "surface": "ptah.run/migration/generator",
       "claimed_by": null
     },
     {
       "id": "gopkg-migration-importer",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/migration/importer",
+      "surface": "ptah.run/migration/importer",
       "claimed_by": null
     },
     {
       "id": "gopkg-migration-lint",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/migration/lint",
+      "surface": "ptah.run/migration/lint",
       "claimed_by": null
     },
     {
       "id": "gopkg-migration-migrationfile",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/migration/migrationfile",
+      "surface": "ptah.run/migration/migrationfile",
       "claimed_by": null
     },
     {
       "id": "gopkg-migration-migrator",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/migration/migrator",
+      "surface": "ptah.run/migration/migrator",
       "claimed_by": null
     },
     {
       "id": "gopkg-migration-planner",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/migration/planner",
+      "surface": "ptah.run/migration/planner",
       "claimed_by": null
     },
     {
       "id": "gopkg-migration-risk",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/migration/risk",
+      "surface": "ptah.run/migration/risk",
       "claimed_by": null
     },
     {
       "id": "gopkg-migration-safety",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/migration/safety",
+      "surface": "ptah.run/migration/safety",
       "claimed_by": null
     },
     {
       "id": "gopkg-migration-schemadiff",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/migration/schemadiff",
+      "surface": "ptah.run/migration/schemadiff",
       "claimed_by": null
     },
     {
       "id": "gopkg-migration-schemadiff-difftypes",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/migration/schemadiff/difftypes",
+      "surface": "ptah.run/migration/schemadiff/difftypes",
       "claimed_by": null
     },
     {
       "id": "gopkg-migration-seeder",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/migration/seeder",
+      "surface": "ptah.run/migration/seeder",
       "claimed_by": null
     },
     {
       "id": "gopkg-migration-shadow",
       "kind": "public-package",
-      "surface": "go.5x5.cz/ptah/migration/shadow",
+      "surface": "ptah.run/migration/shadow",
       "claimed_by": null
     },
     {

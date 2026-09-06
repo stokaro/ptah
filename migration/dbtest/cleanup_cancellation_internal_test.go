@@ -15,7 +15,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/internal/shadowdb"
+	"ptah.run/migration/internal/shadowdb"
 )
 
 // TestRunCaseCleanup_RunsOnACanceledContext is the fourth lifecycle path.

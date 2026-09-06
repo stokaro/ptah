@@ -11,9 +11,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/migratetag"
-	"go.5x5.cz/ptah/cmd/migrateup"
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/cmd/migratetag"
+	"ptah.run/cmd/migrateup"
+	"ptah.run/dbschema"
 )
 
 // `migrate down --to-tag` and `--skip-checks` were recorded waivers until

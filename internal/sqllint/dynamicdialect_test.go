@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/sqllint"
+	"ptah.run/internal/sqllint"
 )
 
 // dynamicCodes lists the rules a lint run reported for one routine.

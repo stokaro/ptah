@@ -9,10 +9,10 @@ import (
 	"fmt"
 	"io"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/envbool"
+	"ptah.run/catalog"
+	"ptah.run/core/coverage"
+	"ptah.run/core/platform"
+	"ptah.run/internal/envbool"
 )
 
 // DescribeAllEnvVar restores the pre-scoping read: every role Ptah manages on
@@ -29,12 +29,12 @@ import (
 // another is something a user could do before, so it stays reachable here.
 //
 // It is an environment variable and not a flag for the reason
-// [go.5x5.cz/ptah/internal/atlashclrender.KeepAtlasRefusedBlocksEnvVar] gives:
+// [ptah.run/internal/atlashclrender.KeepAtlasRefusedBlocksEnvVar] gives:
 // the conformance cli-surface tier asserts that `ptah-compat` registers
 // exactly the flags the pinned Atlas community binary registers, so a flag
 // that binary does not have would break the promise the surface exists to
 // keep. Spelling and precedent:
-// [go.5x5.cz/ptah/internal/atlassource.AllowExternalSchemaEnvVar].
+// [ptah.run/internal/atlassource.AllowExternalSchemaEnvVar].
 //
 // It changes the description only. Both reads are still performed, so the set
 // the comparator takes existence from is identical either way, and turning
@@ -42,8 +42,8 @@ import (
 const DescribeAllEnvVar = "PTAH_POSTGRES_INSPECT_ALL_ROLES"
 
 // describeAll is the declaration of the variable, made once, in the package
-// that owns it. See [go.5x5.cz/ptah/internal/envbool].
-// It is [go.5x5.cz/ptah/internal/envbool.Gated]: describing every managed role
+// that owns it. See [ptah.run/internal/envbool].
+// It is [ptah.run/internal/envbool.Gated]: describing every managed role
 // on the server widens the description beyond anything the pinned community
 // binary emits, which does not model roles.
 var describeAll = envbool.New(DescribeAllEnvVar, false, envbool.Gated)

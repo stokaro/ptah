@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/agentpolicy"
+	"ptah.run/internal/agentpolicy"
 )
 
 // Reading Ptah's own documentation is its own capability, and it is authorized

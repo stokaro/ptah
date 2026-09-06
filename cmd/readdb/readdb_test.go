@@ -10,7 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "modernc.org/sqlite" // registers the SQLite driver for database/sql
 
-	"go.5x5.cz/ptah/cmd/readdb"
+	"ptah.run/cmd/readdb"
 )
 
 func TestReadDBCommand_StdoutIsExecutableSQL(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/pgtypeext"
+	"ptah.run/internal/pgtypeext"
 )
 
 // TestBaseTypeName_ReducesADeclarationToTheNameACatalogUses pins the reduction

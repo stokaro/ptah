@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	examplemigrations "go.5x5.cz/ptah/examples/migrator"
+	examplemigrations "ptah.run/examples/migrator"
 )
 
 func TestExampleMigrations(t *testing.T) {

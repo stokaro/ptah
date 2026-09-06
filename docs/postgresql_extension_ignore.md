@@ -31,9 +31,9 @@ import (
     "fmt"
     "time"
 
-    "go.5x5.cz/ptah/core/goschema"
-    "go.5x5.cz/ptah/dbschema"
-    "go.5x5.cz/ptah/migration/schemadiff"
+    "ptah.run/core/goschema"
+    "ptah.run/dbschema"
+    "ptah.run/migration/schemadiff"
 )
 
 func main() {
@@ -70,7 +70,7 @@ func main() {
 ### Custom Ignore List
 
 ```go
-import "go.5x5.cz/ptah/config"
+import "ptah.run/config"
 
 // Ignore specific extensions only
 opts := config.WithIgnoredExtensions("plpgsql", "adminpack", "pg_stat_statements")
@@ -174,7 +174,7 @@ import (
     "context"
     "time"
 
-    "go.5x5.cz/ptah/migration/generator"
+    "ptah.run/migration/generator"
 )
 
 // Generate migration with custom extension ignore options

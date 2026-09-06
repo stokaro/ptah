@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 
-	"go.5x5.cz/ptah/catalog"
+	"ptah.run/catalog"
 )
 
 // hypertableCatalog is the view TimescaleDB publishes its hypertables through.

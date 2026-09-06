@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/docs"
-	"go.5x5.cz/ptah/internal/buildinfo"
-	"go.5x5.cz/ptah/internal/docsembed"
+	"ptah.run/docs"
+	"ptah.run/internal/buildinfo"
+	"ptah.run/internal/docsembed"
 )
 
 // A path a result carries has to be one a person can open. The embedded

@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasregistry"
+	"ptah.run/internal/atlasregistry"
 )
 
 // adoptableProject is a file a real person wrote: a comment, blank lines, and

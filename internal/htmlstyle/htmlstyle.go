@@ -15,7 +15,7 @@ package htmlstyle
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/internal/buildinfo"
+	"ptah.run/internal/buildinfo"
 )
 
 // Tokens is the color and metric declaration, in the three blocks a

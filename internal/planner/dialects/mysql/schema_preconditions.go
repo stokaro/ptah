@@ -4,11 +4,11 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/planner/schemaprecondition"
-	"go.5x5.cz/ptah/internal/tableref"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/internal/planner/schemaprecondition"
+	"ptah.run/internal/tableref"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // planSchemaPreconditions creates the schemas the added objects are declared

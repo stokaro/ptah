@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/cmd/root"
+	"ptah.run/cmd/atlas"
+	"ptah.run/cmd/root"
 )
 
 // unknownNameSchemaHCL carries a top-level block and a column attribute that

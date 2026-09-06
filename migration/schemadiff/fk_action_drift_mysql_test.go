@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/core/renderer"
+	"ptah.run/internal/planner/dialects/mysql"
+	"ptah.run/migration/schemadiff"
 )
 
 // TestCompare_FieldLevelForeignKeyActionDrift_MySQL is the MySQL/MariaDB

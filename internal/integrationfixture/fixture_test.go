@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/integrationfixture"
+	"ptah.run/internal/integrationfixture"
 )
 
 func TestRoundTripsCoverGeneratorEdgeCases(t *testing.T) {

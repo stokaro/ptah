@@ -5,13 +5,13 @@ package identifiervalidation
 import (
 	"fmt"
 
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/indexscope"
-	"go.5x5.cz/ptah/internal/tableref"
-	"go.5x5.cz/ptah/migration/internal/generatedschema"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/indexscope"
+	"ptah.run/internal/tableref"
+	"ptah.run/migration/internal/generatedschema"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // ValidateCoverage rejects catalog-resolved snapshots that omit a candidate.

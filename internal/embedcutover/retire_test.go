@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedcutover"
+	"ptah.run/internal/embedcutover"
 )
 
 // retirable is a generation that may be destroyed: nothing reads it, nothing

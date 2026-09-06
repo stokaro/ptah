@@ -19,13 +19,13 @@ import (
 	"os/exec"
 	"strings"
 
-	"go.5x5.cz/ptah/cmd/root"
-	"go.5x5.cz/ptah/internal/agentsurface"
-	"go.5x5.cz/ptah/internal/capabilityprobe"
-	"go.5x5.cz/ptah/internal/cmdrefviews"
-	"go.5x5.cz/ptah/internal/docsync"
-	"go.5x5.cz/ptah/internal/lintcatalog"
-	"go.5x5.cz/ptah/internal/schemacensus"
+	"ptah.run/cmd/root"
+	"ptah.run/internal/agentsurface"
+	"ptah.run/internal/capabilityprobe"
+	"ptah.run/internal/cmdrefviews"
+	"ptah.run/internal/docsync"
+	"ptah.run/internal/lintcatalog"
+	"ptah.run/internal/schemacensus"
 )
 
 const usage = `usage: docsync [--write]

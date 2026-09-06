@@ -13,22 +13,22 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/cmd/internal/migrateflags"
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasargs"
-	"go.5x5.cz/ptah/internal/atlascompatpolicy"
-	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
-	"go.5x5.cz/ptah/internal/atlasmigratereport"
-	"go.5x5.cz/ptah/internal/atlasreport"
-	"go.5x5.cz/ptah/internal/dblock"
-	"go.5x5.cz/ptah/internal/envbool"
-	"go.5x5.cz/ptah/internal/revisiontable"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/cmd/internal/migrateflags"
+	"ptah.run/config/projectconfig"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasargs"
+	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/atlasmigratereport"
+	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/dblock"
+	"ptah.run/internal/envbool"
+	"ptah.run/internal/revisiontable"
+	"ptah.run/migration/migrator"
 )
 
 type atlasMigrateApplyOptions struct {
@@ -863,14 +863,14 @@ func atlasApplySkipChecksFromEnv() (bool, error) {
 }
 
 // applySkipChecks is the declaration of the variable, made once, on the verb
-// that owns it. See [go.5x5.cz/ptah/internal/envbool].
+// that owns it. See [ptah.run/internal/envbool].
 //
 // It carries the one change stokaro/ptah#1334 makes to this reader: an
 // explicitly EMPTY value used to read as unset here, which folded a
 // `PTAH_SKIP_CHECKS=` left behind by a broken shell expansion into "checks
 // enforced" without a word. Absence still selects the default; a present value
 // has to parse.
-// It is [go.5x5.cz/ptah/internal/envbool.Gated]: bypassing `-- +ptah check`
+// It is [ptah.run/internal/envbool.Gated]: bypassing `-- +ptah check`
 // directives is a Ptah-only capability the pinned community binary has no
 // spelling for, so strict compatibility must refuse an enabled value rather
 // than run a migration set the oracle would have enforced.

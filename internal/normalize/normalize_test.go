@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/normalize"
+	"ptah.run/internal/normalize"
 )
 
 func TestType(t *testing.T) {

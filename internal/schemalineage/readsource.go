@@ -1,7 +1,7 @@
 package schemalineage
 
 import (
-	"go.5x5.cz/ptah/internal/lexer"
+	"ptah.run/internal/lexer"
 )
 
 // readSourceRef is the one table a statement reads, the word naming what kind

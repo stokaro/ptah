@@ -33,9 +33,9 @@ import (
 	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/core/platform"
+	"ptah.run/core/sqlutil"
+	"ptah.run/dbschema"
 )
 
 const (

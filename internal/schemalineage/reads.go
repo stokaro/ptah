@@ -4,11 +4,11 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/lexer"
-	"go.5x5.cz/ptah/internal/parser"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/lexer"
+	"ptah.run/internal/parser"
 )
 
 // RoutineRead is one column a routine body reads.

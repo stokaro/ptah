@@ -10,10 +10,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/cmd/internal/schemaserve"
-	"go.5x5.cz/ptah/config/projectconfig"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/cmd/internal/schemaserve"
+	"ptah.run/config/projectconfig"
 )
 
 const (

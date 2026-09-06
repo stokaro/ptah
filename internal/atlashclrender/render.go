@@ -14,13 +14,13 @@ import (
 	"github.com/hashicorp/hcl/v2/hclwrite"
 	"github.com/zclconf/go-cty/cty"
 
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/pgindexstorage"
-	"go.5x5.cz/ptah/internal/sqlitekey"
-	"go.5x5.cz/ptah/internal/tableref"
-	"go.5x5.cz/ptah/migration/risk"
+	"ptah.run/core/coverage"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/pgindexstorage"
+	"ptah.run/internal/sqlitekey"
+	"ptah.run/internal/tableref"
+	"ptah.run/migration/risk"
 )
 
 // GeneratedCodeMarker is the first line of every native Ptah HCL schema
@@ -70,7 +70,7 @@ type Result struct {
 	// NotDescribed is what the rendered document does not claim to describe.
 	// It is also written into the document itself, as directive comments in the
 	// header, because the process that reads the document back is not this one;
-	// see [go.5x5.cz/ptah/core/coverage].
+	// see [ptah.run/core/coverage].
 	NotDescribed coverage.Set
 }
 
@@ -457,7 +457,7 @@ func (r *renderer) render() {
 // Saying so is what protects the declaration. `ptah schema export
 // --cleanup-go-annotations` deletes the Go annotations once the HCL is written,
 // and a loss diagnostic is what turns that into
-// [go.5x5.cz/ptah/internal/goannotationexport.ErrLossyCleanup]. Without this,
+// [ptah.run/internal/goannotationexport.ErrLossyCleanup]. Without this,
 // cleanup would remove the only place the scope was ever written down and the
 // schema would silently go back to reaching every dialect.
 func (r *renderer) reportDialectScopes() {
@@ -622,7 +622,7 @@ func (r *renderer) renderEnums() {
 // when the name is ambiguous is that binary's rule, not a Ptah convention. Its
 // loader then refuses the two-block document it just wrote (`duplicate enum
 // "mood"`, exit 1, measured on its own output); Ptah's reads it under
-// [go.5x5.cz/ptah/internal/atlashcl.SchemaScopedEnumsEnvVar], which is the
+// [ptah.run/internal/atlashcl.SchemaScopedEnumsEnvVar], which is the
 // round trip that binary does not have.
 func (r *renderer) enumLabels(enum schemamodel.Enum) string {
 	schema := r.schemaFor(enum.Schema)

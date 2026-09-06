@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/dbschema/sqlite"
+	"ptah.run/catalog"
+	"ptah.run/internal/dbschema/sqlite"
 )
 
 // rebuildStatements is the create-copy-drop-rename sequence SQLite's own ALTER

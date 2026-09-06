@@ -14,9 +14,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/internal/embedspec"
-	"go.5x5.cz/ptah/internal/embedstore"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/embedspec"
+	"ptah.run/internal/embedstore"
 )
 
 // TestInferenceRollbackRequiresTheDestinationIndex prevents a rollback that

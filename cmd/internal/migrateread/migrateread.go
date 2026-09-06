@@ -19,10 +19,10 @@ import (
 
 	"github.com/spf13/pflag"
 
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/cmd/internal/migrationsource"
-	"go.5x5.cz/ptah/internal/migrationintegrity"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/cmd/internal/migrationsource"
+	"ptah.run/internal/migrationintegrity"
+	"ptah.run/migration/migrationfile"
 )
 
 // Options are the flags common to every read-only migration-directory command.

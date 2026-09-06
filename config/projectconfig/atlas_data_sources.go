@@ -19,17 +19,17 @@ import (
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasregistry"
-	"go.5x5.cz/ptah/internal/atlasruntimevar"
-	"go.5x5.cz/ptah/internal/cloudtoken"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/migrationartifact"
-	"go.5x5.cz/ptah/internal/migrationsnapshot"
-	"go.5x5.cz/ptah/internal/ociartifact"
-	"go.5x5.cz/ptah/internal/processcapture"
-	"go.5x5.cz/ptah/internal/remotemigrationdir"
-	"go.5x5.cz/ptah/internal/secretdisplay"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasregistry"
+	"ptah.run/internal/atlasruntimevar"
+	"ptah.run/internal/cloudtoken"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/migrationartifact"
+	"ptah.run/internal/migrationsnapshot"
+	"ptah.run/internal/ociartifact"
+	"ptah.run/internal/processcapture"
+	"ptah.run/internal/remotemigrationdir"
+	"ptah.run/internal/secretdisplay"
 )
 
 const (

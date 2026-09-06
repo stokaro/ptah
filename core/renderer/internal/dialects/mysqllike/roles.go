@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/ptaherr"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
 )
 
 // MySQL and MariaDB have had roles since 8.0 and 10.0, and the shape is narrower

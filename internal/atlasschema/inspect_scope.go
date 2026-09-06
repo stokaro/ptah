@@ -8,10 +8,10 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/schemascope"
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/dbschema"
+	"ptah.run/internal/schemascope"
 )
 
 // readInspectSchema reads the schemas one inspection describes.

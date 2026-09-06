@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform/identifier"
+	"ptah.run/core/platform/identifier"
 )
 
 // catalogResolvedSemantics is a target that resolved exactly one name. Everything

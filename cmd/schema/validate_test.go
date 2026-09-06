@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"ptah.run/cmd/internal/exitcode"
 )
 
 // `schema validate` exists so a pre-commit hook can use the status alone. The

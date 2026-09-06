@@ -10,12 +10,12 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/migration/migrator"
-	"go.5x5.cz/ptah/migration/safety"
+	"ptah.run/cmd/atlas"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/migration/migrator"
+	"ptah.run/migration/safety"
 )
 
 func sqliteURLFromPath(path string) string {

@@ -1,7 +1,7 @@
 package astbuilder
 
 import (
-	"go.5x5.cz/ptah/core/ast"
+	"ptah.run/core/ast"
 )
 
 // ColumnBuilder provides a fluent API for building column definitions within table contexts.
@@ -184,7 +184,7 @@ func (cb *ColumnBuilder) Check(expression string) *ColumnBuilder {
 //
 // kind is the storage form, "VIRTUAL" or "STORED", and travels to the AST as
 // [ast.ColumnNode.GeneratedKind]. Which forms a target actually has is a
-// question for [go.5x5.cz/ptah/core/renderer], not for this package: nothing
+// question for [ptah.run/core/renderer], not for this package: nothing
 // here validates the pair.
 //
 // Example:
@@ -449,7 +449,7 @@ func (scb *SchemaColumnBuilder) Check(expression string) *SchemaColumnBuilder {
 //
 // kind is the storage form, "VIRTUAL" or "STORED", and travels to the AST as
 // [ast.ColumnNode.GeneratedKind]. Which forms a target actually has is a
-// question for [go.5x5.cz/ptah/core/renderer], not for this package: nothing
+// question for [ptah.run/core/renderer], not for this package: nothing
 // here validates the pair.
 //
 // Example:

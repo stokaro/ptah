@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/sqlutil"
+	"ptah.run/core/platform"
+	"ptah.run/core/sqlutil"
 )
 
 // defaultMigrationTagsTable is where the tag namespace lives.

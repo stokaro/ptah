@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/migrate"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemaartifacttest"
+	"ptah.run/cmd/migrate"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemaartifacttest"
 )
 
 func ociUsersSchema() *schemamodel.Database {

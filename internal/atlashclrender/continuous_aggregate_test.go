@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlashcl"
-	"go.5x5.cz/ptah/internal/atlashclrender"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/atlashclrender"
 )
 
 // TestRenderWritesTheContinuousAggregateBlock pins that a description names an

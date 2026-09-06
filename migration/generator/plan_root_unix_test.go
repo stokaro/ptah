@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/generator"
+	"ptah.run/migration/generator"
 )
 
 // The two rows below decide, explicitly, what a migration directory containing

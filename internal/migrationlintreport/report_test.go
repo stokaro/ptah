@@ -13,11 +13,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/migrationlintreport"
-	"go.5x5.cz/ptah/internal/migrationsnapshot"
-	migrationlint "go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/migrationlintreport"
+	"ptah.run/internal/migrationsnapshot"
+	migrationlint "ptah.run/migration/lint"
+	"ptah.run/migration/migrationfile"
 )
 
 type gitExitStatus128 struct{}

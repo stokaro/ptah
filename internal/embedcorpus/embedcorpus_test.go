@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedcorpus"
+	"ptah.run/internal/embedcorpus"
 )
 
 // complete is a corpus with everything an operator would write.

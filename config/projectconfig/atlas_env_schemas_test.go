@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/envbool/envbooltest"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/envbool/envbooltest"
 )
 
 // TestParseAtlasEnvSchemasSelectsTheSchemaUniverse pins the decode half of
@@ -73,7 +73,7 @@ func TestParseAtlasEnvSchemasSelectsTheSchemaUniverse(t *testing.T) {
 			// clear a ptah.yaml value rather than silently inherit it. The
 			// no-restriction behavior comes from the value, not the presence
 			// bit — an empty list joins to the empty flag value, which
-			// [go.5x5.cz/ptah/cmd/internal/dbcli.ParseSchemas] reads as no
+			// [ptah.run/cmd/internal/dbcli.ParseSchemas] reads as no
 			// schemas named.
 			name: "an empty list is present and selects nothing",
 			raw: `env "local" {

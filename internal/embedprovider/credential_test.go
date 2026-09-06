@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedprovider"
+	"ptah.run/internal/embedprovider"
 )
 
 // TestParseCredentialRef_ReadsWhatItSupportsAndRefusesTheRest pins the surface.

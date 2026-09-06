@@ -7,7 +7,7 @@ import (
 	"os"
 	"testing"
 
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/internal/dbtarget"
 )
 
 // requireReachableEngine resolves an engine's driver-form address and proves

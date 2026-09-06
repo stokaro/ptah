@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/internal/testutils"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/internal/testutils"
 )
 
 // flywayImportSource is a source directory only the Flyway layout can read.

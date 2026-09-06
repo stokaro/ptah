@@ -10,9 +10,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedcatchup"
-	"go.5x5.cz/ptah/internal/embedgen"
-	"go.5x5.cz/ptah/internal/embedrun"
+	"ptah.run/internal/embedcatchup"
+	"ptah.run/internal/embedgen"
+	"ptah.run/internal/embedrun"
 )
 
 // fakeChanges answers pages of settled events.

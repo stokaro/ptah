@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/lexer"
-	"go.5x5.cz/ptah/internal/parser"
+	"ptah.run/core/ast"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/lexer"
+	"ptah.run/internal/parser"
 )
 
 // RoutineWrite is one table or column a routine body writes.

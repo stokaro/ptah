@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/agentaudit"
+	"ptah.run/internal/agentaudit"
 )
 
 // fixedClock pins the timestamp so a record can be compared byte for byte.

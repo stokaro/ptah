@@ -163,9 +163,9 @@ jobs:
             echo
             echo '```text'
             # Every failing package, longest first.
-            grep -E '^FAIL[[:space:]]+go\.5x5\.cz/ptah' unit-tests.log | sort -rn -k3
+            grep -E '^FAIL[[:space:]]+ptah\.run' unit-tests.log | sort -rn -k3
             # The five slowest passing packages show the timeout's context.
-            grep -E '^ok[[:space:]]+go\.5x5\.cz/ptah' unit-tests.log | sort -rn -k3 | head -5
+            grep -E '^ok[[:space:]]+ptah\.run' unit-tests.log | sort -rn -k3 | head -5
             grep -A 6 -E '^panic: test timed out' unit-tests.log | head -40
             # Windows runtime aborts may use `Exception 0x` rather than a Go
             # panic header, so retain both signatures and enough allocation

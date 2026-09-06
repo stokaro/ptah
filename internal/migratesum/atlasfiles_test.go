@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/migratesum"
+	"ptah.run/internal/migratesum"
 )
 
 func atlasSourceFS(files map[string]string) fstest.MapFS {

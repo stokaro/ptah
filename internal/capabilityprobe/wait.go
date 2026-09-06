@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dburldisplay"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dburldisplay"
 )
 
 // waitInterval is how long WaitForServer sleeps between attempts.

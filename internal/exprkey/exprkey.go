@@ -36,8 +36,8 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/internal/objectidentity"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/internal/objectidentity"
 )
 
 // Check is the key for a table CHECK whose table arrives as one possibly

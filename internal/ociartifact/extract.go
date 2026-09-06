@@ -8,7 +8,7 @@ import (
 	"path"
 	"path/filepath"
 
-	"go.5x5.cz/ptah/internal/fsdurable"
+	"ptah.run/internal/fsdurable"
 )
 
 // WriteToDir reconstructs the artifact under dir. The destination must not

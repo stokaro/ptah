@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/defaultlit"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer/internal/dialects/internal/defaultlit"
 )
 
 // visitCreateDomain renders Oracle 23's CREATE DOMAIN.

@@ -4,8 +4,8 @@ import (
 	"maps"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
 )
 
 // DeclaredUserTypes is the vocabulary used to qualify column references to

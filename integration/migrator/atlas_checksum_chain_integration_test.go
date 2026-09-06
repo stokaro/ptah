@@ -10,10 +10,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrationfile"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/dbschema"
+	"ptah.run/internal/migratesum"
+	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/migrator"
 )
 
 const (

@@ -18,8 +18,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 )
 
 // probedDialects are the dialects the probe has a statement table for.

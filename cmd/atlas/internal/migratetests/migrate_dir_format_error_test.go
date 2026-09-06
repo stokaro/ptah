@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/internal/atlasmigrate"
 )
 
 // unknownDirFormatStderr is the whole of what the pinned community binary

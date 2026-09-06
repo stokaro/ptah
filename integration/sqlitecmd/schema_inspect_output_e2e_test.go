@@ -12,13 +12,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/cmd/schema"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlashclrender"
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/internal/envbool/envbooltest"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/cmd/atlas"
+	"ptah.run/cmd/schema"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/envbool/envbooltest"
+	"ptah.run/migration/migrator"
 )
 
 const nativeInspectIncludeDDL = `CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT);

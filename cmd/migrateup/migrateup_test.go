@@ -13,15 +13,15 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/pflag"
 
-	"go.5x5.cz/ptah/cmd/internal/cliobs"
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/testutils"
-	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrationfile"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/cmd/internal/cliobs"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/testutils"
+	"ptah.run/migration/lint"
+	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/migrator"
 )
 
 // TestMigrateUp_VerifySumAbortsOnDriftBeforeConnecting exercises the

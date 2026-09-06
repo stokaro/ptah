@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/renderer"
+	"ptah.run/core/renderer"
 )
 
 // queryBuilderPage is the page whose dialect table this test holds to

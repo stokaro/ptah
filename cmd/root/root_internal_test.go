@@ -13,8 +13,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/exitcode"
 )
 
 func TestNewRootCommand_AtlasLookingRootPathsStayRejected(t *testing.T) {

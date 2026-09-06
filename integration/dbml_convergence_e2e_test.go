@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/root"
+	"ptah.run/cmd/root"
 )
 
 // dbmlDesiredState is a schema written in DBML rather than in any format Ptah

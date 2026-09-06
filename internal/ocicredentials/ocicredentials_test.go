@@ -11,7 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"oras.land/oras-go/v2/registry/remote/auth"
 
-	"go.5x5.cz/ptah/internal/ocicredentials"
+	"ptah.run/internal/ocicredentials"
 )
 
 // envOptions builds Options backed by a fixed map, so a test never touches the

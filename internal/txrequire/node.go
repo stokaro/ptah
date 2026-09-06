@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
 )
 
 // NodeRequiresAutocommit reports whether a PLANNED node must be routed away

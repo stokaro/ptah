@@ -10,8 +10,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/migration/diffpolicy"
+	"ptah.run/config"
+	"ptah.run/migration/diffpolicy"
 )
 
 // TestCompareOptionsWithDiffPolicyForwardsEverySkipTheGuardReads pins the

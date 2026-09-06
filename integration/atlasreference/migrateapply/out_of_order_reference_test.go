@@ -5,7 +5,7 @@ package migrateapply_test
 import (
 	"database/sql"
 	"errors"
-	"go.5x5.cz/ptah/integration/atlasreference"
+	"ptah.run/integration/atlasreference"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -196,7 +196,7 @@ func assertMigrationState(c *qt.C, dbPath string, wantTables, wantVersions []str
 func buildCompatBinary(c *qt.C) string {
 	c.Helper()
 	path := filepath.Join(c.TempDir(), "ptah-compat")
-	out, err := exec.Command("go", "build", "-o", path, "go.5x5.cz/ptah/cmd/ptah-compat").CombinedOutput()
+	out, err := exec.Command("go", "build", "-o", path, "ptah.run/cmd/ptah-compat").CombinedOutput()
 	c.Assert(err, qt.IsNil, qt.Commentf("build ptah-compat: %s", out))
 	return path
 }

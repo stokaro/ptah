@@ -27,12 +27,12 @@ import (
 	qt "github.com/frankban/quicktest"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/internal/sqlident"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/core/platform"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/sqlident"
+	"ptah.run/migration/migrator"
 )
 
 func TestSimulateOnDev_MySQLFailedRehearsalLeavesTargetByteIdenticalLive(t *testing.T) {

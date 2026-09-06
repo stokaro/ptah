@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/aiprovider"
+	"ptah.run/internal/aiprovider"
 )
 
 // sseServer serves a fixed event stream and records what was asked for.

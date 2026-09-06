@@ -7,13 +7,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/agentflags"
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/internal/agentaudit"
-	"go.5x5.cz/ptah/internal/aiprovider"
-	"go.5x5.cz/ptah/internal/assistloop"
-	"go.5x5.cz/ptah/internal/assistsession"
+	"ptah.run/cmd/internal/agentflags"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/internal/agentaudit"
+	"ptah.run/internal/aiprovider"
+	"ptah.run/internal/assistloop"
+	"ptah.run/internal/assistsession"
 )
 
 // Flags this command adds to the shared agent ones.

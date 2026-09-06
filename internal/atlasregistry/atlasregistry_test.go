@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasregistry"
+	"ptah.run/internal/atlasregistry"
 )
 
 // `atlas://` names a repository and a pointer with no registry host in it,

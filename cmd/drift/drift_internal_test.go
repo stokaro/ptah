@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/safety"
+	"ptah.run/migration/safety"
 )
 
 func TestParseIgnoredTables(t *testing.T) {

@@ -1,9 +1,9 @@
 package schemacensus
 
 import (
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/ast"
+	"ptah.run/core/coverage"
+	"ptah.run/core/schemamodel"
 )
 
 // Fixture is one named desired schema the census ablates fields out of.

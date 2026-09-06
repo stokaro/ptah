@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 
-	"go.5x5.cz/ptah/internal/ociartifact"
+	"ptah.run/internal/ociartifact"
 )
 
 // ErrIncompleteRelease reports a release artifact that is missing a part a
@@ -22,7 +22,7 @@ type Fetched struct {
 	//
 	// Unparsed here on purpose: this package models evidence, and the grammar
 	// of a specification belongs to the package that defines it. Checking these
-	// bytes against Release.SpecDigest is [go.5x5.cz/ptah/internal/embedspec.ParsePublished].
+	// bytes against Release.SpecDigest is [ptah.run/internal/embedspec.ParsePublished].
 	Specification []byte
 	// Reference is what the operator asked for, and Digest what it resolved to.
 	//

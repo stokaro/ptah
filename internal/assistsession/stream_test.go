@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/assistsession"
+	"ptah.run/internal/assistsession"
 )
 
 func TestCreate_MirrorsEveryRecordByteForByte(t *testing.T) {

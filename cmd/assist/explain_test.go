@@ -12,9 +12,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/internal/migrateops"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/internal/migrateops"
+	"ptah.run/migration/migrationfile"
 )
 
 // scripted answers each chat request with the next body, so a test can drive a

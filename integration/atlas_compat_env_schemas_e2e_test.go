@@ -18,10 +18,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/internal/envbool/envbooltest"
+	"ptah.run/cmd/atlas"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/envbool/envbooltest"
 )
 
 // atlasCompatEnvSchemasCase is one `env { schemas }` value, the --schema flag

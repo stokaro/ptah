@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/ociartifact"
+	"ptah.run/internal/ociartifact"
 )
 
 // ErrPolicyViolation reports an artifact a policy refuses.

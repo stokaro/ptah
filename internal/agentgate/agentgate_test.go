@@ -8,11 +8,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/agentgate"
-	"go.5x5.cz/ptah/internal/agentpolicy"
-	"go.5x5.cz/ptah/internal/agentworkspace"
-	"go.5x5.cz/ptah/internal/migrateops"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/agentgate"
+	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/agentworkspace"
+	"ptah.run/internal/migrateops"
+	"ptah.run/migration/migrationfile"
 )
 
 // scopeFor builds a workspace holding one class directory with the given files

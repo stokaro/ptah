@@ -8,8 +8,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/pflag"
 
-	"go.5x5.cz/ptah/cmd/dropall"
-	"go.5x5.cz/ptah/internal/atlasurl"
+	"ptah.run/cmd/dropall"
+	"ptah.run/internal/atlasurl"
 )
 
 func TestDropAllCommandDeclinedConfirmationPrintsCanceled(t *testing.T) {

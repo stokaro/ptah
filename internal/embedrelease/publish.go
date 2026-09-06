@@ -10,7 +10,7 @@ import (
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"go.5x5.cz/ptah/internal/ociartifact"
+	"ptah.run/internal/ociartifact"
 )
 
 // FileName is what each record is called inside its artifact.
@@ -80,13 +80,13 @@ func NewReleaseRecord(release Release, specification []byte) (Record, error) {
 		ArtifactType: ReleaseArtifactType, FileName: ReleaseFileName,
 		Body: body, Digest: release.Digest(),
 		Annotations: map[string]string{
-			"cz.5x5.ptah.inference.generation":      release.Generation,
-			"cz.5x5.ptah.inference.record":          release.Digest(),
-			"cz.5x5.ptah.inference.reproducibility": release.Reproducibility,
+			"run.ptah.inference.generation":      release.Generation,
+			"run.ptah.inference.record":          release.Digest(),
+			"run.ptah.inference.reproducibility": release.Reproducibility,
 			// The specification's own address, listed so that a reader
 			// comparing two releases can see whether the document changed
 			// without pulling either layer.
-			"cz.5x5.ptah.inference.specification": release.SpecDigest,
+			"run.ptah.inference.specification": release.SpecDigest,
 		},
 		Files: map[string][]byte{SpecificationFileName: specification},
 	}, nil
@@ -103,12 +103,12 @@ func NewVerificationRecord(verification Verification) (Record, error) {
 	// pulling the layer, and "did this pass" is the question somebody scanning
 	// a list of reports is asking.
 	annotations := map[string]string{
-		"cz.5x5.ptah.inference.generation": verification.Generation,
-		"cz.5x5.ptah.inference.record":     verification.Digest(),
-		"cz.5x5.ptah.inference.passed":     "false",
+		"run.ptah.inference.generation": verification.Generation,
+		"run.ptah.inference.record":     verification.Digest(),
+		"run.ptah.inference.passed":     "false",
 	}
 	if verification.Passed {
-		annotations["cz.5x5.ptah.inference.passed"] = "true"
+		annotations["run.ptah.inference.passed"] = "true"
 	}
 	return Record{
 		ArtifactType: VerificationArtifactType, FileName: VerificationFileName,
@@ -127,9 +127,9 @@ func NewCutoverRecord(cutover Cutover) (Record, error) {
 		ArtifactType: CutoverArtifactType, FileName: CutoverFileName,
 		Body: body, Digest: cutover.Digest(),
 		Annotations: map[string]string{
-			"cz.5x5.ptah.inference.generation": cutover.Generation,
-			"cz.5x5.ptah.inference.record":     cutover.Digest(),
-			"cz.5x5.ptah.inference.plan":       cutover.PlanDigest,
+			"run.ptah.inference.generation": cutover.Generation,
+			"run.ptah.inference.record":     cutover.Digest(),
+			"run.ptah.inference.plan":       cutover.PlanDigest,
 		},
 	}, nil
 }
@@ -145,9 +145,9 @@ func NewRollbackRecord(rollback Rollback) (Record, error) {
 		ArtifactType: RollbackArtifactType, FileName: RollbackFileName,
 		Body: body, Digest: rollback.Digest(),
 		Annotations: map[string]string{
-			"cz.5x5.ptah.inference.generation": rollback.Generation,
-			"cz.5x5.ptah.inference.record":     rollback.Digest(),
-			"cz.5x5.ptah.inference.replaced":   rollback.Replaced,
+			"run.ptah.inference.generation": rollback.Generation,
+			"run.ptah.inference.record":     rollback.Digest(),
+			"run.ptah.inference.replaced":   rollback.Replaced,
 		},
 	}, nil
 }
@@ -166,9 +166,9 @@ func NewRetirementRecord(retirement Retirement) (Record, error) {
 		ArtifactType: RetirementArtifactType, FileName: RetirementFileName,
 		Body: body, Digest: retirement.Digest(),
 		Annotations: map[string]string{
-			"cz.5x5.ptah.inference.generation": retirement.Generation,
-			"cz.5x5.ptah.inference.record":     retirement.Digest(),
-			"cz.5x5.ptah.inference.rows":       strconv.FormatInt(retirement.Rows, 10),
+			"run.ptah.inference.generation": retirement.Generation,
+			"run.ptah.inference.record":     retirement.Digest(),
+			"run.ptah.inference.rows":       strconv.FormatInt(retirement.Rows, 10),
 		},
 	}, nil
 }

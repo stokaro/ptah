@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/graphqlrender"
-	"go.5x5.cz/ptah/internal/schemaexport"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/graphqlrender"
+	"ptah.run/internal/schemaexport"
 )
 
 func exposureSchema() *schemamodel.Database {

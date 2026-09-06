@@ -6,12 +6,12 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/modelast"
-	"go.5x5.cz/ptah/internal/tableref"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/modelast"
+	"ptah.run/internal/tableref"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // planSequences emits real sequence DDL for a target in this family that hosts

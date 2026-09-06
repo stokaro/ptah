@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
-	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
+	"ptah.run/catalog"
+	"ptah.run/core/schemamodel"
+	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/migration/schemadiff/internal/compare"
 )
 
 // postsForeignKey is the constraint both #1258 fixtures carry. MySQL reports it

@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/lexer"
+	"ptah.run/internal/lexer"
 )
 
 // deriveView resolves one view body into edges, or records why it could not.

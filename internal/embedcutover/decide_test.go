@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedcutover"
+	"ptah.run/internal/embedcutover"
 )
 
 // goldenPlanDigest is what the plan in TestPlanDigest_IsTheEncodingPlanVersionNames

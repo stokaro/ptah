@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/dburldisplay"
+	"ptah.run/internal/dburldisplay"
 )
 
 func TestFormat(t *testing.T) {

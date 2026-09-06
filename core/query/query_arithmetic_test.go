@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/query"
+	"ptah.run/core/query"
 )
 
 // TestArithmetic_ParenthesizesSoTheTreeSurvives is the reason this node renders

@@ -64,7 +64,7 @@ equal to it.
 Import paths use the module prefix:
 
 ```go
-import "go.5x5.cz/ptah/core/renderer"
+import "ptah.run/core/renderer"
 ```
 
 The `migration/dbtest` package is the embeddable engine behind the native test
@@ -146,7 +146,7 @@ preserve both fields; missing facts fail closed with
 and is not the safety boundary for applying such a replacement.
 
 The separate [`testkit`](https://github.com/stokaro/ptah-testkit) module
-(`go.5x5.cz/ptah/testkit`) is an opt-in helper for tests that need real
+(`ptah.run/testkit`) is an opt-in helper for tests that need real
 databases. It keeps `testcontainers-go` out of Ptah's main module graph, lives
 in its own repository, and versions independently. It depends on Ptah one way
 and consumes a published release, so nothing here builds against it.

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"go.5x5.cz/ptah/internal/embedgen"
+	"ptah.run/internal/embedgen"
 )
 
 // BenchmarkCanonicalizeAndHash_PerRow measures what one row costs before it

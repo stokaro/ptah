@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/dbtest"
+	"ptah.run/migration/dbtest"
 )
 
 // The Atlas fixture shape, reproduced exactly as Atlas writes it.

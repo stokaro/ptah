@@ -10,8 +10,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/internal/protobufrender"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/internal/protobufrender"
 )
 
 // splitModelWithNickname is the two-table fixture the split tests start from.

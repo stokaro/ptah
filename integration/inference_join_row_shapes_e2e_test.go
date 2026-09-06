@@ -32,7 +32,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/internal/dbtarget"
 )
 
 // TestInferenceARefusingInputPolicyDoesNotJudgeATargetOnlyRowE2E is the first

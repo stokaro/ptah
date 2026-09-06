@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasargs"
+	"ptah.run/internal/atlasargs"
 )
 
 // readOnlyRegistryProject builds the project shape the remote_dir data source

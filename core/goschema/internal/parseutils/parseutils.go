@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/annotationmeta"
+	"ptah.run/internal/annotationmeta"
 )
 
 var keyValuePairRe = regexp.MustCompile(`(\w+(?:\.\w+)*)=("(?:\\.|[^"\\])*"|[^\s]+)`)

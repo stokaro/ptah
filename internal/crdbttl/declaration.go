@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/internal/crdbduration"
-	"go.5x5.cz/ptah/internal/crdbinterval"
+	"ptah.run/core/ast"
+	"ptah.run/internal/crdbduration"
+	"ptah.run/internal/crdbinterval"
 )
 
 // AttributePrefix is what every declared TTL attribute starts with. A parser

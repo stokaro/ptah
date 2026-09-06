@@ -28,10 +28,10 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/capabilityprobe"
-	"go.5x5.cz/ptah/internal/servertarget"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/capabilityprobe"
+	"ptah.run/internal/servertarget"
 )
 
 // Profile is everything Ptah has established about one server.

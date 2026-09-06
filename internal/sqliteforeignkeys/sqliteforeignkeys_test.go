@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/sqliteforeignkeys"
+	"ptah.run/internal/sqliteforeignkeys"
 )
 
 func TestBracketsRecognizesAWrappedPlan(t *testing.T) {

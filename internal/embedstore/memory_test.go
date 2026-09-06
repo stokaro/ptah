@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedrun"
-	"go.5x5.cz/ptah/internal/embedstore"
+	"ptah.run/internal/embedrun"
+	"ptah.run/internal/embedstore"
 )
 
 // at is a fixed instant, so a test says what it means rather than what the

@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
 )
 
 // everyPlannedDialect is every canonical dialect the planner registry routes,

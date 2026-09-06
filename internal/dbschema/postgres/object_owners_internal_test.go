@@ -12,9 +12,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/dbschema/dbtest"
+	"ptah.run/catalog"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/dbschema/dbtest"
 )
 
 // TestReadObjectOwners_PassesOneArgumentPerSchema pins the argument count.

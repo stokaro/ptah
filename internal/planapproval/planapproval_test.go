@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/planapproval"
+	"ptah.run/internal/planapproval"
 )
 
 // An approval is a detached SSH signature over a plan's exact bytes, verified

@@ -8,13 +8,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/internal/embedcorpus"
-	"go.5x5.cz/ptah/internal/embeddigest"
-	"go.5x5.cz/ptah/internal/embedeval"
-	"go.5x5.cz/ptah/internal/embedpg"
-	"go.5x5.cz/ptah/internal/embedprovider"
-	"go.5x5.cz/ptah/internal/embedspec"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/internal/embedcorpus"
+	"ptah.run/internal/embeddigest"
+	"ptah.run/internal/embedeval"
+	"ptah.run/internal/embedpg"
+	"ptah.run/internal/embedprovider"
+	"ptah.run/internal/embedspec"
 )
 
 // evaluateOptions are what the evaluate verb takes.

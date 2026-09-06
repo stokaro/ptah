@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform/capability"
+	"ptah.run/core/platform/capability"
 )
 
 // answer is what one live server did about one capability, with the statement

@@ -12,8 +12,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/embedrun"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/embedrun"
 )
 
 // TestRunFields_CoverEveryRunField is the ratchet.

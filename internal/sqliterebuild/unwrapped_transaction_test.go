@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 )
 
 // TestDDLInsideTransaction_IsDeclaredPerTarget states which engines take a

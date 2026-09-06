@@ -8,9 +8,9 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/internal/lexer"
+	"ptah.run/core/platform"
+	"ptah.run/core/sqlutil"
+	"ptah.run/internal/lexer"
 )
 
 func (m *Migrator) migrationsTableExists(ctx context.Context) (bool, error) {

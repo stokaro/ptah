@@ -4,7 +4,7 @@ import (
 	"maps"
 	"strconv"
 
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
+	"ptah.run/internal/atlasmigrateimport"
 )
 
 // flywayVersionTokens is the two-way dictionary between the exact revision

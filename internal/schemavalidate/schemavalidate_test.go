@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemavalidate"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemavalidate"
 )
 
 // The renderer refuses a schema it cannot render, but it refuses the first

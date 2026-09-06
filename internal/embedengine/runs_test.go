@@ -7,9 +7,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedengine"
-	"go.5x5.cz/ptah/internal/embedrun"
-	"go.5x5.cz/ptah/internal/embedstore"
+	"ptah.run/internal/embedengine"
+	"ptah.run/internal/embedrun"
+	"ptah.run/internal/embedstore"
 )
 
 // TestPause_StopsARunningBackfillAtItsNextCommit is the property the pause verb

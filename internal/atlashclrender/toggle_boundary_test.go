@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlashclrender"
-	"go.5x5.cz/ptah/internal/pgindexstorage"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/pgindexstorage"
 )
 
 // A malformed toggle fails the export even for a schema that carries no index

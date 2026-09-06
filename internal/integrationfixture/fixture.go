@@ -5,7 +5,7 @@ package integrationfixture
 import (
 	"maps"
 
-	"go.5x5.cz/ptah/core/platform"
+	"ptah.run/core/platform"
 )
 
 // RoundTrip describes one fixture-driven migration generator scenario.

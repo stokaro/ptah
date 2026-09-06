@@ -10,12 +10,12 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/internal/atlaslint"
-	"go.5x5.cz/ptah/internal/fsnapshot"
-	"go.5x5.cz/ptah/internal/migrationsnapshot"
-	"go.5x5.cz/ptah/internal/parser"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/core/ast"
+	"ptah.run/internal/atlaslint"
+	"ptah.run/internal/fsnapshot"
+	"ptah.run/internal/migrationsnapshot"
+	"ptah.run/internal/parser"
+	"ptah.run/migration/migrationfile"
 )
 
 // errNoSQLMigrationFiles reports a directory holding no *.sql file at all. It

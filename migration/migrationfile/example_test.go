@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/migration/migrationfile"
 )
 
 // ExampleDiscover walks a migration directory in auto format. Results come

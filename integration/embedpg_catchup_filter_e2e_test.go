@@ -13,11 +13,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/internal/embedengine"
-	"go.5x5.cz/ptah/internal/embedgen"
-	"go.5x5.cz/ptah/internal/embedpg"
-	"go.5x5.cz/ptah/internal/embedrun"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/embedengine"
+	"ptah.run/internal/embedgen"
+	"ptah.run/internal/embedpg"
+	"ptah.run/internal/embedrun"
 )
 
 // TestEmbedPGCatchUpHonorsTheSourceFilterE2E is stokaro/ptah#2638.

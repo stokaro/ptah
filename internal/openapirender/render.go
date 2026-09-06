@@ -12,8 +12,8 @@ import (
 
 	yaml "go.yaml.in/yaml/v3"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemaexport"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemaexport"
 )
 
 const (

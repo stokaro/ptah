@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"go.5x5.cz/ptah/internal/workflowimagepins"
+	"ptah.run/internal/workflowimagepins"
 )
 
 func main() {

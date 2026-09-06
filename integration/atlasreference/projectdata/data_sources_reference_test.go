@@ -21,9 +21,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "modernc.org/sqlite" // registers the SQLite driver for database/sql
 
-	"go.5x5.cz/ptah/integration/atlasreference"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/integration/atlasreference"
+	"ptah.run/internal/migratesum"
+	"ptah.run/migration/migrationfile"
 )
 
 const (
@@ -801,7 +801,7 @@ env "local" {
 func buildCompatBinary(c *qt.C) string {
 	c.Helper()
 	path := filepath.Join(c.TempDir(), "ptah-compat")
-	output, err := exec.Command("go", "build", "-o", path, "go.5x5.cz/ptah/cmd/ptah-compat").CombinedOutput()
+	output, err := exec.Command("go", "build", "-o", path, "ptah.run/cmd/ptah-compat").CombinedOutput()
 	c.Assert(err, qt.IsNil, qt.Commentf("build ptah-compat: %s", output))
 	return path
 }

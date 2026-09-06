@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/query"
+	"ptah.run/core/query"
 )
 
 // cteDialectRow is one dialect and the WITH clause it must receive.

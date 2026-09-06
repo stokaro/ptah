@@ -12,10 +12,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/editor"
-	"go.5x5.cz/ptah/cmd/internal/migratemaint"
-	"go.5x5.cz/ptah/internal/migrateops"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/editor"
+	"ptah.run/cmd/internal/migratemaint"
+	"ptah.run/internal/migrateops"
 )
 
 type editInputs struct {

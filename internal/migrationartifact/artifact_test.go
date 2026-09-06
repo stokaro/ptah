@@ -11,9 +11,9 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2/content/memory"
 
-	"go.5x5.cz/ptah/internal/migrationartifact"
-	"go.5x5.cz/ptah/internal/ociartifact"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/migrationartifact"
+	"ptah.run/internal/ociartifact"
+	"ptah.run/migration/migrationfile"
 )
 
 func TestVersionTag(t *testing.T) {

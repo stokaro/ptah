@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/oracletype"
-	"go.5x5.cz/ptah/internal/sqlident"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/oracletype"
+	"ptah.run/internal/sqlident"
 )
 
 func renderColumn(column *ast.ColumnNode, caps capability.Capabilities) (string, error) {

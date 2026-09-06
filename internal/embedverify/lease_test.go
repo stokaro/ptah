@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedverify"
+	"ptah.run/internal/embedverify"
 )
 
 // leaseAt returns the run state a healthy generation has, with the lease the

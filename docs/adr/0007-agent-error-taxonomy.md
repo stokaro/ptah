@@ -117,7 +117,7 @@ which is `internal/agentapi`.
 ### 2.3 The code reaches the client twice
 
 **Chosen.** In the result text, as a leading token, and in the result's `_meta`
-under `ptah.5x5.cz/diagnostic` as an object with `code`, `actor`, `retryable`,
+under `ptah.run/diagnostic` as an object with `code`, `actor`, `retryable`,
 `message` and `hint`.
 
 Twice, because two different things read a tool result. Most clients hand the

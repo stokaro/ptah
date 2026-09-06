@@ -11,15 +11,15 @@ import (
 	"strings"
 	"sync"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/pgindexstorage"
-	"go.5x5.cz/ptah/internal/reservedrole"
-	"go.5x5.cz/ptah/internal/rolescope"
-	"go.5x5.cz/ptah/internal/routinesetting"
-	"go.5x5.cz/ptah/internal/sqlrunner"
+	"ptah.run/catalog"
+	"ptah.run/core/coverage"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/pgindexstorage"
+	"ptah.run/internal/reservedrole"
+	"ptah.run/internal/rolescope"
+	"ptah.run/internal/routinesetting"
+	"ptah.run/internal/sqlrunner"
 )
 
 // Reader reads schema from PostgreSQL databases
@@ -1365,7 +1365,7 @@ func (r *Reader) readIndexes(ctx context.Context) ([]catalog.Index, error) {
 // through [schemamodel.Extension.Provides] wherever the renderer's reference scan
 // reads the attribute it lands in, and that is the answer preferred when both
 // are available, because a name can be looked up in the document; see
-// [go.5x5.cz/ptah/internal/atlashclrender] omitRefusedExtension. This projection
+// [ptah.run/internal/atlashclrender] omitRefusedExtension. This projection
 // does not depend on either: Provides excludes names pg_catalog also supplies,
 // so a class shadowed by a core one would drop out of it.
 func requiredExtensionsProjection(indclassExpr, accessMethodExpr string) string {

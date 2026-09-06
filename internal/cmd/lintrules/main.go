@@ -15,7 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/internal/lintcatalog"
+	"ptah.run/internal/lintcatalog"
 )
 
 func main() {

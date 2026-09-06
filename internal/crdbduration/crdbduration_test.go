@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/crdbduration"
+	"ptah.run/internal/crdbduration"
 )
 
 // TestCanonical_ReproducesWhatTheServerStored is the table this package exists

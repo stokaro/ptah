@@ -10,10 +10,10 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
 
-	"go.5x5.cz/ptah/internal/fsnapshot"
-	"go.5x5.cz/ptah/internal/migrationlintreport"
-	"go.5x5.cz/ptah/internal/ociartifact"
-	migrationlint "go.5x5.cz/ptah/migration/lint"
+	"ptah.run/internal/fsnapshot"
+	"ptah.run/internal/migrationlintreport"
+	"ptah.run/internal/ociartifact"
+	migrationlint "ptah.run/migration/lint"
 )
 
 const (

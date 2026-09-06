@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/renderer"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/core/renderer"
 )
 
 // TestOracleRoleStatements pins every role and grant shape against what a live

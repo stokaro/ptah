@@ -6,9 +6,9 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/migration/safety"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/ast"
+	"ptah.run/migration/safety"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // ExampleAssessSQL classifies raw SQL strings — the zero-dependency entry

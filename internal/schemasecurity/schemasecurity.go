@@ -31,9 +31,9 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/migration/risk"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemamodel"
+	"ptah.run/migration/risk"
 )
 
 // publicRole is the pseudo-role every engine grants to when a grant names no

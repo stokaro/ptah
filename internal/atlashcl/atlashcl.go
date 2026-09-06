@@ -15,10 +15,10 @@ import (
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/convert"
 
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/pgindexstorage"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/core/coverage"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/pgindexstorage"
+	"ptah.run/internal/tableref"
 )
 
 // Options configures HCL schema parsing.
@@ -54,7 +54,7 @@ type Options struct {
 	// does with the count. Deciding what "too many" means needs facts this
 	// parser does not have -- which URL the run is limited to -- so the rule
 	// lives with the caller that knows them
-	// (go.5x5.cz/ptah/internal/schemafile.Options.SchemaScope).
+	// (ptah.run/internal/schemafile.Options.SchemaScope).
 	RecordSchemaBlock func(SchemaBlock)
 
 	// Vars supplies values for the file's `variable` blocks, spelled the way

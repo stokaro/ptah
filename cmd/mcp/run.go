@@ -3,11 +3,11 @@ package mcp
 import (
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/agentflags"
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/internal/agentaudit"
-	"go.5x5.cz/ptah/internal/buildinfo"
-	"go.5x5.cz/ptah/internal/mcpserver"
+	"ptah.run/cmd/internal/agentflags"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/internal/agentaudit"
+	"ptah.run/internal/buildinfo"
+	"ptah.run/internal/mcpserver"
 )
 
 // run resolves the operator's configuration and serves until the session ends.

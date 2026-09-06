@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas"
+	"ptah.run/cmd/atlas"
 )
 
 // `schema test -u env://src` was refused by name while `--to env://src`

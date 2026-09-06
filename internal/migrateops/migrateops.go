@@ -15,9 +15,9 @@ import (
 	"strconv"
 	"time"
 
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/migrationversion"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/migrationversion"
+	"ptah.run/migration/migrationfile"
 )
 
 // Result reports the outcome of a maintenance operation for CLI display.

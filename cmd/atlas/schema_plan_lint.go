@@ -6,11 +6,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/internal/atlasreport"
-	"go.5x5.cz/ptah/internal/envbool"
-	"go.5x5.cz/ptah/internal/planlint"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/envbool"
+	"ptah.run/internal/planlint"
 )
 
 // atlasSchemaPlanLintFailOnErrorEnvVar turns the plan report into a gate: an
@@ -26,12 +26,12 @@ import (
 // It is an environment variable rather than a flag because the conformance
 // cli-surface tier asserts that ptah-compat registers exactly the flags of the
 // surface it stands in for; precedent and spelling:
-// [go.5x5.cz/ptah/internal/atlashclrender.KeepAtlasRefusedBlocksEnvVar].
+// [ptah.run/internal/atlashclrender.KeepAtlasRefusedBlocksEnvVar].
 const atlasSchemaPlanLintFailOnErrorEnvVar = "PTAH_ATLAS_PLAN_LINT_FAIL_ON_ERROR"
 
 // atlasPlanLintFailOnError is the declaration of the variable, made once, on
-// the verb that owns it. See [go.5x5.cz/ptah/internal/envbool].
-// It is [go.5x5.cz/ptah/internal/envbool.Gated]: the pinned community binary
+// the verb that owns it. See [ptah.run/internal/envbool].
+// It is [ptah.run/internal/envbool.Gated]: the pinned community binary
 // v1.3.0 refuses the whole `schema plan` path, so failing a plan review on a
 // lint finding is behavior it does not have at all.
 var atlasPlanLintFailOnError = envbool.New(atlasSchemaPlanLintFailOnErrorEnvVar, false, envbool.Gated)

@@ -22,11 +22,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/internal/embedgen"
-	"go.5x5.cz/ptah/internal/embedpg"
-	"go.5x5.cz/ptah/internal/embedspec"
-	"go.5x5.cz/ptah/internal/embedverify"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/embedgen"
+	"ptah.run/internal/embedpg"
+	"ptah.run/internal/embedspec"
+	"ptah.run/internal/embedverify"
 )
 
 // TestEnsureTarget_CreatesTheColumnsAGenerationWritesLive is the happy path.

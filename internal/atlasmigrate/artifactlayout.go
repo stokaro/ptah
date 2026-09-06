@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
+	"ptah.run/internal/atlasmigrateimport"
 )
 
 // This file is the write half of `migrate diff`'s layout rules: given the

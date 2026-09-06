@@ -13,11 +13,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/migrationreplay"
-	"go.5x5.cz/ptah/internal/sqlident"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/core/platform"
+	"ptah.run/dbschema"
+	"ptah.run/internal/migrationreplay"
+	"ptah.run/internal/sqlident"
+	"ptah.run/migration/migrationfile"
 )
 
 func TestWithReplayedSnapshot_ClickHouseLive(t *testing.T) {

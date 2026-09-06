@@ -12,12 +12,12 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/config"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/migration/schemadiff"
 )
 
 // TestPostgresDomainDefaultConvergesE2E is the live acceptance for

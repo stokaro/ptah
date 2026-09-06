@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedcutover"
+	"ptah.run/internal/embedcutover"
 )
 
 // cutOverAt is when the current generation took over.

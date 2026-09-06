@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedcatchup"
-	"go.5x5.cz/ptah/internal/embedreport"
+	"ptah.run/internal/embedcatchup"
+	"ptah.run/internal/embedreport"
 )
 
 // TestBoundaryText_AnAbsentWatermarkSaysWhyItIsAbsent is stokaro/ptah#2646

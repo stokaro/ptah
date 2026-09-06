@@ -6,7 +6,7 @@ import (
 	"os"
 	"regexp"
 
-	"go.5x5.cz/ptah/core/schemasource"
+	"ptah.run/core/schemasource"
 )
 
 // ExampleRun executes an external program that prints a desired schema to its

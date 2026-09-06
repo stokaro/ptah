@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
+	"ptah.run/core/platform"
 )
 
 // fmtVerbRe matches any Go fmt verb shape (`%s`, `%d`, `%v`, `%+v`, `%5.3f`,

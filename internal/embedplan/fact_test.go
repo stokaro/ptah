@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedplan"
+	"ptah.run/internal/embedplan"
 )
 
 // TestFact_EveryProvenanceExceptMeasuredOwesAnExplanation is the rule the

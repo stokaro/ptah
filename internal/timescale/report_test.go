@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/timescale"
+	"ptah.run/catalog"
+	"ptah.run/internal/timescale"
 )
 
 // TestReportUndescribed_NamesWhatTheDescriptionLeavesOut pins both notes and

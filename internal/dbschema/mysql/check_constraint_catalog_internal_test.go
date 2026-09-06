@@ -13,8 +13,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/dbschema/dbtest"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/dbschema/dbtest"
 )
 
 // checkConstraintCatalog records which spellings a reader asked for, in order,

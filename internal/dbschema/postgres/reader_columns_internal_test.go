@@ -19,7 +19,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/dbschema/dbtest"
+	"ptah.run/internal/dbschema/dbtest"
 )
 
 // pgColumnCatalog is one row of the column introspection query as PostgreSQL

@@ -23,18 +23,18 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdflags"
-	"go.5x5.cz/ptah/cmd/internal/serverversion"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/agentapi"
-	"go.5x5.cz/ptah/internal/agentaudit"
-	"go.5x5.cz/ptah/internal/agentgate"
-	"go.5x5.cz/ptah/internal/agentpolicy"
-	"go.5x5.cz/ptah/internal/agenttarget"
-	"go.5x5.cz/ptah/internal/agentworkspace"
-	"go.5x5.cz/ptah/internal/buildinfo"
-	"go.5x5.cz/ptah/internal/mcpserver"
-	"go.5x5.cz/ptah/internal/servertarget"
+	"ptah.run/cmd/internal/cmdflags"
+	"ptah.run/cmd/internal/serverversion"
+	"ptah.run/core/platform"
+	"ptah.run/internal/agentapi"
+	"ptah.run/internal/agentaudit"
+	"ptah.run/internal/agentgate"
+	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/agenttarget"
+	"ptah.run/internal/agentworkspace"
+	"ptah.run/internal/buildinfo"
+	"ptah.run/internal/mcpserver"
+	"ptah.run/internal/servertarget"
 )
 
 // Flag names, in one place because two commands, their help text, and the

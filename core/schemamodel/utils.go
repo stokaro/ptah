@@ -10,9 +10,9 @@ import (
 	"strings"
 	"sync"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/internal/tableref"
 )
 
 // Global regex cache for function dependency analysis

@@ -14,10 +14,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"go.5x5.cz/ptah/cmd/root"
-	"go.5x5.cz/ptah/internal/agentsurface"
-	"go.5x5.cz/ptah/internal/featureinventory"
-	"go.5x5.cz/ptah/internal/quickstart"
+	"ptah.run/cmd/root"
+	"ptah.run/internal/agentsurface"
+	"ptah.run/internal/featureinventory"
+	"ptah.run/internal/quickstart"
 )
 
 // artifactPath is the committed register. It is `.json` deliberately: docs.go

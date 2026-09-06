@@ -12,9 +12,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/internal/pathguard"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/pathguard"
 )
 
 // These tests replace the migration directory, or one of its ancestors, after

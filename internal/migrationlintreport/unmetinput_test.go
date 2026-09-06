@@ -7,9 +7,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/migrationlintreport"
-	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/migrationlintreport"
+	"ptah.run/migration/lint"
+	"ptah.run/migration/migrationfile"
 )
 
 // unmetInputAnalysis returns an analysis of a column rename with the baseline

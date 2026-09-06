@@ -35,7 +35,7 @@ package txrequire
 import (
 	"fmt"
 
-	"go.5x5.cz/ptah/core/platform/capability"
+	"ptah.run/core/platform/capability"
 )
 
 // Reason names why a statement cannot run inside a transaction.

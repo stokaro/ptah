@@ -13,8 +13,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/dbschema/dbtest"
+	"ptah.run/catalog"
+	"ptah.run/internal/dbschema/dbtest"
 )
 
 // TestReadHypertables_CarriesThePrimaryDimension pins what the read takes from

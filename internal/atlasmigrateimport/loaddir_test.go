@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
+	"ptah.run/internal/atlasmigrateimport"
 )
 
 func TestLoadDir_ConvertsEachFormatToUpOnlyEntries(t *testing.T) {

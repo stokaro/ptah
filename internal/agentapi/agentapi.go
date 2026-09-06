@@ -30,16 +30,16 @@ package agentapi
 import (
 	"context"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/agentdiag"
-	"go.5x5.cz/ptah/internal/agenttarget"
-	"go.5x5.cz/ptah/internal/docsembed"
-	"go.5x5.cz/ptah/internal/schemalineage"
-	"go.5x5.cz/ptah/internal/schemaload"
-	"go.5x5.cz/ptah/internal/schemavalidate"
+	"ptah.run/core/platform"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/internal/agentdiag"
+	"ptah.run/internal/agenttarget"
+	"ptah.run/internal/docsembed"
+	"ptah.run/internal/schemalineage"
+	"ptah.run/internal/schemaload"
+	"ptah.run/internal/schemavalidate"
 )
 
 // Version is the contract version. A caller reads it to know what it is talking
@@ -68,7 +68,7 @@ import (
 // opened is refused -- schema loading was otherwise a route around
 // network.arbitrary, which no layer may grant.
 // 2026-08-24 also gave every failure a code from
-// [go.5x5.cz/ptah/internal/agentdiag], and made apply_patch answer with both an
+// [ptah.run/internal/agentdiag], and made apply_patch answer with both an
 // error and a response when verification undid the patch. A client that read
 // only the message text still works; one that branches on the code no longer
 // has to parse prose.

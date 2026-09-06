@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/sqlschema"
+	"ptah.run/core/platform"
+	"ptah.run/internal/sqlschema"
 )
 
 // The two engines fold non-ASCII index names differently, and not in a way any

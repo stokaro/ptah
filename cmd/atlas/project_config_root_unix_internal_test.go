@@ -17,10 +17,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdadapter"
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/cmd/internal/migrationsource"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/cmd/internal/cmdadapter"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/cmd/internal/migrationsource"
+	"ptah.run/migration/migrationfile"
 )
 
 func TestAtlasArgMapperPreservesProjectFilesSnapshot(t *testing.T) {

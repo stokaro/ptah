@@ -13,8 +13,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/atlashclrender"
+	"ptah.run/core/platform"
+	"ptah.run/internal/atlashclrender"
 )
 
 // atlasFeatureRefusal is the substring that separates the two refusals this

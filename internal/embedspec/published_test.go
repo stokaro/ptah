@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedspec"
+	"ptah.run/internal/embedspec"
 )
 
 // TestParsePublished_ReadsWhatTheReleaseRecorded is the receiving half of a

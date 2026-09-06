@@ -7,14 +7,14 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/deporder"
-	"go.5x5.cz/ptah/internal/planner/objectlookup"
-	"go.5x5.cz/ptah/internal/schemaprep"
-	"go.5x5.cz/ptah/internal/tableref"
-	"go.5x5.cz/ptah/migration/internal/generatedschema"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/deporder"
+	"ptah.run/internal/planner/objectlookup"
+	"ptah.run/internal/schemaprep"
+	"ptah.run/internal/tableref"
+	"ptah.run/migration/internal/generatedschema"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func generatedTableByStructName(tables []schemamodel.Table, structName string) *schemamodel.Table {

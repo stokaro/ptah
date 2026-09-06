@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/devdocker"
+	"ptah.run/internal/devdocker"
 )
 
 // The rows below are the pinned community binary v1.3.0's own answers,

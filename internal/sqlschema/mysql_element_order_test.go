@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/astbuilder"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/sqlschema"
+	"ptah.run/core/ast"
+	"ptah.run/core/astbuilder"
+	"ptah.run/core/platform"
+	"ptah.run/internal/sqlschema"
 )
 
 // The two documents stokaro/ptah#2773 was filed about, and the four that say

@@ -13,7 +13,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/core/platform/capability"
+	"ptah.run/core/platform/capability"
 )
 
 // viewOrderingRow is one server shape and what its cleanup query may contain.

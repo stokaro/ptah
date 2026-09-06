@@ -14,9 +14,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/internal/dbschema/postgres"
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/internal/sqlrunner"
+	"ptah.run/internal/dbschema/postgres"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/sqlrunner"
 )
 
 type postgresWriterFamilyLiveCase struct {

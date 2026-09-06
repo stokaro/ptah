@@ -6,12 +6,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/envbool/envbooltest"
-	"go.5x5.cz/ptah/internal/sqlitevirtual"
+	"ptah.run/catalog"
+	"ptah.run/core/coverage"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/envbool/envbooltest"
+	"ptah.run/internal/sqlitevirtual"
 )
 
 func TestValidateExplicitURLToggleRejectsMalformedSQLiteValue(t *testing.T) {

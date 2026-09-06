@@ -5,9 +5,9 @@
 VERSION ?= $(shell git describe --tags --always --dirty)
 COMMIT ?= $(shell git rev-parse --short HEAD)
 DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
-LDFLAGS := -X go.5x5.cz/ptah/internal/buildinfo.Version=$(VERSION) \
-	-X go.5x5.cz/ptah/internal/buildinfo.Commit=$(COMMIT) \
-	-X go.5x5.cz/ptah/internal/buildinfo.Date=$(DATE)
+LDFLAGS := -X ptah.run/internal/buildinfo.Version=$(VERSION) \
+	-X ptah.run/internal/buildinfo.Commit=$(COMMIT) \
+	-X ptah.run/internal/buildinfo.Date=$(DATE)
 
 # Default target
 help:

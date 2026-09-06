@@ -4,8 +4,8 @@ import (
 	"net/url"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/atlasurl"
+	"ptah.run/core/platform"
+	"ptah.run/internal/atlasurl"
 )
 
 // AtlasSchema is the schema the Atlas surface keeps its revision table

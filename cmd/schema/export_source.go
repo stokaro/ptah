@@ -7,11 +7,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/ociartifact"
-	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/internal/schemaload"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/ociartifact"
+	"ptah.run/internal/pathguard"
+	"ptah.run/internal/schemaload"
 )
 
 // loadExportSchema resolves the desired schema an export projects, from Go

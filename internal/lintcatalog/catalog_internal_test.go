@@ -12,7 +12,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/lint"
+	"ptah.run/migration/lint"
 )
 
 // TestJoinRefusesARuleTheCatalogDoesNotDescribe is the direction that matters

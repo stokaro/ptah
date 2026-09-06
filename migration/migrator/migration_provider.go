@@ -12,9 +12,9 @@ import (
 	"strings"
 	"sync"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlashash"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlashash"
+	"ptah.run/migration/migrationfile"
 )
 
 // MigrationProvider provides a list of migrations

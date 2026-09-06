@@ -19,12 +19,12 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/internal/normalize"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/core/ast"
+	"ptah.run/core/coverage"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/internal/normalize"
+	"ptah.run/internal/tableref"
 )
 
 // Database is the complete description one schema read produced: the CURRENT
@@ -137,7 +137,7 @@ type Database struct {
 	// NotDescribed records what this read did not look at, so a comparator can
 	// tell an object the database does not have from one the reader was never
 	// asked about. The zero value claims the read covered everything; see
-	// [go.5x5.cz/ptah/core/coverage].
+	// [ptah.run/core/coverage].
 	NotDescribed coverage.Set `json:"not_described,omitzero"`
 
 	// UnregisteredVirtualTables lists the SQLite virtual tables this read found
@@ -160,7 +160,7 @@ type Database struct {
 	// tables at risk are not the virtual table an operator would exclude, so a
 	// selection that removes the virtual table leaves every dangerous row in
 	// place; a signal carried on the excluded row would vanish exactly when it
-	// matters. See [go.5x5.cz/ptah/internal/sqlitevirtual].
+	// matters. See [ptah.run/internal/sqlitevirtual].
 	//
 	// It is never serialized: the same database read by a build that registers
 	// the module yields an empty list, so this describes the reader rather than

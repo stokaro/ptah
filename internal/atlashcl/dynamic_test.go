@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlashcl"
+	"ptah.run/internal/atlashcl"
 )
 
 // dynamicTableDocument wraps a table body so each row below carries only the

@@ -53,7 +53,7 @@
 // than `public`: the reader qualifies what the declaration left bare.
 //
 // Comparing unqualified names with no gate answers a different and much worse
-// question. Measured through [go.5x5.cz/ptah/migration/planner.GenerateSchemaDiffSQLStatements]
+// question. Measured through [ptah.run/migration/planner.GenerateSchemaDiffSQLStatements]
 // on PostgreSQL 17.10, a schema declaring exactly one `users` table -- in
 // `reporting` -- and a diff naming `app.users` with one added column produced
 // `ALTER TABLE "app"."users" ADD COLUMN "note" TEXT NOT NULL`, built from
@@ -66,9 +66,9 @@
 package objectlookup
 
 import (
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/tableref"
 )
 
 // Find returns the single item that names the same object as name, or nil.

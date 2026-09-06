@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/config/projectconfig"
+	"ptah.run/config/projectconfig"
 )
 
 // The `atlas.hcl` names Atlas CE decodes into a struct field accept a BLOCK

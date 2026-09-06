@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
+	"ptah.run/catalog"
 )
 
 // readRowPolicies reads the row policies the connected database declares.

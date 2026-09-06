@@ -10,8 +10,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasschema"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasschema"
 )
 
 // The escape lint is best-effort and can be defeated (string concatenation

@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/renderer/internal/dialects/mysql"
+	"ptah.run/core/ast"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer/internal/dialects/mysql"
 )
 
 func TestMySQLRenderer_ViewsAndTriggers(t *testing.T) {

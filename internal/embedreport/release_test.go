@@ -6,10 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedgen"
-	"go.5x5.cz/ptah/internal/embedrelease"
-	"go.5x5.cz/ptah/internal/embedreport"
-	"go.5x5.cz/ptah/internal/embedspec"
+	"ptah.run/internal/embedgen"
+	"ptah.run/internal/embedrelease"
+	"ptah.run/internal/embedreport"
+	"ptah.run/internal/embedspec"
 )
 
 // TestBuildRelease_SaysWhatTheChangeProposes covers the mapping a registry

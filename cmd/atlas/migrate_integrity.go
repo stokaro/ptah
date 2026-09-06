@@ -11,14 +11,14 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdadapter"
-	"go.5x5.cz/ptah/cmd/internal/cmdflags"
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/internal/atlasargs"
-	"go.5x5.cz/ptah/internal/atlascompatpolicy"
-	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
+	"ptah.run/cmd/internal/cmdadapter"
+	"ptah.run/cmd/internal/cmdflags"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/internal/atlasargs"
+	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/atlasmigrateimport"
 )
 
 // atlasNativeEnvPrefix is the environment prefix cmdadapter installs on every

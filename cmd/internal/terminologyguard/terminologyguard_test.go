@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"go.5x5.cz/ptah/cmd/root"
+	"ptah.run/cmd/root"
 )
 
 // registryPath is the one registry, read here and by

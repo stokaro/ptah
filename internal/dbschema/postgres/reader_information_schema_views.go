@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"go.5x5.cz/ptah/catalog"
+	"ptah.run/catalog"
 )
 
 // informationSchemaViewQuery reads views from the SQL-standard catalog.

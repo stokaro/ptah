@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/parser"
-	"go.5x5.cz/ptah/internal/sqlschema"
+	"ptah.run/internal/parser"
+	"ptah.run/internal/sqlschema"
 )
 
 // TestToDatabase_AlterTableAddIndexReachesTheModel is the second half of

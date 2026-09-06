@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/pgindexstorage"
+	"ptah.run/internal/pgindexstorage"
 )
 
 // TestRecords_TheDefaultSetIsTheOneEverySurfaceCarries pins which parameters

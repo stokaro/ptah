@@ -8,9 +8,9 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/integrationfixture"
-	"go.5x5.cz/ptah/migration/generator"
+	"ptah.run/dbschema"
+	"ptah.run/internal/integrationfixture"
+	"ptah.run/migration/generator"
 )
 
 type appliedRoundTripMigration struct {

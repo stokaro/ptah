@@ -20,9 +20,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/dbschema"
 )
 
 type supportedApplyLock struct{}

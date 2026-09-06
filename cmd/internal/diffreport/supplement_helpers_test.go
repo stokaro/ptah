@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"strings"
 
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // diffFieldByJSONName returns the SchemaDiff field that serializes under name.

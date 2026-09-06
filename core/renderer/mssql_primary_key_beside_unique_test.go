@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/internal/sqlschema"
+	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer"
+	"ptah.run/internal/sqlschema"
 )
 
 // renderErrorFromSQL is the error rendering one CREATE TABLE for a dialect.

@@ -8,12 +8,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdadapter"
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/cmd/migrate"
-	"go.5x5.cz/ptah/internal/atlasargs"
-	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"ptah.run/cmd/internal/cmdadapter"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/cmd/migrate"
+	"ptah.run/internal/atlasargs"
+	"ptah.run/internal/atlasmigrate"
 )
 
 // newAtlasMigrateNewCommand returns `atlas migrate new`.

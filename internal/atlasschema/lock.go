@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dblock"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dblock"
 )
 
 // ApplyLockName is the session advisory lock name that serializes concurrent

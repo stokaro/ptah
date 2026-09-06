@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/internal/tableref"
 )
 
 const ambiguousTableScope = "\x00"

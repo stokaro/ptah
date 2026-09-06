@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/embeddigest"
+	"ptah.run/internal/embeddigest"
 )
 
 // Identity is the content address of a generation: the digest of every part of

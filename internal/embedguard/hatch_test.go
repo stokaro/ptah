@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedguard"
+	"ptah.run/internal/embedguard"
 )
 
 // TestHatchedByInterface_IsWrittenDown keeps the guard from going blind by
@@ -41,24 +41,24 @@ func TestHatchedByInterface_IsWrittenDown(t *testing.T) {
 	c.Assert(hatched, qt.DeepEquals, []string{
 		// An error type's Unwrap, matched by errors.Is and errors.As rather
 		// than by a call anybody writes.
-		"go.5x5.cz/ptah/internal/embedengine.Unwrap",
+		"ptah.run/internal/embedengine.Unwrap",
 		// The store, reached through the interfaces its callers declare. The
 		// engine and the report layer each take a narrow interface rather than
 		// importing embedpg, which is what keeps the persistence choice out of
 		// them -- and what puts these here.
-		"go.5x5.cz/ptah/internal/embedpg.AbandonRun",
-		"go.5x5.cz/ptah/internal/embedpg.AppendEvent",
-		"go.5x5.cz/ptah/internal/embedpg.ClaimRun",
-		"go.5x5.cz/ptah/internal/embedpg.CreateRun",
-		"go.5x5.cz/ptah/internal/embedpg.Events",
-		"go.5x5.cz/ptah/internal/embedpg.MovePointer",
-		"go.5x5.cz/ptah/internal/embedpg.RegisterGeneration",
-		"go.5x5.cz/ptah/internal/embedpg.RunsForGeneration",
+		"ptah.run/internal/embedpg.AbandonRun",
+		"ptah.run/internal/embedpg.AppendEvent",
+		"ptah.run/internal/embedpg.ClaimRun",
+		"ptah.run/internal/embedpg.CreateRun",
+		"ptah.run/internal/embedpg.Events",
+		"ptah.run/internal/embedpg.MovePointer",
+		"ptah.run/internal/embedpg.RegisterGeneration",
+		"ptah.run/internal/embedpg.RunsForGeneration",
 		// The catch-up loop calls this through the Changes interface, and
 		// embedengine does not import embedpg. It is the case the widening was
 		// added for, and the one the rule's own comment names.
-		"go.5x5.cz/ptah/internal/embedpg.Since",
+		"ptah.run/internal/embedpg.Since",
 		// The second error type's Unwrap.
-		"go.5x5.cz/ptah/internal/embedprovider.Unwrap",
+		"ptah.run/internal/embedprovider.Unwrap",
 	})
 }

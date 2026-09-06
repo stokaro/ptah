@@ -3,10 +3,10 @@ package postgres
 import (
 	"fmt"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/crdbttl"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/crdbttl"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // applyRowTTLChanges appends the statements each table's row-level TTL

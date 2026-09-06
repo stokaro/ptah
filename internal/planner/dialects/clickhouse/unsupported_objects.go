@@ -4,16 +4,16 @@ import (
 	"fmt"
 	"slices"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/deporder"
-	"go.5x5.cz/ptah/internal/modelast"
-	"go.5x5.cz/ptah/internal/planner/objectlookup"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/deporder"
+	"ptah.run/internal/modelast"
+	"ptah.run/internal/planner/objectlookup"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // reportUnsupportedObjectsBeforeTables and planObjectsAfterTables append the

@@ -14,7 +14,7 @@ import (
 
 	yaml "go.yaml.in/yaml/v3"
 
-	"go.5x5.cz/ptah/internal/lintdialect"
+	"ptah.run/internal/lintdialect"
 )
 
 // ConfigFileName is the conventional per-project lint configuration file,

@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasprojectpath"
-	"go.5x5.cz/ptah/internal/pathguard"
+	"ptah.run/internal/atlasprojectpath"
+	"ptah.run/internal/pathguard"
 )
 
 // This test needs a directory whose name contains "?" -- that is the whole

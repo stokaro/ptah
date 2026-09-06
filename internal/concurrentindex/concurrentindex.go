@@ -19,13 +19,13 @@ package concurrentindex
 import (
 	"slices"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/indexscope"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/indexscope"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TableFacts is what the live catalog says about one table, reduced to the two
@@ -104,7 +104,7 @@ func mergeTableFacts(into map[string]TableFacts, key string, facts TableFacts) {
 // concurrently.
 //
 // `CREATE INDEX CONCURRENTLY` survives parsing into
-// [go.5x5.cz/ptah/core/schemamodel.Index.Concurrently], and until this existed
+// [ptah.run/core/schemamodel.Index.Concurrently], and until this existed
 // nothing carried the answer to the planner: a `.sql` desired state asking for
 // the non-locking build was planned as a locking one, silently, which on a table
 // large enough for the request to be worth making is the difference between a

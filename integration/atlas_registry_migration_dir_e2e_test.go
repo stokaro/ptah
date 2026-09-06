@@ -13,12 +13,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	atlascmd "go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/migrationartifact"
-	"go.5x5.cz/ptah/internal/ociartifact"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	atlascmd "ptah.run/cmd/atlas"
+	"ptah.run/dbschema"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/migrationartifact"
+	"ptah.run/internal/ociartifact"
+	"ptah.run/migration/migrationfile"
 )
 
 // TestAtlasRegistryMigrationDirE2E is the live acceptance for resolving an

@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/renderer/internal/dialects/postgres"
+	"ptah.run/core/ast"
+	"ptah.run/core/renderer/internal/dialects/postgres"
 )
 
 // A column default reaches the renderer in one of two spellings, and both are

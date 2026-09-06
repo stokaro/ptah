@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/htmlstyle"
+	"ptah.run/internal/htmlstyle"
 )
 
 var (

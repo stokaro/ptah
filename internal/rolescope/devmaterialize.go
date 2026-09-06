@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/catalog"
+	"ptah.run/core/schemamodel"
 )
 
 // RolesToCreateOnDev splits the roles a desired schema declares into the ones a

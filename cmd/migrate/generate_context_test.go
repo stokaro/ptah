@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/migrate"
+	"ptah.run/cmd/migrate"
 )
 
 // TestMigrateGenerateHonorsTheCommandContext pins that the run is governed by

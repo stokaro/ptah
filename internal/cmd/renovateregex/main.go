@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"go.5x5.cz/ptah/internal/renovateregex"
+	"ptah.run/internal/renovateregex"
 )
 
 func main() {

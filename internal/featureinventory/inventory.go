@@ -10,9 +10,9 @@ import (
 
 	yaml "go.yaml.in/yaml/v3"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/internal/agentsurface"
+	"ptah.run/core/platform"
+	"ptah.run/core/renderer"
+	"ptah.run/internal/agentsurface"
 )
 
 // ClaimedFloor is the number of claimed rows the gate refuses to fall below.

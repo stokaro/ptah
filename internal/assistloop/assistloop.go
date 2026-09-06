@@ -41,7 +41,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"go.5x5.cz/ptah/internal/aiprovider"
+	"ptah.run/internal/aiprovider"
 )
 
 // Limits a run is bounded by when the caller states none.

@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/sqlident"
+	"ptah.run/core/platform"
+	"ptah.run/internal/sqlident"
 )
 
 // RenderSelect renders a SELECT statement to parameterized SQL for the given

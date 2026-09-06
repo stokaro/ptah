@@ -15,14 +15,14 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/htmlstyle"
-	"go.5x5.cz/ptah/migration/internal/scratchdb"
-	"go.5x5.cz/ptah/migration/internal/shadowdb"
-	"go.5x5.cz/ptah/migration/migrationfile"
-	"go.5x5.cz/ptah/migration/migrator"
-	"go.5x5.cz/ptah/migration/seeder"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/internal/htmlstyle"
+	"ptah.run/migration/internal/scratchdb"
+	"ptah.run/migration/internal/shadowdb"
+	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/migrator"
+	"ptah.run/migration/seeder"
 )
 
 // Options configures a single [RunMigrationTest] invocation.

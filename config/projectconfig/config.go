@@ -22,7 +22,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/migration/diffpolicy"
+	"ptah.run/migration/diffpolicy"
 )
 
 const (

@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/migrate"
-	"go.5x5.cz/ptah/internal/envbool/envbooltest"
-	"go.5x5.cz/ptah/internal/sqlitevirtual"
+	"ptah.run/cmd/migrate"
+	"ptah.run/internal/envbool/envbooltest"
+	"ptah.run/internal/sqlitevirtual"
 )
 
 const (

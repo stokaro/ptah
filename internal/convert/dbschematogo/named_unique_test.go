@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"ptah.run/catalog"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/convert/dbschematogo"
 )
 
 // uniqueSchema is one table with one single-column UNIQUE constraint under the

@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/risk"
+	"ptah.run/migration/lint"
+	"ptah.run/migration/risk"
 )
 
 // planLintFileName is the name the planned statements are linted under. The

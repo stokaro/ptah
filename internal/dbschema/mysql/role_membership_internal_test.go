@@ -12,8 +12,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/dbschema/dbtest"
+	"ptah.run/catalog"
+	"ptah.run/internal/dbschema/dbtest"
 )
 
 // TestReadRoleMemberships_ReadsTheTableThisEngineHas pins the discovery and the

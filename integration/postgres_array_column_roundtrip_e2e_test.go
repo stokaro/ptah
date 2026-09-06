@@ -12,10 +12,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/catalog"
+	"ptah.run/dbschema"
+	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/dbtarget"
 )
 
 // TestPostgresArrayColumnSurvivesAReadE2E is the round trip stokaro/ptah#1138

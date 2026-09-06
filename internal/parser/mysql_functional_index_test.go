@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/parser"
+	"ptah.run/internal/parser"
 )
 
 // functionalKeyTable wraps one table-body declaration in a table with columns

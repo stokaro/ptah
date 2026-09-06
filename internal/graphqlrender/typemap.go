@@ -1,6 +1,6 @@
 package graphqlrender
 
-import "go.5x5.cz/ptah/internal/schemaexport"
+import "ptah.run/internal/schemaexport"
 
 // Built-in and custom GraphQL scalar names.
 const (

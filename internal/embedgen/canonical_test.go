@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedgen"
+	"ptah.run/internal/embedgen"
 )
 
 // row builds a source row from the values a test names.

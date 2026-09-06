@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/inference"
+	"ptah.run/cmd/inference"
 )
 
 // TestVerify_RefusesTwoDestinationsForOneRecord covers the flag pair that would

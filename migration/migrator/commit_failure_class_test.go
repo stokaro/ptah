@@ -27,7 +27,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/ddltx"
+	"ptah.run/internal/ddltx"
 )
 
 // TestCommitFailure_OnlyTheTransactionalClassHasACommitStep states why this

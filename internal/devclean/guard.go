@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/lexer"
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/internal/lexer"
 )
 
 // ReplayGuard rejects migration statements whose effects cannot be confined to

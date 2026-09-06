@@ -6,10 +6,10 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/annotationmeta"
-	"go.5x5.cz/ptah/internal/annotationparse"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/annotationmeta"
+	"ptah.run/internal/annotationparse"
+	"ptah.run/internal/tableref"
 )
 
 // ValidateParsed proves that every planned removal came from a supported source

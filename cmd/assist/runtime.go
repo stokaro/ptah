@@ -10,13 +10,13 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/internal/agentapi"
-	"go.5x5.cz/ptah/internal/aiprovider"
-	"go.5x5.cz/ptah/internal/assistconfig"
-	"go.5x5.cz/ptah/internal/assistloop"
-	"go.5x5.cz/ptah/internal/buildinfo"
-	"go.5x5.cz/ptah/internal/mcpserver"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/internal/agentapi"
+	"ptah.run/internal/aiprovider"
+	"ptah.run/internal/assistconfig"
+	"ptah.run/internal/assistloop"
+	"ptah.run/internal/buildinfo"
+	"ptah.run/internal/mcpserver"
 )
 
 // toolSession is the half of the protocol client the surfaces use: list what

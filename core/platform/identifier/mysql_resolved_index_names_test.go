@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/identifier"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 )
 
 // The four pairs the two engines answer oppositely, plus the pair they agree

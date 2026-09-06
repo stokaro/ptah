@@ -27,7 +27,7 @@ package matviewrefresh
 import (
 	"fmt"
 
-	"go.5x5.cz/ptah/core/ptaherr"
+	"ptah.run/core/ptaherr"
 )
 
 // Attribute is the retired attribute's only spelling, shared by every

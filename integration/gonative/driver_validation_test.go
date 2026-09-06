@@ -11,9 +11,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/core/platform/capability"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbtarget"
 )
 
 // TestPgxDriverValidation verifies that the pgx driver is actually being used

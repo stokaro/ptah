@@ -55,9 +55,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"go.5x5.cz/ptah/internal/agentdiag"
-	"go.5x5.cz/ptah/internal/agentpolicy"
-	"go.5x5.cz/ptah/internal/agentworkspace"
+	"ptah.run/internal/agentdiag"
+	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/agentworkspace"
 )
 
 // Limits on one patch. They bound what a single tool call can do to a

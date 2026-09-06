@@ -9,7 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "modernc.org/sqlite" // registers the SQLite driver for database/sql
 
-	"go.5x5.cz/ptah/internal/atlasscript"
+	"ptah.run/internal/atlasscript"
 )
 
 // manyRows opens a database with enough rows to need several batches.

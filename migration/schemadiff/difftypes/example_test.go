@@ -8,8 +8,8 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/schemamodel"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // ExampleTableCreationsFor builds the table additions of a hand-written diff.

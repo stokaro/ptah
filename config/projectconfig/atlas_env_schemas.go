@@ -1,6 +1,6 @@
 package projectconfig
 
-import "go.5x5.cz/ptah/internal/envbool"
+import "ptah.run/internal/envbool"
 
 // IgnoreEnvSchemasEnvVar restores the treatment `env { schemas }` had before
 // the attribute got a parser arm: the value is still decoded and still
@@ -18,7 +18,7 @@ import "go.5x5.cz/ptah/internal/envbool"
 // being deleted.
 //
 // It is an environment variable and not a flag for the reason
-// [go.5x5.cz/ptah/internal/atlashclrender.KeepAtlasRefusedBlocksEnvVar] gives:
+// [ptah.run/internal/atlashclrender.KeepAtlasRefusedBlocksEnvVar] gives:
 // the conformance cli-surface tier asserts that `ptah-compat` registers exactly
 // the flags the pinned binary registers, so a flag that binary does not have
 // would break the promise the surface exists to keep.
@@ -30,9 +30,9 @@ import "go.5x5.cz/ptah/internal/envbool"
 const IgnoreEnvSchemasEnvVar = "PTAH_ATLAS_IGNORE_ENV_SCHEMAS"
 
 // ignoreEnvSchemas is the declaration of the variable, made once, in the
-// package that owns the atlas.hcl parse. See [go.5x5.cz/ptah/internal/envbool].
+// package that owns the atlas.hcl parse. See [ptah.run/internal/envbool].
 //
-// It is [go.5x5.cz/ptah/internal/envbool.Gated], and the direction is what
+// It is [ptah.run/internal/envbool.Gated], and the direction is what
 // decides it. The pinned community binary HONORS `env { schemas }`: measured on
 // v1.3.0 against a PostgreSQL database holding `one`, `two` and `public`,
 // `schemas = ["one"]` describes `one` alone. A true value here restores the

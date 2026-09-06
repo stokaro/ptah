@@ -10,8 +10,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/shadow"
+	"ptah.run/dbschema"
+	"ptah.run/migration/shadow"
 )
 
 func writeRollbackShadowMigrations(c *qt.C, dir, downSQL string) {

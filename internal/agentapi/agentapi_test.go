@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/agentapi"
-	"go.5x5.cz/ptah/internal/agenttarget"
+	"ptah.run/internal/agentapi"
+	"ptah.run/internal/agenttarget"
 )
 
 // schemaSession builds a session permitted to read the source given.

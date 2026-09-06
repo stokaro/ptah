@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/internal/embeddigest"
+	"ptah.run/internal/embeddigest"
 )
 
 // Decision is the answer, with every reason it is what it is.

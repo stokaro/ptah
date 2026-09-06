@@ -14,10 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/internal/dblock"
+	"ptah.run/core/platform"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/dblock"
 )
 
 const (

@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/oracleroutine"
+	"ptah.run/internal/oracleroutine"
 )
 
 // TestBody_TakesTheTextAfterTheHeader pins the split that recovers a routine's

@@ -9,10 +9,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/agentgate"
-	"go.5x5.cz/ptah/internal/agentpatch"
-	"go.5x5.cz/ptah/internal/agentpolicy"
-	"go.5x5.cz/ptah/internal/agentworkspace"
+	"ptah.run/internal/agentgate"
+	"ptah.run/internal/agentpatch"
+	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/agentworkspace"
 )
 
 // stubVerifier answers with a scripted report per call: the first is the

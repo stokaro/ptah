@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
-	"go.5x5.cz/ptah/internal/testutils"
+	"ptah.run/cmd/atlas/internal/atlastest"
+	"ptah.run/internal/testutils"
 )
 
 // errorText renders err for a containment assertion, so a test can say "this

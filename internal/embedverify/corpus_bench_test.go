@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"go.5x5.cz/ptah/internal/embedverify"
+	"ptah.run/internal/embedverify"
 )
 
 // BenchmarkVerify_LargeCorpus measures what a verification costs at corpus

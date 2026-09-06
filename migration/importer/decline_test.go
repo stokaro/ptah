@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/importer"
+	"ptah.run/migration/importer"
 )
 
 // Every file under the source tree is accounted for -- stokaro/ptah#2231.

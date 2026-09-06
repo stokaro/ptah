@@ -5,7 +5,7 @@ package migrator_test
 import (
 	"testing"
 
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/internal/dbtarget"
 )
 
 // sqlServerTestURL resolves the live SQL Server address. dbtarget declares the

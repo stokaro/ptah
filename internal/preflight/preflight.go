@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/core/platform"
+	"ptah.run/core/platform"
 )
 
 const defaultWebhookTimeout = 30 * time.Second

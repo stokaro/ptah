@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/lexer"
+	"ptah.run/core/platform"
+	"ptah.run/internal/lexer"
 )
 
 func validatePostgresReplayStatement(dialect string, tokens []lexer.Token) error {

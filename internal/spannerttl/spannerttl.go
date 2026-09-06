@@ -31,7 +31,7 @@
 //
 // # Why this does not reuse crdbinterval
 //
-// [go.5x5.cz/ptah/internal/crdbinterval] exists for the same shape of problem
+// [ptah.run/internal/crdbinterval] exists for the same shape of problem
 // on CockroachDB and is the WRONG answer here, which the table above is what
 // shows. It compares PostgreSQL's (months, days, microseconds) triple and
 // deliberately refuses to convert between the three, because in PostgreSQL
@@ -55,7 +55,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
+	"ptah.run/core/ast"
 )
 
 // Parse reads the catalog's policy expression into the policy it denotes.
@@ -106,7 +106,7 @@ func Render(spec *ast.RowDeletionPolicySpec, quoteIdentifier func(string) string
 // in case, so `"CreatedAt"` and `"createdat"` are two columns; a policy moved
 // between them is a real change, and folding it away would leave the deletion
 // tied to the wrong timestamp with nothing planned. The caller passes
-// [go.5x5.cz/ptah/core/platform/identifier.Semantics.ColumnIdentityKey], which
+// [ptah.run/core/platform/identifier.Semantics.ColumnIdentityKey], which
 // is the same rule every other column comparison in the comparator uses -- so
 // an unquoted name the server lower-cases still converges, and a quoted one
 // that genuinely differs does not.

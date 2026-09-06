@@ -1,7 +1,7 @@
 package embedgen
 
 import (
-	"go.5x5.cz/ptah/internal/embeddigest"
+	"ptah.run/internal/embeddigest"
 )
 
 // SourceInputHash is the digest of the exact canonical text a provider was

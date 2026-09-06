@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlasfilter"
-	"go.5x5.cz/ptah/internal/envbool/envbooltest"
+	"ptah.run/catalog"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlasfilter"
+	"ptah.run/internal/envbool/envbooltest"
 )
 
 // TestExcludeDatabaseReport_NamesSelectorsThatMatchedNothing is the emptiness

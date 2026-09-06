@@ -11,9 +11,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
-	"go.5x5.cz/ptah/internal/revisiontable"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/revisiontable"
+	"ptah.run/migration/migrator"
 )
 
 // flywaySource builds a Flyway directory in which every migration announces its

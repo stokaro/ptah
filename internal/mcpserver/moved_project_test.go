@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/agentpolicy"
+	"ptah.run/internal/agentpolicy"
 )
 
 // TestApply_RefusesWhenTheArtifactDirectoryWasReplaced is the moved-project

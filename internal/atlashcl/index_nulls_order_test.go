@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlashcl"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlashcl"
 )
 
 // `nulls_first` and `nulls_last` are the spelling the pinned community binary

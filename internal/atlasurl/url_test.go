@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasurl"
+	"ptah.run/internal/atlasurl"
 )
 
 func TestDialectFromURL_HappyPath(t *testing.T) {

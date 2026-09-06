@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/oci"
+	"ptah.run/cmd/oci"
 )
 
 func TestCommandTreeAndFlags(t *testing.T) {

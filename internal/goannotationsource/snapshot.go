@@ -13,8 +13,8 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/fsnapshot"
-	"go.5x5.cz/ptah/internal/pathguard"
+	"ptah.run/internal/fsnapshot"
+	"ptah.run/internal/pathguard"
 )
 
 var (

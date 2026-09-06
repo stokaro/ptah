@@ -18,13 +18,13 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
-	"go.5x5.cz/ptah/internal/fsdurable"
-	"go.5x5.cz/ptah/internal/fsnapshot"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/migrationversion"
-	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/fsdurable"
+	"ptah.run/internal/fsnapshot"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/migrationversion"
+	"ptah.run/internal/pathguard"
+	"ptah.run/migration/migrationfile"
 )
 
 const (

@@ -8,10 +8,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/migratestatus"
-	"go.5x5.cz/ptah/cmd/migratevalidate"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/cmd/migratestatus"
+	"ptah.run/cmd/migratevalidate"
+	"ptah.run/internal/migratesum"
+	"ptah.run/migration/migrationfile"
 )
 
 // These tests pin the apply-time integrity gate from stokaro/ptah#955 and the

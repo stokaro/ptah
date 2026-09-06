@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/project"
+	"ptah.run/cmd/project"
 )
 
 // adoptionReport runs the verb and decodes its JSON answer.

@@ -12,14 +12,14 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/devclean"
-	"go.5x5.cz/ptah/internal/devdocker"
-	"go.5x5.cz/ptah/internal/devlock"
-	"go.5x5.cz/ptah/internal/migrationsnapshot"
-	"go.5x5.cz/ptah/migration/migrationfile"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/core/platform"
+	"ptah.run/dbschema"
+	"ptah.run/internal/devclean"
+	"ptah.run/internal/devdocker"
+	"ptah.run/internal/devlock"
+	"ptah.run/internal/migrationsnapshot"
+	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/migrator"
 )
 
 const failedReplayCleanupTimeout = 30 * time.Second

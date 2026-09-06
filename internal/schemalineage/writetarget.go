@@ -3,7 +3,7 @@ package schemalineage
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/internal/lexer"
+	"ptah.run/internal/lexer"
 )
 
 // writeTargetRef is the table a statement writes and the columns it names.

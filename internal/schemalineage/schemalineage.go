@@ -23,7 +23,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/schemamodel"
 )
 
 // Edge is one column-to-column dependency: a base column feeding a view column.

@@ -11,12 +11,12 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/migration/generator"
-	"go.5x5.cz/ptah/migration/migrationfile"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/catalog"
+	"ptah.run/core/goschema"
+	"ptah.run/core/renderer"
+	"ptah.run/migration/generator"
+	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/schemadiff"
 )
 
 // exampleEntities is the desired schema every example plans toward: one

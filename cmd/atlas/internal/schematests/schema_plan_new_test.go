@@ -7,9 +7,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/migration/safety"
+	"ptah.run/cmd/atlas"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/migration/safety"
 )
 
 // `atlas schema plan new` has no oracle: CE aborts the whole `schema plan`

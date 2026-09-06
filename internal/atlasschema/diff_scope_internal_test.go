@@ -15,16 +15,16 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlasfilter"
-	"go.5x5.cz/ptah/internal/atlassource"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/catalog"
+	"ptah.run/core/coverage"
+	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlasfilter"
+	"ptah.run/internal/atlassource"
+	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff"
 )
 
 func TestScopeDiffStatePreservesGeneratedDependencyValidation(t *testing.T) {

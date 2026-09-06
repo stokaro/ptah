@@ -7,9 +7,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/migration/migrator"
 )
 
 // TestRuntimePolicies_ReachEveryTargetTheirCapabilityClaims states the two

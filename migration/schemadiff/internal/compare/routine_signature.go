@@ -3,8 +3,8 @@ package compare
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/catalog"
+	"ptah.run/core/schemamodel"
 )
 
 // normalizeRoutineSignature reduces a routine's argument list to the form both

@@ -6,8 +6,8 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
-	"go.5x5.cz/ptah/atlascompat"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/atlascompat"
+	"ptah.run/migration/migrationfile"
 )
 
 // ExampleParseAtlasHCL parses an Atlas schema HCL document into the schema

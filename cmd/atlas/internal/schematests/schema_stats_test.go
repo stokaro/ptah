@@ -10,10 +10,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "modernc.org/sqlite" // registers the SQLite driver for database/sql
 
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/internal/atlascompatpolicy"
+	"ptah.run/cmd/atlas"
+	"ptah.run/cmd/atlas/internal/atlastest"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/internal/atlascompatpolicy"
 )
 
 // The Atlas-compatible surface spells this verb `schema stats inspect`, three

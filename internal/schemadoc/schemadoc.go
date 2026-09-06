@@ -5,8 +5,8 @@ import (
 	"html"
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/htmlstyle"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/htmlstyle"
 )
 
 // Options selects what the document covers and what it is called.

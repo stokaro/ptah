@@ -6,10 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/schemamodel"
-	sqliteplanner "go.5x5.cz/ptah/internal/planner/dialects/sqlite"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemamodel"
+	sqliteplanner "ptah.run/internal/planner/dialects/sqlite"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // viewFixture916 and triggerFixture916 are the two diffs the table below plans.

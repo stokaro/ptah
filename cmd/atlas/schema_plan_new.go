@@ -3,8 +3,8 @@ package atlas
 import (
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/internal/atlasschema"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/internal/atlasschema"
 )
 
 // newAtlasSchemaPlanNewCommand implements `atlas schema plan new`.

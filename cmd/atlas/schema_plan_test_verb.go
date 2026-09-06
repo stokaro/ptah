@@ -8,16 +8,16 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/cmd/internal/testexternal"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/internal/devdocker"
-	"go.5x5.cz/ptah/internal/schemafile"
-	"go.5x5.cz/ptah/migration/dbtest"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/cmd/internal/testexternal"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/devdocker"
+	"ptah.run/internal/schemafile"
+	"ptah.run/migration/dbtest"
+	"ptah.run/migration/migrator"
 )
 
 // atlasSchemaPlanTestVerb is the Atlas command name, for diagnostics.

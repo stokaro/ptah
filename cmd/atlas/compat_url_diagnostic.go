@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/atlassource"
+	"ptah.run/core/platform"
+	"ptah.run/internal/atlassource"
 )
 
 // This file owns the Atlas-compatible surface's `--url` error boundary: the

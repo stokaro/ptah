@@ -23,8 +23,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/internal/exeext"
-	"go.5x5.cz/ptah/internal/quickstart"
+	"ptah.run/internal/exeext"
+	"ptah.run/internal/quickstart"
 )
 
 // defaultDocsDir is where the site's pages live. The runner reads the published

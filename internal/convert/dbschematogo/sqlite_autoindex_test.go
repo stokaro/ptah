@@ -7,9 +7,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"ptah.run/core/renderer"
+	"ptah.run/dbschema"
+	"ptah.run/internal/convert/dbschematogo"
 )
 
 // openSQLite returns a connection to a fresh database file under the checker's

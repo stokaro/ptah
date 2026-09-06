@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
+	"ptah.run/core/platform"
 )
 
 // This file renders the write-side DML statements — INSERT, UPDATE, and DELETE —

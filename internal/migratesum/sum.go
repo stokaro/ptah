@@ -26,8 +26,8 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/atlashash"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/atlashash"
+	"ptah.run/migration/migrationfile"
 )
 
 // FileName is the conventional integrity file inside a migrations directory.

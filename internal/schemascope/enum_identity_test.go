@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemascope"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemascope"
 )
 
 // scopedEnumSchema declares one enum of the given name and one qualified table

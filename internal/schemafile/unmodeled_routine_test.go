@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/schemafile"
+	"ptah.run/internal/schemafile"
 )
 
 // TestLoadPath_ReportsARoutineNothingModeled is the half that reaches a person.

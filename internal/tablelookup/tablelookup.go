@@ -5,8 +5,8 @@ package tablelookup
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/tableref"
 )
 
 // ResolveReference returns the canonical identity of a referenced table when

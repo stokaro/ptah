@@ -26,10 +26,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/internal/embedgen"
-	"go.5x5.cz/ptah/internal/embedpg"
-	"go.5x5.cz/ptah/internal/embedverify"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/embedgen"
+	"ptah.run/internal/embedpg"
+	"ptah.run/internal/embedverify"
 )
 
 // TestEmbedPGVerificationSeesAVectorOutsideTheFilterE2E is the finding, and its

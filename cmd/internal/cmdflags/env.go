@@ -11,8 +11,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"go.5x5.cz/ptah/internal/envbinding"
-	"go.5x5.cz/ptah/internal/envbool"
+	"ptah.run/internal/envbinding"
+	"ptah.run/internal/envbool"
 )
 
 const (
@@ -175,7 +175,7 @@ func setEnvValue(flags *pflag.FlagSet, flag *pflag.Flag, envName, value string) 
 	case "bool":
 		// One grammar and one error shape for every boolean PTAH_* variable,
 		// whether it reaches a feature through a flag or is read directly by the
-		// package that owns it. See [go.5x5.cz/ptah/internal/envbool].
+		// package that owns it. See [ptah.run/internal/envbool].
 		if _, err := envbool.Parse(envName, value); err != nil {
 			return err
 		}

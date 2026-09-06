@@ -18,12 +18,12 @@ import (
 	"context"
 	"database/sql"
 
-	"go.5x5.cz/ptah/internal/embedcatchup"
-	"go.5x5.cz/ptah/internal/embedgen"
-	"go.5x5.cz/ptah/internal/embedpg"
-	"go.5x5.cz/ptah/internal/embedplan"
-	"go.5x5.cz/ptah/internal/embedrun"
-	"go.5x5.cz/ptah/internal/embedspec"
+	"ptah.run/internal/embedcatchup"
+	"ptah.run/internal/embedgen"
+	"ptah.run/internal/embedpg"
+	"ptah.run/internal/embedplan"
+	"ptah.run/internal/embedrun"
+	"ptah.run/internal/embedspec"
 )
 
 // Disclosure is what leaves the database if this plan runs.

@@ -8,8 +8,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/cmd/root"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/cmd/root"
 )
 
 // projectEnvCommandPaths lists every native command that selects a project env

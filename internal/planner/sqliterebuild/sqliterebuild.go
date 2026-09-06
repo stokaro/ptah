@@ -22,7 +22,7 @@
 package sqliterebuild
 
 import (
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // NeedsTableRebuild reports whether this table diff has to be converged by

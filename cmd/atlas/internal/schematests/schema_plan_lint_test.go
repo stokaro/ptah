@@ -9,9 +9,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"ptah.run/cmd/atlas"
+	"ptah.run/cmd/atlas/internal/atlastest"
+	"ptah.run/cmd/internal/exitcode"
 )
 
 // `atlas schema plan lint` has no oracle to copy: the pinned community binary
@@ -174,7 +174,7 @@ func TestSchemaPlanLintStatesItsCoverageOnStderr(t *testing.T) {
 //
 // Where the severity boundary itself sits — error fails, warning does not — is
 // pinned one level down, by TestHasErrorSeverity_HappyPath in
-// go.5x5.cz/ptah/internal/planlint, which can put a warning-only statement in
+// ptah.run/internal/planlint, which can put a warning-only statement in
 // front of the predicate without needing a plan whose replay reaches --to.
 func TestSchemaPlanLintFailOnErrorGate_HappyPath(t *testing.T) {
 	tests := []struct {

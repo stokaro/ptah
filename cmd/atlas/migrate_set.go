@@ -7,15 +7,15 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasargs"
-	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
-	"go.5x5.cz/ptah/internal/revisiontable"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/config/projectconfig"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasargs"
+	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/revisiontable"
+	"ptah.run/migration/migrator"
 )
 
 type atlasMigrateSetOptions struct {

@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
+	"ptah.run/catalog"
 )
 
 // foreignKeySession is foreign-key enforcement turned off on one connection for

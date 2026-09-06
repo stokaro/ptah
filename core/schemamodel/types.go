@@ -6,18 +6,18 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/core/ast"
+	"ptah.run/core/coverage"
+	"ptah.run/internal/tableref"
 )
 
 // Database is the desired-state model of a whole schema: every declared object
 // kind, plus the derived dependency maps that decide creation order. Every
 // authoring frontend produces one — Go annotations
-// ([go.5x5.cz/ptah/core/goschema]), YAML ([go.5x5.cz/ptah/core/yamlschema]),
+// ([ptah.run/core/goschema]), YAML ([ptah.run/core/yamlschema]),
 // HCL, SQL, DBML, and a caller assembling the struct by hand — and the
 // renderer, planner, and schema-diff layers consume it without knowing which
-// one did. The current-state counterpart is [go.5x5.cz/ptah/catalog].
+// one did. The current-state counterpart is [ptah.run/catalog].
 //
 // A Database assembled by hand is not finished until [Finalize] has run:
 // Dependencies, FunctionDependencies, SelfReferencingForeignKeys, the expanded
@@ -67,11 +67,11 @@ type Database struct {
 	// NotDescribed records what this description does not claim to describe, so
 	// a comparator can tell an object the description says is gone from one it
 	// was never asked about. The zero value claims everything, which is what a
-	// hand-authored schema file is; see [go.5x5.cz/ptah/core/coverage].
+	// hand-authored schema file is; see [ptah.run/core/coverage].
 	//
 	// `omitzero` is load-bearing rather than cosmetic. This struct's JSON
 	// encoding IS the desired-state fingerprint (see
-	// [go.5x5.cz/ptah/internal/atlasschema.SchemaFingerprint] and the plan
+	// [ptah.run/internal/atlasschema.SchemaFingerprint] and the plan
 	// file's `to` attribute), so a field that serialized unconditionally would
 	// change the fingerprint of every schema anyone has already planned against
 	// -- the one thing "adding coverage changes no existing plan" promises it
@@ -270,7 +270,7 @@ type Field struct {
 	OnUpdate        string // Foreign key ON UPDATE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
 	// Deferrable marks a single-column foreign key whose check may be postponed
 	// to the end of a transaction. See
-	// [go.5x5.cz/ptah/core/ast.ForeignKeyRef.Deferrable].
+	// [ptah.run/core/ast.ForeignKeyRef.Deferrable].
 	Deferrable bool
 	// Initially is the default timing of a deferrable check: "deferred",
 	// "immediate", or empty for a clause the author did not write.
@@ -281,7 +281,7 @@ type Field struct {
 	// NotNullConstraintName is an optional explicit constraint name for the
 	// column's NOT NULL, carried only where the target persists one as an
 	// addressable catalog object. See
-	// [go.5x5.cz/ptah/core/ast.ColumnNode.NotNullConstraintName].
+	// [ptah.run/core/ast.ColumnNode.NotNullConstraintName].
 	NotNullConstraintName string
 	// GeneratedExpression stores the raw SQL expression for generated columns.
 	GeneratedExpression string
@@ -315,8 +315,8 @@ type IndexPart struct {
 }
 
 // Index NULLS ordering spellings for IndexPart.NullsOrder, matching
-// [go.5x5.cz/ptah/core/ast.NullsOrderFirst] and
-// [go.5x5.cz/ptah/catalog.NullsOrderFirst] so the value survives every
+// [ptah.run/core/ast.NullsOrderFirst] and
+// [ptah.run/catalog.NullsOrderFirst] so the value survives every
 // hop between the three index-part shapes unchanged.
 const (
 	NullsOrderFirst = "FIRST"
@@ -503,7 +503,7 @@ type Constraint struct {
 	OnDelete       string   // ON DELETE action
 	OnUpdate       string   // ON UPDATE action
 	// Deferrable marks a foreign key whose check may be postponed to the end of
-	// a transaction. See [go.5x5.cz/ptah/core/ast.ForeignKeyRef.Deferrable].
+	// a transaction. See [ptah.run/core/ast.ForeignKeyRef.Deferrable].
 	Deferrable bool
 	// Initially is the default timing of a deferrable check: "deferred",
 	// "immediate", or empty for a clause the author did not write.
@@ -1264,7 +1264,7 @@ type View struct {
 
 	// Attributes carries a view's own WITH clause on the targets that have one
 	// -- SQL Server's SCHEMABINDING and VIEW_METADATA. See
-	// [go.5x5.cz/ptah/catalog.View] for why they are the view's rather
+	// [ptah.run/catalog.View] for why they are the view's rather
 	// than its body's (stokaro/ptah#2125).
 	Attributes []string `json:",omitempty"`
 
@@ -1285,7 +1285,7 @@ type View struct {
 // rather than schema state: the view is populated when it is created, a changed
 // definition is reconciled as DROP and CREATE, and it goes stale only when its
 // source data changes -- which a schema comparison cannot observe. See
-// [go.5x5.cz/ptah/internal/matviewrefresh] for the whole reasoning and the
+// [ptah.run/internal/matviewrefresh] for the whole reasoning and the
 // refusal a declaration of the retired attribute gets (stokaro/ptah#1625).
 type MaterializedView struct {
 	StructName string // Name of the Go struct this materialized view is associated with

@@ -9,9 +9,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/testutils"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/testutils"
+	"ptah.run/migration/migrationfile"
 )
 
 // TestPtahAtlasNamespaceRemoved pins the removal of the ptah atlas command

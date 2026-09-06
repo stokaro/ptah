@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/quickstart"
+	"ptah.run/internal/quickstart"
 )
 
 // TestDiscover_HappyPath reads a tree and returns only the pages that opt in.

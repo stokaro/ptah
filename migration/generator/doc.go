@@ -4,7 +4,7 @@
 //
 // The desired schema comes from annotated Go entities or a pre-merged
 // schemamodel.Database, the current schema from a live database connection,
-// and the difference from go.5x5.cz/ptah/migration/schemadiff. Rendering is
+// and the difference from ptah.run/migration/schemadiff. Rendering is
 // deterministic and dependency-ordered, and the down file restores the
 // introspected current schema rather than merely inverting the up file's
 // statement list.
@@ -65,7 +65,7 @@
 // Setting GenerateMigrationOptions.ShadowDatabaseURL measures the candidate
 // against a live disposable database before any file is written. That
 // measurement is not this package's work. It belongs to
-// go.5x5.cz/ptah/migration/shadow, which this package calls and whose
+// ptah.run/migration/shadow, which this package calls and whose
 // structured *shadow.VerificationError it returns unchanged through
 // PlanMigration and GenerateMigration, inspectable with errors.As. What stays
 // here is the offline half: a diff, a directory, and the files published into

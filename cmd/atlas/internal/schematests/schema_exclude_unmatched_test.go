@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/internal/atlasfilter"
+	"ptah.run/cmd/atlas"
+	"ptah.run/internal/atlasfilter"
 )
 
 // writeUnmatchedExcludeSchema writes the one-table desired schema every case

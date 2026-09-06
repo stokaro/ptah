@@ -7,7 +7,7 @@ package ast_test
 import (
 	"errors"
 
-	"go.5x5.cz/ptah/core/ast"
+	"ptah.run/core/ast"
 )
 
 // MockVisitor implements the Visitor interface for testing

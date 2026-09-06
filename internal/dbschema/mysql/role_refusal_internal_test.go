@@ -19,9 +19,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/internal/dbschema/dbtest"
+	"ptah.run/catalog"
+	"ptah.run/core/coverage"
+	"ptah.run/internal/dbschema/dbtest"
 )
 
 func TestReadRolesMarksNonAuthenticatingPasswordsAbsent(t *testing.T) {

@@ -12,8 +12,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/viz"
-	"go.5x5.cz/ptah/internal/testutils"
+	"ptah.run/cmd/viz"
+	"ptah.run/internal/testutils"
 )
 
 func TestCommandWritesMermaid(t *testing.T) {

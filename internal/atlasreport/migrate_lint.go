@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/atlaslint"
-	"go.5x5.cz/ptah/internal/migratesum"
-	migrationlint "go.5x5.cz/ptah/migration/lint"
+	"ptah.run/internal/atlaslint"
+	"ptah.run/internal/migratesum"
+	migrationlint "ptah.run/migration/lint"
 )
 
 type MigrateLintOptions struct {

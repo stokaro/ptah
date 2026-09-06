@@ -12,9 +12,9 @@
 package schemaprecondition
 
 import (
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemamodel"
 )
 
 // Node returns the creation for one schema, carrying what the declaration says
@@ -22,7 +22,7 @@ import (
 //
 // name is the schema an added object needs, which is why the node is emitted at
 // all; declared is every schema the desired document declares, normally
-// [go.5x5.cz/ptah/migration/schemadiff/difftypes.SchemaDiff.DeclaredSchemas].
+// [ptah.run/migration/schemadiff/difftypes.SchemaDiff.DeclaredSchemas].
 // A name no declaration matches yields the bare guarded creation, which is the
 // established behavior for a schema reached only through an object's qualifier.
 //

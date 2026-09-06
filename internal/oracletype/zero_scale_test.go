@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/oracletype"
+	"ptah.run/internal/oracletype"
 )
 
 // TestMap_DropsAnExplicitZeroScale pins that a declared scale of zero is not

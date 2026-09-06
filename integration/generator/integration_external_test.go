@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/core/sqlutil"
+	"ptah.run/dbschema"
 )
 
 // execScript executes generated SQL using the same statement splitter as the

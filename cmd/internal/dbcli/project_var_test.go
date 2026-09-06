@@ -8,7 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"ptah.run/cmd/internal/dbcli"
 )
 
 // atlasHCLRequiringVar is a project config whose env cannot be evaluated

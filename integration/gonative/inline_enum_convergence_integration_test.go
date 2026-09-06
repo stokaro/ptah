@@ -11,12 +11,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/dbschema/mysql"
-	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/core/goschema"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/dbschema/mysql"
+	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff"
 )
 
 // inlineEnumSchema declares one enum-typed column carrying the given values.

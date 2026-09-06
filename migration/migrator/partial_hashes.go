@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/sqlutil"
+	"ptah.run/core/sqlutil"
 )
 
 // partialHashPrefix is the tag Atlas puts on every digest it records, the same

@@ -7,11 +7,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlashcl"
-	"go.5x5.cz/ptah/internal/atlashclrender"
-	"go.5x5.cz/ptah/internal/goannotationcleanup"
-	"go.5x5.cz/ptah/internal/goannotationexport"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/goannotationcleanup"
+	"ptah.run/internal/goannotationexport"
 )
 
 func TestExport_HappyPath_WritesValidatedHCLAndCleansAnnotations(t *testing.T) {

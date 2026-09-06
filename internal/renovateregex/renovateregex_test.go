@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/renovateregex"
+	"ptah.run/internal/renovateregex"
 )
 
 // TestCheck_RefusesABackreference is stokaro/ptah#2339, which is the whole

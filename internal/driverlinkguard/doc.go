@@ -9,7 +9,7 @@
 // rendering path, and nothing about the build goes red.
 //
 // The test measures the invariant from the resolved import graph rather than
-// from the source text, the way [go.5x5.cz/ptah/internal/cmd/boundaries] does:
+// from the source text, the way [ptah.run/internal/cmd/boundaries] does:
 // an import edge the compiler resolved cannot be talked out of, while a search
 // for driver spellings answers wrongly in both directions -- a doc comment
 // naming a driver looks like an import, and an indirect edge three packages

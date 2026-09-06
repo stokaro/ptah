@@ -9,8 +9,8 @@ import (
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/function"
 
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/atlashcl"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/atlashcl"
 )
 
 // parseProjectExpression evaluates one expression in an env's `url`, which is a

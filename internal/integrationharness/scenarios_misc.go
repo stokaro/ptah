@@ -10,8 +10,8 @@ import (
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/core/platform"
+	"ptah.run/dbschema"
 )
 
 // testTimestampVerification tests that applied_at timestamps are stored correctly

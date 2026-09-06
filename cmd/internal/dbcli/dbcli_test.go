@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"ptah.run/cmd/internal/dbcli"
 )
 
 func TestParseConnectTimeout_HappyPath(t *testing.T) {

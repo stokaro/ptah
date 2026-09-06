@@ -14,18 +14,18 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/cmd/readdb"
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/internal/dbschema/postgres"
-	"go.5x5.cz/ptah/internal/rolescope"
-	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/catalog"
+	"ptah.run/cmd/readdb"
+	"ptah.run/core/goschema"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
+	"ptah.run/core/sqlutil"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/dbschema/postgres"
+	"ptah.run/internal/rolescope"
+	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff"
 )
 
 func TestPostgreSQLRolesGrantsRoundTripAndBehaviorIntegration(t *testing.T) {
@@ -502,7 +502,7 @@ func rolesNamedByDescription(schema *catalog.Database) []string {
 // naming one is refused before anything is compared or planned rather than
 // turned into a CREATE ROLE the server refuses. See
 // compare.TestRolesReservedNameIsRefusedBeforeThisComparisonRunsAtAll and
-// go.5x5.cz/ptah/internal/reservedrole.
+// ptah.run/internal/reservedrole.
 func TestPostgreSQLRoleOutOfScopeIsPresentNotAbsentIntegration(t *testing.T) {
 	c := qt.New(t)
 	dsn := skipIfNoPostgreSQL(t)

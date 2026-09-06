@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/migration/migrator"
 )
 
 func TestMigrateStatusExitCode_Clean(t *testing.T) {

@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/dbtest"
+	"ptah.run/migration/dbtest"
 )
 
 // writeUsersEntity writes a minimal Go entity annotation file describing a

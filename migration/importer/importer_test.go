@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/importer"
+	"ptah.run/migration/importer"
 )
 
 func golangMigrateFS() fstest.MapFS {

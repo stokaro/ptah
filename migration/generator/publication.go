@@ -12,10 +12,10 @@ import (
 	"io/fs"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/internal/fsnapshot"
-	"go.5x5.cz/ptah/internal/migrationsnapshot"
-	"go.5x5.cz/ptah/internal/pathguard"
+	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/fsnapshot"
+	"ptah.run/internal/migrationsnapshot"
+	"ptah.run/internal/pathguard"
 )
 
 var (

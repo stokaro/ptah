@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasschema"
+	"ptah.run/internal/atlasschema"
 )
 
 // `ptah-compat schema diff` reaches the comparator through the variant that

@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlashcl"
+	"ptah.run/internal/atlashcl"
 )
 
 func TestParse_PtahParityExtensions_HappyPath(t *testing.T) {

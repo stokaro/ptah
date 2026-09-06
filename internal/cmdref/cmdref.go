@@ -31,7 +31,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/agentsurface"
+	"ptah.run/internal/agentsurface"
 )
 
 // Availability says what PTAH_ATLAS_STRICT_COMPAT=1 does to one path of the
