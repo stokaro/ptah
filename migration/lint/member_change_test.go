@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/migration/lint"
+	"ptah.run/migration/migrationfile"
 )
 
 // memberFS is the fixture every case in this file analyzes: a table with one
