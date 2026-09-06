@@ -34,14 +34,16 @@ func readBaselineColumns(ctx context.Context,
 	for _, table := range schema.Tables {
 		for _, column := range table.Columns {
 			columns = append(columns, lint.BaselineColumn{
-				Version:    version,
-				Schema:     table.Schema,
-				Table:      table.Name,
-				Name:       column.Name,
-				DataType:   compatColumnDataType(column),
-				ColumnType: column.ColumnType,
-				NotNull:    strings.EqualFold(strings.TrimSpace(column.IsNullable), "NO"),
-				HasDefault: column.ColumnDefault != nil && strings.TrimSpace(*column.ColumnDefault) != "",
+				Version:      version,
+				Schema:       table.Schema,
+				Table:        table.Name,
+				Name:         column.Name,
+				DataType:     compatColumnDataType(column),
+				ColumnType:   column.ColumnType,
+				Charset:      column.Charset,
+				TableCharset: table.Charset,
+				NotNull:      strings.EqualFold(strings.TrimSpace(column.IsNullable), "NO"),
+				HasDefault:   column.ColumnDefault != nil && strings.TrimSpace(*column.ColumnDefault) != "",
 			})
 		}
 	}

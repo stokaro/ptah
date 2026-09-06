@@ -78,6 +78,7 @@ func builtinRules() []Rule {
 	rules = append(rules, postgresRules()...)
 	rules = append(rules, mysqlRules()...)
 	rules = append(rules, mysqlMemberRules()...)
+	rules = append(rules, mysqlCostRules()...)
 	rules = append(rules, sqliteRules()...)
 	rules = append(rules, transactionRules()...)
 	return rules
@@ -1446,7 +1447,13 @@ func mysqlRules() []Rule {
 				if !isAlterTable(stmt.Words) || !scanAddPrimaryKey(stmt.Words) {
 					return false, ""
 				}
-				return true, "adding a primary key rebuilds the table and blocks DML on MySQL/MariaDB; use a staged online-DDL path for large tables"
+				// Measured on MySQL 8.4 and MariaDB 11.8.9 (mysqlcost.go): the
+				// rebuild is in place and LOCK=NONE is accepted, so the older
+				// wording that it blocks DML overstated the cost.
+				return true, "adding a primary key rebuilds the table around the new clustered index; " +
+					"both MySQL and MariaDB do it in place with writes allowed (ALGORITHM=INPLACE, LOCK=NONE), " +
+					"but the rebuild reads and rewrites every row and ALGORITHM=INSTANT is refused, " +
+					"so plan it for a quiet period or an online-DDL tool on a large table"
 			},
 		},
 		{

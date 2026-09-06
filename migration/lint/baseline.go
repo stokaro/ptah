@@ -40,6 +40,12 @@ type BaselineColumn struct {
 	// SET column; the rules that compare member lists read this field and
 	// find nothing when it is empty (stokaro/ptah#2942).
 	ColumnType string
+	// Charset is the column's character set as the server names it, empty
+	// for a column whose type carries none. TableCharset is the default
+	// character set of the owning table, which is what a MODIFY that names
+	// no character set gives the column (stokaro/ptah#2942).
+	Charset      string
+	TableCharset string
 	// NotNull reports whether the column rejects NULL.
 	NotNull bool
 	// HasDefault reports whether the column carries a DEFAULT expression.
@@ -79,6 +85,10 @@ type BaselineDependent struct {
 // existed.
 type baselineColumns struct {
 	byRef map[string][]BaselineColumn
+	// byTable holds every column of a table under the same reference
+	// spellings byRef uses, in catalog order, for the rules whose subject is
+	// the whole table.
+	byTable map[string][]BaselineColumn
 	// schemaless reports that no column in this state names a schema. A reader
 	// scoped to one schema does not repeat that schema's name on every table, so
 	// a migration writing `ALTER TABLE public.users` has a qualifier the state
@@ -98,13 +108,20 @@ func newBaselineIndex(columns []BaselineColumn) map[int64]baselineColumns {
 	for _, column := range columns {
 		state, ok := index[column.Version]
 		if !ok {
-			state = baselineColumns{byRef: make(map[string][]BaselineColumn), schemaless: true}
+			state = baselineColumns{
+				byRef:      make(map[string][]BaselineColumn),
+				byTable:    make(map[string][]BaselineColumn),
+				schemaless: true,
+			}
 		}
 		if column.Schema != "" {
 			state.schemaless = false
 		}
 		for _, key := range baselineKeys(column) {
 			state.byRef[key] = append(state.byRef[key], column)
+		}
+		for _, key := range baselineTableKeys(column) {
+			state.byTable[key] = append(state.byTable[key], column)
 		}
 		index[column.Version] = state
 	}
@@ -129,6 +146,51 @@ func baselineKeys(column BaselineColumn) []string {
 		table + "\x00" + name,
 		qualified + "\x00" + name,
 	}
+}
+
+// baselineTableKeys are the reference spellings that resolve to one table,
+// the same two forms [baselineKeys] indexes a column under.
+func baselineTableKeys(column BaselineColumn) []string {
+	table := normalizeIdent(column.Table)
+	if column.Schema == "" {
+		return []string{table}
+	}
+	return []string{table, normalizeIdent(column.Schema) + "." + table}
+}
+
+// tableColumns returns every baseline column of one table, in catalog order,
+// resolving the reference the way [baselineColumns.column] does and failing
+// closed on the same ambiguity: a bare name two schemas carry resolves to
+// neither.
+func (b baselineColumns) tableColumns(tableRef string) []BaselineColumn {
+	if len(b.byTable) == 0 || tableRef == "" {
+		return nil
+	}
+	if columns := b.exactTable(tableRef); columns != nil {
+		return columns
+	}
+	if !b.schemaless {
+		return nil
+	}
+	dot := strings.LastIndex(tableRef, ".")
+	if dot < 0 {
+		return nil
+	}
+	return b.exactTable(tableRef[dot+1:])
+}
+
+func (b baselineColumns) exactTable(tableRef string) []BaselineColumn {
+	columns := b.byTable[tableRef]
+	if len(columns) == 0 {
+		return nil
+	}
+	owner := columns[0].Schema
+	for _, column := range columns[1:] {
+		if column.Schema != owner {
+			return nil
+		}
+	}
+	return columns
 }
 
 // column returns the baseline state of one column of one table.

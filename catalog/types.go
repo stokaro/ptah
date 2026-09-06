@@ -204,6 +204,8 @@ type Table struct {
 	Schema          string   `json:"schema,omitempty"`
 	Type            string   `json:"type"` // TABLE, VIEW, etc.
 	Comment         string   `json:"comment"`
+	Charset         string   `json:"charset,omitempty"` // MySQL/MariaDB default character set for columns declared without one
+	Collate         string   `json:"collate,omitempty"` // MySQL/MariaDB default collation
 	Columns         []Column `json:"columns"`
 	EstimatedRows   int64    `json:"estimated_rows,omitempty"`    // Best-effort planner estimate from database statistics
 	RowStatsUnknown bool     `json:"row_stats_unknown,omitempty"` // The database reports no usable row statistics; EstimatedRows is not a row count
