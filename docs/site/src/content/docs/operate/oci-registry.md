@@ -553,7 +553,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Ptah
-        run: go install go.5x5.cz/ptah/cmd/ptah@latest
+        run: go install ptah.run/cmd/ptah@latest
 
       - name: Publish migration artifact
         shell: bash

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/capability"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
 )
 
 // visitCreateComposite renders Oracle's composite type.

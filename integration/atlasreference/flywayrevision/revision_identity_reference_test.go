@@ -7,7 +7,7 @@ package flywayrevision_test
 import (
 	"database/sql"
 	"errors"
-	"go.5x5.cz/ptah/integration/atlasreference"
+	"ptah.run/integration/atlasreference"
 	"io/fs"
 	"net/url"
 	"os"
@@ -983,7 +983,7 @@ func environmentWithoutPtahVariables(environment []string) []string {
 func buildCompatBinary(c *qt.C) string {
 	c.Helper()
 	path := filepath.Join(c.TempDir(), "ptah-compat")
-	result := exec.Command("go", "build", "-o", path, "go.5x5.cz/ptah/cmd/ptah-compat")
+	result := exec.Command("go", "build", "-o", path, "ptah.run/cmd/ptah-compat")
 	output, err := result.CombinedOutput()
 	c.Assert(err, qt.IsNil, qt.Commentf("build ptah-compat: %s", output))
 	return path

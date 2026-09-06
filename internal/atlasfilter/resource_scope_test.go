@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasfilter"
+	"ptah.run/internal/atlasfilter"
 )
 
 func TestScopeResourcesKeepsWriterOnlyKindsSelectable(t *testing.T) {

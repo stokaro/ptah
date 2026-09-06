@@ -15,7 +15,7 @@ import (
 	digest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"go.5x5.cz/ptah/internal/ociartifact"
+	"ptah.run/internal/ociartifact"
 )
 
 func referrer(letter, artifactType string) ociartifact.DiscoveredReferrer {

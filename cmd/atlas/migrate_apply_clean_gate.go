@@ -4,11 +4,11 @@ import (
 	"context"
 	"io/fs"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
-	"go.5x5.cz/ptah/internal/migrateclean"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/migrateclean"
+	"ptah.run/migration/migrator"
 )
 
 // atlasMigrateApplyRefusalOperands carries everything the refusals that run

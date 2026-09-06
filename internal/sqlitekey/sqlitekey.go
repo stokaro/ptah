@@ -38,7 +38,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/schemamodel"
 )
 
 // ImpliesNotNull reports whether SQLite makes field NOT NULL because table's

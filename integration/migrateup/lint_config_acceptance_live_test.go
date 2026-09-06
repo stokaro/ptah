@@ -11,13 +11,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/migrateup"
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/migration/lint"
+	"ptah.run/cmd/migrateup"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/core/renderer"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/migration/lint"
 )
 
 func TestMigrateUp_LintConfigSeverityOverrideControlsPostgresMigration(t *testing.T) {

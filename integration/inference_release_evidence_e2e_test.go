@@ -19,9 +19,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/internal/embedrelease"
-	"go.5x5.cz/ptah/internal/ociartifact"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/embedrelease"
+	"ptah.run/internal/ociartifact"
 )
 
 // TestInferenceReleaseEvidenceE2E publishes a generation change's evidence to a
@@ -136,7 +136,7 @@ func assertVerificationIsFoundFromTheRelease(
 		embedrelease.VerificationArtifactType)
 	c.Assert(err, qt.IsNil)
 	c.Assert(referrers, qt.HasLen, 1)
-	c.Assert(referrers[0].Annotations["cz.5x5.ptah.inference.passed"], qt.Equals, "false")
+	c.Assert(referrers[0].Annotations["run.ptah.inference.passed"], qt.Equals, "false")
 
 	pulled := pullRecord(c, ctx, repository+"@"+referrers[0].Digest.String(),
 		embedrelease.VerificationArtifactType, embedrelease.VerificationFileName)
@@ -378,7 +378,7 @@ func assertVerifyIsFoundFromTheReleaseItIsAbout(
 		embedrelease.VerificationArtifactType)
 	c.Assert(err, qt.IsNil)
 	c.Assert(referrers, qt.HasLen, 1)
-	c.Assert(referrers[0].Annotations["cz.5x5.ptah.inference.passed"], qt.Equals, "true")
+	c.Assert(referrers[0].Annotations["run.ptah.inference.passed"], qt.Equals, "true")
 }
 
 // assertVerifyPublishesWhatItMeasured runs the verb and then reads its record.

@@ -19,7 +19,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/cmdutil"
 )
 
 func TestInterruptExitCodeReproducesTheDefaultHandler(t *testing.T) {

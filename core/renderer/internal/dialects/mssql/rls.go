@@ -4,9 +4,9 @@ import (
 	"regexp"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/mssqlpolicy"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/mssqlpolicy"
 )
 
 // SQL Server hosts row-level security through a SECURITY POLICY, and the shape

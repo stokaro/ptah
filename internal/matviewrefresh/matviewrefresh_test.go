@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/internal/matviewrefresh"
+	"ptah.run/core/ptaherr"
+	"ptah.run/internal/matviewrefresh"
 )
 
 // TestRefuse_CarriesTheSentinelAndTheReason pins the two things every caller

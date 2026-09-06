@@ -2,7 +2,7 @@
 // online-DDL tools such as gh-ost and pt-online-schema-change.
 package onlineddl
 
-import "go.5x5.cz/ptah/config/projectconfig"
+import "ptah.run/config/projectconfig"
 
 // Canonical tool names accepted in configuration and directives.
 const (

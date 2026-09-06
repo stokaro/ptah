@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/rlspolicy"
+	"ptah.run/internal/rlspolicy"
 )
 
 // TestCommand_FoldsAnUnspecifiedClauseOntoALL pins the fold.

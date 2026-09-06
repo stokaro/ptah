@@ -11,12 +11,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
-	"go.5x5.cz/ptah/cmd/migratedown"
-	"go.5x5.cz/ptah/cmd/migratetag"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/migrationintegrity"
+	"ptah.run/cmd/atlas"
+	"ptah.run/cmd/atlas/internal/atlastest"
+	"ptah.run/cmd/migratedown"
+	"ptah.run/cmd/migratetag"
+	"ptah.run/dbschema"
+	"ptah.run/internal/migrationintegrity"
 )
 
 // failingRollbackSQL is a down migration that cannot succeed, used by the tests

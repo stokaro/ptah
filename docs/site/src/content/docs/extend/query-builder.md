@@ -140,9 +140,9 @@ manage indices by hand.
 
 ```go
 import (
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/query"
-	"go.5x5.cz/ptah/core/renderer"
+	"ptah.run/core/platform"
+	"ptah.run/core/query"
+	"ptah.run/core/renderer"
 )
 
 stmt := query.Select("id", "name").

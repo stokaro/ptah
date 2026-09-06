@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/dbschema/dbtest"
+	"ptah.run/internal/dbschema/dbtest"
 )
 
 // sequenceNamed reads the fake catalog and returns the sequence named.

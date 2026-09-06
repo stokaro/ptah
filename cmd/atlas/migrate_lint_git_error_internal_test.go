@@ -13,7 +13,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/migrationlintreport"
+	"ptah.run/internal/migrationlintreport"
 )
 
 // exitStatus128 is the failure a git invocation against an unresolvable

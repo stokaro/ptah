@@ -9,9 +9,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/generator"
+	"ptah.run/core/platform"
+	"ptah.run/dbschema"
+	"ptah.run/migration/generator"
 )
 
 // TestGenerateMigration_PartitionedParentRefusesRequestedConcurrentIndexBeforePublicationWithRealPostgres

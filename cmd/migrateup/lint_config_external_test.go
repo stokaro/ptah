@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/migrateup"
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/cmd/migrateup"
+	"ptah.run/dbschema"
 )
 
 func TestMigrateUp_InvalidLintPolicyPreventsExecution(t *testing.T) {

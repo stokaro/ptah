@@ -11,11 +11,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/fsdurable"
-	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/internal/protobufrender"
-	"go.5x5.cz/ptah/internal/schemaexport"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/fsdurable"
+	"ptah.run/internal/pathguard"
+	"ptah.run/internal/protobufrender"
+	"ptah.run/internal/schemaexport"
 )
 
 var (

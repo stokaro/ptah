@@ -13,8 +13,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/migrationreplay"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/migrationreplay"
 )
 
 func TestGenerateDiff_PreparePublicationRejectsSymlinkReplacement(t *testing.T) {

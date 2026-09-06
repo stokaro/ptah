@@ -10,11 +10,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/exprkey"
+	"ptah.run/catalog"
+	"ptah.run/config"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/exprkey"
 )
 
 // oracleStoredExpression is what a live 23.26.2.0.0 stores for

@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/dbschema/dbtest"
-	"go.5x5.cz/ptah/internal/dbschema/postgres"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/dbschema/dbtest"
+	"ptah.run/internal/dbschema/postgres"
 )
 
 // cleanupQueryFor captures the catalog query DropAllTables sends for a given

@@ -3,13 +3,13 @@ package generator
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/deporder"
-	"go.5x5.cz/ptah/internal/schemaprep"
-	"go.5x5.cz/ptah/internal/tablelookup"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/catalog"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/deporder"
+	"ptah.run/internal/schemaprep"
+	"ptah.run/internal/tablelookup"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // dropReverseConstraintsRestoredByTableCreation removes, from a reverse plan,

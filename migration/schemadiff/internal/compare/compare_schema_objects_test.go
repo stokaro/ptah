@@ -5,11 +5,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
-	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
+	"ptah.run/catalog"
+	"ptah.run/core/ast"
+	"ptah.run/core/schemamodel"
+	"ptah.run/migration/schemadiff/difftypes"
+	"ptah.run/migration/schemadiff/internal/compare"
 )
 
 func TestViews_DetectsBodyChange(t *testing.T) {

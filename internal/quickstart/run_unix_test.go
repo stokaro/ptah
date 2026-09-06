@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/quickstart"
+	"ptah.run/internal/quickstart"
 )
 
 // The PowerShell half of this file is the windows-latest leg of

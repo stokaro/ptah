@@ -7,7 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"go.5x5.cz/ptah/internal/agentpolicy"
+	"ptah.run/internal/agentpolicy"
 )
 
 // TestApply_TheSecondOfTwoPreviewsAgainstOneDigestIsRefused is #1490's

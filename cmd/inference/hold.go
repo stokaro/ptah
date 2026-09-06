@@ -7,9 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/internal/embedengine"
-	"go.5x5.cz/ptah/internal/embedpg"
-	"go.5x5.cz/ptah/internal/embedrun"
+	"ptah.run/internal/embedengine"
+	"ptah.run/internal/embedpg"
+	"ptah.run/internal/embedrun"
 )
 
 // newPauseCommand returns "ptah inference pause".

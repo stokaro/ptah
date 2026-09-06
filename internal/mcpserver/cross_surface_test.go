@@ -8,8 +8,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"go.5x5.cz/ptah/internal/agentapi"
-	"go.5x5.cz/ptah/internal/mcpserver"
+	"ptah.run/internal/agentapi"
+	"ptah.run/internal/mcpserver"
 )
 
 // TestServer_AnswersWhatTheDirectCallAnswers is the cross-surface equivalence

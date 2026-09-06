@@ -8,10 +8,10 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dburldisplay"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dburldisplay"
 )
 
 // Outcome is the verdict for one capability row.

@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/internal/embedreport"
+	"ptah.run/internal/embedreport"
 )
 
 // newDescribeCommand returns "ptah inference describe".

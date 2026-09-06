@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemaload"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemaload"
 )
 
 // tenantHCL declares one required variable and uses it as a column default, so

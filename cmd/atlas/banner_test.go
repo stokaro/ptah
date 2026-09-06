@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/internal/atlascompatpolicy"
+	"ptah.run/cmd/atlas"
+	"ptah.run/internal/atlascompatpolicy"
 )
 
 // wordmark is one line of the shared banner, enough to find it in a stream.

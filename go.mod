@@ -1,4 +1,4 @@
-module go.5x5.cz/ptah
+module ptah.run
 
 go 1.26.5
 

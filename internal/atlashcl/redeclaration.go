@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/envbool"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/envbool"
 )
 
 // One HCL document is a set of declarations, and declaring one object twice in
@@ -114,11 +114,11 @@ const StrictRedeclarationsEnvVar = "PTAH_HCL_STRICT_REDECLARATIONS"
 // does model both, its renderer writes the same two-label spelling, and with
 // this variable set Ptah reads the document back and re-renders it byte for
 // byte -- the round trip that binary does not have. See
-// [go.5x5.cz/ptah/internal/atlashclrender] for the rendering half.
+// [ptah.run/internal/atlashclrender] for the rendering half.
 const SchemaScopedEnumsEnvVar = "PTAH_HCL_SCHEMA_SCOPED_ENUMS"
 
 // The declarations of the three variables, made once, in the package that owns
-// them. See [go.5x5.cz/ptah/internal/envbool].
+// them. See [ptah.run/internal/envbool].
 //
 // Two are gated and one is retained, and the split follows the pinned community
 // binary rather than the shape of the setting. Merging a redeclared object and

@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/lintdialect"
-	"go.5x5.cz/ptah/internal/lintexpr"
+	"ptah.run/internal/lintdialect"
+	"ptah.run/internal/lintexpr"
 )
 
 // Declared rules let a project add a check without building a binary.

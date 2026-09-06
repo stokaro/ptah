@@ -12,13 +12,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
-	"go.5x5.cz/ptah/internal/atlassource"
-	"go.5x5.cz/ptah/migration/generator"
-	"go.5x5.cz/ptah/migration/importer"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/atlassource"
+	"ptah.run/migration/generator"
+	"ptah.run/migration/importer"
+	"ptah.run/migration/migrator"
 )
 
 func TestGooseNoTransactionArtifactImportsAppliesAndRollsBack(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	"path"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/fsnapshot"
+	"ptah.run/internal/fsnapshot"
 )
 
 var ErrChangedDuringCapture = errors.New("migration directory changed during snapshot capture")

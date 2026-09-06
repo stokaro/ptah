@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dburldisplay"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dburldisplay"
 )
 
 // TestConnectToDatabase_FillsTheRedactedURL pins the field a marshalled

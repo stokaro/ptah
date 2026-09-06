@@ -19,8 +19,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/revisiontable"
+	"ptah.run/catalog"
+	"ptah.run/internal/revisiontable"
 )
 
 func TestPlanExecutionOrdersKnownDependentsWithoutChangingReport(t *testing.T) {

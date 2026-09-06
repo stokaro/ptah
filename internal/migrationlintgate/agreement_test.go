@@ -8,10 +8,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/migrationlintgate"
-	"go.5x5.cz/ptah/internal/migrationlintreport"
-	"go.5x5.cz/ptah/migration/lint"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/migrationlintgate"
+	"ptah.run/internal/migrationlintreport"
+	"ptah.run/migration/lint"
 )
 
 // This file is the completion criterion for stokaro/ptah#270: `ptah migrations

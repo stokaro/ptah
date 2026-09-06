@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/internal/embeddigest"
+	"ptah.run/internal/embeddigest"
 )
 
 // Evidence is what a cutover plan was built from.

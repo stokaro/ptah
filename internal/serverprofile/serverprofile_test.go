@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/serverprofile"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/serverprofile"
 )
 
 // The strings below are what real servers answer about themselves. They are

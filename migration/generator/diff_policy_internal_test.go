@@ -10,13 +10,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/migration/diffpolicy"
-	"go.5x5.cz/ptah/migration/safety"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/catalog"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlasmigrate"
+	"ptah.run/migration/diffpolicy"
+	"ptah.run/migration/safety"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestPlanGeneratedMigrationSpecs_SkipDropTable(t *testing.T) {

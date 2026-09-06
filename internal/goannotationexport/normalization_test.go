@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/goannotationexport"
+	"ptah.run/internal/goannotationexport"
 )
 
 // decomposedAccent is "e" followed by U+0301 COMBINING ACUTE ACCENT. Written as

@@ -13,14 +13,14 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlashcl"
-	"go.5x5.cz/ptah/internal/atlashclrender"
-	"go.5x5.cz/ptah/internal/fsdurable"
-	"go.5x5.cz/ptah/internal/goannotationcleanup"
-	"go.5x5.cz/ptah/internal/goannotationsource"
-	"go.5x5.cz/ptah/internal/pathguard"
+	"ptah.run/core/goschema"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/fsdurable"
+	"ptah.run/internal/goannotationcleanup"
+	"ptah.run/internal/goannotationsource"
+	"ptah.run/internal/pathguard"
 )
 
 var (

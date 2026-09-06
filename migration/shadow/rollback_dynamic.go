@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/internal/devlock"
-	"go.5x5.cz/ptah/migration/internal/shadowdb"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/devlock"
+	"ptah.run/migration/internal/shadowdb"
+	"ptah.run/migration/migrator"
 )
 
 // DynamicRollbackOptions configures PlanDynamicRollback.

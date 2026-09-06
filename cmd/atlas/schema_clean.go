@@ -12,19 +12,19 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/cmd/internal/cmdflags"
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlascompatpolicy"
-	"go.5x5.cz/ptah/internal/atlasfilter"
-	"go.5x5.cz/ptah/internal/atlasreport"
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/dburldisplay"
-	"go.5x5.cz/ptah/internal/schemaclean"
+	"ptah.run/catalog"
+	"ptah.run/cmd/internal/cmdflags"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/config/projectconfig"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/atlasfilter"
+	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/dburldisplay"
+	"ptah.run/internal/schemaclean"
 )
 
 type atlasSchemaCleanOptions struct {

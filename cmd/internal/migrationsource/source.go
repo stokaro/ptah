@@ -11,11 +11,11 @@ import (
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"go.5x5.cz/ptah/internal/migrationartifact"
-	"go.5x5.cz/ptah/internal/migrationsnapshot"
-	"go.5x5.cz/ptah/internal/ociartifact"
-	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/migrationartifact"
+	"ptah.run/internal/migrationsnapshot"
+	"ptah.run/internal/ociartifact"
+	"ptah.run/internal/pathguard"
+	"ptah.run/migration/migrationfile"
 )
 
 // Options controls migration source resolution.

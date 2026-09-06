@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/atlasregistry"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/atlasregistry"
 )
 
 func TestParseAtlas_ResolvesComputedDataSourceIndex(t *testing.T) {

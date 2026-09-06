@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/pgindexstorage"
+	"ptah.run/internal/pgindexstorage"
 )
 
 // reloptions is what pg_class.reloptions looks like once the query has encoded

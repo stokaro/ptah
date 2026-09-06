@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/identifier"
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
 )
 
 // ReportUndescribed writes a note naming the TimescaleDB objects the
@@ -35,8 +35,8 @@ import (
 // statement about the document rather than a note beside it.
 //
 // It names the objects rather than counting them, which is the choice
-// [go.5x5.cz/ptah/internal/sqlitevirtual.ReportUnclassified] makes and the
-// opposite of [go.5x5.cz/ptah/internal/rolescope.ReportUndescribed]. That note
+// [ptah.run/internal/sqlitevirtual.ReportUnclassified] makes and the
+// opposite of [ptah.run/internal/rolescope.ReportUndescribed]. That note
 // withholds names because they come from outside the inspected scope and can
 // belong to another tenant; these are the operator's own tables, already in the
 // document they are looking at, and the note is useless without saying which of

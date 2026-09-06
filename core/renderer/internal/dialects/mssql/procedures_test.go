@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/renderer/internal/dialects/mssql"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/ast"
+	"ptah.run/core/renderer/internal/dialects/mssql"
+	"ptah.run/core/schemamodel"
 )
 
 // SQL Server hosts stored procedures, and Ptah rendered them as a named skip

@@ -3,10 +3,10 @@ package sqlutil
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/dialectlexer"
-	"go.5x5.cz/ptah/internal/lexer"
-	"go.5x5.cz/ptah/internal/sqlcompound"
+	"ptah.run/core/platform"
+	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/lexer"
+	"ptah.run/internal/sqlcompound"
 )
 
 // SourceStatement is one statement as it was written, rather than as an

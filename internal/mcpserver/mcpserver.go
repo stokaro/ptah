@@ -45,9 +45,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"go.5x5.cz/ptah/internal/agentapi"
-	"go.5x5.cz/ptah/internal/agentdiag"
-	"go.5x5.cz/ptah/internal/agentpolicy"
+	"ptah.run/internal/agentapi"
+	"ptah.run/internal/agentdiag"
+	"ptah.run/internal/agentpolicy"
 )
 
 // serverName is what a client sees in its tool list.
@@ -356,7 +356,7 @@ func wrap[Req any, Res any](
 // the schema does not cover, and a failure is exactly that: the tool's output
 // schema describes the answer, not the refusal. The key is namespaced because
 // _meta is shared with every other participant in the connection.
-const diagnosticKey = "ptah.5x5.cz/diagnostic"
+const diagnosticKey = "ptah.run/diagnostic"
 
 // errorResult renders one failure the way this surface reports failures.
 //

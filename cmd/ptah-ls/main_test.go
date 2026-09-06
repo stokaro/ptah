@@ -12,7 +12,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/testutils"
+	"ptah.run/internal/testutils"
 )
 
 // These tests build the ptah-ls binary at run time and exercise it as a

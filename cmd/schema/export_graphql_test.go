@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"ptah.run/cmd/internal/exitcode"
 )
 
 // graphqlModel is a schema with a server-generated key, a defaulted column, a

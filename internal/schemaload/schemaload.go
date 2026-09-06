@@ -15,14 +15,14 @@ import (
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/core/schemasource"
-	"go.5x5.cz/ptah/internal/atlassource"
-	"go.5x5.cz/ptah/internal/ociartifact"
-	"go.5x5.cz/ptah/internal/schemaartifact"
-	"go.5x5.cz/ptah/internal/schemafile"
+	"ptah.run/core/coverage"
+	"ptah.run/core/goschema"
+	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemasource"
+	"ptah.run/internal/atlassource"
+	"ptah.run/internal/ociartifact"
+	"ptah.run/internal/schemaartifact"
+	"ptah.run/internal/schemafile"
 )
 
 // Options selects the desired-schema sources and how loading is reported.

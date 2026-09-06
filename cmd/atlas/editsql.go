@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"go.5x5.cz/ptah/cmd/internal/editor"
+	"ptah.run/cmd/internal/editor"
 )
 
 // editAtlasSQL round-trips SQL text through the operator's editor ($VISUAL,

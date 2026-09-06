@@ -8,8 +8,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
 )
 
 // ErrUnnamedIndex is the class of an inline index left without a name that no

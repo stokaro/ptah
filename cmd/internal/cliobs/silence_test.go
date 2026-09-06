@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/cliobs"
+	"ptah.run/cmd/internal/cliobs"
 )
 
 // QuietDefaultLogger keeps library narration off the Atlas-compatible binary's

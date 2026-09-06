@@ -10,9 +10,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/servertarget"
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/internal/servertarget"
 )
 
 // liveNote is what getDatabaseInfoWithCapabilities writes into

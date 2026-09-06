@@ -10,7 +10,7 @@
 package embedstore
 
 import (
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/schemamodel"
 )
 
 // TablePrefix is what every table this package owns is named with.

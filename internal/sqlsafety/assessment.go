@@ -5,8 +5,8 @@ package sqlsafety
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/internal/dialectlexer"
-	"go.5x5.cz/ptah/internal/lexer"
+	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/lexer"
 )
 
 // SQLForAssessment removes non-executable comments and expands MySQL/MariaDB

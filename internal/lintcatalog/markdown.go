@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/migrationlintgate"
+	"ptah.run/internal/migrationlintgate"
 )
 
 // WriteMarkdown renders the whole enumeration: the families, both rule tables,

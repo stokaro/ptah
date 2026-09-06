@@ -3,7 +3,7 @@ package config_test
 import (
 	"fmt"
 
-	"go.5x5.cz/ptah/config"
+	"ptah.run/config"
 )
 
 // ExampleDefaultCompareOptions shows what the defaults actually contain: the

@@ -13,10 +13,10 @@ import (
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/memory"
 
-	"go.5x5.cz/ptah/internal/lintartifact"
-	"go.5x5.cz/ptah/internal/migrationlintreport"
-	"go.5x5.cz/ptah/internal/ociartifact"
-	migrationlint "go.5x5.cz/ptah/migration/lint"
+	"ptah.run/internal/lintartifact"
+	"ptah.run/internal/migrationlintreport"
+	"ptah.run/internal/ociartifact"
+	migrationlint "ptah.run/migration/lint"
 )
 
 func TestNewFS_CleanReportUsesCanonicalJSON(t *testing.T) {

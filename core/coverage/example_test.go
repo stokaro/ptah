@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/coverage"
+	"ptah.run/core/coverage"
 )
 
 // Example walks the whole story end to end: a reader that was refused the

@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"ptah.run/catalog"
+	"ptah.run/internal/convert/dbschematogo"
 )
 
 // coveringUniqueSchema is one table carrying a unique index named i2, and

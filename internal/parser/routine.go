@@ -3,9 +3,9 @@ package parser
 import (
 	"fmt"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/lexer"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/internal/lexer"
 )
 
 type routineParser interface {

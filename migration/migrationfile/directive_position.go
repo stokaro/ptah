@@ -7,9 +7,9 @@ import (
 	"strings"
 	"unicode"
 
-	"go.5x5.cz/ptah/internal/dialectlexer"
-	"go.5x5.cz/ptah/internal/lexer"
-	"go.5x5.cz/ptah/internal/ptahdirective"
+	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/lexer"
+	"ptah.run/internal/ptahdirective"
 )
 
 // A migration file's directives are significant only BEFORE its first

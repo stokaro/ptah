@@ -6,9 +6,9 @@ import (
 	"net/url"
 	"slices"
 
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
-	"go.5x5.cz/ptah/internal/fsnapshot"
-	"go.5x5.cz/ptah/internal/migrationsnapshot"
+	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/fsnapshot"
+	"ptah.run/internal/migrationsnapshot"
 )
 
 // DirFormatQueryKey is the one migration-directory URL query key that selects

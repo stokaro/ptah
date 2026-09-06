@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/query"
+	"ptah.run/core/platform"
+	"ptah.run/core/query"
 )
 
 // renderProjection renders "SELECT <expr> FROM t" for PostgreSQL and returns the

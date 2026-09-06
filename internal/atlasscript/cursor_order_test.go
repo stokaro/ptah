@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasscript"
+	"ptah.run/internal/atlasscript"
 )
 
 // The cursor is read in source order -- stokaro/ptah#1017.

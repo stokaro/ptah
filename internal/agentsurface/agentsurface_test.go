@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/root"
-	"go.5x5.cz/ptah/internal/agentsurface"
+	"ptah.run/cmd/root"
+	"ptah.run/internal/agentsurface"
 )
 
 // TestClassification_NamesEveryVerbTheBinaryHas is the guard ADR 0002's

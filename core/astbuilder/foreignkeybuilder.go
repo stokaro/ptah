@@ -1,7 +1,7 @@
 package astbuilder
 
 import (
-	"go.5x5.cz/ptah/core/ast"
+	"ptah.run/core/ast"
 )
 
 // ForeignKeyBuilder provides a fluent API for configuring foreign key constraints within table contexts.

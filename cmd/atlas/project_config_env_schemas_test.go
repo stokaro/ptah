@@ -7,9 +7,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/envbool/envbooltest"
+	"ptah.run/cmd/atlas/internal/atlastest"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/envbool/envbooltest"
 )
 
 // TestCompatEnvSchemasOptOutIsRefusedWithoutAProjectFile pins the refusal on

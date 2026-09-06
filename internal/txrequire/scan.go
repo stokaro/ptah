@@ -4,8 +4,8 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/dialectlexer"
-	"go.5x5.cz/ptah/internal/lexer"
+	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/lexer"
 )
 
 // tokenize renders a statement as the word sequence the rules scan.

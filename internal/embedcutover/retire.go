@@ -3,7 +3,7 @@ package embedcutover
 import (
 	"strconv"
 
-	"go.5x5.cz/ptah/internal/embeddigest"
+	"ptah.run/internal/embeddigest"
 )
 
 // RetirementPlan is a proposal to destroy a generation.

@@ -10,10 +10,10 @@ import (
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/mysqlroutine"
-	"go.5x5.cz/ptah/internal/sqlrunner"
+	"ptah.run/catalog"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/mysqlroutine"
+	"ptah.run/internal/sqlrunner"
 )
 
 // Reader reads schema information from MySQL/MariaDB databases

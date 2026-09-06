@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/clickhouserbac"
-	"go.5x5.cz/ptah/internal/sqlident"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/clickhouserbac"
+	"ptah.run/internal/sqlident"
 )
 
 // The five visitors in this file are ClickHouse's role and privilege surface.

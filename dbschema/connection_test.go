@@ -13,8 +13,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasurl"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasurl"
 )
 
 func TestDatabaseConnectionWithSession_DiscardsSessionState(t *testing.T) {

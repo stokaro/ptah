@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemacensus"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemacensus"
 )
 
 // TestRegistry_CoversEveryFieldTheModelHas is the half of the census that makes

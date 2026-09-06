@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/agentflags"
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/internal/assistsession"
+	"ptah.run/cmd/internal/agentflags"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/internal/assistsession"
 )
 
 // olderThanFlag names the prune window.

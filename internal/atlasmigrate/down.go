@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/migrationfile"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/dbschema"
+	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/migrator"
 )
 
 // DownOptions configures PrepareDown against an Atlas-format migration

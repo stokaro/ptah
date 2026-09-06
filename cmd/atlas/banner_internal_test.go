@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlascompatpolicy"
+	"ptah.run/internal/atlascompatpolicy"
 )
 
 // TestBannerName_TheStrictProfileCarriesNone pins both answers.

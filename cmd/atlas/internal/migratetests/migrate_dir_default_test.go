@@ -10,10 +10,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/atlascompat"
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/atlascompat"
+	"ptah.run/cmd/atlas"
+	"ptah.run/cmd/atlas/internal/atlastest"
+	"ptah.run/dbschema"
 )
 
 // The `--dir` default matrix for stokaro/ptah#1241 items 2, 3 and 4.

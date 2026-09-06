@@ -4,11 +4,11 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/tableref"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/catalog"
+	"ptah.run/core/coverage"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/tableref"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Hypertables compares declared TimescaleDB hypertables against the ones the

@@ -6,7 +6,7 @@ import (
 	"slices"
 	"time"
 
-	"go.5x5.cz/ptah/internal/embeddigest"
+	"ptah.run/internal/embeddigest"
 )
 
 // Phase is where a run has got to in the lifecycle.

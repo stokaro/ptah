@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/systemschema"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/systemschema"
+	"ptah.run/internal/tableref"
 )
 
 func (r *renderer) renderExtensions() {
@@ -1127,7 +1127,7 @@ func (r *renderer) renderSynonyms() {
 // The schema is written VERBATIM rather than through [renderer.schemaFor]: an
 // empty Schema is the DATABASE scope, a fourth address alongside schema, table
 // and column, and substituting the connection default for it would move a
-// database property onto a schema. [go.5x5.cz/ptah/core/schemamodel.ExtendedProperty.QualifiedOwner]
+// database property onto a schema. [ptah.run/core/schemamodel.ExtendedProperty.QualifiedOwner]
 // spells that address `(database)`, and the SQL Server renderer emits it by
 // passing no `@level0type` at all.
 func (r *renderer) renderExtendedProperties() {

@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/core/sqlutil"
+	"ptah.run/dbschema"
+	"ptah.run/migration/migrationfile"
 )
 
 // MigrationFunc represents a migration function that operates on a database connection

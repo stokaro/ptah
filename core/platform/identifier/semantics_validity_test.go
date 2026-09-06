@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/platform/identifier"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 )
 
 // Every dialect's own semantics must survive Normalize unchanged.

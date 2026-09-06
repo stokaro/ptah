@@ -8,10 +8,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/migration/risk"
-	"go.5x5.cz/ptah/migration/safety"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/ast"
+	"ptah.run/migration/risk"
+	"ptah.run/migration/safety"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestClassifySchemaDiff_HighestSeverity(t *testing.T) {

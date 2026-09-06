@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlashcl"
+	"ptah.run/internal/atlashcl"
 )
 
 // A column type written with Atlas's sql() escape hatch reduces to its SQL text

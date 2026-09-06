@@ -9,9 +9,9 @@ import (
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/matviewrefresh"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/matviewrefresh"
+	"ptah.run/internal/tableref"
 )
 
 func (p *parser) parseExtension(block *hclsyntax.Block) error {
@@ -1409,7 +1409,7 @@ func (p *parser) parseHypertable(block *hclsyntax.Block) error {
 }
 
 // qualifyHypertableName folds the schema back into the table name, which is how
-// [go.5x5.cz/ptah/core/schemamodel.Hypertable] carries it: the declaration names a
+// [ptah.run/core/schemamodel.Hypertable] carries it: the declaration names a
 // TABLE, and a table is named the way every other reference to one is.
 func qualifyHypertableName(schema, table string) string {
 	if strings.TrimSpace(schema) == "" {

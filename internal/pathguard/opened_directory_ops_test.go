@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/fsdurable"
-	"go.5x5.cz/ptah/internal/pathguard"
+	"ptah.run/internal/fsdurable"
+	"ptah.run/internal/pathguard"
 )
 
 func TestOpenedDirectoryOperations_HappyPath(t *testing.T) {

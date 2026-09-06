@@ -11,10 +11,10 @@ package planlint
 import (
 	"fmt"
 
-	"go.5x5.cz/ptah/internal/fsnapshot"
-	"go.5x5.cz/ptah/internal/lintdialect"
-	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/fsnapshot"
+	"ptah.run/internal/lintdialect"
+	"ptah.run/migration/lint"
+	"ptah.run/migration/migrationfile"
 )
 
 // sourceName is the name the plan's SQL is analyzed under.

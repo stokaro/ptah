@@ -11,8 +11,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/fsdurable"
-	"go.5x5.cz/ptah/internal/goannotationsource"
+	"ptah.run/internal/fsdurable"
+	"ptah.run/internal/goannotationsource"
 )
 
 // concurrentEditOriginal is the annotated source a cleanup plans to rewrite,

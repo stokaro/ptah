@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas"
+	"ptah.run/cmd/atlas"
 )
 
 // writeSchemaTestScopeFixture writes a desired schema whose two tables live in

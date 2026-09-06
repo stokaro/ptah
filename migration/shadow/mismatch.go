@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func describeDiff(diff *difftypes.SchemaDiff) string {

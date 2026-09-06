@@ -7,9 +7,9 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemaprep"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemaprep"
+	"ptah.run/internal/tableref"
 )
 
 const (

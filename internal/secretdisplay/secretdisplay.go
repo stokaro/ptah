@@ -9,7 +9,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"go.5x5.cz/ptah/internal/atlasurl"
+	"ptah.run/internal/atlasurl"
 )
 
 // Sanitize redacts secrets discoverable from the effective environment and

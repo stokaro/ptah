@@ -3,7 +3,7 @@ package atlasfilter
 import (
 	"slices"
 
-	"go.5x5.cz/ptah/internal/envbool"
+	"ptah.run/internal/envbool"
 )
 
 // AllowUnmatchedExcludeEnvVar restores the permissive treatment of an
@@ -14,7 +14,7 @@ import (
 // cli-surface tier asserts that `ptah-compat` registers exactly the flags the
 // pinned community binary registers, so a flag that binary does not have would
 // break the very promise this surface exists to keep. Precedent and spelling:
-// [go.5x5.cz/ptah/internal/atlashclrender.KeepAtlasRefusedBlocksEnvVar].
+// [ptah.run/internal/atlashclrender.KeepAtlasRefusedBlocksEnvVar].
 //
 // The variable exists because refusing an unmatched selector is the safe
 // default but not a free one: a shared exclude list reused across environments
@@ -23,8 +23,8 @@ import (
 const AllowUnmatchedExcludeEnvVar = "PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE"
 
 // allowUnmatchedExclude is the declaration of the variable, made once, in the
-// package that owns it. See [go.5x5.cz/ptah/internal/envbool].
-// It is [go.5x5.cz/ptah/internal/envbool.Retained]: it relaxes a Ptah-added
+// package that owns it. See [ptah.run/internal/envbool].
+// It is [ptah.run/internal/envbool.Retained]: it relaxes a Ptah-added
 // refusal back to what the pinned binary already accepts, so it adds no Atlas
 // capability for strict compatibility to withhold.
 var allowUnmatchedExclude = envbool.New(AllowUnmatchedExcludeEnvVar, false, envbool.Retained)

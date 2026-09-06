@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasreport"
-	"go.5x5.cz/ptah/internal/schemaclean"
+	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/schemaclean"
 )
 
 func TestSchemaCleanFormatRendersJSONWithRedactedURL(t *testing.T) {

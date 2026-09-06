@@ -8,8 +8,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"go.5x5.cz/ptah/internal/aiprovider"
-	"go.5x5.cz/ptah/internal/assistloop"
+	"ptah.run/internal/aiprovider"
+	"ptah.run/internal/assistloop"
 )
 
 // TestRun_HandsTheModelWhatAnExternalClientWouldGet is the result half of the

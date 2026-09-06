@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/annotationmeta"
-	"go.5x5.cz/ptah/internal/annotationparse"
+	"ptah.run/internal/annotationmeta"
+	"ptah.run/internal/annotationparse"
 )
 
 // DiagnosticSeverity follows the LSP DiagnosticSeverity values.

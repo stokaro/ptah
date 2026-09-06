@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/atlascompat"
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/atlascompat"
+	"ptah.run/cmd/atlas"
+	"ptah.run/migration/migrationfile"
 )
 
 func TestMigrateNewWithAtlasProjectEnumIdentifiers(t *testing.T) {

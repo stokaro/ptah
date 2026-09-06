@@ -8,10 +8,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlascompatpolicy"
-	"go.5x5.cz/ptah/internal/atlasscript"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/atlasscript"
 )
 
 type scriptOptions struct {

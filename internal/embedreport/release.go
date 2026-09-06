@@ -3,8 +3,8 @@ package embedreport
 import (
 	"time"
 
-	"go.5x5.cz/ptah/internal/embedrelease"
-	"go.5x5.cz/ptah/internal/embedspec"
+	"ptah.run/internal/embedrelease"
+	"ptah.run/internal/embedspec"
 )
 
 // BuildRelease is what a generation change proposes, as the record a registry

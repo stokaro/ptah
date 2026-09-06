@@ -3,8 +3,8 @@
 package testutils
 
 import (
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/catalog"
+	"ptah.run/core/schemamodel"
 )
 
 // CreateTestParseResult creates a minimal PackageParseResult for testing

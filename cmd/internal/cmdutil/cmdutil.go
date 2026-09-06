@@ -11,7 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"ptah.run/cmd/internal/exitcode"
 )
 
 const (

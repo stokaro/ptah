@@ -17,15 +17,15 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"  // registers the pgx driver for database/sql
 	_ "github.com/microsoft/go-mssqldb" // registers the SQL Server driver for database/sql
 
-	"go.5x5.cz/ptah/cmd/generate"
-	"go.5x5.cz/ptah/cmd/readdb"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/cmd/generate"
+	"ptah.run/cmd/readdb"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/dbtarget"
 )
 
 func TestPostgreSQLSchemaRenderCircularForeignKeysApplyIntegration(t *testing.T) {

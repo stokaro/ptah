@@ -10,9 +10,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/lintdialect"
-	"go.5x5.cz/ptah/migration/lint"
+	"ptah.run/core/platform"
+	"ptah.run/internal/lintdialect"
+	"ptah.run/migration/lint"
 )
 
 // This file measures the half of stokaro/ptah#270's fix that accepting dialect

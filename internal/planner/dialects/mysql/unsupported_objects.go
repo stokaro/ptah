@@ -6,14 +6,14 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/modelast"
-	"go.5x5.cz/ptah/internal/mysqlroutine"
-	"go.5x5.cz/ptah/internal/oracleroutine"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/modelast"
+	"ptah.run/internal/mysqlroutine"
+	"ptah.run/internal/oracleroutine"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // reportUnsupportedObjects appends the AST nodes for the declared object kinds

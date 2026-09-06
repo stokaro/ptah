@@ -2,7 +2,7 @@
 // what each one is for, so a fact an author declares cannot disappear on the way
 // to SQL without somebody having decided that it should.
 //
-// The enumeration is reflection over [go.5x5.cz/ptah/core/schemamodel.Database]
+// The enumeration is reflection over [ptah.run/core/schemamodel.Database]
 // rather than a written list, so a field added to the model appears here the day
 // it is added. [Registry] is the hand-written half: one disposition per field,
 // with the reason for every field that is not rendered. [Measure] is the

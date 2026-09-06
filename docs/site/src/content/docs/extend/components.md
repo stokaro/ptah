@@ -109,8 +109,8 @@ import (
 	"fmt"
 	"log"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/renderer"
+	"ptah.run/core/ast"
+	"ptah.run/core/renderer"
 )
 
 func main() {
@@ -248,8 +248,8 @@ import (
 	"fmt"
 	"log"
 
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/yamlschema"
+	"ptah.run/core/renderer"
+	"ptah.run/core/yamlschema"
 )
 
 func main() {

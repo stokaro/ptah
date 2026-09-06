@@ -9,11 +9,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlashclrender"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/core/platform"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/dbtarget"
 )
 
 // TestSQLServerLiveInspectDescribesSynonymsAndProperties is stokaro/ptah#2001

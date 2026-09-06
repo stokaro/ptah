@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/sqllint"
+	"ptah.run/core/platform"
+	"ptah.run/internal/sqllint"
 )
 
 // TestSeverities_APolicyReplacesARuleSeverity pins that `ptah sql lint` honors

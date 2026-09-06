@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/lintcatalog"
-	"go.5x5.cz/ptah/migration/lint"
+	"ptah.run/internal/lintcatalog"
+	"ptah.run/migration/lint"
 )
 
 // The alias table lives in migration/lint, because internal/lintcatalog imports

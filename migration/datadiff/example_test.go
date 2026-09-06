@@ -3,7 +3,7 @@ package datadiff_test
 import (
 	"fmt"
 
-	"go.5x5.cz/ptah/migration/datadiff"
+	"ptah.run/migration/datadiff"
 )
 
 // ExampleCompute diffs the desired managed rows of a table against what the

@@ -7,10 +7,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/dbschema/mssql"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/dbschema/mssql"
+	"ptah.run/migration/schemadiff"
 )
 
 // TestReadSynonyms_Live reads the three target shapes a synonym can have back

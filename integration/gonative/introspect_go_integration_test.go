@@ -15,11 +15,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/cmd/root"
-	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/cmd/root"
+	"ptah.run/config"
+	"ptah.run/core/goschema"
+	"ptah.run/dbschema"
+	"ptah.run/migration/schemadiff"
 )
 
 func openPostgres(t *testing.T, dsn string) (*sql.DB, error) {

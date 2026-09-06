@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/goannotationsource"
+	"ptah.run/internal/goannotationsource"
 )
 
 func TestCapture_HappyPath_UsesStableSharedSourcePolicy(t *testing.T) {

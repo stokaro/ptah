@@ -7,8 +7,8 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 )
 
 // CICell is one matrix cell in the form continuous integration consumes it.

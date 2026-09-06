@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/risk"
+	"ptah.run/migration/risk"
 )
 
 func TestSeverityRankAndMachineLevels(t *testing.T) {

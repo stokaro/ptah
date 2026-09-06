@@ -9,7 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"go.yaml.in/yaml/v3"
 
-	"go.5x5.cz/ptah/cmd/inference"
+	"ptah.run/cmd/inference"
 )
 
 // exampleDir is where the Kubernetes manifests live, relative to this package.

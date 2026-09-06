@@ -2,7 +2,7 @@
 
 package migratetests_test
 
-import "go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
+import "ptah.run/cmd/atlas/internal/atlastest"
 
 // acceptedBackslashNames carries the row that only holds where a backslash is
 // an ordinary character in a file name. The pinned binary was measured here:

@@ -10,8 +10,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/aiprovider"
-	"go.5x5.cz/ptah/internal/assistsession"
+	"ptah.run/internal/aiprovider"
+	"ptah.run/internal/assistsession"
 )
 
 // clock returns a time source that advances one second per read, so records

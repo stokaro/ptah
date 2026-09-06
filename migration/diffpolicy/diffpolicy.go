@@ -23,9 +23,9 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/indexscope"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/indexscope"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // ChangeKind identifies a destructive schema change kind that a diff policy can

@@ -7,10 +7,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/query"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/internal/sqlident"
+	"ptah.run/core/query"
+	"ptah.run/core/renderer"
+	"ptah.run/core/sqlutil"
+	"ptah.run/internal/sqlident"
 )
 
 // This file is the dialect-coverage guard for the query builder's four render

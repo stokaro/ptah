@@ -3,8 +3,8 @@ package schemaprep
 import (
 	"slices"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
 )
 
 // EffectiveFieldForPlatform returns the field after applying the target's

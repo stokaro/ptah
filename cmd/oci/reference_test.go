@@ -10,7 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/oci"
+	"ptah.run/cmd/oci"
 )
 
 // commandReference is the page that lists the native command surface.

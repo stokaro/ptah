@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/aiprovider"
+	"ptah.run/internal/aiprovider"
 )
 
 // recorder is a stub endpoint: it records what it was sent and answers with a

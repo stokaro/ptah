@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemastats"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemastats"
 )
 
 // metricValue reads one metric's sample line out of a rendered scrape.

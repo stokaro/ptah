@@ -27,8 +27,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/catalog"
+	"ptah.run/dbschema"
 )
 
 // indexAttributeSeed builds the whole set of #1242 shapes in one database. They

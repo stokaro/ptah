@@ -19,7 +19,7 @@
 package ddltx
 
 import (
-	"go.5x5.cz/ptah/core/platform"
+	"ptah.run/core/platform"
 )
 
 // Class is a DDL transaction contract: what a database guarantees about a

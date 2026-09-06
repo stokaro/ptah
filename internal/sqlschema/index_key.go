@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/lexer"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/lexer"
 )
 
 // A CREATE INDEX key list element is more than a column name. PostgreSQL's

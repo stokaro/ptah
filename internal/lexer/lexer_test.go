@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/lexer"
+	"ptah.run/internal/lexer"
 )
 
 func TestTokenType_String(t *testing.T) {

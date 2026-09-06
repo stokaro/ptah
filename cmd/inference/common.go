@@ -10,12 +10,12 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // the driver the PostgreSQL vertical uses
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdflags"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/embeddigest"
-	"go.5x5.cz/ptah/internal/embedpg"
-	"go.5x5.cz/ptah/internal/embedrelease"
-	"go.5x5.cz/ptah/internal/embedspec"
+	"ptah.run/cmd/internal/cmdflags"
+	"ptah.run/core/platform"
+	"ptah.run/internal/embeddigest"
+	"ptah.run/internal/embedpg"
+	"ptah.run/internal/embedrelease"
+	"ptah.run/internal/embedspec"
 )
 
 // commonOptions are what the specification-led database verbs share.

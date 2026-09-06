@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/schemaprep"
-	"go.5x5.cz/ptah/internal/sqlident"
-	"go.5x5.cz/ptah/internal/sqlrunner"
+	"ptah.run/catalog"
+	"ptah.run/internal/schemaprep"
+	"ptah.run/internal/sqlident"
+	"ptah.run/internal/sqlrunner"
 )
 
 var triggerHeaderPattern = regexp.MustCompile(

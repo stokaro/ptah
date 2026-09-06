@@ -16,7 +16,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"go.5x5.cz/ptah/internal/ociartifact"
+	"ptah.run/internal/ociartifact"
 )
 
 const evidenceArtifactType = "application/vnd.ptah.evidence.v1+json"

@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/query"
+	"ptah.run/core/platform"
+	"ptah.run/core/query"
 )
 
 // eqCols builds a "left = right" comparison of two qualified columns, the shape

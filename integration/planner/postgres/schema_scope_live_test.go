@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/schemamodel"
+	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestPlannerDoesNotWriteToARelationTheSchemaNeverDeclaredLive is blocker 1

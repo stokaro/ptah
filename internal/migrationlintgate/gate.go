@@ -8,9 +8,9 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/lintdialect"
-	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/risk"
+	"ptah.run/internal/lintdialect"
+	"ptah.run/migration/lint"
+	"ptah.run/migration/risk"
 )
 
 // ReportedFamily is the only identifier family this gate ever blocks on.

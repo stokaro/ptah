@@ -11,7 +11,7 @@ import (
 // one file name in the migration directory.
 //
 // The sentence is deliberately the one
-// [go.5x5.cz/ptah/internal/atlasmigrateimport.ErrSkeletonNameNotAnElement]
+// [ptah.run/internal/atlasmigrateimport.ErrSkeletonNameNotAnElement]
 // already prints for the same mistake on a foreign directory layout. One rule
 // with two spellings is how an operator learns that the two paths are different
 // rules, which they are not.

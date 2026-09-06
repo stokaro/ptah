@@ -8,11 +8,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/core/schemasource"
-	"go.5x5.cz/ptah/internal/atlassource"
-	"go.5x5.cz/ptah/internal/envbool/envbooltest"
-	"go.5x5.cz/ptah/internal/testutils"
+	"ptah.run/config/projectconfig"
+	"ptah.run/core/schemasource"
+	"ptah.run/internal/atlassource"
+	"ptah.run/internal/envbool/envbooltest"
+	"ptah.run/internal/testutils"
 )
 
 // externalHelperModes maps a mode name to the behavior the re-executed test

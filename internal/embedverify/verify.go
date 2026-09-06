@@ -165,7 +165,7 @@ type RunState struct {
 	//
 	// A RunState.UnreconciledBatches count stood here too, feeding a blocking
 	// finding. It went, because nothing in the tree ever set the
-	// [go.5x5.cz/ptah/internal/embedrun.BatchOutcome] Unreconciled flag it would
+	// [ptah.run/internal/embedrun.BatchOutcome] Unreconciled flag it would
 	// have counted -- and the checkpoint refuses such a batch rather than
 	// committing one to be counted later, so the guarantee lives there.
 	LeaseHolder  string

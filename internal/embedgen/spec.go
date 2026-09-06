@@ -1,6 +1,6 @@
 package embedgen
 
-import "go.5x5.cz/ptah/internal/embedrun"
+import "ptah.run/internal/embedrun"
 
 // SpecVersion is the version of this specification's own shape.
 //

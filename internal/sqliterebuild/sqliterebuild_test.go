@@ -8,9 +8,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/sqliteforeignkeys"
-	"go.5x5.cz/ptah/internal/sqliterebuild"
+	"ptah.run/dbschema"
+	"ptah.run/internal/sqliteforeignkeys"
+	"ptah.run/internal/sqliterebuild"
 )
 
 // rebuildBody is the create-copy-drop-rename sequence SQLite's own ALTER TABLE

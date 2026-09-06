@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/capabilityprobe"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/capabilityprobe"
 )
 
 // presetSource declares every capability preset Ptah ships.

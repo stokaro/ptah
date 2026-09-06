@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/schemamodel"
 )
 
 // references renders one Ref per foreign key, sorted by the line itself so the

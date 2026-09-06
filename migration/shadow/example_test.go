@@ -10,11 +10,11 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
-	"go.5x5.cz/ptah/core/yamlschema"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/migrationfile"
-	"go.5x5.cz/ptah/migration/migrator"
-	"go.5x5.cz/ptah/migration/shadow"
+	"ptah.run/core/yamlschema"
+	"ptah.run/dbschema"
+	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/migrator"
+	"ptah.run/migration/shadow"
 )
 
 // ExampleVerifyMigration runs the generator's pre-write check standalone: the

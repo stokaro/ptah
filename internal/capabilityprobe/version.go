@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
+	"ptah.run/core/platform"
 )
 
 // Version is a server's product version, corrected per dialect.

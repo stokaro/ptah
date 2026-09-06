@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/cmdutil"
 )
 
 type atlasSchemaPlanValidateOptions struct {

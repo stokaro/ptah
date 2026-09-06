@@ -13,11 +13,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/internal/atlasregistry"
-	"go.5x5.cz/ptah/internal/migrationartifact"
-	"go.5x5.cz/ptah/internal/ociartifact"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/cmd/atlas"
+	"ptah.run/internal/atlasregistry"
+	"ptah.run/internal/migrationartifact"
+	"ptah.run/internal/ociartifact"
+	"ptah.run/migration/migrationfile"
 )
 
 // TestOCIRegistryAtlasReferenceE2E is the proof stokaro/ptah#1210's Definition

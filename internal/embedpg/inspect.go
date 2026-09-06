@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/internal/embedcutover"
-	"go.5x5.cz/ptah/internal/embedgen"
-	"go.5x5.cz/ptah/internal/embedspec"
-	"go.5x5.cz/ptah/internal/embedstore"
-	"go.5x5.cz/ptah/internal/embedverify"
+	"ptah.run/internal/embedcutover"
+	"ptah.run/internal/embedgen"
+	"ptah.run/internal/embedspec"
+	"ptah.run/internal/embedstore"
+	"ptah.run/internal/embedverify"
 )
 
 // ReadStructure reads back the schema a generation's verification is measured

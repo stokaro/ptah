@@ -7,8 +7,8 @@ import (
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"go.5x5.cz/ptah/cmd/internal/migrationsource"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/cmd/internal/migrationsource"
+	"ptah.run/migration/migrationfile"
 )
 
 // These rows moved here from cmd/migrateup, where they were a white-box test of

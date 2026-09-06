@@ -22,7 +22,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
+	"ptah.run/core/platform"
 )
 
 // Attribute is the annotation attribute name every scoped directive accepts.

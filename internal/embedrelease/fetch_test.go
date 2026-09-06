@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedrelease"
-	"go.5x5.cz/ptah/internal/ociartifact"
+	"ptah.run/internal/embedrelease"
+	"ptah.run/internal/ociartifact"
 )
 
 // specification is a stand-in for the document a release carries.
@@ -113,7 +113,7 @@ func TestNewReleaseRecord_ListsTheSpecificationItCarries(t *testing.T) {
 	record, err := embedrelease.NewReleaseRecord(aRelease(), []byte(specification))
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(record.Annotations["cz.5x5.ptah.inference.specification"], qt.Equals, "0f0e0d0c")
+	c.Assert(record.Annotations["run.ptah.inference.specification"], qt.Equals, "0f0e0d0c")
 	c.Assert(record.Files[embedrelease.SpecificationFileName], qt.DeepEquals, []byte(specification))
 }
 

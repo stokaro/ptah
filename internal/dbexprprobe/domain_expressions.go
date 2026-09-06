@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/config"
+	"ptah.run/dbschema"
 )
 
 // DomainExpressionProbe is one declared domain whose CHECK and DEFAULT need the

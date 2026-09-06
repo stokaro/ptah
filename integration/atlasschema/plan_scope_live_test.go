@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasschema"
+	"ptah.run/internal/atlasschema"
 )
 
 // A saved plan records an exclude list and no schema scope, so `schema apply

@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedrun"
+	"ptah.run/internal/embedrun"
 )
 
 // running is a run a worker holds, at the given phase.

@@ -59,7 +59,7 @@ func (e coveredDirectoryError) Is(target error) bool {
 //
 // The kind is settled by fs.Stat rather than by matching on the read error's
 // text, so the answer is the same whether fsys is an os.DirFS over the real
-// directory or an [go.5x5.cz/ptah/internal/fsnapshot.Snapshot] captured from it.
+// directory or an [ptah.run/internal/fsnapshot.Snapshot] captured from it.
 // Those two disagreed before #991: the snapshot had no way to record a
 // directory holding no captured file, so the same tree read as "file does not
 // exist" through one and "is a directory" through the other.

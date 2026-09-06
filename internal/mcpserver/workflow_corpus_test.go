@@ -8,8 +8,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"go.5x5.cz/ptah/internal/agentpolicy"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/internal/agentpolicy"
+	"ptah.run/migration/migrator"
 )
 
 // This file is #1490's workflow corpus: one case per task shape a person

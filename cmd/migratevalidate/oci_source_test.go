@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/cmd/migratevalidate"
-	"go.5x5.cz/ptah/internal/testutils"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/cmd/migratevalidate"
+	"ptah.run/internal/testutils"
 )
 
 // This file holds the two halves of stokaro/ptah#1499 that live in this

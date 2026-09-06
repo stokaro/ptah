@@ -4,8 +4,8 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/objectidentity"
+	"ptah.run/catalog"
+	"ptah.run/internal/objectidentity"
 )
 
 // projectDatabase applies the schema universe and include selectors to the

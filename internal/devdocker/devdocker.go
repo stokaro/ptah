@@ -54,7 +54,7 @@ import (
 	"net/url"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
+	"ptah.run/core/platform"
 )
 
 // Scheme is the URL scheme this package provisions.

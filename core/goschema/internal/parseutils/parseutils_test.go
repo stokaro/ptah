@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema/internal/parseutils"
+	"ptah.run/core/goschema/internal/parseutils"
 )
 
 func TestParseKeyValueComment_UnquotesEscapedValues(t *testing.T) {

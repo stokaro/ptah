@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/dialectlexer"
-	"go.5x5.cz/ptah/internal/ptahdirective"
+	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/ptahdirective"
 )
 
 // ParseDirectives extracts `-- +ptah key=value` annotations from migration

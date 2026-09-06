@@ -11,15 +11,15 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/serverversion"
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/internal/schemasecurity"
-	"go.5x5.cz/ptah/internal/schemaviz"
-	"go.5x5.cz/ptah/internal/servertarget"
-	"go.5x5.cz/ptah/migration/risk"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/serverversion"
+	"ptah.run/core/goschema"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/pathguard"
+	"ptah.run/internal/schemasecurity"
+	"ptah.run/internal/schemaviz"
+	"ptah.run/internal/servertarget"
+	"ptah.run/migration/risk"
 )
 
 const (

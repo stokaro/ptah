@@ -133,6 +133,16 @@ jobs:
           scripts/check-docs-origin-selftest.sh
           scripts/check-docs-origin.sh
 
+      # The module path, on every pull request. An import of the retired path
+      # still COMPILES -- the old vanity host still answers -- so the proxy
+      # fetches a published Ptah and the build succeeds against a different tree
+      # than the one being edited (stokaro/ptah#2943).
+      - name: Check the module path
+        run: |
+          set -euo pipefail
+          scripts/check-module-path-selftest.sh
+          scripts/check-module-path.sh
+
       # The release image mirror's RULE, on every pull request. The gate itself
       # reads two live registries and only means something after a release, so
       # what runs here is the decision it makes, driven through every branch

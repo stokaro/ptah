@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlascompatpolicy"
-	"go.5x5.cz/ptah/internal/atlasschema"
+	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/atlasschema"
 )
 
 func TestAtlasLiveSchemaObjectValidator(t *testing.T) {

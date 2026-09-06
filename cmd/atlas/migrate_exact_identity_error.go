@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/migration/migrator"
 )
 
 type atlasExactIdentityError struct {

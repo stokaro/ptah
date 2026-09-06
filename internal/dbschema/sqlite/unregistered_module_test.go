@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/dbschema/sqlite"
+	"ptah.run/catalog"
+	"ptah.run/internal/dbschema/sqlite"
 )
 
 // TestReadSchemaRecordsVirtualTablesItCouldNotClassify is the read half of the

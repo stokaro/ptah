@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/lint"
+	"ptah.run/migration/lint"
 )
 
 // aliasPolicyRow is one schema-apply policy entry plus the dialect it is linted

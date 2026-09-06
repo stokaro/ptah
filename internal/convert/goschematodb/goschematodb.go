@@ -9,11 +9,11 @@ import (
 	"maps"
 	"slices"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemaprep"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemaprep"
+	"ptah.run/internal/tableref"
 )
 
 // ToDBSchema converts Ptah's desired-schema IR into the DB schema shape used by

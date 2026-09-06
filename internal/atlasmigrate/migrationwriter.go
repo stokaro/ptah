@@ -5,9 +5,9 @@ import (
 	"errors"
 	"io/fs"
 
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/pathguard"
+	"ptah.run/migration/migrationfile"
 )
 
 // MigrationWriter is the rooted migration-directory capability a writer

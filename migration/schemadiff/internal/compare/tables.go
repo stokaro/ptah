@@ -3,19 +3,19 @@ package compare
 import (
 	"sort"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/crdbttl"
-	"go.5x5.cz/ptah/internal/deporder"
-	"go.5x5.cz/ptah/internal/objectidentity"
-	"go.5x5.cz/ptah/internal/spannerttl"
-	"go.5x5.cz/ptah/internal/tableref"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/catalog"
+	"ptah.run/config"
+	"ptah.run/core/ast"
+	"ptah.run/core/coverage"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/crdbttl"
+	"ptah.run/internal/deporder"
+	"ptah.run/internal/objectidentity"
+	"ptah.run/internal/spannerttl"
+	"ptah.run/internal/tableref"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TablesAndColumns performs comprehensive table and column comparison between generated and database schemas.
@@ -209,7 +209,7 @@ func TablesAndColumnsWithGeneratedExpressions(
 			// is virtual, and two different kinds of object have collided;
 			// silently reporting no difference would leave the incompatible
 			// object in place while every surface said the schema was synced.
-			// [go.5x5.cz/ptah/internal/sqlitevirtual.ValidateComparison]
+			// [ptah.run/internal/sqlitevirtual.ValidateComparison]
 			// refuses that collision by name at the seams that can return an
 			// error, which is every verb comparing a live database. What
 			// remains here is the direct library API, which has no error to
@@ -335,7 +335,7 @@ func rowTTLChange(desired, current *ast.RowTTLSpec) *difftypes.RowTTLChange {
 // Cloud Spanner emulator behind PGAdapter 0.55.2, `INTERVAL '30 days'` reads
 // back as `INTERVAL '4 WEEKS 2 DAYS'` -- so comparing the two as text would
 // report a difference between a database and its own description, forever.
-// [go.5x5.cz/ptah/internal/spannerttl] owns that comparison (stokaro/ptah#2236).
+// [ptah.run/internal/spannerttl] owns that comparison (stokaro/ptah#2236).
 func rowDeletionPolicyChange(
 	desired, current *ast.RowDeletionPolicySpec,
 	semantics identifier.Semantics,

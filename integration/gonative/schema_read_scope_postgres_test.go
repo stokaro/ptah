@@ -56,8 +56,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/internal/atlasreport"
-	"go.5x5.cz/ptah/internal/atlasschema"
+	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/atlasschema"
 )
 
 // readScopeSeed is the two-schema database both tests below are measured on.

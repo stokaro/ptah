@@ -8,12 +8,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/catalog"
+	"ptah.run/core/ast"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff"
 )
 
 // The live half of stokaro/ptah#1027: a CockroachDB row-level TTL applied,
@@ -384,7 +384,7 @@ func rowTTLColumnNames(c *qt.C, t *testing.T, dsn string) []string {
 //
 // Each row asserts more than convergence. The stored value is read back and
 // checked against the form
-// [go.5x5.cz/ptah/internal/crdbduration] predicts, so a rewrite this package
+// [ptah.run/internal/crdbduration] predicts, so a rewrite this package
 // gets wrong fails here as a wrong VALUE rather than only as a plan that will
 // not settle -- which is the difference between "something did not converge"
 // and "the conversion is wrong, and here is what the server did instead".

@@ -10,8 +10,8 @@ import (
 	"regexp"
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/migration/risk"
+	"ptah.run/core/schemamodel"
+	"ptah.run/migration/risk"
 )
 
 // Severity classifies an export diagnostic, on the one scale every Ptah

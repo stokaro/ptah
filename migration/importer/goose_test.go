@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/importer"
+	"ptah.run/migration/importer"
 )
 
 const gooseInitSQL = `-- +goose Up

@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
+	"ptah.run/internal/atlasmigrateimport"
 )
 
 // golangMigrateRow is one migration shape and whether golang-migrate can run it

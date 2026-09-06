@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/capabilityprobe"
+	"ptah.run/internal/capabilityprobe"
 )
 
 // CellVerdict is one expected cell's line in the tier report.

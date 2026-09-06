@@ -7,10 +7,10 @@ import (
 	"strconv"
 	"time"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/dbschema"
+	"ptah.run/migration/migrationfile"
 )
 
 type restoreTimeoutsFunc func(context.Context) error

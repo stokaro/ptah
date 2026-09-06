@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/assistsession"
+	"ptah.run/internal/assistsession"
 )
 
 // sessionProbePassword is the secret the arguments below carry. It is a word

@@ -12,8 +12,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/fsdurable"
-	"go.5x5.cz/ptah/internal/goannotationsource"
+	"ptah.run/internal/fsdurable"
+	"ptah.run/internal/goannotationsource"
 )
 
 func TestExport_FailurePath_RevalidatesSourcesAfterOutputStaging(t *testing.T) {

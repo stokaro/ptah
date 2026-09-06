@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
 )
 
 // planFor returns the experiment table for a dialect, or false when the probe

@@ -7,7 +7,7 @@ name: Install Smoke
 # host answered the Go toolchain with a redirect loop, every documented install
 # failed, and no job ran one. See stokaro/ptah#1024.
 #
-# It is deliberately NOT a pull-request gate. It resolves go.5x5.cz and the
+# It is deliberately NOT a pull-request gate. It resolves the vanity host and the
 # module proxy, so a network or host problem would turn unrelated PRs red and
 # train people to ignore it. A schedule catches a broken host within the day,
 # which is what the failure it guards against actually needs.

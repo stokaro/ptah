@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/processcapture"
+	"ptah.run/internal/processcapture"
 )
 
 const processCaptureHelperFlag = "--process-capture-helper"

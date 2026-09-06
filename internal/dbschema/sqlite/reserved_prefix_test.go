@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/dbschema/sqlite"
+	"ptah.run/internal/dbschema/sqlite"
 )
 
 // reservedPrefixCase is one object name and whether DropAllTables owes it a

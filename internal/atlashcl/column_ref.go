@@ -8,7 +8,7 @@ import (
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
 
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/internal/tableref"
 )
 
 // maxColumnRefDepth bounds how many wrappers a column reference may be buried

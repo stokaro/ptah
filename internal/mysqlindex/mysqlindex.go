@@ -13,7 +13,7 @@ package mysqlindex
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
+	"ptah.run/core/platform"
 )
 
 // Kind is the access method a MySQL-family index carries.

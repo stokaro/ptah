@@ -3,7 +3,7 @@ package risk_test
 import (
 	"fmt"
 
-	"go.5x5.cz/ptah/migration/risk"
+	"ptah.run/migration/risk"
 )
 
 // ExampleIsBlocking answers the one question a gate-writer has: which

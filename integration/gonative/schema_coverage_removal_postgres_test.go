@@ -22,8 +22,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/core/coverage"
+	"ptah.run/dbschema"
 )
 
 // coverageRemovalSeed holds one object of each block type the compatibility

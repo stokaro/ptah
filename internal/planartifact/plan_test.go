@@ -12,11 +12,11 @@ import (
 	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/memory"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/ociartifact"
-	"go.5x5.cz/ptah/internal/planartifact"
-	"go.5x5.cz/ptah/migration/safety"
+	"ptah.run/catalog"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/ociartifact"
+	"ptah.run/internal/planartifact"
+	"ptah.run/migration/safety"
 )
 
 func TestNewFS_UsesStateBoundCanonicalJSON(t *testing.T) {

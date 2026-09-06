@@ -468,7 +468,7 @@ The native CLI exits:
 
 ## Embedding
 
-Import `go.5x5.cz/ptah/migration/dbtest` and construct `Case`, `Step`,
+Import `ptah.run/migration/dbtest` and construct `Case`, `Step`,
 and `Assertion` values directly, or load YAML with `ParseCases` / `LoadCases`.
 Use `FilterCases` for the same regular-expression selection as `--run`. Call
 `RunMigrationTest` or `RunSchemaTest`; `Options.SeedDir` and

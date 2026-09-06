@@ -14,27 +14,27 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdflags"
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/cmd/internal/migrateflags"
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlascompatpolicy"
-	"go.5x5.cz/ptah/internal/atlasfilter"
-	"go.5x5.cz/ptah/internal/atlasreport"
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/internal/atlassource"
-	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/internal/envbool"
-	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/internal/schemafile"
-	"go.5x5.cz/ptah/internal/sqlitevirtual"
-	migrationlint "go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrationfile"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/cmd/internal/cmdflags"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/cmd/internal/migrateflags"
+	"ptah.run/config/projectconfig"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/atlasfilter"
+	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/atlassource"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/envbool"
+	"ptah.run/internal/pathguard"
+	"ptah.run/internal/schemafile"
+	"ptah.run/internal/sqlitevirtual"
+	migrationlint "ptah.run/migration/lint"
+	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/migrator"
 )
 
 type atlasSchemaApplyOptions struct {
@@ -687,7 +687,7 @@ func needsAtlasSchemaApplyConfig(cmd *cobra.Command) bool {
 // toSources when the project supplied it, so each file sees its own
 // `data "hcl_schema" { vars }`; the plain URLs otherwise, which keep the run's
 // --var. Same rule, same reason as
-// [go.5x5.cz/ptah/internal/atlassource.ProjectEnv.SuppliedSource].
+// [ptah.run/internal/atlassource.ProjectEnv.SuppliedSource].
 func atlasSchemaApplyDesiredSources(opts atlasSchemaApplyOptions) []schemafile.Source {
 	if len(opts.toSources) > 0 {
 		return opts.toSources
@@ -1366,8 +1366,8 @@ func ensureAtlasSchemaApplyDevURL(
 }
 
 // atlasApplyWithoutDevURL is the declaration of the variable, made once, on the
-// verb that owns it. See [go.5x5.cz/ptah/internal/envbool].
-// It is [go.5x5.cz/ptah/internal/envbool.Gated]: applying with no dev database
+// verb that owns it. See [ptah.run/internal/envbool].
+// It is [ptah.run/internal/envbool.Gated]: applying with no dev database
 // is behavior the pinned binary does not offer on this verb.
 var atlasApplyWithoutDevURL = envbool.New(applyWithoutDevURLEnvVar, false, envbool.Gated)
 

@@ -3,8 +3,8 @@ package schemadiff
 import (
 	"slices"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/catalog"
+	"ptah.run/core/schemamodel"
 )
 
 // suppressScopedAway removes from the current schema every object a scope kept

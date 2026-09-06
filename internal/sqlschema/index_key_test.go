@@ -5,13 +5,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/modelast"
-	"go.5x5.cz/ptah/internal/parser"
-	"go.5x5.cz/ptah/internal/sqlschema"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/modelast"
+	"ptah.run/internal/parser"
+	"ptah.run/internal/sqlschema"
 )
 
 // parseOneIndex parses a document holding exactly one CREATE INDEX and converts

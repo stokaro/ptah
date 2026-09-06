@@ -3,9 +3,9 @@ package oracle
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/oracleroutine"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/oracleroutine"
 )
 
 // Oracle hosts standalone functions and procedures, and the header it needs is

@@ -8,13 +8,13 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	clickhousedb "go.5x5.cz/ptah/internal/dbschema/clickhouse"
-	"go.5x5.cz/ptah/internal/sqlident"
-	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	clickhousedb "ptah.run/internal/dbschema/clickhouse"
+	"ptah.run/internal/sqlident"
+	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff"
 )
 
 func readClickHouseViews(t *testing.T, db *sql.DB, database string) *catalog.Database {

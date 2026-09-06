@@ -9,9 +9,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/platform"
+	"ptah.run/catalog"
+	"ptah.run/core/coverage"
+	"ptah.run/core/platform"
 )
 
 // TestRecordUnmodeledObjectKinds_SpannerChangeStreams pins that a description

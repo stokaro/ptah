@@ -41,12 +41,12 @@ session may do.
 ```
 
 A **client program** reads the result's `_meta`, under the key
-`ptah.5x5.cz/diagnostic`:
+`ptah.run/diagnostic`:
 
 ```json
 {
   "_meta": {
-    "ptah.5x5.cz/diagnostic": {
+    "ptah.run/diagnostic": {
       "code": "capability_denied",
       "actor": "operator",
       "retryable": false,

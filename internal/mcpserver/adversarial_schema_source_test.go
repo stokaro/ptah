@@ -8,8 +8,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"go.5x5.cz/ptah/internal/agentapi"
-	"go.5x5.cz/ptah/internal/agentpolicy"
+	"ptah.run/internal/agentapi"
+	"ptah.run/internal/agentpolicy"
 )
 
 // injectedSchema is a declared schema whose table comment addresses the model

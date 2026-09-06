@@ -5,9 +5,9 @@ import (
 	"io/fs"
 	"net/url"
 
-	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
-	"go.5x5.cz/ptah/internal/fsnapshot"
+	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/fsnapshot"
 )
 
 // This file holds the shared way a read-only compat verb turns a `--dir`

@@ -9,9 +9,9 @@ import (
 	"slices"
 	"time"
 
-	"go.5x5.cz/ptah/internal/embedgen"
-	"go.5x5.cz/ptah/internal/embedrun"
-	"go.5x5.cz/ptah/internal/embedstore"
+	"ptah.run/internal/embedgen"
+	"ptah.run/internal/embedrun"
+	"ptah.run/internal/embedstore"
 )
 
 // EnsureRunIndex builds a generation's index and records the run phase behind

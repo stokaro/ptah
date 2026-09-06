@@ -10,8 +10,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/microsoft/go-mssqldb" // registers the SQL Server driver for database/sql
 
-	"go.5x5.cz/ptah/core/query"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/core/query"
+	"ptah.run/internal/dbtarget"
 )
 
 // The query builder's dialect matrix pins what each dialect renders. It cannot

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/tableref"
-	migrationlint "go.5x5.cz/ptah/migration/lint"
+	"ptah.run/internal/tableref"
+	migrationlint "ptah.run/migration/lint"
 )
 
 // Atlas's lint analyzers pre-wrap their rendered text at analyzer-specific

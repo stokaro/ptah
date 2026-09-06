@@ -18,7 +18,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	moderncsqlite "modernc.org/sqlite"
 
-	"go.5x5.cz/ptah/internal/dbschema/sqlite"
+	"ptah.run/internal/dbschema/sqlite"
 )
 
 func TestWriterDropAllTables_DoesNotLog(t *testing.T) {

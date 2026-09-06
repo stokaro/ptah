@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/annotationmeta"
+	"ptah.run/internal/annotationmeta"
 )
 
 // SchemaPath is where the generated document is committed.

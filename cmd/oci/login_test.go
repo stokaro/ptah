@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/oci"
+	"ptah.run/cmd/oci"
 )
 
 // runOCI executes the oci command tree with a scripted stdin and returns

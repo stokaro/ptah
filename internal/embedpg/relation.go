@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/embedgen"
+	"ptah.run/internal/embedgen"
 )
 
 // Relation is one physical PostgreSQL relation, named the way the server names

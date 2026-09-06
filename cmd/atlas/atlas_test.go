@@ -18,15 +18,15 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasfilter"
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/schemaclean"
-	"go.5x5.cz/ptah/internal/testutils"
-	migrationlint "go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/config/projectconfig"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasfilter"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/schemaclean"
+	"ptah.run/internal/testutils"
+	migrationlint "ptah.run/migration/lint"
+	"ptah.run/migration/migrationfile"
 )
 
 func TestSchemaCleanScopeCarriesAnExplicitSchemaSequenceWithItsDefaultSchemaTable(t *testing.T) {

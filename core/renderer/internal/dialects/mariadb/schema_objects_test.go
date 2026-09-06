@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/renderer"
+	"ptah.run/core/ast"
+	"ptah.run/core/renderer"
 )
 
 func TestMariaDBRenderer_JSONColumnUsesLongtextCheck(t *testing.T) {

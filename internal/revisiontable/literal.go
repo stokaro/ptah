@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
+	"ptah.run/core/platform"
 )
 
 // VersionLiteral renders an exact Atlas revision identity as a SQL literal

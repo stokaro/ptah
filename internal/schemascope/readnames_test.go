@@ -7,9 +7,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/dbschema/dbtest"
-	"go.5x5.cz/ptah/internal/schemascope"
+	"ptah.run/catalog"
+	"ptah.run/internal/dbschema/dbtest"
+	"ptah.run/internal/schemascope"
 )
 
 // TestReadNames pins the one decision every comparison-side database read

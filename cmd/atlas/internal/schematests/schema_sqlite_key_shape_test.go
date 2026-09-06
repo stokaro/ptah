@@ -10,8 +10,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/cmd/atlas"
+	"ptah.run/dbschema"
 )
 
 // This file pins the SQLite key-and-uniqueness output shape of the

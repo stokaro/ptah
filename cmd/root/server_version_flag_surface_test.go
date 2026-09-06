@@ -9,8 +9,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"go.5x5.cz/ptah/cmd/internal/serverversion"
-	"go.5x5.cz/ptah/cmd/root"
+	"ptah.run/cmd/internal/serverversion"
+	"ptah.run/cmd/root"
 )
 
 // This file is the LIVE ENUMERATION of the commands whose --dialect decides

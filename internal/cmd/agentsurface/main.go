@@ -11,8 +11,8 @@ import (
 	"fmt"
 	"os"
 
-	"go.5x5.cz/ptah/cmd/root"
-	"go.5x5.cz/ptah/internal/agentsurface"
+	"ptah.run/cmd/root"
+	"ptah.run/internal/agentsurface"
 )
 
 func main() {

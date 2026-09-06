@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/agentapi"
-	"go.5x5.cz/ptah/internal/agentpolicy"
+	"ptah.run/internal/agentapi"
+	"ptah.run/internal/agentpolicy"
 )
 
 // injectedSQL is a migration whose comment addresses the model rather than the

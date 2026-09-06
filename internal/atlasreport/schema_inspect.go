@@ -9,13 +9,13 @@ import (
 	"text/template"
 	"text/template/parse"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlashclrender"
-	"go.5x5.cz/ptah/internal/dbmlrender"
-	"go.5x5.cz/ptah/internal/schemaviz"
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/dbmlrender"
+	"ptah.run/internal/schemaviz"
 )
 
 type SchemaInspectReport struct {
@@ -25,7 +25,7 @@ type SchemaInspectReport struct {
 	// omitAtlasRefusedBlocks renders HCL for the Atlas-compatible surface,
 	// which leaves out the block types the pinned Atlas community binary
 	// refuses to read where nothing in the document names them; see
-	// [go.5x5.cz/ptah/internal/atlashclrender.RenderInspectedForAtlasCLI].
+	// [ptah.run/internal/atlashclrender.RenderInspectedForAtlasCLI].
 	omitAtlasRefusedBlocks bool
 	// compatibilityHCLFraming applies the Atlas-compatible single-document
 	// frame independently of block omission: the Ptah generated-code marker is
@@ -485,7 +485,7 @@ func atlasSchemaInspectBase64URL(value any) string {
 // second, empty `{"name":"public"}` entry the binary never prints, and
 // `--schema nosuch` answered `{"schemas":[{"name":"public"}]}` where that
 // binary answers `{}`. Which schemas exist is the reader's answer, not the
-// connection's; see [go.5x5.cz/ptah/internal/schemaselection].
+// connection's; see [ptah.run/internal/schemaselection].
 func atlasSchemaInspectJSON(schema *catalog.Database, info catalog.ServerInfo) atlasSchemaInspectJSONRealm {
 	schemasByName := make(map[string]*atlasSchemaInspectJSONSchema)
 	indexesByTable := atlasSchemaInspectIndexesByTable(schema.Indexes)

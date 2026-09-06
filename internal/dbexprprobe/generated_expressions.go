@@ -7,10 +7,10 @@ import (
 	"os"
 	"strings"
 
-	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/exprkey"
+	"ptah.run/config"
+	"ptah.run/core/platform"
+	"ptah.run/dbschema"
+	"ptah.run/internal/exprkey"
 )
 
 // GeneratedExpressionProbe is one declared table whose generated columns need

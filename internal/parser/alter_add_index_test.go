@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/internal/parser"
+	"ptah.run/core/ast"
+	"ptah.run/internal/parser"
 )
 
 // alterAddIndexDocument declares a table and then adds one index to it.

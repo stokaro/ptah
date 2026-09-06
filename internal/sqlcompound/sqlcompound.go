@@ -22,7 +22,7 @@ package sqlcompound
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
+	"ptah.run/core/platform"
 )
 
 // State tracks one scanner's position relative to a compound routine body.

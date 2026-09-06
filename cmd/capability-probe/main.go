@@ -28,7 +28,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/internal/capabilityprobe"
+	"ptah.run/internal/capabilityprobe"
 )
 
 func main() {

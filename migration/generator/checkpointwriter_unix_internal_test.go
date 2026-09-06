@@ -21,8 +21,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/migrationsnapshot"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/migrationsnapshot"
+	"ptah.run/migration/migrationfile"
 )
 
 // These are the checkpoint and data-migration writers' half of the rooted-writer

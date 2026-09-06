@@ -13,7 +13,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/dbschema"
 )
 
 // TestCompatBinarySchemaInspectFormatLiterals exercises the compatibility
@@ -22,7 +22,7 @@ import (
 // literally; explicit helpers retain Ptah's complete rendering capability.
 func TestCompatBinarySchemaInspectFormatLiterals(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c, "ptah-compat", "ptah.run/cmd/ptah-compat")
 	dir := c.TempDir()
 	emptyDB := filepath.Join(dir, "empty.db")
 	populatedDB := filepath.Join(dir, "populated.db")
@@ -90,7 +90,7 @@ func TestCompatBinarySchemaInspectFormatLiterals(t *testing.T) {
 
 func TestCompatBinarySchemaInspectBareProjectFormatIsLiteralText(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c, "ptah-compat", "ptah.run/cmd/ptah-compat")
 	dir := c.TempDir()
 	dbPath := filepath.Join(dir, "populated.db")
 	createSchemaInspectSQLiteDatabase(c, dbPath,
@@ -120,7 +120,7 @@ func TestCompatBinarySchemaInspectBareProjectFormatIsLiteralText(t *testing.T) {
 // adapter from narrowing the native Ptah surface.
 func TestNativeBinarySchemaInspectBareFormatsStillRender(t *testing.T) {
 	c := qt.New(t)
-	native := buildSchemaInspectBinary(c, "ptah", "go.5x5.cz/ptah/cmd/ptah")
+	native := buildSchemaInspectBinary(c, "ptah", "ptah.run/cmd/ptah")
 	dir := c.TempDir()
 	emptyDB := filepath.Join(dir, "empty.db")
 	populatedDB := filepath.Join(dir, "populated.db")

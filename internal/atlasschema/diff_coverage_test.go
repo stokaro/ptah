@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasschema"
+	"ptah.run/internal/atlasschema"
 )
 
 // `schema diff` is the one verb whose CURRENT side can be a document rather

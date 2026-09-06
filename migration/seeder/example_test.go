@@ -7,8 +7,8 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/seeder"
+	"ptah.run/dbschema"
+	"ptah.run/migration/seeder"
 )
 
 // ExampleDiscover walks a filesystem of seed files and reports what each name

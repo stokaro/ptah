@@ -13,9 +13,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/revisiontable"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/core/platform"
+	"ptah.run/internal/revisiontable"
+	"ptah.run/migration/migrationfile"
 )
 
 func TestWithAtlasRepeatableVersionsIsExplicitAndCloned(t *testing.T) {

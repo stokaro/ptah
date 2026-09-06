@@ -4,7 +4,7 @@ import (
 	"slices"
 	"time"
 
-	"go.5x5.cz/ptah/internal/embeddigest"
+	"ptah.run/internal/embeddigest"
 )
 
 // Operation is what happened to a source row.

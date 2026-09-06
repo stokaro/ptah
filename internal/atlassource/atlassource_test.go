@@ -8,12 +8,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/atlassource"
-	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/atlassource"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/pathguard"
+	"ptah.run/migration/migrationfile"
 )
 
 // resolvedPath mirrors the resolver's pathguard resolution (symlinks such as

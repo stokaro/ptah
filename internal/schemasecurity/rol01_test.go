@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemasecurity"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemasecurity"
 )
 
 // grantedSchema is one role granted SELECT on two tables.

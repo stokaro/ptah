@@ -5,7 +5,7 @@ import (
 	"slices"
 	"sort"
 
-	"go.5x5.cz/ptah/internal/agentdiag"
+	"ptah.run/internal/agentdiag"
 )
 
 // ErrHardDenied reports a configuration that tried to grant a capability no

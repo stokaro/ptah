@@ -8,9 +8,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/cmd/schema"
-	"go.5x5.cz/ptah/internal/testutils"
+	"ptah.run/cmd/atlas"
+	"ptah.run/cmd/schema"
+	"ptah.run/internal/testutils"
 )
 
 // This file pins the DECISION behind stokaro/ptah#928 item 2, not merely its

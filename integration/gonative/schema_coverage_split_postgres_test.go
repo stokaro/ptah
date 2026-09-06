@@ -36,9 +36,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasschema"
+	"ptah.run/core/coverage"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasschema"
 )
 
 func TestPostgreSQLCoverageSurvivesSplitWriteIntegration(t *testing.T) {

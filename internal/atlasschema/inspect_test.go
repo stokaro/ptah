@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasschema"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasschema"
 )
 
 func TestInspect_HappyPathHCL(t *testing.T) {

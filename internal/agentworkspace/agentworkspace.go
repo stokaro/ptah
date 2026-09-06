@@ -43,9 +43,9 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/agentdiag"
-	"go.5x5.cz/ptah/internal/agentpolicy"
-	"go.5x5.cz/ptah/internal/pathguard"
+	"ptah.run/internal/agentdiag"
+	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/pathguard"
 )
 
 // Limits on what one scope will read or one patch will write.

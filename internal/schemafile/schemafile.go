@@ -10,15 +10,15 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/core/yamlschema"
-	"go.5x5.cz/ptah/internal/atlashcl"
-	"go.5x5.cz/ptah/internal/dbmlparse"
-	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/internal/schemaselection"
-	"go.5x5.cz/ptah/internal/sqlschema"
+	"ptah.run/core/ast"
+	"ptah.run/core/coverage"
+	"ptah.run/core/schemamodel"
+	"ptah.run/core/yamlschema"
+	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/dbmlparse"
+	"ptah.run/internal/pathguard"
+	"ptah.run/internal/schemaselection"
+	"ptah.run/internal/sqlschema"
 )
 
 // Options configures schema file loading.

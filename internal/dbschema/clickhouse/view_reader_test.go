@@ -8,10 +8,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/chrefresh"
-	"go.5x5.cz/ptah/internal/dbschema/clickhouse"
-	"go.5x5.cz/ptah/internal/dbschema/dbtest"
+	"ptah.run/catalog"
+	"ptah.run/internal/chrefresh"
+	"ptah.run/internal/dbschema/clickhouse"
+	"ptah.run/internal/dbschema/dbtest"
 )
 
 // The table read now names 'MaterializedView' too, inside the subquery that

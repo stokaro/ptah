@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedspec"
+	"ptah.run/internal/embedspec"
 )
 
 // TestParse_TheDocumentDigestFollowsTheBytes is the half of the answer the

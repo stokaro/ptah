@@ -39,10 +39,10 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/atlaslint"
-	"go.5x5.cz/ptah/internal/sqlcompound"
-	"go.5x5.cz/ptah/migration/migrationfile"
-	"go.5x5.cz/ptah/migration/risk"
+	"ptah.run/internal/atlaslint"
+	"ptah.run/internal/sqlcompound"
+	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/risk"
 )
 
 // Severity is the urgency of a finding.
@@ -169,7 +169,7 @@ type RuleConfig struct {
 
 	// Match DECLARES a rule rather than configuring one. It is an expression
 	// over `statement`, `file` and `dialect` that decides whether the rule
-	// fires; see [go.5x5.cz/ptah/migration/lint] package documentation for the
+	// fires; see [ptah.run/migration/lint] package documentation for the
 	// vocabulary.
 	//
 	// Its presence is what separates the two uses of this type: an entry with

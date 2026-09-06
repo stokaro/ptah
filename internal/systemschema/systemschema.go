@@ -4,7 +4,7 @@
 // It is a leaf on purpose. The question is about names and dialects, so it
 // needs neither a connection nor a database URL, and the packages that render
 // SQL from Go structs reach it without linking a database driver.
-// [go.5x5.cz/ptah/internal/schemaselection] answers the other half -- what a
+// [ptah.run/internal/schemaselection] answers the other half -- what a
 // URL and a session say about the schema a run works in -- and parses a DSN to
 // do it, which is why the two questions live in two packages.
 package systemschema
@@ -13,10 +13,10 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemamodel"
 )
 
 // PostgresDescribedSchemasPredicate is the realm predicate a DESCRIPTION uses:

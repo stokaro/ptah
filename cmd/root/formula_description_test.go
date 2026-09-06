@@ -18,7 +18,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/root"
+	"ptah.run/cmd/root"
 )
 
 const goreleaserPath = "../../.goreleaser.yaml"

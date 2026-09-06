@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/migration/migrationfile"
 )
 
 // atlasCheckpointDirective is the file directive Atlas writes as the first

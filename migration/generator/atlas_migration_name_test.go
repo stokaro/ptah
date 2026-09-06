@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/generator"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/migration/generator"
+	"ptah.run/migration/migrationfile"
 )
 
 // TestGenerateEmptyMigrationKeepsTheAtlasNameVerbatim pins the file name

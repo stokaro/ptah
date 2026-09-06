@@ -6,11 +6,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/internal/schemafile"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/schemafile"
+	"ptah.run/migration/migrator"
 )
 
 // verifiedAtlasSchemaPlan is a plan file that has been read and checked against

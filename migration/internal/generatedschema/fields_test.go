@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/migration/internal/generatedschema"
+	"ptah.run/core/schemamodel"
+	"ptah.run/migration/internal/generatedschema"
 )
 
 func TestFieldsForTable_NilDatabase(t *testing.T) {

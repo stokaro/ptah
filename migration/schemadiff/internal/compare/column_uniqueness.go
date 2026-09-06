@@ -3,10 +3,10 @@ package compare
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/objectidentity"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/objectidentity"
+	"ptah.run/internal/tableref"
 )
 
 // columnIdentity and tableIdentity are the shared identity model's comparison

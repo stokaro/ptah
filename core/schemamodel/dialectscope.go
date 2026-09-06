@@ -4,8 +4,8 @@ import (
 	"slices"
 	"sort"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/dialectscope"
+	"ptah.run/core/platform"
+	"ptah.run/internal/dialectscope"
 )
 
 // ScopeToDialect returns db projected onto dialect: every declared object whose

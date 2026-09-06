@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/chrefresh"
-	"go.5x5.cz/ptah/internal/sqlrunner"
+	"ptah.run/catalog"
+	"ptah.run/core/coverage"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/chrefresh"
+	"ptah.run/internal/sqlrunner"
 )
 
 // Engines we consider "real data tables" for table introspection. The

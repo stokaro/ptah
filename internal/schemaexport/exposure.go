@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/schemamodel"
 )
 
 // Shape is the direction of an API contract: what a caller reads back, or what

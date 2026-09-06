@@ -7,11 +7,11 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/objectidentity"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/catalog"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/objectidentity"
+	"ptah.run/internal/tableref"
 )
 
 // ExcludeDatabase returns a shallow copy of schema with resources matching

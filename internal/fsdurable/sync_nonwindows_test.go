@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/fsdurable"
+	"ptah.run/internal/fsdurable"
 )
 
 func TestSyncDir_FailurePath(t *testing.T) {

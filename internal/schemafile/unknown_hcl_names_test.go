@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/schemafile"
+	"ptah.run/internal/schemafile"
 )
 
 // unknownHCLNamesSource carries one unmodeled name in each of the two

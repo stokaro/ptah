@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/objectidentity"
+	"ptah.run/internal/objectidentity"
 )
 
 // TestResolve_RefusalClasses pins the four ways a reference fails to name one

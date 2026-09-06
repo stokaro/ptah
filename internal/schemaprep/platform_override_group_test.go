@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/schemaprep"
+	"ptah.run/internal/schemaprep"
 )
 
 // TestPlatformOverrideGroup_ResolvesBySpelling pins the lookup PlatformOverrideGroup

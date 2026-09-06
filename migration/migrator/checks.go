@@ -7,13 +7,13 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dialectlexer"
-	"go.5x5.cz/ptah/internal/lexer"
-	"go.5x5.cz/ptah/internal/ptahdirective"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/core/platform"
+	"ptah.run/core/sqlutil"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/lexer"
+	"ptah.run/internal/ptahdirective"
+	"ptah.run/migration/migrationfile"
 )
 
 // OnFail selects what a failing check does. Only abort is supported today: the

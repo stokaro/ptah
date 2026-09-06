@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedprovider"
+	"ptah.run/internal/embedprovider"
 )
 
 // endpoint stands an embedding server up and returns a provider pointed at it.

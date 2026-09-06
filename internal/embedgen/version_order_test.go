@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedgen"
-	"go.5x5.cz/ptah/internal/embedrun"
+	"ptah.run/internal/embedgen"
+	"ptah.run/internal/embedrun"
 )
 
 // TestVersionOrder_EveryStrategyStatesHowItsVersionsCompare is the ratchet on

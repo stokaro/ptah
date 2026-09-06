@@ -10,12 +10,12 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/pflag"
 
-	"go.5x5.cz/ptah/cmd/internal/cliobs"
-	"go.5x5.cz/ptah/cmd/migratedown"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/internal/testutils"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/cmd/internal/cliobs"
+	"ptah.run/cmd/migratedown"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/testutils"
+	"ptah.run/migration/migrator"
 )
 
 func TestMigrateDownCommand_Creation(t *testing.T) {

@@ -10,10 +10,10 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/envbool"
+	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/envbool"
 )
 
 const (
@@ -54,7 +54,7 @@ const (
 // something a user could do before this refusal, so it stays reachable here.
 //
 // It is an environment variable and not a flag for the reason
-// [go.5x5.cz/ptah/internal/rolescope.DescribeAllEnvVar] gives: the conformance
+// [ptah.run/internal/rolescope.DescribeAllEnvVar] gives: the conformance
 // cli-surface tier asserts that ptah-compat registers exactly the flags the
 // pinned Atlas community binary registers, so a flag that binary does not have
 // would break the promise the surface exists to keep.
@@ -116,8 +116,8 @@ func likePattern() string {
 }
 
 // allow is the declaration of the variable, made once, in the package that owns
-// it. See [go.5x5.cz/ptah/internal/envbool].
-// It is [go.5x5.cz/ptah/internal/envbool.Gated]: planning a reserved role is
+// it. See [ptah.run/internal/envbool].
+// It is [ptah.run/internal/envbool.Gated]: planning a reserved role is
 // role management, which the pinned community binary does not model at all, and
 // strict mode already refuses roles in a desired schema.
 var allow = envbool.New(AllowEnvVar, false, envbool.Gated)

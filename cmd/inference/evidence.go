@@ -12,8 +12,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"go.5x5.cz/ptah/internal/embedrelease"
-	"go.5x5.cz/ptah/internal/ociartifact"
+	"ptah.run/internal/embedrelease"
+	"ptah.run/internal/ociartifact"
 )
 
 // evidenceOptions are the flags every verb that can leave a record takes.

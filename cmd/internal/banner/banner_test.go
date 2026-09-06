@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/banner"
+	"ptah.run/cmd/internal/banner"
 )
 
 // wordmark is the art the three binaries share, written out here rather than

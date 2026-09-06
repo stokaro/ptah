@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/dbmlparse"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/dbmlparse"
 )
 
 // bookshop is one document carrying each construct this parser reads.

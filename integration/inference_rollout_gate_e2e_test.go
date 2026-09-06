@@ -18,8 +18,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/internal/exeext"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/exeext"
 )
 
 // TestInferenceRolloutGateE2E is the interface a Kubernetes rollout waits on.

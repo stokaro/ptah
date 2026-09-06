@@ -8,9 +8,9 @@ package nullsdistinct
 import (
 	"fmt"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/ptaherr"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
 )
 
 // Feature is the CapabilityError feature label the refusal carries. It is a

@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/migration/lint"
+	"ptah.run/migration/migrationfile"
 )
 
 // fixture builds an in-memory migrations directory.

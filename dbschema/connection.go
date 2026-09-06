@@ -16,22 +16,22 @@ import (
 	_ "github.com/sijms/go-ora/v3"                       // Oracle driver
 	_ "github.com/tursodatabase/libsql-client-go/libsql" // libsql (Turso) driver
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/internal/dbschema/clickhouse"
-	"go.5x5.cz/ptah/internal/dbschema/mssql"
-	"go.5x5.cz/ptah/internal/dbschema/mysql"
-	"go.5x5.cz/ptah/internal/dbschema/oracle"
-	"go.5x5.cz/ptah/internal/dbschema/postgres"
-	"go.5x5.cz/ptah/internal/dbschema/sqlite"
-	"go.5x5.cz/ptah/internal/dburldisplay"
-	"go.5x5.cz/ptah/internal/schemaselection"
-	"go.5x5.cz/ptah/internal/servertarget"
-	"go.5x5.cz/ptah/internal/sqlrunner"
+	"ptah.run/catalog"
+	"ptah.run/core/coverage"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/dbschema/clickhouse"
+	"ptah.run/internal/dbschema/mssql"
+	"ptah.run/internal/dbschema/mysql"
+	"ptah.run/internal/dbschema/oracle"
+	"ptah.run/internal/dbschema/postgres"
+	"ptah.run/internal/dbschema/sqlite"
+	"ptah.run/internal/dburldisplay"
+	"ptah.run/internal/schemaselection"
+	"ptah.run/internal/servertarget"
+	"ptah.run/internal/sqlrunner"
 )
 
 // ConnectToDatabase creates a database connection from a URL.

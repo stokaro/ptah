@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io/fs"
 
-	"go.5x5.cz/ptah/docs"
+	"ptah.run/docs"
 )
 
 // ExampleFS reads one embedded guide with the standard filesystem helpers. FS

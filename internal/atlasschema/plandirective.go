@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/migration/migrationfile"
 )
 
 // PlanDirectiveComment is the comment marker a directive line carries. A

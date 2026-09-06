@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlashcl"
+	"ptah.run/internal/atlashcl"
 )
 
 // functionDocument puts one call in a column default, which is where the

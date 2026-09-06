@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/dbmlparse"
+	"ptah.run/internal/dbmlparse"
 )
 
 // TestParse_SaysWhatItReadAndDidNotApply pins the loss report.

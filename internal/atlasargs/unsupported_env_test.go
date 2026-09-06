@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasargs"
+	"ptah.run/internal/atlasargs"
 )
 
 // Map fills unset flags from their PTAH_<FLAG> environment twins, and that

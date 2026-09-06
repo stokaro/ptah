@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"go.5x5.cz/ptah/internal/migrationlintreport"
+	"ptah.run/internal/migrationlintreport"
 )
 
 // atlasMigrateLintGitDisplayError adapts a failed `git diff` performed for

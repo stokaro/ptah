@@ -12,8 +12,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/root"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/cmd/root"
+	"ptah.run/internal/dbtarget"
 )
 
 // liveDBMLDocument is the schema this file applies, written in DBML.

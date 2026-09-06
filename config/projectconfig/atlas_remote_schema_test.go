@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/atlasregistry"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/atlasregistry"
 )
 
 // parseRemoteSchemaSource parses a project file whose env src is a

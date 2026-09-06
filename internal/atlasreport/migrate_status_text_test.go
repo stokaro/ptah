@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasreport"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/internal/atlasreport"
+	"ptah.run/migration/migrator"
 )
 
 // statusTextFS is the two-migration directory every row below reports on.

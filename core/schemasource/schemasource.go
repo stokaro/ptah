@@ -18,12 +18,12 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/core/yamlschema"
-	"go.5x5.cz/ptah/internal/atlashcl"
-	"go.5x5.cz/ptah/internal/processcapture"
-	"go.5x5.cz/ptah/internal/secretdisplay"
-	"go.5x5.cz/ptah/internal/sqlschema"
+	"ptah.run/core/schemamodel"
+	"ptah.run/core/yamlschema"
+	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/processcapture"
+	"ptah.run/internal/secretdisplay"
+	"ptah.run/internal/sqlschema"
 )
 
 // DefaultTimeout bounds how long an external schema command may run when the

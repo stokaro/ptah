@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/atlasregistry"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/atlasregistry"
 )
 
 // TestAtlasMigrationDir_RegistryReference pins what an `atlas://` migration.dir

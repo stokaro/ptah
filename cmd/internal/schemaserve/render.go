@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/internal/schemadoc"
-	"go.5x5.cz/ptah/migration/safety"
+	"ptah.run/internal/schemadoc"
+	"ptah.run/migration/safety"
 )
 
 // dashboardCSS is what this view adds to the document's own appearance.

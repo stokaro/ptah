@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/docsindex"
+	"ptah.run/internal/docsindex"
 )
 
 // The corpus every test in this file searches. It is written rather than read

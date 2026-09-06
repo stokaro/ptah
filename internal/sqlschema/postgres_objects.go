@@ -3,8 +3,8 @@ package sqlschema
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/ast"
+	"ptah.run/core/schemamodel"
 )
 
 // This file converts the schema objects beyond tables, indexes and enums that

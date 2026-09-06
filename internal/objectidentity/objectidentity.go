@@ -51,7 +51,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform/identifier"
+	"ptah.run/core/platform/identifier"
 )
 
 // Kind names the object family an identity belongs to.

@@ -9,7 +9,7 @@
 //
 // What the linter can see is CONFIGURED. It tracks rows by the package that
 // DECLARED the Query returning them, and its default list is `database/sql`
-// alone. Ptah's schema readers hold a [go.5x5.cz/ptah/internal/sqlrunner.Runner]
+// alone. Ptah's schema readers hold a [ptah.run/internal/sqlrunner.Runner]
 // rather than a *sql.DB, so under the default list the linter ran over the
 // PostgreSQL reader and reported nothing while eleven of its reads were missing
 // the terminal check -- measured on the tree stokaro/ptah#2720 was filed

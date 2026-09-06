@@ -1,7 +1,7 @@
 // Package envboolguard hosts the repository guard for the boolean `PTAH_*`
 // environment-variable contract.
 //
-// The contract itself lives in [go.5x5.cz/ptah/internal/envbool]: absence
+// The contract itself lives in [ptah.run/internal/envbool]: absence
 // selects the documented default, a present value must parse as a boolean, and
 // anything else refuses the command before it does work. A contract that only
 // exists in the packages that happen to follow it today is not a contract; the

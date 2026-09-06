@@ -1,8 +1,8 @@
 package goannotationexport
 
 import (
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlashclrender"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlashclrender"
 )
 
 const opaqueSQLBodyMessage = "raw SQL body is emitted as opaque HCL text and cannot be structurally interpreted; review it before treating the export as semantically complete"

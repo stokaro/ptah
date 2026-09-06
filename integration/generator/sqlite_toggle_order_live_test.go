@@ -10,8 +10,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/generator"
+	"ptah.run/dbschema"
+	"ptah.run/migration/generator"
 )
 
 func TestGenerateCheckpointFromShadowRejectsMalformedSQLiteToggleBeforeMutation(t *testing.T) {

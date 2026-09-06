@@ -8,15 +8,15 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/concurrentindex"
-	"go.5x5.cz/ptah/internal/indexscope"
-	"go.5x5.cz/ptah/internal/txrequire"
-	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/catalog"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/concurrentindex"
+	"ptah.run/internal/indexscope"
+	"ptah.run/internal/txrequire"
+	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 type splitMigrationNodes struct {

@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/atlasfilter"
+	"ptah.run/catalog"
+	"ptah.run/internal/atlasfilter"
 )
 
 // envReferenceSchema is a database with two tables, so a selector that works

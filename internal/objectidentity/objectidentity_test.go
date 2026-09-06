@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/internal/objectidentity"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/internal/objectidentity"
 )
 
 // postgresSemantics is the folding rule the four cited defects were all found

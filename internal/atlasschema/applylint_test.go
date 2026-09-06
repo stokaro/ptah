@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/migration/lint"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/migration/lint"
 )
 
 // This file measures how much of the rule registry `ptah-compat schema apply`

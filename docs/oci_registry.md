@@ -825,7 +825,7 @@ jobs:
           go-version: "1.26.x"
 
       - name: Install Ptah
-        run: go install go.5x5.cz/ptah/cmd/ptah@latest
+        run: go install ptah.run/cmd/ptah@latest
 
       # No login step and no Docker: the credential is read from the
       # environment, where it appears in neither shell history nor the process

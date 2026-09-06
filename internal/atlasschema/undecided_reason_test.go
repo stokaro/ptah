@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/internal/atlasschema"
+	"ptah.run/core/coverage"
+	"ptah.run/internal/atlasschema"
 )
 
 // The warning is the only place a withheld addition surfaces at all: no

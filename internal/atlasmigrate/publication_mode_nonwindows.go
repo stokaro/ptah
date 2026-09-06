@@ -2,7 +2,7 @@
 
 package atlasmigrate
 
-import "go.5x5.cz/ptah/internal/pathguard"
+import "ptah.run/internal/pathguard"
 
 func platformPublicationMode(
 	d *pathguard.OpenedDirectory,

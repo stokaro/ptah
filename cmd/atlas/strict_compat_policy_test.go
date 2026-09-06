@@ -10,10 +10,10 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/internal/atlascompatpolicy"
+	"ptah.run/cmd/atlas"
+	"ptah.run/cmd/atlas/internal/atlastest"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/internal/atlascompatpolicy"
 )
 
 func TestStrictCECommandTreeExposesOnlyCommunityCommandsInHelp(t *testing.T) {

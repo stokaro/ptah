@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"go.5x5.cz/ptah/internal/envbinding"
+	"ptah.run/internal/envbinding"
 )
 
 // targetFlags and scratchFlags are the flags that name a database.

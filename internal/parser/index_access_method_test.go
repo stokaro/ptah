@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/parser"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/internal/parser"
 )
 
 // The MySQL family's `USING {BTREE|HASH}` is a clause the DDL asks for, and

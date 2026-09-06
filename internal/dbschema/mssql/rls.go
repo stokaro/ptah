@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
+	"ptah.run/catalog"
 )
 
 // readRLSPolicies reads the security policies the connected database declares,

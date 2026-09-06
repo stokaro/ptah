@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/embedgen"
+	"ptah.run/internal/embedgen"
 )
 
 // indexDatabase is the SQL surface index creation needs. Both *sql.DB and the

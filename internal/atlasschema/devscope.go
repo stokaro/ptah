@@ -6,9 +6,9 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/lexer"
-	"go.5x5.cz/ptah/internal/sqlident"
+	"ptah.run/core/platform"
+	"ptah.run/internal/lexer"
+	"ptah.run/internal/sqlident"
 )
 
 // DevScopeError reports that a statement about to be rehearsed on the dev

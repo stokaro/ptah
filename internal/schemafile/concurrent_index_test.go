@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/schemafile"
+	"ptah.run/internal/schemafile"
 )
 
 // The parser has accepted CONCURRENTLY since it learned CREATE INDEX, and the

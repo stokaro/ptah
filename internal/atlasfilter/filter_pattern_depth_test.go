@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlasfilter"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlasfilter"
 )
 
 // TestExcludeDatabaseWithDefaultSchema_RefusesPatternsDeeperThanTheScope pins

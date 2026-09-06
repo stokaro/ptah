@@ -11,7 +11,7 @@ package project
 import (
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/cmdutil"
 )
 
 // NewProjectCommand returns the `project` command group.

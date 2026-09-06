@@ -8,7 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/assistloop"
+	"ptah.run/internal/assistloop"
 )
 
 // TestWorkflowsDocumentQuotesTheRunLimits binds the table in

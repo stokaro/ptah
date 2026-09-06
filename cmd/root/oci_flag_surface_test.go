@@ -13,9 +13,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/migrationsource"
-	"go.5x5.cz/ptah/cmd/root"
-	"go.5x5.cz/ptah/internal/testutils"
+	"ptah.run/cmd/internal/migrationsource"
+	"ptah.run/cmd/root"
+	"ptah.run/internal/testutils"
 )
 
 // This file is the LIVE ENUMERATION of Ptah's OCI command surface.

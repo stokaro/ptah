@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/migrationspull"
+	"ptah.run/cmd/migrationspull"
 )
 
 func TestNewMigrationsPullCommand_Help(t *testing.T) {

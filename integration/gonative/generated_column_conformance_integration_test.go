@@ -10,11 +10,11 @@ import (
 	_ "github.com/go-sql-driver/mysql" // registers the MySQL driver for database/sql
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	mysqlreader "go.5x5.cz/ptah/internal/dbschema/mysql"
-	postgresreader "go.5x5.cz/ptah/internal/dbschema/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	mysqlreader "ptah.run/internal/dbschema/mysql"
+	postgresreader "ptah.run/internal/dbschema/postgres"
+	"ptah.run/migration/schemadiff"
 )
 
 func TestGeneratedColumnConformanceFixture_RoundTrip_Postgres(t *testing.T) {

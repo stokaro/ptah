@@ -7,10 +7,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/dbschema/sqlite"
+	"ptah.run/catalog"
+	"ptah.run/core/renderer"
+	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/dbschema/sqlite"
 )
 
 // TestReadSchemaRoundTripsVirtualTables is the acceptance for

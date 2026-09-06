@@ -8,11 +8,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
-	"go.5x5.cz/ptah/internal/envbool/envbooltest"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/testutils"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/cmd/atlas/internal/atlastest"
+	"ptah.run/internal/envbool/envbooltest"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/testutils"
+	"ptah.run/migration/migrationfile"
 )
 
 // checkpointFlagFixture writes a hashed two-migration Atlas directory and

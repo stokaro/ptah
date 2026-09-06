@@ -59,7 +59,7 @@
 //     `Schema is synced, no changes to be made.` with the catalog untouched;
 //   - to drop it, [AllowDropEnvVar] plans the drop exactly as before. It is an
 //     environment variable rather than a flag for the reason
-//     [go.5x5.cz/ptah/internal/reservedrole.AllowEnvVar] gives: the conformance
+//     [ptah.run/internal/reservedrole.AllowEnvVar] gives: the conformance
 //     cli-surface tier asserts that ptah-compat registers exactly the flags the
 //     pinned Atlas community binary registers.
 //
@@ -125,19 +125,19 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/internal/envbool"
-	"go.5x5.cz/ptah/internal/planner/objectlookup"
-	"go.5x5.cz/ptah/internal/planner/sqliterebuild"
-	"go.5x5.cz/ptah/internal/sqlitemodule"
-	"go.5x5.cz/ptah/migration/diffpolicy"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/catalog"
+	"ptah.run/core/coverage"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/envbool"
+	"ptah.run/internal/planner/objectlookup"
+	"ptah.run/internal/planner/sqliterebuild"
+	"ptah.run/internal/sqlitemodule"
+	"ptah.run/migration/diffpolicy"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // AllowDropEnvVar plans the removal of a live virtual table the desired state
@@ -149,7 +149,7 @@ import (
 // contents. It only decides whether Ptah is willing to plan it unasked.
 const AllowDropEnvVar = "PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP"
 
-// It is [go.5x5.cz/ptah/internal/envbool.Retained]: a true value restores the
+// It is [ptah.run/internal/envbool.Retained]: a true value restores the
 // `DROP TABLE` the pinned community binary plans for a SQLite virtual table
 // anyway, so refusing it in strict mode would move Ptah further from the
 // oracle rather than closer.
@@ -179,12 +179,12 @@ var allowDrop = envbool.New(AllowDropEnvVar, false, envbool.Retained)
 // second.
 //
 // It is an environment variable rather than a flag for the reason
-// [go.5x5.cz/ptah/internal/reservedrole.AllowEnvVar] gives: the conformance
+// [ptah.run/internal/reservedrole.AllowEnvVar] gives: the conformance
 // cli-surface tier asserts that ptah-compat registers exactly the flags the
 // pinned Atlas community binary registers.
 const AllowUnregisteredModuleEnvVar = "PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE"
 
-// It is [go.5x5.cz/ptah/internal/envbool.Retained], and the argument is if
+// It is [ptah.run/internal/envbool.Retained], and the argument is if
 // anything stronger than its sibling's. The refusal it lifts is Ptah's own: the
 // pinned community binary has no notion of a module this build cannot classify
 // and plans the drops regardless. A true value therefore restores oracle
@@ -279,8 +279,8 @@ type Policy struct {
 	// table safe to discount rather than only its DROP TABLE: both
 	// implementations of this policy also drop the index, constraint, trigger,
 	// RLS and grant removals belonging to a table they keep
-	// ([go.5x5.cz/ptah/migration/diffpolicy.Apply] and
-	// [go.5x5.cz/ptah/internal/atlasschema.ApplyDiffPolicy]). A table that is
+	// ([ptah.run/migration/diffpolicy.Apply] and
+	// [ptah.run/internal/atlasschema.ApplyDiffPolicy]). A table that is
 	// not dropped and whose dependent removals are gone is not rebuilt either.
 	//
 	// It does NOT cover a rebuild. `skip drop_table` filters removals, not
@@ -384,7 +384,7 @@ func ValidateComparison(
 	// dormant: the operator believes they enabled the drop, nothing says
 	// otherwise, and the value is first parsed on the day a virtual table
 	// appears. Same boundary as
-	// [go.5x5.cz/ptah/internal/reservedrole.ValidateDeclared], which resolves
+	// [ptah.run/internal/reservedrole.ValidateDeclared], which resolves
 	// after the dialect gate and before the roles are scanned.
 	dropAllowed, err := DropAllowed()
 	if err != nil {
@@ -719,7 +719,7 @@ func ValidatePlannedChanges(
 // [ValidatePlannedChanges] grants an add-column-only diff, which is correct for
 // the forward direction, admitted a rollback that rebuilds the table.
 //
-// Reproduced through [go.5x5.cz/ptah/migration/generator.PlanMigration] on an
+// Reproduced through [ptah.run/migration/generator.PlanMigration] on an
 // fts4 database this build cannot load, with a programmatic desired schema
 // naming the module's storage and one extra column on `docs_content`. The up
 // file was the single statement
@@ -751,8 +751,8 @@ func ValidatePlannedChanges(
 //
 // No [Policy] is taken, because at this seam there is nothing left to promise:
 // both callers filter the forward diff through their diff policy BEFORE the
-// reverse is derived from it (see [go.5x5.cz/ptah/migration/generator] and
-// [go.5x5.cz/ptah/internal/atlasmigrate]), and nothing filters the reverse
+// reverse is derived from it (see [ptah.run/migration/generator] and
+// [ptah.run/internal/atlasmigrate]), and nothing filters the reverse
 // afterwards. A caller that grew a later filter would be refused for a
 // statement it deletes, which is the safe direction and the one the zero Policy
 // already stands for.
@@ -1271,7 +1271,7 @@ func plansVirtualTableRemoval(side pairedSide, policy Policy, declaredLimits cov
 }
 
 // spellings returns every name the two sides might use for this table, which
-// is what [go.5x5.cz/ptah/core/coverage.Set.Describes] asks for: a directive
+// is what [ptah.run/core/coverage.Set.Describes] asks for: a directive
 // written against one spelling has to answer for the other, and a false
 // negative there restores the removal coverage exists to withhold.
 func (s pairedSide) spellings() []string {
@@ -1395,7 +1395,7 @@ func Names(tables []Table) []string {
 // which half is real.
 //
 // It reports the tables and the module rather than a count, the opposite of
-// [go.5x5.cz/ptah/internal/rolescope.ReportUndescribed]. That note withholds
+// [ptah.run/internal/rolescope.ReportUndescribed]. That note withholds
 // names because they come from outside the inspected scope and can belong to
 // another tenant; these names are in the document the operator is already
 // looking at, and the note is useless without saying which of the statements

@@ -13,9 +13,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/migrateup"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/cmd/migrateup"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbtarget"
 )
 
 func TestMigrateUpCommandPgDumpHookWritesArtifact(t *testing.T) {

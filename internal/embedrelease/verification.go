@@ -3,8 +3,8 @@ package embedrelease
 import (
 	"time"
 
-	"go.5x5.cz/ptah/internal/embedeval"
-	"go.5x5.cz/ptah/internal/embedverify"
+	"ptah.run/internal/embedeval"
+	"ptah.run/internal/embedverify"
 )
 
 // VerificationOf turns a report into the record a registry holds.

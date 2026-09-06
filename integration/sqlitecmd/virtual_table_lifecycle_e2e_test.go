@@ -22,9 +22,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/db"
-	"go.5x5.cz/ptah/cmd/schema"
-	"go.5x5.cz/ptah/internal/sqlitevirtual"
+	"ptah.run/cmd/db"
+	"ptah.run/cmd/schema"
+	"ptah.run/internal/sqlitevirtual"
 )
 
 // fts5Schema declares one ordinary table beside the virtual one, so a test that

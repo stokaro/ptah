@@ -5,7 +5,7 @@ package lintdialect
 import (
 	"slices"
 
-	"go.5x5.cz/ptah/core/platform"
+	"ptah.run/core/platform"
 )
 
 // Expected is the user-facing list of supported lint dialects.

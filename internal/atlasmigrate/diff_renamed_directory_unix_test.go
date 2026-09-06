@@ -11,8 +11,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasmigrate"
 )
 
 // This is stokaro/ptah#895's own reproduction, kept as a regression test.

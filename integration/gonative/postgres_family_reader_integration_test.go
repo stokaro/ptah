@@ -10,11 +10,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/cmd/readdb"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/catalog"
+	"ptah.run/cmd/atlas"
+	"ptah.run/cmd/readdb"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbtarget"
 )
 
 func TestPostgresFamilyReader_CockroachDBCatalogObjects(t *testing.T) {

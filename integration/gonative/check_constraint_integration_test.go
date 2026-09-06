@@ -10,13 +10,13 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/dbschema/postgres"
-	"go.5x5.cz/ptah/internal/modelast"
-	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/catalog"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/dbschema/postgres"
+	"ptah.run/internal/modelast"
+	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff"
 )
 
 // TestFieldLevelCheckConstraint_RoundTrip_Integration is the e2e backfill for

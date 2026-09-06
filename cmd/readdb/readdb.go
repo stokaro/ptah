@@ -8,15 +8,15 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/dburldisplay"
-	"go.5x5.cz/ptah/internal/rolescope"
-	"go.5x5.cz/ptah/internal/sqlitevirtual"
-	"go.5x5.cz/ptah/internal/timescale"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/core/renderer"
+	"ptah.run/dbschema"
+	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/dburldisplay"
+	"ptah.run/internal/rolescope"
+	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/internal/timescale"
 )
 
 const (

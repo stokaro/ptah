@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/atlassource"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/atlassource"
 )
 
 // projectWithMigrationDir writes an atlas.hcl naming one migration directory

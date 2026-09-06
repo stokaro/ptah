@@ -10,8 +10,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/atlassource"
+	"ptah.run/catalog"
+	"ptah.run/internal/atlassource"
 )
 
 // patternScopeFixture is two tables in two schemas, the second one named so a

@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/dbmlrender"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/dbmlrender"
 )
 
 // TestRender_WritesTheSchemaItWasGiven pins the document a schema produces.

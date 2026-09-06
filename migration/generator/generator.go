@@ -8,14 +8,14 @@ import (
 	"sync"
 	"time"
 
-	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/internal/fsnapshot"
-	"go.5x5.cz/ptah/migration/diffpolicy"
-	"go.5x5.cz/ptah/migration/migrationfile"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/config"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/fsnapshot"
+	"ptah.run/migration/diffpolicy"
+	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/schemadiff"
 )
 
 // GenerateMigrationOptions contains options for migration generation
@@ -67,7 +67,7 @@ type GenerateMigrationOptions struct {
 	ReportFormat string
 	// ShadowDatabaseURL enables pre-write verification on an ephemeral database
 	// whose live database realm must be distinct from the target connection.
-	// The verification runs in [go.5x5.cz/ptah/migration/shadow]: it drops all
+	// The verification runs in [ptah.run/migration/shadow]: it drops all
 	// objects in this database, replays existing migrations from OutputDir,
 	// applies the candidate migration, re-introspects the result, and aborts if
 	// it differs from the Go schema.

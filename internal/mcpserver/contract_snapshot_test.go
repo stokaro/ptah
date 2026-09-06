@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/agentpolicy"
+	"ptah.run/internal/agentpolicy"
 )
 
 // contractSnapshotPath is the checked-in shape of the agent contract.

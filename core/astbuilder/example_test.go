@@ -5,9 +5,9 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/astbuilder"
-	"go.5x5.cz/ptah/core/renderer"
+	"ptah.run/core/ast"
+	"ptah.run/core/astbuilder"
+	"ptah.run/core/renderer"
 )
 
 // ExampleNewTable builds one CREATE TABLE and renders it for two dialects. The

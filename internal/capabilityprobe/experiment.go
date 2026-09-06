@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"go.5x5.cz/ptah/core/platform/capability"
+	"ptah.run/core/platform/capability"
 )
 
 // observation is what one experiment concluded about one capability key.

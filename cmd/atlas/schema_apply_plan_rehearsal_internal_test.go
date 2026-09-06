@@ -12,8 +12,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlasschema"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlasschema"
 )
 
 // desiredFixture is a non-nil desired schema; the decision only cares whether

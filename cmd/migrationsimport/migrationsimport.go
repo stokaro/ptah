@@ -14,8 +14,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/migration/importer"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/migration/importer"
 )
 
 type options struct {

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"go.5x5.cz/ptah/internal/agentdiag"
+	"ptah.run/internal/agentdiag"
 )
 
 // ErrApprovalUnavailable reports a [VerdictAsk] reached in a session that has

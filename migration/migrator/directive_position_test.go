@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/directiveplacement"
-	"go.5x5.cz/ptah/migration/migrationfile"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/internal/directiveplacement"
+	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/migrator"
 )
 
 // directiveClassCase is one directive of one family, with the positions at

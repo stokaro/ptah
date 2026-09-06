@@ -11,8 +11,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbtarget"
 )
 
 // evolvedEnumMembers is the order the server holds after the fixture's inserts,

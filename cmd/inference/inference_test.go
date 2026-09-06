@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/inference"
+	"ptah.run/cmd/inference"
 )
 
 // TestOpen_AnotherEngineIsRefusedByName is stokaro/ptah#2386.

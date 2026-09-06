@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/crdbinterval"
+	"ptah.run/internal/crdbinterval"
 )
 
 // TestEqual_AgreesWithWhatTheServerStored is the table this package exists for.

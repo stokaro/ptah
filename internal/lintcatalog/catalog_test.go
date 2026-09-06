@@ -11,11 +11,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/lintcatalog"
-	"go.5x5.cz/ptah/internal/migrationlintgate"
-	"go.5x5.cz/ptah/internal/sqllint"
-	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/lintcatalog"
+	"ptah.run/internal/migrationlintgate"
+	"ptah.run/internal/sqllint"
+	"ptah.run/migration/lint"
+	"ptah.run/migration/migrationfile"
 )
 
 const (

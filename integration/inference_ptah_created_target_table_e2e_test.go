@@ -28,7 +28,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/internal/dbtarget"
 )
 
 // ownedTargetTable is the relation these specifications ask Ptah to make.

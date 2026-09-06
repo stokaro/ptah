@@ -3,7 +3,7 @@ package capabilityprobe
 import (
 	"context"
 
-	"go.5x5.cz/ptah/core/platform/capability"
+	"ptah.run/core/platform/capability"
 )
 
 // clickHouseSpelling writes the throwaway tables the ClickHouse experiments

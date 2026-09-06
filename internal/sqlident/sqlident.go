@@ -8,7 +8,7 @@ package sqlident
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
+	"ptah.run/core/platform"
 )
 
 // Quote returns name as a safely-quoted identifier for dialect. The dialect

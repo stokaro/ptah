@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/modelast"
+	"ptah.run/core/ast"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/modelast"
 )
 
 // TestPrimaryKeyName_DecidesTheFormAndCarriesTheName pins both halves of

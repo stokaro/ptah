@@ -14,9 +14,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasurl"
+	"ptah.run/core/platform"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasurl"
 )
 
 // ErrNoIsolation reports that the dialect a URL names has no way to give one

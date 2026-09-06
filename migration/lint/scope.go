@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/internal/tableref"
 )
 
 // schemaScope is the set of schema objects a lint run reviews.

@@ -10,8 +10,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
-	"go.5x5.cz/ptah/internal/migratesum"
+	"ptah.run/cmd/atlas/internal/atlastest"
+	"ptah.run/internal/migratesum"
 )
 
 // These tests pin stokaro/ptah#845 on `ptah-compat migrate new`: an empty

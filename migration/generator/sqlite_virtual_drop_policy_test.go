@@ -8,10 +8,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/diffpolicy"
-	"go.5x5.cz/ptah/migration/generator"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/migration/diffpolicy"
+	"ptah.run/migration/generator"
 )
 
 // TestGenerateMigrationCarriesTheDropPolicyIntoTheVirtualTableGuard is the

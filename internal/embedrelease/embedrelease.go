@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"time"
 
-	"go.5x5.cz/ptah/internal/embeddigest"
+	"ptah.run/internal/embeddigest"
 )
 
 // Artifact types, following the convention internal/ociartifact already

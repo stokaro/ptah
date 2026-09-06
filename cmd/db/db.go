@@ -4,10 +4,10 @@ package db
 import (
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/dbcapabilities"
-	"go.5x5.cz/ptah/cmd/dropall"
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/readdb"
+	"ptah.run/cmd/dbcapabilities"
+	"ptah.run/cmd/dropall"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/readdb"
 )
 
 // NewDBCommand returns the native live-database command namespace.

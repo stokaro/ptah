@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"slices"
 
-	"go.5x5.cz/ptah/internal/embedengine"
-	"go.5x5.cz/ptah/internal/embedgen"
-	"go.5x5.cz/ptah/internal/embedprovider"
-	"go.5x5.cz/ptah/internal/embedrun"
-	"go.5x5.cz/ptah/internal/embedstore"
+	"ptah.run/internal/embedengine"
+	"ptah.run/internal/embedgen"
+	"ptah.run/internal/embedprovider"
+	"ptah.run/internal/embedrun"
+	"ptah.run/internal/embedstore"
 )
 
 // fakeSource answers keyset pages from a fixed list.

@@ -10,11 +10,11 @@ import (
 	"strings"
 	"sync"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/sqlident"
-	"go.5x5.cz/ptah/internal/sqlrunner"
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/sqlident"
+	"ptah.run/internal/sqlrunner"
 )
 
 var protectedPostgresDatabases = []string{

@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"os"
 
-	"go.5x5.cz/ptah/internal/cmdrefviews"
+	"ptah.run/internal/cmdrefviews"
 )
 
 const usage = `usage: cmdref native|compat|strict|flags

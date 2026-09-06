@@ -1,5 +1,5 @@
 // Package safety classifies a schema diff into findings, each carrying a
-// [go.5x5.cz/ptah/migration/risk.Severity].
+// [ptah.run/migration/risk.Severity].
 //
 // It is an analysis rather than a vocabulary: it reads a comparison and decides
 // which changes remove data, drop objects or tighten constraints. The scale
@@ -15,14 +15,14 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/internal/htmlstyle"
-	"go.5x5.cz/ptah/internal/typechange"
-	"go.5x5.cz/ptah/migration/risk"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer"
+	"ptah.run/core/sqlutil"
+	"ptah.run/internal/htmlstyle"
+	"ptah.run/internal/typechange"
+	"ptah.run/migration/risk"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Severity is the operational risk level for a schema change.

@@ -5,8 +5,8 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/query"
+	"ptah.run/core/platform"
+	"ptah.run/core/query"
 )
 
 // Example is the canonical first-use flow: build a SELECT fluently, compose the

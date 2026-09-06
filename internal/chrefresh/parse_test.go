@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/internal/chrefresh"
+	"ptah.run/core/ast"
+	"ptah.run/internal/chrefresh"
 )
 
 // storedStatements are CREATE MATERIALIZED VIEW statements captured verbatim

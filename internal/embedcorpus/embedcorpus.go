@@ -15,8 +15,8 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"go.5x5.cz/ptah/internal/embeddigest"
-	"go.5x5.cz/ptah/internal/embedeval"
+	"ptah.run/internal/embeddigest"
+	"ptah.run/internal/embedeval"
 )
 
 // FormatVersion is the file format this build reads.

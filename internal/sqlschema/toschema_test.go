@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/sqlschema"
+	"ptah.run/core/ast"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/sqlschema"
 )
 
 func TestToField_BasicProperties(t *testing.T) {

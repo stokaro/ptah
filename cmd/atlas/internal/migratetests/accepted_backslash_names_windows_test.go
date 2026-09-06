@@ -2,7 +2,7 @@
 
 package migratetests_test
 
-import "go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
+import "ptah.run/cmd/atlas/internal/atlastest"
 
 // acceptedBackslashNames is empty here. On Windows a backslash IS a path
 // separator, so `a\b` names two elements and the rule that refuses a path

@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedcatchup"
+	"ptah.run/internal/embedcatchup"
 )
 
 // TestResumeFrom_HappyPath covers the positions a run can resume at.

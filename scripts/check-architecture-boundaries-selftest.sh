@@ -54,7 +54,7 @@ target="$tree/migration/planner/boundaries_selftest_defect.go"
 cat >"$target" <<'GO'
 package planner
 
-import _ "go.5x5.cz/ptah/migration/migrator"
+import _ "ptah.run/migration/migrator"
 GO
 require_refusal "planning importing versioned execution"
 rm -f "$target"
@@ -66,7 +66,7 @@ target="$tree/core/goschema/boundaries_selftest_defect.go"
 cat >"$target" <<'GO'
 package goschema
 
-import _ "go.5x5.cz/ptah/internal/sqlschema"
+import _ "ptah.run/internal/sqlschema"
 GO
 require_refusal "the canonical model taking one more pipeline import"
 rm -f "$target"
@@ -77,7 +77,7 @@ target="$tree/internal/planner/dialects/sqlite/boundaries_selftest_defect.go"
 cat >"$target" <<'GO'
 package sqlite
 
-import "go.5x5.cz/ptah/core/goschema"
+import "ptah.run/core/goschema"
 
 func boundariesSelftestDefect() *goschema.Database {
 	return &goschema.Database{}

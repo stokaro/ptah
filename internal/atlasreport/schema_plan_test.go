@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasreport"
+	"ptah.run/internal/atlasreport"
 )
 
 func schemaPlanFixture() atlasreport.SchemaPlan {

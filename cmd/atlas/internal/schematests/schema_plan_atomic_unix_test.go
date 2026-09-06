@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/internal/atlasschema"
+	"ptah.run/cmd/atlas"
+	"ptah.run/internal/atlasschema"
 )
 
 func TestSchemaPlanExplicitOutputReplacesSymlinkInsteadOfFollowingIt(t *testing.T) {

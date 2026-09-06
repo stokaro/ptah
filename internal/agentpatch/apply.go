@@ -9,15 +9,15 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/internal/agentdiag"
-	"go.5x5.cz/ptah/internal/agentgate"
-	"go.5x5.cz/ptah/internal/agentpolicy"
-	"go.5x5.cz/ptah/internal/agentworkspace"
-	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/internal/fsdurable"
-	"go.5x5.cz/ptah/internal/migrateops"
-	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/agentdiag"
+	"ptah.run/internal/agentgate"
+	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/agentworkspace"
+	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/fsdurable"
+	"ptah.run/internal/migrateops"
+	"ptah.run/internal/pathguard"
+	"ptah.run/migration/migrationfile"
 )
 
 // createdFileMode is the mode a newly created artifact gets.

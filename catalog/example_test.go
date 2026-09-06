@@ -6,8 +6,8 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/catalog"
+	"ptah.run/dbschema"
 )
 
 // ExampleQualifyTableName shows the keying convention both sides of a schema

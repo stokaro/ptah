@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/embedgen"
-	"go.5x5.cz/ptah/internal/embedrun"
-	"go.5x5.cz/ptah/internal/embedstore"
+	"ptah.run/internal/embedgen"
+	"ptah.run/internal/embedrun"
+	"ptah.run/internal/embedstore"
 )
 
 // MetadataSuffixes are what a generation's bookkeeping columns are called,

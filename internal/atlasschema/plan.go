@@ -12,16 +12,16 @@ import (
 
 	digest "github.com/opencontainers/go-digest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasfilter"
-	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/internal/schemafile"
-	"go.5x5.cz/ptah/internal/sqlsafety"
-	"go.5x5.cz/ptah/migration/risk"
-	"go.5x5.cz/ptah/migration/safety"
+	"ptah.run/catalog"
+	"ptah.run/core/schemamodel"
+	"ptah.run/core/sqlutil"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasfilter"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/schemafile"
+	"ptah.run/internal/sqlsafety"
+	"ptah.run/migration/risk"
+	"ptah.run/migration/safety"
 )
 
 const (
@@ -85,7 +85,7 @@ type PlanFileOptions struct {
 	// [ApplyOptions.Desired]. When set, ToURLs are ignored.
 	Desired *schemamodel.Database
 	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
-	// spells them; see [go.5x5.cz/ptah/internal/schemafile.Options].
+	// spells them; see [ptah.run/internal/schemafile.Options].
 	Vars []string
 
 	// Diagnostics receives out-of-band notices; see [ApplyOptions.Diagnostics].

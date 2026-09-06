@@ -9,9 +9,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/testutils"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/testutils"
+	"ptah.run/migration/migrationfile"
 )
 
 // These tests build the ptah-compat binary at run time and exercise it as a
@@ -58,7 +58,7 @@ func TestCompatBinaryNamedAtlasResolvesRootCommands(t *testing.T) {
 // still matches the substring "unknown flag" — true under either prefix, which
 // is why the split went unnoticed. That assertion is deferred rather than
 // forgotten, and the reason is sequencing, not effort:
-// ptah-atlas-conformance builds its compat binary from the go.5x5.cz/ptah
+// ptah-atlas-conformance builds its compat binary from the ptah.run
 // version its own go.mod pins, so the assertion can only be added after a
 // release containing this change is pinned there. Measured, same argv
 // (`migrate validate --totally-unknown-flag`), same machine:

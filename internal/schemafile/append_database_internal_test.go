@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/coverage"
+	"ptah.run/core/schemamodel"
 )
 
 // TestAppendDatabase_MergesEveryObjectFamily is the guard the two families

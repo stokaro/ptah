@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/bufwriter"
-	"go.5x5.cz/ptah/core/renderer/internal/dialects/mysqllike"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer/internal/dialects/internal/bufwriter"
+	"ptah.run/core/renderer/internal/dialects/mysqllike"
 )
 
 // TestVisitCreateTable_CarriesTheTableComment pins where a table's comment goes.

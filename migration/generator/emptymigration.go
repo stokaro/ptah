@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/internal/migrationversion"
-	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/migrationversion"
+	"ptah.run/internal/pathguard"
+	"ptah.run/migration/migrationfile"
 )
 
 // EmptyMigrationOptions contains options for skeleton migration creation.

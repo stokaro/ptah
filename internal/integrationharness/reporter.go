@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"go.5x5.cz/ptah/internal/htmlstyle"
+	"ptah.run/internal/htmlstyle"
 )
 
 // ReportFormat represents the output format for reports

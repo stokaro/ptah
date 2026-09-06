@@ -7,7 +7,7 @@ import (
 
 	clickhousedriver "github.com/ClickHouse/clickhouse-go/v2"
 
-	"go.5x5.cz/ptah/catalog"
+	"ptah.run/catalog"
 )
 
 // grantsQuery reads the grants this description owns: rows held by a ROLE, on

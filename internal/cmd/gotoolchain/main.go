@@ -11,7 +11,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/gotoolchain"
+	"ptah.run/internal/gotoolchain"
 )
 
 func main() {

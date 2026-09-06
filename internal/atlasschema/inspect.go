@@ -7,23 +7,23 @@ import (
 	"io"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasfilter"
-	"go.5x5.cz/ptah/internal/atlasreport"
-	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/dialectlexer"
-	"go.5x5.cz/ptah/internal/fileplan"
-	"go.5x5.cz/ptah/internal/lexer"
-	"go.5x5.cz/ptah/internal/rolescope"
-	"go.5x5.cz/ptah/internal/schemascope"
-	"go.5x5.cz/ptah/internal/schemaselection"
-	"go.5x5.cz/ptah/internal/sqlident"
-	"go.5x5.cz/ptah/internal/sqlitevirtual"
-	"go.5x5.cz/ptah/internal/timescale"
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasfilter"
+	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/fileplan"
+	"ptah.run/internal/lexer"
+	"ptah.run/internal/rolescope"
+	"ptah.run/internal/schemascope"
+	"ptah.run/internal/schemaselection"
+	"ptah.run/internal/sqlident"
+	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/internal/timescale"
 )
 
 // InspectOptions configures Atlas-compatible schema inspection.
@@ -47,10 +47,10 @@ type InspectOptions struct {
 	// binary refuses as a feature -- unless something else in the document
 	// names the object -- and reports every decision on Diagnostics. Only
 	// `ptah-compat` sets it, and setting
-	// [go.5x5.cz/ptah/internal/atlashclrender.KeepAtlasRefusedBlocksEnvVar]
+	// [ptah.run/internal/atlashclrender.KeepAtlasRefusedBlocksEnvVar]
 	// turns it back off there; the native surface renders every construct Ptah
 	// models. See
-	// [go.5x5.cz/ptah/internal/atlashclrender.RenderInspectedForAtlasCLI].
+	// [ptah.run/internal/atlashclrender.RenderInspectedForAtlasCLI].
 	OmitAtlasRefusedBlocks bool
 	// CompatibilityHCLFraming selects the Atlas-compatible single-document HCL
 	// frame without changing which blocks the document contains. Only
@@ -490,7 +490,7 @@ func SplitSchemaNames(values []string) []string {
 // is what the SQL format needs: the pinned community binary v1.3.0 renders a
 // schema it was told about and stays quiet about the one it merely connected
 // to. The measurements are on
-// [go.5x5.cz/ptah/internal/atlasreport.SchemaInspectReport].
+// [ptah.run/internal/atlasreport.SchemaInspectReport].
 func describesSchemas(info catalog.ServerInfo, opts InspectOptions) bool {
 	if len(SplitSchemaNames(opts.Schemas)) > 0 {
 		return true
@@ -501,7 +501,7 @@ func describesSchemas(info catalog.ServerInfo, opts InspectOptions) bool {
 // ConnectionIsRealmScoped reports whether a run over this connection describes
 // the whole realm rather than the one schema its URL named.
 //
-// It is the question [go.5x5.cz/ptah/internal/atlasfilter.Scope]'s
+// It is the question [ptah.run/internal/atlasfilter.Scope]'s
 // RealmRelativePatterns answers, asked from the connection every surface
 // already holds. Spelled once so that `schema inspect`, `schema apply` and
 // `schema clean` cannot end up counting the same exclude pattern three

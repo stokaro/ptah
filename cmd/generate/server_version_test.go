@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/generate"
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"ptah.run/cmd/generate"
+	"ptah.run/cmd/internal/exitcode"
 )
 
 // unevenlyReferencedFixture writes the schema from stokaro/ptah#916 that a

@@ -13,16 +13,16 @@ import (
 	"strconv"
 	"strings"
 
-	ptahast "go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/goschema/internal/parseutils"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/annotationmeta"
-	"go.5x5.cz/ptah/internal/chrefresh"
-	"go.5x5.cz/ptah/internal/crdbttl"
-	"go.5x5.cz/ptah/internal/dialectscope"
-	"go.5x5.cz/ptah/internal/routinesetting"
-	"go.5x5.cz/ptah/internal/tableref"
+	ptahast "ptah.run/core/ast"
+	"ptah.run/core/goschema/internal/parseutils"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/annotationmeta"
+	"ptah.run/internal/chrefresh"
+	"ptah.run/internal/crdbttl"
+	"ptah.run/internal/dialectscope"
+	"ptah.run/internal/routinesetting"
+	"ptah.run/internal/tableref"
 )
 
 // annotationErrorContext locates one annotation in the source being parsed, so

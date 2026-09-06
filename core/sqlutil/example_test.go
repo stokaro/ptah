@@ -3,7 +3,7 @@ package sqlutil_test
 import (
 	"fmt"
 
-	"go.5x5.cz/ptah/core/sqlutil"
+	"ptah.run/core/sqlutil"
 )
 
 // ExampleRebind rewrites one portable `?` template for each placeholder family

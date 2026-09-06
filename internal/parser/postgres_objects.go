@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/internal/lexer"
+	"ptah.run/core/ast"
+	"ptah.run/internal/lexer"
 )
 
 // This file holds the statement grammar for the PostgreSQL schema objects that

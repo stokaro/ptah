@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/schemamodel"
-	oracleplanner "go.5x5.cz/ptah/internal/planner/dialects/oracle"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/ast"
+	"ptah.run/core/schemamodel"
+	oracleplanner "ptah.run/internal/planner/dialects/oracle"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Oracle emits a column's comment as a statement of its own, and emits no

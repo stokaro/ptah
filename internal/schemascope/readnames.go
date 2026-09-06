@@ -3,8 +3,8 @@ package schemascope
 import (
 	"context"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/schemaselection"
+	"ptah.run/catalog"
+	"ptah.run/internal/schemaselection"
 )
 
 // ReadNames resolves the schemas one live database read covers, for every read

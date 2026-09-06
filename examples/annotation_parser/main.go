@@ -28,9 +28,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/goschema"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
 )
 
 func main() {

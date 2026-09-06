@@ -4,11 +4,11 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/concurrentindex"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/catalog"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/concurrentindex"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // DiffPolicy holds Atlas-compatible schema diff policy that maps to Ptah's

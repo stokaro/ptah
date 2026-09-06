@@ -232,7 +232,7 @@
         "/operate/troubleshooting/"
       ],
       "visibleWords": 8343,
-      "sourceBytes": 58692
+      "sourceBytes": 58686
     },
     {
       "path": "docs/site/src/content/docs/atlas/license-boundary.md",
@@ -1654,7 +1654,7 @@
         "/versioned/lint/"
       ],
       "visibleWords": 2430,
-      "sourceBytes": 24093
+      "sourceBytes": 24069
     },
     {
       "path": "docs/site/src/content/docs/extend/overview.mdx",
@@ -1744,7 +1744,7 @@
         "/schema/go-annotations/"
       ],
       "visibleWords": 3000,
-      "sourceBytes": 24560
+      "sourceBytes": 24548
     },
     {
       "path": "docs/site/src/content/docs/extend/query-builder.md",
@@ -1782,7 +1782,7 @@
         "/extend/overview/"
       ],
       "visibleWords": 2850,
-      "sourceBytes": 22362
+      "sourceBytes": 22344
     },
     {
       "path": "docs/site/src/content/docs/index.mdx",
@@ -3335,7 +3335,7 @@
         "/versioned/lint/"
       ],
       "visibleWords": 2521,
-      "sourceBytes": 21753
+      "sourceBytes": 21747
     },
     {
       "path": "docs/site/src/content/docs/operate/overview.mdx",
@@ -5295,7 +5295,7 @@
         "/start/install/"
       ],
       "visibleWords": 995,
-      "sourceBytes": 9160
+      "sourceBytes": 9142
     },
     {
       "path": "docs/site/src/content/docs/start/install.mdx",
@@ -5670,7 +5670,7 @@
         "/versioned/integrity-and-safety/"
       ],
       "visibleWords": 1162,
-      "sourceBytes": 11597
+      "sourceBytes": 11591
     },
     {
       "path": "docs/site/src/content/docs/versioned/apply.md",

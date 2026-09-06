@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/deporder"
+	"ptah.run/internal/deporder"
 )
 
 // TestUserTypesForCreate_OrdersEachKindAgainstTheOthers pins the property the

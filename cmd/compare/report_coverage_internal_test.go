@@ -15,9 +15,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/diffreport"
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/cmd/internal/diffreport"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // nonCategoryFields names the SchemaDiff fields that carry no schema changes

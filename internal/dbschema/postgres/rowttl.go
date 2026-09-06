@@ -1,9 +1,9 @@
 package postgres
 
 import (
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/crdbttl"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/crdbttl"
 )
 
 // rowTTLOptionsExpr renders the projection carrying a table's row-level TTL

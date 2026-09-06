@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemaload"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemaload"
 )
 
 // containmentFixture is one pair of destinations — one inside the working

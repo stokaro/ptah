@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/envbool"
-	"go.5x5.cz/ptah/internal/envbool/envbooltest"
+	"ptah.run/internal/envbool"
+	"ptah.run/internal/envbool/envbooltest"
 )
 
 // probeEnvVar is a name no production code declares, so these rows measure the

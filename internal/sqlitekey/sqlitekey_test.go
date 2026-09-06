@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/sqlitekey"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/sqlitekey"
 )
 
 // TestImpliesNotNull is the shape table measured with `pragma table_info` on

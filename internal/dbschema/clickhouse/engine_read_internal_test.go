@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/dbschema/dbtest"
+	"ptah.run/internal/dbschema/dbtest"
 )
 
 const engineFullFixture = "ReplacingMergeTree(ver) PARTITION BY toYYYYMM(day) " +

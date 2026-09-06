@@ -41,12 +41,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/dbschema/dbtest"
-	"go.5x5.cz/ptah/internal/envbool/envbooltest"
-	"go.5x5.cz/ptah/internal/rolescope"
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/dbschema/dbtest"
+	"ptah.run/internal/envbool/envbooltest"
+	"ptah.run/internal/rolescope"
 )
 
 // clusterRole is one role on the simulated server together with the single
@@ -1014,7 +1014,7 @@ func TestReadRolesPartitionsEveryManageableRole(t *testing.T) {
 	// compared against nothing, which is why such a schema is refused before it
 	// reaches the comparator -- see
 	// compare.TestRolesReservedNameIsRefusedBeforeThisComparisonRunsAtAll and
-	// go.5x5.cz/ptah/internal/reservedrole.
+	// ptah.run/internal/reservedrole.
 	//
 	// This test alone cannot catch a broken complement predicate: the fake
 	// answers the complement read by negating its own scoped answer. What

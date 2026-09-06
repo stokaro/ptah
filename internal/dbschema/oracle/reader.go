@@ -21,9 +21,9 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/sqlrunner"
+	"ptah.run/catalog"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/sqlrunner"
 )
 
 // Reader reads schema information from Oracle databases.

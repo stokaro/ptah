@@ -3,9 +3,9 @@ package postgres
 import (
 	"fmt"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // applyRowDeletionPolicyChanges appends the statement each table's row deletion

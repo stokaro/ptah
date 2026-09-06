@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/cliobs"
+	"ptah.run/cmd/internal/cliobs"
 )
 
 func TestEmitterJSONModeWritesParseableJSONLines(t *testing.T) {

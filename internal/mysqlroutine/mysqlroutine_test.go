@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/mysqlroutine"
+	"ptah.run/internal/mysqlroutine"
 )
 
 // TestCharacteristic_EncodesEachVolatilityOnADistinctCatalogCell pins the write

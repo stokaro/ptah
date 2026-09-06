@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"io"
 
-	"go.5x5.cz/ptah/cmd/internal/cliobs"
-	"go.5x5.cz/ptah/internal/migrationintegrity"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/cmd/internal/cliobs"
+	"ptah.run/internal/migrationintegrity"
+	"ptah.run/migration/migrationfile"
 )
 
 // VerifyOptions selects how strict one [Verify] call is and where it reports.

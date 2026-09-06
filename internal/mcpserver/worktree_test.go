@@ -8,14 +8,14 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/agentapi"
-	"go.5x5.cz/ptah/internal/agentgate"
-	"go.5x5.cz/ptah/internal/agentpolicy"
-	"go.5x5.cz/ptah/internal/agentworkspace"
-	"go.5x5.cz/ptah/internal/mcpserver"
-	"go.5x5.cz/ptah/internal/migrateops"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/core/platform"
+	"ptah.run/internal/agentapi"
+	"ptah.run/internal/agentgate"
+	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/agentworkspace"
+	"ptah.run/internal/mcpserver"
+	"ptah.run/internal/migrateops"
+	"ptah.run/migration/migrationfile"
 )
 
 // TestServer_ServesAProjectInALinkedWorktree covers the worktree half of

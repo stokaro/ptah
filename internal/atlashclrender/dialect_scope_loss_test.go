@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlashclrender"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlashclrender"
 )
 
 // TestRender_ADialectScopeIsReportedAsAnExportLoss holds the one thing that

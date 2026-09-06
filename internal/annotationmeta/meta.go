@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/dialectscope"
-	"go.5x5.cz/ptah/internal/matviewrefresh"
+	"ptah.run/internal/dialectscope"
+	"ptah.run/internal/matviewrefresh"
 )
 
 // Scope describes where a directive is valid in Go source.

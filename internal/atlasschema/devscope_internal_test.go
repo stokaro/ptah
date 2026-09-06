@@ -14,7 +14,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
+	"ptah.run/core/platform"
 )
 
 // TestRescopeStatementsForDevDatabaseRewritesTheTargetIntoTheDevDatabase covers

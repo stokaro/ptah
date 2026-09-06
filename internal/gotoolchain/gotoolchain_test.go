@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/gotoolchain"
+	"ptah.run/internal/gotoolchain"
 )
 
 // writeManifest puts one YAML file in a temporary tree and parses it.

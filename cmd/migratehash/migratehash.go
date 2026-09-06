@@ -8,10 +8,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/ociartifact"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/ociartifact"
+	"ptah.run/migration/migrationfile"
 )
 
 // NewMigrateHashCommand returns the migration hash command.

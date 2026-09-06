@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/dialectscope"
+	"ptah.run/internal/dialectscope"
 )
 
 // TestParse_ResolvesEverySpellingAndRefusesTheQuietReadings pins both halves of

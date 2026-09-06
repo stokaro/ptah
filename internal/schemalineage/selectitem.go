@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strconv"
 
-	"go.5x5.cz/ptah/internal/lexer"
+	"ptah.run/internal/lexer"
 )
 
 // splitSelectList divides the select list on top-level commas.

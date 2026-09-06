@@ -5,10 +5,10 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/core/ptaherr"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // planExtensionChanges turns a modified extension into the statements the

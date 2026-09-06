@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sort"
 
-	"go.5x5.cz/ptah/internal/agentsurface"
+	"ptah.run/internal/agentsurface"
 )
 
 // The rules this package refuses on. A rule is a code rather than a sentence

@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/sqlitemodule"
+	"ptah.run/catalog"
+	"ptah.run/internal/sqlitemodule"
 )
 
 // tableKind is SQLite's own answer to "what kind of table is this", as

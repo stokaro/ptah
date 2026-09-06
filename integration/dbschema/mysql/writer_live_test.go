@@ -12,10 +12,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	mysqldriver "github.com/go-sql-driver/mysql"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/dbschema/mysql"
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/internal/sqlident"
+	"ptah.run/core/platform"
+	"ptah.run/internal/dbschema/mysql"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/sqlident"
 )
 
 func TestWriterDropDatabaseRealm_LiveRejectsProtectedDatabase(t *testing.T) {

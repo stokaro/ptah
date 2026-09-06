@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/ddltx"
-	"go.5x5.cz/ptah/internal/lexer"
+	"ptah.run/internal/ddltx"
+	"ptah.run/internal/lexer"
 )
 
 // implicitCommitDialect reports whether the server commits an open transaction

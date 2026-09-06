@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/internal/embeddigest"
-	"go.5x5.cz/ptah/internal/embedrun"
+	"ptah.run/internal/embeddigest"
+	"ptah.run/internal/embedrun"
 )
 
 // Errors a caller distinguishes.

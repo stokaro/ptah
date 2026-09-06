@@ -3,8 +3,8 @@ package clickhouse
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/capability"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
 )
 
 // ClickHouse has row policies, and the shared declaration describes them more

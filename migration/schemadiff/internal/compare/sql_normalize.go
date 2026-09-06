@@ -3,7 +3,7 @@ package compare
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
+	"ptah.run/core/platform"
 )
 
 func isMySQLFamilyDialect(dialect string) bool {

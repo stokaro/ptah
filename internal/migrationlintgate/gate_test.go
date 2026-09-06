@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/migrationlintgate"
-	"go.5x5.cz/ptah/migration/lint"
+	"ptah.run/internal/migrationlintgate"
+	"ptah.run/migration/lint"
 )
 
 func TestAnalyze_HappyPath_AppliesPolicy(t *testing.T) {

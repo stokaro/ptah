@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/ptaherr"
+	"ptah.run/core/ast"
+	"ptah.run/core/ptaherr"
 )
 
 // An index and a UNIQUE, PRIMARY KEY or CHECK constraint each have one payload

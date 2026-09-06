@@ -26,20 +26,20 @@ import (
 	// cmd/atlas links it, which is why PTAH_ALLOW_NONINTERACTIVE_EDIT still
 	// appears below. If it ever stopped linking it, the documented-set gate goes
 	// red rather than the enumeration going quietly shorter.
-	_ "go.5x5.cz/ptah/cmd/atlas"
-	_ "go.5x5.cz/ptah/config/projectconfig" // links its PTAH_* declarations into the registry
-	"go.5x5.cz/ptah/internal/atlascompatpolicy"
-	_ "go.5x5.cz/ptah/internal/atlasfilter"    // links its PTAH_* declarations into the registry
-	_ "go.5x5.cz/ptah/internal/atlashcl"       // links its PTAH_* declarations into the registry
-	_ "go.5x5.cz/ptah/internal/atlashclrender" // links its PTAH_* declarations into the registry
-	_ "go.5x5.cz/ptah/internal/atlassource"    // links its PTAH_* declarations into the registry
-	"go.5x5.cz/ptah/internal/envbool"
-	"go.5x5.cz/ptah/internal/envbool/envbooltest"
-	_ "go.5x5.cz/ptah/internal/migrationintegrity" // links its PTAH_* declarations into the registry
-	_ "go.5x5.cz/ptah/internal/reservedrole"       // links its PTAH_* declarations into the registry
-	_ "go.5x5.cz/ptah/internal/rolescope"          // links its PTAH_* declarations into the registry
-	_ "go.5x5.cz/ptah/internal/sqlitevirtual"      // links its PTAH_* declarations into the registry
-	_ "go.5x5.cz/ptah/migration/migrator"          // links its PTAH_* declarations into the registry
+	_ "ptah.run/cmd/atlas"
+	_ "ptah.run/config/projectconfig" // links its PTAH_* declarations into the registry
+	"ptah.run/internal/atlascompatpolicy"
+	_ "ptah.run/internal/atlasfilter"    // links its PTAH_* declarations into the registry
+	_ "ptah.run/internal/atlashcl"       // links its PTAH_* declarations into the registry
+	_ "ptah.run/internal/atlashclrender" // links its PTAH_* declarations into the registry
+	_ "ptah.run/internal/atlassource"    // links its PTAH_* declarations into the registry
+	"ptah.run/internal/envbool"
+	"ptah.run/internal/envbool/envbooltest"
+	_ "ptah.run/internal/migrationintegrity" // links its PTAH_* declarations into the registry
+	_ "ptah.run/internal/reservedrole"       // links its PTAH_* declarations into the registry
+	_ "ptah.run/internal/rolescope"          // links its PTAH_* declarations into the registry
+	_ "ptah.run/internal/sqlitevirtual"      // links its PTAH_* declarations into the registry
+	_ "ptah.run/migration/migrator"          // links its PTAH_* declarations into the registry
 )
 
 // ptahVarPattern reads variable names out of documentation prose.

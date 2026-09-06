@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlashcl"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlashcl"
 )
 
 // A `column` value is read from the PARSED expression, so every spelling that

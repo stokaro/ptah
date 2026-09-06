@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/internal/constraintscope"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/internal/constraintscope"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // TestNormalize_FillsAnIdentityNoProducerResolved is what Normalize is for.

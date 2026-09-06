@@ -3,10 +3,10 @@ package postgres
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/crdbttl"
-	"go.5x5.cz/ptah/internal/spannerttl"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/crdbttl"
+	"ptah.run/internal/spannerttl"
 )
 
 // renderRowTTL returns the ` WITH (...)` clause a CREATE TABLE carries for its

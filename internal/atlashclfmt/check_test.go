@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlashclfmt"
+	"ptah.run/internal/atlashclfmt"
 )
 
 func TestCheckPathsReportsUnformattedFilesWithoutRewriting(t *testing.T) {

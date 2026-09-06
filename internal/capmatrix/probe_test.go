@@ -12,9 +12,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/capabilityprobe"
-	"go.5x5.cz/ptah/internal/capmatrix"
-	"go.5x5.cz/ptah/internal/integrationharness"
+	"ptah.run/internal/capabilityprobe"
+	"ptah.run/internal/capmatrix"
+	"ptah.run/internal/integrationharness"
 )
 
 // writeSuiteReports writes the JSON reports the integration runner produces,

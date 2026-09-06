@@ -14,8 +14,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	cmdschema "go.5x5.cz/ptah/cmd/schema"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	cmdschema "ptah.run/cmd/schema"
+	"ptah.run/internal/dbtarget"
 )
 
 // lineageSeed is one table, one view over it, and one routine that reads and

@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/migration/migrator"
 )
 
 const (

@@ -17,10 +17,10 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"go.5x5.cz/ptah/internal/embedcatchup"
-	"go.5x5.cz/ptah/internal/embedcutover"
-	"go.5x5.cz/ptah/internal/embeddigest"
-	"go.5x5.cz/ptah/internal/embedgen"
+	"ptah.run/internal/embedcatchup"
+	"ptah.run/internal/embedcutover"
+	"ptah.run/internal/embeddigest"
+	"ptah.run/internal/embedgen"
 )
 
 // Document is one specification file.

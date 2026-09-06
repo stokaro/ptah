@@ -21,18 +21,18 @@ import (
 	// reads back. A package left out here contributes no declarations, so its
 	// variables would look unclassified rather than boolean -- which is the
 	// direction that fails loudly instead of passing quietly.
-	_ "go.5x5.cz/ptah/cmd/atlas"
-	_ "go.5x5.cz/ptah/cmd/internal/editor" // links its PTAH_* declarations into the registry
-	"go.5x5.cz/ptah/internal/atlascompatpolicy"
-	_ "go.5x5.cz/ptah/internal/atlasfilter"    // links its PTAH_* declarations into the registry
-	_ "go.5x5.cz/ptah/internal/atlashclrender" // links its PTAH_* declarations into the registry
-	_ "go.5x5.cz/ptah/internal/atlassource"    // links its PTAH_* declarations into the registry
-	"go.5x5.cz/ptah/internal/envbool"
-	_ "go.5x5.cz/ptah/internal/migrationintegrity" // links its PTAH_* declarations into the registry
-	_ "go.5x5.cz/ptah/internal/reservedrole"       // links its PTAH_* declarations into the registry
-	_ "go.5x5.cz/ptah/internal/rolescope"          // links its PTAH_* declarations into the registry
-	_ "go.5x5.cz/ptah/internal/sqlitevirtual"      // links its PTAH_* declarations into the registry
-	_ "go.5x5.cz/ptah/migration/migrator"          // links its PTAH_* declarations into the registry
+	_ "ptah.run/cmd/atlas"
+	_ "ptah.run/cmd/internal/editor" // links its PTAH_* declarations into the registry
+	"ptah.run/internal/atlascompatpolicy"
+	_ "ptah.run/internal/atlasfilter"    // links its PTAH_* declarations into the registry
+	_ "ptah.run/internal/atlashclrender" // links its PTAH_* declarations into the registry
+	_ "ptah.run/internal/atlassource"    // links its PTAH_* declarations into the registry
+	"ptah.run/internal/envbool"
+	_ "ptah.run/internal/migrationintegrity" // links its PTAH_* declarations into the registry
+	_ "ptah.run/internal/reservedrole"       // links its PTAH_* declarations into the registry
+	_ "ptah.run/internal/rolescope"          // links its PTAH_* declarations into the registry
+	_ "ptah.run/internal/sqlitevirtual"      // links its PTAH_* declarations into the registry
+	_ "ptah.run/migration/migrator"          // links its PTAH_* declarations into the registry
 )
 
 // nonBooleanPtahVars is the ONLY hand-written list in this file: the `PTAH_*`
@@ -118,7 +118,7 @@ func TestNoDirectBooleanEnvironmentParsing(t *testing.T) {
 	}
 
 	c.Assert(violations, qt.HasLen, 0, qt.Commentf(
-		"route the read through go.5x5.cz/ptah/internal/envbool instead:\n%s",
+		"route the read through ptah.run/internal/envbool instead:\n%s",
 		strings.Join(violations, "\n")))
 }
 
@@ -278,7 +278,7 @@ func TestEveryPtahVariableIsClassified(t *testing.T) {
 		"found %d names; a scan that finds nothing is also green", len(mentioned)))
 	unclassified := namesOutsideBothClassifications(mentioned)
 	c.Assert(unclassified, qt.HasLen, 0, qt.Commentf(
-		"declare each through go.5x5.cz/ptah/internal/envbool, or record it in"+
+		"declare each through ptah.run/internal/envbool, or record it in"+
 			" nonBooleanPtahVars: %v", unclassified))
 }
 

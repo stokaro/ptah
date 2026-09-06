@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/buildinfo"
+	"ptah.run/internal/buildinfo"
 )
 
 func TestWritePrintsStableCLIFormat(t *testing.T) {

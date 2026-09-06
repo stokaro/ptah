@@ -1,6 +1,6 @@
 package testutils
 
-import "go.5x5.cz/ptah/internal/exeext"
+import "ptah.run/internal/exeext"
 
 // ExecutableSuffix is the extension a file needs before Windows will run it.
 //

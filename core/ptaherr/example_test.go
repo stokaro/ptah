@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/renderer"
+	"ptah.run/core/goschema"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer"
 )
 
 // Example shows the package's two-layer branching contract on one returned

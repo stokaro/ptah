@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"go.5x5.cz/ptah/internal/fsdurable"
+	"ptah.run/internal/fsdurable"
 )
 
 // writeAtlasOutputFile publishes a rendered document at path atomically.

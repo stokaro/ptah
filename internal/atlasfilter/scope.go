@@ -5,9 +5,9 @@ import (
 	"maps"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemascope"
+	"ptah.run/catalog"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemascope"
 )
 
 // Scope is the positive selection applied to Atlas schema apply and diff.

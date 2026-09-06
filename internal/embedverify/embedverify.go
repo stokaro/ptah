@@ -25,7 +25,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/embeddigest"
+	"ptah.run/internal/embeddigest"
 )
 
 // Severity is how much a finding matters.
@@ -109,7 +109,7 @@ const KeyFieldSeparator = "\x1f"
 // Length prefixes remove the boundary question rather than making it rarer.
 // Nothing a component can contain moves where it ends, so there is no value
 // left to choose a separator against -- which is why this is the encoder
-// [embeddigest.Of] hashes and why [go.5x5.cz/ptah/internal/embedcatchup.KeyIdentity]
+// [embeddigest.Of] hashes and why [ptah.run/internal/embedcatchup.KeyIdentity]
 // already reached for it.
 //
 // It is a comparison key, never a display one. Printed raw, a terminal swallows

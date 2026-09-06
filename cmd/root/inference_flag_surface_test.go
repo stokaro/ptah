@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/root"
+	"ptah.run/cmd/root"
 )
 
 // runNativeRoot drives the real binary's command tree, which is the only place

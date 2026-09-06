@@ -7,11 +7,11 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/internal/schemaselection"
-	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/schemaselection"
+	"ptah.run/migration/lint"
+	"ptah.run/migration/migrator"
 )
 
 // schemaCapture reads the dev database twice during one replay: once standing
@@ -52,7 +52,7 @@ func newSchemaCapture(analysis lint.Analysis, devURL string) *schemaCapture {
 
 // firstAnalyzedVersionKey returns the first key among the up-migration files
 // the analysis selected. The predicate is the one
-// [go.5x5.cz/ptah/internal/atlasreport] uses to decide which files the report
+// [ptah.run/internal/atlasreport] uses to decide which files the report
 // lists, so the schema pair spans exactly the versions the report names.
 func firstAnalyzedVersionKey(analysis lint.Analysis) (string, bool) {
 	files := analysis.Files()

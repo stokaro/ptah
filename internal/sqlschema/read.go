@@ -1,9 +1,9 @@
 package sqlschema
 
 import (
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/parser"
+	"ptah.run/core/ast"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/parser"
 )
 
 // Read loads a SQL desired schema into the canonical model.

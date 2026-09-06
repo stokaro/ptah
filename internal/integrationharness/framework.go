@@ -12,17 +12,17 @@ import (
 	"sync"
 	"time"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasurl"
-	"go.5x5.cz/ptah/internal/integrationfixture"
-	"go.5x5.cz/ptah/internal/testsummary"
-	"go.5x5.cz/ptah/migration/migrationfile"
-	"go.5x5.cz/ptah/migration/migrator"
-	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/core/goschema"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/integrationfixture"
+	"ptah.run/internal/testsummary"
+	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/migrator"
+	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff"
 )
 
 // TestStep represents a single step within a test scenario

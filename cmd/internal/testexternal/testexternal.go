@@ -5,8 +5,8 @@
 package testexternal
 
 import (
-	"go.5x5.cz/ptah/internal/envbool"
-	"go.5x5.cz/ptah/migration/dbtest"
+	"ptah.run/internal/envbool"
+	"ptah.run/migration/dbtest"
 )
 
 // Allowed reports whether this invocation authorizes an external test step.
@@ -20,9 +20,9 @@ func Allowed() (bool, error) {
 }
 
 // allowExternal is the declaration of the variable, made once, on the surface
-// that owns it. See [go.5x5.cz/ptah/internal/envbool].
+// that owns it. See [ptah.run/internal/envbool].
 //
-// It is [go.5x5.cz/ptah/internal/envbool.Retained]. The pinned community binary
+// It is [ptah.run/internal/envbool.Retained]. The pinned community binary
 // runs an `external` step's program with no authorization at all, so refusing
 // one by default takes nothing away from Atlas compatibility and this variable
 // adds no capability beyond it -- it restores what that binary already does.

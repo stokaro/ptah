@@ -1,9 +1,9 @@
 package lint
 
 import (
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/txrequire"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/txrequire"
 )
 
 // checkTransactionMix reports a file whose statements cannot all run inside

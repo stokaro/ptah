@@ -11,12 +11,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/datamigrate"
-	"go.5x5.cz/ptah/migration/generator"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/dbschema"
+	"ptah.run/internal/datamigrate"
+	"ptah.run/migration/generator"
+	"ptah.run/migration/migrationfile"
 )
 
 const (

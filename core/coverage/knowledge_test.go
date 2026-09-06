@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/coverage"
+	"ptah.run/core/coverage"
 )
 
 // allReasons is every reason this build understands, written out rather than

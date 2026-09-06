@@ -8,10 +8,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"go.5x5.cz/ptah/internal/agentapi"
-	"go.5x5.cz/ptah/internal/agentpolicy"
-	"go.5x5.cz/ptah/internal/agenttarget"
-	"go.5x5.cz/ptah/internal/mcpserver"
+	"ptah.run/internal/agentapi"
+	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/agenttarget"
+	"ptah.run/internal/mcpserver"
 )
 
 // diagnosticKey is where a failed call carries its structured diagnostic.
@@ -19,7 +19,7 @@ import (
 // The literal is repeated here rather than exported from the package under
 // test, because it is a wire contract: a test that read the constant would keep
 // passing through a rename that broke every client.
-const diagnosticKey = "ptah.5x5.cz/diagnostic"
+const diagnosticKey = "ptah.run/diagnostic"
 
 // diagnosticOf returns the structured diagnostic a failed call carries.
 func diagnosticOf(c *qt.C, result *mcp.CallToolResult) map[string]any {

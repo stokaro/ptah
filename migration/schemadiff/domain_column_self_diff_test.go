@@ -21,9 +21,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/catalog"
+	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/migration/schemadiff"
 )
 
 // TestCompare_DomainColumnSelfDiffPlansNothing is the no-churn property for

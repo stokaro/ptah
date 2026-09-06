@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform/capability"
+	"ptah.run/catalog"
+	"ptah.run/core/platform/capability"
 )
 
 // readSequences reports the standalone sequences the connected database holds.

@@ -9,10 +9,10 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/revisiontable"
-	"go.5x5.cz/ptah/internal/sqlident"
+	"ptah.run/catalog"
+	"ptah.run/dbschema"
+	"ptah.run/internal/revisiontable"
+	"ptah.run/internal/sqlident"
 )
 
 // Object kinds a cleanup plan can name. Every constant here must correspond to

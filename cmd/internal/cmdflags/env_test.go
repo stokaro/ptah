@@ -8,8 +8,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdflags"
-	"go.5x5.cz/ptah/internal/envbool/envbooltest"
+	"ptah.run/cmd/internal/cmdflags"
+	"ptah.run/internal/envbool/envbooltest"
 )
 
 func TestEnvNameNormalizesFlagName(t *testing.T) {

@@ -13,9 +13,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/directiveplacement"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/core/platform"
+	"ptah.run/internal/directiveplacement"
+	"ptah.run/migration/migrationfile"
 )
 
 // loaderDirectiveCase mirrors the toolkit's class table for the directives the

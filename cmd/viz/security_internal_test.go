@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/schemaviz"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/schemaviz"
 )
 
 // TestSecurityAnnotations sorts findings into the ones a node can carry and the

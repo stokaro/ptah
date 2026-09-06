@@ -2,7 +2,7 @@
 // searchable index.
 //
 // It is the seam between where the documentation is kept and how it is served:
-// [go.5x5.cz/ptah/docs] holds the files, [docsindex] knows how to search them,
+// [ptah.run/docs] holds the files, [docsindex] knows how to search them,
 // and neither has to know about the other.
 package docsembed
 
@@ -12,9 +12,9 @@ import (
 	"strings"
 	"sync"
 
-	"go.5x5.cz/ptah/docs"
-	"go.5x5.cz/ptah/internal/buildinfo"
-	"go.5x5.cz/ptah/internal/docsindex"
+	"ptah.run/docs"
+	"ptah.run/internal/buildinfo"
+	"ptah.run/internal/docsindex"
 )
 
 // docsPrefix is what an embedded path is reported as. The embedded filesystem

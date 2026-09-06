@@ -9,9 +9,9 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/goschema"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemamodel"
 )
 
 // ExampleParseSource is the minimum viable embedding: one annotated struct,

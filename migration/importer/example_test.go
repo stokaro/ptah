@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
-	"go.5x5.cz/ptah/migration/importer"
+	"ptah.run/migration/importer"
 )
 
 // ExampleImport runs the whole pipeline offline: with a nil parser the source

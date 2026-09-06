@@ -8,11 +8,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/migration/generator"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/catalog"
+	"ptah.run/config"
+	"ptah.run/core/schemamodel"
+	"ptah.run/migration/generator"
+	"ptah.run/migration/schemadiff"
 )
 
 // TestGenerateMigrationOptions_CompareOptions_Initialization tests that CompareOptions

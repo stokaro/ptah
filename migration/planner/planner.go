@@ -7,22 +7,22 @@ import (
 	"strings"
 	"sync"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/internal/planner/dialects/clickhouse"
-	"go.5x5.cz/ptah/internal/planner/dialects/mssql"
-	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
-	"go.5x5.cz/ptah/internal/planner/dialects/oracle"
-	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
-	"go.5x5.cz/ptah/internal/planner/dialects/sqlite"
-	"go.5x5.cz/ptah/internal/txrequire"
-	"go.5x5.cz/ptah/internal/usertypescope"
-	"go.5x5.cz/ptah/migration/diffpolicy"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer"
+	"ptah.run/core/sqlutil"
+	"ptah.run/internal/planner/dialects/clickhouse"
+	"ptah.run/internal/planner/dialects/mssql"
+	"ptah.run/internal/planner/dialects/mysql"
+	"ptah.run/internal/planner/dialects/oracle"
+	"ptah.run/internal/planner/dialects/postgres"
+	"ptah.run/internal/planner/dialects/sqlite"
+	"ptah.run/internal/txrequire"
+	"ptah.run/internal/usertypescope"
+	"ptah.run/migration/diffpolicy"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 var builtInPlannerRegistration struct {
@@ -193,7 +193,7 @@ func RegisteredDialects() ([]string, error) {
 //
 // # Usage Example
 //
-//	import "go.5x5.cz/ptah/core/platform"
+//	import "ptah.run/core/platform"
 //
 //	// Get PostgreSQL planner
 //	pgPlanner, err := planner.GetPlanner(platform.Postgres)
@@ -380,7 +380,7 @@ func normalizeRegistryDialect(dialect string) string {
 //
 // # Usage Example
 //
-//	import "go.5x5.cz/ptah/core/platform"
+//	import "ptah.run/core/platform"
 //
 //	// Generate AST nodes for PostgreSQL
 //	nodes, err := planner.GenerateSchemaDiffAST(diff, platform.Postgres)
@@ -533,7 +533,7 @@ func RequiresNoTransaction(dialect string, nodes []ast.Node) bool {
 //
 // # Usage Example
 //
-//	import "go.5x5.cz/ptah/core/platform"
+//	import "ptah.run/core/platform"
 //
 //	// Generate SQL statements for MySQL
 //	statements, err := planner.GenerateSchemaDiffSQLStatements(diff, platform.MySQL)
@@ -616,7 +616,7 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 //
 // # Usage Example
 //
-//	import "go.5x5.cz/ptah/core/platform"
+//	import "ptah.run/core/platform"
 //
 //	// Generate complete SQL script for PostgreSQL
 //	sql, err := planner.GenerateSchemaDiffSQL(diff, platform.Postgres)

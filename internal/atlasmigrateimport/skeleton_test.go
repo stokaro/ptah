@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
+	"ptah.run/internal/atlasmigrateimport"
 )
 
 // skeletonSeedFile is the pre-existing migration each layout's fixture starts

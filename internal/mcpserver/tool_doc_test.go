@@ -11,8 +11,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"go.5x5.cz/ptah/internal/agentpolicy"
-	"go.5x5.cz/ptah/internal/mcpserver"
+	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/mcpserver"
 )
 
 // The two reference pages that tell a reader which tools this server offers,

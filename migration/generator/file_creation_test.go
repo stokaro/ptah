@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/generator"
+	"ptah.run/migration/generator"
 )
 
 // TestGenerateEmptyMigrationNeverOverwritesAnExistingHalf is the file-level

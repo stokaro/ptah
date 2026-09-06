@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/schema"
+	"ptah.run/cmd/schema"
 )
 
 // nativeEmptySelectionDDL is the fixture the native-surface rows select

@@ -14,9 +14,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/cmd/atlas"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbtarget"
 )
 
 // createScopeSchemas provisions two uniquely named schemas with one table

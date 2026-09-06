@@ -11,8 +11,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/devlock"
+	"ptah.run/dbschema"
+	"ptah.run/internal/devlock"
 )
 
 func TestAcquire_SQLiteSerializesSymlinkAliases(t *testing.T) {

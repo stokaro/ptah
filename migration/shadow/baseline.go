@@ -6,15 +6,15 @@ import (
 	"io/fs"
 	"time"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/sqlitevirtual"
-	"go.5x5.cz/ptah/migration/internal/shadowdb"
-	"go.5x5.cz/ptah/migration/migrator"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/catalog"
+	"ptah.run/config"
+	"ptah.run/core/platform/capability"
+	"ptah.run/dbschema"
+	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/migration/internal/shadowdb"
+	"ptah.run/migration/migrator"
+	"ptah.run/migration/schemadiff"
 )
 
 // BaselineVerifyOptions configures shadow verification before metadata

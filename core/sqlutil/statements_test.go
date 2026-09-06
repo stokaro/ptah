@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/sqlutil"
+	"ptah.run/core/platform"
+	"ptah.run/core/sqlutil"
 )
 
 func TestSplitStatements(t *testing.T) {

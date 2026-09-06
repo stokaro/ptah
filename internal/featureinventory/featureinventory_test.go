@@ -7,14 +7,14 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/agentsurface"
-	"go.5x5.cz/ptah/internal/featureinventory"
+	"ptah.run/internal/agentsurface"
+	"ptah.run/internal/featureinventory"
 )
 
 // modulePath is the module the ledger fixtures below belong to. It is this
 // repository's own, because the ledger fixtures are copied from its ledger; the
 // parameter itself is exercised by TestLedgerPackages_ForeignModule.
-const modulePath = "go.5x5.cz/ptah"
+const modulePath = "ptah.run"
 
 // runnableExample is a fixture page that publishes something to run. An Example
 // carrying no shells is refused, so the fixtures cannot use a bare page path.
@@ -42,23 +42,23 @@ func TestLedgerPackages_HappyPath(t *testing.T) {
 	}{
 		{
 			name:   "a list item is a listing",
-			ledger: "- `go.5x5.cz/ptah/core/renderer`\n",
-			want:   []string{"go.5x5.cz/ptah/core/renderer"},
+			ledger: "- `ptah.run/core/renderer`\n",
+			want:   []string{"ptah.run/core/renderer"},
 		},
 		{
 			name:   "trailing prose after the closing backtick is not part of the path",
-			ledger: "- `go.5x5.cz/ptah/dbschema` -- reads a live database\n",
-			want:   []string{"go.5x5.cz/ptah/dbschema"},
+			ledger: "- `ptah.run/dbschema` -- reads a live database\n",
+			want:   []string{"ptah.run/dbschema"},
 		},
 		{
 			name:   "the same package listed twice is one package",
-			ledger: "- `go.5x5.cz/ptah/catalog`\n- `go.5x5.cz/ptah/catalog`\n",
-			want:   []string{"go.5x5.cz/ptah/catalog"},
+			ledger: "- `ptah.run/catalog`\n- `ptah.run/catalog`\n",
+			want:   []string{"ptah.run/catalog"},
 		},
 		{
 			name:   "the result is sorted regardless of file order",
-			ledger: "- `go.5x5.cz/ptah/dbschema`\n- `go.5x5.cz/ptah/catalog`\n",
-			want:   []string{"go.5x5.cz/ptah/catalog", "go.5x5.cz/ptah/dbschema"},
+			ledger: "- `ptah.run/dbschema`\n- `ptah.run/catalog`\n",
+			want:   []string{"ptah.run/catalog", "ptah.run/dbschema"},
 		},
 	}
 
@@ -81,11 +81,11 @@ func TestLedgerPackages_FailurePath(t *testing.T) {
 		name   string
 		ledger string
 	}{
-		{name: "a prose paragraph", ledger: "A paragraph mentioning `go.5x5.cz/ptah/gateselftest` is not a listing.\n"},
-		{name: "an indented list item", ledger: "  - `go.5x5.cz/ptah/nested`\n"},
-		{name: "a bullet with no backticks", ledger: "- go.5x5.cz/ptah/bare\n"},
+		{name: "a prose paragraph", ledger: "A paragraph mentioning `ptah.run/gateselftest` is not a listing.\n"},
+		{name: "an indented list item", ledger: "  - `ptah.run/nested`\n"},
+		{name: "a bullet with no backticks", ledger: "- ptah.run/bare\n"},
 		{name: "a package outside this module", ledger: "- `github.com/spf13/cobra`\n"},
-		{name: "the module path with nothing after it", ledger: "- `go.5x5.cz/ptah`\n"},
+		{name: "the module path with nothing after it", ledger: "- `ptah.run`\n"},
 	}
 
 	for _, test := range tests {
@@ -197,7 +197,7 @@ func TestDerive_HappyPath(t *testing.T) {
 		// would be credited to the same page; here it stays unclaimed, because
 		// the join is equality and there is no search step.
 		NativeLeaves: []agentsurface.Leaf{{Name: "schema apply"}, {Name: "schema apply-plan"}},
-		Ledger:       []byte("- `go.5x5.cz/ptah/core/renderer`\n"),
+		Ledger:       []byte("- `ptah.run/core/renderer`\n"),
 		Release:      []byte("builds:\n  - binary: ptah\n"),
 		Pages:        []featureinventory.PageClaim{{Path: page, Owns: []string{"cli-ptah-schema-apply"}}},
 		Examples:     []featureinventory.Example{runnableExample("docs/site/src/content/docs/start/q.mdx")},
@@ -220,7 +220,7 @@ func TestDerive_FailurePath(t *testing.T) {
 	_, problems := featureinventory.Derive(featureinventory.Sources{
 		ModulePath:   modulePath,
 		NativeLeaves: []agentsurface.Leaf{{Name: "schema apply"}},
-		Ledger:       []byte("- `go.5x5.cz/ptah/core/renderer`\n"),
+		Ledger:       []byte("- `ptah.run/core/renderer`\n"),
 		Release:      []byte("builds:\n  - binary: ptah\n"),
 		Pages:        []featureinventory.PageClaim{{Path: "a.md", Owns: []string{"cli-ptah-schema-aplly"}}},
 		Examples:     []featureinventory.Example{runnableExample("q.mdx")},
@@ -237,7 +237,7 @@ func TestRender_HappyPath(t *testing.T) {
 	doc, _ := featureinventory.Derive(featureinventory.Sources{
 		ModulePath:   modulePath,
 		NativeLeaves: []agentsurface.Leaf{{Name: "db read"}},
-		Ledger:       []byte("- `go.5x5.cz/ptah/core/renderer`\n"),
+		Ledger:       []byte("- `ptah.run/core/renderer`\n"),
 		Release:      []byte("builds:\n  - binary: ptah\n"),
 		Examples:     []featureinventory.Example{runnableExample("q.mdx")},
 	})
@@ -295,12 +295,12 @@ func unclaimed(doc *featureinventory.Document) []string {
 func TestLedgerPackages_ForeignModule(t *testing.T) {
 	c := qt.New(t)
 
-	ledger := []byte("- `apiguardfixture/pkg`\n- `go.5x5.cz/ptah/core/renderer`\n")
+	ledger := []byte("- `apiguardfixture/pkg`\n- `ptah.run/core/renderer`\n")
 
 	c.Assert(featureinventory.LedgerPackages(ledger, "apiguardfixture"), qt.DeepEquals,
 		[]string{"apiguardfixture/pkg"})
 	c.Assert(featureinventory.LedgerPackages(ledger, modulePath), qt.DeepEquals,
-		[]string{"go.5x5.cz/ptah/core/renderer"})
+		[]string{"ptah.run/core/renderer"})
 }
 
 // An empty module path recognizes nothing rather than every backticked list
@@ -310,7 +310,7 @@ func TestLedgerPackages_ForeignModule(t *testing.T) {
 func TestLedgerPackages_NoModulePath(t *testing.T) {
 	c := qt.New(t)
 
-	ledger := []byte("- `go.5x5.cz/ptah/core/renderer`\n- `github.com/spf13/cobra`\n")
+	ledger := []byte("- `ptah.run/core/renderer`\n- `github.com/spf13/cobra`\n")
 
 	c.Assert(featureinventory.LedgerPackages(ledger, ""), qt.HasLen, 0)
 }
@@ -321,10 +321,10 @@ func TestModulePathOf_HappyPath(t *testing.T) {
 		goMod string
 		want  string
 	}{
-		{name: "the first directive", goMod: "module go.5x5.cz/ptah\n\ngo 1.26.5\n", want: "go.5x5.cz/ptah"},
-		{name: "a tab after the keyword", goMod: "module\tgo.5x5.cz/ptah\n", want: "go.5x5.cz/ptah"},
-		{name: "a quoted path", goMod: "module \"go.5x5.cz/ptah\"\n", want: "go.5x5.cz/ptah"},
-		{name: "a trailing comment", goMod: "module go.5x5.cz/ptah // the published path\n", want: "go.5x5.cz/ptah"},
+		{name: "the first directive", goMod: "module ptah.run\n\ngo 1.26.5\n", want: "ptah.run"},
+		{name: "a tab after the keyword", goMod: "module\tptah.run\n", want: "ptah.run"},
+		{name: "a quoted path", goMod: "module \"ptah.run\"\n", want: "ptah.run"},
+		{name: "a trailing comment", goMod: "module ptah.run // the published path\n", want: "ptah.run"},
 		{name: "a comment line first", goMod: "// a header\nmodule apiguardfixture\n", want: "apiguardfixture"},
 	}
 
@@ -343,9 +343,9 @@ func TestModulePathOf_FailurePath(t *testing.T) {
 		goMod string
 	}{
 		{name: "no module directive", goMod: "go 1.26.5\n\nrequire (\n\tgithub.com/spf13/cobra v1.10.2\n)\n"},
-		{name: "an indented line is not a directive", goMod: "\tmodule go.5x5.cz/ptah\n"},
+		{name: "an indented line is not a directive", goMod: "\tmodule ptah.run\n"},
 		{name: "the keyword with nothing after it", goMod: "module\n"},
-		{name: "a word that starts with the keyword", goMod: "modulepath go.5x5.cz/ptah\n"},
+		{name: "a word that starts with the keyword", goMod: "modulepath ptah.run\n"},
 		{name: "an empty file", goMod: ""},
 	}
 
@@ -405,7 +405,7 @@ func TestDerive_ExampleRunsNothing(t *testing.T) {
 			_, problems := featureinventory.Derive(featureinventory.Sources{
 				ModulePath:   modulePath,
 				NativeLeaves: []agentsurface.Leaf{{Name: "db read"}},
-				Ledger:       []byte("- `go.5x5.cz/ptah/core/renderer`\n"),
+				Ledger:       []byte("- `ptah.run/core/renderer`\n"),
 				Release:      []byte("builds:\n  - binary: ptah\n"),
 				Examples:     []featureinventory.Example{test.example},
 			})

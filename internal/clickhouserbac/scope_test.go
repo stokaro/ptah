@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/clickhouserbac"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"ptah.run/catalog"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/clickhouserbac"
+	"ptah.run/internal/convert/dbschematogo"
 )
 
 // TestScope_String_QuotesTheIdentifiersAndNotTheWildcard pins the one rendering

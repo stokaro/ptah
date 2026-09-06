@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
+	"ptah.run/core/ast"
 )
 
 // FromReloptions reads a table's TTL configuration out of the storage

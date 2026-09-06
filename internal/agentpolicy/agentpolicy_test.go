@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/agentpolicy"
+	"ptah.run/internal/agentpolicy"
 )
 
 // verdictOf resolves one request against a policy and returns the spelling, so

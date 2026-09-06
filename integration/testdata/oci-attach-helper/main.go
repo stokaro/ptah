@@ -8,7 +8,7 @@ import (
 	"testing/fstest"
 	"time"
 
-	"go.5x5.cz/ptah/internal/ociartifact"
+	"ptah.run/internal/ociartifact"
 )
 
 func main() {

@@ -5,7 +5,7 @@ package schemaprep
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/schemamodel"
 )
 
 // ForeignKeyReference is the model-side interpretation of a field's foreign

@@ -9,15 +9,15 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"go.5x5.cz/ptah/internal/agentapi"
-	"go.5x5.cz/ptah/internal/agentgate"
-	"go.5x5.cz/ptah/internal/agentpolicy"
-	"go.5x5.cz/ptah/internal/agentworkspace"
-	"go.5x5.cz/ptah/internal/aiprovider"
-	"go.5x5.cz/ptah/internal/assistloop"
-	"go.5x5.cz/ptah/internal/mcpserver"
-	"go.5x5.cz/ptah/internal/migrateops"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/agentapi"
+	"ptah.run/internal/agentgate"
+	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/agentworkspace"
+	"ptah.run/internal/aiprovider"
+	"ptah.run/internal/assistloop"
+	"ptah.run/internal/mcpserver"
+	"ptah.run/internal/migrateops"
+	"ptah.run/migration/migrationfile"
 )
 
 // toolSession connects a client to Ptah's own server over an in-memory

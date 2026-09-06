@@ -9,10 +9,10 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/dbschema/postgres"
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/internal/testutils"
+	"ptah.run/catalog"
+	"ptah.run/internal/dbschema/postgres"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/testutils"
 )
 
 // skipIfNoPostgreSQL skips only when POSTGRES_TEST_DSN is absent; a bad configured DSN fails.

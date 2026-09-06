@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/renderer/internal/dialects/mssql"
+	"ptah.run/core/ast"
+	"ptah.run/core/renderer/internal/dialects/mssql"
 )
 
 func TestRenderer_FilteredIndexRendersWherePredicate(t *testing.T) {

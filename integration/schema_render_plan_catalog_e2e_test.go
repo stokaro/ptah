@@ -17,9 +17,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/sqlutil"
+	"ptah.run/internal/dbtarget"
 )
 
 // renderPlanCatalogCase is one PostgreSQL-family target this measurement can

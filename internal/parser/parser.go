@@ -9,16 +9,16 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/internal/dialectlexer"
-	"go.5x5.cz/ptah/internal/lexer"
-	"go.5x5.cz/ptah/internal/mysqlindex"
-	"go.5x5.cz/ptah/internal/nullsdistinct"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/sqlutil"
+	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/lexer"
+	"ptah.run/internal/mysqlindex"
+	"ptah.run/internal/nullsdistinct"
+	"ptah.run/internal/tableref"
 )
 
 // Parser converts SQL tokens into AST nodes.

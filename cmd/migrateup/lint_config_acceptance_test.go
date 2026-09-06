@@ -9,10 +9,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	lintcmd "go.5x5.cz/ptah/cmd/lint"
-	"go.5x5.cz/ptah/cmd/migrateup"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/lint"
+	lintcmd "ptah.run/cmd/lint"
+	"ptah.run/cmd/migrateup"
+	"ptah.run/dbschema"
+	"ptah.run/migration/lint"
 )
 
 func TestMigrateUp_InvalidLintConfigFailsBeforeSQLiteMigrationExecution(t *testing.T) {

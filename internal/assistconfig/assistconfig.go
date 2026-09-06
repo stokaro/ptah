@@ -40,7 +40,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"go.5x5.cz/ptah/internal/aiprovider"
+	"ptah.run/internal/aiprovider"
 )
 
 // ConfigEnvVar names the file to read instead of the default location.

@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
 )
 
 // scopedSchema is one table every target can host plus one PostgreSQL-only

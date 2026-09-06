@@ -6,12 +6,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlascompatpolicy"
-	"go.5x5.cz/ptah/internal/envbool/envbooltest"
+	"ptah.run/catalog"
+	"ptah.run/config/projectconfig"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/envbool/envbooltest"
 )
 
 func TestResolveDefaultsToFullCompatibility(t *testing.T) {

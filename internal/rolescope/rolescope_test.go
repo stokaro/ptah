@@ -7,17 +7,17 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/envbool/envbooltest"
-	"go.5x5.cz/ptah/internal/rolescope"
+	"ptah.run/catalog"
+	"ptah.run/core/coverage"
+	"ptah.run/core/platform"
+	"ptah.run/internal/envbool/envbooltest"
+	"ptah.run/internal/rolescope"
 )
 
 // TestDescribeAllReadsTheOptIn pins how the opt-in is parsed.
 //
-// The rows mirror [go.5x5.cz/ptah/internal/atlashclrender]'s and
-// [go.5x5.cz/ptah/internal/atlassource]'s opt-ins, so an operator who learned
+// The rows mirror [ptah.run/internal/atlashclrender]'s and
+// [ptah.run/internal/atlassource]'s opt-ins, so an operator who learned
 // one spelling is not surprised by this one: absence keeps the scoped default, a
 // valid false keeps it too, and anything else is refused by name and by value
 // (stokaro/ptah#1334).

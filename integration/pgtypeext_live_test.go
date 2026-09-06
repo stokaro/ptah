@@ -20,8 +20,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/internal/pgtypeext"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/internal/pgtypeext"
 )
 
 // TestPgTypeExt_TheClaimAgreesWithTheCatalogLive asks the server.

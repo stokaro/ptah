@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/schemaclean"
+	"ptah.run/catalog"
+	"ptah.run/internal/schemaclean"
 )
 
 // schemaWithEveryReportableKind holds one object of every kind that any

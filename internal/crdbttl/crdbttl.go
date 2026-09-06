@@ -18,9 +18,9 @@
 //     `'5 minutes'` as `'00:05:00'`; `ttl_row_stats_poll_interval = '600s'` reads
 //     back as `'10m0s'` and `'1500ms'` as `'1s'`. Neither is compared as text.
 //     Each spelling denotes a VALUE, so each is compared through the value:
-//     ttl_expire_after by [go.5x5.cz/ptah/internal/crdbinterval]
+//     ttl_expire_after by [ptah.run/internal/crdbinterval]
 //     (stokaro/ptah#1605), ttl_row_stats_poll_interval by
-//     [go.5x5.cz/ptah/internal/crdbduration] (stokaro/ptah#1721). The two need
+//     [ptah.run/internal/crdbduration] (stokaro/ptah#1721). The two need
 //     different readers because the rewrites differ in kind — one is
 //     PostgreSQL's interval normalization, the other truncation to whole
 //     seconds in Go's duration spelling. The duration has one edge the interval
@@ -54,11 +54,11 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/crdbduration"
-	"go.5x5.cz/ptah/internal/crdbinterval"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/crdbduration"
+	"ptah.run/internal/crdbinterval"
 )
 
 // The policy type is [ast.RowTTLSpec], defined in core/ast and used unchanged
@@ -210,8 +210,8 @@ const (
 // internal/clickhouserbac applies to a rewritten privilege, with a value
 // canonicalization in place of a name expansion. Both are managed now, each
 // compared through the value its spelling denotes rather than through the text:
-// see [go.5x5.cz/ptah/internal/crdbinterval] (stokaro/ptah#1605) and
-// [go.5x5.cz/ptah/internal/crdbduration] (stokaro/ptah#1721), which carry the
+// see [ptah.run/internal/crdbinterval] (stokaro/ptah#1605) and
+// [ptah.run/internal/crdbduration] (stokaro/ptah#1721), which carry the
 // measured tables.
 //
 // What remains is refused for an unrelated reason. `ttl` is not a knob at all:
@@ -426,7 +426,7 @@ type TableTTL struct {
 // It is the one field here compared that way, and it has to be: the server
 // rewrites the interval it stores, so `72 hours` reads back as `72:00:00` and a
 // text comparison would find a difference on every run. See
-// [go.5x5.cz/ptah/internal/crdbinterval] for the measured table.
+// [ptah.run/internal/crdbinterval] for the measured table.
 //
 // A value neither side can parse falls back to text equality. That case does
 // not arise through a declaration -- [ValidateDeclared] refuses an unreadable
@@ -454,7 +454,7 @@ func equalInterval(a, b string) bool {
 // `10m0s` and a text comparison would find a difference on every run. The
 // rewrite is a different one -- truncation to whole seconds and Go's duration
 // spelling rather than PostgreSQL's interval normalization -- which is why it
-// goes through [go.5x5.cz/ptah/internal/crdbduration] and not crdbinterval.
+// goes through [ptah.run/internal/crdbduration] and not crdbinterval.
 //
 // A value neither side can read falls back to text equality, on the same
 // reasoning: [ValidateDeclared] refuses an unreadable declaration before it

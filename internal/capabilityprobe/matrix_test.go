@@ -10,8 +10,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/capabilityprobe"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/capabilityprobe"
 )
 
 // TestCIMatrix_AccountsForEveryDeclaredLine is the census the tiered pipeline

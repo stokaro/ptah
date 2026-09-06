@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/agentdiag"
+	"ptah.run/internal/agentdiag"
 )
 
 // ErrNoSourceScope reports that no directory was configured for schema sources

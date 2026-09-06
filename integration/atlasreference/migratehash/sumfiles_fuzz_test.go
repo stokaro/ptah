@@ -14,10 +14,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/integration/atlasreference"
-	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
-	"go.5x5.cz/ptah/internal/migratesum"
+	"ptah.run/integration/atlasreference"
+	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/migratesum"
 )
 
 // assertCaptureSelectsTheSame checks that selecting the covered set over the

@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
+	"ptah.run/catalog"
 )
 
 func TestDBSchema_RolesOutOfScopeIsNeverSerialized(t *testing.T) {

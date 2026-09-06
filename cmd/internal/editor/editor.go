@@ -16,7 +16,7 @@ import (
 	"github.com/google/shlex"
 	"github.com/mattn/go-isatty"
 
-	"go.5x5.cz/ptah/internal/envbool"
+	"ptah.run/internal/envbool"
 )
 
 // ErrNoEditor reports that no editor command could be resolved. Callers may
@@ -74,10 +74,10 @@ func RequireInteractive(in io.Reader) error {
 }
 
 // allowNonInteractive is the declaration of the variable, made once, in the
-// package that owns it. See [go.5x5.cz/ptah/internal/envbool]. An explicitly
+// package that owns it. See [ptah.run/internal/envbool]. An explicitly
 // empty value is refused here too, which is stokaro/ptah#1334's one change to
 // this reader.
-// It is [go.5x5.cz/ptah/internal/envbool.Retained]: permitting a scripted
+// It is [ptah.run/internal/envbool.Retained]: permitting a scripted
 // editor in a non-interactive process adds no editor or migration capability
 // the pinned binary lacks, so strict compatibility keeps it reachable.
 var allowNonInteractive = envbool.New(AllowNonInteractiveEnvVar, false, envbool.Retained)

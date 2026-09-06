@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/lint"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/migration/lint"
+	"ptah.run/migration/migrationfile"
 )
 
 // An empty migration directory is nothing to analyze on the Atlas-compatible

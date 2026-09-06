@@ -5,10 +5,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/internal/atlashcl"
-	"go.5x5.cz/ptah/internal/matviewrefresh"
+	"ptah.run/core/goschema"
+	"ptah.run/core/ptaherr"
+	"ptah.run/internal/atlashcl"
+	"ptah.run/internal/matviewrefresh"
 )
 
 // TestParseMaterializedViewRefusesRetiredRefreshStrategy is what this file used

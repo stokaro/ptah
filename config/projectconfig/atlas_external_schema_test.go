@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/testutils"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/testutils"
 )
 
 func TestParseAtlasExternalSchemaDataSource_HappyPath(t *testing.T) {

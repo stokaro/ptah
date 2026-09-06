@@ -1,8 +1,8 @@
 package schemaprep
 
 import (
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
 )
 
 // QualifyRLSPolicyForTarget puts a SQL Server policy and its target table into

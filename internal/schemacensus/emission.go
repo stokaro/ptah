@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/capabilityprobe"
+	"ptah.run/internal/capabilityprobe"
 )
 
 // Emission is one physical database object a render creates.

@@ -17,8 +17,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/internal/dbschema/dbtest"
+	"ptah.run/core/platform/capability"
+	"ptah.run/internal/dbschema/dbtest"
 )
 
 // enumFunctionCatalog answers the two reads this file exercises with one row

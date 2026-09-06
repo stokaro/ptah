@@ -15,19 +15,19 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdflags"
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/cmd/internal/migrationsource"
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/atlasargs"
-	"go.5x5.cz/ptah/internal/atlascompatpolicy"
-	"go.5x5.cz/ptah/internal/atlasprojectpath"
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/internal/atlassource"
-	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/internal/remotemigrationdir"
-	"go.5x5.cz/ptah/internal/schemafile"
+	"ptah.run/cmd/internal/cmdflags"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/cmd/internal/migrationsource"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/atlasargs"
+	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/atlasprojectpath"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/atlassource"
+	"ptah.run/internal/pathguard"
+	"ptah.run/internal/remotemigrationdir"
+	"ptah.run/internal/schemafile"
 )
 
 const (
@@ -1437,7 +1437,7 @@ func atlasSourceProjectEnv(
 // file, because that is what the pinned Atlas community binary v1.3.0 does:
 // `schema apply --env local --to file://s.hcl --dry-run` exits 1 with `missing
 // value for required variable "tenant"` where the same env with no --to exits 0
-// and plans `DEFAULT 'acme'`. See [go.5x5.cz/ptah/internal/atlassource.ProjectEnv.SuppliedSource].
+// and plans `DEFAULT 'acme'`. See [ptah.run/internal/atlassource.ProjectEnv.SuppliedSource].
 //
 // nil for an empty list, so a run that substituted nothing scopes nothing.
 func atlasProjectSourceURLs(flag string, urls []string) map[string][]string {
@@ -1452,7 +1452,7 @@ func atlasProjectSourceURLs(flag string, urls []string) map[string][]string {
 //
 // It exists for the loaders that never classify: `schema plan` and
 // `schema plan validate` read local files directly, so
-// [go.5x5.cz/ptah/internal/atlassource.ClassifySet] -- where every other verb
+// [ptah.run/internal/atlassource.ClassifySet] -- where every other verb
 // picks the scope up -- is not on their path. The caller decides provenance by
 // where it calls this, exactly as it does for [atlasProjectSourceURLs].
 func atlasProjectSchemaFileSources(cfg projectconfig.Config, urls []string) []schemafile.Source {

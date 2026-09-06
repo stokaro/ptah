@@ -19,7 +19,7 @@
 //
 //   - [VerifyMigration] replays the prior history plus a candidate migration,
 //     compares the result with the desired schema, then rolls the candidate back
-//     and forward again. It is what [go.5x5.cz/ptah/migration/generator]
+//     and forward again. It is what [ptah.run/migration/generator]
 //     calls before it writes files.
 //   - [VerifyBaseline] replays the history up to a version and compares the
 //     result with the target, which is what makes recording that version as a

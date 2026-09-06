@@ -43,7 +43,7 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/internal/aiprovider"
+	"ptah.run/internal/aiprovider"
 )
 
 // SchemaVersion identifies the record contract. A change to the shape of any

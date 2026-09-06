@@ -301,7 +301,7 @@ func (op *ModifyTTLOperation) alterOperation() {}
 //
 // The parameters travel as rendered `name = value` text rather than as a spec,
 // because the ordering and the quoting are decisions
-// [go.5x5.cz/ptah/internal/crdbttl] owns and the renderer must not make a
+// [ptah.run/internal/crdbttl] owns and the renderer must not make a
 // second time. An empty Options is not a valid operation and renders nothing.
 type SetRowTTLOperation struct {
 	// Options are the storage parameters to set, already rendered, in the

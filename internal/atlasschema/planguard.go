@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/lexer"
+	"ptah.run/core/platform"
+	"ptah.run/internal/lexer"
 )
 
 // PlanEscapeError reports that a pre-planned statement matched a known

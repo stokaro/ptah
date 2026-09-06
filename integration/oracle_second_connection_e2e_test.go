@@ -10,8 +10,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/sijms/go-ora/v3" // registers the Oracle driver for database/sql
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbtarget"
 )
 
 // TestOracleSecondConnectionE2E pins the one thing a driver change can take

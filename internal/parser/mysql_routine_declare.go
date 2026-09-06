@@ -3,8 +3,8 @@ package parser
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/internal/lexer"
+	"ptah.run/core/ast"
+	"ptah.run/internal/lexer"
 )
 
 func (p mysqlRoutineBodyParser) parseDeclareStatement(startIdx, endIdx int) *ast.MySQLRoutineDeclaration {

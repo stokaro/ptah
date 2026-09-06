@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/migrateflags"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/cmd/internal/migrateflags"
+	"ptah.run/migration/migrator"
 )
 
 func TestParseExecOrder(t *testing.T) {

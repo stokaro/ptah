@@ -13,9 +13,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/core/platform"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbtarget"
 )
 
 func openShadowTestPostgres(c *qt.C) (string, *dbschema.DatabaseConnection) {

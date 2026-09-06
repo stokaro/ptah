@@ -3,9 +3,9 @@ package atlashcl
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/tablelookup"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/tablelookup"
+	"ptah.run/internal/tableref"
 )
 
 // pendingForeignRef is one single-column foreign key whose target table still

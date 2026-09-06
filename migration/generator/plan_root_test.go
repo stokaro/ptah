@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/generator"
+	"ptah.run/migration/generator"
 )
 
 // A plan records which filesystem object it was built against, not merely what

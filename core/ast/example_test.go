@@ -5,8 +5,8 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/renderer"
+	"ptah.run/core/ast"
+	"ptah.run/core/renderer"
 )
 
 // ExampleNewCreateTable builds one CREATE TABLE with the fluent node API and

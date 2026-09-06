@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema"
+	"ptah.run/core/platform"
+	"ptah.run/dbschema"
 )
 
 // resolveProbes runs every probe through one rolled-back transaction and

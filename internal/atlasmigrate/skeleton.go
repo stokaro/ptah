@@ -7,11 +7,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"go.5x5.cz/ptah/internal/atlasmigrateimport"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/migrationversion"
-	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/atlasmigrateimport"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/migrationversion"
+	"ptah.run/internal/pathguard"
+	"ptah.run/migration/migrationfile"
 )
 
 // WriteSkeletonMigration writes one foreign layout's empty migration into dir

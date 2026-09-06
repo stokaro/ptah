@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/query"
+	"ptah.run/core/query"
 )
 
 // windowSelect renders one window expression in a projection.

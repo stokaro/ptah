@@ -8,7 +8,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/internal/tableref"
 )
 
 var registeredRules = struct {

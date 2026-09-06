@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/pathguard"
+	"ptah.run/internal/pathguard"
 )
 
 func TestOpenDirectoryWithinRootAnchorsOpenedDirectory(t *testing.T) {

@@ -7,9 +7,9 @@ package generator
 import (
 	"os"
 
-	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/internal/migrationversion"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/migrationversion"
+	"ptah.run/migration/migrationfile"
 )
 
 // nextAvailableMigrationVersion answers the version question over the names

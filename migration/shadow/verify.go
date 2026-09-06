@@ -6,15 +6,15 @@ import (
 	"io/fs"
 	"maps"
 
-	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/devlock"
-	"go.5x5.cz/ptah/migration/internal/shadowdb"
-	"go.5x5.cz/ptah/migration/migrator"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/config"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/internal/devlock"
+	"ptah.run/migration/internal/shadowdb"
+	"ptah.run/migration/migrator"
+	"ptah.run/migration/schemadiff"
 )
 
 // VerificationResult describes one failed shadow-database verification.

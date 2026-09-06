@@ -4,9 +4,9 @@ package schemascope
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/catalog"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/tableref"
 )
 
 // SplitNames expands repeated and comma-separated schema filter values.

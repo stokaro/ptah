@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedreport"
+	"ptah.run/internal/embedreport"
 )
 
 // TestStatus_EveryJSONKeyIsSnakeCaseHappyPath covers stokaro/ptah#2741.

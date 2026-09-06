@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedgen"
-	"go.5x5.cz/ptah/internal/embedspec"
+	"ptah.run/internal/embedgen"
+	"ptah.run/internal/embedspec"
 )
 
 // withLayout is `complete` with a target.layout key, and with its target table

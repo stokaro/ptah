@@ -10,14 +10,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/internal/embedcutover"
-	"go.5x5.cz/ptah/internal/embedpg"
-	"go.5x5.cz/ptah/internal/embedrelease"
-	"go.5x5.cz/ptah/internal/embedreport"
-	"go.5x5.cz/ptah/internal/embedrun"
-	"go.5x5.cz/ptah/internal/embedstore"
-	"go.5x5.cz/ptah/internal/embedverify"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/internal/embedcutover"
+	"ptah.run/internal/embedpg"
+	"ptah.run/internal/embedrelease"
+	"ptah.run/internal/embedreport"
+	"ptah.run/internal/embedrun"
+	"ptah.run/internal/embedstore"
+	"ptah.run/internal/embedverify"
 )
 
 // newVerifyCommand returns "ptah inference verify".

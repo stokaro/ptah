@@ -452,8 +452,8 @@ import (
     "os"
     "time"
 
-    "go.5x5.cz/ptah/dbschema"
-    "go.5x5.cz/ptah/migration/migrator"
+    "ptah.run/dbschema"
+    "ptah.run/migration/migrator"
 )
 
 func main() {
@@ -490,8 +490,8 @@ func main() {
 import (
     "context"
     "os"
-    "go.5x5.cz/ptah/dbschema"
-    "go.5x5.cz/ptah/migration/migrator"
+    "ptah.run/dbschema"
+    "ptah.run/migration/migrator"
 )
 
 // Option 1: Create migrator with registered migrations

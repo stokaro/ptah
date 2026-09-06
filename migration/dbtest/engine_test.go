@@ -10,8 +10,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/migration/dbtest"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/migration/dbtest"
+	"ptah.run/migration/migrationfile"
 )
 
 func TestRunMigrationTest_AssertionsHappyPath(t *testing.T) {

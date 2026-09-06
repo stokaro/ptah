@@ -14,11 +14,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlashclrender"
-	"go.5x5.cz/ptah/internal/atlasreport"
-	"go.5x5.cz/ptah/internal/envbool/envbooltest"
+	"ptah.run/catalog"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlashclrender"
+	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/envbool/envbooltest"
 )
 
 // TestAtlasInspectRefusedBlockGate pins both states of the capability gate, and

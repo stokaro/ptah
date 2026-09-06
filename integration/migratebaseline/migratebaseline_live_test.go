@@ -14,10 +14,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/migratebaseline"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dbtarget"
-	"go.5x5.cz/ptah/migration/shadow"
+	"ptah.run/cmd/migratebaseline"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbtarget"
+	"ptah.run/migration/shadow"
 )
 
 func TestVerifyBaselinePostgresMismatchRequiresForce(t *testing.T) {

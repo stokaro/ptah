@@ -446,7 +446,7 @@ reporting implementation.
 `go.mod` carries two Go versions and they are different facts with different
 lifecycles. Do not collapse them.
 
-- `go 1.26.5` is the published compatibility floor. `go.5x5.cz/ptah` is a
+- `go 1.26.5` is the published compatibility floor. `ptah.run` is a
   released import path, so raising this forces every consumer onto the newer
   language version. It moves on a human decision.
 - `toolchain go1.26.6` is what CI builds and scans with. It moves on every patch
@@ -472,7 +472,7 @@ forwarding resolves to is pinned by the `go-version-file` input's default, which
 has to exist and to name `go.mod`: the forwarded value is opaque, so that
 default is the only place left where the module is named.
 
-Raising it is the root module's decision alone. `go.5x5.cz/ptah/testkit` lives
+Raising it is the root module's decision alone. `ptah.run/testkit` lives
 in [stokaro/ptah-testkit](https://github.com/stokaro/ptah-testkit) and consumes
 a published release rather than this working tree, so a floor raised here
 reaches it when it bumps its `require` line.
@@ -2484,7 +2484,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasurl"
+	"ptah.run/internal/atlasurl"
 )
 
 func TestDialectFromURL_HappyPath(t *testing.T) {

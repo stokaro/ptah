@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/internal/parser"
+	"ptah.run/core/ast"
+	"ptah.run/internal/parser"
 )
 
 func main() {

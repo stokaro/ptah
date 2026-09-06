@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/planner/dialects/mysql"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // A plan that would add two index names the target may treat as one is refused

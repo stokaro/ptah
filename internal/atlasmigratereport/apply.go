@@ -8,9 +8,9 @@ import (
 	"io"
 	"io/fs"
 
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/internal/atlasreport"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/atlasreport"
 )
 
 type ApplyFormatOptions struct {

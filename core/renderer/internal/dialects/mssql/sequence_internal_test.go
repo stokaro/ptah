@@ -12,8 +12,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform/capability"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform/capability"
 )
 
 // TestRenderer_CreateSequenceUsesTSQLClauseOrder pins the statement shape whose

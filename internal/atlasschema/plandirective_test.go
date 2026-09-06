@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasschema"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/migration/migrationfile"
 )
 
 // TestParsePlanDirectiveAcceptsEverySpellingOfALine covers the two ways one

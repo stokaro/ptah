@@ -3,8 +3,8 @@ package clickhouse
 import (
 	"fmt"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/core/ast"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // planRoles emits the role half of ClickHouse access control.
@@ -31,7 +31,7 @@ func planRoles(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Node {
 // INHERIT or REPLICATION, and not even a comment -- `CREATE ROLE r COMMENT 'x'`
 // is refused with Code 62 as a syntax error. So this deliberately does not look
 // the role up in the desired schema the way the PostgreSQL planner's
-// addNewRoles does. [go.5x5.cz/ptah/internal/clickhouserbac.ValidateDeclared]
+// addNewRoles does. [ptah.run/internal/clickhouserbac.ValidateDeclared]
 // has already refused any declaration that named an attribute, before the
 // schema reached a planner at all, and what survives that gate is a name.
 //
@@ -166,7 +166,7 @@ func revokeGrantOptions(result []ast.Node, diff *difftypes.SchemaDiff) []ast.Nod
 // keyword to render it into. A ClickHouse scope is a two-part pattern -- `db`.`t`
 // for a table, `db`.* for a database -- and which of the two a reference means is
 // precisely what ObjectType records, so dropping it here would leave the
-// renderer guessing. [go.5x5.cz/ptah/internal/clickhouserbac.Scope] reads it back
+// renderer guessing. [ptah.run/internal/clickhouserbac.Scope] reads it back
 // rather than emitting it.
 func grantNode(grant difftypes.GrantRef) *ast.GrantPrivilegeNode {
 	return ast.NewGrantPrivilege(

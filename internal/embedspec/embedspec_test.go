@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedcatchup"
-	"go.5x5.cz/ptah/internal/embedgen"
-	"go.5x5.cz/ptah/internal/embedspec"
+	"ptah.run/internal/embedcatchup"
+	"ptah.run/internal/embedgen"
+	"ptah.run/internal/embedspec"
 )
 
 // complete is a specification file with every field an operator would write.

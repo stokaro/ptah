@@ -1,4 +1,4 @@
-// Command example demonstrates embedding go.5x5.cz/ptah/migration/generator
+// Command example demonstrates embedding ptah.run/migration/generator
 // in a standalone program: it compares annotated Go entities against a live
 // database, publishes the migration pair, and prints what was written. The
 // package's testable examples are the reference for the API contracts; this
@@ -13,7 +13,7 @@ import (
 	"os"
 	"time"
 
-	"go.5x5.cz/ptah/migration/generator"
+	"ptah.run/migration/generator"
 )
 
 func main() {

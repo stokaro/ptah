@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/aiprovider"
-	"go.5x5.cz/ptah/internal/assistloop"
+	"ptah.run/internal/aiprovider"
+	"ptah.run/internal/assistloop"
 )
 
 // TestRun_AToolCallTheServerRefusesComesBackAsAnAnswer is #1490's invalid and

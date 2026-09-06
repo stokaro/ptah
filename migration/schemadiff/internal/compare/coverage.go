@@ -1,10 +1,10 @@
 package compare
 
 import (
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/catalog"
+	"ptah.run/core/coverage"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/tableref"
 )
 
 // Coverage pairs the limits the two sides of one comparison declared about

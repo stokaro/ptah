@@ -45,7 +45,7 @@ func AppendDatabase(dst, src *Database) {
 	// A limit one source declared is a limit of the whole composite. Dropping
 	// it here would turn "this description does not claim to describe X" into
 	// silence, and silence is what a comparator reads as a removal -- the exact
-	// failure [go.5x5.cz/ptah/core/coverage] exists to prevent. Merging matches
+	// failure [ptah.run/core/coverage] exists to prevent. Merging matches
 	// what internal/schemafile already does when it composes documents.
 	dst.NotDescribed = dst.NotDescribed.Merge(src.NotDescribed)
 	dst.Schemas = append(dst.Schemas, src.Schemas...)

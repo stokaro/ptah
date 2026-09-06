@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 
-	"go.5x5.cz/ptah/internal/embedcatchup"
-	"go.5x5.cz/ptah/internal/embedrun"
+	"ptah.run/internal/embedcatchup"
+	"ptah.run/internal/embedrun"
 )
 
 // rowsQueryer is the common query surface used by an ordinary floor lookup and

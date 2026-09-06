@@ -7,16 +7,16 @@
 # an incompatible public API change before v1. The PR must explain the
 # compatibility rationale and update docs/public_api.md when the stable package
 # set changes.
-v0.1.2 go.5x5.cz/ptah/core/platform/capability
-v0.1.1 go.5x5.cz/ptah/migration/generator
-v0.1.2 go.5x5.cz/ptah/migration/generator
-v0.1.2 go.5x5.cz/ptah/migration/migrator
+v0.1.2 ptah.run/core/platform/capability
+v0.1.1 ptah.run/migration/generator
+v0.1.2 ptah.run/migration/generator
+v0.1.2 ptah.run/migration/migrator
 
 # Per-file transaction handling now needs the explicit file/none/unspecified
 # enum rather than public Boolean fields. The old function-only SQL loaders
 # could discard transaction modes and timeouts, so one pair constructor now
 # returns a complete Migration with both directions' metadata attached.
-v0.2.0 go.5x5.cz/ptah/migration/migrator
+v0.2.0 ptah.run/migration/migrator
 
 # Migration generation can publish multiple ordered file pairs when ordinary
 # DDL must be separated from PostgreSQL concurrent-index statements. The
@@ -24,34 +24,34 @@ v0.2.0 go.5x5.cz/ptah/migration/migrator
 # and let embedders silently ignore later migrations. MigrationFiles.Files is
 # now the sole path and report source, so callers must handle every generated
 # pair.
-v0.2.0 go.5x5.cz/ptah/migration/generator
+v0.2.0 ptah.run/migration/generator
 
-# The module import path moved from github.com/stokaro/ptah to go.5x5.cz/ptah.
+# The module import path moved for the first time, at the baseline below.
 # Every exported signature that names a type from this module therefore changed
 # textually, which apidiff reports as incompatible for each package below. The
 # change is the rename and nothing else: no symbol was added, removed, or had
 # its shape altered. Consumers must update their import paths; that is the
 # intended, announced cost of the move.
-v0.1.2 go.5x5.cz/ptah/atlascompat
-v0.1.2 go.5x5.cz/ptah/config
-v0.1.2 go.5x5.cz/ptah/config/projectconfig
-v0.1.2 go.5x5.cz/ptah/core/platform/capability
-v0.1.2 go.5x5.cz/ptah/core/ptaherr
-v0.1.2 go.5x5.cz/ptah/core/query
-v0.1.2 go.5x5.cz/ptah/core/renderer
-v0.1.2 go.5x5.cz/ptah/core/schemasource
-v0.1.2 go.5x5.cz/ptah/dbschema
-v0.1.2 go.5x5.cz/ptah/dbschema/types
-v0.1.2 go.5x5.cz/ptah/migration/dbtest
-v0.1.2 go.5x5.cz/ptah/migration/diffpolicy
-v0.1.2 go.5x5.cz/ptah/migration/generator
-v0.1.2 go.5x5.cz/ptah/migration/lint
-v0.1.2 go.5x5.cz/ptah/migration/migrator
-v0.1.2 go.5x5.cz/ptah/migration/planner
-v0.1.2 go.5x5.cz/ptah/migration/safety
-v0.1.2 go.5x5.cz/ptah/migration/schemadiff
-v0.1.2 go.5x5.cz/ptah/migration/schemadiff/types
-v0.1.2 go.5x5.cz/ptah/migration/seeder
+v0.1.2 ptah.run/atlascompat
+v0.1.2 ptah.run/config
+v0.1.2 ptah.run/config/projectconfig
+v0.1.2 ptah.run/core/platform/capability
+v0.1.2 ptah.run/core/ptaherr
+v0.1.2 ptah.run/core/query
+v0.1.2 ptah.run/core/renderer
+v0.1.2 ptah.run/core/schemasource
+v0.1.2 ptah.run/dbschema
+v0.1.2 ptah.run/dbschema/types
+v0.1.2 ptah.run/migration/dbtest
+v0.1.2 ptah.run/migration/diffpolicy
+v0.1.2 ptah.run/migration/generator
+v0.1.2 ptah.run/migration/lint
+v0.1.2 ptah.run/migration/migrator
+v0.1.2 ptah.run/migration/planner
+v0.1.2 ptah.run/migration/safety
+v0.1.2 ptah.run/migration/schemadiff
+v0.1.2 ptah.run/migration/schemadiff/types
+v0.1.2 ptah.run/migration/seeder
 
 # Describing what a PostgreSQL extension provides needs a list, and a struct
 # with a slice field is no longer comparable. Extension and DBExtension gained
@@ -64,8 +64,8 @@ v0.1.2 go.5x5.cz/ptah/migration/seeder
 # The cost is comparability: consumers can no longer use == on these structs or
 # use them as map keys. Nothing else changed -- no symbol was removed and no
 # existing field altered.
-v0.2.0 go.5x5.cz/ptah/core/goschema
-v0.2.0 go.5x5.cz/ptah/dbschema/types
+v0.2.0 ptah.run/core/goschema
+v0.2.0 ptah.run/dbschema/types
 
 # A PostgreSQL RLS policy name is scoped to its table, not to the schema:
 # CREATE POLICY tenant_isolation succeeds once on each of two tables in one
@@ -79,7 +79,7 @@ v0.2.0 go.5x5.cz/ptah/dbschema/types
 # The cost is that consumers reading rls_policies_added get objects with
 # policy_name and table_name instead of strings. Nothing was removed and no
 # other field changed.
-v0.2.0 go.5x5.cz/ptah/migration/schemadiff/types
+v0.2.0 ptah.run/migration/schemadiff/types
 
 # SQL Server synonyms become a schema object kind, which widens ast.Visitor with
 # VisitCreateSynonym and VisitDropSynonym (stokaro/ptah#1030). Every node kind
@@ -92,8 +92,8 @@ v0.2.0 go.5x5.cz/ptah/migration/schemadiff/types
 #
 # core/renderer is listed for the same change: RenderVisitor embeds ast.Visitor,
 # so widening one widens the other.
-v0.2.0 go.5x5.cz/ptah/core/ast
-v0.2.0 go.5x5.cz/ptah/core/renderer
+v0.2.0 ptah.run/core/ast
+v0.2.0 ptah.run/core/renderer
 
 # migration/importer.Parser gained NamePattern and its Parse now returns a
 # *ParseResult instead of a []SourceMigration (stokaro/ptah#2231).
@@ -109,7 +109,7 @@ v0.2.0 go.5x5.cz/ptah/core/renderer
 # AccountForSource then declines everything it did not hear about. An additive
 # optional method would have let a parser keep silently dropping files, which is
 # the defect itself.
-v0.2.0 go.5x5.cz/ptah/migration/importer
+v0.2.0 ptah.run/migration/importer
 
 # The no-consumer surface cuts of the #2246 public API audit. A full-module
 # consumer sweep classified these packages' deleted or unexported symbols as
@@ -120,10 +120,10 @@ v0.2.0 go.5x5.cz/ptah/migration/importer
 # visitors; config.FilterIgnoredExtensions and sqlutil's two SQL Server parser
 # predicates had exactly one consumer each, inside this module. Pre-GA, with
 # zero library consumers, the cuts are direct.
-v0.2.0 go.5x5.cz/ptah/migration/planner
-v0.2.0 go.5x5.cz/ptah/core/renderer
-v0.2.0 go.5x5.cz/ptah/config
-v0.2.0 go.5x5.cz/ptah/core/sqlutil
+v0.2.0 ptah.run/migration/planner
+v0.2.0 ptah.run/core/renderer
+v0.2.0 ptah.run/config
+v0.2.0 ptah.run/core/sqlutil
 
 # The expression probes leave dbschema for internal/dbexprprobe, and
 # FormatDatabaseURL leaves it for internal/dburldisplay (#2246 §4.4). Neither
@@ -132,7 +132,7 @@ v0.2.0 go.5x5.cz/ptah/core/sqlutil
 # redaction for display is a cmd concern. dbschema keeps one new export in
 # their place, WithRolledBackTransaction, which is the connection contract the
 # probes actually needed.
-v0.2.0 go.5x5.cz/ptah/dbschema
+v0.2.0 ptah.run/dbschema
 
 # The DML language consolidates into core/query (#2246 §4.3): the statement
 # and expression node types leave core/ast, and the four Render functions
@@ -140,9 +140,9 @@ v0.2.0 go.5x5.cz/ptah/dbschema
 # quartet had no production caller outside core/query's own documentation --
 # the two packages were carrying one language between them. Names and error
 # text are unchanged; only the import path moves.
-v0.2.0 go.5x5.cz/ptah/core/ast
-v0.2.0 go.5x5.cz/ptah/core/renderer
-v0.2.0 go.5x5.cz/ptah/core/query
+v0.2.0 ptah.run/core/ast
+v0.2.0 ptah.run/core/renderer
+v0.2.0 ptah.run/core/query
 
 # The migration file layout leaves the engine for migration/migrationfile
 # (#2246 §4.2). migration/lint held 66 references into migration/migrator and
@@ -151,12 +151,12 @@ v0.2.0 go.5x5.cz/ptah/core/query
 # Symbols drop the word the package name carries (MigrationFile is File,
 # DiscoverMigrationFiles is Discover), and the engine keeps no aliases: its
 # exported signatures name migrationfile types directly.
-v0.2.0 go.5x5.cz/ptah/migration/migrator
-v0.2.0 go.5x5.cz/ptah/migration/generator
-v0.2.0 go.5x5.cz/ptah/atlascompat
-v0.2.0 go.5x5.cz/ptah/migration/lint
-v0.2.0 go.5x5.cz/ptah/migration/importer
-v0.2.0 go.5x5.cz/ptah/migration/dbtest
+v0.2.0 ptah.run/migration/migrator
+v0.2.0 ptah.run/migration/generator
+v0.2.0 ptah.run/atlascompat
+v0.2.0 ptah.run/migration/lint
+v0.2.0 ptah.run/migration/importer
+v0.2.0 ptah.run/migration/dbtest
 
 # Live shadow verification leaves migration/generator for migration/shadow
 # (#2246 §4.5). Publication needs a diff and a directory; verification
@@ -165,7 +165,7 @@ v0.2.0 go.5x5.cz/ptah/migration/dbtest
 # (ShadowVerificationError is VerificationError, VerifyRollbackFromShadow is
 # VerifyRollback). Checkpoint generation stays in the generator, which renders
 # it through generator internals.
-v0.2.0 go.5x5.cz/ptah/migration/generator
+v0.2.0 ptah.run/migration/generator
 
 # The §9 contract fixes of #2246. SchemaReader.ReadSchema and
 # ReadSchemaWithSchemas take a context, so live introspection can be cancelled
@@ -174,10 +174,10 @@ v0.2.0 go.5x5.cz/ptah/migration/generator
 # password) and gains a RedactedURL sibling; every non-test consumer wants the
 # raw value to reconnect, so the field keeps it. migration/seeder gains
 # ChecksumMismatchError, which makes a recorded checksum mean something.
-v0.2.0 go.5x5.cz/ptah/dbschema
-v0.2.0 go.5x5.cz/ptah/dbschema/types
-v0.2.0 go.5x5.cz/ptah/migration/seeder
-v0.2.0 go.5x5.cz/ptah/core/ast
+v0.2.0 ptah.run/dbschema
+v0.2.0 ptah.run/dbschema/types
+v0.2.0 ptah.run/migration/seeder
+v0.2.0 ptah.run/core/ast
 
 # The diff model package is named for what it holds rather than for nothing.
 # `types` denoted two different packages in adjacent pipeline stages -- this one
@@ -188,9 +188,9 @@ v0.2.0 go.5x5.cz/ptah/core/ast
 # rather than introducing a spelling. Every signature naming SchemaDiff,
 # IndexRef or a per-object diff therefore changes its type's import path;
 # no field, method or behavior moves. See stokaro/ptah#2246 section 2.1.
-v0.2.0 go.5x5.cz/ptah/migration/schemadiff
-v0.2.0 go.5x5.cz/ptah/migration/safety
-v0.2.0 go.5x5.cz/ptah/migration/diffpolicy
+v0.2.0 ptah.run/migration/schemadiff
+v0.2.0 ptah.run/migration/safety
+v0.2.0 ptah.run/migration/diffpolicy
 
 # The live-schema model is named for what it holds and which side of the
 # comparison it is. `dbschema/types` and `core/goschema` were both `types`-ish
@@ -203,8 +203,8 @@ v0.2.0 go.5x5.cz/ptah/migration/diffpolicy
 # Every signature naming one of the thirty moved types changes its type's
 # import path and spelling; no field, method or behavior moves. See
 # stokaro/ptah#2246 section 2.1.
-v0.2.0 go.5x5.cz/ptah/catalog
-v0.2.0 go.5x5.cz/ptah/dbschema
+v0.2.0 ptah.run/catalog
+v0.2.0 ptah.run/dbschema
 
 # The desired-schema model leaves the Go parser. `goschema.Database` is produced
 # by six input formats -- Go annotations, Atlas HCL, YAML, SQL, DBML and
@@ -217,8 +217,8 @@ v0.2.0 go.5x5.cz/ptah/dbschema
 # lines being respelled: `Compare(desired *schemamodel.Database, current
 # *catalog.Database)` is the ADR's own vocabulary finally spelled in code.
 # See stokaro/ptah#2246 section 2.1.
-v0.2.0 go.5x5.cz/ptah/core/goschema
-v0.2.0 go.5x5.cz/ptah/core/schemasource
+v0.2.0 ptah.run/core/goschema
+v0.2.0 ptah.run/core/schemasource
 
 # The planner stops taking the declaration, and an index addition carries the
 # index it creates.
@@ -265,8 +265,8 @@ v0.2.0 go.5x5.cz/ptah/core/schemasource
 # refusal before it compares, the rollback direction makes it in
 # `migration/generator` where the prior schema exists, and render and plan still
 # share one validation, which is what stokaro/ptah#1717 asks for.
-v0.3.0 go.5x5.cz/ptah/migration/planner
-v0.3.0 go.5x5.cz/ptah/migration/schemadiff/difftypes
+v0.3.0 ptah.run/migration/planner
+v0.3.0 ptah.run/migration/schemadiff/difftypes
 
 # Role.HasPassword becomes Role.PasswordState. The Boolean folded "not
 # permitted to inspect" and "observed without a password" into the same false
@@ -274,7 +274,7 @@ v0.3.0 go.5x5.cz/ptah/migration/schemadiff/difftypes
 # difference its planner needs to fail safely. Embedders must now handle
 # unknown, absent, and present explicitly; this is an intentional pre-v1 break
 # for stokaro/ptah#2836.
-v0.3.0 go.5x5.cz/ptah/catalog
+v0.3.0 ptah.run/catalog
 
 # ParseAtlasTestCases takes options. `self.dev_url` is the caller's fact, not
 # the file's: a `.test.hcl` case can name the disposable database it runs
@@ -284,4 +284,42 @@ v0.3.0 go.5x5.cz/ptah/catalog
 # every existing three-argument call reading identically at the source level --
 # only the function's type changed. Intentional pre-v1 break for
 # stokaro/ptah#2866.
-v0.3.0 go.5x5.cz/ptah/migration/dbtest
+v0.3.0 ptah.run/migration/dbtest
+
+# The module import path moved again, to ptah.run. Every exported signature
+# that names a type from this module therefore changed textually, which apidiff
+# reports as incompatible for each package below. The change is the rename and
+# nothing else: no symbol was added, removed, or had its shape altered, and the
+# entries above show the same thing happening at an earlier baseline.
+#
+# The path is not written out in this file's prose, because a gate refuses the
+# retired one anywhere in the tree -- a note naming a host nothing publishes to
+# goes stale the way a constant does. What records WHICH move is the baseline
+# tag on each line.
+#
+# Consumers must update their import paths. Ptah is pre-v1 and AGENTS.md is
+# explicit that its own previous behavior is not a contract; the announced cost
+# of the move is exactly this. See stokaro/ptah#2943.
+v0.3.0 ptah.run/atlascompat
+v0.3.0 ptah.run/catalog
+v0.3.0 ptah.run/config
+v0.3.0 ptah.run/config/projectconfig
+v0.3.0 ptah.run/core/astbuilder
+v0.3.0 ptah.run/core/goschema
+v0.3.0 ptah.run/core/ptaherr
+v0.3.0 ptah.run/core/renderer
+v0.3.0 ptah.run/core/schemamodel
+v0.3.0 ptah.run/core/schemasource
+v0.3.0 ptah.run/core/yamlschema
+v0.3.0 ptah.run/dbschema
+v0.3.0 ptah.run/migration/dbtest
+v0.3.0 ptah.run/migration/diffpolicy
+v0.3.0 ptah.run/migration/generator
+v0.3.0 ptah.run/migration/lint
+v0.3.0 ptah.run/migration/migrator
+v0.3.0 ptah.run/migration/planner
+v0.3.0 ptah.run/migration/safety
+v0.3.0 ptah.run/migration/schemadiff
+v0.3.0 ptah.run/migration/schemadiff/difftypes
+v0.3.0 ptah.run/migration/seeder
+v0.3.0 ptah.run/migration/shadow

@@ -9,8 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/cmd/schema"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/cmd/schema"
 )
 
 // The spellings of one desired schema. They declare the same two tables,

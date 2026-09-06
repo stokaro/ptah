@@ -9,11 +9,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/agentflags"
-	"go.5x5.cz/ptah/internal/aiprovider"
-	"go.5x5.cz/ptah/internal/assistloop"
-	"go.5x5.cz/ptah/internal/assistsession"
-	"go.5x5.cz/ptah/internal/buildinfo"
+	"ptah.run/cmd/internal/agentflags"
+	"ptah.run/internal/aiprovider"
+	"ptah.run/internal/assistloop"
+	"ptah.run/internal/assistsession"
+	"ptah.run/internal/buildinfo"
 )
 
 // Session flags shared by the surfaces that hold a conversation.

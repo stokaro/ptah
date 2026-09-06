@@ -1,7 +1,7 @@
 package migrator
 
 import (
-	"go.5x5.cz/ptah/internal/revisiontable"
+	"ptah.run/internal/revisiontable"
 )
 
 // The migrator's defaults are derived from internal/revisiontable rather than

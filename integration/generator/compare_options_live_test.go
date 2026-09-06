@@ -8,10 +8,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/generator"
+	"ptah.run/config"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/migration/generator"
 )
 
 func TestGenerateMigration_CompareOptionsWithRealPostgres(t *testing.T) {

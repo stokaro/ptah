@@ -7,8 +7,8 @@ import (
 	"regexp"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/migratesum"
+	"ptah.run/migration/migrationfile"
 )
 
 // maxPtahVersion is the largest version Ptah's exactly-10-digit file-name format

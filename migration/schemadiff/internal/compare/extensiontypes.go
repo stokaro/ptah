@@ -1,8 +1,8 @@
 package compare
 
 import (
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/pgtypeext"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/pgtypeext"
 )
 
 // extensionsDeclaredTypesNeed reports which extensions the desired schema's own

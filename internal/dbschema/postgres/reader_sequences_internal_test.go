@@ -18,7 +18,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/dbschema/dbtest"
+	"ptah.run/internal/dbschema/dbtest"
 )
 
 // pgSequenceCatalog is one sequence as PostgreSQL 17.10 reports it, reduced to

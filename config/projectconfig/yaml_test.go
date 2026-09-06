@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/migration/diffpolicy"
+	"ptah.run/config/projectconfig"
+	"ptah.run/migration/diffpolicy"
 )
 
 func TestParsePtahProjectConfigNamedEnv(t *testing.T) {

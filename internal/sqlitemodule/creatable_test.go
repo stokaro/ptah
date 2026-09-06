@@ -8,7 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "modernc.org/sqlite" // registers the SQLite driver for database/sql
 
-	"go.5x5.cz/ptah/internal/sqlitemodule"
+	"ptah.run/internal/sqlitemodule"
 )
 
 // creatableRow is one registered module and a CREATE VIRTUAL TABLE that
@@ -44,7 +44,7 @@ func creatableRows() []creatableRow {
 }
 
 // TestEveryRegisteredModuleCanCreateAVirtualTable checks the premise the
-// desired-side refusal in [go.5x5.cz/ptah/internal/sqlitevirtual] rests on:
+// desired-side refusal in [ptah.run/internal/sqlitevirtual] rests on:
 // that "this build registers the module" answers "this build can execute the
 // CREATE VIRTUAL TABLE a plan would carry".
 //

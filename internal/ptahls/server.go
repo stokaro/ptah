@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync"
 
-	"go.5x5.cz/ptah/internal/annotationparse"
+	"ptah.run/internal/annotationparse"
 )
 
 const maxContentLength = 16 << 20

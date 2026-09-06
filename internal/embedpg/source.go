@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/embedengine"
-	"go.5x5.cz/ptah/internal/embedgen"
+	"ptah.run/internal/embedengine"
+	"ptah.run/internal/embedgen"
 )
 
 // Source is embedengine.Source over a PostgreSQL table.

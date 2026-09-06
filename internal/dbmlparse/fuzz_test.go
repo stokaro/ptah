@@ -3,7 +3,7 @@ package dbmlparse_test
 import (
 	"testing"
 
-	"go.5x5.cz/ptah/internal/dbmlparse"
+	"ptah.run/internal/dbmlparse"
 )
 
 // FuzzParse holds the parser to the one promise it can make about any input:

@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"sync"
 
-	"go.5x5.cz/ptah/migration/internal/scratchdb"
+	"ptah.run/migration/internal/scratchdb"
 )
 
 // ErrParallelNeedsIsolation is returned when a case asks to run in parallel and

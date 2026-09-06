@@ -8,8 +8,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/exitcode"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/cmd/internal/exitcode"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 func TestCompareExitCode_EmptyDiff(t *testing.T) {

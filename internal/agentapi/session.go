@@ -9,14 +9,14 @@ import (
 	"sync"
 	"time"
 
-	"go.5x5.cz/ptah/internal/agentaudit"
-	"go.5x5.cz/ptah/internal/agentdiag"
-	"go.5x5.cz/ptah/internal/agentgate"
-	"go.5x5.cz/ptah/internal/agentpatch"
-	"go.5x5.cz/ptah/internal/agentpolicy"
-	"go.5x5.cz/ptah/internal/agenttarget"
-	"go.5x5.cz/ptah/internal/agentworkspace"
-	"go.5x5.cz/ptah/internal/docsembed"
+	"ptah.run/internal/agentaudit"
+	"ptah.run/internal/agentdiag"
+	"ptah.run/internal/agentgate"
+	"ptah.run/internal/agentpatch"
+	"ptah.run/internal/agentpolicy"
+	"ptah.run/internal/agenttarget"
+	"ptah.run/internal/agentworkspace"
+	"ptah.run/internal/docsembed"
 )
 
 // UntrustedContentNotice accompanies every artifact this session hands back.

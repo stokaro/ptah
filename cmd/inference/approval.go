@@ -11,8 +11,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/internal/embedcutover"
-	"go.5x5.cz/ptah/internal/planapproval"
+	"ptah.run/internal/embedcutover"
+	"ptah.run/internal/planapproval"
 )
 
 // approvalOptions are the flags a verb that needs authorization takes.

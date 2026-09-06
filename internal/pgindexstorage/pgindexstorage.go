@@ -26,7 +26,7 @@ package pgindexstorage
 import (
 	"slices"
 
-	"go.5x5.cz/ptah/internal/envbool"
+	"ptah.run/internal/envbool"
 )
 
 // EnvVar widens the recorded set to every storage parameter the catalog holds.

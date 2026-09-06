@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedrun"
+	"ptah.run/internal/embedrun"
 )
 
 // TestCheckpoint_RefusesABatchWhoseWorkIsNotDurable is the ordering the whole

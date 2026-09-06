@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"os"
 
-	"go.5x5.cz/ptah/cmd/internal/banner"
-	"go.5x5.cz/ptah/internal/buildinfo"
-	"go.5x5.cz/ptah/internal/ptahls"
+	"ptah.run/cmd/internal/banner"
+	"ptah.run/internal/buildinfo"
+	"ptah.run/internal/ptahls"
 )
 
 // usageExitCode is the status ptah-ls exits with for any usage error. It is

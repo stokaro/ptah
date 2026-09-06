@@ -11,11 +11,11 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"go.5x5.cz/ptah/cmd/internal/migrationsource"
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/core/schemasource"
-	"go.5x5.cz/ptah/internal/atlassource"
-	"go.5x5.cz/ptah/internal/pathguard"
+	"ptah.run/cmd/internal/migrationsource"
+	"ptah.run/config/projectconfig"
+	"ptah.run/core/schemasource"
+	"ptah.run/internal/atlassource"
+	"ptah.run/internal/pathguard"
 )
 
 const (

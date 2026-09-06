@@ -26,8 +26,8 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/agentdiag"
-	"go.5x5.cz/ptah/internal/agentpolicy"
+	"ptah.run/internal/agentdiag"
+	"ptah.run/internal/agentpolicy"
 )
 
 // ErrUnknown reports a target identity nothing configured matches.

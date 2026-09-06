@@ -25,8 +25,8 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/ast"
+	"ptah.run/core/schemamodel"
 )
 
 // ToField converts an ast.ColumnNode to a schemamodel.Field with comprehensive attribute extraction.
@@ -475,7 +475,7 @@ func toSchemaIndexParts(parts []ast.IndexPart) []schemamodel.IndexPart {
 			// the same key read out of the catalog on a property neither side
 			// could see, which is a rebuild of an identical index. The three
 			// IndexPart shapes deliberately spell the value the same way; see
-			// [go.5x5.cz/ptah/core/schemamodel.NullsOrderFirst].
+			// [ptah.run/core/schemamodel.NullsOrderFirst].
 			NullsOrder: part.NullsOrder,
 		})
 	}

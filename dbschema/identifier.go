@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"slices"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/platform/identifier"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/platform/identifier"
 )
 
 // ResolveIdentifierSemantics resolves how the connected catalog compares the

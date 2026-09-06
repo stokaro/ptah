@@ -16,15 +16,15 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/deporder"
-	"go.5x5.cz/ptah/internal/schemaprep"
-	"go.5x5.cz/ptah/internal/sqlident"
-	"go.5x5.cz/ptah/internal/systemschema"
-	"go.5x5.cz/ptah/internal/tablelookup"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/core/ast"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/deporder"
+	"ptah.run/internal/schemaprep"
+	"ptah.run/internal/sqlident"
+	"ptah.run/internal/systemschema"
+	"ptah.run/internal/tablelookup"
+	"ptah.run/internal/tableref"
 )
 
 // escapeSQLStringLiteral properly escapes a string value for use in SQL string literals.
@@ -713,7 +713,7 @@ func fromTableWithFieldConverter(
 	createTable.RowTTL = newTable.RowTTL.Clone()
 	createTable.RowDeletionPolicy = newTable.RowDeletionPolicy.Clone()
 	// Raw SQL the author asked to be appended to CREATE TABLE. It is carried
-	// verbatim; see [go.5x5.cz/ptah/core/ast.CreateTableNode.CustomSQL] for why
+	// verbatim; see [ptah.run/core/ast.CreateTableNode.CustomSQL] for why
 	// it is not an Options entry (stokaro/ptah#2590).
 	createTable.CustomSQL = newTable.CustomSQL
 

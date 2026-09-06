@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"go.5x5.cz/ptah/internal/embedcatchup"
-	"go.5x5.cz/ptah/internal/embedrun"
+	"ptah.run/internal/embedcatchup"
+	"ptah.run/internal/embedrun"
 )
 
 // Memory is a Store held in memory.

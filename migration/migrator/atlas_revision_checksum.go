@@ -7,9 +7,9 @@ import (
 	"sort"
 	"time"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/internal/atlashash"
+	"ptah.run/core/platform"
+	"ptah.run/core/sqlutil"
+	"ptah.run/internal/atlashash"
 )
 
 type ownedAtlasSumContribution struct {

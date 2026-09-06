@@ -11,8 +11,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/schemasecurity"
-	"go.5x5.cz/ptah/migration/risk"
+	"ptah.run/internal/schemasecurity"
+	"ptah.run/migration/risk"
 )
 
 // TestSecurityReportFails pins which threshold acts on which report.

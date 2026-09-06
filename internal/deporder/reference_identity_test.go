@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/deporder"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/deporder"
 )
 
 func TestTablesForCreate_PreservesStructuralIdentity(t *testing.T) {

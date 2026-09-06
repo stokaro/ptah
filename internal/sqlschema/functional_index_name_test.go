@@ -5,9 +5,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/parser"
-	"go.5x5.cz/ptah/internal/sqlschema"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/parser"
+	"ptah.run/internal/sqlschema"
 )
 
 // functionalIndexDatabase reads one MySQL document and returns the model.

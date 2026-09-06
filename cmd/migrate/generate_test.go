@@ -11,11 +11,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/cmd/migrate"
-	"go.5x5.cz/ptah/config/projectconfig"
-	"go.5x5.cz/ptah/internal/sqlitevirtual"
-	"go.5x5.cz/ptah/migration/safety"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/cmd/migrate"
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/migration/safety"
 )
 
 func TestMigrateGenerateCommandExposesShadowDBFlag(t *testing.T) {

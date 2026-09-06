@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
+	"ptah.run/core/ast"
 )
 
 // TestPostgres_ModifyColumn_KeyColumnKeepsNotNull pins the renderer itself,

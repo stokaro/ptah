@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/internal/txrequire"
+	"ptah.run/core/ast"
+	"ptah.run/internal/txrequire"
 )
 
 // TestKind covers the classification stokaro/ptah#1714 needs: the two kinds a

@@ -19,12 +19,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/capabilityprobe"
-	"go.5x5.cz/ptah/internal/serverprofile"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/core/platform/capability"
+	"ptah.run/dbschema"
+	"ptah.run/internal/capabilityprobe"
+	"ptah.run/internal/serverprofile"
 )
 
 const (

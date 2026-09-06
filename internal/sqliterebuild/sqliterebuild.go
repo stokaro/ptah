@@ -11,11 +11,11 @@ import (
 	"context"
 	"slices"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/sqliteforeignkeys"
+	"ptah.run/catalog"
+	"ptah.run/core/platform"
+	"ptah.run/core/platform/capability"
+	"ptah.run/dbschema"
+	"ptah.run/internal/sqliteforeignkeys"
 )
 
 // foreignKeyScopedTransactor is a schema writer that can suspend foreign-key

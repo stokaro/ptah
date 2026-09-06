@@ -16,7 +16,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/testutils"
+	"ptah.run/internal/testutils"
 )
 
 // TestRenderDOTToSVG_TheCallersDeadlineWins is the fix.

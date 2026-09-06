@@ -59,8 +59,8 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/matviewrefresh"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/matviewrefresh"
 )
 
 // ParseFile reads a YAML schema file and parses it with Parse, returning the

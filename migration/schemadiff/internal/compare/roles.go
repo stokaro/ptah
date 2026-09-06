@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"sort"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/catalog"
+	"ptah.run/core/coverage"
+	"ptah.run/core/schemamodel"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // Roles performs PostgreSQL role comparison between generated and database schemas.
@@ -55,7 +55,7 @@ import (
 // refused first, at the surfaces that accept one and can return an error
 // (stokaro/ptah#1312). This comparison keeps no opinion about reserved names,
 // which is why it still needs no error return. The single definition of
-// "reserved" lives in [go.5x5.cz/ptah/internal/reservedrole], shared with the
+// "reserved" lives in [ptah.run/internal/reservedrole], shared with the
 // reader's own exclusion so the two cannot disagree.
 //
 // # Role Modification Detection

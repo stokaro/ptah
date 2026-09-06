@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/goannotationexport"
+	"ptah.run/internal/goannotationexport"
 )
 
 func TestExport_FailurePath_OutputSymlinkAliasCannotOverwriteGoSource(t *testing.T) {

@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/coverage"
-	"go.5x5.cz/ptah/internal/schemafile"
+	"ptah.run/core/coverage"
+	"ptah.run/internal/schemafile"
 )
 
 // Only `.sql` has CREATE VIRTUAL TABLE, so silence about a live SQLite virtual

@@ -7,25 +7,25 @@ import (
 	"io/fs"
 	"time"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/config"
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/atlasfilter"
-	"go.5x5.cz/ptah/internal/atlasreport"
-	"go.5x5.cz/ptah/internal/atlassource"
-	"go.5x5.cz/ptah/internal/clickhouserbac"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/convert/goschematodb"
-	"go.5x5.cz/ptah/internal/crdbttl"
-	"go.5x5.cz/ptah/internal/schemafile"
-	"go.5x5.cz/ptah/internal/servertarget"
-	"go.5x5.cz/ptah/internal/sqlitevirtual"
-	"go.5x5.cz/ptah/internal/systemschema"
-	"go.5x5.cz/ptah/migration/planner"
-	"go.5x5.cz/ptah/migration/schemadiff"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/catalog"
+	"ptah.run/config"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/atlasfilter"
+	"ptah.run/internal/atlasreport"
+	"ptah.run/internal/atlassource"
+	"ptah.run/internal/clickhouserbac"
+	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/convert/goschematodb"
+	"ptah.run/internal/crdbttl"
+	"ptah.run/internal/schemafile"
+	"ptah.run/internal/servertarget"
+	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/internal/systemschema"
+	"ptah.run/migration/planner"
+	"ptah.run/migration/schemadiff"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 type DiffOptions struct {
@@ -59,10 +59,10 @@ type DiffOptions struct {
 	// takes its dialect from --dev-url or from a source URL, not from a flag.
 	ServerVersion string
 	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
-	// spells them; see [go.5x5.cz/ptah/internal/schemafile.Options].
+	// spells them; see [ptah.run/internal/schemafile.Options].
 	Vars []string
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
-	// policy; see [go.5x5.cz/ptah/internal/atlassource.ResolveOptions].
+	// policy; see [ptah.run/internal/atlassource.ResolveOptions].
 	IgnoreUnknownHCLNames bool
 	// ValidateSchema applies a caller-selected policy to both fully resolved
 	// authored states before comparison. Nil accepts every modeled object.

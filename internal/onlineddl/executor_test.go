@@ -14,8 +14,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/testutils"
+	"ptah.run/catalog"
+	"ptah.run/internal/testutils"
 )
 
 // fakeConn satisfies Conn without a database. QueryRowContext must never be

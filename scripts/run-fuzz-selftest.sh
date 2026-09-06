@@ -42,7 +42,7 @@ expect() {
 	fi
 }
 
-expect "a clean run passes" true "$(stub go_pass 0 'ok  	go.5x5.cz/ptah/pkg	30.4s')"
+expect "a clean run passes" true "$(stub go_pass 0 'ok  	ptah.run/pkg	30.4s')"
 
 expect "a deadline with no finding passes" true "$(stub go_deadline 1 '--- FAIL: FuzzThing (30.31s)
     context deadline exceeded
@@ -87,7 +87,7 @@ FAIL')"
 # "any line beginning FAIL", every other row here still passes.
 expect "a build failure beside the deadline fails" false "$(stub go_build 1 '--- FAIL: FuzzThing (30.31s)
     context deadline exceeded
-FAIL	go.5x5.cz/ptah/pkg [build failed]')"
+FAIL	ptah.run/pkg [build failed]')"
 
 # The controls. A deadline-only transcript still passes, and it still passes
 # with the progress and package-summary lines a real run prints around it --
@@ -99,7 +99,7 @@ fuzz: elapsed: 30s, execs: 122333 (4077/sec), new interesting: 3 (total: 15)
 --- FAIL: FuzzThing (30.31s)
     context deadline exceeded
 FAIL
-FAIL	go.5x5.cz/ptah/pkg	30.4s')"
+FAIL	ptah.run/pkg	30.4s')"
 
 if [ "$failures" -ne 0 ]; then
 	printf 'run-fuzz-selftest: %d case(s) failed\n' "$failures" >&2

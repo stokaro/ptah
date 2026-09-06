@@ -14,9 +14,9 @@ import (
 	"strings"
 	"sync"
 
-	"go.5x5.cz/ptah/internal/atlasregistry"
-	"go.5x5.cz/ptah/internal/migrationartifact"
-	"go.5x5.cz/ptah/internal/ociartifact"
+	"ptah.run/internal/atlasregistry"
+	"ptah.run/internal/migrationartifact"
+	"ptah.run/internal/ociartifact"
 )
 
 // Names reports whether a raw migration-directory value is a registry

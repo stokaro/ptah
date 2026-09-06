@@ -6,10 +6,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/internal/schemaartifact"
-	"go.5x5.cz/ptah/internal/schemaload"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/internal/schemaartifact"
+	"ptah.run/internal/schemaload"
 )
 
 type options struct {

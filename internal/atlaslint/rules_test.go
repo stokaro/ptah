@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlaslint"
+	"ptah.run/internal/atlaslint"
 )
 
 func TestRuleForNativeCode(t *testing.T) {

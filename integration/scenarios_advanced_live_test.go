@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	ptahintegration "go.5x5.cz/ptah/internal/integrationharness"
+	ptahintegration "ptah.run/internal/integrationharness"
 )
 
 func TestAdvancedScenariosWithRealDatabase(t *testing.T) {

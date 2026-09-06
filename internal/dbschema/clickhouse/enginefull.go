@@ -3,7 +3,7 @@ package clickhouse
 import (
 	"strings"
 
-	"go.5x5.cz/ptah/internal/lexer"
+	"ptah.run/internal/lexer"
 )
 
 // engineFullClauses is one system.tables.engine_full string, split into the

@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasscript"
+	"ptah.run/internal/atlasscript"
 )
 
 // TestMask_RewritesEachMethodAsDocumented pins the four methods.

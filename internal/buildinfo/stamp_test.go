@@ -9,7 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/buildinfo"
+	"ptah.run/internal/buildinfo"
 )
 
 // stampedFiles are the two places that stamp version metadata into a binary.

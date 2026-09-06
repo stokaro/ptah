@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/annotationparse"
+	"ptah.run/internal/annotationparse"
 )
 
 func TestScanReportsDirectiveAndAttributeRanges(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/schemamodel"
 )
 
 // projectGenerated applies the schema universe and include selectors to the

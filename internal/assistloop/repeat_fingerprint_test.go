@@ -6,8 +6,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/aiprovider"
-	"go.5x5.cz/ptah/internal/assistloop"
+	"ptah.run/internal/aiprovider"
+	"ptah.run/internal/assistloop"
 )
 
 // The repeat limit counts a call, not a tool -- stokaro/ptah#1490.

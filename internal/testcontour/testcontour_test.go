@@ -13,7 +13,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/testcontour"
+	"ptah.run/internal/testcontour"
 )
 
 func TestRun_HappyPath(t *testing.T) {
@@ -43,7 +43,7 @@ func TestRun_FailurePathRejectsTopLevelSkip(t *testing.T) {
 		Tags:    []string{"testcontour_fixture"},
 		Timeout: time.Minute,
 	})
-	c.Assert(err, qt.ErrorMatches, `test contour ./testdata/topskip skipped go\.5x5\.cz/ptah/internal/testcontour/testdata/topskip:TestTaggedTopLevelSkip`)
+	c.Assert(err, qt.ErrorMatches, `test contour ./testdata/topskip skipped ptah\.run/internal/testcontour/testdata/topskip:TestTaggedTopLevelSkip`)
 }
 
 func TestRun_FailurePathRejectsSubtestSkip(t *testing.T) {
@@ -53,7 +53,7 @@ func TestRun_FailurePathRejectsSubtestSkip(t *testing.T) {
 		Tags:    []string{"testcontour_fixture"},
 		Timeout: time.Minute,
 	})
-	c.Assert(err, qt.ErrorMatches, `test contour ./testdata/subskip skipped go\.5x5\.cz/ptah/internal/testcontour/testdata/subskip:TestTaggedSubtestSkip/skipped`)
+	c.Assert(err, qt.ErrorMatches, `test contour ./testdata/subskip skipped ptah\.run/internal/testcontour/testdata/subskip:TestTaggedSubtestSkip/skipped`)
 }
 
 func TestRun_FailurePathPreservesTestFailure(t *testing.T) {
@@ -86,7 +86,7 @@ func TestRun_FailurePathRejectsIncompletePackageInRecursiveContour(t *testing.T)
 	c.Assert(
 		err,
 		qt.ErrorMatches,
-		`test contour ./testdata/recursive/\.\.\. produced no complete result for go\.5x5\.cz/ptah/internal/testcontour/testdata/recursive/incomplete:TestNeverRuns`,
+		`test contour ./testdata/recursive/\.\.\. produced no complete result for ptah\.run/internal/testcontour/testdata/recursive/incomplete:TestNeverRuns`,
 	)
 }
 

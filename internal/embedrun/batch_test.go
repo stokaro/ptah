@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedrun"
+	"ptah.run/internal/embedrun"
 )
 
 // inputs builds rows whose text is the given size.

@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-	"go.5x5.cz/ptah/internal/schemalineage"
-	"go.5x5.cz/ptah/migration/lint"
+	"ptah.run/catalog"
+	"ptah.run/dbschema"
+	"ptah.run/internal/convert/dbschematogo"
+	"ptah.run/internal/schemalineage"
+	"ptah.run/migration/lint"
 )
 
 // readBaselineColumns records the schema state one migration version starts

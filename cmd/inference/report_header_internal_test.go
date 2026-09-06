@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedverify"
+	"ptah.run/internal/embedverify"
 )
 
 // TestPrintReport_TheHeaderExplainsATargetCountThatIsNotAVectorCount covers

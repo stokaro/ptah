@@ -25,7 +25,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
+	"ptah.run/core/ast"
 )
 
 func TestNodeScopeReference_IndexIsMeasuredByItsTable(t *testing.T) {

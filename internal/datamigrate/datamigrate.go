@@ -20,13 +20,13 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/datadiff"
-	"go.5x5.cz/ptah/migration/safety"
+	"ptah.run/catalog"
+	"ptah.run/core/goschema"
+	"ptah.run/core/platform"
+	"ptah.run/core/schemamodel"
+	"ptah.run/dbschema"
+	"ptah.run/migration/datadiff"
+	"ptah.run/migration/safety"
 )
 
 // Options configures [Generate].

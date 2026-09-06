@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/revisiontable"
+	"ptah.run/internal/revisiontable"
 )
 
 // Where the revision table belongs is a per-dialect fact, measured against the

@@ -18,8 +18,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/directiveplacement"
+	"ptah.run/core/platform"
+	"ptah.run/internal/directiveplacement"
 )
 
 // directiveStatement is the placement table's statement, aliased so the
@@ -323,7 +323,7 @@ func TestMisplacedDirectiveErrorFindsNothingToRefuse(t *testing.T) {
 }
 
 // headerScanDialects is every target [directiveHeaderLength] can be asked
-// about, in the same order [go.5x5.cz/ptah/internal/ptahdirective] enumerates
+// about, in the same order [ptah.run/internal/ptahdirective] enumerates
 // them for its conservative scan. A dialect missing from here would silently
 // drop out of the tables below.
 var headerScanDialects = []string{
@@ -342,7 +342,7 @@ var headerScanDialects = []string{
 // dialect rule.
 //
 // A `#` line is a comment for every target except SQL Server, and the migrator
-// learns that from [go.5x5.cz/ptah/internal/dialectlexer.Options] -- the same
+// learns that from [ptah.run/internal/dialectlexer.Options] -- the same
 // options the file will be tokenized with. Naming the dialects here instead
 // produced exactly one wrong row per dialect the list forgot: ClickHouse leaves
 // hash comments enabled and was left out, so a ClickHouse file opening with `#`

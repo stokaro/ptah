@@ -8,8 +8,8 @@ import (
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/coverage"
+	"ptah.run/catalog"
+	"ptah.run/core/coverage"
 )
 
 // readRoles reports the roles this server holds, and nothing else that lives in

@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/internal/atlasschema"
+	"ptah.run/core/ptaherr"
+	"ptah.run/internal/atlasschema"
 )
 
 // TestDiffRefusesTheRetiredRefreshStrategyBeforeComparing keeps this file's

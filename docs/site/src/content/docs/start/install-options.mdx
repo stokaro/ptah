@@ -121,14 +121,14 @@ switching to the other so Homebrew does not leave the earlier links on `PATH`.
 Install the native CLI from a tagged module version:
 
 ```bash
-go install go.5x5.cz/ptah/cmd/ptah@vX.Y.Z
+go install ptah.run/cmd/ptah@vX.Y.Z
 ```
 
 Install the compatibility binary and language server separately:
 
 ```bash
-go install go.5x5.cz/ptah/cmd/ptah-compat@vX.Y.Z
-go install go.5x5.cz/ptah/cmd/ptah-ls@vX.Y.Z
+go install ptah.run/cmd/ptah-compat@vX.Y.Z
+go install ptah.run/cmd/ptah-ls@vX.Y.Z
 ```
 
 The binaries land in `GOBIN`, or in `$(go env GOPATH)/bin` when `GOBIN` is

@@ -25,8 +25,8 @@ import (
 	"sort"
 	"strings"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/tableref"
+	"ptah.run/core/platform"
+	"ptah.run/internal/tableref"
 )
 
 // Comparison describes how a database compares identifiers.

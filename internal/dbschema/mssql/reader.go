@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/internal/sqlrunner"
+	"ptah.run/catalog"
+	"ptah.run/internal/sqlrunner"
 )
 
 const schemaPredicatePlaceholder = "/* ptah:schema-predicate */"

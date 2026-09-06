@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/planlint"
-	migrationlint "go.5x5.cz/ptah/migration/lint"
+	"ptah.run/internal/planlint"
+	migrationlint "ptah.run/migration/lint"
 )
 
 // The SQL a plan carries is analyzed by the migration lint rules, and the

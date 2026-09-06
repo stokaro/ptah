@@ -7,12 +7,12 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/platform/identifier"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/constraintscope"
-	"go.5x5.cz/ptah/internal/schemaprep"
-	"go.5x5.cz/ptah/migration/schemadiff/difftypes"
+	"ptah.run/catalog"
+	"ptah.run/core/platform/identifier"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/constraintscope"
+	"ptah.run/internal/schemaprep"
+	"ptah.run/migration/schemadiff/difftypes"
 )
 
 // reverseIndexRemovals splits the up direction's index removals by what the

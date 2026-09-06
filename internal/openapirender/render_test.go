@@ -6,8 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	yaml "go.yaml.in/yaml/v3"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/openapirender"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/openapirender"
 )
 
 func fixture() *schemamodel.Database {

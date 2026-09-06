@@ -9,12 +9,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/migrationintegrity"
-	"go.5x5.cz/ptah/internal/migrationsnapshot"
-	"go.5x5.cz/ptah/migration/generator"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/internal/atlasmigrate"
+	"ptah.run/internal/migratesum"
+	"ptah.run/internal/migrationintegrity"
+	"ptah.run/internal/migrationsnapshot"
+	"ptah.run/migration/generator"
+	"ptah.run/migration/migrationfile"
 )
 
 type editedCheckpointFixture struct {

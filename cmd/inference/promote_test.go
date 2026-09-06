@@ -11,10 +11,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/inference"
-	"go.5x5.cz/ptah/internal/embedrelease"
-	"go.5x5.cz/ptah/internal/embedspec"
-	"go.5x5.cz/ptah/internal/ociartifact"
+	"ptah.run/cmd/inference"
+	"ptah.run/internal/embedrelease"
+	"ptah.run/internal/embedspec"
+	"ptah.run/internal/ociartifact"
 )
 
 // TestDescribe_RunsAPublishedReleaseInsteadOfAFile is the receiving half of a

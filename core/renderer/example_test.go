@@ -6,12 +6,12 @@ import (
 
 	"github.com/go-extras/go-kit/must"
 
-	"go.5x5.cz/ptah/core/ast"
-	"go.5x5.cz/ptah/core/astbuilder"
-	"go.5x5.cz/ptah/core/ptaherr"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/core/yamlschema"
+	"ptah.run/core/ast"
+	"ptah.run/core/astbuilder"
+	"ptah.run/core/ptaherr"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
+	"ptah.run/core/yamlschema"
 )
 
 // ExampleRenderSQL is the one-call path: hand over the dialect and the nodes

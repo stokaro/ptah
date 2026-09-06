@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas"
+	"ptah.run/cmd/atlas"
 )
 
 func writeDottedIncludeDiffFiles(c *qt.C, fromSQL, toSQL string) (fromPath, toPath, devPath string) {

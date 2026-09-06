@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"go.5x5.cz/ptah/internal/atlaslint"
-	migrationlint "go.5x5.cz/ptah/migration/lint"
+	"ptah.run/internal/atlaslint"
+	migrationlint "ptah.run/migration/lint"
 )
 
 // lintWrapWidth is the content width Atlas wraps lint diagnostics at, measured

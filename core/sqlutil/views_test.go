@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/sqlutil"
+	"ptah.run/core/sqlutil"
 )
 
 // TestCheckOptionRequestsCheck names every word a reader in this tree puts on a

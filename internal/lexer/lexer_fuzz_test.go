@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"go.5x5.cz/ptah/internal/lexer"
+	"ptah.run/internal/lexer"
 )
 
 func FuzzLexer(f *testing.F) {

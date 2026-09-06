@@ -6,7 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/embedprovider"
+	"ptah.run/internal/embedprovider"
 )
 
 // vectors builds a result of the given shape.

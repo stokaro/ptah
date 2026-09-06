@@ -11,8 +11,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/migration/dbtest"
+	"ptah.run/cmd/atlas"
+	"ptah.run/migration/dbtest"
 )
 
 // TestSchemaPlanTest_ExternalStepNeedsTheAuthorization drives the verb rather

@@ -18,9 +18,9 @@ import (
 	"slices"
 	"strings"
 
-	"go.5x5.cz/ptah/internal/atlaslint"
-	"go.5x5.cz/ptah/internal/sqllint"
-	"go.5x5.cz/ptah/migration/lint"
+	"ptah.run/internal/atlaslint"
+	"ptah.run/internal/sqllint"
+	"ptah.run/migration/lint"
 )
 
 // Origin records whose rule a row describes.

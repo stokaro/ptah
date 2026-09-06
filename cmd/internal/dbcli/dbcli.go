@@ -3,7 +3,7 @@
 // construction keeps behavior consistent across commands.
 //
 // For the close-with-warning idiom used after a successful Connect, prefer
-// [go.5x5.cz/ptah/dbschema.CloseAndWarn] — it lives next to the
+// [ptah.run/dbschema.CloseAndWarn] — it lives next to the
 // DatabaseConnection type so non-CLI consumers (for example the migration
 // generator) can also use it.
 package dbcli
@@ -54,7 +54,7 @@ func RegisterSchemasFlag(flags *pflag.FlagSet, target *string) {
 
 // RegisterURLScopedSchemasFlag registers the same flag for the verbs whose
 // empty value lets the database URL decide, through
-// [go.5x5.cz/ptah/internal/schemascope.ReadNames]: a PostgreSQL-family URL that
+// [ptah.run/internal/schemascope.ReadNames]: a PostgreSQL-family URL that
 // pins a schema with `search_path` is read at that schema, and one that pins
 // none is read across every schema of the connected database.
 //

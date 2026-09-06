@@ -67,7 +67,7 @@ type Set struct {
 // Registers reports whether the build can load module.
 //
 // The comparison folds ASCII case because SQLite does, and only ASCII, matching
-// [go.5x5.cz/ptah/core/platform/identifier]'s rule for the same reason. This is
+// [ptah.run/core/platform/identifier]'s rule for the same reason. This is
 // not a detail that can be skipped: measured on a real database,
 // `CREATE VIRTUAL TABLE t USING FTS5(a)` succeeds and creates a genuine FTS5
 // index with all five shadow tables, `sqlite_schema` records the module
@@ -183,7 +183,7 @@ func Registered() (Set, error) {
 // [strings.ToLower] is deliberately not used: it folds Unicode, which SQLite
 // does not, and a fold the engine does not perform invents matches the engine
 // will not honor. The same reasoning is spelled out on
-// [go.5x5.cz/ptah/internal/sqlitevirtual]'s table identity, where it was
+// [ptah.run/internal/sqlitevirtual]'s table identity, where it was
 // measured on a live database.
 func foldASCII(value string) string {
 	folded := []byte(value)

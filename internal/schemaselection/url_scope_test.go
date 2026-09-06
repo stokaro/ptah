@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/schemaselection"
+	"ptah.run/internal/schemaselection"
 )
 
 // TestURLScopeAnswersFromTheURLAlone pins which URLs limit a run to one schema.

@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/inference"
+	"ptah.run/cmd/inference"
 )
 
 // TestDescribe_ReadsASpecificationWithNoDatabase is why the verb exists.

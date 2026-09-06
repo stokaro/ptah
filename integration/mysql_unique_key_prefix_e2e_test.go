@@ -57,7 +57,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/go-sql-driver/mysql" // registers the MySQL driver, which both engines here speak, for database/sql
 
-	"go.5x5.cz/ptah/internal/dbtarget"
+	"ptah.run/internal/dbtarget"
 )
 
 // uniqueKeyPrefixSchema is the declaration the issue was filed about, beside

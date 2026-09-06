@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/migrationsnapshot"
+	"ptah.run/internal/migrationsnapshot"
 )
 
 func TestCaptureDirectory_MissingRootIsEmptyHistory(t *testing.T) {

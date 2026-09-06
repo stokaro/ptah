@@ -13,13 +13,13 @@ import (
 
 	"github.com/spf13/pflag"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/cmd/internal/migrateflags"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/migrateops"
-	"go.5x5.cz/ptah/migration/migrationfile"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/cmd/internal/migrateflags"
+	"ptah.run/dbschema"
+	"ptah.run/internal/migrateops"
+	"ptah.run/migration/migrationfile"
+	"ptah.run/migration/migrator"
 )
 
 // Options are the flags common to every maintenance command.

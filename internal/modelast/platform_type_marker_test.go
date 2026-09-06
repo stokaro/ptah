@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/schemamodel"
-	"go.5x5.cz/ptah/internal/modelast"
+	"ptah.run/core/schemamodel"
+	"ptah.run/internal/modelast"
 )
 
 // A type that is already the target's own is not put through the portable

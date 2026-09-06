@@ -21,9 +21,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/internal/dbschema/dbtest"
+	"ptah.run/core/platform"
+	"ptah.run/dbschema"
+	"ptah.run/internal/dbschema/dbtest"
 )
 
 func TestWithLockSession_KeepsLockAndCallbackOnPinnedSession(t *testing.T) {

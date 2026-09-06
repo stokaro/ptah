@@ -10,8 +10,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/schema"
-	"go.5x5.cz/ptah/internal/sqlitevirtual"
+	"ptah.run/cmd/schema"
+	"ptah.run/internal/sqlitevirtual"
 )
 
 func TestSchemaInspectRefusesExplicitIndexOnVirtualTableShadowStorage(t *testing.T) {

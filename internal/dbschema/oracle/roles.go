@@ -9,8 +9,8 @@ import (
 
 	"github.com/sijms/go-ora/v3/network"
 
-	"go.5x5.cz/ptah/catalog"
-	"go.5x5.cz/ptah/core/coverage"
+	"ptah.run/catalog"
+	"ptah.run/core/coverage"
 )
 
 // Oracle error numbers for a catalog this account may not read.

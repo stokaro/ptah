@@ -8,12 +8,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/editor"
-	"go.5x5.cz/ptah/internal/migrateops"
-	"go.5x5.cz/ptah/internal/pathguard"
-	"go.5x5.cz/ptah/migration/generator"
-	"go.5x5.cz/ptah/migration/migrationfile"
+	"ptah.run/cmd/internal/cmdutil"
+	"ptah.run/cmd/internal/editor"
+	"ptah.run/internal/migrateops"
+	"ptah.run/internal/pathguard"
+	"ptah.run/migration/generator"
+	"ptah.run/migration/migrationfile"
 )
 
 const (

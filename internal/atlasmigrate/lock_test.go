@@ -7,7 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"ptah.run/internal/atlasmigrate"
 )
 
 func TestRecoverPendingPublication_ReusesHeldDirectoryLock(t *testing.T) {

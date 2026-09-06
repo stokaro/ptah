@@ -5,8 +5,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/internal/dialectlexer"
-	"go.5x5.cz/ptah/internal/lexer"
+	"ptah.run/internal/dialectlexer"
+	"ptah.run/internal/lexer"
 )
 
 func TestOptions_HappyPath(t *testing.T) {

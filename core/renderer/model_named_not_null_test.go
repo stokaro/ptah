@@ -6,9 +6,9 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform/capability"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/core/schemamodel"
+	"ptah.run/core/platform/capability"
+	"ptah.run/core/renderer"
+	"ptah.run/core/schemamodel"
 )
 
 // namedNotNullDatabase is one table whose second column carries a NOT NULL
@@ -16,7 +16,7 @@ import (
 //
 // The distinction is the whole point. core/renderer/named_not_null_test.go
 // already proves the PostgreSQL renderer keeps and refuses the name correctly;
-// it hands the renderer an [go.5x5.cz/ptah/core/ast.ColumnNode] it built
+// it hands the renderer an [ptah.run/core/ast.ColumnNode] it built
 // itself. The desired-state path goes through the model, and the field stopped
 // there -- so the name was gone before any of those decisions could be reached
 // (stokaro/ptah#2590).

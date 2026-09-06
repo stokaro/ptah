@@ -30,8 +30,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/internal/capabilityprobe"
-	"go.5x5.cz/ptah/internal/capmatrix"
+	"ptah.run/internal/capabilityprobe"
+	"ptah.run/internal/capmatrix"
 )
 
 func main() {

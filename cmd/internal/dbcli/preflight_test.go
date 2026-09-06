@@ -7,8 +7,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/internal/dbcli"
-	"go.5x5.cz/ptah/migration/migrator"
+	"ptah.run/cmd/internal/dbcli"
+	"ptah.run/migration/migrator"
 )
 
 func TestCombineMigrationHooks_NoHooks(t *testing.T) {

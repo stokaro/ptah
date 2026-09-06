@@ -10,10 +10,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/core/renderer"
-	"go.5x5.cz/ptah/internal/dbschema/postgres"
-	"go.5x5.cz/ptah/migration/schemadiff"
+	"ptah.run/core/goschema"
+	"ptah.run/core/renderer"
+	"ptah.run/internal/dbschema/postgres"
+	"ptah.run/migration/schemadiff"
 )
 
 // TestPostgreSQLUserTypesRoundTripIntegration verifies the critical invariant of
