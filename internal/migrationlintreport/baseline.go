@@ -39,7 +39,7 @@ func readBaselineColumns(ctx context.Context,
 				Table:        table.Name,
 				Name:         column.Name,
 				DataType:     compatColumnDataType(column),
-				ColumnType:   column.ColumnType,
+				ColumnType:   baselineTypeSpelling(column),
 				Charset:      column.Charset,
 				TableCharset: table.Charset,
 				NotNull:      strings.EqualFold(strings.TrimSpace(column.IsNullable), "NO"),
@@ -48,6 +48,51 @@ func readBaselineColumns(ctx context.Context,
 		}
 	}
 	return columns, nil
+}
+
+// baselineTypeSpelling is the column's type as the server spells it, for the
+// rules that compare a column's type before and after a statement.
+//
+// MySQL and MariaDB report it whole in COLUMN_TYPE. PostgreSQL spreads it over
+// information_schema: the width, precision, and scale sit in fields of their
+// own, and only an array or a domain column carries format_type's spelling.
+// The composition here writes what format_type would: `character varying(20)`,
+// `numeric(10,2)`, `timestamp(3) without time zone`, `bit varying(8)`, and the
+// catalog's own spelling for everything else.
+func baselineTypeSpelling(column catalog.Column) string {
+	if column.ColumnType != "" {
+		return column.ColumnType
+	}
+	if column.FormattedType != "" {
+		return column.FormattedType
+	}
+	dataType := strings.ToLower(strings.Join(strings.Fields(column.DataType), " "))
+	switch dataType {
+	case "character varying", "character", "bit", "bit varying":
+		if column.CharacterMaxLength != nil {
+			return dataType + "(" + strconv.Itoa(*column.CharacterMaxLength) + ")"
+		}
+	case "numeric":
+		if column.NumericPrecision != nil {
+			scale := 0
+			if column.NumericScale != nil {
+				scale = *column.NumericScale
+			}
+			return dataType + "(" + strconv.Itoa(*column.NumericPrecision) + "," + strconv.Itoa(scale) + ")"
+		}
+	case "timestamp without time zone", "timestamp with time zone", "time without time zone", "time with time zone":
+		if column.DatetimePrecision != nil {
+			base, zone, _ := strings.Cut(dataType, " ")
+			return base + "(" + strconv.Itoa(*column.DatetimePrecision) + ") " + zone
+		}
+	case "interval":
+		if column.DatetimePrecision != nil {
+			return dataType + "(" + strconv.Itoa(*column.DatetimePrecision) + ")"
+		}
+	case "user-defined":
+		return column.UDTName
+	}
+	return dataType
 }
 
 // compatColumnDataType renders the type name the compatibility surface prints

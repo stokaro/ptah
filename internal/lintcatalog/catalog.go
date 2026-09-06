@@ -232,6 +232,10 @@ var migrationRuleMeta = map[string]ruleMeta{
 		Summary:   "the declared column order can waste tuple padding",
 		AtlasCode: "PG110",
 	},
+	"PG301": {
+		Summary:   "a column type change PostgreSQL cannot prove safe rewrites the table and its indexes",
+		AtlasCode: "PG301",
+	},
 	"PG302": {
 		Summary:   "a volatile DEFAULT on an added column rewrites or evaluates every existing row",
 		AtlasCode: "PG302",
@@ -239,6 +243,10 @@ var migrationRuleMeta = map[string]ruleMeta{
 	"PG303": {
 		Summary:   "SET NOT NULL scans the table to validate existing rows",
 		AtlasCode: "PG303",
+	},
+	"PG304": {
+		Summary:   "a primary key over nullable columns sets them NOT NULL and scans every row on top of the index build",
+		AtlasCode: "PG304",
 	},
 	"PG305": {
 		Summary:   "adding a CHECK constraint validates existing rows and can hold locks",

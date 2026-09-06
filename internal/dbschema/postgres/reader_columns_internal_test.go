@@ -119,14 +119,14 @@ func serveColumnQuery(catalog pgColumnCatalog, query string) (dbtest.QueryResult
 		Columns: []string{
 			"table_name", "column_name", "data_type", "udt_name", "formatted_type",
 			"domain_name", "domain_schema", "is_nullable", "column_default", "character_maximum_length",
-			"numeric_precision", "numeric_scale", "ordinal_position",
+			"numeric_precision", "numeric_scale", "datetime_precision", "ordinal_position",
 			"generated_kind", "generated_expression", "identity_kind",
 			"column_comment", "not_null_constraint_name", "owned_sequence_name",
 		},
 		Rows: [][]driver.Value{{
 			catalog.tableName, catalog.columnName, catalog.dataType, catalog.udtName, formattedType,
 			domainName, domainSchema, "YES", nil, nil,
-			nil, nil, int64(1),
+			nil, nil, nil, int64(1),
 			"", "", "",
 			"", "", "",
 		}},

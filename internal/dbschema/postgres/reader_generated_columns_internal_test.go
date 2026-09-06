@@ -24,7 +24,7 @@ import (
 var generatedColumnRow = []driver.Value{
 	"t", "g", "integer", "int4", "",
 	"", "", "YES", nil, nil,
-	nil, nil, int64(1),
+	nil, nil, nil, int64(1),
 	"s", "(n + 1)", "",
 	"", "", "",
 }
@@ -33,7 +33,7 @@ var generatedColumnRow = []driver.Value{
 var columnQueryColumns = []string{
 	"table_name", "column_name", "data_type", "udt_name", "formatted_type",
 	"domain_name", "domain_schema", "is_nullable", "column_default", "character_maximum_length",
-	"numeric_precision", "numeric_scale", "ordinal_position",
+	"numeric_precision", "numeric_scale", "datetime_precision", "ordinal_position",
 	"generated_kind", "generated_expression", "identity_kind",
 	"column_comment", "not_null_constraint_name", "owned_sequence_name",
 }
@@ -81,10 +81,10 @@ func servePostgres12(query string, _ []driver.NamedValue) (dbtest.QueryResult, e
 	// it asks, and gets the constant its gated branch selects otherwise.
 	row := append([]driver.Value(nil), generatedColumnRow...)
 	if !projectionReadsAttgenerated(query, "generated_kind") {
-		row[13] = ""
+		row[14] = ""
 	}
 	if !projectionReadsAttgenerated(query, "generated_expression") {
-		row[14] = ""
+		row[15] = ""
 	}
 	return dbtest.QueryResult{Columns: columnQueryColumns, Rows: [][]driver.Value{row}}, nil
 }

@@ -247,7 +247,7 @@ func TestPG102SummaryKeepsTheVersionDistinction(t *testing.T) {
 // sees the MySQL MODIFY COLUMN that restates the member list. The row read as
 // coverage and the code produced none of it.
 //
-// These are the MySQL rows whose mapping is a claim about which rules fire on a
+// These are the rows whose mapping is a claim about which rules fire on a
 // specific statement rather than an identity between codes. The rest of the
 // analyzer table is still a reading of the Atlas documentation joined to
 // registered rules; this test does not extend to it, and does not pretend to.
@@ -346,6 +346,22 @@ func TestAtlasRowsNameTheRulesThatFire(t *testing.T) {
 			dialect:   "mysql",
 			up:        "ALTER TABLE orders DROP PRIMARY KEY;\n",
 			down:      "ALTER TABLE orders ADD PRIMARY KEY (id);\n",
+		},
+		{
+			name:      "PG301, a column type change PostgreSQL rewrites for",
+			atlasCode: "PG301",
+			dialect:   "postgres",
+			up:        "ALTER TABLE orders ALTER COLUMN total TYPE bigint;\n",
+			down:      "ALTER TABLE orders ALTER COLUMN total TYPE integer;\n",
+			baseline:  []lint.BaselineColumn{{Version: 1, Table: "orders", Name: "total", ColumnType: "integer"}},
+		},
+		{
+			name:      "PG304, a primary key over a nullable column",
+			atlasCode: "PG304",
+			dialect:   "postgres",
+			up:        "ALTER TABLE orders ADD PRIMARY KEY (id);\n",
+			down:      "ALTER TABLE orders DROP CONSTRAINT orders_pkey;\n",
+			baseline:  []lint.BaselineColumn{{Version: 1, Table: "orders", Name: "id", ColumnType: "integer"}},
 		},
 		{
 			name:      "MY136, a table character set change",
