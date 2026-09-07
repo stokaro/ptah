@@ -15,13 +15,13 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/catalog"
-	"ptah.run/internal/cli/readdb"
 	"ptah.run/core/goschema"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
 	"ptah.run/core/sqlutil"
 	"ptah.run/dbschema"
 	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/cli/readdb"
 	"ptah.run/internal/dbschema/postgres"
 	"ptah.run/internal/rolescope"
 	"ptah.run/migration/planner"
@@ -674,11 +674,12 @@ CREATE ROLE pgbouncer_undescribed_137 LOGIN;`)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
 	var inspectDiag bytes.Buffer
-	inspected, err := atlasschema.Inspect(t.Context(), conn, atlasschema.InspectOptions{
+	inspectedResult, err := atlasschema.Inspect(t.Context(), conn, atlasschema.InspectOptions{
 		Schemas:     []string{"ptah_undescribed_schema_137"},
 		Diagnostics: &inspectDiag,
 	})
 	c.Assert(err, qt.IsNil)
+	inspected := inspectedResult.Rendered
 	c.Assert(inspected, qt.Not(qt.Contains), "ptah_undescribed_outside_137")
 	c.Assert(inspected, qt.Not(qt.Contains), "PTAH_POSTGRES_INSPECT_ALL_ROLES",
 		qt.Commentf("the note belongs on the diagnostics stream, never in the document"))
