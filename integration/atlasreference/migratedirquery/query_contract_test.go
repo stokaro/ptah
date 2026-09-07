@@ -7,7 +7,7 @@ package migratedirquery_test
 import (
 	"bytes"
 	"errors"
-	"ptah.run/integration/atlasreference"
+	"ptah.run/internal/atlasreference"
 	"io/fs"
 	"os"
 	"os/exec"

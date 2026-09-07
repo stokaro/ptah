@@ -15,7 +15,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"ptah.run/config/projectconfig"
-	"ptah.run/integration/atlasreference"
+	"ptah.run/internal/atlasreference"
 )
 
 // The community half of the stokaro/ptah#1042 divergence, measured rather than

@@ -90,17 +90,13 @@ is_internal() {
 	return 1
 }
 
-# Named exemptions, deleted by the change that internalizes the subtree each one
+# The one exemption left, deleted by the change that internalizes the subtree it
 # names (stokaro/ptah#2974). An exemption is not a boundary: it keeps a package
-# out of docs/public_api.md while Go goes on publishing it, so each is a
-# recorded debt with an owner rather than a policy. None may be added.
-#
-# `integration` covers both the fixture series and the reference helper beside
-# the suites, and comes off only when both have moved.
+# out of docs/public_api.md while Go goes on publishing it, so it is a recorded
+# debt with an owner rather than a policy. None may be added.
 is_exempt() {
 	case "$1" in
 		"$module_path"/cmd | "$module_path"/cmd/*) return 0 ;;
-		"$module_path"/integration | "$module_path"/integration/*) return 0 ;;
 	esac
 	return 1
 }

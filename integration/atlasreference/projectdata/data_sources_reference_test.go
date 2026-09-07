@@ -21,7 +21,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "modernc.org/sqlite" // registers the SQLite driver for database/sql
 
-	"ptah.run/integration/atlasreference"
+	"ptah.run/internal/atlasreference"
 	"ptah.run/internal/migratesum"
 	"ptah.run/migration/migrationfile"
 )
