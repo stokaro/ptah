@@ -3328,7 +3328,7 @@
       "route": "/operate/deliver/",
       "title": "Deliver a schema change",
       "description": "Follow one schema change from a reviewed pull request to a verified database, and see which guide owns each stage.",
-      "sidebarPath": "Deliver and operate",
+      "sidebarPath": "Test, deliver, and operate",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -3379,7 +3379,7 @@
       "route": "/operate/kubernetes-operator/",
       "title": "Kubernetes operator",
       "description": "Reconcile a desired schema from an OCI artifact with the Ptah Operator, and know what it does not deploy.",
-      "sidebarPath": "Deliver and operate",
+      "sidebarPath": "Test, deliver, and operate",
       "sidebarLabel": null,
       "type": "reference",
       "audience": [
@@ -3421,7 +3421,7 @@
       "route": "/operate/oci-registry/",
       "title": "OCI registry artifacts",
       "description": "Publish, pin, pull, and consume Ptah migrations and desired schemas through an OCI registry.",
-      "sidebarPath": "Deliver and operate",
+      "sidebarPath": "Test, deliver, and operate",
       "sidebarLabel": "Use OCI registries",
       "type": "how-to",
       "audience": [
@@ -3480,9 +3480,9 @@
     {
       "path": "docs/site/src/content/docs/operate/overview.mdx",
       "route": "/operate/overview/",
-      "title": "Deliver and operate",
+      "title": "Test, deliver, and operate",
       "description": "Test migrations and schemas, build CI gates, manage data artifacts, and diagnose failed runs.",
-      "sidebarPath": "Deliver and operate",
+      "sidebarPath": "Test, deliver, and operate",
       "sidebarLabel": "Overview",
       "type": "landing",
       "audience": [
@@ -3525,14 +3525,14 @@
       ],
       "inboundLinks": [],
       "visibleWords": 118,
-      "sourceBytes": 2358
+      "sourceBytes": 2365
     },
     {
       "path": "docs/site/src/content/docs/operate/seed-data.md",
       "route": "/operate/seed-data/",
       "title": "Seed data",
       "description": "Apply one-off, environment-scoped SQL seed files with ptah seed and track them in schema_seeds.",
-      "sidebarPath": "Data",
+      "sidebarPath": "Test, deliver, and operate",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -3573,7 +3573,7 @@
       "route": "/operate/troubleshooting/",
       "title": "Troubleshooting",
       "description": "Fix common Ptah command, database, Graphviz, hash, config, and conformance problems.",
-      "sidebarPath": "Deliver and operate",
+      "sidebarPath": "Test, deliver, and operate",
       "sidebarLabel": null,
       "type": "troubleshooting",
       "audience": [
@@ -5715,7 +5715,7 @@
       "route": "/testing/ci/",
       "title": "CI",
       "description": "Gate pull requests with the Ptah GitHub Action or shell checks, and read exit codes correctly.",
-      "sidebarPath": "Testing and safety",
+      "sidebarPath": "Test, deliver, and operate",
       "sidebarLabel": "Run checks in CI",
       "type": "how-to",
       "audience": [
@@ -5773,7 +5773,7 @@
       "route": "/testing/migrations-and-schema/",
       "title": "Test migrations and schemas",
       "description": "Assert migration and schema behavior with declarative test cases against a throwaway database.",
-      "sidebarPath": "Testing and safety",
+      "sidebarPath": "Test, deliver, and operate",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -6271,7 +6271,7 @@
       "route": "/versioned/reference-data/",
       "title": "Reference data",
       "description": "Declare reference/seed rows and generate reversible data migrations from the drift against a live database.",
-      "sidebarPath": "Data",
+      "sidebarPath": "Test, deliver, and operate",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
