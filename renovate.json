@@ -101,7 +101,6 @@
         "internal/capabilityprobe/cells.go"
       ],
       "matchPackageNames": [
-        "*",
         "!gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator"
       ],
       "enabled": false

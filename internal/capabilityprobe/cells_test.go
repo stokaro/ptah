@@ -876,18 +876,38 @@ func ruleDisablingCellsFile(c *qt.C) renovatePackageRule {
 func renovateRuleCovers(c *qt.C, rule renovatePackageRule, name string) bool {
 	c.Helper()
 
+	// Renovate's rule, from its string-matching documentation: a list matches
+	// when at least one POSITIVE pattern matches, if any positive pattern is
+	// present, and no negative one does. A list of exceptions alone therefore
+	// covers everything it does not name.
+	//
+	// `*` is refused rather than honored. Beside any other pattern it is a
+	// configuration error the hosted app rejects outright, which stops every
+	// pull request it would open (stokaro/ptah#3040), so a helper that read it
+	// would let the shape back in while this test stayed green.
+	positive := false
 	covered := false
 	for _, selector := range rule.MatchPackageNames {
 		excluded, exception := strings.CutPrefix(selector, "!")
-		c.Assert(exception || selector == "*" || selector == name, qt.IsTrue,
-			qt.Commentf("selector %q is neither `*`, an exception nor a plain name, and this test "+
-				"cannot say what it matches", selector))
-		if exception && excluded == name {
-			return false
+		c.Assert(selector == "*" || selector == "**", qt.IsFalse,
+			qt.Commentf("selector %q matches every package, and Renovate refuses it beside "+
+				"another pattern", selector))
+		c.Assert(strings.ContainsAny(selector, "*?["), qt.IsFalse,
+			qt.Commentf("selector %q is a glob rather than a plain name, and this test cannot "+
+				"say what it matches", selector))
+		if exception {
+			if excluded == name {
+				return false
+			}
+			continue
 		}
-		if selector == "*" || selector == name {
+		positive = true
+		if selector == name {
 			covered = true
 		}
+	}
+	if !positive {
+		return true
 	}
 	return covered
 }
