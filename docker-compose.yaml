@@ -132,7 +132,7 @@ services:
   # for a managed product rather than running the product itself, so a plain
   # `docker compose up` should not imply Spanner coverage (stokaro/ptah#1719).
   spanner:
-    image: gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.2
+    image: gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.3
     profiles:
       - spanner
     ports:
