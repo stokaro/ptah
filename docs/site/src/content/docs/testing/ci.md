@@ -201,7 +201,7 @@ A run that fails before it can lint is reported as one `blocker` entry rather
 than as an empty report, because an empty Code Quality artifact is
 indistinguishable from a clean one on the merge request.
 
-## Recommended pull-request contour
+## Recommended pull-request checks
 
 | Check | Why it exists |
 | --- | --- |

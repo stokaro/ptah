@@ -6,12 +6,12 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 131,
-    "authored": 129,
+    "pages": 132,
+    "authored": 130,
     "generated": 2,
     "byType": {
       "concept": 16,
-      "how-to": 55,
+      "how-to": 56,
       "landing": 12,
       "reference": 33,
       "status": 8,
@@ -1658,6 +1658,49 @@
       "sourceBytes": 24069
     },
     {
+      "path": "docs/site/src/content/docs/extend/editor-and-shell.mdx",
+      "route": "/extend/editor-and-shell/",
+      "title": "Editor and shell setup",
+      "description": "Enable shell completion and the Ptah language server, and check that each one works.",
+      "sidebarPath": "Extend and integrate",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "new-user"
+      ],
+      "readerQuestion": "How do I get completion in my shell and annotation support in my editor?",
+      "goal": "Enable and verify shell completion and the Ptah language server.",
+      "sourceOfTruth": [
+        "cmd/ptah-ls",
+        "editors/vscode"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "configure VS Code",
+        "shell completion",
+        "language server"
+      ],
+      "sourceMode": null,
+      "overlaps": [
+        "/reference/go-annotations/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/reference/go-annotations/",
+        "/schema/validate-and-format/",
+        "/schema/work-with-a-source/",
+        "/start/install/"
+      ],
+      "inboundLinks": [],
+      "visibleWords": 396,
+      "sourceBytes": 3331
+    },
+    {
       "path": "docs/site/src/content/docs/extend/overview.mdx",
       "route": "/extend/overview/",
       "title": "Extend and integrate",
@@ -3285,7 +3328,7 @@
       "route": "/operate/deliver/",
       "title": "Deliver a schema change",
       "description": "Follow one schema change from a reviewed pull request to a verified database, and see which guide owns each stage.",
-      "sidebarPath": "Test, automate, and operate",
+      "sidebarPath": "Deliver and operate",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -3335,7 +3378,7 @@
       "route": "/operate/kubernetes-operator/",
       "title": "Kubernetes operator",
       "description": "Reconcile a desired schema from an OCI artifact with the Ptah Operator, and know what it does not deploy.",
-      "sidebarPath": "Test, automate, and operate",
+      "sidebarPath": "Deliver and operate",
       "sidebarLabel": null,
       "type": "reference",
       "audience": [
@@ -3377,8 +3420,8 @@
       "route": "/operate/oci-registry/",
       "title": "OCI registry artifacts",
       "description": "Publish, pin, pull, and consume Ptah migrations and desired schemas through an OCI registry.",
-      "sidebarPath": "Test, automate, and operate",
-      "sidebarLabel": null,
+      "sidebarPath": "Deliver and operate",
+      "sidebarLabel": "Use OCI registries",
       "type": "how-to",
       "audience": [
         "platform-engineer"
@@ -3438,7 +3481,7 @@
       "route": "/operate/overview/",
       "title": "Test, automate, and operate",
       "description": "Test migrations and schemas, build CI gates, manage data artifacts, and diagnose failed runs.",
-      "sidebarPath": "Test, automate, and operate",
+      "sidebarPath": "Deliver and operate",
       "sidebarLabel": "Overview",
       "type": "landing",
       "audience": [
@@ -3488,7 +3531,7 @@
       "route": "/operate/seed-data/",
       "title": "Seed data",
       "description": "Apply one-off, environment-scoped SQL seed files with ptah seed and track them in schema_seeds.",
-      "sidebarPath": "Test, automate, and operate",
+      "sidebarPath": "Data",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -3529,7 +3572,7 @@
       "route": "/operate/troubleshooting/",
       "title": "Troubleshooting",
       "description": "Fix common Ptah command, database, Graphviz, hash, config, and conformance problems.",
-      "sidebarPath": "Test, automate, and operate",
+      "sidebarPath": "Deliver and operate",
       "sidebarLabel": null,
       "type": "troubleshooting",
       "audience": [
@@ -3950,6 +3993,7 @@
         "/databases/oracle/",
         "/databases/postgresql/",
         "/databases/sqlserver/",
+        "/extend/editor-and-shell/",
         "/reference/overview/",
         "/schema/go-annotations/",
         "/schema/overview/",
@@ -4303,7 +4347,7 @@
       "route": "/schema/composite/",
       "title": "Composite desired schema",
       "description": "Merge static schema files, Go annotations, and an external loader into one desired schema.",
-      "sidebarPath": "Define and understand schemas > Sources",
+      "sidebarPath": "Schemas > Sources",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -4356,7 +4400,7 @@
       "route": "/schema/dbml/",
       "title": "DBML",
       "description": "Read a DBML document as a desired schema, and write any Ptah schema back out as canonical DBML.",
-      "sidebarPath": "Define and understand schemas > Sources",
+      "sidebarPath": "Schemas > Sources",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -4401,7 +4445,7 @@
       "route": "/schema/document/",
       "title": "Generate schema documentation",
       "description": "Write a desired schema as a Markdown reference or a self-contained HTML page with ptah schema export.",
-      "sidebarPath": "Define and understand schemas > Analysis and documentation",
+      "sidebarPath": "Schemas > Analysis and documentation",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -4460,7 +4504,7 @@
       "route": "/schema/export/",
       "title": "API schema export",
       "description": "Project a desired schema into OpenAPI or GraphQL contract candidates and review their trust-boundary limitations.",
-      "sidebarPath": "Define and understand schemas > Contract exports",
+      "sidebarPath": "Schemas > API schema exports",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -4526,7 +4570,7 @@
       "route": "/schema/go-annotations/",
       "title": "Go annotations",
       "description": "Use annotated Go structs as the desired database schema.",
-      "sidebarPath": "Define and understand schemas > Sources",
+      "sidebarPath": "Schemas > Sources",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -4583,7 +4627,7 @@
       "route": "/schema/hcl/",
       "title": "HCL schema",
       "description": "Reuse Atlas-compatible HCL schema files as Ptah's desired schema.",
-      "sidebarPath": "Define and understand schemas > Sources",
+      "sidebarPath": "Schemas > Sources",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -4638,7 +4682,7 @@
       "route": "/schema/lineage/",
       "title": "Trace view column lineage",
       "description": "Run ptah schema lineage to find which base columns each view column and each routine reads, and which tables and columns each routine writes, before dropping or renaming one of them.",
-      "sidebarPath": "Define and understand schemas > Analysis and documentation",
+      "sidebarPath": "Schemas > Analysis and documentation",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -4684,7 +4728,7 @@
       "route": "/schema/orm-and-external/",
       "title": "ORM and external loaders",
       "description": "Feed an ORM's or any external program's schema into Ptah as the desired schema.",
-      "sidebarPath": "Define and understand schemas > Sources",
+      "sidebarPath": "Schemas > Sources",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -4729,7 +4773,7 @@
       "route": "/schema/overview/",
       "title": "Define and understand schemas",
       "description": "Choose a schema source, combine or validate it, and turn the result into documentation, diagrams, or API contracts.",
-      "sidebarPath": "Define and understand schemas",
+      "sidebarPath": "Schemas",
       "sidebarLabel": "Overview",
       "type": "landing",
       "audience": [
@@ -4782,7 +4826,7 @@
       "route": "/schema/protobuf/",
       "title": "Protobuf schema export",
       "description": "Export a desired schema to a Protobuf Edition 2023 definition whose field numbers stay wire compatible as the schema changes.",
-      "sidebarPath": "Define and understand schemas > Contract exports",
+      "sidebarPath": "Schemas > API schema exports",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -4831,7 +4875,7 @@
       "route": "/schema/security/",
       "title": "Report schema security findings",
       "description": "Run ptah schema security over a live database to review privileges, owners, roles and tables with no row policy, and gate a pull request on the result.",
-      "sidebarPath": "Define and understand schemas > Analysis and documentation",
+      "sidebarPath": "Schemas > Analysis and documentation",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -4880,7 +4924,7 @@
       "route": "/schema/serve/",
       "title": "Serve a live schema view",
       "description": "Run ptah schema serve to watch in a browser how a live database differs from the desired schema while you change it.",
-      "sidebarPath": "Define and understand schemas > Analysis and documentation",
+      "sidebarPath": "Schemas > Analysis and documentation",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -4928,7 +4972,7 @@
       "route": "/schema/sql/",
       "title": "SQL schema",
       "description": "Use plain SQL DDL files as Ptah's desired schema.",
-      "sidebarPath": "Define and understand schemas > Sources",
+      "sidebarPath": "Schemas > Sources",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -4977,7 +5021,7 @@
       "route": "/schema/stats/",
       "title": "Count schema objects",
       "description": "Run ptah schema stats to emit one OpenMetrics gauge per object kind in a live database and feed it to a metrics collector.",
-      "sidebarPath": "Define and understand schemas > Analysis and documentation",
+      "sidebarPath": "Schemas > Analysis and documentation",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -5023,7 +5067,7 @@
       "route": "/schema/validate-and-format/",
       "title": "Validate and format schema files",
       "description": "Check a desired schema for structural problems with ptah schema validate and keep HCL files canonically formatted with ptah schema fmt, both without a database.",
-      "sidebarPath": "Define and understand schemas > Analysis and documentation",
+      "sidebarPath": "Schemas > Analysis and documentation",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -5060,6 +5104,7 @@
         "/testing/ci/"
       ],
       "inboundLinks": [
+        "/extend/editor-and-shell/",
         "/schema/overview/",
         "/schema/work-with-a-source/",
         "/testing/ci/"
@@ -5072,7 +5117,7 @@
       "route": "/schema/visualize/",
       "title": "Visualize the schema",
       "description": "Render entity-relationship diagrams from the desired schema as Mermaid, DOT, or SVG with ptah viz.",
-      "sidebarPath": "Define and understand schemas > Analysis and documentation",
+      "sidebarPath": "Schemas > Analysis and documentation",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -5128,7 +5173,7 @@
       "route": "/schema/work-with-a-source/",
       "title": "Work with a desired schema",
       "description": "The operations every schema source shares — render, compare, gate on drift, compose, and validate across dialects — with the flag that names each source.",
-      "sidebarPath": "Define and understand schemas > Sources",
+      "sidebarPath": "Schemas > Sources",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -5169,6 +5214,7 @@
       "inboundLinks": [
         "/concepts/desired-schema-and-sources/",
         "/direct/overview/",
+        "/extend/editor-and-shell/",
         "/reference/native-commands/",
         "/schema/dbml/",
         "/schema/document/",
@@ -5188,7 +5234,7 @@
       "route": "/schema/yaml/",
       "title": "YAML schema",
       "description": "Author the desired schema in Ptah's strict YAML format and feed it to render, compare, and migration commands.",
-      "sidebarPath": "Define and understand schemas > Sources",
+      "sidebarPath": "Schemas > Sources",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -5239,7 +5285,7 @@
       "route": "/start/adopt-an-existing-database/",
       "title": "Adopt an existing database",
       "description": "Put a live database under Ptah management with introspect, baseline, and import, without recreating anything.",
-      "sidebarPath": "Start",
+      "sidebarPath": "Getting started",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -5300,7 +5346,7 @@
       "route": "/start/choose-a-workflow/",
       "title": "Choose a workflow",
       "description": "Decide between versioned migrations and direct schema changes for schema work. Persistent inference state uses a separate lifecycle.",
-      "sidebarPath": "Start",
+      "sidebarPath": "Getting started",
       "sidebarLabel": null,
       "type": "concept",
       "audience": [
@@ -5352,7 +5398,7 @@
       "route": "/start/install-options/",
       "title": "Other installation methods",
       "description": "Pin or customize the installer, use Homebrew or Go, verify release artifacts, and build Ptah from source.",
-      "sidebarPath": "Start",
+      "sidebarPath": "Getting started",
       "sidebarLabel": null,
       "type": "reference",
       "audience": [
@@ -5400,7 +5446,7 @@
       "route": "/start/install/",
       "title": "Install Ptah",
       "description": "Install the three Ptah binaries with the verified release script and confirm they run.",
-      "sidebarPath": "Start",
+      "sidebarPath": "Getting started",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -5444,6 +5490,7 @@
         "/direct/compare-and-drift/",
         "/direct/inspect/",
         "/direct/plan-and-approve/",
+        "/extend/editor-and-shell/",
         "/inference/quick-start/",
         "/schema/document/",
         "/schema/lineage/",
@@ -5465,7 +5512,7 @@
       "route": "/start/overview/",
       "title": "Start with Ptah",
       "description": "Install Ptah, get a verified result, choose a schema workflow, or adopt a database that already exists.",
-      "sidebarPath": "Start",
+      "sidebarPath": "Getting started",
       "sidebarLabel": "Overview",
       "type": "landing",
       "audience": [
@@ -5512,8 +5559,8 @@
       "route": "/start/quick-start-direct/",
       "title": "Evolve and gate a direct schema",
       "description": "Change an applied desired schema, review the ALTER plan, and gate CI on schema drift.",
-      "sidebarPath": "Start",
-      "sidebarLabel": "Continue direct changes",
+      "sidebarPath": "Getting started",
+      "sidebarLabel": "Update a schema and detect drift",
       "type": "how-to",
       "audience": [
         "new-user",
@@ -5561,7 +5608,7 @@
       "route": "/start/quick-start-migrations/",
       "title": "Quick start: versioned migrations",
       "description": "Create, seal, apply, and verify one migration against a disposable SQLite database.",
-      "sidebarPath": "Start",
+      "sidebarPath": "Getting started",
       "sidebarLabel": null,
       "type": "tutorial",
       "audience": [
@@ -5613,7 +5660,7 @@
       "route": "/start/quick-start/",
       "title": "Quick start",
       "description": "Apply and verify a first Ptah schema change against a disposable SQLite database.",
-      "sidebarPath": "Start",
+      "sidebarPath": "Getting started",
       "sidebarLabel": null,
       "type": "tutorial",
       "audience": [
@@ -5667,8 +5714,8 @@
       "route": "/testing/ci/",
       "title": "CI",
       "description": "Gate pull requests with the Ptah GitHub Action or shell checks, and read exit codes correctly.",
-      "sidebarPath": "Test, automate, and operate",
-      "sidebarLabel": null,
+      "sidebarPath": "Testing and safety",
+      "sidebarLabel": "Run checks in CI",
       "type": "how-to",
       "audience": [
         "ci-operator"
@@ -5717,14 +5764,14 @@
         "/versioned/lint/"
       ],
       "visibleWords": 1155,
-      "sourceBytes": 10446
+      "sourceBytes": 10445
     },
     {
       "path": "docs/site/src/content/docs/testing/migrations-and-schema.mdx",
       "route": "/testing/migrations-and-schema/",
       "title": "Test migrations and schemas",
       "description": "Assert migration and schema behavior with declarative test cases against a throwaway database.",
-      "sidebarPath": "Test, automate, and operate",
+      "sidebarPath": "Testing and safety",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
@@ -6222,7 +6269,7 @@
       "route": "/versioned/reference-data/",
       "title": "Reference data",
       "description": "Declare reference/seed rows and generate reversible data migrations from the drift against a live database.",
-      "sidebarPath": "Test, automate, and operate",
+      "sidebarPath": "Data",
       "sidebarLabel": null,
       "type": "how-to",
       "audience": [
