@@ -7,7 +7,7 @@ audience:
 readerQuestion: "How do I use annotated Go structs as the desired database schema?"
 goal: "Render a desired schema from annotated Go structs."
 sourceOfTruth:
-  - "cmd/schema"
+  - "internal/cli/schema"
   - "internal/schemaload"
 generated: false
 searchAliases:

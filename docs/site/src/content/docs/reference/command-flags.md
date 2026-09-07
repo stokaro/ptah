@@ -7,8 +7,8 @@ audience:
 readerQuestion: Which flags and environment bindings does each current command expose?
 goal: Look up the flags, defaults, and environment bindings for a command.
 sourceOfTruth:
-  - cmd/root
-  - cmd/atlas
+  - internal/cli/root
+  - internal/cli/atlas
   - internal/cmdref
 generated: true
 generator: internal/cmd/docsync

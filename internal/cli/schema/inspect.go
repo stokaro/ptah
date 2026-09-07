@@ -1,0 +1,397 @@
+package schema
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/spf13/cobra"
+
+	"ptah.run/config/projectconfig"
+	"ptah.run/internal/atlasschema"
+	"ptah.run/internal/atlassource"
+	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/ociartifact"
+	"ptah.run/internal/pathguard"
+	"ptah.run/internal/schemaartifact"
+)
+
+const (
+	inspectDBURLFlag         = "db-url"
+	inspectSchemaFileFlag    = "schema-file"
+	inspectMigrationsDirFlag = "migrations-dir"
+	inspectDevURLFlag        = "dev-url"
+	inspectIncludeFlag       = "include"
+	inspectExcludeFlag       = "exclude"
+	inspectFormatFlag        = "format"
+	inspectOutDirFlag        = "out-dir"
+	inspectSplitFlag         = "split"
+)
+
+// inspectOCIMaterializedName is the file the pulled schema artifact is written
+// to before it is inspected.
+//
+// The extension is load-bearing, not decorative: the inspection source is a
+// path handed to the shared resolver, which decides what a source IS from its
+// extension. A schema artifact carries canonical HCL — that is what
+// `ptah schema push` publishes and what `ptah schema pull` writes — so the
+// materialized file has to say .hcl or the resolver refuses a file it can
+// read.
+const inspectOCIMaterializedName = "schema.hcl"
+
+type schemaInspectOptions struct {
+	dbURL          string
+	schemaFile     string
+	migrationsDir  string
+	devURL         string
+	schemas        string
+	include        []string
+	exclude        []string
+	format         string
+	outDir         string
+	split          string
+	plainHTTP      bool
+	connectTimeout string
+	configPath     string
+	envName        string
+}
+
+func newSchemaInspectCommand() *cobra.Command {
+	opts := schemaInspectOptions{}
+	cmd := &cobra.Command{
+		Use:   "inspect",
+		Short: "Inspect a schema as machine-clean HCL, SQL, or JSON",
+		Long: `Inspect a schema source and write machine-clean output to stdout, without
+status banners: pipe it into files, diffs, or other tools.
+
+The source is a live database (--db-url), a local schema file (--schema-file:
+.hcl, .yaml, .yml, .sql, or .dbml), or an Atlas-format migration directory
+(--migrations-dir). Non-database sources require --dev-url: the dev database
+is reset destructively, the source is materialized on it (schema files
+executed, migration directories replayed), and the result is introspected so
+the output is normalized by a real database of the target dialect.
+
+The default output is HCL; --format selects hcl, sql, json, or dbml. With --out-dir
+the inspected schema is exported as files instead of one stream: one file per
+object by default, or grouped with --split schema|type.
+
+--schemas, --include, and --exclude select what is inspected, in that order:
+--schemas names the schema universe, --include picks top-level resources
+inside it with Atlas-style selectors, and --exclude subtracts from the result.
+Child resources ride along with their parent and cannot be selected on their
+own: the [type=column] spelling fails before the database is contacted. A
+positional spelling such as table.column is not refused on its shape, because
+it is indistinguishable from a table literally named that; an identifier
+holding a dot can also be named as main."my.table" or a\.b\.c. An --include
+selection that matches nothing renders no objects and keeps exit status 0, but
+reports the empty selection on standard error. A selection that keeps an
+object whose dependency it dropped is refused rather than rendered, so
+inspected output never references an object it omitted.`,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runSchemaInspect(cmd, opts)
+		},
+	}
+	flags := cmd.Flags()
+	flags.StringVar(&opts.dbURL, inspectDBURLFlag, "", "Live database URL to inspect")
+	flags.StringVar(&opts.schemaFile, inspectSchemaFileFlag, "", "Schema file to inspect: a local .hcl, .yaml, .yml, .sql, or .dbml file, or an oci:// schema artifact; requires --dev-url")
+	flags.StringVar(&opts.migrationsDir, inspectMigrationsDirFlag, "", "Atlas-format migration directory to inspect; requires --dev-url")
+	flags.StringVar(&opts.devURL, inspectDevURLFlag, "", "Dev database URL used to evaluate non-database inspection sources; it is reset destructively")
+	dbcli.RegisterURLScopedSchemasFlag(flags, &opts.schemas)
+	flags.StringArrayVar(&opts.include, inspectIncludeFlag, nil, "Schema objects to include in inspection (Atlas-style selectors)")
+	flags.StringArrayVar(&opts.exclude, inspectExcludeFlag, nil, "Schema objects to exclude from inspection (Atlas-style selectors)")
+	flags.StringVar(&opts.format, inspectFormatFlag, "hcl", "Output format: hcl, sql, json, or dbml")
+	flags.StringVar(&opts.outDir, inspectOutDirFlag, "", "Directory the inspected schema is exported into as files (hcl and sql formats only)")
+	flags.StringVar(&opts.split, inspectSplitFlag, "", "File grouping for --out-dir: object (default), schema, or type")
+	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
+	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
+	dbcli.RegisterConfigFlag(flags, &opts.configPath)
+	dbcli.RegisterEnvFlag(flags, &opts.envName)
+	cmd.MarkFlagsMutuallyExclusive(inspectDBURLFlag, inspectSchemaFileFlag, inspectMigrationsDirFlag)
+	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	return cmd
+}
+
+func runSchemaInspect(cmd *cobra.Command, opts schemaInspectOptions) error {
+	projectCfg, err := dbcli.LoadProjectConfig(cmd, opts.configPath)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if opts.schemaFile == "" && opts.migrationsDir == "" {
+		opts.dbURL = dbcli.EffectiveString(
+			cmd,
+			inspectDBURLFlag,
+			opts.dbURL,
+			projectCfg.StringValue(projectconfig.StringDatabaseURL),
+		)
+	}
+	// Normalized once, here, so every consumer judges the same bytes.
+	//
+	// atlasschema.inspectOnDev trims before it enforces the dev-database
+	// requirement, so an un-normalized copy reaching any earlier check makes
+	// that check disagree with the one that decides. `--dev-url '   '` was
+	// exactly that: the OCI preflight saw three spaces, called them a value,
+	// pulled the artifact, and only then reported `--dev-url cannot be empty`.
+	// Trimming in the preflight as well would have fixed the symptom and left
+	// the next reader of this value free to reintroduce it.
+	opts.devURL = strings.TrimSpace(dbcli.EffectiveString(
+		cmd,
+		inspectDevURLFlag,
+		opts.devURL,
+		projectCfg.StringValue(projectconfig.StringDevURL),
+	))
+
+	// An oci:// --schema-file is resolved here, into a real local file, before
+	// anything classifies the value. See materializeOCISchemaFile for why the
+	// shared classifier is deliberately left alone.
+	materialized, cleanup, err := materializeOCISchemaFile(cmd, opts, projectCfg)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if cleanup != nil {
+		// Deliberately function-scoped rather than block-scoped: the
+		// materialized file has to outlive this block and be removed on every
+		// exit path below, including the ones that fail. A nil cleanup means
+		// nothing was materialized, so there is nothing to remove.
+		defer cleanup()
+		opts.schemaFile = materialized
+	}
+
+	sourceURL, err := resolveInspectSource(opts)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	locals, err := resolveInspectLocals(cmd, opts, projectCfg)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+
+	rendered, err := atlasschema.InspectSource(cmd.Context(), atlasschema.InspectSourceOptions{
+		URL:            sourceURL,
+		DevURL:         opts.devURL,
+		Schemas:        dbcli.ParseSchemas(opts.schemas),
+		Include:        opts.include,
+		Exclude:        opts.exclude,
+		Format:         locals.format,
+		Diagnostics:    cmd.ErrOrStderr(),
+		ConnectTimeout: locals.connectTimeout,
+	})
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	fmt.Fprint(cmd.OutOrStdout(), rendered)
+	return nil
+}
+
+// inspectLocals are the values this command derives without contacting a
+// registry, a network, or a database.
+type inspectLocals struct {
+	format         string
+	connectTimeout time.Duration
+}
+
+// resolveInspectLocals derives every local value the run needs, and returns the
+// first error any of those derivations produces.
+//
+// It exists because the alternative — a preflight that lists the local checks
+// it happens to know about — has now drifted from the real sequence twice on
+// this one function, and both times the same way: a check that runs, but not
+// on the value or at the point the next step actually uses. First
+// --connect-timeout was parsed after the OCI pull, so an unparseable duration
+// was reported as a registry dial failure; before that it was --format and the
+// selectors. A hand-maintained subset will drift again the next time a local
+// value is added here, and nothing about adding one would prompt the author to
+// look at the preflight.
+//
+// So there is no subset. Both callers run this same function: the OCI
+// materialization runs it before it pulls, and the main flow runs it where the
+// values are used. It is pure, so running it twice costs nothing, and a local
+// check added here is covered in front of the registry without anybody
+// remembering to do that.
+func resolveInspectLocals(
+	cmd *cobra.Command,
+	opts schemaInspectOptions,
+	projectCfg projectconfig.Config,
+) (inspectLocals, error) {
+	format, err := resolveInspectFormat(opts)
+	if err != nil {
+		return inspectLocals{}, err
+	}
+	connectTimeout, err := dbcli.ParseConnectTimeout(
+		dbcli.EffectiveString(
+			cmd,
+			dbcli.ConnectTimeoutFlagName,
+			opts.connectTimeout,
+			projectCfg.StringValue(projectconfig.StringMigrationConnectTimeout),
+		))
+	if err != nil {
+		return inspectLocals{}, err
+	}
+	return inspectLocals{format: format, connectTimeout: connectTimeout}, nil
+}
+
+// materializeOCISchemaFile pulls an oci:// --schema-file to a local canonical
+// HCL file and returns its path plus the cleanup that removes it. A value that
+// is not an oci:// reference returns ("", nil, nil), which is the caller's
+// signal that nothing was materialized.
+//
+// # Why here, and not in the shared classifier
+//
+// Every sibling command that accepts an oci:// --schema-file resolves it
+// through [ptah.run/internal/schemaload], which parses the artifact into
+// a desired schema directly. `schema inspect` cannot: it does not parse its
+// source at all. It hands the source to
+// [ptah.run/internal/atlasschema.InspectSource], which materializes it on
+// a destructively reset --dev-url database and introspects the result, so the
+// output is normalized by a real database of the target dialect. That is the
+// whole point of the verb, and it is why the refusal was not an oversight: the
+// value goes to [ptah.run/internal/atlassource.Classify], which names no
+// oci source kind.
+//
+// Teaching Classify one would have been the smaller diff and the wrong change.
+// That function is shared with the Atlas-compatible surface: thirteen non-test
+// call sites live under internal/cli/atlas and internal/atlasschema, and
+// internal/cli/atlas/compat_url_diagnostic.go re-words exactly its unsupported-scheme
+// verdict — its own comment says it does so "so a scheme added to
+// atlassource.Classify later is recognized here without this file being
+// edited". Adding an oci branch would therefore stop `ptah-compat schema
+// inspect --url oci://...` refusing, and the pinned community binary refuses
+// that reference at exit 1 (`sql/sqlclient: unknown driver "oci"`). Widening
+// the classifier would hand a compatibility-policy (a) violation to a surface
+// this issue never mentioned.
+//
+// So the scheme is resolved before classification instead, on the one native
+// verb that wants it, through the same schemaartifact.PullToFile that
+// `ptah schema pull` uses. The bytes inspected are byte-for-byte the bytes
+// `schema pull` would have written, because it is not a second implementation
+// of the pull.
+func materializeOCISchemaFile(
+	cmd *cobra.Command,
+	opts schemaInspectOptions,
+	projectCfg projectconfig.Config,
+) (string, func(), error) {
+	reference := strings.TrimSpace(opts.schemaFile)
+	if !strings.HasPrefix(reference, ociartifact.Scheme) {
+		return "", nil, nil
+	}
+
+	// Every purely local argument error is answered before the registry is
+	// contacted. Without this the pull happens first, so `--format garbage` or
+	// a missing --dev-url would be reported as a dial failure after an
+	// authenticated network round trip — and on a slow or unreachable registry,
+	// after the wait. An artifact is a remote resource; a typo is not, and the
+	// operator should not need a working network to be told about one.
+	//
+	// An oci:// reference is never a database URL, so the dev-database
+	// requirement applies unconditionally here. Both checks come from
+	// atlasschema rather than being restated, so the message and the order stay
+	// the ones InspectSource would have produced.
+	//
+	// resolveInspectLocals is the whole local sequence, not a list of the parts
+	// this function remembered. It runs here and again where its values are
+	// used; it is pure, so the second run costs nothing, and a local check
+	// added to it is covered in front of the registry automatically. Calling it
+	// here rather than hoisting it keeps the order every non-OCI invocation
+	// already had: hoisting would change which message a local source wrong in
+	// two ways receives, which is a behavior change this defect does not
+	// license.
+	if _, err := resolveInspectLocals(cmd, opts, projectCfg); err != nil {
+		return "", nil, err
+	}
+	if err := atlasschema.ValidateNonDatabaseInspectPreconditions(atlasschema.InspectSourceOptions{
+		Format:  opts.format,
+		Include: opts.include,
+		Exclude: opts.exclude,
+		DevURL:  opts.devURL,
+	}); err != nil {
+		return "", nil, err
+	}
+
+	dir, err := os.MkdirTemp("", "ptah-inspect-oci-")
+	if err != nil {
+		return "", nil, fmt.Errorf("create temporary directory for %s: %w", reference, err)
+	}
+	cleanup := func() { _ = os.RemoveAll(dir) }
+	_, output, err := schemaartifact.PullToFile(
+		cmd.Context(),
+		reference,
+		filepath.Join(dir, inspectOCIMaterializedName),
+		opts.plainHTTP,
+	)
+	if err != nil {
+		cleanup()
+		return "", nil, err
+	}
+	return output, cleanup, nil
+}
+
+// resolveInspectSource maps the native source flags onto one inspection URL.
+func resolveInspectSource(opts schemaInspectOptions) (string, error) {
+	switch {
+	case strings.TrimSpace(opts.migrationsDir) != "":
+		dir, err := pathguard.ResolveCLIPath(opts.migrationsDir)
+		if err != nil {
+			return "", fmt.Errorf("invalid migrations directory: %w", err)
+		}
+		if err := cmdutil.StatDir(dir); err != nil {
+			return "", err
+		}
+		source, err := atlassource.Classify(dir)
+		if err != nil {
+			return "", fmt.Errorf("--%s %q: %w", inspectMigrationsDirFlag, opts.migrationsDir, err)
+		}
+		if source.Kind != atlassource.KindMigrationDir {
+			return "", fmt.Errorf(
+				"--%s %q is not recognized as a migration directory (missing atlas.sum); only Atlas-format directories can be inspected",
+				inspectMigrationsDirFlag, opts.migrationsDir)
+		}
+		return dir, nil
+	case strings.TrimSpace(opts.schemaFile) != "":
+		return strings.TrimSpace(opts.schemaFile), nil
+	case strings.TrimSpace(opts.dbURL) != "":
+		return strings.TrimSpace(opts.dbURL), nil
+	default:
+		return "", fmt.Errorf(
+			"an inspection source is required: pass --%s, --%s, or --%s",
+			inspectDBURLFlag, inspectSchemaFileFlag, inspectMigrationsDirFlag)
+	}
+}
+
+// resolveInspectFormat maps the native format flags onto the shared inspect
+// renderer. Plain hcl/sql/json stream to stdout; --out-dir composes the
+// split/write export the renderer implements.
+func resolveInspectFormat(opts schemaInspectOptions) (string, error) {
+	format := strings.ToLower(strings.TrimSpace(opts.format))
+	switch format {
+	case "", "hcl":
+		format = "hcl"
+	case "sql", "json", "dbml":
+	default:
+		return "", fmt.Errorf(
+			"unsupported --%s %q: expected hcl, sql, json, or dbml", inspectFormatFlag, opts.format)
+	}
+
+	split := strings.ToLower(strings.TrimSpace(opts.split))
+	outDir := strings.TrimSpace(opts.outDir)
+	if outDir == "" {
+		if split != "" {
+			return "", fmt.Errorf("--%s requires --%s", inspectSplitFlag, inspectOutDirFlag)
+		}
+		return format, nil
+	}
+	if format == "json" || format == "dbml" {
+		return "", fmt.Errorf("--%s supports the hcl and sql formats only", inspectOutDirFlag)
+	}
+	splitArg := ""
+	switch split {
+	case "", "object":
+	case "schema", "type":
+		splitArg = fmt.Sprintf(" %q", split)
+	default:
+		return "", fmt.Errorf("unsupported --%s %q: expected object, schema, or type", inspectSplitFlag, opts.split)
+	}
+	return fmt.Sprintf("{{ %s . | split%s | write %q }}", format, splitArg, outDir), nil
+}

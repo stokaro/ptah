@@ -89,7 +89,7 @@ export const glossary: Record<string, GlossaryEntry> = {
   'throwaway-database': {
     definition:
       'A database supplied specifically for destructive tests or examples, with no state the operator needs to preserve.',
-    source: 'cmd/schema',
+    source: 'internal/cli/schema',
   },
   dialect: {
     definition:
@@ -109,17 +109,17 @@ export const glossary: Record<string, GlossaryEntry> = {
   generation: {
     definition:
       'One immutable identity for an embedding model, preprocessing contract, target layout, and the vectors produced under that contract.',
-    source: 'cmd/inference',
+    source: 'internal/cli/inference',
   },
   'candidate-generation': {
     definition:
       'A generation being prepared, backfilled, indexed, and verified while queries still read the active generation.',
-    source: 'cmd/inference',
+    source: 'internal/cli/inference',
   },
   cutover: {
     definition:
       'The explicit, digest-approved state transition that moves the query pointer from the active generation to a verified candidate.',
-    source: 'cmd/inference',
+    source: 'internal/cli/inference',
   },
   conformance: {
     definition:

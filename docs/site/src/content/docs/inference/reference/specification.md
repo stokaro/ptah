@@ -8,7 +8,7 @@ audience:
 readerQuestion: "Which fields and values does an inference specification accept?"
 goal: "Look up the accepted inference specification fields and values."
 sourceOfTruth:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 overlaps: []

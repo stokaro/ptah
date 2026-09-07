@@ -295,7 +295,7 @@ func Classify(rawURL string) (Source, error) {
 // differently does not have to re-parse the URL. The Atlas-compatible surface
 // is the caller that needs both: the pinned community binary answers an
 // unknown scheme on `schema inspect --url` from its client layer rather than
-// from a desired-state resolver, so cmd/atlas re-words exactly this verdict
+// from a desired-state resolver, so internal/cli/atlas re-words exactly this verdict
 // and leaves every other classification failure alone. Its Error text is the
 // message this branch has always produced, so native Ptah is unchanged.
 type UnsupportedSchemeError struct {
@@ -661,7 +661,7 @@ func errExternalSchemaDisabled() error {
 // package that owns it. See [ptah.run/internal/envbool].
 //
 // The same name reaches the native surface as the --allow-external-schema
-// flag's environment twin, which cmd/internal/cmdflags already parses under the
+// flag's environment twin, which internal/cli/internal/cmdflags already parses under the
 // same grammar and the same error, so one name means one thing on both
 // binaries.
 // It is [ptah.run/internal/envbool.Gated]: evaluating

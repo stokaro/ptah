@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	"ptah.run/cmd/atlas"
-	"ptah.run/cmd/internal/cliobs"
-	"ptah.run/cmd/root"
 	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/cli/atlas"
+	"ptah.run/internal/cli/cliobs"
+	"ptah.run/internal/cli/root"
 	"ptah.run/internal/exeext"
 )
 

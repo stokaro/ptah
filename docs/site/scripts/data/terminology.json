@@ -5,7 +5,7 @@
     "",
     "This file is the source. Section 7 of docs/STYLE_GUIDE.md is generated from it",
     "between markers by docs/site/scripts/check-terminology.mjs --write, and the same",
-    "script reads the bans below to check reader-facing prose. cmd/internal/",
+    "script reads the bans below to check reader-facing prose. internal/cli/internal/",
     "terminologyguard reads this file too, and checks the native command tree's help",
     "text against the same bans -- one registry, two readers, so a spelling cannot be",
     "retired in prose while the binary keeps printing it.",
@@ -237,7 +237,7 @@
 
           "helpText": {
             "tree": "native",
-            "reason": "cmd/internal/terminologyguard walks cmd/root.NewRootCommand() and reads every Short, Long, Example and flag usage under it. The compatibility tree is left out for the reason `scope.exclude` gives for the atlas/ pages: `ptah-compat` describes itself in the vocabulary its users arrived with, and the decision is recorded once here rather than twice in two readers. A ban with no `helpText` governs prose only."
+            "reason": "internal/cli/internal/terminologyguard walks internal/cli/root.NewRootCommand() and reads every Short, Long, Example and flag usage under it. The compatibility tree is left out for the reason `scope.exclude` gives for the atlas/ pages: `ptah-compat` describes itself in the vocabulary its users arrived with, and the decision is recorded once here rather than twice in two readers. A ban with no `helpText` governs prose only."
           },
 
           "scope": {

@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I detect schema drift and turn it into a CI gate?"
 goal: "Detect schema drift and turn it into a CI gate."
 sourceOfTruth:
-  - "cmd/schema"
+  - "internal/cli/schema"
   - "migration/schemadiff"
   - "migration/planner"
 generated: false

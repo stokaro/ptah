@@ -17,7 +17,7 @@
       "themeBehavior": "explicit-light-and-dark",
       "requiredPlacement": "within-250-visible-words",
       "acceptanceTest": "docs/site/scripts/check-visual-snapshots.mjs",
-      "owner": "cmd/viz",
+      "owner": "internal/cli/viz",
       "deliveryState": "verified"
     },
     {
@@ -35,7 +35,7 @@
       "themeBehavior": "explicit-light-and-dark",
       "requiredPlacement": "within-250-visible-words",
       "acceptanceTest": "docs/site/scripts/check-visual-snapshots.mjs",
-      "owner": "cmd/viz",
+      "owner": "internal/cli/viz",
       "deliveryState": "verified"
     },
     {
@@ -71,7 +71,7 @@
       "themeBehavior": "prefers-color-scheme",
       "requiredPlacement": "within-250-visible-words",
       "acceptanceTest": "docs/site/scripts/check-visual-snapshots.mjs",
-      "owner": "cmd/internal/schemaserve",
+      "owner": "internal/cli/internal/schemaserve",
       "deliveryState": "verified"
     },
     {
@@ -89,7 +89,7 @@
       "themeBehavior": "generated-report",
       "requiredPlacement": "within-250-visible-words-of-report-section",
       "acceptanceTest": "docs/site/scripts/check-visual-snapshots.mjs",
-      "owner": "cmd/migrate",
+      "owner": "internal/cli/migrate",
       "deliveryState": "verified"
     },
     {
@@ -125,7 +125,7 @@
       "themeBehavior": "generated-report",
       "requiredPlacement": "within-250-visible-words-of-report-section",
       "acceptanceTest": "docs/site/scripts/check-visual-snapshots.mjs",
-      "owner": "cmd/schema",
+      "owner": "internal/cli/schema",
       "deliveryState": "verified"
     },
     {
@@ -143,7 +143,7 @@
       "themeBehavior": "not-applicable-text-output",
       "requiredPlacement": "within-250-visible-words",
       "acceptanceTest": "docs/site/scripts/check-visual-snapshots.mjs",
-      "owner": "cmd/schema",
+      "owner": "internal/cli/schema",
       "deliveryState": "verified"
     },
     {
@@ -161,7 +161,7 @@
       "themeBehavior": "not-applicable-metrics-output",
       "requiredPlacement": "within-250-visible-words",
       "acceptanceTest": "docs/site/scripts/check-visual-snapshots.mjs",
-      "owner": "cmd/schema",
+      "owner": "internal/cli/schema",
       "deliveryState": "verified"
     },
     {
@@ -179,7 +179,7 @@
       "themeBehavior": "not-applicable-contract-output",
       "requiredPlacement": "within-250-visible-words-of-each-target",
       "acceptanceTest": "docs/site/scripts/check-visual-snapshots.mjs",
-      "owner": "cmd/schema",
+      "owner": "internal/cli/schema",
       "deliveryState": "verified"
     }
   ]

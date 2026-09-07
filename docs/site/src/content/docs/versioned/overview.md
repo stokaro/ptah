@@ -8,7 +8,7 @@ audience:
 readerQuestion: "When should I use versioned migrations, and which task comes next?"
 goal: "Choose the versioned workflow when appropriate and open the correct next task."
 sourceOfTruth:
-  - "cmd/migrations"
+  - "internal/cli/migrations"
   - "migration"
 generated: false
 overlaps:

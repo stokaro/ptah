@@ -6,10 +6,10 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/cmd/atlas"
-	"ptah.run/cmd/root"
 	"ptah.run/internal/agentsurface"
 	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/cli/atlas"
+	"ptah.run/internal/cli/root"
 	"ptah.run/internal/cmdref"
 )
 

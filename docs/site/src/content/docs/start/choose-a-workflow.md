@@ -7,9 +7,9 @@ audience:
 readerQuestion: "Should this schema change use versioned migrations or direct schema changes?"
 goal: "Choose whether a schema change should use versioned migrations or direct schema changes."
 sourceOfTruth:
-  - "cmd/root"
-  - "cmd/schema"
-  - "cmd/migrations"
+  - "internal/cli/root"
+  - "internal/cli/schema"
+  - "internal/cli/migrations"
 generated: false
 overlaps: []
 disposition: keep

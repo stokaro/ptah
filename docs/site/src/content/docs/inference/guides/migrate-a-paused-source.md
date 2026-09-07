@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I migrate inference state while writes to the source table are paused?"
 goal: "Migrate inference state while writes to the source table are paused."
 sourceOfTruth:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 overlaps: []

@@ -8,7 +8,7 @@ audience:
 readerQuestion: "Do inference migrations apply to my persistent model output?"
 goal: "Determine whether inference migrations apply to my persistent model output."
 sourceOfTruth:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 searchAliases:

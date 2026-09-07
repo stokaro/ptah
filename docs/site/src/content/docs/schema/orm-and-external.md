@@ -7,7 +7,7 @@ audience:
 readerQuestion: "How do I feed an ORM's or any external program's schema into Ptah as the desired schema?"
 goal: "Load an external schema into a Ptah workflow."
 sourceOfTruth:
-  - "cmd/schema"
+  - "internal/cli/schema"
   - "internal/schemaload"
 generated: false
 searchAliases:

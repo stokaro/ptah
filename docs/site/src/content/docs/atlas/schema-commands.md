@@ -8,7 +8,7 @@ audience:
 readerQuestion: "What does each ptah-compat schema verb accept, do, and return?"
 goal: "Look up the behavior and runnable form of an Atlas-compatible schema verb."
 sourceOfTruth:
-  - "cmd/atlas"
+  - "internal/cli/atlas"
   - "internal/atlascompatpolicy"
 generated: false
 overlaps: []

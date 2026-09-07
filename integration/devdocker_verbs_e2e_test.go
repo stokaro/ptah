@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/cmd/atlas"
+	"ptah.run/internal/cli/atlas"
 )
 
 // Three of the four verbs wired by stokaro/ptah#844 -- migrate test, schema

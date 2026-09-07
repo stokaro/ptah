@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How does Ptah model consistency modes?"
 goal: "Explain Ptah's model for consistency modes."
 sourceOfTruth:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
   - "integration/inference_outbox_prune_e2e_test.go"
 generated: false

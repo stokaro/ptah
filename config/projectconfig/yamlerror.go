@@ -11,9 +11,9 @@ import (
 )
 
 // ptahConfigFlagName is the CLI flag that selects an explicit ptah.yaml path.
-// It is spelled here rather than imported because cmd/internal/dbcli, which
+// It is spelled here rather than imported because internal/cli/internal/dbcli, which
 // registers it, depends on this package. TestPtahConfigFlagNameMatchesCLI in
-// cmd/internal/dbcli holds the two spellings together.
+// internal/cli/internal/dbcli holds the two spellings together.
 const ptahConfigFlagName = "config"
 
 // atlasConfigExtension is the extension that makes --config read a path as an

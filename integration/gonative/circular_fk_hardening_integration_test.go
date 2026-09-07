@@ -17,8 +17,8 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"  // registers the pgx driver for database/sql
 	_ "github.com/microsoft/go-mssqldb" // registers the SQL Server driver for database/sql
 
-	"ptah.run/cmd/generate"
-	"ptah.run/cmd/readdb"
+	"ptah.run/internal/cli/generate"
+	"ptah.run/internal/cli/readdb"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"

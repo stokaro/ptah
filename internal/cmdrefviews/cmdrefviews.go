@@ -1,7 +1,7 @@
 // Package cmdrefviews names the four command-reference renderings and builds
 // the surfaces each one measures.
 //
-// This is the second non-test file outside cmd/atlas that imports cmd/atlas,
+// This is the second non-test file outside internal/cli/atlas that imports internal/cli/atlas,
 // and the exception is deliberate: see AGENTS.md, "Dependency direction". A
 // documentation generator that measures BOTH surfaces is not the native product
 // depending on the compatibility product, and the direction the rule protects
@@ -19,10 +19,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"ptah.run/cmd/atlas"
-	"ptah.run/cmd/root"
 	"ptah.run/internal/agentsurface"
 	"ptah.run/internal/atlascompatpolicy"
+	"ptah.run/internal/cli/atlas"
+	"ptah.run/internal/cli/root"
 	"ptah.run/internal/cmdref"
 )
 

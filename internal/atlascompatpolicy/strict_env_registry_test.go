@@ -11,7 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	// Importing the owners is what populates the registry the strict policy
-	// reads back, exactly as cmd/internal/envboolguard does and for the same
+	// reads back, exactly as internal/cli/internal/envboolguard does and for the same
 	// reason: a package left out here contributes no declarations, so its
 	// variable would look absent rather than unvalidated. The ptah-compat
 	// process links all of them, because each declaration lives in the package
@@ -19,20 +19,21 @@ import (
 	// package cannot reach the behavior either.
 	//
 	// These are blank imports from an EXTERNAL test package, which is what keeps
-	// them legal: cmd/atlas imports this package, and nothing here imports
-	// cmd/atlas.
+	// them legal: internal/cli/atlas imports this package, and nothing here imports
+	// internal/cli/atlas.
 	//
-	// cmd/internal/editor is absent because Go refuses it from outside cmd/;
-	// cmd/atlas links it, which is why PTAH_ALLOW_NONINTERACTIVE_EDIT still
-	// appears below. If it ever stopped linking it, the documented-set gate goes
-	// red rather than the enumeration going quietly shorter.
-	_ "ptah.run/cmd/atlas"
+	// internal/cli/internal/editor is absent because Go refuses it from outside
+	// internal/cli/; internal/cli/atlas links it, which is why
+	// PTAH_ALLOW_NONINTERACTIVE_EDIT still appears below. If it ever stopped
+	// linking it, the documented-set gate goes red rather than the enumeration
+	// going quietly shorter.
 	_ "ptah.run/config/projectconfig" // links its PTAH_* declarations into the registry
 	"ptah.run/internal/atlascompatpolicy"
 	_ "ptah.run/internal/atlasfilter"    // links its PTAH_* declarations into the registry
 	_ "ptah.run/internal/atlashcl"       // links its PTAH_* declarations into the registry
 	_ "ptah.run/internal/atlashclrender" // links its PTAH_* declarations into the registry
 	_ "ptah.run/internal/atlassource"    // links its PTAH_* declarations into the registry
+	_ "ptah.run/internal/cli/atlas"      // links its PTAH_* declarations into the registry
 	"ptah.run/internal/envbool"
 	"ptah.run/internal/envbool/envbooltest"
 	_ "ptah.run/internal/migrationintegrity" // links its PTAH_* declarations into the registry
@@ -96,7 +97,7 @@ func TestStrictCERefusesAMalformedValueForEveryRegisteredVariable(t *testing.T) 
 // binary already does, so strict mode honors it. The selector is what turned
 // strict mode on and can never be refused by it. An unclassified variable is
 // refused, which is the fail-closed direction -- but the registry guard in
-// cmd/internal/envboolguard is what keeps one from shipping in that state, so
+// internal/cli/internal/envboolguard is what keeps one from shipping in that state, so
 // this row exists to pin the runtime answer rather than to permit it.
 func TestStrictCEAnswersEveryRegisteredVariableByItsDeclaredClass(t *testing.T) {
 	assertions := map[envbool.Class]func(*testing.T, string, error){

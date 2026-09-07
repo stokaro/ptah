@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I migrate a table while my application continues writing to it?"
 goal: "Migrate a table while my application continues writing to it."
 sourceOfTruth:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 overlaps: []

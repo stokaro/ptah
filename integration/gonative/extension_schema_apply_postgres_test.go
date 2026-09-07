@@ -13,7 +13,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"ptah.run/cmd/root"
+	"ptah.run/internal/cli/root"
 )
 
 // TestNativeSchemaApplyCreatesExtensionInDeclaredSchemaPostgres crosses the

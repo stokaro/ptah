@@ -39,7 +39,7 @@ integration-test
 # passes that spelling writes one into the package directory it runs in. Tracked
 # as stokaro/ptah#1819; ignored here so it cannot be committed again while the
 # underlying behavior is being fixed.
-cmd/atlas/dev
+internal/cli/atlas/dev
 
 # Ptah Assist writes each conversation here, in the project it was about. The
 # file holds the conversation and whatever Ptah read on the model's behalf, so

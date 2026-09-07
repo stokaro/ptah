@@ -136,20 +136,13 @@ write_module core/ast examples/models
 ledger 'example.com/thing/core/ast' --documentation-only 'example.com/thing/examples/models'
 assert_accepted 'a package the ledger lists as documentation-only'
 
-# The one tree still outside the ledger, the named exemption the gate carries
-# until stokaro/ptah#2974 internalizes it. The fixture is what keeps it from
-# being dropped by accident: the ledger below lists nothing that matches, so a
-# tree that is not exempt fails.
-write_module core/ast cmd/thing
-ledger 'example.com/thing/core/ast'
-assert_accepted 'an exempt tree: cmd/thing'
-
-# The exemptions that are gone. `examples/**` is classified package by package,
-# `stubs`, the integration fixture tree and the reference helper moved behind
-# internal boundaries, and the testutil and mocks patterns matched nothing in
-# the tree at all -- so a package under any of these names is an ordinary
-# unclassified library.
-for reported in examples/one stubs integration/suite catalog/testutil catalog/mocks; do
+# The exemptions, all of them gone. `examples/**` is classified package by
+# package; `stubs`, the integration fixture tree, the reference helper and the
+# command tree moved behind internal boundaries; and the testutil and mocks
+# patterns matched nothing in the tree at all. A package under any of these
+# names is an ordinary unclassified library, and this list is what keeps the
+# path-shaped escape hatch from being reintroduced one case at a time.
+for reported in examples/one stubs integration/suite cmd/thing catalog/testutil catalog/mocks; do
 	write_module core/ast "$reported"
 	ledger 'example.com/thing/core/ast'
 	assert_rejected "a formerly exempt path: $reported" \
@@ -197,4 +190,4 @@ add_main tools/generator
 ledger 'example.com/thing/core/ast'
 assert_rejected 'a module with no library package at all' 'classified no library packages at all'
 
-printf 'public API self-test: an unclassified package is reported, stable and documentation-only listings are not, the one exempt tree stays quiet, five former exemptions and a boundary-lookalike are reported, four internal boundaries, a program and a test-only directory stay quiet, and an empty corpus is refused\n'
+printf 'public API self-test: an unclassified package is reported, stable and documentation-only listings are not, six former exemptions and a boundary-lookalike are reported, four internal boundaries, a program and a test-only directory stay quiet, and an empty corpus is refused\n'

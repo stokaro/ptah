@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I save a schema change as a plan file, sign it with an SSH key, and refuse an apply whose plan carries no matching approval?"
 goal: "Apply only the reviewed and signed schema plan."
 sourceOfTruth:
-  - "cmd/schema"
+  - "internal/cli/schema"
   - "migration/schemadiff"
   - "migration/planner"
 generated: false

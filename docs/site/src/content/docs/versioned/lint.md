@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I analyze migration files for production-unsafe patterns, set the rule policy, declare rules of your own, and gate destructive statements at apply time?"
 goal: "Define and enforce a migration safety policy."
 sourceOfTruth:
-  - "cmd/migrations"
+  - "internal/cli/migrations"
   - "migration"
 generated: false
 overlaps: []

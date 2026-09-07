@@ -3,7 +3,7 @@
 // whether the database already holds objects that no migration in the
 // directory created.
 //
-// It sits between the compat command in cmd/atlas and the live catalog. The
+// It sits between the compat command in internal/cli/atlas and the live catalog. The
 // command owns the two questions this package cannot see — whether the run was
 // opted out of the gate, and whether the revision table already holds rows —
 // and this package owns the three it can: which scope the connection selected,

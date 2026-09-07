@@ -13,7 +13,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	atlascmd "ptah.run/cmd/atlas"
+	atlascmd "ptah.run/internal/cli/atlas"
 	"ptah.run/dbschema"
 	"ptah.run/internal/migratesum"
 	"ptah.run/internal/migrationartifact"

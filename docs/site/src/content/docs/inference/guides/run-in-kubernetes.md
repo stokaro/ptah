@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I run an embedding-generation change in Kubernetes and gate a rollout on it?"
 goal: "Run an embedding-generation change as Kubernetes Jobs and gate a rollout on its readiness."
 sourceOfTruth:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "examples/kubernetes"
   - "integration/inference_rollout_gate_e2e_test.go"
 generated: false

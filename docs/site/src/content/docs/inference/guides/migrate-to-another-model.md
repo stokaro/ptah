@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I replace an active embedding generation with one from another model?"
 goal: "Replace an active embedding generation with one from another model."
 sourceOfTruth:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 searchAliases:

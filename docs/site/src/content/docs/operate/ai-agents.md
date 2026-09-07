@@ -8,8 +8,8 @@ audience:
 readerQuestion: "How can a model work with Ptah without receiving unrestricted project access?"
 goal: "Choose an AI surface and route to its setup and safety guidance."
 sourceOfTruth:
-  - "cmd/assist"
-  - "cmd/mcp"
+  - "internal/cli/assist"
+  - "internal/cli/mcp"
   - "internal/mcpserver"
 generated: false
 searchAliases:

@@ -22,8 +22,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
 
-	"ptah.run/cmd/atlas"
-	"ptah.run/cmd/root"
+	"ptah.run/internal/cli/atlas"
+	"ptah.run/internal/cli/root"
 	"ptah.run/config/projectconfig"
 	"ptah.run/internal/migratesum"
 	"ptah.run/migration/migrationfile"

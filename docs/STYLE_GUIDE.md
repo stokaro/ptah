@@ -108,7 +108,7 @@ audience:
 readerQuestion: How do I apply an already reviewed schema plan?
 goal: Apply the plan to a target database and verify the resulting schema.
 sourceOfTruth:
-  - cmd/schema
+  - internal/cli/schema
   - migration/planner
 generated: false
 overlaps:
@@ -830,7 +830,7 @@ in this guide is a review responsibility.
 | No `testify` in code samples | 8 | `check:style` |
 | A retired spelling on a section 7 row whose **Held by** names a gate | 7 | `check:terminology` |
 | Section 7's table matches the registry it is generated from | 7 | `check:terminology` |
-| Native help text obeys the section 7 rows `terminologyguard` holds | 7 | `cmd/internal/terminologyguard` |
+| Native help text obeys the section 7 rows `terminologyguard` holds | 7 | `internal/cli/internal/terminologyguard` |
 | Every image carries alt text | 11.3 | `check:style` |
 | `title` and `description` frontmatter | 13 | `check:page-health` |
 | Page type, audience, reader question, goal, source, generated state, overlaps, and disposition | 3.1 | Astro content schema; `check:content-inventory` |
@@ -884,7 +884,7 @@ necessarily contains the words it bans.
 Section 7 is a generated rendering of
 `docs/site/scripts/data/terminology.json`, and the registry is what both
 checkers read: `check:terminology` for Markdown prose, and
-`cmd/internal/terminologyguard` for the native command tree's help text, in
+`internal/cli/internal/terminologyguard` for the native command tree's help text, in
 `go test ./...` rather than in this workflow, because a Go-only change does not
 trigger it.
 

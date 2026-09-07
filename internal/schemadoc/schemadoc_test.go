@@ -187,7 +187,7 @@ func tokensIn(block string) map[string]bool {
 // the exporting machine's filesystem layout.
 //
 // The caller supplies the name, so this pins the rendering rather than the
-// basename; cmd/schema is where the path is reduced to a name.
+// basename; internal/cli/schema is where the path is reduced to a name.
 func TestRender_NamesItsSourceWithoutItsPath(t *testing.T) {
 	c := qt.New(t)
 

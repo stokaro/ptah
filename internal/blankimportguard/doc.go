@@ -16,7 +16,7 @@
 //
 // The exemption is wrong for the tests here. Several of them blank-import
 // Ptah's own packages to populate a registry the test then reads back --
-// cmd/internal/envboolguard and internal/atlascompatpolicy both do -- and there
+// internal/cli/internal/envboolguard and internal/atlascompatpolicy both do -- and there
 // the failure of a missing import is not a broken test but a quieter one: the
 // registry holds less, the enumeration checks less, and the assertion passes.
 // That is the shape AGENTS.md calls a gate that reports without running.

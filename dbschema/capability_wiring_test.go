@@ -21,15 +21,15 @@ func TestLiveCapabilityPathsAvoidVersionBlindFactories(t *testing.T) {
 			`generateUpMigrationSQL\([^)]*(conn\.Info\(\)|info)\.Dialect\)`,
 			`generateDownMigrationSQL\([^)]*(conn\.Info\(\)|info)\.Dialect\)`,
 		},
-		filepath.Join("..", "cmd", "migrate", "migrate.go"): {
+		filepath.Join("..", "internal", "cli", "migrate", "migrate.go"): {
 			`planner\.GenerateSchemaDiff(AST|SQL|SQLStatements)\([^)]*(conn\.Info\(\)|info)\.Dialect`,
 			`safety\.AssessRendered\([^)]*(conn\.Info\(\)|info)\.Dialect`,
 			`renderer\.RenderSQL\([^)]*(conn\.Info\(\)|info)\.Dialect`,
 		},
-		filepath.Join("..", "cmd", "compare", "compare.go"): {
+		filepath.Join("..", "internal", "cli", "compare", "compare.go"): {
 			`planner\.GenerateSchemaDiff(AST|SQL|SQLStatements)\([^)]*(conn\.Info\(\)|info)\.Dialect`,
 		},
-		filepath.Join("..", "cmd", "readdb", "readdb.go"): {
+		filepath.Join("..", "internal", "cli", "readdb", "readdb.go"): {
 			`renderer\.GetOrderedCreateStatements\([^)]*(conn\.Info\(\)|info)\.Dialect`,
 		},
 		filepath.Join("..", "internal", "integrationharness", "framework.go"): {

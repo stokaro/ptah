@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I convert a golang-migrate, Goose, Flyway, Liquibase, or dbmate migration directory into Ptah's native format?"
 goal: "Convert and verify a third-party migration directory."
 sourceOfTruth:
-  - "cmd/migrations"
+  - "internal/cli/migrations"
   - "migration"
 generated: false
 overlaps: []

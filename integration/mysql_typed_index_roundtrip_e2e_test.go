@@ -50,7 +50,7 @@ package integration_test
 // go through Ptah at all, an in-sync comparison says the desired model and the
 // server now describe one index.
 //
-// The commands are driven in process, through the cobra tree `cmd/schema`
+// The commands are driven in process, through the cobra tree `internal/cli/schema`
 // builds, which is the shape mysql_inline_index_naming_e2e_test.go and
 // schema_lineage_live_e2e_test.go already establish for the native schema
 // verbs: the same user-facing surface `ptah schema apply` and

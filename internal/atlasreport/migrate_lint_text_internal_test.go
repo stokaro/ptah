@@ -838,7 +838,7 @@ func TestMigrateLintProseIsAtlasCompatible(t *testing.T) {
 // never emitted the finding.
 //
 // TRUNCATE is the fixture because DS108 has no Atlas counterpart. The property
-// arrived here from cmd/atlas, where it was pinned on a rename until #1074 gave
+// arrived here from internal/cli/atlas, where it was pinned on a rename until #1074 gave
 // renames a measured Atlas identity; the renderer can analyze TRUNCATE without
 // a dev-database replay, which no SQLite-backed command test can.
 //

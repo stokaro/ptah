@@ -3,7 +3,7 @@
     "./internal/atlasmigrateimport/",
     "./internal/atlasmigrate/",
     "./migration/migrator/",
-    "./cmd/atlas/"
+    "./internal/cli/atlas/"
   ],
   "mutations": [
     {
@@ -86,7 +86,7 @@
     },
     {
       "name": "the surviving-baseline refusal is removed, leaving the exemption to decide",
-      "file": "cmd/atlas/migrate_apply.go",
+      "file": "internal/cli/atlas/migrate_apply.go",
       "old": "\tif err := checkFlywayBaselineHistory(linearity.baseline, execOrder, plan); err != nil {\n\t\treturn err\n\t}",
       "new": "\t_ = checkFlywayBaselineHistory"
     }

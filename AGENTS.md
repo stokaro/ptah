@@ -76,8 +76,10 @@ sample package documentation reaches carries no guarantee.
 directory holding only `_test.go` files publish no import path and are outside
 the surface for that reason. What is left is behind an `internal/` boundary --
 matched as a whole path segment, so `core/internal` is a boundary and
-`internalized` is not. One named exemption is left, `cmd`, and the change that
-internalizes it under stokaro/ptah#2974 deletes it; none may be added.
+`internalized` is not. There are no exemptions: every one the gate carried named
+a subtree Go published while the ledger declined to mention it, and
+stokaro/ptah#2974 closed each by moving the subtree rather than by widening the
+rule. None may be added.
 Additive API changes get normal code review: do not commit a generated
 snapshot of exported declarations to make them show up twice in a diff
 (`docs/public_api.snapshot` and its gate were removed in stokaro/ptah#2572 for
@@ -99,13 +101,23 @@ planners); `internal/modelast` (lowering to AST nodes); `internal/tablelookup`;
 `internal/serverprofile` and `internal/capmatrix` (declared release lines, what
 a live server established, and the CI fan-out over them).
 
-Command tree: `cmd/ptah/main.go` is the native binary and `cmd/root/root.go`
-assembles it from the namespaces `cmd/schema`, `cmd/db`, `cmd/migrations`,
-`cmd/oci`, `cmd/seed`, `cmd/sql`, `cmd/viz`, `cmd/introspect`, `cmd/version`
-and `cmd/license`; each leaf verb keeps its own package below them
-(`cmd/generate` backs `ptah schema render`). `cmd/atlas` is the Atlas-compatible
-tree shipped by `cmd/ptah-compat`. `cmd/integration-test` is the suite runner
-and `cmd/ptah-ls` the language server. Both command trees are adapters; see
+Command tree: `cmd/` holds the programs that ship and nothing else; the tree
+they assemble lives under `internal/cli/`.
+
+- `cmd/ptah/main.go` is the native binary, and `internal/cli/root/root.go`
+  assembles it from the namespaces `schema`, `db`, `migrations`, `oci`, `seed`,
+  `sql`, `viz`, `introspect`, `version` and `license` under `internal/cli/`.
+  Each leaf verb keeps its own package below them; `internal/cli/generate`
+  backs `ptah schema render`.
+- `internal/cli/atlas` is the Atlas-compatible tree, shipped by
+  `cmd/ptah-compat`.
+- Shared command helpers sit in `internal/cli/internal/`. `internal/cli/banner`
+  and `internal/cli/cliobs` are the exceptions: a `main` package imports each
+  directly, so neither can sit behind that second boundary.
+- `cmd/integration-test` is the suite runner and `cmd/ptah-ls` the language
+  server.
+
+Both command trees are adapters; see
 [Native And Compatibility Capability Ownership](#native-and-compatibility-capability-ownership).
 
 Entities to test against: `internal/stubs/`, `examples/`, and the numbered
@@ -267,7 +279,7 @@ the default**, and use `os.LookupEnv`, because `PTAH_X=` and an absent
 variable are different configuration states.
 
 Declare each variable once with `envbool.New(name, default, class)` and
-resolve it through `Var.Resolve`; `cmd/internal/envboolguard` refuses a
+resolve it through `Var.Resolve`; `internal/cli/internal/envboolguard` refuses a
 `strconv.ParseBool(os.Getenv(...))` call site. `class` is the strict-mode
 classification, stated at the declaration with a comment saying which
 capability the pinned binary has or lacks: `Gated` (adds behavior CE does not
@@ -284,7 +296,7 @@ why it cannot be a capability gate.
 ### A `PTAH_*` value is consumed once, by the surface that decides with it
 
 The compatibility surface forwards to a native command, and
-`cmd/internal/cmdadapter` installs the same `PTAH_*` binding on the target. So
+`internal/cli/internal/cmdadapter` installs the same `PTAH_*` binding on the target. So
 a variable is offered twice, and when the adapter's decision was *nothing* --
 a scope that emptied the forwarded values -- the target reads the variable
 itself and the decision is overwritten by its own input (stokaro/ptah#1535).
@@ -370,7 +382,7 @@ migration testing, drift detection, schema security analysis, checkpoints,
 pre-apply checks, planning, validation, artifact publishing, directory import.
 Its semantics live in a shared package below the CLI layer and are reachable
 through the native surface too; never implement general behavior only inside
-`cmd/atlas`.
+`internal/cli/atlas`.
 
 **Compatibility machinery** exists to interpret or reproduce an Atlas contract
 -- `atlas://` resolution, flag spelling and precedence, `atlas.hcl` evaluation,
@@ -386,9 +398,10 @@ Exposing a capability natively means a native verb or flag; the compatibility
 surface takes no new flag and keeps fuller behavior behind a `PTAH_*` variable
 (precedent: `PTAH_ALLOW_EXTERNAL_SCHEMA`).
 
-Native code must not depend on `cmd/atlas`, and shared packages must not
+Native code must not depend on `internal/cli/atlas`, and shared packages must not
 either. **No gate checks this direction**: `scripts/check-architecture-boundaries.sh`
-enforces only the four ADR 0001 directions, none of which names `cmd/atlas`,
+enforces only the four ADR 0001 directions, none of which names
+`internal/cli/atlas`,
 so a new non-test importer is caught by review alone. One exists beside the
 binary `cmd/ptah-compat`: `internal/cmdrefviews`, which has to construct both
 trees in one process to say what strict mode takes out, and says so at the top
@@ -469,7 +482,7 @@ full Atlas parity unless the conformance evidence proves it.
 Follow [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md). Section 7 is the
 terminology authority; its table is generated from
 `docs/site/scripts/data/terminology.json`, which is what
-`check-terminology.mjs` and `cmd/internal/terminologyguard` read, so add a term
+`check-terminology.mjs` and `internal/cli/internal/terminologyguard` read, so add a term
 there and render it with `--write`. Product definitions live once in
 `src/glossary.ts`.
 

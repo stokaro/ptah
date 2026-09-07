@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I detect a changed migration or unsafe precondition before apply?"
 goal: "Detect a changed migration or unsafe precondition before apply."
 sourceOfTruth:
-  - "cmd/migrations"
+  - "internal/cli/migrations"
   - "migration"
 generated: false
 searchAliases:

@@ -12,7 +12,7 @@
 // The decision existed the entire time: embedplan.Plan.Runnable() was computed,
 // tested five times, and read by nothing. internal/embedguard reports exactly
 // that shape and did not, because it matches a declaration by bare name and
-// cobra's own Command.Runnable is called in cmd/atlas — the false negative that
+// cobra's own Command.Runnable is called in internal/cli/atlas — the false negative that
 // package's own doc comment names as the direction it accepts.
 //
 // This file drives the cobra tree an operator runs, because an exit code is the

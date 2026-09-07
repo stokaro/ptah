@@ -193,7 +193,7 @@ func Flags(surfaces []Surface) (string, error) {
 //
 // The paragraph names the compatibility COMMAND and lets its row name the
 // variable, which is not squeamishness about repetition. A `PTAH_*` name in a
-// string literal is a name cmd/internal/envboolguard requires to be classified,
+// string literal is a name internal/cli/internal/envboolguard requires to be classified,
 // and the two classifications it offers are "declared through
 // internal/envbool" and "carries something other than a boolean".
 // `PTAH_AUTO_APPROVE` is neither: it is a boolean that reaches its flag through
@@ -221,8 +221,8 @@ var flagsPreamble = strings.Join([]string{
 	"readerQuestion: Which flags and environment bindings does each current command expose?",
 	"goal: Look up the flags, defaults, and environment bindings for a command.",
 	"sourceOfTruth:",
-	"  - cmd/root",
-	"  - cmd/atlas",
+	"  - internal/cli/root",
+	"  - internal/cli/atlas",
 	"  - internal/cmdref",
 	"generated: true",
 	"generator: internal/cmd/docsync",

@@ -153,7 +153,7 @@ func readScopeDatabases(c *qt.C, dsn string) (sourceURL, devURL string) {
 }
 
 // readScopePlan compares the two states through the same entry point
-// cmd/atlas/schema_diff.go and cmd/schema/diff.go both call, and returns the
+// internal/cli/atlas/schema_diff.go and internal/cli/schema/diff.go both call, and returns the
 // statements it planned.
 func readScopePlan(c *qt.C, devURL string, from, to []string) []string {
 	c.Helper()

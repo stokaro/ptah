@@ -1088,7 +1088,7 @@ type FlywayBaseline struct {
 // before what is already applied, and it is not: it is an artifact of projecting
 // a sum order onto an int64, which is why the version is exempted from the
 // linear guard. Whether the baseline may then run at all is a second question,
-// answered by checkFlywayBaselineHistory in cmd/atlas.
+// answered by checkFlywayBaselineHistory in internal/cli/atlas.
 //
 // It shares flywaySumFiles and flywayConvertedVersions with the importer, so
 // the version reported here is the one the entry is actually executed under. The

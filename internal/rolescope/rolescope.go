@@ -67,7 +67,7 @@ func DescribeAll() (bool, error) {
 // the first has a count to report.
 //
 // The omission is reported rather than silent for the reason
-// cmd/schema/test.go's dropClusterScopedTestState reports its own: an operator
+// internal/cli/schema/test.go's dropClusterScopedTestState reports its own: an operator
 // who is shown a description of their database must not be told less than the
 // truth about it. A reader who sees no role block and no note cannot tell a
 // server with no roles from a server whose roles this description declined to
@@ -131,7 +131,7 @@ func describeAllRemedy(dialect string) string {
 }
 
 // countedRoles renders a count with its singular or plural noun, in the shape
-// cmd/schema/test.go's countedNoun uses for the same kind of note.
+// internal/cli/schema/test.go's countedNoun uses for the same kind of note.
 func countedRoles(count int) string {
 	if count == 1 {
 		return "1 role"

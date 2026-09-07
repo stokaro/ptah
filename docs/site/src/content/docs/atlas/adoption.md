@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I move an Atlas project to Ptah in reversible stages?"
 goal: "Move an Atlas project to Ptah in reversible stages."
 sourceOfTruth:
-  - "cmd/atlas"
+  - "internal/cli/atlas"
   - "internal/atlascompatpolicy"
 generated: false
 searchAliases:

@@ -8,7 +8,7 @@ audience:
 readerQuestion: "When should I use direct schema changes, and which command comes next?"
 goal: "Choose the direct workflow when appropriate and open the correct next task."
 sourceOfTruth:
-  - "cmd/schema"
+  - "internal/cli/schema"
   - "migration/schemadiff"
   - "migration/planner"
 generated: false

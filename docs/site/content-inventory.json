@@ -35,7 +35,7 @@
       "readerQuestion": "How do I move an Atlas project to Ptah in reversible stages?",
       "goal": "Move an Atlas project to Ptah in reversible stages.",
       "sourceOfTruth": [
-        "cmd/atlas",
+        "internal/cli/atlas",
         "internal/atlascompatpolicy"
       ],
       "owns": [
@@ -62,7 +62,7 @@
         "/reference/configuration/"
       ],
       "visibleWords": 1052,
-      "sourceBytes": 7951
+      "sourceBytes": 7960
     },
     {
       "path": "docs/site/src/content/docs/atlas/conformance.mdx",
@@ -79,7 +79,7 @@
       "readerQuestion": "What does the current Atlas conformance evidence establish?",
       "goal": "Interpret the current Atlas conformance evidence and its limits.",
       "sourceOfTruth": [
-        "cmd/atlas",
+        "internal/cli/atlas",
         "internal/atlascompatpolicy"
       ],
       "owns": [],
@@ -110,7 +110,7 @@
         "/reference/hcl-schema/"
       ],
       "visibleWords": 2315,
-      "sourceBytes": 19420
+      "sourceBytes": 19438
     },
     {
       "path": "docs/site/src/content/docs/atlas/docs-coverage.md",
@@ -127,7 +127,7 @@
       "readerQuestion": "What does the current evidence establish about Atlas documentation coverage?",
       "goal": "Interpret the current Atlas documentation coverage evidence and its gaps.",
       "sourceOfTruth": [
-        "cmd/atlas",
+        "internal/cli/atlas",
         "internal/atlascompatpolicy"
       ],
       "owns": [],
@@ -179,7 +179,7 @@
         "/reference/hcl-schema/"
       ],
       "visibleWords": 4943,
-      "sourceBytes": 45183
+      "sourceBytes": 45192
     },
     {
       "path": "docs/site/src/content/docs/atlas/feature-matrix.md",
@@ -249,7 +249,7 @@
       "readerQuestion": "What is Ptah's independent implementation boundary for Atlas compatibility?",
       "goal": "Explain Ptah's independent implementation boundary for Atlas compatibility.",
       "sourceOfTruth": [
-        "cmd/atlas",
+        "internal/cli/atlas",
         "internal/atlascompatpolicy"
       ],
       "owns": [],
@@ -269,7 +269,7 @@
         "/atlas/feature-matrix/"
       ],
       "visibleWords": 548,
-      "sourceBytes": 4490
+      "sourceBytes": 4499
     },
     {
       "path": "docs/site/src/content/docs/atlas/migrate-commands.md",
@@ -286,7 +286,7 @@
       "readerQuestion": "What does each ptah-compat migrate verb accept, do, and return?",
       "goal": "Look up the behavior and runnable form of an Atlas-compatible migration verb.",
       "sourceOfTruth": [
-        "cmd/atlas",
+        "internal/cli/atlas",
         "internal/atlascompatpolicy"
       ],
       "owns": [],
@@ -324,7 +324,7 @@
         "/versioned/lint/"
       ],
       "visibleWords": 13955,
-      "sourceBytes": 97663
+      "sourceBytes": 97672
     },
     {
       "path": "docs/site/src/content/docs/atlas/output-and-redaction.md",
@@ -340,7 +340,7 @@
       "readerQuestion": "What data does ptah-compat expose to format templates, and how are URLs redacted?",
       "goal": "Write an Atlas-compatible format template without exposing URL credentials.",
       "sourceOfTruth": [
-        "cmd/atlas",
+        "internal/cli/atlas",
         "internal/atlasreport"
       ],
       "owns": [],
@@ -368,7 +368,7 @@
         "/atlas/schema-commands/"
       ],
       "visibleWords": 131,
-      "sourceBytes": 1705
+      "sourceBytes": 1714
     },
     {
       "path": "docs/site/src/content/docs/atlas/overview.md",
@@ -385,7 +385,7 @@
       "readerQuestion": "Which Ptah surface should an Atlas user choose?",
       "goal": "Choose the correct Ptah or ptah-compat surface for an Atlas workflow.",
       "sourceOfTruth": [
-        "cmd/atlas",
+        "internal/cli/atlas",
         "internal/atlascompatpolicy"
       ],
       "owns": [],
@@ -433,7 +433,7 @@
         "/testing/migrations-and-schema/"
       ],
       "visibleWords": 497,
-      "sourceBytes": 4576
+      "sourceBytes": 4585
     },
     {
       "path": "docs/site/src/content/docs/atlas/project-config.md",
@@ -450,7 +450,7 @@
       "readerQuestion": "Which `atlas.hcl` blocks, attributes, and expressions does Ptah support?",
       "goal": "Look up the supported `atlas.hcl` blocks, attributes, and expressions.",
       "sourceOfTruth": [
-        "cmd/atlas",
+        "internal/cli/atlas",
         "internal/atlascompatpolicy"
       ],
       "owns": [],
@@ -479,7 +479,7 @@
         "/schema/orm-and-external/"
       ],
       "visibleWords": 6736,
-      "sourceBytes": 49232
+      "sourceBytes": 49241
     },
     {
       "path": "docs/site/src/content/docs/atlas/retained-divergences.md",
@@ -496,7 +496,7 @@
       "readerQuestion": "Where does ptah-compat deliberately differ from the pinned Atlas community binary?",
       "goal": "Evaluate each measured compatibility difference and its current policy.",
       "sourceOfTruth": [
-        "cmd/atlas",
+        "internal/cli/atlas",
         "internal/atlascompatpolicy"
       ],
       "owns": [],
@@ -505,7 +505,7 @@
       "editSource": null,
       "lastVerified": "2026-08-30",
       "evidence": [
-        "cmd/atlas/compat_1241_retained_divergence_test.go",
+        "internal/cli/atlas/compat_1241_retained_divergence_test.go",
         "stokaro/ptah#1241"
       ],
       "searchAliases": [
@@ -527,7 +527,7 @@
         "/reference/atlas-commands/"
       ],
       "visibleWords": 6112,
-      "sourceBytes": 42416
+      "sourceBytes": 42452
     },
     {
       "path": "docs/site/src/content/docs/atlas/schema-commands.md",
@@ -544,7 +544,7 @@
       "readerQuestion": "What does each ptah-compat schema verb accept, do, and return?",
       "goal": "Look up the behavior and runnable form of an Atlas-compatible schema verb.",
       "sourceOfTruth": [
-        "cmd/atlas",
+        "internal/cli/atlas",
         "internal/atlascompatpolicy"
       ],
       "owns": [],
@@ -583,7 +583,7 @@
         "/reference/hcl-schema/"
       ],
       "visibleWords": 12207,
-      "sourceBytes": 89117
+      "sourceBytes": 89126
     },
     {
       "path": "docs/site/src/content/docs/atlas/strict-ce-mode.md",
@@ -602,7 +602,7 @@
       "sourceOfTruth": [
         "internal/atlascompatpolicy",
         "internal/envbool",
-        "cmd/atlas"
+        "internal/cli/atlas"
       ],
       "owns": [],
       "generated": false,
@@ -611,7 +611,7 @@
       "lastVerified": "2026-08-30",
       "evidence": [
         "internal/atlascompatpolicy",
-        "cmd/atlas/strict_compat_policy_test.go",
+        "internal/cli/atlas/strict_compat_policy_test.go",
         "github:stokaro/ptah-atlas-conformance"
       ],
       "searchAliases": [
@@ -637,7 +637,7 @@
         "/reference/extension-variables/"
       ],
       "visibleWords": 416,
-      "sourceBytes": 3915
+      "sourceBytes": 3933
     },
     {
       "path": "docs/site/src/content/docs/concepts/database-urls-and-dev-databases.md",
@@ -1360,7 +1360,7 @@
       "readerQuestion": "How do I apply a desired schema directly and verify the result?",
       "goal": "Apply a desired schema directly and verify the result.",
       "sourceOfTruth": [
-        "cmd/schema",
+        "internal/cli/schema",
         "migration/schemadiff",
         "migration/planner"
       ],
@@ -1400,7 +1400,7 @@
         "/start/choose-a-workflow/"
       ],
       "visibleWords": 830,
-      "sourceBytes": 8847
+      "sourceBytes": 8856
     },
     {
       "path": "docs/site/src/content/docs/direct/compare-and-drift.md",
@@ -1417,7 +1417,7 @@
       "readerQuestion": "How do I detect schema drift and turn it into a CI gate?",
       "goal": "Detect schema drift and turn it into a CI gate.",
       "sourceOfTruth": [
-        "cmd/schema",
+        "internal/cli/schema",
         "migration/schemadiff",
         "migration/planner"
       ],
@@ -1460,7 +1460,7 @@
         "/testing/ci/"
       ],
       "visibleWords": 1434,
-      "sourceBytes": 11993
+      "sourceBytes": 12002
     },
     {
       "path": "docs/site/src/content/docs/direct/inspect.md",
@@ -1477,7 +1477,7 @@
       "readerQuestion": "How do I read a live database schema as SQL, HCL, JSON, DBML, or annotated Go models?",
       "goal": "Choose the required output format and inspect a live schema.",
       "sourceOfTruth": [
-        "cmd/schema",
+        "internal/cli/schema",
         "migration/schemadiff",
         "migration/planner"
       ],
@@ -1512,7 +1512,7 @@
         "/schema/security/"
       ],
       "visibleWords": 1813,
-      "sourceBytes": 14304
+      "sourceBytes": 14313
     },
     {
       "path": "docs/site/src/content/docs/direct/overview.md",
@@ -1529,7 +1529,7 @@
       "readerQuestion": "When should I use direct schema changes, and which command comes next?",
       "goal": "Choose the direct workflow when appropriate and open the correct next task.",
       "sourceOfTruth": [
-        "cmd/schema",
+        "internal/cli/schema",
         "migration/schemadiff",
         "migration/planner"
       ],
@@ -1561,7 +1561,7 @@
         "/start/choose-a-workflow/"
       ],
       "visibleWords": 471,
-      "sourceBytes": 3984
+      "sourceBytes": 3993
     },
     {
       "path": "docs/site/src/content/docs/direct/plan-and-approve.md",
@@ -1578,7 +1578,7 @@
       "readerQuestion": "How do I save a schema change as a plan file, sign it with an SSH key, and refuse an apply whose plan carries no matching approval?",
       "goal": "Apply only the reviewed and signed schema plan.",
       "sourceOfTruth": [
-        "cmd/schema",
+        "internal/cli/schema",
         "migration/schemadiff",
         "migration/planner"
       ],
@@ -1610,7 +1610,7 @@
         "/start/quick-start-direct/"
       ],
       "visibleWords": 1358,
-      "sourceBytes": 13183
+      "sourceBytes": 13192
     },
     {
       "path": "docs/site/src/content/docs/extend/components.md",
@@ -1672,8 +1672,8 @@
       "goal": "Choose the supported Go, component, query-builder, MCP, or AI-assist integration.",
       "sourceOfTruth": [
         "docs/public_api.md",
-        "cmd/mcp",
-        "cmd/assist"
+        "internal/cli/mcp",
+        "internal/cli/assist"
       ],
       "owns": [],
       "generated": false,
@@ -1701,7 +1701,7 @@
       ],
       "inboundLinks": [],
       "visibleWords": 132,
-      "sourceBytes": 2403
+      "sourceBytes": 2421
     },
     {
       "path": "docs/site/src/content/docs/extend/public-api.md",
@@ -1798,8 +1798,8 @@
       "readerQuestion": "Which Ptah workflow matches the change I need to make?",
       "goal": "Choose the Ptah workflow that matches the change.",
       "sourceOfTruth": [
-        "cmd/root",
-        "cmd/inference"
+        "internal/cli/root",
+        "internal/cli/inference"
       ],
       "owns": [],
       "generated": false,
@@ -1836,7 +1836,7 @@
       ],
       "inboundLinks": [],
       "visibleWords": 339,
-      "sourceBytes": 7799
+      "sourceBytes": 7817
     },
     {
       "path": "docs/site/src/content/docs/inference/concepts/consistency.md",
@@ -1853,7 +1853,7 @@
       "readerQuestion": "How does Ptah model consistency modes?",
       "goal": "Explain Ptah's model for consistency modes.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go",
         "integration/inference_outbox_prune_e2e_test.go"
       ],
@@ -1877,7 +1877,7 @@
         "/inference/strategies/choose-a-consistency-mode/"
       ],
       "visibleWords": 873,
-      "sourceBytes": 6042
+      "sourceBytes": 6051
     },
     {
       "path": "docs/site/src/content/docs/inference/concepts/embeddings-and-inference-state.md",
@@ -1894,7 +1894,7 @@
       "readerQuestion": "How does Ptah model embeddings and inference state?",
       "goal": "Explain Ptah's model for embeddings and inference state.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go"
       ],
       "owns": [],
@@ -1915,7 +1915,7 @@
         "/inference/overview/"
       ],
       "visibleWords": 604,
-      "sourceBytes": 4133
+      "sourceBytes": 4142
     },
     {
       "path": "docs/site/src/content/docs/inference/concepts/generations.md",
@@ -1932,7 +1932,7 @@
       "readerQuestion": "How does Ptah model generations?",
       "goal": "Explain Ptah's model for generations.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go"
       ],
       "owns": [],
@@ -1953,7 +1953,7 @@
         "/inference/quick-start/"
       ],
       "visibleWords": 652,
-      "sourceBytes": 4852
+      "sourceBytes": 4861
     },
     {
       "path": "docs/site/src/content/docs/inference/concepts/lifecycle.md",
@@ -1970,7 +1970,7 @@
       "readerQuestion": "How does Ptah model the lifecycle?",
       "goal": "Explain Ptah's model for the lifecycle.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go"
       ],
       "owns": [],
@@ -1991,7 +1991,7 @@
         "/inference/troubleshooting/"
       ],
       "visibleWords": 626,
-      "sourceBytes": 4350
+      "sourceBytes": 4359
     },
     {
       "path": "docs/site/src/content/docs/inference/concepts/security-and-data-boundaries.md",
@@ -2008,7 +2008,7 @@
       "readerQuestion": "How does Ptah model security and data boundaries?",
       "goal": "Explain Ptah's model for security and data boundaries.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go"
       ],
       "owns": [],
@@ -2026,7 +2026,7 @@
         "/inference/guides/configure-a-provider/"
       ],
       "visibleWords": 533,
-      "sourceBytes": 4115
+      "sourceBytes": 4124
     },
     {
       "path": "docs/site/src/content/docs/inference/concepts/verification-and-cutover.md",
@@ -2043,7 +2043,7 @@
       "readerQuestion": "How does Ptah model verification, cutover, and rollback?",
       "goal": "Explain Ptah's model for verification, cutover, and rollback.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go"
       ],
       "owns": [],
@@ -2061,7 +2061,7 @@
         "/inference/concepts/generations/"
       ],
       "visibleWords": 1099,
-      "sourceBytes": 8063
+      "sourceBytes": 8072
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/configure-a-provider.md",
@@ -2079,7 +2079,7 @@
       "goal": "Configure an embedding endpoint and check it before running a migration.",
       "sourceOfTruth": [
         "internal/embedprovider",
-        "cmd/inference/probe.go"
+        "internal/cli/inference/probe.go"
       ],
       "owns": [
         "cli-ptah-inference-probe"
@@ -2099,7 +2099,7 @@
       ],
       "inboundLinks": [],
       "visibleWords": 759,
-      "sourceBytes": 6604
+      "sourceBytes": 6613
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/create-first-generation.md",
@@ -2116,7 +2116,7 @@
       "readerQuestion": "How do I add vectors to a table that has none, on a system where nothing is searching yet?",
       "goal": "Create and verify the first searchable vector generation.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go"
       ],
       "owns": [],
@@ -2138,7 +2138,7 @@
       ],
       "inboundLinks": [],
       "visibleWords": 580,
-      "sourceBytes": 5263
+      "sourceBytes": 5272
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/migrate-a-live-table.md",
@@ -2155,7 +2155,7 @@
       "readerQuestion": "How do I migrate a table while my application continues writing to it?",
       "goal": "Migrate a table while my application continues writing to it.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go"
       ],
       "owns": [],
@@ -2175,7 +2175,7 @@
         "/inference/strategies/choose-a-consistency-mode/"
       ],
       "visibleWords": 792,
-      "sourceBytes": 6129
+      "sourceBytes": 6138
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/migrate-a-paused-source.md",
@@ -2192,7 +2192,7 @@
       "readerQuestion": "How do I migrate inference state while writes to the source table are paused?",
       "goal": "Migrate inference state while writes to the source table are paused.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go"
       ],
       "owns": [],
@@ -2210,7 +2210,7 @@
         "/inference/concepts/consistency/"
       ],
       "visibleWords": 369,
-      "sourceBytes": 3354
+      "sourceBytes": 3363
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/migrate-to-another-model.md",
@@ -2227,7 +2227,7 @@
       "readerQuestion": "How do I replace an active embedding generation with one from another model?",
       "goal": "Replace an active embedding generation with one from another model.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go"
       ],
       "owns": [],
@@ -2252,7 +2252,7 @@
         "/inference/strategies/production-rollout/"
       ],
       "visibleWords": 566,
-      "sourceBytes": 5573
+      "sourceBytes": 5582
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/resume-and-recover.md",
@@ -2269,7 +2269,7 @@
       "readerQuestion": "How do I recover an inference migration after a provider or worker failure?",
       "goal": "Recover an inference migration after a provider or worker failure.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go",
         "integration/inference_outbox_prune_e2e_test.go"
       ],
@@ -2296,7 +2296,7 @@
         "/inference/troubleshooting/"
       ],
       "visibleWords": 606,
-      "sourceBytes": 5606
+      "sourceBytes": 5615
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/rollback-and-retire.md",
@@ -2313,7 +2313,7 @@
       "readerQuestion": "How do I roll back to a previous generation and retire old vectors safely?",
       "goal": "Roll back to a previous generation and retire old vectors safely.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go"
       ],
       "owns": [],
@@ -2336,7 +2336,7 @@
         "/inference/troubleshooting/"
       ],
       "visibleWords": 878,
-      "sourceBytes": 6718
+      "sourceBytes": 6727
     },
     {
       "path": "docs/site/src/content/docs/inference/guides/run-in-kubernetes.md",
@@ -2353,7 +2353,7 @@
       "readerQuestion": "How do I run an embedding-generation change in Kubernetes and gate a rollout on it?",
       "goal": "Run an embedding-generation change as Kubernetes Jobs and gate a rollout on its readiness.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "examples/kubernetes",
         "integration/inference_rollout_gate_e2e_test.go"
       ],
@@ -2376,7 +2376,7 @@
         "/inference/strategies/production-rollout/"
       ],
       "visibleWords": 1036,
-      "sourceBytes": 7976
+      "sourceBytes": 7985
     },
     {
       "path": "docs/site/src/content/docs/inference/overview.md",
@@ -2393,7 +2393,7 @@
       "readerQuestion": "Do inference migrations apply to my persistent model output?",
       "goal": "Determine whether inference migrations apply to my persistent model output.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go"
       ],
       "owns": [],
@@ -2425,7 +2425,7 @@
         "/start/overview/"
       ],
       "visibleWords": 537,
-      "sourceBytes": 4609
+      "sourceBytes": 4618
     },
     {
       "path": "docs/site/src/content/docs/inference/quick-start.md",
@@ -2442,7 +2442,7 @@
       "readerQuestion": "How do I run and verify one complete inference migration?",
       "goal": "Build, verify, and activate one embedding generation without an external model service.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go",
         "docs/site/fixtures/inference-quick-start"
       ],
@@ -2473,7 +2473,7 @@
         "/inference/overview/"
       ],
       "visibleWords": 633,
-      "sourceBytes": 7611
+      "sourceBytes": 7620
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/commands.md",
@@ -2490,7 +2490,7 @@
       "readerQuestion": "Which inference commands and flags does Ptah expose?",
       "goal": "Look up the available inference commands and flags.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go"
       ],
       "owns": [
@@ -2526,7 +2526,7 @@
         "/inference/concepts/embeddings-and-inference-state/"
       ],
       "visibleWords": 2932,
-      "sourceBytes": 21341
+      "sourceBytes": 21350
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/evaluation-corpus.md",
@@ -2582,7 +2582,7 @@
       "readerQuestion": "How do I interpret inference run status and verification findings?",
       "goal": "Interpret inference run status and verification findings.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go"
       ],
       "owns": [],
@@ -2600,7 +2600,7 @@
       ],
       "inboundLinks": [],
       "visibleWords": 2211,
-      "sourceBytes": 15816
+      "sourceBytes": 15825
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/specification.md",
@@ -2617,7 +2617,7 @@
       "readerQuestion": "Which fields and values does an inference specification accept?",
       "goal": "Look up the accepted inference specification fields and values.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go"
       ],
       "owns": [],
@@ -2640,7 +2640,7 @@
         "/inference/troubleshooting/"
       ],
       "visibleWords": 1930,
-      "sourceBytes": 13769
+      "sourceBytes": 13778
     },
     {
       "path": "docs/site/src/content/docs/inference/reference/support-and-limitations.md",
@@ -2657,7 +2657,7 @@
       "readerQuestion": "Which inference migration guarantees are measured, unsupported, or owned by the operator?",
       "goal": "Distinguish measured, unsupported, and operator-owned inference guarantees.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go"
       ],
       "owns": [],
@@ -2666,7 +2666,7 @@
       "editSource": null,
       "lastVerified": "2026-08-30",
       "evidence": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go"
       ],
       "searchAliases": [],
@@ -2681,7 +2681,7 @@
         "/inference/overview/"
       ],
       "visibleWords": 707,
-      "sourceBytes": 5325
+      "sourceBytes": 5343
     },
     {
       "path": "docs/site/src/content/docs/inference/strategies/choose-a-consistency-mode.md",
@@ -2698,7 +2698,7 @@
       "readerQuestion": "Which consistency mode fits my source-write behavior?",
       "goal": "Choose a consistency mode for the source-write behavior.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go"
       ],
       "owns": [],
@@ -2719,7 +2719,7 @@
         "/inference/concepts/consistency/"
       ],
       "visibleWords": 547,
-      "sourceBytes": 3942
+      "sourceBytes": 3951
     },
     {
       "path": "docs/site/src/content/docs/inference/strategies/choose-a-target-layout.md",
@@ -2736,7 +2736,7 @@
       "readerQuestion": "Which target layout fits my query and lifecycle needs?",
       "goal": "Choose a vector target layout for the query and lifecycle needs.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go"
       ],
       "owns": [],
@@ -2755,7 +2755,7 @@
         "/inference/reference/specification/"
       ],
       "visibleWords": 1020,
-      "sourceBytes": 7043
+      "sourceBytes": 7052
     },
     {
       "path": "docs/site/src/content/docs/inference/strategies/plan-provider-capacity.md",
@@ -2772,7 +2772,7 @@
       "readerQuestion": "How do I size a backfill for my embedding provider's capacity and cost?",
       "goal": "Size a backfill for my embedding provider's capacity and cost.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go"
       ],
       "owns": [],
@@ -2795,7 +2795,7 @@
         "/inference/troubleshooting/"
       ],
       "visibleWords": 616,
-      "sourceBytes": 4804
+      "sourceBytes": 4813
     },
     {
       "path": "docs/site/src/content/docs/inference/strategies/plan-vector-indexes.md",
@@ -2812,7 +2812,7 @@
       "readerQuestion": "When should I build each type of vector index?",
       "goal": "Choose a vector index type and when to build it.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go"
       ],
       "owns": [],
@@ -2830,7 +2830,7 @@
       ],
       "inboundLinks": [],
       "visibleWords": 508,
-      "sourceBytes": 4194
+      "sourceBytes": 4203
     },
     {
       "path": "docs/site/src/content/docs/inference/strategies/production-rollout.md",
@@ -2847,7 +2847,7 @@
       "readerQuestion": "How do I order and verify a production inference migration?",
       "goal": "Order and verify a production inference migration.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go"
       ],
       "owns": [],
@@ -2868,7 +2868,7 @@
       ],
       "inboundLinks": [],
       "visibleWords": 1166,
-      "sourceBytes": 9859
+      "sourceBytes": 9868
     },
     {
       "path": "docs/site/src/content/docs/inference/troubleshooting.md",
@@ -2885,7 +2885,7 @@
       "readerQuestion": "Which inference migration symptom am I seeing, and how do I recover?",
       "goal": "Identify an inference migration symptom and follow its recovery path.",
       "sourceOfTruth": [
-        "cmd/inference",
+        "internal/cli/inference",
         "integration/inference_cli_e2e_test.go",
         "integration/inference_outbox_prune_e2e_test.go"
       ],
@@ -2914,7 +2914,7 @@
         "/operate/troubleshooting/"
       ],
       "visibleWords": 1618,
-      "sourceBytes": 11110
+      "sourceBytes": 11119
     },
     {
       "path": "docs/site/src/content/docs/operate/ai-agent-changes.md",
@@ -2971,7 +2971,7 @@
       "readerQuestion": "How do I connect my MCP client to Ptah?",
       "goal": "Start a Ptah MCP session and verify the client can describe it.",
       "sourceOfTruth": [
-        "cmd/mcp",
+        "internal/cli/mcp",
         "internal/mcpserver"
       ],
       "owns": [],
@@ -2997,7 +2997,7 @@
         "/operate/ai-agents/"
       ],
       "visibleWords": 274,
-      "sourceBytes": 3105
+      "sourceBytes": 3114
     },
     {
       "path": "docs/site/src/content/docs/operate/ai-agent-permissions.md",
@@ -3101,8 +3101,8 @@
       "readerQuestion": "How can a model work with Ptah without receiving unrestricted project access?",
       "goal": "Choose an AI surface and route to its setup and safety guidance.",
       "sourceOfTruth": [
-        "cmd/assist",
-        "cmd/mcp",
+        "internal/cli/assist",
+        "internal/cli/mcp",
         "internal/mcpserver"
       ],
       "owns": [],
@@ -3136,7 +3136,7 @@
         "/reference/native-commands/"
       ],
       "visibleWords": 417,
-      "sourceBytes": 3889
+      "sourceBytes": 3907
     },
     {
       "path": "docs/site/src/content/docs/operate/ai-assist-providers.md",
@@ -3199,7 +3199,7 @@
       "goal": "Inspect and manage saved conversations without confusing them with the agent audit log.",
       "sourceOfTruth": [
         "internal/assistsession",
-        "cmd/assist"
+        "internal/cli/assist"
       ],
       "owns": [
         "cli-ptah-assist-sessions-delete",
@@ -3226,7 +3226,7 @@
         "/operate/ai-assist/"
       ],
       "visibleWords": 261,
-      "sourceBytes": 2658
+      "sourceBytes": 2667
     },
     {
       "path": "docs/site/src/content/docs/operate/ai-assist.md",
@@ -3243,7 +3243,7 @@
       "readerQuestion": "How do I ask Ptah a model-assisted question and see what it verified?",
       "goal": "Run one Ptah Assist question and distinguish the model answer from Ptah tool evidence.",
       "sourceOfTruth": [
-        "cmd/assist",
+        "internal/cli/assist",
         "internal/assistloop"
       ],
       "owns": [
@@ -3277,7 +3277,7 @@
         "/reference/native-commands/"
       ],
       "visibleWords": 387,
-      "sourceBytes": 4071
+      "sourceBytes": 4080
     },
     {
       "path": "docs/site/src/content/docs/operate/oci-registry.md",
@@ -3293,8 +3293,8 @@
       "readerQuestion": "How do I publish, pin, pull, and consume Ptah migrations and desired schemas through an OCI registry?",
       "goal": "Publish and consume a pinned migration or schema artifact.",
       "sourceOfTruth": [
-        "cmd/migrationspush",
-        "cmd/migrationspull",
+        "internal/cli/migrationspush",
+        "internal/cli/migrationspull",
         "internal/schemaartifact"
       ],
       "owns": [
@@ -3335,7 +3335,7 @@
         "/versioned/lint/"
       ],
       "visibleWords": 2521,
-      "sourceBytes": 21747
+      "sourceBytes": 21765
     },
     {
       "path": "docs/site/src/content/docs/operate/overview.mdx",
@@ -3352,10 +3352,10 @@
       "readerQuestion": "How do I run Ptah safely in tests, automation, and operational workflows?",
       "goal": "Open the canonical test, CI, artifact, data, or troubleshooting task.",
       "sourceOfTruth": [
-        "cmd/migrations",
-        "cmd/schema",
-        "cmd/oci",
-        "cmd/seed"
+        "internal/cli/migrations",
+        "internal/cli/schema",
+        "internal/cli/oci",
+        "internal/cli/seed"
       ],
       "owns": [],
       "generated": false,
@@ -3385,7 +3385,7 @@
       ],
       "inboundLinks": [],
       "visibleWords": 118,
-      "sourceBytes": 2330
+      "sourceBytes": 2366
     },
     {
       "path": "docs/site/src/content/docs/operate/seed-data.md",
@@ -3401,7 +3401,7 @@
       "readerQuestion": "How do I apply one-off, environment-scoped SQL seed files with ptah seed and track them in schema_seeds?",
       "goal": "Apply a seed file once and confirm its tracked state.",
       "sourceOfTruth": [
-        "cmd/seed",
+        "internal/cli/seed",
         "migration/seeder"
       ],
       "owns": [
@@ -3426,7 +3426,7 @@
         "/versioned/reference-data/"
       ],
       "visibleWords": 490,
-      "sourceBytes": 4973
+      "sourceBytes": 4982
     },
     {
       "path": "docs/site/src/content/docs/operate/troubleshooting.md",
@@ -3493,7 +3493,7 @@
       "readerQuestion": "Which Atlas-compatible commands are implemented, limited, or unavailable?",
       "goal": "Determine which Atlas-compatible commands are implemented, limited, or unavailable.",
       "sourceOfTruth": [
-        "cmd/atlas",
+        "internal/cli/atlas",
         "internal/cmdref"
       ],
       "owns": [],
@@ -3533,7 +3533,7 @@
         "/reference/native-commands/"
       ],
       "visibleWords": 14286,
-      "sourceBytes": 99318
+      "sourceBytes": 99327
     },
     {
       "path": "docs/site/src/content/docs/reference/capabilities.mdx",
@@ -3600,8 +3600,8 @@
       "readerQuestion": "Which flags and environment bindings does each current command expose?",
       "goal": "Look up the flags, defaults, and environment bindings for a command.",
       "sourceOfTruth": [
-        "cmd/root",
-        "cmd/atlas",
+        "internal/cli/root",
+        "internal/cli/atlas",
         "internal/cmdref"
       ],
       "owns": [],
@@ -3628,7 +3628,7 @@
         "/reference/overview/"
       ],
       "visibleWords": 8709,
-      "sourceBytes": 85938
+      "sourceBytes": 85956
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",
@@ -4014,7 +4014,7 @@
       "readerQuestion": "Which command paths does the native `ptah` binary expose?",
       "goal": "Look up every command path exposed by the native `ptah` binary.",
       "sourceOfTruth": [
-        "cmd/root",
+        "internal/cli/root",
         "internal/cmdref"
       ],
       "owns": [],
@@ -4069,7 +4069,7 @@
         "/schema/yaml/"
       ],
       "visibleWords": 7368,
-      "sourceBytes": 49809
+      "sourceBytes": 49818
     },
     {
       "path": "docs/site/src/content/docs/reference/overview.mdx",
@@ -4216,7 +4216,7 @@
       "readerQuestion": "How do I merge several schema sources into one desired schema?",
       "goal": "Build and verify one desired schema from multiple sources.",
       "sourceOfTruth": [
-        "cmd/schema",
+        "internal/cli/schema",
         "internal/schemaload"
       ],
       "owns": [],
@@ -4253,7 +4253,7 @@
         "/versioned/generate/"
       ],
       "visibleWords": 592,
-      "sourceBytes": 5110
+      "sourceBytes": 5119
     },
     {
       "path": "docs/site/src/content/docs/schema/dbml.md",
@@ -4269,7 +4269,7 @@
       "readerQuestion": "How do I read a DBML document as a desired schema, and write any Ptah schema back out as canonical DBML?",
       "goal": "Round-trip a desired schema through canonical DBML.",
       "sourceOfTruth": [
-        "cmd/schema",
+        "internal/cli/schema",
         "internal/schemaload"
       ],
       "owns": [],
@@ -4298,7 +4298,7 @@
         "/schema/work-with-a-source/"
       ],
       "visibleWords": 823,
-      "sourceBytes": 6888
+      "sourceBytes": 6897
     },
     {
       "path": "docs/site/src/content/docs/schema/document.mdx",
@@ -4314,9 +4314,9 @@
       "readerQuestion": "How do I generate a browsable schema reference?",
       "goal": "Generate a browsable schema reference.",
       "sourceOfTruth": [
-        "cmd/schema",
+        "internal/cli/schema",
         "internal/schemadoc",
-        "cmd/internal/schemaserve"
+        "internal/cli/internal/schemaserve"
       ],
       "owns": [],
       "generated": false,
@@ -4357,7 +4357,7 @@
         "/schema/yaml/"
       ],
       "visibleWords": 1486,
-      "sourceBytes": 13428
+      "sourceBytes": 13446
     },
     {
       "path": "docs/site/src/content/docs/schema/export.mdx",
@@ -4373,7 +4373,7 @@
       "readerQuestion": "How do I project a desired schema into OpenAPI or GraphQL contract candidates and review their trust-boundary limitations?",
       "goal": "Generate and review an OpenAPI or GraphQL contract candidate.",
       "sourceOfTruth": [
-        "cmd/schema",
+        "internal/cli/schema",
         "internal/schemaload",
         "core/yamlschema",
         "core/goschema",
@@ -4423,7 +4423,7 @@
         "/schema/yaml/"
       ],
       "visibleWords": 4212,
-      "sourceBytes": 35195
+      "sourceBytes": 35204
     },
     {
       "path": "docs/site/src/content/docs/schema/go-annotations.md",
@@ -4439,7 +4439,7 @@
       "readerQuestion": "How do I use annotated Go structs as the desired database schema?",
       "goal": "Render a desired schema from annotated Go structs.",
       "sourceOfTruth": [
-        "cmd/schema",
+        "internal/cli/schema",
         "internal/schemaload"
       ],
       "owns": [
@@ -4480,7 +4480,7 @@
         "/schema/work-with-a-source/"
       ],
       "visibleWords": 1461,
-      "sourceBytes": 12213
+      "sourceBytes": 12222
     },
     {
       "path": "docs/site/src/content/docs/schema/hcl.md",
@@ -4496,7 +4496,7 @@
       "readerQuestion": "How do I reuse Atlas-compatible HCL schema files as Ptah's desired schema?",
       "goal": "Render a desired schema from Atlas-compatible HCL.",
       "sourceOfTruth": [
-        "cmd/schema",
+        "internal/cli/schema",
         "internal/schemaload",
         "internal/atlashcl",
         "internal/atlashclrender"
@@ -4535,7 +4535,7 @@
         "/schema/work-with-a-source/"
       ],
       "visibleWords": 517,
-      "sourceBytes": 5780
+      "sourceBytes": 5789
     },
     {
       "path": "docs/site/src/content/docs/schema/lineage.mdx",
@@ -4551,7 +4551,7 @@
       "readerQuestion": "How do I run ptah schema lineage to find which base columns each view column and each routine reads, and which tables and columns each routine writes, before dropping or renaming one of them?",
       "goal": "Identify dependencies before dropping or renaming a database object.",
       "sourceOfTruth": [
-        "cmd/schema",
+        "internal/cli/schema",
         "internal/schemalineage"
       ],
       "owns": [
@@ -4581,7 +4581,7 @@
         "/reference/native-commands/"
       ],
       "visibleWords": 1923,
-      "sourceBytes": 16775
+      "sourceBytes": 16784
     },
     {
       "path": "docs/site/src/content/docs/schema/orm-and-external.md",
@@ -4597,7 +4597,7 @@
       "readerQuestion": "How do I feed an ORM's or any external program's schema into Ptah as the desired schema?",
       "goal": "Load an external schema into a Ptah workflow.",
       "sourceOfTruth": [
-        "cmd/schema",
+        "internal/cli/schema",
         "internal/schemaload"
       ],
       "owns": [],
@@ -4626,7 +4626,7 @@
         "/schema/work-with-a-source/"
       ],
       "visibleWords": 1008,
-      "sourceBytes": 8759
+      "sourceBytes": 8768
     },
     {
       "path": "docs/site/src/content/docs/schema/overview.mdx",
@@ -4646,7 +4646,7 @@
         "core/schemamodel",
         "core/goschema",
         "core/yamlschema",
-        "cmd/schema"
+        "internal/cli/schema"
       ],
       "owns": [],
       "generated": false,
@@ -4679,7 +4679,7 @@
       ],
       "inboundLinks": [],
       "visibleWords": 120,
-      "sourceBytes": 2446
+      "sourceBytes": 2455
     },
     {
       "path": "docs/site/src/content/docs/schema/protobuf.md",
@@ -4695,7 +4695,7 @@
       "readerQuestion": "How do I generate Protobuf while preserving field-number compatibility?",
       "goal": "Generate Protobuf while preserving field-number compatibility.",
       "sourceOfTruth": [
-        "cmd/schema",
+        "internal/cli/schema",
         "internal/schemaload",
         "core/yamlschema",
         "internal/atlashcl",
@@ -4728,7 +4728,7 @@
         "/schema/export/"
       ],
       "visibleWords": 4286,
-      "sourceBytes": 35477
+      "sourceBytes": 35486
     },
     {
       "path": "docs/site/src/content/docs/schema/security.mdx",
@@ -4744,7 +4744,7 @@
       "readerQuestion": "How do I run ptah schema security over a live database to review privileges, owners, roles and tables with no row policy, and gate a pull request on the result?",
       "goal": "Find and gate on actionable database security findings.",
       "sourceOfTruth": [
-        "cmd/schema",
+        "internal/cli/schema",
         "internal/schemasecurity"
       ],
       "owns": [
@@ -4777,7 +4777,7 @@
         "/testing/ci/"
       ],
       "visibleWords": 1147,
-      "sourceBytes": 11822
+      "sourceBytes": 11831
     },
     {
       "path": "docs/site/src/content/docs/schema/serve.mdx",
@@ -4793,9 +4793,9 @@
       "readerQuestion": "How do I inspect schema drift in Ptah's live browser view?",
       "goal": "Inspect schema drift in Ptah's live browser view.",
       "sourceOfTruth": [
-        "cmd/schema",
+        "internal/cli/schema",
         "internal/schemadoc",
-        "cmd/internal/schemaserve"
+        "internal/cli/internal/schemaserve"
       ],
       "owns": [
         "cli-ptah-schema-serve"
@@ -4825,7 +4825,7 @@
         "/reference/native-commands/"
       ],
       "visibleWords": 1431,
-      "sourceBytes": 12299
+      "sourceBytes": 12317
     },
     {
       "path": "docs/site/src/content/docs/schema/sql.md",
@@ -4841,7 +4841,7 @@
       "readerQuestion": "How do I use plain SQL DDL files as Ptah's desired schema?",
       "goal": "Render a desired schema from SQL DDL.",
       "sourceOfTruth": [
-        "cmd/schema",
+        "internal/cli/schema",
         "internal/schemaload"
       ],
       "owns": [],
@@ -4874,7 +4874,7 @@
         "/schema/work-with-a-source/"
       ],
       "visibleWords": 1317,
-      "sourceBytes": 11116
+      "sourceBytes": 11125
     },
     {
       "path": "docs/site/src/content/docs/schema/stats.mdx",
@@ -4890,7 +4890,7 @@
       "readerQuestion": "How do I run ptah schema stats to emit one OpenMetrics gauge per object kind in a live database and feed it to a metrics collector?",
       "goal": "Publish schema object counts as OpenMetrics gauges.",
       "sourceOfTruth": [
-        "cmd/schema",
+        "internal/cli/schema",
         "internal/schemastats"
       ],
       "owns": [
@@ -4920,7 +4920,7 @@
         "/schema/security/"
       ],
       "visibleWords": 622,
-      "sourceBytes": 8041
+      "sourceBytes": 8050
     },
     {
       "path": "docs/site/src/content/docs/schema/validate-and-format.md",
@@ -4936,7 +4936,7 @@
       "readerQuestion": "How do I check a desired schema for structural problems with ptah schema validate and keep HCL files canonically formatted with ptah schema fmt, both without a database?",
       "goal": "Validate schema structure and enforce canonical HCL formatting.",
       "sourceOfTruth": [
-        "cmd/schema",
+        "internal/cli/schema",
         "internal/schemavalidate"
       ],
       "owns": [
@@ -4969,7 +4969,7 @@
         "/testing/ci/"
       ],
       "visibleWords": 1265,
-      "sourceBytes": 11229
+      "sourceBytes": 11238
     },
     {
       "path": "docs/site/src/content/docs/schema/visualize.mdx",
@@ -4985,7 +4985,7 @@
       "readerQuestion": "How do I generate and inspect a schema diagram?",
       "goal": "Generate and inspect a schema diagram.",
       "sourceOfTruth": [
-        "cmd/viz",
+        "internal/cli/viz",
         "internal/schemaviz"
       ],
       "owns": [
@@ -5025,7 +5025,7 @@
         "/schema/stats/"
       ],
       "visibleWords": 1088,
-      "sourceBytes": 12222
+      "sourceBytes": 12231
     },
     {
       "path": "docs/site/src/content/docs/schema/work-with-a-source.mdx",
@@ -5041,7 +5041,7 @@
       "readerQuestion": "Which operations and flags are shared by every schema source?",
       "goal": "Identify the operations and flags shared by every schema source.",
       "sourceOfTruth": [
-        "cmd/schema",
+        "internal/cli/schema",
         "internal/schemaload"
       ],
       "owns": [
@@ -5085,7 +5085,7 @@
         "/start/quick-start/"
       ],
       "visibleWords": 556,
-      "sourceBytes": 5746
+      "sourceBytes": 5755
     },
     {
       "path": "docs/site/src/content/docs/schema/yaml.md",
@@ -5101,7 +5101,7 @@
       "readerQuestion": "How do I author the desired schema in Ptah's strict YAML format and feed it to render, compare, and migration commands?",
       "goal": "Render and validate a desired schema from Ptah YAML.",
       "sourceOfTruth": [
-        "cmd/schema",
+        "internal/cli/schema",
         "internal/schemaload",
         "core/yamlschema"
       ],
@@ -5136,7 +5136,7 @@
         "/schema/work-with-a-source/"
       ],
       "visibleWords": 349,
-      "sourceBytes": 4388
+      "sourceBytes": 4397
     },
     {
       "path": "docs/site/src/content/docs/start/adopt-an-existing-database.mdx",
@@ -5152,9 +5152,9 @@
       "readerQuestion": "How do I adopt a database without recreating its existing objects?",
       "goal": "Adopt a database without recreating its existing objects.",
       "sourceOfTruth": [
-        "cmd/root",
-        "cmd/schema",
-        "cmd/migrations"
+        "internal/cli/root",
+        "internal/cli/schema",
+        "internal/cli/migrations"
       ],
       "owns": [
         "cli-ptah-introspect",
@@ -5197,7 +5197,7 @@
         "/versioned/overview/"
       ],
       "visibleWords": 1019,
-      "sourceBytes": 12589
+      "sourceBytes": 12616
     },
     {
       "path": "docs/site/src/content/docs/start/choose-a-workflow.md",
@@ -5213,9 +5213,9 @@
       "readerQuestion": "Should this schema change use versioned migrations or direct schema changes?",
       "goal": "Choose whether a schema change should use versioned migrations or direct schema changes.",
       "sourceOfTruth": [
-        "cmd/root",
-        "cmd/schema",
-        "cmd/migrations"
+        "internal/cli/root",
+        "internal/cli/schema",
+        "internal/cli/migrations"
       ],
       "owns": [],
       "generated": false,
@@ -5249,7 +5249,7 @@
         "/versioned/overview/"
       ],
       "visibleWords": 870,
-      "sourceBytes": 6782
+      "sourceBytes": 6809
     },
     {
       "path": "docs/site/src/content/docs/start/install-options.mdx",
@@ -5378,9 +5378,9 @@
       "readerQuestion": "Which starting path matches the database work in front of me?",
       "goal": "Open the shortest safe starting path for a new or existing database.",
       "sourceOfTruth": [
-        "cmd/root",
-        "cmd/schema",
-        "cmd/migrations"
+        "internal/cli/root",
+        "internal/cli/schema",
+        "internal/cli/migrations"
       ],
       "owns": [],
       "generated": false,
@@ -5409,7 +5409,7 @@
       ],
       "inboundLinks": [],
       "visibleWords": 151,
-      "sourceBytes": 2363
+      "sourceBytes": 2390
     },
     {
       "path": "docs/site/src/content/docs/start/quick-start-direct.mdx",
@@ -5426,7 +5426,7 @@
       "readerQuestion": "How do I evolve a directly managed schema and detect later drift?",
       "goal": "Apply one schema evolution and turn drift detection into an automation gate.",
       "sourceOfTruth": [
-        "cmd/schema",
+        "internal/cli/schema",
         "docs/exit_codes.md"
       ],
       "owns": [],
@@ -5458,7 +5458,7 @@
         "/start/quick-start/"
       ],
       "visibleWords": 255,
-      "sourceBytes": 3655
+      "sourceBytes": 3664
     },
     {
       "path": "docs/site/src/content/docs/start/quick-start-migrations.mdx",
@@ -5474,7 +5474,7 @@
       "readerQuestion": "How do I create, apply, and verify my first versioned migration?",
       "goal": "Apply one sealed migration and verify its recorded database state.",
       "sourceOfTruth": [
-        "cmd/migrations",
+        "internal/cli/migrations",
         "migration/migrator",
         "migration/migrationfile"
       ],
@@ -5510,7 +5510,7 @@
         "/start/quick-start/"
       ],
       "visibleWords": 268,
-      "sourceBytes": 4220
+      "sourceBytes": 4229
     },
     {
       "path": "docs/site/src/content/docs/start/quick-start.mdx",
@@ -5526,9 +5526,9 @@
       "readerQuestion": "How do I get a verified Ptah result in five minutes?",
       "goal": "Apply a desired schema to SQLite and verify the live database matches it.",
       "sourceOfTruth": [
-        "cmd/schema",
-        "cmd/db",
-        "cmd/schema/apply_test.go"
+        "internal/cli/schema",
+        "internal/cli/db",
+        "internal/cli/schema/apply_test.go"
       ],
       "owns": [],
       "generated": false,
@@ -5564,7 +5564,7 @@
         "/start/quick-start-direct/"
       ],
       "visibleWords": 282,
-      "sourceBytes": 3954
+      "sourceBytes": 3981
     },
     {
       "path": "docs/site/src/content/docs/testing/ci.md",
@@ -5580,8 +5580,8 @@
       "readerQuestion": "How do I gate pull requests with the Ptah GitHub Action or shell checks, and read exit codes correctly?",
       "goal": "Gate a pull request on stable Ptah exit codes.",
       "sourceOfTruth": [
-        "cmd/migrationstest",
-        "cmd/schema",
+        "internal/cli/migrationstest",
+        "internal/cli/schema",
         "integration"
       ],
       "owns": [],
@@ -5620,7 +5620,7 @@
         "/versioned/lint/"
       ],
       "visibleWords": 1000,
-      "sourceBytes": 9282
+      "sourceBytes": 9300
     },
     {
       "path": "docs/site/src/content/docs/testing/migrations-and-schema.mdx",
@@ -5636,8 +5636,8 @@
       "readerQuestion": "How do I assert migration and schema behavior with declarative test cases against a throwaway database?",
       "goal": "Run isolated migration and schema assertions against a throwaway database.",
       "sourceOfTruth": [
-        "cmd/migrationstest",
-        "cmd/schema",
+        "internal/cli/migrationstest",
+        "internal/cli/schema",
         "integration"
       ],
       "owns": [
@@ -5672,7 +5672,7 @@
         "/versioned/integrity-and-safety/"
       ],
       "visibleWords": 1162,
-      "sourceBytes": 11591
+      "sourceBytes": 11609
     },
     {
       "path": "docs/site/src/content/docs/versioned/apply.md",
@@ -5689,7 +5689,7 @@
       "readerQuestion": "How do I apply pending migrations and verify their state?",
       "goal": "Apply pending migrations and verify their state.",
       "sourceOfTruth": [
-        "cmd/migrations",
+        "internal/cli/migrations",
         "migration"
       ],
       "owns": [
@@ -5731,7 +5731,7 @@
         "/versioned/rollback/"
       ],
       "visibleWords": 4279,
-      "sourceBytes": 31459
+      "sourceBytes": 31468
     },
     {
       "path": "docs/site/src/content/docs/versioned/checkpoints.md",
@@ -5748,7 +5748,7 @@
       "readerQuestion": "How do I squash migration history into a cumulative-schema checkpoint that fresh databases bootstrap from?",
       "goal": "Create a checkpoint and verify fresh-database bootstrap.",
       "sourceOfTruth": [
-        "cmd/migrations",
+        "internal/cli/migrations",
         "migration"
       ],
       "owns": [
@@ -5774,7 +5774,7 @@
         "/versioned/rollback/"
       ],
       "visibleWords": 1314,
-      "sourceBytes": 9941
+      "sourceBytes": 9950
     },
     {
       "path": "docs/site/src/content/docs/versioned/generate.mdx",
@@ -5791,7 +5791,7 @@
       "readerQuestion": "How do I generate a migration from a reviewed desired schema?",
       "goal": "Generate a migration from a reviewed desired schema.",
       "sourceOfTruth": [
-        "cmd/migrations",
+        "internal/cli/migrations",
         "migration"
       ],
       "owns": [
@@ -5842,7 +5842,7 @@
         "/versioned/overview/"
       ],
       "visibleWords": 1491,
-      "sourceBytes": 14970
+      "sourceBytes": 14979
     },
     {
       "path": "docs/site/src/content/docs/versioned/import.md",
@@ -5859,7 +5859,7 @@
       "readerQuestion": "How do I convert a golang-migrate, Goose, Flyway, Liquibase, or dbmate migration directory into Ptah's native format?",
       "goal": "Convert and verify a third-party migration directory.",
       "sourceOfTruth": [
-        "cmd/migrations",
+        "internal/cli/migrations",
         "migration"
       ],
       "owns": [
@@ -5888,7 +5888,7 @@
         "/versioned/rollback/"
       ],
       "visibleWords": 612,
-      "sourceBytes": 6248
+      "sourceBytes": 6257
     },
     {
       "path": "docs/site/src/content/docs/versioned/integrity-and-safety.md",
@@ -5905,7 +5905,7 @@
       "readerQuestion": "How do I detect a changed migration or unsafe precondition before apply?",
       "goal": "Detect a changed migration or unsafe precondition before apply.",
       "sourceOfTruth": [
-        "cmd/migrations",
+        "internal/cli/migrations",
         "migration"
       ],
       "owns": [
@@ -5951,7 +5951,7 @@
         "/versioned/rollback/"
       ],
       "visibleWords": 5018,
-      "sourceBytes": 34961
+      "sourceBytes": 34970
     },
     {
       "path": "docs/site/src/content/docs/versioned/lint.md",
@@ -5968,7 +5968,7 @@
       "readerQuestion": "How do I analyze migration files for production-unsafe patterns, set the rule policy, declare rules of your own, and gate destructive statements at apply time?",
       "goal": "Define and enforce a migration safety policy.",
       "sourceOfTruth": [
-        "cmd/migrations",
+        "internal/cli/migrations",
         "migration"
       ],
       "owns": [
@@ -6006,7 +6006,7 @@
         "/versioned/overview/"
       ],
       "visibleWords": 3435,
-      "sourceBytes": 24918
+      "sourceBytes": 24927
     },
     {
       "path": "docs/site/src/content/docs/versioned/maintain-history.md",
@@ -6023,7 +6023,7 @@
       "readerQuestion": "How do I edit, reorder, and delete unapplied migrations with the integrity file kept true, and repair a dirty revision state after a partial failure?",
       "goal": "Safely maintain unapplied migrations and repair dirty state.",
       "sourceOfTruth": [
-        "cmd/migrations",
+        "internal/cli/migrations",
         "migration"
       ],
       "owns": [
@@ -6055,7 +6055,7 @@
         "/versioned/rollback/"
       ],
       "visibleWords": 1462,
-      "sourceBytes": 13106
+      "sourceBytes": 13115
     },
     {
       "path": "docs/site/src/content/docs/versioned/overview.md",
@@ -6072,7 +6072,7 @@
       "readerQuestion": "When should I use versioned migrations, and which task comes next?",
       "goal": "Choose the versioned workflow when appropriate and open the correct next task.",
       "sourceOfTruth": [
-        "cmd/migrations",
+        "internal/cli/migrations",
         "migration"
       ],
       "owns": [],
@@ -6116,7 +6116,7 @@
         "/start/choose-a-workflow/"
       ],
       "visibleWords": 442,
-      "sourceBytes": 4450
+      "sourceBytes": 4459
     },
     {
       "path": "docs/site/src/content/docs/versioned/reference-data.md",
@@ -6133,7 +6133,7 @@
       "readerQuestion": "How do I declare reference/seed rows and generate reversible data migrations from the drift against a live database?",
       "goal": "Generate and verify reversible reference-data migrations.",
       "sourceOfTruth": [
-        "cmd/migrations",
+        "internal/cli/migrations",
         "migration"
       ],
       "owns": [
@@ -6160,7 +6160,7 @@
         "/versioned/overview/"
       ],
       "visibleWords": 859,
-      "sourceBytes": 6653
+      "sourceBytes": 6662
     },
     {
       "path": "docs/site/src/content/docs/versioned/rollback.md",
@@ -6177,7 +6177,7 @@
       "readerQuestion": "How do I roll back to an explicit revision safely?",
       "goal": "Roll back to an explicit revision safely.",
       "sourceOfTruth": [
-        "cmd/migrations",
+        "internal/cli/migrations",
         "migration"
       ],
       "owns": [
@@ -6212,7 +6212,7 @@
         "/versioned/overview/"
       ],
       "visibleWords": 1725,
-      "sourceBytes": 13411
+      "sourceBytes": 13420
     }
   ]
 }

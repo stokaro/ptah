@@ -7,8 +7,8 @@ audience:
 readerQuestion: "How do I gate pull requests with the Ptah GitHub Action or shell checks, and read exit codes correctly?"
 goal: "Gate a pull request on stable Ptah exit codes."
 sourceOfTruth:
-  - "cmd/migrationstest"
-  - "cmd/schema"
+  - "internal/cli/migrationstest"
+  - "internal/cli/schema"
   - "integration"
 generated: false
 searchAliases:

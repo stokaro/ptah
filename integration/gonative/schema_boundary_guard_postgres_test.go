@@ -415,8 +415,8 @@ func observeBoundaryCase(c *qt.C, dsn string, tc boundaryCase) boundaryObservati
 	live, err := dbschema.ReadSchemaWithSchemasContext(c.Context(), conn, nil)
 	c.Assert(err, qt.IsNil)
 
-	// The two surfaces differ in exactly the two options cmd/atlas sets and
-	// cmd/schema does not: the compatibility binary omits the block types the
+	// The two surfaces differ in exactly the two options internal/cli/atlas sets and
+	// internal/cli/schema does not: the compatibility binary omits the block types the
 	// tool it stands in for refuses, and tolerates names Ptah does not model.
 	// Everything else is the same library call, so a difference between the
 	// two rows is a difference those options caused.
@@ -515,7 +515,7 @@ func boundaryConnectedRole(c *qt.C, dbURL string) string {
 }
 
 // boundaryInspect renders the live database, through the same entry point
-// cmd/atlas/schema_inspect.go and cmd/schema/inspect.go both call.
+// internal/cli/atlas/schema_inspect.go and internal/cli/schema/inspect.go both call.
 func boundaryInspect(c *qt.C, dbURL string, compatibility bool) string {
 	c.Helper()
 
@@ -551,7 +551,7 @@ func boundaryParseBack(c *qt.C, document string, compatibility bool) *schemamode
 
 // boundaryApplyBack plans the document against the database it came from and
 // returns the statements, through the same entry point
-// cmd/atlas/schema_apply.go and cmd/schema/apply.go both call. An empty result
+// internal/cli/atlas/schema_apply.go and internal/cli/schema/apply.go both call. An empty result
 // is property 2 holding.
 func boundaryApplyBack(c *qt.C, conn *dbschema.DatabaseConnection, document string, compatibility bool) []string {
 	c.Helper()

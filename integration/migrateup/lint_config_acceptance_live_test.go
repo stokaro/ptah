@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/cmd/migrateup"
+	"ptah.run/internal/cli/migrateup"
 	"ptah.run/core/ast"
 	"ptah.run/core/platform"
 	"ptah.run/core/renderer"

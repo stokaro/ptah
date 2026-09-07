@@ -7,7 +7,7 @@ audience:
 readerQuestion: "How do I generate Protobuf while preserving field-number compatibility?"
 goal: "Generate Protobuf while preserving field-number compatibility."
 sourceOfTruth:
-  - "cmd/schema"
+  - "internal/cli/schema"
   - "internal/schemaload"
   - "core/yamlschema"
   - "internal/atlashcl"

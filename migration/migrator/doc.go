@@ -216,7 +216,7 @@
 //     directives, txtar archives, and templates
 //   - ptah/migration/generator: Applies generated migration files
 //   - ptah/core/sqlutil: Uses SQL parsing utilities for statement splitting
-//   - ptah/cmd/migrate*: Provides CLI interfaces for migration operations
+//   - ptah/internal/cli/migrate*: Provides CLI interfaces for migration operations
 //
 // # Thread Safety
 //

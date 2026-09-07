@@ -161,7 +161,7 @@ Use these routes to avoid missing a class of docs:
   conformance pages that mention the changed capability.
 - **Assist and MCP agent behavior**: the `operate/ai-*` workflow pages,
   `docs/site/src/content/docs/reference/mcp-tools.md`, the native command and
-  flag references, `cmd/assist`, `cmd/mcp`, and the `internal/assist*`,
+  flag references, `internal/cli/assist`, `internal/cli/mcp`, and the `internal/assist*`,
   `internal/aiprovider`, `internal/agent*`, and `internal/mcpserver` packages.
 - **Public Go API**: `docs/public_api.md`,
   `docs/site/src/content/docs/extend/*.md`, and package comments for exported

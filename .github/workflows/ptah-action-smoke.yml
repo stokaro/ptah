@@ -93,7 +93,7 @@ jobs:
           dir: ${{ runner.temp }}/ptah-action-models
           db-url: sqlite:///${{ runner.temp }}/ptah-action.db
           dialect: sqlite
-          migration-dir: cmd/lint/testdata/clean
+          migration-dir: internal/cli/lint/testdata/clean
           comment: "false"
           lint: "true"
 
@@ -115,7 +115,7 @@ jobs:
           dir: ${{ runner.temp }}/ptah-action-models
           db-url: sqlite:///${{ runner.temp }}/ptah-action-setup-go.db
           dialect: sqlite
-          migration-dir: cmd/lint/testdata/clean
+          migration-dir: internal/cli/lint/testdata/clean
           comment: "false"
           lint: "true"
 

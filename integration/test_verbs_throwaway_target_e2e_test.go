@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"ptah.run/cmd/root"
+	"ptah.run/internal/cli/root"
 )
 
 // TestTestVerbs_TheThrowawayTargetIsExplicitOnly is a destructive default this

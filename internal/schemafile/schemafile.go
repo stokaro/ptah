@@ -28,7 +28,7 @@ type Options struct {
 	// parser does not model instead of refusing the file.
 	//
 	// The split is by COMMAND TREE, not by file format. It is set only by
-	// cmd/atlas -- `schema apply`, `schema inspect`, `schema diff`,
+	// internal/cli/atlas -- `schema apply`, `schema inspect`, `schema diff`,
 	// `schema plan`, `schema plan validate` and `migrate diff` on the
 	// Atlas-compatible binary -- which consumes files written for another tool
 	// and must not refuse a construct that tool accepts and ignores.

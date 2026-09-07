@@ -16,7 +16,7 @@ import (
 )
 
 // Every fixture below analyzes under CompatibilityProfileAtlas, which is what
-// `ptah-compat migrate lint` passes (cmd/atlas/migrate_lint.go). The renderer in
+// `ptah-compat migrate lint` passes (internal/cli/atlas/migrate_lint.go). The renderer in
 // this package only ever receives an analysis produced that way, and a fixture
 // built from the native profile carries a different finding set -- so an
 // assertion on one is not an assertion about anything this package renders.

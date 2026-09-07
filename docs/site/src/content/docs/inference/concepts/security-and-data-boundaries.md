@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How does Ptah model security and data boundaries?"
 goal: "Explain Ptah's model for security and data boundaries."
 sourceOfTruth:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 overlaps: []

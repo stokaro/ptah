@@ -173,7 +173,7 @@ type Status struct {
 //
 // internal/embedguard exists to report exactly that shape and did not, because
 // it matches a declaration by bare name and cobra's own Command.Runnable is
-// called in cmd/atlas. The guard's doc comment names that false negative as the
+// called in internal/cli/atlas. The guard's doc comment names that false negative as the
 // direction it accepts; this is one it cost.
 func (p Plan) Runnable() bool {
 	return embedplan.Plan{Blockers: p.Blockers}.Runnable()

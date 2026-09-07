@@ -1,7 +1,7 @@
 {
   "packages": [
-    "./cmd/atlas/",
-    "./cmd/internal/editor/",
+    "./internal/cli/atlas/",
+    "./internal/cli/internal/editor/",
     "./core/sqlutil/",
     "./internal/atlasschema/",
     "./internal/atlasreport/",
@@ -10,20 +10,20 @@
   "mutations": [
     {
       "name": "the rendered name never wins over the default naming",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\t\tplan.Name, err = renderAtlasSchemaPlanName(opts.nameFormat, plan, outputMode)",
       "new": "\t\t_, err = renderAtlasSchemaPlanName(opts.nameFormat, plan, outputMode)",
       "comment": "The template still runs and still refuses bad names, so every rejection case stays green; only a case asserting the resulting name separates them."
     },
     {
       "name": "--name-format is evaluated but --name's default still wins for HCL",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\tcase opts.nameFormat != \"\":",
       "new": "\tcase opts.nameFormat != \"\" && format == atlasschema.PlanFormatJSON:"
     },
     {
       "name": "the template sees the fingerprints swapped",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "atlasreport.NewSchemaPlanName(plan.FromFingerprint, plan.ToFingerprint)",
       "new": "atlasreport.NewSchemaPlanName(plan.ToFingerprint, plan.FromFingerprint)",
       "comment": "Killed only by a fixture whose two fingerprints differ; a plan from an empty database would make both branches agree."
@@ -37,76 +37,76 @@
     },
     {
       "name": "the empty rendered name is accepted",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\tcase name == \"\":",
       "new": "\tcase false && name == \"\":"
     },
     {
       "name": "a rendered path separator is accepted",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\tcase outputMode == atlasSchemaPlanDefaultOutput && strings.ContainsAny(name, `/\\`):",
       "new": "\tcase false && outputMode == atlasSchemaPlanDefaultOutput && strings.ContainsAny(name, `/\\`):"
     },
     {
       "name": "a rendered control character is accepted",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\tcase strings.ContainsFunc(name, unicode.IsControl):",
       "new": "\tcase false && strings.ContainsFunc(name, unicode.IsControl):",
       "comment": "The dead conjunct disables the rule while keeping the unicode import live; deleting the case outright is a build failure, which is not a result."
     },
     {
       "name": "an empty --name-format falls through to the default naming",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\t\tif opts.nameFormat == \"\" {\n\t\t\treturn fmt.Errorf(\"--name-format must not be empty\")\n\t\t}\n",
       "new": ""
     },
     {
       "name": "the template is parsed only after the database is contacted",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\t\tif err := atlasreport.ValidateSchemaPlanNameTemplate(opts.nameFormat); err != nil {\n\t\t\treturn err\n\t\t}",
       "new": "",
       "comment": "Every rejection case still errors, just later and after a connection attempt; only the unreachable-target case separates the orderings."
     },
     {
       "name": "--name and --name-format may be combined",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\tcmd.MarkFlagsMutuallyExclusive(\"name\", \"name-format\")",
       "new": ""
     },
     {
       "name": "--skip-lint is refused again",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\t\t{\"format\", \"Ptah does not implement --format for schema plan yet\"},",
       "new": "\t\t{\"format\", \"Ptah does not implement --format for schema plan yet\"},\n\t\t{\"skip-lint\", \"Ptah does not lint declarative plans yet, so there is no lint step to skip\"},"
     },
     {
       "name": "--edit is refused again",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\t\t{\"format\", \"Ptah does not implement --format for schema plan yet\"},",
       "new": "\t\t{\"format\", \"Ptah does not implement --format for schema plan yet\"},\n\t\t{\"edit\", \"Ptah does not implement editing the plan before saving yet; review the saved plan file instead\"},"
     },
     {
       "name": "the edited plan is discarded and the computed one saved",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\tif opts.edit {\n\t\tplan, err = editAtlasSchemaPlan(cmd.Context(), plan)\n\t\tif err != nil {\n\t\t\treturn cmdutil.Fail(cmd, err)\n\t\t}\n\t}",
       "new": "\tif opts.edit {\n\t\tif _, err = editAtlasSchemaPlan(cmd.Context(), plan); err != nil {\n\t\t\treturn cmdutil.Fail(cmd, err)\n\t\t}\n\t}"
     },
     {
       "name": "an editor failure is swallowed and the computed plan saved",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\tif opts.edit {\n\t\tplan, err = editAtlasSchemaPlan(cmd.Context(), plan)\n\t\tif err != nil {\n\t\t\treturn cmdutil.Fail(cmd, err)\n\t\t}\n\t}",
       "new": "\tif opts.edit {\n\t\tif edited, editErr := editAtlasSchemaPlan(cmd.Context(), plan); editErr == nil {\n\t\t\tplan = edited\n\t\t}\n\t}",
       "comment": "The dangerous shape: a refused edit still writes a reviewable-looking plan file. Must be killed by the no-plan-file assertion, not only by the message."
     },
     {
       "name": "an edit that leaves no statement is saved as an empty plan",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\tplan = plan.WithStatementsFromSQL(edited)\n\tif !plan.HasChanges() {\n\t\treturn atlasschema.PlanFile{}, fmt.Errorf(\n\t\t\t\"the edited plan contains no SQL statement; nothing was saved\")\n\t}",
       "new": "\tplan = plan.WithStatementsFromSQL(edited)"
     },
     {
       "name": "the editor is opened before the no-changes check",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\tif !plan.HasChanges() {\n\t\tfmt.Fprintln(cmd.OutOrStdout(), \"Schema is synced, no changes to be made.\")\n\t\treturn nil\n\t}",
       "new": "\tif opts.edit {\n\t\tif edited, editErr := editAtlasSchemaPlan(cmd.Context(), plan); editErr == nil {\n\t\t\tplan = edited\n\t\t}\n\t}\n\tif !plan.HasChanges() {\n\t\tfmt.Fprintln(cmd.OutOrStdout(), \"Schema is synced, no changes to be made.\")\n\t\treturn nil\n\t}",
       "comment": "The naming block now sits between the check and the edit, so the two are no longer adjacent to swap; hoisting a copy of the edit above the check reproduces the same defect."
@@ -152,65 +152,65 @@
     },
     {
       "name": "a lint step is added that ignores --skip-lint",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\toutputPath := strings.TrimSpace(opts.output)\n\toutputMode := atlasSchemaPlanOutputModeFor(outputPath)\n\tformat := atlasSchemaPlanFormat(outputPath)",
       "new": "\tif plan.Destructive {\n\t\tfmt.Fprintln(cmd.ErrOrStderr(), \"lint: plan contains a destructive change\")\n\t}\n\toutputPath := strings.TrimSpace(opts.output)\n\toutputMode := atlasSchemaPlanOutputModeFor(outputPath)\n\tformat := atlasSchemaPlanFormat(outputPath)",
       "comment": "Killed only by a DESTRUCTIVE fixture plus a whole-output assertion. An additive fixture gives the linter nothing to say, and a document-only comparison cannot see diagnostics at all."
     },
     {
       "name": "a lint step is added that honors --skip-lint",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\toutputPath := strings.TrimSpace(opts.output)\n\toutputMode := atlasSchemaPlanOutputModeFor(outputPath)\n\tformat := atlasSchemaPlanFormat(outputPath)",
       "new": "\tif plan.Destructive && !cmd.Flags().Changed(\"skip-lint\") {\n\t\tfmt.Fprintln(cmd.ErrOrStderr(), \"lint: plan contains a destructive change\")\n\t}\n\toutputPath := strings.TrimSpace(opts.output)\n\toutputMode := atlasSchemaPlanOutputModeFor(outputPath)\n\tformat := atlasSchemaPlanFormat(outputPath)",
       "comment": "The flag acquiring a real meaning. The no-op claim is only honest while both runs report identically, so honoring the flag must go red too."
     },
     {
       "name": "a refusing lint step is added",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\toutputPath := strings.TrimSpace(opts.output)\n\toutputMode := atlasSchemaPlanOutputModeFor(outputPath)\n\tformat := atlasSchemaPlanFormat(outputPath)",
       "new": "\tif plan.Destructive && !cmd.Flags().Changed(\"skip-lint\") {\n\t\treturn cmdutil.Fail(cmd, fmt.Errorf(\"lint: plan contains a destructive change\"))\n\t}\n\toutputPath := strings.TrimSpace(opts.output)\n\toutputMode := atlasSchemaPlanOutputModeFor(outputPath)\n\tformat := atlasSchemaPlanFormat(outputPath)"
     },
     {
       "name": "--skip-lint acquires a document-affecting meaning",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\tif opts.dryRun || (!opts.save && outputPath == \"\") {",
       "new": "\tif opts.dryRun || cmd.Flags().Changed(\"skip-lint\") || (!opts.save && outputPath == \"\") {"
     },
     {
       "name": "the editor opens before the naming and format checks",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\tif opts.edit {\n\t\tplan, err = editAtlasSchemaPlan(cmd.Context(), plan)\n\t\tif err != nil {\n\t\t\treturn cmdutil.Fail(cmd, err)\n\t\t}\n\t}\n\tdocument, err := atlasschema.MarshalPlanFileAs(plan, format)",
       "new": "\tdocument, err := atlasschema.MarshalPlanFileAs(plan, format)",
       "comment": "Deleting the edit block entirely is the only way to move it without duplicating anchors; the marker-file assertions in ...IsNotOpenedWhenNamingFailsFirst pin the ordering, and the edit tests pin that editing still happens."
     },
     {
       "name": "the format-support check no longer runs before the editor",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\tif err := atlasschema.CheckPlanFormatSupported(plan, format); err != nil {\n\t\treturn cmdutil.Fail(cmd, err)\n\t}",
       "new": "",
       "comment": "The writer still refuses, so only the marker-file assertion separates them."
     },
     {
       "name": "the Windows-illegal character set is not checked",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\tcase strings.ContainsAny(name, atlasPlanNameIllegalWindowsChars):",
       "new": "\tcase false && strings.ContainsAny(name, atlasPlanNameIllegalWindowsChars):"
     },
     {
       "name": "the directory-reference names . and .. are accepted",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\tcase name == \".\" || name == \"..\":",
       "new": "\tcase false && (name == \".\" || name == \"..\"):"
     },
     {
       "name": "--name skips the shared name validation",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\tif opts.name != \"\" {\n\t\tif err := validateAtlasSchemaPlanName(\n\t\t\t\"--name\",\n\t\t\topts.name,\n\t\t\tatlasSchemaPlanOutputModeFor(strings.TrimSpace(opts.output)),\n\t\t); err != nil {\n\t\t\treturn err\n\t\t}\n\t}",
       "new": ""
     },
     {
       "name": "the collision remediation always names --name",
-      "file": "cmd/atlas/schema_plan.go",
+      "file": "internal/cli/atlas/schema_plan.go",
       "old": "\t\t\t\t\"plan file %s already exists; pass %s or --output to choose a distinct plan file\", path, nameSource))",
       "new": "\t\t\t\t\"plan file %s already exists; pass --name or --output to choose a distinct plan file\", path))\n\t\t\t_ = nameSource",
       "comment": "The discarded reference keeps nameSource live; dropping its only use is a build failure, which is not a result."
@@ -244,20 +244,20 @@
     },
     {
       "name": "invalid UTF-8 editor output reaches plan marshaling",
-      "file": "cmd/atlas/editsql.go",
+      "file": "internal/cli/atlas/editsql.go",
       "old": "\tif !utf8.Valid(edited) {",
       "new": "\tif !utf8.Valid(edited) && false {",
       "comment": "The dead conjunct keeps the utf8 import live so the mutation exercises behavior instead of producing an uninformative build failure."
     },
     {
       "name": "default plan publication replaces an existing reviewed plan",
-      "file": "cmd/atlas/planfile_write.go",
+      "file": "internal/cli/atlas/planfile_write.go",
       "old": "\t\terr = fsdurable.MoveFileNoReplace(stagedPath, path)",
       "new": "\t\terr = fsdurable.ReplaceFile(stagedPath, path)"
     },
     {
       "name": "successful execution leaves schema-plan local flags sticky",
-      "file": "cmd/atlas/project_config.go",
+      "file": "internal/cli/atlas/project_config.go",
       "old": "\t\t\tdefer resetAtlasExecutionFlags(cmd, group)\n\t\t\treturn runE(cmd, args)",
       "new": "\t\t\treturn runE(cmd, args)"
     }

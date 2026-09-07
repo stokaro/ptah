@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I edit, reorder, and delete unapplied migrations with the integrity file kept true, and repair a dirty revision state after a partial failure?"
 goal: "Safely maintain unapplied migrations and repair dirty state."
 sourceOfTruth:
-  - "cmd/migrations"
+  - "internal/cli/migrations"
   - "migration"
 generated: false
 overlaps: []

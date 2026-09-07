@@ -306,10 +306,10 @@ jobs:
         run: scripts/check-gate-selftests.sh
 
       - name: Validate lint SARIF output
-        run: go test ./cmd/lint -run 'TestRunLint_SARIF' -count=1
+        run: go test ./internal/cli/lint -run 'TestRunLint_SARIF' -count=1
 
       - name: Generate lint SARIF for code scanning
-        run: go run ./cmd/ptah migrations lint --dir cmd/lint/testdata/clean --format sarif --fail-on none > ptah-lint.sarif
+        run: go run ./cmd/ptah migrations lint --dir internal/cli/lint/testdata/clean --format sarif --fail-on none > ptah-lint.sarif
 
       - name: Upload lint SARIF to code scanning
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository

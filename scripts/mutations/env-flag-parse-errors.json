@@ -1,45 +1,45 @@
 {
   "packages": [
-    "./cmd/internal/cmdflags/",
-    "./cmd/internal/cmdadapter/",
+    "./internal/cli/internal/cmdflags/",
+    "./internal/cli/internal/cmdadapter/",
     "./internal/atlasargs/",
-    "./cmd/root/",
+    "./internal/cli/root/",
     "./cmd/ptah-compat/"
   ],
   "mutations": [
     {
       "name": "environment flag parse errors are discarded again",
-      "file": "cmd/internal/cmdflags/env.go",
+      "file": "internal/cli/internal/cmdflags/env.go",
       "old": "\t\tapplyErr = setEnvValue(flags, flag, envName, value)\n",
       "new": "\t\t_ = setEnvValue(flags, flag, envName, value)\n"
     },
     {
       "name": "a malformed boolean environment value is accepted as unset",
-      "file": "cmd/internal/cmdflags/env.go",
+      "file": "internal/cli/internal/cmdflags/env.go",
       "old": "\t\tif _, err := strconv.ParseBool(value); err != nil {\n\t\t\treturn fmt.Errorf(\"invalid boolean value %q for %s\", value, envName)\n\t\t}\n",
       "new": "\t\tif _, err := strconv.ParseBool(value); err != nil {\n\t\t\treturn nil\n\t\t}\n"
     },
     {
       "name": "a malformed environment value overrides an explicit CLI flag",
-      "file": "cmd/internal/cmdflags/env.go",
+      "file": "internal/cli/internal/cmdflags/env.go",
       "old": "\t\tif flag.Changed {\n\t\t\treturn\n\t\t}\n",
       "new": "\t\tif false {\n\t\t\treturn\n\t\t}\n"
     },
     {
       "name": "an invalid native unsigned integer reaches the mutating pflag parser",
-      "file": "cmd/internal/cmdflags/env.go",
+      "file": "internal/cli/internal/cmdflags/env.go",
       "old": "\tcase \"uint\", \"uint64\":\n\t\tif _, err := strconv.ParseUint(value, 0, 64); err != nil {\n\t\t\treturn fmt.Errorf(\"invalid unsigned integer value %q for %s\", value, envName)\n\t\t}\n",
       "new": ""
     },
     {
       "name": "legacy nil-Args command groups stop rejecting unknown commands",
-      "file": "cmd/internal/cmdflags/env.go",
+      "file": "internal/cli/internal/cmdflags/env.go",
       "old": "\t\tif cmd.Args != nil || !cmd.HasSubCommands() {\n",
       "new": "\t\tif true {\n"
     },
     {
       "name": "forwarded native targets lose environment validation",
-      "file": "cmd/internal/cmdadapter/cmdadapter.go",
+      "file": "internal/cli/internal/cmdadapter/cmdadapter.go",
       "old": "\tcmdflags.InstallEnvBinding(envPrefix, target)\n",
       "new": "\tcmdflags.InstallEnvBinding(envPrefix, &cobra.Command{})\n"
     },

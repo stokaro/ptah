@@ -11,8 +11,8 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
 	"ptah.run/catalog"
-	"ptah.run/cmd/atlas"
-	"ptah.run/cmd/readdb"
+	"ptah.run/internal/cli/atlas"
+	"ptah.run/internal/cli/readdb"
 	"ptah.run/dbschema"
 	"ptah.run/internal/dbtarget"
 )

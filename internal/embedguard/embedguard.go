@@ -225,7 +225,7 @@ func Declarations(root string) ([]Finding, error) {
 // By name AND by reach, rather than by resolved symbol. The name alone was too
 // coarse in one direction: any same-named identifier anywhere in the module
 // counted as a use, so `embedplan.Plan.Runnable` read as called because
-// cmd/atlas calls cobra's `Command.Runnable` -- an unrelated method on an
+// internal/cli/atlas calls cobra's `Command.Runnable` -- an unrelated method on an
 // unrelated type, in a package that has nothing to do with the inference
 // vertical. The decision it carried was absent from the product and the guard
 // was green (stokaro/ptah#2682, the cost measured in stokaro/ptah#2648).

@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I interpret inference run status and verification findings?"
 goal: "Interpret inference run status and verification findings."
 sourceOfTruth:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
 generated: false
 overlaps: []

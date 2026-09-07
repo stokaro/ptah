@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I run and verify one complete inference migration?"
 goal: "Build, verify, and activate one embedding generation without an external model service."
 sourceOfTruth:
-  - "cmd/inference"
+  - "internal/cli/inference"
   - "integration/inference_cli_e2e_test.go"
   - "docs/site/fixtures/inference-quick-start"
 generated: false

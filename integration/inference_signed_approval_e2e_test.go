@@ -20,7 +20,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers the pgx driver for database/sql
 
-	"ptah.run/cmd/root"
+	"ptah.run/internal/cli/root"
 	"ptah.run/internal/dbtarget"
 	"ptah.run/internal/embedrelease"
 )
@@ -44,7 +44,7 @@ import (
 // to. An integration test that skips reads as one that passed -- which is why
 // the contour runner fails on a skip -- and a runner with no OpenSSH is one
 // where this capability genuinely does not work. The unit tests beside
-// cmd/inference skip, correctly: they are not the contour.
+// internal/cli/inference skip, correctly: they are not the contour.
 func TestInferenceSignedApprovalE2E(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.TimescaleDB)
 	c := qt.New(t)

@@ -9,7 +9,7 @@ readerQuestion: "What does Ptah Assist save, and how do I manage it?"
 goal: "Inspect and manage saved conversations without confusing them with the agent audit log."
 sourceOfTruth:
   - "internal/assistsession"
-  - "cmd/assist"
+  - "internal/cli/assist"
 generated: false
 searchAliases:
   - Ptah Assist history

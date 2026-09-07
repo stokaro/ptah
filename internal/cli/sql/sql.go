@@ -1,0 +1,343 @@
+// Package sql contains commands for standalone SQL files.
+package sql
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"slices"
+
+	"github.com/spf13/cobra"
+
+	"ptah.run/core/platform"
+	"ptah.run/internal/cli/internal/cmdutil"
+	"ptah.run/internal/cli/internal/exitcode"
+	"ptah.run/internal/cli/internal/serverversion"
+	"ptah.run/internal/servertarget"
+	"ptah.run/internal/sqllint"
+	migrationlint "ptah.run/migration/lint"
+)
+
+const (
+	formatText = "text"
+	formatJSON = "json"
+)
+
+// sqlLintDialects is the one spelling of the list --dialect advertises. The
+// flag's help and its refusal both read it, so the two cannot come to disagree
+// about what this command takes.
+//
+// It is deliberately NOT capability.DefaultDialects, which "ptah schema render"
+// uses and which names ten. validateSQLLintOptions accepts whatever
+// platform.NormalizeDialect resolves, so `--dialect oracle` is accepted here
+// and exits 0, while nothing in internal/sqllint has been measured to analyze
+// Oracle. Naming a tenth dialect would claim coverage nobody established, and
+// refusing it is a behavior change this help-text change does not get to make.
+const sqlLintDialects = "postgres, mysql, mariadb, sqlite, sqlserver, clickhouse, cockroachdb, yugabytedb, or spanner"
+
+var errSQLLintFindings = errors.New("sql lint findings found")
+
+// NewSQLCommand returns the standalone SQL command namespace.
+func NewSQLCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "sql",
+		Short: "Work with standalone SQL files",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
+		},
+	}
+	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	cmd.AddCommand(newSQLLintCommand())
+	return cmd
+}
+
+func newSQLLintCommand() *cobra.Command {
+	var dialect string
+	var version string
+	var format string
+	var stdin bool
+	var disabled []string
+
+	cmd := &cobra.Command{
+		Use:   "lint [files...]",
+		Short: "Lint standalone SQL files",
+		Long: `Lint standalone SQL files using Ptah's SQL parser, AST, and
+target capability presets.
+
+This command is intentionally separate from ptah migrations lint, which is
+migration directory specific.`,
+		Args:          cobra.ArbitraryArgs,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runSQLLint(cmd, sqlLintOptions{
+				dialect:  dialect,
+				version:  version,
+				format:   format,
+				stdin:    stdin,
+				disabled: disabled,
+				files:    args,
+			})
+		},
+	}
+
+	flags := cmd.Flags()
+	flags.StringVar(&dialect, "dialect", "", "Target dialect: "+sqlLintDialects)
+	serverversion.Register(flags, &version)
+	flags.StringVar(&format, "format", formatText, "Output format: text or json")
+	flags.BoolVar(&stdin, "stdin", false, "Read SQL from stdin")
+	flags.StringArrayVar(&disabled, "disable", nil, "Disable a rule code or family, for example DDL001 or CAP (repeatable)")
+	cmdutil.ConfigureCommandArgs(cmd, cobra.ArbitraryArgs)
+	return cmd
+}
+
+type sqlLintOptions struct {
+	dialect  string
+	version  string
+	format   string
+	stdin    bool
+	disabled []string
+	files    []string
+}
+
+type sqlLintReport struct {
+	Failed bool `json:"failed"`
+	// Dialect and Version describe the target the findings below were
+	// produced against. Version is present only when it resolved: a value the
+	// capability resolver could not identify never reaches this struct,
+	// because a machine that reads a version here must be able to treat it as
+	// the version that was applied.
+	Dialect string `json:"dialect,omitempty"`
+	Version string `json:"version,omitempty"`
+	// VersionNote is set when Version resolved to something other than an
+	// exact measured release line, and says what was planned instead.
+	VersionNote string            `json:"version_note,omitempty"`
+	Sources     []string          `json:"sources,omitempty"`
+	Disabled    []string          `json:"disabled_rules,omitempty"`
+	Findings    []sqllint.Finding `json:"findings"`
+	Error       string            `json:"error,omitempty"`
+}
+
+func runSQLLint(cmd *cobra.Command, opts sqlLintOptions) error {
+	if err := validateSQLLintOptions(opts); err != nil {
+		return writeSQLLintError(cmd.ErrOrStderr(), opts.format, err.Error())
+	}
+
+	// Resolved before the SQL is read so an unusable --server-version is reported as
+	// the usage error it is, rather than behind whatever the first file has
+	// to say for itself.
+	normalizedDialect := platform.NormalizeDialect(opts.dialect)
+	target, err := servertarget.Resolve(normalizedDialect, opts.version)
+	if err != nil {
+		// The resolver's own sentence names the value, the dialect and the
+		// remedy, and there are two of them — a value naming no server and a
+		// value naming a different server than --dialect. Re-stating one here
+		// is how the other comes to be reported as the wrong thing.
+		return writeSQLLintError(cmd.ErrOrStderr(), opts.format,
+			// Named from the constant, so the diagnostic cannot drift from
+			// the flag the way it did while this command spelled it its own
+			// way (stokaro/ptah#916).
+			fmt.Sprintf("invalid --%s: %s", serverversion.FlagName, err))
+	}
+
+	sources, err := readSQLLintSources(cmd.InOrStdin(), opts)
+	if err != nil {
+		return writeSQLLintError(cmd.ErrOrStderr(), opts.format, err.Error())
+	}
+
+	severities, err := sqlLintSeverities()
+	if err != nil {
+		return writeSQLLintError(cmd.ErrOrStderr(), opts.format, err.Error())
+	}
+
+	var findings []sqllint.Finding
+	for _, source := range sources {
+		sourceFindings, err := sqllint.LintSource(source, sqllint.Options{
+			Dialect:       normalizedDialect,
+			Version:       opts.version,
+			Capabilities:  target.Capabilities,
+			DisabledRules: opts.disabled,
+			Severities:    severities,
+		})
+		if err != nil {
+			return writeSQLLintError(cmd.ErrOrStderr(), opts.format, err.Error())
+		}
+		findings = append(findings, sourceFindings...)
+	}
+	if findings == nil {
+		findings = make([]sqllint.Finding, 0)
+	}
+
+	report := sqlLintReport{
+		Failed:      hasErrorFinding(findings),
+		Dialect:     normalizedDialect,
+		Version:     opts.version,
+		VersionNote: target.Note,
+		Sources:     sourceNames(sources),
+		Disabled:    opts.disabled,
+		Findings:    findings,
+	}
+	// The note goes to stderr in text mode whatever the outcome: it describes
+	// the target rather than the SQL, so it must not be mistaken for a finding
+	// on stdout, and it must still be visible on a clean run — a clean run
+	// against an unmodeled server is exactly the case it exists to announce.
+	if opts.format == formatText && report.VersionNote != "" {
+		if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", report.VersionNote); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+	}
+	writer := cmd.OutOrStdout()
+	if report.Failed {
+		writer = cmd.ErrOrStderr()
+	}
+	if err := writeSQLLintReport(writer, opts.format, report); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if report.Failed {
+		return exitcode.New(1, errSQLLintFindings)
+	}
+	return nil
+}
+
+func validateSQLLintOptions(opts sqlLintOptions) error {
+	if opts.format != formatText && opts.format != formatJSON {
+		return fmt.Errorf("invalid --format value %q: expected text or json", opts.format)
+	}
+	if opts.dialect != "" && platform.NormalizeDialect(opts.dialect) == "" {
+		return fmt.Errorf("invalid --dialect value %q: expected %s", opts.dialect, sqlLintDialects)
+	}
+	if opts.version != "" && opts.dialect == "" {
+		return fmt.Errorf("--%s requires --dialect", serverversion.FlagName)
+	}
+	if opts.stdin && len(opts.files) > 0 {
+		return fmt.Errorf("--stdin cannot be combined with file arguments")
+	}
+	if !opts.stdin && len(opts.files) == 0 {
+		return fmt.Errorf("at least one SQL file is required unless --stdin is set")
+	}
+	return nil
+}
+
+func readSQLLintSources(stdin io.Reader, opts sqlLintOptions) ([]sqllint.Source, error) {
+	if opts.stdin {
+		data, err := io.ReadAll(stdin)
+		if err != nil {
+			return nil, fmt.Errorf("read stdin: %w", err)
+		}
+		return []sqllint.Source{{Name: "<stdin>", SQL: string(data)}}, nil
+	}
+
+	sources := make([]sqllint.Source, 0, len(opts.files))
+	for _, path := range opts.files {
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, fmt.Errorf("SQL file %s: %w", path, err)
+		}
+		if info.IsDir() {
+			return nil, fmt.Errorf("SQL file %s: is a directory", path)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read SQL file %s: %w", path, err)
+		}
+		sources = append(sources, sqllint.Source{
+			Name: filepath.ToSlash(path),
+			SQL:  string(data),
+		})
+	}
+	return sources, nil
+}
+
+func writeSQLLintReport(w io.Writer, format string, report sqlLintReport) error {
+	if format == formatJSON {
+		encoder := json.NewEncoder(w)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(report)
+	}
+	return writeSQLLintText(w, report)
+}
+
+func writeSQLLintText(w io.Writer, report sqlLintReport) error {
+	if report.Error != "" {
+		_, err := fmt.Fprintf(w, "error: %s\n", report.Error)
+		return err
+	}
+	if len(report.Findings) == 0 {
+		_, err := fmt.Fprintln(w, "No SQL lint findings.")
+		return err
+	}
+	for _, finding := range report.Findings {
+		if _, err := fmt.Fprintf(w, "%s:%d:%d: %s %s: %s\n",
+			finding.File,
+			finding.Line,
+			finding.Column,
+			finding.Severity,
+			finding.Rule,
+			finding.Message,
+		); err != nil {
+			return err
+		}
+	}
+	_, err := fmt.Fprintf(w, "\n%d finding(s).\n", len(report.Findings))
+	return err
+}
+
+func writeSQLLintError(w io.Writer, format, msg string) error {
+	report := sqlLintReport{
+		Failed:   true,
+		Findings: make([]sqllint.Finding, 0),
+		Error:    msg,
+	}
+	if err := writeSQLLintReport(w, format, report); err != nil {
+		return exitcode.New(2, fmt.Errorf("%s; additionally failed to write error report: %w", msg, err))
+	}
+	return exitcode.New(2, errors.New(msg))
+}
+
+func hasErrorFinding(findings []sqllint.Finding) bool {
+	for _, finding := range findings {
+		if finding.Severity == sqllint.SeverityError {
+			return true
+		}
+	}
+	return false
+}
+
+func sourceNames(sources []sqllint.Source) []string {
+	names := make([]string, 0, len(sources))
+	for _, source := range sources {
+		names = append(names, source.Name)
+	}
+	return names
+}
+
+// sqlLintSeverities reads the per-rule severities a committed policy sets for
+// this linter.
+//
+// The same `.ptah-lint.yaml` the migration linter reads, and only the rows
+// naming identifiers this linter reports: a project configures its rules in one
+// file, and #1270 asks for severity "through the normal Ptah policy mechanism"
+// rather than a second one invented here.
+//
+// The file is read from the working directory, which is where the migration
+// linter finds it too. A missing file is not an error.
+//
+// migration/lint owns the format; sqllint takes a plain map, so the dependency
+// stays here in the command rather than between the two libraries.
+func sqlLintSeverities() (map[string]sqllint.Severity, error) {
+	cfg, err := migrationlint.LoadConfigFS(os.DirFS("."), migrationlint.ConfigFileName)
+	if err != nil {
+		return nil, err
+	}
+	reported := sqllint.CatalogIDs()
+	severities := make(map[string]sqllint.Severity)
+	for code, rule := range cfg.Rules {
+		if rule.Severity == "" || !slices.Contains(reported, code) {
+			continue
+		}
+		severities[code] = sqllint.Severity(rule.Severity)
+	}
+	return severities, nil
+}

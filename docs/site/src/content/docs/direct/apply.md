@@ -8,7 +8,7 @@ audience:
 readerQuestion: "How do I apply a desired schema directly and verify the result?"
 goal: "Apply a desired schema directly and verify the result."
 sourceOfTruth:
-  - "cmd/schema"
+  - "internal/cli/schema"
   - "migration/schemadiff"
   - "migration/planner"
 generated: false

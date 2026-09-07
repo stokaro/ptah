@@ -8,7 +8,7 @@ audience:
 readerQuestion: "What is Ptah's independent implementation boundary for Atlas compatibility?"
 goal: "Explain Ptah's independent implementation boundary for Atlas compatibility."
 sourceOfTruth:
-  - "cmd/atlas"
+  - "internal/cli/atlas"
   - "internal/atlascompatpolicy"
 generated: false
 overlaps: []

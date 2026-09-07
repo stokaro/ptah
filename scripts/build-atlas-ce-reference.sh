@@ -87,16 +87,16 @@ fi
 
 mkdir -p "$source_dir"
 tar -xzf "$archive" --strip-components=1 -C "$source_dir"
-if [[ ! -f "$source_dir/go.mod" || ! -d "$source_dir/cmd/atlas" ]]; then
+if [[ ! -f "$source_dir/go.mod" || ! -d "$source_dir/internal/cli/atlas" ]]; then
 	printf 'atlas-ce: verified source archive has an unexpected layout\n' >&2
 	exit 1
 fi
 
 printf 'atlas-ce: building verified source archive\n'
 (
-	cd "$source_dir/cmd/atlas"
+	cd "$source_dir/internal/cli/atlas"
 	GOWORK=off go build -trimpath \
-		-ldflags "-X ariga.io/atlas/cmd/atlas/internal/cmdapi.version=$ATLAS_CE_VERSION" \
+		-ldflags "-X ariga.io/atlas/internal/cli/atlas/internal/cmdapi.version=$ATLAS_CE_VERSION" \
 		-o "$candidate" .
 )
 

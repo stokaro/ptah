@@ -73,7 +73,7 @@ func TestParseAtlasEnvSchemasSelectsTheSchemaUniverse(t *testing.T) {
 			// clear a ptah.yaml value rather than silently inherit it. The
 			// no-restriction behavior comes from the value, not the presence
 			// bit — an empty list joins to the empty flag value, which
-			// [ptah.run/cmd/internal/dbcli.ParseSchemas] reads as no
+			// [ptah.run/internal/cli/internal/dbcli.ParseSchemas] reads as no
 			// schemas named.
 			name: "an empty list is present and selects nothing",
 			raw: `env "local" {

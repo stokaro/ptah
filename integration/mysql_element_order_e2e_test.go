@@ -29,7 +29,7 @@ package integration_test
 // catalogs proves they agree; it cannot notice that both are empty, which is
 // what a `users` table that never got created looks like from here.
 //
-// The commands are driven in process, through the cobra tree `cmd/schema`
+// The commands are driven in process, through the cobra tree `internal/cli/schema`
 // builds, for the reason the sibling file
 // mysql_inline_index_naming_e2e_test.go states: it is the surface a user has,
 // including the exit status, without a `go build` in the middle of a database
@@ -46,7 +46,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/go-sql-driver/mysql" // registers the MySQL driver, which both engines here speak, for database/sql
 
-	cmdschema "ptah.run/cmd/schema"
+	cmdschema "ptah.run/internal/cli/schema"
 	"ptah.run/internal/dbtarget"
 )
 

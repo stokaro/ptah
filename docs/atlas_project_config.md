@@ -590,7 +590,7 @@ through a rooted handle, which is what catches a link chain the resolver stops
 following and a path swapped for a link between the check and the read.
 `ParseAtlasFSWithOptions` takes the filesystem from its caller, so a caller that
 supplies one without that protection has chosen a weaker boundary; the loaders
-in this package and in `cmd/atlas` supply a rooted one.
+in this package and in `internal/cli/atlas` supply a rooted one.
 
 This is deliberately stricter than Atlas. The pinned community v1.3.0 binary
 reads all three shapes and exits 0, and the contents land somewhere observable,

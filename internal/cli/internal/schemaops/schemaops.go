@@ -1,0 +1,357 @@
+// Package schemaops contains shared command-line schema comparison helpers.
+package schemaops
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"ptah.run/catalog"
+	"ptah.run/config"
+	"ptah.run/core/schemamodel"
+	"ptah.run/core/schemasource"
+	"ptah.run/dbschema"
+	"ptah.run/internal/atlassource"
+	"ptah.run/internal/atlasurl"
+	"ptah.run/internal/cli/internal/dbcli"
+	"ptah.run/internal/dburldisplay"
+	"ptah.run/internal/schemaload"
+	"ptah.run/internal/sqlitevirtual"
+	"ptah.run/migration/schemadiff"
+	"ptah.run/migration/schemadiff/difftypes"
+)
+
+// CompareOptions configures a live schema comparison.
+type CompareOptions struct {
+	RootDirs       []string
+	SchemaFiles    []string
+	Commands       []schemasource.Command
+	DatabaseURL    string
+	ConnectTimeout time.Duration
+	IgnoredTables  []string
+	Schemas        []string
+	PlainHTTP      bool
+	// ProjectEnv is the atlas.hcl environment an `env://` schema file is
+	// expanded through; the zero value keeps the refusal (stokaro/ptah#1760).
+	ProjectEnv atlassource.ProjectEnv
+	// EnvSelectorFlag names the flag that selects a project environment on the
+	// running command; empty when it offers none.
+	EnvSelectorFlag string
+}
+
+// CompareResult is the output of a live schema comparison.
+type CompareResult struct {
+	Sources     string
+	DatabaseURL string
+	Dialect     string
+	Generated   *schemamodel.Database
+	Database    *catalog.Database
+	Diff        *difftypes.SchemaDiff
+}
+
+// Compare resolves the desired schema from Go entities, schema files, and/or an
+// external command, reads the live database schema, applies command filters, and
+// returns a dialect-aware schema diff.
+func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
+	if opts.DatabaseURL == "" {
+		return nil, fmt.Errorf("database URL is required")
+	}
+	dialect, err := atlasurl.DialectFromURL(opts.DatabaseURL)
+	if err != nil {
+		return nil, err
+	}
+	if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
+		return nil, err
+	}
+
+	loadOpts := schemaload.Options{
+		RootDirs:        opts.RootDirs,
+		SchemaFiles:     opts.SchemaFiles,
+		ProjectEnv:      opts.ProjectEnv,
+		EnvSelectorFlag: opts.EnvSelectorFlag,
+		Commands:        opts.Commands,
+		Dialect:         dialect,
+		PlainHTTP:       opts.PlainHTTP,
+	}
+	desired, err := schemaload.LoadContext(ctx, loadOpts)
+	if err != nil {
+		return nil, err
+	}
+
+	connectCtx, cancelConnect := dbcli.ConnectContext(ctx, opts.ConnectTimeout)
+	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.DatabaseURL)
+	cancelConnect()
+	if err != nil {
+		return nil, fmt.Errorf("error connecting to database: %w", err)
+	}
+	defer dbschema.CloseAndWarn(conn)
+
+	dbSchema, err := dbschema.ReadSchemaWithSchemasContext(ctx, conn, opts.Schemas)
+	if err != nil {
+		return nil, fmt.Errorf("error reading database schema: %w", err)
+	}
+
+	if len(opts.IgnoredTables) > 0 {
+		desired = FilterGeneratedTables(desired, opts.IgnoredTables)
+		dbSchema = FilterDatabaseTables(dbSchema, opts.IgnoredTables)
+	}
+
+	info := conn.Info()
+	compareOpts := config.DefaultCompareOptions()
+	diff, err := schemadiff.CompareWithDatabase(
+		ctx,
+		conn,
+		desired,
+		dbSchema,
+		compareOpts,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error comparing schemas: %w", err)
+	}
+
+	return &CompareResult{
+		Sources:     loadOpts.Sources(),
+		DatabaseURL: dburldisplay.Format(opts.DatabaseURL),
+		Dialect:     info.Dialect,
+		Generated:   desired,
+		Database:    dbSchema,
+		Diff:        diff,
+	}, nil
+}
+
+// FilterGeneratedTables returns a shallow copy of db without ignored tables and
+// their table-scoped schema objects.
+func FilterGeneratedTables(db *schemamodel.Database, ignoredTables []string) *schemamodel.Database {
+	if db == nil {
+		return nil
+	}
+	ignored := tableSet(ignoredTables)
+	if len(ignored) == 0 {
+		return db
+	}
+
+	filtered := *db
+	ignoredStructs := make(map[string]struct{})
+	filtered.Tables = keep(db.Tables, func(table schemamodel.Table) bool {
+		if isIgnoredTable(ignored, table.QualifiedName(), table.Name) {
+			ignoredStructs[table.StructName] = struct{}{}
+			return false
+		}
+		return true
+	})
+	ignoredEnumRefs := make(map[string]struct{})
+	filtered.Fields = keep(db.Fields, func(field schemamodel.Field) bool {
+		_, ignore := ignoredStructs[field.StructName]
+		if ignore {
+			// Record the type name unconditionally: keepGeneratedEnums
+			// intersects it with the declared enum names, so a type that names
+			// something else never matches. Enum identity is the declaration,
+			// not an "enum_" name prefix (stokaro/ptah#931 item 1).
+			ignoredEnumRefs[field.Type] = struct{}{}
+		}
+		return !ignore
+	})
+	filtered.Indexes = keep(db.Indexes, func(index schemamodel.Index) bool {
+		if _, ignore := ignoredStructs[index.StructName]; ignore {
+			return false
+		}
+		if index.TableName != "" {
+			return !isIgnoredTable(ignored, index.TableName)
+		}
+		return true
+	})
+	filtered.Constraints = keep(db.Constraints, func(constraint schemamodel.Constraint) bool {
+		if _, ignore := ignoredStructs[constraint.StructName]; ignore {
+			return false
+		}
+		if constraint.Table != "" {
+			return !isIgnoredTable(ignored, constraint.Table)
+		}
+		return true
+	})
+	filtered.EmbeddedFields = keep(db.EmbeddedFields, func(field schemamodel.EmbeddedField) bool {
+		_, ignore := ignoredStructs[field.StructName]
+		return !ignore
+	})
+	filtered.RLSPolicies = keep(db.RLSPolicies, func(policy schemamodel.RLSPolicy) bool {
+		return !isIgnoredTable(ignored, policy.Table)
+	})
+	filtered.RLSEnabledTables = keep(db.RLSEnabledTables, func(table schemamodel.RLSEnabledTable) bool {
+		return !isIgnoredTable(ignored, table.Table)
+	})
+	filtered.Dependencies = filterDependencies(db.Dependencies, ignored)
+	filtered.SelfReferencingForeignKeys = filterSelfReferencingForeignKeys(db.SelfReferencingForeignKeys, ignored)
+	filtered.Enums = keepGeneratedEnums(db.Enums, filtered.Fields, ignoredEnumRefs)
+
+	return &filtered
+}
+
+// FilterDatabaseTables returns a shallow copy of db without ignored tables and
+// their table-scoped schema objects.
+func FilterDatabaseTables(db *catalog.Database, ignoredTables []string) *catalog.Database {
+	if db == nil {
+		return nil
+	}
+	ignored := tableSet(ignoredTables)
+	if len(ignored) == 0 {
+		return db
+	}
+
+	filtered := *db
+	ignoredEnumRefs := make(map[string]struct{})
+	filtered.Tables = keep(db.Tables, func(table catalog.Table) bool {
+		ignore := isIgnoredTable(ignored, table.QualifiedName(), table.Name)
+		if ignore {
+			addDatabaseEnumRefs(ignoredEnumRefs, table.Columns)
+		}
+		return !ignore
+	})
+	filtered.Indexes = keep(db.Indexes, func(index catalog.Index) bool {
+		return !isIgnoredTable(ignored, index.QualifiedTableName(), index.TableName)
+	})
+	filtered.Constraints = keep(db.Constraints, func(constraint catalog.Constraint) bool {
+		return !isIgnoredTable(ignored, constraint.QualifiedTableName(), constraint.TableName)
+	})
+	filtered.RLSPolicies = keep(db.RLSPolicies, func(policy catalog.RLSPolicy) bool {
+		return !isIgnoredTable(ignored, policy.Table)
+	})
+	filtered.Enums = keepDatabaseEnums(db.Enums, filtered.Tables, ignoredEnumRefs)
+
+	return &filtered
+}
+
+func tableSet(names []string) map[string]struct{} {
+	set := make(map[string]struct{})
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name != "" {
+			set[name] = struct{}{}
+		}
+	}
+	return set
+}
+
+func isIgnoredTable(ignored map[string]struct{}, names ...string) bool {
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, ok := ignored[name]; ok {
+			return true
+		}
+		if idx := strings.LastIndex(name, "."); idx >= 0 {
+			if _, ok := ignored[name[idx+1:]]; ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func keep[T any](items []T, shouldKeep func(T) bool) []T {
+	out := make([]T, 0, len(items))
+	for _, item := range items {
+		if shouldKeep(item) {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func filterDependencies(in map[string][]string, ignored map[string]struct{}) map[string][]string {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string][]string, len(in))
+	for table, deps := range in {
+		if isIgnoredTable(ignored, table) {
+			continue
+		}
+		out[table] = keep(deps, func(dep string) bool {
+			return !isIgnoredTable(ignored, dep)
+		})
+	}
+	return out
+}
+
+func filterSelfReferencingForeignKeys(
+	in map[string][]schemamodel.SelfReferencingFK,
+	ignored map[string]struct{},
+) map[string][]schemamodel.SelfReferencingFK {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string][]schemamodel.SelfReferencingFK, len(in))
+	for table, refs := range in {
+		if isIgnoredTable(ignored, table) {
+			continue
+		}
+		out[table] = refs
+	}
+	return out
+}
+
+func keepGeneratedEnums(enums []schemamodel.Enum, fields []schemamodel.Field, ignoredEnumRefs map[string]struct{}) []schemamodel.Enum {
+	// Every field type is a candidate reference; the keep below intersects them
+	// with the names the schema actually declares as enums. Restricting this to
+	// types spelled "enum_*" made an ignored table drop an enum that a kept
+	// table still referenced (stokaro/ptah#931 item 1).
+	referenced := make(map[string]struct{})
+	for _, field := range fields {
+		referenced[field.Type] = struct{}{}
+	}
+	return keep(enums, func(enum schemamodel.Enum) bool {
+		if _, stillReferenced := referenced[enum.Name]; stillReferenced {
+			return true
+		}
+		_, wasIgnored := ignoredEnumRefs[enum.Name]
+		return !wasIgnored
+	})
+}
+
+func keepDatabaseEnums(
+	enums []catalog.Enum,
+	tables []catalog.Table,
+	ignoredEnumRefs map[string]struct{},
+) []catalog.Enum {
+	referenced := make(map[string]struct{})
+	for _, table := range tables {
+		addDatabaseEnumRefs(referenced, table.Columns)
+	}
+	return keep(enums, func(enum catalog.Enum) bool {
+		if _, stillReferenced := referenced[enum.Name]; stillReferenced {
+			return true
+		}
+		_, wasIgnored := ignoredEnumRefs[enum.Name]
+		return !wasIgnored
+	})
+}
+
+func addDatabaseEnumRefs(out map[string]struct{}, columns []catalog.Column) {
+	for _, column := range columns {
+		ref, ok := databaseEnumRef(column)
+		if ok {
+			out[ref] = struct{}{}
+		}
+	}
+}
+
+func databaseEnumRef(column catalog.Column) (string, bool) {
+	if column.UDTName == "" {
+		return "", false
+	}
+
+	switch strings.ToUpper(column.DataType) {
+	case "USER-DEFINED":
+		return column.UDTName, true
+	case "ARRAY":
+		ref := strings.TrimPrefix(column.UDTName, "_")
+		return ref, ref != ""
+	case "":
+		return column.UDTName, true
+	default:
+		return "", false
+	}
+}
