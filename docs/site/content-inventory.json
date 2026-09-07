@@ -583,8 +583,8 @@
         "/reference/atlas-commands/",
         "/reference/hcl-schema/"
       ],
-      "visibleWords": 12649,
-      "sourceBytes": 93073
+      "visibleWords": 12656,
+      "sourceBytes": 93116
     },
     {
       "path": "docs/site/src/content/docs/atlas/strict-ce-mode.md",
@@ -5781,8 +5781,8 @@
         "/versioned/integrity-and-safety/",
         "/versioned/lint/"
       ],
-      "visibleWords": 1681,
-      "sourceBytes": 15457
+      "visibleWords": 1705,
+      "sourceBytes": 15598
     },
     {
       "path": "docs/site/src/content/docs/testing/migrations-and-schema.mdx",
