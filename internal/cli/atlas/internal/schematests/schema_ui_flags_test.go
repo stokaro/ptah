@@ -47,6 +47,33 @@ func TestSchemaUIFlagsAreRegisteredRefusals(t *testing.T) {
 		// an export nobody declared from silently emitting the ordinary
 		// report -- are covered by TestSchemaExportRefusesWhatItCannotResolve.
 		{
+			// The twin of the two inspect rows above. It answered `unknown
+			// flag` until the flag was registered, which is the state a script
+			// passing the documented spelling could learn nothing from.
+			name: "schema diff --web",
+			args: func(dbPath string) []string {
+				return []string{
+					"schema", "diff",
+					"--from", "sqlite://" + dbPath,
+					"--to", "sqlite://" + dbPath,
+					"--web",
+				}
+			},
+			want: "atlas schema diff accepts --web, but Ptah does not implement its behavior",
+		},
+		{
+			name: "schema diff -w",
+			args: func(dbPath string) []string {
+				return []string{
+					"schema", "diff",
+					"--from", "sqlite://" + dbPath,
+					"--to", "sqlite://" + dbPath,
+					"-w",
+				}
+			},
+			want: "render it with --format '{{ mermaid . }}'",
+		},
+		{
 			name: "schema diff --export with no project config",
 			args: func(dbPath string) []string {
 				return []string{
