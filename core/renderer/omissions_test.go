@@ -19,11 +19,19 @@ import (
 // carrying them is the ordinary case for an author who wrote for MySQL first
 // and added a second target later.
 func tableWithMySQLOptions() *schemamodel.Database {
+	return tableWithEngine("InnoDB")
+}
+
+// tableWithEngine is tableWithMySQLOptions with the engine named by the caller.
+// ClickHouse refuses a MySQL-family engine outright (stokaro/ptah#3002), so a
+// row measuring what that target drops has to declare an engine it accepts, or
+// it measures the refusal instead.
+func tableWithEngine(engine string) *schemamodel.Database {
 	return &schemamodel.Database{
 		Tables: []schemamodel.Table{{
 			StructName:    "User",
 			Name:          "users",
-			Engine:        "InnoDB",
+			Engine:        engine,
 			AutoIncrement: "100",
 			Charset:       "utf8mb4",
 			Collate:       "utf8mb4_bin",
@@ -58,10 +66,14 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesEveryTableOptionATarg
 	tests := []struct {
 		name    string
 		dialect string
-		want    []string
+		// engine is the declared table engine. Every target but ClickHouse
+		// carries the MySQL-family value the rest of this fixture uses.
+		engine string
+		want   []string
 	}{
 		{
 			name:    "postgres carries none of them",
+			engine:  "InnoDB",
 			dialect: platform.Postgres,
 			want: []string{
 				"table option AUTO_INCREMENT",
@@ -72,6 +84,7 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesEveryTableOptionATarg
 		},
 		{
 			name:    "sqlite carries none of them and used to say nothing",
+			engine:  "InnoDB",
 			dialect: platform.SQLite,
 			want: []string{
 				"table option AUTO_INCREMENT",
@@ -82,6 +95,7 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesEveryTableOptionATarg
 		},
 		{
 			name:    "sql server carries none of them and used to say nothing",
+			engine:  "InnoDB",
 			dialect: platform.SQLServer,
 			want: []string{
 				"table option AUTO_INCREMENT",
@@ -92,6 +106,7 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesEveryTableOptionATarg
 		},
 		{
 			name:    "oracle carries none of them and used to say nothing",
+			engine:  "InnoDB",
 			dialect: platform.Oracle,
 			want: []string{
 				"table option AUTO_INCREMENT",
@@ -105,6 +120,7 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesEveryTableOptionATarg
 			// is preserved rather than lost. Reporting it here would be a
 			// finding about a declaration that did reach the output.
 			name:    "clickhouse keeps the engine and drops the rest",
+			engine:  "MergeTree",
 			dialect: platform.ClickHouse,
 			want: []string{
 				"table option AUTO_INCREMENT",
@@ -119,7 +135,7 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesEveryTableOptionATarg
 			c := qt.New(t)
 
 			_, omissions, err := renderer.GetOrderedCreateStatementsReportingOmissions(
-				tableWithMySQLOptions(),
+				tableWithEngine(test.engine),
 				test.dialect,
 				capability.ForDialect(test.dialect),
 			)

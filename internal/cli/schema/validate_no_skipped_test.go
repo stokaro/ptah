@@ -24,6 +24,16 @@ const mySQLOptionsSchema = `CREATE TABLE users (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=100;
 `
 
+// clickHouseOptionsSchema is mySQLOptionsSchema with an engine ClickHouse
+// accepts. ClickHouse refuses a MySQL-family engine outright
+// (stokaro/ptah#3002), so measuring what it skips needs a source it renders.
+const clickHouseOptionsSchema = `CREATE TABLE users (
+    id INT NOT NULL AUTO_INCREMENT,
+    name VARCHAR(255) NOT NULL,
+    PRIMARY KEY (id)
+) ENGINE=MergeTree DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin AUTO_INCREMENT=100;
+`
+
 // TestSchemaValidateNoSkippedNamesEveryDroppedTableOption is the verb-level
 // check stokaro/ptah#2976 asks for.
 //
@@ -69,22 +79,26 @@ func TestSchemaValidateNoSkippedReportsATargetThatSaidNothing(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
-		want    int
+		// schema is the source each target reads. Only ClickHouse needs its
+		// own, because it is the only target here that refuses the engine the
+		// shared fixture declares.
+		schema string
+		want   int
 	}{
 		// The three that spell a generated key report the four table options
 		// and nothing about the column.
-		{name: "sqlite", dialect: "sqlite", want: 4},
-		{name: "sql server", dialect: "sqlserver", want: 4},
-		{name: "oracle", dialect: "oracle", want: 4},
+		{name: "sqlite", dialect: "sqlite", schema: mySQLOptionsSchema, want: 4},
+		{name: "sql server", dialect: "sqlserver", schema: mySQLOptionsSchema, want: 4},
+		{name: "oracle", dialect: "oracle", schema: mySQLOptionsSchema, want: 4},
 		// ClickHouse renders an engine clause, so that option survives, and it
 		// generates no key, so the column adds a line of its own.
-		{name: "clickhouse", dialect: "clickhouse", want: 4},
+		{name: "clickhouse", dialect: "clickhouse", schema: clickHouseOptionsSchema, want: 4},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			path := writeSchemaSQLFile(c, t.TempDir(), "schema.sql", mySQLOptionsSchema)
+			path := writeSchemaSQLFile(c, t.TempDir(), "schema.sql", test.schema)
 
 			stdout, _, err := runSchemaStreams(
 				"validate", "--schema-file", path, "--dialect", test.dialect, "--no-skipped")
@@ -251,4 +265,27 @@ func TestSchemaValidateNoSkippedKeepsUsageErrorsApart(t *testing.T) {
 
 	c.Assert(findings, qt.Equals, 1)
 	c.Assert(noDialect, qt.Equals, 2)
+}
+
+// TestSchemaValidateNoSkippedRefusesAMySQLFamilyEngineOnClickHouse is what
+// stokaro/ptah#3002 changes for this verb.
+//
+// The issue recorded that `--no-skipped` exited 0 on this source, and that it
+// was right to: the ENGINE was not skipped, it reached the output inside a
+// clause that could not hold it. Nothing on the skipped path could have caught
+// that, so the refusal is what makes the verb able to.
+//
+// Measured: plain `validate` still exits 0 here, because it does not render.
+// That is a separate gap and is not what this test claims.
+func TestSchemaValidateNoSkippedRefusesAMySQLFamilyEngineOnClickHouse(t *testing.T) {
+	c := qt.New(t)
+	path := writeSchemaSQLFile(c, t.TempDir(), "schema.sql", mySQLOptionsSchema)
+
+	stdout, stderr, err := runSchemaStreams(
+		"validate", "--schema-file", path, "--dialect", "clickhouse", "--no-skipped")
+
+	c.Assert(exitcode.Code(err, 2), qt.Equals, 1)
+	c.Assert(stdout, qt.Contains, "MySQL-family storage engine")
+	c.Assert(stdout, qt.Contains, "platform.clickhouse.engine")
+	c.Assert(strings.TrimSpace(stderr), qt.Equals, "1 problem")
 }
