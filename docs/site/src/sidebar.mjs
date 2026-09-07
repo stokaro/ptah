@@ -211,30 +211,18 @@ export const sidebar = [
     ],
   },
   {
-    label: 'Testing and safety',
-    collapsed: true,
-    items: [
-      { slug: 'testing/migrations-and-schema' },
-      { slug: 'testing/ci', label: 'Run checks in CI' },
-    ],
-  },
-  {
-    label: 'Deliver and operate',
+    label: 'Test, deliver, and operate',
     collapsed: true,
     items: [
       { slug: 'operate/overview', label: 'Overview' },
+      { slug: 'testing/migrations-and-schema' },
+      { slug: 'testing/ci', label: 'Run checks in CI' },
       { slug: 'operate/deliver' },
       { slug: 'operate/oci-registry', label: 'Use OCI registries' },
       { slug: 'operate/kubernetes-operator' },
-      { slug: 'operate/troubleshooting' },
-    ],
-  },
-  {
-    label: 'Data',
-    collapsed: true,
-    items: [
       { slug: 'versioned/reference-data' },
       { slug: 'operate/seed-data' },
+      { slug: 'operate/troubleshooting' },
     ],
   },
   {
