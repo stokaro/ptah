@@ -117,8 +117,8 @@ jobs:
       # 13:25:43 started one two seconds later. The label was right, the event
       # fired, and the run was suppressed.
       #
-      # testkit-sync.yml records the same ladder for the same reason, about its
-      # pushes rather than its labels. This is the label half of it.
+      # site-redeploy.yml holds the same rule for the same reason, about the
+      # dispatch it sends rather than a label. This is the label half of it.
       - name: Mint a GitHub App token
         id: app-token
         if: vars.CAPABILITY_MATRIX_APP_ID != ''
@@ -180,7 +180,7 @@ jobs:
           if [ "${STARTS}" = "true" ]; then
             text="Capability matrix requested for cells: \`${CELLS}\`. The \`probe *\` checks run as checks OF THIS PULL REQUEST, so a red cell is visible here and blocks the merge; a request that names nothing the matrix has fails the \`cells\` job rather than probing silently."
           else
-            text="Capability matrix requested for cells: \`${CELLS}\`, and the \`${LABEL}\` label is on. **It will not start on its own.** GitHub creates no workflow run for an event its own \`GITHUB_TOKEN\` triggered, and no app token or PAT is configured here, so the label this bot just applied starts nothing. Remove and re-add the label yourself and the run begins. To make the request self-starting, set the \`CAPABILITY_MATRIX_APP_ID\` variable with a \`CAPABILITY_MATRIX_APP_KEY\` secret, or a \`CAPABILITY_MATRIX_TOKEN\` PAT — the ladder \`testkit-sync.yml\` documents for its pushes."
+            text="Capability matrix requested for cells: \`${CELLS}\`, and the \`${LABEL}\` label is on. **It will not start on its own.** GitHub creates no workflow run for an event its own \`GITHUB_TOKEN\` triggered, and no app token or PAT is configured here, so the label this bot just applied starts nothing. Remove and re-add the label yourself and the run begins. To make the request self-starting, set the \`CAPABILITY_MATRIX_APP_ID\` variable with a \`CAPABILITY_MATRIX_APP_KEY\` secret, or a \`CAPABILITY_MATRIX_TOKEN\` PAT."
           fi
           body="$(printf '%s\n%s' "${marker}" "${text}")"
           gh pr comment "${PR}" --repo "${REPO}" --body "${body}"
