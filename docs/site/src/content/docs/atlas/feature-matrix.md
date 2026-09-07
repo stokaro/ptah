@@ -204,7 +204,7 @@ seven of them as open capabilities regardless.
 | schema inspect to HCL, SQL, or JSON | ✅ | ✅ | ✅ | Default HCL; rendered HCL/SQL/JSON use explicit helper templates. Bare and whitespace-wrapped hcl/sql/json are literal template text. Native shorthands still render and add file export. |
 | Schema-qualified exclude globs for enums and functions | ✅ | 🟡 | ✅ | Enums and functions match schema-qualified globs on the rule tables and views use, and the match reaches the planned DROP. The community binary matches `app.mood`; it reports no functions. |
 | Verb `schema stats` | ✅ | ❌ | ✅ | Ptah implements it as `schema stats inspect` on the compat surface and `schema stats` natively, emitting OpenMetrics counts for 18 object kinds. Unlike Atlas it accepts SQLite. |
-| Verb `schema validate` | ✅ | ❌ | ✅ | `ptah schema validate` and the compat verb report every structural problem in a desired state without a database; exit 1 when any is found. |
+| Verb `schema validate` | ✅ | ❌ | ✅ | `ptah schema validate` and the compat verb report every structural problem in a desired state without a database; exit 1 when any is found. `--no-skipped` also fails a dropped declaration. |
 
 </div>
 

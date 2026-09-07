@@ -182,6 +182,7 @@ code-scanning permission model.
 | `migrations up --verify-sum --dry-run` | Exercises the apply path without changing the shared target. |
 | `schema drift` | Fails when a long-lived environment diverged from the desired schema. |
 | `schema validate --dialect <each target>` | Fails on a structural problem in the desired schema, with no database at all. |
+| `schema validate --no-skipped` | Also fails when rendering for a target would drop a declared object or property. |
 | `schema fmt --check` | Fails when an HCL schema file is not canonically formatted. |
 | `schema security --fail-on any` | Fails on a privilege, owner or role finding. Without `--fail-on any` the check reports and never fails, because no rule is error-severity. |
 
