@@ -9,8 +9,8 @@ import (
 	"ptah.run/internal/atlasargs"
 )
 
-// The UI-bound schema flags, and why they are registered refusals rather than
-// implementations or absences.
+// The UI-bound schema flags: where their spelling comes from, and what each
+// one does here.
 //
 // Both have an Atlas-side source: Atlas's published CLI reference
 // (atlasgo.io/cli-reference) lists `-w, --web  open the schema ERD in the
@@ -20,32 +20,30 @@ import (
 // present and `--frobnicate-nonsense` missing as controls. So the reference is
 // the source, and the spelling below matches it.
 //
-// --web is implemented; see internal/cli/atlas/schema_web.go for what it does
-// and for the two places it diverges from the vendor description. It was a
-// registered refusal until stokaro/ptah#3011, on the reasoning that opening a
-// viewer has no local counterpart. That reasoning covered the second half of
-// the flag and skipped the first: the ERD is local, Ptah already draws it, and
-// what the refusal actually declined was handing the operator the file.
+// Both are implemented, and each was a registered refusal first. The refusals
+// are worth remembering because both were wrong in the same way -- each named a
+// real difficulty and then declined more than the difficulty required:
 //
-// --export is not implemented, and the reason is different in kind:
+//   - --export was refused on the grounds that Ptah's project-config evaluator
+//     tolerated an `exporter` block and evaluated nothing from it, so there was
+//     nothing for the flag to select. stokaro/ptah#1620 closed that by reading
+//     the block: an exporter is a Go text/template over the same report
+//     --format renders, so it needed no evaluator of its own.
+//   - --web was refused on the grounds that opening a viewer has no local
+//     counterpart. stokaro/ptah#3011 closed that: the ERD is local and Ptah
+//     already draws it, so what the refusal declined was handing the operator
+//     the file, not opening one.
 //
-//   - --export selects an exporter declared by an atlas.hcl `exporter` block.
-//     Ptah's project-config evaluator tolerates that block and evaluates nothing
-//     from it, so there is no exporter for the flag to select. Accepting the
-//     flag would silently emit the default output and call it an export.
+// What remains refused is narrower and belongs to --export alone: an invocation
+// that selects no exporter. No project config, an env naming none, a name the
+// project does not declare, or --format passed beside it -- each is a case where
+// emitting the ordinary report would let an operator believe their exporter ran.
+// That is the failure the whole flag was once a refusal to avoid, and
+// implementing it did not license reintroducing it. See resolveAtlasExporter.
 //
-// Accepting either silently is the failure this issue exists to prevent, and
-// leaving both unregistered would leave a script no way to learn why its
-// spelling did nothing. A registered refusal answers the question in one line
-// and cannot be mistaken for success: it exits non-zero before any database is
-// contacted.
-//
-// The same verdict and the same source cover the twins this batch did not touch,
-// left out to stay inside the batch rather than because they differ.
-// `schema inspect --export` and `schema diff --web` are registered now, each
-// beside its twin: a flag on one verb and not the other is the inconsistency
-// stokaro/ptah#1620 named, and it reached a caller as `unknown flag` where the
-// documented surface has the flag. `migrate lint --web` is the one that remains.
+// `migrate lint --web` is the one member of the documented group that stays
+// unregistered; stokaro/ptah#3011 left it out of scope deliberately rather than
+// by accident, so the group is not split without a word.
 const (
 	atlasSchemaWebFlagName    = "web"
 	atlasSchemaExportFlagName = "export"

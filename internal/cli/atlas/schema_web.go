@@ -97,7 +97,10 @@ func writeAtlasSchemaERD(cmd *cobra.Command, request atlasSchemaERD) error {
 	for _, diagnostic := range diagnostics {
 		fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", diagnostic)
 	}
-	webartifact.Report(cmd.ErrOrStderr(), result)
+	// Both sentences: this command's standard output is the schema or the
+	// migration SQL, so nothing else has told the operator a file exists.
+	webartifact.ReportArtifact(cmd.ErrOrStderr(), result.Path)
+	webartifact.ReportOpen(cmd.ErrOrStderr(), result)
 	return nil
 }
 

@@ -573,7 +573,7 @@
     "atlas_oss": "yes",
     "atlas_pro": "yes",
     "note": "Schema file, `atlas.sum` migration dir, or env:// is materialized on a reset dev DB then introspected; without `--dev-url` it fails.",
-    "evidence": "conformance gaps.md probe `inspect-source-workflow`; docs/site/src/content/docs/atlas/schema-commands.md"
+    "evidence": "conformance gaps.md probe `inspect-source-workflow`; docs/site/src/content/docs/atlas/schema-commands.mdx"
   },
   {
     "area": "Direct schema workflow",
@@ -582,7 +582,7 @@
     "atlas_oss": "no",
     "atlas_pro": "yes",
     "note": "`{{ hcl . | split | write \"dir\" }}` writes object/schema/type trees; pinned Atlas CE rejects split, write, hcl as non-community.",
-    "evidence": "Verified: `ptah-compat schema inspect --format '{{ hcl . | split | write \"exp\" }}'` wrote exp/tables/{posts,users}.hcl; docs/site/src/content/docs/atlas/schema-commands.md (split/write exports)"
+    "evidence": "Verified: `ptah-compat schema inspect --format '{{ hcl . | split | write \"exp\" }}'` wrote exp/tables/{posts,users}.hcl; docs/site/src/content/docs/atlas/schema-commands.mdx (split/write exports)"
   },
   {
     "area": "Direct schema workflow",
@@ -654,7 +654,7 @@
     "atlas_oss": "yes",
     "atlas_pro": "yes",
     "note": "Schema names scope resources; non-extension matches carry extensions as support. Diff refuses exact PostgreSQL-family server namespaces before SQL because catalogs do not round-trip safely.",
-    "evidence": "conformance gaps.md `atlas schema apply -s` and `atlas schema diff -s` shorthand rows; internal/atlasfilter/scope_extension_schema_universe_test.go; internal/atlasschema/diff_scope_internal_test.go; integration/atlascmd/schema_scope_live_test.go; integration/atlascmd/schema_apply_extension_schema_live_test.go; docs/site/src/content/docs/atlas/schema-commands.md"
+    "evidence": "conformance gaps.md `atlas schema apply -s` and `atlas schema diff -s` shorthand rows; internal/atlasfilter/scope_extension_schema_universe_test.go; internal/atlasschema/diff_scope_internal_test.go; integration/atlascmd/schema_scope_live_test.go; integration/atlascmd/schema_apply_extension_schema_live_test.go; docs/site/src/content/docs/atlas/schema-commands.mdx"
   },
   {
     "area": "Direct schema workflow",

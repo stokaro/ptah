@@ -196,7 +196,7 @@ Exported schema documentation to .../schema.html
 Found 2 table(s), 6 field(s), 1 enum(s)
 ```
 
-For the two tables and six columns above, that file is about 11 KB.
+For the two tables and six columns above, that file is about 14 KB.
 
 ### What the page contains
 
@@ -218,8 +218,10 @@ For the two tables and six columns above, that file is about 11 KB.
 - A `Null` cell marked `null` where the column accepts it and `—` where it does
   not, so a nullable column is the one that carries a marker.
 - A footer reading `Rendered by Ptah from the declared schema. This file is
-  self-contained: opening it fetches nothing.`, beside the Ptah mark and the
-  version of the binary that wrote the file.
+  self-contained: opening it fetches nothing.`, beside the Ptah mark, the
+  version of the binary that wrote the file, and a link to `https://ptah.run`.
+  The document travels: it reaches people who did not run the command, and the
+  link is how one of them finds out what made it.
 
 The diagram element names itself, so a reader using a screen reader is told
 what it is rather than meeting an unlabeled graphic:
@@ -235,12 +237,11 @@ the mark in the footer is inlined SVG for the same reason.
 
 ### Confirm that it fetches nothing
 
-The page is self-contained: it references no stylesheet, font, script or image
-outside itself, and every link in it is an in-page fragment. Check that on a
-file you are about to publish:
+The page is self-contained: it loads no stylesheet, font, script or image from
+anywhere. Check that on a file you are about to publish:
 
 ```bash
-grep -c -E 'https?://|<script|<link|<img' schema.html
+grep -c -E '<script|<link|<img|src=|@import' schema.html
 ```
 
 Expected output includes:
@@ -250,8 +251,56 @@ Expected output includes:
 ```
 
 `grep` also exits 1, because it matched nothing, and that is the result you
-want. No part of the file names a resource outside itself, so the page opens on
-a machine with no network access, and opening it sends your schema nowhere.
+want. The page opens on a machine with no network access, and opening it sends
+your schema nowhere.
+
+The file does carry one address, and it is worth seeing which:
+
+```bash
+grep -o -E 'https?://[^"]+' schema.html
+```
+
+Expected output includes:
+
+```text
+https://ptah.run
+```
+
+That is the footer link. An anchor is inert until somebody clicks it, so it
+costs the page nothing on open. If you would rather not ship it, the Markdown
+target has no footer.
+
+### Open it straight away
+
+`--open` shows the file as soon as it is written, using whatever the desktop
+opens HTML with:
+
+```bash
+ptah schema export --to html --schema-file schema.yaml --out schema.html --open
+```
+
+With `--out` the file you named is the one that opens, and the export has
+already printed where it is. Without `--out` the document goes to standard
+output, which is nothing a browser can be pointed at, so `ptah` writes a copy
+to a temporary file and names it on standard error:
+
+```text
+Schema document written to /tmp/ptah-schema-1699.html
+```
+
+Nothing is uploaded either way: the browser is pointed at a path on your own
+disk.
+
+A run that cannot open a browser is not a failed run. Under `CI`, or with no
+display, `ptah` writes the file, says why it did not open it, and exits `0`:
+
+```text
+not opened: CI is set
+```
+
+Set `PTAH_SKIP_BROWSER_OPEN=1` to ask for the same on a machine that could have
+opened one. Like every boolean `PTAH_*` variable, a value that is not a boolean
+is refused rather than read as the default.
 
 ## Set the document title
 

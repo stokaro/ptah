@@ -323,6 +323,24 @@
       "volatileDataNormalized": true
     },
     {
+      "id": "schema-diff-web",
+      "path": "docs/site/src/assets/schema-diff-web.png",
+      "type": "generated-report-preview",
+      "editableSource": null,
+      "fixture": "docs/site/fixtures/product-output",
+      "generator": "docs/site/scripts/generate-product-output-assets.mjs",
+      "pages": [
+        "/atlas/schema-commands/"
+      ],
+      "titleRequired": false,
+      "descriptionRequired": false,
+      "sizeLimitBytes": 256000,
+      "themeBehavior": "generated-report-light",
+      "fullSizeArtifact": "docs/site/public/samples/reports/schema-diff-web.html",
+      "versionedDownload": true,
+      "volatileDataNormalized": true
+    },
+    {
       "id": "migration-test-pass",
       "path": "docs/site/src/assets/migration-test-pass.png",
       "type": "generated-report-preview",
@@ -539,6 +557,10 @@
       "name": "compatibility-differences"
     },
     {
+      "route": "/atlas/schema-commands/",
+      "name": "atlas-schema-commands"
+    },
+    {
       "route": "/versioned/generate/",
       "name": "versioned-generate"
     },
@@ -735,6 +757,26 @@
       "expectedCaption": "A real `migrations generate --report html` artifact for a destructive SQLite table rebuild.",
       "expectedArtifact": "docs/site/src/assets/migration-safety-report.png",
       "headingText": "Review the HTML safety report",
+      "maxVisibleWordsBeforeVisual": 100,
+      "minimumRenderedWidth": 280,
+      "minimumRenderedHeight": 110,
+      "fullSizeAction": true,
+      "sourceAction": true,
+      "downloadAction": true,
+      "requiredVariants": [],
+      "themes": [
+        "light",
+        "dark"
+      ],
+      "enforced": true
+    },
+    {
+      "route": "/atlas/schema-commands/",
+      "primaryVisualId": "schema-diff-web",
+      "selector": "[data-visual-id=\"schema-diff-web\"]",
+      "expectedCaption": "A real `schema diff --web` document for a comparison that adds one table, changes one, and removes one.",
+      "expectedArtifact": "docs/site/src/assets/schema-diff-web.png",
+      "headingText": "Look at a schema as a diagram",
       "maxVisibleWordsBeforeVisual": 100,
       "minimumRenderedWidth": 280,
       "minimumRenderedHeight": 110,

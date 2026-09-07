@@ -117,7 +117,7 @@ Use these routes to avoid missing a class of docs:
   `docs/site/src/content/docs/atlas/overview.md`,
   `docs/site/src/content/docs/atlas/strict-ce-mode.md`,
   `docs/site/src/content/docs/atlas/migrate-commands.md`,
-  `docs/site/src/content/docs/atlas/schema-commands.md`,
+  `docs/site/src/content/docs/atlas/schema-commands.mdx`,
   `docs/site/src/content/docs/atlas/output-and-redaction.md`,
   `docs/site/src/content/docs/reference/atlas-commands.md`,
   `docs/site/src/content/docs/atlas/feature-matrix.md` (generated from

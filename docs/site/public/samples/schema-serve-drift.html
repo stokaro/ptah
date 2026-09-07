@@ -113,7 +113,8 @@ td.num { font-family: var(--mono); color: var(--text-mute); text-align: right; w
 
 .empty { color: var(--text-mute); font-style: italic; padding: 18px; }
 .footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 16px; color: var(--text-mute); font-size: 12.5px; }
-.footer-mark { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 12.5px; flex-shrink: 0; }
+.footer-mark { display: inline-flex; align-items: center; gap: 7px; font-family: var(--mono); font-size: 12.5px; flex-shrink: 0; color: var(--text-mute); text-decoration: none; }
+.footer-mark:hover { color: var(--text); text-decoration: underline; }
 
 @media (max-width: 900px) {
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -150,6 +151,18 @@ section[id] { scroll-margin-top: 20px; }
 .erd .edge { stroke: var(--text-mute); fill: none; }
 .erd .arrow { fill: var(--text-mute); }
 .erd-note { font-family: var(--mono); font-size: 12.5px; color: var(--text-mute); margin-top: 12px; }
+
+/* Comparison marks. The fill is the soft token and the stroke the solid one, so
+   a marked node reads as the same rectangle in another color rather than as a
+   different shape -- the diagram still answers "what depends on what" first. */
+.erd .node.chg-added { fill: var(--ok-soft); stroke: var(--ok); }
+.erd .node.chg-changed { fill: var(--amber-soft); stroke: var(--amber); }
+.erd .node.chg-removed { fill: var(--danger-soft); stroke: var(--danger); }
+.erd-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.chg { font-family: var(--mono); font-size: 12px; padding: 2px 8px; border-radius: var(--radius); border: 1px solid; }
+.chg-added { background: var(--ok-soft); border-color: var(--ok); color: var(--text); }
+.chg-changed { background: var(--amber-soft); border-color: var(--amber); color: var(--text); }
+.chg-removed { background: var(--danger-soft); border-color: var(--danger); color: var(--text); }
 
 @media (max-width: 900px) {
   .layout { grid-template-columns: minmax(0, 1fr); gap: 0; }

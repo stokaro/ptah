@@ -4,6 +4,7 @@
 // volatile file names are copied to stable, versioned sample names.
 import { spawnSync } from 'node:child_process';
 import {
+  chmodSync,
   copyFileSync,
   mkdirSync,
   mkdtempSync,
@@ -34,6 +35,11 @@ const contractSamples = join(samplesRoot, 'contracts');
 const ptah = process.env.PTAH_BIN
   ? resolve(process.env.PTAH_BIN)
   : join(repositoryRoot, 'bin', 'ptah');
+// The Atlas-compatible binary, resolved the same way and for the same reason.
+// One output below is produced by a flag that lives only on that surface.
+const ptahCompat = process.env.PTAH_COMPAT_BIN
+  ? resolve(process.env.PTAH_COMPAT_BIN)
+  : join(repositoryRoot, 'bin', 'ptah-compat');
 const viewport = { width: 1200, height: 720 };
 
 function execute(args, cwd, allowedStatuses = [0]) {
@@ -113,7 +119,11 @@ function writeSample(path, value) {
 // version back into the samples without anything saying so.
 function pinReportVersion(path) {
   const original = readFileSync(path, 'utf8');
-  const stabilized = original.replace(/(<\/svg>)ptah [^<]+(<\/span>)/, '$1ptah dev$2');
+  // The mark closes an anchor: every Ptah HTML footer links back to Ptah. The
+  // pattern says so rather than accepting the shape that came before it, so
+  // the guard below keeps meaning "the footer moved" instead of quietly
+  // matching a spelling nothing writes.
+  const stabilized = original.replace(/(<\/svg>)ptah [^<]+(<\/a>)/, '$1ptah dev$2');
   if (stabilized === original) {
     throw new Error(`${path}: no footer version to normalize; has the report footer changed?`);
   }
@@ -270,6 +280,46 @@ try {
   await screenshotHTML(browser, migrationPassSample, join(assetsRoot, 'migration-test-pass.png'), 500);
   await screenshotHTML(browser, migrationFailSample, join(assetsRoot, 'migration-test-fail.png'), 500);
 
+  // The diff ERD. `--web` lives only on the Atlas-compatible surface, so this
+  // is the one output here produced by that binary rather than by `ptah`.
+  //
+  // CI and the suppression are both set: the generator must not open a browser
+  // on the machine that runs it, and setting both means the run does not depend
+  // on which of the two refusals happens to fire first.
+  const erdRun = spawnSync(ptahCompat, [
+    'schema', 'diff',
+    '--from', `file://${join(fixtureRoot, 'erd-from.sql')}`,
+    '--to', `file://${join(fixtureRoot, 'erd-to.sql')}`,
+    '--dev-url', 'sqlite://dev?mode=memory',
+    '--web',
+  ], {
+    cwd: workRoot,
+    encoding: 'utf8',
+    env: { ...process.env, CI: '1', PTAH_SKIP_BROWSER_OPEN: '1' },
+  });
+  if (erdRun.status !== 0) {
+    throw new Error(
+      `${ptahCompat} schema diff --web failed with ${erdRun.status}\n${erdRun.stdout}${erdRun.stderr}`,
+    );
+  }
+  // The command prints where it put the file, which is the contract a person
+  // reads too. Parsing it here rather than guessing a name means the generator
+  // fails loudly if that line ever stops being printed.
+  const erdPath = /Schema document written to (.+)/.exec(erdRun.stderr)?.[1]?.trim();
+  if (!erdPath) {
+    throw new Error(`schema diff --web printed no artifact path:\n${erdRun.stderr}`);
+  }
+  const erdSample = join(reportSamples, 'schema-diff-web.html');
+  copyFileSync(erdPath, erdSample);
+  // The artifact is written 0600 on purpose: it holds the shape of somebody's
+  // schema and it lands in a directory the whole machine can list. The copy is
+  // a committed sample the site serves, so it takes the mode the other samples
+  // have rather than inheriting that one.
+  chmodSync(erdSample, 0o644);
+  rmSync(erdPath, { force: true });
+  pinReportVersion(erdSample);
+  await screenshotHTML(browser, erdSample, join(assetsRoot, 'schema-diff-web.png'), 640);
+
   const schemaArgs = [
     'schema', 'test', '--dir', join(fixtureRoot, 'schema-tests'),
     '--schema-file', join(fixtureRoot, 'schema.sql'), '--report', 'html',
@@ -331,6 +381,7 @@ try {
     'migration-test-fail.png',
     'schema-test-pass.png',
     'schema-test-fail.png',
+    'schema-diff-web.png',
   ]) console.log(`  ${relative(repositoryRoot, join(assetsRoot, file))}`);
 } finally {
   if (browser) await browser.close();

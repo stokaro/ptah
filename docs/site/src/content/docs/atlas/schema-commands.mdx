@@ -15,6 +15,11 @@ overlaps: []
 disposition: keep
 ---
 
+import ProductPreview from '../../../components/ProductPreview.astro';
+import schemaDiffWeb from '../../../assets/schema-diff-web.png';
+
+export const schemaDiffWebSample = `${import.meta.env.BASE_URL}samples/reports/schema-diff-web.html`;
+
 You want Atlas-style declarative schema work — inspect a live database, diff
 schema files, apply or plan desired-schema changes — through Ptah. This page
 covers the `ptah-compat schema` verbs with runnable examples. Every invocation
@@ -88,6 +93,10 @@ ptah-compat schema inspect --url "$DATABASE_URL" > schema.hcl
 ptah-compat schema inspect --url "$DATABASE_URL" --format '{{ sql . }}' > schema.sql
 ptah-compat schema inspect --url "$DATABASE_URL" --format '{{ json . }}' > schema.json
 ```
+
+For a picture instead of a file, `--web` writes the schema as a local HTML
+document and opens it. See [Look at a schema as a
+diagram](#look-at-a-schema-as-a-diagram).
 
 ### Inspect output formats
 
@@ -1709,6 +1718,82 @@ comparison with `--schema` and
 A diff whose change needs a dialect-specific rebuild plan — for example adding
 a column to a SQLite table — fails with an explicit error instead of emitting
 SQL the dialect cannot run in place.
+
+## Look at a schema as a diagram
+
+`-w`/`--web` on `schema inspect` and `schema diff` writes the schema as a
+self-contained HTML document and opens it with whatever the desktop opens HTML
+with. On a diff the document carries the comparison: every table is marked
+added, changed or removed, and one both sides agree on is left plain.
+
+```bash
+ptah-compat schema diff \
+  --from file://erd-from.sql \
+  --to file://erd-to.sql \
+  --dev-url "sqlite://dev?mode=memory" \
+  --web
+```
+
+<ProductPreview
+  id="schema-diff-web"
+  src={schemaDiffWeb}
+  alt="A Ptah schema diff document: a dependency diagram whose four table boxes are colored green for the added table, amber for the changed one, red for the removed one and plain for the untouched one, above a legend naming the three marks."
+  caption="A real `schema diff --web` document for a comparison that adds one table, changes one, and removes one."
+  notice="The color is on the boxes of the dependency diagram, not in a separate list, so the change and what depends on it are read in one picture. The legend names only the marks this comparison produced."
+  fullSizeHref={schemaDiffWebSample}
+  downloadHref={schemaDiffWebSample}
+  sourceHref={schemaDiffWebSample}
+  reproduce={`ptah-compat schema diff --from file://docs/site/fixtures/product-output/erd-from.sql --to file://docs/site/fixtures/product-output/erd-to.sql --dev-url "sqlite://dev?mode=memory" --web`}
+/>
+
+A removed table is in neither `--to` nor a document rendered from it, so the
+diagram is drawn from the end state plus the tables that leave it. That is why
+`legacy_notes` appears at all.
+
+The migration SQL still goes to standard output, unchanged. The document's path
+goes to standard error, so `--web` composes with a run whose output is being
+read:
+
+```text
+Schema document written to /tmp/ptah-schema-1699.html
+```
+
+### Nothing is published
+
+Atlas's published CLI reference describes `-w, --web` as opening the schema ERD
+in the browser, which a reader may reasonably take to mean a hosted page. Ptah
+writes a local file and opens that. A schema is the shape of somebody's data, so
+the flag that shows it must not be the flag that publishes it. The document
+fetches no stylesheet, font, script or image, and a database URL is reduced to
+its scheme and host before it is written into the file, so a password does not
+travel with a document somebody attaches to a review.
+
+The pinned Atlas community binary v1.3.0 does not register the flag: `atlas
+schema inspect --url ... --web` answers `unknown flag: --web`. So there is no
+community behavior this diverges from, and `PTAH_ATLAS_STRICT_COMPAT=1` answers
+`unknown flag` here too. `migrate lint --web` stays unregistered.
+
+### When no browser can open
+
+A run that cannot open a browser is not a failed run: the document is the
+deliverable and it is on disk before anything is opened. Under `CI`, or with no
+display, the path is printed with the reason nothing opened, and the command
+exits `0`:
+
+```text
+Schema document written to /tmp/ptah-schema-1699.html
+not opened: CI is set
+```
+
+`PTAH_SKIP_BROWSER_OPEN=1` asks for the same on a machine that could have opened
+one. It is a variable rather than a flag because the conformance `cli-surface`
+tier asserts exact flag parity with the pinned binary. Like every boolean
+`PTAH_*` variable it is strict: a value that is not a boolean is refused before
+the command does any work.
+
+The native spelling of the same artifact is [`ptah schema export --to html
+--open`](../../schema/document/#open-it-straight-away), which uses the same
+renderer and the same opener.
 
 ## Format schema files
 
