@@ -609,6 +609,7 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 	for _, name := range refused {
 		r.writeObjectSkipped(foreignKeyConstraintKind, name)
 	}
+	r.writeTableOptionsSkipped(node.Options)
 
 	r.w.WriteLinef("CREATE TABLE%s %s (", guard, r.escapeQualifiedIdentifier(node.Name))
 	for i, line := range lines {
@@ -630,19 +631,11 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 		r.w.Write(partition)
 	}
 
-	// Table options (PostgreSQL-specific filtering applied)
-	if len(node.Options) > 0 {
-		options := r.renderTableOptions(node.Options)
-		if options != "" {
-			r.w.Write(" ")
-			r.w.Write(options)
-		}
-	}
-
-	// Row-level TTL is a storage parameter, so it shares the WITH position with
-	// the options above; the two are rendered separately because a TTL is
-	// refused on a target that lacks the capability rather than filtered out of
-	// a map (stokaro/ptah#1027).
+	// Row-level TTL is a storage parameter and takes the WITH position; the
+	// table options the node carries are named above the statement instead,
+	// because this target renders none of them (see writeTableOptionsSkipped),
+	// and a TTL is refused on a target that lacks the capability rather than
+	// filtered out of a map (stokaro/ptah#1027).
 	rowTTL, err := r.renderRowTTL(node)
 	if err != nil {
 		return err
@@ -1753,24 +1746,31 @@ func (r *Renderer) renderExcludeConstraint(constraint *ast.ConstraintNode) (stri
 	return result, nil
 }
 
-// renderTableOptions renders the table options the node carries, in key
-// order, skipping MySQL's ENGINE.
+const tableOptionKind = "table option"
+
+// writeTableOptionsSkipped names every table option the node carries on a
+// skip line above the statement, in key order.
 //
-// The order is sorted because the options are a map, and a render that
-// walked it in map order produced a different statement on every run for the
-// same schema. The census in internal/schemacensus compares two renders of one
-// fixture byte for byte, so that walk read as a field one surface loses
-// (stokaro/ptah#2968). The options that remain after ENGINE are MySQL's too,
-// and emitting them here is stokaro/ptah#2969.
-func (r *Renderer) renderTableOptions(options map[string]string) string {
-	parts := make([]string, 0, len(options))
+// The PostgreSQL family renders none of them. The four the MySQL family owns
+// -- ENGINE, AUTO_INCREMENT, CHARSET and COLLATE -- have no counterpart here,
+// and anything else in the map is a platform override this renderer has no
+// clause for: PostgreSQL's own table-level storage parameters are not
+// modeled, and the `KEY=value` spelling that used to be written after the
+// column list is a syntax error on every server of the family
+// (stokaro/ptah#2969). SQLite, SQL Server and Oracle leave the same options
+// out without a word; this target says so, the way it names a foreign key it
+// cannot host, so a render never loses a declaration in silence. The one
+// option that carries a value the author would miss, AUTO_INCREMENT, gets the
+// line that says where the value goes on this family. The order is sorted
+// because the options are a map, and a walk in map order produced a
+// different render on every run (stokaro/ptah#2968).
+func (r *Renderer) writeTableOptionsSkipped(options map[string]string) {
 	for _, key := range slices.Sorted(maps.Keys(options)) {
-		if key == "ENGINE" {
-			continue
+		r.writeObjectSkipped(tableOptionKind, key+"="+options[key])
+		if key == "AUTO_INCREMENT" {
+			r.w.WriteLinef("-- %s: declare the start on the key column with identity_start to keep it.", r.dialectUpper)
 		}
-		parts = append(parts, fmt.Sprintf("%s=%s", key, options[key]))
 	}
-	return strings.Join(parts, " ")
 }
 
 // renderPostgreSQLModifyColumn renders PostgreSQL-specific column modifications
