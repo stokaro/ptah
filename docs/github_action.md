@@ -119,11 +119,21 @@ tree that could not be published: a missing `README.md` or `LICENSE`, a script
 `action.yml` names but does not ship, or a path reaching outside the directory,
 which exists here and does not once published.
 
-Publishing needs `PTAH_ACTION_PUBLISH_TOKEN`, a token with write access to
-`stokaro/ptah-action`. Without it a push reports in its summary that the tree
-is publishable and was not published; a manual dispatch fails instead, because
-someone asking for a publish should not be told about it in a summary nobody
-opens.
+Publishing authenticates as a GitHub App holding `Contents: Read and write`,
+read from the `PUBLISH_APP_ID` variable and the `PUBLISH_APP_KEY` secret. The
+workflow narrows the token it mints to `stokaro/ptah-action` alone, so a key
+that leaks cannot write to the repository that stores it.
+
+An app beats a personal token for a job that runs unattended. It is not tied to
+whoever created it, so it survives that person's access changing, and the token
+expires in an hour rather than on a date somebody picked. The variable is named
+for publishing rather than for this action because the Homebrew formula and the
+site redeploy write into a sibling repository the same way, and one app narrowed
+per run is the credential the three should share.
+
+Without them a push reports in its summary that the tree is publishable and was
+not published; a manual dispatch fails instead, because someone asking for a
+publish should not be told about it in a summary nobody opens.
 
 The action's desired-schema inputs mirror the CLI's source selectors: `dir`
 becomes `--root-dir`, `schema-file` becomes `--schema-file` and takes SQL,
