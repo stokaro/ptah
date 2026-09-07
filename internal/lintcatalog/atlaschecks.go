@@ -96,6 +96,16 @@ var atlasChecks = []AtlasCheck{
 
 	{Code: "BC101", Meaning: "renaming a table", PtahRules: []string{"BC101"}, Status: StatusCovered},
 	{Code: "BC102", Meaning: "renaming a column", PtahRules: []string{"BC101"}, Status: StatusCovered, Note: "one rule reports both object kinds"},
+	{
+		Code: "BC103", Meaning: "dropping a table", PtahRules: []string{"BC103"}, Status: StatusCovered,
+		Note: "the rollout break, not the row loss DS101 reports on the same statement, and separately " +
+			"suppressible: accepting the data loss is not accepting deployed clients failing. Native " +
+			"`ptah migrations lint` only; no apply gate",
+	},
+	{
+		Code: "BC104", Meaning: "dropping a column", PtahRules: []string{"BC104"}, Status: StatusCovered,
+		Note: "as BC103, beside DS102, and reported on the same surface; a column of a table this migration itself created is exempt, which DS102 is deliberately not",
+	},
 
 	{Code: "MY101", Meaning: "adding a non-nullable column without a DEFAULT to an existing table", PtahRules: []string{"DD101"}, Status: StatusCovered, Note: "DD101 applies to every dialect"},
 	{Code: "MY102", Meaning: "an inline REFERENCES clause in ADD COLUMN has no effect", PtahRules: []string{"MY102"}, Status: StatusCovered},
@@ -154,6 +164,65 @@ var atlasChecks = []AtlasCheck{
 		PtahRules: []string{"MY136"}, Status: StatusCovered,
 		Note: "names the columns whose re-encoding forces the copy; a conversion that touches no column, or only utf8mb3 to utf8mb4 on short VARCHAR and CHAR columns no key covers, is not reported",
 	},
+	{
+		Code: "MY137", Meaning: "modifying the primary key rebuilds the table and its secondary indexes", Pro: true,
+		PtahRules: []string{"MY137"}, Status: StatusCovered,
+		Note: "one statement that drops and adds; measured in place with writes allowed, so it subsumes MY132 rather than repeating it, and leaves CD103 to report the identity loss",
+	},
+	{
+		Code: "MY138", Meaning: "changing the storage engine requires a table copy and blocks DML", Pro: true,
+		PtahRules: []string{"MY138"}, Status: StatusCovered,
+		Note: "any ENGINE= clause, including one naming the engine the table already uses, which costs the same because it is the documented way to force a rebuild",
+	},
+	{
+		Code: "MY139", Meaning: "partitioning or removing partitioning requires a table copy and blocks DML", Pro: true,
+		PtahRules: []string{"MY139"}, Status: StatusCovered,
+		Note: "measured, this statement form accepts no ALGORITHM or LOCK clause at all, so the finding says there is no online-DDL negotiation rather than naming a copy",
+	},
+	{
+		Code: "MY140", Meaning: "adding a STORED generated column requires a table copy and blocks DML", Pro: true,
+		PtahRules: []string{"MY140"}, Status: StatusCovered,
+	},
+	{
+		Code: "MY141", Meaning: "adding an AUTO_INCREMENT column rebuilds the table and blocks DML", Pro: true,
+		PtahRules: []string{"MY141"}, Status: StatusCovered,
+		Note: "the rebuild is in place and writes still stop: LOCK=NONE is refused, which is why the finding reports cost and locking separately",
+	},
+	{
+		Code: "MY142", Meaning: "adding a column before existing columns prevents an instant operation on older versions", Pro: true,
+		Status: StatusAbsent,
+		Note: "measured absent on every MySQL release line this repository declares: ADD COLUMN ... FIRST accepts ALGORITHM=INSTANT on 8.4.11 and on 8.0.46, and" +
+			"the lowest declared line is 8.4, so a rule would be a false positive wherever Ptah is tested",
+	},
+	{
+		Code: "MY143", Meaning: "modifying a generated column requires a table copy and blocks DML", Pro: true,
+		PtahRules: []string{"MY143"}, Status: StatusCovered,
+		Note: "the MODIFY and CHANGE side; adding one is MY140, and DS103 still reports the type change where the declared type moves",
+	},
+	{
+		Code: "MY144", Meaning: "adding a CHECK constraint scans all existing rows", Pro: true,
+		PtahRules: []string{"MY144"}, Status: StatusCovered,
+	},
+	{
+		Code: "MY145", Meaning: "modifying or enforcing a CHECK constraint re-validates all existing rows", Pro: true,
+		PtahRules: []string{"MY145"}, Status: StatusCovered,
+		Note: "MySQL only: MariaDB has no ENFORCED or NOT ENFORCED syntax, so a mariadb finding would describe a statement that server refuses to parse",
+	},
+	{
+		Code: "MY146", Meaning: "dropping system versioning permanently deletes all history rows", Pro: true,
+		PtahRules: []string{"MY146"}, Status: StatusCovered,
+		Note: "MariaDB only: MySQL 8.4 has no system versioning at all; reported as an error because the history is deleted rather than made expensive",
+	},
+	{
+		Code: "MY147", Meaning: "changing column nullability requires a table rebuild", Pro: true,
+		PtahRules: []string{"MY147"}, Status: StatusCovered,
+		Note: "the cost; measured in place with writes allowed. Whether an existing NULL fails the statement is the separate question DD103 answers from the baseline",
+	},
+	{
+		Code: "MY148", Meaning: "changing a column character set or collation requires a table copy and blocks DML", Pro: true,
+		PtahRules: []string{"MY130"}, Status: StatusPartial,
+		Note: "MY130 names this consequence where it can prove the copy from the dev database; without that baseline, or on a spelling it cannot resolve to a before-and-after, the statement is not reported",
+	},
 
 	{Code: "LT101", Meaning: "modifying a nullable column to non-nullable without a DEFAULT", PtahRules: []string{"LT101"}, Status: StatusCovered},
 
@@ -197,6 +266,31 @@ var atlasChecks = []AtlasCheck{
 	{Code: "PG309", Meaning: "a STORED generated column rewrites the table", Pro: true, PtahRules: []string{"PG309"}, Status: StatusCovered},
 	{Code: "PG310", Meaning: "an identity column rewrites the table", Pro: true, PtahRules: []string{"PG310"}, Status: StatusCovered},
 	{Code: "PG311", Meaning: "an access-method change rewrites the table", Pro: true, PtahRules: []string{"PG311"}, Status: StatusCovered},
+	{
+		Code: "PG108", Meaning: "an index on a partitioned table blocks writes on all its partitions", Pro: true,
+		PtahRules: []string{"PG108"}, Status: StatusPartial,
+		Note: "reported where the migration itself declares the parent PARTITION BY; the statement alone cannot say a table is partitioned, so an index on a" +
+			"parent created in an earlier release is left to PG101, whose CONCURRENTLY remedy the server refuses here",
+	},
+	{
+		Code: "PG109", Meaning: "an EXCLUDE constraint takes an ACCESS EXCLUSIVE lock and scans the table", Pro: true,
+		PtahRules: []string{"PG109"}, Status: StatusCovered,
+	},
+	{
+		Code: "PG312", Meaning: "redefining a primary key builds its unique index under an ACCESS EXCLUSIVE lock", Pro: true,
+		PtahRules: []string{"PG312"}, Status: StatusCovered,
+		Note: "distinct from Ptah's own PG312P, which is about a SECURITY DEFINER routine and keeps its trailing P; the USING INDEX form builds nothing under the lock and is not reported",
+	},
+	{
+		Code: "PG314", Meaning: "changing REPLICA IDENTITY to FULL or NOTHING risks the logical replication setup", Pro: true,
+		PtahRules: []string{"PG314"}, Status: StatusCovered,
+		Note: "FULL and NOTHING carry different consequences and are reported with different messages; DEFAULT and USING INDEX keep a usable row identity and are not reported",
+	},
+	{
+		Code: "PG320", Meaning: "disabling autovacuum lets dead rows accumulate", Pro: true,
+		PtahRules: []string{"PG320"}, Status: StatusCovered,
+		Note: "the one rule here whose hazard is not a lock or a rewrite: the statement takes only a SHARE UPDATE EXCLUSIVE lock and the cost is paid later",
+	},
 
 	{Code: "CD101", Meaning: "a foreign-key constraint was dropped", Pro: true, PtahRules: []string{"CD101"}, Status: StatusCovered},
 	{Code: "CD102", Meaning: "a check constraint was dropped", Pro: true, PtahRules: []string{"CD102"}, Status: StatusCovered},

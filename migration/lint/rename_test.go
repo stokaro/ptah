@@ -433,21 +433,29 @@ func TestAnalyzeFS_RenameIsSuppressedByTheDestructiveSelectorOnly(t *testing.T) 
 // master by construction. It was validated with the inverse mutant instead:
 // extending the exemption to droppedColumnSubjects turns the first row into
 // []string(nil) and leaves the second row green.
+//
+// The rows also pin where BC104 does and does not agree with DS102. It takes
+// the exemption this rule refuses, because a column on a table created in this
+// same migration was never in a schema any deployed version queried, and it is
+// native-only, so the compatibility column is DS102 alone on both rows.
 func TestAnalyzeFS_DropColumnStillReportsOnASameFileCreatedTable(t *testing.T) {
 	tests := []struct {
-		name string
-		sql  string
-		want []string
+		name       string
+		sql        string
+		wantNative []string
+		wantAtlas  []string
 	}{
 		{
-			name: "table created in the same file",
-			sql:  "CREATE TABLE users (id int, nick text);\nALTER TABLE users DROP COLUMN nick;",
-			want: []string{"DS102"},
+			name:       "table created in the same file",
+			sql:        "CREATE TABLE users (id int, nick text);\nALTER TABLE users DROP COLUMN nick;",
+			wantNative: []string{"DS102"},
+			wantAtlas:  []string{"DS102"},
 		},
 		{
-			name: "table not created in this file",
-			sql:  "ALTER TABLE users DROP COLUMN nick;",
-			want: []string{"DS102"},
+			name:       "table not created in this file",
+			sql:        "ALTER TABLE users DROP COLUMN nick;",
+			wantNative: []string{"BC104", "DS102"},
+			wantAtlas:  []string{"DS102"},
 		},
 	}
 
@@ -455,8 +463,8 @@ func TestAnalyzeFS_DropColumnStillReportsOnASameFileCreatedTable(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			native, atlas := analyzeRename(c, map[string]string{"1_drop.sql": test.sql + "\n"})
-			c.Assert(rulesOf(native), qt.DeepEquals, test.want)
-			c.Assert(rulesOf(atlas), qt.DeepEquals, test.want)
+			c.Assert(rulesOf(native), qt.DeepEquals, test.wantNative)
+			c.Assert(rulesOf(atlas), qt.DeepEquals, test.wantAtlas)
 		})
 	}
 }
@@ -477,11 +485,14 @@ func TestAnalyzeFS_DropColumnKeepsEveryDroppedColumnInOneFinding(t *testing.T) {
 		"1_drop.sql": "ALTER TABLE users DROP COLUMN nick, DROP COLUMN email;\n",
 	})
 
-	c.Assert(rulesOf(native), qt.DeepEquals, []string{"DS102"})
-	c.Assert(subjectsOf(native), qt.DeepEquals, [][]lint.Subject{{
+	c.Assert(rulesOf(native), qt.DeepEquals, []string{"BC104", "DS102"})
+	// Both findings keep every dropped column in one finding: the shape that
+	// makes the compatibility renderer say "columns" rather than naming one.
+	columns := []lint.Subject{
 		{Kind: lint.SubjectColumn, Name: "nick", Parent: "users"},
 		{Kind: lint.SubjectColumn, Name: "email", Parent: "users"},
-	}})
+	}
+	c.Assert(subjectsOf(native), qt.DeepEquals, [][]lint.Subject{columns, columns})
 }
 
 // TestAnalyzeFS_TableRenameIsTwoSchemaChanges pins the semantic change count a

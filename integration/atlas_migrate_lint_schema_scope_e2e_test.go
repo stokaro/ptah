@@ -398,6 +398,10 @@ func TestNativeMigrationsLintIgnoresTheDevURLSchemaScopeE2E(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "exit status 1")
 	c.Assert(report, qt.Contains, `DROP TABLE permanently deletes table app."Users"`)
 	c.Assert(report, qt.Contains, "DROP TABLE permanently deletes table app.audit_log")
-	c.Assert(report, qt.Contains, "2 finding(s).")
+	// Four: each of the two dropped tables is reported for the rows it
+	// destroys and for the name deployed code still queries.
+	c.Assert(report, qt.Contains, `dropping table app."Users" retires a name`)
+	c.Assert(report, qt.Contains, "dropping table app.audit_log retires a name")
+	c.Assert(report, qt.Contains, "4 finding(s).")
 	c.Assert(report, qt.Not(qt.Contains), "No lint findings.")
 }

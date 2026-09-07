@@ -39,12 +39,18 @@ type atlasAlias struct {
 var atlasCodeAliases = map[string]atlasAlias{
 	"BC102": {rules: []string{"BC101"}},
 	"MF104": {rules: []string{"PG303", "LT101", "DD103"}},
-	// No engine-specific code is here: MY110 through MY123 (members.go),
-	// MY130, MY133 and MY136 (mysqlcost.go), and PG301 and PG304 (pgcost.go)
+	// MY148 is the first engine-specific alias, and the reason the dialects
+	// field existed before there was one. Ptah reports a column character set
+	// or collation change through MY130, whose subject is the whole column
+	// type change, so a config naming MY148 would otherwise be refused as an
+	// unknown code. It is scoped to the engines MY130 runs on: an alias for
+	// one engine must not weaken another engine's run (stokaro/ptah#1631).
+	"MY148": {dialects: mysqlFamily, rules: []string{"MY130"}},
+	// No other engine-specific code is here: MY110 through MY123 (members.go),
+	// MY130, MY133 and MY136 (mysqlcost.go), MY137 through MY147
+	// (atlasgaps.go), and PG301, PG304, PG108, PG109, PG312, PG314 and PG320
 	// are each a Ptah rule of the same name, so the code needs no alias to
-	// reach it. The dialects field stays, because an alias for one engine
-	// must not weaken another engine's run (stokaro/ptah#1631), and the next
-	// engine-specific alias inherits that scoping rather than reinventing it.
+	// reach it.
 }
 
 // mysqlFamily is the pair Ptah's MySQL rules are defined for.

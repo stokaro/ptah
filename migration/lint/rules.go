@@ -88,6 +88,7 @@ func builtinRules() []Rule {
 	rules = append(rules, inPlaceRules()...)
 	rules = append(rules, sqliteRules()...)
 	rules = append(rules, transactionRules()...)
+	rules = append(rules, atlasGapRules()...)
 	return rules
 }
 
@@ -311,6 +312,21 @@ func tableRenamedFindings(file *File) []Finding {
 // A target list that could not be parsed to the end yields one subject-less
 // finding: the statement is still destructive, and failing closed keeps it
 // reported rather than letting an unreadable target silence the rule.
+// orderedDropTargets returns a DROP TABLE target list ordered by logical name.
+//
+// A drop carries two consequences and each is reported per target: the rows it
+// destroys, and the name deployed clients still query. A comma list's written
+// order carries no meaning, so both reports have to derive the same sequence
+// from it -- two sorts would agree until one of them was changed, and the
+// symptom would be one statement reporting its tables in two different orders.
+func orderedDropTargets(tables []tableReference) []tableReference {
+	ordered := slices.Clone(tables)
+	slices.SortStableFunc(ordered, func(a, b tableReference) int {
+		return strings.Compare(logicalObjectName(a.name), logicalObjectName(b.name))
+	})
+	return ordered
+}
+
 func tableDroppedFindings(filePath string, line, statementIndex int, tables []tableReference) []Finding {
 	finding := func(message string, subjects ...Subject) Finding {
 		return Finding{
@@ -327,10 +343,7 @@ func tableDroppedFindings(filePath string, line, statementIndex int, tables []ta
 		return []Finding{finding("DROP TABLE permanently deletes the table and every row in it; " + tableDroppedAdvice)}
 	}
 
-	ordered := slices.Clone(tables)
-	slices.SortStableFunc(ordered, func(a, b tableReference) int {
-		return strings.Compare(logicalObjectName(a.name), logicalObjectName(b.name))
-	})
+	ordered := orderedDropTargets(tables)
 	findings := make([]Finding, 0, len(ordered))
 	for _, table := range ordered {
 		findings = append(findings, finding(

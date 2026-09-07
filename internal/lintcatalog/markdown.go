@@ -232,9 +232,15 @@ func writeAtlasChecks(w io.Writer, entries []Entry) error {
 	var out strings.Builder
 	out.WriteString("## Atlas analyzer checks\n\n")
 	fmt.Fprintf(&out,
-		"Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/analyzers) carries, "+
-			"and what Ptah does about it: %d covered, %d partial, %d not implemented, %d waived, of %d. "+
+		"Every check code in the reviewed snapshot of the "+
+			"[Atlas analyzer documentation](https://atlasgo.io/lint/analyzers) "+
+			"(`internal/lintcatalog/atlasreference.txt`, reviewed %s), and what Ptah does about it: "+
+			"%d covered, %d partial, %d not implemented, %d waived, of %d. "+
+			"That page presents its table as highlights rather than an inventory -- it says Atlas "+
+			"\"runs and reports dozens of additional checks\" beyond them -- so a complete row here is "+
+			"completeness against the snapshot, not full behavioral parity with the analyzer. "+
 			"A code Atlas marks as an Atlas Pro feature is marked here too%s.\n\n",
+		AtlasReferenceReviewedOn,
 		counts[StatusCovered], counts[StatusPartial], counts[StatusAbsent], counts[StatusWaived], len(checks),
 		atlasSurfaceNote(entries, checks))
 	// Five columns, and the widest carries a sentence, so at a phone width auto

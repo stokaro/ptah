@@ -231,8 +231,8 @@
         "/atlas/strict-ce-mode/",
         "/operate/troubleshooting/"
       ],
-      "visibleWords": 8387,
-      "sourceBytes": 58943
+      "visibleWords": 8385,
+      "sourceBytes": 58963
     },
     {
       "path": "docs/site/src/content/docs/atlas/license-boundary.md",
@@ -3952,8 +3952,8 @@
         "/schema/security/",
         "/versioned/lint/"
       ],
-      "visibleWords": 4634,
-      "sourceBytes": 30994
+      "visibleWords": 5770,
+      "sourceBytes": 38430
     },
     {
       "path": "docs/site/src/content/docs/reference/mcp-tools.md",

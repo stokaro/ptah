@@ -164,7 +164,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Migration lint rules
 
-71 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings unless the policy's `gate` section names more families, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
+88 rules, registered in `migration/lint`. `ptah migrations lint` reports the whole registry, and `ptah-compat migrate lint` reports all of it but `BC101`, which only native `ptah` emits. Neither apply gate reports even that much, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings unless the policy's `gate` section names more families, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
 
 ### Every dialect
 
@@ -172,6 +172,8 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | --- | --- | --- | --- |
 | `AC101` | the migration defines a routine whose body is not analyzed, so a clean result says nothing about what the body does | both | Ptah |
 | `BC101` | a rename retires a name deployed code still refers to | native only | Atlas |
+| `BC103` | dropping a table retires a name deployed clients still query, which is a rollout break a backup does not mitigate | both | Atlas |
+| `BC104` | dropping a column retires a name deployed clients still select and insert, whether or not the column held rows | both | Atlas |
 | `CD101` | dropping a foreign key removes referential-integrity enforcement | both | Atlas |
 | `CD102` | dropping a check constraint removes a value-validation guarantee | both | Atlas |
 | `CD103` | dropping a primary key removes row identity and can break replication | both | Atlas |
@@ -200,6 +202,18 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `NM106` | a check constraint this migration names violates the configured naming convention | both | Atlas |
 | `SA101` | a routine builds and runs a statement from a value it does not quote | both | Atlas |
 
+### mariadb
+
+| Rule | Meaning | Surface | Origin |
+| --- | --- | --- | --- |
+| `MY146` | DROP SYSTEM VERSIONING deletes every historical row version permanently, and no rollback restores it | both | Atlas |
+
+### mysql
+
+| Rule | Meaning | Surface | Origin |
+| --- | --- | --- | --- |
+| `MY145` | enforcing a CHECK constraint revalidates every row; unenforcing one stops the server refusing the values it was there to refuse | both | Atlas |
+
 ### mysql, mariadb
 
 | Rule | Meaning | Surface | Origin |
@@ -222,6 +236,14 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `MY134` | adding a FULLTEXT index can rebuild the table and block writes | both | Atlas |
 | `MY135` | adding a SPATIAL index can rebuild the table and block writes | both | Atlas |
 | `MY136` | converting a table's character set re-encodes its columns and copies the table | both | Atlas |
+| `MY137` | replacing a primary key rebuilds the table and every secondary index that stores it as a row pointer | both | Atlas |
+| `MY138` | changing the storage engine copies the table and blocks writes for the duration | both | Atlas |
+| `MY139` | a partitioning change rewrites every row and accepts no ALGORITHM or LOCK clause to soften it | both | Atlas |
+| `MY140` | adding a STORED generated column computes a value for every row, copying the table and blocking writes | both | Atlas |
+| `MY141` | adding an AUTO_INCREMENT column rebuilds the table in place and still blocks writes | both | Atlas |
+| `MY143` | changing a STORED generated column recomputes it for every row, copying the table and blocking writes | both | Atlas |
+| `MY144` | adding a CHECK constraint validates every existing row, and one that fails the predicate fails the migration | both | Atlas |
+| `MY147` | declaring a column NOT NULL rebuilds the table; whether an existing NULL fails the statement is DD103's question | both | Atlas |
 
 ### mysql, mariadb, sqlserver, clickhouse
 
@@ -239,6 +261,8 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `PG104` | adding a primary key takes an ACCESS EXCLUSIVE lock and can scan existing rows | both | Atlas |
 | `PG105` | adding a unique constraint takes an ACCESS EXCLUSIVE lock and validates rows | both | Atlas |
 | `PG106` | DROP INDEX without CONCURRENTLY blocks writes while the index is removed | both | Atlas |
+| `PG108` | an index on a partitioned table locks the parent and every partition at once, and CONCURRENTLY is refused there | both | Atlas |
+| `PG109` | adding an EXCLUDE constraint holds an ACCESS EXCLUSIVE lock while it builds the index and validates every row | both | Atlas |
 | `PG110` | the declared column order can waste tuple padding | both | Atlas |
 | `PG301` | a column type change PostgreSQL cannot prove safe rewrites the table and its indexes | both | Atlas |
 | `PG301P` | an ALTER COLUMN TYPE the dev database shows PostgreSQL applies as a catalog edit, with no rewrite, rebuild or scan; info only | both | Ptah |
@@ -251,7 +275,10 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `PG309` | adding a STORED generated column computes and stores a value for every row | both | Atlas |
 | `PG310` | adding an identity column can rewrite existing rows | both | Atlas |
 | `PG311` | changing a table's access method rewrites the table | both | Atlas |
+| `PG312` | replacing a primary key builds the new unique index under an ACCESS EXCLUSIVE lock | both | Atlas |
 | `PG312P` | a SECURITY DEFINER routine that does not pin search_path resolves unqualified names through the caller's | both | Ptah |
+| `PG314` | REPLICA IDENTITY FULL or NOTHING changes what logical replication can carry for the table | both | Atlas |
+| `PG320` | disabling autovacuum leaves dead rows for nothing to reclaim; the statement is cheap and the cost is paid later | both | Atlas |
 | `TX101` | the migration mixes statements that cannot share one transaction | both | Atlas |
 | `TX201` | an explicit BEGIN/COMMIT block fights the migrator's transaction management | both | Atlas |
 
@@ -283,7 +310,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Default severities
 
-16 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `SQL001`, `SQL002`. The other 62 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
+17 rules report at error severity by default: `CAP001`, `CD101`, `CD102`, `CD103`, `DDL002`, `DS101`, `DS102`, `DS104`, `DS105`, `DS106`, `DS107`, `DS108`, `DS109`, `DS110P`, `MY146`, `SQL001`, `SQL002`. The other 78 default to warning. A committed `.ptah-lint.yaml` replaces either, per rule or per family. `ptah sql lint` reads the same file and now reads the `rules:` severities it sets for `CAP001`, `DDL001`, `DDL002`, `SQL001`, `SQL002`, `SQL003` and `SQL004`, so the severities above are the defaults. `--disable` refuses a selector covering `SQL001` or `SQL002`: those report that the file could not be analyzed, and a run that analyzed nothing must not report clean.
 
 ## What ptah-compat prints
 
@@ -297,7 +324,7 @@ Every migration lint finding reports under an analyzer name and a code on the co
 
 ## Atlas analyzer checks
 
-Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/analyzers) carries, and what Ptah does about it: 56 covered, 0 partial, 0 not implemented, 2 waived, of 58. A code Atlas marks as an Atlas Pro feature is marked here too, and the ones Ptah implements are reported through both surfaces except `BC101` and `BC102`, whose Ptah rule the compatibility surface does not report.
+Every check code in the reviewed snapshot of the [Atlas analyzer documentation](https://atlasgo.io/lint/analyzers) (`internal/lintcatalog/atlasreference.txt`, reviewed 2026-09-06), and what Ptah does about it: 72 covered, 2 partial, 1 not implemented, 2 waived, of 77. That page presents its table as highlights rather than an inventory -- it says Atlas "runs and reports dozens of additional checks" beyond them -- so a complete row here is completeness against the snapshot, not full behavioral parity with the analyzer. A code Atlas marks as an Atlas Pro feature is marked here too, and the ones Ptah implements are reported through both surfaces except `BC101` and `BC102`, whose Ptah rule the compatibility surface does not report.
 
 <div class="ptah-wide-table">
 
@@ -312,6 +339,8 @@ Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/anal
 | `MF104` | modifying a nullable column to non-nullable might fail | no | `PG303`, `LT101`, `DD103` | covered — PG303 on PostgreSQL, CockroachDB, YugabyteDB and Spanner, LT101 on SQLite, DD103 on MySQL, MariaDB, SQL Server and ClickHouse; every engine measured, each with its own failure named |
 | `BC101` | renaming a table | no | `BC101` | covered |
 | `BC102` | renaming a column | no | `BC101` | covered — one rule reports both object kinds |
+| `BC103` | dropping a table | no | `BC103` | covered — the rollout break, not the row loss DS101 reports on the same statement, and separately suppressible: accepting the data loss is not accepting deployed clients failing. Native `ptah migrations lint` only; no apply gate |
+| `BC104` | dropping a column | no | `BC104` | covered — as BC103, beside DS102, and reported on the same surface; a column of a table this migration itself created is exempt, which DS102 is deliberately not |
 | `MY101` | adding a non-nullable column without a DEFAULT to an existing table | no | `DD101` | covered — DD101 applies to every dialect |
 | `MY102` | an inline REFERENCES clause in ADD COLUMN has no effect | no | `MY102` | covered |
 | `MY110` | removing enum values from a column requires a table copy | no | `MY110` | covered |
@@ -329,6 +358,18 @@ Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/anal
 | `MY134` | adding a FULLTEXT index blocks DML | yes | `MY134` | covered |
 | `MY135` | adding a SPATIAL index blocks DML | yes | `MY135` | covered |
 | `MY136` | changing the table character set requires a table rebuild | yes | `MY136` | covered — names the columns whose re-encoding forces the copy; a conversion that touches no column, or only utf8mb3 to utf8mb4 on short VARCHAR and CHAR columns no key covers, is not reported |
+| `MY137` | modifying the primary key rebuilds the table and its secondary indexes | yes | `MY137` | covered — one statement that drops and adds; measured in place with writes allowed, so it subsumes MY132 rather than repeating it, and leaves CD103 to report the identity loss |
+| `MY138` | changing the storage engine requires a table copy and blocks DML | yes | `MY138` | covered — any ENGINE= clause, including one naming the engine the table already uses, which costs the same because it is the documented way to force a rebuild |
+| `MY139` | partitioning or removing partitioning requires a table copy and blocks DML | yes | `MY139` | covered — measured, this statement form accepts no ALGORITHM or LOCK clause at all, so the finding says there is no online-DDL negotiation rather than naming a copy |
+| `MY140` | adding a STORED generated column requires a table copy and blocks DML | yes | `MY140` | covered |
+| `MY141` | adding an AUTO_INCREMENT column rebuilds the table and blocks DML | yes | `MY141` | covered — the rebuild is in place and writes still stop: LOCK=NONE is refused, which is why the finding reports cost and locking separately |
+| `MY142` | adding a column before existing columns prevents an instant operation on older versions | yes | — | not implemented — measured absent on every MySQL release line this repository declares: ADD COLUMN ... FIRST accepts ALGORITHM=INSTANT on 8.4.11 and on 8.0.46, andthe lowest declared line is 8.4, so a rule would be a false positive wherever Ptah is tested |
+| `MY143` | modifying a generated column requires a table copy and blocks DML | yes | `MY143` | covered — the MODIFY and CHANGE side; adding one is MY140, and DS103 still reports the type change where the declared type moves |
+| `MY144` | adding a CHECK constraint scans all existing rows | yes | `MY144` | covered |
+| `MY145` | modifying or enforcing a CHECK constraint re-validates all existing rows | yes | `MY145` | covered — MySQL only: MariaDB has no ENFORCED or NOT ENFORCED syntax, so a mariadb finding would describe a statement that server refuses to parse |
+| `MY146` | dropping system versioning permanently deletes all history rows | yes | `MY146` | covered — MariaDB only: MySQL 8.4 has no system versioning at all; reported as an error because the history is deleted rather than made expensive |
+| `MY147` | changing column nullability requires a table rebuild | yes | `MY147` | covered — the cost; measured in place with writes allowed. Whether an existing NULL fails the statement is the separate question DD103 answers from the baseline |
+| `MY148` | changing a column character set or collation requires a table copy and blocks DML | yes | `MY130` | partial — MY130 names this consequence where it can prove the copy from the dev database; without that baseline, or on a spelling it cannot resolve to a before-and-after, the statement is not reported |
 | `LT101` | modifying a nullable column to non-nullable without a DEFAULT | no | `LT101` | covered |
 | `PG101` | index created without CONCURRENTLY | yes | `PG101` | covered |
 | `PG102` | index dropped without CONCURRENTLY | yes | `PG106` | covered |
@@ -347,6 +388,11 @@ Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/anal
 | `PG309` | a STORED generated column rewrites the table | yes | `PG309` | covered |
 | `PG310` | an identity column rewrites the table | yes | `PG310` | covered |
 | `PG311` | an access-method change rewrites the table | yes | `PG311` | covered |
+| `PG108` | an index on a partitioned table blocks writes on all its partitions | yes | `PG108` | partial — reported where the migration itself declares the parent PARTITION BY; the statement alone cannot say a table is partitioned, so an index on aparent created in an earlier release is left to PG101, whose CONCURRENTLY remedy the server refuses here |
+| `PG109` | an EXCLUDE constraint takes an ACCESS EXCLUSIVE lock and scans the table | yes | `PG109` | covered |
+| `PG312` | redefining a primary key builds its unique index under an ACCESS EXCLUSIVE lock | yes | `PG312` | covered — distinct from Ptah's own PG312P, which is about a SECURITY DEFINER routine and keeps its trailing P; the USING INDEX form builds nothing under the lock and is not reported |
+| `PG314` | changing REPLICA IDENTITY to FULL or NOTHING risks the logical replication setup | yes | `PG314` | covered — FULL and NOTHING carry different consequences and are reported with different messages; DEFAULT and USING INDEX keep a usable row identity and are not reported |
+| `PG320` | disabling autovacuum lets dead rows accumulate | yes | `PG320` | covered — the one rule here whose hazard is not a lock or a rewrite: the statement takes only a SHARE UPDATE EXCLUSIVE lock and the cost is paid later |
 | `CD101` | a foreign-key constraint was dropped | yes | `CD101` | covered |
 | `CD102` | a check constraint was dropped | yes | `CD102` | covered |
 | `CD103` | a primary-key constraint was dropped | yes | `CD103` | covered |

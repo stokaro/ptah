@@ -15,6 +15,12 @@ import (
 	"ptah.run/migration/migrationfile"
 )
 
+// Every fixture below analyzes under CompatibilityProfileAtlas, which is what
+// `ptah-compat migrate lint` passes (cmd/atlas/migrate_lint.go). The renderer in
+// this package only ever receives an analysis produced that way, and a fixture
+// built from the native profile carries a different finding set -- so an
+// assertion on one is not an assertion about anything this package renders.
+
 func TestWriteMigrateLintFormat_CustomTemplate(t *testing.T) {
 	c := qt.New(t)
 	fsys := fstest.MapFS{
@@ -22,7 +28,8 @@ func TestWriteMigrateLintFormat_CustomTemplate(t *testing.T) {
 		"2_drop_users.sql":   {Data: []byte("DROP TABLE users;")},
 	}
 	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
-		DirFormat: migrationfile.DirFormatAtlas,
+		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 		Selection: migrationlint.VersionSelection{
 			Versions:   []int64{2},
 			Restricted: true,
@@ -51,7 +58,8 @@ func TestWriteMigrateLintFormat_JSONFiles(t *testing.T) {
 		"1_create_users.sql": {Data: []byte("CREATE TABLE users (id integer);")},
 	}
 	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
-		DirFormat: migrationfile.DirFormatAtlas,
+		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
 	var out bytes.Buffer
@@ -99,7 +107,8 @@ func TestNewMigrateLint_DuplicateBasenamesKeepFindingsScoped(t *testing.T) {
 		"b/1_change.sql": {Data: []byte("SELECT 1;")},
 	}
 	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
-		DirFormat: migrationfile.DirFormatAtlas,
+		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
 
@@ -152,7 +161,8 @@ func TestNewMigrateLint_OrdersMigrationsByVersion(t *testing.T) {
 		"2_earlier.sql": {Data: []byte("SELECT 2;")},
 	}
 	analysis, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{
-		DirFormat: migrationfile.DirFormatAtlas,
+		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
 
@@ -197,8 +207,9 @@ func TestNewMigrateLint_LoadsSemanticChangeCountForMultiActionAlter(t *testing.T
 	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
 		"1_alter.sql": {Data: []byte("ALTER TABLE users ADD COLUMN a INTEGER, ADD COLUMN b INTEGER;\n")},
 	}, migrationlint.Options{
-		DirFormat: migrationfile.DirFormatAtlas,
-		Dialect:   "sqlite",
+		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
+		Dialect:       "sqlite",
 	})
 	c.Assert(err, qt.IsNil)
 
@@ -217,8 +228,9 @@ func TestNewMigrateLint_LoadsZeroChangesForNonDDLFile(t *testing.T) {
 	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
 		"1_seed.sql": {Data: []byte("INSERT INTO users (id) VALUES (1);\n")},
 	}, migrationlint.Options{
-		DirFormat: migrationfile.DirFormatAtlas,
-		Dialect:   "sqlite",
+		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
+		Dialect:       "sqlite",
 	})
 	c.Assert(err, qt.IsNil)
 
@@ -238,8 +250,9 @@ func TestNewMigrateLint_LoadsSemanticChangeCountForMixedFile(t *testing.T) {
 				"INSERT INTO t (id) VALUES (1);\n" +
 				"ALTER TABLE t ADD COLUMN a INTEGER, ADD COLUMN b INTEGER;\n")},
 	}, migrationlint.Options{
-		DirFormat: migrationfile.DirFormatAtlas,
-		Dialect:   "sqlite",
+		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
+		Dialect:       "sqlite",
 	})
 	c.Assert(err, qt.IsNil)
 
@@ -256,8 +269,9 @@ func TestNewMigrateLint_LoadsOneChangePerSingleStatementFixtureFile(t *testing.T
 		"1_create_users.sql":    {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
 		"2_create_accounts.sql": {Data: []byte("CREATE TABLE accounts (id INTEGER);\n")},
 	}, migrationlint.Options{
-		DirFormat: migrationfile.DirFormatAtlas,
-		Dialect:   "sqlite",
+		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
+		Dialect:       "sqlite",
 	})
 	c.Assert(err, qt.IsNil)
 
@@ -304,7 +318,10 @@ func TestWriteMigrateLintFormat_RedactsSensitiveURL(t *testing.T) {
 		"&sslmode=disable"
 	analysis, err := migrationlint.AnalyzeFS(fstest.MapFS{
 		"1_empty.sql": {Data: []byte("-- no changes\n")},
-	}, migrationlint.Options{DirFormat: migrationfile.DirFormatAtlas})
+	}, migrationlint.Options{
+		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
+	})
 	c.Assert(err, qt.IsNil)
 	var out bytes.Buffer
 
@@ -334,7 +351,8 @@ func TestWriteMigrateLintFormat_ValidAtlasSumAddsIntegrityStep(t *testing.T) {
 	integrity, err := atlasreport.InspectMigrateLintIntegrity(snapshot, covered)
 	c.Assert(err, qt.IsNil)
 	analysis, err := migrationlint.AnalyzeFS(snapshot, migrationlint.Options{
-		DirFormat: migrationfile.DirFormatAtlas,
+		Compatibility: migrationlint.CompatibilityProfileAtlas,
+		DirFormat:     migrationfile.DirFormatAtlas,
 	})
 	c.Assert(err, qt.IsNil)
 	var out bytes.Buffer

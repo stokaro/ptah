@@ -87,7 +87,14 @@ func assertLintAndMigrateExclusionParity(
 	c.Helper()
 	legacyDir := filepath.Join(migrationsDir, "legacy")
 	c.Assert(os.MkdirAll(legacyDir, 0o755), qt.IsNil)
-	writeLintGateMigration(c, migrationsDir, lint.ConfigFileName, fmt.Sprintf("rules:\n  DS101:\n    exclude:\n      - %q\n", pattern))
+	// The excluded path's DROP TABLE is reported by two rules with two
+	// consequences: DS101 for the rows it destroys and BC103 for the name
+	// deployed clients still query. This test is about exclusion parity
+	// between the two commands, so the fixture excludes both -- and the pair
+	// is worth knowing, because an existing config that excludes DS101 alone
+	// stops silencing the statement (stokaro/ptah#2972).
+	writeLintGateMigration(c, migrationsDir, lint.ConfigFileName, fmt.Sprintf(
+		"rules:\n  DS101:\n    exclude:\n      - %q\n  BC103:\n    exclude:\n      - %q\n", pattern, pattern))
 	writeLintGateMigration(c, legacyDir, "0000000001_create.up.sql", "CREATE TABLE users (id INTEGER);\n")
 	writeLintGateMigration(c, legacyDir, "0000000001_create.down.sql", "DROP TABLE users;\n")
 	writeLintGateMigration(c, legacyDir, "0000000002_drop.up.sql", "DROP TABLE users;\n")
