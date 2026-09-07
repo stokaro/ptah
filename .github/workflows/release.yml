@@ -156,6 +156,14 @@ jobs:
           set -euo pipefail
           # App first. Both write the formula the same way, and the app one does
           # not expire on a date somebody picked.
+          #
+          # The second rung stays until a release has actually published through
+          # the app. Nothing here is dispatchable -- this job runs on a tag push
+          # alone -- so the app path cannot be proven the way the action publish
+          # and the site redeploy were, and a credential that fails here fails
+          # after the assets and the images are already out. The line below
+          # names which one ran; when it has said "as the app" for a release,
+          # the PAT rung and the HOMEBREW_TAP_TOKEN secret both go.
           if [ -n "${APP_TOKEN}" ]; then
             echo "::add-mask::${APP_TOKEN}"
             echo "value=${APP_TOKEN}" >>"${GITHUB_OUTPUT}"
