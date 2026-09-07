@@ -8,6 +8,7 @@ import (
 
 	"ptah.run/core/ast"
 	"ptah.run/core/astbuilder"
+	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer"
 	"ptah.run/core/schemamodel"
@@ -177,4 +178,39 @@ func ExampleValidateSchema() {
 	// <nil>
 	// mysql does not support INCLUDE columns on index "idx_orders_customer"; target postgres, yugabytedb, cockroachdb, or spanner
 	// true
+}
+
+// ExampleGetOrderedCreateStatementsReportingOmissions shows how an embedder
+// asks what a target could not carry.
+//
+// The schema is written for MySQL, which renders all four table options, and
+// pointed at PostgreSQL, which renders none of them. Before this entry point
+// the render exited 0 and the loss was visible only as a comment in the SQL,
+// which is not something a pipeline can branch on.
+func ExampleGetOrderedCreateStatementsReportingOmissions() {
+	database := &schemamodel.Database{
+		Tables: []schemamodel.Table{{
+			StructName:    "User",
+			Name:          "users",
+			Engine:        "InnoDB",
+			AutoIncrement: "100",
+		}},
+		Fields: []schemamodel.Field{
+			{StructName: "User", Name: "id", Type: "INT", Primary: true},
+		},
+	}
+
+	_, omissions, err := renderer.GetOrderedCreateStatementsReportingOmissions(
+		database, "postgres", capability.Postgres17())
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	for _, omission := range omissions {
+		fmt.Printf("%s %q: %s\n", omission.Kind, omission.Name, omission.Message())
+	}
+
+	// Output:
+	// table "users": table option AUTO_INCREMENT=100 would be skipped
+	// table "users": table option ENGINE=InnoDB would be skipped
 }

@@ -15,6 +15,7 @@ import (
 	"ptah.run/core/renderer/internal/dialects/internal/bufwriter"
 	"ptah.run/internal/mysqlindex"
 	"ptah.run/internal/mysqlroutine"
+	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/tableref"
 )
 
@@ -29,6 +30,19 @@ type Renderer struct {
 	// drops any modifier the concrete target would reject — MySQL 8/9 reject
 	// IF EXISTS on constraint and index drops, MariaDB accepts both.
 	caps capability.Capabilities
+	// sink receives a record for each declaration this target does not emit.
+	// A nil sink drops what it is given, so a render nobody asked to report
+	// costs nothing.
+	sink *renderdiag.Sink
+}
+
+// ReportOmissionsTo directs this renderer's omission records to sink.
+//
+// The MySQL and MariaDB wrappers delegate here rather than holding a sink of
+// their own, for the reason their shared writer is held by pointer: a second
+// copy of this state is one that nothing ever reads.
+func (r *Renderer) ReportOmissionsTo(sink *renderdiag.Sink) {
+	r.sink = sink
 }
 
 // New creates a new MySQL-like renderer. The target capabilities are resolved
@@ -1508,10 +1522,19 @@ func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
 func (r *Renderer) sequenceNotSupported(statement, name, comment string) {
 	if comment != "" {
 		r.w.WriteLinef("-- %s %s not supported in %s: %s", statement, name, r.dialect, comment)
-		return
+	} else {
+		r.w.WriteLinef("-- %s %s not supported in %s", statement, name, r.dialect)
 	}
-	r.w.WriteLinef("-- %s %s not supported in %s", statement, name, r.dialect)
+	r.sink.Record(renderdiag.Omission{
+		Reason: renderdiag.ReasonUnsupported,
+		Kind:   sequenceKind,
+		Name:   name,
+	})
 }
+
+// sequenceKind is the object kind a skipped sequence statement is recorded as.
+// The statement spelling varies (CREATE, ALTER, DROP); the object does not.
+const sequenceKind = "sequence"
 
 // sequenceIdentifier qualifies a sequence name with its declared schema when the
 // name does not already carry one.
@@ -1586,9 +1609,11 @@ func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode)
 func (r *Renderer) notGenerated(kind, name string) {
 	if name == "" {
 		r.w.WriteLinef("-- %s: %s is not generated for this target; skipped.", r.dialectUpper, kind)
+		r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Kind: kind})
 		return
 	}
 	r.w.WriteLinef("-- %s: %s %s is not generated for this target; skipped.", r.dialectUpper, kind, name)
+	r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Kind: kind, Name: name})
 }
 
 // VisitRawSQL renders a literal SQL fragment verbatim. Dialect-specific

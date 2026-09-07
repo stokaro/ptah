@@ -10,6 +10,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/renderer/internal/dialects/internal/bufwriter"
+	"ptah.run/internal/renderdiag"
 )
 
 const DialectName = platform.SQLServer
@@ -17,6 +18,19 @@ const DialectName = platform.SQLServer
 type Renderer struct {
 	w    bufwriter.Writer
 	caps capability.Capabilities
+	// sink receives a record for each declaration this target does not emit.
+	// A nil sink drops what it is given, so a render nobody asked to report
+	// costs nothing.
+	sink *renderdiag.Sink
+}
+
+// ReportOmissionsTo directs this renderer's omission records to sink.
+//
+// The ordered-render path builds a renderer per statement, so the sink outlives
+// the renderer rather than the other way round; that is what lets one report
+// span a schema without any state surviving a statement.
+func (r *Renderer) ReportOmissionsTo(sink *renderdiag.Sink) {
+	r.sink = sink
 }
 
 func New() *Renderer {
@@ -105,6 +119,10 @@ func tableLeafName(table string) string {
 }
 
 func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
+	// T-SQL has no trailing table-option clause, so every option the author
+	// declared is dropped here. It was dropped before this line too; what is
+	// new is that the loss is now reported rather than silent.
+	r.sink.RecordDroppedTableOptions(node.Name, node.Options)
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -931,9 +949,11 @@ func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
 func (r *Renderer) notSupported(feature, name string) {
 	if name == "" {
 		r.w.WriteLinef("-- SQLSERVER: %s is not generated for this target; skipped.", feature)
+		r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Kind: feature})
 		return
 	}
 	r.w.WriteLinef("-- SQLSERVER: %s %q is not generated for this target; skipped.", feature, name)
+	r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Kind: feature, Name: name})
 }
 
 func renderColumn(column *ast.ColumnNode) (string, error) {

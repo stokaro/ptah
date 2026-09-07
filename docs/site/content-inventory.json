@@ -231,8 +231,8 @@
         "/atlas/strict-ce-mode/",
         "/operate/troubleshooting/"
       ],
-      "visibleWords": 8385,
-      "sourceBytes": 58963
+      "visibleWords": 8391,
+      "sourceBytes": 59012
     },
     {
       "path": "docs/site/src/content/docs/atlas/license-boundary.md",
@@ -3627,8 +3627,8 @@
         "/reference/native-commands/",
         "/reference/overview/"
       ],
-      "visibleWords": 8702,
-      "sourceBytes": 85874
+      "visibleWords": 8709,
+      "sourceBytes": 85938
     },
     {
       "path": "docs/site/src/content/docs/reference/configuration.mdx",
@@ -3857,6 +3857,7 @@
         "/reference/overview/",
         "/schema/go-annotations/",
         "/schema/overview/",
+        "/schema/validate-and-format/",
         "/start/install-options/"
       ],
       "visibleWords": 4298,
@@ -4954,6 +4955,7 @@
       "outboundLinks": [
         "/direct/compare-and-drift/",
         "/reference/exit-codes/",
+        "/reference/go-annotations/",
         "/reference/native-commands/",
         "/schema/composite/",
         "/schema/go-annotations/",
@@ -4966,8 +4968,8 @@
         "/schema/work-with-a-source/",
         "/testing/ci/"
       ],
-      "visibleWords": 921,
-      "sourceBytes": 8585
+      "visibleWords": 1261,
+      "sourceBytes": 11197
     },
     {
       "path": "docs/site/src/content/docs/schema/visualize.mdx",
@@ -5617,8 +5619,8 @@
         "/versioned/integrity-and-safety/",
         "/versioned/lint/"
       ],
-      "visibleWords": 983,
-      "sourceBytes": 9164
+      "visibleWords": 1000,
+      "sourceBytes": 9282
     },
     {
       "path": "docs/site/src/content/docs/testing/migrations-and-schema.mdx",

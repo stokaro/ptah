@@ -64,6 +64,7 @@ import (
 	"ptah.run/internal/mysqlroutine"
 	"ptah.run/internal/nullsdistinct"
 	"ptah.run/internal/objectidentity"
+	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/reservedrole"
 	"ptah.run/internal/schemaprep"
 	"ptah.run/internal/systemschema"
@@ -1013,6 +1014,17 @@ func GetOrderedCreateStatementsWithCapabilities(
 	dialect string,
 	caps capability.Capabilities,
 ) ([]string, error) {
+	// A nil sink drops what it is given, so the reporting variant and this one
+	// are the same render rather than two that can drift apart.
+	return orderedCreateStatements(r, dialect, caps, nil)
+}
+
+func orderedCreateStatements(
+	r *schemamodel.Database,
+	dialect string,
+	caps capability.Capabilities,
+	sink *renderdiag.Sink,
+) ([]string, error) {
 	var statements []string
 
 	if _, err := NewRendererWithCapabilities(dialect, caps); err != nil {
@@ -1035,7 +1047,7 @@ func GetOrderedCreateStatementsWithCapabilities(
 		return nil, err
 	}
 	err = modelast.WalkDatabase(database, dialect, func(node ast.Node) error {
-		sql, err := RenderSQLWithCapabilities(dialect, caps, node)
+		sql, err := renderNodeReporting(dialect, caps, sink, node)
 		if err != nil {
 			return err
 		}

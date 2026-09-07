@@ -17,6 +17,7 @@ import (
 	"ptah.run/core/renderer/internal/dialects/internal/bufwriter"
 	"ptah.run/core/renderer/internal/dialects/internal/defaultlit"
 	"ptah.run/core/schemamodel"
+	"ptah.run/internal/renderdiag"
 )
 
 // Renderer provides PostgreSQL-specific SQL rendering
@@ -27,6 +28,19 @@ type Renderer struct {
 	dialectUpper string
 	caps         capability.Capabilities
 	w            bufwriter.Writer
+	// sink receives a record for each declaration this target does not emit.
+	// It is nil unless a caller asked for the report, and a nil sink drops
+	// what it is given, so rendering costs nothing when nobody is listening.
+	sink *renderdiag.Sink
+}
+
+// ReportOmissionsTo directs this renderer's omission records to sink.
+//
+// The ordered-render path builds a renderer per statement, so the sink outlives
+// the renderer rather than the other way round; that is what lets one report
+// span a schema without any state surviving a statement.
+func (r *Renderer) ReportOmissionsTo(sink *renderdiag.Sink) {
+	r.sink = sink
 }
 
 func (r *Renderer) VisitUpsert(_ *ast.UpsertNode) error {
@@ -609,7 +623,7 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 	for _, name := range refused {
 		r.writeObjectSkipped(foreignKeyConstraintKind, name)
 	}
-	r.writeTableOptionsSkipped(node.Options)
+	r.writeTableOptionsSkipped(node.Name, node.Options)
 
 	r.w.WriteLinef("CREATE TABLE%s %s (", guard, r.escapeQualifiedIdentifier(node.Name))
 	for i, line := range lines {
@@ -1746,7 +1760,12 @@ func (r *Renderer) renderExcludeConstraint(constraint *ast.ConstraintNode) (stri
 	return result, nil
 }
 
-const tableOptionKind = "table option"
+const (
+	tableOptionKind = renderdiag.TableOptionProperty
+	// autoIncrementOption is the one table option carrying a value the author
+	// would miss, so it is the one with a remedy on this family.
+	autoIncrementOption = "AUTO_INCREMENT"
+)
 
 // writeTableOptionsSkipped names every table option the node carries on a
 // skip line above the statement, in key order.
@@ -1764,12 +1783,15 @@ const tableOptionKind = "table option"
 // line that says where the value goes on this family. The order is sorted
 // because the options are a map, and a walk in map order produced a
 // different render on every run (stokaro/ptah#2968).
-func (r *Renderer) writeTableOptionsSkipped(options map[string]string) {
+func (r *Renderer) writeTableOptionsSkipped(table string, options map[string]string) {
 	for _, key := range slices.Sorted(maps.Keys(options)) {
-		r.writeObjectSkipped(tableOptionKind, key+"="+options[key])
-		if key == "AUTO_INCREMENT" {
-			r.w.WriteLinef("-- %s: declare the start on the key column with identity_start to keep it.", r.dialectUpper)
+		r.writeObjectSkippedLine(tableOptionKind, key+"="+options[key])
+		remedy := ""
+		if key == autoIncrementOption {
+			remedy = "declare the start on the key column with identity_start"
+			r.w.WriteLinef("-- %s: %s to keep it.", r.dialectUpper, remedy)
 		}
+		r.sink.Record(renderdiag.TableOptionOmission(table, key, options[key], remedy))
 	}
 }
 
@@ -2191,6 +2213,20 @@ func sequenceOptions(asType string, start, increment, minValue, maxValue, cache 
 // renderer, so the skip diagnostic is the shared answer shape for a target that
 // cannot host an object kind (stokaro/ptah#929).
 func (r *Renderer) writeObjectSkipped(kind, name string) {
+	r.writeObjectSkippedLine(kind, name)
+	r.sink.Record(renderdiag.Omission{
+		Reason: renderdiag.ReasonUnsupported,
+		Kind:   kind,
+		Name:   name,
+	})
+}
+
+// writeObjectSkippedLine writes the skip comment without recording anything.
+//
+// A caller that has more identity in hand than this line carries -- a table
+// option knows the table it was declared on -- writes the line here and records
+// the fuller record itself, so one skip never arrives as two records.
+func (r *Renderer) writeObjectSkippedLine(kind, name string) {
 	r.w.WriteLinef("-- %s: %s %s is not supported by this target; skipped.",
 		r.dialectUpper, commentFragment(kind), commentFragment(name))
 }

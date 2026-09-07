@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/renderer/internal/dialects/internal/bufwriter"
 	"ptah.run/core/renderer/internal/dialects/mysqllike"
+	"ptah.run/internal/renderdiag"
 )
 
 // Renderer provides MariaDB-specific SQL rendering
@@ -34,6 +35,12 @@ func NewWithCapabilities(caps capability.Capabilities) *Renderer {
 		r: mysqllike.NewWithCapabilities("mariadb", w, caps),
 		w: w,
 	}
+}
+
+// ReportOmissionsTo forwards the sink to the embedded renderer, which is where
+// every skip this wrapper can produce is written.
+func (r *Renderer) ReportOmissionsTo(sink *renderdiag.Sink) {
+	r.r.ReportOmissionsTo(sink)
 }
 
 func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {

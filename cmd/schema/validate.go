@@ -21,6 +21,7 @@ const (
 	validateRootDirFlag    = "root-dir"
 	validateSchemaFileFlag = "schema-file"
 	validateDialectFlag    = "dialect"
+	validateNoSkippedFlag  = "no-skipped"
 )
 
 type schemaValidateOptions struct {
@@ -29,6 +30,7 @@ type schemaValidateOptions struct {
 	dialects      []string
 	serverVersion string
 	plainHTTP     bool
+	noSkipped     bool
 	configPath    string
 	envName       string
 }
@@ -69,6 +71,8 @@ per problem otherwise, so a pre-commit hook can use the status alone.`,
 	flags.StringArrayVar(&opts.rootDirs, validateRootDirFlag, nil, "Root directory to scan for Go entities (repeatable)")
 	flags.StringArrayVar(&opts.schemaFiles, validateSchemaFileFlag, nil, "SQL, YAML, HCL, DBML, or OCI desired-schema source (repeatable)")
 	flags.StringArrayVar(&opts.dialects, validateDialectFlag, nil, "Target dialect to validate against (repeatable; required)")
+	flags.BoolVar(&opts.noSkipped, validateNoSkippedFlag, false,
+		"Also fail when rendering for a target would leave out a declared object or property")
 	serverversion.Register(flags, &opts.serverVersion)
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
@@ -134,7 +138,10 @@ func runSchemaValidate(cmd *cobra.Command, opts schemaValidateOptions) error {
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
-		problems = append(problems, schemavalidate.CollectWithCapabilities(database, dialect, caps)...)
+		problems = append(problems, schemavalidate.CollectWithOptions(database, dialect, schemavalidate.Options{
+			Capabilities: caps,
+			NoSkipped:    opts.noSkipped,
+		})...)
 	}
 	if len(problems) == 0 {
 		return nil
@@ -144,7 +151,7 @@ func runSchemaValidate(cmd *cobra.Command, opts schemaValidateOptions) error {
 		lines = append(lines, problem.String())
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), strings.Join(lines, "\n"))
-	summary := problemCount(len(problems))
+	summary := problemCount(len(problems), opts.problemNoun())
 	fmt.Fprintln(cmd.ErrOrStderr(), summary)
 	// Exit 1, not 2: finding problems is this verb's expected negative result,
 	// the status the reference table gives a drift check or a lint finding. A
@@ -153,13 +160,26 @@ func runSchemaValidate(cmd *cobra.Command, opts schemaValidateOptions) error {
 	return exitcode.New(1, errors.New(summary))
 }
 
+// problemNoun names what this run counts.
+//
+// The adjective goes away under --no-skipped because the count is no longer
+// only structural: a declaration this target renders nothing for is a loss, not
+// a fault in the schema, and calling it structural would send the reader looking
+// for a mistake they did not make.
+func (o schemaValidateOptions) problemNoun() string {
+	if o.noSkipped {
+		return "problem"
+	}
+	return "structural problem"
+}
+
 // problemCount names the count in the summary line, so a single problem does
 // not read as "1 structural problems".
-func problemCount(count int) string {
+func problemCount(count int, noun string) string {
 	if count == 1 {
-		return "1 structural problem"
+		return "1 " + noun
 	}
-	return fmt.Sprintf("%d structural problems", count)
+	return fmt.Sprintf("%d %ss", count, noun)
 }
 
 // validateCapabilities picks the capability set one dialect is validated

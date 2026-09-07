@@ -48,18 +48,50 @@ func Collect(database *schemamodel.Database, dialect string) []Problem {
 	return CollectWithCapabilities(database, dialect, capability.ForDialect(dialect))
 }
 
+// Options selects what a collection checks.
+type Options struct {
+	// Capabilities is the target capability set the schema is checked against.
+	// The zero value selects the dialect's default preset.
+	Capabilities capability.Capabilities
+	// NoSkipped adds the render check: every declaration this target would
+	// leave out of its DDL becomes a problem. It is opt-in because a schema
+	// written for several engines is expected to lose engine-specific
+	// declarations on the others, and failing that by default would refuse the
+	// authoring style Ptah supports.
+	NoSkipped bool
+}
+
 // CollectWithCapabilities reports every structural problem it can find against
 // a concrete capability set.
-//
-// The checks are ordered cheapest first and none of them stops the others: a
-// caller asking what is wrong with a schema wants the list, not the first
-// entry. The renderer's own validation contributes at most one problem,
-// because it is fail-fast by construction.
 func CollectWithCapabilities(
 	database *schemamodel.Database,
 	dialect string,
 	caps capability.Capabilities,
 ) []Problem {
+	return CollectWithOptions(database, dialect, Options{Capabilities: caps})
+}
+
+// CollectWithOptions reports every problem the selected checks can find.
+//
+// The checks are ordered cheapest first and none of them stops the others: a
+// caller asking what is wrong with a schema wants the list, not the first
+// entry. The renderer's own validation contributes at most one problem,
+// because it is fail-fast by construction.
+//
+// With [Options.NoSkipped] the render runs too, and what it leaves out becomes
+// one problem per lost declaration. A render refusal is a problem rather than
+// an error: the caller asked what is wrong with this schema for this target,
+// and "it cannot be rendered at all" is an answer to that question, not a
+// failure to answer it.
+func CollectWithOptions(
+	database *schemamodel.Database,
+	dialect string,
+	opts Options,
+) []Problem {
+	caps := opts.Capabilities
+	if caps == nil {
+		caps = capability.ForDialect(dialect)
+	}
 	if database == nil {
 		return []Problem{{
 			Dialect: dialect,
@@ -78,8 +110,68 @@ func CollectWithCapabilities(
 			Kind:    "schema",
 			Message: err.Error(),
 		})
+		// The render begins with exactly this validation, so running it now
+		// would report the same refusal twice. Returning here is the dedup:
+		// there is no second fault to find in a schema that does not reach a
+		// renderer.
+		return problems
+	}
+	if !opts.NoSkipped {
+		return problems
+	}
+	return append(problems, collectSkippedDeclarations(scoped, dialect, caps)...)
+}
+
+// collectSkippedDeclarations renders the schema and reports what did not survive.
+//
+// The SQL is discarded. This verb answers a question about the schema and must
+// not print DDL or write a file, so the render exists only for what it leaves
+// behind: the omission report and, where the target refuses outright, the
+// error.
+func collectSkippedDeclarations(
+	database *schemamodel.Database,
+	dialect string,
+	caps capability.Capabilities,
+) []Problem {
+	_, omissions, err := renderer.GetOrderedCreateStatementsReportingOmissions(database, dialect, caps)
+	if err != nil {
+		return []Problem{{
+			Dialect: dialect,
+			Kind:    "schema",
+			Message: err.Error(),
+		}}
+	}
+	problems := make([]Problem, 0, len(omissions))
+	for _, omission := range omissions {
+		problems = append(problems, Problem{
+			Dialect: dialect,
+			Kind:    omission.Kind,
+			Object:  omission.Name,
+			Message: skippedMessage(omission),
+		})
 	}
 	return problems
+}
+
+// skippedMessage states the loss, and the remedy only where one exists.
+//
+// A whole object that was lost is named by [Problem.String] already, so the
+// message says only what happened to it; repeating the name there produced
+// `role "app": role app would be skipped`. A lost property has to name itself,
+// because the object line cannot.
+//
+// A remedy that does not work on the target it is printed for costs the reader
+// more than silence, so the renderer decides whether there is one and this
+// function only formats what it was given.
+func skippedMessage(omission renderer.Omission) string {
+	message := "would be skipped"
+	if omission.Property != "" {
+		message = omission.Message()
+	}
+	if omission.Remedy == "" {
+		return message
+	}
+	return message + "; " + omission.Remedy
 }
 
 // collectIndexProblems checks every index against the relation it belongs to.

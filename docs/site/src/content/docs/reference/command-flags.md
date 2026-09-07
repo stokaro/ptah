@@ -1627,6 +1627,7 @@ Read the columns as follows.
 | `--config` | `string` | — | `PTAH_CONFIG` | — |
 | `--dialect` | `stringArray` | `[]` | `PTAH_DIALECT` | — |
 | `--env` | `string` | — | `PTAH_ENV` | — |
+| `--no-skipped` | `bool` | `false` | `PTAH_NO_SKIPPED` | — |
 | `--plain-http` | `bool` | `false` | `PTAH_PLAIN_HTTP` | — |
 | `--root-dir` | `stringArray` | `[]` | `PTAH_ROOT_DIR` | — |
 | `--schema-file` | `stringArray` | `[]` | `PTAH_SCHEMA_FILE` | — |

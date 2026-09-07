@@ -141,6 +141,55 @@ keys`, because ClickHouse models none.
 capability set a dialect stands for, for example `--dialect postgres
 --server-version 17`.
 
+## Fail when a target would drop a declaration
+
+Structural validation asks whether the schema is sound. It does not ask whether
+the target keeps everything the schema declares, and those are different
+questions: a table carrying `ENGINE=InnoDB` is sound, and PostgreSQL renders no
+table engine at all. `--no-skipped` adds the second question.
+
+```bash
+ptah schema validate --schema-file schema.sql --dialect postgres --no-skipped
+```
+
+Expected output includes:
+
+```text
+postgres: table "users": table option AUTO_INCREMENT=100 would be skipped; declare the start on the key column with identity_start
+postgres: table "users": table option CHARSET=utf8mb4 would be skipped
+postgres: table "users": table option COLLATE=utf8mb4_bin would be skipped
+postgres: table "users": table option ENGINE=InnoDB would be skipped
+4 problems
+```
+
+Each lost declaration is one line, so fixing some of them shortens the report
+rather than leaving it unchanged. A remedy is printed only where one works on
+that target. The run exits `1`, the same status a structural problem carries,
+and a target that keeps every declaration prints nothing and exits `0`.
+
+The check reads what the renderer decided, not what it wrote in a comment. That
+matters because the targets are not equally talkative: the PostgreSQL family
+names a dropped table option on a `skipped` comment and SQLite, SQL Server and
+Oracle drop the same option without a word. A check built on the comment would
+report the quiet targets as the strict ones.
+
+A render the target refuses outright fails this mode too, as a `schema` problem
+carrying the refusal.
+
+The flag is opt-in because a schema written for several engines is expected to
+lose engine-specific declarations on the others. Two things it does not report,
+for the same reason:
+
+- an object a `dialects=` scope excludes from this target, which is not part of
+  that target's desired state at all;
+- a declaration a [platform override](../../reference/go-annotations/) replaced
+  for this target, which is the author choosing what the target gets.
+
+Reporting is not yet exhaustive over every property every dialect drops. It
+covers what a renderer names as skipped and the table options a target cannot
+carry; [stokaro/ptah#2983](https://github.com/stokaro/ptah/issues/2983) records
+what remains.
+
 ## Format HCL schema files
 
 `ptah schema fmt` walks the paths it is given, or the current directory when it
@@ -209,12 +258,17 @@ See [Exit codes](../../reference/exit-codes/) for the contract these follow.
 
 ## Limitations
 
-- `ptah schema validate` checks structure, not renderability. A declaration the
-  renderer refuses for the same dialect can validate cleanly: a `SERIAL` column
-  validates against `clickhouse` and exits `0`, while
-  `ptah schema render --dialect clickhouse` over the same source exits `2` with
-  `clickhouse: SERIAL has no auto-increment equivalent`. Render as well as
-  validate before trusting a target.
+- `ptah schema validate` checks structure, not renderability, unless
+  `--no-skipped` is passed. Without it a declaration the renderer refuses for
+  the same dialect validates cleanly: a `SERIAL` column validates against
+  `clickhouse` and exits `0`, while `ptah schema render --dialect clickhouse`
+  over the same source exits `2` with `clickhouse: SERIAL has no auto-increment
+  equivalent`. Either pass the flag or render as well as validate before
+  trusting a target.
+- `--no-skipped` reports the declarations the render path names and the table
+  options a target cannot carry. It is not a portability verdict: two targets
+  that both keep every declaration can still store and compare the data
+  differently.
 - `ptah schema fmt` reads `.hcl` files only. A YAML, SQL or DBML schema file in
   the same directory is left alone and not reported, so a formatting gate over a
   mixed directory covers the HCL half of it.

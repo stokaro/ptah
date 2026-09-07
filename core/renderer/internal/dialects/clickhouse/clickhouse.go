@@ -38,6 +38,7 @@ import (
 	"ptah.run/core/renderer/internal/dialects/internal/bufwriter"
 	"ptah.run/core/renderer/internal/dialects/internal/defaultlit"
 	"ptah.run/internal/chrefresh"
+	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/tableref"
 )
 
@@ -56,6 +57,20 @@ type Renderer struct {
 	// the MergeTree sorting key and/or PRIMARY KEY, which ClickHouse rejects
 	// when wrapped in Nullable(...).
 	forceNotNullSet map[string]struct{}
+
+	// sink receives a record for each declaration this target does not emit.
+	// A nil sink drops what it is given, so a render nobody asked to report
+	// costs nothing.
+	sink *renderdiag.Sink
+}
+
+// ReportOmissionsTo directs this renderer's omission records to sink.
+//
+// The ordered-render path builds a renderer per statement, so the sink outlives
+// the renderer rather than the other way round; that is what lets one report
+// span a schema without any state surviving a statement.
+func (r *Renderer) ReportOmissionsTo(sink *renderdiag.Sink) {
+	r.sink = sink
 }
 
 // New constructs a ClickHouse renderer with an empty output buffer.
@@ -103,9 +118,11 @@ func (r *Renderer) Render(node ast.Node) (string, error) {
 func (r *Renderer) notSupported(feature, name string) {
 	if name == "" {
 		r.w.WriteLinef("-- CLICKHOUSE: %s is not supported", feature)
+		r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Kind: feature})
 		return
 	}
 	r.w.WriteLinef("-- CLICKHOUSE: %s %q is not supported", feature, name)
+	r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Kind: feature, Name: name})
 }
 
 // VisitCreateSchema renders schema creation as ClickHouse database creation.
@@ -435,6 +452,23 @@ func (s tableEngineSpec) isMergeTreeFamily() bool {
 // Annotation overrides live in node.Options under uppercased keys; the
 // table's own Engine string is used as a fallback (it's the documented
 // `platform.mysql.engine=` channel and is mirrored on the AST node).
+// tableEngineOptionKeys are the option keys resolveTableEngineSpec reads.
+//
+// It has to name every key that function consumes: a key missing here is
+// reported as a loss it did not suffer, and a key present here that the
+// function stopped reading is a loss nothing reports (stokaro/ptah#2976).
+// TestVisitCreateTable_RendersEveryTableOptionItKeeps drives each one through
+// the renderer rather than trusting the list.
+var tableEngineOptionKeys = []string{
+	"ENGINE",
+	"ORDER_BY",
+	"PARTITION_BY",
+	"PRIMARY_KEY",
+	"SAMPLE_BY",
+	"SETTINGS",
+	"TTL",
+}
+
 func resolveTableEngineSpec(node *ast.CreateTableNode) tableEngineSpec {
 	spec := tableEngineSpec{engine: "MergeTree"}
 
@@ -574,6 +608,9 @@ func splitColumns(expr string) []string {
 // thread it through r.forceNotNullSet so the per-column renderer can return
 // a precise error rather than silently stripping Nullable.
 func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
+	// Every option outside the engine spec is dropped. It was dropped before
+	// this line too; what is new is that the loss is reported.
+	r.sink.RecordDroppedTableOptions(node.Name, node.Options, tableEngineOptionKeys...)
 	guard := ""
 	if node.IfNotExists {
 		guard = " IF NOT EXISTS"

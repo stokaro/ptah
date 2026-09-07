@@ -11,6 +11,7 @@ import (
 	"ptah.run/core/renderer/internal/dialects/internal/bufwriter"
 	"ptah.run/core/renderer/internal/dialects/internal/defaultlit"
 	"ptah.run/internal/normalize"
+	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/sqlident"
 )
 
@@ -19,6 +20,19 @@ const DialectName = "sqlite"
 type Renderer struct {
 	w    bufwriter.Writer
 	caps capability.Capabilities
+	// sink receives a record for each declaration this target does not emit.
+	// A nil sink drops what it is given, so a render nobody asked to report
+	// costs nothing.
+	sink *renderdiag.Sink
+}
+
+// ReportOmissionsTo directs this renderer's omission records to sink.
+//
+// The ordered-render path builds a renderer per statement, so the sink outlives
+// the renderer rather than the other way round; that is what lets one report
+// span a schema without any state surviving a statement.
+func (r *Renderer) ReportOmissionsTo(sink *renderdiag.Sink) {
+	r.sink = sink
 }
 
 // New constructs a renderer for the SQLite the offline paths assume, which is
@@ -97,7 +111,7 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 
 	if len(node.Columns) == 0 && len(node.Constraints) == 0 && node.SelectBody != "" {
 		r.w.Writef("CREATE TABLE%s %s", guard, escapeQualifiedIdentifier(node.Name))
-		r.writeTableOptions(node.Options)
+		r.writeTableOptions(node.Name, node.Options)
 		r.writeCustomSQL(node)
 		r.w.WriteLinef(" AS %s;", strings.TrimSpace(node.SelectBody))
 		return nil
@@ -132,7 +146,7 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 	}
 
 	r.w.Write(")")
-	r.writeTableOptions(node.Options)
+	r.writeTableOptions(node.Name, node.Options)
 	// The author's own raw tail closes the statement (stokaro/ptah#2590).
 	r.writeCustomSQL(node)
 	r.w.WriteLine(";")
@@ -520,7 +534,10 @@ func escapeModuleName(module string) string {
 	return sqlident.BareOrQuoted(DialectName, module)
 }
 
-func (r *Renderer) writeTableOptions(options map[string]string) {
+func (r *Renderer) writeTableOptions(table string, options map[string]string) {
+	// Recorded before the kept options are written, so the two halves of this
+	// function cannot disagree about which keys SQLite carries.
+	r.sink.RecordDroppedTableOptions(table, options, sqliteTableOptionKeys...)
 	var tableOptions []string
 	if strings.EqualFold(options["STRICT"], "true") {
 		tableOptions = append(tableOptions, "STRICT")
@@ -536,10 +553,20 @@ func (r *Renderer) writeTableOptions(options map[string]string) {
 func (r *Renderer) notSupported(feature, name string) {
 	if name == "" {
 		r.w.WriteLinef("-- SQLITE: %s is not supported", feature)
+		r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Kind: feature})
 		return
 	}
 	r.w.WriteLinef("-- SQLITE: %s %q is not supported", feature, name)
+	r.sink.Record(renderdiag.Omission{Reason: renderdiag.ReasonUnsupported, Kind: feature, Name: name})
 }
+
+// sqliteTableOptionKeys are the table options writeTableOptions renders.
+//
+// It has to name every key that function reads: a key present here and dropped
+// there is a loss nothing reports, which is the defect this list exists inside
+// (stokaro/ptah#2976). TestVisitCreateTable_RendersEveryTableOptionItKeeps
+// drives each one through the renderer rather than trusting the list.
+var sqliteTableOptionKeys = []string{"STRICT", "WITHOUT_ROWID", "WITHOUT ROWID"}
 
 func renderColumn(column *ast.ColumnNode, caps capability.Capabilities) (string, error) {
 	if column == nil {

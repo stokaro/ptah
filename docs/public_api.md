@@ -92,6 +92,22 @@ referenced-key policy: `ForeignKeysRequireUniqueReference`,
 schema validation without rendering SQL. Migration planning calls this path
 before producing AST nodes.
 
+`GetOrderedCreateStatementsReportingOmissions` renders the same statements and
+also returns the declarations the target did not carry, as `Omission` values.
+It is the same render rather than a second one, so the statements it returns
+equal what the capability-aware variant returns for the same arguments.
+
+An `Omission` names the target, a stable `Reason`, the owning object, the lost
+property where a property rather than the object was lost, the declared value,
+and a remedy only where one works on that target. The order is deterministic
+and does not follow the walk.
+
+A refusal is an error, not an omission: a non-nil error carries no statements
+and no omissions, because nothing was rendered for a declaration to be missing
+from. Reporting is not exhaustive over every property every dialect drops. It
+covers what a renderer names as skipped and the table options a target cannot
+carry, and stokaro/ptah#2983 records what remains.
+
 An object whose key payload is empty is refused with
 `ptaherr.ErrInvalidSchemaDiff` before any statement is emitted:
 
