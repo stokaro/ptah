@@ -13,11 +13,11 @@ fi
 
 "$ptah_bin" schema export \
 	--to openapi-v3 \
-	--root-dir "$repo_root/stubs" \
+	--root-dir "$repo_root/internal/stubs" \
 	--out "$workspace/openapi.yaml"
 "$ptah_bin" schema export \
 	--to graphql \
-	--root-dir "$repo_root/stubs" \
+	--root-dir "$repo_root/internal/stubs" \
 	--out "$workspace/schema.graphql"
 
 npx -y @redocly/cli@1 lint "$workspace/openapi.yaml"
@@ -106,7 +106,7 @@ for entry in "${profiles[@]}"; do
 	out="$workspace/schema-${profile//,/_}.graphql"
 	"$ptah_bin" schema export \
 		--to graphql \
-		--root-dir "$repo_root/stubs" \
+		--root-dir "$repo_root/internal/stubs" \
 		--graphql-operations "$profile" \
 		--out "$out"
 	check_graphql "$out" "$mode"
@@ -126,7 +126,7 @@ refuse_if_present "$workspace/schema-update-input.graphql" 'ProductCreateInput'
 # "none" is the spelling of the default, and it must produce the same bytes.
 "$ptah_bin" schema export \
 	--to graphql \
-	--root-dir "$repo_root/stubs" \
+	--root-dir "$repo_root/internal/stubs" \
 	--graphql-operations none \
 	--out "$workspace/schema-none.graphql"
 diff -u "$workspace/schema.graphql" "$workspace/schema-none.graphql"
@@ -136,7 +136,7 @@ diff -u "$workspace/schema.graphql" "$workspace/schema-none.graphql"
 set +e
 "$ptah_bin" schema export \
 	--to graphql \
-	--root-dir "$repo_root/stubs" \
+	--root-dir "$repo_root/internal/stubs" \
 	--graphql-operations mutations \
 	--out "$workspace/schema-refused.graphql" >"$workspace/refused.out" 2>"$workspace/refused.err"
 refused_code=$?
@@ -161,23 +161,23 @@ echo "graphql operation profiles: OK"
 # The allowlist policy over a source that declares no api_expose is the sharpest
 # case available here: every column is withheld, so both targets have to degrade
 # to something well formed rather than to something merely smaller.
-"$ptah_bin" schema export 	--to openapi-v3 	--root-dir "$repo_root/stubs" 	--api-field-policy allowlist 	--out "$workspace/openapi-allowlist.yaml"
+"$ptah_bin" schema export 	--to openapi-v3 	--root-dir "$repo_root/internal/stubs" 	--api-field-policy allowlist 	--out "$workspace/openapi-allowlist.yaml"
 npx -y @redocly/cli@1 lint "$workspace/openapi-allowlist.yaml" --format=stylish
 refuse_if_present "$workspace/openapi-allowlist.yaml" 'password'
 
-"$ptah_bin" schema export 	--to graphql 	--root-dir "$repo_root/stubs" 	--graphql-operations list 	--api-field-policy allowlist 	--out "$workspace/graphql-allowlist.graphql"
+"$ptah_bin" schema export 	--to graphql 	--root-dir "$repo_root/internal/stubs" 	--graphql-operations list 	--api-field-policy allowlist 	--out "$workspace/graphql-allowlist.graphql"
 # Still a valid executable document even with every column withheld: the
 # renderer degrades to an empty Query root rather than to unparsable SDL.
 check_graphql "$workspace/graphql-allowlist.graphql" executable
 
 # The default policy is unchanged, which is what keeps every schema exported
 # before this existed exporting the same way.
-"$ptah_bin" schema export 	--to openapi-v3 	--root-dir "$repo_root/stubs" 	--api-field-policy all 	--out "$workspace/openapi-all.yaml"
+"$ptah_bin" schema export 	--to openapi-v3 	--root-dir "$repo_root/internal/stubs" 	--api-field-policy all 	--out "$workspace/openapi-all.yaml"
 diff -u "$workspace/openapi.yaml" "$workspace/openapi-all.yaml"
 
 # An unrecognized policy is refused, and the run writes nothing.
 set +e
-"$ptah_bin" schema export 	--to openapi-v3 	--root-dir "$repo_root/stubs" 	--api-field-policy strict 	--out "$workspace/openapi-refused.yaml" >"$workspace/policy.out" 2>"$workspace/policy.err"
+"$ptah_bin" schema export 	--to openapi-v3 	--root-dir "$repo_root/internal/stubs" 	--api-field-policy strict 	--out "$workspace/openapi-refused.yaml" >"$workspace/policy.out" 2>"$workspace/policy.err"
 policy_code=$?
 set -e
 if [[ $policy_code -eq 0 ]]; then

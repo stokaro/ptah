@@ -38,7 +38,7 @@ func TestGetDependencyInfo_EmptyResult(t *testing.T) {
 func TestGetDependencyInfo(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := goschema.ParseDir("../../stubs")
+	result, err := goschema.ParseDir("../../internal/stubs")
 	c.Assert(err, qt.IsNil)
 
 	info := getDependencyInfo(result)

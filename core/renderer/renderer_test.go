@@ -439,7 +439,7 @@ func TestNewVisitorMethods_UnitTests(t *testing.T) {
 func TestPlatformSpecificOverrides(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := goschema.ParseDir("../../stubs")
+	result, err := goschema.ParseDir("../../internal/stubs")
 	c.Assert(err, qt.IsNil)
 
 	// Test PostgreSQL (default)
@@ -486,7 +486,7 @@ func TestPlatformSpecificOverrides(t *testing.T) {
 func TestEmbeddedFieldsInPackageParser(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := goschema.ParseDir("../../stubs")
+	result, err := goschema.ParseDir("../../internal/stubs")
 	c.Assert(err, qt.IsNil)
 
 	// Find the articles table statement
@@ -515,7 +515,7 @@ func TestEmbeddedFieldsInPackageParser(t *testing.T) {
 func TestGetOrderedCreateStatements(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := goschema.ParseDir("../../stubs")
+	result, err := goschema.ParseDir("../../internal/stubs")
 	c.Assert(err, qt.IsNil)
 
 	statements, err := renderer.GetOrderedCreateStatements(result, "postgres")

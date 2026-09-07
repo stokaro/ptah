@@ -1241,7 +1241,7 @@ func TestParseFS_RealFilesystem(t *testing.T) {
 	c := qt.New(t)
 
 	// Test using the existing stubs directory which we know works
-	result, err := goschema.ParseFS(os.DirFS("../../stubs"), ".")
+	result, err := goschema.ParseFS(os.DirFS("../../internal/stubs"), ".")
 	c.Assert(err, qt.IsNil)
 	c.Assert(result, qt.IsNotNil)
 
@@ -1456,11 +1456,11 @@ func TestParseFS_CompareWithParseDir(t *testing.T) {
 	c := qt.New(t)
 
 	// Parse using ParseDir (existing functionality)
-	resultDir, err := goschema.ParseDir("../../stubs")
+	resultDir, err := goschema.ParseDir("../../internal/stubs")
 	c.Assert(err, qt.IsNil)
 
 	// Parse using ParseFS with os.DirFS
-	resultFS, err := goschema.ParseFS(os.DirFS("../../stubs"), ".")
+	resultFS, err := goschema.ParseFS(os.DirFS("../../internal/stubs"), ".")
 	c.Assert(err, qt.IsNil)
 
 	// Results should be identical

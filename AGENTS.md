@@ -77,7 +77,7 @@ directory holding only `_test.go` files publish no import path and are outside
 the surface for that reason. What is left is behind an `internal/` boundary --
 matched as a whole path segment, so `core/internal` is a boundary and
 `internalized` is not. The gate still carries a named exemption per subtree
-whose move has not landed (`cmd`, `integration`, `stubs`); each is deleted by
+whose move has not landed (`cmd`, `integration`); each is deleted by
 the change that internalizes its subtree under stokaro/ptah#2974, and none may
 be added. Additive API changes get normal code review: do not commit a generated
 snapshot of exported declarations to make them show up twice in a diff
@@ -109,12 +109,12 @@ tree shipped by `cmd/ptah-compat`. `cmd/integration-test` is the suite runner
 and `cmd/ptah-ls` the language server. Both command trees are adapters; see
 [Native And Compatibility Capability Ownership](#native-and-compatibility-capability-ownership).
 
-Entities to test against: `stubs/`, `examples/`, and the numbered fixture
+Entities to test against: `internal/stubs/`, `examples/`, and the numbered fixture
 series in `integration/fixtures/entities/`.
 
 ## Schema Annotations
 
-Directives are `//ptah:` comments on Go structs; `stubs/` holds worked
+Directives are `//ptah:` comments on Go structs; `internal/stubs/` holds worked
 examples. Two things the parser will not tell you:
 
 - **An index annotation has to sit on a struct field.** Written at file level,

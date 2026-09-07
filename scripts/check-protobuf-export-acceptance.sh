@@ -118,7 +118,7 @@ assert_changed() {
 base_proto="$workspace/proto"
 mkdir -p "$(dirname "$base_proto/$proto_relative_path")"
 write_buf_config "$base_proto"
-export_schema "$repo_root/stubs" "$base_proto"
+export_schema "$repo_root/internal/stubs" "$base_proto"
 check_proto_module "$base_proto"
 
 (
@@ -148,7 +148,7 @@ EOF
 )
 
 cp "$base_proto/$proto_relative_path" "$workspace/schema.first.proto"
-export_schema "$repo_root/stubs" "$base_proto"
+export_schema "$repo_root/internal/stubs" "$base_proto"
 cmp "$workspace/schema.first.proto" "$base_proto/$proto_relative_path"
 
 baseline="$workspace/proto-baseline"
@@ -163,7 +163,7 @@ run_compatible_case() {
 	local proto_root="$case_root/proto"
 
 	mkdir -p "$case_root"
-	cp -R "$repo_root/stubs" "$source_root"
+	cp -R "$repo_root/internal/stubs" "$source_root"
 	cp -R "$baseline" "$proto_root"
 	python3 "$repo_root/scripts/mutate-protobuf-export-fixture.py" "$mutation" "$source_root"
 	export_schema "$source_root" "$proto_root" "$@"
@@ -201,7 +201,7 @@ if ! grep -q '^// ptah:protobuf-export-version=1$' "$retired_root/proto/$proto_r
 	exit 1
 fi
 cp "$retired_root/proto/$proto_relative_path" "$retired_root/before.proto"
-if export_schema "$repo_root/stubs" "$retired_root/proto" >"$retired_root/out" 2>&1; then
+if export_schema "$repo_root/internal/stubs" "$retired_root/proto" >"$retired_root/out" 2>&1; then
 	printf 'export over a version 1 baseline unexpectedly succeeded\n' >&2
 	cat "$retired_root/out" >&2
 	exit 1
@@ -220,7 +220,7 @@ fi
 cmp "$retired_root/before.proto" "$retired_root/proto/$proto_relative_path"
 
 breaking_root="$workspace/cases/incompatible-type"
-cp -R "$repo_root/stubs" "$breaking_root-stubs"
+cp -R "$repo_root/internal/stubs" "$breaking_root-stubs"
 cp -R "$baseline" "$breaking_root-proto"
 python3 "$repo_root/scripts/mutate-protobuf-export-fixture.py" change-type "$breaking_root-stubs"
 export_schema "$breaking_root-stubs" "$breaking_root-proto" \
@@ -248,7 +248,7 @@ split_dir="$(dirname "$split_proto/$proto_relative_path")"
 
 # Turning the split on moves every message out of the --out file, which is
 # refused unless the move is asked for explicitly.
-if export_schema "$repo_root/stubs" "$split_proto" --proto-split table 2>"$workspace/split-refusal.txt"; then
+if export_schema "$repo_root/internal/stubs" "$split_proto" --proto-split table 2>"$workspace/split-refusal.txt"; then
 	printf 'expected --proto-split=table to be refused against a single-file baseline\n' >&2
 	exit 1
 fi
@@ -258,7 +258,7 @@ if [[ "$(find "$split_dir" -name '*.proto' | wc -l | tr -d ' ')" != "1" ]]; then
 	exit 1
 fi
 
-export_schema "$repo_root/stubs" "$split_proto" --proto-split table --proto-on-type-move relocate
+export_schema "$repo_root/internal/stubs" "$split_proto" --proto-split table --proto-on-type-move relocate
 split_count="$(find "$split_dir" -name '*.proto' | wc -l | tr -d ' ')"
 if [[ "$split_count" -lt 2 ]]; then
 	printf 'expected --proto-split=table to write more than one file, found %s\n' "$split_count" >&2
@@ -272,7 +272,7 @@ check_proto_module "$split_proto"
 
 # Regeneration of the whole set, not only the --out file.
 cp -R "$split_proto" "$workspace/split-first"
-export_schema "$repo_root/stubs" "$split_proto" --proto-split table
+export_schema "$repo_root/internal/stubs" "$split_proto" --proto-split table
 diff -r "$workspace/split-first" "$split_proto"
 
 printf 'Protobuf export acceptance: OK\n'
