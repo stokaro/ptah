@@ -40,6 +40,7 @@
   "/examples/schema-viz/",
   "/examples/yaml-schema/",
   "/extend/components/",
+  "/extend/editor-and-shell/",
   "/extend/overview/",
   "/extend/public-api/",
   "/extend/query-builder/",

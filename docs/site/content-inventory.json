@@ -6,12 +6,12 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 131,
-    "authored": 129,
+    "pages": 132,
+    "authored": 130,
     "generated": 2,
     "byType": {
       "concept": 16,
-      "how-to": 55,
+      "how-to": 56,
       "landing": 12,
       "reference": 33,
       "status": 8,
@@ -1656,6 +1656,49 @@
       ],
       "visibleWords": 2430,
       "sourceBytes": 24069
+    },
+    {
+      "path": "docs/site/src/content/docs/extend/editor-and-shell.mdx",
+      "route": "/extend/editor-and-shell/",
+      "title": "Editor and shell setup",
+      "description": "Enable shell completion and the Ptah language server, and check that each one works.",
+      "sidebarPath": "Extend and integrate",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "new-user"
+      ],
+      "readerQuestion": "How do I get completion in my shell and annotation support in my editor?",
+      "goal": "Enable and verify shell completion and the Ptah language server.",
+      "sourceOfTruth": [
+        "cmd/ptah-ls",
+        "editors/vscode"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "configure VS Code",
+        "shell completion",
+        "language server"
+      ],
+      "sourceMode": null,
+      "overlaps": [
+        "/reference/go-annotations/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/reference/go-annotations/",
+        "/schema/validate-and-format/",
+        "/schema/work-with-a-source/",
+        "/start/install/"
+      ],
+      "inboundLinks": [],
+      "visibleWords": 396,
+      "sourceBytes": 3331
     },
     {
       "path": "docs/site/src/content/docs/extend/overview.mdx",
@@ -3950,6 +3993,7 @@
         "/databases/oracle/",
         "/databases/postgresql/",
         "/databases/sqlserver/",
+        "/extend/editor-and-shell/",
         "/reference/overview/",
         "/schema/go-annotations/",
         "/schema/overview/",
@@ -5060,6 +5104,7 @@
         "/testing/ci/"
       ],
       "inboundLinks": [
+        "/extend/editor-and-shell/",
         "/schema/overview/",
         "/schema/work-with-a-source/",
         "/testing/ci/"
@@ -5169,6 +5214,7 @@
       "inboundLinks": [
         "/concepts/desired-schema-and-sources/",
         "/direct/overview/",
+        "/extend/editor-and-shell/",
         "/reference/native-commands/",
         "/schema/dbml/",
         "/schema/document/",
@@ -5444,6 +5490,7 @@
         "/direct/compare-and-drift/",
         "/direct/inspect/",
         "/direct/plan-and-approve/",
+        "/extend/editor-and-shell/",
         "/inference/quick-start/",
         "/schema/document/",
         "/schema/lineage/",
