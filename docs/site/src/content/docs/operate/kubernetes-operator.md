@@ -16,7 +16,6 @@ searchAliases:
 overlaps:
   - /operate/oci-registry/
 disposition: keep
-sourceMode: oci-artifact-only
 ---
 
 [Ptah Operator](https://github.com/stokaro/ptah-operator) is a Kubernetes

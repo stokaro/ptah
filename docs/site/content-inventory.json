@@ -3356,7 +3356,7 @@
         "PtahSchema",
         "deploy to Kubernetes"
       ],
-      "sourceMode": "oci-artifact-only",
+      "sourceMode": null,
       "overlaps": [
         "/operate/oci-registry/"
       ],
@@ -3369,7 +3369,7 @@
         "/operate/deliver/"
       ],
       "visibleWords": 451,
-      "sourceBytes": 4708
+      "sourceBytes": 4678
     },
     {
       "path": "docs/site/src/content/docs/operate/oci-registry.md",
