@@ -130,9 +130,81 @@ workflow steps consume the generated reports.
 - Pin `version` to a release tag instead of `latest`, or point `binary-path`
   at a Ptah built from source earlier in the workflow.
 
+## Any CI platform
+
+The Action is GitHub-shaped, and the parts of it that are not are the two
+machine-readable outputs it renders. Both are available to any platform:
+
+| Output | What it answers |
+| --- | --- |
+| `ptah migrations plan --report json --check-destructive` | Whether the plan is destructive, as a document rather than an exit code |
+| `ptah migrations lint --format json` | Every finding, with rule, severity, file and line |
+
+`--format sarif`, `--format github-actions` and `--format gitlab` are the same
+findings in a form a particular platform ingests. A platform with no format of
+its own reads the JSON and renders it however it reports.
+
+Ptah ships a container image, so a platform with no marketplace entry needs no
+installation step. Its entry point is `ptah`, so the image takes the arguments
+directly:
+
+```bash
+docker run --rm -v "$PWD:/src" -w /src \
+  ghcr.io/stokaro/ptah:v0.4.0 \
+  migrations lint --dir ./migrations --dialect postgres --format json
+```
+
+Pin the image by digest in a pipeline that must be reproducible, the same way
+the [deployment path](../../operate/deliver/) pins a migration artifact.
+
+### GitLab CI
+
+`--format gitlab` is a Code Quality artifact GitLab renders on the merge
+request. The job is [below](#report-findings-on-a-gitlab-merge-request).
+
+### Azure DevOps
+
+Azure has no findings format of its own here. Publish the SARIF as a build
+artifact and let the exit code fail the step:
+
+```yaml
+- script: |
+    ptah migrations lint --dir ./migrations --dialect postgres --format sarif > ptah-lint.sarif
+  displayName: Lint migrations
+- task: PublishBuildArtifacts@1
+  inputs:
+    pathToPublish: ptah-lint.sarif
+    artifactName: ptah-lint
+```
+
+### CircleCI
+
+```yaml
+- run:
+    name: Lint migrations
+    command: ptah migrations lint --dir ./migrations --dialect postgres --format json > ptah-lint.json
+- store_artifacts:
+    path: ptah-lint.json
+```
+
+### Bitbucket Pipelines
+
+```yaml
+- step:
+    name: Lint migrations
+    script:
+      - ptah migrations lint --dir ./migrations --dialect postgres --format json | tee ptah-lint.json
+    artifacts:
+      - ptah-lint.json
+```
+
+What none of these get is the sticky comment and the check run. Those are
+rendered by `comment.js` and `check-run.js` in the Action and have no
+equivalent elsewhere yet.
+
 ## Minimal shell checks
 
-The same gate on any CI system:
+The same gate on any CI system, without a container:
 
 ```bash
 ptah migrations validate --dir ./migrations

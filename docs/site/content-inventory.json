@@ -3368,6 +3368,7 @@
       ],
       "inboundLinks": [
         "/operate/kubernetes-operator/",
+        "/testing/ci/",
         "/versioned/maintain-history/"
       ],
       "visibleWords": 1041,
@@ -5741,6 +5742,7 @@
       "disposition": "keep",
       "outboundLinks": [
         "/direct/compare-and-drift/",
+        "/operate/deliver/",
         "/operate/troubleshooting/",
         "/reference/exit-codes/",
         "/schema/security/",
@@ -5763,8 +5765,8 @@
         "/versioned/integrity-and-safety/",
         "/versioned/lint/"
       ],
-      "visibleWords": 1155,
-      "sourceBytes": 10445
+      "visibleWords": 1388,
+      "sourceBytes": 12761
     },
     {
       "path": "docs/site/src/content/docs/testing/migrations-and-schema.mdx",
