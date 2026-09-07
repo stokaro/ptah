@@ -595,7 +595,9 @@ The referrers command lists descriptor metadata but does not pull report payload
 
 **Ptah documentation.** [License boundary](../license-boundary/), [Feature matrix](../feature-matrix/)
 
-**Implementation status.** Out of scope. Login, registry, UI, promotion, monitoring, and Cloud APIs are not Atlas OSS drop-in targets.
+**Implementation status.** Out of scope. Login, the Atlas Registry, the Cloud UI, monitoring, and the Cloud APIs are account-bound services rather than Atlas OSS drop-in targets.
+
+Out of scope is the hosted service, not the capability: Ptah publishes and promotes through any [OCI registry](../../operate/oci-registry/).
 
 **Conformance status.** Not measured.
 
