@@ -3479,7 +3479,7 @@
     {
       "path": "docs/site/src/content/docs/operate/overview.mdx",
       "route": "/operate/overview/",
-      "title": "Test, automate, and operate",
+      "title": "Deliver and operate",
       "description": "Test migrations and schemas, build CI gates, manage data artifacts, and diagnose failed runs.",
       "sidebarPath": "Deliver and operate",
       "sidebarLabel": "Overview",
@@ -3524,7 +3524,7 @@
       ],
       "inboundLinks": [],
       "visibleWords": 118,
-      "sourceBytes": 2366
+      "sourceBytes": 2358
     },
     {
       "path": "docs/site/src/content/docs/operate/seed-data.md",
@@ -4771,7 +4771,7 @@
     {
       "path": "docs/site/src/content/docs/schema/overview.mdx",
       "route": "/schema/overview/",
-      "title": "Define and understand schemas",
+      "title": "Schemas",
       "description": "Choose a schema source, combine or validate it, and turn the result into documentation, diagrams, or API contracts.",
       "sidebarPath": "Schemas",
       "sidebarLabel": "Overview",
@@ -4819,7 +4819,7 @@
       ],
       "inboundLinks": [],
       "visibleWords": 120,
-      "sourceBytes": 2455
+      "sourceBytes": 2433
     },
     {
       "path": "docs/site/src/content/docs/schema/protobuf.md",
