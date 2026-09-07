@@ -127,6 +127,10 @@ func (r *Renderer) notSupported(feature, name string) {
 
 // VisitCreateSchema renders schema creation as ClickHouse database creation.
 func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
+	// Only the MySQL family has a schema-level character set and collation, so
+	// a declared one reaches the output nowhere here.
+	r.sink.RecordLostProperty(renderdiag.SchemaKind, node.Name, renderdiag.CharsetProperty, node.Charset)
+	r.sink.RecordLostProperty(renderdiag.SchemaKind, node.Name, renderdiag.CollateProperty, node.Collate)
 	guard := ""
 	if node.IfNotExists {
 		guard = " IF NOT EXISTS"
@@ -637,6 +641,9 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 			},
 		)
 	}
+	// ClickHouse has a PARTITION BY clause of its own, and this renderer does
+	// not read the declared spec, so the table is created unpartitioned.
+	r.sink.RecordLostPartition(node.Name, node.Partition)
 	guard := ""
 	if node.IfNotExists {
 		guard = " IF NOT EXISTS"

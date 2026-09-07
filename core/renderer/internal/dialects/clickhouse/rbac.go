@@ -9,6 +9,7 @@ import (
 	"ptah.run/core/ptaherr"
 	"ptah.run/core/schemamodel"
 	"ptah.run/internal/clickhouserbac"
+	"ptah.run/internal/renderdiag"
 	"ptah.run/internal/sqlident"
 )
 
@@ -79,6 +80,10 @@ func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
 		return err
 	}
 	r.writeRBACComment(node.Comment)
+	// The line above is a SQL comment, which the server does not store: the
+	// render looks like it kept the text and the database has none of it. Only
+	// the PostgreSQL family has COMMENT ON ROLE.
+	r.sink.RecordLostComment(renderdiag.RoleKind, node.Name, node.Comment)
 	r.w.WriteLinef("CREATE ROLE IF NOT EXISTS %s;", target)
 	return nil
 }

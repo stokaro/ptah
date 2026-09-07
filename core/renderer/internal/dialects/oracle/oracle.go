@@ -179,6 +179,10 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 			},
 		)
 	}
+	// Only the PostgreSQL family renders a PARTITION BY clause, so a
+	// declared partitioning produces one ordinary table here: every row
+	// lands in the same place.
+	r.sink.RecordLostPartition(node.Name, node.Partition)
 	guard := ""
 	if node.IfNotExists {
 		guard = r.createGuard()
@@ -630,6 +634,10 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 }
 
 func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
+	// Refreshing is an operation on this target rather than a property of the
+	// view: there is no clause here that could schedule one, so a declared
+	// schedule reaches the output nowhere and the view is populated once.
+	r.sink.RecordLostRefresh(node.Name, node.Refresh)
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -751,6 +759,10 @@ func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
+	// The line above is a SQL comment, which the server does not store: the
+	// render looks like it kept the text and the database has none of it. Only
+	// the PostgreSQL family has COMMENT ON ROLE.
+	r.sink.RecordLostComment(renderdiag.RoleKind, node.Name, node.Comment)
 	r.w.WriteLinef("CREATE ROLE %s;", escapeIdentifier(node.Name))
 	return nil
 }

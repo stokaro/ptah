@@ -7,6 +7,7 @@ import (
 	"ptah.run/core/ast"
 	"ptah.run/core/platform/capability"
 	"ptah.run/core/ptaherr"
+	"ptah.run/internal/renderdiag"
 )
 
 // MySQL and MariaDB have had roles since 8.0 and 10.0, and the shape is narrower
@@ -46,6 +47,10 @@ func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
+	// The line above is a SQL comment, which the server does not store: the
+	// render looks like it kept the text and the database has none of it. Only
+	// the PostgreSQL family has COMMENT ON ROLE.
+	r.sink.RecordLostComment(renderdiag.RoleKind, node.Name, node.Comment)
 	// IF NOT EXISTS unconditionally: the node carries no guard field, the
 	// clause is accepted, and a plan that is safe to re-run is worth more than
 	// a statement that fails the second time for a reason nobody asked about.

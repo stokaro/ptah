@@ -103,6 +103,10 @@ func (r *Renderer) qualifiedIndexTarget(table, name string) string {
 
 // VisitCreateSchema renders a CREATE SCHEMA statement.
 func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
+	// Only the MySQL family has a schema-level character set and collation, so
+	// a declared one reaches the output nowhere here.
+	r.sink.RecordLostProperty(renderdiag.SchemaKind, node.Name, renderdiag.CharsetProperty, node.Charset)
+	r.sink.RecordLostProperty(renderdiag.SchemaKind, node.Name, renderdiag.CollateProperty, node.Collate)
 	guard := ""
 	if node.IfNotExists {
 		guard = " IF NOT EXISTS"
@@ -2535,6 +2539,10 @@ func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewN
 		return nil
 	}
 
+	// Refreshing is an operation on this target rather than a property of the
+	// view: there is no clause here that could schedule one, so a declared
+	// schedule reaches the output nowhere and the view is populated once.
+	r.sink.RecordLostRefresh(node.Name, node.Refresh)
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}

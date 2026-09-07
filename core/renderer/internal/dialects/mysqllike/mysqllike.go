@@ -396,6 +396,10 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 			renderdiag.ColumnProperties{NotNullConstraintName: column.NotNullConstraintName},
 		)
 	}
+	// Only the PostgreSQL family renders a PARTITION BY clause, so a
+	// declared partitioning produces one ordinary table here: every row
+	// lands in the same place.
+	r.sink.RecordLostPartition(node.Name, node.Partition)
 	// Table comment
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s TABLE: %s (%s) --", r.dialectUpper, node.Name, node.Comment)

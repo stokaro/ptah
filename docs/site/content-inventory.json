@@ -5126,8 +5126,8 @@
         "/testing/ci/",
         "/testing/overview/"
       ],
-      "visibleWords": 1934,
-      "sourceBytes": 15453
+      "visibleWords": 2100,
+      "sourceBytes": 16484
     },
     {
       "path": "docs/site/src/content/docs/schema/visualize.mdx",

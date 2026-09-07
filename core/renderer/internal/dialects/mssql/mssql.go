@@ -65,6 +65,10 @@ func (r *Renderer) Render(node ast.Node) (string, error) {
 }
 
 func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
+	// Only the MySQL family has a schema-level character set and collation, so
+	// a declared one reaches the output nowhere here.
+	r.sink.RecordLostProperty(renderdiag.SchemaKind, node.Name, renderdiag.CharsetProperty, node.Charset)
+	r.sink.RecordLostProperty(renderdiag.SchemaKind, node.Name, renderdiag.CollateProperty, node.Collate)
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -155,6 +159,10 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 			},
 		)
 	}
+	// Only the PostgreSQL family renders a PARTITION BY clause, so a
+	// declared partitioning produces one ordinary table here: every row
+	// lands in the same place.
+	r.sink.RecordLostPartition(node.Name, node.Partition)
 	if node.SelectBody != "" {
 		return unsupportedFeaturef("CREATE TABLE AS SELECT is not supported")
 	}
@@ -778,6 +786,10 @@ func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
+	// The line above is a SQL comment, which the server does not store: the
+	// render looks like it kept the text and the database has none of it. Only
+	// the PostgreSQL family has COMMENT ON ROLE.
+	r.sink.RecordLostComment(renderdiag.RoleKind, node.Name, node.Comment)
 	r.w.WriteLinef("CREATE ROLE %s;", escapeIdentifier(unquoteIdentifier(node.Name)))
 	return nil
 }

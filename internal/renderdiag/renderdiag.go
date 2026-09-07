@@ -28,9 +28,12 @@ package renderdiag
 
 import (
 	"cmp"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
+
+	"ptah.run/core/ast"
 )
 
 // Reason names why a declaration did not reach the output.
@@ -414,4 +417,63 @@ func (s *Sink) RecordLostStorageParams(index string, params map[string]string) {
 // file and the database enforces nothing, which is the same outcome as silence.
 func (s *Sink) RecordLostUniqueIndex(index string) {
 	s.Record(PropertyOmission(IndexKind, index, UniqueIndexProperty, ""))
+}
+
+// Kinds an omission names beside [TableKind], [ColumnKind] and [IndexKind].
+const (
+	// SchemaKind owns a property lost from a CREATE SCHEMA.
+	SchemaKind = "schema"
+	// RoleKind owns a property lost from a CREATE ROLE.
+	RoleKind = "role"
+	// MaterializedViewKind owns a property lost from a CREATE MATERIALIZED
+	// VIEW.
+	MaterializedViewKind = "materialized view"
+)
+
+// Properties a whole node can declare and a target decline to carry.
+const (
+	// PartitionProperty is a table's partitioning. Losing it produces one
+	// ordinary table where the author declared a partitioned one, so every row
+	// lands in the same place and a partition-wise plan is not available.
+	PartitionProperty = "partition"
+	// RefreshProperty is a materialized view's refresh schedule. A target that
+	// drops it creates a view that is populated once and never again, which
+	// reads as stale data rather than as a missing clause.
+	RefreshProperty = "refresh schedule"
+)
+
+// RecordLostRefresh records a materialized view's refresh schedule the target
+// does not carry. A view declaring none records nothing.
+//
+// A view created without it is populated once and never again, which reaches
+// the reader as stale data rather than as a missing clause -- so the schedule is
+// worth naming even though the view itself was created.
+func (s *Sink) RecordLostRefresh(view string, spec *ast.MatViewRefreshSpec) {
+	if s == nil || spec == nil {
+		return
+	}
+	s.RecordLostProperty(MaterializedViewKind, view, RefreshProperty,
+		strings.TrimSpace(spec.Mode+" "+spec.Interval))
+}
+
+// RecordLostPartition records a table partitioning the target does not carry.
+// A table declaring none records nothing.
+//
+// The spec is described here rather than by each renderer. Five targets drop
+// it, and five descriptions of the same declaration are five things to keep in
+// step; taking the node is what makes the sentence one.
+func (s *Sink) RecordLostPartition(table string, spec *ast.PartitionSpec) {
+	if s == nil || spec == nil {
+		return
+	}
+	keys := make([]string, 0, len(spec.Parts))
+	for _, part := range spec.Parts {
+		if part.Expr != "" {
+			keys = append(keys, part.Expr)
+			continue
+		}
+		keys = append(keys, part.Name)
+	}
+	s.RecordLostProperty(TableKind, table, PartitionProperty,
+		fmt.Sprintf("%s (%s)", spec.Type, strings.Join(keys, ", ")))
 }
