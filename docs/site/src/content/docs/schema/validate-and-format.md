@@ -187,8 +187,8 @@ the target dropped on its own, so it stays quiet about:
 
 Reporting is not yet exhaustive over every property every dialect drops. It
 covers what a renderer names as skipped, the table options a target cannot
-carry, the comments a target does not store, and an index's partial condition
-and operator class;
+carry, the comments a target does not store, an index's partial condition and
+operator class, and a column's identity clauses;
 [stokaro/ptah#2983](https://github.com/stokaro/ptah/issues/2983) records what
 remains.
 
@@ -201,6 +201,11 @@ A partial index reports its condition wherever the target drops it. That one is
 worth a gate on its own: the MySQL family and ClickHouse render the index over
 the whole table instead, so a unique index starts rejecting rows the author
 meant to allow.
+
+A generated key reports the values it loses, not the spelling. Every target
+writes a key some way, so `AUTO_INCREMENT` in place of `GENERATED ALWAYS AS
+IDENTITY` is not a finding; a declared `identity_start` that the target drops
+is.
 
 ## Format HCL schema files
 

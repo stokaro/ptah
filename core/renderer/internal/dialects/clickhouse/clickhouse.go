@@ -611,6 +611,15 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 	// Every option outside the engine spec is dropped. It was dropped before
 	// this line too; what is new is that the loss is reported.
 	r.sink.RecordDroppedTableOptions(node.Name, node.Options, tableEngineOptionKeys...)
+	// ClickHouse generates no key values, so every identity clause is lost.
+	for _, column := range node.Columns {
+		r.sink.RecordLostIdentity(renderdiag.ColumnName(node.Name, column.Name), renderdiag.Identity{
+			Generation: column.IdentityGeneration,
+			Start:      column.IdentityStart,
+			Increment:  column.IdentityIncrement,
+			Options:    column.IdentityOptions,
+		})
+	}
 	guard := ""
 	if node.IfNotExists {
 		guard = " IF NOT EXISTS"

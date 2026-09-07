@@ -136,6 +136,12 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 			renderdiag.ColumnName(node.Name, column.Name),
 			column.Comment,
 		)
+		// IDENTITY(start, increment) carries the two values. T-SQL has no
+		// ALWAYS or BY DEFAULT and no raw option list, so those two are lost.
+		r.sink.RecordLostIdentity(renderdiag.ColumnName(node.Name, column.Name), renderdiag.Identity{
+			Generation: column.IdentityGeneration,
+			Options:    column.IdentityOptions,
+		})
 	}
 	if node.SelectBody != "" {
 		return unsupportedFeaturef("CREATE TABLE AS SELECT is not supported")

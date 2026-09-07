@@ -108,6 +108,14 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 			renderdiag.ColumnName(node.Name, column.Name),
 			column.Comment,
 		)
+		// AUTOINCREMENT carries no generation mode, start or step, so a
+		// declared value reaches the output nowhere.
+		r.sink.RecordLostIdentity(renderdiag.ColumnName(node.Name, column.Name), renderdiag.Identity{
+			Generation: column.IdentityGeneration,
+			Start:      column.IdentityStart,
+			Increment:  column.IdentityIncrement,
+			Options:    column.IdentityOptions,
+		})
 	}
 
 	guard := ""
