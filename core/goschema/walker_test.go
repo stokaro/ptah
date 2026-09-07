@@ -1530,7 +1530,7 @@ type Product struct {
 func TestParseDir_SchemaObjectsAndGrants(t *testing.T) {
 	c := qt.New(t)
 
-	fixtureDir := "../../integration/fixtures/entities/023-go-annotations-objects"
+	fixtureDir := "../../integration/internal/fixtures/entities/023-go-annotations-objects"
 
 	result, err := goschema.ParseDir(fixtureDir)
 	c.Assert(err, qt.IsNil)
@@ -1585,7 +1585,7 @@ func TestParseDir_SchemaObjectsAndGrants(t *testing.T) {
 func TestParseDir_AllIntegrationFixturesRemainParsable(t *testing.T) {
 	c := qt.New(t)
 
-	fixtureDirs, err := filepath.Glob("../../integration/fixtures/entities/*")
+	fixtureDirs, err := filepath.Glob("../../integration/internal/fixtures/entities/*")
 	c.Assert(err, qt.IsNil)
 	c.Assert(fixtureDirs, qt.Not(qt.HasLen), 0)
 
@@ -1608,7 +1608,7 @@ func TestParseDir_AllIntegrationFixturesRemainParsable(t *testing.T) {
 func TestParseDir_ReflectionGuard(t *testing.T) {
 	c := qt.New(t)
 
-	fixtureDir := "../../integration/fixtures/entities/023-go-annotations-objects"
+	fixtureDir := "../../integration/internal/fixtures/entities/023-go-annotations-objects"
 
 	merged := schemamodel.Database{}
 	entries, err := os.ReadDir(fixtureDir)

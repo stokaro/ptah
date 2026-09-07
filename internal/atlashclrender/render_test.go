@@ -340,7 +340,7 @@ func TestRender_ExplicitTableReferencePreservesStructuralIdentity(t *testing.T) 
 
 func TestRenderFixture023SchemaObjectsRoundTrip(t *testing.T) {
 	c := qt.New(t)
-	db, err := goschema.ParseDir("../../integration/fixtures/entities/023-go-annotations-objects")
+	db, err := goschema.ParseDir("../../integration/internal/fixtures/entities/023-go-annotations-objects")
 	c.Assert(err, qt.IsNil)
 
 	rendered, err := atlashclrender.Render(db)

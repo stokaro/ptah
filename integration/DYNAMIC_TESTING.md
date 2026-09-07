@@ -14,7 +14,7 @@ The dynamic testing approach exercises the whole migration pipeline by:
 ## Versioned Entity Structure
 
 ```text
-ptah/integration/fixtures/entities/
+ptah/integration/internal/fixtures/entities/
 ├── 000-initial/          # Basic entities (User, Product)
 │   ├── user.go
 │   └── product.go
@@ -142,7 +142,7 @@ docker compose --profile test run --rm ptah-tester --scenarios=dynamic_basic_evo
 
 ## Adding New Test Scenarios
 
-1. **Create New Entity Version**: Add new directory under `fixtures/entities/`
+1. **Create New Entity Version**: Add new directory under `internal/fixtures/entities/`
 2. **Define Evolution**: Create entity files showing the desired changes
 3. **Add Test Scenario**: Create new test function in `scenarios_dynamic.go`
 4. **Register Scenario**: Add to `GetDynamicScenarios()` function

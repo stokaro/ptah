@@ -34,6 +34,7 @@ func TestPostgreSQLGenerateMutualForeignKeysApplyIntegration(t *testing.T) {
 	fixtureDir := filepath.Join(
 		filepath.Dir(currentFile),
 		"..",
+		"internal",
 		"fixtures",
 		"entities",
 		"029-roundtrip-mutual-cycle",

@@ -355,7 +355,7 @@ linters:
       - path: 'integration(harness)?/.*\.go$'
         linters:
           - unused
-      - path : 'integration/fixtures/entities/.*\.go$'
+      - path : 'integration/internal/fixtures/entities/.*\.go$'
         linters:
           - lll
       - text: 'var-naming: avoid meaningless package names'

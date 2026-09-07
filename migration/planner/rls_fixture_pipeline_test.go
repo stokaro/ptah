@@ -29,7 +29,7 @@ func TestRLSFixturePipeline(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			fixtureDir := filepath.Join("..", "..", "integration", "fixtures", "entities", test.fixture)
+			fixtureDir := filepath.Join("..", "..", "integration", "internal", "fixtures", "entities", test.fixture)
 			desired, err := goschema.ParseDir(fixtureDir)
 			c.Assert(err, qt.IsNil)
 			c.Assert(desired.RLSPolicies, qt.HasLen, test.expectedPolicies)

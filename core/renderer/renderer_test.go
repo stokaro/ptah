@@ -635,7 +635,7 @@ func TestGetOrderedCreateStatements_MutualForeignKeysAreTwoPhase(t *testing.T) {
 }
 
 func TestGenerateSchema_Deterministic(t *testing.T) {
-	fixtureDir := "../../integration/fixtures/entities/035-roundtrip-fk-diamond"
+	fixtureDir := "../../integration/internal/fixtures/entities/035-roundtrip-fk-diamond"
 	dialects := []string{"postgres", "mysql", "mariadb"}
 
 	for _, dialect := range dialects {

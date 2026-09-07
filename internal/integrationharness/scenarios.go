@@ -340,7 +340,7 @@ func testGenerateDesiredSchema(ctx context.Context, conn *dbschema.DatabaseConne
 	entitiesDir := "fixtures/entities/000-initial"
 	if _, err := os.Stat(entitiesDir); err != nil {
 		// Fallback to local development path
-		entitiesDir = "integration/fixtures/entities/000-initial"
+		entitiesDir = "integration/internal/fixtures/entities/000-initial"
 	}
 
 	// Parse entities

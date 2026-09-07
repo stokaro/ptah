@@ -147,7 +147,7 @@ func TestSchemaExportCommandPreservesSchemaObjects(t *testing.T) {
 	// Windows drives -- which is what a CI checkout on D: and a temp directory
 	// on C: produces. Copying also makes the run independent of the tree it
 	// was started from.
-	repoFixture, err := filepath.Abs("../../integration/fixtures/entities/023-go-annotations-objects")
+	repoFixture, err := filepath.Abs("../../integration/internal/fixtures/entities/023-go-annotations-objects")
 	c.Assert(err, qt.IsNil)
 	fixtureDir := filepath.Join(dir, "fixture")
 	c.Assert(os.CopyFS(fixtureDir, os.DirFS(repoFixture)), qt.IsNil)

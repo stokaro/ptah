@@ -373,7 +373,7 @@ docker compose --profile test run --rm ptah-tester --verbose --scenarios=dynamic
 
 See the integration test fixtures for complete examples:
 
-- `integration/fixtures/entities/016-roles/`: Basic role definitions
-- `integration/fixtures/entities/017-roles-advanced/`: Advanced role configurations
+- `integration/internal/fixtures/entities/016-roles/`: Basic role definitions
+- `integration/internal/fixtures/entities/017-roles-advanced/`: Advanced role configurations
 
 These examples demonstrate real-world usage patterns and can serve as templates for your own role definitions.

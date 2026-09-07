@@ -9,11 +9,11 @@ import (
 
 func FuzzLexer(f *testing.F) {
 	for _, path := range []string{
-		"../../integration/fixtures/migrations/basic/0000000001_create_users_table.up.sql",
-		"../../integration/fixtures/migrations/basic/0000000002_create_posts_table.up.sql",
-		"../../integration/fixtures/migrations/basic/0000000003_create_comments_table.up.sql",
-		"../../integration/fixtures/migrations/basic_mysql/0000000001_create_users_table.up.sql",
-		"../../integration/fixtures/migrations/basic_mysql/0000000002_create_posts_table.up.sql",
+		"../../integration/internal/fixtures/migrations/basic/0000000001_create_users_table.up.sql",
+		"../../integration/internal/fixtures/migrations/basic/0000000002_create_posts_table.up.sql",
+		"../../integration/internal/fixtures/migrations/basic/0000000003_create_comments_table.up.sql",
+		"../../integration/internal/fixtures/migrations/basic_mysql/0000000001_create_users_table.up.sql",
+		"../../integration/internal/fixtures/migrations/basic_mysql/0000000002_create_posts_table.up.sql",
 	} {
 		addLexerSeedFile(f, path)
 	}

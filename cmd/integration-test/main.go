@@ -137,7 +137,7 @@ func runIntegrationTests(_ *cobra.Command, _ []string, opts *rootOptions) error 
 	fixturesPath := "/app/fixtures"
 	if _, err := os.Stat(fixturesPath); os.IsNotExist(err) {
 		// Fallback to local development path
-		fixturesPath = "integration/fixtures"
+		fixturesPath = "integration/internal/fixtures"
 	}
 	fixturesFS := os.DirFS(fixturesPath)
 

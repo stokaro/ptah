@@ -12,7 +12,7 @@ func TestRLSPolicyGenerationInventarioReproduction(t *testing.T) {
 	c := qt.New(t)
 
 	// Parse the directory that reproduces the exact inventario project structure
-	database, err := goschema.ParseDir("../../integration/fixtures/entities/017-rls-inventario-reproduction")
+	database, err := goschema.ParseDir("../../integration/internal/fixtures/entities/017-rls-inventario-reproduction")
 	c.Assert(err, qt.IsNil)
 
 	// Debug output
