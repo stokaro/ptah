@@ -1,0 +1,118 @@
+name: Publish the GitHub Action
+
+# stokaro/ptah-action is a published copy of .github/actions/ptah, not a place
+# to edit. This mirrors the directory there so the two cannot drift, which is
+# what stokaro/ptah#3024 records having happened twice in one day.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/actions/ptah/**'
+      - '.github/workflows/publish-action.yml'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Moving major tag to point at the published commit, or empty to leave tags alone.
+        required: false
+        default: v1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-action
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # The gate runs on every pull request too. Running it again here is not
+      # redundant: this is the last point at which a tree that cannot be
+      # published is still ours to fix.
+      - name: Refuse a tree that cannot be published
+        run: scripts/check-action-publishable.sh
+
+      - name: Report whether publishing is configured
+        id: configured
+        env:
+          TOKEN: ${{ secrets.PTAH_ACTION_PUBLISH_TOKEN }}
+        run: |
+          if [ -z "${TOKEN}" ]; then
+            echo "configured=false" >>"$GITHUB_OUTPUT"
+            {
+              printf '## Action publish skipped\n\n'
+              printf 'PTAH_ACTION_PUBLISH_TOKEN is not set, so stokaro/ptah-action was not updated.\n'
+              printf 'The directory was still checked, so this run says the tree is publishable and not that it was published.\n'
+            } >>"$GITHUB_STEP_SUMMARY"
+          else
+            echo "configured=true" >>"$GITHUB_OUTPUT"
+          fi
+
+      # A dispatch is somebody asking for a publish. Telling them it was
+      # skipped in a summary nobody opens is how a missing secret survives.
+      - name: A dispatch without the token is an error
+        if: github.event_name == 'workflow_dispatch' && steps.configured.outputs.configured != 'true'
+        run: |
+          echo "PTAH_ACTION_PUBLISH_TOKEN is required to publish" >&2
+          exit 1
+
+      - name: Check out the published repository
+        if: steps.configured.outputs.configured == 'true'
+        uses: actions/checkout@v7
+        with:
+          repository: stokaro/ptah-action
+          token: ${{ secrets.PTAH_ACTION_PUBLISH_TOKEN }}
+          path: published
+          fetch-depth: 0
+
+      - name: Mirror the directory
+        if: steps.configured.outputs.configured == 'true'
+        id: mirror
+        run: |
+          set -euo pipefail
+          # --delete so a file removed here is removed there. Without it the
+          # published copy keeps shipping a script this repository dropped.
+          rsync -a --delete \
+            --exclude '.git' \
+            .github/actions/ptah/ published/
+          cd published
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "changed=false" >>"$GITHUB_OUTPUT"
+            echo "published copy already matches"
+            exit 0
+          fi
+          echo "changed=true" >>"$GITHUB_OUTPUT"
+          git add -A
+          git -c user.name='ptah-publish' \
+              -c user.email='ptah-publish@users.noreply.github.com' \
+              commit -m "Publish .github/actions/ptah from stokaro/ptah@${GITHUB_SHA}"
+          git push origin HEAD:main
+
+      # Consumers pin stokaro/ptah-action@v1. A publish that leaves the tag
+      # behind ships nothing to them.
+      - name: Move the major tag
+        if: >-
+          steps.configured.outputs.configured == 'true' &&
+          steps.mirror.outputs.changed == 'true' &&
+          (github.event_name != 'workflow_dispatch' || inputs.tag != '')
+        env:
+          TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || 'v1' }}
+        run: |
+          set -euo pipefail
+          cd published
+          git tag -f "$TAG"
+          git push -f origin "refs/tags/$TAG"
+
+      - name: Say what happened
+        if: steps.configured.outputs.configured == 'true'
+        run: |
+          {
+            printf '## Action publish\n\n'
+            printf '| Field | Value |\n| --- | --- |\n'
+            printf '| Source commit | `%s` |\n' "$GITHUB_SHA"
+            printf '| Published | %s |\n' "${{ steps.mirror.outputs.changed }}"
+          } >>"$GITHUB_STEP_SUMMARY"
