@@ -116,6 +116,15 @@ func TestRunLint_DefaultTextKeepsNativePtahDiagnostics(t *testing.T) {
 	c.Assert(stdout, qt.Not(qt.Contains), "https://atlasgo.io/lint/analyzers")
 }
 
+// reportRulesOf collects the rule each finding reports, in order.
+func reportRulesOf(findings []migrationlint.Finding) []string {
+	rules := make([]string, 0, len(findings))
+	for _, finding := range findings {
+		rules = append(rules, finding.Rule)
+	}
+	return rules
+}
+
 // sarifResultMessagesOf collects each SARIF result's message text, in order.
 func sarifResultMessagesOf(results []sarifResultForTest) []string {
 	messages := make([]string, 0, len(results))
@@ -136,11 +145,11 @@ func distinctSARIFFingerprints(results []sarifResultForTest) map[string]struct{}
 }
 
 // TestRunLint_MultiTargetDropFingerprintsEveryTable pins the SARIF consequence
-// of reporting one finding per dropped table. All three results share a rule, a
-// file and a line, so their fingerprints can only differ through the message.
-// Were the three to carry one shared message, GitHub code scanning would fold
-// them into a single alert and two of the three destroyed tables would never
-// reach the security tab.
+// of reporting one finding per dropped table per consequence. Within a rule the
+// three results share a file and a line, so their fingerprints can only differ
+// through the message. Were the three to carry one shared message, GitHub code
+// scanning would fold them into a single alert and two of the three destroyed
+// tables would never reach the security tab.
 func TestRunLint_MultiTargetDropFingerprintsEveryTable(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -157,15 +166,24 @@ func TestRunLint_MultiTargetDropFingerprintsEveryTable(t *testing.T) {
 	var report sarifForTest
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	results := report.Runs[0].Results
+	rollout := func(table string) string {
+		return "dropped table breaks deployed code: dropping table " + table + " retires a name " +
+			"application versions already deployed against the old schema still query, so each of them " +
+			"starts failing the moment this migration commits -- a rollout break that lands even on an " +
+			"empty table, which no backup mitigates; deploy code that no longer reads it first, then " +
+			"drop it in a later release"
+	}
+	dataLoss := func(table string) string {
+		return "table dropped: DROP TABLE permanently deletes table " + table + " and every row in it; " +
+			"take a verified backup first and consider a rename-and-retire window instead"
+	}
 	c.Assert(sarifResultMessagesOf(results), qt.DeepEquals, []string{
-		"table dropped: DROP TABLE permanently deletes table alpha and every row in it; " +
-			"take a verified backup first and consider a rename-and-retire window instead",
-		"table dropped: DROP TABLE permanently deletes table mid and every row in it; " +
-			"take a verified backup first and consider a rename-and-retire window instead",
-		"table dropped: DROP TABLE permanently deletes table zeta and every row in it; " +
-			"take a verified backup first and consider a rename-and-retire window instead",
+		rollout("alpha"), rollout("mid"), rollout("zeta"),
+		dataLoss("alpha"), dataLoss("mid"), dataLoss("zeta"),
 	})
-	c.Assert(distinctSARIFFingerprints(results), qt.HasLen, 3)
+	// Six results, six fingerprints. The rule id is part of the fingerprint,
+	// so the two consequences for one table do not fold together either.
+	c.Assert(distinctSARIFFingerprints(results), qt.HasLen, 6)
 }
 
 func TestRunLint_CuratedFixtureProducesExpectedRuleHits(t *testing.T) {
@@ -188,7 +206,7 @@ func TestRunLint_CuratedFixtureProducesExpectedRuleHits(t *testing.T) {
 	for _, f := range report.Findings {
 		rules[f.Rule]++
 	}
-	for _, want := range []string{"DS101", "DS102", "DS103", "BC101", "MF101P", "MF102P", "MF103", "PG101", "PG102", "MY101"} {
+	for _, want := range []string{"BC103", "DS101", "BC104", "DS102", "DS103", "BC101", "MF101P", "MF102P", "MF103", "PG101", "PG102", "MY101"} {
 		c.Assert(rules[want] >= 1, qt.IsTrue,
 			qt.Commentf("expected at least one %s hit; got rule tally %v", want, rules))
 	}
@@ -300,9 +318,9 @@ func TestRunLint_LatestRestrictsToLatestMigrationVersions(t *testing.T) {
 		Findings []migrationlint.Finding `json:"findings"`
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
-	c.Assert(report.Findings, qt.HasLen, 1)
-	c.Assert(report.Findings[0].Rule, qt.Equals, "DS102")
+	c.Assert(reportRulesOf(report.Findings), qt.DeepEquals, []string{"BC104", "DS102"})
 	c.Assert(report.Findings[0].File, qt.Contains, "0000000002_new.up.sql")
+	c.Assert(report.Findings[1].File, qt.Contains, "0000000002_new.up.sql")
 }
 
 func TestRunLint_ProjectConfigLatestRestrictsToLatestMigrationVersions(t *testing.T) {
@@ -337,9 +355,9 @@ func TestRunLint_ProjectConfigLatestRestrictsToLatestMigrationVersions(t *testin
 		Findings []migrationlint.Finding `json:"findings"`
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
-	c.Assert(report.Findings, qt.HasLen, 1)
-	c.Assert(report.Findings[0].Rule, qt.Equals, "DS102")
+	c.Assert(reportRulesOf(report.Findings), qt.DeepEquals, []string{"BC104", "DS102"})
 	c.Assert(report.Findings[0].File, qt.Contains, "0000000002_new.up.sql")
+	c.Assert(report.Findings[1].File, qt.Contains, "0000000002_new.up.sql")
 }
 
 func TestRunLint_ExplicitGitBaseSuppressesProjectLatest(t *testing.T) {
@@ -423,9 +441,9 @@ func TestRunLint_GitBaseRestrictsToChangedMigrationVersions(t *testing.T) {
 		Findings []migrationlint.Finding `json:"findings"`
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
-	c.Assert(report.Findings, qt.HasLen, 1)
-	c.Assert(report.Findings[0].Rule, qt.Equals, "DS102")
+	c.Assert(reportRulesOf(report.Findings), qt.DeepEquals, []string{"BC104", "DS102"})
 	c.Assert(report.Findings[0].File, qt.Contains, "0000000002_new.up.sql")
+	c.Assert(report.Findings[1].File, qt.Contains, "0000000002_new.up.sql")
 }
 
 func TestRunLint_ProjectConfigGitBaseRestrictsToChangedMigrationVersions(t *testing.T) {
@@ -472,9 +490,9 @@ func TestRunLint_ProjectConfigGitBaseRestrictsToChangedMigrationVersions(t *test
 		Findings []migrationlint.Finding `json:"findings"`
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
-	c.Assert(report.Findings, qt.HasLen, 1)
-	c.Assert(report.Findings[0].Rule, qt.Equals, "DS102")
+	c.Assert(reportRulesOf(report.Findings), qt.DeepEquals, []string{"BC104", "DS102"})
 	c.Assert(report.Findings[0].File, qt.Contains, "0000000002_new.up.sql")
+	c.Assert(report.Findings[1].File, qt.Contains, "0000000002_new.up.sql")
 }
 
 func TestRunLint_GitBaseRejectsUnversionedSQLFiles(t *testing.T) {
@@ -686,9 +704,10 @@ func TestRunLint_AtlasProjectConfigDestructivePolicyDowngradesSeverity(t *testin
 		Findings []migrationlint.Finding `json:"findings"`
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
-	c.Assert(report.Findings, qt.HasLen, 1)
-	c.Assert(report.Findings[0].Rule, qt.Equals, "DS102")
-	c.Assert(report.Findings[0].Severity, qt.Equals, migrationlint.SeverityWarning)
+	// The policy downgrades the destructive rule it names. BC104 is not in
+	// that family and keeps the severity it was registered with.
+	c.Assert(reportRulesOf(report.Findings), qt.DeepEquals, []string{"BC104", "DS102"})
+	c.Assert(report.Findings[1].Severity, qt.Equals, migrationlint.SeverityWarning)
 }
 
 func TestRunLint_AtlasProjectConfigConcurrentIndexPolicyRaisesSeverity(t *testing.T) {
@@ -782,6 +801,7 @@ ALTER TABLE users ADD COLUMN legacy TEXT;
 		levelByRule[result.RuleID] = result.Level
 	}
 	c.Assert(levelByRule, qt.DeepEquals, map[string]string{
+		"BC104": "warning",
 		"DS102": "warning",
 		"PG101": "error",
 		"PG106": "warning",
@@ -814,10 +834,11 @@ func TestRunLint_ConfigRuleSeverityAndExclude(t *testing.T) {
 		Findings []migrationlint.Finding `json:"findings"`
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
-	c.Assert(report.Findings, qt.HasLen, 1)
-	c.Assert(report.Findings[0].Rule, qt.Equals, "DS102")
-	c.Assert(report.Findings[0].Severity, qt.Equals, migrationlint.SeverityWarning)
-	c.Assert(report.Findings[0].File, qt.Contains, "main/0000000002_main.up.sql")
+	// The exclusion names DS102, so the legacy path is excluded for that rule
+	// alone and BC104 still reports there.
+	c.Assert(reportRulesOf(report.Findings), qt.DeepEquals, []string{"BC104", "BC104", "DS102"})
+	c.Assert(report.Findings[2].Severity, qt.Equals, migrationlint.SeverityWarning)
+	c.Assert(report.Findings[2].File, qt.Contains, "main/0000000002_main.up.sql")
 }
 
 // TestRunLint_SeverityDecidesTheExitCode pins the whole severity vocabulary

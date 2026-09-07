@@ -48,6 +48,12 @@
     "reason": "The generated reference is exhaustive by design and provides a keyboard-accessible filter across all command and flag rows."
   },
   {
+    "route": "/reference/lint-rules/",
+    "check": "page-length",
+    "target": "page",
+    "reason": "The page is generated from the rule registries and the Atlas check catalog, so its length is the number of rules; splitting it would leave a reader looking up a code with two places to check."
+  },
+  {
     "route": "/reference/native-commands/",
     "check": "page-length",
     "target": "page",

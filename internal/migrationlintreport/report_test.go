@@ -99,9 +99,8 @@ func TestBuild_UsesProjectConfigWithoutCobra(t *testing.T) {
 	c.Assert(report.Dialect, qt.Equals, "postgres")
 	c.Assert(report.DisabledRules, qt.DeepEquals, []string{"MF"})
 	c.Assert(report.Versions, qt.DeepEquals, []int64{2})
-	c.Assert(report.Findings, qt.HasLen, 1)
-	c.Assert(report.Findings[0].Rule, qt.Equals, "DS102")
-	c.Assert(report.Findings[0].File, qt.Contains, "0000000002_new.up.sql")
+	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"BC104", "DS102"})
+	c.Assert(report.Findings[1].File, qt.Contains, "0000000002_new.up.sql")
 }
 
 func TestBuild_ExplicitEmptyProjectDirReachesValidation(t *testing.T) {
@@ -213,8 +212,9 @@ func TestBuild_LatestAndAnalysisShareOneSourceSnapshot(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Versions, qt.DeepEquals, []int64{2})
-	c.Assert(report.Findings, qt.HasLen, 1)
+	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"BC103", "DS101"})
 	c.Assert(report.Findings[0].File, qt.Contains, "2_new.sql")
+	c.Assert(report.Findings[1].File, qt.Contains, "2_new.sql")
 	c.Assert(source.reads, qt.DeepEquals, map[string]int{
 		"1_old.sql": 1,
 		"2_new.sql": 1,
@@ -240,8 +240,9 @@ func TestBuild_LatestSelectsAtlasBareRepeatableAfterNumericMigrations(t *testing
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Versions, qt.DeepEquals, []int64{0})
 	c.Assert(report.VersionKeys, qt.DeepEquals, []string{"R"})
-	c.Assert(report.Findings, qt.HasLen, 1)
+	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"BC103", "DS101"})
 	c.Assert(report.Findings[0].File, qt.Contains, "R__drop_users.sql")
+	c.Assert(report.Findings[1].File, qt.Contains, "R__drop_users.sql")
 }
 
 func TestBuild_GitBaseSelectsAtlasRepeatableByRevisionKey(t *testing.T) {
@@ -278,8 +279,9 @@ func TestBuild_GitBaseSelectsAtlasRepeatableByRevisionKey(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.Versions, qt.DeepEquals, []int64{2})
 	c.Assert(report.VersionKeys, qt.DeepEquals, []string{"2R"})
-	c.Assert(report.Findings, qt.HasLen, 1)
+	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"BC103", "DS101"})
 	c.Assert(report.Findings[0].File, qt.Contains, "2R_drop_users.sql")
+	c.Assert(report.Findings[1].File, qt.Contains, "2R_drop_users.sql")
 }
 
 func TestBuild_ProvidedSnapshotDoesNotRequireSourceDirectory(t *testing.T) {
@@ -298,8 +300,7 @@ func TestBuild_ProvidedSnapshotDoesNotRequireSourceDirectory(t *testing.T) {
 	}, projectconfig.Config{})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(report.Findings, qt.HasLen, 1)
-	c.Assert(report.Findings[0].Rule, qt.Equals, "DS101")
+	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"BC103", "DS101"})
 }
 
 func TestBuild_LoadsConventionalLintConfigFromSnapshot(t *testing.T) {
@@ -321,7 +322,10 @@ func TestBuild_LoadsConventionalLintConfigFromSnapshot(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(report.DisabledRules, qt.DeepEquals, []string{"DS101"})
-	c.Assert(report.Findings, qt.HasLen, 0)
+	// The config disables the data-loss rule and the drop is still reported,
+	// for the rollout break it also is. A config written before that rule
+	// existed silences one of the two consequences, not the statement.
+	c.Assert(findingRules(report.Findings), qt.DeepEquals, []string{"BC103"})
 	c.Assert(source.reads, qt.DeepEquals, map[string]int{
 		".ptah-lint.yaml": 1,
 		"1_drop.sql":      1,

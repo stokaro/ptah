@@ -397,16 +397,32 @@ func ruleFamilyCoverage(c *qt.C) []ruleDialectCoverage {
 	return coverages
 }
 
-// TestBuiltInRules_NoRuleSplitsTheMySQLFamily is the measurement that justifies
-// treating "mysql" and "mariadb" as interchangeable in a lint policy.
+// TestBuiltInRules_MySQLFamilyMembersAreSplitOnlyWhereMeasured records the
+// rules that name one MySQL-family member and not the other.
 //
-// Every built-in MySQL-family rule names both, and lint's scanner mode treats
-// the two identically, so the names select an identical analysis and refusing a
-// policy that declares one while the wire reports the other diagnoses nothing.
-// If a rule ever names one and not the other that premise is gone, and this
-// test says which rule rather than letting Compatible widen in silence.
-func TestBuiltInRules_NoRuleSplitsTheMySQLFamily(t *testing.T) {
+// Almost every built-in MySQL-family rule names both, because lint's scanner
+// mode treats the two identically. Two do not, and in each case the statement
+// the rule scans for is a syntax error on the member left out, so the rule
+// could not fire there whatever it named: MariaDB has no ENFORCED at all, and
+// MySQL 8.4 has no system versioning (stokaro/ptah#2972). Declaring the whole
+// family for those would put a cost claim on a statement the server rejects
+// before any cost is paid.
+//
+// This does not change what Compatible accepts. A policy's dialect never
+// decides which rules run -- the dialect the connection reports does -- so a
+// MariaDB database runs MY146 whether the policy says mariadb or mysql, and
+// refusing that policy would diagnose nothing. What the split does change is
+// that "the two members select an identical rule set" is no longer true, and
+// the exceptions are written down here one at a time so a third one has to be
+// argued for rather than inherited.
+func TestBuiltInRules_MySQLFamilyMembersAreSplitOnlyWhereMeasured(t *testing.T) {
 	c := qt.New(t)
+
+	// The rules that name part of the family, and the member each names.
+	measured := []string{
+		"MY145=" + platform.MySQL,
+		"MY146=" + platform.MariaDB,
+	}
 
 	mysqlFamily := slices.DeleteFunc(ruleFamilyCoverage(c), func(cov ruleDialectCoverage) bool {
 		return cov.family != platform.MySQL
@@ -422,8 +438,16 @@ func TestBuiltInRules_NoRuleSplitsTheMySQLFamily(t *testing.T) {
 	split := slices.DeleteFunc(mysqlFamily, func(cov ruleDialectCoverage) bool {
 		return len(cov.named) == 0 || len(cov.named) == len(cov.want)
 	})
+	partial := make([]string, 0, len(split))
+	for _, cov := range split {
+		named := slices.Clone(cov.named)
+		slices.Sort(named)
+		partial = append(partial, cov.rule+"="+strings.Join(named, ","))
+	}
+	slices.Sort(partial)
 
-	c.Assert(split, qt.HasLen, 0, qt.Commentf("these rules name part of the MySQL family, so mysql and mariadb are no longer interchangeable"))
+	c.Assert(partial, qt.DeepEquals, measured,
+		qt.Commentf("a rule names part of the MySQL family that this test does not record as measured"))
 }
 
 // TestBuiltInRules_PostgresFamilyMembersAreNamedOnlyWhereMeasured pins the

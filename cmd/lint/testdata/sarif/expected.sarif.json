@@ -9,6 +9,16 @@
           "informationUri": "https://github.com/stokaro/ptah",
           "rules": [
             {
+              "id": "BC103",
+              "name": "dropped table breaks deployed code",
+              "shortDescription": {
+                "text": "dropped table breaks deployed code"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              }
+            },
+            {
               "id": "DS101",
               "name": "table dropped",
               "shortDescription": {
@@ -28,8 +38,32 @@
       },
       "results": [
         {
-          "ruleId": "DS101",
+          "ruleId": "BC103",
           "ruleIndex": 0,
+          "level": "warning",
+          "message": {
+            "text": "dropped table breaks deployed code: dropping table users retires a name application versions already deployed against the old schema still query, so each of them starts failing the moment this migration commits -- a rollout break that lands even on an empty table, which no backup mitigates; deploy code that no longer reads it first, then drop it in a later release"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "testdata/sarif/migrations/0000000001_drop_users.up.sql",
+                  "uriBaseId": "%SRCROOT%"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "primaryLocationLineHash": "566dc2b40d2a6b721d7c119966ab4f89"
+          }
+        },
+        {
+          "ruleId": "DS101",
+          "ruleIndex": 1,
           "level": "error",
           "message": {
             "text": "table dropped: DROP TABLE permanently deletes table users and every row in it; take a verified backup first and consider a rename-and-retire window instead"

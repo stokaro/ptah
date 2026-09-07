@@ -133,6 +133,74 @@ type ruleMeta struct {
 // lint rule. Adding a rule to migration/lint without adding it here fails
 // [Entries]; removing one without removing the entry here fails it too.
 var migrationRuleMeta = map[string]ruleMeta{
+	"BC103": {
+		Summary:   "dropping a table retires a name deployed clients still query, which is a rollout break a backup does not mitigate",
+		AtlasCode: "BC103",
+	},
+	"BC104": {
+		Summary:   "dropping a column retires a name deployed clients still select and insert, whether or not the column held rows",
+		AtlasCode: "BC104",
+	},
+	"PG108": {
+		Summary:   "an index on a partitioned table locks the parent and every partition at once, and CONCURRENTLY is refused there",
+		AtlasCode: "PG108",
+	},
+	"PG109": {
+		Summary:   "adding an EXCLUDE constraint holds an ACCESS EXCLUSIVE lock while it builds the index and validates every row",
+		AtlasCode: "PG109",
+	},
+	"PG312": {
+		Summary:   "replacing a primary key builds the new unique index under an ACCESS EXCLUSIVE lock",
+		AtlasCode: "PG312",
+	},
+	"PG314": {
+		Summary:   "REPLICA IDENTITY FULL or NOTHING changes what logical replication can carry for the table",
+		AtlasCode: "PG314",
+	},
+	"PG320": {
+		Summary:   "disabling autovacuum leaves dead rows for nothing to reclaim; the statement is cheap and the cost is paid later",
+		AtlasCode: "PG320",
+	},
+	"MY137": {
+		Summary:   "replacing a primary key rebuilds the table and every secondary index that stores it as a row pointer",
+		AtlasCode: "MY137",
+	},
+	"MY138": {
+		Summary:   "changing the storage engine copies the table and blocks writes for the duration",
+		AtlasCode: "MY138",
+	},
+	"MY139": {
+		Summary:   "a partitioning change rewrites every row and accepts no ALGORITHM or LOCK clause to soften it",
+		AtlasCode: "MY139",
+	},
+	"MY140": {
+		Summary:   "adding a STORED generated column computes a value for every row, copying the table and blocking writes",
+		AtlasCode: "MY140",
+	},
+	"MY141": {
+		Summary:   "adding an AUTO_INCREMENT column rebuilds the table in place and still blocks writes",
+		AtlasCode: "MY141",
+	},
+	"MY143": {
+		Summary:   "changing a STORED generated column recomputes it for every row, copying the table and blocking writes",
+		AtlasCode: "MY143",
+	},
+	"MY144": {
+		Summary:   "adding a CHECK constraint validates every existing row, and one that fails the predicate fails the migration",
+		AtlasCode: "MY144",
+	},
+	"MY145": {
+		Summary:   "enforcing a CHECK constraint revalidates every row; unenforcing one stops the server refusing the values it was there to refuse",
+		AtlasCode: "MY145",
+	},
+	"MY146": {
+		Summary:   "DROP SYSTEM VERSIONING deletes every historical row version permanently, and no rollback restores it",
+		AtlasCode: "MY146",
+	},
+	"MY147": {
+		Summary:   "declaring a column NOT NULL rebuilds the table; whether an existing NULL fails the statement is DD103's question",
+		AtlasCode: "MY147",
+	},
 	"DD103": {
 		Summary: "a nullable column made NOT NULL fails on a row holding NULL, or rewrites it to the type's default",
 	},
@@ -682,7 +750,7 @@ func Validate(entries []Entry) error {
 	for _, entry := range entries {
 		codes[entry.Code] = struct{}{}
 	}
-	var problems []string
+	problems := atlasReferenceProblems()
 	for _, entry := range entries {
 		if _, found := FamilyFor(entry.Code); !found {
 			problems = append(problems, fmt.Sprintf("rule %s has prefix %q, which no family declares", entry.Code, prefixOf(entry.Code)))
@@ -726,6 +794,34 @@ func Validate(entries []Entry) error {
 		return nil
 	}
 	return fmt.Errorf("lint catalog is inconsistent with the code:\n  %s", strings.Join(problems, "\n  "))
+}
+
+// atlasReferenceProblems compares the Atlas check catalog against the reviewed
+// snapshot, code for code.
+//
+// This is the check that was missing. Consistency between the registry and the
+// generated page cannot detect a check absent from both, and neither can a
+// floor on how many rows are covered: the catalog agreed with itself while it
+// was nineteen checks behind the page it was built from (stokaro/ptah#2972).
+func atlasReferenceProblems() []string {
+	drift := CompareAtlasReference()
+	if drift.Empty() {
+		return nil
+	}
+	var problems []string
+	for _, code := range drift.MissingFromCatalog {
+		problems = append(problems, fmt.Sprintf(
+			"Atlas check %s is in the reviewed reference and has no catalog entry; assess it and add a row, or refresh the reference deliberately", code))
+	}
+	for _, code := range drift.MissingFromReference {
+		problems = append(problems, fmt.Sprintf(
+			"Atlas check %s has a catalog entry and is not in the reviewed reference; an upstream removal is reviewed by refreshing the reference, not by leaving the row", code))
+	}
+	for _, code := range drift.ProDisagreements {
+		problems = append(problems, fmt.Sprintf(
+			"Atlas check %s carries a different Atlas Pro marking in the catalog than in the reviewed reference", code))
+	}
+	return problems
 }
 
 // conventionProblems compares the identifiers that do not follow the convention
