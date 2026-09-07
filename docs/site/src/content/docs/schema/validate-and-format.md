@@ -155,12 +155,19 @@ ptah schema validate --schema-file schema.sql --dialect postgres --no-skipped
 Expected output includes:
 
 ```text
+postgres: column "users.id": auto-increment would be skipped; declare the column type as SERIAL or BIGSERIAL, or give it an identity clause with identity_generation
 postgres: table "users": table option AUTO_INCREMENT=100 would be skipped; declare the start on the key column with identity_start
 postgres: table "users": table option CHARSET=utf8mb4 would be skipped
 postgres: table "users": table option COLLATE=utf8mb4_bin would be skipped
 postgres: table "users": table option ENGINE=InnoDB would be skipped
-4 problems
+5 problems
 ```
+
+The first line is the one to read first. `id INT NOT NULL AUTO_INCREMENT`
+renders on PostgreSQL as `"id" INT PRIMARY KEY NOT NULL`, so the key generates
+nothing and every insert has to supply one. It is also what makes the line below
+it usable: moving the start onto `identity_start` is advice about a key this
+target was not generating until the column itself is fixed.
 
 Each lost declaration is one line, so fixing some of them shortens the report
 rather than leaving it unchanged. A remedy is printed only where one works on
@@ -185,12 +192,23 @@ the target dropped on its own, so it stays quiet about:
 - a declaration a [platform override](../../reference/go-annotations/) replaced
   for this target, where the schema already says what this target gets.
 
-Reporting is not yet exhaustive over every property every dialect drops. It
-covers what a renderer names as skipped, the table options a target cannot
-carry, the comments a target does not store, an index's partial condition and
-operator class, and a column's identity clauses;
-[stokaro/ptah#2983](https://github.com/stokaro/ptah/issues/2983) records what
-remains.
+The check reads a render of the create statements, so what it can see is what
+a `CREATE` carries: tables, columns and indexes. It covers what a renderer names
+as skipped, the table options a target cannot carry, every property a column
+declares, and an index's condition, operator class, FULLTEXT parser, storage
+parameters, part order and uniqueness.
+
+It also covers what a whole object declares: a table's partitioning, a schema's
+character set and collation, a role's comment, and a materialized view's refresh
+schedule.
+
+Two things are still outside it, and
+[stokaro/ptah#2983](https://github.com/stokaro/ptah/issues/2983) tracks them. The
+`DROP` path is one, because this check renders creates and never reaches a
+`DROP`. The other is an index's type, which needs a rule for telling a
+normalized default from a discarded declaration before it can be reported at
+all: neither PostgreSQL nor the MySQL family writes `USING BTREE`, so a report
+built today would call a normalized default a loss.
 
 A comment is reported wherever the target does not store it, including where the
 render writes it as a `-- text` line. SQLite and SQL Server keep none of a
@@ -202,10 +220,69 @@ worth a gate on its own: the MySQL family and ClickHouse render the index over
 the whole table instead, so a unique index starts rejecting rows the author
 meant to allow.
 
+The rest of an index reports the same way:
+
+| Property | Kept by | Dropped by |
+| --- | --- | --- |
+| Operator class | the PostgreSQL family | every other target |
+| FULLTEXT parser | the MySQL family | every other target |
+| Storage parameters | the PostgreSQL family | every other target |
+| Descending part | every target but ClickHouse | ClickHouse |
+| `UNIQUE` | every target but ClickHouse | ClickHouse |
+
+ClickHouse builds a data-skipping index, which enforces nothing and is ordered
+by the table's sorting key, so a unique index accepts every duplicate and a
+descending part is built ascending. The render writes a `--` line about the
+first of those; the server stores none of it, which is why the report names it
+as well.
+
+A covering index's `INCLUDE` payload is the one property that is refused rather
+than reported. A target without the clause fails the render, which is the
+louder answer, so nothing is dropped for a report to name.
+
+Four declarations belong to a whole object rather than to a column or an index:
+
+| Property | Kept by | Dropped by |
+| --- | --- | --- |
+| Table partitioning | the PostgreSQL family | every other target |
+| Schema character set and collation | the MySQL family | PostgreSQL, SQL Server, ClickHouse |
+| Role comment | the PostgreSQL family | the MySQL family, SQL Server, Oracle, ClickHouse |
+| Materialized view refresh schedule | ClickHouse | PostgreSQL, Oracle |
+
+Losing the partitioning produces one ordinary table where a partitioned one was
+declared, and losing the refresh schedule produces a view that is populated once
+and never again, which reaches its reader as stale data rather than as a missing
+clause. SQLite and Oracle report a schema and a role as unsupported objects
+outright, so they name the loss already and add no second line about a property.
+
 A generated key reports the values it loses, not the spelling. Every target
 writes a key some way, so `AUTO_INCREMENT` in place of `GENERATED ALWAYS AS
 IDENTITY` is not a finding; a declared `identity_start` that the target drops
-is.
+is. Two targets write no key at all for a column that declares one, and they
+report that on its own line: ClickHouse has no generated column, and PostgreSQL
+generates through a sequence-backed type or an identity clause and reads the
+flag nowhere, so a plain `INTEGER` marked auto-increment is a column whose
+values the caller has to supply.
+
+The rest of a column's properties are reported wherever the target drops them:
+
+| Property | Kept by | Dropped by |
+| --- | --- | --- |
+| Character set | the MySQL family | every other target |
+| Collation | the MySQL family | every other target |
+| `ON UPDATE` expression | the MySQL family | every other target |
+| NOT NULL constraint name | PostgreSQL 18 and later | the MySQL family, SQLite, SQL Server, Oracle, ClickHouse |
+| Column `UNIQUE` | every target but ClickHouse | ClickHouse |
+
+Two of these are worth more than their storage. A dropped collation changes
+which values a comparison and a unique index treat as equal, and a dropped
+`UNIQUE` lets the database accept rows the author meant to exclude.
+
+A NOT NULL constraint name is the one case where a target refuses instead of
+reporting. The PostgreSQL family accepts the syntax on a server that stores no
+such name and would lose it on the way in, so it fails the render rather than
+carrying on; every other target drops the name, keeps the constraint, and
+reports the loss.
 
 ## Format HCL schema files
 

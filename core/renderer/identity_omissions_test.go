@@ -73,9 +73,13 @@ func TestGetOrderedCreateStatementsReportingOmissions_NamesEveryLostIdentityClau
 			want:    []string{"identity generation", "identity increment", "identity start"},
 		},
 		{
-			name:    "clickhouse generates no key values at all",
+			// The extra line is the point of this row. Every other target
+			// generates the key some way and loses only what the author chose;
+			// ClickHouse generates nothing, so the column is left for the
+			// caller to fill and `auto-increment` says so (stokaro/ptah#2983).
+			name:    "clickhouse generates no key at all",
 			dialect: platform.ClickHouse,
-			want:    []string{"identity generation", "identity increment", "identity start"},
+			want:    []string{"auto-increment", "identity generation", "identity increment", "identity start"},
 		},
 	}
 

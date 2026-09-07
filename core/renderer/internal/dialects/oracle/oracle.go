@@ -166,7 +166,23 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 			Increment:  column.IdentityIncrement,
 			Options:    column.IdentityOptions,
 		})
+		// UNIQUE and the identity clause are written; the rest is not. Oracle
+		// 12.2 and later do have a column COLLATE clause, so the collation is a
+		// declaration this target could carry and does not.
+		r.sink.RecordLostColumnProperties(
+			renderdiag.ColumnName(node.Name, column.Name),
+			renderdiag.ColumnProperties{
+				Charset:               column.Charset,
+				Collate:               column.Collate,
+				UpdateExpression:      column.UpdateExpression,
+				NotNullConstraintName: column.NotNullConstraintName,
+			},
+		)
 	}
+	// Only the PostgreSQL family renders a PARTITION BY clause, so a
+	// declared partitioning produces one ordinary table here: every row
+	// lands in the same place.
+	r.sink.RecordLostPartition(node.Name, node.Partition)
 	guard := ""
 	if node.IfNotExists {
 		guard = r.createGuard()
@@ -413,6 +429,10 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	// Only the PostgreSQL family has an operator-class clause, so a declared
 	// class reaches the output nowhere here.
 	r.recordLostOperatorClasses(node)
+	// A FULLTEXT parser names a MySQL plugin and storage parameters are a
+	// PostgreSQL clause; this target has neither.
+	r.sink.RecordLostProperty(renderdiag.IndexKind, node.Name, renderdiag.ParserProperty, node.Parser)
+	r.sink.RecordLostStorageParams(node.Name, node.StorageParams)
 	if strings.TrimSpace(node.Condition) != "" {
 		// Oracle has no WHERE clause on CREATE INDEX. The equivalent it does
 		// have -- a function-based index whose expression is NULL for the rows
@@ -614,6 +634,10 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 }
 
 func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
+	// Refreshing is an operation on this target rather than a property of the
+	// view: there is no clause here that could schedule one, so a declared
+	// schedule reaches the output nowhere and the view is populated once.
+	r.sink.RecordLostRefresh(node.Name, node.Refresh)
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -735,6 +759,10 @@ func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
+	// The line above is a SQL comment, which the server does not store: the
+	// render looks like it kept the text and the database has none of it. Only
+	// the PostgreSQL family has COMMENT ON ROLE.
+	r.sink.RecordLostComment(renderdiag.RoleKind, node.Name, node.Comment)
 	r.w.WriteLinef("CREATE ROLE %s;", escapeIdentifier(node.Name))
 	return nil
 }

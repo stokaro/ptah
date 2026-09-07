@@ -65,6 +65,10 @@ func (r *Renderer) Render(node ast.Node) (string, error) {
 }
 
 func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
+	// Only the MySQL family has a schema-level character set and collation, so
+	// a declared one reaches the output nowhere here.
+	r.sink.RecordLostProperty(renderdiag.SchemaKind, node.Name, renderdiag.CharsetProperty, node.Charset)
+	r.sink.RecordLostProperty(renderdiag.SchemaKind, node.Name, renderdiag.CollateProperty, node.Collate)
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
@@ -142,7 +146,23 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 			Generation: column.IdentityGeneration,
 			Options:    column.IdentityOptions,
 		})
+		// UNIQUE and IDENTITY are written; the rest is not. T-SQL does have a
+		// column COLLATE clause, so the collation is a declaration this target
+		// could carry and does not.
+		r.sink.RecordLostColumnProperties(
+			renderdiag.ColumnName(node.Name, column.Name),
+			renderdiag.ColumnProperties{
+				Charset:               column.Charset,
+				Collate:               column.Collate,
+				UpdateExpression:      column.UpdateExpression,
+				NotNullConstraintName: column.NotNullConstraintName,
+			},
+		)
 	}
+	// Only the PostgreSQL family renders a PARTITION BY clause, so a
+	// declared partitioning produces one ordinary table here: every row
+	// lands in the same place.
+	r.sink.RecordLostPartition(node.Name, node.Partition)
 	if node.SelectBody != "" {
 		return unsupportedFeaturef("CREATE TABLE AS SELECT is not supported")
 	}
@@ -279,6 +299,10 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	// Only the PostgreSQL family has an operator-class clause, so a declared
 	// class reaches the output nowhere here.
 	r.recordLostOperatorClasses(node)
+	// A FULLTEXT parser names a MySQL plugin and storage parameters are a
+	// PostgreSQL clause; this target has neither.
+	r.sink.RecordLostProperty(renderdiag.IndexKind, node.Name, renderdiag.ParserProperty, node.Parser)
+	r.sink.RecordLostStorageParams(node.Name, node.StorageParams)
 	if node.IfNotExists {
 		r.w.WriteLinef("IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = %s AND object_id = OBJECT_ID(%s))",
 			escapeStringLiteral(node.Name),
@@ -762,6 +786,10 @@ func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
+	// The line above is a SQL comment, which the server does not store: the
+	// render looks like it kept the text and the database has none of it. Only
+	// the PostgreSQL family has COMMENT ON ROLE.
+	r.sink.RecordLostComment(renderdiag.RoleKind, node.Name, node.Comment)
 	r.w.WriteLinef("CREATE ROLE %s;", escapeIdentifier(unquoteIdentifier(node.Name)))
 	return nil
 }

@@ -387,7 +387,19 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 			Increment:  column.IdentityIncrement,
 			Options:    column.IdentityOptions,
 		})
+		// This family writes the character set, the collation, the ON UPDATE
+		// expression, UNIQUE and AUTO_INCREMENT, so the only column property it
+		// loses is the name on a NOT NULL: the server has no syntax for one and
+		// the renderer drops the name rather than the constraint.
+		r.sink.RecordLostColumnProperties(
+			renderdiag.ColumnName(node.Name, column.Name),
+			renderdiag.ColumnProperties{NotNullConstraintName: column.NotNullConstraintName},
+		)
 	}
+	// Only the PostgreSQL family renders a PARTITION BY clause, so a
+	// declared partitioning produces one ordinary table here: every row
+	// lands in the same place.
+	r.sink.RecordLostPartition(node.Name, node.Partition)
 	// Table comment
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s TABLE: %s (%s) --", r.dialectUpper, node.Name, node.Comment)
@@ -525,6 +537,9 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	// Only the PostgreSQL family has an operator-class clause, so a declared
 	// class reaches the output nowhere here.
 	r.recordLostOperatorClasses(node)
+	// The FULLTEXT parser is written below; index storage parameters are a
+	// PostgreSQL clause and reach the output nowhere here.
+	r.sink.RecordLostStorageParams(node.Name, node.StorageParams)
 	var parts []string
 
 	parts = append(parts, "CREATE")

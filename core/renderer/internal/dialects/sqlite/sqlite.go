@@ -116,7 +116,23 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 			Increment:  column.IdentityIncrement,
 			Options:    column.IdentityOptions,
 		})
+		// UNIQUE and AUTOINCREMENT are written; the rest of the column's
+		// properties are not. SQLite does have a column COLLATE clause, so the
+		// collation is a declaration this target could carry and does not.
+		r.sink.RecordLostColumnProperties(
+			renderdiag.ColumnName(node.Name, column.Name),
+			renderdiag.ColumnProperties{
+				Charset:               column.Charset,
+				Collate:               column.Collate,
+				UpdateExpression:      column.UpdateExpression,
+				NotNullConstraintName: column.NotNullConstraintName,
+			},
+		)
 	}
+	// Only the PostgreSQL family renders a PARTITION BY clause, so a
+	// declared partitioning produces one ordinary table here: every row
+	// lands in the same place.
+	r.sink.RecordLostPartition(node.Name, node.Partition)
 
 	guard := ""
 	if node.IfNotExists {
@@ -233,6 +249,10 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	// Only the PostgreSQL family has an operator-class clause, so a declared
 	// class reaches the output nowhere here.
 	r.recordLostOperatorClasses(node)
+	// A FULLTEXT parser names a MySQL plugin and storage parameters are a
+	// PostgreSQL clause; this target has neither.
+	r.sink.RecordLostProperty(renderdiag.IndexKind, node.Name, renderdiag.ParserProperty, node.Parser)
+	r.sink.RecordLostStorageParams(node.Name, node.StorageParams)
 	indexName, tableName := sqliteIndexTarget(node.Name, node.Table)
 	parts := []string{"CREATE"}
 	if node.Unique {

@@ -127,6 +127,10 @@ func (r *Renderer) notSupported(feature, name string) {
 
 // VisitCreateSchema renders schema creation as ClickHouse database creation.
 func (r *Renderer) VisitCreateSchema(node *ast.CreateSchemaNode) error {
+	// Only the MySQL family has a schema-level character set and collation, so
+	// a declared one reaches the output nowhere here.
+	r.sink.RecordLostProperty(renderdiag.SchemaKind, node.Name, renderdiag.CharsetProperty, node.Charset)
+	r.sink.RecordLostProperty(renderdiag.SchemaKind, node.Name, renderdiag.CollateProperty, node.Collate)
 	guard := ""
 	if node.IfNotExists {
 		guard = " IF NOT EXISTS"
@@ -619,7 +623,27 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 			Increment:  column.IdentityIncrement,
 			Options:    column.IdentityOptions,
 		})
+		// This target keeps none of the column properties. Two of them decide
+		// what the database accepts rather than how it stores: a dropped UNIQUE
+		// admits rows the author meant to exclude, and a column declared to
+		// generate its own values generates none. Neither is refused, because a
+		// schema written for several engines is expected to reach this one, and
+		// #2983 widens the report without changing what render writes.
+		r.sink.RecordLostColumnProperties(
+			renderdiag.ColumnName(node.Name, column.Name),
+			renderdiag.ColumnProperties{
+				Charset:               column.Charset,
+				Collate:               column.Collate,
+				UpdateExpression:      column.UpdateExpression,
+				NotNullConstraintName: column.NotNullConstraintName,
+				Unique:                column.Unique,
+				AutoIncrement:         column.AutoInc,
+			},
+		)
 	}
+	// ClickHouse has a PARTITION BY clause of its own, and this renderer does
+	// not read the declared spec, so the table is created unpartitioned.
+	r.sink.RecordLostPartition(node.Name, node.Partition)
 	guard := ""
 	if node.IfNotExists {
 		guard = " IF NOT EXISTS"
@@ -989,6 +1013,20 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	// Only the PostgreSQL family has an operator-class clause, so a declared
 	// class reaches the output nowhere here.
 	r.recordLostOperatorClasses(node)
+	// A FULLTEXT parser names a MySQL plugin and storage parameters are a
+	// PostgreSQL clause; this target has neither.
+	r.sink.RecordLostProperty(renderdiag.IndexKind, node.Name, renderdiag.ParserProperty, node.Parser)
+	r.sink.RecordLostStorageParams(node.Name, node.StorageParams)
+	// The statement below reads node.Columns, which carries each part's
+	// expression and not its direction, so a descending part is built
+	// ascending and a query written for the declared order scans.
+	r.recordLostPartOrder(node)
+	// A data-skipping index enforces nothing. The renderer writes a `--`
+	// line saying so, which the server does not store, so the author reads
+	// "downgraded" in a file while the database accepts every duplicate.
+	if node.Unique {
+		r.sink.RecordLostUniqueIndex(node.Name)
+	}
 	if node.Table == "" {
 		r.w.WriteLinef("-- CLICKHOUSE: secondary index %q skipped (no target table)", node.Name)
 		return nil
@@ -1021,6 +1059,23 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 		granularity,
 	)
 	return nil
+}
+
+// recordLostPartOrder names every index part whose declared direction is gone.
+//
+// One record per descending part rather than one for the index, so an index
+// that fixes some of them shortens the report. An ascending part records
+// nothing: ascending is what this target builds, so nothing was lost.
+func (r *Renderer) recordLostPartOrder(node *ast.IndexNode) {
+	for _, part := range node.EffectiveParts() {
+		if !part.Desc {
+			continue
+		}
+		// Reference is the column name or the expression, whichever the part
+		// carries; reading one field would leave the other's record nameless.
+		r.sink.Record(renderdiag.PropertyOmission(
+			renderdiag.IndexKind, node.Name, renderdiag.PartOrderProperty, part.Reference()+" DESC"))
+	}
 }
 
 // VisitDropIndex emits ALTER TABLE … DROP INDEX. The table name is
