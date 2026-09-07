@@ -76,8 +76,16 @@ jobs:
           set -euo pipefail
           # --delete so a file removed here is removed there. Without it the
           # published copy keeps shipping a script this repository dropped.
+          #
+          # The exclusions are the published repository's own files, not the
+          # action's: its smoke workflow and its CONTRIBUTING. --delete would
+          # take them, because they are absent from the source directory, and
+          # the first publish would silently remove the CI that tests what it
+          # just published.
           rsync -a --delete \
             --exclude '.git' \
+            --exclude '.github' \
+            --exclude 'CONTRIBUTING.md' \
             .github/actions/ptah/ published/
           cd published
           if git diff --quiet && git diff --cached --quiet; then
