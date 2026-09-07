@@ -15,7 +15,44 @@ safety_error_path="$output_dir/ptah-safety.stderr.txt"
 lint_path="$output_dir/ptah-lint.json"
 lint_error_path="$output_dir/ptah-lint.stderr.txt"
 
-common_args=(migrations plan --root-dir "${INPUT_DIR:-.}" --db-url "${INPUT_DB_URL:?db-url input is required}")
+# The desired schema is forwarded, never reinterpreted: each selector maps to
+# the flag Ptah already has, and Ptah decides what a source means.
+#
+# `dir` used to default to `.`, so a run selecting a SQL file still scanned the
+# working directory for Go entities and silently composed a schema nobody asked
+# for. It defaults to empty now, and the fallback below keeps the old behaviour
+# for a run that selects nothing at all.
+read_lines() {
+	printf '%s\n' "$1" | while IFS= read -r line; do
+		line="${line#"${line%%[![:space:]]*}"}"
+		line="${line%"${line##*[![:space:]]}"}"
+		[[ -n "$line" ]] && printf '%s\n' "$line"
+	done
+}
+
+if [[ -n "${INPUT_SCHEMA_FORMAT:-}" && -z "${INPUT_SCHEMA_CMD:-}" ]]; then
+	echo "schema-format selects the output format of schema-cmd, which is not set" >&2
+	exit 2
+fi
+
+source_args=()
+while IFS= read -r root; do
+	source_args+=(--root-dir "$root")
+done < <(read_lines "${INPUT_DIR:-}")
+while IFS= read -r file; do
+	source_args+=(--schema-file "$file")
+done < <(read_lines "${INPUT_SCHEMA_FILE:-}")
+if [[ -n "${INPUT_SCHEMA_CMD:-}" ]]; then
+	source_args+=(--schema-cmd "$INPUT_SCHEMA_CMD")
+	if [[ -n "${INPUT_SCHEMA_FORMAT:-}" ]]; then
+		source_args+=(--schema-format "$INPUT_SCHEMA_FORMAT")
+	fi
+fi
+if [[ "${#source_args[@]}" -eq 0 ]]; then
+	source_args=(--root-dir .)
+fi
+
+common_args=(migrations plan "${source_args[@]}" --db-url "${INPUT_DB_URL:?db-url input is required}")
 if [[ -n "${INPUT_SCHEMAS:-}" ]]; then
 	common_args+=(--schemas "$INPUT_SCHEMAS")
 fi
@@ -30,6 +67,30 @@ if [[ "${INPUT_ALLOW_DESTRUCTIVE:-false}" == "true" ]]; then
 fi
 "$ptah_bin" "${safety_args[@]}" >"$safety_path" 2>"$safety_error_path"
 safety_status="$?"
+
+generate_status="0"
+generated_list_path="$output_dir/ptah-generated.txt"
+: >"$generated_list_path"
+if [[ "${INPUT_GENERATE:-false}" == "true" ]]; then
+	migration_dir="${INPUT_MIGRATION_DIR:-migrations}"
+	mkdir -p "$migration_dir"
+	# The directory is compared before and after rather than parsing the
+	# command's prose: the file names carry a timestamp the caller cannot
+	# predict, and a message format is a worse contract than the filesystem.
+	before="$(mktemp)"
+	after="$(mktemp)"
+	find "$migration_dir" -type f -name '*.sql' | LC_ALL=C sort >"$before"
+	generate_args=(migrations generate "${source_args[@]}" \
+		--db-url "$INPUT_DB_URL" --migrations-dir "$migration_dir")
+	if [[ -n "${INPUT_GENERATE_NAME:-}" ]]; then
+		generate_args+=(--name "$INPUT_GENERATE_NAME")
+	fi
+	"$ptah_bin" "${generate_args[@]}" >"$output_dir/ptah-generate.txt" 2>&1
+	generate_status="$?"
+	find "$migration_dir" -type f -name '*.sql' | LC_ALL=C sort >"$after"
+	comm -13 "$before" "$after" >"$generated_list_path"
+	rm -f "$before" "$after"
+fi
 
 lint_status="0"
 if [[ "${INPUT_LINT:-true}" == "true" ]]; then
@@ -67,6 +128,9 @@ NODE
 	printf 'safety-exit-code=%s\n' "$safety_status"
 	printf 'lint-exit-code=%s\n' "$lint_status"
 	printf 'destructive=%s\n' "$destructive"
+	printf 'generate-exit-code=%s\n' "$generate_status"
+	printf 'generated-list-path=%s\n' "$generated_list_path"
+	printf 'generated-count=%s\n' "$(wc -l <"$generated_list_path" | tr -d ' ')"
 } >>"$GITHUB_OUTPUT"
 
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
@@ -77,5 +141,9 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
 		printf '| Plan | exit %s |\n' "$plan_status"
 		printf '| Safety | exit %s, destructive: %s |\n' "$safety_status" "$destructive"
 		printf '| Lint | exit %s |\n' "$lint_status"
+		if [[ "${INPUT_GENERATE:-false}" == "true" ]]; then
+			printf '| Generate | exit %s, %s file(s) |\n' \
+				"$generate_status" "$(wc -l <"$generated_list_path" | tr -d ' ')"
+		fi
 	} >>"$GITHUB_STEP_SUMMARY"
 fi

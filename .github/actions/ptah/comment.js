@@ -89,10 +89,41 @@ function buildComment() {
     lines.push("", details("Lint command stderr", "text", lintErrorText));
   }
 
+  const generated = generatedFiles();
+  if (generated.length) {
+    lines.push("", `Generated ${generated.length} migration file(s) in this run:`, "");
+    for (const file of generated) {
+      lines.push(`- \`${file}\``);
+    }
+    lines.push("", details("Generated migration SQL", "sql", generatedSQL(generated)));
+  }
+
   return truncateComment(lines.join("\n"));
 }
 
-// buildComment is exported so the documented comment body can be produced by
+// generatedFiles reads the list run.sh wrote by comparing the migration
+// directory before and after generation. An empty or missing list means
+// generation was off or produced nothing, and both render as no section rather
+// than as an empty one.
+function generatedFiles() {
+  const listed = readText(process.env.PTAH_GENERATED_LIST_PATH);
+  return listed
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+// generatedSQL concatenates the files so a reviewer reads what would be
+// committed rather than a description of it. Each file keeps its name above
+// it: an up and a down migration are easy to confuse once the SQL runs
+// together.
+function generatedSQL(files) {
+  return files
+    .map((file) => `-- ${file}\n${readText(file).trimEnd()}`)
+    .join("\n\n");
+}
+
+// buildComment is exported so a documented comment body can be produced by
 // running the same code the Action runs, rather than transcribed by hand into
 // a page that then drifts from it.
 module.exports.buildComment = buildComment;
