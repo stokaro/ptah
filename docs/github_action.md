@@ -107,6 +107,24 @@ workflows. For SQLite smoke tests, `sqlite:///${{ runner.temp }}/ptah.db` is
 enough; for PostgreSQL, MySQL, MariaDB, SQL Server, CockroachDB, or YugabyteDB,
 start the database as a service container or provide a secret URL.
 
+## Where the action lives
+
+`stokaro/ptah-action` is a published copy of `.github/actions/ptah` in this
+repository, not a second place to edit. `publish-action.yml` mirrors the
+directory there on a push to master that touches it, and moves the `v1` tag so
+a workflow pinning `stokaro/ptah-action@v1` receives the change.
+
+`scripts/check-action-publishable.sh` runs on every pull request and refuses a
+tree that could not be published: a missing `README.md` or `LICENSE`, a script
+`action.yml` names but does not ship, or a path reaching outside the directory,
+which exists here and does not once published.
+
+Publishing needs `PTAH_ACTION_PUBLISH_TOKEN`, a token with write access to
+`stokaro/ptah-action`. Without it a push reports in its summary that the tree
+is publishable and was not published; a manual dispatch fails instead, because
+someone asking for a publish should not be told about it in a summary nobody
+opens.
+
 The action's desired-schema inputs mirror the CLI's source selectors: `dir`
 becomes `--root-dir`, `schema-file` becomes `--schema-file` and takes SQL,
 YAML, HCL, DBML or `oci://` values, and `schema-cmd` with `schema-format`

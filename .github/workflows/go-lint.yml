@@ -111,6 +111,11 @@ jobs:
           scripts/check-workflow-concurrency.sh
           scripts/check-workflow-concurrency-selftest.sh
 
+      - name: Check the published action stays publishable
+        run: |
+          scripts/check-action-publishable.sh
+          scripts/check-action-publishable-selftest.sh
+
       - name: Check the brand assets
         run: |
           set -euo pipefail
