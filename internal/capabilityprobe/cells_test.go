@@ -809,8 +809,91 @@ func TestRenovate_ClassifiesEveryDatabaseServerImage(t *testing.T) {
 type renovatePackageRule struct {
 	GroupName         string   `json:"groupName"`
 	MatchPackageNames []string `json:"matchPackageNames"`
+	MatchFileNames    []string `json:"matchFileNames"`
 	AutoMerge         *bool    `json:"automerge"`
+	Enabled           *bool    `json:"enabled"`
 }
+
+// TestRenovate_DisablesEveryLinePinnedImage is the second lock on the release
+// lines, on a different axis from the manager pattern.
+//
+// The manager can only reach the emulator, and this rule denies the file by name
+// with the emulator as its single exception. Two locks because the first one was
+// enough right up until it was not: stokaro/ptah#3031 moved four lines, and
+// stokaro/ptah#3034 would have taken mysql 8.4 to 26.7 and postgres 13 to 18.
+//
+// A rule nobody checks is a rule somebody deletes, so this asserts the rule
+// exists, that it is off, and that it covers every line-pinned image while
+// leaving the one Versionless image alone.
+func TestRenovate_DisablesEveryLinePinnedImage(t *testing.T) {
+	c := qt.New(t)
+
+	rule := ruleDisablingCellsFile(c)
+
+	for _, cell := range capabilityprobe.Cells {
+		repository, _ := splitImageRef(cell.Image)
+		t.Run(cell.Image, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(renovateRuleCovers(c, rule, repository), qt.Not(qt.Equals), cell.Versionless,
+				qt.Commentf("cell %s pins %q; a line-pinned image must be denied and the one "+
+					"Versionless image must not be", capabilityprobe.CellID(cell), cell.Image))
+		})
+	}
+}
+
+// ruleDisablingCellsFile returns the one rule that turns updates off for the
+// cell declaration, failing when the policy carries no such rule.
+func ruleDisablingCellsFile(c *qt.C) renovatePackageRule {
+	c.Helper()
+
+	body, err := os.ReadFile(renovateConfig)
+	c.Assert(err, qt.IsNil)
+
+	var config struct {
+		PackageRules []renovatePackageRule `json:"packageRules"`
+	}
+	c.Assert(json.Unmarshal(body, &config), qt.IsNil)
+
+	matching := make([]renovatePackageRule, 0, len(config.PackageRules))
+	for _, rule := range config.PackageRules {
+		if slices.Contains(rule.MatchFileNames, cellsFile) && rule.Enabled != nil && !*rule.Enabled {
+			matching = append(matching, rule)
+		}
+	}
+	c.Assert(matching, qt.HasLen, 1,
+		qt.Commentf("%s must carry exactly one rule that names %s and disables it; without it a widened "+
+			"manager pattern is the only thing standing between a bot and the release lines",
+			renovateConfig, cellsFile))
+	return matching[0]
+}
+
+// renovateRuleCovers reports whether the rule's package selectors match name.
+//
+// It reads the two spellings this policy uses -- `*` for everything and a `!`
+// prefix for an exception -- and refuses anything else rather than guessing:
+// a selector this cannot read would otherwise be reported as no match, which
+// reads exactly like a package the rule deliberately leaves alone.
+func renovateRuleCovers(c *qt.C, rule renovatePackageRule, name string) bool {
+	c.Helper()
+
+	covered := false
+	for _, selector := range rule.MatchPackageNames {
+		excluded, exception := strings.CutPrefix(selector, "!")
+		c.Assert(exception || selector == "*" || selector == name, qt.IsTrue,
+			qt.Commentf("selector %q is neither `*`, an exception nor a plain name, and this test "+
+				"cannot say what it matches", selector))
+		if exception && excluded == name {
+			return false
+		}
+		if selector == "*" || selector == name {
+			covered = true
+		}
+	}
+	return covered
+}
+
+// cellsFile is the path the disabling rule names, as Renovate sees it.
+const cellsFile = "internal/capabilityprobe/cells.go"
 
 // renovateCustomManager is one custom manager from the dependency policy.
 type renovateCustomManager struct {

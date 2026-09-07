@@ -94,6 +94,27 @@
         "indirect"
       ],
       "enabled": true
+    },
+    {
+      "description": "Every Image in internal/capabilityprobe/cells.go names the release LINE the cell reproduces -- tagPinsLine in matrix.go requires tag == Line -- so moving one is not an update. It renames the line and stops covering the old one. stokaro/ptah#3031 moved four before anyone noticed: two ClickHouse cells were collapsed onto one image, the 26.3 and 25.8 LTS lines stopped being covered, and the MariaDB 11.4 cell claimed the 11.8 cell's image; stokaro/ptah#3034 would have taken mysql 8.4 to 26.7 and postgres 13 to 18. The custom manager above is already narrowed to the one image that may move, and this rule is the second lock, on a different axis: the file is denied by name and the emulator is the single exception. The emulator is the only cell declared Versionless, meaning its tag names no line, which is what makes it safe to follow. TestRenovate_DisablesEveryLinePinnedImage requires this rule to exist, because a lock nobody checks is a lock somebody deletes.",
+      "matchFileNames": [
+        "internal/capabilityprobe/cells.go"
+      ],
+      "matchPackageNames": [
+        "*",
+        "!gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "go.mod carries two Go versions with different lifecycles. `toolchain` is what CI builds with and moves on every patch release, so Renovate keeps proposing it -- stokaro/ptah#2732 is one such bump and they are welcome. The `go` directive is the published compatibility floor: go.5x5.cz/ptah is a released import path, so raising it forces every consumer onto a newer language version, and AGENTS.md says it moves on a human decision. Renovate moved it once, in stokaro/ptah#223, under the title `update dependency go`, which reads like any other bump. The two are separable only by depType, so that is what this matches: `golang` is the directive and `toolchain` is the directive below it. Disabling the first leaves the second flowing. TestRenovate_LeavesTheCompatibilityFloorToAHuman requires this rule to exist.",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchDepTypes": [
+        "golang"
+      ],
+      "enabled": false
     }
   ]
 }
