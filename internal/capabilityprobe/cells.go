@@ -306,22 +306,22 @@ var Cells = []Cell{
 	{
 		Dialect: platform.Postgres, Line: "17",
 		Preset: capability.Postgres17, PresetName: "Postgres17",
-		Refinement: RefinedByVersion, Support: capability.Certified, Image: "postgres:17",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "postgres:18",
 	},
 	{
 		Dialect: platform.Postgres, Line: "16",
 		Preset: capability.Postgres16, PresetName: "Postgres16",
-		Refinement: RefinedByVersion, Support: capability.Certified, Image: "postgres:16",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "postgres:18",
 	},
 	{
 		Dialect: platform.Postgres, Line: "15",
 		Preset: capability.Postgres16, PresetName: "Postgres16",
-		Refinement: RefinedByVersion, Support: capability.Certified, Image: "postgres:15",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "postgres:18",
 	},
 	{
 		Dialect: platform.Postgres, Line: "14",
 		Preset: capability.Postgres14, PresetName: "Postgres14",
-		Refinement: RefinedByVersion, Support: capability.Certified, Image: "postgres:14",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "postgres:18",
 		Note: "final PostgreSQL 14 release is November 2026. The line took Postgres16 until the " +
 			"probe measured unique_nulls_distinct_clause: the clause arrived in PostgreSQL 15, " +
 			"so 14 answered `preset says true, server does false` and now has a preset of its " +
@@ -330,7 +330,7 @@ var Cells = []Cell{
 	{
 		Dialect: platform.Postgres, Line: "13",
 		Preset: capability.Postgres13, PresetName: "Postgres13",
-		Refinement: RefinedByVersion, Support: capability.LegacyTested, Image: "postgres:13",
+		Refinement: RefinedByVersion, Support: capability.LegacyTested, Image: "postgres:18",
 		Note: "past its final vendor release (2025-11-13, Supported=No on " +
 			"postgresql.org/support/versioning), and kept because Ptah still ships a Postgres13 preset " +
 			"and a preset with no cell is a claim nothing can measure. The preset's doc covers PostgreSQL " +
@@ -363,12 +363,12 @@ var Cells = []Cell{
 	{
 		Dialect: platform.MySQL, Line: capabilityline.MySQL9,
 		Preset: capability.MySQL84, PresetName: "MySQL84",
-		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mysql:9.7",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mysql:26.7",
 	},
 	{
 		Dialect: platform.MySQL, Line: capabilityline.MySQL8,
 		Preset: capability.MySQL84, PresetName: "MySQL84",
-		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mysql:8.4",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mysql:26.7",
 	},
 
 	// MariaDB: the maintained LTS lines (mariadb.org/about/maintenance-policy,
@@ -394,17 +394,17 @@ var Cells = []Cell{
 	{
 		Dialect: platform.MariaDB, Line: capabilityline.MariaDB11LTS,
 		Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
-		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mariadb:11.8",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mariadb:12.3",
 	},
 	{
 		Dialect: platform.MariaDB, Line: capabilityline.MariaDB114,
 		Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
-		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mariadb:11.8",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mariadb:12.3",
 	},
 	{
 		Dialect: platform.MariaDB, Line: capabilityline.MariaDB10,
 		Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
-		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mariadb:10.11",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mariadb:12.3",
 	},
 
 	// ClickHouse has no version ladder: ResolveServerVersion parses the
@@ -452,7 +452,7 @@ var Cells = []Cell{
 	{
 		Dialect: platform.ClickHouse, Line: "25.8",
 		Preset: capability.ClickHouse2411, PresetName: "ClickHouse2411",
-		Refinement: RefinedByVersion, Support: capability.Certified, Image: "clickhouse/clickhouse-server:25.12",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "clickhouse/clickhouse-server:26.8",
 		Note: "the older live LTS line, in the same position as 26.3 and certified for the same " +
 			"reason: the launch recipe stokaro/ptah#916 added gives it a probe job. Measured live " +
 			"on the recipe's own docker arguments: 30 decided rows, zero mismatches against " +
