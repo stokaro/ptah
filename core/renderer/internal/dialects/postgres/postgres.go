@@ -1085,6 +1085,11 @@ func (r *Renderer) VisitConstraint(node *ast.ConstraintNode) error {
 }
 
 func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
+	// The storage parameters are rendered below as WITH (key='value'), and the
+	// operator class and the partial condition have clauses here too. The
+	// FULLTEXT parser does not: it names a MySQL plugin and this family has no
+	// clause that could carry it.
+	r.sink.RecordLostProperty(renderdiag.IndexKind, node.Name, renderdiag.ParserProperty, node.Parser)
 	var parts []string
 
 	parts = append(parts, "CREATE")

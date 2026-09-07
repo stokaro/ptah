@@ -371,3 +371,47 @@ func (s *Sink) RecordLostColumnProperties(name string, lost ColumnProperties) {
 		s.Record(omission)
 	}
 }
+
+// Index properties a target can decline to carry, beyond
+// [ConditionProperty] and [OperatorClassProperty].
+const (
+	// ParserProperty is the MySQL FULLTEXT parser name, such as ngram. Only
+	// the MySQL family has a clause for it.
+	ParserProperty = "fulltext parser"
+	// StorageParamProperty prefixes one index storage parameter. Only the
+	// PostgreSQL family renders these, as WITH (key='value').
+	StorageParamProperty = "index storage parameter"
+	// PartOrderProperty is a descending index part. A target that reads the
+	// column list and not the parts builds the index ascending, so a query
+	// written for the declared order scans instead of walking the index.
+	PartOrderProperty = "index part order"
+	// UniqueIndexProperty is a unique index the target creates as an ordinary
+	// one. The declaration decides which rows the database accepts, so losing
+	// it is the index-level twin of losing a column's UNIQUE.
+	UniqueIndexProperty = "unique index"
+)
+
+// RecordLostStorageParams records every index storage parameter a target drops.
+//
+// One record per key, in a deterministic order, because fixing some of them has
+// to shorten the report rather than leave it unchanged. An index that declared
+// none records nothing.
+func (s *Sink) RecordLostStorageParams(index string, params map[string]string) {
+	if s == nil {
+		return
+	}
+	for _, key := range slices.Sorted(maps.Keys(params)) {
+		s.Record(PropertyOmission(
+			IndexKind, index, StorageParamProperty+" "+key, params[key]))
+	}
+}
+
+// RecordLostUniqueIndex records a unique index the target does not enforce.
+// The caller decides whether the index declared one.
+//
+// A renderer that answers with a SQL line comment records it here too. The
+// server stores none of that comment, so the author reads "downgraded" in a
+// file and the database enforces nothing, which is the same outcome as silence.
+func (s *Sink) RecordLostUniqueIndex(index string) {
+	s.Record(PropertyOmission(IndexKind, index, UniqueIndexProperty, ""))
+}

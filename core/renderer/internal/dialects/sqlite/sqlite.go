@@ -245,6 +245,10 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	// Only the PostgreSQL family has an operator-class clause, so a declared
 	// class reaches the output nowhere here.
 	r.recordLostOperatorClasses(node)
+	// A FULLTEXT parser names a MySQL plugin and storage parameters are a
+	// PostgreSQL clause; this target has neither.
+	r.sink.RecordLostProperty(renderdiag.IndexKind, node.Name, renderdiag.ParserProperty, node.Parser)
+	r.sink.RecordLostStorageParams(node.Name, node.StorageParams)
 	indexName, tableName := sqliteIndexTarget(node.Name, node.Table)
 	parts := []string{"CREATE"}
 	if node.Unique {

@@ -533,6 +533,9 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	// Only the PostgreSQL family has an operator-class clause, so a declared
 	// class reaches the output nowhere here.
 	r.recordLostOperatorClasses(node)
+	// The FULLTEXT parser is written below; index storage parameters are a
+	// PostgreSQL clause and reach the output nowhere here.
+	r.sink.RecordLostStorageParams(node.Name, node.StorageParams)
 	var parts []string
 
 	parts = append(parts, "CREATE")

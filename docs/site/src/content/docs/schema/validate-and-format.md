@@ -192,12 +192,19 @@ the target dropped on its own, so it stays quiet about:
 - a declaration a [platform override](../../reference/go-annotations/) replaced
   for this target, where the schema already says what this target gets.
 
-Reporting is not yet exhaustive over every property every dialect drops. It
-covers what a renderer names as skipped, the table options a target cannot
-carry, the comments a target does not store, an index's partial condition and
-operator class, and every property a column declares;
-[stokaro/ptah#2983](https://github.com/stokaro/ptah/issues/2983) records what
-remains, which is now index properties and whole-node ones.
+The check reads a render of the create statements, so what it can see is what
+a `CREATE` carries: tables, columns and indexes. It covers what a renderer names
+as skipped, the table options a target cannot carry, every property a column
+declares, and an index's condition, operator class, FULLTEXT parser, storage
+parameters, part order and uniqueness.
+
+Three groups are still outside it, and
+[stokaro/ptah#2983](https://github.com/stokaro/ptah/issues/2983) tracks them:
+whole-node properties nothing reads, such as `CreateTableNode.Partition` outside
+PostgreSQL and ClickHouse; the `DROP` path, which this check never renders; and
+an index's type, which needs a rule for telling a normalized default from a
+discarded declaration before it can be reported at all, because neither
+PostgreSQL nor the MySQL family writes `USING BTREE`.
 
 A comment is reported wherever the target does not store it, including where the
 render writes it as a `-- text` line. SQLite and SQL Server keep none of a
@@ -208,6 +215,26 @@ A partial index reports its condition wherever the target drops it. That one is
 worth a gate on its own: the MySQL family and ClickHouse render the index over
 the whole table instead, so a unique index starts rejecting rows the author
 meant to allow.
+
+The rest of an index reports the same way:
+
+| Property | Kept by | Dropped by |
+| --- | --- | --- |
+| Operator class | the PostgreSQL family | every other target |
+| FULLTEXT parser | the MySQL family | every other target |
+| Storage parameters | the PostgreSQL family | every other target |
+| Descending part | every target but ClickHouse | ClickHouse |
+| `UNIQUE` | every target but ClickHouse | ClickHouse |
+
+ClickHouse builds a data-skipping index, which enforces nothing and is ordered
+by the table's sorting key, so a unique index accepts every duplicate and a
+descending part is built ascending. The render writes a `--` line about the
+first of those; the server stores none of it, which is why the report names it
+as well.
+
+A covering index's `INCLUDE` payload is the one property that is refused rather
+than reported. A target without the clause fails the render, which is the
+louder answer, so nothing is dropped for a report to name.
 
 A generated key reports the values it loses, not the spelling. Every target
 writes a key some way, so `AUTO_INCREMENT` in place of `GENERATED ALWAYS AS
