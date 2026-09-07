@@ -2057,6 +2057,7 @@ Read the columns as follows.
 | `--include` | `stringArray` | `[]` | `PTAH_INCLUDE` | — |
 | `--schema`, `-s` | `stringArray` | `[]` | `PTAH_SCHEMA` | — |
 | `--to` | `stringArray` | `[]` | `PTAH_TO` | — |
+| `--web`, `-w` | `bool` | `false` | `PTAH_WEB` | — |
 
 </div>
 
