@@ -146,9 +146,12 @@
 // same physical transaction as the migration body because their DDL can commit
 // independently. These dialects reject transaction-control SQL, durable server
 // settings outside that transaction, database-catalog changes, unverified
-// storage engines, cross-database references, executable comments, nested SQL,
-// indirect database objects, opaque migration functions, and statement
-// interceptors in file mode; batch mode is unsupported.
+// storage engines, executable comments, nested SQL, indirect database objects,
+// opaque migration functions, and statement interceptors in file mode; batch
+// mode is unsupported. A statement naming another database is inspected rather
+// than refused: the engine preflight and the object catalog cover every
+// database a migration names, and what they find there is refused on the same
+// terms as the connected one.
 //
 // # SQL File Support
 //

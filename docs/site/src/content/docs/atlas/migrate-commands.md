@@ -229,8 +229,9 @@ the InnoDB witness:
   preflight can make the server execute SQL that Ptah did not inspect.
 - `SELECT` or `TABLE` with `INTO OUTFILE` or `INTO DUMPFILE`, which writes
   outside the InnoDB transaction.
-- `USE` and qualified references to another database. The connection URL must
-  name the database whose engines Ptah validates.
+- `USE`. The connection URL must name the database whose engines Ptah
+  validates. A qualified reference to another database is allowed, and that
+  database is inspected on the same terms as the connected one.
 - Executable comments, nested or dynamic SQL, and table locks.
 - Definitions of indirect database objects, references to existing views or
   trigger-bearing tables, and stored-routine calls.

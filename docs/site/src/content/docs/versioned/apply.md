@@ -312,8 +312,9 @@ people and pipelines share a directory:
   with `INTO OUTFILE` or `INTO DUMPFILE` is also refused because it writes
   outside that transaction. The equivalent `SCHEMA` statements and `USE` are rejected as
   well; select the target database in `--db-url` so Ptah can validate the
-  database it will modify. References to another database are rejected even
-  when qualified directly. Ptah also refuses executable comments, `CALL`,
+  database it will modify. A statement that names another database is inspected
+  rather than refused: the engine preflight and the object catalog cover every
+  database a migration names. Ptah also refuses executable comments, `CALL`,
   prepared or dynamic SQL, table locks, definitions of views, triggers,
   routines, and events, references to existing views or trigger-bearing tables,
   and calls to stored routines. Those forms can hide work that does not share

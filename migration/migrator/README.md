@@ -843,9 +843,18 @@ from the outer statement:
   preflight did not inspect.
 - `SELECT` or `TABLE` with `INTO OUTFILE` or `INTO DUMPFILE`, which writes
   outside the InnoDB transaction.
-- `USE` and qualified references to another database. The connection URL,
-  engine preflight, migration target, and metadata table must refer to one
-  database.
+- `USE`. The connection URL selects the database whose engines Ptah validates,
+  and a statement that changes it leaves the preflight describing a database the
+  migration is no longer in.
+
+A qualified reference to another database is not refused. The engine preflight
+and the object catalog run over every database a migration names, so a table
+there is checked exactly as one here is: a non-InnoDB table, a view, a
+trigger-bearing table or a routine in that database refuses the migration with
+the same diagnostic it would raise in the connected one. Refusing the reference
+outright rejected directories the pinned community binary applies, and the
+cross-database spelling was never what made file mode non-atomic
+(stokaro/ptah#2975).
 - Direct references to the configured migration metadata table. That relation
   is reserved for Ptah's transaction witness.
 - Executable comments, `CALL`, prepared or dynamic SQL, and table locks.

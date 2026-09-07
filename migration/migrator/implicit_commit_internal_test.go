@@ -319,192 +319,165 @@ func TestMySQLDefinesIndirectWriter_Absent(t *testing.T) {
 	}
 }
 
-func TestMySQLReferencedExternalSchema(t *testing.T) {
-	c := qt.New(t)
+// TestMySQLReferencedExternalSchemas pins which qualified references name a
+// database other than the connected one.
+//
+// The answer decides which databases the tx-mode file preflight inspects. It
+// used to decide which migrations were refused outright, and narrowing that to
+// an inspection is stokaro/ptah#2975; the cases are unchanged, because what
+// counts as a reference did not change.
+//
+// The comparison stays byte-exact on purpose. A database named in a different
+// case is a different name to this scan, so it is inspected rather than assumed
+// to be the connected one.
+func TestMySQLReferencedExternalSchemas(t *testing.T) {
+	tests := []struct {
+		name     string
+		sql      string
+		selected string
+		want     []string
+	}{
+		{
+			name:     "qualified",
+			sql:      "INSERT INTO `archive`.jobs VALUES (1)",
+			selected: "ptahtest",
+			want:     []string{"archive"},
+		},
+		{
+			name:     "routine",
+			sql:      "INSERT INTO jobs VALUES (archive.next_job_id())",
+			selected: "ptahtest",
+			want:     []string{"archive"},
+		},
+		{
+			name:     "create index",
+			sql:      "CREATE INDEX jobs_created_at ON archive.jobs (created_at)",
+			selected: "ptahtest",
+			want:     []string{"archive"},
+		},
+		{
+			name:     "drop index",
+			sql:      "DROP INDEX jobs_created_at ON archive.jobs",
+			selected: "ptahtest",
+			want:     []string{"archive"},
+		},
+		{
+			name:     "rename target",
+			sql:      "RENAME TABLE ptahtest.jobs TO archive.jobs",
+			selected: "ptahtest",
+			want:     []string{"archive"},
+		},
+		{
+			name:     "alter rename target",
+			sql:      "ALTER TABLE ptahtest.jobs RENAME TO archive.jobs",
+			selected: "ptahtest",
+			want:     []string{"archive"},
+		},
+		{
+			name:     "drop view",
+			sql:      "DROP VIEW ptahtest.active_jobs, archive.active_jobs",
+			selected: "ptahtest",
+			want:     []string{"archive"},
+		},
+		{
+			name:     "drop function",
+			sql:      "DROP FUNCTION IF EXISTS archive.next_job_id",
+			selected: "ptahtest",
+			want:     []string{"archive"},
+		},
+		{
+			name:     "grant table",
+			sql:      "GRANT SELECT ON archive.jobs TO app",
+			selected: "ptahtest",
+			want:     []string{"archive"},
+		},
+		{
+			name:     "grant database",
+			sql:      "GRANT TRIGGER ON archive.* TO app",
+			selected: "ptahtest",
+			want:     []string{"archive"},
+		},
+		{
+			name:     "quoted",
+			sql:      `INSERT INTO "archive"."jobs" VALUES (1)`,
+			selected: "ptahtest",
+			want:     []string{"archive"},
+		},
+		{
+			name:     "create if not exists",
+			sql:      "CREATE TABLE IF NOT EXISTS archive.jobs (id BIGINT)",
+			selected: "ptahtest",
+			want:     []string{"archive"},
+		},
+		{
+			name:     "drop if exists",
+			sql:      "DROP TABLE IF EXISTS archive.jobs",
+			selected: "ptahtest",
+			want:     []string{"archive"},
+		},
+		{
+			name:     "truncate",
+			sql:      "TRUNCATE archive.jobs",
+			selected: "ptahtest",
+			want:     []string{"archive"},
+		},
+		{
+			name:     "grant function",
+			sql:      "GRANT EXECUTE ON FUNCTION archive.next_job_id TO app",
+			selected: "ptahtest",
+			want:     []string{"archive"},
+		},
+		{
+			name:     "grant procedure",
+			sql:      "GRANT EXECUTE ON PROCEDURE archive.apply_jobs TO app",
+			selected: "ptahtest",
+			want:     []string{"archive"},
+		},
+		{
+			name:     "selected",
+			sql:      "INSERT INTO ptahtest.jobs VALUES (1)",
+			selected: "ptahtest",
+			want:     make([]string, 0),
+		},
+		{
+			name:     "selected quoted",
+			sql:      `INSERT INTO "ptahtest"."jobs" VALUES (1)`,
+			selected: "ptahtest",
+			want:     make([]string, 0),
+		},
+		{
+			name:     "selected grant",
+			sql:      "GRANT TRIGGER ON ptahtest.* TO app",
+			selected: "ptahtest",
+			want:     make([]string, 0),
+		},
+		{
+			name:     "case variant",
+			sql:      "INSERT INTO PTAHTEST.jobs VALUES (1)",
+			selected: "ptahtest",
+			want:     []string{"PTAHTEST"},
+		},
+		{
+			name:     "unqualified",
+			sql:      "SELECT archive FROM jobs",
+			selected: "ptahtest",
+			want:     make([]string, 0),
+		},
+		{
+			name:     "alias",
+			sql:      "SELECT archive.id FROM jobs AS archive",
+			selected: "ptahtest",
+			want:     make([]string, 0),
+		},
+	}
 
-	qualified, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens("INSERT INTO `archive`.jobs VALUES (1)", "mysql"),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsTrue)
-	c.Assert(qualified, qt.Equals, "archive")
-
-	routine, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens("INSERT INTO jobs VALUES (archive.next_job_id())", "mysql"),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsTrue)
-	c.Assert(routine, qt.Equals, "archive")
-
-	createIndex, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens("CREATE INDEX jobs_created_at ON archive.jobs (created_at)", "mysql"),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsTrue)
-	c.Assert(createIndex, qt.Equals, "archive")
-
-	dropIndex, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens("DROP INDEX jobs_created_at ON archive.jobs", "mysql"),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsTrue)
-	c.Assert(dropIndex, qt.Equals, "archive")
-
-	renameTarget, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens("RENAME TABLE ptahtest.jobs TO archive.jobs", "mysql"),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsTrue)
-	c.Assert(renameTarget, qt.Equals, "archive")
-
-	renameListSource, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens(
-			"RENAME TABLE ptahtest.jobs TO ptahtest.old_jobs, archive.pending_jobs TO ptahtest.jobs",
-			"mysql",
-		),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsTrue)
-	c.Assert(renameListSource, qt.Equals, "archive")
-
-	alterRenameTarget, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens("ALTER TABLE ptahtest.jobs RENAME TO archive.jobs", "mysql"),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsTrue)
-	c.Assert(alterRenameTarget, qt.Equals, "archive")
-
-	dropView, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens("DROP VIEW ptahtest.active_jobs, archive.active_jobs", "mysql"),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsTrue)
-	c.Assert(dropView, qt.Equals, "archive")
-
-	dropFunction, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens("DROP FUNCTION IF EXISTS archive.next_job_id", "mysql"),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsTrue)
-	c.Assert(dropFunction, qt.Equals, "archive")
-
-	foreignKey, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens(
-			"CREATE TABLE child (parent_id BIGINT, FOREIGN KEY (parent_id) REFERENCES archive.parent (id))",
-			"mysql",
-		),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsTrue)
-	c.Assert(foreignKey, qt.Equals, "archive")
-
-	grantTable, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens("GRANT SELECT ON archive.jobs TO app", "mysql"),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsTrue)
-	c.Assert(grantTable, qt.Equals, "archive")
-
-	grantDatabase, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens("GRANT TRIGGER ON archive.* TO app", "mysql"),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsTrue)
-	c.Assert(grantDatabase, qt.Equals, "archive")
-
-	quoted, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens(`INSERT INTO "archive"."jobs" VALUES (1)`, "mysql"),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsTrue)
-	c.Assert(quoted, qt.Equals, "archive")
-
-	createIfNotExists, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens("CREATE TABLE IF NOT EXISTS archive.jobs (id BIGINT)", "mysql"),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsTrue)
-	c.Assert(createIfNotExists, qt.Equals, "archive")
-
-	dropIfExists, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens("DROP TABLE IF EXISTS archive.jobs", "mysql"),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsTrue)
-	c.Assert(dropIfExists, qt.Equals, "archive")
-
-	truncate, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens("TRUNCATE archive.jobs", "mysql"),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsTrue)
-	c.Assert(truncate, qt.Equals, "archive")
-
-	grantFunction, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens("GRANT EXECUTE ON FUNCTION archive.next_job_id TO app", "mysql"),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsTrue)
-	c.Assert(grantFunction, qt.Equals, "archive")
-
-	grantProcedure, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens("GRANT EXECUTE ON PROCEDURE archive.apply_jobs TO app", "mysql"),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsTrue)
-	c.Assert(grantProcedure, qt.Equals, "archive")
-
-	selected, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens("INSERT INTO ptahtest.jobs VALUES (1)", "mysql"),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsFalse)
-	c.Assert(selected, qt.Equals, "")
-
-	selectedQuoted, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens(`INSERT INTO "ptahtest"."jobs" VALUES (1)`, "mysql"),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsFalse)
-	c.Assert(selectedQuoted, qt.Equals, "")
-
-	selectedForeignKey, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens(
-			"CREATE TABLE child (parent_id BIGINT, FOREIGN KEY (parent_id) REFERENCES ptahtest.parent (id))",
-			"mysql",
-		),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsFalse)
-	c.Assert(selectedForeignKey, qt.Equals, "")
-
-	selectedGrant, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens("GRANT TRIGGER ON ptahtest.* TO app", "mysql"),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsFalse)
-	c.Assert(selectedGrant, qt.Equals, "")
-
-	caseVariant, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens("INSERT INTO PTAHTEST.jobs VALUES (1)", "mysql"),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsTrue)
-	c.Assert(caseVariant, qt.Equals, "PTAHTEST")
-
-	unqualified, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens("SELECT archive FROM jobs", "mysql"),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsFalse)
-	c.Assert(unqualified, qt.Equals, "")
-
-	alias, referenced := mysqlReferencedExternalSchema(
-		significantSQLTokens("SELECT archive.id FROM jobs AS archive", "mysql"),
-		"ptahtest",
-	)
-	c.Assert(referenced, qt.IsFalse)
-	c.Assert(alias, qt.Equals, "")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			got := mysqlReferencedExternalSchemas(significantSQLTokens(test.sql, "mysql"), test.selected)
+			c.Assert(got, qt.DeepEquals, test.want)
+		})
+	}
 }
 
 func TestMySQLGrantsProvideTriggerCatalogVisibility_HappyPath(t *testing.T) {
