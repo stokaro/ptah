@@ -322,6 +322,16 @@ func TestRolledBackProgress_MariaDBRejectsUnwitnessedExecutionBoundaries(t *test
 	runRejectsUnwitnessedExecutionBoundaries(t, targetURL, targetURL, "mariadb")
 }
 
+func TestRolledBackProgress_MySQLAcceptsCrossDatabaseStatementsTheWitnessCovers(t *testing.T) {
+	targetURL := mySQLFamilyScratchDatabaseURL(t, "mysql", dbtarget.MySQLAdmin, "ptah_2975_scope")
+	runAcceptsCrossDatabaseStatementsTheWitnessCovers(t, targetURL, targetURL, "mysql")
+}
+
+func TestRolledBackProgress_MariaDBAcceptsCrossDatabaseStatementsTheWitnessCovers(t *testing.T) {
+	targetURL := mySQLFamilyScratchDatabaseURL(t, "mariadb", dbtarget.MariaDBAdmin, "ptah_2975_scope")
+	runAcceptsCrossDatabaseStatementsTheWitnessCovers(t, targetURL, targetURL, "mariadb")
+}
+
 func TestRolledBackProgress_MySQLWithoutTriggerPrivilegeFailsClosed(t *testing.T) {
 	targetURL := mySQLFamilyScratchDatabaseURL(t, "mysql", dbtarget.MySQLAdmin, "ptah_887_privilege")
 	runMySQLWithoutTriggerPrivilegeFailsClosed(t, targetURL)
@@ -573,219 +583,6 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		}
 	})
 
-	t.Run("cross-database CREATE INDEX", func(t *testing.T) {
-		c := qt.New(t)
-		ctx := context.Background()
-		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-		c.Assert(err, qt.IsNil)
-		defer issue887CloseConnection(t, conn)
-		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
-		c.Assert(err, qt.IsNil)
-		defer issue887CloseConnection(t, adminConn)
-
-		names := issue887Names(dialect + "_xidxc")
-		cleanupIssue887(t, conn, names)
-		defer cleanupIssue887(t, conn, names)
-		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
-		indexName := fmt.Sprintf("ptah887idx%d", time.Now().UnixNano())
-		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
-		c.Assert(err, qt.IsNil)
-		defer issue887DropDatabase(t, adminConn, externalDatabase)
-		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
-			"CREATE TABLE %s.external_jobs (id INTEGER PRIMARY KEY)", externalDatabase,
-		))
-		c.Assert(err, qt.IsNil)
-		migration := migrator.CreateMigrationFromSQL(
-			1,
-			"cross-database CREATE INDEX",
-			fmt.Sprintf("CREATE INDEX %s ON %s.external_jobs (id)", indexName, externalDatabase),
-			fmt.Sprintf("DROP INDEX %s ON %s.external_jobs", indexName, externalDatabase),
-		)
-
-		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
-		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
-		c.Assert(issue887IndexCount(t, adminConn, externalDatabase, "external_jobs", indexName), qt.Equals, int64(0))
-		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
-	})
-
-	t.Run("cross-database DROP INDEX", func(t *testing.T) {
-		c := qt.New(t)
-		ctx := context.Background()
-		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-		c.Assert(err, qt.IsNil)
-		defer issue887CloseConnection(t, conn)
-		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
-		c.Assert(err, qt.IsNil)
-		defer issue887CloseConnection(t, adminConn)
-
-		names := issue887Names(dialect + "_xidxd")
-		cleanupIssue887(t, conn, names)
-		defer cleanupIssue887(t, conn, names)
-		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
-		indexName := fmt.Sprintf("ptah887idx%d", time.Now().UnixNano())
-		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
-		c.Assert(err, qt.IsNil)
-		defer issue887DropDatabase(t, adminConn, externalDatabase)
-		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
-			"CREATE TABLE %s.external_jobs (id INTEGER PRIMARY KEY, note VARCHAR(64))", externalDatabase,
-		))
-		c.Assert(err, qt.IsNil)
-		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
-			"CREATE INDEX %s ON %s.external_jobs (note)", indexName, externalDatabase,
-		))
-		c.Assert(err, qt.IsNil)
-		migration := migrator.CreateMigrationFromSQL(
-			1,
-			"cross-database DROP INDEX",
-			fmt.Sprintf("DROP INDEX %s ON %s.external_jobs", indexName, externalDatabase),
-			fmt.Sprintf("CREATE INDEX %s ON %s.external_jobs (note)", indexName, externalDatabase),
-		)
-
-		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
-		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
-		c.Assert(issue887IndexCount(t, adminConn, externalDatabase, "external_jobs", indexName), qt.Equals, int64(1))
-		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
-	})
-
-	t.Run("cross-database foreign key", func(t *testing.T) {
-		c := qt.New(t)
-		ctx := context.Background()
-		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-		c.Assert(err, qt.IsNil)
-		defer issue887CloseConnection(t, conn)
-		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
-		c.Assert(err, qt.IsNil)
-		defer issue887CloseConnection(t, adminConn)
-
-		names := issue887Names(dialect + "_xref")
-		cleanupIssue887(t, conn, names)
-		defer cleanupIssue887(t, conn, names)
-		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
-		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
-		c.Assert(err, qt.IsNil)
-		defer issue887DropDatabase(t, adminConn, externalDatabase)
-		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
-			"CREATE TABLE %s.parents (id INTEGER PRIMARY KEY)", externalDatabase,
-		))
-		c.Assert(err, qt.IsNil)
-		migration := migrator.CreateMigrationFromSQL(
-			1,
-			"cross-database foreign key",
-			fmt.Sprintf(
-				"CREATE TABLE %s (id INTEGER PRIMARY KEY, parent_id INTEGER, "+
-					"FOREIGN KEY (parent_id) REFERENCES %s.parents (id))",
-				names.createdTable,
-				externalDatabase,
-			),
-			fmt.Sprintf("DROP TABLE %s", names.createdTable),
-		)
-
-		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
-		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
-		c.Assert(issue887TableCount(t, adminConn, names.createdTable), qt.Equals, int64(0))
-		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
-	})
-
-	t.Run("cross-database privilege target", func(t *testing.T) {
-		c := qt.New(t)
-		ctx := context.Background()
-		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-		c.Assert(err, qt.IsNil)
-		defer issue887CloseConnection(t, conn)
-		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
-		c.Assert(err, qt.IsNil)
-		defer issue887CloseConnection(t, adminConn)
-
-		names := issue887Names(dialect + "_xgrant")
-		cleanupIssue887(t, conn, names)
-		defer cleanupIssue887(t, conn, names)
-		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
-		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
-		c.Assert(err, qt.IsNil)
-		defer issue887DropDatabase(t, adminConn, externalDatabase)
-		username, _ := issue887CreateUser(t, adminConn)
-		defer issue887DropUser(t, adminConn, username)
-		migration := migrator.CreateMigrationFromSQL(
-			1,
-			"cross-database privilege target",
-			fmt.Sprintf("GRANT TRIGGER ON %s.* TO '%s'@'%%'", externalDatabase, username),
-			fmt.Sprintf("REVOKE TRIGGER ON %s.* FROM '%s'@'%%'", externalDatabase, username),
-		)
-
-		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
-		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
-		c.Assert(
-			issue887SchemaPrivilegeCount(t, adminConn, externalDatabase, username, "TRIGGER"),
-			qt.Equals,
-			int64(0),
-		)
-		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
-	})
-
-	t.Run("cross-database CREATE TABLE IF NOT EXISTS", func(t *testing.T) {
-		c := qt.New(t)
-		ctx := context.Background()
-		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-		c.Assert(err, qt.IsNil)
-		defer issue887CloseConnection(t, conn)
-		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
-		c.Assert(err, qt.IsNil)
-		defer issue887CloseConnection(t, adminConn)
-
-		names := issue887Names(dialect + "_xcreate")
-		cleanupIssue887(t, conn, names)
-		defer cleanupIssue887(t, conn, names)
-		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
-		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
-		c.Assert(err, qt.IsNil)
-		defer issue887DropDatabase(t, adminConn, externalDatabase)
-		migration := migrator.CreateMigrationFromSQL(
-			1,
-			"cross-database CREATE TABLE IF NOT EXISTS",
-			fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.external_jobs (id INTEGER PRIMARY KEY)", externalDatabase),
-			fmt.Sprintf("DROP TABLE IF EXISTS %s.external_jobs", externalDatabase),
-		)
-
-		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
-		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
-		c.Assert(issue887TableCountInSchema(t, adminConn, externalDatabase, "external_jobs"), qt.Equals, int64(0))
-		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
-	})
-
-	t.Run("cross-database DROP TABLE IF EXISTS", func(t *testing.T) {
-		c := qt.New(t)
-		ctx := context.Background()
-		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-		c.Assert(err, qt.IsNil)
-		defer issue887CloseConnection(t, conn)
-		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
-		c.Assert(err, qt.IsNil)
-		defer issue887CloseConnection(t, adminConn)
-
-		names := issue887Names(dialect + "_xdrop")
-		cleanupIssue887(t, conn, names)
-		defer cleanupIssue887(t, conn, names)
-		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
-		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
-		c.Assert(err, qt.IsNil)
-		defer issue887DropDatabase(t, adminConn, externalDatabase)
-		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
-			"CREATE TABLE %s.external_jobs (id INTEGER PRIMARY KEY)", externalDatabase,
-		))
-		c.Assert(err, qt.IsNil)
-		migration := migrator.CreateMigrationFromSQL(
-			1,
-			"cross-database DROP TABLE IF EXISTS",
-			fmt.Sprintf("DROP TABLE IF EXISTS %s.external_jobs", externalDatabase),
-			fmt.Sprintf("CREATE TABLE %s.external_jobs (id INTEGER PRIMARY KEY)", externalDatabase),
-		)
-
-		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
-		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
-		c.Assert(issue887TableCountInSchema(t, adminConn, externalDatabase, "external_jobs"), qt.Equals, int64(1))
-		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
-	})
-
 	t.Run("cross-database TRUNCATE", func(t *testing.T) {
 		c := qt.New(t)
 		ctx := context.Background()
@@ -817,87 +614,12 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		)
 
 		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
-		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
+		c.Assert(err, qt.ErrorMatches, `.*requires InnoDB target tables.*`)
 		c.Assert(
 			issue887ScalarCount(t, adminConn, fmt.Sprintf("SELECT COUNT(*) FROM %s.external_jobs", externalDatabase)),
 			qt.Equals,
 			int64(1),
 		)
-		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
-	})
-
-	t.Run("cross-database routine privilege target", func(t *testing.T) {
-		c := qt.New(t)
-		ctx := context.Background()
-		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-		c.Assert(err, qt.IsNil)
-		defer issue887CloseConnection(t, conn)
-		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
-		c.Assert(err, qt.IsNil)
-		defer issue887CloseConnection(t, adminConn)
-
-		names := issue887Names(dialect + "_xrgrant")
-		cleanupIssue887(t, conn, names)
-		defer cleanupIssue887(t, conn, names)
-		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
-		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
-		c.Assert(err, qt.IsNil)
-		defer issue887DropDatabase(t, adminConn, externalDatabase)
-		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
-			"CREATE FUNCTION %s.next_job_id() RETURNS INT DETERMINISTIC RETURN 7", externalDatabase,
-		))
-		c.Assert(err, qt.IsNil)
-		username, _ := issue887CreateUser(t, adminConn)
-		defer issue887DropUser(t, adminConn, username)
-		migration := migrator.CreateMigrationFromSQL(
-			1,
-			"cross-database routine privilege target",
-			fmt.Sprintf("GRANT EXECUTE ON FUNCTION %s.next_job_id TO '%s'@'%%'", externalDatabase, username),
-			fmt.Sprintf("REVOKE EXECUTE ON FUNCTION %s.next_job_id FROM '%s'@'%%'", externalDatabase, username),
-		)
-
-		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
-		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
-		c.Assert(
-			issue887RoutinePrivilegeCount(t, adminConn, externalDatabase, "next_job_id", username, "EXECUTE"),
-			qt.Equals,
-			int64(0),
-		)
-		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
-	})
-
-	t.Run("cross-database RENAME TABLE", func(t *testing.T) {
-		c := qt.New(t)
-		ctx := context.Background()
-		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
-		c.Assert(err, qt.IsNil)
-		defer issue887CloseConnection(t, conn)
-		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
-		c.Assert(err, qt.IsNil)
-		defer issue887CloseConnection(t, adminConn)
-
-		names := issue887Names(dialect + "_cross_db_rename")
-		cleanupIssue887(t, conn, names)
-		defer cleanupIssue887(t, conn, names)
-		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
-		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
-		c.Assert(err, qt.IsNil)
-		defer issue887DropDatabase(t, adminConn, externalDatabase)
-		_, err = conn.ExecContext(ctx, fmt.Sprintf(
-			"CREATE TABLE %s (id INTEGER PRIMARY KEY)", names.createdTable,
-		))
-		c.Assert(err, qt.IsNil)
-		migration := migrator.CreateMigrationFromSQL(
-			1,
-			"cross-database RENAME TABLE",
-			fmt.Sprintf("RENAME TABLE %s TO %s.external_jobs", names.createdTable, externalDatabase),
-			fmt.Sprintf("RENAME TABLE %s.external_jobs TO %s", externalDatabase, names.createdTable),
-		)
-
-		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
-		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
-		c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(1))
-		c.Assert(issue887TableCountInSchema(t, adminConn, externalDatabase, "external_jobs"), qt.Equals, int64(0))
 		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
 	})
 
@@ -930,7 +652,7 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 		)
 
 		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
-		c.Assert(err, qt.ErrorMatches, `.*references database .* outside the selected database.*`)
+		c.Assert(err, qt.ErrorMatches, `.*requires InnoDB target tables.*`)
 		c.Assert(
 			issue887ScalarCount(t, adminConn, fmt.Sprintf("SELECT COUNT(*) FROM %s.external_jobs", externalDatabase)),
 			qt.Equals,
@@ -973,6 +695,89 @@ func runRejectsUnwitnessedExecutionBoundaries(t *testing.T, dbURL, adminURL, dia
 			int64(0),
 		)
 		c.Assert(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
+	})
+
+	t.Run("cross-database view", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, conn)
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, adminConn)
+
+		names := issue887Names(dialect + "_xview")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
+		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
+		c.Assert(err, qt.IsNil)
+		defer issue887DropDatabase(t, adminConn, externalDatabase)
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE TABLE %s.external_jobs (id INTEGER PRIMARY KEY)", externalDatabase,
+		))
+		c.Assert(err, qt.IsNil)
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE VIEW %s.external_view AS SELECT id FROM %s.external_jobs",
+			externalDatabase,
+			externalDatabase,
+		))
+		c.Assert(err, qt.IsNil)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"cross-database view",
+			fmt.Sprintf("INSERT INTO %s.external_view (id) VALUES (1)", externalDatabase),
+			fmt.Sprintf("DELETE FROM %s.external_jobs", externalDatabase),
+		)
+
+		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*relation .* has indirect behavior that Ptah cannot tie to the transaction witness.*`)
+		c.Assert(
+			issue887ScalarCount(t, adminConn, fmt.Sprintf("SELECT COUNT(*) FROM %s.external_jobs", externalDatabase)),
+			qt.Equals,
+			int64(0),
+		)
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
+	})
+
+	t.Run("cross-database routine call", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, conn)
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, adminConn)
+
+		names := issue887Names(dialect + "_xroutine")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
+		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
+		c.Assert(err, qt.IsNil)
+		defer issue887DropDatabase(t, adminConn, externalDatabase)
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE TABLE %s (id INTEGER PRIMARY KEY)", names.ledgerTable,
+		))
+		c.Assert(err, qt.IsNil)
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE FUNCTION %s.next_job_id() RETURNS INTEGER DETERMINISTIC RETURN 1",
+			externalDatabase,
+		))
+		c.Assert(err, qt.IsNil)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"cross-database routine call",
+			fmt.Sprintf("INSERT INTO %s (id) VALUES (%s.next_job_id())", names.ledgerTable, externalDatabase),
+			fmt.Sprintf("DELETE FROM %s", names.ledgerTable),
+		)
+
+		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.ErrorMatches, `.*routine .* can execute SQL outside Ptah's transaction witness.*`)
+		c.Assert(issue887ScalarCount(t, adminConn, "SELECT COUNT(*) FROM "+names.ledgerTable), qt.Equals, int64(0))
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
 	})
 
 	t.Run("triggered relation", func(t *testing.T) {
@@ -1234,6 +1039,313 @@ func runMySQLDefaultRoleTriggerPrivilegeIsAccepted(t *testing.T, adminURL string
 	c.Assert(err, qt.ErrorMatches, `.*relation .* has indirect behavior that Ptah cannot tie to the transaction witness.*`)
 	c.Assert(issue887LedgerCount(t, adminConn, names), qt.Equals, int64(0))
 	c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(0))
+}
+
+// runAcceptsCrossDatabaseStatementsTheWitnessCovers is the other half of the
+// boundary rule, and it used to be part of the refusal above.
+//
+// A statement naming a second database was refused outright. It was not the
+// cross-database spelling that made tx-mode file non-atomic -- MySQL commits
+// DDL implicitly either way -- and the pinned community binary applies such a
+// directory, so the refusal rejected working migration sets (stokaro/ptah#2975).
+// What it was standing in for is that the catalog and the engine preflight
+// covered one database, leaving objects in another invisible. Those now cover
+// every database a migration names, so a statement whose objects the witness
+// can follow runs, and each case here asserts that its object changed and that
+// a revision was written.
+func runAcceptsCrossDatabaseStatementsTheWitnessCovers(t *testing.T, dbURL, adminURL, dialect string) {
+	t.Helper()
+
+	t.Run("cross-database CREATE INDEX", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, conn)
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, adminConn)
+
+		names := issue887Names(dialect + "_xidxc")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
+		indexName := fmt.Sprintf("ptah887idx%d", time.Now().UnixNano())
+		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
+		c.Assert(err, qt.IsNil)
+		defer issue887DropDatabase(t, adminConn, externalDatabase)
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE TABLE %s.external_jobs (id INTEGER PRIMARY KEY)", externalDatabase,
+		))
+		c.Assert(err, qt.IsNil)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"cross-database CREATE INDEX",
+			fmt.Sprintf("CREATE INDEX %s ON %s.external_jobs (id)", indexName, externalDatabase),
+			fmt.Sprintf("DROP INDEX %s ON %s.external_jobs", indexName, externalDatabase),
+		)
+
+		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.IsNil)
+		c.Assert(issue887IndexCount(t, adminConn, externalDatabase, "external_jobs", indexName), qt.Equals, int64(1))
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(1))
+	})
+
+	t.Run("cross-database DROP INDEX", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, conn)
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, adminConn)
+
+		names := issue887Names(dialect + "_xidxd")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
+		indexName := fmt.Sprintf("ptah887idx%d", time.Now().UnixNano())
+		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
+		c.Assert(err, qt.IsNil)
+		defer issue887DropDatabase(t, adminConn, externalDatabase)
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE TABLE %s.external_jobs (id INTEGER PRIMARY KEY, note VARCHAR(64))", externalDatabase,
+		))
+		c.Assert(err, qt.IsNil)
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE INDEX %s ON %s.external_jobs (note)", indexName, externalDatabase,
+		))
+		c.Assert(err, qt.IsNil)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"cross-database DROP INDEX",
+			fmt.Sprintf("DROP INDEX %s ON %s.external_jobs", indexName, externalDatabase),
+			fmt.Sprintf("CREATE INDEX %s ON %s.external_jobs (note)", indexName, externalDatabase),
+		)
+
+		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.IsNil)
+		c.Assert(issue887IndexCount(t, adminConn, externalDatabase, "external_jobs", indexName), qt.Equals, int64(0))
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(1))
+	})
+
+	t.Run("cross-database foreign key", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, conn)
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, adminConn)
+
+		names := issue887Names(dialect + "_xref")
+		cleanupIssue887(t, conn, names)
+		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
+		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
+		c.Assert(err, qt.IsNil)
+		defer issue887DropDatabase(t, adminConn, externalDatabase)
+		// Registered after the database drop so it runs before it: the
+		// migration now succeeds, and the table it creates holds a foreign key
+		// into that database, which the server will not let go first.
+		defer cleanupIssue887(t, conn, names)
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE TABLE %s.parents (id INTEGER PRIMARY KEY)", externalDatabase,
+		))
+		c.Assert(err, qt.IsNil)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"cross-database foreign key",
+			fmt.Sprintf(
+				"CREATE TABLE %s (id INTEGER PRIMARY KEY, parent_id INTEGER, "+
+					"FOREIGN KEY (parent_id) REFERENCES %s.parents (id))",
+				names.createdTable,
+				externalDatabase,
+			),
+			fmt.Sprintf("DROP TABLE %s", names.createdTable),
+		)
+
+		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.IsNil)
+		c.Assert(issue887TableCount(t, adminConn, names.createdTable), qt.Equals, int64(1))
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(1))
+	})
+
+	t.Run("cross-database privilege target", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, conn)
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, adminConn)
+
+		names := issue887Names(dialect + "_xgrant")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
+		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
+		c.Assert(err, qt.IsNil)
+		defer issue887DropDatabase(t, adminConn, externalDatabase)
+		username, _ := issue887CreateUser(t, adminConn)
+		defer issue887DropUser(t, adminConn, username)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"cross-database privilege target",
+			fmt.Sprintf("GRANT TRIGGER ON %s.* TO '%s'@'%%'", externalDatabase, username),
+			fmt.Sprintf("REVOKE TRIGGER ON %s.* FROM '%s'@'%%'", externalDatabase, username),
+		)
+
+		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.IsNil)
+		c.Assert(
+			issue887SchemaPrivilegeCount(t, adminConn, externalDatabase, username, "TRIGGER"),
+			qt.Equals,
+			int64(1),
+		)
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(1))
+	})
+
+	t.Run("cross-database CREATE TABLE IF NOT EXISTS", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, conn)
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, adminConn)
+
+		names := issue887Names(dialect + "_xcreate")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
+		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
+		c.Assert(err, qt.IsNil)
+		defer issue887DropDatabase(t, adminConn, externalDatabase)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"cross-database CREATE TABLE IF NOT EXISTS",
+			fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.external_jobs (id INTEGER PRIMARY KEY)", externalDatabase),
+			fmt.Sprintf("DROP TABLE IF EXISTS %s.external_jobs", externalDatabase),
+		)
+
+		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.IsNil)
+		c.Assert(issue887TableCountInSchema(t, adminConn, externalDatabase, "external_jobs"), qt.Equals, int64(1))
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(1))
+	})
+
+	t.Run("cross-database DROP TABLE IF EXISTS", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, conn)
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, adminConn)
+
+		names := issue887Names(dialect + "_xdrop")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
+		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
+		c.Assert(err, qt.IsNil)
+		defer issue887DropDatabase(t, adminConn, externalDatabase)
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE TABLE %s.external_jobs (id INTEGER PRIMARY KEY)", externalDatabase,
+		))
+		c.Assert(err, qt.IsNil)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"cross-database DROP TABLE IF EXISTS",
+			fmt.Sprintf("DROP TABLE IF EXISTS %s.external_jobs", externalDatabase),
+			fmt.Sprintf("CREATE TABLE %s.external_jobs (id INTEGER PRIMARY KEY)", externalDatabase),
+		)
+
+		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.IsNil)
+		c.Assert(issue887TableCountInSchema(t, adminConn, externalDatabase, "external_jobs"), qt.Equals, int64(0))
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(1))
+	})
+
+	t.Run("cross-database routine privilege target", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, conn)
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, adminConn)
+
+		names := issue887Names(dialect + "_xrgrant")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
+		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
+		c.Assert(err, qt.IsNil)
+		defer issue887DropDatabase(t, adminConn, externalDatabase)
+		_, err = adminConn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE FUNCTION %s.next_job_id() RETURNS INT DETERMINISTIC RETURN 7", externalDatabase,
+		))
+		c.Assert(err, qt.IsNil)
+		username, _ := issue887CreateUser(t, adminConn)
+		defer issue887DropUser(t, adminConn, username)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"cross-database routine privilege target",
+			fmt.Sprintf("GRANT EXECUTE ON FUNCTION %s.next_job_id TO '%s'@'%%'", externalDatabase, username),
+			fmt.Sprintf("REVOKE EXECUTE ON FUNCTION %s.next_job_id FROM '%s'@'%%'", externalDatabase, username),
+		)
+
+		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.IsNil)
+		c.Assert(
+			issue887RoutinePrivilegeCount(t, adminConn, externalDatabase, "next_job_id", username, "EXECUTE"),
+			qt.Equals,
+			int64(1),
+		)
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(1))
+	})
+
+	t.Run("cross-database RENAME TABLE", func(t *testing.T) {
+		c := qt.New(t)
+		ctx := context.Background()
+		conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, conn)
+		adminConn, err := dbschema.ConnectToDatabase(ctx, adminURL)
+		c.Assert(err, qt.IsNil)
+		defer issue887CloseConnection(t, adminConn)
+
+		names := issue887Names(dialect + "_cross_db_rename")
+		cleanupIssue887(t, conn, names)
+		defer cleanupIssue887(t, conn, names)
+		externalDatabase := fmt.Sprintf("ptah887external%d", time.Now().UnixNano())
+		_, err = adminConn.ExecContext(ctx, "CREATE DATABASE "+externalDatabase)
+		c.Assert(err, qt.IsNil)
+		defer issue887DropDatabase(t, adminConn, externalDatabase)
+		_, err = conn.ExecContext(ctx, fmt.Sprintf(
+			"CREATE TABLE %s (id INTEGER PRIMARY KEY)", names.createdTable,
+		))
+		c.Assert(err, qt.IsNil)
+		migration := migrator.CreateMigrationFromSQL(
+			1,
+			"cross-database RENAME TABLE",
+			fmt.Sprintf("RENAME TABLE %s TO %s.external_jobs", names.createdTable, externalDatabase),
+			fmt.Sprintf("RENAME TABLE %s.external_jobs TO %s", externalDatabase, names.createdTable),
+		)
+
+		err = issue887Migrator(adminConn, names, migration).MigrateUp(ctx)
+		c.Assert(err, qt.IsNil)
+		c.Assert(issue887TableCount(t, conn, names.createdTable), qt.Equals, int64(0))
+		c.Assert(issue887TableCountInSchema(t, adminConn, externalDatabase, "external_jobs"), qt.Equals, int64(1))
+		c.Assert(issue887RevisionCount(t, adminConn, names), qt.Equals, int64(1))
+	})
 }
 
 func runMySQLRejectsFilesystemWritesBeforeSideEffect(t *testing.T, adminURL string) {

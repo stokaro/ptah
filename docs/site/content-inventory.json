@@ -323,8 +323,8 @@
         "/versioned/apply/",
         "/versioned/lint/"
       ],
-      "visibleWords": 13955,
-      "sourceBytes": 97672
+      "visibleWords": 13971,
+      "sourceBytes": 97754
     },
     {
       "path": "docs/site/src/content/docs/atlas/output-and-redaction.md",
@@ -5943,8 +5943,8 @@
         "/versioned/overview/",
         "/versioned/rollback/"
       ],
-      "visibleWords": 4279,
-      "sourceBytes": 31468
+      "visibleWords": 4293,
+      "sourceBytes": 31554
     },
     {
       "path": "docs/site/src/content/docs/versioned/checkpoints.md",

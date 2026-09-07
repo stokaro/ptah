@@ -181,7 +181,16 @@ func (m *Migrator) requireTransactionalTargetEngines(ctx context.Context) error 
 			defaultEngine,
 		)
 	}
-	schema := m.connectionSchemaName()
+	return m.requireInnoDBTablesIn(ctx, m.connectionSchemaName())
+}
+
+// requireInnoDBTablesIn refuses a database holding a table the witness cannot
+// follow.
+//
+// It is per database rather than per connection because a statement may name
+// another one, and a non-InnoDB table there breaks the witness exactly as it
+// would here (stokaro/ptah#2975).
+func (m *Migrator) requireInnoDBTablesIn(ctx context.Context, schema string) error {
 	var table, engine string
 	err := m.conn.QueryRowContext(ctx, `SELECT table_name, engine
 FROM information_schema.tables
@@ -203,9 +212,17 @@ LIMIT 1`, schema).Scan(&table, &engine)
 	)
 }
 
+// mysqlTransactionalCatalog holds what the witness cannot be tied to.
+//
+// The bare maps answer for the connected database, where a statement may name a
+// relation without qualifying it. The qualified maps answer for every database
+// the migration names, connected or not, and are what makes a cross-database
+// statement checkable rather than refused unread (stokaro/ptah#2975).
 type mysqlTransactionalCatalog struct {
-	unsafeRelations map[string]struct{}
-	routines        map[string]struct{}
+	unsafeRelations          map[string]struct{}
+	routines                 map[string]struct{}
+	qualifiedUnsafeRelations map[string]struct{}
+	qualifiedRoutines        map[string]struct{}
 }
 
 func (m *Migrator) requireTransactionalTargetIsolation(
@@ -216,20 +233,47 @@ func (m *Migrator) requireTransactionalTargetIsolation(
 	if !implicitCommitDialect(m.connectionDialect()) {
 		return nil
 	}
-	catalog, err := m.loadMySQLTransactionalCatalog(ctx)
+	statements := splitSQLStatementsForConnection(m.conn, migrationSQLForDirection(migration, direction))
+	statementTokens := make([][]lexer.Token, 0, len(statements))
+	for _, statement := range statements {
+		statementTokens = append(statementTokens, significantSQLTokens(statement, m.connectionDialect()))
+	}
+	// The databases a statement names are inspected rather than refused. A
+	// cross-database statement is not what makes tx-mode file non-atomic --
+	// MySQL commits DDL implicitly either way -- and refusing it rejected
+	// directories the pinned community binary applies. What the refusal was
+	// really standing in for is that the catalog covered one database, so a view
+	// or a routine in another one was invisible; loading their catalogs is what
+	// removes the need to guess (stokaro/ptah#2975).
+	external := m.referencedExternalSchemas(statementTokens)
+	for _, schema := range external {
+		if err := m.requireInnoDBTablesIn(ctx, schema); err != nil {
+			return err
+		}
+	}
+	catalog, err := m.loadMySQLTransactionalCatalog(ctx, external)
 	if err != nil {
 		return err
 	}
-	statements := splitSQLStatementsForConnection(m.conn, migrationSQLForDirection(migration, direction))
-	for i, statement := range statements {
-		tokens := significantSQLTokens(statement, m.connectionDialect())
-		if schema, referenced := mysqlReferencedExternalSchema(tokens, m.connectionSchemaName()); referenced {
+	for i, tokens := range statementTokens {
+		if relation, referenced := mysqlReferencedQualifiedCatalogName(
+			tokens, catalog.qualifiedUnsafeRelations,
+		); referenced {
 			return fmt.Errorf(
-				"migration %d cannot run tx-mode file statement %d because it references database %s outside "+
-					"the selected database; use a connection scoped to that database or tx-mode none",
+				"migration %d cannot run tx-mode file statement %d because relation %s has indirect behavior "+
+					"that Ptah cannot tie to the transaction witness; use direct InnoDB tables or tx-mode none",
 				migration.Version,
 				i+1,
-				schema,
+				relation,
+			)
+		}
+		if routine, invoked := mysqlInvokedQualifiedRoutine(tokens, catalog.qualifiedRoutines); invoked {
+			return fmt.Errorf(
+				"migration %d cannot run tx-mode file statement %d because routine %s can execute SQL outside "+
+					"Ptah's transaction witness; use direct SQL or tx-mode none",
+				migration.Version,
+				i+1,
+				routine,
 			)
 		}
 		if relation, referenced := mysqlReferencedCatalogName(tokens, catalog.unsafeRelations); referenced {
@@ -254,42 +298,97 @@ func (m *Migrator) requireTransactionalTargetIsolation(
 	return nil
 }
 
-func (m *Migrator) loadMySQLTransactionalCatalog(ctx context.Context) (mysqlTransactionalCatalog, error) {
+func (m *Migrator) loadMySQLTransactionalCatalog(
+	ctx context.Context,
+	external []string,
+) (mysqlTransactionalCatalog, error) {
 	schema := m.connectionSchemaName()
 	catalog := mysqlTransactionalCatalog{
-		unsafeRelations: make(map[string]struct{}),
-		routines:        make(map[string]struct{}),
+		unsafeRelations:          make(map[string]struct{}),
+		routines:                 make(map[string]struct{}),
+		qualifiedUnsafeRelations: make(map[string]struct{}),
+		qualifiedRoutines:        make(map[string]struct{}),
 	}
-	if platform.NormalizeDialect(m.connectionDialect()) == platform.MySQL {
-		if err := m.requireMySQLTriggerCatalogVisibility(ctx, schema); err != nil {
+	// Every named database is inspected, and a database Ptah cannot inspect
+	// fails the run rather than passing unread: the point of loading these is
+	// that nothing in them is invisible.
+	for _, other := range external {
+		if err := m.collectMySQLSchemaCatalog(ctx, other, &catalog); err != nil {
 			return mysqlTransactionalCatalog{}, err
 		}
 	}
+	if err := m.collectMySQLSchemaCatalog(ctx, schema, &catalog); err != nil {
+		return mysqlTransactionalCatalog{}, err
+	}
+	return catalog, nil
+}
+
+// collectMySQLSchemaCatalog records one database's views, triggered tables and
+// routines under their qualified names, and under their bare names when the
+// database is the connected one.
+func (m *Migrator) collectMySQLSchemaCatalog(
+	ctx context.Context,
+	schema string,
+	catalog *mysqlTransactionalCatalog,
+) error {
+	connected := schema == m.connectionSchemaName()
+	relation := func(name string) {
+		catalog.qualifiedUnsafeRelations[qualifiedCatalogKey(schema, name)] = struct{}{}
+		if connected {
+			catalog.unsafeRelations[strings.ToLower(name)] = struct{}{}
+		}
+	}
+	routine := func(name string) {
+		catalog.qualifiedRoutines[qualifiedCatalogKey(schema, name)] = struct{}{}
+		if connected {
+			catalog.routines[strings.ToLower(name)] = struct{}{}
+		}
+	}
+	if platform.NormalizeDialect(m.connectionDialect()) == platform.MySQL {
+		if err := m.requireMySQLTriggerCatalogVisibility(ctx, schema); err != nil {
+			return err
+		}
+	}
+	return m.collectMySQLSchemaObjects(ctx, schema, relation, routine)
+}
+
+// qualifiedCatalogKey is the one spelling a qualified catalog entry is stored
+// and looked up under, so the writer and the reader cannot fold case
+// differently.
+func qualifiedCatalogKey(schema, name string) string {
+	return strings.ToLower(schema) + "." + strings.ToLower(name)
+}
+
+func (m *Migrator) collectMySQLSchemaObjects(
+	ctx context.Context,
+	schema string,
+	relation, routine func(string),
+) error {
 	if err := m.collectMySQLCatalogNames(
 		ctx,
 		"SELECT table_name FROM information_schema.tables WHERE table_schema = ? AND table_type = 'VIEW'",
 		[]any{schema},
-		func(name string) { catalog.unsafeRelations[strings.ToLower(name)] = struct{}{} },
+		relation,
 	); err != nil {
-		return mysqlTransactionalCatalog{}, fmt.Errorf("failed to inspect MySQL-family views: %w", err)
+		return fmt.Errorf("failed to inspect MySQL-family views: %w", err)
 	}
 	if err := m.collectMySQLCatalogNames(
 		ctx,
 		"SELECT event_object_table FROM information_schema.triggers WHERE trigger_schema = ?",
 		[]any{schema},
-		func(name string) { catalog.unsafeRelations[strings.ToLower(name)] = struct{}{} },
+		relation,
 	); err != nil {
-		return mysqlTransactionalCatalog{}, fmt.Errorf("failed to inspect MySQL-family triggers: %w", err)
+		return fmt.Errorf("failed to inspect MySQL-family triggers: %w", err)
 	}
 	if err := m.collectMySQLCatalogNames(
 		ctx,
 		"SELECT routine_name FROM information_schema.routines WHERE routine_schema = ?",
 		[]any{schema},
-		func(name string) { catalog.routines[strings.ToLower(name)] = struct{}{} },
+		routine,
 	); err != nil {
-		return mysqlTransactionalCatalog{}, fmt.Errorf("failed to inspect MySQL-family routines: %w", err)
+		return fmt.Errorf("failed to inspect MySQL-family routines: %w", err)
 	}
-	return catalog, nil
+	return nil
 }
 
 func (m *Migrator) requireMySQLTriggerCatalogVisibility(ctx context.Context, schema string) error {
@@ -425,25 +524,105 @@ func (m *Migrator) collectMySQLCatalogNames(
 	return rows.Err()
 }
 
-func mysqlReferencedExternalSchema(tokens []lexer.Token, selectedSchema string) (string, bool) {
-	for i, token := range tokens {
-		name, identifier := mysqlMigrationIdentifierValue(token)
-		if !identifier || i+2 >= len(tokens) || tokens[i+1].Value != "." {
+// referencedExternalSchemas names every database the statements reference other
+// than the connected one, in first-seen order.
+//
+// The order is the statements' own so that a refusal names the first database
+// the reader would look at, and the set is deduplicated because one database
+// named by ten statements is one catalog to load.
+func (m *Migrator) referencedExternalSchemas(statements [][]lexer.Token) []string {
+	selected := m.connectionSchemaName()
+	seen := make(map[string]struct{})
+	schemas := make([]string, 0)
+	for _, tokens := range statements {
+		for _, schema := range mysqlReferencedExternalSchemas(tokens, selected) {
+			key := strings.ToLower(schema)
+			if _, repeated := seen[key]; repeated {
+				continue
+			}
+			seen[key] = struct{}{}
+			schemas = append(schemas, schema)
+		}
+	}
+	return schemas
+}
+
+// mysqlReferencedExternalSchemas names every database one statement qualifies a
+// relation or a routine with, other than the selected one.
+func mysqlReferencedExternalSchemas(tokens []lexer.Token, selectedSchema string) []string {
+	schemas := make([]string, 0)
+	for i := range tokens {
+		schema, referenced := mysqlQualifiedReferenceSchema(tokens, i)
+		if !referenced || schema == selectedSchema {
 			continue
 		}
-		_, referencedIdentifier := mysqlMigrationIdentifierValue(tokens[i+2])
-		privilegeWildcard := tokens[i+2].Value == "*" && mysqlFollowsPrivilegeTargetPrefix(tokens[:i])
-		if !referencedIdentifier && !privilegeWildcard {
+		schemas = append(schemas, schema)
+	}
+	return schemas
+}
+
+// mysqlQualifiedReferenceSchema reads the database a qualified relation or
+// routine reference names, at the index of its schema token.
+func mysqlQualifiedReferenceSchema(tokens []lexer.Token, i int) (string, bool) {
+	name, identifier := mysqlMigrationIdentifierValue(tokens[i])
+	if !identifier || i+2 >= len(tokens) || tokens[i+1].Value != "." {
+		return "", false
+	}
+	_, referencedIdentifier := mysqlMigrationIdentifierValue(tokens[i+2])
+	privilegeWildcard := tokens[i+2].Value == "*" && mysqlFollowsPrivilegeTargetPrefix(tokens[:i])
+	if !referencedIdentifier && !privilegeWildcard {
+		return "", false
+	}
+	relationReference := mysqlDirectRelationReference(tokens, i) || privilegeWildcard
+	routineReference := referencedIdentifier && i+3 < len(tokens) && tokens[i+3].Value == "("
+	if !relationReference && !routineReference {
+		return "", false
+	}
+	return name, true
+}
+
+// mysqlReferencedQualifiedCatalogName finds a qualified relation reference the
+// witness cannot follow, in any database the catalog covers.
+func mysqlReferencedQualifiedCatalogName(
+	tokens []lexer.Token,
+	names map[string]struct{},
+) (string, bool) {
+	for i := range tokens {
+		schema, referenced := mysqlQualifiedReferenceSchema(tokens, i)
+		if !referenced {
 			continue
 		}
-		relationReference := mysqlDirectRelationReference(tokens, i) || privilegeWildcard
-		routineReference := referencedIdentifier && i+3 < len(tokens) && tokens[i+3].Value == "("
-		if !relationReference && !routineReference {
+		name, identifier := mysqlMigrationIdentifierValue(tokens[i+2])
+		if !identifier {
 			continue
 		}
-		if name != selectedSchema {
-			return name, true
+		if _, known := names[qualifiedCatalogKey(schema, name)]; !known {
+			continue
 		}
+		if !mysqlRelationReference(tokens, i+2) {
+			continue
+		}
+		return schema + "." + name, true
+	}
+	return "", false
+}
+
+// mysqlInvokedQualifiedRoutine finds a qualified routine call, in any database
+// the catalog covers.
+func mysqlInvokedQualifiedRoutine(tokens []lexer.Token, routines map[string]struct{}) (string, bool) {
+	for i := range tokens {
+		schema, identifier := mysqlMigrationIdentifierValue(tokens[i])
+		if !identifier || i+3 >= len(tokens) || tokens[i+1].Value != "." || tokens[i+3].Value != "(" {
+			continue
+		}
+		name, named := mysqlMigrationIdentifierValue(tokens[i+2])
+		if !named {
+			continue
+		}
+		if _, known := routines[qualifiedCatalogKey(schema, name)]; !known {
+			continue
+		}
+		return schema + "." + name, true
 	}
 	return "", false
 }
