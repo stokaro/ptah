@@ -120,7 +120,7 @@ Lines whose container tag does not name the line, so which patch it resolves to 
 
 - `oracle` 23, pinned as `gvenzl/oracle-free:slim`.
 - `oracle` 21, pinned as `gvenzl/oracle-xe:21-slim`.
-- `spanner` 0, pinned as `gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.2`.
+- `spanner` 0, pinned as `gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.3`.
 - `sqlserver` 17.0, pinned as `mcr.microsoft.com/mssql/server:2025-latest`.
 - `sqlserver` 16.0, pinned as `mcr.microsoft.com/mssql/server:2022-latest`.
 - `sqlserver` 15.0, pinned as `mcr.microsoft.com/mssql/server:2019-latest`.
