@@ -6,14 +6,14 @@
     "docs/site/src/lib/content-metadata.mjs"
   ],
   "summary": {
-    "pages": 129,
-    "authored": 127,
+    "pages": 131,
+    "authored": 129,
     "generated": 2,
     "byType": {
       "concept": 16,
-      "how-to": 54,
+      "how-to": 55,
       "landing": 12,
-      "reference": 32,
+      "reference": 33,
       "status": 8,
       "troubleshooting": 4,
       "tutorial": 3
@@ -1393,6 +1393,7 @@
         "/direct/compare-and-drift/",
         "/direct/overview/",
         "/direct/plan-and-approve/",
+        "/operate/deliver/",
         "/schema/lineage/",
         "/schema/security/",
         "/schema/serve/",
@@ -3280,6 +3281,97 @@
       "sourceBytes": 4080
     },
     {
+      "path": "docs/site/src/content/docs/operate/deliver.mdx",
+      "route": "/operate/deliver/",
+      "title": "Deliver a schema change",
+      "description": "Follow one schema change from a reviewed pull request to a verified database, and see which guide owns each stage.",
+      "sidebarPath": "Test, automate, and operate",
+      "sidebarLabel": null,
+      "type": "how-to",
+      "audience": [
+        "platform-engineer",
+        "ci-operator"
+      ],
+      "readerQuestion": "How does a reviewed schema change reach a production database?",
+      "goal": "Carry one change through publish, promotion, apply and verification.",
+      "sourceOfTruth": [
+        "internal/cli/migrationspush",
+        "internal/cli/migrations",
+        "internal/cli/oci"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "deploy migrations from OCI",
+        "promote to production",
+        "deployment pipeline"
+      ],
+      "sourceMode": "oci-artifact-only",
+      "overlaps": [
+        "/operate/oci-registry/",
+        "/testing/ci/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/direct/apply/",
+        "/operate/kubernetes-operator/",
+        "/operate/oci-registry/",
+        "/testing/ci/",
+        "/versioned/rollback/"
+      ],
+      "inboundLinks": [
+        "/operate/kubernetes-operator/"
+      ],
+      "visibleWords": 667,
+      "sourceBytes": 5890
+    },
+    {
+      "path": "docs/site/src/content/docs/operate/kubernetes-operator.md",
+      "route": "/operate/kubernetes-operator/",
+      "title": "Kubernetes operator",
+      "description": "Reconcile a desired schema from an OCI artifact with the Ptah Operator, and know what it does not deploy.",
+      "sidebarPath": "Test, automate, and operate",
+      "sidebarLabel": null,
+      "type": "reference",
+      "audience": [
+        "platform-engineer"
+      ],
+      "readerQuestion": "How does the Ptah Operator deploy a schema, and what does it not cover?",
+      "goal": "Decide whether the operator fits a deployment, and reach its canonical documentation.",
+      "sourceOfTruth": [
+        "https://github.com/stokaro/ptah-operator"
+      ],
+      "owns": [],
+      "generated": false,
+      "generator": null,
+      "editSource": null,
+      "lastVerified": null,
+      "evidence": [],
+      "searchAliases": [
+        "Kubernetes operator",
+        "PtahSchema",
+        "deploy to Kubernetes"
+      ],
+      "sourceMode": "oci-artifact-only",
+      "overlaps": [
+        "/operate/oci-registry/"
+      ],
+      "disposition": "keep",
+      "outboundLinks": [
+        "/operate/deliver/",
+        "/operate/oci-registry/"
+      ],
+      "inboundLinks": [
+        "/operate/deliver/"
+      ],
+      "visibleWords": 451,
+      "sourceBytes": 4708
+    },
+    {
       "path": "docs/site/src/content/docs/operate/oci-registry.md",
       "route": "/operate/oci-registry/",
       "title": "OCI registry artifacts",
@@ -3328,6 +3420,8 @@
         "/atlas/feature-matrix/",
         "/atlas/overview/",
         "/concepts/migration-directory/",
+        "/operate/deliver/",
+        "/operate/kubernetes-operator/",
         "/operate/overview/",
         "/reference/capabilities/",
         "/reference/native-commands/",
@@ -5609,6 +5703,7 @@
       "inboundLinks": [
         "/atlas/docs-coverage/",
         "/direct/compare-and-drift/",
+        "/operate/deliver/",
         "/operate/overview/",
         "/schema/export/",
         "/schema/protobuf/",
@@ -6205,6 +6300,7 @@
       "inboundLinks": [
         "/atlas/docs-coverage/",
         "/atlas/retained-divergences/",
+        "/operate/deliver/",
         "/start/quick-start-migrations/",
         "/versioned/apply/",
         "/versioned/import/",

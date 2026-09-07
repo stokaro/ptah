@@ -220,6 +220,8 @@ export const sidebar = [
       { slug: 'versioned/reference-data' },
       { slug: 'operate/seed-data' },
       { slug: 'operate/oci-registry' },
+      { slug: 'operate/deliver' },
+      { slug: 'operate/kubernetes-operator' },
       { slug: 'operate/troubleshooting' },
     ],
   },
