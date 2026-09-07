@@ -5619,8 +5619,8 @@
         "/versioned/integrity-and-safety/",
         "/versioned/lint/"
       ],
-      "visibleWords": 1000,
-      "sourceBytes": 9300
+      "visibleWords": 1155,
+      "sourceBytes": 10446
     },
     {
       "path": "docs/site/src/content/docs/testing/migrations-and-schema.mdx",
@@ -6005,8 +6005,8 @@
         "/versioned/integrity-and-safety/",
         "/versioned/overview/"
       ],
-      "visibleWords": 3435,
-      "sourceBytes": 24927
+      "visibleWords": 3454,
+      "sourceBytes": 25056
     },
     {
       "path": "docs/site/src/content/docs/versioned/maintain-history.md",

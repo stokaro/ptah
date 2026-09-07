@@ -28,6 +28,7 @@ const (
 	formatJSON          = migrationlintreport.FormatJSON
 	formatGitHubActions = migrationlintreport.FormatGitHubActions
 	formatSARIF         = migrationlintreport.FormatSARIF
+	formatGitLab        = migrationlintreport.FormatGitLab
 
 	failOnError = migrationlintreport.FailOnError
 
@@ -98,7 +99,7 @@ Rules can be disabled per code or family via --disable or .ptah-lint.yaml.`,
 	cmd.Flags().StringVar(&dir, "dir", "./migrations", "Local directory or oci:// reference containing migration files")
 	cmd.Flags().StringVar(&dirFormat, "dir-format", string(migrationfile.DirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	cmd.Flags().StringVar(&dialect, "dialect", "", "Target dialect gating dialect-specific rules: "+lintdialect.Expected+" (empty runs every rule)")
-	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions, sarif")
+	cmd.Flags().StringVar(&format, "format", formatText, "Output format: text, json, github-actions, sarif, gitlab")
 	cmd.Flags().StringVar(&configPath, "config", "", "Path to a lint config file (default: <dir>/"+migrationlint.ConfigFileName+" when present)")
 	cmd.Flags().StringVar(&atlasEnv, "atlas-env", "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	dbcli.RegisterEnvFlag(cmd.Flags(), &envName)

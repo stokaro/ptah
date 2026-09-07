@@ -80,10 +80,11 @@ Useful controls, all designed for CI:
   files. `--git-base <branch>` selects the changeset from Git instead.
 - `--fail-on error` (default) fails only on error-severity findings;
   `--fail-on any` fails on warnings too; `--fail-on none` always exits `0`.
-- `--format json`, `--format sarif`, and `--format github-actions` feed code
-  scanners and PR annotations. The SARIF output is a SARIF 2.1.0 document
-  that GitHub code scanning ingests — [CI](../../testing/ci/) shows the
-  upload step.
+- `--format json`, `--format sarif`, `--format github-actions`, and
+  `--format gitlab` feed code scanners and merge-request annotations. The
+  SARIF output is a SARIF 2.1.0 document that GitHub code scanning ingests,
+  and `gitlab` is a GitLab Code Quality report that GitLab CI reads as a
+  `codequality` artifact — [CI](../../testing/ci/) shows both upload steps.
 - `--dialect` gates dialect-specific rules; accepted values are `postgres`,
   `mysql`, `mariadb`, `sqlite`, `sqlserver`, `clickhouse`, `cockroachdb`,
   `yugabytedb`, and `spanner`. Every documented alias of those names is
