@@ -580,7 +580,7 @@ func TestParsePackageRecursively(t *testing.T) {
 	c := qt.New(t)
 
 	// Test parsing the stubs directory
-	result, err := goschema.ParseDir("../../stubs")
+	result, err := goschema.ParseDir("../../internal/stubs")
 	c.Assert(err, qt.IsNil)
 
 	// Verify we found entities (includes all test files in stubs directory)
@@ -611,7 +611,7 @@ func TestParsePackageRecursively(t *testing.T) {
 func TestDependencyResolution(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := goschema.ParseDir("../../stubs")
+	result, err := goschema.ParseDir("../../internal/stubs")
 	c.Assert(err, qt.IsNil)
 
 	// Check that dependencies are correctly identified
@@ -628,7 +628,7 @@ func TestDependencyResolution(t *testing.T) {
 func TestDeduplication(t *testing.T) {
 	c := qt.New(t)
 
-	result, err := goschema.ParseDir("../../stubs")
+	result, err := goschema.ParseDir("../../internal/stubs")
 	c.Assert(err, qt.IsNil)
 
 	// Verify no duplicate tables

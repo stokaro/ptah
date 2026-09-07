@@ -186,7 +186,7 @@ func TestZZZRootCommandErrorsExit2(t *testing.T) {
 			args: []string{
 				"schema",
 				"compare",
-				"--root-dir", filepath.Join("..", "..", "stubs"),
+				"--root-dir", filepath.Join("..", "..", "internal", "stubs"),
 				"--db-url", "postgres://u:p@127.0.0.1:1/db?sslmode=disable",
 				"--connect-timeout", "1ms",
 			},

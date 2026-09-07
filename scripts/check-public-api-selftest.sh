@@ -140,16 +140,17 @@ assert_accepted 'a package the ledger lists as documentation-only'
 # until stokaro/ptah#2974 internalizes the subtree. A fixture per exemption is
 # what keeps one from being dropped by accident: the ledger below lists nothing
 # that matches, so a tree that is not exempt fails.
-for exempt in cmd/thing integration/suite stubs; do
+for exempt in cmd/thing integration/suite; do
 	write_module core/ast "$exempt"
 	ledger 'example.com/thing/core/ast'
 	assert_accepted "an exempt tree: $exempt"
 done
 
-# The exemptions that are gone. `examples/**` is classified package by package
-# now, and the testutil and mocks patterns matched nothing in the tree at all,
-# so a package under either name is an ordinary unclassified library.
-for reported in examples/one catalog/testutil catalog/mocks; do
+# The exemptions that are gone. `examples/**` is classified package by package,
+# `stubs` moved behind an internal boundary, and the testutil and mocks patterns
+# matched nothing in the tree at all -- so a package under any of these names is
+# an ordinary unclassified library.
+for reported in examples/one stubs catalog/testutil catalog/mocks; do
 	write_module core/ast "$reported"
 	ledger 'example.com/thing/core/ast'
 	assert_rejected "a formerly exempt path: $reported" \
@@ -197,4 +198,4 @@ add_main tools/generator
 ledger 'example.com/thing/core/ast'
 assert_rejected 'a module with no library package at all' 'classified no library packages at all'
 
-printf 'public API self-test: an unclassified package is reported, stable and documentation-only listings are not, three exempt trees stay quiet, three former exemptions and a boundary-lookalike are reported, four internal boundaries, a program and a test-only directory stay quiet, and an empty corpus is refused\n'
+printf 'public API self-test: an unclassified package is reported, stable and documentation-only listings are not, two exempt trees stay quiet, four former exemptions and a boundary-lookalike are reported, four internal boundaries, a program and a test-only directory stay quiet, and an empty corpus is refused\n'

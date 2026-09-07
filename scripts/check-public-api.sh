@@ -101,7 +101,6 @@ is_exempt() {
 	case "$1" in
 		"$module_path"/cmd | "$module_path"/cmd/*) return 0 ;;
 		"$module_path"/integration | "$module_path"/integration/*) return 0 ;;
-		"$module_path"/stubs) return 0 ;;
 	esac
 	return 1
 }

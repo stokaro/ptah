@@ -23,7 +23,7 @@ func TestGenerateCreateTableFromStubs(t *testing.T) {
 	// Get the stubs directory
 	currentDir, err := os.Getwd()
 	c.Assert(err, qt.IsNil)
-	stubsDir := filepath.Join(currentDir, "..", "..", "stubs")
+	stubsDir := filepath.Join(currentDir, "..", "..", "internal", "stubs")
 
 	// List all .go files in the stubs directory
 	files, err := filepath.Glob(filepath.Join(stubsDir, "*.go"))

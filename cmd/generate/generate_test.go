@@ -113,7 +113,7 @@ func TestGenerateCommandUnsupportedDialectExits2WithoutPanicTrace(t *testing.T) 
 	var errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
-	cmd.SetArgs([]string{"--root-dir", filepath.Join("..", "..", "stubs"), "--dialect", "db2"})
+	cmd.SetArgs([]string{"--root-dir", filepath.Join("..", "..", "internal", "stubs"), "--dialect", "db2"})
 
 	err := cmd.Execute()
 

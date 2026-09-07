@@ -1,6 +1,12 @@
 // Package stubs contains annotated Go entities exercising the Ptah annotation
 // surface end to end. The files serve as parser input for goschema tests and
 // demos; they are parsed from source rather than imported.
+//
+// Nothing imports it, which is why it sits behind an internal boundary: a
+// package no caller needs has no reason to be a public import path, and as a
+// top-level one it was published on the module's godoc beside the embedder API
+// (stokaro/ptah#2974). The tests and acceptance scripts that read it name the
+// directory as a path, so the boundary costs them nothing.
 package stubs
 
 //ptah:schema:table name="products" platform.mysql.engine="InnoDB" platform.mysql.comment="Product catalog" platform.mariadb.engine="InnoDB" platform.mariadb.comment="Product catalog"
