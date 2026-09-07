@@ -39,9 +39,12 @@ import (
 // and cannot be mistaken for success: it exits non-zero before any database is
 // contacted.
 //
-// The same verdict and the same source cover the twins this batch did not touch
-// — `schema inspect --export`, `schema diff --web`, `migrate lint --web` — left
-// out to stay inside the batch rather than because they differ.
+// The same verdict and the same source cover the twins this batch did not touch,
+// left out to stay inside the batch rather than because they differ.
+// `schema inspect --export` and `schema diff --web` are registered now, each
+// beside its twin: a flag on one verb and not the other is the inconsistency
+// stokaro/ptah#1620 named, and it reached a caller as `unknown flag` where the
+// documented surface has the flag. `migrate lint --web` is the one that remains.
 const (
 	atlasSchemaWebFlagName    = "web"
 	atlasSchemaExportFlagName = "export"

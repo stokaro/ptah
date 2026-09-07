@@ -84,9 +84,9 @@ landing page as an explicit child such as `Overview`.
 - Every top-level group now begins with an explicit landing page. The group
   heading remains a disclosure control, while its parent breadcrumb links to
   that first child.
-- The validated top-level order is Start; Versioned migrations; Direct schema
-  changes; Inference migrations; Define and understand schemas; Databases;
-  Test, automate, and operate; Extend and integrate; Reference; Atlas
+- The validated top-level order is Getting started; Versioned migrations;
+  Direct schema changes; Inference migrations; Schemas; Databases; Testing and
+  safety; Deliver and operate; Data; Extend and integrate; Reference; Atlas
   compatibility. Versioned and direct work remain separate because they are
   different operational choices, not subdivisions of one reader task.
 - Advanced inference strategy, reference, generated reference, and Atlas

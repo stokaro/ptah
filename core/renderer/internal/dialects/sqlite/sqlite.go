@@ -98,6 +98,17 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
+	// The line above is a SQL comment, which the server does not store, and no
+	// column comment reaches the output at all. Both are declarations the
+	// author wrote and the database will not have.
+	r.sink.RecordLostComment(renderdiag.TableKind, node.Name, node.Comment)
+	for _, column := range node.Columns {
+		r.sink.RecordLostComment(
+			renderdiag.ColumnKind,
+			renderdiag.ColumnName(node.Name, column.Name),
+			column.Comment,
+		)
+	}
 
 	guard := ""
 	if node.IfNotExists {
@@ -208,6 +219,9 @@ func (r *Renderer) VisitIndex(node *ast.IndexNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
+	// The line above is a SQL comment, which the server does not store: the
+	// render looks like it kept the text and the database has none of it.
+	r.sink.RecordLostComment(renderdiag.IndexKind, node.Name, node.Comment)
 	indexName, tableName := sqliteIndexTarget(node.Name, node.Table)
 	parts := []string{"CREATE"}
 	if node.Unique {

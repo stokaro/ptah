@@ -81,12 +81,24 @@ which Ptah does not evaluate.`
 	flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in diffing")
 	if !policy.IsStrictCE() {
 		registerAtlasUIFlag(cmd, atlasSchemaExportFlag())
+		// The twin of `schema inspect --web`, left unregistered while that one
+		// was the only member of its batch. A flag on one verb and not its twin
+		// is the inconsistency stokaro/ptah#1620 flagged and deferred, and the
+		// verdict and the source are the same for both: Atlas's CLI reference
+		// documents it, the pinned community binary does not register it, and
+		// Ptah renders the diagram locally but opens no viewer.
+		registerAtlasUIFlag(cmd, atlasSchemaWebFlag())
 	}
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgsHint("name the states with --from and --to"))
 	return cmd
 }
 
 func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
+	// Before any config or database work, as on `schema inspect`: a flag Ptah
+	// does not implement must not be answered with a diff that ignored it.
+	if err := refuseAtlasUIFlag(cmd, "schema", "diff", atlasSchemaWebFlag()); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	if err := validateAtlasSchemaDiffSQLiteToggle(opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

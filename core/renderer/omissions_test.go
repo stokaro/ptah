@@ -1,6 +1,7 @@
 package renderer_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -345,4 +346,124 @@ func TestGetOrderedCreateStatementsReportingOmissions_FailurePath(t *testing.T) 
 	c.Assert(err, qt.ErrorMatches, "(?s).*SERIAL has no auto-increment equivalent.*")
 	c.Assert(statements, qt.IsNil)
 	c.Assert(omissions, qt.IsNil)
+}
+
+// enumBackedTable declares an enum and a column typed by it.
+//
+// Five dialects have no CREATE TYPE and model the values on the column instead.
+// That is a supported alternate representation, not a loss, and telling the two
+// apart is what keeps this check from failing every schema with an enum.
+func enumBackedTable() *schemamodel.Database {
+	return &schemamodel.Database{
+		Enums: []schemamodel.Enum{{Name: "user_status", Values: []string{"active", "banned"}}},
+		Tables: []schemamodel.Table{{
+			StructName: "User",
+			Name:       "users",
+		}},
+		Fields: []schemamodel.Field{
+			{StructName: "User", Name: "id", Type: "INT", Primary: true},
+			{StructName: "User", Name: "status", Type: "user_status", Nullable: false},
+		},
+	}
+}
+
+// TestGetOrderedCreateStatementsReportingOmissions_AnInlineEnumIsNotALoss is the
+// alternate-representation control stokaro/ptah#2976 asks for by name.
+//
+// The values reach the output on every one of these targets, spelled the way
+// the target spells them. Reporting the absent CREATE TYPE would call a
+// successful translation a loss, and every schema with an enum would fail.
+func TestGetOrderedCreateStatementsReportingOmissions_AnInlineEnumIsNotALoss(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+	}{
+		{name: "mysql", dialect: platform.MySQL},
+		{name: "mariadb", dialect: platform.MariaDB},
+		{name: "sqlite", dialect: platform.SQLite},
+		{name: "sql server", dialect: platform.SQLServer},
+		{name: "oracle", dialect: platform.Oracle},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, omissions, err := renderer.GetOrderedCreateStatementsReportingOmissions(
+				enumBackedTable(), test.dialect, capability.ForDialect(test.dialect))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(omissions, qt.HasLen, 0)
+			c.Assert(strings.Join(statements, "\n"), qt.Contains, "active")
+			c.Assert(strings.Join(statements, "\n"), qt.Contains, "banned")
+		})
+	}
+}
+
+// TestGetOrderedCreateStatementsReportingOmissions_AnEnumWithNoInlineFormIsALoss
+// is that control's other half.
+//
+// Every assertion above is satisfied by a check that never reports an enum.
+// ClickHouse has no inline lowering for one, so the type is skipped and the
+// author does lose it.
+func TestGetOrderedCreateStatementsReportingOmissions_AnEnumWithNoInlineFormIsALoss(t *testing.T) {
+	c := qt.New(t)
+
+	_, omissions, err := renderer.GetOrderedCreateStatementsReportingOmissions(
+		enumBackedTable(), platform.ClickHouse, capability.ClickHouse24())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(omissions, qt.HasLen, 1)
+	c.Assert(omissions[0].Name, qt.Equals, "user_status")
+}
+
+// generatedKeyTable declares a key the target generates values for and a column
+// with a default the target writes its own way.
+func generatedKeyTable() *schemamodel.Database {
+	return &schemamodel.Database{
+		Tables: []schemamodel.Table{{StructName: "Order", Name: "orders"}},
+		Fields: []schemamodel.Field{
+			{StructName: "Order", Name: "id", Type: "SERIAL", Primary: true},
+			{
+				StructName:  "Order",
+				Name:        "created_at",
+				Type:        "TIMESTAMP",
+				DefaultExpr: "CURRENT_TIMESTAMP",
+			},
+		},
+	}
+}
+
+// TestGetOrderedCreateStatementsReportingOmissions_AGeneratedDefaultIsNotALoss
+// is the other false-positive control the issue names.
+//
+// A portable type mapped to the target's spelling preserves the declaration:
+// SERIAL becomes AUTO_INCREMENT on the MySQL family and an identity column on
+// Oracle and SQL Server. A check that read those as losses would fail every
+// schema with a generated key, which is most of them.
+func TestGetOrderedCreateStatementsReportingOmissions_AGeneratedDefaultIsNotALoss(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+	}{
+		{name: "postgres", dialect: platform.Postgres},
+		{name: "mysql", dialect: platform.MySQL},
+		{name: "mariadb", dialect: platform.MariaDB},
+		{name: "sqlite", dialect: platform.SQLite},
+		{name: "sql server", dialect: platform.SQLServer},
+		{name: "oracle", dialect: platform.Oracle},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			statements, omissions, err := renderer.GetOrderedCreateStatementsReportingOmissions(
+				generatedKeyTable(), test.dialect, capability.ForDialect(test.dialect))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(omissions, qt.HasLen, 0)
+			c.Assert(strings.Join(statements, "\n"), qt.Contains, "CURRENT_TIMESTAMP")
+		})
+	}
 }

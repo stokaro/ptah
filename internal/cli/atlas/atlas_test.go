@@ -321,10 +321,13 @@ func TestCompatCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 			flags: []string{"--url", "--to", "--dev-url", "--dry-run", "--auto-approve", "--format", "--schema", "--exclude", "--include", "--tx-mode", "--plan", "--edit", "--lock-timeout", "--lock-name", "--skip-lock", "--skip-lint"},
 		},
 		{
-			name:      "schema_diff",
-			path:      []string{"schema", "diff"},
-			flags:     []string{"--from", "--to", "--dev-url", "--env", "--format", "--schema", "--exclude", "--include"},
-			forbidden: []string{"--web"},
+			// --web moved from forbidden to advertised. It is a registered
+			// refusal, as on `schema inspect`: the documented surface has the
+			// flag, so answering `unknown flag` told a script nothing, and
+			// advertising it is what lets the refusal be read.
+			name:  "schema_diff",
+			path:  []string{"schema", "diff"},
+			flags: []string{"--from", "--to", "--dev-url", "--env", "--format", "--schema", "--exclude", "--include", "--web"},
 		},
 		{
 			name:  "schema_clean",

@@ -13,6 +13,10 @@
 // record into the problem model that verb already reports, so this package adds
 // a vocabulary rather than a fifth analysis result shape.
 //
+// A comment answered with a `-- text` line is recorded too. The server stores
+// none of it, so the render looks like it kept the text while the database has
+// none, which to the author is the same outcome as dropping it.
+//
 // # This is not coverage
 //
 // [ptah.run/core/coverage] answers a neighboring question and must not be
@@ -157,4 +161,47 @@ func (s *Sink) RecordDroppedTableOptions(table string, options map[string]string
 		}
 		s.Record(TableOptionOmission(table, key, options[key], ""))
 	}
+}
+
+// Kinds an omission names beside [TableKind].
+const (
+	// ColumnKind owns a property lost from one column. Its Name is
+	// `table.column`, because a column name alone does not identify one.
+	ColumnKind = "column"
+	// IndexKind owns a property lost from one index.
+	IndexKind = "index"
+)
+
+// CommentProperty is the property name a lost comment is recorded under.
+//
+// A comment is the one declaration several targets answer with a SQL line
+// comment, which the server does not store: the render looks like it kept the
+// text and the database has none of it. Recording it under one name keeps
+// `-- text` and dropping the text outright from reading as two different
+// outcomes, because to the author they are the same one.
+const CommentProperty = "comment"
+
+// PropertyOmission is the record for one property an object lost.
+func PropertyOmission(kind, name, property, value string) Omission {
+	return Omission{
+		Reason:   ReasonUnsupported,
+		Kind:     kind,
+		Name:     name,
+		Property: property,
+		Detail:   value,
+	}
+}
+
+// RecordLostComment records a comment the target does not store. An empty
+// comment records nothing, because nothing was declared to lose.
+func (s *Sink) RecordLostComment(kind, name, comment string) {
+	if s == nil || comment == "" {
+		return
+	}
+	s.Record(PropertyOmission(kind, name, CommentProperty, comment))
+}
+
+// ColumnName is the identity a column omission carries.
+func ColumnName(table, column string) string {
+	return table + "." + column
 }
